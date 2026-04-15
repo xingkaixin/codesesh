@@ -15,6 +15,19 @@ const PROPOSED_PLAN_PATTERN = /<proposed_plan>\s*([\s\S]*?)\s*<\/proposed_plan>/
 const PLAN_APPROVAL_PREFIX = "PLEASE IMPLEMENT THIS PLAN";
 const SUBAGENT_NOTIFICATION_PATTERN = /<subagent_notification>\s*([\s\S]*?)\s*<\/subagent_notification>/;
 
+const DEVELOPER_LIKE_USER_MARKERS = [
+  "agents.md instructions for",
+  "<instructions>",
+  "<environment_context>",
+  "<permissions instructions>",
+  "<collaboration_mode>",
+];
+
+function isDeveloperLikeUserMessage(text: string): boolean {
+  const lower = text.toLowerCase();
+  return DEVELOPER_LIKE_USER_MARKERS.some((m) => lower.includes(m));
+}
+
 const CODEX_TOOL_TITLE_MAP: Record<string, string> = {
   exec_command: "bash",
   apply_patch: "patch",
@@ -823,6 +836,11 @@ export class CodexAgent extends BaseAgent {
       : String(content ?? "");
 
     if (!text.trim()) {
+      return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
+    }
+
+    // Skip injected developer/system context messages
+    if (isDeveloperLikeUserMessage(text)) {
       return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
     }
 
