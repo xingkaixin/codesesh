@@ -143,8 +143,9 @@ export class KimiAgent extends BaseAgent {
       const id = String(metadata.session_id ?? sessionDir);
       const title = String(metadata.title ?? "Untitled Session");
       const wireMtime = metadata.wire_mtime;
+      // wire_mtime 是秒级时间戳，需要转换为毫秒
       const createdAt = typeof wireMtime === "number"
-        ? wireMtime
+        ? wireMtime * 1000
         : statSync(metadataPath).mtimeMs;
 
       return {
