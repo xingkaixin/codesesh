@@ -365,7 +365,7 @@ export class CodexAgent extends BaseAgent {
     try {
       const content = readFileSync(indexPath, "utf-8");
       for (const record of parseJsonlLines(content)) {
-        const sid = String(record["session_id"] ?? "").trim();
+        const sid = String(record["id"] ?? "").trim();
         const threadName = String(record["thread_name"] ?? "").trim();
         if (sid && threadName) {
           this.sessionIndexCache.set(sid, threadName);
@@ -462,6 +462,7 @@ export class CodexAgent extends BaseAgent {
   }
 
   private extractTitleFromLines(lines: string[]): string | null {
+    let userMessageCount = 0;
     for (const line of lines.slice(0, 20)) {
       try {
         const data = JSON.parse(line);
@@ -472,6 +473,10 @@ export class CodexAgent extends BaseAgent {
         const pType = String(payload["type"] ?? "");
         if (pType !== "message") continue;
         if (String(payload["role"] ?? "") !== "user") continue;
+
+        // Skip the first user message (context injection); use the second
+        userMessageCount++;
+        if (userMessageCount < 2) continue;
 
         const content = payload["content"];
         if (Array.isArray(content)) {
