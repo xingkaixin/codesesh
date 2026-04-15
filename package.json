@@ -5,6 +5,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "serve": "node --watch packages/cli/dist/index.js",
     "clean": "turbo run clean"
   },
   "devDependencies": {
