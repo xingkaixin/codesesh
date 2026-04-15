@@ -49,7 +49,7 @@ function isPathScopeMatch(queryPath: string, sessionPath: string): boolean {
   return s === q || s.startsWith(q + "/") || q.startsWith(s + "/");
 }
 
-function filterSessions(sessions: SessionHead[], options: ScanOptions): SessionHead[] {
+export function filterSessions(sessions: SessionHead[], options: ScanOptions): SessionHead[] {
   let result = sessions;
 
   if (options.cwd) {

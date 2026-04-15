@@ -1,0 +1,191 @@
+import { describe, it, expect, vi } from "vitest";
+import { handleGetAgents, handleGetSessions, handleGetSessionData } from "../handlers.js";
+import type { ScanResult, SessionHead, SessionData } from "@agent-lens/core";
+import { BaseAgent } from "@agent-lens/core";
+
+// --- Helpers ---
+
+function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
+  return {
+    id,
+    slug: `agent/${id}`,
+    title: `Session ${id}`,
+    time_created: 1000,
+    time_updated: 1000,
+    directory: "/home/user/project",
+    ...overrides,
+  };
+}
+
+function makeMockContext(
+  overrides: {
+    query?: Record<string, string>;
+    param?: Record<string, string>;
+  } = {},
+) {
+  const jsonFn = vi.fn().mockReturnValue({ status: 200 });
+  return {
+    req: {
+      query: (key: string) => overrides.query?.[key] ?? "",
+      param: (key: string) => overrides.param?.[key] ?? "",
+    },
+    json: jsonFn,
+  } as any;
+}
+
+class MockAgent extends BaseAgent {
+  readonly name = "claudecode";
+  readonly displayName = "Claude Code";
+
+  isAvailable() {
+    return true;
+  }
+
+  scan(): SessionHead[] {
+    return [];
+  }
+
+  getSessionData(_sessionId: string): SessionData {
+    return {
+      id: "s1",
+      slug: "claudecode/s1",
+      title: "Test Session",
+      time_created: 1000,
+      time_updated: 1000,
+      messages: [],
+      stats: {
+        message_count: 0,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 0,
+      },
+    };
+  }
+}
+
+function makeScanResult(overrides?: Partial<ScanResult>): ScanResult {
+  const agent = new MockAgent();
+  return {
+    sessions: [makeSession("s1"), makeSession("s2")],
+    byAgent: { claudecode: [makeSession("s1"), makeSession("s2")] },
+    agents: [agent],
+    ...overrides,
+  };
+}
+
+// --- Tests ---
+
+describe("handleGetAgents", () => {
+  it("returns agent info list", () => {
+    const c = makeMockContext();
+    const result = makeScanResult();
+    handleGetAgents(c, result);
+    expect(c.json).toHaveBeenCalled();
+    const response = c.json.mock.calls[0]![0];
+    expect(Array.isArray(response)).toBe(true);
+  });
+});
+
+describe("handleGetSessions", () => {
+  it("returns all sessions without filters", () => {
+    const c = makeMockContext();
+    const result = makeScanResult();
+    handleGetSessions(c, result);
+    const response = c.json.mock.calls[0]![0];
+    expect(response.sessions).toHaveLength(2);
+  });
+
+  it("filters by agent", () => {
+    const c = makeMockContext({ query: { agent: "claudecode" } });
+    const result = makeScanResult();
+    handleGetSessions(c, result);
+    const response = c.json.mock.calls[0]![0];
+    expect(response.sessions).toHaveLength(2);
+  });
+
+  it("falls back to all sessions when agent not found in byAgent", () => {
+    const c = makeMockContext({ query: { agent: "nonexistent" } });
+    const result = makeScanResult();
+    handleGetSessions(c, result);
+    const response = c.json.mock.calls[0]![0];
+    // Falls back to scanResult.sessions
+    expect(response.sessions).toHaveLength(2);
+  });
+
+  it("filters by q (title search)", () => {
+    const c = makeMockContext({ query: { q: "s1" } });
+    const result = makeScanResult();
+    handleGetSessions(c, result);
+    const response = c.json.mock.calls[0]![0];
+    expect(response.sessions).toHaveLength(1);
+    expect(response.sessions[0].id).toBe("s1");
+  });
+
+  it("filters by cwd (substring match)", () => {
+    const c = makeMockContext({ query: { cwd: "project" } });
+    const result = makeScanResult();
+    handleGetSessions(c, result);
+    const response = c.json.mock.calls[0]![0];
+    expect(response.sessions).toHaveLength(2);
+  });
+
+  it("filters by from date", () => {
+    const c = makeMockContext({ query: { from: "2024-01-01" } });
+    const result = makeScanResult({
+      sessions: [
+        makeSession("old", { time_created: new Date("2023-01-01").getTime() }),
+        makeSession("new", { time_created: new Date("2025-01-01").getTime() }),
+      ],
+      byAgent: {},
+    });
+    handleGetSessions(c, result);
+    const response = c.json.mock.calls[0]![0];
+    expect(response.sessions).toHaveLength(1);
+    expect(response.sessions[0].id).toBe("new");
+  });
+
+  it("ignores invalid from date", () => {
+    const c = makeMockContext({ query: { from: "not-a-date" } });
+    const result = makeScanResult();
+    handleGetSessions(c, result);
+    const response = c.json.mock.calls[0]![0];
+    // Invalid date → filter not applied
+    expect(response.sessions).toHaveLength(2);
+  });
+});
+
+describe("handleGetSessionData", () => {
+  it("returns session data for valid agent and id", async () => {
+    const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
+    const result = makeScanResult();
+    await handleGetSessionData(c, result);
+    expect(c.json).toHaveBeenCalled();
+    const response = c.json.mock.calls[0]![0];
+    expect(response.title).toBe("Test Session");
+  });
+
+  it("returns 400 when session ID is missing", async () => {
+    const c = makeMockContext({ param: { agent: "claudecode", id: "" } });
+    const result = makeScanResult();
+    await handleGetSessionData(c, result);
+    expect(c.json).toHaveBeenCalledWith({ error: "Missing session ID" }, 400);
+  });
+
+  it("returns 404 for unknown agent", async () => {
+    const c = makeMockContext({ param: { agent: "unknown", id: "s1" } });
+    const result = makeScanResult();
+    await handleGetSessionData(c, result);
+    expect(c.json).toHaveBeenCalledWith({ error: "Unknown agent: unknown" }, 404);
+  });
+
+  it("returns 500 when agent throws", async () => {
+    const agent = new MockAgent();
+    agent.getSessionData = () => {
+      throw new Error("DB not found");
+    };
+    const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
+    const result = makeScanResult({ agents: [agent] });
+    await handleGetSessionData(c, result);
+    expect(c.json).toHaveBeenCalledWith({ error: "DB not found" }, 500);
+  });
+});
