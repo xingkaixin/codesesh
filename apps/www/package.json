@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "deploy": "pnpm build && wrangler pages deploy dist --project-name agent-lens"
+    "deploy:cf": "pnpm build && wrangler pages deploy dist --project-name agent-lens"
   },
   "dependencies": {
     "clsx": "^2.1.1",
