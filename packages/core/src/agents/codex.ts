@@ -5,6 +5,7 @@ import type { SessionHead, SessionData, Message, MessagePart } from "../types/in
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
 import { parseJsonlLines } from "../utils/jsonl.js";
 import { resolveSessionTitle, basenameTitle } from "../utils/title-fallback.js";
+import { perf } from "../utils/perf.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -191,7 +192,9 @@ function extractPatchContent(lines: string[], startIndex: number): { text: strin
 // Session meta
 // ---------------------------------------------------------------------------
 
-interface SessionMeta {
+import type { SessionCacheMeta, ChangeCheckResult } from "./base.js";
+
+interface SessionMeta extends SessionCacheMeta {
   id: string;
   title: string;
   sourcePath: string;
@@ -236,14 +239,25 @@ export class CodexAgent extends BaseAgent {
   scan(): SessionHead[] {
     if (!this.basePath) return [];
 
+    const scanMarker = perf.start("codex:scan");
+
     // Pre-load session index for titles
+    const indexMarker = perf.start("loadSessionIndex");
     this.loadSessionIndex();
+    perf.end(indexMarker);
 
     const heads: SessionHead[] = [];
 
-    for (const file of this.listRolloutFiles()) {
+    const listMarker = perf.start("listRolloutFiles");
+    const files = this.listRolloutFiles();
+    perf.end(listMarker);
+
+    for (const file of files) {
       try {
+        const parseMarker = perf.start(`parseSessionHead:${basename(file)}`);
         const head = this.parseSessionHead(file);
+        perf.end(parseMarker);
+
         if (head) {
           heads.push(head);
           this.sessionMetaMap.set(head.id, {
@@ -262,7 +276,121 @@ export class CodexAgent extends BaseAgent {
       }
     }
 
+    perf.end(scanMarker);
     return heads;
+  }
+
+  getSessionMetaMap(): Map<string, SessionCacheMeta> {
+    return this.sessionMetaMap;
+  }
+
+  setSessionMetaMap(meta: Map<string, SessionCacheMeta>): void {
+    this.sessionMetaMap = meta as Map<string, SessionMeta>;
+  }
+
+  /**
+   * 检测文件系统变更
+   */
+  checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
+    if (!this.basePath) {
+      return { hasChanges: false, timestamp: Date.now() };
+    }
+
+    const changedIds: string[] = [];
+
+    for (const session of cachedSessions) {
+      const meta = this.sessionMetaMap.get(session.id);
+      if (!meta) continue;
+
+      try {
+        const stat = statSync(meta.sourcePath);
+        if (stat.mtimeMs > sinceTimestamp) {
+          changedIds.push(session.id);
+        }
+      } catch {
+        changedIds.push(session.id);
+      }
+    }
+
+    // 检查新文件
+    try {
+      const allFiles = this.listRolloutFiles();
+      const hasNewFiles = allFiles.length > cachedSessions.length;
+
+      return {
+        hasChanges: changedIds.length > 0 || hasNewFiles,
+        changedIds,
+        timestamp: Date.now(),
+      };
+    } catch {
+      return {
+        hasChanges: changedIds.length > 0,
+        changedIds,
+        timestamp: Date.now(),
+      };
+    }
+  }
+
+  /**
+   * 增量扫描
+   */
+  incrementalScan(cachedSessions: SessionHead[], changedIds: string[]): SessionHead[] {
+    if (!this.basePath) return cachedSessions;
+
+    const sessionMap = new Map(cachedSessions.map(s => [s.id, s]));
+
+    // 重新扫描变更的会话
+    for (const file of this.listRolloutFiles()) {
+      try {
+        const sessionId = extractSessionId(file);
+
+        if (changedIds.includes(sessionId)) {
+          const head = this.parseSessionHead(file);
+          if (head) {
+            sessionMap.set(head.id, head);
+            this.sessionMetaMap.set(head.id, {
+              id: head.id,
+              title: head.title,
+              sourcePath: file,
+              directory: head.directory,
+              model: null,
+              messageCount: head.stats.message_count,
+              createdAt: head.time_created,
+              updatedAt: head.time_updated ?? head.time_created,
+            });
+          }
+        }
+      } catch {
+        // skip
+      }
+    }
+
+    // 检查新文件
+    for (const file of this.listRolloutFiles()) {
+      try {
+        const sessionId = extractSessionId(file);
+        if (!sessionMap.has(sessionId)) {
+          const head = this.parseSessionHead(file);
+          if (head) {
+            sessionMap.set(head.id, head);
+            this.sessionMetaMap.set(head.id, {
+              id: head.id,
+              title: head.title,
+              sourcePath: file,
+              directory: head.directory,
+              model: null,
+              messageCount: head.stats.message_count,
+              createdAt: head.time_created,
+              updatedAt: head.time_updated ?? head.time_created,
+            });
+          }
+        }
+      } catch {
+        // skip
+      }
+    }
+
+    return Array.from(sessionMap.values());
   }
 
   getSessionData(sessionId: string): SessionData {

@@ -1,7 +1,7 @@
 import { defineCommand, runMain } from "citty";
 import { createServer } from "./server.js";
 import { printScanResults } from "./output.js";
-import { scanSessions, createRegisteredAgents, getAgentInfoMap, type ScanOptions } from "@agent-lens/core";
+import { scanSessionsAsync, createRegisteredAgents, getAgentInfoMap, type ScanOptions, perf } from "@agent-lens/core";
 
 const VERSION = "0.1.0";
 
@@ -71,11 +71,39 @@ const main = defineCommand({
       description: "Don't auto-open browser",
       default: false,
     },
+    trace: {
+      type: "boolean",
+      description: "Show performance trace logs",
+      default: false,
+    },
+    cache: {
+      type: "boolean",
+      description: "Use cached scan results if available",
+      default: true,
+    },
+    "clear-cache": {
+      type: "boolean",
+      description: "Clear scan cache before starting",
+      default: false,
+    },
   },
   async run({ args }) {
     const port = parseInt(args.port as string, 10) || 4321;
     const noOpen = args.noOpen as boolean;
     const jsonOnly = args.json as boolean;
+    const trace = args.trace as boolean;
+    const useCache = args.cache as boolean;
+    const clearCache = args["clear-cache"] as boolean;
+
+    if (trace) {
+      perf.enable();
+    }
+
+    if (clearCache) {
+      const { clearCache: clear } = await import("@agent-lens/core");
+      clear();
+      console.log("Cache cleared.");
+    }
 
     // Parse session URI if provided
     let targetSession: { agent: string; sessionId: string } | null = null;
@@ -114,10 +142,15 @@ const main = defineCommand({
       cwd: cwdFilter,
       from: fromTimestamp,
       to: args.to ? parseDateToTimestamp(args.to as string) : undefined,
+      useCache: useCache,
     };
 
-    // Scan sessions
-    const result = scanSessions(scanOptions);
+    // Scan sessions (parallel)
+    const result = await scanSessionsAsync(scanOptions);
+
+    if (trace) {
+      console.log(perf.getReport());
+    }
 
     if (jsonOnly) {
       const info = getAgentInfoMap(

@@ -1,7 +1,9 @@
 import { resolve } from "node:path";
 import type { SessionHead } from "../types/index.js";
-import type { BaseAgent } from "../agents/index.js";
+import type { BaseAgent, SessionCacheMeta, ChangeCheckResult } from "../agents/index.js";
 import { createRegisteredAgents } from "../agents/index.js";
+import { perf } from "../utils/index.js";
+import { loadCachedSessions, saveCachedSessions } from "./cache.js";
 
 export interface ScanOptions {
   /** Filter to specific agent name(s) */
@@ -12,12 +14,25 @@ export interface ScanOptions {
   from?: number;
   /** Only include sessions created before this timestamp (ms) */
   to?: number;
+  /** Use cached scan results if available */
+  useCache?: boolean;
+  /** Enable smart refresh (fast cache + background incremental scan) */
+  smartRefresh?: boolean;
 }
 
 export interface ScanResult {
   sessions: SessionHead[];
   byAgent: Record<string, SessionHead[]>;
   agents: BaseAgent[];
+}
+
+/** 扫描状态更新回调 */
+export interface ScanProgress {
+  agent: string;
+  phase: 'cache' | 'checking' | 'incremental' | 'complete';
+  cachedCount?: number;
+  newCount?: number;
+  changedCount?: number;
 }
 
 /**
@@ -53,7 +68,168 @@ function filterSessions(sessions: SessionHead[], options: ScanOptions): SessionH
   return result;
 }
 
-export function scanSessions(options: ScanOptions = {}): ScanResult {
+interface AgentScanResult {
+  agent: BaseAgent;
+  heads: SessionHead[];
+  fromCache?: boolean;
+  refreshed?: boolean;
+}
+
+/**
+ * 智能扫描单个 Agent
+ * 1. 优先使用缓存立即返回
+ * 2. 后台检测变更
+ * 3. 增量刷新（仅更新变更的部分）
+ */
+async function scanAgentSmart(
+  agent: BaseAgent,
+  options: ScanOptions,
+  onProgress?: (progress: ScanProgress) => void
+): Promise<AgentScanResult | null> {
+  const useCache = options.useCache ?? true;
+  const smartRefresh = options.smartRefresh ?? true;
+
+  // 1. 尝试加载缓存
+  if (useCache) {
+    const cached = loadCachedSessions(agent.name);
+    if (cached !== null) {
+      // 恢复元数据
+      if (agent.setSessionMetaMap) {
+        const metaMap = new Map<string, SessionCacheMeta>();
+        for (const [id, meta] of Object.entries(cached.meta)) {
+          metaMap.set(id, meta);
+        }
+        agent.setSessionMetaMap(metaMap);
+      }
+
+      // 通知缓存已加载
+      onProgress?.({
+        agent: agent.name,
+        phase: 'cache',
+        cachedCount: cached.sessions.length,
+      });
+
+      // 2. 智能刷新：后台检测变更
+      if (smartRefresh && agent.checkForChanges) {
+        setTimeout(async () => {
+          await refreshAgentAsync(agent, cached.sessions, cached.timestamp, onProgress);
+        }, 0);
+      }
+
+      const filtered = filterSessions(cached.sessions, options);
+      return { agent, heads: filtered, fromCache: true };
+    }
+  }
+
+  // 无缓存或缓存失效，执行完整扫描
+  return scanAgentFull(agent, options, onProgress);
+}
+
+/**
+ * 后台异步刷新 Agent 数据
+ */
+async function refreshAgentAsync(
+  agent: BaseAgent,
+  cachedSessions: SessionHead[],
+  cacheTimestamp: number,
+  onProgress?: (progress: ScanProgress) => void
+): Promise<void> {
+  try {
+    // 检测变更
+    onProgress?.({ agent: agent.name, phase: 'checking' });
+
+    const checkResult = await Promise.resolve(
+      agent.checkForChanges!(cacheTimestamp, cachedSessions)
+    );
+
+    if (!checkResult.hasChanges) {
+      onProgress?.({ agent: agent.name, phase: 'complete' });
+      return;
+    }
+
+    // 增量刷新
+    onProgress?.({
+      agent: agent.name,
+      phase: 'incremental',
+      changedCount: checkResult.changedIds?.length,
+    });
+
+    const updatedSessions = await Promise.resolve(
+      agent.incrementalScan!(cachedSessions, checkResult.changedIds || [])
+    );
+
+    // 保存更新后的缓存
+    const metaMap = agent.getSessionMetaMap?.();
+    const meta: Record<string, SessionCacheMeta> = {};
+    if (metaMap) {
+      for (const [id, data] of metaMap.entries()) {
+        meta[id] = { id, ...(data as Record<string, unknown>) } as SessionCacheMeta;
+      }
+    }
+    saveCachedSessions(agent.name, updatedSessions, meta);
+
+    onProgress?.({
+      agent: agent.name,
+      phase: 'complete',
+      newCount: updatedSessions.length,
+    });
+  } catch (err) {
+    // 刷新失败不中断主流程
+    console.error(`[${agent.name}] Background refresh failed:`, err);
+  }
+}
+
+/**
+ * 完整扫描 Agent（无缓存时使用）
+ */
+async function scanAgentFull(
+  agent: BaseAgent,
+  options: ScanOptions,
+  onProgress?: (progress: ScanProgress) => void
+): Promise<AgentScanResult | null> {
+  const availMarker = perf.start(`agent:${agent.name}:isAvailable`);
+  const isAvail = agent.isAvailable();
+  perf.end(availMarker);
+
+  if (!isAvail) {
+    return null;
+  }
+
+  try {
+    const scanMarker = perf.start(`agent:${agent.name}:scan`);
+    const heads = agent.scan();
+    perf.end(scanMarker);
+
+    // 收集元数据
+    const metaMap = agent.getSessionMetaMap?.();
+    const meta: Record<string, SessionCacheMeta> = {};
+    if (metaMap) {
+      for (const [id, data] of metaMap.entries()) {
+        meta[id] = { id, ...(data as Record<string, unknown>) } as SessionCacheMeta;
+      }
+    }
+
+    // 保存到缓存
+    saveCachedSessions(agent.name, heads, meta);
+
+    onProgress?.({ agent: agent.name, phase: 'complete', newCount: heads.length });
+
+    const filtered = filterSessions(heads, options);
+    return { agent, heads: filtered, fromCache: false };
+  } catch (err) {
+    console.error(`Error scanning ${agent.name}:`, err);
+    return { agent, heads: [], fromCache: false };
+  }
+}
+
+/**
+ * 主扫描函数 - 并行扫描所有 Agent
+ */
+export async function scanSessions(
+  options: ScanOptions = {},
+  onProgress?: (progress: ScanProgress) => void
+): Promise<ScanResult> {
+  const scanMarker = perf.start("scanSessions");
   const agents = createRegisteredAgents();
   const byAgent: Record<string, SessionHead[]> = {};
   const allSessions: SessionHead[] = [];
@@ -63,21 +239,40 @@ export function scanSessions(options: ScanOptions = {}): ScanResult {
     ? new Set(options.agents.map((a) => a.toLowerCase()))
     : null;
 
-  for (const agent of agents) {
-    if (agentFilter && !agentFilter.has(agent.name.toLowerCase())) continue;
-    if (!agent.isAvailable()) continue;
-    availableAgents.push(agent);
+  // 过滤需要扫描的 Agent
+  const agentsToScan = agents.filter((agent) => {
+    if (agentFilter && !agentFilter.has(agent.name.toLowerCase())) {
+      return false;
+    }
+    return true;
+  });
 
-    try {
-      const heads = agent.scan();
-      const filtered = filterSessions(heads, options);
-      byAgent[agent.name] = filtered;
-      allSessions.push(...filtered);
-    } catch (err) {
-      console.error(`Error scanning ${agent.name}:`, err);
-      byAgent[agent.name] = [];
+  // 并行扫描所有 Agent
+  const scanPromises = agentsToScan.map((agent) =>
+    scanAgentSmart(agent, options, onProgress)
+  );
+
+  const results = await Promise.all(scanPromises);
+
+  // 处理结果
+  for (const result of results) {
+    if (result) {
+      availableAgents.push(result.agent);
+      byAgent[result.agent.name] = result.heads;
+      allSessions.push(...result.heads);
     }
   }
 
+  perf.end(scanMarker);
   return { sessions: allSessions, byAgent, agents: availableAgents };
+}
+
+/**
+ * 异步扫描（带增量更新支持）
+ */
+export async function scanSessionsAsync(
+  options: ScanOptions = {},
+  onProgress?: (progress: ScanProgress) => void
+): Promise<ScanResult> {
+  return scanSessions(options, onProgress);
 }

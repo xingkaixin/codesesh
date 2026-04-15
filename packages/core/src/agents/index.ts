@@ -1,4 +1,5 @@
 export { BaseAgent } from "./base.js";
+export type { SessionCacheMeta, ChangeCheckResult } from "./base.js";
 export {
   registerAgent,
   createRegisteredAgents,

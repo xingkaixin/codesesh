@@ -5,6 +5,7 @@ import type { SessionHead, SessionData, Message, MessagePart } from "../types/in
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
 import { parseJsonlLines } from "../utils/jsonl.js";
 import { basenameTitle } from "../utils/title-fallback.js";
+import { perf } from "../utils/perf.js";
 
 const KIMI_TOOL_TITLE_MAP: Record<string, string> = {
   ReadFile: "read",
@@ -26,7 +27,9 @@ function normalizeTitleText(text: string): string {
   return line?.trim().slice(0, 80) || "";
 }
 
-interface SessionMeta {
+import type { SessionCacheMeta, ChangeCheckResult } from "./base.js";
+
+interface SessionMeta extends SessionCacheMeta {
   id: string;
   title: string;
   sourcePath: string;
@@ -160,10 +163,19 @@ export class KimiAgent extends BaseAgent {
   scan(): SessionHead[] {
     if (!this.basePath) return [];
 
+    const scanMarker = perf.start("kimi:scan");
+
+    const listMarker = perf.start("listMetadataFiles");
+    const metadataFiles = this.listMetadataFiles();
+    perf.end(listMarker);
+
     const heads: SessionHead[] = [];
-    for (const metadataFile of this.listMetadataFiles()) {
+    for (const metadataFile of metadataFiles) {
       try {
+        const parseMarker = perf.start(`parseSessionMeta:${basename(metadataFile)}`);
         const meta = this.parseSessionMeta(metadataFile);
+        perf.end(parseMarker);
+
         if (!meta) continue;
 
         this.sessionMetaMap.set(meta.id, meta);
@@ -186,7 +198,91 @@ export class KimiAgent extends BaseAgent {
       }
     }
 
+    perf.end(scanMarker);
     return heads;
+  }
+
+  getSessionMetaMap(): Map<string, SessionCacheMeta> {
+    return this.sessionMetaMap;
+  }
+
+  setSessionMetaMap(meta: Map<string, SessionCacheMeta>): void {
+    this.sessionMetaMap = meta as Map<string, SessionMeta>;
+  }
+
+  /**
+   * 检测文件系统变更
+   */
+  checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
+    const changedIds: string[] = [];
+
+    for (const session of cachedSessions) {
+      const meta = this.sessionMetaMap.get(session.id);
+      if (!meta) continue;
+
+      try {
+        // 检查 metadata.json 的修改时间
+        const stat = statSync(join(meta.sourcePath, "metadata.json"));
+        if (stat.mtimeMs > sinceTimestamp) {
+          changedIds.push(session.id);
+          continue;
+        }
+
+        // 检查 wire.jsonl 或 context.jsonl 的修改时间
+        const dataFile = meta.wireFile || meta.contextFile;
+        if (dataFile) {
+          const dataStat = statSync(dataFile);
+          if (dataStat.mtimeMs > sinceTimestamp) {
+            changedIds.push(session.id);
+          }
+        }
+      } catch {
+        changedIds.push(session.id);
+      }
+    }
+
+    return {
+      hasChanges: changedIds.length > 0,
+      changedIds,
+      timestamp: Date.now(),
+    };
+  }
+
+  /**
+   * 增量扫描
+   */
+  incrementalScan(cachedSessions: SessionHead[], changedIds: string[]): SessionHead[] {
+    const sessionMap = new Map(cachedSessions.map(s => [s.id, s]));
+
+    // 重新扫描变更的会话
+    for (const metadataFile of this.listMetadataFiles()) {
+      try {
+        const meta = this.parseSessionMeta(metadataFile);
+        if (!meta) continue;
+
+        if (changedIds.includes(meta.id)) {
+          this.sessionMetaMap.set(meta.id, meta);
+          sessionMap.set(meta.id, {
+            id: meta.id,
+            slug: `kimi/${meta.id}`,
+            title: meta.title,
+            directory: basenameTitle(meta.sourcePath) || "",
+            time_created: meta.createdAt,
+            time_updated: meta.createdAt,
+            stats: {
+              message_count: 0,
+              total_input_tokens: 0,
+              total_output_tokens: 0,
+              total_cost: 0,
+            },
+          });
+        }
+      } catch {
+        // skip
+      }
+    }
+
+    return Array.from(sessionMap.values());
   }
 
   getSessionData(sessionId: string): SessionData {

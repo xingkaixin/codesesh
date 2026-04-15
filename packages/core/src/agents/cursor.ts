@@ -4,6 +4,7 @@ import { BaseAgent } from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
 import { getCursorDataPath } from "../discovery/paths.js";
 import { openDbReadOnly, isSqliteAvailable, type SQLiteDatabase } from "../utils/sqlite.js";
+import { perf } from "../utils/perf.js";
 
 // ---------------------------------------------------------------------------
 // Cursor data model interfaces
@@ -353,11 +354,18 @@ export class CursorAgent extends BaseAgent {
   scan(): SessionHead[] {
     if (!this.dbPath) return [];
 
+    const scanMarker = perf.start("cursor:scan");
+
+    const dbMarker = perf.start("openDatabase");
     const db = this.openDatabase();
+    perf.end(dbMarker);
+
     if (!db) return [];
 
     // Build composerId → workspace path map from workspaceStorage
+    const wsMarker = perf.start("buildWorkspacePathMap");
     const workspacePathMap = this.buildWorkspacePathMap();
+    perf.end(wsMarker);
 
     try {
       const rows = db
@@ -413,6 +421,7 @@ export class CursorAgent extends BaseAgent {
         }
       }
 
+      perf.end(scanMarker);
       return heads;
     } catch {
       return [];

@@ -5,8 +5,10 @@ import type { SessionHead, SessionData, Message, MessagePart } from "../types/in
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
 import { parseJsonlLines } from "../utils/jsonl.js";
 import { resolveSessionTitle, basenameTitle } from "../utils/title-fallback.js";
+import { perf } from "../utils/perf.js";
+import type { SessionCacheMeta, ChangeCheckResult } from "./base.js";
 
-interface SessionMeta {
+interface SessionMeta extends SessionCacheMeta {
   id: string;
   title: string;
   sourcePath: string;
@@ -66,12 +68,24 @@ export class ClaudeCodeAgent extends BaseAgent {
   scan(): SessionHead[] {
     if (!this.basePath) return [];
 
+    const scanMarker = perf.start("claudecode:scan");
     const heads: SessionHead[] = [];
 
-    for (const projectDir of this.listProjectDirs()) {
-      for (const file of this.listJsonlFiles(projectDir)) {
+    const listMarker = perf.start("listProjectDirs");
+    const projectDirs = this.listProjectDirs();
+    perf.end(listMarker);
+
+    for (const projectDir of projectDirs) {
+      const fileMarker = perf.start(`listJsonlFiles:${basename(projectDir)}`);
+      const files = this.listJsonlFiles(projectDir);
+      perf.end(fileMarker);
+
+      for (const file of files) {
         try {
+          const parseMarker = perf.start(`parseSessionHead:${basename(file)}`);
           const head = this.parseSessionHead(file, projectDir);
+          perf.end(parseMarker);
+
           if (head) {
             heads.push(head);
             this.sessionMetaMap.set(head.id, {
@@ -91,7 +105,16 @@ export class ClaudeCodeAgent extends BaseAgent {
       }
     }
 
+    perf.end(scanMarker);
     return heads;
+  }
+
+  getSessionMetaMap(): Map<string, SessionCacheMeta> {
+    return this.sessionMetaMap;
+  }
+
+  setSessionMetaMap(meta: Map<string, SessionCacheMeta>): void {
+    this.sessionMetaMap = meta as Map<string, SessionMeta>;
   }
 
   getSessionData(sessionId: string): SessionData {
@@ -148,6 +171,123 @@ export class ClaudeCodeAgent extends BaseAgent {
       },
       messages,
     };
+  }
+
+  /**
+   * 检测文件系统变更
+   * 通过比较文件修改时间判断是否有新内容
+   */
+  checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
+    if (!this.basePath) {
+      return { hasChanges: false, timestamp: Date.now() };
+    }
+
+    const changedIds: string[] = [];
+
+    for (const session of cachedSessions) {
+      const meta = this.sessionMetaMap.get(session.id);
+      if (!meta) continue;
+
+      try {
+        const stat = statSync(meta.sourcePath);
+        // 如果文件修改时间晚于缓存时间，说明有变更
+        if (stat.mtimeMs > sinceTimestamp) {
+          changedIds.push(session.id);
+        }
+      } catch {
+        // 文件可能被删除，也视为变更
+        changedIds.push(session.id);
+      }
+    }
+
+    // 检查是否有新文件（简单实现：比较缓存数量和实际文件数量）
+    try {
+      let totalFiles = 0;
+      for (const dir of this.listProjectDirs()) {
+        totalFiles += this.listJsonlFiles(dir).length;
+      }
+      const hasNewFiles = totalFiles > cachedSessions.length;
+
+      return {
+        hasChanges: changedIds.length > 0 || hasNewFiles,
+        changedIds,
+        timestamp: Date.now(),
+      };
+    } catch {
+      return {
+        hasChanges: changedIds.length > 0,
+        changedIds,
+        timestamp: Date.now(),
+      };
+    }
+  }
+
+  /**
+   * 增量扫描 - 只扫描变更的会话
+   */
+  incrementalScan(cachedSessions: SessionHead[], changedIds: string[]): SessionHead[] {
+    if (!this.basePath) return cachedSessions;
+
+    // 创建缓存会话的 Map 便于更新
+    const sessionMap = new Map(cachedSessions.map(s => [s.id, s]));
+
+    // 重新扫描变更的会话
+    for (const projectDir of this.listProjectDirs()) {
+      for (const file of this.listJsonlFiles(projectDir)) {
+        try {
+          const sessionId = basename(file, ".jsonl");
+
+          // 只处理变更的会话
+          if (changedIds.includes(sessionId)) {
+            const head = this.parseSessionHead(file, projectDir);
+            if (head) {
+              sessionMap.set(head.id, head);
+              this.sessionMetaMap.set(head.id, {
+                id: head.id,
+                title: head.title,
+                sourcePath: file,
+                directory: head.directory,
+                model: head.stats.total_tokens ? "unknown" : undefined,
+                messageCount: head.stats.message_count,
+                createdAt: head.time_created,
+                updatedAt: head.time_updated ?? head.time_created,
+              });
+            }
+          }
+        } catch {
+          // skip malformed files
+        }
+      }
+    }
+
+    // 检查是否有新文件需要添加
+    for (const projectDir of this.listProjectDirs()) {
+      for (const file of this.listJsonlFiles(projectDir)) {
+        try {
+          const sessionId = basename(file, ".jsonl");
+          if (!sessionMap.has(sessionId)) {
+            const head = this.parseSessionHead(file, projectDir);
+            if (head) {
+              sessionMap.set(head.id, head);
+              this.sessionMetaMap.set(head.id, {
+                id: head.id,
+                title: head.title,
+                sourcePath: file,
+                directory: head.directory,
+                model: head.stats.total_tokens ? "unknown" : undefined,
+                messageCount: head.stats.message_count,
+                createdAt: head.time_created,
+                updatedAt: head.time_updated ?? head.time_created,
+              });
+            }
+          }
+        } catch {
+          // skip malformed files
+        }
+      }
+    }
+
+    return Array.from(sessionMap.values());
   }
 
   // --- Private helpers ---
