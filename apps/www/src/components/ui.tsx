@@ -72,8 +72,8 @@ export function Hero() {
           in one place.
         </h1>
         <p className="mx-auto mt-5 max-w-md text-sm leading-relaxed text-[var(--console-muted)]">
-          Your sessions are scattered across tools and directories. CodeSesh finds them all and
-          puts them in one place.
+          Your sessions are scattered across tools and directories. CodeSesh finds them all and puts
+          them in one place.
         </p>
 
         {/* Terminal demo — part of hero */}
