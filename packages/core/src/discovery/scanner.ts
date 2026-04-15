@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { resolve, sep } from "node:path";
 import type { SessionHead } from "../types/index.js";
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import { createRegisteredAgents } from "../agents/index.js";
@@ -46,7 +46,10 @@ function isPathScopeMatch(queryPath: string, sessionPath: string): boolean {
   if (!sessionPath) return false;
   const q = resolve(queryPath);
   const s = resolve(sessionPath);
-  return s === q || s.startsWith(q + "/") || q.startsWith(s + "/");
+  const sepNorm = (p: string) => p.replaceAll(sep, "/");
+  const sn = sepNorm(s);
+  const qn = sepNorm(q);
+  return sn === qn || sn.startsWith(qn + "/") || qn.startsWith(sn + "/");
 }
 
 export function filterSessions(sessions: SessionHead[], options: ScanOptions): SessionHead[] {

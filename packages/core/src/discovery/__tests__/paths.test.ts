@@ -75,7 +75,7 @@ describe("resolveProviderRoots", () => {
     mockedPlatform.mockReturnValue("linux");
     vi.stubEnv("XDG_DATA_HOME", "/custom/data");
     const roots = resolveProviderRoots();
-    expect(roots.opencodeRoot).toBe("/custom/data/opencode");
+    expect(roots.opencodeRoot.replace(/\\/g, "/")).toBe("/custom/data/opencode");
   });
 });
 
