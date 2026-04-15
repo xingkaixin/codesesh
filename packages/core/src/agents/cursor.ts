@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import { BaseAgent } from "./base.js";
 import type { SessionCacheMeta, ChangeCheckResult } from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
@@ -297,7 +297,7 @@ export class CursorAgent extends BaseAgent {
         };
         const uri = data.folder ?? data.workspace ?? "";
         if (!uri) continue;
-        workspacePath = decodeURIComponent(uri.replace(/^file:\/\//, ""));
+        workspacePath = normalize(decodeURIComponent(uri.replace(/^file:\/\//, "")));
       } catch {
         continue;
       }

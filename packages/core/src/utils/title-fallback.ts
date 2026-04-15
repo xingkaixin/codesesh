@@ -13,7 +13,7 @@ export function normalizeTitleText(text: string): string | null {
 /** Return a stable basename for fallback title. */
 export function basenameTitle(path: string | null | undefined): string | null {
   if (!path) return null;
-  const normalized = path.trim().replace(/\/+$/, "");
+  const normalized = path.trim().replace(/[/\\]+$/, "");
   if (!normalized) return null;
   const name = basename(normalized).trim();
   return name || null;
