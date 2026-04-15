@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, basename } from "node:path";
+import { join, basename, dirname } from "node:path";
 import { BaseAgent } from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
@@ -33,9 +34,16 @@ interface SessionMeta extends SessionCacheMeta {
   id: string;
   title: string;
   sourcePath: string;
+  cwd: string;
   contextFile: string | null;
   wireFile: string | null;
   createdAt: number;
+  metaFile: string;
+}
+
+interface KimiWorkDir {
+  path: string;
+  last_session_id: string | null;
 }
 
 function normalizeToolArguments(raw: unknown): unknown {
@@ -84,77 +92,117 @@ export class KimiAgent extends BaseAgent {
 
   private basePath: string | null = null;
   private sessionMetaMap = new Map<string, SessionMeta>();
+  private projectMap = new Map<string, string>();
 
   private findBasePath(): string | null {
     const roots = resolveProviderRoots();
     return firstExisting(join(roots.kimiRoot, "sessions"), "data/kimi");
   }
 
+  /** Parse kimi.json and build md5(project_path) → cwd mapping */
+  private loadKimiConfig(): void {
+    const roots = resolveProviderRoots();
+    const configPath = join(roots.kimiRoot, "kimi.json");
+    if (!existsSync(configPath)) return;
+    try {
+      const raw = JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
+      const workDirs = raw?.work_dirs;
+      if (!Array.isArray(workDirs)) return;
+      for (const wd of workDirs) {
+        const path = (wd as KimiWorkDir).path;
+        if (typeof path !== "string") continue;
+        const hash = createHash("md5").update(path).digest("hex");
+        this.projectMap.set(hash, path);
+      }
+    } catch {
+      // ignore malformed config
+    }
+  }
+
   isAvailable(): boolean {
     this.basePath = this.findBasePath();
     if (!this.basePath) return false;
+    this.loadKimiConfig();
     try {
-      // Use recursive listing to find metadata.json at any depth
-      return this.listMetadataFiles().length > 0;
+      return this.listSessionDirs().length > 0;
     } catch {
       // ignore
     }
     return false;
   }
 
-  private listMetadataFiles(): string[] {
+  /** Walk sessions/{project_hash}/{session_id}/ and find valid session dirs */
+  private listSessionDirs(): string[] {
     if (!this.basePath) return [];
-    const files: string[] = [];
+    const dirs: string[] = [];
     try {
-      this.walkDir(this.basePath, (path) => {
-        if (path.endsWith("metadata.json")) files.push(path);
-      });
-    } catch {
-      // ignore
-    }
-    return files;
-  }
-
-  private walkDir(dir: string, callback: (path: string) => void) {
-    try {
-      for (const entry of readdirSync(dir)) {
-        const fullPath = join(dir, entry);
-        const stat = statSync(fullPath);
-        if (stat.isDirectory()) {
-          this.walkDir(fullPath, callback);
-        } else {
-          callback(fullPath);
+      for (const hashEntry of readdirSync(this.basePath, { withFileTypes: true })) {
+        if (!hashEntry.isDirectory()) continue;
+        const hashPath = join(this.basePath, hashEntry.name);
+        try {
+          for (const sessionEntry of readdirSync(hashPath, { withFileTypes: true })) {
+            if (!sessionEntry.isDirectory()) continue;
+            const sessionPath = join(hashPath, sessionEntry.name);
+            if (
+              existsSync(join(sessionPath, "metadata.json")) ||
+              existsSync(join(sessionPath, "state.json"))
+            ) {
+              dirs.push(sessionPath);
+            }
+          }
+        } catch {
+          // skip unreadable hash dirs
         }
       }
     } catch {
-      // skip permission errors
+      // skip unreadable base
     }
+    return dirs;
   }
 
-  private parseSessionMeta(metadataPath: string): SessionMeta | null {
+  /** Parse session directory, preferring state.json over metadata.json */
+  private parseSessionDir(sessionDir: string): SessionMeta | null {
     try {
-      const metadata = JSON.parse(readFileSync(metadataPath, "utf-8")) as Record<string, unknown>;
-      const sessionDir = basename(metadataPath);
-      const contextFile = join(metadataPath, "..", "context.jsonl");
-      const wireFile = join(metadataPath, "..", "wire.jsonl");
+      const sessionId = basename(sessionDir);
+      const projectHash = basename(dirname(sessionDir));
+      const contextFile = join(sessionDir, "context.jsonl");
+      const wireFile = join(sessionDir, "wire.jsonl");
 
       if (!existsSync(contextFile) && !existsSync(wireFile)) return null;
 
-      const id = String(metadata.session_id ?? sessionDir);
-      const title = String(metadata.title ?? "Untitled Session");
-      const wireMtime = metadata.wire_mtime;
-      // wire_mtime 是秒级时间戳，需要转换为毫秒
-      const createdAt = typeof wireMtime === "number"
+      const statePath = join(sessionDir, "state.json");
+      const metaPath = join(sessionDir, "metadata.json");
+
+      let title = "";
+      let wireMtime: number | null = null;
+      let metaFile = "";
+
+      if (existsSync(statePath)) {
+        const state = JSON.parse(readFileSync(statePath, "utf-8")) as Record<string, unknown>;
+        title = String(state.custom_title ?? "");
+        wireMtime = typeof state.wire_mtime === "number" ? state.wire_mtime : null;
+        metaFile = statePath;
+      } else if (existsSync(metaPath)) {
+        const meta = JSON.parse(readFileSync(metaPath, "utf-8")) as Record<string, unknown>;
+        title = String(meta.title ?? "");
+        wireMtime = typeof meta.wire_mtime === "number" ? meta.wire_mtime : null;
+        metaFile = metaPath;
+      }
+
+      const cwd = this.projectMap.get(projectHash) || "";
+      const createdAt = wireMtime !== null
         ? wireMtime * 1000
-        : statSync(metadataPath).mtimeMs;
+        : (metaFile ? statSync(metaFile).mtimeMs : statSync(sessionDir).mtimeMs);
 
       return {
-        id,
-        title,
-        sourcePath: join(metadataPath, ".."),
+        id: sessionId,
+        title: title || "Untitled Session",
+        sourcePath: sessionDir,
+        cwd,
         contextFile: existsSync(contextFile) ? contextFile : null,
         wireFile: existsSync(wireFile) ? wireFile : null,
         createdAt,
+        metaFile,
       };
     } catch {
       return null;
@@ -166,15 +214,15 @@ export class KimiAgent extends BaseAgent {
 
     const scanMarker = perf.start("kimi:scan");
 
-    const listMarker = perf.start("listMetadataFiles");
-    const metadataFiles = this.listMetadataFiles();
+    const listMarker = perf.start("listSessionDirs");
+    const sessionDirs = this.listSessionDirs();
     perf.end(listMarker);
 
     const heads: SessionHead[] = [];
-    for (const metadataFile of metadataFiles) {
+    for (const dir of sessionDirs) {
       try {
-        const parseMarker = perf.start(`parseSessionMeta:${basename(metadataFile)}`);
-        const meta = this.parseSessionMeta(metadataFile);
+        const parseMarker = perf.start(`parseSessionDir:${basename(dir)}`);
+        const meta = this.parseSessionDir(dir);
         perf.end(parseMarker);
 
         if (!meta) continue;
@@ -184,7 +232,7 @@ export class KimiAgent extends BaseAgent {
           id: meta.id,
           slug: `kimi/${meta.id}`,
           title: meta.title,
-          directory: basenameTitle(meta.sourcePath) || "",
+          directory: meta.cwd,
           time_created: meta.createdAt,
           time_updated: meta.createdAt,
           stats: {
@@ -222,11 +270,13 @@ export class KimiAgent extends BaseAgent {
       if (!meta) continue;
 
       try {
-        // 检查 metadata.json 的修改时间
-        const stat = statSync(join(meta.sourcePath, "metadata.json"));
-        if (stat.mtimeMs > sinceTimestamp) {
-          changedIds.push(session.id);
-          continue;
+        // 检查 metadata.json 或 state.json 的修改时间
+        if (meta.metaFile) {
+          const stat = statSync(meta.metaFile);
+          if (stat.mtimeMs > sinceTimestamp) {
+            changedIds.push(session.id);
+            continue;
+          }
         }
 
         // 检查 wire.jsonl 或 context.jsonl 的修改时间
@@ -255,10 +305,9 @@ export class KimiAgent extends BaseAgent {
   incrementalScan(cachedSessions: SessionHead[], changedIds: string[]): SessionHead[] {
     const sessionMap = new Map(cachedSessions.map(s => [s.id, s]));
 
-    // 重新扫描变更的会话
-    for (const metadataFile of this.listMetadataFiles()) {
+    for (const dir of this.listSessionDirs()) {
       try {
-        const meta = this.parseSessionMeta(metadataFile);
+        const meta = this.parseSessionDir(dir);
         if (!meta) continue;
 
         if (changedIds.includes(meta.id)) {
@@ -267,7 +316,7 @@ export class KimiAgent extends BaseAgent {
             id: meta.id,
             slug: `kimi/${meta.id}`,
             title: meta.title,
-            directory: basenameTitle(meta.sourcePath) || "",
+            directory: meta.cwd,
             time_created: meta.createdAt,
             time_updated: meta.createdAt,
             stats: {
@@ -706,7 +755,7 @@ export class KimiAgent extends BaseAgent {
       id: meta.id,
       title: meta.title,
       slug: `kimi/${meta.id}`,
-      directory: meta.sourcePath,
+      directory: meta.cwd,
       time_created: meta.createdAt,
       time_updated: meta.createdAt,
       stats,
