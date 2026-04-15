@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ModelConfig } from "./config";
 import type { AgentInfo, SessionHead, SessionData } from "./lib/api";
@@ -136,24 +136,25 @@ export default function App() {
       if (!map.has(groupKey)) map.set(groupKey, { key: groupKey, label, sessions: [] });
       map.get(groupKey)!.sessions.push(s);
     }
+    // Sort groups by most recent session time descending; unknown always last
     return [...map.values()].sort((a, b) => {
       if (a.key === "__unknown__") return 1;
       if (b.key === "__unknown__") return -1;
-      return a.label.localeCompare(b.label);
+      const aTime = Math.max(...a.sessions.map((s) => s.time_updated ?? s.time_created));
+      const bTime = Math.max(...b.sessions.map((s) => s.time_updated ?? s.time_created));
+      return bTime - aTime;
     });
   }, [sidebarSessions]);
 
-  // All groups open by default; track collapsed groups
-  const initializedRef = useRef(false);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  // Reset collapsed state when agent changes
+  // Default: all groups collapsed; track which are expanded
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  // Reset to all-collapsed when agent changes
   useEffect(() => {
-    if (!initializedRef.current) { initializedRef.current = true; return; }
-    setCollapsedGroups(new Set());
+    setExpandedGroups(new Set());
   }, [activeAgentKey]);
 
   function toggleGroup(key: string) {
-    setCollapsedGroups((prev) => {
+    setExpandedGroups((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
@@ -368,7 +369,7 @@ export default function App() {
               ) : (
                 <div className="space-y-2">
                   {sidebarGroups.map((group) => {
-                    const isCollapsed = collapsedGroups.has(group.key);
+                    const isExpanded = expandedGroups.has(group.key);
                     return (
                       <div key={group.key}>
                         {/* Folder header */}
@@ -377,12 +378,12 @@ export default function App() {
                           className="console-mono flex w-full items-center gap-1.5 rounded-sm px-2 py-1 text-left text-xs text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)]"
                           title={group.key === "__unknown__" ? undefined : group.key}
                         >
-                          <span className="shrink-0 text-[10px]">{isCollapsed ? "▶" : "▼"}</span>
+                          <span className="shrink-0 text-[10px]">{isExpanded ? "▼" : "▶"}</span>
                           <span className="line-clamp-1 font-semibold">{group.label}</span>
                           <span className="ml-auto shrink-0 text-[11px]">{group.sessions.length}</span>
                         </button>
                         {/* Sessions under this folder */}
-                        {!isCollapsed && (
+                        {isExpanded && (
                           <ul className="mt-0.5 space-y-0.5 pl-3">
                             {group.sessions.map((item) => {
                               const isActive =
