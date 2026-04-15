@@ -5,6 +5,10 @@
     "codesesh": "dist/index.js"
   },
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xingkaixin/codesesh"
+  },
   "publishConfig": {
     "access": "public"
   },
