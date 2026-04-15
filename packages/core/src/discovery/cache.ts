@@ -32,11 +32,11 @@ interface CacheData {
 }
 
 function getCachePath(): string {
-  return join(homedir(), ".cache", "agent-lens", CACHE_FILENAME);
+  return join(homedir(), ".cache", "codesesh", CACHE_FILENAME);
 }
 
 function ensureCacheDir(): void {
-  const cacheDir = join(homedir(), ".cache", "agent-lens");
+  const cacheDir = join(homedir(), ".cache", "codesesh");
   if (!existsSync(cacheDir)) {
     mkdirSync(cacheDir, { recursive: true });
   }

@@ -1,5 +1,5 @@
 {
-  "name": "@agent-lens/web",
+  "name": "@codesesh/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",

@@ -1,6 +1,6 @@
 import type { Context } from "hono";
-import type { ScanResult, SessionData, SessionHead } from "@agent-lens/core";
-import { getAgentInfoMap } from "@agent-lens/core";
+import type { ScanResult, SessionData, SessionHead } from "@codesesh/core";
+import { getAgentInfoMap } from "@codesesh/core";
 
 export function handleGetAgents(c: Context, scanResult: ScanResult) {
   const counts: Record<string, number> = {};

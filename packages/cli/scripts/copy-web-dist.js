@@ -16,7 +16,7 @@ const webDistTarget = resolve(cliDir, "dist/web");
 
 if (!existsSync(webDistSource)) {
   console.warn("⚠️  Web dist not found at:", webDistSource);
-  console.warn("   Run 'pnpm --filter @agent-lens/web build' first");
+  console.warn("   Run 'pnpm --filter @codesesh/web build' first");
   process.exit(0);
 }
 

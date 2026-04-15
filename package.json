@@ -1,5 +1,5 @@
 {
-  "name": "agent-lens-monorepo",
+  "name": "codesesh-monorepo",
   "private": true,
   "packageManager": "pnpm@9.15.0",
   "scripts": {

@@ -239,7 +239,7 @@ export default function App() {
   }, [agents]);
 
   // Header
-  let headerTitle = "Agent Lens";
+  let headerTitle = "CodeSesh";
   let headerSubtitle = "Select an agent to browse sessions";
   if (viewState.mode === "agent" && activeAgentKey) {
     const agent = agents.find((a) => a.name.toLowerCase() === activeAgentKey);
@@ -323,9 +323,9 @@ export default function App() {
       <header className="h-14 shrink-0 border-b border-[var(--console-border)] bg-white/85 backdrop-blur-sm">
         <div className="flex h-full items-center justify-between px-4">
           <Link to="/" className="flex items-center gap-2 text-[var(--console-text)]">
-            <img src="/logo.svg" alt="Agent Lens" className="h-6 w-6 rounded-sm" />
+            <img src="/logo.svg" alt="CodeSesh" className="h-6 w-6 rounded-sm" />
             <span className="console-mono text-sm font-semibold uppercase tracking-[0.05em]">
-              Agent Lens
+              CodeSesh
             </span>
           </Link>
           <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-muted)]">

@@ -1,5 +1,5 @@
 {
-  "name": "@agent-lens/www",
+  "name": "@codesesh/www",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "deploy:cf": "pnpm build && wrangler pages deploy dist --project-name agent-lens"
+    "deploy:cf": "pnpm build && wrangler pages deploy dist --project-name codesesh"
   },
   "dependencies": {
     "clsx": "^2.1.1",

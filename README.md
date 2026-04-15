@@ -1,25 +1,25 @@
-# Agent Lens
+# CodeSesh
 
 > **One place to see every AI coding session you've ever had.**
 
 You've been coding with AI agents — Claude Code, Cursor, Kimi, Codex, OpenCode — and the conversations are scattered everywhere on your filesystem. Context is lost. Cost is invisible. History is buried.
 
-**Agent Lens** fixes that. It scans your local machine, finds every AI agent session, and surfaces them in a unified, beautiful Web UI. Think of it as a time machine for your AI-assisted development workflow.
+**CodeSesh** fixes that. It scans your local machine, finds every AI agent session, and surfaces them in a unified, beautiful Web UI. Think of it as a time machine for your AI-assisted development workflow.
 
 ---
 
-## Why Agent Lens?
+## Why CodeSesh?
 
 Modern developers work with multiple AI coding agents simultaneously. Each tool stores its session history in its own proprietary format, in its own hidden directory. There's no way to search across them, compare costs, or revisit that brilliant conversation you had three weeks ago.
 
-Agent Lens believes your session history belongs to **you** — and you deserve to see it all in one place.
+CodeSesh believes your session history belongs to **you** — and you deserve to see it all in one place.
 
 **What you get:**
 
 - **Unified Timeline** — Browse sessions across all your AI agents in a single, searchable interface
 - **Full Conversation Replay** — Read every message, tool call, and reasoning step exactly as it happened
 - **Cost & Token Visibility** — See exactly how many tokens and dollars each session consumed
-- **Zero Configuration** — Just run it. Agent Lens auto-discovers everything on your filesystem
+- **Zero Configuration** — Just run it. CodeSesh auto-discovers everything on your filesystem
 - **100% Local & Private** — Nothing leaves your machine. No accounts, no cloud sync, no telemetry
 - **Instant Startup** — Scans and launches in seconds, then opens your browser automatically
 
@@ -50,8 +50,8 @@ More agents coming soon. Adding a new one is [a single file](#extending).
 
 ```bash
 # Clone the repo
-git clone https://github.com/your-username/agent-lens.git
-cd agent-lens
+git clone https://github.com/your-username/codesesh.git
+cd codesesh
 
 # Install dependencies
 pnpm install
@@ -60,7 +60,7 @@ pnpm install
 pnpm build
 
 # Launch — scans sessions and opens your browser
-npx agent-lens serve
+npx codesesh serve
 ```
 
 That's it. Your browser will open at `http://localhost:4321` with all your sessions ready to browse.
@@ -73,68 +73,68 @@ That's it. Your browser will open at `http://localhost:4321` with all your sessi
 
 ```bash
 # Start the web UI (default port 4321)
-npx agent-lens
+npx codesesh
 
 # Choose a custom port
-npx agent-lens --port 8080
-npx agent-lens -p 8080
+npx codesesh --port 8080
+npx codesesh -p 8080
 
 # Start without auto-opening the browser
-npx agent-lens --no-open
+npx codesesh --no-open
 ```
 
 ### Filter by Time
 
 ```bash
 # Only show sessions from the last 3 days
-npx agent-lens --days 3
+npx codesesh --days 3
 
 # Show all sessions (no time limit)
-npx agent-lens --days 0
+npx codesesh --days 0
 
 # Show sessions after a specific date (overrides --days)
-npx agent-lens --from 2025-01-01
+npx codesesh --from 2025-01-01
 
 # Show sessions within a date range
-npx agent-lens --from 2025-01-01 --to 2025-03-31
+npx codesesh --from 2025-01-01 --to 2025-03-31
 ```
 
 ### Filter by Directory
 
 ```bash
 # Only show sessions from the current project
-npx agent-lens --cwd .
+npx codesesh --cwd .
 
 # Only show sessions from a specific path
-npx agent-lens --cwd /Users/you/projects/my-app
+npx codesesh --cwd /Users/you/projects/my-app
 ```
 
 ### Filter by Agent
 
 ```bash
 # Only show Claude Code sessions
-npx agent-lens --agent claudecode
+npx codesesh --agent claudecode
 
 # Only show Cursor sessions
-npx agent-lens --agent cursor
+npx codesesh --agent cursor
 
 # Multiple agents, comma-separated
-npx agent-lens --agent claudecode,cursor
+npx codesesh --agent claudecode,cursor
 ```
 
 ### Open a Specific Session
 
 ```bash
 # Jump directly to a session by agent and ID
-npx agent-lens --session claudecode://3b0e4ead-eba9-43e7-9fac-b30647e189f8
+npx codesesh --session claudecode://3b0e4ead-eba9-43e7-9fac-b30647e189f8
 ```
 
 ### JSON Output (for scripting)
 
 ```bash
 # Dump all session data as JSON instead of starting the server
-npx agent-lens --json
-npx agent-lens -j
+npx codesesh --json
+npx codesesh -j
 ```
 
 ### CLI Options Reference
@@ -157,7 +157,7 @@ npx agent-lens -j
 
 ## Web UI Walkthrough
 
-Once Agent Lens is running, here's what you'll find:
+Once CodeSesh is running, here's what you'll find:
 
 1. **Agent Sidebar** — A panel listing all detected agents with session counts. Click any agent to filter the view.
 
@@ -192,7 +192,7 @@ pnpm test:watch
 pnpm test:coverage
 
 # Deploy landing page to Cloudflare Pages
-pnpm --filter @agent-lens/www deploy:cf
+pnpm --filter @codesesh/www deploy:cf
 ```
 
 ### Dev Workflow (watch mode)

@@ -1,8 +1,8 @@
-# Agent-Lens 扫描与缓存机制说明文档
+# CodeSesh 扫描与缓存机制说明文档
 
 ## 概述
 
-本文档详细说明 Agent-Lens 的会话扫描、并行处理和缓存机制的设计理念与实现细节。
+本文档详细说明 CodeSesh 的会话扫描、并行处理和缓存机制的设计理念与实现细节。
 
 ## 1. 整体架构
 
@@ -263,16 +263,16 @@ Cursor (5.6s)
 
 ```bash
 # 使用缓存（默认开启）
-agent-lens
+codesesh
 
 # 禁用缓存
-agent-lens --no-cache
+codesesh --no-cache
 
 # 清除缓存后启动
-agent-lens --clear-cache
+codesesh --clear-cache
 
 # 性能追踪
-agent-lens --trace
+codesesh --trace
 ```
 
 ### 6.2 程序化配置
@@ -307,7 +307,7 @@ scanSessions: 14.60ms
 ### 7.2 缓存信息
 
 ```typescript
-import { getCacheInfo } from "@agent-lens/core";
+import { getCacheInfo } from "@codesesh/core";
 
 const info = getCacheInfo();
 console.log(info);
@@ -343,7 +343,7 @@ fs.watch(sessionDir, (eventType, filename) => {
 
 ```typescript
 // 将会话元数据存储在 SQLite 中
-const db = new Database('~/.cache/agent-lens/cache.db');
+const db = new Database('~/.cache/codesesh/cache.db');
 
 // 优势：
 // - 更快的查询速度
@@ -353,7 +353,7 @@ const db = new Database('~/.cache/agent-lens/cache.db');
 
 ## 9. 总结
 
-Agent-Lens 的扫描与缓存机制通过以下方式实现高性能：
+CodeSesh 的扫描与缓存机制通过以下方式实现高性能：
 
 1. **并行扫描**：所有 Agent 同时工作
 2. **智能缓存**：先返回缓存，后台增量刷新

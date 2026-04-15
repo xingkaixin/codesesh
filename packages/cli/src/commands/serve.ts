@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import { createServer } from "../server.js";
 import { printScanResults } from "../output.js";
-import { scanSessions, createRegisteredAgents } from "@agent-lens/core";
+import { scanSessions, createRegisteredAgents } from "@codesesh/core";
 
 export const serveCommand = defineCommand({
   meta: {
@@ -47,7 +47,7 @@ export const serveCommand = defineCommand({
     const agents = createRegisteredAgents();
 
     if (jsonOnly) {
-      const { getAgentInfoMap } = await import("@agent-lens/core");
+      const { getAgentInfoMap } = await import("@codesesh/core");
       const info = getAgentInfoMap(
         Object.fromEntries(Object.entries(result.byAgent).map(([k, v]) => [k, v.length])),
       );

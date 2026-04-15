@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { handleGetAgents, handleGetSessions, handleGetSessionData } from "../handlers.js";
-import type { ScanResult, SessionHead, SessionData } from "@agent-lens/core";
-import { BaseAgent } from "@agent-lens/core";
+import type { ScanResult, SessionHead, SessionData } from "@codesesh/core";
+import { BaseAgent } from "@codesesh/core";
 
 // --- Helpers ---
 

@@ -18,14 +18,14 @@ export function Header() {
     <header className="sticky top-0 z-50 border-b border-[var(--console-border)] bg-white/85 backdrop-blur-sm">
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
         <a href="/" className="flex items-center gap-2 text-[var(--console-text)]">
-          <img src="/logo.svg" alt="Agent Lens" className="h-6 w-6 rounded-sm" />
+          <img src="/logo.svg" alt="CodeSesh" className="h-6 w-6 rounded-sm" />
           <span className="console-mono text-sm font-semibold uppercase tracking-[0.05em]">
-            Agent Lens
+            CodeSesh
           </span>
         </a>
         <nav className="flex items-center gap-4">
           <a
-            href="https://github.com/xingkaixin/agent-lens"
+            href="https://github.com/xingkaixin/codesesh"
             target="_blank"
             rel="noopener noreferrer"
             className="console-mono text-xs text-[var(--console-muted)] transition-colors hover:text-[var(--console-text)]"
@@ -44,7 +44,7 @@ export function Header() {
 /* ─── Hero ────────────────────────────────────────────── */
 
 const installSteps = [
-  { prompt: "$", command: "npx agent-lens" },
+  { prompt: "$", command: "npx codesesh" },
   { prompt: "→", command: "Scanning sessions..." },
   { prompt: "✔", command: "8 sessions discovered across 3 agents" },
   { prompt: "ℹ", command: "http://localhost:4321" },
@@ -54,7 +54,7 @@ export function Hero() {
   const [copied, setCopied] = useState(false);
 
   function handleCopy() {
-    navigator.clipboard.writeText("npx agent-lens").then(() => {
+    navigator.clipboard.writeText("npx codesesh").then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -64,7 +64,7 @@ export function Hero() {
     <section className="px-6 pb-20 pt-24 text-center">
       <div className="mx-auto max-w-2xl">
         <div className="mb-6 flex justify-center">
-          <img src="/logo.svg" alt="Agent Lens" className="h-20 w-20" />
+          <img src="/logo.svg" alt="CodeSesh" className="h-20 w-20" />
         </div>
         <h1 className="console-mono text-3xl font-bold tracking-tight text-[var(--console-accent-strong)] md:text-4xl">
           See every AI coding session,
@@ -72,7 +72,7 @@ export function Hero() {
           in one place.
         </h1>
         <p className="mx-auto mt-5 max-w-md text-sm leading-relaxed text-[var(--console-muted)]">
-          Your sessions are scattered across tools and directories. Agent Lens finds them all and
+          Your sessions are scattered across tools and directories. CodeSesh finds them all and
           puts them in one place.
         </p>
 
@@ -154,7 +154,7 @@ const features: FeatureItem[] = [
   {
     icon: Settings,
     title: "Zero Configuration",
-    description: "Just run it. Agent Lens auto-discovers everything on your filesystem.",
+    description: "Just run it. CodeSesh auto-discovers everything on your filesystem.",
   },
   {
     icon: Shield,
@@ -238,7 +238,7 @@ export function Footer() {
   return (
     <footer className="border-t border-[var(--console-border)] px-6 py-8">
       <div className="mx-auto flex max-w-5xl items-center justify-between">
-        <span className="console-mono text-xs text-[var(--console-muted)]">Agent Lens</span>
+        <span className="console-mono text-xs text-[var(--console-muted)]">CodeSesh</span>
         <span className="console-mono text-xs text-[var(--console-muted)]">
           &copy; {new Date().getFullYear()}
         </span>

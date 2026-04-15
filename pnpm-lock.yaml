@@ -157,7 +157,7 @@ importers:
 
   packages/cli:
     dependencies:
-      '@agent-lens/core':
+      '@codesesh/core':
         specifier: workspace:*
         version: link:../core
       '@hono/node-server':

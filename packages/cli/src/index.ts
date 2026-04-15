@@ -7,7 +7,7 @@ import {
   getAgentInfoMap,
   type ScanOptions,
   perf,
-} from "@agent-lens/core";
+} from "@codesesh/core";
 
 const VERSION = "0.1.0";
 
@@ -27,7 +27,7 @@ function parseSessionUri(uri: string): { agent: string; sessionId: string } | nu
 
 const main = defineCommand({
   meta: {
-    name: "agent-lens",
+    name: "codesesh",
     description: "Discover, aggregate, and visualize AI coding agent sessions",
     version: VERSION,
   },
@@ -106,7 +106,7 @@ const main = defineCommand({
     }
 
     if (clearCache) {
-      const { clearCache: clear } = await import("@agent-lens/core");
+      const { clearCache: clear } = await import("@codesesh/core");
       clear();
       console.log("Cache cleared.");
     }

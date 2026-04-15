@@ -22,3 +22,7 @@ Thumbs.db
 # agent
 .claude
 .agents
+
+
+# cf
+.wrangler

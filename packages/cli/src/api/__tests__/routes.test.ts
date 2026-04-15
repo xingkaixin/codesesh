@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createApiRoutes } from "../routes.js";
-import type { ScanResult } from "@agent-lens/core";
+import type { ScanResult } from "@codesesh/core";
 
 describe("createApiRoutes", () => {
   it("returns a Hono instance with route handlers", () => {

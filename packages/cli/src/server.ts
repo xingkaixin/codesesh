@@ -5,7 +5,7 @@ import { logger } from "hono/logger";
 import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ScanResult } from "@agent-lens/core";
+import type { ScanResult } from "@codesesh/core";
 import { createApiRoutes } from "./api/routes.js";
 
 function findWebDistPath(): string | null {

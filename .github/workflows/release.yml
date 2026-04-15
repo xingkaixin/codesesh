@@ -32,15 +32,15 @@ jobs:
 
       - run: pnpm build
 
-      # Build CLI with @agent-lens/core bundled in (self-contained)
-      - run: pnpm --filter @agent-lens/cli run release
+      # Build CLI with @codesesh/core bundled in (self-contained)
+      - run: pnpm --filter codesesh run release
         env:
           BUNDLE_CORE: true
 
       # Remove workspace-only deps from published package.json
-      - name: Remove @agent-lens/core from dependencies
+      - name: Remove @codesesh/core from dependencies
         working-directory: packages/cli
-        run: node -e "const p=require('./package.json');delete p.dependencies['@agent-lens/core'];require('fs').writeFileSync('./package.json',JSON.stringify(p,null,2)+'\n')"
+        run: node -e "const p=require('./package.json');delete p.dependencies['@codesesh/core'];require('fs').writeFileSync('./package.json',JSON.stringify(p,null,2)+'\n')"
 
       - name: Publish to npm
         run: npm publish --provenance --access public

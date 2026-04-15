@@ -1,4 +1,4 @@
-# Agent-Lens 扫描架构
+# CodeSesh 扫描架构
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -60,7 +60,7 @@
 │                          Cache Layer                           │
 │              packages/core/src/discovery/cache.ts               │
 │                                                                │
-│   缓存位置: ~/.cache/agent-lens/scan-cache.json               │
+│   缓存位置: ~/.cache/codesesh/scan-cache.json               │
 │   缓存格式: { version: 2, entries: { [agent]: CacheEntry } }  │
 │   缓存内容: sessions + meta + timestamp                       │
 │   TTL: 7 天                                                    │
@@ -106,14 +106,14 @@ CacheEntry Structure:
 
 ```bash
 # 默认模式（智能缓存）
-agent-lens
+codesesh
 
 # 禁用缓存
-agent-lens --no-cache
+codesesh --no-cache
 
 # 清除缓存
-agent-lens --clear-cache
+codesesh --clear-cache
 
 # 性能追踪
-agent-lens --trace
+codesesh --trace
 ```
