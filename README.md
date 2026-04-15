@@ -73,32 +73,68 @@ That's it. Your browser will open at `http://localhost:4321` with all your sessi
 
 ```bash
 # Start the web UI (default port 4321)
-npx agent-lens serve
+npx agent-lens
 
 # Choose a custom port
-npx agent-lens serve --port 8080
-npx agent-lens serve -p 8080
+npx agent-lens --port 8080
+npx agent-lens -p 8080
 
 # Start without auto-opening the browser
-npx agent-lens serve --no-open
+npx agent-lens --no-open
+```
+
+### Filter by Time
+
+```bash
+# Only show sessions from the last 3 days
+npx agent-lens --days 3
+
+# Show all sessions (no time limit)
+npx agent-lens --days 0
+
+# Show sessions after a specific date (overrides --days)
+npx agent-lens --from 2025-01-01
+
+# Show sessions within a date range
+npx agent-lens --from 2025-01-01 --to 2025-03-31
+```
+
+### Filter by Directory
+
+```bash
+# Only show sessions from the current project
+npx agent-lens --cwd .
+
+# Only show sessions from a specific path
+npx agent-lens --cwd /Users/you/projects/my-app
 ```
 
 ### Filter by Agent
 
 ```bash
 # Only show Claude Code sessions
-npx agent-lens serve --agent claudecode
+npx agent-lens --agent claudecode
 
 # Only show Cursor sessions
-npx agent-lens serve --agent cursor
+npx agent-lens --agent cursor
+
+# Multiple agents, comma-separated
+npx agent-lens --agent claudecode,cursor
+```
+
+### Open a Specific Session
+
+```bash
+# Jump directly to a session by agent and ID
+npx agent-lens --session claudecode://3b0e4ead-eba9-43e7-9fac-b30647e189f8
 ```
 
 ### JSON Output (for scripting)
 
 ```bash
 # Dump all session data as JSON instead of starting the server
-npx agent-lens serve --json
-npx agent-lens serve -j
+npx agent-lens --json
+npx agent-lens -j
 ```
 
 ### CLI Options Reference
@@ -106,9 +142,16 @@ npx agent-lens serve -j
 | Flag | Alias | Default | Description |
 |------|-------|---------|-------------|
 | `--port` | `-p` | `4321` | HTTP server port |
-| `--agent` | `-a` | all | Filter to a specific agent |
+| `--days` | `-d` | `7` | Only include sessions from the last N days (`0` = all time) |
+| `--cwd` | — | — | Filter to sessions from a project directory (`.` = current dir) |
+| `--agent` | `-a` | all | Filter to specific agent(s), comma-separated |
+| `--from` | — | — | Sessions created after this date `YYYY-MM-DD` (overrides `--days`) |
+| `--to` | — | — | Sessions created before this date `YYYY-MM-DD` |
+| `--session` | `-s` | — | Directly open a session (`agent://session-id`) |
 | `--json` | `-j` | `false` | Output JSON and exit (no server) |
 | `--no-open` | — | `false` | Don't auto-open the browser |
+| `-v` | — | — | Print version number |
+| `-h` / `--help` | — | — | Show help |
 
 ---
 
@@ -129,14 +172,26 @@ Once Agent Lens is running, here's what you'll find:
 ## Development
 
 ```bash
-# Run everything in dev mode (hot reload)
-pnpm dev
-
 # Build all packages
 pnpm build
 
 # Clean build artifacts
 pnpm clean
+```
+
+### Dev Workflow (watch mode)
+
+Open two terminals:
+
+```bash
+# Terminal 1 — watch & recompile on source changes
+pnpm dev
+
+# Terminal 2 — auto-restart server when dist changes
+pnpm serve
+
+# Or pass CLI flags directly:
+node --watch packages/cli/dist/index.js --cwd . --days 3
 ```
 
 ### Project Structure
