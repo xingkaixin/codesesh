@@ -1,14 +1,14 @@
 {
   "name": "codesesh",
   "version": "0.1.0",
-  "bin": {
-    "codesesh": "dist/index.js"
-  },
-  "type": "module",
   "repository": {
     "type": "git",
     "url": "https://github.com/xingkaixin/codesesh"
   },
+  "bin": {
+    "codesesh": "dist/index.js"
+  },
+  "type": "module",
   "publishConfig": {
     "access": "public"
   },
