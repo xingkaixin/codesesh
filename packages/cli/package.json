@@ -1,6 +1,6 @@
 {
   "name": "codesesh",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "One place to see every AI coding session you've ever had. Unify Claude Code, Cursor, Kimi, Codex, and OpenCode sessions in a single, beautiful Web UI.",
   "keywords": [
     "ai",

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.5] - 2026-04-16
+
+- fix(cli): read version dynamically from `package.json` instead of hardcoded value
+- fix(web): rebuild web dist to resolve stale version showing `v0.1.3` in the UI
+
 ## [0.1.4] - 2026-04-16
 
 - fix(core): initialize agent state when using cached scan results
