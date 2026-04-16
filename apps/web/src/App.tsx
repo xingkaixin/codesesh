@@ -1,3 +1,5 @@
+declare const __APP_VERSION__: string;
+
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ModelConfig } from "./config";
@@ -329,7 +331,7 @@ export default function App() {
             </span>
           </Link>
           <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-muted)]">
-            v0.1.0
+            v{__APP_VERSION__}
           </span>
         </div>
       </header>

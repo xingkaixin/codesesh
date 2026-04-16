@@ -5,41 +5,38 @@
   "keywords": [
     "ai",
     "claude",
-    "cursor",
-    "kimi",
+    "cli",
     "codex",
+    "cursor",
+    "developer-tools",
+    "history",
+    "kimi",
     "opencode",
     "session",
-    "history",
     "visualization",
-    "developer-tools",
-    "cli",
     "web-ui"
   ],
   "homepage": "https://codesesh.xingkaixin.me/",
   "bugs": {
     "url": "https://github.com/xingkaixin/codesesh/issues"
   },
+  "license": "MIT",
+  "author": "Kevin <xingkaixin@gmail.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/xingkaixin/codesesh.git",
     "directory": "packages/cli"
   },
-  "license": "MIT",
-  "author": "Kevin <xingkaixin@gmail.com>",
-  "engines": {
-    "node": ">=18.0.0"
-  },
   "bin": {
     "codesesh": "dist/index.js"
   },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "files": [
     "dist",
     "README.md"
   ],
   "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "publishConfig": {
     "access": "public"
   },
@@ -62,5 +59,8 @@
     "@types/node": "^22.14.0",
     "tsup": "^8.4.0",
     "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
