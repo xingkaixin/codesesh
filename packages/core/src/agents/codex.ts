@@ -790,7 +790,7 @@ export class CodexAgent extends BaseAgent {
 
     const payload = (data["payload"] ?? {}) as Record<string, unknown>;
     const payloadType = String(payload["type"] ?? "");
-    const timestampMs = parseTimestampMs(payload);
+    const timestampMs = parseTimestampMs(data) || parseTimestampMs(payload);
 
     switch (payloadType) {
       case "message": {

@@ -361,6 +361,7 @@ export class KimiAgent extends BaseAgent {
     const ignoredToolCallIds = new Set<string>();
 
     let seq = 0;
+    const fallbackTs = meta.createdAt;
     for (const record of parseJsonlLines(content)) {
       seq++;
       try {
@@ -374,8 +375,8 @@ export class KimiAgent extends BaseAgent {
               this.buildMessage({
                 messageId: `context-${seq}`,
                 role: "user",
-                timestampMs: 0,
-                parts: [{ type: "text", text, time_created: 0 }],
+                timestampMs: fallbackTs,
+                parts: [{ type: "text", text, time_created: fallbackTs }],
               }),
             );
           }
@@ -387,6 +388,7 @@ export class KimiAgent extends BaseAgent {
             record,
             seq,
             ignoredToolCallIds,
+            fallbackTs,
           );
           if (!message) continue;
           const msgIndex = messages.length;
@@ -400,7 +402,7 @@ export class KimiAgent extends BaseAgent {
         if (role === "tool") {
           const callId = String(record.tool_call_id ?? "").trim();
           if (callId && ignoredToolCallIds.has(callId)) continue;
-          const outputParts = normalizeToolOutputParts(record.content, 0);
+          const outputParts = normalizeToolOutputParts(record.content, fallbackTs);
           if (callId && this.backfillToolOutput(messages, pendingToolCalls, callId, outputParts)) {
             continue;
           }
@@ -409,7 +411,7 @@ export class KimiAgent extends BaseAgent {
               this.buildMessage({
                 messageId: `context-${seq}`,
                 role: "tool",
-                timestampMs: 0,
+                timestampMs: fallbackTs,
                 parts: outputParts,
               }),
             );
@@ -628,6 +630,7 @@ export class KimiAgent extends BaseAgent {
     record: Record<string, unknown>,
     seq: number,
     ignoredToolCallIds: Set<string>,
+    fallbackTs: number,
   ): { message: Message; toolIndexes: Map<string, number> } {
     const parts: MessagePart[] = [];
     const toolIndexes = new Map<string, number>();
@@ -641,10 +644,10 @@ export class KimiAgent extends BaseAgent {
 
         if (partType === "think") {
           const text = String(ci.think ?? "");
-          if (text.trim()) parts.push({ type: "reasoning", text, time_created: 0 });
+          if (text.trim()) parts.push({ type: "reasoning", text, time_created: fallbackTs });
         } else if (partType === "text") {
           const text = String(ci.text ?? "");
-          if (text.trim()) parts.push({ type: "text", text, time_created: 0 });
+          if (text.trim()) parts.push({ type: "text", text, time_created: fallbackTs });
         }
       }
     }
@@ -673,7 +676,7 @@ export class KimiAgent extends BaseAgent {
           callID: callId,
           title: mapToolTitle(toolName),
           state: { arguments: normalizeToolArguments(function_.arguments), output: null },
-          time_created: 0,
+          time_created: fallbackTs,
         };
         toolIndexes.set(callId, parts.length);
         parts.push(part);
@@ -685,7 +688,7 @@ export class KimiAgent extends BaseAgent {
         message: this.buildMessage({
           messageId: `context-${seq}`,
           role: "assistant",
-          timestampMs: 0,
+          timestampMs: fallbackTs,
           parts: [],
         }),
         toolIndexes,
@@ -696,7 +699,7 @@ export class KimiAgent extends BaseAgent {
     const message = this.buildMessage({
       messageId: `context-${seq}`,
       role: "assistant",
-      timestampMs: 0,
+      timestampMs: fallbackTs,
       parts,
       agent: "kimi",
       mode: allTools ? "tool" : undefined,
