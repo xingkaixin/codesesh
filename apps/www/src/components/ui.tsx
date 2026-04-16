@@ -18,7 +18,7 @@ export function Header() {
     <header className="sticky top-0 z-50 border-b border-[var(--console-border)] bg-white/85 backdrop-blur-sm">
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
         <a href="/" className="flex items-center gap-2 text-[var(--console-text)]">
-          <img src="/logo.svg" alt="CodeSesh" className="h-6 w-6 rounded-sm" />
+          <img src="/logo.svg?v=2" alt="CodeSesh" className="h-6 w-6 rounded-sm" />
           <span className="console-mono text-sm font-semibold uppercase tracking-[0.05em]">
             CodeSesh
           </span>
@@ -64,7 +64,7 @@ export function Hero() {
     <section className="px-6 pb-20 pt-24 text-center">
       <div className="mx-auto max-w-2xl">
         <div className="mb-6 flex justify-center">
-          <img src="/logo.svg" alt="CodeSesh" className="h-20 w-20" />
+          <img src="/logo.svg?v=2" alt="CodeSesh" className="h-20 w-20" />
         </div>
         <h1 className="console-mono text-3xl font-bold tracking-tight text-[var(--console-accent-strong)] md:text-4xl">
           See every AI coding session,
