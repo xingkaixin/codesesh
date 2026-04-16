@@ -375,6 +375,8 @@ export class ClaudeCodeAgent extends BaseAgent {
     let messageCount = 0;
     let model: string | null = null;
     let cwd: string | null = null;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
 
     for (const line of lines) {
       try {
@@ -396,6 +398,18 @@ export class ClaudeCodeAgent extends BaseAgent {
           if (!model) {
             const m = (msg as Record<string, unknown>)["model"];
             if (typeof m === "string" && m.trim()) model = m.trim();
+          }
+          if (role === "assistant") {
+            const usage = (msg as Record<string, unknown>)["usage"] as
+              | Record<string, unknown>
+              | undefined;
+            if (usage && typeof usage === "object") {
+              totalInputTokens +=
+                ((usage["input_tokens"] as number) ?? 0) +
+                ((usage["cache_creation_input_tokens"] as number) ?? 0) +
+                ((usage["cache_read_input_tokens"] as number) ?? 0);
+              totalOutputTokens += (usage["output_tokens"] as number) ?? 0;
+            }
           }
         }
       } catch {
@@ -420,8 +434,8 @@ export class ClaudeCodeAgent extends BaseAgent {
       time_updated: updatedAt,
       stats: {
         message_count: messageCount,
-        total_input_tokens: 0,
-        total_output_tokens: 0,
+        total_input_tokens: totalInputTokens,
+        total_output_tokens: totalOutputTokens,
         total_cost: 0,
       },
     };

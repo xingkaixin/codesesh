@@ -436,6 +436,13 @@ export class CodexAgent extends BaseAgent {
     let latestAssistantTextIndex: number | null = null;
     let pendingPlan: MessagePart | null = null;
 
+    // Token-count dedup state (matches codeburn strategy)
+    let prevCumulativeTotal = 0;
+    let prevInput = 0;
+    let prevCached = 0;
+    let prevOutput = 0;
+    let prevReasoning = 0;
+
     for (const record of parseJsonlLines(content)) {
       try {
         const result = this.convertRecord(
@@ -451,11 +458,63 @@ export class CodexAgent extends BaseAgent {
         latestAssistantTextIndex = result.latestAssistantTextIndex;
         pendingPlan = result.pendingPlan;
 
-        // Extract token usage
-        this.extractTokenUsage(record, (input, output) => {
-          totalInputTokens += input;
-          totalOutputTokens += output;
-        });
+        // Process Codex token_count events
+        const recordType = String(record["type"] ?? "");
+        if (recordType === "event_msg") {
+          const payload = (record["payload"] ?? {}) as Record<string, unknown>;
+          if (String(payload["type"] ?? "") === "token_count") {
+            const info = payload["info"] as Record<string, unknown> | undefined;
+            const totalUsage = info?.["total_token_usage"] as Record<string, unknown> | undefined;
+            const cumulativeTotal = Number(totalUsage?.["total_tokens"] ?? 0);
+
+            if (cumulativeTotal > 0 && cumulativeTotal === prevCumulativeTotal) {
+              // duplicate event
+            } else {
+              prevCumulativeTotal = cumulativeTotal;
+
+              const lastUsage = info?.["last_token_usage"] as Record<string, unknown> | undefined;
+              let inputTokens = 0;
+              let cachedInputTokens = 0;
+              let outputTokens = 0;
+              let reasoningTokens = 0;
+
+              if (lastUsage) {
+                inputTokens = Number(lastUsage["input_tokens"] ?? 0);
+                cachedInputTokens = Number(lastUsage["cached_input_tokens"] ?? 0);
+                outputTokens = Number(lastUsage["output_tokens"] ?? 0);
+                reasoningTokens = Number(lastUsage["reasoning_output_tokens"] ?? 0);
+              } else if (cumulativeTotal > 0 && totalUsage) {
+                inputTokens = Number(totalUsage["input_tokens"] ?? 0) - prevInput;
+                cachedInputTokens = Number(totalUsage["cached_input_tokens"] ?? 0) - prevCached;
+                outputTokens = Number(totalUsage["output_tokens"] ?? 0) - prevOutput;
+                reasoningTokens = Number(totalUsage["reasoning_output_tokens"] ?? 0) - prevReasoning;
+
+                prevInput = Number(totalUsage["input_tokens"] ?? 0);
+                prevCached = Number(totalUsage["cached_input_tokens"] ?? 0);
+                prevOutput = Number(totalUsage["output_tokens"] ?? 0);
+                prevReasoning = Number(totalUsage["reasoning_output_tokens"] ?? 0);
+              }
+
+              const uncachedInput = Math.max(0, inputTokens - cachedInputTokens);
+              if (uncachedInput || outputTokens || reasoningTokens) {
+                totalInputTokens += uncachedInput;
+                totalOutputTokens += outputTokens + reasoningTokens;
+
+                // Bind to the most recent assistant message without tokens
+                for (let i = messages.length - 1; i >= 0; i--) {
+                  const msg = messages[i]!;
+                  if (msg.role === "assistant" && !msg.tokens) {
+                    msg.tokens = {
+                      input: uncachedInput,
+                      output: outputTokens + reasoningTokens,
+                    };
+                    break;
+                  }
+                }
+              }
+            }
+          }
+        }
       } catch {
         // skip malformed records
       }
@@ -566,10 +625,18 @@ export class CodexAgent extends BaseAgent {
 
     const title = resolveSessionTitle(indexTitle, messageTitle, directoryTitle);
 
-    // Walk all lines to count messages and extract model
+    // Walk all lines to count messages, extract model, and pre-accumulate tokens
     let updatedAt = createdAt;
     let messageCount = 0;
     let model: string | null = null;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+
+    let scanPrevCumulativeTotal = 0;
+    let scanPrevInput = 0;
+    let scanPrevCached = 0;
+    let scanPrevOutput = 0;
+    let scanPrevReasoning = 0;
 
     const COUNTED_TYPES = new Set(["message", "function_call", "function_call_output"]);
 
@@ -597,6 +664,46 @@ export class CodexAgent extends BaseAgent {
             if (typeof m === "string" && m.trim()) model = m.trim();
           }
         }
+
+        if (recordType === "event_msg") {
+          const p = (data["payload"] ?? {}) as Record<string, unknown>;
+          if (String(p["type"] ?? "") === "token_count") {
+            const info = p["info"] as Record<string, unknown> | undefined;
+            const totalUsage = info?.["total_token_usage"] as Record<string, unknown> | undefined;
+            const cumulativeTotal = Number(totalUsage?.["total_tokens"] ?? 0);
+
+            if (cumulativeTotal > 0 && cumulativeTotal !== scanPrevCumulativeTotal) {
+              scanPrevCumulativeTotal = cumulativeTotal;
+
+              const lastUsage = info?.["last_token_usage"] as Record<string, unknown> | undefined;
+              let inputTokens = 0;
+              let cachedInputTokens = 0;
+              let outputTokens = 0;
+              let reasoningTokens = 0;
+
+              if (lastUsage) {
+                inputTokens = Number(lastUsage["input_tokens"] ?? 0);
+                cachedInputTokens = Number(lastUsage["cached_input_tokens"] ?? 0);
+                outputTokens = Number(lastUsage["output_tokens"] ?? 0);
+                reasoningTokens = Number(lastUsage["reasoning_output_tokens"] ?? 0);
+              } else if (cumulativeTotal > 0 && totalUsage) {
+                inputTokens = Number(totalUsage["input_tokens"] ?? 0) - scanPrevInput;
+                cachedInputTokens = Number(totalUsage["cached_input_tokens"] ?? 0) - scanPrevCached;
+                outputTokens = Number(totalUsage["output_tokens"] ?? 0) - scanPrevOutput;
+                reasoningTokens = Number(totalUsage["reasoning_output_tokens"] ?? 0) - scanPrevReasoning;
+
+                scanPrevInput = Number(totalUsage["input_tokens"] ?? 0);
+                scanPrevCached = Number(totalUsage["cached_input_tokens"] ?? 0);
+                scanPrevOutput = Number(totalUsage["output_tokens"] ?? 0);
+                scanPrevReasoning = Number(totalUsage["reasoning_output_tokens"] ?? 0);
+              }
+
+              const uncachedInput = Math.max(0, inputTokens - cachedInputTokens);
+              totalInputTokens += uncachedInput;
+              totalOutputTokens += outputTokens + reasoningTokens;
+            }
+          }
+        }
       } catch {
         // skip
       }
@@ -613,8 +720,8 @@ export class CodexAgent extends BaseAgent {
       time_updated: updatedAt,
       stats: {
         message_count: messageCount,
-        total_input_tokens: 0,
-        total_output_tokens: 0,
+        total_input_tokens: totalInputTokens,
+        total_output_tokens: totalOutputTokens,
         total_cost: 0,
       },
     };
@@ -653,29 +760,6 @@ export class CodexAgent extends BaseAgent {
       }
     }
     return null;
-  }
-
-  // ---- Token usage extraction ----
-
-  private extractTokenUsage(
-    record: Record<string, unknown>,
-    accumulate: (input: number, output: number) => void,
-  ): void {
-    const recordType = String(record["type"] ?? "");
-    if (recordType !== "response_item") return;
-
-    const payload = (record["payload"] ?? {}) as Record<string, unknown>;
-    const info = payload["info"] as Record<string, unknown> | undefined;
-    if (!info) return;
-
-    const totalUsage = info["total_token_usage"] as Record<string, unknown> | undefined;
-    if (!totalUsage) return;
-
-    const inputTokens = Number(totalUsage["input_tokens"] ?? 0);
-    const outputTokens = Number(totalUsage["output_tokens"] ?? 0);
-    if (inputTokens || outputTokens) {
-      accumulate(inputTokens, outputTokens);
-    }
   }
 
   // ---- Record conversion ----

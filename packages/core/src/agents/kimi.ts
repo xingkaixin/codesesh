@@ -447,6 +447,22 @@ export class KimiAgent extends BaseAgent {
         const timestamp = Number(record.timestamp ?? 0);
         const timestampMs = Number.isFinite(timestamp) ? Math.floor(timestamp * 1000) : 0;
 
+        // Bind usage to the most recent assistant message without tokens
+        const usage = message["usage"] as Record<string, unknown> | undefined;
+        if (usage && typeof usage === "object") {
+          const inputTokens = Number(usage["input_tokens"] ?? 0);
+          const outputTokens = Number(usage["output_tokens"] ?? 0);
+          if (inputTokens || outputTokens) {
+            for (let i = messages.length - 1; i >= 0; i--) {
+              const msg = messages[i]!;
+              if (msg.role === "assistant" && !msg.tokens) {
+                msg.tokens = { input: inputTokens, output: outputTokens };
+                break;
+              }
+            }
+          }
+        }
+
         if (msgType === "TurnBegin") {
           const userInput = payload.user_input;
           if (Array.isArray(userInput) && userInput.length > 0) {
