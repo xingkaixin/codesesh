@@ -5,8 +5,8 @@ import { logger } from "hono/logger";
 import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ScanResult } from "@codesesh/core";
 import { createApiRoutes } from "./api/routes.js";
+import { LiveScanStore } from "./live-scan.js";
 
 function findWebDistPath(): string | null {
   const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -28,14 +28,14 @@ function findWebDistPath(): string | null {
 
 export async function createServer(
   port: number,
-  scanResult: ScanResult,
+  store: LiveScanStore,
 ): Promise<{ url: string; shutdown: () => void }> {
   const app = new Hono();
 
   app.use("*", logger());
 
   // API routes
-  app.route("/api", createApiRoutes(scanResult));
+  app.route("/api", createApiRoutes(store, store));
 
   // Serve static files from web dist (if available)
   const webDistPath = findWebDistPath();
@@ -51,6 +51,9 @@ export async function createServer(
 
   return {
     url,
-    shutdown: () => server.close(),
+    shutdown: () => {
+      server.close();
+      void store.shutdown();
+    },
   };
 }

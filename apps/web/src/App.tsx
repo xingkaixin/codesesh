@@ -1,10 +1,15 @@
 declare const __APP_VERSION__: string;
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ModelConfig } from "./config";
-import type { AgentInfo, SessionHead, SessionData } from "./lib/api";
-import { fetchAgents, fetchSessions, fetchSessionData } from "./lib/api";
+import type { AgentInfo, SessionHead, SessionData, SessionsUpdatedEvent } from "./lib/api";
+import {
+  fetchAgents,
+  fetchSessions,
+  fetchSessionData,
+  subscribeSessionUpdates,
+} from "./lib/api";
 import { SessionDetail } from "./components/SessionDetail";
 import { SessionDetailSkeleton } from "./components/SessionDetailSkeleton";
 import {
@@ -97,6 +102,7 @@ export default function App() {
   const [session, setSession] = useState<SessionData | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [liveNotice, setLiveNotice] = useState<string | null>(null);
 
   // Load agents and sessions
   useEffect(() => {
@@ -192,6 +198,33 @@ export default function App() {
       ? `${viewState.activeAgentKey}/${viewState.activeSessionSlug}`
       : "";
 
+  const syncLiveUpdate = useEffectEvent(async (event: SessionsUpdatedEvent) => {
+    try {
+      const [agentList, sessionList] = await Promise.all([fetchAgents(), fetchSessions()]);
+      setAgents(agentList);
+      setSessions(sessionList.sessions);
+
+      if (viewState.mode === "session") {
+        try {
+          const data = await fetchSessionData(viewState.activeAgentKey, viewState.activeSessionSlug);
+          setSession(data);
+          setSessionError(null);
+        } catch {
+          setSession(null);
+          setSessionError("Session not found");
+        }
+      }
+
+      if (event.newSessions > 0) {
+        setLiveNotice(`发现 ${event.newSessions} 个新会话，列表已自动刷新`);
+      } else if (event.updatedSessions > 0) {
+        setLiveNotice("会话内容已同步");
+      }
+    } catch (err) {
+      console.error("Failed to sync live session update:", err);
+    }
+  });
+
   // Load session detail
   useEffect(() => {
     if (viewState.mode !== "session") {
@@ -215,6 +248,28 @@ export default function App() {
     })();
     return () => ac.abort();
   }, [sessionFetchKey, viewState.activeAgentKey, viewState.activeSessionSlug, viewState.mode]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeSessionUpdates((event) => {
+      void syncLiveUpdate(event);
+    });
+
+    return unsubscribe;
+  }, [syncLiveUpdate]);
+
+  useEffect(() => {
+    if (!liveNotice) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setLiveNotice(null);
+    }, 3500);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [liveNotice]);
 
   // Build landing data
   const landingSessions = useMemo<LandingSession[]>(() => {
@@ -463,6 +518,11 @@ export default function App() {
               <p className="console-mono mt-1 text-xs text-[var(--console-muted)]">
                 {headerSubtitle}
               </p>
+              {liveNotice ? (
+                <p className="console-mono mt-2 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
+                  {liveNotice}
+                </p>
+              ) : null}
             </div>
           </section>
 

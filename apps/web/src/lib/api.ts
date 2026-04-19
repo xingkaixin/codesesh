@@ -89,6 +89,16 @@ export interface SessionData {
   messages: Message[];
 }
 
+export interface SessionsUpdatedEvent {
+  type: "sessions-updated";
+  changedAgents: string[];
+  newSessions: number;
+  updatedSessions: number;
+  removedSessions: number;
+  totalSessions: number;
+  timestamp: number;
+}
+
 export async function fetchAgents(): Promise<AgentInfo[]> {
   const res = await fetch("/api/agents");
   if (!res.ok) throw new Error("Failed to fetch agents");
@@ -107,4 +117,26 @@ export async function fetchSessionData(agent: string, sessionId: string): Promis
   const res = await fetch(`/api/sessions/${agent}/${sessionId}`);
   if (!res.ok) throw new Error("Failed to fetch session data");
   return res.json();
+}
+
+export function subscribeSessionUpdates(
+  onUpdate: (event: SessionsUpdatedEvent) => void,
+): () => void {
+  const source = new EventSource("/api/events");
+
+  source.addEventListener("sessions-updated", (event) => {
+    try {
+      onUpdate(JSON.parse(event.data) as SessionsUpdatedEvent);
+    } catch (error) {
+      console.error("Failed to parse session update event:", error);
+    }
+  });
+
+  source.onerror = () => {
+    console.error("Session update stream disconnected");
+  };
+
+  return () => {
+    source.close();
+  };
 }

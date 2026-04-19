@@ -55,6 +55,7 @@
   "dependencies": {
     "@codesesh/core": "workspace:*",
     "@hono/node-server": "^1.14.0",
+    "chokidar": "^5.0.0",
     "citty": "^0.1.6",
     "consola": "^3.4.2",
     "hono": "^4.7.4",

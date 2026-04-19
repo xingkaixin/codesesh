@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { handleGetAgents, handleGetSessions, handleGetSessionData } from "../handlers.js";
+import {
+  handleGetAgents,
+  handleGetSessions,
+  handleGetSessionData,
+  type ScanResultSource,
+} from "../handlers.js";
 import type { ScanResult, SessionHead, SessionData } from "@codesesh/core";
 import { BaseAgent } from "@codesesh/core";
 
@@ -73,13 +78,21 @@ function makeScanResult(overrides?: Partial<ScanResult>): ScanResult {
   };
 }
 
+function makeScanSource(overrides?: Partial<ScanResult>): ScanResultSource {
+  const result = makeScanResult(overrides);
+  return {
+    getSnapshot() {
+      return result;
+    },
+  };
+}
+
 // --- Tests ---
 
 describe("handleGetAgents", () => {
   it("returns agent info list", () => {
     const c = makeMockContext();
-    const result = makeScanResult();
-    handleGetAgents(c, result);
+    handleGetAgents(c, makeScanSource());
     expect(c.json).toHaveBeenCalled();
     const response = c.json.mock.calls[0]![0];
     expect(Array.isArray(response)).toBe(true);
@@ -89,24 +102,21 @@ describe("handleGetAgents", () => {
 describe("handleGetSessions", () => {
   it("returns all sessions without filters", () => {
     const c = makeMockContext();
-    const result = makeScanResult();
-    handleGetSessions(c, result);
+    handleGetSessions(c, makeScanSource());
     const response = c.json.mock.calls[0]![0];
     expect(response.sessions).toHaveLength(2);
   });
 
   it("filters by agent", () => {
     const c = makeMockContext({ query: { agent: "claudecode" } });
-    const result = makeScanResult();
-    handleGetSessions(c, result);
+    handleGetSessions(c, makeScanSource());
     const response = c.json.mock.calls[0]![0];
     expect(response.sessions).toHaveLength(2);
   });
 
   it("falls back to all sessions when agent not found in byAgent", () => {
     const c = makeMockContext({ query: { agent: "nonexistent" } });
-    const result = makeScanResult();
-    handleGetSessions(c, result);
+    handleGetSessions(c, makeScanSource());
     const response = c.json.mock.calls[0]![0];
     // Falls back to scanResult.sessions
     expect(response.sessions).toHaveLength(2);
@@ -114,8 +124,7 @@ describe("handleGetSessions", () => {
 
   it("filters by q (title search)", () => {
     const c = makeMockContext({ query: { q: "s1" } });
-    const result = makeScanResult();
-    handleGetSessions(c, result);
+    handleGetSessions(c, makeScanSource());
     const response = c.json.mock.calls[0]![0];
     expect(response.sessions).toHaveLength(1);
     expect(response.sessions[0].id).toBe("s1");
@@ -123,22 +132,23 @@ describe("handleGetSessions", () => {
 
   it("filters by cwd (substring match)", () => {
     const c = makeMockContext({ query: { cwd: "project" } });
-    const result = makeScanResult();
-    handleGetSessions(c, result);
+    handleGetSessions(c, makeScanSource());
     const response = c.json.mock.calls[0]![0];
     expect(response.sessions).toHaveLength(2);
   });
 
   it("filters by from date", () => {
     const c = makeMockContext({ query: { from: "2024-01-01" } });
-    const result = makeScanResult({
+    handleGetSessions(
+      c,
+      makeScanSource({
       sessions: [
         makeSession("old", { time_created: new Date("2023-01-01").getTime() }),
         makeSession("new", { time_created: new Date("2025-01-01").getTime() }),
       ],
       byAgent: {},
-    });
-    handleGetSessions(c, result);
+      }),
+    );
     const response = c.json.mock.calls[0]![0];
     expect(response.sessions).toHaveLength(1);
     expect(response.sessions[0].id).toBe("new");
@@ -146,8 +156,7 @@ describe("handleGetSessions", () => {
 
   it("ignores invalid from date", () => {
     const c = makeMockContext({ query: { from: "not-a-date" } });
-    const result = makeScanResult();
-    handleGetSessions(c, result);
+    handleGetSessions(c, makeScanSource());
     const response = c.json.mock.calls[0]![0];
     // Invalid date → filter not applied
     expect(response.sessions).toHaveLength(2);
@@ -157,8 +166,7 @@ describe("handleGetSessions", () => {
 describe("handleGetSessionData", () => {
   it("returns session data for valid agent and id", async () => {
     const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
-    const result = makeScanResult();
-    await handleGetSessionData(c, result);
+    await handleGetSessionData(c, makeScanSource());
     expect(c.json).toHaveBeenCalled();
     const response = c.json.mock.calls[0]![0];
     expect(response.title).toBe("Test Session");
@@ -166,15 +174,13 @@ describe("handleGetSessionData", () => {
 
   it("returns 400 when session ID is missing", async () => {
     const c = makeMockContext({ param: { agent: "claudecode", id: "" } });
-    const result = makeScanResult();
-    await handleGetSessionData(c, result);
+    await handleGetSessionData(c, makeScanSource());
     expect(c.json).toHaveBeenCalledWith({ error: "Missing session ID" }, 400);
   });
 
   it("returns 404 for unknown agent", async () => {
     const c = makeMockContext({ param: { agent: "unknown", id: "s1" } });
-    const result = makeScanResult();
-    await handleGetSessionData(c, result);
+    await handleGetSessionData(c, makeScanSource());
     expect(c.json).toHaveBeenCalledWith({ error: "Unknown agent: unknown" }, 404);
   });
 
@@ -184,8 +190,7 @@ describe("handleGetSessionData", () => {
       throw new Error("DB not found");
     };
     const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
-    const result = makeScanResult({ agents: [agent] });
-    await handleGetSessionData(c, result);
+    await handleGetSessionData(c, makeScanSource({ agents: [agent] }));
     expect(c.json).toHaveBeenCalledWith({ error: "DB not found" }, 500);
   });
 });

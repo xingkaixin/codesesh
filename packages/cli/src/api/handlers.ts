@@ -2,16 +2,21 @@ import type { Context } from "hono";
 import type { ScanResult, SessionData, SessionHead } from "@codesesh/core";
 import { getAgentInfoMap } from "@codesesh/core";
 
-export function handleGetAgents(c: Context, scanResult: ScanResult) {
-  const counts: Record<string, number> = {};
-  for (const agent of scanResult.agents) {
-    counts[agent.name] = scanResult.byAgent[agent.name]?.length ?? 0;
-  }
+export interface ScanResultSource {
+  getSnapshot(): ScanResult;
+}
+
+export function handleGetAgents(c: Context, scanSource: ScanResultSource) {
+  const scanResult = scanSource.getSnapshot();
+  const counts = Object.fromEntries(
+    Object.entries(scanResult.byAgent).map(([agentName, sessions]) => [agentName, sessions.length]),
+  );
   const info = getAgentInfoMap(counts);
   return c.json(info);
 }
 
-export function handleGetSessions(c: Context, scanResult: ScanResult) {
+export function handleGetSessions(c: Context, scanSource: ScanResultSource) {
+  const scanResult = scanSource.getSnapshot();
   const agent = c.req.query("agent");
   const q = c.req.query("q")?.toLowerCase();
   const cwd = c.req.query("cwd")?.toLowerCase();
@@ -52,7 +57,8 @@ export function handleGetSessions(c: Context, scanResult: ScanResult) {
   return c.json({ sessions });
 }
 
-export async function handleGetSessionData(c: Context, scanResult: ScanResult) {
+export async function handleGetSessionData(c: Context, scanSource: ScanResultSource) {
+  const scanResult = scanSource.getSnapshot();
   const agentName = c.req.param("agent");
   const sessionId = c.req.param("id");
 

@@ -1,7 +1,8 @@
 import { defineCommand } from "citty";
 import { createServer } from "../server.js";
 import { printScanResults } from "../output.js";
-import { scanSessions, createRegisteredAgents } from "@codesesh/core";
+import { createRegisteredAgents } from "@codesesh/core";
+import { LiveScanStore } from "../live-scan.js";
 
 export const serveCommand = defineCommand({
   meta: {
@@ -41,9 +42,11 @@ export const serveCommand = defineCommand({
     const port = parseInt(args.port as string, 10) || 4321;
     const noOpen = args["no-open"] as boolean;
     const jsonOnly = args.json as boolean;
+    const store = new LiveScanStore(!jsonOnly);
 
-    // Scan sessions
-    const result = scanSessions();
+    await store.initialize();
+    const result = store.getSnapshot();
+
     const agents = createRegisteredAgents();
 
     if (jsonOnly) {
@@ -68,7 +71,7 @@ export const serveCommand = defineCommand({
     printScanResults(agents, result);
 
     // Start server
-    const { url } = await createServer(port, result);
+    const { url } = await createServer(port, store);
 
     if (!noOpen) {
       const open = (await import("open")).default;
