@@ -155,10 +155,7 @@ export class OpenCodeAgent extends BaseAgent {
     return this.scan();
   }
 
-  private readSessionStats(
-    db: SQLiteDatabase,
-    sessionId: string,
-  ): SessionHead["stats"] | null {
+  private readSessionStats(db: SQLiteDatabase, sessionId: string): SessionHead["stats"] | null {
     try {
       const rows = db
         .prepare("SELECT data FROM message WHERE session_id = ? ORDER BY time_created ASC")
