@@ -4,12 +4,7 @@ import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "re
 import { Link, useLocation } from "react-router-dom";
 import { ModelConfig } from "./config";
 import type { AgentInfo, SessionHead, SessionData, SessionsUpdatedEvent } from "./lib/api";
-import {
-  fetchAgents,
-  fetchSessions,
-  fetchSessionData,
-  subscribeSessionUpdates,
-} from "./lib/api";
+import { fetchAgents, fetchSessions, fetchSessionData, subscribeSessionUpdates } from "./lib/api";
 import { SessionDetail } from "./components/SessionDetail";
 import { SessionDetailSkeleton } from "./components/SessionDetailSkeleton";
 import {
@@ -206,7 +201,10 @@ export default function App() {
 
       if (viewState.mode === "session") {
         try {
-          const data = await fetchSessionData(viewState.activeAgentKey, viewState.activeSessionSlug);
+          const data = await fetchSessionData(
+            viewState.activeAgentKey,
+            viewState.activeSessionSlug,
+          );
           setSession(data);
           setSessionError(null);
         } catch {
@@ -255,7 +253,7 @@ export default function App() {
     });
 
     return unsubscribe;
-  }, [syncLiveUpdate]);
+  }, []);
 
   useEffect(() => {
     if (!liveNotice) {

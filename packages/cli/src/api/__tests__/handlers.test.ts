@@ -142,11 +142,11 @@ describe("handleGetSessions", () => {
     handleGetSessions(
       c,
       makeScanSource({
-      sessions: [
-        makeSession("old", { time_created: new Date("2023-01-01").getTime() }),
-        makeSession("new", { time_created: new Date("2025-01-01").getTime() }),
-      ],
-      byAgent: {},
+        sessions: [
+          makeSession("old", { time_created: new Date("2023-01-01").getTime() }),
+          makeSession("new", { time_created: new Date("2025-01-01").getTime() }),
+        ],
+        byAgent: {},
       }),
     );
     const response = c.json.mock.calls[0]![0];
