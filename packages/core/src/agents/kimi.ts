@@ -235,6 +235,7 @@ export class KimiAgent extends BaseAgent {
         if (!meta) continue;
 
         this.sessionMetaMap.set(meta.id, meta);
+        const stats = this.extractStats(meta.sourcePath);
         heads.push({
           id: meta.id,
           slug: `kimi/${meta.id}`,
@@ -242,12 +243,7 @@ export class KimiAgent extends BaseAgent {
           directory: meta.cwd,
           time_created: meta.createdAt,
           time_updated: meta.createdAt,
-          stats: {
-            message_count: 0,
-            total_input_tokens: 0,
-            total_output_tokens: 0,
-            total_cost: 0,
-          },
+          stats,
         });
       } catch {
         // skip
@@ -319,6 +315,7 @@ export class KimiAgent extends BaseAgent {
 
         if (changedIds.includes(meta.id)) {
           this.sessionMetaMap.set(meta.id, meta);
+          const stats = this.extractStats(meta.sourcePath);
           sessionMap.set(meta.id, {
             id: meta.id,
             slug: `kimi/${meta.id}`,
@@ -326,12 +323,7 @@ export class KimiAgent extends BaseAgent {
             directory: meta.cwd,
             time_created: meta.createdAt,
             time_updated: meta.createdAt,
-            stats: {
-              message_count: 0,
-              total_input_tokens: 0,
-              total_output_tokens: 0,
-              total_cost: 0,
-            },
+            stats,
           });
         }
       } catch {

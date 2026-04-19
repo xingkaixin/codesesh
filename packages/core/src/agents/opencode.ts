@@ -4,7 +4,7 @@ import { BaseAgent } from "./base.js";
 import type { SessionCacheMeta, ChangeCheckResult } from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
-import { openDbReadOnly, isSqliteAvailable } from "../utils/sqlite.js";
+import { openDbReadOnly, isSqliteAvailable, type SQLiteDatabase } from "../utils/sqlite.js";
 
 export class OpenCodeAgent extends BaseAgent {
   readonly name = "opencode";
@@ -75,6 +75,7 @@ export class OpenCodeAgent extends BaseAgent {
         const timeUpdated = Number(row.time_updated ?? timeCreated);
         const slug = `opencode/${id}`;
         const directory = String(row.directory ?? "");
+        const stats = hasMessageTable ? this.readSessionStats(db, id) : null;
 
         heads.push({
           id,
@@ -84,10 +85,10 @@ export class OpenCodeAgent extends BaseAgent {
           time_created: timeCreated,
           time_updated: timeUpdated,
           stats: {
-            message_count: Number(row.message_count ?? 0),
-            total_input_tokens: 0,
-            total_output_tokens: 0,
-            total_cost: 0,
+            message_count: stats?.message_count ?? Number(row.message_count ?? 0),
+            total_input_tokens: stats?.total_input_tokens ?? 0,
+            total_output_tokens: stats?.total_output_tokens ?? 0,
+            total_cost: stats?.total_cost ?? 0,
           },
         });
 
@@ -152,6 +153,40 @@ export class OpenCodeAgent extends BaseAgent {
   incrementalScan(_cachedSessions: SessionHead[], _changedIds: string[]): SessionHead[] {
     // 对于 OpenCode，直接重新执行完整扫描
     return this.scan();
+  }
+
+  private readSessionStats(
+    db: SQLiteDatabase,
+    sessionId: string,
+  ): SessionHead["stats"] | null {
+    try {
+      const rows = db
+        .prepare("SELECT data FROM message WHERE session_id = ? ORDER BY time_created ASC")
+        .all(sessionId) as Array<{ data?: string }>;
+
+      let totalCost = 0;
+      let totalInputTokens = 0;
+      let totalOutputTokens = 0;
+
+      for (const row of rows) {
+        const msgData = JSON.parse(String(row.data ?? "{}")) as Record<string, unknown>;
+        const cost = Number(msgData.cost ?? 0);
+        const tokens = msgData.tokens as Record<string, unknown> | undefined;
+
+        totalCost += cost;
+        totalInputTokens += Number(tokens?.input ?? 0);
+        totalOutputTokens += Number(tokens?.output ?? 0);
+      }
+
+      return {
+        message_count: rows.length,
+        total_input_tokens: totalInputTokens,
+        total_output_tokens: totalOutputTokens,
+        total_cost: totalCost,
+      };
+    } catch {
+      return null;
+    }
   }
 
   getSessionData(sessionId: string): SessionData {

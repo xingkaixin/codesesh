@@ -390,7 +390,12 @@ export class CursorAgent extends BaseAgent {
           const updatedAt = composer.updatedAt ?? createdAt;
 
           // Load actual messages to filter out empty composers
-          const messages = this.loadMessagesFromBubbles(db, composerId, sessionId);
+          const messages = this.loadMessagesFromBubbles(
+            db,
+            composerId,
+            sessionId,
+            composer.modelConfig?.modelName ?? composer.model ?? null,
+          );
           const hasSubagents =
             Array.isArray(composer.subagentInfos) && composer.subagentInfos.length > 0;
           if (messages.length === 0 && !hasSubagents) {
@@ -537,7 +542,12 @@ export class CursorAgent extends BaseAgent {
       const updatedAt = composer.updatedAt ?? createdAt;
 
       // Load messages from bubbles (like agent-dump does)
-      const messages = this.loadMessagesFromBubbles(db, composerId, resolvedSessionId);
+      const messages = this.loadMessagesFromBubbles(
+        db,
+        composerId,
+        resolvedSessionId,
+        composer.modelConfig?.modelName ?? composer.model ?? null,
+      );
 
       // Aggregate stats
       let totalInputTokens = 0;
@@ -689,6 +699,7 @@ export class CursorAgent extends BaseAgent {
     db: SQLiteDatabase,
     composerId: string,
     _sessionId: string,
+    initialModelName: string | null,
   ): Message[] {
     const messages: Message[] = [];
 
@@ -697,7 +708,7 @@ export class CursorAgent extends BaseAgent {
         .prepare("SELECT key, value FROM cursorDiskKV WHERE key LIKE ? ORDER BY rowid ASC")
         .all(`bubbleId:${composerId}:%`) as Array<{ key: string; value: string }>;
 
-      let activeModelName: string | null = null;
+      let activeModelName: string | null = initialModelName;
       let messageIndex = 0;
 
       for (const row of rows) {
@@ -719,7 +730,7 @@ export class CursorAgent extends BaseAgent {
           }
 
           // Track model from user turn
-          if (role === "user" && bubble.modelInfo?.modelName) {
+          if (bubble.modelInfo?.modelName) {
             activeModelName = bubble.modelInfo.modelName;
           }
 
@@ -754,7 +765,7 @@ export class CursorAgent extends BaseAgent {
             time_created: timestampMs,
             time_completed: null,
             mode: role === "assistant" && parts.some((p) => p.type === "tool") ? "tool" : null,
-            model: activeModelName,
+            model: bubble.modelInfo?.modelName ?? activeModelName,
             provider: null,
             tokens: { input: inputTokens, output: outputTokens },
             cost: 0,

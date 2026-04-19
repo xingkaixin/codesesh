@@ -69,6 +69,10 @@ function parseTimestampMs(data: Record<string, unknown>): number {
   }
 }
 
+function extractModelName(raw: unknown): string | null {
+  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+}
+
 // ---------------------------------------------------------------------------
 // Title helpers
 // ---------------------------------------------------------------------------
@@ -435,16 +439,22 @@ export class CodexAgent extends BaseAgent {
     let currentAssistantIndex: number | null = null;
     let latestAssistantTextIndex: number | null = null;
     let pendingPlan: MessagePart | null = null;
+    let activeModel: string | null = meta.model;
 
     // Token-count dedup state (matches codeburn strategy)
     let prevCumulativeTotal = 0;
     let prevInput = 0;
-    let prevCached = 0;
     let prevOutput = 0;
     let prevReasoning = 0;
 
     for (const record of parseJsonlLines(content)) {
       try {
+        const recordType = String(record["type"] ?? "");
+        if (recordType === "turn_context") {
+          const payload = (record["payload"] ?? {}) as Record<string, unknown>;
+          activeModel = extractModelName(payload["model"]) ?? activeModel;
+        }
+
         const result = this.convertRecord(
           record,
           messages,
@@ -458,8 +468,14 @@ export class CodexAgent extends BaseAgent {
         latestAssistantTextIndex = result.latestAssistantTextIndex;
         pendingPlan = result.pendingPlan;
 
+        if (currentAssistantIndex !== null && activeModel) {
+          const message = messages[currentAssistantIndex];
+          if (message?.role === "assistant" && !message.model) {
+            message.model = activeModel;
+          }
+        }
+
         // Process Codex token_count events
-        const recordType = String(record["type"] ?? "");
         if (recordType === "event_msg") {
           const payload = (record["payload"] ?? {}) as Record<string, unknown>;
           if (String(payload["type"] ?? "") === "token_count") {
@@ -474,31 +490,27 @@ export class CodexAgent extends BaseAgent {
 
               const lastUsage = info?.["last_token_usage"] as Record<string, unknown> | undefined;
               let inputTokens = 0;
-              let cachedInputTokens = 0;
               let outputTokens = 0;
               let reasoningTokens = 0;
 
               if (lastUsage) {
                 inputTokens = Number(lastUsage["input_tokens"] ?? 0);
-                cachedInputTokens = Number(lastUsage["cached_input_tokens"] ?? 0);
                 outputTokens = Number(lastUsage["output_tokens"] ?? 0);
                 reasoningTokens = Number(lastUsage["reasoning_output_tokens"] ?? 0);
               } else if (cumulativeTotal > 0 && totalUsage) {
                 inputTokens = Number(totalUsage["input_tokens"] ?? 0) - prevInput;
-                cachedInputTokens = Number(totalUsage["cached_input_tokens"] ?? 0) - prevCached;
                 outputTokens = Number(totalUsage["output_tokens"] ?? 0) - prevOutput;
                 reasoningTokens =
                   Number(totalUsage["reasoning_output_tokens"] ?? 0) - prevReasoning;
 
                 prevInput = Number(totalUsage["input_tokens"] ?? 0);
-                prevCached = Number(totalUsage["cached_input_tokens"] ?? 0);
                 prevOutput = Number(totalUsage["output_tokens"] ?? 0);
                 prevReasoning = Number(totalUsage["reasoning_output_tokens"] ?? 0);
               }
 
-              const uncachedInput = Math.max(0, inputTokens - cachedInputTokens);
-              if (uncachedInput || outputTokens || reasoningTokens) {
-                totalInputTokens += uncachedInput;
+              const totalInput = Math.max(0, inputTokens);
+              if (totalInput || outputTokens || reasoningTokens) {
+                totalInputTokens += totalInput;
                 totalOutputTokens += outputTokens + reasoningTokens;
 
                 // Bind to the most recent assistant message without tokens
@@ -506,7 +518,7 @@ export class CodexAgent extends BaseAgent {
                   const msg = messages[i]!;
                   if (msg.role === "assistant" && !msg.tokens) {
                     msg.tokens = {
-                      input: uncachedInput,
+                      input: totalInput,
                       output: outputTokens + reasoningTokens,
                     };
                     break;
@@ -635,7 +647,6 @@ export class CodexAgent extends BaseAgent {
 
     let scanPrevCumulativeTotal = 0;
     let scanPrevInput = 0;
-    let scanPrevCached = 0;
     let scanPrevOutput = 0;
     let scanPrevReasoning = 0;
 
@@ -645,7 +656,11 @@ export class CodexAgent extends BaseAgent {
       try {
         const data = JSON.parse(line);
         const recordType = String(data["type"] ?? "");
-        if (recordType === "session_meta") {
+        if (recordType === "session_meta" || recordType === "turn_context") {
+          const payload = (data["payload"] ?? {}) as Record<string, unknown>;
+          if (!model) {
+            model = extractModelName(payload["model"]);
+          }
           const p = (data["payload"] ?? {}) as Record<string, unknown>;
           const ts = parseTimestampMs(p);
           if (ts > updatedAt) updatedAt = ts;
@@ -678,30 +693,26 @@ export class CodexAgent extends BaseAgent {
 
               const lastUsage = info?.["last_token_usage"] as Record<string, unknown> | undefined;
               let inputTokens = 0;
-              let cachedInputTokens = 0;
               let outputTokens = 0;
               let reasoningTokens = 0;
 
               if (lastUsage) {
                 inputTokens = Number(lastUsage["input_tokens"] ?? 0);
-                cachedInputTokens = Number(lastUsage["cached_input_tokens"] ?? 0);
                 outputTokens = Number(lastUsage["output_tokens"] ?? 0);
                 reasoningTokens = Number(lastUsage["reasoning_output_tokens"] ?? 0);
               } else if (cumulativeTotal > 0 && totalUsage) {
                 inputTokens = Number(totalUsage["input_tokens"] ?? 0) - scanPrevInput;
-                cachedInputTokens = Number(totalUsage["cached_input_tokens"] ?? 0) - scanPrevCached;
                 outputTokens = Number(totalUsage["output_tokens"] ?? 0) - scanPrevOutput;
                 reasoningTokens =
                   Number(totalUsage["reasoning_output_tokens"] ?? 0) - scanPrevReasoning;
 
                 scanPrevInput = Number(totalUsage["input_tokens"] ?? 0);
-                scanPrevCached = Number(totalUsage["cached_input_tokens"] ?? 0);
                 scanPrevOutput = Number(totalUsage["output_tokens"] ?? 0);
                 scanPrevReasoning = Number(totalUsage["reasoning_output_tokens"] ?? 0);
               }
 
-              const uncachedInput = Math.max(0, inputTokens - cachedInputTokens);
-              totalInputTokens += uncachedInput;
+              const totalInput = Math.max(0, inputTokens);
+              totalInputTokens += totalInput;
               totalOutputTokens += outputTokens + reasoningTokens;
             }
           }
