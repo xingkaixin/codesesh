@@ -10,11 +10,34 @@ function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead 
     id,
     slug: `agent/${id}`,
     title: `Session ${id}`,
+    directory: "/home/user/project",
     time_created: 1000,
     time_updated: 1000,
-    directory: "/home/user/project",
+    stats: {
+      message_count: 1,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_cost: 0,
+    },
     ...overrides,
   };
+}
+
+class TestAgent extends BaseAgent {
+  readonly name = "test";
+  readonly displayName = "test";
+
+  isAvailable(): boolean {
+    return true;
+  }
+
+  scan(): SessionHead[] {
+    return [];
+  }
+
+  getSessionData(): SessionData {
+    return {} as SessionData;
+  }
 }
 
 describe("filterSessions", () => {
@@ -113,10 +136,11 @@ vi.mock("../../agents/index.js", () => ({
 
 import { scanSessions, scanSessionsAsync } from "../scanner.js";
 import { createRegisteredAgents } from "../../agents/index.js";
-import { loadCachedSessions } from "../cache.js";
+import { loadCachedSessions, saveCachedSessions } from "../cache.js";
 
 const mockedCreateRegisteredAgents = vi.mocked(createRegisteredAgents);
 const mockedLoadCachedSessions = vi.mocked(loadCachedSessions);
+const mockedSaveCachedSessions = vi.mocked(saveCachedSessions);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -131,7 +155,7 @@ function createTestAgent(overrides: {
   incrementalScanResult?: SessionHead[];
   metaMap?: Map<string, SessionCacheMeta>;
 }) {
-  const agent = new BaseAgent() as any;
+  const agent = new TestAgent() as any;
   agent.name = overrides.name;
   agent.displayName = overrides.name;
   agent.isAvailable = () => overrides.available;
@@ -264,6 +288,35 @@ describe("scanSessions", () => {
     // Should use cached sessions
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions[0]!.id).toBe("cached");
+  });
+
+  it("refreshes stale cache before returning results", async () => {
+    const cachedSessions = [makeSession("cached")];
+    const refreshedSessions = [makeSession("fresh")];
+    mockedLoadCachedSessions.mockReturnValue({
+      sessions: cachedSessions,
+      meta: {},
+      timestamp: Date.now(),
+    });
+    mockedCreateRegisteredAgents.mockReturnValue([
+      createTestAgent({
+        name: "test",
+        available: true,
+        sessions: refreshedSessions,
+        checkForChangesResult: {
+          hasChanges: true,
+          changedIds: ["fresh"],
+          timestamp: Date.now(),
+        },
+        incrementalScanResult: refreshedSessions,
+      }),
+    ]);
+
+    const result = await scanSessions({ useCache: true, smartRefresh: false });
+
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0]!.id).toBe("fresh");
+    expect(mockedSaveCachedSessions).toHaveBeenCalledWith("test", refreshedSessions, {});
   });
 
   it("does not crash without onProgress callback", async () => {

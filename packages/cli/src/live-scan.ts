@@ -7,9 +7,11 @@ import {
   getCursorDataPath,
   resolveProviderRoots,
   scanSessions,
+  saveCachedSessions,
   type BaseAgent,
   type ScanResult,
   type ScanOptions,
+  type SessionCacheMeta,
   type SessionHead,
 } from "@codesesh/core";
 
@@ -48,6 +50,18 @@ function sessionSignature(session: SessionHead): string {
     session.stats.total_cost,
     session.stats.total_tokens ?? 0,
   ]);
+}
+
+function buildAgentCacheMeta(agent: BaseAgent): Record<string, SessionCacheMeta> {
+  const metaMap = agent.getSessionMetaMap?.();
+  const meta: Record<string, SessionCacheMeta> = {};
+  if (!metaMap) return meta;
+
+  for (const [id, data] of metaMap.entries()) {
+    meta[id] = { id, ...(data as Record<string, unknown>) } as SessionCacheMeta;
+  }
+
+  return meta;
 }
 
 function buildUpdateEvent(
@@ -354,6 +368,7 @@ export class LiveScanStore {
     }
 
     nextSessions = this.applyFilters(nextSessions);
+    saveCachedSessions(agentName, nextSessions, buildAgentCacheMeta(agent));
 
     const event = buildUpdateEvent(agentName, previousSessions, nextSessions);
     this.byAgent[agentName] = sortSessions(nextSessions);

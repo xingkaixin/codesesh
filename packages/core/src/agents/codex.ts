@@ -326,39 +326,39 @@ export class CodexAgent extends BaseAgent {
       return { hasChanges: false, timestamp: Date.now() };
     }
 
-    const changedIds: string[] = [];
+    const changedIds = new Set<string>();
+    const currentFiles = this.listRolloutFiles();
+    const currentIds = new Set(currentFiles.map((file) => extractSessionId(file)));
+    const cachedIds = new Set(cachedSessions.map((session) => session.id));
 
     for (const session of cachedSessions) {
       const meta = this.sessionMetaMap.get(session.id);
-      if (!meta) continue;
+      if (!currentIds.has(session.id)) {
+        changedIds.add(session.id);
+        continue;
+      }
+      if (!meta) {
+        changedIds.add(session.id);
+        continue;
+      }
 
       try {
         const stat = statSync(meta.sourcePath);
         if (stat.mtimeMs > sinceTimestamp) {
-          changedIds.push(session.id);
+          changedIds.add(session.id);
         }
       } catch {
-        changedIds.push(session.id);
+        changedIds.add(session.id);
       }
     }
 
-    // 检查新文件
-    try {
-      const allFiles = this.listRolloutFiles();
-      const hasNewFiles = allFiles.length > cachedSessions.length;
+    const hasAddedSessions = currentFiles.some((file) => !cachedIds.has(extractSessionId(file)));
 
-      return {
-        hasChanges: changedIds.length > 0 || hasNewFiles,
-        changedIds,
-        timestamp: Date.now(),
-      };
-    } catch {
-      return {
-        hasChanges: changedIds.length > 0,
-        changedIds,
-        timestamp: Date.now(),
-      };
-    }
+    return {
+      hasChanges: changedIds.size > 0 || hasAddedSessions,
+      changedIds: Array.from(changedIds),
+      timestamp: Date.now(),
+    };
   }
 
   /**
@@ -368,13 +368,23 @@ export class CodexAgent extends BaseAgent {
     if (!this.basePath) return cachedSessions;
 
     const sessionMap = new Map(cachedSessions.map((s) => [s.id, s]));
+    const changedSet = new Set(changedIds);
+    const currentFiles = this.listRolloutFiles();
+    const currentIds = new Set(currentFiles.map((file) => extractSessionId(file)));
+
+    for (const session of cachedSessions) {
+      if (!currentIds.has(session.id)) {
+        sessionMap.delete(session.id);
+        this.sessionMetaMap.delete(session.id);
+      }
+    }
 
     // 重新扫描变更的会话
-    for (const file of this.listRolloutFiles()) {
+    for (const file of currentFiles) {
       try {
         const sessionId = extractSessionId(file);
 
-        if (changedIds.includes(sessionId)) {
+        if (changedSet.has(sessionId)) {
           const head = this.parseSessionHead(file);
           if (head) {
             sessionMap.set(head.id, head);
@@ -396,7 +406,7 @@ export class CodexAgent extends BaseAgent {
     }
 
     // 检查新文件
-    for (const file of this.listRolloutFiles()) {
+    for (const file of currentFiles) {
       try {
         const sessionId = extractSessionId(file);
         if (!sessionMap.has(sessionId)) {

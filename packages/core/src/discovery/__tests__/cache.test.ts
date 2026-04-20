@@ -42,8 +42,15 @@ function makeSession(id: string): SessionHead {
     id,
     slug: `agent/${id}`,
     title: `Session ${id}`,
+    directory: "/tmp/project",
     time_created: now,
     time_updated: now,
+    stats: {
+      message_count: 1,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_cost: 0,
+    },
   };
 }
 
@@ -114,7 +121,7 @@ describe("loadCachedSessions", () => {
     expect(result).not.toBeNull();
     expect(result!.sessions).toHaveLength(1);
     expect(result!.sessions[0]!.id).toBe("s1");
-    expect(result!.meta.s1.sourcePath).toBe("/path");
+    expect(result?.meta.s1?.sourcePath).toBe("/path");
   });
 });
 

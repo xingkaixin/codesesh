@@ -78,6 +78,18 @@ interface AgentScanResult {
   refreshed?: boolean;
 }
 
+function buildAgentCacheMeta(agent: BaseAgent): Record<string, SessionCacheMeta> {
+  const metaMap = agent.getSessionMetaMap?.();
+  const meta: Record<string, SessionCacheMeta> = {};
+  if (!metaMap) return meta;
+
+  for (const [id, data] of metaMap.entries()) {
+    meta[id] = { id, ...(data as Record<string, unknown>) } as SessionCacheMeta;
+  }
+
+  return meta;
+}
+
 /**
  * 智能扫描单个 Agent
  * 1. 优先使用缓存立即返回
@@ -90,7 +102,7 @@ async function scanAgentSmart(
   onProgress?: (progress: ScanProgress) => void,
 ): Promise<AgentScanResult | null> {
   const useCache = options.useCache ?? true;
-  const smartRefresh = options.smartRefresh ?? true;
+  const canValidateCache = Boolean(agent.checkForChanges && agent.incrementalScan);
 
   // 1. 尝试加载缓存
   if (useCache) {
@@ -105,9 +117,10 @@ async function scanAgentSmart(
         agent.setSessionMetaMap(metaMap);
       }
 
-      // 命中缓存时也要确保 agent 的 basePath 等状态已初始化
-      // 否则后台增量刷新会因为 basePath 为 null 而失效
-      agent.isAvailable();
+      const isAvail = agent.isAvailable();
+      if (!isAvail) {
+        return null;
+      }
 
       // 通知缓存已加载
       onProgress?.({
@@ -116,11 +129,37 @@ async function scanAgentSmart(
         cachedCount: cached.sessions.length,
       });
 
-      // 2. 智能刷新：后台检测变更
-      if (smartRefresh && agent.checkForChanges) {
-        setTimeout(async () => {
-          await refreshAgentAsync(agent, cached.sessions, cached.timestamp, onProgress);
-        }, 0);
+      if (canValidateCache) {
+        onProgress?.({ agent: agent.name, phase: "checking" });
+
+        const checkResult = await Promise.resolve(
+          agent.checkForChanges!(cached.timestamp, cached.sessions),
+        );
+
+        if (checkResult.hasChanges) {
+          onProgress?.({
+            agent: agent.name,
+            phase: "incremental",
+            changedCount: checkResult.changedIds?.length,
+          });
+
+          const updatedSessions = await Promise.resolve(
+            agent.incrementalScan!(cached.sessions, checkResult.changedIds || []),
+          );
+
+          saveCachedSessions(agent.name, updatedSessions, buildAgentCacheMeta(agent));
+
+          onProgress?.({
+            agent: agent.name,
+            phase: "complete",
+            newCount: updatedSessions.length,
+          });
+
+          const filtered = filterSessions(updatedSessions, options);
+          return { agent, heads: filtered, fromCache: true, refreshed: true };
+        }
+
+        onProgress?.({ agent: agent.name, phase: "complete", newCount: cached.sessions.length });
       }
 
       const filtered = filterSessions(cached.sessions, options);
@@ -166,14 +205,7 @@ async function refreshAgentAsync(
     );
 
     // 保存更新后的缓存
-    const metaMap = agent.getSessionMetaMap?.();
-    const meta: Record<string, SessionCacheMeta> = {};
-    if (metaMap) {
-      for (const [id, data] of metaMap.entries()) {
-        meta[id] = { id, ...(data as Record<string, unknown>) } as SessionCacheMeta;
-      }
-    }
-    saveCachedSessions(agent.name, updatedSessions, meta);
+    saveCachedSessions(agent.name, updatedSessions, buildAgentCacheMeta(agent));
 
     onProgress?.({
       agent: agent.name,
@@ -208,13 +240,7 @@ async function scanAgentFull(
     perf.end(scanMarker);
 
     // 收集元数据
-    const metaMap = agent.getSessionMetaMap?.();
-    const meta: Record<string, SessionCacheMeta> = {};
-    if (metaMap) {
-      for (const [id, data] of metaMap.entries()) {
-        meta[id] = { id, ...(data as Record<string, unknown>) } as SessionCacheMeta;
-      }
-    }
+    const meta = buildAgentCacheMeta(agent);
 
     // 保存到缓存
     saveCachedSessions(agent.name, heads, meta);
