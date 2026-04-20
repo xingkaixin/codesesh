@@ -17,11 +17,12 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 **What you get:**
 
 - **Unified Timeline** — Browse sessions across all your AI agents in a single, searchable interface
+- **Dashboard & Activity Trends** — Track daily activity, agent distribution, recent sessions, and latest activity at a glance
 - **Full Conversation Replay** — Read every message, tool call, and reasoning step exactly as it happened
 - **Cost & Token Visibility** — See exactly how many tokens and dollars each session consumed
 - **Zero Configuration** — Just run it. CodeSesh auto-discovers everything on your filesystem
 - **100% Local & Private** — Nothing leaves your machine. No accounts, no cloud sync, no telemetry
-- **Instant Startup** — Scans and launches in seconds, then opens your browser automatically
+- **Live Refresh** — File changes are picked up automatically, and the UI stays in sync without a restart
 
 ---
 
@@ -44,7 +45,7 @@ More agents coming soon. Adding a new one is [a single file](#extending).
 ### Prerequisites
 
 - Node.js 18+
-- pnpm 9+
+- pnpm 10+
 
 ### Install & Run
 
@@ -150,6 +151,9 @@ npx codesesh -j
 | `--session` | `-s` | — | Directly open a session (`agent://session-id`) |
 | `--json` | `-j` | `false` | Output JSON and exit (no server) |
 | `--no-open` | — | `false` | Don't auto-open the browser |
+| `--trace` | — | `false` | Print performance trace logs |
+| `--cache` | — | `true` | Use cached scan results when available |
+| `--clear-cache` | — | `false` | Clear scan cache before starting |
 | `-v` | — | — | Print version number |
 | `-h` / `--help` | — | — | Show help |
 
@@ -159,13 +163,11 @@ npx codesesh -j
 
 Once CodeSesh is running, here's what you'll find:
 
-1. **Agent Sidebar** — A panel listing all detected agents with session counts. Click any agent to filter the view.
-
-2. **Session List** — Browse your sessions sorted by most recent. Each card shows the session title, working directory, message count, and total cost at a glance.
-
-3. **Session Detail** — Click any session to open a full replay. You'll see every user message, assistant response, tool invocation, and reasoning step — exactly as it unfolded.
-
-4. **Stats Bar** — At the top of each session, see the total tokens consumed (input + output) and the cost in dollars.
+1. **Dashboard** — Start from a summary view with total sessions, total messages, total tokens, latest activity, daily activity, agent distribution, and recent sessions.
+2. **Agent Sidebar** — A panel listing all detected agents with session counts. Click any agent to filter the view.
+3. **Session List** — Browse your sessions sorted by most recent. Each card shows the session title, working directory, message count, and total cost at a glance.
+4. **Session Detail** — Click any session to open a full replay. You'll see every user message, assistant response, tool invocation, and reasoning step exactly as it unfolded.
+5. **Live Updates** — New or changed local sessions are reflected automatically while the server is running.
 
 ---
 

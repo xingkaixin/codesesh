@@ -37,7 +37,7 @@ apps/web            React 前端
 ## 数据流
 
 ```
-CLI 参数 → core 扫描会话 → Hono HTTP API → React Web UI 展示
+CLI 参数 → core 全量扫描 / 缓存恢复 → LiveScanStore 文件监听增量刷新 → Hono HTTP API / SSE → React Web UI（Dashboard / 会话列表 / 详情）
 ```
 
 ## 扩展新 Agent

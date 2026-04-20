@@ -67,8 +67,8 @@ export function Hero() {
           in one place.
         </h1>
         <p className="mx-auto mt-5 max-w-md text-sm leading-relaxed text-[var(--console-muted)]">
-          Your sessions are scattered across tools and directories. CodeSesh finds them all and puts
-          them in one place.
+          CodeSesh finds sessions across tools and directories, then turns them into a live
+          dashboard and a full replayable history.
         </p>
 
         {/* Terminal demo — part of hero */}
@@ -119,7 +119,7 @@ export function Hero() {
             </pre>
           </div>
           <p className="console-mono mt-3 text-center text-xs text-[var(--console-accent)]">
-            Requires Node.js 20+ · Works with pnpm, npm, or bun
+            Requires Node.js 18+ · Works with pnpm, npm, or bun
           </p>
         </div>
       </div>
@@ -137,6 +137,11 @@ interface FeatureItem {
 
 const features: FeatureItem[] = [
   {
+    icon: BarChart3,
+    title: "Dashboard & Activity Trends",
+    description: "Track daily activity, agent distribution, recent sessions, and latest activity.",
+  },
+  {
     icon: Eye,
     title: "Unified Timeline",
     description: "Browse sessions across all your AI agents in a single, searchable interface.",
@@ -145,6 +150,11 @@ const features: FeatureItem[] = [
     icon: Terminal,
     title: "Full Conversation Replay",
     description: "Read every message, tool call, and reasoning step exactly as it happened.",
+  },
+  {
+    icon: Timer,
+    title: "Live Refresh",
+    description: "File changes are picked up automatically, and the UI stays in sync.",
   },
   {
     icon: BarChart3,
@@ -160,11 +170,6 @@ const features: FeatureItem[] = [
     icon: Shield,
     title: "100% Local & Private",
     description: "Nothing leaves your machine. No accounts, no cloud sync, no telemetry.",
-  },
-  {
-    icon: Timer,
-    title: "Instant Startup",
-    description: "Scans and launches in seconds, then opens your browser automatically.",
   },
 ];
 

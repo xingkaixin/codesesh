@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.0] - 2026-04-20
+
+- feat(cli): add live session refresh with filesystem watchers and server-sent events
+- feat(web): add a dashboard with activity charts, agent distribution, recent activity, and breadcrumb navigation
+- feat(web): keep dashboard and session lists aligned with CLI time filters such as `--days`, `--from`, and `--to`
+- feat(core): improve Codex parsing and cache refresh with recent-session revalidation
+- feat(cli): keep full history in the server store while preserving windowed JSON output semantics
+- fix(api): use session activity time for dashboard windowing
+- chore: bump packages to `0.2.0`, update pnpm to `10.33.0`, and fix OS-independent test paths
+
 ## [0.1.5] - 2026-04-16
 
 - fix(cli): read version dynamically from `package.json` instead of hardcoded value

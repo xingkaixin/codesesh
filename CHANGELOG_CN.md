@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.0] - 2026-04-20
+
+- feat(cli): 增加基于文件监听和 SSE 的实时会话刷新
+- feat(web): 增加 Dashboard，提供活跃趋势、Agent 分布、最近活动和面包屑导航
+- feat(web): 让 Dashboard 与会话列表共享 CLI 时间过滤语义，支持 `--days`、`--from`、`--to`
+- feat(core): 优化 Codex 解析与缓存刷新逻辑，增加最近会话重校验
+- feat(cli): 服务端保留完整历史数据，同时维持 JSON 输出的时间窗口语义
+- fix(api): Dashboard 时间窗口改为基于会话活跃时间统计
+- chore: 全量包版本升级到 `0.2.0`，pnpm 升级到 `10.33.0`，并修复跨平台测试路径
+
 ## [0.1.5] - 2026-04-16
 
 - fix(cli): 版本号从 `package.json` 动态读取，移除硬编码
