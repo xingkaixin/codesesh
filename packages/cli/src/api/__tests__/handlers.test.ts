@@ -247,6 +247,49 @@ describe("handleGetDashboard", () => {
     expect(Array.isArray(response.perAgent)).toBe(true);
     expect(response.perAgent[0]?.name).toBe("claudecode");
   });
+
+  it("uses activity time instead of creation time for dashboard windowing", () => {
+    const c = makeMockContext({ query: { days: "7" } });
+    const now = Date.now();
+    const staleCreatedRecentlyUpdated = makeSession("old-active", {
+      time_created: now - 40 * 86400000,
+      time_updated: now - 60_000,
+      stats: {
+        message_count: 7,
+        total_input_tokens: 10,
+        total_output_tokens: 5,
+        total_cost: 0,
+      },
+    });
+    const recentButIdle = makeSession("recent-idle", {
+      time_created: now - 2 * 86400000,
+      time_updated: now - 2 * 86400000,
+      stats: {
+        message_count: 2,
+        total_input_tokens: 1,
+        total_output_tokens: 1,
+        total_cost: 0,
+      },
+    });
+
+    handleGetDashboard(
+      c,
+      makeScanSource({
+        sessions: [staleCreatedRecentlyUpdated, recentButIdle],
+        byAgent: { claudecode: [staleCreatedRecentlyUpdated, recentButIdle] },
+      }),
+    );
+
+    const response = c.json.mock.calls[0]![0];
+    expect(response.totals.sessions).toBe(2);
+    expect(response.totals.latestActivity).toBe(staleCreatedRecentlyUpdated.time_updated);
+    expect(response.recentSessions[0]?.id).toBe("old-active");
+
+    const todayKey = new Date(now).toLocaleDateString("en-CA").replaceAll("/", "-");
+    const todayBucket = response.dailyActivity.find((bucket: { date: string }) => bucket.date === todayKey);
+    expect(todayBucket?.sessions).toBe(1);
+    expect(todayBucket?.messages).toBe(7);
+  });
 });
 
 describe("handleGetSessionData", () => {

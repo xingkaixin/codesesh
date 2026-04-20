@@ -17,6 +17,10 @@ function getTotalTokens(stats: SessionHead["stats"]): number {
   return stats.total_tokens ?? stats.total_input_tokens + stats.total_output_tokens;
 }
 
+function getSessionActivityTime(session: SessionHead): number {
+  return session.time_updated ?? session.time_created;
+}
+
 function parseDateParam(
   value: string | undefined,
   fallback: number | undefined,
@@ -35,6 +39,20 @@ function filterSessionsByWindow(
   return sessions.filter((s) => {
     if (from != null && s.time_created < from) return false;
     if (to != null && s.time_created > to) return false;
+    return true;
+  });
+}
+
+function filterSessionsByActivityWindow(
+  sessions: SessionHead[],
+  from: number | undefined,
+  to: number | undefined,
+): SessionHead[] {
+  if (from == null && to == null) return sessions;
+  return sessions.filter((session) => {
+    const activity = getSessionActivityTime(session);
+    if (from != null && activity < from) return false;
+    if (to != null && activity > to) return false;
     return true;
   });
 }
@@ -229,14 +247,13 @@ export function handleGetDashboard(
     c.req.query("to"),
   );
 
-  // All aggregations operate on the same window as /api/sessions would see
-  const windowed = filterSessionsByWindow(scanResult.sessions, from, to);
+  const windowed = filterSessionsByActivityWindow(scanResult.sessions, from, to);
 
   const agentInfo = getAgentInfoMap(
     Object.fromEntries(
       Object.entries(scanResult.byAgent).map(([name, sessions]) => [
         name,
-        filterSessionsByWindow(sessions, from, to).length,
+        filterSessionsByActivityWindow(sessions, from, to).length,
       ]),
     ),
   );
@@ -250,14 +267,14 @@ export function handleGetDashboard(
     totalMessages += session.stats.message_count;
     totalTokens += getTotalTokens(session.stats);
     totalCost += session.stats.total_cost ?? 0;
-    const activity = session.time_updated ?? session.time_created;
+    const activity = getSessionActivityTime(session);
     if (activity > latestActivity) latestActivity = activity;
   }
 
   const perAgent: DashboardAgentStat[] = Object.entries(scanResult.byAgent)
     .map(([name, sessions]) => {
       const info = agentInfoMap.get(name);
-      const agentWindowed = filterSessionsByWindow(sessions, from, to);
+      const agentWindowed = filterSessionsByActivityWindow(sessions, from, to);
       let messages = 0;
       let tokens = 0;
       for (const s of agentWindowed) {
@@ -286,7 +303,7 @@ export function handleGetDashboard(
   }
 
   for (const session of windowed) {
-    const key = toLocalDateKey(session.time_created);
+    const key = toLocalDateKey(getSessionActivityTime(session));
     const bucket = dailyMap.get(key);
     if (bucket) {
       bucket.sessions += 1;
@@ -297,7 +314,7 @@ export function handleGetDashboard(
   const dailyActivity = [...dailyMap.values()];
 
   const recentSessions: DashboardRecentSession[] = [...windowed]
-    .sort((a, b) => (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created))
+    .sort((a, b) => getSessionActivityTime(b) - getSessionActivityTime(a))
     .slice(0, 10)
     .map((session) => {
       const agentKey = session.slug.split("/")[0] ?? "unknown";
