@@ -1,12 +1,19 @@
 declare const __APP_VERSION__: string;
 
-import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ModelConfig } from "./config";
 import type {
   AgentInfo,
   AppConfig,
   DashboardData,
+  SearchResult,
   SessionHead,
   SessionData,
   SessionsUpdatedEvent,
@@ -15,6 +22,7 @@ import {
   fetchAgents,
   fetchConfig,
   fetchDashboard,
+  fetchSearchResults,
   fetchSessions,
   fetchSessionData,
   subscribeSessionUpdates,
@@ -121,6 +129,17 @@ function formatRelativeTime(timestamp?: number) {
   return `${days}d ago`;
 }
 
+function toSafeSnippetHtml(snippet: string): string {
+  return snippet
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;")
+    .replaceAll("&lt;mark&gt;", "<mark>")
+    .replaceAll("&lt;/mark&gt;", "</mark>");
+}
+
 interface BreadcrumbItem {
   label: string;
   to?: string;
@@ -138,6 +157,10 @@ export default function App() {
   const [liveNotice, setLiveNotice] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
+  const [draftSearchQuery, setDraftSearchQuery] = useState("");
+  const [activeSearchQuery, setActiveSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   // Load config + agents + sessions + dashboard (all share the same app-level window)
   useEffect(() => {
@@ -169,11 +192,25 @@ export default function App() {
 
   const location = useLocation();
   const validAgentKeys = useMemo(() => new Set(agents.map((a) => a.name.toLowerCase())), [agents]);
+  const agentNameMap = useMemo(
+    () => new Map(agents.map((agent) => [agent.name.toLowerCase(), agent.displayName])),
+    [agents],
+  );
+  const isSearchMode = activeSearchQuery.length > 0;
 
   const viewState = useMemo(
     () => parseViewState(location.pathname, validAgentKeys),
     [location.pathname, validAgentKeys],
   );
+  const detailHighlightQuery =
+    isSearchMode
+      ? activeSearchQuery
+      : typeof location.state === "object" &&
+          location.state !== null &&
+          "searchQuery" in location.state &&
+          typeof location.state.searchQuery === "string"
+        ? location.state.searchQuery
+        : "";
 
   const sessionsByAgent = useMemo(() => {
     const grouped: Record<string, SessionHead[]> = {};
@@ -245,17 +282,24 @@ export default function App() {
 
   const syncLiveUpdate = useEffectEvent(async (event: SessionsUpdatedEvent) => {
     try {
-      const [agentList, sessionList, dashboardData] = await Promise.all([
+      const [agentList, sessionList, dashboardData, searchData] = await Promise.all([
         fetchAgents(),
         fetchSessions(),
         fetchDashboard(appConfig?.window.days).catch((err) => {
           console.error("Failed to refresh dashboard:", err);
           return null;
         }),
+        activeSearchQuery
+          ? fetchSearchResults(activeSearchQuery).catch((err) => {
+              console.error("Failed to refresh search results:", err);
+              return { results: [] };
+            })
+          : Promise.resolve<{ results: SearchResult[] } | null>(null),
       ]);
       setAgents(agentList);
       setSessions(sessionList.sessions);
       if (dashboardData) setDashboard(dashboardData);
+      if (searchData) setSearchResults(searchData.results);
 
       if (viewState.mode === "session") {
         try {
@@ -280,6 +324,36 @@ export default function App() {
       console.error("Failed to sync live session update:", err);
     }
   });
+
+  useEffect(() => {
+    if (!activeSearchQuery) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSearchLoading(true);
+
+    void fetchSearchResults(activeSearchQuery)
+      .then((data) => {
+        if (cancelled) return;
+        setSearchResults(data.results);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("Failed to load search results:", err);
+        setSearchResults([]);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setSearchLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSearchQuery]);
 
   // Load session detail
   useEffect(() => {
@@ -360,10 +434,20 @@ export default function App() {
   let headerTitle = "CodeSesh";
   let headerSubtitle = "Select an agent to browse sessions";
   if (viewState.mode === "root") {
-    headerTitle = "Dashboard";
-    headerSubtitle = dashboard
-      ? `${dashboard.totals.sessions.toLocaleString("en-US")} total sessions across ${dashboard.perAgent.length} agents`
-      : "Aggregated view across all agents";
+    headerTitle = isSearchMode ? "Search" : "Dashboard";
+    headerSubtitle = isSearchMode
+      ? searchLoading
+        ? `Searching for "${activeSearchQuery}"`
+        : `${searchResults.length} matches for "${activeSearchQuery}"`
+      : dashboard
+        ? `${dashboard.totals.sessions.toLocaleString("en-US")} total sessions across ${dashboard.perAgent.length} agents`
+        : "Aggregated view across all agents";
+  }
+  if (isSearchMode && viewState.mode !== "root") {
+    headerTitle = "Search";
+    headerSubtitle = searchLoading
+      ? `Searching for "${activeSearchQuery}"`
+      : `${searchResults.length} matches for "${activeSearchQuery}"`;
   }
   if (viewState.mode === "agent" && activeAgentKey) {
     headerTitle = activeAgent?.displayName ?? activeAgentKey;
@@ -389,6 +473,10 @@ export default function App() {
   }
 
   const breadcrumbItems = useMemo<BreadcrumbItem[]>(() => {
+    if (isSearchMode) {
+      return [{ label: "Search" }];
+    }
+
     const dashboardCrumb: BreadcrumbItem = {
       label: "Dashboard",
       to: viewState.mode === "root" ? undefined : "/",
@@ -425,12 +513,22 @@ export default function App() {
     }
 
     return [dashboardCrumb, { label: "Invalid Route" }];
-  }, [activeAgent, activeAgentKey, session?.title, viewState]);
+  }, [activeAgent, activeAgentKey, isSearchMode, session?.title, viewState]);
 
   // Content
   let content: ReactNode;
   if (loading) {
     content = <SessionDetailSkeleton />;
+  } else if (isSearchMode) {
+    content = (
+      <SearchResultsPanel
+        query={activeSearchQuery}
+        loading={searchLoading}
+        results={searchResults}
+        agentNameMap={agentNameMap}
+        onOpenResult={() => setActiveSearchQuery("")}
+      />
+    );
   } else if (error) {
     content = (
       <div className="mx-auto max-w-4xl rounded-sm border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-6 text-sm text-[var(--console-error)]">
@@ -467,7 +565,7 @@ export default function App() {
         />
       );
     } else {
-      content = <SessionDetail session={session} />;
+      content = <SessionDetail session={session} highlightQuery={detailHighlightQuery} />;
     }
   } else if (viewState.mode === "missingAgent") {
     content = (
@@ -482,17 +580,43 @@ export default function App() {
     content = <div className="text-sm text-[var(--console-muted)]">Invalid route.</div>;
   }
 
+  function runSearch() {
+    setActiveSearchQuery(draftSearchQuery.trim());
+  }
+
   return (
     <div className="console-ui h-screen overflow-hidden bg-[var(--console-bg)] text-[var(--console-text)]">
       <header className="h-14 shrink-0 border-b border-[var(--console-border)] bg-white/85 backdrop-blur-sm">
-        <div className="flex h-full items-center justify-between px-4">
+        <div className="grid h-full grid-cols-[auto_1fr_auto] items-center gap-4 px-4">
           <Link to="/" className="flex items-center gap-2 text-[var(--console-text)]">
             <img src="/logo.svg?v=3" alt="CodeSesh" className="h-6 w-6 rounded-sm" />
             <span className="console-mono text-sm font-semibold uppercase tracking-[0.05em]">
               CodeSesh
             </span>
           </Link>
-          <div className="flex items-center gap-3">
+          <form
+            className="mx-auto flex w-full max-w-[560px] items-center justify-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              runSearch();
+            }}
+          >
+            <label className="flex min-w-0 flex-1 items-center rounded-sm border border-[var(--console-border)] bg-white px-2 py-1">
+              <input
+                value={draftSearchQuery}
+                onChange={(event) => setDraftSearchQuery(event.target.value)}
+                placeholder="Search sessions"
+                className="console-mono w-full min-w-0 bg-transparent text-xs text-[var(--console-text)] outline-none placeholder:text-[var(--console-muted)]"
+              />
+            </label>
+            <button
+              type="submit"
+              className="console-mono rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-3 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-white"
+            >
+              Search
+            </button>
+          </form>
+          <div className="flex items-center justify-end gap-3">
             {formatWindowLabel(appConfig) ? (
               <span
                 className="console-mono rounded-sm border border-[var(--console-border)] bg-white px-2 py-1 text-xs text-[var(--console-text)]"
@@ -685,6 +809,88 @@ export default function App() {
           </section>
         </main>
       </div>
+    </div>
+  );
+}
+
+function SearchResultsPanel({
+  query,
+  loading,
+  results,
+  agentNameMap,
+  onOpenResult,
+}: {
+  query: string;
+  loading: boolean;
+  results: SearchResult[];
+  agentNameMap: Map<string, string>;
+  onOpenResult: () => void;
+}) {
+  if (loading) {
+    return (
+      <div className="grid gap-3">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div
+            key={index}
+            className="animate-pulse rounded-sm border border-[var(--console-border)] bg-white/80 p-4"
+          >
+            <div className="h-3 w-32 rounded bg-[var(--console-surface-muted)]" />
+            <div className="mt-3 h-4 w-2/3 rounded bg-[var(--console-surface-muted)]" />
+            <div className="mt-2 h-3 w-full rounded bg-[var(--console-surface-muted)]" />
+            <div className="mt-1 h-3 w-5/6 rounded bg-[var(--console-surface-muted)]" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (results.length === 0) {
+    return (
+      <div className="rounded-sm border border-[var(--console-border)] bg-white/80 p-6">
+        <h2 className="console-mono text-sm font-semibold text-[var(--console-text)]">
+          No matches
+        </h2>
+        <p className="console-mono mt-2 text-xs text-[var(--console-muted)]">
+          Query: {query}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3">
+      {results.map((result) => {
+        const agentKey = result.agentName.toLowerCase();
+        const agentLabel = agentNameMap.get(agentKey) ?? result.agentName;
+
+        return (
+          <Link
+            key={`${result.agentName}/${result.session.id}`}
+            to={`/${agentKey}/${result.session.id}`}
+            state={{ searchQuery: query }}
+            onClick={onOpenResult}
+            className="rounded-sm border border-[var(--console-border)] bg-white/85 p-4 transition-colors hover:border-[var(--console-border-strong)] hover:bg-white"
+          >
+            <div className="flex items-center gap-2">
+              <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--console-muted)]">
+                {agentLabel}
+              </span>
+              <span className="console-mono text-[11px] text-[var(--console-muted)]">
+                {result.session.directory}
+              </span>
+            </div>
+            <h2 className="console-mono mt-3 text-sm font-semibold text-[var(--console-text)]">
+              {result.session.title}
+            </h2>
+            <p
+              className="console-mono mt-2 text-xs leading-6 text-[var(--console-muted)] [&_mark]:bg-[var(--console-accent)] [&_mark]:px-0.5 [&_mark]:text-white"
+              dangerouslySetInnerHTML={{
+                __html: toSafeSnippetHtml(result.snippet || result.session.title),
+              }}
+            />
+          </Link>
+        );
+      })}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type { ScanResult, SessionData, SessionHead } from "@codesesh/core";
-import { getAgentInfoMap } from "@codesesh/core";
+import { getAgentInfoMap, searchSessions, syncSessionSearchIndex } from "@codesesh/core";
 
 export interface ScanResultSource {
   getSnapshot(): ScanResult;
@@ -110,6 +110,40 @@ export function handleGetSessions(
   }
 
   return c.json({ sessions });
+}
+
+export function handleSearchSessions(
+  c: Context,
+  scanSource: ScanResultSource,
+  defaults: SessionListDefaults = {},
+) {
+  const query = c.req.query("q")?.trim() ?? "";
+  if (!query) {
+    return c.json({ results: [] });
+  }
+
+  const scanResult = scanSource.getSnapshot();
+  const agent = c.req.query("agent");
+  const cwd = c.req.query("cwd");
+  const from = parseDateParam(c.req.query("from"), defaults.from);
+  const to = parseDateParam(c.req.query("to"), defaults.to);
+
+  for (const indexedAgent of scanResult.agents) {
+    const sessions = scanResult.byAgent[indexedAgent.name] ?? [];
+    syncSessionSearchIndex(indexedAgent.name, sessions, (sessionId) =>
+      indexedAgent.getSessionData(sessionId),
+    );
+  }
+
+  const results = searchSessions(query, {
+    agent,
+    cwd,
+    from,
+    to,
+    limit: 50,
+  });
+
+  return c.json({ results });
 }
 
 export async function handleGetSessionData(c: Context, scanSource: ScanResultSource) {

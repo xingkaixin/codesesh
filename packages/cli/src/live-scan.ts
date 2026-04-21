@@ -7,6 +7,7 @@ import {
   getCursorDataPath,
   resolveProviderRoots,
   scanSessions,
+  syncSessionSearchIndex,
   saveCachedSessions,
   type BaseAgent,
   type ScanResult,
@@ -369,6 +370,7 @@ export class LiveScanStore {
 
     nextSessions = this.applyFilters(nextSessions);
     saveCachedSessions(agentName, nextSessions, buildAgentCacheMeta(agent));
+    syncSessionSearchIndex(agentName, nextSessions, (sessionId) => agent.getSessionData(sessionId));
 
     const event = buildUpdateEvent(agentName, previousSessions, nextSessions);
     this.byAgent[agentName] = sortSessions(nextSessions);

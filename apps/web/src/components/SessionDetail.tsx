@@ -61,6 +61,7 @@ import type { DiffBlock, DiffLineItem, ToolOutputContent } from "./tool-output/t
 
 interface SessionDetailProps {
   session: SessionData;
+  highlightQuery?: string;
 }
 
 type ToolStatus = "running" | "completed" | "error";
@@ -117,8 +118,41 @@ const TOOL_STATUS_META: Record<
 // Small helpers
 // ---------------------------------------------------------------------------
 
-function MessageMarkdown({ text }: { text: string }) {
-  return <MarkdownContent text={text} />;
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildHighlightPattern(query?: string): RegExp | null {
+  const normalized = query?.trim();
+  if (!normalized) return null;
+  const terms = Array.from(
+    new Set(
+      (normalized.match(/"[^"]+"|\S+/g) ?? [])
+        .map((term) => term.replace(/^"|"$/g, "").trim())
+        .filter(Boolean)
+        .filter((term) => !/^OR$/i.test(term)),
+    ),
+  );
+  if (terms.length === 0) return null;
+  return new RegExp(`(${terms.map(escapeRegExp).join("|")})`, "gi");
+}
+
+function renderHighlightedText(text: string, query?: string) {
+  const pattern = buildHighlightPattern(query);
+  if (!pattern) return text;
+
+  const parts = text.split(pattern);
+  return parts.map((part, index) =>
+    part.match(pattern) ? (
+      <mark key={`${part}-${index}`}>{part}</mark>
+    ) : (
+      <span key={`${part}-${index}`}>{part}</span>
+    ),
+  );
+}
+
+function MessageMarkdown({ text, highlightQuery }: { text: string; highlightQuery?: string }) {
+  return <MarkdownContent text={text} highlightQuery={highlightQuery} />;
 }
 
 function toDisplayText(value: unknown) {
@@ -1151,7 +1185,7 @@ function formatMessageTime(rawTime: number | string) {
 // SessionDetail (main export)
 // ---------------------------------------------------------------------------
 
-export function SessionDetail({ session }: SessionDetailProps) {
+export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
   const sessionSlug = session.slug || "";
   const sessionAgentKey =
     sessionSlug.split("/")[0] || ModelConfig.getDefaultAgentKey() || "claudecode";
@@ -1213,6 +1247,7 @@ export function SessionDetail({ session }: SessionDetailProps) {
                 blocks={blocks}
                 formatTokens={formatTokens}
                 sessionAgentKey={sessionAgentKey}
+                highlightQuery={highlightQuery}
               />
             ))
           ) : (
@@ -1366,11 +1401,13 @@ function MessageItem({
   blocks,
   formatTokens: fmtTokens,
   sessionAgentKey,
+  highlightQuery,
 }: {
   msg: Message;
   blocks?: MessageBlock[];
   formatTokens: (n: number) => string;
   sessionAgentKey: string;
+  highlightQuery?: string;
 }) {
   const isUser = msg.role === "user";
   const isAbortMessage = isCodexTurnAbortedMessage(msg, sessionAgentKey);
@@ -1431,14 +1468,19 @@ function MessageItem({
           ) : (
             renderedBlocks.map((block, index) => {
               if (block.type === "reasoning") {
-                return <ReasoningSection key={index} parts={block.parts} />;
+                return <ReasoningSection key={index} parts={block.parts} highlightQuery={highlightQuery} />;
               }
               if (block.type === "plan") {
-                return <PlansSection key={index} parts={block.parts} />;
+                return <PlansSection key={index} parts={block.parts} highlightQuery={highlightQuery} />;
               }
               if (block.type === "tool") {
                 return (
-                  <ToolsSection key={index} parts={block.parts} sessionAgentKey={sessionAgentKey} />
+                  <ToolsSection
+                    key={index}
+                    parts={block.parts}
+                    sessionAgentKey={sessionAgentKey}
+                    highlightQuery={highlightQuery}
+                  />
                 );
               }
               return (
@@ -1448,7 +1490,11 @@ function MessageItem({
                 >
                   <div className="console-markdown text-sm leading-relaxed text-[var(--console-text)]">
                     {block.parts.map((part, partIndex) => (
-                      <MessageMarkdown key={partIndex} text={extractMessageText(part.text)} />
+                      <MessageMarkdown
+                        key={partIndex}
+                        text={extractMessageText(part.text)}
+                        highlightQuery={highlightQuery}
+                      />
                     ))}
                   </div>
                 </div>
@@ -1509,7 +1555,7 @@ function AbortToolItem() {
   );
 }
 
-function ReasoningSection({ parts }: { parts: MessagePart[] }) {
+function ReasoningSection({ parts, highlightQuery }: { parts: MessagePart[]; highlightQuery?: string }) {
   const [expanded, setExpanded] = useState(false);
   const fullText = parts
     .map((p) => extractMessageText(p.text))
@@ -1533,7 +1579,7 @@ function ReasoningSection({ parts }: { parts: MessagePart[] }) {
       {expanded && (
         <div className="border-t border-dashed border-[var(--console-thinking-border)] px-4 py-3">
           <div className="console-mono whitespace-pre-wrap text-xs leading-relaxed text-[var(--console-muted)]">
-            {fullText}
+            {renderHighlightedText(fullText, highlightQuery)}
           </div>
         </div>
       )}
@@ -1544,32 +1590,39 @@ function ReasoningSection({ parts }: { parts: MessagePart[] }) {
 function ToolsSection({
   parts,
   sessionAgentKey,
+  highlightQuery,
 }: {
   parts: MessagePart[];
   sessionAgentKey: string;
+  highlightQuery?: string;
 }) {
   return (
     <div className="space-y-2">
       <div className="space-y-2">
         {parts.map((tool, i) => (
-          <ToolItem key={i} tool={tool} sessionAgentKey={sessionAgentKey} />
+          <ToolItem
+            key={i}
+            tool={tool}
+            sessionAgentKey={sessionAgentKey}
+            highlightQuery={highlightQuery}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function PlansSection({ parts }: { parts: MessagePart[] }) {
+function PlansSection({ parts, highlightQuery }: { parts: MessagePart[]; highlightQuery?: string }) {
   return (
     <div className="space-y-2">
       {parts.map((plan, i) => (
-        <PlanItem key={i} part={plan} />
+        <PlanItem key={i} part={plan} highlightQuery={highlightQuery} />
       ))}
     </div>
   );
 }
 
-function PlanItem({ part }: { part: MessagePart }) {
+function PlanItem({ part, highlightQuery }: { part: MessagePart; highlightQuery?: string }) {
   const [expanded, setExpanded] = useState(false);
   const display = buildCodexPlanDisplay(part);
   const statusMeta =
@@ -1632,7 +1685,7 @@ function PlanItem({ part }: { part: MessagePart }) {
           </div>
           <div className="p-4">
             <div className="console-markdown text-sm leading-relaxed text-[var(--console-text)]">
-              <MessageMarkdown text={display.contentMarkdown} />
+              <MessageMarkdown text={display.contentMarkdown} highlightQuery={highlightQuery} />
             </div>
           </div>
         </div>
@@ -1641,7 +1694,15 @@ function PlanItem({ part }: { part: MessagePart }) {
   );
 }
 
-function ToolItem({ tool, sessionAgentKey }: { tool: MessagePart; sessionAgentKey: string }) {
+function ToolItem({
+  tool,
+  sessionAgentKey,
+  highlightQuery,
+}: {
+  tool: MessagePart;
+  sessionAgentKey: string;
+  highlightQuery?: string;
+}) {
   const [expanded, setExpanded] = useState(false);
   const state = normalizeToolState(tool);
   const strategy = getToolDisplayStrategy(sessionAgentKey, tool, state);
@@ -1670,7 +1731,7 @@ function ToolItem({ tool, sessionAgentKey }: { tool: MessagePart; sessionAgentKe
                 </span>
                 {strategy.secondaryText ? (
                   <span className="console-mono mt-0.5 block whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-muted)]">
-                    {strategy.secondaryText}
+                    {renderHighlightedText(strategy.secondaryText, highlightQuery)}
                   </span>
                 ) : null}
               </span>
@@ -1691,7 +1752,7 @@ function ToolItem({ tool, sessionAgentKey }: { tool: MessagePart; sessionAgentKe
                 </span>
                 {strategy.secondaryText ? (
                   <span className="console-mono mt-0.5 block whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-muted)]">
-                    {strategy.secondaryText}
+                    {renderHighlightedText(strategy.secondaryText, highlightQuery)}
                   </span>
                 ) : null}
               </span>
@@ -1724,7 +1785,7 @@ function ToolItem({ tool, sessionAgentKey }: { tool: MessagePart; sessionAgentKe
                         {detail.label}
                       </span>
                       <span className="console-mono whitespace-pre-wrap break-all text-xs leading-relaxed text-[var(--console-text)]">
-                        {detail.value}
+                        {renderHighlightedText(detail.value, highlightQuery)}
                       </span>
                     </div>
                   ))}
@@ -1739,7 +1800,7 @@ function ToolItem({ tool, sessionAgentKey }: { tool: MessagePart; sessionAgentKe
                 Input Preview
               </span>
               <pre className="console-mono mt-1 max-h-[200px] overflow-x-auto whitespace-pre-wrap break-all text-xs leading-relaxed text-[var(--console-muted)]">
-                {state.inputText || "{}"}
+                {renderHighlightedText(state.inputText || "{}", highlightQuery)}
               </pre>
             </div>
           ) : null}

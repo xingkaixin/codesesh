@@ -3,6 +3,7 @@ import {
   handleGetAgents,
   handleGetConfig,
   handleGetDashboard,
+  handleSearchSessions,
   handleGetSessions,
   handleGetSessionData,
   type ScanResultSource,
@@ -74,6 +75,7 @@ export function createApiRoutes(
   api.get("/config", (c) => handleGetConfig(c, listDefaults));
   api.get("/agents", (c) => handleGetAgents(c, scanSource, listDefaults));
   api.get("/sessions", (c) => handleGetSessions(c, scanSource, listDefaults));
+  api.get("/search", (c) => handleSearchSessions(c, scanSource, listDefaults));
   api.get("/sessions/:agent/:id", (c) => handleGetSessionData(c, scanSource));
   api.get("/dashboard", (c) => handleGetDashboard(c, scanSource, listDefaults));
   if (store) {

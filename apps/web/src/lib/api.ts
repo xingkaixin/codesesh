@@ -142,6 +142,12 @@ export interface AppConfig {
   };
 }
 
+export interface SearchResult {
+  agentName: string;
+  session: SessionHead;
+  snippet: string;
+}
+
 export async function fetchConfig(): Promise<AppConfig> {
   const res = await fetch("/api/config");
   if (!res.ok) throw new Error("Failed to fetch config");
@@ -174,6 +180,14 @@ export async function fetchDashboard(days?: number): Promise<DashboardData> {
   const suffix = params.toString();
   const res = await fetch(suffix ? `/api/dashboard?${suffix}` : "/api/dashboard");
   if (!res.ok) throw new Error("Failed to fetch dashboard");
+  return res.json();
+}
+
+export async function fetchSearchResults(query: string): Promise<{ results: SearchResult[] }> {
+  const params = new URLSearchParams();
+  params.set("q", query);
+  const res = await fetch(`/api/search?${params}`);
+  if (!res.ok) throw new Error("Failed to fetch search results");
   return res.json();
 }
 

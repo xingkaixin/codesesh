@@ -6,10 +6,12 @@ import {
   clearCache,
   getCacheInfo,
   loadCachedSessions,
+  searchSessions,
   saveCachedSessions,
+  syncSessionSearchIndex,
   type SessionCacheMeta,
 } from "../cache.js";
-import type { SessionHead } from "../../types/index.js";
+import type { SessionData, SessionHead } from "../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-test-"));
 
@@ -50,6 +52,21 @@ function makeSession(id: string): SessionHead {
       total_output_tokens: 0,
       total_cost: 0,
     },
+  };
+}
+
+function makeSessionData(id: string, text: string): SessionData {
+  const session = makeSession(id);
+  return {
+    ...session,
+    messages: [
+      {
+        id: `${id}-m1`,
+        role: "user",
+        time_created: now,
+        parts: [{ type: "text", text }],
+      },
+    ],
   };
 }
 
@@ -166,5 +183,41 @@ describe("getCacheInfo", () => {
     saveCachedSessions("agent2", [makeSession("c")]);
 
     expect(getCacheInfo()).toEqual({ lastScanTime: now, size: 3 });
+  });
+});
+
+describe("searchSessions", () => {
+  it("indexes session content and returns highlighted matches", () => {
+    const session = makeSession("s1");
+    saveCachedSessions("claudecode", [session]);
+    syncSessionSearchIndex("claudecode", [session], (sessionId) =>
+      makeSessionData(sessionId, "sqlite fts search is now enabled"),
+    );
+
+    const results = searchSessions("sqlite");
+    expect(results).toHaveLength(1);
+    expect(results[0]?.agentName).toBe("claudecode");
+    expect(results[0]?.session.id).toBe("s1");
+    expect(results[0]?.snippet).toContain("<mark>sqlite</mark>");
+  });
+
+  it("supports OR queries and agent filters", () => {
+    const alpha = makeSession("alpha");
+    const beta = makeSession("beta");
+    saveCachedSessions("claudecode", [alpha]);
+    saveCachedSessions("cursor", [beta]);
+    syncSessionSearchIndex("claudecode", [alpha], (sessionId) =>
+      makeSessionData(sessionId, "search alpha term"),
+    );
+    syncSessionSearchIndex("cursor", [beta], (sessionId) =>
+      makeSessionData(sessionId, "search beta term"),
+    );
+
+    const allResults = searchSessions("alpha OR beta");
+    expect(allResults).toHaveLength(2);
+
+    const filteredResults = searchSessions("alpha OR beta", { agent: "cursor" });
+    expect(filteredResults).toHaveLength(1);
+    expect(filteredResults[0]?.agentName).toBe("cursor");
   });
 });
