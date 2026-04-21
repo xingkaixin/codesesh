@@ -193,7 +193,7 @@ importers:
         version: 5.9.3
 
   packages/core:
-    optionalDependencies:
+    dependencies:
       better-sqlite3:
         specifier: ^11.10.0
         version: 11.10.0
