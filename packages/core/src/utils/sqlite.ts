@@ -31,9 +31,9 @@ try {
   const require = createRequire(import.meta.url);
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const mod = require("better-sqlite3");
-  DatabaseConstructor = (typeof mod === "function"
-    ? mod
-    : (mod as { default?: unknown }).default) as SQLiteDatabaseConstructor;
+  DatabaseConstructor = (
+    typeof mod === "function" ? mod : (mod as { default?: unknown }).default
+  ) as SQLiteDatabaseConstructor;
 } catch {
   // better-sqlite3 not installed — adapters that need SQLite will gracefully skip
 }

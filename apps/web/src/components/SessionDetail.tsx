@@ -1468,10 +1468,18 @@ function MessageItem({
           ) : (
             renderedBlocks.map((block, index) => {
               if (block.type === "reasoning") {
-                return <ReasoningSection key={index} parts={block.parts} highlightQuery={highlightQuery} />;
+                return (
+                  <ReasoningSection
+                    key={index}
+                    parts={block.parts}
+                    highlightQuery={highlightQuery}
+                  />
+                );
               }
               if (block.type === "plan") {
-                return <PlansSection key={index} parts={block.parts} highlightQuery={highlightQuery} />;
+                return (
+                  <PlansSection key={index} parts={block.parts} highlightQuery={highlightQuery} />
+                );
               }
               if (block.type === "tool") {
                 return (
@@ -1555,7 +1563,13 @@ function AbortToolItem() {
   );
 }
 
-function ReasoningSection({ parts, highlightQuery }: { parts: MessagePart[]; highlightQuery?: string }) {
+function ReasoningSection({
+  parts,
+  highlightQuery,
+}: {
+  parts: MessagePart[];
+  highlightQuery?: string;
+}) {
   const [expanded, setExpanded] = useState(false);
   const fullText = parts
     .map((p) => extractMessageText(p.text))
@@ -1612,7 +1626,13 @@ function ToolsSection({
   );
 }
 
-function PlansSection({ parts, highlightQuery }: { parts: MessagePart[]; highlightQuery?: string }) {
+function PlansSection({
+  parts,
+  highlightQuery,
+}: {
+  parts: MessagePart[];
+  highlightQuery?: string;
+}) {
   return (
     <div className="space-y-2">
       {parts.map((plan, i) => (

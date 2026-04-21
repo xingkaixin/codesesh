@@ -1,12 +1,6 @@
 declare const __APP_VERSION__: string;
 
-import {
-  useEffect,
-  useEffectEvent,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ModelConfig } from "./config";
 import type {
@@ -202,15 +196,14 @@ export default function App() {
     () => parseViewState(location.pathname, validAgentKeys),
     [location.pathname, validAgentKeys],
   );
-  const detailHighlightQuery =
-    isSearchMode
-      ? activeSearchQuery
-      : typeof location.state === "object" &&
-          location.state !== null &&
-          "searchQuery" in location.state &&
-          typeof location.state.searchQuery === "string"
-        ? location.state.searchQuery
-        : "";
+  const detailHighlightQuery = isSearchMode
+    ? activeSearchQuery
+    : typeof location.state === "object" &&
+        location.state !== null &&
+        "searchQuery" in location.state &&
+        typeof location.state.searchQuery === "string"
+      ? location.state.searchQuery
+      : "";
 
   const sessionsByAgent = useMemo(() => {
     const grouped: Record<string, SessionHead[]> = {};
@@ -850,9 +843,7 @@ function SearchResultsPanel({
         <h2 className="console-mono text-sm font-semibold text-[var(--console-text)]">
           No matches
         </h2>
-        <p className="console-mono mt-2 text-xs text-[var(--console-muted)]">
-          Query: {query}
-        </p>
+        <p className="console-mono mt-2 text-xs text-[var(--console-muted)]">Query: {query}</p>
       </div>
     );
   }
