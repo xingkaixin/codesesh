@@ -60,27 +60,12 @@
 │                          Cache Layer                           │
 │              packages/core/src/discovery/cache.ts               │
 │                                                                │
-│   缓存位置: ~/.cache/codesesh/scan-cache.json               │
-│   缓存格式: { version: 2, entries: { [agent]: CacheEntry } }  │
-│   缓存内容: sessions + meta + timestamp                       │
+│   存储位置: ~/.cache/codesesh/codesesh.db                     │
+│   存储内容: sessions cache + meta + FTS index                 │
 │   TTL: 7 天                                                    │
 └────────────────────────────────────────────────────────────────┘
 
-CacheEntry Structure:
-{
-  "claudecode": {
-    "sessions": [...],      // SessionHead[]
-    "meta": {               // SessionCacheMeta
-      "session-id": {
-        "id": "...",
-        "sourcePath": "...",
-        ...
-      }
-    },
-    "timestamp": 1776241234567,  // 用于变更检测
-    "version": 2
-  }
-}
+详细表结构和数据流见 [sqlite-storage.md](./sqlite-storage.md)。
 ```
 
 ## 性能对比

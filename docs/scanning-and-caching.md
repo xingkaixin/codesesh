@@ -4,6 +4,8 @@
 
 本文档详细说明 CodeSesh 的会话扫描、并行处理和缓存机制的设计理念与实现细节。
 
+SQLite 表结构和搜索索引数据流见 [sqlite-storage.md](./sqlite-storage.md)。
+
 ## 1. 整体架构
 
 ```
@@ -184,21 +186,17 @@ incrementalScan(cachedSessions: SessionHead[], changedIds: string[]): SessionHea
 
 ### 3.3 缓存数据结构
 
-```typescript
-// 缓存版本 2
-interface CacheData {
-  version: 2;
-  entries: Record<string, CacheEntry>; // 按 Agent 分组
-  lastScanTime: number;
-}
+当前缓存后端已经切换为 SQLite，位置是 `~/.cache/codesesh/codesesh.db`。
 
-interface CacheEntry {
-  sessions: SessionHead[];           // 会话列表
-  meta: Record<string, SessionCacheMeta>; // 元数据（sourcePath 等）
-  timestamp: number;                 // 缓存时间戳（用于变更检测）
-  version: number;
-}
-```
+核心表：
+
+- `cache_meta`
+- `agent_cache`
+- `cached_sessions`
+- `session_documents`
+- `session_documents_fts`
+
+结构说明见 [sqlite-storage.md](./sqlite-storage.md)。
 
 ## 4. 数据一致性保证
 
@@ -339,16 +337,16 @@ fs.watch(sessionDir, (eventType, filename) => {
 });
 ```
 
-### 8.3 数据库存储
+### 8.3 SQLite 存储深化
 
 ```typescript
-// 将会话元数据存储在 SQLite 中
-const db = new Database('~/.cache/codesesh/cache.db');
+// 当前已经使用 SQLite 统一持久化缓存和搜索索引
+const db = new Database("~/.cache/codesesh/codesesh.db");
 
-// 优势：
-// - 更快的查询速度
-// - 支持复杂过滤
-// - 增量更新更高效
+// 后续可以继续深化：
+// - 将首次搜索的按需建索引改成后台预热
+// - 将更多过滤条件前移到 SQLite 查询层
+// - 让搜索索引覆盖更多结构化工具输出
 ```
 
 ## 9. 总结
