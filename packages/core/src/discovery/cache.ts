@@ -399,12 +399,12 @@ export function getCacheInfo(): { lastScanTime: number | null; size: number } {
   }
 
   const info = withCacheDb((db) => {
-    const timestampRow = db
-      .prepare("SELECT MAX(timestamp) AS value FROM agent_cache")
-      .get() as ScalarRow | undefined;
-    const sizeRow = db
-      .prepare("SELECT COUNT(*) AS value FROM cached_sessions")
-      .get() as ScalarRow | undefined;
+    const timestampRow = db.prepare("SELECT MAX(timestamp) AS value FROM agent_cache").get() as
+      | ScalarRow
+      | undefined;
+    const sizeRow = db.prepare("SELECT COUNT(*) AS value FROM cached_sessions").get() as
+      | ScalarRow
+      | undefined;
 
     const lastScanTime = Number(timestampRow?.value ?? 0) || null;
     const size = Number(sizeRow?.value ?? 0);
@@ -445,12 +445,12 @@ export function syncSessionSearchIndex(
     const loaded = toUpsert
       .map((session) => {
         try {
-        const data = loadSessionData(session.id);
-        return {
-          session,
-          contentText: buildSessionContent(data),
-          contentHash: sessionContentHash(session),
-        };
+          const data = loadSessionData(session.id);
+          return {
+            session,
+            contentText: buildSessionContent(data),
+            contentHash: sessionContentHash(session),
+          };
         } catch {
           return null;
         }
