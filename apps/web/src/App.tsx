@@ -1,7 +1,7 @@
 declare const __APP_VERSION__: string;
 
-import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ModelConfig } from "./config";
 import type {
   AgentInfo,
@@ -152,7 +152,51 @@ interface BreadcrumbItem {
   to?: string;
 }
 
+interface SidebarSessionEntry {
+  session: SessionHead;
+  groupKey: string;
+}
+
+const SHORTCUT_HINT_STORAGE_KEY = "codesesh.shortcuts-hint-dismissed";
+
+const SHORTCUT_GROUPS = [
+  {
+    title: "Navigation",
+    items: [
+      { keys: "j / k", description: "Move through sessions or search results" },
+      { keys: "Enter", description: "Open the current selection" },
+      { keys: "g / G", description: "Jump to the first or last item" },
+    ],
+  },
+  {
+    title: "Search",
+    items: [
+      { keys: "/", description: "Focus the search box" },
+      { keys: "Esc", description: "Exit search or close the current detail view" },
+    ],
+  },
+  {
+    title: "Groups",
+    items: [
+      { keys: "h / l", description: "Collapse or expand the selected session group" },
+      { keys: "?", description: "Open this shortcuts panel" },
+    ],
+  },
+] as const;
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName.toLowerCase();
+  return (
+    tagName === "input" ||
+    tagName === "textarea" ||
+    tagName === "select" ||
+    target.isContentEditable
+  );
+}
+
 export default function App() {
+  const navigate = useNavigate();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [sessions, setSessions] = useState<SessionHead[]>([]);
   const [bookmarks, setBookmarks] = useState<BookmarkedSessionSnapshot[]>([]);
@@ -169,6 +213,14 @@ export default function App() {
   const [activeSearchQuery, setActiveSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [selectedSidebarSessionId, setSelectedSidebarSessionId] = useState<string | null>(null);
+  const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const [shortcutHintDismissed, setShortcutHintDismissed] = useState(true);
+
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const sidebarItemRefs = useRef(new Map<string, HTMLAnchorElement>());
+  const searchResultRefs = useRef(new Map<string, HTMLAnchorElement>());
 
   // Load config + agents + sessions + dashboard (all share the same app-level window)
   useEffect(() => {
@@ -389,6 +441,14 @@ export default function App() {
     });
   }
 
+  const visibleSidebarSessions = useMemo<SidebarSessionEntry[]>(() => {
+    return sidebarGroups.flatMap((group) =>
+      expandedGroups.has(group.key)
+        ? group.sessions.map((session) => ({ session, groupKey: group.key }))
+        : [],
+    );
+  }, [expandedGroups, sidebarGroups]);
+
   // Stable key for session fetch
   const sessionFetchKey =
     viewState.mode === "session"
@@ -516,6 +576,72 @@ export default function App() {
     };
   }, [liveNotice]);
 
+  useEffect(() => {
+    try {
+      setShortcutHintDismissed(window.localStorage.getItem(SHORTCUT_HINT_STORAGE_KEY) === "1");
+    } catch {
+      setShortcutHintDismissed(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isSearchMode) {
+      setSelectedSearchIndex((current) => {
+        if (searchResults.length === 0) return 0;
+        return Math.min(current, searchResults.length - 1);
+      });
+      return;
+    }
+
+    if (viewState.mode === "session") {
+      setSelectedSidebarSessionId(viewState.activeSessionSlug);
+      return;
+    }
+
+    if (viewState.mode === "agent") {
+      setSelectedSidebarSessionId(
+        (current) => current ?? visibleSidebarSessions[0]?.session.id ?? null,
+      );
+      return;
+    }
+
+    setSelectedSidebarSessionId(null);
+  }, [
+    isSearchMode,
+    searchResults.length,
+    viewState.mode,
+    viewState.activeSessionSlug,
+    visibleSidebarSessions,
+  ]);
+
+  useEffect(() => {
+    if (viewState.mode !== "session") return;
+    const containingGroup = sidebarGroups.find((group) =>
+      group.sessions.some((session) => session.id === viewState.activeSessionSlug),
+    );
+    if (!containingGroup) return;
+    setExpandedGroups((prev) => {
+      if (prev.has(containingGroup.key)) return prev;
+      const next = new Set(prev);
+      next.add(containingGroup.key);
+      return next;
+    });
+  }, [sidebarGroups, viewState.activeSessionSlug, viewState.mode]);
+
+  useEffect(() => {
+    if (!selectedSidebarSessionId) return;
+    const node = sidebarItemRefs.current.get(selectedSidebarSessionId);
+    node?.scrollIntoView({ block: "nearest" });
+  }, [selectedSidebarSessionId]);
+
+  useEffect(() => {
+    if (!isSearchMode) return;
+    const selectedResult = searchResults[selectedSearchIndex];
+    if (!selectedResult) return;
+    const key = `${selectedResult.agentName}/${selectedResult.session.id}`;
+    searchResultRefs.current.get(key)?.scrollIntoView({ block: "nearest" });
+  }, [isSearchMode, searchResults, selectedSearchIndex]);
+
   // Build landing data
   const landingSessions = useMemo<LandingSession[]>(() => {
     return sessions.map((s) => {
@@ -642,6 +768,11 @@ export default function App() {
         results={searchResults}
         agentNameMap={agentNameMap}
         onOpenResult={() => setActiveSearchQuery("")}
+        selectedIndex={selectedSearchIndex}
+        registerResultRef={(key, node) => {
+          if (node) searchResultRefs.current.set(key, node);
+          else searchResultRefs.current.delete(key);
+        }}
       />
     );
   } else if (error) {
@@ -722,6 +853,216 @@ export default function App() {
     setActiveSearchQuery(draftSearchQuery.trim());
   }
 
+  function dismissShortcutHint() {
+    setShortcutHintDismissed(true);
+    try {
+      window.localStorage.setItem(SHORTCUT_HINT_STORAGE_KEY, "1");
+    } catch {
+      // Ignore storage failures and keep the UI usable.
+    }
+  }
+
+  const handleGlobalKeydown = useEffectEvent((event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.isComposing) return;
+
+    const target = event.target;
+    const inEditable = isEditableTarget(target);
+    const key = event.key;
+
+    if (shortcutHelpOpen) {
+      if (key === "Escape") {
+        event.preventDefault();
+        setShortcutHelpOpen(false);
+      }
+      return;
+    }
+
+    if (inEditable) {
+      if (key === "Escape") {
+        event.preventDefault();
+        if (target instanceof HTMLElement) target.blur();
+      }
+      return;
+    }
+
+    if (key === "?") {
+      event.preventDefault();
+      setShortcutHelpOpen(true);
+      dismissShortcutHint();
+      return;
+    }
+
+    if (key === "/") {
+      event.preventDefault();
+      dismissShortcutHint();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+      return;
+    }
+
+    if (key === "Escape") {
+      event.preventDefault();
+      if (activeSearchQuery) {
+        setActiveSearchQuery("");
+        setDraftSearchQuery("");
+        return;
+      }
+      if (viewState.mode === "session" && viewState.activeAgentKey) {
+        navigate(`/${viewState.activeAgentKey}`);
+      }
+      return;
+    }
+
+    if (isSearchMode) {
+      if (searchResults.length === 0) return;
+
+      if (key === "j") {
+        event.preventDefault();
+        dismissShortcutHint();
+        setSelectedSearchIndex((current) => Math.min(current + 1, searchResults.length - 1));
+        return;
+      }
+      if (key === "k") {
+        event.preventDefault();
+        dismissShortcutHint();
+        setSelectedSearchIndex((current) => Math.max(current - 1, 0));
+        return;
+      }
+      if (key === "g") {
+        event.preventDefault();
+        dismissShortcutHint();
+        setSelectedSearchIndex(0);
+        return;
+      }
+      if (key === "G") {
+        event.preventDefault();
+        dismissShortcutHint();
+        setSelectedSearchIndex(searchResults.length - 1);
+        return;
+      }
+      if (key === "Enter") {
+        const result = searchResults[selectedSearchIndex];
+        if (!result) return;
+        event.preventDefault();
+        dismissShortcutHint();
+        setActiveSearchQuery("");
+        navigate(`/${result.agentName.toLowerCase()}/${result.session.id}`, {
+          state: { searchQuery: activeSearchQuery },
+        });
+      }
+      return;
+    }
+
+    if (!activeAgentKey || sidebarGroups.length === 0) return;
+
+    const selectGroupBoundary = (direction: "start" | "end") => {
+      const group = direction === "start" ? sidebarGroups[0] : sidebarGroups.at(-1);
+      if (!group) return;
+      setExpandedGroups((prev) => {
+        const next = new Set(prev);
+        next.add(group.key);
+        return next;
+      });
+      const session = direction === "start" ? group.sessions[0] : group.sessions.at(-1);
+      if (session) setSelectedSidebarSessionId(session.id);
+    };
+
+    const moveSidebarSelection = (offset: number) => {
+      dismissShortcutHint();
+      if (visibleSidebarSessions.length === 0) {
+        selectGroupBoundary(offset >= 0 ? "start" : "end");
+        return;
+      }
+      const currentIndex = visibleSidebarSessions.findIndex(
+        (entry) => entry.session.id === selectedSidebarSessionId,
+      );
+      const baseIndex =
+        currentIndex >= 0 ? currentIndex : offset >= 0 ? -1 : visibleSidebarSessions.length;
+      const nextIndex = Math.max(
+        0,
+        Math.min(baseIndex + offset, visibleSidebarSessions.length - 1),
+      );
+      setSelectedSidebarSessionId(visibleSidebarSessions[nextIndex]?.session.id ?? null);
+    };
+
+    if (key === "j") {
+      event.preventDefault();
+      moveSidebarSelection(1);
+      return;
+    }
+    if (key === "k") {
+      event.preventDefault();
+      moveSidebarSelection(-1);
+      return;
+    }
+    if (key === "g") {
+      event.preventDefault();
+      dismissShortcutHint();
+      selectGroupBoundary("start");
+      return;
+    }
+    if (key === "G") {
+      event.preventDefault();
+      dismissShortcutHint();
+      selectGroupBoundary("end");
+      return;
+    }
+    if (key === "Enter") {
+      const selected = visibleSidebarSessions.find(
+        (entry) => entry.session.id === selectedSidebarSessionId,
+      );
+      if (!selected) return;
+      event.preventDefault();
+      dismissShortcutHint();
+      navigate(`/${activeAgentKey}/${selected.session.id}`);
+      return;
+    }
+    if (key === "l") {
+      const selected =
+        visibleSidebarSessions.find((entry) => entry.session.id === selectedSidebarSessionId) ??
+        (sidebarGroups[0]
+          ? { session: sidebarGroups[0].sessions[0]!, groupKey: sidebarGroups[0].key }
+          : null);
+      if (!selected) return;
+      event.preventDefault();
+      dismissShortcutHint();
+      setExpandedGroups((prev) => {
+        const next = new Set(prev);
+        next.add(selected.groupKey);
+        return next;
+      });
+      setSelectedSidebarSessionId(selected.session.id);
+      return;
+    }
+    if (key === "h") {
+      const selected = visibleSidebarSessions.find(
+        (entry) => entry.session.id === selectedSidebarSessionId,
+      );
+      if (!selected) return;
+      event.preventDefault();
+      dismissShortcutHint();
+      setExpandedGroups((prev) => {
+        const next = new Set(prev);
+        next.delete(selected.groupKey);
+        return next;
+      });
+      const currentGroupIndex = sidebarGroups.findIndex((group) => group.key === selected.groupKey);
+      const fallbackGroup =
+        sidebarGroups[currentGroupIndex - 1] ?? sidebarGroups[currentGroupIndex + 1] ?? null;
+      const fallbackSession = fallbackGroup
+        ? (visibleSidebarSessions.find((entry) => entry.groupKey === fallbackGroup.key)?.session ??
+          fallbackGroup.sessions[0])
+        : null;
+      setSelectedSidebarSessionId(fallbackSession?.id ?? null);
+    }
+  });
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleGlobalKeydown);
+    return () => window.removeEventListener("keydown", handleGlobalKeydown);
+  }, []);
+
   return (
     <div className="console-ui h-screen overflow-hidden bg-[var(--console-bg)] text-[var(--console-text)]">
       <header className="h-14 shrink-0 border-b border-[var(--console-border)] bg-white/85 backdrop-blur-sm">
@@ -741,9 +1082,10 @@ export default function App() {
           >
             <label className="flex min-w-0 flex-1 items-center rounded-sm border border-[var(--console-border)] bg-white px-2 py-1">
               <input
+                ref={searchInputRef}
                 value={draftSearchQuery}
                 onChange={(event) => setDraftSearchQuery(event.target.value)}
-                placeholder="Search sessions"
+                placeholder="Search sessions  /"
                 className="console-mono w-full min-w-0 bg-transparent text-xs text-[var(--console-text)] outline-none placeholder:text-[var(--console-muted)]"
               />
             </label>
@@ -755,6 +1097,17 @@ export default function App() {
             </button>
           </form>
           <div className="flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setShortcutHelpOpen(true);
+                dismissShortcutHint();
+              }}
+              className="console-mono rounded-sm border border-[var(--console-border)] bg-white px-2 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-[var(--console-surface-muted)]"
+              title="Show keyboard shortcuts"
+            >
+              ? Shortcuts
+            </button>
             {formatWindowLabel(appConfig) ? (
               <span
                 className="console-mono rounded-sm border border-[var(--console-border)] bg-white px-2 py-1 text-xs text-[var(--console-text)]"
@@ -889,6 +1242,11 @@ export default function App() {
             <section>
               <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
                 SESSIONS
+                {activeAgentKey ? (
+                  <span className="ml-2 text-[10px] font-normal text-[var(--console-muted)]">
+                    Navigate j k · Open Enter
+                  </span>
+                ) : null}
               </h3>
               {!activeAgentKey ? (
                 <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
@@ -929,10 +1287,16 @@ export default function App() {
                                     className={`relative flex items-start gap-2 rounded-sm border px-2 py-1.5 text-xs transition-colors ${
                                       isActive
                                         ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)] before:absolute before:bottom-0 before:left-0 before:top-0 before:w-0.5 before:bg-[var(--console-accent)]"
-                                        : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+                                        : selectedSidebarSessionId === item.id
+                                          ? "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-text)]"
+                                          : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
                                     }`}
                                   >
                                     <Link
+                                      ref={(node) => {
+                                        if (node) sidebarItemRefs.current.set(item.id, node);
+                                        else sidebarItemRefs.current.delete(item.id);
+                                      }}
                                       to={`/${activeAgentKey}/${item.id}`}
                                       title={item.title}
                                       className="console-mono line-clamp-1 min-w-0 flex-1"
@@ -997,6 +1361,29 @@ export default function App() {
               <p className="console-mono mt-1 text-xs text-[var(--console-muted)]">
                 {headerSubtitle}
               </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {!shortcutHintDismissed ? (
+                  <div className="console-mono inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
+                    <span>Keyboard navigation available</span>
+                    <span className="rounded-sm border border-[var(--console-border)] bg-white px-1">
+                      ?
+                    </span>
+                    <button
+                      type="button"
+                      onClick={dismissShortcutHint}
+                      className="text-[var(--console-muted)] transition-colors hover:text-[var(--console-text)]"
+                      aria-label="Dismiss keyboard shortcuts hint"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : null}
+                {!isSearchMode && viewState.mode === "session" ? (
+                  <span className="console-mono inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
+                    Esc back
+                  </span>
+                ) : null}
+              </div>
               {liveNotice ? (
                 <p className="console-mono mt-2 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
                   {liveNotice}
@@ -1010,6 +1397,63 @@ export default function App() {
           </section>
         </main>
       </div>
+      {shortcutHelpOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4"
+          onClick={() => setShortcutHelpOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Keyboard shortcuts"
+            className="w-full max-w-2xl rounded-sm border border-[var(--console-border-strong)] bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="console-mono text-[11px] uppercase tracking-[0.16em] text-[var(--console-muted)]">
+                  Keyboard Shortcuts
+                </p>
+                <h2 className="console-mono mt-2 text-xl font-semibold text-[var(--console-text)]">
+                  Navigate without leaving the keyboard
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShortcutHelpOpen(false)}
+                className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-white"
+              >
+                Esc
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-3">
+              {SHORTCUT_GROUPS.map((group) => (
+                <div
+                  key={group.title}
+                  className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-4"
+                >
+                  <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
+                    {group.title}
+                  </h3>
+                  <div className="mt-3 space-y-3">
+                    {group.items.map((item) => (
+                      <div key={item.keys}>
+                        <p className="console-mono text-xs text-[var(--console-text)]">
+                          {item.keys}
+                        </p>
+                        <p className="mt-1 text-sm leading-6 text-[var(--console-muted)]">
+                          {item.description}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1020,12 +1464,16 @@ function SearchResultsPanel({
   results,
   agentNameMap,
   onOpenResult,
+  selectedIndex,
+  registerResultRef,
 }: {
   query: string;
   loading: boolean;
   results: SearchResult[];
   agentNameMap: Map<string, string>;
   onOpenResult: () => void;
+  selectedIndex: number;
+  registerResultRef: (key: string, node: HTMLAnchorElement | null) => void;
 }) {
   if (loading) {
     return (
@@ -1058,17 +1506,26 @@ function SearchResultsPanel({
 
   return (
     <div className="grid gap-3">
-      {results.map((result) => {
+      <div className="console-mono text-[11px] text-[var(--console-muted)]">
+        Navigate j k · Open Enter · Exit Esc
+      </div>
+      {results.map((result, index) => {
         const agentKey = result.agentName.toLowerCase();
         const agentLabel = agentNameMap.get(agentKey) ?? result.agentName;
+        const resultKey = `${result.agentName}/${result.session.id}`;
 
         return (
           <Link
-            key={`${result.agentName}/${result.session.id}`}
+            key={resultKey}
+            ref={(node) => registerResultRef(resultKey, node)}
             to={`/${agentKey}/${result.session.id}`}
             state={{ searchQuery: query }}
             onClick={onOpenResult}
-            className="rounded-sm border border-[var(--console-border)] bg-white/85 p-4 transition-colors hover:border-[var(--console-border-strong)] hover:bg-white"
+            className={`rounded-sm border bg-white/85 p-4 transition-colors hover:border-[var(--console-border-strong)] hover:bg-white ${
+              index === selectedIndex
+                ? "border-[var(--console-border-strong)]"
+                : "border-[var(--console-border)]"
+            }`}
           >
             <div className="flex items-center gap-2">
               <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--console-muted)]">
