@@ -148,6 +148,18 @@ export interface SearchResult {
   snippet: string;
 }
 
+export interface BookmarkedSessionSnapshot {
+  agentKey: string;
+  sessionId: string;
+  fullPath: string;
+  title: string;
+  directory: string;
+  time_created: number;
+  time_updated?: number;
+  stats: SessionHead["stats"];
+  bookmarked_at: number;
+}
+
 export async function fetchConfig(): Promise<AppConfig> {
   const res = await fetch("/api/config");
   if (!res.ok) throw new Error("Failed to fetch config");
@@ -189,6 +201,43 @@ export async function fetchSearchResults(query: string): Promise<{ results: Sear
   const res = await fetch(`/api/search?${params}`);
   if (!res.ok) throw new Error("Failed to fetch search results");
   return res.json();
+}
+
+export async function fetchBookmarks(): Promise<{ bookmarks: BookmarkedSessionSnapshot[] }> {
+  const res = await fetch("/api/bookmarks");
+  if (!res.ok) throw new Error("Failed to fetch bookmarks");
+  return res.json();
+}
+
+export async function upsertBookmark(
+  bookmark: Omit<BookmarkedSessionSnapshot, "bookmarked_at">,
+): Promise<{ bookmark: BookmarkedSessionSnapshot }> {
+  const res = await fetch("/api/bookmarks", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(bookmark),
+  });
+  if (!res.ok) throw new Error("Failed to save bookmark");
+  return res.json();
+}
+
+export async function importBookmarks(
+  bookmarks: Omit<BookmarkedSessionSnapshot, "bookmarked_at">[],
+): Promise<{ bookmarks: BookmarkedSessionSnapshot[] }> {
+  const res = await fetch("/api/bookmarks/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(bookmarks),
+  });
+  if (!res.ok) throw new Error("Failed to import bookmarks");
+  return res.json();
+}
+
+export async function deleteBookmark(agentKey: string, sessionId: string): Promise<void> {
+  const res = await fetch(`/api/bookmarks/${agentKey}/${sessionId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Failed to delete bookmark");
 }
 
 export function subscribeSessionUpdates(

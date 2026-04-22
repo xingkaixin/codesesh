@@ -6,6 +6,7 @@ import { ModelConfig } from "./config";
 import type {
   AgentInfo,
   AppConfig,
+  BookmarkedSessionSnapshot,
   DashboardData,
   SearchResult,
   SessionHead,
@@ -13,13 +14,17 @@ import type {
   SessionsUpdatedEvent,
 } from "./lib/api";
 import {
+  deleteBookmark,
   fetchAgents,
+  fetchBookmarks,
   fetchConfig,
   fetchDashboard,
   fetchSearchResults,
   fetchSessions,
   fetchSessionData,
+  importBookmarks,
   subscribeSessionUpdates,
+  upsertBookmark,
 } from "./lib/api";
 import { SessionDetail } from "./components/SessionDetail";
 import { SessionDetailSkeleton } from "./components/SessionDetailSkeleton";
@@ -30,6 +35,14 @@ import {
 } from "./components/DetailLanding";
 import { Dashboard } from "./components/Dashboard";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { BookmarkButton } from "./components/BookmarkButton";
+import {
+  clearLegacyBookmarks,
+  getSessionBookmarkKey,
+  loadLegacyBookmarks,
+  mergeBookmarksWithSessions,
+  toBookmarkedSessionSnapshot,
+} from "./lib/bookmarks";
 
 type ViewState =
   | { mode: "root"; activeAgentKey: null; activeSessionSlug: null }
@@ -142,6 +155,7 @@ interface BreadcrumbItem {
 export default function App() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [sessions, setSessions] = useState<SessionHead[]>([]);
+  const [bookmarks, setBookmarks] = useState<BookmarkedSessionSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -163,16 +177,18 @@ export default function App() {
       try {
         const config = await fetchConfig();
         setAppConfig(config);
-        const [agentList, sessionList, dashboardData] = await Promise.all([
+        const [agentList, sessionList, dashboardData, bookmarkData] = await Promise.all([
           fetchAgents(),
           fetchSessions(),
           fetchDashboard(config.window.days).catch((err) => {
             console.error("Failed to load dashboard:", err);
             return null;
           }),
+          fetchBookmarks(),
         ]);
         setAgents(agentList);
         setSessions(sessionList.sessions);
+        setBookmarks(bookmarkData.bookmarks);
         if (dashboardData) setDashboard(dashboardData);
       } catch (err) {
         console.error("Failed to load data:", err);
@@ -224,10 +240,116 @@ export default function App() {
     return grouped;
   }, [sessions, agents]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    setBookmarks((prev) => {
+      const next = mergeBookmarksWithSessions(prev, sessions);
+      if (next === prev) return prev;
+      void importBookmarks(
+        next.map(({ bookmarked_at: _bookmarkedAt, ...bookmark }) => bookmark),
+      ).catch((error) => {
+        if (!cancelled) {
+          console.error("Failed to sync bookmark snapshots:", error);
+        }
+      });
+      return next;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessions]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      const legacy = loadLegacyBookmarks();
+      if (legacy.length === 0) return;
+
+      try {
+        const data = await importBookmarks(
+          legacy.map(({ bookmarked_at: _bookmarkedAt, ...bookmark }) => bookmark),
+        );
+        if (cancelled) return;
+        setBookmarks(data.bookmarks);
+        clearLegacyBookmarks();
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to migrate legacy bookmarks:", error);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const bookmarkKeySet = useMemo(
+    () =>
+      new Set(
+        bookmarks.map((bookmark) => getSessionBookmarkKey(bookmark.agentKey, bookmark.sessionId)),
+      ),
+    [bookmarks],
+  );
+
+  function isSessionBookmarked(agentKey: string, sessionId: string): boolean {
+    return bookmarkKeySet.has(getSessionBookmarkKey(agentKey, sessionId));
+  }
+
+  function toggleBookmark(snapshot: BookmarkedSessionSnapshot) {
+    const key = getSessionBookmarkKey(snapshot.agentKey, snapshot.sessionId);
+    const exists = bookmarkKeySet.has(key);
+    const previous = bookmarks;
+    const next = exists
+      ? previous.filter(
+          (bookmark) => getSessionBookmarkKey(bookmark.agentKey, bookmark.sessionId) !== key,
+        )
+      : [...previous, snapshot].toSorted((a, b) => {
+          const aTime = a.time_updated ?? a.time_created;
+          const bTime = b.time_updated ?? b.time_created;
+          return bTime - aTime;
+        });
+
+    setBookmarks(next);
+
+    void (
+      exists
+        ? deleteBookmark(snapshot.agentKey, snapshot.sessionId)
+        : upsertBookmark({
+            agentKey: snapshot.agentKey,
+            sessionId: snapshot.sessionId,
+            fullPath: snapshot.fullPath,
+            title: snapshot.title,
+            directory: snapshot.directory,
+            time_created: snapshot.time_created,
+            time_updated: snapshot.time_updated,
+            stats: snapshot.stats,
+          })
+    ).catch((error) => {
+      console.error("Failed to toggle bookmark:", error);
+      setBookmarks(previous);
+    });
+  }
+
+  function toggleSessionBookmark(session: SessionHead, agentKey: string) {
+    toggleBookmark(toBookmarkedSessionSnapshot(session, agentKey));
+  }
+
   const activeAgentKey = viewState.activeAgentKey;
   const sidebarSessions = useMemo(
     () => (activeAgentKey ? (sessionsByAgent[activeAgentKey] ?? []) : []),
     [activeAgentKey, sessionsByAgent],
+  );
+
+  const bookmarkedSessions = useMemo(
+    () =>
+      bookmarks.toSorted(
+        (a, b) => (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created),
+      ),
+    [bookmarks],
   );
 
   // Group sidebar sessions by last cwd component (file-tree style)
@@ -530,9 +652,26 @@ export default function App() {
     );
   } else if (viewState.mode === "root") {
     content = dashboard ? (
-      <Dashboard data={dashboard} />
+      <Dashboard
+        data={dashboard}
+        bookmarkedSessions={bookmarkedSessions}
+        isBookmarked={isSessionBookmarked}
+        onToggleBookmark={(session, agentKey) => {
+          if ("agentName" in session) {
+            toggleSessionBookmark(session, agentKey ?? session.agentName.toLowerCase());
+            return;
+          }
+          toggleBookmark(session);
+        }}
+      />
     ) : (
-      <DetailLanding type="global" sessions={landingSessions} agentItems={landingAgentItems} />
+      <DetailLanding
+        type="global"
+        sessions={landingSessions}
+        agentItems={landingAgentItems}
+        isBookmarked={isSessionBookmarked}
+        onToggleBookmark={(session) => toggleSessionBookmark(session, session.agentKey)}
+      />
     );
   } else if (viewState.mode === "agent" && activeAgentKey) {
     const agentSessions = landingSessions.filter((s) => s.agentKey === activeAgentKey);
@@ -542,6 +681,8 @@ export default function App() {
         sessions={agentSessions}
         agentItems={landingAgentItems}
         activeAgentKey={activeAgentKey}
+        isBookmarked={isSessionBookmarked}
+        onToggleBookmark={(session) => toggleSessionBookmark(session, session.agentKey)}
       />
     );
   } else if (viewState.mode === "session") {
@@ -555,6 +696,8 @@ export default function App() {
           agentItems={landingAgentItems}
           activeAgentKey={viewState.activeAgentKey}
           attemptedSessionSlug={viewState.activeSessionSlug}
+          isBookmarked={isSessionBookmarked}
+          onToggleBookmark={(session) => toggleSessionBookmark(session, session.agentKey)}
         />
       );
     } else {
@@ -567,6 +710,8 @@ export default function App() {
         sessions={landingSessions}
         agentItems={landingAgentItems}
         attemptedAgentKey={viewState.attemptedKey}
+        isBookmarked={isSessionBookmarked}
+        onToggleBookmark={(session) => toggleSessionBookmark(session, session.agentKey)}
       />
     );
   } else {
@@ -689,6 +834,60 @@ export default function App() {
 
             <section>
               <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
+                BOOKMARKS
+              </h3>
+              {bookmarkedSessions.length === 0 ? (
+                <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
+                  No bookmarks yet
+                </span>
+              ) : (
+                <ul className="space-y-1">
+                  {bookmarkedSessions.map((session) => {
+                    const isActive =
+                      viewState.mode === "session" &&
+                      viewState.activeAgentKey === session.agentKey &&
+                      viewState.activeSessionSlug === session.sessionId;
+                    const agent = ModelConfig.agents[session.agentKey];
+                    return (
+                      <li key={getSessionBookmarkKey(session.agentKey, session.sessionId)}>
+                        <div
+                          className={`flex items-start gap-2 rounded-sm border px-2 py-1.5 transition-colors ${
+                            isActive
+                              ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
+                              : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+                          }`}
+                        >
+                          <Link
+                            to={`/${session.fullPath}`}
+                            className="flex min-w-0 flex-1 items-start gap-2"
+                          >
+                            {agent?.icon ? (
+                              <img
+                                src={agent.icon}
+                                alt={agent.name}
+                                className="mt-0.5 size-3.5 shrink-0 object-contain"
+                              />
+                            ) : null}
+                            <div className="min-w-0 flex-1">
+                              <span className="console-mono line-clamp-1 block text-xs">
+                                {session.title}
+                              </span>
+                              <span className="console-mono mt-0.5 line-clamp-1 block text-[10px] text-[var(--console-muted)]">
+                                {agent?.name ?? session.agentKey}
+                              </span>
+                            </div>
+                          </Link>
+                          <BookmarkButton active onToggle={() => toggleBookmark(session)} />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+
+            <section>
+              <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
                 SESSIONS
               </h3>
               {!activeAgentKey ? (
@@ -726,17 +925,26 @@ export default function App() {
                                 viewState.activeSessionSlug === item.id;
                               return (
                                 <li key={item.id}>
-                                  <Link
-                                    to={`/${activeAgentKey}/${item.id}`}
-                                    className={`console-mono relative block rounded-sm border px-2 py-1.5 text-xs transition-colors ${
+                                  <div
+                                    className={`relative flex items-start gap-2 rounded-sm border px-2 py-1.5 text-xs transition-colors ${
                                       isActive
                                         ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)] before:absolute before:bottom-0 before:left-0 before:top-0 before:w-0.5 before:bg-[var(--console-accent)]"
                                         : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
                                     }`}
-                                    title={item.title}
                                   >
-                                    <span className="line-clamp-1">{item.title}</span>
-                                  </Link>
+                                    <Link
+                                      to={`/${activeAgentKey}/${item.id}`}
+                                      title={item.title}
+                                      className="console-mono line-clamp-1 min-w-0 flex-1"
+                                    >
+                                      {item.title}
+                                    </Link>
+                                    <BookmarkButton
+                                      active={isSessionBookmarked(activeAgentKey, item.id)}
+                                      onToggle={() => toggleSessionBookmark(item, activeAgentKey)}
+                                      className="relative z-10"
+                                    />
+                                  </div>
                                 </li>
                               );
                             })}

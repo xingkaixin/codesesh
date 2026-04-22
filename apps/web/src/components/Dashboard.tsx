@@ -2,14 +2,23 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ModelConfig } from "../config";
 import type {
+  BookmarkedSessionSnapshot,
   DashboardData,
   DashboardAgentStat,
   DashboardDailyBucket,
   DashboardRecentSession,
 } from "../lib/api";
+import { getSessionBookmarkKey } from "../lib/bookmarks";
+import { BookmarkButton } from "./BookmarkButton";
 
 interface DashboardProps {
   data: DashboardData;
+  bookmarkedSessions: BookmarkedSessionSnapshot[];
+  isBookmarked: (agentKey: string, sessionId: string) => boolean;
+  onToggleBookmark: (
+    session: DashboardRecentSession | BookmarkedSessionSnapshot,
+    agentKey?: string,
+  ) => void;
 }
 
 function formatNumber(value: number) {
@@ -181,7 +190,68 @@ function AgentDistribution({ perAgent }: { perAgent: DashboardAgentStat[] }) {
   );
 }
 
-function RecentSessions({ sessions }: { sessions: DashboardRecentSession[] }) {
+function BookmarkedSessions({
+  sessions,
+  onToggleBookmark,
+}: {
+  sessions: BookmarkedSessionSnapshot[];
+  onToggleBookmark: (session: BookmarkedSessionSnapshot) => void;
+}) {
+  if (sessions.length === 0) return null;
+
+  return (
+    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
+          Bookmarked Sessions
+        </h3>
+        <span className="console-mono text-[11px] text-[var(--console-muted)]">
+          {sessions.length} items
+        </span>
+      </div>
+      <ul className="space-y-2">
+        {sessions.map((session) => {
+          const agentConfig = ModelConfig.agents[session.agentKey];
+          const updated = session.time_updated ?? session.time_created;
+          return (
+            <li key={getSessionBookmarkKey(session.agentKey, session.sessionId)}>
+              <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
+                <Link to={`/${session.fullPath}`} className="flex min-w-0 flex-1 items-start gap-2">
+                  {agentConfig?.icon ? (
+                    <img
+                      src={agentConfig.icon}
+                      alt={agentConfig.name}
+                      className="mt-0.5 size-3.5 shrink-0 object-contain"
+                    />
+                  ) : null}
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-1 text-sm text-[var(--console-text)]">
+                      {session.title}
+                    </p>
+                    <p className="console-mono mt-0.5 line-clamp-1 text-[11px] text-[var(--console-muted)]">
+                      /{session.fullPath} · {formatRelativeTime(updated)}
+                    </p>
+                  </div>
+                </Link>
+                <BookmarkButton active onToggle={() => onToggleBookmark(session)} />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function RecentSessions({
+  sessions,
+  isBookmarked,
+  onToggleBookmark,
+}: {
+  sessions: DashboardRecentSession[];
+  isBookmarked: (agentKey: string, sessionId: string) => boolean;
+  onToggleBookmark: (session: DashboardRecentSession, agentKey: string) => void;
+}) {
   if (sessions.length === 0) {
     return (
       <div className="rounded-sm border border-[var(--console-border)] bg-white p-4 text-sm text-[var(--console-muted)]">
@@ -205,31 +275,35 @@ function RecentSessions({ sessions }: { sessions: DashboardRecentSession[] }) {
           const agentKey = session.agentName.toLowerCase();
           const agentConfig = ModelConfig.agents[agentKey];
           const updated = session.time_updated ?? session.time_created;
+          const bookmarked = isBookmarked(agentKey, session.id);
           return (
             <li key={session.id}>
-              <Link
-                to={`/${session.slug}`}
-                className="block rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
-              >
-                <div className="flex items-center gap-2">
-                  {agentConfig?.icon ? (
-                    <img
-                      src={agentConfig.icon}
-                      alt={agentConfig.name}
-                      className="size-3.5 shrink-0 object-contain"
-                    />
-                  ) : null}
-                  <p className="line-clamp-1 flex-1 text-sm text-[var(--console-text)]">
-                    {session.title}
+              <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
+                <Link to={`/${session.slug}`} className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    {agentConfig?.icon ? (
+                      <img
+                        src={agentConfig.icon}
+                        alt={agentConfig.name}
+                        className="size-3.5 shrink-0 object-contain"
+                      />
+                    ) : null}
+                    <p className="line-clamp-1 flex-1 text-sm text-[var(--console-text)]">
+                      {session.title}
+                    </p>
+                    <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
+                      {formatRelativeTime(updated)}
+                    </span>
+                  </div>
+                  <p className="console-mono mt-0.5 line-clamp-1 text-[11px] text-[var(--console-muted)]">
+                    /{session.slug}
                   </p>
-                  <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
-                    {formatRelativeTime(updated)}
-                  </span>
-                </div>
-                <p className="console-mono mt-0.5 line-clamp-1 text-[11px] text-[var(--console-muted)]">
-                  /{session.slug}
-                </p>
-              </Link>
+                </Link>
+                <BookmarkButton
+                  active={bookmarked}
+                  onToggle={() => onToggleBookmark(session, agentKey)}
+                />
+              </div>
             </li>
           );
         })}
@@ -238,7 +312,12 @@ function RecentSessions({ sessions }: { sessions: DashboardRecentSession[] }) {
   );
 }
 
-export function Dashboard({ data }: DashboardProps) {
+export function Dashboard({
+  data,
+  bookmarkedSessions,
+  isBookmarked,
+  onToggleBookmark,
+}: DashboardProps) {
   const { totals, perAgent, dailyActivity, recentSessions } = data;
 
   return (
@@ -262,8 +341,17 @@ export function Dashboard({ data }: DashboardProps) {
 
       <div className="grid gap-4 md:grid-cols-2">
         <AgentDistribution perAgent={perAgent} />
-        <RecentSessions sessions={recentSessions} />
+        <RecentSessions
+          sessions={recentSessions}
+          isBookmarked={isBookmarked}
+          onToggleBookmark={onToggleBookmark}
+        />
       </div>
+
+      <BookmarkedSessions
+        sessions={bookmarkedSessions}
+        onToggleBookmark={(session) => onToggleBookmark(session)}
+      />
     </div>
   );
 }

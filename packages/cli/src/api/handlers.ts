@@ -1,6 +1,14 @@
 import type { Context } from "hono";
-import type { ScanResult, SessionData, SessionHead } from "@codesesh/core";
-import { getAgentInfoMap, searchSessions, syncSessionSearchIndex } from "@codesesh/core";
+import type { BookmarkRecord, ScanResult, SessionData, SessionHead } from "@codesesh/core";
+import {
+  deleteBookmark,
+  getAgentInfoMap,
+  importBookmarks,
+  listBookmarks,
+  searchSessions,
+  syncSessionSearchIndex,
+  upsertBookmark,
+} from "@codesesh/core";
 
 export interface ScanResultSource {
   getSnapshot(): ScanResult;
@@ -11,6 +19,48 @@ export interface SessionListDefaults {
   to?: number;
   /** When --days was used, original value — kept for UI "last N days" label */
   days?: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isSessionStats(value: unknown): value is SessionHead["stats"] {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.message_count === "number" &&
+    typeof value.total_input_tokens === "number" &&
+    typeof value.total_output_tokens === "number" &&
+    typeof value.total_cost === "number" &&
+    (value.total_tokens == null || typeof value.total_tokens === "number")
+  );
+}
+
+function parseBookmarkPayload(value: unknown): Omit<BookmarkRecord, "bookmarked_at"> | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.agentKey !== "string" ||
+    typeof value.sessionId !== "string" ||
+    typeof value.fullPath !== "string" ||
+    typeof value.title !== "string" ||
+    typeof value.directory !== "string" ||
+    typeof value.time_created !== "number" ||
+    (value.time_updated != null && typeof value.time_updated !== "number") ||
+    !isSessionStats(value.stats)
+  ) {
+    return null;
+  }
+
+  return {
+    agentKey: value.agentKey,
+    sessionId: value.sessionId,
+    fullPath: value.fullPath,
+    title: value.title,
+    directory: value.directory,
+    time_created: value.time_created,
+    time_updated: value.time_updated,
+    stats: value.stats,
+  };
 }
 
 function getTotalTokens(stats: SessionHead["stats"]): number {
@@ -168,6 +218,47 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
     const message = err instanceof Error ? err.message : "Failed to load session";
     return c.json({ error: message }, 500);
   }
+}
+
+export function handleGetBookmarks(c: Context) {
+  return c.json({ bookmarks: listBookmarks() });
+}
+
+export async function handlePutBookmark(c: Context) {
+  const payload = parseBookmarkPayload(await c.req.json().catch(() => null));
+  if (!payload) {
+    return c.json({ error: "Invalid bookmark payload" }, 400);
+  }
+
+  return c.json({ bookmark: upsertBookmark(payload) });
+}
+
+export async function handleImportBookmarks(c: Context) {
+  const payload = await c.req.json().catch(() => null);
+  if (!Array.isArray(payload)) {
+    return c.json({ error: "Invalid bookmark payload" }, 400);
+  }
+
+  const bookmarks = payload
+    .map((entry) => parseBookmarkPayload(entry))
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+  if (bookmarks.length !== payload.length) {
+    return c.json({ error: "Invalid bookmark payload" }, 400);
+  }
+
+  return c.json({ bookmarks: importBookmarks(bookmarks) });
+}
+
+export function handleDeleteBookmark(c: Context) {
+  const agentKey = c.req.param("agent");
+  const sessionId = c.req.param("id");
+  if (!agentKey || !sessionId) {
+    return c.json({ error: "Missing bookmark identifier" }, 400);
+  }
+
+  deleteBookmark(agentKey, sessionId);
+  return c.json({ ok: true });
 }
 
 export interface DashboardAgentStat {

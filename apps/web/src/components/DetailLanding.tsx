@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { ModelConfig } from "../config";
 import type { SessionHead } from "../lib/api";
+import { BookmarkButton } from "./BookmarkButton";
 
 export interface LandingSession extends SessionHead {
   agentKey: string;
@@ -22,6 +23,8 @@ interface DetailLandingProps {
   activeAgentKey?: string;
   attemptedAgentKey?: string;
   attemptedSessionSlug?: string | null;
+  isBookmarked: (agentKey: string, sessionId: string) => boolean;
+  onToggleBookmark: (session: LandingSession) => void;
 }
 
 function formatNumber(value: number) {
@@ -151,7 +154,15 @@ function RecommendedAgents({ agentItems }: { agentItems: LandingAgentItem[] }) {
   );
 }
 
-function RecentSessions({ sessions }: { sessions: LandingSession[] }) {
+function RecentSessions({
+  sessions,
+  isBookmarked,
+  onToggleBookmark,
+}: {
+  sessions: LandingSession[];
+  isBookmarked: (agentKey: string, sessionId: string) => boolean;
+  onToggleBookmark: (session: LandingSession) => void;
+}) {
   if (sessions.length === 0) {
     return (
       <div className="rounded-sm border border-[var(--console-border)] bg-white p-4 text-sm text-[var(--console-muted)]">
@@ -171,20 +182,23 @@ function RecentSessions({ sessions }: { sessions: LandingSession[] }) {
         </span>
       </div>
       <ul className="space-y-2">
-        {sessions.map((session) => (
-          <li key={session.id}>
-            <Link
-              to={`/${session.fullPath}`}
-              className="block rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
-            >
-              <p className="line-clamp-1 text-sm text-[var(--console-text)]">{session.title}</p>
-              <p className="console-mono mt-0.5 text-[11px] text-[var(--console-muted)]">
-                /{session.fullPath} ·{" "}
-                {formatRelativeTime(session.time_updated || session.time_created)}
-              </p>
-            </Link>
-          </li>
-        ))}
+        {sessions.map((session) => {
+          const bookmarked = isBookmarked(session.agentKey, session.id);
+          return (
+            <li key={session.id}>
+              <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
+                <Link to={`/${session.fullPath}`} className="min-w-0 flex-1">
+                  <p className="line-clamp-1 text-sm text-[var(--console-text)]">{session.title}</p>
+                  <p className="console-mono mt-0.5 text-[11px] text-[var(--console-muted)]">
+                    /{session.fullPath} ·{" "}
+                    {formatRelativeTime(session.time_updated || session.time_created)}
+                  </p>
+                </Link>
+                <BookmarkButton active={bookmarked} onToggle={() => onToggleBookmark(session)} />
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -197,6 +211,8 @@ export function DetailLanding({
   activeAgentKey,
   attemptedAgentKey,
   attemptedSessionSlug,
+  isBookmarked,
+  onToggleBookmark,
 }: DetailLandingProps) {
   const sortedSessions = sessions.toSorted(
     (a, b) => (b.time_updated || b.time_created || 0) - (a.time_updated || a.time_created || 0),
@@ -267,7 +283,11 @@ export function DetailLanding({
           <DiagnosticItem label="Session" value={sessionSlug} />
         </div>
 
-        <RecentSessions sessions={recentSessions} />
+        <RecentSessions
+          sessions={recentSessions}
+          isBookmarked={isBookmarked}
+          onToggleBookmark={onToggleBookmark}
+        />
       </div>
     );
   }
@@ -309,7 +329,11 @@ export function DetailLanding({
           </ul>
         </div>
 
-        <RecentSessions sessions={recentSessions} />
+        <RecentSessions
+          sessions={recentSessions}
+          isBookmarked={isBookmarked}
+          onToggleBookmark={onToggleBookmark}
+        />
       </div>
     );
   }
@@ -342,7 +366,11 @@ export function DetailLanding({
         <LandingCard label="Tokens" value={formatNumber(totalTokens)} />
       </div>
 
-      <RecentSessions sessions={recentSessions} />
+      <RecentSessions
+        sessions={recentSessions}
+        isBookmarked={isBookmarked}
+        onToggleBookmark={onToggleBookmark}
+      />
     </div>
   );
 }

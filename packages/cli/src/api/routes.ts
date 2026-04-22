@@ -1,11 +1,15 @@
 import { Hono } from "hono";
 import {
   handleGetAgents,
+  handleGetBookmarks,
   handleGetConfig,
   handleGetDashboard,
+  handleDeleteBookmark,
+  handleImportBookmarks,
   handleSearchSessions,
   handleGetSessions,
   handleGetSessionData,
+  handlePutBookmark,
   type ScanResultSource,
   type SessionListDefaults,
 } from "./handlers.js";
@@ -78,6 +82,10 @@ export function createApiRoutes(
   api.get("/search", (c) => handleSearchSessions(c, scanSource, listDefaults));
   api.get("/sessions/:agent/:id", (c) => handleGetSessionData(c, scanSource));
   api.get("/dashboard", (c) => handleGetDashboard(c, scanSource, listDefaults));
+  api.get("/bookmarks", (c) => handleGetBookmarks(c));
+  api.put("/bookmarks", (c) => handlePutBookmark(c));
+  api.post("/bookmarks/import", (c) => handleImportBookmarks(c));
+  api.delete("/bookmarks/:agent/:id", (c) => handleDeleteBookmark(c));
   if (store) {
     api.get("/events", (c) => createSseResponse(store, c.req.raw.signal));
   }
