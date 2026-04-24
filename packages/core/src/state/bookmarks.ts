@@ -6,6 +6,13 @@ import { openDb, type DatabaseRow } from "../utils/sqlite.js";
 const BOOKMARK_DB_FILENAME = "state.db";
 const BOOKMARK_DB_VERSION = 1;
 
+export class BookmarkStorageUnavailableError extends Error {
+  constructor() {
+    super("SQLite state database is unavailable");
+    this.name = "BookmarkStorageUnavailableError";
+  }
+}
+
 export interface BookmarkRecord {
   agentKey: string;
   sessionId: string;
@@ -85,7 +92,7 @@ function ensureSchema(db: NonNullable<ReturnType<typeof openDb>>): void {
 function withStateDb<T>(fn: (db: NonNullable<ReturnType<typeof openDb>>) => T): T {
   const db = openDb(getStateDbPath());
   if (!db) {
-    throw new Error("SQLite state database is unavailable");
+    throw new BookmarkStorageUnavailableError();
   }
 
   try {

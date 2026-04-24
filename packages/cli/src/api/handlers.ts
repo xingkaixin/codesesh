@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import type { BookmarkRecord, ScanResult, SessionData, SessionHead } from "@codesesh/core";
 import {
+  BookmarkStorageUnavailableError,
   deleteBookmark,
   getAgentInfoMap,
   importBookmarks,
@@ -221,7 +222,14 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
 }
 
 export function handleGetBookmarks(c: Context) {
-  return c.json({ bookmarks: listBookmarks() });
+  try {
+    return c.json({ bookmarks: listBookmarks(), storageAvailable: true });
+  } catch (error) {
+    if (error instanceof BookmarkStorageUnavailableError) {
+      return c.json({ bookmarks: [], storageAvailable: false });
+    }
+    throw error;
+  }
 }
 
 export async function handlePutBookmark(c: Context) {
@@ -230,7 +238,14 @@ export async function handlePutBookmark(c: Context) {
     return c.json({ error: "Invalid bookmark payload" }, 400);
   }
 
-  return c.json({ bookmark: upsertBookmark(payload) });
+  try {
+    return c.json({ bookmark: upsertBookmark(payload), storageAvailable: true });
+  } catch (error) {
+    if (error instanceof BookmarkStorageUnavailableError) {
+      return c.json({ error: "Bookmark storage is unavailable" }, 503);
+    }
+    throw error;
+  }
 }
 
 export async function handleImportBookmarks(c: Context) {
@@ -247,7 +262,14 @@ export async function handleImportBookmarks(c: Context) {
     return c.json({ error: "Invalid bookmark payload" }, 400);
   }
 
-  return c.json({ bookmarks: importBookmarks(bookmarks) });
+  try {
+    return c.json({ bookmarks: importBookmarks(bookmarks), storageAvailable: true });
+  } catch (error) {
+    if (error instanceof BookmarkStorageUnavailableError) {
+      return c.json({ error: "Bookmark storage is unavailable" }, 503);
+    }
+    throw error;
+  }
 }
 
 export function handleDeleteBookmark(c: Context) {
@@ -257,8 +279,15 @@ export function handleDeleteBookmark(c: Context) {
     return c.json({ error: "Missing bookmark identifier" }, 400);
   }
 
-  deleteBookmark(agentKey, sessionId);
-  return c.json({ ok: true });
+  try {
+    deleteBookmark(agentKey, sessionId);
+    return c.json({ ok: true, storageAvailable: true });
+  } catch (error) {
+    if (error instanceof BookmarkStorageUnavailableError) {
+      return c.json({ error: "Bookmark storage is unavailable" }, 503);
+    }
+    throw error;
+  }
 }
 
 export interface DashboardAgentStat {

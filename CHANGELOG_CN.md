@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.1] - 2026-04-24
+
+- fix(cli): 在发布后的 CLI 包中包含 SQLite 运行时依赖
+- fix(api): SQLite 状态存储不可用时，收藏接口保持稳定响应
+
 ## [0.4.0] - 2026-04-24
 
 - feat(bookmarks): 增加基于 SQLite 持久化的会话收藏，并提供 API 路由与 Web UI 操作

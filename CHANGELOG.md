@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.1] - 2026-04-24
+
+- fix(cli): include SQLite runtime dependency in the published CLI package
+- fix(api): keep the bookmarks endpoint stable when SQLite storage is unavailable
+
 ## [0.4.0] - 2026-04-24
 
 - feat(bookmarks): add SQLite-backed session bookmarking with API routes and Web UI controls

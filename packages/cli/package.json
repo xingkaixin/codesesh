@@ -1,6 +1,6 @@
 {
   "name": "codesesh",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "One place to see every AI coding session you've ever had. Unify Claude Code, Cursor, Kimi, Codex, and OpenCode sessions in a single, beautiful Web UI.",
   "keywords": [
     "ai",
@@ -55,6 +55,7 @@
   "dependencies": {
     "@codesesh/core": "workspace:*",
     "@hono/node-server": "^1.14.0",
+    "better-sqlite3": "^11.10.0",
     "chokidar": "^5.0.0",
     "citty": "^0.1.6",
     "consola": "^3.4.2",
