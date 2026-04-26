@@ -202,6 +202,29 @@ export async function fetchSessionData(agent: string, sessionId: string): Promis
   return res.json();
 }
 
+export async function renameSession(
+  agent: string,
+  sessionId: string,
+  title: string | null,
+): Promise<{ session: SessionHead }> {
+  const res = await fetch(`/api/sessions/${agent}/${sessionId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) {
+    let message = "Failed to rename session";
+    try {
+      const data = (await res.json()) as { error?: string };
+      if (data?.error) message = data.error;
+    } catch {
+      // ignore JSON parse errors
+    }
+    throw new Error(message);
+  }
+  return res.json();
+}
+
 export async function fetchDashboard(days?: number): Promise<DashboardData> {
   const params = new URLSearchParams();
   if (days != null && days > 0) params.set("days", String(days));
