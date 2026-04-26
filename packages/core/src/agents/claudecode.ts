@@ -1,4 +1,12 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join, basename, dirname } from "node:path";
 import { BaseAgent, matchesScanWindow } from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
@@ -10,6 +18,17 @@ import { estimateTokenCost } from "../utils/cost.js";
 import type { AgentScanOptions, SessionCacheMeta, ChangeCheckResult } from "./base.js";
 
 const RECENT_SESSION_REVALIDATION_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * cc itself writes `{type:"custom-title", customTitle, sessionId}` records
+ * when launched with `--name`. The picker, prompt box, and terminal title all
+ * read from this field, so codesesh round-trips through the same record to
+ * stay bidirectionally in sync with `claude --name`. cc appends a new row on
+ * every resume rather than upserting, so the *last* row wins on read; on
+ * write we replace any existing rows with a single fresh one.
+ */
+const CUSTOM_TITLE_TYPE = "custom-title";
+const ALIAS_TITLE_MAX_LENGTH = 200;
 
 interface SessionMeta extends SessionCacheMeta {
   id: string;
@@ -189,6 +208,118 @@ export class ClaudeCodeAgent extends BaseAgent {
       },
       messages,
     };
+  }
+
+  /**
+   * Persist a user-set display title onto the session jsonl by replacing all
+   * `{type:"custom-title"}` records with a single fresh one — the same field
+   * cc itself writes when launched with `--name`. Passing null or an empty
+   * string removes the records entirely, so the title falls back to whatever
+   * the auto-derivation chooses (sessions-index.json summary → first user
+   * message → directory name).
+   *
+   * cc appends a new custom-title row on every resume rather than upserting,
+   * so we collapse any existing rows into one to avoid unbounded growth.
+   *
+   * The write is atomic (temp file + rename) to avoid leaving a half-written
+   * jsonl that cc itself may try to resume from.
+   */
+  setSessionAlias(sessionId: string, alias: string | null): SessionHead | null {
+    const meta = this.sessionMetaMap.get(sessionId);
+    if (!meta) return null;
+    const filePath = meta.sourcePath;
+    if (!existsSync(filePath)) return null;
+
+    const projectDir = dirname(filePath);
+    const trimmed = (alias ?? "").trim().slice(0, ALIAS_TITLE_MAX_LENGTH);
+    const desired = trimmed.length > 0 ? trimmed : null;
+
+    const original = readFileSync(filePath, "utf-8");
+    const trailingNewline = original.endsWith("\n");
+    const dataLines = trailingNewline ? original.slice(0, -1).split("\n") : original.split("\n");
+
+    const customTitleIndices: number[] = [];
+    for (let i = 0; i < dataLines.length; i++) {
+      const line = dataLines[i];
+      if (!line || !line.trim()) continue;
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed?.type === CUSTOM_TITLE_TYPE) {
+          customTitleIndices.push(i);
+        }
+      } catch {
+        // ignore malformed lines
+      }
+    }
+
+    let mutated = false;
+    if (desired !== null) {
+      const newLine = JSON.stringify({
+        type: CUSTOM_TITLE_TYPE,
+        customTitle: desired,
+        sessionId,
+      });
+      if (customTitleIndices.length === 0) {
+        dataLines.unshift(newLine);
+        mutated = true;
+      } else {
+        // Replace the first occurrence in place, drop the rest. Iterate from
+        // the tail so splice indices stay valid.
+        const [firstIdx, ...rest] = customTitleIndices;
+        if (dataLines[firstIdx!] !== newLine) {
+          dataLines[firstIdx!] = newLine;
+          mutated = true;
+        }
+        for (const extra of rest.reverse()) {
+          dataLines.splice(extra, 1);
+          mutated = true;
+        }
+      }
+    } else if (customTitleIndices.length > 0) {
+      for (const idx of customTitleIndices.reverse()) {
+        dataLines.splice(idx, 1);
+      }
+      mutated = true;
+    }
+
+    if (mutated) {
+      const content =
+        dataLines.length > 0
+          ? dataLines.join("\n") + (trailingNewline || dataLines.length > 0 ? "\n" : "")
+          : "";
+      const tmpPath = `${filePath}.codesesh-alias.tmp`;
+      try {
+        writeFileSync(tmpPath, content, "utf-8");
+        renameSync(tmpPath, filePath);
+      } catch (error) {
+        try {
+          if (existsSync(tmpPath)) unlinkSync(tmpPath);
+        } catch {
+          // best-effort cleanup
+        }
+        throw error;
+      }
+    }
+
+    // sessions-index.json may still hold the previous summary; bust the cache
+    // entry for this project so the next parseSessionHead reload doesn't keep
+    // returning the stale value.
+    delete this.sessionsIndexCache[basename(projectDir)];
+
+    const head = this.parseSessionHead(filePath, projectDir);
+    if (head) {
+      this.sessionMetaMap.set(sessionId, {
+        id: head.id,
+        title: head.title,
+        sourcePath: filePath,
+        directory: head.directory,
+        model: meta.model,
+        messageCount: head.stats.message_count,
+        createdAt: head.time_created,
+        updatedAt: head.time_updated ?? head.time_created,
+      });
+    }
+    return head;
   }
 
   /**
@@ -393,7 +524,7 @@ export class ClaudeCodeAgent extends BaseAgent {
     // Try to get title from sessions-index.json
     const index = this.loadSessionsIndex(projectDir);
     const indexEntry = index.get(sessionId);
-    const explicitTitle = indexEntry?.summary ? String(indexEntry.summary) : null;
+    const indexSummary = indexEntry?.summary ? String(indexEntry.summary) : null;
 
     // Extract lightweight metadata; cwd lives in user-type records, not the first line
     let updatedAt = createdAt;
@@ -405,6 +536,8 @@ export class ClaudeCodeAgent extends BaseAgent {
     let totalCacheReadTokens = 0;
     let totalCacheCreateTokens = 0;
     let totalCost = 0;
+    let customTitle: string | null = null;
+    let hookSummary: string | null = null;
     const modelUsageMap: Record<string, number> = {};
 
     for (const line of lines) {
@@ -415,6 +548,21 @@ export class ClaudeCodeAgent extends BaseAgent {
 
         if (!cwd && data["cwd"] && typeof data["cwd"] === "string") {
           cwd = data["cwd"];
+        }
+
+        if (data["type"] === CUSTOM_TITLE_TYPE && typeof data["customTitle"] === "string") {
+          // cc appends a fresh custom-title row on every resume, so let the
+          // last one win — that's what cc itself surfaces in /resume.
+          const titleText = data["customTitle"].trim();
+          if (titleText) customTitle = titleText;
+        } else if (data["type"] === "summary" && typeof data["summary"] === "string") {
+          const summaryText = data["summary"].trim();
+          if (summaryText && !hookSummary) {
+            // Prefer the first hook-emitted summary we encounter. cc only
+            // writes one of these per session-end so first === last in
+            // practice; pinning to the first keeps reads stable.
+            hookSummary = summaryText;
+          }
         }
 
         const msg = data["message"];
@@ -469,6 +617,11 @@ export class ClaudeCodeAgent extends BaseAgent {
     const messageTitle = this.extractTitle(lines);
     const directoryTitle = basenameTitle(directory) || basenameTitle(projectDir);
 
+    // Title precedence: cc-native custom-title (== `claude --name`) >
+    // sessions-index.json > hook-emitted summary > first user message >
+    // directory name. Using the cc-native field means renames done in
+    // codesesh appear in cc's /resume picker and vice versa.
+    const explicitTitle = customTitle ?? indexSummary ?? hookSummary ?? null;
     const title = resolveSessionTitle(explicitTitle, messageTitle, directoryTitle);
 
     const hasModelUsage = Object.keys(modelUsageMap).length > 0;

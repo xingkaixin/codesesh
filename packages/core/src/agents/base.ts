@@ -78,4 +78,13 @@ export abstract class BaseAgent {
     cachedSessions: SessionHead[],
     changedIds: string[],
   ): Promise<SessionHead[]> | SessionHead[];
+
+  /**
+   * Persist a user-editable display title for the session.
+   * Implementations write back to the session's underlying storage so that
+   * subsequent scans pick the new title up. Pass `null` or an empty string
+   * to clear the alias and fall back to the auto-derived title.
+   * Returns the refreshed SessionHead, or `null` when the session is unknown.
+   */
+  setSessionAlias?(sessionId: string, alias: string | null): SessionHead | null;
 }
