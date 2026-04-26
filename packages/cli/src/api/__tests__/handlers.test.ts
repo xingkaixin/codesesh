@@ -320,6 +320,26 @@ describe("handleGetDashboard", () => {
     expect(response.window.days).toBe(7);
   });
 
+  it("days=0 covers all sessions back to earliest activity", () => {
+    const now = Date.now();
+    const c = makeMockContext({ query: { days: "0" } });
+    const sessions = [
+      makeSession("old", {
+        time_created: now - 120 * 86400000,
+        time_updated: now - 120 * 86400000,
+      }),
+      makeSession("recent", {
+        time_created: now - 5 * 86400000,
+        time_updated: now - 5 * 86400000,
+      }),
+    ];
+    handleGetDashboard(c, makeScanSource({ sessions, byAgent: { claudecode: sessions } }));
+    const response = c.json.mock.calls[0]![0];
+    expect(response.totals.sessions).toBe(2);
+    expect(response.window.days).toBeGreaterThanOrEqual(120);
+    expect(response.dailyActivity.length).toBe(response.window.days);
+  });
+
   it("produces per-agent breakdown sorted by session count", () => {
     const c = makeMockContext();
     handleGetDashboard(c, makeScanSource());

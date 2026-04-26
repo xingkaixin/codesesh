@@ -418,6 +418,7 @@ function resolveDashboardWindow(
   queryDays: string | undefined,
   queryFrom: string | undefined,
   queryTo: string | undefined,
+  earliestSessionTs?: number,
 ): { from: number; to: number; days: number } {
   const now = Date.now();
   const todayStart = startOfLocalDay(now);
@@ -425,12 +426,20 @@ function resolveDashboardWindow(
   // Query "to" wins over defaults, then "now" end-of-today as fallback
   const toTs = parseDateParam(queryTo, defaults.to) ?? todayStart + 24 * 60 * 60 * 1000 - 1;
 
+  const hasQueryFrom = queryFrom != null && queryFrom !== "";
+  const fromFromQuery = parseDateParam(queryFrom, undefined);
+
   // Resolve days (preferred): query, defaults.days, or derive from defaults.from
   const parsedDays = queryDays ? parseInt(queryDays, 10) : NaN;
+  if (parsedDays === 0 && !hasQueryFrom) {
+    const fromTs = startOfLocalDay(earliestSessionTs ?? todayStart);
+    const days = Math.max(1, Math.ceil((todayStart - fromTs) / 86400000) + 1);
+    return { from: fromTs, to: toTs, days };
+  }
+
   let days: number | undefined =
     Number.isFinite(parsedDays) && parsedDays > 0 ? parsedDays : defaults.days;
 
-  const fromFromQuery = parseDateParam(queryFrom, undefined);
   let fromTs: number;
   if (fromFromQuery != null) {
     fromTs = startOfLocalDay(fromFromQuery);
@@ -454,11 +463,18 @@ export function handleGetDashboard(
   defaults: SessionListDefaults = {},
 ) {
   const scanResult = scanSource.getSnapshot();
+  const earliestActivity =
+    scanResult.sessions.length > 0
+      ? Math.min(
+          ...scanResult.sessions.map((session) => session.time_updated ?? session.time_created),
+        )
+      : Date.now();
   const { from, to, days } = resolveDashboardWindow(
     defaults,
     c.req.query("days"),
     c.req.query("from"),
     c.req.query("to"),
+    earliestActivity,
   );
 
   const windowed = filterSessionsByActivityWindow(scanResult.sessions, from, to);

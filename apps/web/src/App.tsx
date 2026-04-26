@@ -218,7 +218,10 @@ export default function App() {
         setBookmarks(bookmarkData.bookmarks);
       } catch (err) {
         console.error("Failed to load config:", err);
-        if (!cancelled) setError("Failed to load data. Is the CLI server running?");
+        if (!cancelled) {
+          setError("Failed to load data. Is the CLI server running?");
+          setLoading(false);
+        }
       }
     })();
     return () => {
