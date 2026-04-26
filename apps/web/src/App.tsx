@@ -36,6 +36,7 @@ import {
 import { Dashboard } from "./components/Dashboard";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { BookmarkButton } from "./components/BookmarkButton";
+import { CopyResumeButton } from "./components/CopyResumeButton";
 import {
   clearLegacyBookmarks,
   getSessionBookmarkKey,
@@ -1303,6 +1304,13 @@ export default function App() {
                                     >
                                       {item.title}
                                     </Link>
+                                    {activeAgentKey === "claudecode" ? (
+                                      <CopyResumeButton
+                                        sessionId={item.id}
+                                        directory={item.directory}
+                                        className="relative z-10"
+                                      />
+                                    ) : null}
                                     <BookmarkButton
                                       active={isSessionBookmarked(activeAgentKey, item.id)}
                                       onToggle={() => toggleSessionBookmark(item, activeAgentKey)}
