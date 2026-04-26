@@ -9,6 +9,7 @@ import {
   handleSearchSessions,
   handleGetSessions,
   handleGetSessionData,
+  handlePatchSession,
   handlePutBookmark,
   type ScanResultSource,
   type SessionListDefaults,
@@ -81,6 +82,7 @@ export function createApiRoutes(
   api.get("/sessions", (c) => handleGetSessions(c, scanSource, listDefaults));
   api.get("/search", (c) => handleSearchSessions(c, scanSource, listDefaults));
   api.get("/sessions/:agent/:id", (c) => handleGetSessionData(c, scanSource));
+  api.patch("/sessions/:agent/:id", (c) => handlePatchSession(c, scanSource));
   api.get("/dashboard", (c) => handleGetDashboard(c, scanSource, listDefaults));
   api.get("/bookmarks", (c) => handleGetBookmarks(c));
   api.put("/bookmarks", (c) => handlePutBookmark(c));

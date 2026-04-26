@@ -221,6 +221,66 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
   }
 }
 
+const ALIAS_TITLE_MAX_LENGTH = 200;
+
+export async function handlePatchSession(c: Context, scanSource: ScanResultSource) {
+  const agentName = c.req.param("agent");
+  const sessionId = c.req.param("id");
+
+  if (!sessionId) {
+    return c.json({ error: "Missing session ID" }, 400);
+  }
+
+  const scanResult = scanSource.getSnapshot();
+  const agent = scanResult.agents.find((a) => a.name === agentName);
+  if (!agent) {
+    return c.json({ error: `Unknown agent: ${agentName}` }, 404);
+  }
+
+  if (typeof agent.setSessionAlias !== "function") {
+    return c.json({ error: `Agent does not support rename: ${agentName}` }, 400);
+  }
+
+  const payload = await c.req.json().catch(() => null);
+  if (!isRecord(payload) || !("title" in payload)) {
+    return c.json({ error: "Missing title in request body" }, 400);
+  }
+
+  const rawTitle = payload.title;
+  let alias: string | null;
+  if (rawTitle === null) {
+    alias = null;
+  } else if (typeof rawTitle === "string") {
+    alias = rawTitle.slice(0, ALIAS_TITLE_MAX_LENGTH);
+  } else {
+    return c.json({ error: "Title must be a string or null" }, 400);
+  }
+
+  let updated: SessionHead | null;
+  try {
+    updated = agent.setSessionAlias(sessionId, alias);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to rename session";
+    return c.json({ error: message }, 500);
+  }
+
+  if (!updated) {
+    return c.json({ error: `Session not found: ${sessionId}` }, 404);
+  }
+
+  // Eagerly patch the in-memory snapshot so subsequent GETs see the new title
+  // before chokidar's debounced refresh fires.
+  const agentSessions = scanResult.byAgent[agentName];
+  if (agentSessions) {
+    const idx = agentSessions.findIndex((session) => session.id === sessionId);
+    if (idx >= 0) agentSessions[idx] = updated;
+  }
+  const flatIdx = scanResult.sessions.findIndex((session) => session.id === sessionId);
+  if (flatIdx >= 0) scanResult.sessions[flatIdx] = updated;
+
+  return c.json({ session: updated });
+}
+
 export function handleGetBookmarks(c: Context) {
   try {
     return c.json({ bookmarks: listBookmarks(), storageAvailable: true });

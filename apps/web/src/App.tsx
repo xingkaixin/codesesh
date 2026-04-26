@@ -1,7 +1,16 @@
 declare const __APP_VERSION__: string;
 
-import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Pencil } from "lucide-react";
 import { ModelConfig } from "./config";
 import type {
   AgentInfo,
@@ -23,6 +32,7 @@ import {
   fetchSessions,
   fetchSessionData,
   importBookmarks,
+  renameSession,
   subscribeSessionUpdates,
   upsertBookmark,
 } from "./lib/api";
@@ -192,6 +202,196 @@ function isEditableTarget(target: EventTarget | null) {
     tagName === "textarea" ||
     tagName === "select" ||
     target.isContentEditable
+  );
+}
+
+const ALIAS_TITLE_MAX_LENGTH = 200;
+
+interface EditableSessionTitleProps {
+  title: string;
+  canEdit: boolean;
+  onSave: (next: string) => Promise<void>;
+}
+
+function EditableSessionTitle({ title, canEdit, onSave }: EditableSessionTitleProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const [saving, setSaving] = useState(false);
+  const [errorText, setErrorText] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const committingRef = useRef(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(title);
+  }, [title, editing]);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  const finishEditing = (nextTitle: string) => {
+    setEditing(false);
+    setDraft(nextTitle);
+    setSaving(false);
+    setErrorText(null);
+    committingRef.current = false;
+  };
+
+  const commit = async () => {
+    if (committingRef.current) return;
+    const trimmed = draft.trim();
+    // No change → just exit edit mode without an API round trip.
+    if (trimmed === title.trim()) {
+      finishEditing(title);
+      return;
+    }
+    committingRef.current = true;
+    setSaving(true);
+    setErrorText(null);
+    try {
+      await onSave(trimmed);
+      finishEditing(trimmed || title);
+    } catch (err) {
+      committingRef.current = false;
+      setSaving(false);
+      setErrorText(err instanceof Error ? err.message : "Rename failed");
+    }
+  };
+
+  const cancel = () => {
+    finishEditing(title);
+  };
+
+  if (!canEdit) {
+    return (
+      <h1 className="console-mono text-xl font-semibold tracking-tight text-[var(--console-text)]">
+        {title}
+      </h1>
+    );
+  }
+
+  if (!editing) {
+    return (
+      <div className="flex min-w-0 items-center gap-2">
+        <h1 className="console-mono truncate text-xl font-semibold tracking-tight text-[var(--console-text)]">
+          {title}
+        </h1>
+        <button
+          type="button"
+          onClick={() => {
+            setDraft(title);
+            setEditing(true);
+          }}
+          aria-label="Rename session"
+          title="Rename session"
+          className="inline-flex size-6 shrink-0 items-center justify-center rounded-sm border border-transparent text-[var(--console-muted)] opacity-70 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] hover:opacity-100"
+        >
+          <Pencil className="size-3" strokeWidth={1.8} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <input
+        ref={inputRef}
+        type="text"
+        value={draft}
+        maxLength={ALIAS_TITLE_MAX_LENGTH}
+        disabled={saving}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            void commit();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            cancel();
+          }
+        }}
+        onBlur={() => {
+          // Skip blur-saving when the user just hit Enter/Escape (committingRef
+          // gets reset by finishEditing) to avoid double-firing.
+          if (!committingRef.current && editing) {
+            void commit();
+          }
+        }}
+        className="console-mono w-full max-w-[36rem] rounded-sm border border-[var(--console-border)] bg-white px-2 py-1 text-xl font-semibold tracking-tight text-[var(--console-text)] outline-none focus:border-[var(--console-text)]"
+        aria-label="Session title"
+      />
+      <span className="console-mono text-[10px] text-[var(--console-muted)]">
+        {saving ? "Saving…" : "Enter to save · Esc to cancel"}
+        {errorText ? ` · ${errorText}` : null}
+      </span>
+    </div>
+  );
+}
+
+interface SidebarRenameFieldProps {
+  initial: string;
+  onCommit: (next: string) => Promise<void>;
+  onCancel: () => void;
+}
+
+function SidebarRenameField({ initial, onCommit, onCancel }: SidebarRenameFieldProps) {
+  const [draft, setDraft] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const committingRef = useRef(false);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  const finish = async () => {
+    if (committingRef.current) return;
+    committingRef.current = true;
+    if (draft.trim() === initial.trim()) {
+      onCancel();
+      return;
+    }
+    setSaving(true);
+    try {
+      await onCommit(draft);
+    } catch {
+      // Keep the editor open on failure so the user can retry — onCancel
+      // would discard their draft.
+      committingRef.current = false;
+      setSaving(false);
+      return;
+    }
+    // Parent unmounts the field on success.
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      value={draft}
+      maxLength={ALIAS_TITLE_MAX_LENGTH}
+      disabled={saving}
+      onChange={(event) => setDraft(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          void finish();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          onCancel();
+        }
+      }}
+      onBlur={() => {
+        if (!committingRef.current) void finish();
+      }}
+      onClick={(event) => event.preventDefault()}
+      className="console-mono min-w-0 flex-1 rounded-sm border border-[var(--console-border)] bg-white px-1 py-0.5 text-xs text-[var(--console-text)] outline-none focus:border-[var(--console-text)]"
+      aria-label="Rename session inline"
+    />
   );
 }
 
@@ -424,6 +624,26 @@ export default function App() {
       return bTime - aTime;
     });
   }, [sidebarSessions]);
+
+  const handleRenameSession = useCallback(
+    async (sessionId: string, nextTitle: string) => {
+      if (!activeAgentKey) return;
+      const trimmed = nextTitle.trim();
+      const payload = trimmed.length > 0 ? trimmed : null;
+      const { session: updated } = await renameSession(activeAgentKey, sessionId, payload);
+      // Patch detail view + sidebar so the new title appears immediately,
+      // before the SSE-driven rescan catches up.
+      setSession((prev) =>
+        prev && prev.id === sessionId ? { ...prev, title: updated.title } : prev,
+      );
+      setSessions((prev) =>
+        prev.map((entry) => (entry.id === updated.id ? { ...entry, title: updated.title } : entry)),
+      );
+    },
+    [activeAgentKey],
+  );
+
+  const [renamingSidebarSessionId, setRenamingSidebarSessionId] = useState<string | null>(null);
 
   // Default: all groups collapsed; track which are expanded
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -1292,17 +1512,44 @@ export default function App() {
                                           : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
                                     }`}
                                   >
-                                    <Link
-                                      ref={(node) => {
-                                        if (node) sidebarItemRefs.current.set(item.id, node);
-                                        else sidebarItemRefs.current.delete(item.id);
-                                      }}
-                                      to={`/${activeAgentKey}/${item.id}`}
-                                      title={item.title}
-                                      className="console-mono line-clamp-1 min-w-0 flex-1"
-                                    >
-                                      {item.title}
-                                    </Link>
+                                    {renamingSidebarSessionId === item.id ? (
+                                      <SidebarRenameField
+                                        initial={item.title}
+                                        onCommit={async (next) => {
+                                          await handleRenameSession(item.id, next);
+                                          setRenamingSidebarSessionId(null);
+                                        }}
+                                        onCancel={() => setRenamingSidebarSessionId(null)}
+                                      />
+                                    ) : (
+                                      <Link
+                                        ref={(node) => {
+                                          if (node) sidebarItemRefs.current.set(item.id, node);
+                                          else sidebarItemRefs.current.delete(item.id);
+                                        }}
+                                        to={`/${activeAgentKey}/${item.id}`}
+                                        title={item.title}
+                                        className="console-mono line-clamp-1 min-w-0 flex-1"
+                                      >
+                                        {item.title}
+                                      </Link>
+                                    )}
+                                    {activeAgentKey === "claudecode" &&
+                                    renamingSidebarSessionId !== item.id ? (
+                                      <button
+                                        type="button"
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+                                          setRenamingSidebarSessionId(item.id);
+                                        }}
+                                        aria-label="Rename session"
+                                        title="Rename"
+                                        className="relative z-10 inline-flex size-6 shrink-0 items-center justify-center rounded-sm border border-transparent text-[var(--console-muted)] opacity-70 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] hover:opacity-100"
+                                      >
+                                        <Pencil className="size-3" strokeWidth={1.8} />
+                                      </button>
+                                    ) : null}
                                     <BookmarkButton
                                       active={isSessionBookmarked(activeAgentKey, item.id)}
                                       onToggle={() => toggleSessionBookmark(item, activeAgentKey)}
@@ -1354,9 +1601,20 @@ export default function App() {
                       ? "Dashboard"
                       : "Landing"}
                 </span>
-                <h1 className="console-mono text-xl font-semibold tracking-tight text-[var(--console-text)]">
-                  {headerTitle}
-                </h1>
+                {viewState.mode === "session" &&
+                session &&
+                !sessionError &&
+                activeAgentKey === "claudecode" ? (
+                  <EditableSessionTitle
+                    title={session.title || "Conversation"}
+                    canEdit
+                    onSave={(next) => handleRenameSession(session.id, next)}
+                  />
+                ) : (
+                  <h1 className="console-mono text-xl font-semibold tracking-tight text-[var(--console-text)]">
+                    {headerTitle}
+                  </h1>
+                )}
               </div>
               <p className="console-mono mt-1 text-xs text-[var(--console-muted)]">
                 {headerSubtitle}
