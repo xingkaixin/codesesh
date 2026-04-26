@@ -12,7 +12,11 @@ interface PresetOption {
 }
 
 const PRESETS: PresetOption[] = [
+  { label: "Yesterday", range: { kind: "yesterday" } },
+  { label: "Last 1 day", range: { kind: "preset", days: 1 } },
+  { label: "Last 3 days", range: { kind: "preset", days: 3 } },
   { label: "Last 7 days", range: { kind: "preset", days: 7 } },
+  { label: "Last 14 days", range: { kind: "preset", days: 14 } },
   { label: "Last 30 days", range: { kind: "preset", days: 30 } },
   { label: "Last 90 days", range: { kind: "preset", days: 90 } },
   { label: "All time", range: { kind: "all" } },
@@ -23,6 +27,7 @@ function rangesEqual(a: TimeRange | null, b: TimeRange): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === "preset" && b.kind === "preset") return a.days === b.days;
   if (a.kind === "all" && b.kind === "all") return true;
+  if (a.kind === "yesterday" && b.kind === "yesterday") return true;
   if (a.kind === "custom" && b.kind === "custom")
     return a.from === b.from && (a.to ?? "") === (b.to ?? "");
   return false;

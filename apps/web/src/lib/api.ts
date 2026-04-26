@@ -167,7 +167,16 @@ export interface SearchResult {
 export type TimeRange =
   | { kind: "preset"; days: number }
   | { kind: "custom"; from: string; to?: string }
+  | { kind: "yesterday" }
   | { kind: "all" };
+
+function formatLocalIsoDateForApi(ts: number): string {
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 function appendRangeParams(params: URLSearchParams, range?: TimeRange): void {
   if (!range) return;
@@ -175,6 +184,13 @@ function appendRangeParams(params: URLSearchParams, range?: TimeRange): void {
     params.set("days", String(range.days));
   } else if (range.kind === "all") {
     params.set("days", "0");
+  } else if (range.kind === "yesterday") {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - 1);
+    const iso = formatLocalIsoDateForApi(start.getTime());
+    params.set("from", iso);
+    params.set("to", iso);
   } else {
     params.set("from", range.from);
     if (range.to) params.set("to", range.to);

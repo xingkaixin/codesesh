@@ -72,13 +72,25 @@ function getSessionActivityTime(session: SessionHead): number {
   return session.time_updated ?? session.time_created;
 }
 
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 function parseDateParam(
   value: string | undefined,
   fallback: number | undefined,
+  bound: "start" | "end" = "start",
 ): number | undefined {
   if (value == null) return fallback;
   const ts = new Date(value).getTime();
-  return Number.isNaN(ts) ? fallback : ts;
+  if (Number.isNaN(ts)) return fallback;
+  // YYYY-MM-DD without time-of-day means "the whole day". For an upper
+  // bound we need to extend to 23:59:59.999 of that day, otherwise
+  // ?to=2026-04-26 truncates to that day's 00:00 UTC and excludes every
+  // session active later that day. (When the value already carries a
+  // time-of-day, respect it as-is.)
+  if (bound === "end" && typeof value === "string" && DATE_ONLY_RE.test(value)) {
+    return ts + 86400000 - 1;
+  }
+  return ts;
 }
 
 function parseDaysParam(value: string | undefined): number | undefined {
@@ -104,7 +116,7 @@ function resolveListWindow(
 ): { from: number | undefined; to: number | undefined } {
   const explicitDays = parseDaysParam(queryDays);
   const explicitFrom = parseDateParam(queryFrom, undefined);
-  const explicitTo = parseDateParam(queryTo, undefined);
+  const explicitTo = parseDateParam(queryTo, undefined, "end");
 
   let from: number | undefined;
   let to: number | undefined = explicitTo ?? defaults.to;
@@ -424,7 +436,7 @@ function resolveDashboardWindow(
   const todayStart = startOfLocalDay(now);
 
   // Query "to" wins over defaults, then "now" end-of-today as fallback
-  const toTs = parseDateParam(queryTo, defaults.to) ?? todayStart + 24 * 60 * 60 * 1000 - 1;
+  const toTs = parseDateParam(queryTo, defaults.to, "end") ?? todayStart + 24 * 60 * 60 * 1000 - 1;
 
   const hasQueryFrom = queryFrom != null && queryFrom !== "";
   const fromFromQuery = parseDateParam(queryFrom, undefined);

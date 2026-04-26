@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { AppConfig, TimeRange } from "./api";
 
-const PRESET_DAYS = new Set([7, 30, 90]);
+const PRESET_DAYS = new Set([1, 3, 7, 14, 30, 90]);
 
 export function isValidIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -13,6 +13,7 @@ export function isValidIsoDate(value: string): boolean {
 export function parseRangeParam(value: string | null): TimeRange | null {
   if (!value) return null;
   if (value === "all") return { kind: "all" };
+  if (value === "yesterday") return { kind: "yesterday" };
   const m = /^(\d+)d$/.exec(value);
   if (!m) return null;
   const days = parseInt(m[1]!, 10);
@@ -44,6 +45,7 @@ export function formatLocalIsoDate(ts: number): string {
 export function formatRangeLabel(range: TimeRange | null): string {
   if (!range) return "All time";
   if (range.kind === "all") return "All time";
+  if (range.kind === "yesterday") return "Yesterday";
   if (range.kind === "preset") {
     if (PRESET_DAYS.has(range.days)) return `Last ${range.days}d`;
     return `Last ${range.days}d`;
@@ -99,6 +101,7 @@ export function useTimeRange(cliFallback: TimeRange | null): UseTimeRangeResult 
           if (next) {
             if (next.kind === "preset") params.set("range", `${next.days}d`);
             else if (next.kind === "all") params.set("range", "all");
+            else if (next.kind === "yesterday") params.set("range", "yesterday");
             else {
               params.set("from", next.from);
               if (next.to) params.set("to", next.to);

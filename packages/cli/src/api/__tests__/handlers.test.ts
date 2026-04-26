@@ -228,6 +228,27 @@ describe("handleGetSessions", () => {
     expect(response.sessions).toHaveLength(2);
   });
 
+  it("treats from=YYYY-MM-DD&to=YYYY-MM-DD as the whole day", () => {
+    // 2024-06-15 12:34:56 UTC sits inside the requested day window.
+    const inDay = new Date("2024-06-15T12:34:56Z").getTime();
+    const dayBefore = new Date("2024-06-14T22:00:00Z").getTime();
+    const dayAfter = new Date("2024-06-16T01:00:00Z").getTime();
+    const c = makeMockContext({ query: { from: "2024-06-15", to: "2024-06-15" } });
+    handleGetSessions(
+      c,
+      makeScanSource({
+        sessions: [
+          makeSession("before", { time_created: dayBefore, time_updated: dayBefore }),
+          makeSession("inside", { time_created: inDay, time_updated: inDay }),
+          makeSession("after", { time_created: dayAfter, time_updated: dayAfter }),
+        ],
+        byAgent: {},
+      }),
+    );
+    const response = c.json.mock.calls[0]![0];
+    expect(response.sessions.map((s: { id: string }) => s.id)).toEqual(["inside"]);
+  });
+
   it("filters by days query param", () => {
     const now = Date.now();
     const c = makeMockContext({ query: { days: "3" } });
