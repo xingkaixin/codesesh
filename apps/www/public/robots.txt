@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://codesesh.xingkaixin.me/sitemap.xml

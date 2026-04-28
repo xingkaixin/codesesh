@@ -396,16 +396,18 @@ const features: FeatureItem[] = [
 
 export function Features() {
   return (
-    <section className="px-6 pb-20">
+    <section className="px-6 pb-20" aria-label="Features">
       <div className="mx-auto max-w-5xl">
         <h2 className="console-mono mb-2 text-center text-xs font-bold uppercase tracking-[0.16em] text-[var(--console-muted)]">
           Features
         </h2>
-        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((f) => (
-            <FeatureCard key={f.title} {...f} />
+            <li key={f.title}>
+              <FeatureCard {...f} />
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
     </section>
   );
@@ -435,24 +437,24 @@ const agents = [
 
 export function Agents() {
   return (
-    <section className="px-6 pb-20">
+    <section className="px-6 pb-20" aria-label="Supported AI Agents">
       <div className="mx-auto max-w-5xl">
         <h2 className="console-mono mb-2 text-center text-xs font-bold uppercase tracking-[0.16em] text-[var(--console-muted)]">
           Supported Agents
         </h2>
-        <div className="mt-10 grid grid-cols-2 justify-items-center gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <ul className="mt-10 grid grid-cols-2 justify-items-center gap-4 sm:grid-cols-3 lg:grid-cols-5">
           {agents.map((a) => (
-            <div
+            <li
               key={a.name}
               className="flex w-full max-w-[160px] flex-col items-center gap-2 rounded-sm border border-[var(--console-border)] bg-white px-4 py-5"
             >
-              <img src={a.icon} alt={a.name} className="size-8 object-contain" />
+              <img src={a.icon} alt={a.name} className="size-8 object-contain" width="32" height="32" loading="lazy" />
               <span className="console-mono text-xs font-semibold text-[var(--console-text)]">
                 {a.name}
               </span>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
     </section>
   );
