@@ -72,13 +72,68 @@ function getSessionActivityTime(session: SessionHead): number {
   return session.time_updated ?? session.time_created;
 }
 
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 function parseDateParam(
   value: string | undefined,
   fallback: number | undefined,
+  bound: "start" | "end" = "start",
 ): number | undefined {
   if (value == null) return fallback;
   const ts = new Date(value).getTime();
-  return Number.isNaN(ts) ? fallback : ts;
+  if (Number.isNaN(ts)) return fallback;
+  // YYYY-MM-DD without time-of-day means "the whole day". For an upper
+  // bound we need to extend to 23:59:59.999 of that day, otherwise
+  // ?to=2026-04-26 truncates to that day's 00:00 UTC and excludes every
+  // session active later that day. (When the value already carries a
+  // time-of-day, respect it as-is.)
+  if (bound === "end" && typeof value === "string" && DATE_ONLY_RE.test(value)) {
+    return ts + 86400000 - 1;
+  }
+  return ts;
+}
+
+function parseDaysParam(value: string | undefined): number | undefined {
+  if (value == null) return undefined;
+  if (value === "") return undefined;
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n)) return undefined;
+  // days=0 explicitly opts into "all time"
+  return n;
+}
+
+/**
+ * Resolve a session-list time window from optional query params + CLI defaults.
+ * Priority: explicit query > CLI defaults > undefined (no window).
+ * `days` is converted to a `from` timestamp (now - days * 86400000) when no
+ * explicit `from` is provided; `days=0` means "all time" and clears the window.
+ */
+function resolveListWindow(
+  defaults: SessionListDefaults,
+  queryDays: string | undefined,
+  queryFrom: string | undefined,
+  queryTo: string | undefined,
+): { from: number | undefined; to: number | undefined } {
+  const explicitDays = parseDaysParam(queryDays);
+  const explicitFrom = parseDateParam(queryFrom, undefined);
+  const explicitTo = parseDateParam(queryTo, undefined, "end");
+
+  let from: number | undefined;
+  let to: number | undefined = explicitTo ?? defaults.to;
+
+  if (explicitFrom != null) {
+    from = explicitFrom;
+  } else if (explicitDays != null) {
+    from = explicitDays > 0 ? Date.now() - explicitDays * 86400000 : undefined;
+    if (explicitDays === 0) {
+      // "all time" — also clear any default `to` so the window is fully open
+      to = explicitTo;
+    }
+  } else {
+    from = defaults.from;
+  }
+
+  return { from, to };
 }
 
 function filterSessionsByWindow(
@@ -119,7 +174,12 @@ export function handleGetAgents(
   defaults: SessionListDefaults = {},
 ) {
   const scanResult = scanSource.getSnapshot();
-  const { from, to } = defaults;
+  const { from, to } = resolveListWindow(
+    defaults,
+    c.req.query("days"),
+    c.req.query("from"),
+    c.req.query("to"),
+  );
   const counts = Object.fromEntries(
     Object.entries(scanResult.byAgent).map(([agentName, sessions]) => [
       agentName,
@@ -139,8 +199,12 @@ export function handleGetSessions(
   const agent = c.req.query("agent");
   const q = c.req.query("q")?.toLowerCase();
   const cwd = c.req.query("cwd")?.toLowerCase();
-  const from = parseDateParam(c.req.query("from"), defaults.from);
-  const to = parseDateParam(c.req.query("to"), defaults.to);
+  const { from, to } = resolveListWindow(
+    defaults,
+    c.req.query("days"),
+    c.req.query("from"),
+    c.req.query("to"),
+  );
 
   let sessions: SessionHead[] = [];
 
@@ -176,8 +240,12 @@ export function handleSearchSessions(
   const scanResult = scanSource.getSnapshot();
   const agent = c.req.query("agent");
   const cwd = c.req.query("cwd");
-  const from = parseDateParam(c.req.query("from"), defaults.from);
-  const to = parseDateParam(c.req.query("to"), defaults.to);
+  const { from, to } = resolveListWindow(
+    defaults,
+    c.req.query("days"),
+    c.req.query("from"),
+    c.req.query("to"),
+  );
 
   for (const indexedAgent of scanResult.agents) {
     const sessions = scanResult.byAgent[indexedAgent.name] ?? [];
@@ -362,19 +430,28 @@ function resolveDashboardWindow(
   queryDays: string | undefined,
   queryFrom: string | undefined,
   queryTo: string | undefined,
+  earliestSessionTs?: number,
 ): { from: number; to: number; days: number } {
   const now = Date.now();
   const todayStart = startOfLocalDay(now);
 
   // Query "to" wins over defaults, then "now" end-of-today as fallback
-  const toTs = parseDateParam(queryTo, defaults.to) ?? todayStart + 24 * 60 * 60 * 1000 - 1;
+  const toTs = parseDateParam(queryTo, defaults.to, "end") ?? todayStart + 24 * 60 * 60 * 1000 - 1;
+
+  const hasQueryFrom = queryFrom != null && queryFrom !== "";
+  const fromFromQuery = parseDateParam(queryFrom, undefined);
 
   // Resolve days (preferred): query, defaults.days, or derive from defaults.from
   const parsedDays = queryDays ? parseInt(queryDays, 10) : NaN;
+  if (parsedDays === 0 && !hasQueryFrom) {
+    const fromTs = startOfLocalDay(earliestSessionTs ?? todayStart);
+    const days = Math.max(1, Math.ceil((todayStart - fromTs) / 86400000) + 1);
+    return { from: fromTs, to: toTs, days };
+  }
+
   let days: number | undefined =
     Number.isFinite(parsedDays) && parsedDays > 0 ? parsedDays : defaults.days;
 
-  const fromFromQuery = parseDateParam(queryFrom, undefined);
   let fromTs: number;
   if (fromFromQuery != null) {
     fromTs = startOfLocalDay(fromFromQuery);
@@ -398,11 +475,18 @@ export function handleGetDashboard(
   defaults: SessionListDefaults = {},
 ) {
   const scanResult = scanSource.getSnapshot();
+  const earliestActivity =
+    scanResult.sessions.length > 0
+      ? Math.min(
+          ...scanResult.sessions.map((session) => session.time_updated ?? session.time_created),
+        )
+      : Date.now();
   const { from, to, days } = resolveDashboardWindow(
     defaults,
     c.req.query("days"),
     c.req.query("from"),
     c.req.query("to"),
+    earliestActivity,
   );
 
   const windowed = filterSessionsByActivityWindow(scanResult.sessions, from, to);
