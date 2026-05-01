@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ModelConfig } from "../config";
 import { cn } from "../lib/utils";
 import type { Message, MessagePart, SessionData } from "../lib/api";
+import { InteractiveReceipt } from "./InteractiveReceipt";
 import { MarkdownContent } from "./MarkdownContent";
 import {
   buildMessageBlocks,
@@ -1480,11 +1481,11 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-8 px-2 md:px-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+    <div className="mx-auto w-full max-w-[1440px] space-y-8 px-2 md:px-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
       <SessionSummarySection
         summary={typeof session.summary_files === "string" ? session.summary_files : undefined}
       />
-      <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:items-start">
+      <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_320px] lg:items-start">
         <SessionToc
           toc={toc}
           fileChangeSummary={fileChangeSummary}
@@ -1521,6 +1522,7 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
             </div>
           )}
         </div>
+        <InteractiveReceipt session={session} toc={toc} />
       </div>
     </div>
   );
