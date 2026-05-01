@@ -8,6 +8,17 @@ export interface SessionStats {
   total_cache_create_tokens?: number;
 }
 
+export type SmartTag =
+  | "bugfix"
+  | "refactoring"
+  | "feature-dev"
+  | "testing"
+  | "docs"
+  | "git-ops"
+  | "build-deploy"
+  | "exploration"
+  | "planning";
+
 export interface MessageTokens {
   input?: number;
   output?: number;
@@ -69,6 +80,8 @@ export interface SessionHead {
   time_updated?: number;
   stats: SessionStats;
   model_usage?: Record<string, number>;
+  smart_tags?: SmartTag[];
+  smart_tags_source_updated_at?: number;
 }
 
 /** Full session data for detail view */
@@ -83,4 +96,6 @@ export interface SessionData {
   summary_files?: unknown;
   stats: SessionStats;
   messages: Message[];
+  smart_tags?: SmartTag[];
+  smart_tags_source_updated_at?: number;
 }

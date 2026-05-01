@@ -27,6 +27,7 @@ import { cn } from "../lib/utils";
 import type { Message, MessagePart, SessionData } from "../lib/api";
 import { InteractiveReceipt } from "./InteractiveReceipt";
 import { MarkdownContent } from "./MarkdownContent";
+import { SmartTagChips } from "./SmartTagChips";
 import {
   buildMessageBlocks,
   extractMessageText,
@@ -1440,6 +1441,31 @@ function formatMessageTime(rawTime: number | string) {
   });
 }
 
+function formatSessionDate(timestamp?: number) {
+  if (!timestamp) return "Unknown";
+  return new Date(timestamp).toLocaleString("zh-CN");
+}
+
+function SessionMetadataBar({ session }: { session: SessionData }) {
+  if (!session.smart_tags || session.smart_tags.length === 0) return null;
+
+  return (
+    <section className="rounded-sm border border-[var(--console-border)] bg-white px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <p className="console-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--console-muted)]">
+            Smart Tags
+          </p>
+          <SmartTagChips tags={session.smart_tags} limit={9} className="mt-2" />
+        </div>
+        <p className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
+          Source updated {formatSessionDate(session.smart_tags_source_updated_at)}
+        </p>
+      </div>
+    </section>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // SessionDetail (main export)
 // ---------------------------------------------------------------------------
@@ -1485,6 +1511,7 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
       <SessionSummarySection
         summary={typeof session.summary_files === "string" ? session.summary_files : undefined}
       />
+      <SessionMetadataBar session={session} />
       <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_320px] lg:items-start">
         <SessionToc
           toc={toc}

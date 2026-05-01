@@ -5,6 +5,17 @@ export interface AgentInfo {
   icon: string;
 }
 
+export type SmartTag =
+  | "bugfix"
+  | "refactoring"
+  | "feature-dev"
+  | "testing"
+  | "docs"
+  | "git-ops"
+  | "build-deploy"
+  | "exploration"
+  | "planning";
+
 export interface SessionHead {
   id: string;
   slug: string;
@@ -19,6 +30,8 @@ export interface SessionHead {
     total_cost: number;
     total_tokens?: number;
   };
+  smart_tags?: SmartTag[];
+  smart_tags_source_updated_at?: number;
 }
 
 export interface MessageTokens {
@@ -87,6 +100,8 @@ export interface SessionData {
     total_tokens?: number;
   };
   messages: Message[];
+  smart_tags?: SmartTag[];
+  smart_tags_source_updated_at?: number;
 }
 
 export interface SessionsUpdatedEvent {
@@ -128,6 +143,13 @@ export interface ModelDistributionEntry {
   sessions: number;
 }
 
+export interface DashboardTagStat {
+  tag: SmartTag;
+  sessions: number;
+  messages: number;
+  tokens: number;
+}
+
 export interface DashboardTotals {
   sessions: number;
   messages: number;
@@ -146,6 +168,7 @@ export interface DashboardData {
   dailyActivity: DashboardDailyBucket[];
   dailyTokenActivity: DailyTokenBucket[];
   modelDistribution: ModelDistributionEntry[];
+  tagDistribution: DashboardTagStat[];
   recentSessions: DashboardRecentSession[];
   window: { from: number; to: number; days: number };
 }

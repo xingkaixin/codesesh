@@ -6,12 +6,14 @@ import type {
   DashboardData,
   DashboardAgentStat,
   DashboardDailyBucket,
+  DashboardTagStat,
   DailyTokenBucket,
   ModelDistributionEntry,
   DashboardRecentSession,
 } from "../lib/api";
 import { getSessionBookmarkKey } from "../lib/bookmarks";
 import { BookmarkButton } from "./BookmarkButton";
+import { getSmartTagTone, SMART_TAG_LABELS, SmartTagChips } from "./SmartTagChips";
 
 interface DashboardProps {
   data: DashboardData;
@@ -522,6 +524,63 @@ function AgentDistribution({ perAgent }: { perAgent: DashboardAgentStat[] }) {
   );
 }
 
+function SmartTagDistribution({ tags }: { tags: DashboardTagStat[] }) {
+  const total = useMemo(() => Math.max(1, ...tags.map((tag) => tag.sessions)), [tags]);
+
+  if (tags.length === 0) {
+    return (
+      <div className="rounded-sm border border-[var(--console-border)] bg-white p-4 text-sm text-[var(--console-muted)]">
+        No smart tag data yet
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
+          Smart Tags
+        </h3>
+        <span className="console-mono text-[11px] text-[var(--console-muted)]">
+          {tags.length} tags
+        </span>
+      </div>
+
+      <ul className="space-y-2">
+        {tags.slice(0, 9).map((tag) => {
+          const pct = (tag.sessions / total) * 100;
+          const tone = getSmartTagTone(tag.tag);
+          return (
+            <li key={tag.tag}>
+              <div className="flex items-center gap-2">
+                <span className="console-mono min-w-0 flex-1 truncate text-xs text-[var(--console-text)]">
+                  {SMART_TAG_LABELS[tag.tag]}
+                </span>
+                <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
+                  {formatNumber(tag.sessions)}
+                </span>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-sm bg-[var(--console-surface-muted)]">
+                <div
+                  className="h-full"
+                  style={{
+                    width: `${pct}%`,
+                    backgroundColor: tone.bar,
+                  }}
+                />
+              </div>
+              <div className="console-mono mt-1 flex gap-3 text-[10px] text-[var(--console-muted)]">
+                <span>{formatNumber(tag.messages)} msgs</span>
+                <span>{formatCompact(tag.tokens)} tokens</span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function BookmarkedSessions({
   sessions,
   onToggleBookmark,
@@ -630,6 +689,7 @@ function RecentSessions({
                   <p className="console-mono mt-0.5 line-clamp-1 text-[11px] text-[var(--console-muted)]">
                     /{session.slug}
                   </p>
+                  <SmartTagChips tags={session.smart_tags} className="mt-1.5" />
                 </Link>
                 <BookmarkButton
                   active={bookmarked}
@@ -650,8 +710,15 @@ export function Dashboard({
   isBookmarked,
   onToggleBookmark,
 }: DashboardProps) {
-  const { totals, perAgent, dailyActivity, dailyTokenActivity, modelDistribution, recentSessions } =
-    data;
+  const {
+    totals,
+    perAgent,
+    dailyActivity,
+    dailyTokenActivity,
+    modelDistribution,
+    tagDistribution,
+    recentSessions,
+  } = data;
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -673,9 +740,10 @@ export function Dashboard({
       <DailyActivityChart buckets={dailyActivity} />
       <DailyTokenChart buckets={dailyTokenActivity} />
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
         <ModelDistribution entries={modelDistribution} />
         <AgentDistribution perAgent={perAgent} />
+        <SmartTagDistribution tags={tagDistribution} />
       </div>
 
       <RecentSessions

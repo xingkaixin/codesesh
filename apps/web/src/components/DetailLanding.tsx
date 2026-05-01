@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ModelConfig } from "../config";
 import type { SessionHead } from "../lib/api";
 import { BookmarkButton } from "./BookmarkButton";
+import { SmartTagChips } from "./SmartTagChips";
 
 export interface LandingSession extends SessionHead {
   agentKey: string;
@@ -193,6 +194,7 @@ function RecentSessions({
                     /{session.fullPath} ·{" "}
                     {formatRelativeTime(session.time_updated || session.time_created)}
                   </p>
+                  <SmartTagChips tags={session.smart_tags} className="mt-1.5" />
                 </Link>
                 <BookmarkButton active={bookmarked} onToggle={() => onToggleBookmark(session)} />
               </div>

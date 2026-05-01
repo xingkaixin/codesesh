@@ -122,6 +122,8 @@ vi.mock("../cache.js", () => ({
 }));
 
 vi.mock("../../utils/index.js", () => ({
+  classifySessionTags: vi.fn(() => []),
+  getSmartTagSourceTimestamp: vi.fn(() => 1000),
   perf: {
     start: vi.fn(() => ({ name: "test", startTime: 0, children: [] })),
     end: vi.fn(),
@@ -164,7 +166,19 @@ function createTestAgent(overrides: {
     if (overrides.metaMap) agent._metaMap = overrides.metaMap;
     return overrides.sessions;
   };
-  agent.getSessionData = () => ({}) as SessionData;
+  agent.getSessionData = () => ({
+    id: "s1",
+    title: "Session",
+    directory: "/repo",
+    time_created: 1000,
+    messages: [],
+    stats: {
+      message_count: 0,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_cost: 0,
+    },
+  });
   agent.getSessionMetaMap = overrides.metaMap ? () => overrides.metaMap! : undefined;
   agent.setSessionMetaMap = undefined;
   agent.checkForChanges = overrides.checkForChangesResult
@@ -316,7 +330,11 @@ describe("scanSessions", () => {
 
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions[0]!.id).toBe("fresh");
-    expect(mockedSaveCachedSessions).toHaveBeenCalledWith("test", refreshedSessions, {});
+    expect(mockedSaveCachedSessions).toHaveBeenCalledWith(
+      "test",
+      [{ ...refreshedSessions[0]!, smart_tags: [], smart_tags_source_updated_at: 1000 }],
+      {},
+    );
   });
 
   it("does not crash without onProgress callback", async () => {

@@ -284,6 +284,38 @@ describe("handleGetDashboard", () => {
     expect(response.perAgent[0]?.name).toBe("claudecode");
   });
 
+  it("aggregates smart tag distribution", () => {
+    const c = makeMockContext();
+    const sessions = [
+      makeSession("a", {
+        smart_tags: ["bugfix", "testing"],
+        stats: {
+          message_count: 2,
+          total_input_tokens: 10,
+          total_output_tokens: 5,
+          total_cost: 0,
+        },
+      }),
+      makeSession("b", {
+        smart_tags: ["bugfix"],
+        stats: {
+          message_count: 3,
+          total_input_tokens: 1,
+          total_output_tokens: 1,
+          total_cost: 0,
+        },
+      }),
+    ];
+
+    handleGetDashboard(c, makeScanSource({ sessions, byAgent: { claudecode: sessions } }));
+    const response = c.json.mock.calls[0]![0];
+
+    expect(response.tagDistribution).toEqual([
+      { tag: "bugfix", sessions: 2, messages: 5, tokens: 17 },
+      { tag: "testing", sessions: 1, messages: 2, tokens: 15 },
+    ]);
+  });
+
   it("uses activity time instead of creation time for dashboard windowing", () => {
     const c = makeMockContext({ query: { days: "7" } });
     const now = Date.now();

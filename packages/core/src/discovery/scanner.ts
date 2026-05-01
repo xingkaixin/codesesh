@@ -2,7 +2,7 @@ import { resolve, sep } from "node:path";
 import type { SessionHead } from "../types/index.js";
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import { createRegisteredAgents } from "../agents/index.js";
-import { perf } from "../utils/index.js";
+import { classifySessionTags, getSmartTagSourceTimestamp, perf } from "../utils/index.js";
 import { loadCachedSessions, saveCachedSessions } from "./cache.js";
 
 export interface ScanOptions {
@@ -90,6 +90,36 @@ function buildAgentCacheMeta(agent: BaseAgent): Record<string, SessionCacheMeta>
   return meta;
 }
 
+function ensureSessionTags(
+  agent: BaseAgent,
+  sessions: SessionHead[],
+): { sessions: SessionHead[]; changed: boolean } {
+  let changed = false;
+
+  const tagged = sessions.map((session) => {
+    const sourceUpdatedAt = session.time_updated ?? session.time_created;
+    const currentTags = Array.isArray(session.smart_tags) ? session.smart_tags : null;
+    if (currentTags && session.smart_tags_source_updated_at === sourceUpdatedAt) {
+      return session;
+    }
+
+    try {
+      const data = agent.getSessionData(session.id);
+      const tags = classifySessionTags(data);
+      changed = true;
+      return {
+        ...session,
+        smart_tags: tags,
+        smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
+      };
+    } catch {
+      return session;
+    }
+  });
+
+  return { sessions: tagged, changed };
+}
+
 /**
  * 智能扫描单个 Agent
  * 1. 优先使用缓存立即返回
@@ -146,23 +176,29 @@ async function scanAgentSmart(
           const updatedSessions = await Promise.resolve(
             agent.incrementalScan!(cached.sessions, checkResult.changedIds || []),
           );
+          const tagged = ensureSessionTags(agent, updatedSessions);
 
-          saveCachedSessions(agent.name, updatedSessions, buildAgentCacheMeta(agent));
+          saveCachedSessions(agent.name, tagged.sessions, buildAgentCacheMeta(agent));
 
           onProgress?.({
             agent: agent.name,
             phase: "complete",
-            newCount: updatedSessions.length,
+            newCount: tagged.sessions.length,
           });
 
-          const filtered = filterSessions(updatedSessions, options);
+          const filtered = filterSessions(tagged.sessions, options);
           return { agent, heads: filtered, fromCache: true, refreshed: true };
         }
 
         onProgress?.({ agent: agent.name, phase: "complete", newCount: cached.sessions.length });
       }
 
-      const filtered = filterSessions(cached.sessions, options);
+      const tagged = ensureSessionTags(agent, cached.sessions);
+      if (tagged.changed) {
+        saveCachedSessions(agent.name, tagged.sessions, buildAgentCacheMeta(agent));
+      }
+
+      const filtered = filterSessions(tagged.sessions, options);
       return { agent, heads: filtered, fromCache: true };
     }
   }
@@ -191,16 +227,17 @@ async function scanAgentFull(
     const scanMarker = perf.start(`agent:${agent.name}:scan`);
     const heads = agent.scan();
     perf.end(scanMarker);
+    const tagged = ensureSessionTags(agent, heads);
 
     // 收集元数据
     const meta = buildAgentCacheMeta(agent);
 
     // 保存到缓存
-    saveCachedSessions(agent.name, heads, meta);
+    saveCachedSessions(agent.name, tagged.sessions, meta);
 
-    onProgress?.({ agent: agent.name, phase: "complete", newCount: heads.length });
+    onProgress?.({ agent: agent.name, phase: "complete", newCount: tagged.sessions.length });
 
-    const filtered = filterSessions(heads, options);
+    const filtered = filterSessions(tagged.sessions, options);
     return { agent, heads: filtered, fromCache: false };
   } catch (err) {
     console.error(`Error scanning ${agent.name}:`, err);

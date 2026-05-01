@@ -1,9 +1,17 @@
 import type { Context } from "hono";
-import type { BookmarkRecord, ScanResult, SessionData, SessionHead } from "@codesesh/core";
+import type {
+  BookmarkRecord,
+  ScanResult,
+  SessionData,
+  SessionHead,
+  SmartTag,
+} from "@codesesh/core";
 import {
   BookmarkStorageUnavailableError,
   deleteBookmark,
   getAgentInfoMap,
+  classifySessionTags,
+  getSmartTagSourceTimestamp,
   importBookmarks,
   listBookmarks,
   searchSessions,
@@ -139,6 +147,7 @@ export function handleGetSessions(
   const agent = c.req.query("agent");
   const q = c.req.query("q")?.toLowerCase();
   const cwd = c.req.query("cwd")?.toLowerCase();
+  const tag = c.req.query("tag")?.toLowerCase();
   const from = parseDateParam(c.req.query("from"), defaults.from);
   const to = parseDateParam(c.req.query("to"), defaults.to);
 
@@ -155,6 +164,9 @@ export function handleGetSessions(
     sessions = sessions.filter((s) => s.directory.toLowerCase().includes(cwd));
   }
   sessions = filterSessionsByActivityWindow(sessions, from, to);
+  if (tag) {
+    sessions = sessions.filter((s) => s.smart_tags?.includes(tag as SmartTag));
+  }
 
   if (q) {
     sessions = sessions.filter((s) => s.title.toLowerCase().includes(q));
@@ -214,7 +226,11 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
 
   try {
     const data: SessionData = agent.getSessionData(sessionId);
-    return c.json(data);
+    return c.json({
+      ...data,
+      smart_tags: classifySessionTags(data),
+      smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load session";
     return c.json({ error: message }, 500);
@@ -320,6 +336,13 @@ export interface ModelDistributionEntry {
   sessions: number;
 }
 
+export interface DashboardTagStat {
+  tag: SmartTag;
+  sessions: number;
+  messages: number;
+  tokens: number;
+}
+
 export interface DashboardTotals {
   sessions: number;
   messages: number;
@@ -338,6 +361,7 @@ export interface DashboardData {
   dailyActivity: DashboardDailyBucket[];
   dailyTokenActivity: DailyTokenBucket[];
   modelDistribution: ModelDistributionEntry[];
+  tagDistribution: DashboardTagStat[];
   recentSessions: DashboardRecentSession[];
   /** Time window covered by dailyActivity (inclusive, ms) */
   window: { from: number; to: number; days: number };
@@ -463,6 +487,7 @@ export function handleGetDashboard(
   }
 
   const modelAgg = new Map<string, { tokens: number; sessions: number }>();
+  const tagAgg = new Map<SmartTag, { sessions: number; messages: number; tokens: number }>();
 
   for (const session of windowed) {
     const key = toLocalDateKey(getSessionActivityTime(session));
@@ -494,6 +519,22 @@ export function handleGetDashboard(
         }
       }
     }
+
+    for (const tag of session.smart_tags ?? []) {
+      const entry = tagAgg.get(tag);
+      const tokens = getTotalTokens(session.stats);
+      if (entry) {
+        entry.sessions += 1;
+        entry.messages += session.stats.message_count;
+        entry.tokens += tokens;
+      } else {
+        tagAgg.set(tag, {
+          sessions: 1,
+          messages: session.stats.message_count,
+          tokens,
+        });
+      }
+    }
   }
 
   const dailyActivity = [...dailyMap.values()];
@@ -502,6 +543,15 @@ export function handleGetDashboard(
   const modelDistribution: ModelDistributionEntry[] = [...modelAgg.entries()]
     .map(([model, { tokens, sessions: count }]) => ({ model, tokens, sessions: count }))
     .sort((a, b) => b.tokens - a.tokens);
+
+  const tagDistribution: DashboardTagStat[] = [...tagAgg.entries()]
+    .map(([tag, { sessions: count, messages, tokens }]) => ({
+      tag,
+      sessions: count,
+      messages,
+      tokens,
+    }))
+    .sort((a, b) => b.sessions - a.sessions || a.tag.localeCompare(b.tag));
 
   const recentSessions: DashboardRecentSession[] = [...windowed]
     .sort((a, b) => getSessionActivityTime(b) - getSessionActivityTime(a))
@@ -523,6 +573,7 @@ export function handleGetDashboard(
     dailyActivity,
     dailyTokenActivity,
     modelDistribution,
+    tagDistribution,
     recentSessions,
     window: { from, to, days },
   };
