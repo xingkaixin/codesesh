@@ -390,6 +390,16 @@ export default function App() {
     () => (activeAgentKey ? (sessionsByAgent[activeAgentKey] ?? []) : []),
     [activeAgentKey, sessionsByAgent],
   );
+  const bookmarkedSidebarSessionIds = useMemo(() => {
+    if (!activeAgentKey) return new Set<string>();
+    return new Set(
+      sidebarSessions
+        .filter((sessionItem) =>
+          bookmarkKeySet.has(getSessionBookmarkKey(activeAgentKey, sessionItem.id)),
+        )
+        .map((sessionItem) => sessionItem.id),
+    );
+  }, [activeAgentKey, bookmarkKeySet, sidebarSessions]);
 
   const bookmarkedSessions = useMemo(
     () =>
@@ -1135,6 +1145,10 @@ export default function App() {
                     setSelectedSidebarSessionId(sessionId);
                     navigate(`/${activeAgentKey}/${sessionId}`);
                   }}
+                  bookmarkedSessionIds={bookmarkedSidebarSessionIds}
+                  onToggleBookmark={(sessionItem) =>
+                    toggleSessionBookmark(sessionItem, activeAgentKey)
+                  }
                 />
               )}
             </section>
