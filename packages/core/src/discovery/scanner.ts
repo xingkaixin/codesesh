@@ -1,5 +1,7 @@
 import { resolve, sep } from "node:path";
-import type { ProjectIdentity, SessionHead } from "../types/index.js";
+import { availableParallelism } from "node:os";
+import { Worker } from "node:worker_threads";
+import type { ProjectIdentity, SessionHead, SmartTag } from "../types/index.js";
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import { createRegisteredAgents } from "../agents/index.js";
 import { computeIdentity, realFs } from "../projects/index.js";
@@ -115,6 +117,13 @@ interface AgentScanResult {
   refreshed?: boolean;
 }
 
+interface SmartTagWorkerResult {
+  id: string;
+  tags?: SmartTag[];
+  sourceUpdatedAt?: number;
+  error?: string;
+}
+
 function buildAgentCacheMeta(agent: BaseAgent): Record<string, SessionCacheMeta> {
   const metaMap = agent.getSessionMetaMap?.();
   const meta: Record<string, SessionCacheMeta> = {};
@@ -127,7 +136,20 @@ function buildAgentCacheMeta(agent: BaseAgent): Record<string, SessionCacheMeta>
   return meta;
 }
 
-function ensureSessionTags(
+function getSmartTagWorkerCount(sessionCount: number): number {
+  if (sessionCount < 8) return 1;
+  return Math.min(sessionCount, Math.max(1, Math.min(4, availableParallelism() - 1)));
+}
+
+function chunkSessions<T>(items: T[], chunkCount: number): T[][] {
+  const chunks = Array.from({ length: chunkCount }, () => [] as T[]);
+  items.forEach((item, index) => {
+    chunks[index % chunkCount]!.push(item);
+  });
+  return chunks.filter((chunk) => chunk.length > 0);
+}
+
+function ensureSessionTagsSync(
   agent: BaseAgent,
   sessions: SessionHead[],
 ): { sessions: SessionHead[]; changed: boolean } {
@@ -155,6 +177,118 @@ function ensureSessionTags(
   });
 
   return { sessions: tagged, changed };
+}
+
+async function classifySessionTagsInWorker(
+  agentName: string,
+  sessionIds: string[],
+): Promise<SmartTagWorkerResult[]> {
+  return new Promise((resolveWorker, rejectWorker) => {
+    const worker = new Worker(
+      `
+        const { parentPort, workerData } = require("node:worker_threads");
+
+        (async () => {
+          const {
+            createRegisteredAgents,
+            classifySessionTags,
+            getSmartTagSourceTimestamp,
+          } = await import("@codesesh/core");
+
+          const agent = createRegisteredAgents().find((item) => item.name === workerData.agentName);
+          const results = [];
+
+          if (agent) {
+            for (const sessionId of workerData.sessionIds) {
+              try {
+                const data = agent.getSessionData(sessionId);
+                results.push({
+                  id: sessionId,
+                  tags: classifySessionTags(data),
+                  sourceUpdatedAt: getSmartTagSourceTimestamp(data),
+                });
+              } catch (error) {
+                results.push({
+                  id: sessionId,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              }
+            }
+          }
+
+          parentPort?.postMessage(results);
+        })().catch((error) => {
+          parentPort?.postMessage([
+            {
+              id: "",
+              error: error instanceof Error ? error.message : String(error),
+            },
+          ]);
+        });
+      `,
+      {
+        eval: true,
+        workerData: { agentName, sessionIds },
+      },
+    );
+
+    worker.once("message", (results: SmartTagWorkerResult[]) => {
+      resolveWorker(results);
+    });
+    worker.once("error", rejectWorker);
+    worker.once("exit", (code) => {
+      if (code !== 0) {
+        rejectWorker(new Error(`Smart tag worker exited with code ${code}`));
+      }
+    });
+  });
+}
+
+async function ensureSessionTags(
+  agent: BaseAgent,
+  sessions: SessionHead[],
+): Promise<{ sessions: SessionHead[]; changed: boolean }> {
+  const staleSessions = sessions.filter((session) => {
+    const sourceUpdatedAt = session.time_updated ?? session.time_created;
+    const currentTags = Array.isArray(session.smart_tags) ? session.smart_tags : null;
+    return !currentTags || session.smart_tags_source_updated_at !== sourceUpdatedAt;
+  });
+
+  if (staleSessions.length === 0) {
+    return { sessions, changed: false };
+  }
+
+  const workerCount = getSmartTagWorkerCount(staleSessions.length);
+  if (workerCount <= 1) {
+    return ensureSessionTagsSync(agent, sessions);
+  }
+
+  try {
+    const results = (
+      await Promise.all(
+        chunkSessions(
+          staleSessions.map((session) => session.id),
+          workerCount,
+        ).map((sessionIds) => classifySessionTagsInWorker(agent.name, sessionIds)),
+      )
+    ).flat();
+    const resultMap = new Map(results.filter((item) => item.tags).map((item) => [item.id, item]));
+
+    return {
+      changed: resultMap.size > 0,
+      sessions: sessions.map((session) => {
+        const result = resultMap.get(session.id);
+        if (!result?.tags || result.sourceUpdatedAt == null) return session;
+        return {
+          ...session,
+          smart_tags: result.tags,
+          smart_tags_source_updated_at: result.sourceUpdatedAt,
+        };
+      }),
+    };
+  } catch {
+    return ensureSessionTagsSync(agent, sessions);
+  }
 }
 
 /**
@@ -217,7 +351,7 @@ async function scanAgentSmart(
           const tagged =
             options.includeSmartTags === false
               ? { sessions: sessionsWithIdentity, changed: false }
-              : ensureSessionTags(agent, sessionsWithIdentity);
+              : await ensureSessionTags(agent, sessionsWithIdentity);
 
           if (options.writeCache !== false && options.from == null && options.to == null) {
             saveCachedSessions(agent.name, tagged.sessions, buildAgentCacheMeta(agent));
@@ -240,7 +374,7 @@ async function scanAgentSmart(
       const tagged =
         options.includeSmartTags === false
           ? { sessions: cachedWithIdentity, changed: false }
-          : ensureSessionTags(agent, cachedWithIdentity);
+          : await ensureSessionTags(agent, cachedWithIdentity);
       if (
         tagged.changed &&
         options.writeCache !== false &&
@@ -283,7 +417,7 @@ async function scanAgentFull(
     const tagged =
       options.includeSmartTags === false
         ? { sessions: headsWithIdentity, changed: false }
-        : ensureSessionTags(agent, headsWithIdentity);
+        : await ensureSessionTags(agent, headsWithIdentity);
 
     // 收集元数据
     const meta = buildAgentCacheMeta(agent);

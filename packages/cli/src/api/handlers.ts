@@ -21,6 +21,7 @@ import {
   syncSessionSearchIndex,
   upsertBookmark,
 } from "@codesesh/core";
+import { appLogger } from "../logging.js";
 
 export interface ScanResultSource {
   getSnapshot(): ScanResult;
@@ -31,6 +32,11 @@ export interface SessionListDefaults {
   to?: number;
   /** When --days was used, original value — kept for UI "last N days" label */
   days?: number;
+}
+
+interface ClientLogPayload {
+  event?: unknown;
+  data?: unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -119,6 +125,22 @@ function matchesProjectScope(session: SessionHead, cwd: string): boolean {
   const identity = computeIdentity(cwd, realFs);
   if (session.project_identity?.key === identity.key) return true;
   return session.directory.toLowerCase().includes(cwd.toLowerCase());
+}
+
+function sanitizeClientLogData(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) return {};
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .slice(0, 30)
+      .map(([key, item]) => {
+        if (typeof item === "string") return [key, item.slice(0, 300)];
+        if (typeof item === "number" || typeof item === "boolean" || item == null) {
+          return [key, item];
+        }
+        return [key, String(item).slice(0, 300)];
+      }),
+  );
 }
 
 export function handleGetConfig(c: Context, defaults: SessionListDefaults) {
@@ -237,6 +259,7 @@ export function handleSearchSessions(
 }
 
 export async function handleGetSessionData(c: Context, scanSource: ScanResultSource) {
+  const startedAt = performance.now();
   const scanResult = scanSource.getSnapshot();
   const agentName = c.req.param("agent");
   const sessionId = c.req.param("id");
@@ -252,18 +275,53 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
   }
 
   try {
+    const loadStartedAt = performance.now();
     const data: SessionData = agent.getSessionData(sessionId);
+    const loadDuration = performance.now() - loadStartedAt;
+    const tagStartedAt = performance.now();
+    const smartTags = classifySessionTags(data);
+    const tagDuration = performance.now() - tagStartedAt;
     const head = scanResult.byAgent[agentName]?.find((item) => item.id === sessionId);
+    appLogger.info("api.session_data", {
+      agent: agentName,
+      session_id: sessionId,
+      messages: data.messages.length,
+      load_duration_ms: Math.round(loadDuration),
+      tag_duration_ms: Math.round(tagDuration),
+      duration_ms: Math.round(performance.now() - startedAt),
+    });
     return c.json({
       ...data,
       project_identity: data.project_identity ?? head?.project_identity,
-      smart_tags: classifySessionTags(data),
+      smart_tags: smartTags,
       smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load session";
+    appLogger.error("api.session_data.error", {
+      agent: agentName,
+      session_id: sessionId,
+      duration_ms: Math.round(performance.now() - startedAt),
+      error: message,
+    });
     return c.json({ error: message }, 500);
   }
+}
+
+export async function handlePostClientLog(c: Context) {
+  const payload = (await c.req.json().catch(() => null)) as ClientLogPayload | null;
+  const rawEvent = payload?.event;
+
+  if (typeof rawEvent !== "string" || !rawEvent.trim()) {
+    return c.json({ ok: false }, 400);
+  }
+
+  const event = rawEvent
+    .trim()
+    .replace(/[^a-zA-Z0-9_.:-]/g, "_")
+    .slice(0, 120);
+  appLogger.info(`client.${event}`, sanitizeClientLogData(payload?.data));
+  return c.json({ ok: true });
 }
 
 export function handleGetBookmarks(c: Context) {

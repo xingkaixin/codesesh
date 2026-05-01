@@ -7,6 +7,7 @@ import {
   handleGetProjects,
   handleDeleteBookmark,
   handleImportBookmarks,
+  handlePostClientLog,
   handleSearchSessions,
   handleGetSessions,
   handleGetSessionData,
@@ -88,6 +89,7 @@ export function createApiRoutes(
   api.put("/bookmarks", (c) => handlePutBookmark(c));
   api.post("/bookmarks/import", (c) => handleImportBookmarks(c));
   api.delete("/bookmarks/:agent/:id", (c) => handleDeleteBookmark(c));
+  api.post("/logs", (c) => handlePostClientLog(c));
   if (store) {
     api.get("/events", (c) => createSseResponse(store, c.req.raw.signal));
   }

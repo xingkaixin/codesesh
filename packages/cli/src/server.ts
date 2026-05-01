@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { logger } from "hono/logger";
 import { existsSync } from "node:fs";
 import type { Server } from "node:http";
 import { resolve, dirname } from "node:path";
@@ -9,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import type { ScanResultSource } from "./api/handlers.js";
 import { createApiRoutes, type ApiRouteOptions } from "./api/routes.js";
 import { LiveScanStore } from "./live-scan.js";
+import { appLogger } from "./logging.js";
 
 export interface CreateServerOptions {
   defaultSessionFrom?: number;
@@ -70,7 +70,27 @@ export async function createServer(
 ): Promise<{ url: string; shutdown: () => void }> {
   const app = new Hono();
 
-  app.use("*", logger());
+  app.use("*", async (c, next) => {
+    const startedAt = performance.now();
+    let thrown: unknown;
+
+    try {
+      await next();
+    } catch (error) {
+      thrown = error;
+      throw error;
+    } finally {
+      const url = new URL(c.req.url);
+      appLogger.info("http.request", {
+        method: c.req.method,
+        path: url.pathname,
+        query_keys: [...url.searchParams.keys()].toSorted(),
+        status: c.res.status,
+        duration_ms: Math.round(performance.now() - startedAt),
+        error: thrown instanceof Error ? thrown.message : undefined,
+      });
+    }
+  });
 
   // API routes
   const routeOptions: ApiRouteOptions = {
@@ -100,6 +120,7 @@ export async function createServer(
   try {
     await waitForListening(server);
   } catch (error) {
+    appLogger.error("server.listen.error", { port, error });
     server.close();
     if (store.shutdown) {
       await store.shutdown();
@@ -108,10 +129,12 @@ export async function createServer(
   }
 
   const url = `http://localhost:${port}`;
+  appLogger.info("server.listen", { port, url });
 
   return {
     url,
     shutdown: () => {
+      appLogger.info("server.shutdown", { port });
       server.close();
       if (store.shutdown) {
         void store.shutdown();

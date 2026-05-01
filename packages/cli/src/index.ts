@@ -3,6 +3,7 @@ import { createServer, getServerStartupErrorMessage } from "./server.js";
 import { LiveScanStore } from "./live-scan.js";
 import { printScanResults } from "./output.js";
 import { VERSION } from "./version.js";
+import { appLogger } from "./logging.js";
 import { createRegisteredAgents, getAgentInfoMap, type ScanOptions, perf } from "@codesesh/core";
 
 function parseDateToTimestamp(dateStr: string): number {
@@ -88,6 +89,7 @@ const main = defineCommand({
     },
   },
   async run({ args }) {
+    const startedAt = performance.now();
     const port = parseInt(args.port as string, 10) || 4321;
     const noOpen = args.noOpen as boolean;
     const jsonOnly = args.json as boolean;
@@ -99,9 +101,20 @@ const main = defineCommand({
       perf.enable();
     }
 
+    appLogger.info("cli.start", {
+      version: VERSION,
+      argv: process.argv.slice(2),
+      port,
+      json: jsonOnly,
+      no_open: noOpen,
+      cache: useCache,
+      log_path: appLogger.getLogPath(),
+    });
+
     if (clearCache) {
       const { clearCache: clear } = await import("@codesesh/core");
       clear();
+      appLogger.info("cache.clear");
       console.log("Cache cleared.");
     }
 
@@ -151,6 +164,15 @@ const main = defineCommand({
     const store = new LiveScanStore(!jsonOnly, scanOptions, startupScanOptions);
     await store.initialize();
     const result = store.getSnapshot();
+    appLogger.info("cli.scan_ready", {
+      duration_ms: Math.round(performance.now() - startedAt),
+      sessions: result.sessions.length,
+      agents: Object.fromEntries(
+        Object.entries(result.byAgent).map(([key, value]) => [key, value.length]),
+      ),
+      startup_from: startupScanOptions.from,
+      startup_to: startupScanOptions.to,
+    });
 
     if (trace) {
       console.log(perf.getReport());
@@ -176,6 +198,10 @@ const main = defineCommand({
         })),
         sessions: windowed,
       };
+      appLogger.info("cli.json_output", {
+        sessions: windowed.length,
+        duration_ms: Math.round(performance.now() - startedAt),
+      });
       console.log(JSON.stringify(output, null, 2));
       return;
     }
@@ -199,12 +225,18 @@ const main = defineCommand({
 
     console.log(`  ${url}`);
     console.log("");
+    appLogger.info("cli.ready", {
+      url,
+      duration_ms: Math.round(performance.now() - startedAt),
+      log_path: appLogger.getLogPath(),
+    });
 
     if (!noOpen) {
       const open = (await import("open")).default;
       const targetUrl = targetSession
         ? `${url}/${targetSession.agent.toLowerCase()}/${targetSession.sessionId}`
         : url;
+      appLogger.info("browser.open", { url: targetUrl });
       await open(targetUrl);
     }
   },

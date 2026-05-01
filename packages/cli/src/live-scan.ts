@@ -15,6 +15,7 @@ import {
   type SessionCacheMeta,
   type SessionHead,
 } from "@codesesh/core";
+import { appLogger } from "./logging.js";
 
 export interface SessionsUpdatedEvent {
   type: "sessions-updated";
@@ -171,7 +172,6 @@ export class LiveScanStore {
   private refreshInFlight = new Set<string>();
   private pendingRefreshes = new Set<string>();
   private watchers: FSWatcher[] = [];
-  private fullScanTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly watchEnabled = true,
@@ -180,6 +180,14 @@ export class LiveScanStore {
   ) {}
 
   async initialize(): Promise<void> {
+    const startedAt = performance.now();
+    appLogger.info("scan.initial.start", {
+      watch_enabled: this.watchEnabled,
+      agents: this.scanOptions.agents,
+      use_cache: this.scanOptions.useCache ?? true,
+      startup_from: this.startupScanOptions.from,
+      startup_to: this.startupScanOptions.to,
+    });
     const initialResult = await scanSessions({
       ...this.scanOptions,
       ...this.startupScanOptions,
@@ -199,9 +207,15 @@ export class LiveScanStore {
           : undefined,
     });
     this.applyScanResult(initialResult);
+    appLogger.info("scan.initial.done", {
+      duration_ms: Math.round(performance.now() - startedAt),
+      sessions: this.sessions.length,
+      agents: Object.fromEntries(
+        Object.entries(this.byAgent).map(([key, value]) => [key, value.length]),
+      ),
+    });
     if (this.watchEnabled) {
       this.startWatching();
-      this.scheduleFullScan();
     }
   }
 
@@ -221,11 +235,6 @@ export class LiveScanStore {
   }
 
   async shutdown(): Promise<void> {
-    if (this.fullScanTimer) {
-      clearTimeout(this.fullScanTimer);
-      this.fullScanTimer = null;
-    }
-
     for (const timer of this.refreshTimers.values()) {
       clearTimeout(timer);
     }
@@ -243,6 +252,10 @@ export class LiveScanStore {
 
   private rebuildSessions(): void {
     this.sessions = sortSessions(Object.values(this.byAgent).flat());
+  }
+
+  private hasStartupWindow(): boolean {
+    return this.startupScanOptions.from != null || this.startupScanOptions.to != null;
   }
 
   private applyScanResult(result: ScanResult): void {
@@ -275,37 +288,6 @@ export class LiveScanStore {
     this.rebuildSessions();
   }
 
-  private scheduleFullScan(): void {
-    if (this.startupScanOptions.from == null && this.startupScanOptions.to == null) {
-      return;
-    }
-
-    this.fullScanTimer = setTimeout(() => {
-      this.fullScanTimer = null;
-      void this.runFullScan();
-    }, 5000);
-  }
-
-  private async runFullScan(): Promise<void> {
-    const result = await scanSessions({
-      ...this.scanOptions,
-      useCache: this.scanOptions.useCache ?? true,
-      smartRefresh: false,
-    });
-
-    this.applyScanResult(result);
-
-    this.emit({
-      type: "sessions-updated",
-      changedAgents: this.agents.map((agent) => agent.name),
-      newSessions: 0,
-      updatedSessions: 0,
-      removedSessions: 0,
-      totalSessions: this.sessions.length,
-      timestamp: Date.now(),
-    });
-  }
-
   private getAllowedAgents(): Set<string> | null {
     if (!this.scanOptions.agents?.length) {
       return null;
@@ -314,7 +296,7 @@ export class LiveScanStore {
   }
 
   private applyFilters(sessions: SessionHead[]): SessionHead[] {
-    return filterSessions(sessions, this.scanOptions);
+    return filterSessions(sessions, { ...this.scanOptions, ...this.startupScanOptions });
   }
 
   private startWatching(): void {
@@ -333,9 +315,17 @@ export class LiveScanStore {
         );
 
       if (watchTargets.length === 0) {
+        appLogger.debug("watch.skip", { agent: agent.name });
         continue;
       }
 
+      appLogger.info("watch.start", {
+        agent: agent.name,
+        targets: watchTargets.map((target) => ({
+          path: target.path,
+          depth: target.depth ?? 0,
+        })),
+      });
       const watcher = chokidar.watch(
         watchTargets.map((target) => target.path),
         {
@@ -355,6 +345,7 @@ export class LiveScanStore {
         this.scheduleRefresh(agent.name);
       });
       watcher.on("error", (error) => {
+        appLogger.error("watch.error", { agent: agent.name, error });
         console.error(`[${agent.name}] File watcher failed:`, error);
       });
 
@@ -363,6 +354,7 @@ export class LiveScanStore {
   }
 
   private scheduleRefresh(agentName: string, delayMs = 200): void {
+    appLogger.debug("scan.refresh.schedule", { agent: agentName, delay_ms: delayMs });
     const existing = this.refreshTimers.get(agentName);
     if (existing) {
       clearTimeout(existing);
@@ -378,6 +370,7 @@ export class LiveScanStore {
 
   private async refreshAgent(agentName: string): Promise<void> {
     if (this.refreshInFlight.has(agentName)) {
+      appLogger.debug("scan.refresh.pending", { agent: agentName });
       this.pendingRefreshes.add(agentName);
       return;
     }
@@ -396,8 +389,10 @@ export class LiveScanStore {
   }
 
   private async runRefresh(agentName: string): Promise<void> {
+    const startedAt = performance.now();
     const agent = this.agents.find((item) => item.name === agentName);
     if (!agent) {
+      appLogger.warn("scan.refresh.missing_agent", { agent: agentName });
       return;
     }
 
@@ -414,6 +409,10 @@ export class LiveScanStore {
 
       this.refreshTimestamps.set(agentName, checkResult.timestamp);
       if (!checkResult.hasChanges) {
+        appLogger.debug("scan.refresh.unchanged", {
+          agent: agentName,
+          duration_ms: Math.round(performance.now() - startedAt),
+        });
         return;
       }
 
@@ -421,12 +420,19 @@ export class LiveScanStore {
         agent.incrementalScan(previousSessions, checkResult.changedIds ?? []),
       );
     } else {
-      nextSessions = await Promise.resolve(agent.scan());
+      nextSessions = await Promise.resolve(
+        agent.scan({
+          ...this.startupScanOptions,
+          fast: this.hasStartupWindow() ? true : undefined,
+        }),
+      );
       this.refreshTimestamps.set(agentName, Date.now());
     }
 
     nextSessions = this.applyFilters(nextSessions);
-    saveCachedSessions(agentName, nextSessions, buildAgentCacheMeta(agent));
+    if (!this.hasStartupWindow()) {
+      saveCachedSessions(agentName, nextSessions, buildAgentCacheMeta(agent));
+    }
     syncSessionSearchIndex(agentName, nextSessions, (sessionId) => agent.getSessionData(sessionId));
 
     const event = buildUpdateEvent(agentName, previousSessions, nextSessions);
@@ -437,5 +443,13 @@ export class LiveScanStore {
       event.totalSessions = this.sessions.length;
       this.emit(event);
     }
+    appLogger.info("scan.refresh.done", {
+      agent: agentName,
+      duration_ms: Math.round(performance.now() - startedAt),
+      sessions: nextSessions.length,
+      new_sessions: event?.newSessions ?? 0,
+      updated_sessions: event?.updatedSessions ?? 0,
+      removed_sessions: event?.removedSessions ?? 0,
+    });
   }
 }

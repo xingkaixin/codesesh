@@ -315,6 +315,24 @@ export async function deleteBookmark(agentKey: string, sessionId: string): Promi
   if (!res.ok) throw new Error("Failed to delete bookmark");
 }
 
+export function logClientEvent(event: string, data: Record<string, unknown> = {}): void {
+  const body = JSON.stringify({ event, data });
+
+  try {
+    if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+      const blob = new Blob([body], { type: "application/json" });
+      if (navigator.sendBeacon("/api/logs", blob)) return;
+    }
+  } catch {}
+
+  void fetch("/api/logs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    keepalive: true,
+  }).catch(() => {});
+}
+
 export function subscribeSessionUpdates(
   onUpdate: (event: SessionsUpdatedEvent) => void,
 ): () => void {

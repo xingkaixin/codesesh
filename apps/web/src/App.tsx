@@ -23,6 +23,7 @@ import {
   fetchSessions,
   fetchSessionData,
   importBookmarks,
+  logClientEvent,
   subscribeSessionUpdates,
   upsertBookmark,
 } from "./lib/api";
@@ -221,6 +222,8 @@ export default function App() {
   // Load config + agents + sessions + dashboard (all share the same app-level window)
   useEffect(() => {
     const ac = new AbortController();
+    const startedAt = performance.now();
+    logClientEvent("app.load.start", { path: window.location.pathname });
     (async () => {
       try {
         const config = await fetchConfig();
@@ -238,8 +241,18 @@ export default function App() {
         setSessions(sessionList.sessions);
         setBookmarks(bookmarkData.bookmarks);
         if (dashboardData) setDashboard(dashboardData);
+        logClientEvent("app.load.done", {
+          duration_ms: Math.round(performance.now() - startedAt),
+          agents: agentList.length,
+          sessions: sessionList.sessions.length,
+          dashboard: Boolean(dashboardData),
+        });
       } catch (err) {
         console.error("Failed to load data:", err);
+        logClientEvent("app.load.error", {
+          duration_ms: Math.round(performance.now() - startedAt),
+          error: err instanceof Error ? err.message : String(err),
+        });
         setError("Failed to load data. Is the CLI server running?");
       } finally {
         setLoading(false);
@@ -260,6 +273,15 @@ export default function App() {
     () => parseViewState(location.pathname, validAgentKeys),
     [location.pathname, validAgentKeys],
   );
+
+  useEffect(() => {
+    logClientEvent("route.change", {
+      path: location.pathname,
+      mode: viewState.mode,
+      agent: viewState.activeAgentKey,
+      session: viewState.activeSessionSlug,
+    });
+  }, [location.pathname, viewState.mode, viewState.activeAgentKey, viewState.activeSessionSlug]);
   const detailHighlightQuery = isSearchMode
     ? activeSearchQuery
     : typeof location.state === "object" &&
@@ -362,6 +384,10 @@ export default function App() {
         });
 
     setBookmarks(next);
+    logClientEvent(exists ? "bookmark.delete" : "bookmark.add", {
+      agent: snapshot.agentKey,
+      session: snapshot.sessionId,
+    });
 
     void (
       exists
@@ -470,15 +496,25 @@ export default function App() {
 
     let cancelled = false;
     setSearchLoading(true);
+    const startedAt = performance.now();
+    logClientEvent("search.start", { query_length: activeSearchQuery.length });
 
     void fetchSearchResults(activeSearchQuery)
       .then((data) => {
         if (cancelled) return;
         setSearchResults(data.results);
+        logClientEvent("search.done", {
+          duration_ms: Math.round(performance.now() - startedAt),
+          results: data.results.length,
+        });
       })
       .catch((err) => {
         if (cancelled) return;
         console.error("Failed to load search results:", err);
+        logClientEvent("search.error", {
+          duration_ms: Math.round(performance.now() - startedAt),
+          error: err instanceof Error ? err.message : String(err),
+        });
         setSearchResults([]);
       })
       .finally(() => {
@@ -501,11 +537,28 @@ export default function App() {
     const ac = new AbortController();
     setSessionLoading(true);
     setSessionError(null);
+    const startedAt = performance.now();
+    logClientEvent("session.open.start", {
+      agent: viewState.activeAgentKey,
+      session: viewState.activeSessionSlug,
+    });
     (async () => {
       try {
         const data = await fetchSessionData(viewState.activeAgentKey, viewState.activeSessionSlug);
         setSession(data);
-      } catch {
+        logClientEvent("session.open.done", {
+          agent: viewState.activeAgentKey,
+          session: viewState.activeSessionSlug,
+          duration_ms: Math.round(performance.now() - startedAt),
+          messages: data.messages.length,
+        });
+      } catch (err) {
+        logClientEvent("session.open.error", {
+          agent: viewState.activeAgentKey,
+          session: viewState.activeSessionSlug,
+          duration_ms: Math.round(performance.now() - startedAt),
+          error: err instanceof Error ? err.message : String(err),
+        });
         setSessionError("Session not found");
         setSession(null);
       } finally {
