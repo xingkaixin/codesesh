@@ -65,4 +65,32 @@ describe("computeIdentity", () => {
       displayName: "tool",
     });
   });
+
+  it("uses git remote identity from Windows repository subdirectories", () => {
+    const fs = createFs(
+      {
+        "D:\\repo\\.git": true,
+        "D:\\repo\\package.json": JSON.stringify({ name: "codesesh" }),
+      },
+      { "D:\\repo": "git@github.com:xingkaixin/codesesh.git" },
+    );
+
+    expect(computeIdentity("D:\\repo\\apps\\web", fs)).toEqual({
+      kind: "git_remote",
+      key: "github.com/xingkaixin/codesesh",
+      displayName: "codesesh",
+    });
+  });
+
+  it("uses manifest path from Windows subdirectories", () => {
+    const fs = createFs({
+      "D:\\workspace\\tool\\package.json": JSON.stringify({ name: "tool" }),
+    });
+
+    expect(computeIdentity("D:\\workspace\\tool\\src", fs)).toEqual({
+      kind: "manifest_path",
+      key: "D:\\workspace\\tool",
+      displayName: "tool",
+    });
+  });
 });

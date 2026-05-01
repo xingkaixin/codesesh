@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import * as path from "node:path";
 import type { ProjectIdentity, ProjectIdentityKind } from "../types/index.js";
 import { fallbackDisplayName } from "./display-name.js";
 
@@ -23,6 +23,7 @@ const PARSEABLE_MANIFESTS = ["package.json", "Cargo.toml", "pyproject.toml"] as 
 
 const LOOSE_DIRS = new Set(["/tmp", "/private/tmp"]);
 const LOOSE_HOME_DIRS = ["Desktop", "Downloads", "Documents"];
+type PathOps = Pick<typeof path.posix, "dirname" | "isAbsolute" | "join" | "resolve">;
 
 export function normalizeGitRemote(url: string): string | null {
   if (!url) return null;
@@ -37,12 +38,20 @@ export function normalizeGitRemote(url: string): string | null {
 export function computeIdentity(cwd: string | null | undefined, fs: IdentityFs): ProjectIdentity {
   if (!cwd) return loose();
 
-  const absoluteCwd = resolve(cwd);
-  const home = homedir();
+  const pathOps = getPathOps(cwd);
+  const absoluteCwd = pathOps.resolve(cwd);
+  const homeDir = homedir();
+  const homePathOps = getPathOps(homeDir);
+  const home = homePathOps === pathOps ? pathOps.resolve(homeDir) : homeDir;
   if (absoluteCwd === home || LOOSE_DIRS.has(absoluteCwd)) return loose();
-  if (LOOSE_HOME_DIRS.some((dir) => absoluteCwd === join(home, dir))) return loose();
+  if (
+    homePathOps === pathOps &&
+    LOOSE_HOME_DIRS.some((dir) => absoluteCwd === pathOps.join(home, dir))
+  ) {
+    return loose();
+  }
 
-  const gitRoot = findGitRoot(absoluteCwd, fs);
+  const gitRoot = findGitRoot(absoluteCwd, fs, pathOps);
   if (gitRoot) {
     const remote = fs.spawn("git", ["config", "--get", "remote.origin.url"], { cwd: gitRoot });
     if (remote.exitCode === 0) {
@@ -60,7 +69,7 @@ export function computeIdentity(cwd: string | null | undefined, fs: IdentityFs):
     if (common.exitCode === 0) {
       const raw = common.stdout.trim();
       if (raw) {
-        const key = isAbsolute(raw) ? raw : resolve(gitRoot, raw);
+        const key = pathOps.isAbsolute(raw) ? raw : pathOps.resolve(gitRoot, raw);
         return {
           kind: "git_common_dir",
           key,
@@ -70,7 +79,7 @@ export function computeIdentity(cwd: string | null | undefined, fs: IdentityFs):
     }
   }
 
-  const manifestDir = findManifestDir(absoluteCwd, fs);
+  const manifestDir = findManifestDir(absoluteCwd, fs, pathOps);
   if (manifestDir) {
     return {
       kind: "manifest_path",
@@ -90,24 +99,32 @@ function loose(): ProjectIdentity {
   return { kind: "loose", key: "loose", displayName: "Loose" };
 }
 
-function findGitRoot(start: string, fs: IdentityFs): string | null {
+function getPathOps(input: string): PathOps {
+  if (/^[a-zA-Z]:[\\/]/.test(input) || input.startsWith("\\\\") || input.includes("\\")) {
+    return path.win32;
+  }
+  if (input.startsWith("/")) return path.posix;
+  return path;
+}
+
+function findGitRoot(start: string, fs: IdentityFs, pathOps: PathOps): string | null {
   let current = start;
-  while (current && current !== "/") {
-    if (fs.exists(join(current, ".git"))) return current;
-    const parent = dirname(current);
+  while (current) {
+    if (fs.exists(pathOps.join(current, ".git"))) return current;
+    const parent = pathOps.dirname(current);
     if (parent === current) break;
     current = parent;
   }
   return null;
 }
 
-function findManifestDir(start: string, fs: IdentityFs): string | null {
+function findManifestDir(start: string, fs: IdentityFs, pathOps: PathOps): string | null {
   let current = start;
-  while (current && current !== "/") {
+  while (current) {
     for (const manifest of MANIFESTS) {
-      if (fs.exists(join(current, manifest))) return current;
+      if (fs.exists(pathOps.join(current, manifest))) return current;
     }
-    const parent = dirname(current);
+    const parent = pathOps.dirname(current);
     if (parent === current) break;
     current = parent;
   }
@@ -122,12 +139,13 @@ interface DisplayNameInput {
 }
 
 function deriveDisplayName(input: DisplayNameInput): string {
+  const pathOps = getPathOps(input.gitRoot ?? input.key);
   const dir = input.gitRoot ?? (input.kind === "manifest_path" ? input.key : null);
   if (dir) {
     for (const manifest of PARSEABLE_MANIFESTS) {
-      const path = join(dir, manifest);
-      if (input.fs.exists(path)) {
-        const name = parseManifestName(manifest, input.fs.readText(path) ?? "");
+      const manifestPath = pathOps.join(dir, manifest);
+      if (input.fs.exists(manifestPath)) {
+        const name = parseManifestName(manifest, input.fs.readText(manifestPath) ?? "");
         if (name) return name;
       }
     }
