@@ -15,6 +15,9 @@ export default defineConfig({
       ],
       exclude: ["**/node_modules/**", "**/dist/**", "packages/core/src/utils/sqlite.ts"],
       reporter: ["text", "html"],
+      thresholds: {
+        lines: 75,
+      },
     },
   },
 });

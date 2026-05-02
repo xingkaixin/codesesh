@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionHead } from "./api";
 import {
+  clearLegacyBookmarks,
   getSessionBookmarkKey,
+  loadLegacyBookmarks,
   mergeBookmarksWithSessions,
+  sortBookmarkedSessions,
   toBookmarkedSessionSnapshot,
 } from "./bookmarks";
 
@@ -26,6 +29,10 @@ function createSession(
 }
 
 describe("bookmarks", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("uses agent + session id as bookmark key", () => {
     expect(getSessionBookmarkKey("codex", "abc")).toBe("codex:abc");
   });
@@ -84,5 +91,90 @@ describe("bookmarks", () => {
     expect(merged[0]?.title).toBe("New title");
     expect(merged[0]?.time_updated).toBe(300);
     expect(merged[0]?.stats.total_tokens).toBe(21);
+  });
+
+  it("loads valid legacy bookmarks and drops invalid entries", () => {
+    const older = toBookmarkedSessionSnapshot(
+      createSession({ id: "old", slug: "codex/old", title: "Old", time_updated: 100 }),
+      "codex",
+    );
+    const newer = toBookmarkedSessionSnapshot(
+      createSession({ id: "new", slug: "codex/new", title: "New", time_updated: 300 }),
+      "codex",
+    );
+    const removeItem = vi.fn();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: vi.fn(() =>
+          JSON.stringify([
+            older,
+            { ...newer, bookmarked_at: "bad" },
+            newer,
+            { sessionId: "bad", stats: { message_count: "bad" } },
+          ]),
+        ),
+        removeItem,
+      },
+    });
+
+    expect(loadLegacyBookmarks().map((bookmark) => bookmark.sessionId)).toEqual(["new", "old"]);
+    clearLegacyBookmarks();
+    expect(removeItem).toHaveBeenCalledWith("codesesh:bookmarks:v1");
+  });
+
+  it("returns empty legacy bookmarks for missing or malformed storage", () => {
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: vi.fn(() => "{bad json"),
+        removeItem: vi.fn(),
+      },
+    });
+
+    expect(loadLegacyBookmarks()).toEqual([]);
+
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: vi.fn(() => JSON.stringify({ sessionId: "not-array" })),
+        removeItem: vi.fn(),
+      },
+    });
+
+    expect(loadLegacyBookmarks()).toEqual([]);
+  });
+
+  it("keeps bookmark arrays unchanged when live sessions add no new data", () => {
+    const bookmark = toBookmarkedSessionSnapshot(
+      createSession({ id: "s1", slug: "codex/s1", title: "Same", time_updated: 100 }),
+      "codex",
+    );
+    const bookmarks = [bookmark];
+
+    expect(
+      mergeBookmarksWithSessions(
+        [],
+        [createSession({ id: "s1", slug: "codex/s1", title: "Same" })],
+      ),
+    ).toEqual([]);
+    expect(mergeBookmarksWithSessions(bookmarks, [])).toBe(bookmarks);
+    expect(
+      mergeBookmarksWithSessions(bookmarks, [
+        createSession({ id: "s1", slug: "codex/s1", title: "Same", time_updated: 100 }),
+      ]),
+    ).toBe(bookmarks);
+  });
+
+  it("sorts bookmarks by updated time with created time fallback", () => {
+    const createdOnly = toBookmarkedSessionSnapshot(
+      createSession({ id: "created", slug: "codex/created", title: "Created", time_created: 200 }),
+      "codex",
+    );
+    const updated = toBookmarkedSessionSnapshot(
+      createSession({ id: "updated", slug: "codex/updated", title: "Updated", time_updated: 300 }),
+      "codex",
+    );
+
+    expect(
+      [createdOnly, updated].toSorted(sortBookmarkedSessions).map((item) => item.sessionId),
+    ).toEqual(["updated", "created"]);
   });
 });

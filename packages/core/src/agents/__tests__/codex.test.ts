@@ -1,9 +1,11 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexAgent } from "../codex.js";
 import type { SessionHead } from "../../types/index.js";
+
+let tempDirs: string[] = [];
 
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {
@@ -26,6 +28,10 @@ function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionH
 describe("CodexAgent cache refresh", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    for (const dir of tempDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    tempDirs = [];
   });
 
   it("detects file set changes even when file count stays the same", () => {
@@ -259,5 +265,238 @@ describe("CodexAgent cache refresh", () => {
     const head = agent.parseSessionHead(sessionFile);
 
     expect(head?.model_usage).toEqual({ "gpt-5.5": 120, "gpt-5.4": 50 });
+  });
+
+  it("parses messages, plans, tools, outputs, and token usage", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const sessionId = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+    const sessionFile = join(tempDir, `rollout-2026-04-20T10-00-00-${sessionId}.jsonl`);
+    const patchInput = [
+      "*** Begin Patch",
+      "*** Add File: package.json",
+      '+{ "name": "codesesh" }',
+      "*** Update File: src/a.ts",
+      "*** Move to: src/b.ts",
+      "-old",
+      "+new",
+      "*** Delete File: old.ts",
+      "*** End Patch",
+    ].join("\n");
+
+    writeFileSync(
+      sessionFile,
+      [
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:00Z",
+          type: "session_meta",
+          payload: { cwd: "/tmp/project", model: "gpt-5.5" },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:01Z",
+          type: "turn_context",
+          payload: { model: "gpt-5.5" },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:02Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [
+              { type: "input_text", text: "<environment_context>noise</environment_context>" },
+            ],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:03Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: "Implement parser coverage" }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:04Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "assistant",
+            content: [
+              {
+                type: "output_text",
+                text: "Plan ready\n<proposed_plan>\n1. Add tests\n</proposed_plan>",
+              },
+            ],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:05Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: "PLEASE IMPLEMENT THIS PLAN",
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:06Z",
+          type: "response_item",
+          payload: {
+            type: "reasoning",
+            summary: [{ type: "summary_text", text: "Need file context" }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:07Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "Reading files" }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:08Z",
+          type: "response_item",
+          payload: {
+            type: "function_call",
+            call_id: "call-1",
+            name: "exec_command",
+            arguments: '{"cmd":"ls"}',
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:09Z",
+          type: "response_item",
+          payload: {
+            type: "function_call_output",
+            call_id: "call-1",
+            output: "package.json",
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:10Z",
+          type: "response_item",
+          payload: {
+            type: "custom_tool_call",
+            call_id: "call-2",
+            name: "apply_patch",
+            input: patchInput,
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:11Z",
+          type: "response_item",
+          payload: {
+            type: "custom_tool_call_output",
+            call_id: "call-2",
+            output: "Success",
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:12Z",
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              last_token_usage: {
+                input_tokens: 100,
+                output_tokens: 20,
+                reasoning_output_tokens: 5,
+                cached_input_tokens: 10,
+              },
+              total_token_usage: { total_tokens: 125 },
+            },
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:13Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content:
+              '<subagent_notification>{"agent_id":"agent-1","nickname":"worker","completed":"done"}</subagent_notification>',
+          },
+        }),
+        "",
+      ].join("\n"),
+    );
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+
+    const [head] = agent.scan();
+    const data = agent.getSessionData(sessionId);
+    const assistantWithTools = data.messages.find((message) =>
+      message.parts.some((part) => part.type === "tool" && part.tool === "bash"),
+    );
+    const bashPart = assistantWithTools?.parts.find(
+      (part) => part.type === "tool" && part.tool === "bash",
+    );
+    const patchPart = assistantWithTools?.parts.find(
+      (part) => part.type === "tool" && part.tool === "patch",
+    );
+
+    expect(head).toMatchObject({
+      id: sessionId,
+      title: "Implement parser coverage",
+      directory: "/tmp/project",
+      stats: {
+        message_count: 8,
+        total_input_tokens: 100,
+        total_output_tokens: 25,
+        total_cache_read_tokens: 10,
+      },
+      model_usage: { "gpt-5.5": 125 },
+    });
+    expect(data.messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+      "assistant",
+    ]);
+    expect(data.messages[1]?.parts).toContainEqual(
+      expect.objectContaining({ type: "plan", text: "1. Add tests" }),
+    );
+    expect(data.messages[3]?.parts[0]).toMatchObject({
+      type: "reasoning",
+      text: "Need file context",
+    });
+    expect(bashPart).toMatchObject({
+      type: "tool",
+      tool: "bash",
+      state: {
+        arguments: { cmd: "ls" },
+        output: [{ type: "text", text: "package.json" }],
+        status: "completed",
+      },
+    });
+    expect(patchPart).toMatchObject({
+      type: "tool",
+      tool: "patch",
+      state: {
+        arguments: [
+          { type: "write_file", path: "package.json" },
+          { type: "move_file", path: "src/a.ts", targetPath: "src/b.ts" },
+          { type: "delete_file", path: "old.ts" },
+        ],
+        output: [{ type: "text", text: "Success" }],
+        status: "completed",
+      },
+    });
+    expect(assistantWithTools).toMatchObject({
+      tokens: { input: 100, output: 20, reasoning: 5, cache_read: 10 },
+      cost_source: "estimated",
+    });
+    expect(data.messages[4]).toMatchObject({
+      role: "assistant",
+      subagent_id: "agent-1",
+      nickname: "worker",
+      parts: [{ type: "text", text: "done" }],
+    });
   });
 });

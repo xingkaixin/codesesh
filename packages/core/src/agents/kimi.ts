@@ -274,38 +274,48 @@ export class KimiAgent extends BaseAgent {
    * 检测文件系统变更
    */
   checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
-    const changedIds: string[] = [];
+    const changedIds = new Set<string>();
+    const cachedIds = new Set(cachedSessions.map((session) => session.id));
+    const currentIds = new Set<string>();
 
-    for (const session of cachedSessions) {
-      const meta = this.sessionMetaMap.get(session.id);
+    for (const dir of this.listSessionDirs()) {
+      const meta = this.parseSessionDir(dir);
       if (!meta) continue;
 
-      try {
-        // 检查 metadata.json 或 state.json 的修改时间
-        if (meta.metaFile) {
-          const stat = statSync(meta.metaFile);
-          if (stat.mtimeMs > sinceTimestamp) {
-            changedIds.push(session.id);
-            continue;
-          }
-        }
+      currentIds.add(meta.id);
+      this.sessionMetaMap.set(meta.id, meta);
 
-        // 检查 wire.jsonl 或 context.jsonl 的修改时间
-        const dataFile = meta.wireFile || meta.contextFile;
+      if (!cachedIds.has(meta.id)) {
+        changedIds.add(meta.id);
+        continue;
+      }
+
+      const dataFile = meta.wireFile || meta.contextFile;
+      try {
+        const metaStat = statSync(meta.metaFile);
+        if (metaStat.mtimeMs > sinceTimestamp) {
+          changedIds.add(meta.id);
+          continue;
+        }
         if (dataFile) {
           const dataStat = statSync(dataFile);
           if (dataStat.mtimeMs > sinceTimestamp) {
-            changedIds.push(session.id);
+            changedIds.add(meta.id);
           }
         }
       } catch {
-        changedIds.push(session.id);
+        changedIds.add(meta.id);
       }
     }
 
+    for (const session of cachedSessions) {
+      if (!currentIds.has(session.id)) changedIds.add(session.id);
+    }
+
+    const changedIdList = Array.from(changedIds);
     return {
-      hasChanges: changedIds.length > 0,
-      changedIds,
+      hasChanges: changedIdList.length > 0,
+      changedIds: changedIdList,
       timestamp: Date.now(),
     };
   }
@@ -315,13 +325,19 @@ export class KimiAgent extends BaseAgent {
    */
   incrementalScan(cachedSessions: SessionHead[], changedIds: string[]): SessionHead[] {
     const sessionMap = new Map(cachedSessions.map((s) => [s.id, s]));
+    const changedIdSet = new Set(changedIds);
+
+    for (const id of changedIdSet) {
+      sessionMap.delete(id);
+      this.sessionMetaMap.delete(id);
+    }
 
     for (const dir of this.listSessionDirs()) {
       try {
         const meta = this.parseSessionDir(dir);
         if (!meta) continue;
 
-        if (changedIds.includes(meta.id)) {
+        if (changedIdSet.has(meta.id)) {
           this.sessionMetaMap.set(meta.id, meta);
           const stats = this.extractStats(meta.sourcePath);
           sessionMap.set(meta.id, {
