@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { Pie, PieChart } from "recharts";
 import { ModelConfig } from "../config";
 import type {
   BookmarkedSessionSnapshot,
@@ -13,6 +14,7 @@ import type {
 import { getSessionBookmarkKey } from "../lib/bookmarks";
 import { BookmarkButton } from "./BookmarkButton";
 import { SmartTagChips } from "./SmartTagChips";
+import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "./ui/chart";
 
 interface DashboardProps {
   data: DashboardData;
@@ -292,28 +294,7 @@ const MODEL_COLORS = [
   "#6EE7B7",
 ];
 
-function describeArc(
-  cx: number,
-  cy: number,
-  r: number,
-  startAngle: number,
-  endAngle: number,
-  sweep: 0 | 1,
-): string {
-  const start = {
-    x: cx + r * Math.cos(startAngle),
-    y: cy + r * Math.sin(startAngle),
-  };
-  const end = {
-    x: cx + r * Math.cos(endAngle),
-    y: cy + r * Math.sin(endAngle),
-  };
-  const largeArc = Math.abs(endAngle - startAngle) > Math.PI ? 1 : 0;
-  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} ${sweep} ${end.x} ${end.y}`;
-}
-
 function ModelDistribution({ entries }: { entries: ModelDistributionEntry[] }) {
-  const [hovered, setHovered] = useState<number | null>(null);
   const totalTokens = useMemo(() => entries.reduce((sum, e) => sum + e.tokens, 0), [entries]);
 
   if (entries.length === 0 || totalTokens === 0) {
@@ -324,28 +305,20 @@ function ModelDistribution({ entries }: { entries: ModelDistributionEntry[] }) {
     );
   }
 
-  const cx = 80;
-  const cy = 80;
-  const outerR = 70;
-  const innerR = 45;
-  const gap = 0.02;
+  const chartData = entries.map((entry, i) => ({
+    ...entry,
+    chartKey: `model${i}`,
+    fraction: entry.tokens / totalTokens,
+    fill: MODEL_COLORS[i % MODEL_COLORS.length]!,
+  }));
 
-  let currentAngle = -Math.PI / 2;
-  const arcs = entries.map((entry, i) => {
-    const fraction = entry.tokens / totalTokens;
-    const startAngle = currentAngle + gap / 2;
-    const endAngle = currentAngle + fraction * Math.PI * 2 - gap / 2;
-    currentAngle += fraction * Math.PI * 2;
-    return {
-      entry,
-      startAngle,
-      endAngle,
-      fraction,
-      color: MODEL_COLORS[i % MODEL_COLORS.length]!,
+  const chartConfig = chartData.reduce<ChartConfig>((config, entry) => {
+    config[entry.chartKey] = {
+      label: entry.model,
+      color: entry.fill,
     };
-  });
-
-  const hoveredEntry = hovered !== null ? entries[hovered] : null;
+    return config;
+  }, {});
 
   return (
     <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
@@ -359,100 +332,53 @@ function ModelDistribution({ entries }: { entries: ModelDistributionEntry[] }) {
       </div>
 
       <div className="flex items-center gap-6">
-        <div className="relative shrink-0">
-          <svg
-            width={160}
-            height={160}
-            viewBox={`0 0 ${cx * 2} ${cy * 2}`}
-            onMouseLeave={() => setHovered(null)}
-          >
-            {arcs.map((arc, i) => {
-              if (arc.fraction < 0.003) return null;
-              const isFullCircle = arc.fraction > 0.997;
-              const isActive = hovered === i;
-
-              if (isFullCircle) {
-                return (
-                  <g key={arc.entry.model} onMouseEnter={() => setHovered(i)}>
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={outerR}
-                      fill="none"
-                      stroke={arc.color}
-                      strokeWidth={outerR - innerR}
-                      opacity={isActive ? 0.8 : 1}
-                    />
-                  </g>
-                );
-              }
-
-              const outerPath = describeArc(cx, cy, outerR, arc.startAngle, arc.endAngle, 1);
-              const innerPath = describeArc(cx, cy, innerR, arc.endAngle, arc.startAngle, 0);
-
-              const outerEnd = {
-                x: cx + outerR * Math.cos(arc.endAngle),
-                y: cy + outerR * Math.sin(arc.endAngle),
-              };
-              const innerStart = {
-                x: cx + innerR * Math.cos(arc.endAngle),
-                y: cy + innerR * Math.sin(arc.endAngle),
-              };
-              const innerEnd = {
-                x: cx + innerR * Math.cos(arc.startAngle),
-                y: cy + innerR * Math.sin(arc.startAngle),
-              };
-
-              const d = `${outerPath} L ${outerEnd.x} ${outerEnd.y} L ${innerStart.x} ${innerStart.y} ${innerPath} L ${innerEnd.x} ${innerEnd.y} Z`;
-
-              return (
-                <path
-                  key={arc.entry.model}
-                  d={d}
-                  fill={arc.color}
-                  opacity={isActive ? 0.8 : 1}
-                  className="cursor-default transition-opacity"
-                  onMouseEnter={() => setHovered(i)}
-                />
-              );
-            })}
-          </svg>
-          {hoveredEntry ? (
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <span className="console-mono text-xs font-semibold text-[var(--console-text)]">
-                {((hoveredEntry.tokens / totalTokens) * 100).toFixed(1)}%
-              </span>
-              <span className="console-mono text-[10px] text-[var(--console-muted)]">
-                {formatCompact(hoveredEntry.tokens)}
-              </span>
+        <div className="flex shrink-0 flex-col items-center">
+          <ChartContainer config={chartConfig} className="aspect-square size-[160px]">
+            <PieChart>
+              <ChartTooltip
+                content={
+                  <ChartTooltipContent
+                    hideLabel
+                    nameKey="chartKey"
+                    formatter={(value) => (
+                      <span className="font-mono font-medium text-foreground tabular-nums">
+                        {formatNumber(Number(value))} tokens
+                      </span>
+                    )}
+                  />
+                }
+              />
+              <Pie
+                data={chartData}
+                dataKey="tokens"
+                nameKey="chartKey"
+                outerRadius={70}
+                paddingAngle={1}
+                strokeWidth={0}
+                isAnimationActive={false}
+              />
+            </PieChart>
+          </ChartContainer>
+          <div className="console-mono -mt-1 text-center">
+            <div className="text-xs font-semibold text-[var(--console-text)]">
+              {formatCompact(totalTokens)}
             </div>
-          ) : (
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <span className="console-mono text-xs font-semibold text-[var(--console-text)]">
-                {formatCompact(totalTokens)}
-              </span>
-              <span className="console-mono text-[10px] text-[var(--console-muted)]">tokens</span>
-            </div>
-          )}
+            <div className="text-[10px] text-[var(--console-muted)]">tokens</div>
+          </div>
         </div>
 
         <ul className="min-w-0 flex-1 space-y-1.5">
-          {arcs.map((arc, i) => (
-            <li
-              key={arc.entry.model}
-              className="flex items-center gap-2"
-              onMouseEnter={() => setHovered(i)}
-              onMouseLeave={() => setHovered(null)}
-            >
+          {chartData.map((entry) => (
+            <li key={entry.model} className="flex items-center gap-2">
               <span
                 className="inline-block size-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: arc.color }}
+                style={{ backgroundColor: entry.fill }}
               />
               <span className="console-mono min-w-0 flex-1 truncate text-xs text-[var(--console-text)]">
-                {arc.entry.model}
+                {entry.model}
               </span>
               <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
-                {(arc.fraction * 100).toFixed(1)}%
+                {(entry.fraction * 100).toFixed(1)}%
               </span>
             </li>
           ))}
