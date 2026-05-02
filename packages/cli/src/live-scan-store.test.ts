@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionHead } from "@codesesh/core";
 
@@ -210,11 +211,11 @@ describe("LiveScanStore", () => {
 describe("resolveAgentWatchTargets", () => {
   it("resolves cursor and opencode watch targets", () => {
     expect(resolveAgentWatchTargets("cursor")).toEqual([
-      { path: "/tmp/cursor/globalStorage/state.vscdb" },
-      { path: "/tmp/cursor/workspaceStorage", depth: 2 },
+      { path: join("/tmp/cursor", "globalStorage", "state.vscdb") },
+      { path: join("/tmp/cursor", "workspaceStorage"), depth: 2 },
     ]);
     expect(resolveAgentWatchTargets("opencode")).toEqual([
-      { path: "/tmp/opencode/opencode.db" },
+      { path: join("/tmp/opencode", "opencode.db") },
       { path: "data/opencode/opencode.db" },
     ]);
     expect(resolveAgentWatchTargets("unknown")).toEqual([]);
