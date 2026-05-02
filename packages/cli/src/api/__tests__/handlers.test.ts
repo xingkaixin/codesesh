@@ -96,6 +96,14 @@ function makeScanSource(overrides?: Partial<ScanResult>): ScanResultSource {
   };
 }
 
+function toLocalDateKey(ts: number): string {
+  const d = new Date(ts);
+  const year = d.getFullYear();
+  const month = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 // --- Tests ---
 
 afterEach(() => {
@@ -425,7 +433,7 @@ describe("handleGetDashboard", () => {
     expect(response.totals.latestActivity).toBe(staleCreatedRecentlyUpdated.time_updated);
     expect(response.recentSessions[0]?.id).toBe("old-active");
 
-    const todayKey = new Date(now).toLocaleDateString("en-CA").replaceAll("/", "-");
+    const todayKey = toLocalDateKey(now);
     const todayBucket = response.dailyActivity.find(
       (bucket: { date: string }) => bucket.date === todayKey,
     );
