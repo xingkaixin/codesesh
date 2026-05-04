@@ -128,6 +128,10 @@
   .animate-terminal-line {
     animation: terminal-line-in 180ms ease-out both;
   }
+
+  .animate-status-ping {
+    animation: status-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
 }
 
 @keyframes caret-blink {
@@ -154,9 +158,18 @@
   }
 }
 
+@keyframes status-ping {
+  75%,
+  100% {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-caret-blink,
-  .animate-terminal-line {
+  .animate-terminal-line,
+  .animate-status-ping {
     animation: none;
   }
 }

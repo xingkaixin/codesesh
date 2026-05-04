@@ -64,6 +64,7 @@ const copy = {
     },
     hero: {
       title: ["把 AI 编码历史，", "变成可复用的", "工程记忆。"],
+      latest: "最新版",
       body: "CodeSesh 自动发现 Claude Code、Cursor、Kimi、Codex 和 OpenCode 的本地会话，把问题、推理、尝试、文件变更和结果沉淀成可浏览、可检索、可复盘的工程记忆。",
       commandTitle: "从本地开始积累",
       command: "npx codesesh",
@@ -229,6 +230,7 @@ const copy = {
     },
     hero: {
       title: ["Turn AI coding history", "into reusable engineering memory."],
+      latest: "Latest",
       body: "CodeSesh discovers local sessions from Claude Code, Cursor, Kimi, Codex, and OpenCode, then preserves problems, reasoning, attempts, file changes, and outcomes in one searchable memory layer.",
       commandTitle: "Start from your machine",
       command: "npx codesesh",
@@ -495,9 +497,6 @@ export function Header({
               </button>
             ))}
           </div>
-          <span className="console-mono rounded-sm border border-[var(--console-border)] bg-white px-2 py-1 text-[10px] font-semibold text-[var(--console-muted)]">
-            v{__APP_VERSION__}
-          </span>
         </nav>
       </div>
     </header>
@@ -519,7 +518,7 @@ export function Hero({ locale }: { locale: Locale }) {
     <section className="px-6 pb-24 pt-20 md:pt-28">
       <div className="mx-auto grid max-w-6xl min-w-0 items-center gap-14 lg:grid-cols-[minmax(0,1.05fr)_minmax(22rem,0.95fr)]">
         <div className="min-w-0 text-left">
-          <img src="/logo.svg?v=2" alt="CodeSesh" className="mb-8 h-16 w-16" />
+          <VersionStatus label={t.latest} />
           <h1 className="landing-heading max-w-3xl text-[2.25rem] font-semibold leading-[1.08] tracking-tight text-[var(--console-accent-strong)] sm:text-4xl md:text-6xl">
             <HeadingText value={t.title} />
           </h1>
@@ -553,6 +552,23 @@ export function Hero({ locale }: { locale: Locale }) {
         </div>
       </div>
     </section>
+  );
+}
+
+function VersionStatus({ label }: { label: string }) {
+  return (
+    <div className="mb-8 inline-flex items-center gap-3 rounded-sm border border-[var(--console-border-strong)] bg-white px-3.5 py-2 shadow-[0_16px_50px_rgba(15,23,42,0.08)]">
+      <span className="relative flex size-2.5">
+        <span className="absolute inline-flex size-full rounded-full bg-[#22c55e] opacity-70 animate-status-ping" />
+        <span className="relative inline-flex size-2.5 rounded-full bg-[#16a34a]" />
+      </span>
+      <span className="console-mono text-xs font-bold text-[var(--console-accent-strong)]">
+        v{__APP_VERSION__}
+      </span>
+      <span className="console-mono border-l border-[var(--console-border)] pl-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--console-muted)]">
+        {label}
+      </span>
+    </div>
   );
 }
 
