@@ -274,6 +274,23 @@ export class ClaudeCodeAgent extends BaseAgent {
       }
       return undefined;
     };
+    // For replace-at-row-0: read the existing row's own timestamp as a last
+    // resort when no other record carries one. Otherwise — if a previous
+    // codesesh-written custom-title row at row 0 was the only timestamp source
+    // (e.g. cc appended a timestamp-less custom-title later) — we'd write a
+    // new row 0 without a timestamp and re-trigger the original P1 mtime drift.
+    const readRowTimestamp = (idx: number): string | undefined => {
+      const candidate = dataLines[idx];
+      if (!candidate || !candidate.trim()) return undefined;
+      try {
+        const parsed = JSON.parse(candidate);
+        const ts = parsed?.timestamp;
+        if (typeof ts === "string" && ts) return ts;
+      } catch {
+        // ignore
+      }
+      return undefined;
+    };
     const buildCustomTitleRow = (preservedTimestamp?: string): string => {
       const row: Record<string, unknown> = {
         type: CUSTOM_TITLE_TYPE,
@@ -295,7 +312,9 @@ export class ClaudeCodeAgent extends BaseAgent {
         // the tail so splice indices stay valid.
         const [firstIdx, ...rest] = customTitleIndices;
         const preserved =
-          firstIdx === 0 ? findFallbackTimestamp(0) : undefined;
+          firstIdx === 0
+            ? findFallbackTimestamp(0) ?? readRowTimestamp(0)
+            : undefined;
         const newLine = buildCustomTitleRow(preserved);
         if (dataLines[firstIdx!] !== newLine) {
           dataLines[firstIdx!] = newLine;

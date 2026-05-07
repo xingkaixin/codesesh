@@ -322,6 +322,50 @@ describe("ClaudeCodeAgent session alias (cc-native custom-title upsert)", () => 
     expect(clearedHead?.time_created).toBe(expectedMs);
   });
 
+  it("preserves time_created when row 0 is the sole timestamp source on re-rename", () => {
+    // Edge case (codex P1 follow-up): after a previous codesesh-written
+    // custom-title sits at row 0 with the only valid timestamp in the file,
+    // and cc has since append-on-resume'd another custom-title without a
+    // timestamp at the tail. The next setSessionAlias() would otherwise call
+    // findFallbackTimestamp(0), find no other row with a timestamp, and write
+    // a new row 0 without one — re-triggering the original mtime drift.
+    const originalTs = "2026-02-15T10:00:00.000Z";
+    writeFileSync(
+      sessionFile,
+      [
+        // Row 0: codesesh-written custom-title carrying the preserved timestamp.
+        JSON.stringify({
+          type: "custom-title",
+          customTitle: "First name",
+          sessionId,
+          timestamp: originalTs,
+        }),
+        // Row 1: cc-appended custom-title with NO timestamp (the realistic
+        // shape after a `claude --resume` against a renamed session).
+        JSON.stringify({ type: "custom-title", customTitle: "cc-appended", sessionId }),
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+
+    const futureMs = Date.parse("2099-06-01T00:00:00.000Z");
+    utimesSync(sessionFile, futureMs / 1000, futureMs / 1000);
+
+    const { agent } = buildAgent();
+    const head = agent.setSessionAlias(sessionId, "Second name");
+
+    expect(head?.time_created).toBe(Date.parse(originalTs));
+    const records = readJsonl();
+    // Cc's duplicate was collapsed; the surviving custom-title carries the
+    // preserved timestamp from the previous row 0.
+    expect(records).toHaveLength(1);
+    expect(records[0]).toEqual({
+      type: "custom-title",
+      customTitle: "Second name",
+      sessionId,
+      timestamp: originalTs,
+    });
+  });
+
   it("collapses cc's append-on-resume duplicates into a single fresh row", () => {
     // cc itself writes a new custom-title row on every resume, so a long-lived
     // session may accumulate several of them. setSessionAlias should leave at
