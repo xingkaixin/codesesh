@@ -42,9 +42,7 @@ describe("buildResumeCommand", () => {
       sessionId: "wt-1",
       directory: "/Users/me/repos/myrepo-worktrees/feature-x",
     });
-    expect(cmd).toBe(
-      "cd '/Users/me/repos/myrepo-worktrees/feature-x' && claude --resume 'wt-1'",
-    );
+    expect(cmd).toBe("cd '/Users/me/repos/myrepo-worktrees/feature-x' && claude --resume 'wt-1'");
   });
 
   it("shell-quotes adversarial directory containing a single quote", () => {
@@ -66,9 +64,7 @@ describe("buildResumeCommand", () => {
 
   it("falls back to no-cd command when directory is missing", () => {
     expect(buildResumeCommand({ sessionId: "abc" })).toBe("claude --resume 'abc'");
-    expect(buildResumeCommand({ sessionId: "abc", directory: null })).toBe(
-      "claude --resume 'abc'",
-    );
+    expect(buildResumeCommand({ sessionId: "abc", directory: null })).toBe("claude --resume 'abc'");
     expect(buildResumeCommand({ sessionId: "abc", directory: undefined })).toBe(
       "claude --resume 'abc'",
     );
@@ -93,11 +89,11 @@ describe("buildResumeCommand", () => {
     // would emit a `cd` to a different path than what the session was started
     // from. trim() is for emptiness detection only; the quoted argument stays
     // verbatim.
-    expect(
-      buildResumeCommand({ sessionId: "abc", directory: " /tmp/proj " }),
-    ).toBe("cd ' /tmp/proj ' && claude --resume 'abc'");
-    expect(
-      buildResumeCommand({ sessionId: "abc", directory: "\t/var/log/app" }),
-    ).toBe("cd '\t/var/log/app' && claude --resume 'abc'");
+    expect(buildResumeCommand({ sessionId: "abc", directory: " /tmp/proj " })).toBe(
+      "cd ' /tmp/proj ' && claude --resume 'abc'",
+    );
+    expect(buildResumeCommand({ sessionId: "abc", directory: "\t/var/log/app" })).toBe(
+      "cd '\t/var/log/app' && claude --resume 'abc'",
+    );
   });
 });
