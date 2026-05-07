@@ -37,6 +37,7 @@ import {
 import { Dashboard } from "./components/Dashboard";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { BookmarkButton } from "./components/BookmarkButton";
+import { CopyResumeButton } from "./components/CopyResumeButton";
 import { SessionTreeSidebar } from "./components/SessionTreeSidebar";
 import { SmartTagChips } from "./components/SmartTagChips";
 import {
@@ -1275,6 +1276,15 @@ export default function App() {
                   <span className="console-mono inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
                     Esc back
                   </span>
+                ) : null}
+                {!isSearchMode &&
+                viewState.mode === "session" &&
+                session &&
+                activeAgentKey === "claudecode" ? (
+                  <CopyResumeButton
+                    sessionId={session.id}
+                    directory={session.directory}
+                  />
                 ) : null}
               </div>
               {liveNotice ? (
