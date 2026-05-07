@@ -26,7 +26,10 @@ import {
   logClientEvent,
   subscribeSessionUpdates,
   upsertBookmark,
+  windowFromTimeRange,
 } from "./lib/api";
+import { rangeFromAppConfig, useTimeRange } from "./lib/useTimeRange";
+import { TimeRangeMenu } from "./components/TimeRangeMenu";
 import { SessionDetail } from "./components/SessionDetail";
 import { SessionDetailSkeleton } from "./components/SessionDetailSkeleton";
 import {
@@ -219,28 +222,71 @@ export default function App() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchResultRefs = useRef(new Map<string, HTMLAnchorElement>());
 
-  // Load config + agents + sessions + dashboard (all share the same app-level window)
+  // Load config + bookmarks once on mount. Window-dependent data
+  // (agents/sessions/dashboard) loads in a separate effect that re-runs
+  // whenever the active TimeRange changes — that lets the header dropdown
+  // and URL ?range=/?from=/?to= state both drive a coherent refetch
+  // without stale-window flashes.
   useEffect(() => {
-    const ac = new AbortController();
     const startedAt = performance.now();
     logClientEvent("app.load.start", { path: window.location.pathname });
+    let cancelled = false;
     (async () => {
       try {
-        const config = await fetchConfig();
+        const [config, bookmarkData] = await Promise.all([fetchConfig(), fetchBookmarks()]);
+        if (cancelled) return;
         setAppConfig(config);
-        const [agentList, sessionList, dashboardData, bookmarkData] = await Promise.all([
-          fetchAgents(),
-          fetchSessions({ from: config.window.from, to: config.window.to }),
-          fetchDashboard(config.window).catch((err) => {
+        setBookmarks(bookmarkData.bookmarks);
+        logClientEvent("app.load.config", {
+          duration_ms: Math.round(performance.now() - startedAt),
+        });
+      } catch (err) {
+        console.error("Failed to load config:", err);
+        logClientEvent("app.load.error", {
+          duration_ms: Math.round(performance.now() - startedAt),
+          error: err instanceof Error ? err.message : String(err),
+        });
+        if (!cancelled) {
+          setError("Failed to load data. Is the CLI server running?");
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const cliFallbackRange = useMemo(() => rangeFromAppConfig(appConfig), [appConfig]);
+  const {
+    range: timeRange,
+    fromUrl: timeRangeFromUrl,
+    setRange: setTimeRange,
+  } = useTimeRange(cliFallbackRange);
+  const activeWindow = useMemo(() => windowFromTimeRange(timeRange), [timeRange]);
+
+  // Reload agents/sessions/dashboard whenever the active window changes.
+  // Skipped until config has loaded so the first fetch carries the resolved
+  // range (CLI fallback or URL state) rather than a bare default.
+  useEffect(() => {
+    if (!appConfig) return;
+    let cancelled = false;
+    const startedAt = performance.now();
+    (async () => {
+      try {
+        const [agentList, sessionList, dashboardData] = await Promise.all([
+          fetchAgents(activeWindow),
+          fetchSessions({ from: activeWindow.from, to: activeWindow.to }),
+          fetchDashboard(activeWindow).catch((err) => {
             console.error("Failed to load dashboard:", err);
             return null;
           }),
-          fetchBookmarks(),
         ]);
+        if (cancelled) return;
         setAgents(agentList);
         setSessions(sessionList.sessions);
-        setBookmarks(bookmarkData.bookmarks);
         if (dashboardData) setDashboard(dashboardData);
+        setError(null);
         logClientEvent("app.load.done", {
           duration_ms: Math.round(performance.now() - startedAt),
           agents: agentList.length,
@@ -249,17 +295,15 @@ export default function App() {
         });
       } catch (err) {
         console.error("Failed to load data:", err);
-        logClientEvent("app.load.error", {
-          duration_ms: Math.round(performance.now() - startedAt),
-          error: err instanceof Error ? err.message : String(err),
-        });
-        setError("Failed to load data. Is the CLI server running?");
+        if (!cancelled) setError("Failed to load data. Is the CLI server running?");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
-    return () => ac.abort();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [appConfig, activeWindow]);
 
   const location = useLocation();
   const validAgentKeys = useMemo(() => new Set(agents.map((a) => a.name.toLowerCase())), [agents]);
@@ -445,14 +489,14 @@ export default function App() {
   const syncLiveUpdate = useEffectEvent(async (event: SessionsUpdatedEvent) => {
     try {
       const [agentList, sessionList, dashboardData, searchData] = await Promise.all([
-        fetchAgents(),
-        fetchSessions({ from: appConfig?.window.from, to: appConfig?.window.to }),
-        fetchDashboard(appConfig?.window).catch((err) => {
+        fetchAgents(activeWindow),
+        fetchSessions({ from: activeWindow.from, to: activeWindow.to }),
+        fetchDashboard(activeWindow).catch((err) => {
           console.error("Failed to refresh dashboard:", err);
           return null;
         }),
         activeSearchQuery
-          ? fetchSearchResults(activeSearchQuery).catch((err) => {
+          ? fetchSearchResults(activeSearchQuery, activeWindow).catch((err) => {
               console.error("Failed to refresh search results:", err);
               return { results: [] };
             })
@@ -499,7 +543,7 @@ export default function App() {
     const startedAt = performance.now();
     logClientEvent("search.start", { query_length: activeSearchQuery.length });
 
-    void fetchSearchResults(activeSearchQuery)
+    void fetchSearchResults(activeSearchQuery, activeWindow)
       .then((data) => {
         if (cancelled) return;
         setSearchResults(data.results);
@@ -525,7 +569,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeSearchQuery]);
+  }, [activeSearchQuery, activeWindow]);
 
   // Load session detail
   useEffect(() => {
@@ -1275,6 +1319,13 @@ export default function App() {
                   <span className="console-mono inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
                     Esc back
                   </span>
+                ) : null}
+                {viewState.mode !== "session" ? (
+                  <TimeRangeMenu
+                    range={timeRange}
+                    onChange={setTimeRange}
+                    isFallback={!timeRangeFromUrl}
+                  />
                 ) : null}
               </div>
               {liveNotice ? (

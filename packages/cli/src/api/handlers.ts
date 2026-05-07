@@ -159,7 +159,11 @@ export function handleGetAgents(
   defaults: SessionListDefaults = {},
 ) {
   const scanResult = scanSource.getSnapshot();
-  const { from, to } = defaults;
+  // Honor the query window when present so the UI's time-range dropdown
+  // moves agent counts in lock-step with the sessions list. CLI defaults
+  // remain the fallback.
+  const from = parseDateParam(c.req.query("from"), defaults.from);
+  const to = parseDateParam(c.req.query("to"), defaults.to);
   const counts = Object.fromEntries(
     Object.entries(scanResult.byAgent).map(([agentName, sessions]) => [
       agentName,
