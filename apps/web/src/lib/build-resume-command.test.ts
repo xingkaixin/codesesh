@@ -86,4 +86,18 @@ describe("buildResumeCommand", () => {
       "claude --resume 'abc'",
     );
   });
+
+  it("preserves surrounding whitespace inside a non-empty directory", () => {
+    // If the upstream cwd happens to carry trailing/leading whitespace (rare
+    // but possible from dirty metadata), we must NOT silently strip it — that
+    // would emit a `cd` to a different path than what the session was started
+    // from. trim() is for emptiness detection only; the quoted argument stays
+    // verbatim.
+    expect(
+      buildResumeCommand({ sessionId: "abc", directory: " /tmp/proj " }),
+    ).toBe("cd ' /tmp/proj ' && claude --resume 'abc'");
+    expect(
+      buildResumeCommand({ sessionId: "abc", directory: "\t/var/log/app" }),
+    ).toBe("cd '\t/var/log/app' && claude --resume 'abc'");
+  });
 });

@@ -72,8 +72,12 @@ export function CopyResumeButton({
           if (ok) setCopied(true);
         });
       }}
-      aria-label={copied ? "Resume command copied" : "Copy claude --resume command"}
-      title={copied ? "Copied" : `Copy: ${command}`}
+      aria-label={
+        copied
+          ? `Resume command copied: ${command}`
+          : `Copy claude --resume command: ${command}`
+      }
+      title={copied ? `Copied: ${command}` : `Copy: ${command}`}
       className={`console-mono inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[11px] transition-colors ${className} ${
         copied
           ? "border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] text-[var(--console-text)]"

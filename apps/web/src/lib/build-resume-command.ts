@@ -23,9 +23,13 @@ export interface BuildResumeCommandInput {
 
 export function buildResumeCommand({ sessionId, directory }: BuildResumeCommandInput): string {
   const quotedId = shellQuote(sessionId);
-  const trimmed = directory?.trim();
-  if (!trimmed) {
+  const raw = directory ?? "";
+  // Use trim() only to detect "effectively empty" — don't lose surrounding
+  // whitespace from the actual cd argument. The shellQuote'd path must match
+  // the directory string verbatim so a path like " /tmp/proj " (a quirky but
+  // legitimate cwd) still resolves correctly when pasted into the shell.
+  if (!raw.trim()) {
     return `claude --resume ${quotedId}`;
   }
-  return `cd ${shellQuote(trimmed)} && claude --resume ${quotedId}`;
+  return `cd ${shellQuote(raw)} && claude --resume ${quotedId}`;
 }
