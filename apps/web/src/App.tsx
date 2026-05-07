@@ -1281,10 +1281,7 @@ export default function App() {
                 viewState.mode === "session" &&
                 session &&
                 activeAgentKey === "claudecode" ? (
-                  <CopyResumeButton
-                    sessionId={session.id}
-                    directory={session.directory}
-                  />
+                  <CopyResumeButton sessionId={session.id} directory={session.directory} />
                 ) : null}
               </div>
               {liveNotice ? (

@@ -48,11 +48,7 @@ async function writeToClipboard(text: string): Promise<boolean> {
   return ok;
 }
 
-export function CopyResumeButton({
-  sessionId,
-  directory,
-  className = "",
-}: CopyResumeButtonProps) {
+export function CopyResumeButton({ sessionId, directory, className = "" }: CopyResumeButtonProps) {
   const [copied, setCopied] = useState(false);
   const command = buildResumeCommand({ sessionId, directory });
 
@@ -73,9 +69,7 @@ export function CopyResumeButton({
         });
       }}
       aria-label={
-        copied
-          ? `Resume command copied: ${command}`
-          : `Copy claude --resume command: ${command}`
+        copied ? `Resume command copied: ${command}` : `Copy claude --resume command: ${command}`
       }
       title={copied ? `Copied: ${command}` : `Copy: ${command}`}
       className={`console-mono inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[11px] transition-colors ${className} ${
