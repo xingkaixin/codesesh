@@ -205,6 +205,53 @@ export interface AppConfig {
   };
 }
 
+/**
+ * UI-side time range used by the header dropdown. Encoded into URL search
+ * params via useTimeRange and converted to the existing window-shaped
+ * payload via windowFromTimeRange before being passed to fetch helpers — we
+ * don't introduce a parallel API surface, the backend already accepts
+ * `from`/`to`/`days` query params.
+ */
+export type TimeRange =
+  | { kind: "preset"; days: number }
+  | { kind: "custom"; from: string; to?: string }
+  | { kind: "yesterday" }
+  | { kind: "all" };
+
+/**
+ * Translate a UI-side TimeRange into the `{from?, to?, days?}` window shape
+ * already understood by the backend / existing fetch helpers.
+ *
+ * - `all`     → empty window (no filter)
+ * - `yesterday` → `from`=yesterday 00:00 local, `to`=yesterday 23:59:59.999
+ * - `preset`  → `days` only (lets the backend resolve from/to itself)
+ * - `custom`  → ISO date strings parsed back to numeric ms; `to` rounded to
+ *               end-of-day so the inclusive UI range maps to the inclusive
+ *               backend window
+ */
+export function windowFromTimeRange(range: TimeRange | null | undefined): AppConfig["window"] {
+  if (!range) return {};
+  if (range.kind === "all") return {};
+  if (range.kind === "preset") return { days: range.days };
+  if (range.kind === "yesterday") {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - 1);
+    const fromTs = start.getTime();
+    const toTs = fromTs + 86400000 - 1;
+    return { from: fromTs, to: toTs };
+  }
+  // custom: ISO date strings, possibly with `to` omitted → leave `to` open.
+  const fromTs = new Date(`${range.from}T00:00:00`).getTime();
+  if (!Number.isFinite(fromTs)) return {};
+  const window: AppConfig["window"] = { from: fromTs };
+  if (range.to) {
+    const toTs = new Date(`${range.to}T23:59:59.999`).getTime();
+    if (Number.isFinite(toTs)) window.to = toTs;
+  }
+  return window;
+}
+
 export interface SearchResult {
   agentName: string;
   session: SessionHead;
@@ -229,8 +276,18 @@ export async function fetchConfig(): Promise<AppConfig> {
   return res.json();
 }
 
-export async function fetchAgents(): Promise<AgentInfo[]> {
-  const res = await fetch("/api/agents");
+function appendWindowParams(params: URLSearchParams, window?: AppConfig["window"]): void {
+  if (!window) return;
+  if (window.from != null) params.set("from", new Date(window.from).toISOString());
+  if (window.to != null) params.set("to", new Date(window.to).toISOString());
+  if (window.days != null && window.days > 0) params.set("days", String(window.days));
+}
+
+export async function fetchAgents(window?: AppConfig["window"]): Promise<AgentInfo[]> {
+  const params = new URLSearchParams();
+  appendWindowParams(params, window);
+  const suffix = params.toString();
+  const res = await fetch(suffix ? `/api/agents?${suffix}` : "/api/agents");
   if (!res.ok) throw new Error("Failed to fetch agents");
   return res.json();
 }
@@ -276,9 +333,13 @@ export async function fetchDashboard(window?: AppConfig["window"]): Promise<Dash
   return res.json();
 }
 
-export async function fetchSearchResults(query: string): Promise<{ results: SearchResult[] }> {
+export async function fetchSearchResults(
+  query: string,
+  window?: AppConfig["window"],
+): Promise<{ results: SearchResult[] }> {
   const params = new URLSearchParams();
   params.set("q", query);
+  appendWindowParams(params, window);
   const res = await fetch(`/api/search?${params}`);
   if (!res.ok) throw new Error("Failed to fetch search results");
   return res.json();
