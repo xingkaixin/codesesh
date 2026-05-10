@@ -1,6 +1,7 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import Database from "better-sqlite3";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearCache,
@@ -71,6 +72,62 @@ function makeSessionData(id: string, text: string): SessionData {
   };
 }
 
+function createLegacyCacheTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE cache_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE TABLE agent_cache (
+      agent_name TEXT PRIMARY KEY,
+      timestamp INTEGER NOT NULL
+    );
+
+    CREATE TABLE cached_sessions (
+      agent_name TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      session_json TEXT NOT NULL,
+      meta_json TEXT,
+      PRIMARY KEY (agent_name, session_id)
+    );
+  `);
+}
+
+function createLegacyCachedSessionDb(version: number, session = makeSession("legacy")): void {
+  mkdirSync(getCacheDir(), { recursive: true });
+  const db = new Database(getCachePath());
+  try {
+    createLegacyCacheTables(db);
+    db.prepare("INSERT INTO cache_meta(key, value) VALUES ('version', ?)").run(String(version));
+    db.prepare("INSERT INTO agent_cache(agent_name, timestamp) VALUES (?, ?)").run(
+      "claudecode",
+      now,
+    );
+    db.prepare(
+      `
+        INSERT INTO cached_sessions(agent_name, session_id, session_json, meta_json)
+        VALUES (?, ?, ?, ?)
+      `,
+    ).run("claudecode", session.id, JSON.stringify(session), null);
+  } finally {
+    db.close();
+  }
+}
+
+function getUserVersion(dbPath: string): number {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    return Number(db.pragma("user_version", { simple: true }));
+  } finally {
+    db.close();
+  }
+}
+
+function getMigrationBackups(): string[] {
+  return readdirSync(getCacheDir()).filter((name) => name.endsWith(".cache-migration.bak"));
+}
+
 beforeEach(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
   dateNowSpy.mockReturnValue(now);
@@ -126,6 +183,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
+    expect(getUserVersion(getCachePath())).toBe(6);
   });
 
   it("overwrites cached rows for the same agent", () => {
@@ -186,6 +244,62 @@ describe("saveCachedSessions", () => {
         lastActivity: now,
       },
     ]);
+  });
+
+  it("migrates legacy sqlite cache rows to the current schema", () => {
+    createLegacyCachedSessionDb(3);
+
+    const result = loadCachedSessions("claudecode");
+
+    expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
+    expect(getUserVersion(getCachePath())).toBe(6);
+    expect(listCachedProjectGroups()).toEqual([
+      {
+        identityKind: "path",
+        identityKey: "/tmp/project",
+        displayName: "project",
+        sources: ["claudecode"],
+        sessionCount: 1,
+        lastActivity: now,
+      },
+    ]);
+  });
+
+  it("backs up populated cache before destructive migration", () => {
+    createLegacyCachedSessionDb(2);
+
+    expect(loadCachedSessions("claudecode")?.sessions.map((session) => session.id)).toEqual([
+      "legacy",
+    ]);
+
+    const backups = getMigrationBackups();
+    expect(backups).toHaveLength(1);
+
+    const backupName = backups[0];
+    expect(backupName).toBeDefined();
+    const backupDb = new Database(join(getCacheDir(), backupName as string), { readonly: true });
+    try {
+      const row = backupDb.prepare("SELECT COUNT(*) AS value FROM cached_sessions").get() as {
+        value?: number;
+      };
+      expect(Number(row.value ?? 0)).toBe(1);
+    } finally {
+      backupDb.close();
+    }
+  });
+
+  it("skips destructive migration backup when cache tables are empty", () => {
+    mkdirSync(getCacheDir(), { recursive: true });
+    const db = new Database(getCachePath());
+    try {
+      createLegacyCacheTables(db);
+      db.prepare("INSERT INTO cache_meta(key, value) VALUES ('version', '2')").run();
+    } finally {
+      db.close();
+    }
+
+    expect(loadCachedSessions("claudecode")).toBeNull();
+    expect(getMigrationBackups()).toEqual([]);
   });
 });
 
@@ -251,5 +365,75 @@ describe("searchSessions", () => {
     const filteredResults = searchSessions("alpha OR beta", { agent: "cursor" });
     expect(filteredResults).toHaveLength(1);
     expect(filteredResults[0]?.agentName).toBe("cursor");
+  });
+
+  it("rebuilds an empty FTS index when content rows exist", () => {
+    mkdirSync(getCacheDir(), { recursive: true });
+    const db = new Database(getCachePath());
+    try {
+      createLegacyCacheTables(db);
+      db.prepare("INSERT INTO cache_meta(key, value) VALUES ('version', '4')").run();
+      db.exec(`
+        CREATE TABLE session_documents (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          agent_name TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          slug TEXT NOT NULL,
+          title TEXT NOT NULL,
+          directory TEXT NOT NULL,
+          time_created INTEGER NOT NULL,
+          time_updated INTEGER,
+          activity_time INTEGER NOT NULL,
+          content_text TEXT NOT NULL,
+          content_hash TEXT NOT NULL,
+          indexed_at INTEGER NOT NULL,
+          UNIQUE(agent_name, session_id)
+        );
+
+        CREATE VIRTUAL TABLE session_documents_fts USING fts5(
+          title,
+          content_text,
+          content='session_documents',
+          content_rowid='id'
+        );
+      `);
+      db.prepare(
+        `
+          INSERT INTO session_documents(
+            agent_name,
+            session_id,
+            slug,
+            title,
+            directory,
+            time_created,
+            time_updated,
+            activity_time,
+            content_text,
+            content_hash,
+            indexed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      ).run(
+        "claudecode",
+        "fts-empty",
+        "claudecode/fts-empty",
+        "FTS Empty",
+        "/tmp/project",
+        now,
+        now,
+        now,
+        "orphan index content",
+        "old",
+        now,
+      );
+    } finally {
+      db.close();
+    }
+
+    const results = searchSessions("orphan");
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.session.id).toBe("fts-empty");
+    expect(results[0]?.snippet).toContain("<mark>orphan</mark>");
   });
 });

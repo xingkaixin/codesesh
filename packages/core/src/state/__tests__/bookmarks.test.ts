@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   deleteBookmark,
@@ -26,6 +27,19 @@ const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
 
 function getStateDir(): string {
   return join(testHomeDir, ".local", "share", "codesesh");
+}
+
+function getStatePath(): string {
+  return join(getStateDir(), "state.db");
+}
+
+function getUserVersion(dbPath: string): number {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    return Number(db.pragma("user_version", { simple: true }));
+  } finally {
+    db.close();
+  }
 }
 
 function makeBookmark(
@@ -67,6 +81,7 @@ describe("bookmarks state storage", () => {
         bookmarked_at: now,
       },
     ]);
+    expect(getUserVersion(getStatePath())).toBe(1);
   });
 
   it("preserves bookmarked_at when refreshing a snapshot", () => {
@@ -101,5 +116,25 @@ describe("bookmarks state storage", () => {
     upsertBookmark(makeBookmark());
     deleteBookmark("codex", "s1");
     expect(listBookmarks()).toEqual([]);
+  });
+
+  it("migrates legacy state metadata to user_version", () => {
+    upsertBookmark(makeBookmark());
+    const db = new Database(getStatePath());
+    try {
+      db.exec("PRAGMA user_version = 0");
+      db.prepare(
+        `
+          INSERT INTO state_meta(key, value)
+          VALUES ('version', '1')
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        `,
+      ).run();
+    } finally {
+      db.close();
+    }
+
+    expect(listBookmarks()[0]?.sessionId).toBe("s1");
+    expect(getUserVersion(getStatePath())).toBe(1);
   });
 });
