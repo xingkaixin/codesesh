@@ -1,6 +1,5 @@
-import { existsSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
-import chokidar, { type FSWatcher } from "chokidar";
+import { existsSync, statSync, watch, type FSWatcher } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   createRegisteredAgents,
   filterSessions,
@@ -31,8 +30,28 @@ type StoreListener = (event: SessionsUpdatedEvent) => void;
 
 interface WatchTarget {
   path: string;
-  depth?: number;
+  root?: string;
 }
+
+interface WatchScope {
+  agentName: string;
+  targetPath: string;
+}
+
+interface StablePathState {
+  path: string;
+  agentNames: Set<string>;
+  lastMtimeMs: number | null;
+  lastSize: number | null;
+  stableSince: number;
+  timer: NodeJS.Timeout | null;
+}
+
+const REFRESH_DEBOUNCE_MS = 200;
+const PENDING_REFRESH_DELAY_MS = 100;
+const WRITE_STABILITY_THRESHOLD_MS = 250;
+const WRITE_STABILITY_POLL_MS = 100;
+const NEW_SESSION_EVENT_WINDOW_MS = 250;
 
 function sortSessions(sessions: SessionHead[]): SessionHead[] {
   return [...sessions].sort(
@@ -110,12 +129,16 @@ function buildUpdateEvent(
   };
 }
 
+function toAbsolutePath(path: string): string {
+  return isAbsolute(path) ? path : resolve(path);
+}
+
 function closestWatchablePath(targetPath: string): string | null {
   if (!isAbsolute(targetPath) && !existsSync(targetPath)) {
     return null;
   }
 
-  let current = targetPath;
+  let current = toAbsolutePath(targetPath);
 
   while (!existsSync(current)) {
     const parent = dirname(current);
@@ -128,6 +151,35 @@ function closestWatchablePath(targetPath: string): string | null {
   return current;
 }
 
+function getWatchRoot(path: string): string {
+  const stat = statSync(path);
+  return stat.isDirectory() ? path : dirname(path);
+}
+
+function isSameOrChildPath(parentPath: string, childPath: string): boolean {
+  const path = relative(parentPath, childPath);
+  return path === "" || (!path.startsWith("..") && !isAbsolute(path));
+}
+
+function isRelatedPath(changedPath: string, targetPath: string): boolean {
+  return isSameOrChildPath(targetPath, changedPath) || isSameOrChildPath(changedPath, targetPath);
+}
+
+function mergeEvents(
+  previous: SessionsUpdatedEvent,
+  next: SessionsUpdatedEvent,
+): SessionsUpdatedEvent {
+  return {
+    type: "sessions-updated",
+    changedAgents: Array.from(new Set([...previous.changedAgents, ...next.changedAgents])),
+    newSessions: previous.newSessions + next.newSessions,
+    updatedSessions: previous.updatedSessions + next.updatedSessions,
+    removedSessions: previous.removedSessions + next.removedSessions,
+    totalSessions: next.totalSessions,
+    timestamp: next.timestamp,
+  };
+}
+
 export function resolveAgentWatchTargets(agentName: string): WatchTarget[] {
   const roots = resolveProviderRoots();
   const cursorDataPath = getCursorDataPath();
@@ -135,27 +187,30 @@ export function resolveAgentWatchTargets(agentName: string): WatchTarget[] {
   switch (agentName) {
     case "claudecode":
       return [
-        { path: join(roots.claudeRoot, "projects"), depth: 2 },
-        { path: "data/claudecode", depth: 2 },
+        { root: roots.claudeRoot, path: join(roots.claudeRoot, "projects") },
+        { path: "data/claudecode" },
       ];
     case "codex":
-      return [{ path: join(roots.codexRoot, "sessions"), depth: 4 }];
+      return [{ root: roots.codexRoot, path: join(roots.codexRoot, "sessions") }];
     case "cursor":
       return cursorDataPath
         ? [
-            { path: join(cursorDataPath, "globalStorage", "state.vscdb") },
-            { path: join(cursorDataPath, "workspaceStorage"), depth: 2 },
+            {
+              root: cursorDataPath,
+              path: join(cursorDataPath, "globalStorage", "state.vscdb"),
+            },
+            { root: cursorDataPath, path: join(cursorDataPath, "workspaceStorage") },
           ]
         : [];
     case "kimi":
       return [
-        { path: join(roots.kimiRoot, "sessions"), depth: 2 },
-        { path: "data/kimi", depth: 2 },
+        { root: roots.kimiRoot, path: join(roots.kimiRoot, "sessions") },
+        { path: "data/kimi" },
       ];
     case "opencode":
       return [
-        { path: join(roots.opencodeRoot, "opencode.db") },
-        { path: "data/opencode/opencode.db" },
+        { root: roots.opencodeRoot, path: join(roots.opencodeRoot, "opencode.db") },
+        { root: "data/opencode", path: "data/opencode/opencode.db" },
       ];
     default:
       return [];
@@ -172,6 +227,9 @@ export class LiveScanStore {
   private refreshInFlight = new Set<string>();
   private pendingRefreshes = new Set<string>();
   private watchers: FSWatcher[] = [];
+  private stablePaths = new Map<string, StablePathState>();
+  private pendingEvent: SessionsUpdatedEvent | null = null;
+  private pendingEventTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly watchEnabled = true,
@@ -236,14 +294,52 @@ export class LiveScanStore {
     }
     this.refreshTimers.clear();
 
+    for (const state of this.stablePaths.values()) {
+      if (state.timer) {
+        clearTimeout(state.timer);
+      }
+    }
+    this.stablePaths.clear();
+
+    if (this.pendingEventTimer) {
+      clearTimeout(this.pendingEventTimer);
+      this.pendingEventTimer = null;
+    }
+    this.pendingEvent = null;
+
     await Promise.all(this.watchers.map((watcher) => watcher.close()));
     this.watchers = [];
   }
 
   private emit(event: SessionsUpdatedEvent): void {
+    if (this.pendingEvent || event.newSessions > 0) {
+      this.queueEvent(event);
+      return;
+    }
+
+    this.emitNow(event);
+  }
+
+  private emitNow(event: SessionsUpdatedEvent): void {
     for (const listener of this.listeners) {
       listener(event);
     }
+  }
+
+  private queueEvent(event: SessionsUpdatedEvent): void {
+    this.pendingEvent = this.pendingEvent ? mergeEvents(this.pendingEvent, event) : event;
+    if (this.pendingEventTimer) {
+      return;
+    }
+
+    this.pendingEventTimer = setTimeout(() => {
+      const pending = this.pendingEvent;
+      this.pendingEvent = null;
+      this.pendingEventTimer = null;
+      if (pending) {
+        this.emitNow(pending);
+      }
+    }, NEW_SESSION_EVENT_WINDOW_MS);
   }
 
   private rebuildSessions(): void {
@@ -296,60 +392,169 @@ export class LiveScanStore {
   }
 
   private startWatching(): void {
+    const scopesByRoot = new Map<string, WatchScope[]>();
+
     for (const agent of this.agents) {
-      const rawTargets = resolveAgentWatchTargets(agent.name);
-      const watchTargets = rawTargets
-        .map((target) => {
-          const watchPath = closestWatchablePath(target.path);
-          return watchPath ? { ...target, path: watchPath } : null;
-        })
-        .filter((target): target is WatchTarget => target !== null)
-        .filter(
-          (target, index, items) =>
-            items.findIndex((item) => item.path === target.path && item.depth === target.depth) ===
-            index,
-        );
+      const watchTargets = resolveAgentWatchTargets(agent.name);
 
       if (watchTargets.length === 0) {
         appLogger.debug("watch.skip", { agent: agent.name });
         continue;
       }
 
+      for (const target of watchTargets) {
+        const watchRootPath = closestWatchablePath(target.root ?? target.path);
+        if (!watchRootPath) continue;
+
+        let rootPath: string;
+        try {
+          rootPath = getWatchRoot(watchRootPath);
+        } catch (error) {
+          this.reportWatchError("watch.resolve.error", { path: watchRootPath, error });
+          continue;
+        }
+        const targetPath = toAbsolutePath(target.path);
+        const scopes = scopesByRoot.get(rootPath) ?? [];
+        if (
+          !scopes.some((scope) => scope.agentName === agent.name && scope.targetPath === targetPath)
+        ) {
+          scopes.push({ agentName: agent.name, targetPath });
+        }
+        scopesByRoot.set(rootPath, scopes);
+      }
+    }
+
+    for (const [rootPath, scopes] of scopesByRoot.entries()) {
+      const agents = Array.from(new Set(scopes.map((scope) => scope.agentName)));
       appLogger.info("watch.start", {
-        agent: agent.name,
-        targets: watchTargets.map((target) => ({
-          path: target.path,
-          depth: target.depth ?? 0,
+        root: rootPath,
+        agents,
+        targets: scopes.map((scope) => ({
+          agent: scope.agentName,
+          path: scope.targetPath,
         })),
       });
-      const watcher = chokidar.watch(
-        watchTargets.map((target) => target.path),
-        {
-          ignoreInitial: true,
-          awaitWriteFinish: {
-            stabilityThreshold: 250,
-            pollInterval: 100,
-          },
-          depth: watchTargets.reduce(
-            (maxDepth, target) => Math.max(maxDepth, target.depth ?? 0),
-            0,
-          ),
-        },
-      );
 
-      watcher.on("all", () => {
-        this.scheduleRefresh(agent.name);
-      });
-      watcher.on("error", (error) => {
-        appLogger.error("watch.error", { agent: agent.name, error });
-        console.error(`[${agent.name}] File watcher failed:`, error);
-      });
+      try {
+        const watcher = watch(rootPath, { recursive: true }, (eventType, filename) => {
+          queueMicrotask(() => {
+            try {
+              this.handleWatchEvent(rootPath, scopes, eventType, filename);
+            } catch (error) {
+              this.reportWatchError("watch.event.error", { root: rootPath, error });
+            }
+          });
+        });
 
-      this.watchers.push(watcher);
+        watcher.on("error", (error) => {
+          this.reportWatchError("watch.error", { root: rootPath, agents, error });
+        });
+
+        this.watchers.push(watcher);
+      } catch (error) {
+        this.reportWatchError("watch.start.error", { root: rootPath, agents, error });
+      }
     }
   }
 
-  private scheduleRefresh(agentName: string, delayMs = 200): void {
+  private handleWatchEvent(
+    rootPath: string,
+    scopes: WatchScope[],
+    eventType: string,
+    filename: string | Buffer | null,
+  ): void {
+    const filenameText = filename?.toString();
+    const changedPath = filenameText
+      ? isAbsolute(filenameText)
+        ? filenameText
+        : join(rootPath, filenameText)
+      : rootPath;
+    const agentNames = new Set(
+      scopes
+        .filter((scope) => isRelatedPath(changedPath, scope.targetPath))
+        .map((scope) => scope.agentName),
+    );
+
+    if (agentNames.size === 0) {
+      return;
+    }
+
+    appLogger.debug("watch.event", {
+      event: eventType,
+      path: changedPath,
+      agents: Array.from(agentNames),
+    });
+    this.waitForStablePath(changedPath, agentNames);
+  }
+
+  private waitForStablePath(path: string, agentNames: Set<string>): void {
+    const existing = this.stablePaths.get(path);
+    if (existing) {
+      for (const agentName of agentNames) {
+        existing.agentNames.add(agentName);
+      }
+      return;
+    }
+
+    const state: StablePathState = {
+      path,
+      agentNames: new Set(agentNames),
+      lastMtimeMs: null,
+      lastSize: null,
+      stableSince: Date.now(),
+      timer: null,
+    };
+    this.stablePaths.set(path, state);
+    this.pollStablePath(path);
+  }
+
+  private pollStablePath(path: string): void {
+    const state = this.stablePaths.get(path);
+    if (!state) {
+      return;
+    }
+
+    let size: number;
+    let mtimeMs: number;
+    try {
+      const stat = statSync(path);
+      size = stat.size;
+      mtimeMs = stat.mtimeMs;
+    } catch {
+      this.stablePaths.delete(path);
+      this.scheduleRefreshForAgents(state.agentNames);
+      return;
+    }
+
+    const now = Date.now();
+    const unchanged = state.lastSize === size && state.lastMtimeMs === mtimeMs;
+    if (!unchanged) {
+      state.lastSize = size;
+      state.lastMtimeMs = mtimeMs;
+      state.stableSince = now;
+    }
+
+    if (unchanged && now - state.stableSince >= WRITE_STABILITY_THRESHOLD_MS) {
+      this.stablePaths.delete(path);
+      this.scheduleRefreshForAgents(state.agentNames);
+      return;
+    }
+
+    state.timer = setTimeout(() => this.pollStablePath(path), WRITE_STABILITY_POLL_MS);
+  }
+
+  private scheduleRefreshForAgents(agentNames: Set<string>): void {
+    for (const agentName of agentNames) {
+      this.scheduleRefresh(agentName);
+    }
+  }
+
+  private reportWatchError(event: string, data: Record<string, unknown>): void {
+    appLogger.error(event, data);
+    console.error("[watch] File watcher failed:", data.error);
+  }
+
+  private scheduleRefresh(agentName: string, delayMs = REFRESH_DEBOUNCE_MS): void {
     appLogger.debug("scan.refresh.schedule", { agent: agentName, delay_ms: delayMs });
     const existing = this.refreshTimers.get(agentName);
     if (existing) {
@@ -375,11 +580,14 @@ export class LiveScanStore {
 
     try {
       await this.runRefresh(agentName);
+    } catch (error) {
+      appLogger.error("scan.refresh.error", { agent: agentName, error });
+      console.error(`[${agentName}] Session refresh failed:`, error);
     } finally {
       this.refreshInFlight.delete(agentName);
 
       if (this.pendingRefreshes.delete(agentName)) {
-        this.scheduleRefresh(agentName, 100);
+        this.scheduleRefresh(agentName, PENDING_REFRESH_DELAY_MS);
       }
     }
   }

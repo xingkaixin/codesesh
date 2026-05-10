@@ -55,7 +55,6 @@
     "@codesesh/core": "workspace:*",
     "@hono/node-server": "^1.14.0",
     "better-sqlite3": "^11.10.0",
-    "chokidar": "^4.0.3",
     "citty": "^0.1.6",
     "consola": "^3.4.2",
     "hono": "^4.7.4",

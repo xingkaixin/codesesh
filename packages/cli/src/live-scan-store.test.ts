@@ -1,6 +1,19 @@
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionHead } from "@codesesh/core";
+
+const fsWatch = vi.hoisted(() => ({
+  watch: vi.fn(),
+  watchers: [] as Array<{
+    path: string;
+    options: { recursive?: boolean };
+    listener: (eventType: string, filename: string | Buffer | null) => void;
+    on: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+  }>,
+}));
 
 const core = vi.hoisted(() => ({
   createRegisteredAgents: vi.fn(),
@@ -17,6 +30,14 @@ const core = vi.hoisted(() => ({
   syncSessionSearchIndex: vi.fn(),
 }));
 
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    watch: fsWatch.watch,
+  };
+});
+
 vi.mock("@codesesh/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core")>();
   return {
@@ -31,16 +52,8 @@ vi.mock("@codesesh/core", async (importOriginal) => {
   };
 });
 
-vi.mock("chokidar", () => ({
-  default: {
-    watch: vi.fn(() => ({
-      on: vi.fn(),
-      close: vi.fn(async () => undefined),
-    })),
-  },
-}));
-
-import { LiveScanStore, resolveAgentWatchTargets } from "./live-scan.js";
+import { LiveScanStore, resolveAgentWatchTargets, type SessionsUpdatedEvent } from "./live-scan.js";
+import { appLogger } from "./logging.js";
 
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {
@@ -89,7 +102,39 @@ function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
 describe("LiveScanStore", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fsWatch.watchers.length = 0;
+    fsWatch.watch.mockImplementation(
+      (
+        path: string,
+        options: { recursive?: boolean },
+        listener: (eventType: string, filename: string | Buffer | null) => void,
+      ) => {
+        const watcher = {
+          path,
+          options,
+          listener,
+          on: vi.fn(),
+          close: vi.fn(async () => undefined),
+        };
+        fsWatch.watchers.push(watcher);
+        return {
+          on: watcher.on,
+          close: watcher.close,
+        };
+      },
+    );
+    core.getCursorDataPath.mockReturnValue("/tmp/cursor");
+    core.resolveProviderRoots.mockReturnValue({
+      claudeRoot: "/tmp/claude",
+      codexRoot: "/tmp/codex",
+      kimiRoot: "/tmp/kimi",
+      opencodeRoot: "/tmp/opencode",
+    });
     core.filterSessions.mockImplementation((sessions: SessionHead[]) => sessions);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("initializes a sorted snapshot for allowed registered agents", async () => {
@@ -123,6 +168,7 @@ describe("LiveScanStore", () => {
   });
 
   it("emits refresh events and persists changed agent sessions", async () => {
+    vi.useFakeTimers();
     const previous = makeSession("session", { title: "old", time_updated: 1000 });
     const updated = makeSession("session", { title: "new", time_updated: 2000 });
     const added = makeSession("added", { time_updated: 1500 });
@@ -147,6 +193,7 @@ describe("LiveScanStore", () => {
     store.subscribe((event) => events.push(event));
     await store.initialize();
     await (store as any).runRefresh("codex");
+    await vi.advanceTimersByTimeAsync(250);
 
     expect(codex.checkForChanges).toHaveBeenCalledWith(expect.any(Number), [previous]);
     expect(codex.incrementalScan).toHaveBeenCalledWith(previous ? [previous] : [], [
@@ -206,17 +253,185 @@ describe("LiveScanStore", () => {
     ]);
     expect(store.getSnapshot().sessions).toEqual([]);
   });
+
+  it("uses native recursive watch and waits for appended files to stabilize", async () => {
+    vi.useFakeTimers();
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-watch-"));
+    const codexRoot = join(tempDir, "codex");
+    const sessionsDir = join(codexRoot, "sessions");
+    const sessionFile = join(sessionsDir, "new.jsonl");
+    mkdirSync(sessionsDir, { recursive: true });
+    core.resolveProviderRoots.mockReturnValue({
+      claudeRoot: join(tempDir, "claude"),
+      codexRoot,
+      kimiRoot: join(tempDir, "kimi"),
+      opencodeRoot: join(tempDir, "opencode"),
+    });
+
+    const newSession = makeSession("new");
+    const codex = makeAgent("codex", {
+      scan: vi.fn(() => [newSession]),
+    });
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [],
+      byAgent: { codex: [] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore(true, { agents: ["codex"] });
+    const events: SessionsUpdatedEvent[] = [];
+    store.subscribe((event) => events.push(event));
+
+    await store.initialize();
+    expect(fsWatch.watchers).toEqual([
+      expect.objectContaining({
+        path: codexRoot,
+        options: { recursive: true },
+      }),
+    ]);
+
+    writeFileSync(sessionFile, "partial");
+    fsWatch.watchers[0]!.listener("change", join("sessions", "new.jsonl"));
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(150);
+
+    appendFileSync(sessionFile, "\ncomplete");
+    fsWatch.watchers[0]!.listener("change", join("sessions", "new.jsonl"));
+    await Promise.resolve();
+    expect(codex.scan).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(codex.scan).toHaveBeenCalledTimes(1);
+    expect(events).toEqual([
+      expect.objectContaining({
+        changedAgents: ["codex"],
+        newSessions: 1,
+      }),
+    ]);
+
+    await store.shutdown();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("logs refresh failures and handles later watch events", async () => {
+    vi.useFakeTimers();
+    const logError = vi.spyOn(appLogger, "error").mockImplementation(() => undefined);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-watch-error-"));
+    const codexRoot = join(tempDir, "codex");
+    const sessionsDir = join(codexRoot, "sessions");
+    const sessionFile = join(sessionsDir, "new.jsonl");
+    mkdirSync(sessionsDir, { recursive: true });
+    writeFileSync(sessionFile, "session");
+    core.resolveProviderRoots.mockReturnValue({
+      claudeRoot: join(tempDir, "claude"),
+      codexRoot,
+      kimiRoot: join(tempDir, "kimi"),
+      opencodeRoot: join(tempDir, "opencode"),
+    });
+
+    const codex = makeAgent("codex", {
+      scan: vi
+        .fn()
+        .mockImplementationOnce(() => {
+          throw new Error("bad file");
+        })
+        .mockImplementationOnce(() => [makeSession("new")]),
+    });
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [],
+      byAgent: { codex: [] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore(true, { agents: ["codex"] });
+    await store.initialize();
+
+    fsWatch.watchers[0]!.listener("change", join("sessions", "new.jsonl"));
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    appendFileSync(sessionFile, "\nretry");
+    fsWatch.watchers[0]!.listener("change", join("sessions", "new.jsonl"));
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(codex.scan).toHaveBeenCalledTimes(2);
+    expect(logError).toHaveBeenCalledWith(
+      "scan.refresh.error",
+      expect.objectContaining({ agent: "codex", error: expect.any(Error) }),
+    );
+
+    await store.shutdown();
+    rmSync(tempDir, { recursive: true, force: true });
+    consoleError.mockRestore();
+    logError.mockRestore();
+  });
+
+  it("merges new session events inside a short window", async () => {
+    vi.useFakeTimers();
+    const existingCodex = makeSession("codex-old");
+    const existingKimi = makeSession("kimi-old");
+    const codex = makeAgent("codex", {
+      checkForChanges: vi.fn(() => ({
+        hasChanges: true,
+        changedIds: ["codex-new"],
+        timestamp: 3000,
+      })),
+      incrementalScan: vi.fn(() => [existingCodex, makeSession("codex-new")]),
+    });
+    const kimi = makeAgent("kimi", {
+      checkForChanges: vi.fn(() => ({
+        hasChanges: true,
+        changedIds: ["kimi-new"],
+        timestamp: 3000,
+      })),
+      incrementalScan: vi.fn(() => [existingKimi, makeSession("kimi-new")]),
+    });
+    core.createRegisteredAgents.mockReturnValue([codex, kimi]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [existingCodex, existingKimi],
+      byAgent: { codex: [existingCodex], kimi: [existingKimi] },
+      agents: [codex, kimi],
+    });
+
+    const store = new LiveScanStore(false);
+    const events: SessionsUpdatedEvent[] = [];
+    store.subscribe((event) => events.push(event));
+    await store.initialize();
+    await (store as any).runRefresh("codex");
+    await (store as any).runRefresh("kimi");
+
+    expect(events).toEqual([]);
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        changedAgents: ["codex", "kimi"],
+        newSessions: 2,
+        updatedSessions: 0,
+        removedSessions: 0,
+        totalSessions: 4,
+      }),
+    ]);
+  });
 });
 
 describe("resolveAgentWatchTargets", () => {
   it("resolves cursor and opencode watch targets", () => {
     expect(resolveAgentWatchTargets("cursor")).toEqual([
-      { path: join("/tmp/cursor", "globalStorage", "state.vscdb") },
-      { path: join("/tmp/cursor", "workspaceStorage"), depth: 2 },
+      {
+        root: "/tmp/cursor",
+        path: join("/tmp/cursor", "globalStorage", "state.vscdb"),
+      },
+      { root: "/tmp/cursor", path: join("/tmp/cursor", "workspaceStorage") },
     ]);
     expect(resolveAgentWatchTargets("opencode")).toEqual([
-      { path: join("/tmp/opencode", "opencode.db") },
-      { path: "data/opencode/opencode.db" },
+      { root: "/tmp/opencode", path: join("/tmp/opencode", "opencode.db") },
+      { root: "data/opencode", path: "data/opencode/opencode.db" },
     ]);
     expect(resolveAgentWatchTargets("unknown")).toEqual([]);
   });

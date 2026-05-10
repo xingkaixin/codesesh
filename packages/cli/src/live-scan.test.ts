@@ -11,7 +11,7 @@ describe("resolveAgentWatchTargets", () => {
     vi.stubEnv("CODEX_HOME", "/tmp/codex-home");
 
     expect(resolveAgentWatchTargets("codex")).toEqual([
-      { path: join("/tmp/codex-home", "sessions"), depth: 4 },
+      { root: "/tmp/codex-home", path: join("/tmp/codex-home", "sessions") },
     ]);
   });
 
@@ -19,8 +19,8 @@ describe("resolveAgentWatchTargets", () => {
     vi.stubEnv("CLAUDE_CONFIG_DIR", "/tmp/claude-home");
 
     expect(resolveAgentWatchTargets("claudecode")).toEqual([
-      { path: join("/tmp/claude-home", "projects"), depth: 2 },
-      { path: "data/claudecode", depth: 2 },
+      { root: "/tmp/claude-home", path: join("/tmp/claude-home", "projects") },
+      { path: "data/claudecode" },
     ]);
   });
 });

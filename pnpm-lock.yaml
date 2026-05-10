@@ -175,9 +175,6 @@ importers:
       better-sqlite3:
         specifier: ^11.10.0
         version: 11.10.0
-      chokidar:
-        specifier: ^4.0.3
-        version: 4.0.3
       citty:
         specifier: ^0.1.6
         version: 0.1.6
