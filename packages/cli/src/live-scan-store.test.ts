@@ -55,6 +55,45 @@ vi.mock("@codesesh/core", async (importOriginal) => {
 import { LiveScanStore, resolveAgentWatchTargets, type SessionsUpdatedEvent } from "./live-scan.js";
 import { appLogger } from "./logging.js";
 
+let restoreRuntime: (() => void) | null = null;
+
+function stubProcessRuntime(platform: NodeJS.Platform, nodeVersion: string): void {
+  restoreRuntime?.();
+  const originalPlatform = process.platform;
+  const originalNodeVersion = process.versions.node;
+  Object.defineProperty(process, "platform", { configurable: true, value: platform });
+  Object.defineProperty(process.versions, "node", { configurable: true, value: nodeVersion });
+  restoreRuntime = () => {
+    Object.defineProperty(process, "platform", {
+      configurable: true,
+      value: originalPlatform,
+    });
+    Object.defineProperty(process.versions, "node", {
+      configurable: true,
+      value: originalNodeVersion,
+    });
+  };
+}
+
+function registerMockWatcher(
+  path: string,
+  options: { recursive?: boolean },
+  listener: (eventType: string, filename: string | Buffer | null) => void,
+) {
+  const watcher = {
+    path,
+    options,
+    listener,
+    on: vi.fn(),
+    close: vi.fn(async () => undefined),
+  };
+  fsWatch.watchers.push(watcher);
+  return {
+    on: watcher.on,
+    close: watcher.close,
+  };
+}
+
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {
     id,
@@ -108,20 +147,7 @@ describe("LiveScanStore", () => {
         path: string,
         options: { recursive?: boolean },
         listener: (eventType: string, filename: string | Buffer | null) => void,
-      ) => {
-        const watcher = {
-          path,
-          options,
-          listener,
-          on: vi.fn(),
-          close: vi.fn(async () => undefined),
-        };
-        fsWatch.watchers.push(watcher);
-        return {
-          on: watcher.on,
-          close: watcher.close,
-        };
-      },
+      ) => registerMockWatcher(path, options, listener),
     );
     core.getCursorDataPath.mockReturnValue("/tmp/cursor");
     core.resolveProviderRoots.mockReturnValue({
@@ -134,6 +160,8 @@ describe("LiveScanStore", () => {
   });
 
   afterEach(() => {
+    restoreRuntime?.();
+    restoreRuntime = null;
     vi.useRealTimers();
   });
 
@@ -256,6 +284,7 @@ describe("LiveScanStore", () => {
 
   it("uses native recursive watch and waits for appended files to stabilize", async () => {
     vi.useFakeTimers();
+    stubProcessRuntime("darwin", "18.0.0");
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-watch-"));
     const codexRoot = join(tempDir, "codex");
     const sessionsDir = join(codexRoot, "sessions");
@@ -310,6 +339,53 @@ describe("LiveScanStore", () => {
         newSessions: 1,
       }),
     ]);
+
+    await store.shutdown();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("uses non-recursive directory watches on Node 18 Linux", async () => {
+    vi.useFakeTimers();
+    stubProcessRuntime("linux", "18.19.0");
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-watch-fallback-"));
+    const codexRoot = join(tempDir, "codex");
+    const sessionsDir = join(codexRoot, "sessions");
+    const dayDir = join(sessionsDir, "2026", "05", "10");
+    const sessionFile = join(dayDir, "new.jsonl");
+    mkdirSync(dayDir, { recursive: true });
+    core.resolveProviderRoots.mockReturnValue({
+      claudeRoot: join(tempDir, "claude"),
+      codexRoot,
+      kimiRoot: join(tempDir, "kimi"),
+      opencodeRoot: join(tempDir, "opencode"),
+    });
+
+    const codex = makeAgent("codex", {
+      scan: vi.fn(() => [makeSession("new")]),
+    });
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [],
+      byAgent: { codex: [] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore(true, { agents: ["codex"] });
+    await store.initialize();
+
+    expect(fsWatch.watchers.some((watcher) => watcher.options.recursive)).toBe(false);
+    expect(fsWatch.watchers.map((watcher) => watcher.path)).toEqual(
+      expect.arrayContaining([codexRoot, sessionsDir, dayDir]),
+    );
+
+    writeFileSync(sessionFile, "complete");
+    const dayWatcher = fsWatch.watchers.find((watcher) => watcher.path === dayDir);
+    expect(dayWatcher).toBeDefined();
+    dayWatcher!.listener("rename", "new.jsonl");
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(codex.scan).toHaveBeenCalledTimes(1);
 
     await store.shutdown();
     rmSync(tempDir, { recursive: true, force: true });
