@@ -1,4 +1,4 @@
-import { existsSync, statSync, watch, type FSWatcher } from "node:fs";
+import { existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   createRegisteredAgents,
@@ -156,6 +156,30 @@ function getWatchRoot(path: string): string {
   return stat.isDirectory() ? path : dirname(path);
 }
 
+function isRecursiveWatchSupported(
+  platform = process.platform,
+  nodeVersion = process.versions.node,
+): boolean {
+  if (platform === "darwin" || platform === "win32") {
+    return true;
+  }
+  if (platform !== "linux" && platform !== "aix" && platform !== "ibmi") {
+    return false;
+  }
+
+  const [major = 0, minor = 0] = nodeVersion.split(".").map((part) => Number(part));
+  return major > 19 || (major === 19 && minor >= 1);
+}
+
+function isRecursiveWatchUnavailable(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ERR_FEATURE_UNAVAILABLE_ON_PLATFORM"
+  );
+}
+
 function isSameOrChildPath(parentPath: string, childPath: string): boolean {
   const path = relative(parentPath, childPath);
   return path === "" || (!path.startsWith("..") && !isAbsolute(path));
@@ -178,6 +202,26 @@ function mergeEvents(
     totalSessions: next.totalSessions,
     timestamp: next.timestamp,
   };
+}
+
+function mergeScopes(target: WatchScope[], scopes: WatchScope[]): void {
+  for (const scope of scopes) {
+    if (
+      !target.some(
+        (item) => item.agentName === scope.agentName && item.targetPath === scope.targetPath,
+      )
+    ) {
+      target.push(scope);
+    }
+  }
+}
+
+function resolveWatchEventPath(watchPath: string, filename: string | Buffer | null): string {
+  const filenameText = filename?.toString();
+  if (!filenameText) {
+    return watchPath;
+  }
+  return isAbsolute(filenameText) ? filenameText : join(watchPath, filenameText);
 }
 
 export function resolveAgentWatchTargets(agentName: string): WatchTarget[] {
@@ -227,6 +271,7 @@ export class LiveScanStore {
   private refreshInFlight = new Set<string>();
   private pendingRefreshes = new Set<string>();
   private watchers: FSWatcher[] = [];
+  private fallbackWatchScopes = new Map<string, WatchScope[]>();
   private stablePaths = new Map<string, StablePathState>();
   private pendingEvent: SessionsUpdatedEvent | null = null;
   private pendingEventTimer: NodeJS.Timeout | null = null;
@@ -309,6 +354,7 @@ export class LiveScanStore {
 
     await Promise.all(this.watchers.map((watcher) => watcher.close()));
     this.watchers = [];
+    this.fallbackWatchScopes.clear();
   }
 
   private emit(event: SessionsUpdatedEvent): void {
@@ -435,40 +481,105 @@ export class LiveScanStore {
         })),
       });
 
-      try {
-        const watcher = watch(rootPath, { recursive: true }, (eventType, filename) => {
-          queueMicrotask(() => {
-            try {
-              this.handleWatchEvent(rootPath, scopes, eventType, filename);
-            } catch (error) {
-              this.reportWatchError("watch.event.error", { root: rootPath, error });
+      if (isRecursiveWatchSupported()) {
+        const started = this.watchDirectory(rootPath, scopes, true);
+        if (started) {
+          continue;
+        }
+      }
+
+      this.watchDirectoryTree(rootPath, scopes);
+    }
+  }
+
+  private watchDirectory(path: string, scopes: WatchScope[], recursive: boolean): boolean {
+    try {
+      const watcher = watch(path, { recursive }, (eventType, filename) => {
+        queueMicrotask(() => {
+          try {
+            const activeScopes = recursive
+              ? scopes
+              : (this.fallbackWatchScopes.get(path) ?? scopes);
+            this.handleWatchEvent(path, activeScopes, eventType, filename);
+            if (!recursive) {
+              this.watchNewDirectories(path, filename, activeScopes);
             }
-          });
+          } catch (error) {
+            this.reportWatchError("watch.event.error", { path, recursive, error });
+          }
         });
+      });
 
-        watcher.on("error", (error) => {
-          this.reportWatchError("watch.error", { root: rootPath, agents, error });
-        });
+      watcher.on("error", (error) => {
+        this.reportWatchError("watch.error", { path, recursive, error });
+      });
 
-        this.watchers.push(watcher);
+      this.watchers.push(watcher);
+      return true;
+    } catch (error) {
+      if (recursive && isRecursiveWatchUnavailable(error)) {
+        appLogger.warn("watch.recursive_unavailable", { path, error });
+        return false;
+      }
+
+      this.reportWatchError("watch.start.error", { path, recursive, error });
+      return false;
+    }
+  }
+
+  private watchDirectoryTree(rootPath: string, scopes: WatchScope[]): void {
+    const pending = [rootPath];
+
+    while (pending.length > 0) {
+      const dirPath = pending.pop()!;
+      this.watchFallbackDirectory(dirPath, scopes);
+
+      try {
+        for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
+          if (entry.isDirectory()) {
+            pending.push(join(dirPath, entry.name));
+          }
+        }
       } catch (error) {
-        this.reportWatchError("watch.start.error", { root: rootPath, agents, error });
+        this.reportWatchError("watch.scan.error", { path: dirPath, error });
       }
     }
   }
 
+  private watchFallbackDirectory(path: string, scopes: WatchScope[]): void {
+    const existingScopes = this.fallbackWatchScopes.get(path);
+    if (existingScopes) {
+      mergeScopes(existingScopes, scopes);
+      return;
+    }
+
+    const storedScopes = [...scopes];
+    this.fallbackWatchScopes.set(path, storedScopes);
+    if (!this.watchDirectory(path, storedScopes, false)) {
+      this.fallbackWatchScopes.delete(path);
+    }
+  }
+
+  private watchNewDirectories(
+    watchPath: string,
+    filename: string | Buffer | null,
+    scopes: WatchScope[],
+  ): void {
+    const path = resolveWatchEventPath(watchPath, filename);
+    try {
+      if (statSync(path).isDirectory()) {
+        this.watchDirectoryTree(path, scopes);
+      }
+    } catch {}
+  }
+
   private handleWatchEvent(
-    rootPath: string,
+    watchPath: string,
     scopes: WatchScope[],
     eventType: string,
     filename: string | Buffer | null,
   ): void {
-    const filenameText = filename?.toString();
-    const changedPath = filenameText
-      ? isAbsolute(filenameText)
-        ? filenameText
-        : join(rootPath, filenameText)
-      : rootPath;
+    const changedPath = resolveWatchEventPath(watchPath, filename);
     const agentNames = new Set(
       scopes
         .filter((scope) => isRelatedPath(changedPath, scope.targetPath))
