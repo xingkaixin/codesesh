@@ -183,7 +183,63 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(6);
+    expect(getUserVersion(getCachePath())).toBe(7);
+  });
+
+  it("writes structured session rows for cache restores", () => {
+    const session = {
+      ...makeSession("s1"),
+      stats: {
+        message_count: 3,
+        total_input_tokens: 10,
+        total_output_tokens: 5,
+        total_cost: 0.12,
+        total_tokens: 20,
+        total_cache_read_tokens: 2,
+      },
+      model_usage: { "claude-sonnet": 20 },
+      smart_tags: ["feature-dev" as const],
+      smart_tags_source_updated_at: now,
+    };
+
+    saveCachedSessions("claudecode", [session], {
+      s1: { id: "s1", sourcePath: "/path/to/source" },
+    });
+
+    const db = new Database(getCachePath(), { readonly: true });
+    try {
+      const row = db.prepare("SELECT * FROM sessions WHERE agent_name = ?").get("claudecode") as {
+        session_id?: string;
+        source_path?: string;
+        message_count?: number;
+        total_tokens?: number;
+        model_usage_json?: string;
+        smart_tags_json?: string;
+      };
+
+      expect(row.session_id).toBe("s1");
+      expect(row.source_path).toBe("/path/to/source");
+      expect(row.message_count).toBe(3);
+      expect(row.total_tokens).toBe(20);
+      expect(JSON.parse(row.model_usage_json ?? "{}")).toEqual({ "claude-sonnet": 20 });
+      expect(JSON.parse(row.smart_tags_json ?? "[]")).toEqual(["feature-dev"]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("restores session heads from structured rows when snapshot json is malformed", () => {
+    saveCachedSessions("claudecode", [makeSession("s1")]);
+
+    const db = new Database(getCachePath());
+    try {
+      db.prepare("UPDATE cached_sessions SET session_json = ? WHERE session_id = ?").run("{", "s1");
+    } finally {
+      db.close();
+    }
+
+    const result = loadCachedSessions("claudecode");
+    expect(result?.sessions.map((session) => session.id)).toEqual(["s1"]);
   });
 
   it("overwrites cached rows for the same agent", () => {
@@ -246,13 +302,45 @@ describe("saveCachedSessions", () => {
     ]);
   });
 
+  it("reads project groups from structured sessions", () => {
+    const session = {
+      ...makeSession("s1"),
+      slug: "claudecode/s1",
+      project_identity: {
+        kind: "git_remote" as const,
+        key: "github.com/xingkaixin/codesesh",
+        displayName: "codesesh",
+      },
+    };
+
+    saveCachedSessions("claudecode", [session]);
+
+    const db = new Database(getCachePath());
+    try {
+      db.prepare("DELETE FROM project_sessions").run();
+    } finally {
+      db.close();
+    }
+
+    expect(listCachedProjectGroups()).toEqual([
+      {
+        identityKind: "git_remote",
+        identityKey: "github.com/xingkaixin/codesesh",
+        displayName: "codesesh",
+        sources: ["claudecode"],
+        sessionCount: 1,
+        lastActivity: now,
+      },
+    ]);
+  });
+
   it("migrates legacy sqlite cache rows to the current schema", () => {
     createLegacyCachedSessionDb(3);
 
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(6);
+    expect(getUserVersion(getCachePath())).toBe(7);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
@@ -334,7 +422,15 @@ describe("getCacheInfo", () => {
 
 describe("searchSessions", () => {
   it("indexes session content and returns highlighted matches", () => {
-    const session = makeSession("s1");
+    const session = {
+      ...makeSession("s1"),
+      stats: {
+        message_count: 1,
+        total_input_tokens: 11,
+        total_output_tokens: 7,
+        total_cost: 0.03,
+      },
+    };
     saveCachedSessions("claudecode", [session]);
     syncSessionSearchIndex("claudecode", [session], (sessionId) =>
       makeSessionData(sessionId, "sqlite fts search is now enabled"),
@@ -344,7 +440,86 @@ describe("searchSessions", () => {
     expect(results).toHaveLength(1);
     expect(results[0]?.agentName).toBe("claudecode");
     expect(results[0]?.session.id).toBe("s1");
+    expect(results[0]?.session.stats).toMatchObject({
+      message_count: 1,
+      total_input_tokens: 11,
+      total_output_tokens: 7,
+      total_cost: 0.03,
+    });
     expect(results[0]?.snippet).toContain("<mark>sqlite</mark>");
+  });
+
+  it("upserts normalized message rows for indexed sessions", () => {
+    const session = {
+      ...makeSession("s1"),
+      stats: { ...makeSession("s1").stats, message_count: 2 },
+    };
+
+    saveCachedSessions("claudecode", [session]);
+    syncSessionSearchIndex("claudecode", [session], () => ({
+      ...session,
+      messages: [
+        {
+          id: "m1",
+          role: "user",
+          time_created: now,
+          parts: [{ type: "text", text: "first message" }],
+        },
+        {
+          id: "m2",
+          role: "assistant",
+          time_created: now + 1,
+          parts: [
+            {
+              type: "tool",
+              tool: "grep",
+              title: "Search",
+              state: { status: "completed", output: "result" },
+            },
+          ],
+        },
+      ],
+    }));
+
+    syncSessionSearchIndex(
+      "claudecode",
+      [{ ...session, stats: { ...session.stats, message_count: 1 } }],
+      () => ({
+        ...session,
+        stats: { ...session.stats, message_count: 1 },
+        messages: [
+          {
+            id: "m1-updated",
+            role: "user",
+            time_created: now,
+            parts: [{ type: "text", text: "updated sqlite message" }],
+          },
+        ],
+      }),
+    );
+
+    const db = new Database(getCachePath(), { readonly: true });
+    try {
+      const rows = db
+        .prepare(
+          "SELECT message_id, role, content_text, tool_metadata_json FROM messages ORDER BY message_index",
+        )
+        .all() as Array<{
+        message_id?: string;
+        role?: string;
+        content_text?: string;
+        tool_metadata_json?: string | null;
+      }>;
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.message_id).toBe("m1-updated");
+      expect(rows[0]?.role).toBe("user");
+      expect(rows[0]?.content_text).toContain("updated sqlite message");
+    } finally {
+      db.close();
+    }
+
+    expect(searchSessions("updated")).toHaveLength(1);
   });
 
   it("supports OR queries and agent filters", () => {

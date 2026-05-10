@@ -6,6 +6,8 @@ import { existsSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type {
+  Message,
+  MessagePart,
   ProjectGroup,
   ProjectIdentityKind,
   SessionData,
@@ -23,7 +25,7 @@ import {
   type SQLiteDatabase,
 } from "../utils/sqlite.js";
 
-const CACHE_SCHEMA_VERSION = 6;
+const CACHE_SCHEMA_VERSION = 7;
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const CACHE_FILENAME = "codesesh.db";
 const LEGACY_CACHE_FILENAME = "scan-cache.json";
@@ -45,7 +47,40 @@ interface ScalarRow extends DatabaseRow {
 }
 
 interface CacheRow extends DatabaseRow {
+  agent_name?: string;
+  session_id?: string;
   session_json?: string;
+  meta_json?: string | null;
+  sort_index?: number;
+}
+
+type SQLiteStatement = ReturnType<SQLiteDatabase["prepare"]>;
+
+interface SessionRow extends DatabaseRow {
+  agent_name?: string;
+  session_id?: string;
+  sort_index?: number;
+  slug?: string;
+  title?: string;
+  source_path?: string | null;
+  directory?: string;
+  project_identity_kind?: ProjectIdentityKind;
+  project_identity_key?: string;
+  project_display_name?: string;
+  time_created?: number;
+  time_updated?: number | null;
+  activity_time?: number;
+  message_count?: number;
+  total_input_tokens?: number;
+  total_output_tokens?: number;
+  total_cache_read_tokens?: number | null;
+  total_cache_create_tokens?: number | null;
+  total_cost?: number;
+  cost_source?: SessionHead["stats"]["cost_source"] | null;
+  total_tokens?: number | null;
+  model_usage_json?: string | null;
+  smart_tags_json?: string | null;
+  smart_tags_source_updated_at?: number | null;
   meta_json?: string | null;
 }
 
@@ -54,14 +89,30 @@ interface IndexedSearchRow extends DatabaseRow {
   content_hash?: string;
 }
 
+interface MessageCountRow extends DatabaseRow {
+  session_id?: string;
+  value?: number;
+}
+
 interface SearchResultRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
   slug?: string;
   title?: string;
   directory?: string;
+  project_identity_kind?: ProjectIdentityKind;
+  project_identity_key?: string;
+  project_display_name?: string;
   time_created?: number;
   time_updated?: number | null;
+  message_count?: number;
+  total_input_tokens?: number;
+  total_output_tokens?: number;
+  total_cache_read_tokens?: number | null;
+  total_cache_create_tokens?: number | null;
+  total_cost?: number;
+  cost_source?: string | null;
+  total_tokens?: number | null;
   snippet?: string | null;
 }
 
@@ -78,11 +129,43 @@ interface ProjectBackfillSessionRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
   session_json?: string;
+  meta_json?: string | null;
+  sort_index?: number;
 }
 
 interface ProjectBackfillDocumentRow extends DatabaseRow {
   id?: number;
+  agent_name?: string;
+  session_id?: string;
+  slug?: string;
+  title?: string;
   directory?: string;
+  project_identity_kind?: ProjectIdentityKind;
+  project_identity_key?: string;
+  project_display_name?: string;
+  time_created?: number;
+  time_updated?: number | null;
+  activity_time?: number;
+}
+
+interface StructuredMessageRecord {
+  index: number;
+  id: string;
+  role: Message["role"];
+  timeCreated: number;
+  timeCompleted?: number | null;
+  agent?: string | null;
+  mode?: string | null;
+  model?: string | null;
+  provider?: string | null;
+  tokensJson?: string | null;
+  cost?: number | null;
+  costSource?: string | null;
+  partsJson: string;
+  subagentId?: string | null;
+  nickname?: string | null;
+  contentText: string;
+  toolMetadataJson?: string | null;
 }
 
 export interface SearchResult {
@@ -149,6 +232,74 @@ function createCacheTables(db: SQLiteDatabase): void {
       meta_json TEXT,
       PRIMARY KEY (agent_name, session_id)
     );
+  `);
+}
+
+function createSessionTables(db: SQLiteDatabase): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      agent_name TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      sort_index INTEGER NOT NULL DEFAULT 0,
+      slug TEXT NOT NULL,
+      title TEXT NOT NULL,
+      source_path TEXT,
+      directory TEXT NOT NULL,
+      project_identity_kind TEXT NOT NULL,
+      project_identity_key TEXT NOT NULL,
+      project_display_name TEXT NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER,
+      activity_time INTEGER NOT NULL,
+      message_count INTEGER NOT NULL,
+      total_input_tokens INTEGER NOT NULL,
+      total_output_tokens INTEGER NOT NULL,
+      total_cache_read_tokens INTEGER,
+      total_cache_create_tokens INTEGER,
+      total_cost REAL NOT NULL,
+      cost_source TEXT,
+      total_tokens INTEGER,
+      model_usage_json TEXT,
+      smart_tags_json TEXT,
+      smart_tags_source_updated_at INTEGER,
+      meta_json TEXT,
+      PRIMARY KEY (agent_name, session_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_agent_activity
+      ON sessions(agent_name, activity_time);
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_project
+      ON sessions(project_identity_kind, project_identity_key, activity_time);
+
+    CREATE TABLE IF NOT EXISTS messages (
+      agent_name TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      message_index INTEGER NOT NULL,
+      message_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_completed INTEGER,
+      agent TEXT,
+      mode TEXT,
+      model TEXT,
+      provider TEXT,
+      tokens_json TEXT,
+      cost REAL,
+      cost_source TEXT,
+      parts_json TEXT NOT NULL,
+      subagent_id TEXT,
+      nickname TEXT,
+      content_text TEXT NOT NULL,
+      tool_metadata_json TEXT,
+      PRIMARY KEY (agent_name, session_id, message_index),
+      FOREIGN KEY (agent_name, session_id)
+        REFERENCES sessions(agent_name, session_id)
+        ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_messages_session
+      ON messages(agent_name, session_id, message_index);
   `);
 }
 
@@ -234,24 +385,218 @@ function createProjectTables(db: SQLiteDatabase): void {
 
     CREATE INDEX IF NOT EXISTS idx_project_sessions_identity
       ON project_sessions(identity_kind, identity_key);
+  `);
+  createProjectGroupsView(db);
+}
 
+function createProjectGroupsView(db: SQLiteDatabase): void {
+  if (!tableExists(db, "sessions")) {
+    db.exec(`
+      CREATE VIEW IF NOT EXISTS project_groups_v AS
+        SELECT
+          identity_kind,
+          identity_key,
+          MIN(display_name) AS display_name,
+          GROUP_CONCAT(DISTINCT agent_name) AS sources_csv,
+          COUNT(*) AS session_count,
+          MAX(activity_time) AS last_activity
+        FROM project_sessions
+        GROUP BY identity_kind, identity_key;
+    `);
+    return;
+  }
+
+  db.exec(`
     CREATE VIEW IF NOT EXISTS project_groups_v AS
       SELECT
-        identity_kind,
-        identity_key,
-        MIN(display_name) AS display_name,
+        project_identity_kind AS identity_kind,
+        project_identity_key AS identity_key,
+        MIN(project_display_name) AS display_name,
         GROUP_CONCAT(DISTINCT agent_name) AS sources_csv,
         COUNT(*) AS session_count,
         MAX(activity_time) AS last_activity
-      FROM project_sessions
-      GROUP BY identity_kind, identity_key;
+      FROM sessions
+      GROUP BY project_identity_kind, project_identity_key;
   `);
+}
+
+function recreateProjectGroupsView(db: SQLiteDatabase): void {
+  db.exec("DROP VIEW IF EXISTS project_groups_v");
+  createProjectGroupsView(db);
 }
 
 function createLatestCacheSchema(db: SQLiteDatabase): void {
   createCacheTables(db);
+  createSessionTables(db);
   createSearchTables(db);
   createProjectTables(db);
+}
+
+function stringifyOptionalJson(value: unknown): string | null {
+  return value == null ? null : JSON.stringify(value);
+}
+
+function parseOptionalJson<T>(value: unknown): T | undefined {
+  return value == null ? undefined : (JSON.parse(String(value)) as T);
+}
+
+function sourcePathFromMeta(meta: SessionCacheMeta | undefined): string | null {
+  return typeof meta?.sourcePath === "string" ? meta.sourcePath : null;
+}
+
+function sourcePathFromMetaJson(metaJson: string | null | undefined): string | null {
+  if (!metaJson) return null;
+  const meta = JSON.parse(metaJson) as SessionCacheMeta;
+  return sourcePathFromMeta(meta);
+}
+
+function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
+  return db.prepare(`
+    INSERT INTO sessions(
+      agent_name,
+      session_id,
+      sort_index,
+      slug,
+      title,
+      source_path,
+      directory,
+      project_identity_kind,
+      project_identity_key,
+      project_display_name,
+      time_created,
+      time_updated,
+      activity_time,
+      message_count,
+      total_input_tokens,
+      total_output_tokens,
+      total_cache_read_tokens,
+      total_cache_create_tokens,
+      total_cost,
+      cost_source,
+      total_tokens,
+      model_usage_json,
+      smart_tags_json,
+      smart_tags_source_updated_at,
+      meta_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(agent_name, session_id) DO UPDATE SET
+      sort_index = excluded.sort_index,
+      slug = excluded.slug,
+      title = excluded.title,
+      source_path = excluded.source_path,
+      directory = excluded.directory,
+      project_identity_kind = excluded.project_identity_kind,
+      project_identity_key = excluded.project_identity_key,
+      project_display_name = excluded.project_display_name,
+      time_created = excluded.time_created,
+      time_updated = excluded.time_updated,
+      activity_time = excluded.activity_time,
+      message_count = excluded.message_count,
+      total_input_tokens = excluded.total_input_tokens,
+      total_output_tokens = excluded.total_output_tokens,
+      total_cache_read_tokens = excluded.total_cache_read_tokens,
+      total_cache_create_tokens = excluded.total_cache_create_tokens,
+      total_cost = excluded.total_cost,
+      cost_source = excluded.cost_source,
+      total_tokens = excluded.total_tokens,
+      model_usage_json = excluded.model_usage_json,
+      smart_tags_json = excluded.smart_tags_json,
+      smart_tags_source_updated_at = excluded.smart_tags_source_updated_at,
+      meta_json = excluded.meta_json
+  `);
+}
+
+function upsertSessionRow(
+  statement: SQLiteStatement,
+  agentName: string,
+  session: SessionHead,
+  metaJson: string | null,
+  sortIndex: number,
+  sourcePath: string | null,
+): void {
+  const identity = session.project_identity ?? computeIdentity(session.directory, realFs);
+  const activityTime = session.time_updated ?? session.time_created;
+  statement.run(
+    agentName,
+    session.id,
+    sortIndex,
+    session.slug,
+    session.title,
+    sourcePath,
+    session.directory,
+    identity.kind,
+    identity.key,
+    identity.displayName,
+    session.time_created,
+    session.time_updated ?? null,
+    activityTime,
+    session.stats.message_count,
+    session.stats.total_input_tokens,
+    session.stats.total_output_tokens,
+    session.stats.total_cache_read_tokens ?? null,
+    session.stats.total_cache_create_tokens ?? null,
+    session.stats.total_cost,
+    session.stats.cost_source ?? null,
+    session.stats.total_tokens ?? null,
+    stringifyOptionalJson(session.model_usage),
+    stringifyOptionalJson(session.smart_tags),
+    session.smart_tags_source_updated_at ?? null,
+    metaJson,
+  );
+}
+
+function sessionFromRow(row: SessionRow): SessionHead {
+  const session: SessionHead = {
+    id: String(row.session_id),
+    slug: String(row.slug),
+    title: String(row.title),
+    directory: String(row.directory),
+    time_created: Number(row.time_created),
+    stats: {
+      message_count: Number(row.message_count ?? 0),
+      total_input_tokens: Number(row.total_input_tokens ?? 0),
+      total_output_tokens: Number(row.total_output_tokens ?? 0),
+      total_cost: Number(row.total_cost ?? 0),
+    },
+  };
+
+  if (row.project_identity_key) {
+    session.project_identity = {
+      kind: row.project_identity_kind ?? "path",
+      key: String(row.project_identity_key),
+      displayName: String(row.project_display_name ?? ""),
+    };
+  }
+  if (row.time_updated != null) {
+    session.time_updated = Number(row.time_updated);
+  }
+  if (row.total_cache_read_tokens != null) {
+    session.stats.total_cache_read_tokens = Number(row.total_cache_read_tokens);
+  }
+  if (row.total_cache_create_tokens != null) {
+    session.stats.total_cache_create_tokens = Number(row.total_cache_create_tokens);
+  }
+  if (row.cost_source) {
+    session.stats.cost_source = row.cost_source;
+  }
+  if (row.total_tokens != null) {
+    session.stats.total_tokens = Number(row.total_tokens);
+  }
+
+  const modelUsage = parseOptionalJson<Record<string, number>>(row.model_usage_json);
+  if (modelUsage) {
+    session.model_usage = modelUsage;
+  }
+
+  const smartTags = parseOptionalJson<SessionHead["smart_tags"]>(row.smart_tags_json);
+  if (smartTags) {
+    session.smart_tags = smartTags;
+  }
+  if (row.smart_tags_source_updated_at != null) {
+    session.smart_tags_source_updated_at = Number(row.smart_tags_source_updated_at);
+  }
+
+  return session;
 }
 
 function recreateSearchIndexSchema(db: SQLiteDatabase): void {
@@ -281,6 +626,9 @@ function readLegacyCacheVersion(db: SQLiteDatabase): number {
 }
 
 function inferCacheSchemaVersion(db: SQLiteDatabase): number {
+  if (tableExists(db, "sessions") || tableExists(db, "messages")) {
+    return 7;
+  }
   if (
     tableExists(db, "project_sessions") ||
     columnExists(db, "session_documents", "project_identity_key")
@@ -311,6 +659,8 @@ function hasAnyCacheSchema(db: SQLiteDatabase): boolean {
     "cache_meta",
     "agent_cache",
     "cached_sessions",
+    "sessions",
+    "messages",
     "session_documents",
     "session_documents_fts",
     "project_sessions",
@@ -398,6 +748,103 @@ function migrateProjectIdentity(db: SQLiteDatabase): void {
   backfillSessionDocumentProjects(db);
 }
 
+function backfillStructuredSessions(db: SQLiteDatabase): void {
+  createSessionTables(db);
+  recreateProjectGroupsView(db);
+  const upsertSession = prepareUpsertSession(db);
+
+  if (tableExists(db, "cached_sessions")) {
+    const rows = db
+      .prepare(
+        "SELECT agent_name, session_id, session_json, meta_json, rowid AS sort_index FROM cached_sessions ORDER BY agent_name, rowid",
+      )
+      .all() as CacheRow[];
+
+    for (const row of rows) {
+      if (!row.agent_name || !row.session_json) {
+        continue;
+      }
+
+      try {
+        const session = JSON.parse(row.session_json) as SessionHead;
+        upsertSessionRow(
+          upsertSession,
+          String(row.agent_name),
+          session,
+          row.meta_json ?? null,
+          Number(row.sort_index ?? 0),
+          sourcePathFromMetaJson(row.meta_json),
+        );
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  if (!tableExists(db, "session_documents")) {
+    return;
+  }
+
+  const documentRows = db
+    .prepare(
+      `
+        SELECT
+          d.agent_name,
+          d.session_id,
+          d.slug,
+          d.title,
+          d.directory,
+          d.project_identity_kind,
+          d.project_identity_key,
+          d.project_display_name,
+          d.time_created,
+          d.time_updated,
+          d.activity_time,
+          d.id
+        FROM session_documents d
+        LEFT JOIN sessions s ON s.agent_name = d.agent_name AND s.session_id = d.session_id
+        WHERE s.session_id IS NULL
+        ORDER BY d.id
+      `,
+    )
+    .all() as ProjectBackfillDocumentRow[];
+
+  for (const row of documentRows) {
+    const directory = String(row.directory ?? "");
+    const identity =
+      row.project_identity_key && row.project_identity_kind && row.project_display_name
+        ? {
+            kind: row.project_identity_kind,
+            key: String(row.project_identity_key),
+            displayName: String(row.project_display_name),
+          }
+        : computeIdentity(directory, realFs);
+
+    upsertSessionRow(
+      upsertSession,
+      String(row.agent_name),
+      {
+        id: String(row.session_id),
+        slug: String(row.slug),
+        title: String(row.title),
+        directory,
+        project_identity: identity,
+        time_created: Number(row.time_created ?? row.activity_time ?? 0),
+        time_updated: row.time_updated == null ? undefined : Number(row.time_updated),
+        stats: {
+          message_count: 0,
+          total_input_tokens: 0,
+          total_output_tokens: 0,
+          total_cost: 0,
+        },
+      },
+      null,
+      Number(row.id ?? 0),
+      null,
+    );
+  }
+}
+
 function invalidateSearchContentHashes(db: SQLiteDatabase): void {
   if (
     tableExists(db, "session_documents") &&
@@ -453,7 +900,14 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
     currentVersion,
     targetVersion: CACHE_SCHEMA_VERSION,
     backupLabel: "cache-migration",
-    backupTables: ["agent_cache", "cached_sessions", "session_documents", "project_sessions"],
+    backupTables: [
+      "agent_cache",
+      "cached_sessions",
+      "sessions",
+      "messages",
+      "session_documents",
+      "project_sessions",
+    ],
     migrations: [
       { version: 3, migrate: createCacheTables },
       { version: 4, migrate: createSearchTables },
@@ -467,6 +921,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
           invalidateSearchContentHashes(db);
         },
       },
+      { version: 7, migrate: backfillStructuredSessions },
     ],
   });
 
@@ -545,28 +1000,89 @@ function appendPlainText(value: unknown, chunks: string[]): void {
   }
 }
 
-function buildSessionContent(session: SessionData): string {
+function compactRecord(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value != null));
+}
+
+function summarizeToolPart(part: MessagePart): Record<string, unknown> {
+  const state =
+    part.state == null
+      ? undefined
+      : compactRecord({
+          status: part.state.status,
+          error: part.state.error,
+          metadata: part.state.metadata,
+        });
+
+  return compactRecord({
+    type: part.type,
+    tool: part.tool,
+    title: part.title,
+    nickname: part.nickname,
+    callID: part.callID,
+    approval_status: part.approval_status,
+    state,
+  });
+}
+
+function buildMessageText(message: Message): string {
   const chunks: string[] = [];
 
-  appendPlainText(session.title, chunks);
+  chunks.push(message.role);
+  appendPlainText(message.agent, chunks);
+  appendPlainText(message.model, chunks);
 
-  for (const message of session.messages) {
-    chunks.push(message.role);
-    appendPlainText(message.agent, chunks);
-    appendPlainText(message.model, chunks);
-
-    for (const part of message.parts) {
-      appendPlainText(part.type, chunks);
-      appendPlainText(part.title, chunks);
-      appendPlainText(part.nickname, chunks);
-      appendPlainText(part.tool, chunks);
-      appendPlainText(part.text, chunks);
-      appendPlainText(part.input, chunks);
-      appendPlainText(part.output, chunks);
-      appendPlainText(part.state, chunks);
-    }
+  for (const part of message.parts) {
+    appendPlainText(part.type, chunks);
+    appendPlainText(part.title, chunks);
+    appendPlainText(part.nickname, chunks);
+    appendPlainText(part.tool, chunks);
+    appendPlainText(part.text, chunks);
+    appendPlainText(part.input, chunks);
+    appendPlainText(part.output, chunks);
+    appendPlainText(part.state, chunks);
   }
 
+  return chunks.join("\n");
+}
+
+function normalizeMessages(session: SessionData): StructuredMessageRecord[] {
+  return session.messages.map((message, index) => {
+    const toolMetadata = message.parts
+      .filter((part) => part.type === "tool")
+      .map((part) => summarizeToolPart(part));
+
+    return {
+      index,
+      id: message.id || `${session.id}:${index}`,
+      role: message.role,
+      timeCreated: message.time_created,
+      timeCompleted: message.time_completed ?? null,
+      agent: message.agent ?? null,
+      mode: message.mode ?? null,
+      model: message.model ?? null,
+      provider: message.provider ?? null,
+      tokensJson: stringifyOptionalJson(message.tokens),
+      cost: message.cost ?? null,
+      costSource: message.cost_source ?? null,
+      partsJson: JSON.stringify(message.parts),
+      subagentId: message.subagent_id ?? null,
+      nickname: message.nickname ?? null,
+      contentText: buildMessageText(message),
+      toolMetadataJson: toolMetadata.length > 0 ? JSON.stringify(toolMetadata) : null,
+    };
+  });
+}
+
+function buildSessionContentFromMessages(
+  title: string | null | undefined,
+  messages: StructuredMessageRecord[],
+): string {
+  const chunks: string[] = [];
+  appendPlainText(title, chunks);
+  for (const message of messages) {
+    appendPlainText(message.contentText, chunks);
+  }
   return chunks.join("\n");
 }
 
@@ -601,23 +1117,42 @@ export function loadCachedSessions(agentName: string): CachedResult | null {
     const rows = db
       .prepare(
         `
-          SELECT session_json, meta_json
-          FROM cached_sessions
+          SELECT
+            session_id,
+            sort_index,
+            slug,
+            title,
+            source_path,
+            directory,
+            project_identity_kind,
+            project_identity_key,
+            project_display_name,
+            time_created,
+            time_updated,
+            message_count,
+            total_input_tokens,
+            total_output_tokens,
+            total_cache_read_tokens,
+            total_cache_create_tokens,
+            total_cost,
+            cost_source,
+            total_tokens,
+            model_usage_json,
+            smart_tags_json,
+            smart_tags_source_updated_at,
+            meta_json
+          FROM sessions
           WHERE agent_name = ?
-          ORDER BY rowid
+          ORDER BY sort_index, activity_time DESC
         `,
       )
-      .all(agentName) as CacheRow[];
+      .all(agentName) as SessionRow[];
 
     const sessions: SessionHead[] = [];
     const meta: Record<string, SessionCacheMeta> = {};
 
     for (const row of rows) {
-      if (!row.session_json) {
-        continue;
-      }
-
-      const session = JSON.parse(row.session_json) as SessionHead;
+      const session = sessionFromRow(row);
       sessions.push(session);
 
       if (row.meta_json) {
@@ -636,17 +1171,24 @@ export function saveCachedSessions(
 ): void {
   withCacheDb((db) => {
     const deleteAgent = db.prepare("DELETE FROM agent_cache WHERE agent_name = ?");
-    const deleteSessions = db.prepare("DELETE FROM cached_sessions WHERE agent_name = ?");
+    const deleteLegacySessions = db.prepare("DELETE FROM cached_sessions WHERE agent_name = ?");
+    const deleteSession = db.prepare(
+      "DELETE FROM sessions WHERE agent_name = ? AND session_id = ?",
+    );
+    const deleteSearchDocument = db.prepare(
+      "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
+    );
     const deleteProjectSessions = db.prepare("DELETE FROM project_sessions WHERE agent_name = ?");
     const upsertAgent = db.prepare(`
       INSERT INTO agent_cache(agent_name, timestamp)
       VALUES (?, ?)
       ON CONFLICT(agent_name) DO UPDATE SET timestamp = excluded.timestamp
     `);
-    const insertSession = db.prepare(`
+    const insertCachedSession = db.prepare(`
       INSERT INTO cached_sessions(agent_name, session_id, session_json, meta_json)
       VALUES (?, ?, ?, ?)
     `);
+    const upsertSession = prepareUpsertSession(db);
     const insertProjectSession = db.prepare(`
       INSERT INTO project_sessions(
         agent_name,
@@ -661,18 +1203,35 @@ export function saveCachedSessions(
 
     const write = db.transaction(() => {
       const timestamp = Date.now();
+      const sessionIds = new Set(sessions.map((session) => session.id));
+      const existingSessionIds = db
+        .prepare("SELECT session_id FROM sessions WHERE agent_name = ?")
+        .all(agentName) as SessionRow[];
       deleteAgent.run(agentName);
-      deleteSessions.run(agentName);
+      deleteLegacySessions.run(agentName);
       deleteProjectSessions.run(agentName);
       upsertAgent.run(agentName, timestamp);
 
-      for (const session of sessions) {
+      for (const row of existingSessionIds) {
+        const sessionId = String(row.session_id);
+        if (!sessionIds.has(sessionId)) {
+          deleteSearchDocument.run(agentName, sessionId);
+          deleteSession.run(agentName, sessionId);
+        }
+      }
+
+      sessions.forEach((session, index) => {
         const identity = session.project_identity ?? computeIdentity(session.directory, realFs);
-        insertSession.run(
+        const sessionMeta = meta[session.id];
+        const metaJson = sessionMeta ? JSON.stringify(sessionMeta) : null;
+        insertCachedSession.run(agentName, session.id, JSON.stringify(session), metaJson);
+        upsertSessionRow(
+          upsertSession,
           agentName,
-          session.id,
-          JSON.stringify(session),
-          meta[session.id] ? JSON.stringify(meta[session.id]) : null,
+          session,
+          metaJson,
+          index,
+          sourcePathFromMeta(sessionMeta),
         );
         insertProjectSession.run(
           agentName,
@@ -683,7 +1242,7 @@ export function saveCachedSessions(
           session.directory,
           session.time_updated ?? session.time_created,
         );
-      }
+      });
     });
 
     write();
@@ -701,6 +1260,9 @@ export function clearCache(): void {
     db.exec(`
       DELETE FROM agent_cache;
       DELETE FROM cached_sessions;
+      DELETE FROM session_documents;
+      DELETE FROM messages;
+      DELETE FROM sessions;
       DELETE FROM project_sessions;
     `);
   });
@@ -732,7 +1294,7 @@ export function getCacheInfo(): { lastScanTime: number | null; size: number } {
     const timestampRow = db.prepare("SELECT MAX(timestamp) AS value FROM agent_cache").get() as
       | ScalarRow
       | undefined;
-    const sizeRow = db.prepare("SELECT COUNT(*) AS value FROM cached_sessions").get() as
+    const sizeRow = db.prepare("SELECT COUNT(*) AS value FROM sessions").get() as
       | ScalarRow
       | undefined;
 
@@ -763,22 +1325,34 @@ export function syncSessionSearchIndex(
     const existingMap = new Map(
       existingRows.map((row) => [String(row.session_id), String(row.content_hash ?? "")]),
     );
+    const messageCountRows = db
+      .prepare(
+        "SELECT session_id, COUNT(*) AS value FROM messages WHERE agent_name = ? GROUP BY session_id",
+      )
+      .all(agentName) as MessageCountRow[];
+    const messageCountMap = new Map(
+      messageCountRows.map((row) => [String(row.session_id), Number(row.value ?? 0)]),
+    );
     const sessionMap = new Map(sessions.map((session) => [session.id, session]));
 
     const toDelete = existingRows
       .map((row) => String(row.session_id))
       .filter((sessionId) => !sessionMap.has(sessionId));
     const toUpsert = sessions.filter(
-      (session) => existingMap.get(session.id) !== sessionContentHash(session),
+      (session) =>
+        existingMap.get(session.id) !== sessionContentHash(session) ||
+        messageCountMap.get(session.id) !== session.stats.message_count,
     );
 
     const loaded = toUpsert
       .map((session) => {
         try {
           const data = loadSessionData(session.id);
+          const messages = normalizeMessages(data);
           return {
             session,
-            contentText: buildSessionContent(data),
+            messages,
+            contentText: buildSessionContentFromMessages(data.title ?? session.title, messages),
             contentHash: sessionContentHash(session),
           };
         } catch {
@@ -790,6 +1364,49 @@ export function syncSessionSearchIndex(
     const deleteRow = db.prepare(
       "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
     );
+    const deleteMessages = db.prepare(
+      "DELETE FROM messages WHERE agent_name = ? AND session_id = ? AND message_index >= ?",
+    );
+    const upsertMessage = db.prepare(`
+      INSERT INTO messages(
+        agent_name,
+        session_id,
+        message_index,
+        message_id,
+        role,
+        time_created,
+        time_completed,
+        agent,
+        mode,
+        model,
+        provider,
+        tokens_json,
+        cost,
+        cost_source,
+        parts_json,
+        subagent_id,
+        nickname,
+        content_text,
+        tool_metadata_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(agent_name, session_id, message_index) DO UPDATE SET
+        message_id = excluded.message_id,
+        role = excluded.role,
+        time_created = excluded.time_created,
+        time_completed = excluded.time_completed,
+        agent = excluded.agent,
+        mode = excluded.mode,
+        model = excluded.model,
+        provider = excluded.provider,
+        tokens_json = excluded.tokens_json,
+        cost = excluded.cost,
+        cost_source = excluded.cost_source,
+        parts_json = excluded.parts_json,
+        subagent_id = excluded.subagent_id,
+        nickname = excluded.nickname,
+        content_text = excluded.content_text,
+        tool_metadata_json = excluded.tool_metadata_json
+    `);
     const upsertRow = db.prepare(`
       INSERT INTO session_documents(
         agent_name,
@@ -825,12 +1442,37 @@ export function syncSessionSearchIndex(
     const write = db.transaction(() => {
       for (const sessionId of toDelete) {
         deleteRow.run(agentName, sessionId);
+        deleteMessages.run(agentName, sessionId, 0);
       }
 
       for (const entry of loaded) {
         const activityTime = entry.session.time_updated ?? entry.session.time_created;
         const identity =
           entry.session.project_identity ?? computeIdentity(entry.session.directory, realFs);
+        for (const message of entry.messages) {
+          upsertMessage.run(
+            agentName,
+            entry.session.id,
+            message.index,
+            message.id,
+            message.role,
+            message.timeCreated,
+            message.timeCompleted ?? null,
+            message.agent ?? null,
+            message.mode ?? null,
+            message.model ?? null,
+            message.provider ?? null,
+            message.tokensJson ?? null,
+            message.cost ?? null,
+            message.costSource ?? null,
+            message.partsJson,
+            message.subagentId ?? null,
+            message.nickname ?? null,
+            message.contentText,
+            message.toolMetadataJson ?? null,
+          );
+        }
+        deleteMessages.run(agentName, entry.session.id, entry.messages.length);
         upsertRow.run(
           agentName,
           entry.session.id,
@@ -867,25 +1509,37 @@ export function searchSessions(query: string, options: SearchOptions = {}): Sear
       .prepare(
         `
           SELECT
-            d.agent_name,
-            d.session_id,
-            d.slug,
-            d.title,
-            d.directory,
-            d.time_created,
-            d.time_updated,
+            s.agent_name,
+            s.session_id,
+            s.slug,
+            s.title,
+            s.directory,
+            s.project_identity_kind,
+            s.project_identity_key,
+            s.project_display_name,
+            s.time_created,
+            s.time_updated,
+            s.message_count,
+            s.total_input_tokens,
+            s.total_output_tokens,
+            s.total_cache_read_tokens,
+            s.total_cache_create_tokens,
+            s.total_cost,
+            s.cost_source,
+            s.total_tokens,
             COALESCE(
               NULLIF(snippet(session_documents_fts, 1, '<mark>', '</mark>', ' … ', 18), ''),
               highlight(session_documents_fts, 0, '<mark>', '</mark>')
             ) AS snippet
           FROM session_documents_fts
           JOIN session_documents d ON d.id = session_documents_fts.rowid
+          JOIN sessions s ON s.agent_name = d.agent_name AND s.session_id = d.session_id
           WHERE session_documents_fts MATCH ?
-            AND (? IS NULL OR d.agent_name = ?)
-            AND (? IS NULL OR d.project_identity_key = ? OR LOWER(d.directory) LIKE ?)
-            AND (? IS NULL OR d.activity_time >= ?)
-            AND (? IS NULL OR d.activity_time <= ?)
-          ORDER BY bm25(session_documents_fts, 8.0, 1.0), d.activity_time DESC
+            AND (? IS NULL OR s.agent_name = ?)
+            AND (? IS NULL OR s.project_identity_key = ? OR LOWER(s.directory) LIKE ?)
+            AND (? IS NULL OR s.activity_time >= ?)
+            AND (? IS NULL OR s.activity_time <= ?)
+          ORDER BY bm25(session_documents_fts, 8.0, 1.0), s.activity_time DESC
           LIMIT ?
         `,
       )
@@ -910,13 +1564,31 @@ export function searchSessions(query: string, options: SearchOptions = {}): Sear
         slug: String(row.slug),
         title: String(row.title),
         directory: String(row.directory),
+        project_identity: row.project_identity_key
+          ? {
+              kind: row.project_identity_kind ?? "path",
+              key: String(row.project_identity_key),
+              displayName: String(row.project_display_name ?? ""),
+            }
+          : undefined,
         time_created: Number(row.time_created),
         time_updated: row.time_updated == null ? undefined : Number(row.time_updated),
         stats: {
-          message_count: 0,
-          total_input_tokens: 0,
-          total_output_tokens: 0,
-          total_cost: 0,
+          message_count: Number(row.message_count ?? 0),
+          total_input_tokens: Number(row.total_input_tokens ?? 0),
+          total_output_tokens: Number(row.total_output_tokens ?? 0),
+          total_cache_read_tokens:
+            row.total_cache_read_tokens == null ? undefined : Number(row.total_cache_read_tokens),
+          total_cache_create_tokens:
+            row.total_cache_create_tokens == null
+              ? undefined
+              : Number(row.total_cache_create_tokens),
+          total_cost: Number(row.total_cost ?? 0),
+          cost_source:
+            row.cost_source == null
+              ? undefined
+              : (String(row.cost_source) as SessionHead["stats"]["cost_source"]),
+          total_tokens: row.total_tokens == null ? undefined : Number(row.total_tokens),
         },
       },
       snippet: String(row.snippet ?? ""),
