@@ -1,10 +1,19 @@
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import type { SessionStats } from "../types/index.js";
-import { openDb, type DatabaseRow } from "../utils/sqlite.js";
+import {
+  columnExists,
+  getUserVersion,
+  openDb,
+  runSchemaMigrations,
+  setUserVersion,
+  tableExists,
+  type DatabaseRow,
+  type SQLiteDatabase,
+} from "../utils/sqlite.js";
 
 const BOOKMARK_DB_FILENAME = "state.db";
-const BOOKMARK_DB_VERSION = 1;
+const BOOKMARK_SCHEMA_VERSION = 1;
 
 export class BookmarkStorageUnavailableError extends Error {
   constructor() {
@@ -53,7 +62,7 @@ function getStateDbPath(): string {
   return join(getStateDir(), BOOKMARK_DB_FILENAME);
 }
 
-function ensureSchema(db: NonNullable<ReturnType<typeof openDb>>): void {
+function createStateSchema(db: SQLiteDatabase): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS state_meta (
       key TEXT PRIMARY KEY,
@@ -73,30 +82,85 @@ function ensureSchema(db: NonNullable<ReturnType<typeof openDb>>): void {
       PRIMARY KEY (agent_name, session_id)
     );
   `);
+}
+
+function readLegacyStateVersion(db: SQLiteDatabase): number {
+  if (
+    !tableExists(db, "state_meta") ||
+    !columnExists(db, "state_meta", "key") ||
+    !columnExists(db, "state_meta", "value")
+  ) {
+    return 0;
+  }
 
   const row = db.prepare("SELECT value FROM state_meta WHERE key = 'version'").get() as
     | DatabaseRow
     | undefined;
-  const version = Number(row?.value ?? 0);
-  if (version === BOOKMARK_DB_VERSION) return;
+  return Number(row?.value ?? 0);
+}
 
+function getCurrentStateSchemaVersion(db: SQLiteDatabase): number {
+  const userVersion = getUserVersion(db);
+  if (userVersion > 0) {
+    return userVersion;
+  }
+
+  const legacyVersion = readLegacyStateVersion(db);
+  if (legacyVersion > 0) {
+    return legacyVersion;
+  }
+
+  return tableExists(db, "bookmarks") ? 1 : 0;
+}
+
+function hasAnyStateSchema(db: SQLiteDatabase): boolean {
+  return tableExists(db, "state_meta") || tableExists(db, "bookmarks");
+}
+
+function setStateSchemaVersion(db: SQLiteDatabase): void {
+  createStateSchema(db);
+  setUserVersion(db, BOOKMARK_SCHEMA_VERSION);
   db.prepare(
     `
       INSERT INTO state_meta(key, value)
       VALUES ('version', ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `,
-  ).run(String(BOOKMARK_DB_VERSION));
+  ).run(String(BOOKMARK_SCHEMA_VERSION));
 }
 
-function withStateDb<T>(fn: (db: NonNullable<ReturnType<typeof openDb>>) => T): T {
-  const db = openDb(getStateDbPath());
+function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
+  const currentVersion = getCurrentStateSchemaVersion(db);
+  if (currentVersion === 0 && !hasAnyStateSchema(db)) {
+    setStateSchemaVersion(db);
+    return;
+  }
+
+  runSchemaMigrations(db, {
+    dbPath,
+    currentVersion,
+    targetVersion: BOOKMARK_SCHEMA_VERSION,
+    backupLabel: "state-migration",
+    backupTables: ["bookmarks"],
+    migrations: [{ version: 1, migrate: createStateSchema }],
+  });
+
+  createStateSchema(db);
+
+  if (getUserVersion(db) <= BOOKMARK_SCHEMA_VERSION) {
+    setStateSchemaVersion(db);
+  }
+}
+
+function withStateDb<T>(fn: (db: SQLiteDatabase) => T): T {
+  const statePath = getStateDbPath();
+  const db = openDb(statePath);
   if (!db) {
     throw new BookmarkStorageUnavailableError();
   }
 
   try {
-    ensureSchema(db);
+    ensureSchema(db, statePath);
     return fn(db);
   } finally {
     db.close();

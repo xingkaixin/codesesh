@@ -12,9 +12,18 @@ import type {
   SessionHead,
 } from "../types/index.js";
 import { buildProjectGroups, computeIdentity, realFs } from "../projects/index.js";
-import { openDb, type DatabaseRow } from "../utils/sqlite.js";
+import {
+  columnExists,
+  getUserVersion,
+  openDb,
+  runSchemaMigrations,
+  setUserVersion,
+  tableExists,
+  type DatabaseRow,
+  type SQLiteDatabase,
+} from "../utils/sqlite.js";
 
-const CACHE_VERSION = 6;
+const CACHE_SCHEMA_VERSION = 6;
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const CACHE_FILENAME = "codesesh.db";
 const LEGACY_CACHE_FILENAME = "scan-cache.json";
@@ -65,6 +74,17 @@ interface ProjectGroupRow extends DatabaseRow {
   last_activity?: number | null;
 }
 
+interface ProjectBackfillSessionRow extends DatabaseRow {
+  agent_name?: string;
+  session_id?: string;
+  session_json?: string;
+}
+
+interface ProjectBackfillDocumentRow extends DatabaseRow {
+  id?: number;
+  directory?: string;
+}
+
 export interface SearchResult {
   agentName: string;
   session: SessionHead;
@@ -95,12 +115,13 @@ function hasCacheStorage(): boolean {
   return existsSync(getCachePath());
 }
 
-function withCacheDb<T>(fn: (db: NonNullable<ReturnType<typeof openDb>>) => T): T | null {
-  const db = openDb(getCachePath());
+function withCacheDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
+  const cachePath = getCachePath();
+  const db = openDb(cachePath);
   if (!db) return null;
 
   try {
-    ensureSchema(db);
+    ensureSchema(db, cachePath);
     return fn(db);
   } catch {
     return null;
@@ -109,7 +130,7 @@ function withCacheDb<T>(fn: (db: NonNullable<ReturnType<typeof openDb>>) => T): 
   }
 }
 
-function ensureSchema(db: NonNullable<ReturnType<typeof openDb>>): void {
+function createCacheTables(db: SQLiteDatabase): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS cache_meta (
       key TEXT PRIMARY KEY,
@@ -128,7 +149,11 @@ function ensureSchema(db: NonNullable<ReturnType<typeof openDb>>): void {
       meta_json TEXT,
       PRIMARY KEY (agent_name, session_id)
     );
+  `);
+}
 
+function createSearchTables(db: SQLiteDatabase): void {
+  db.exec(`
     CREATE TABLE IF NOT EXISTS session_documents (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       agent_name TEXT NOT NULL,
@@ -136,9 +161,6 @@ function ensureSchema(db: NonNullable<ReturnType<typeof openDb>>): void {
       slug TEXT NOT NULL,
       title TEXT NOT NULL,
       directory TEXT NOT NULL,
-      project_identity_kind TEXT NOT NULL DEFAULT 'path',
-      project_identity_key TEXT NOT NULL DEFAULT '',
-      project_display_name TEXT NOT NULL DEFAULT '',
       time_created INTEGER NOT NULL,
       time_updated INTEGER,
       activity_time INTEGER NOT NULL,
@@ -147,31 +169,6 @@ function ensureSchema(db: NonNullable<ReturnType<typeof openDb>>): void {
       indexed_at INTEGER NOT NULL,
       UNIQUE(agent_name, session_id)
     );
-
-    CREATE TABLE IF NOT EXISTS project_sessions (
-      agent_name TEXT NOT NULL,
-      session_id TEXT NOT NULL,
-      identity_kind TEXT NOT NULL,
-      identity_key TEXT NOT NULL,
-      display_name TEXT NOT NULL,
-      directory TEXT NOT NULL,
-      activity_time INTEGER NOT NULL,
-      PRIMARY KEY (agent_name, session_id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_project_sessions_identity
-      ON project_sessions(identity_kind, identity_key);
-
-    CREATE VIEW IF NOT EXISTS project_groups_v AS
-      SELECT
-        identity_kind,
-        identity_key,
-        MIN(display_name) AS display_name,
-        GROUP_CONCAT(DISTINCT agent_name) AS sources_csv,
-        COUNT(*) AS session_count,
-        MAX(activity_time) AS last_activity
-      FROM project_sessions
-      GROUP BY identity_kind, identity_key;
 
     CREATE VIRTUAL TABLE IF NOT EXISTS session_documents_fts USING fts5(
       title,
@@ -197,39 +194,288 @@ function ensureSchema(db: NonNullable<ReturnType<typeof openDb>>): void {
       VALUES (new.id, new.title, new.content_text);
     END;
   `);
+}
 
-  const sessionDocumentColumns = new Set(
-    (db.prepare("PRAGMA table_info(session_documents)").all() as DatabaseRow[]).map((row) =>
-      String(row.name),
-    ),
-  );
-  if (!sessionDocumentColumns.has("project_identity_kind")) {
-    db.exec(`
-      ALTER TABLE session_documents ADD COLUMN project_identity_kind TEXT NOT NULL DEFAULT 'path';
-      ALTER TABLE session_documents ADD COLUMN project_identity_key TEXT NOT NULL DEFAULT '';
-      ALTER TABLE session_documents ADD COLUMN project_display_name TEXT NOT NULL DEFAULT '';
-    `);
+function ensureProjectColumns(db: SQLiteDatabase): void {
+  if (!tableExists(db, "session_documents")) {
+    return;
+  }
+
+  if (!columnExists(db, "session_documents", "project_identity_kind")) {
+    db.exec(
+      "ALTER TABLE session_documents ADD COLUMN project_identity_kind TEXT NOT NULL DEFAULT 'path'",
+    );
+  }
+  if (!columnExists(db, "session_documents", "project_identity_key")) {
+    db.exec(
+      "ALTER TABLE session_documents ADD COLUMN project_identity_key TEXT NOT NULL DEFAULT ''",
+    );
+  }
+  if (!columnExists(db, "session_documents", "project_display_name")) {
+    db.exec(
+      "ALTER TABLE session_documents ADD COLUMN project_display_name TEXT NOT NULL DEFAULT ''",
+    );
+  }
+}
+
+function createProjectTables(db: SQLiteDatabase): void {
+  ensureProjectColumns(db);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_sessions (
+      agent_name TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      identity_kind TEXT NOT NULL,
+      identity_key TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      directory TEXT NOT NULL,
+      activity_time INTEGER NOT NULL,
+      PRIMARY KEY (agent_name, session_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_project_sessions_identity
+      ON project_sessions(identity_kind, identity_key);
+
+    CREATE VIEW IF NOT EXISTS project_groups_v AS
+      SELECT
+        identity_kind,
+        identity_key,
+        MIN(display_name) AS display_name,
+        GROUP_CONCAT(DISTINCT agent_name) AS sources_csv,
+        COUNT(*) AS session_count,
+        MAX(activity_time) AS last_activity
+      FROM project_sessions
+      GROUP BY identity_kind, identity_key;
+  `);
+}
+
+function createLatestCacheSchema(db: SQLiteDatabase): void {
+  createCacheTables(db);
+  createSearchTables(db);
+  createProjectTables(db);
+}
+
+function recreateSearchIndexSchema(db: SQLiteDatabase): void {
+  db.exec(`
+    DROP TRIGGER IF EXISTS session_documents_ai;
+    DROP TRIGGER IF EXISTS session_documents_ad;
+    DROP TRIGGER IF EXISTS session_documents_au;
+    DROP TABLE IF EXISTS session_documents_fts;
+  `);
+  createSearchTables(db);
+  rebuildSearchIndex(db);
+}
+
+function readLegacyCacheVersion(db: SQLiteDatabase): number {
+  if (
+    !tableExists(db, "cache_meta") ||
+    !columnExists(db, "cache_meta", "key") ||
+    !columnExists(db, "cache_meta", "value")
+  ) {
+    return 0;
   }
 
   const versionRow = db.prepare("SELECT value FROM cache_meta WHERE key = 'version'").get() as
     | DatabaseRow
     | undefined;
-  const version = Number(versionRow?.value ?? 0);
+  return Number(versionRow?.value ?? 0);
+}
 
-  if (version === CACHE_VERSION) {
+function inferCacheSchemaVersion(db: SQLiteDatabase): number {
+  if (
+    tableExists(db, "project_sessions") ||
+    columnExists(db, "session_documents", "project_identity_key")
+  ) {
+    return 5;
+  }
+  if (tableExists(db, "session_documents")) {
+    return 4;
+  }
+  if (tableExists(db, "cached_sessions") || tableExists(db, "agent_cache")) {
+    return 3;
+  }
+  return 0;
+}
+
+function getCurrentCacheSchemaVersion(db: SQLiteDatabase): number {
+  const userVersion = getUserVersion(db);
+  if (userVersion > 0) {
+    return userVersion;
+  }
+
+  const legacyVersion = readLegacyCacheVersion(db);
+  return Math.max(legacyVersion, inferCacheSchemaVersion(db));
+}
+
+function hasAnyCacheSchema(db: SQLiteDatabase): boolean {
+  return [
+    "cache_meta",
+    "agent_cache",
+    "cached_sessions",
+    "session_documents",
+    "session_documents_fts",
+    "project_sessions",
+  ].some((table) => tableExists(db, table));
+}
+
+function backfillProjectSessions(db: SQLiteDatabase): void {
+  if (!tableExists(db, "cached_sessions") || !tableExists(db, "project_sessions")) {
     return;
   }
 
-  db.exec(`
-    DELETE FROM agent_cache;
-    DELETE FROM cached_sessions;
-    DELETE FROM session_documents;
-    DELETE FROM project_sessions;
-    INSERT INTO session_documents_fts(session_documents_fts) VALUES ('rebuild');
-    INSERT INTO cache_meta(key, value)
-    VALUES ('version', '${CACHE_VERSION}')
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+  const rows = db
+    .prepare("SELECT agent_name, session_id, session_json FROM cached_sessions")
+    .all() as ProjectBackfillSessionRow[];
+  const upsert = db.prepare(`
+    INSERT INTO project_sessions(
+      agent_name,
+      session_id,
+      identity_kind,
+      identity_key,
+      display_name,
+      directory,
+      activity_time
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(agent_name, session_id) DO UPDATE SET
+      identity_kind = excluded.identity_kind,
+      identity_key = excluded.identity_key,
+      display_name = excluded.display_name,
+      directory = excluded.directory,
+      activity_time = excluded.activity_time
   `);
+
+  for (const row of rows) {
+    if (!row.session_json || !row.agent_name || !row.session_id) {
+      continue;
+    }
+
+    try {
+      const session = JSON.parse(row.session_json) as SessionHead;
+      const identity = session.project_identity ?? computeIdentity(session.directory, realFs);
+      upsert.run(
+        row.agent_name,
+        row.session_id,
+        identity.kind,
+        identity.key,
+        identity.displayName,
+        session.directory,
+        session.time_updated ?? session.time_created,
+      );
+    } catch {
+      continue;
+    }
+  }
+}
+
+function backfillSessionDocumentProjects(db: SQLiteDatabase): void {
+  if (
+    !tableExists(db, "session_documents") ||
+    !columnExists(db, "session_documents", "project_identity_key")
+  ) {
+    return;
+  }
+
+  const rows = db
+    .prepare("SELECT id, directory FROM session_documents")
+    .all() as ProjectBackfillDocumentRow[];
+  const update = db.prepare(`
+    UPDATE session_documents
+    SET
+      project_identity_kind = ?,
+      project_identity_key = ?,
+      project_display_name = ?
+    WHERE id = ?
+  `);
+
+  for (const row of rows) {
+    const identity = computeIdentity(String(row.directory ?? ""), realFs);
+    update.run(identity.kind, identity.key, identity.displayName, Number(row.id));
+  }
+}
+
+function migrateProjectIdentity(db: SQLiteDatabase): void {
+  createProjectTables(db);
+  backfillProjectSessions(db);
+  backfillSessionDocumentProjects(db);
+}
+
+function invalidateSearchContentHashes(db: SQLiteDatabase): void {
+  if (
+    tableExists(db, "session_documents") &&
+    columnExists(db, "session_documents", "content_hash")
+  ) {
+    db.exec("UPDATE session_documents SET content_hash = ''");
+  }
+}
+
+function rebuildSearchIndex(db: SQLiteDatabase): void {
+  if (!tableExists(db, "session_documents_fts")) {
+    return;
+  }
+  db.exec("INSERT INTO session_documents_fts(session_documents_fts) VALUES ('rebuild')");
+}
+
+function ensureFtsConsistency(db: SQLiteDatabase): void {
+  if (!tableExists(db, "session_documents_fts")) {
+    createSearchTables(db);
+  }
+
+  try {
+    db.exec(
+      "INSERT INTO session_documents_fts(session_documents_fts, rank) VALUES ('integrity-check', 1)",
+    );
+  } catch {
+    rebuildSearchIndex(db);
+  }
+}
+
+function setCacheSchemaVersion(db: SQLiteDatabase): void {
+  createCacheTables(db);
+  setUserVersion(db, CACHE_SCHEMA_VERSION);
+  db.prepare(
+    `
+      INSERT INTO cache_meta(key, value)
+      VALUES ('version', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `,
+  ).run(String(CACHE_SCHEMA_VERSION));
+}
+
+function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
+  const currentVersion = getCurrentCacheSchemaVersion(db);
+  if (currentVersion === 0 && !hasAnyCacheSchema(db)) {
+    createLatestCacheSchema(db);
+    setCacheSchemaVersion(db);
+    return;
+  }
+
+  runSchemaMigrations(db, {
+    dbPath,
+    currentVersion,
+    targetVersion: CACHE_SCHEMA_VERSION,
+    backupLabel: "cache-migration",
+    backupTables: ["agent_cache", "cached_sessions", "session_documents", "project_sessions"],
+    migrations: [
+      { version: 3, migrate: createCacheTables },
+      { version: 4, migrate: createSearchTables },
+      { version: 5, migrate: migrateProjectIdentity },
+      {
+        version: 6,
+        destructive: true,
+        migrate(db) {
+          createLatestCacheSchema(db);
+          recreateSearchIndexSchema(db);
+          invalidateSearchContentHashes(db);
+        },
+      },
+    ],
+  });
+
+  createLatestCacheSchema(db);
+  ensureFtsConsistency(db);
+
+  if (getUserVersion(db) <= CACHE_SCHEMA_VERSION) {
+    setCacheSchemaVersion(db);
+  }
 }
 
 function sessionContentHash(session: SessionHead): string {
