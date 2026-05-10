@@ -506,6 +506,59 @@ function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
   `);
 }
 
+function prepareUpsertIndexedSession(db: SQLiteDatabase): SQLiteStatement {
+  return db.prepare(`
+    INSERT INTO sessions(
+      agent_name,
+      session_id,
+      sort_index,
+      slug,
+      title,
+      source_path,
+      directory,
+      project_identity_kind,
+      project_identity_key,
+      project_display_name,
+      time_created,
+      time_updated,
+      activity_time,
+      message_count,
+      total_input_tokens,
+      total_output_tokens,
+      total_cache_read_tokens,
+      total_cache_create_tokens,
+      total_cost,
+      cost_source,
+      total_tokens,
+      model_usage_json,
+      smart_tags_json,
+      smart_tags_source_updated_at,
+      meta_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(agent_name, session_id) DO UPDATE SET
+      slug = excluded.slug,
+      title = excluded.title,
+      directory = excluded.directory,
+      project_identity_kind = excluded.project_identity_kind,
+      project_identity_key = excluded.project_identity_key,
+      project_display_name = excluded.project_display_name,
+      time_created = excluded.time_created,
+      time_updated = excluded.time_updated,
+      activity_time = excluded.activity_time,
+      message_count = excluded.message_count,
+      total_input_tokens = excluded.total_input_tokens,
+      total_output_tokens = excluded.total_output_tokens,
+      total_cache_read_tokens = excluded.total_cache_read_tokens,
+      total_cache_create_tokens = excluded.total_cache_create_tokens,
+      total_cost = excluded.total_cost,
+      cost_source = excluded.cost_source,
+      total_tokens = excluded.total_tokens,
+      model_usage_json = excluded.model_usage_json,
+      smart_tags_json = excluded.smart_tags_json,
+      smart_tags_source_updated_at = excluded.smart_tags_source_updated_at
+  `);
+}
+
 function upsertSessionRow(
   statement: SQLiteStatement,
   agentName: string,
@@ -1325,6 +1378,7 @@ export function syncSessionSearchIndex(
     const existingMap = new Map(
       existingRows.map((row) => [String(row.session_id), String(row.content_hash ?? "")]),
     );
+    const sessionSortIndexMap = new Map(sessions.map((session, index) => [session.id, index]));
     const messageCountRows = db
       .prepare(
         "SELECT session_id, COUNT(*) AS value FROM messages WHERE agent_name = ? GROUP BY session_id",
@@ -1367,6 +1421,7 @@ export function syncSessionSearchIndex(
     const deleteMessages = db.prepare(
       "DELETE FROM messages WHERE agent_name = ? AND session_id = ? AND message_index >= ?",
     );
+    const upsertIndexedSession = prepareUpsertIndexedSession(db);
     const upsertMessage = db.prepare(`
       INSERT INTO messages(
         agent_name,
@@ -1449,6 +1504,14 @@ export function syncSessionSearchIndex(
         const activityTime = entry.session.time_updated ?? entry.session.time_created;
         const identity =
           entry.session.project_identity ?? computeIdentity(entry.session.directory, realFs);
+        upsertSessionRow(
+          upsertIndexedSession,
+          agentName,
+          entry.session,
+          null,
+          sessionSortIndexMap.get(entry.session.id) ?? 0,
+          null,
+        );
         for (const message of entry.messages) {
           upsertMessage.run(
             agentName,

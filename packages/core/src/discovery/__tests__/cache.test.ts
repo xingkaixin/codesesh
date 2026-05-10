@@ -522,6 +522,46 @@ describe("searchSessions", () => {
     expect(searchSessions("updated")).toHaveLength(1);
   });
 
+  it("upserts parent session rows before indexed messages", () => {
+    const session = {
+      ...makeSession("windowed"),
+      slug: "claudecode/windowed",
+      stats: { ...makeSession("windowed").stats, message_count: 1 },
+    };
+
+    saveCachedSessions("cursor", [makeSession("existing")]);
+    syncSessionSearchIndex("claudecode", [session], () => ({
+      ...session,
+      messages: [
+        {
+          id: "m1",
+          role: "user",
+          time_created: now,
+          parts: [{ type: "text", text: "windowed sqlite index" }],
+        },
+      ],
+    }));
+
+    const results = searchSessions("windowed");
+    expect(results).toHaveLength(1);
+    expect(results[0]?.session.id).toBe("windowed");
+
+    const db = new Database(getCachePath(), { readonly: true });
+    try {
+      const parent = db
+        .prepare("SELECT session_id FROM sessions WHERE agent_name = ? AND session_id = ?")
+        .get("claudecode", "windowed") as { session_id?: string };
+      const child = db
+        .prepare("SELECT COUNT(*) AS value FROM messages WHERE agent_name = ? AND session_id = ?")
+        .get("claudecode", "windowed") as { value?: number };
+
+      expect(parent.session_id).toBe("windowed");
+      expect(child.value).toBe(1);
+    } finally {
+      db.close();
+    }
+  });
+
   it("supports OR queries and agent filters", () => {
     const alpha = makeSession("alpha");
     const beta = makeSession("beta");
