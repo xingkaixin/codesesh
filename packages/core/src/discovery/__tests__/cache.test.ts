@@ -427,20 +427,52 @@ describe("searchSessions", () => {
   it("parses lightweight structured search qualifiers", () => {
     expect(
       parseSearchQuery(
-        'agent:codex project:codesesh tag:feature-dev tool:apply_patch file:"src/App.tsx" cost:>1 needle',
+        'agent:codex project:"code sesh" tag:feature-dev tool:apply_patch file:"src/App File.tsx" cost:>1 needle',
       ),
     ).toEqual({
       text: "needle",
       filters: {
         agent: "codex",
-        project: "codesesh",
+        project: "code sesh",
         tags: ["feature-dev"],
         tools: ["apply_patch"],
-        file: "src/App.tsx",
+        file: "src/App File.tsx",
         costMin: 1,
+        costMinExclusive: true,
       },
       hasQualifiers: true,
     });
+  });
+
+  it("preserves strict cost qualifier comparisons", () => {
+    const below = {
+      ...makeSession("below"),
+      time_updated: now + 1,
+      stats: { ...makeSession("below").stats, total_cost: 0.99 },
+    };
+    const boundary = {
+      ...makeSession("boundary"),
+      time_updated: now + 2,
+      stats: { ...makeSession("boundary").stats, total_cost: 1 },
+    };
+    const above = {
+      ...makeSession("above"),
+      time_updated: now + 3,
+      stats: { ...makeSession("above").stats, total_cost: 1.01 },
+    };
+
+    saveCachedSessions("codex", [below, boundary, above]);
+
+    expect(searchSessions("cost:>1").map((result) => result.session.id)).toEqual(["above"]);
+    expect(searchSessions("cost:<1").map((result) => result.session.id)).toEqual(["below"]);
+    expect(searchSessions("cost:>=1").map((result) => result.session.id)).toEqual([
+      "above",
+      "boundary",
+    ]);
+    expect(searchSessions("cost:<=1").map((result) => result.session.id)).toEqual([
+      "boundary",
+      "below",
+    ]);
   });
 
   it("creates cache storage when syncing search index first", () => {
