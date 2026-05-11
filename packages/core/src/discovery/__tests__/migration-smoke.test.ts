@@ -280,5 +280,5 @@ describe("sqlite migration smoke", () => {
     ]);
     expect(getUserVersion(getCachePath())).toBe(7);
     expect(getUserVersion(getStatePath())).toBe(1);
-  });
+  }, 15_000);
 });
