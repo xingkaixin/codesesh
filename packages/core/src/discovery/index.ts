@@ -11,5 +11,6 @@ export {
   searchSessions,
   syncSessionSearchIndex,
 } from "./cache.js";
+export type { SearchIndexSyncOptions, SearchIndexSyncResult } from "./cache.js";
 export { perf } from "../utils/index.js";
 export type { PerfMarker } from "../utils/index.js";

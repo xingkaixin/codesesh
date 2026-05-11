@@ -14,7 +14,7 @@ import {
   type SessionCacheMeta,
   type SessionHead,
 } from "@codesesh/core";
-import { appLogger } from "./logging.js";
+import { appLogger, logSearchIndexSync } from "./logging.js";
 
 export interface SessionsUpdatedEvent {
   type: "sessions-updated";
@@ -52,6 +52,7 @@ const PENDING_REFRESH_DELAY_MS = 100;
 const WRITE_STABILITY_THRESHOLD_MS = 250;
 const WRITE_STABILITY_POLL_MS = 100;
 const NEW_SESSION_EVENT_WINDOW_MS = 250;
+const SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD = 100;
 
 function sortSessions(sessions: SessionHead[]): SessionHead[] {
   return [...sessions].sort(
@@ -270,6 +271,7 @@ export class LiveScanStore {
   private refreshTimestamps = new Map<string, number>();
   private refreshInFlight = new Set<string>();
   private pendingRefreshes = new Set<string>();
+  private pendingRefreshPathCounts = new Map<string, number>();
   private watchers: FSWatcher[] = [];
   private fallbackWatchScopes = new Map<string, WatchScope[]>();
   private stablePaths = new Map<string, StablePathState>();
@@ -338,6 +340,7 @@ export class LiveScanStore {
       clearTimeout(timer);
     }
     this.refreshTimers.clear();
+    this.pendingRefreshPathCounts.clear();
 
     for (const state of this.stablePaths.values()) {
       if (state.timer) {
@@ -656,6 +659,10 @@ export class LiveScanStore {
 
   private scheduleRefreshForAgents(agentNames: Set<string>): void {
     for (const agentName of agentNames) {
+      this.pendingRefreshPathCounts.set(
+        agentName,
+        (this.pendingRefreshPathCounts.get(agentName) ?? 0) + 1,
+      );
       this.scheduleRefresh(agentName);
     }
   }
@@ -705,6 +712,8 @@ export class LiveScanStore {
 
   private async runRefresh(agentName: string): Promise<void> {
     const startedAt = performance.now();
+    const pendingPathCount = this.pendingRefreshPathCounts.get(agentName) ?? 0;
+    this.pendingRefreshPathCounts.delete(agentName);
     const agent = this.agents.find((item) => item.name === agentName);
     if (!agent) {
       appLogger.warn("scan.refresh.missing_agent", { agent: agentName });
@@ -743,7 +752,19 @@ export class LiveScanStore {
     if (!this.hasStartupWindow()) {
       saveCachedSessions(agentName, nextSessions, buildAgentCacheMeta(agent));
     }
-    syncSessionSearchIndex(agentName, nextSessions, (sessionId) => agent.getSessionData(sessionId));
+    const searchIndexOptions =
+      pendingPathCount >= SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD ? { isBulk: true } : undefined;
+    const syncResult = searchIndexOptions
+      ? syncSessionSearchIndex(
+          agentName,
+          nextSessions,
+          (sessionId) => agent.getSessionData(sessionId),
+          searchIndexOptions,
+        )
+      : syncSessionSearchIndex(agentName, nextSessions, (sessionId) =>
+          agent.getSessionData(sessionId),
+        );
+    logSearchIndexSync("scan.refresh", syncResult, { pending_paths: pendingPathCount });
 
     const event = buildUpdateEvent(agentName, previousSessions, nextSessions);
     this.byAgent[agentName] = sortSessions(nextSessions);
@@ -760,6 +781,12 @@ export class LiveScanStore {
       new_sessions: event?.newSessions ?? 0,
       updated_sessions: event?.updatedSessions ?? 0,
       removed_sessions: event?.removedSessions ?? 0,
+      pending_paths: pendingPathCount,
+      search_index_mode: syncResult?.mode,
+      search_index_rebuild_duration_ms:
+        syncResult?.rebuildDurationMs == null
+          ? undefined
+          : Math.round(syncResult.rebuildDurationMs),
     });
   }
 }

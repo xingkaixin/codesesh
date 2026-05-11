@@ -449,6 +449,116 @@ describe("searchSessions", () => {
     expect(results[0]?.snippet).toContain("<mark>sqlite</mark>");
   });
 
+  it("bulk sync rebuilds FTS for large initial indexes", () => {
+    const sessions = Array.from({ length: 101 }, (_, index) => {
+      const session = makeSession(`bulk-${index}`);
+      if (index === 42) {
+        return {
+          ...session,
+          directory: "/tmp/bulk-project",
+          project_identity: {
+            kind: "path" as const,
+            key: "/tmp/bulk-project",
+            displayName: "bulk-project",
+          },
+        };
+      }
+      if (index === 43) {
+        return {
+          ...session,
+          directory: "/tmp/other-project",
+          project_identity: {
+            kind: "path" as const,
+            key: "/tmp/other-project",
+            displayName: "other-project",
+          },
+        };
+      }
+      return session;
+    });
+    const sessionMap = new Map(sessions.map((session) => [session.id, session]));
+
+    saveCachedSessions("claudecode", sessions);
+    const result = syncSessionSearchIndex("claudecode", sessions, (sessionId) => ({
+      ...sessionMap.get(sessionId)!,
+      messages: [
+        {
+          id: `${sessionId}-m1`,
+          role: "user",
+          time_created: now,
+          parts: [
+            {
+              type: "text",
+              text:
+                sessionId === "bulk-42" || sessionId === "bulk-43"
+                  ? "bulk needle project filter"
+                  : `bulk filler ${sessionId}`,
+            },
+          ],
+        },
+      ],
+    }));
+
+    expect(result).toMatchObject({
+      mode: "bulk",
+      sessions: 101,
+      changed: 101,
+      deleted: 0,
+      indexed: 101,
+      skipped: 0,
+    });
+    expect(result?.rebuildDurationMs).toBeGreaterThanOrEqual(0);
+
+    const allResults = searchSessions("needle");
+    expect(allResults).toHaveLength(2);
+
+    const filteredResults = searchSessions("needle", { cwd: "/tmp/bulk-project" });
+    expect(filteredResults).toHaveLength(1);
+    expect(filteredResults[0]?.session.id).toBe("bulk-42");
+    expect(filteredResults[0]?.snippet).toContain("<mark>needle</mark>");
+  });
+
+  it("keeps small incremental updates searchable immediately", () => {
+    const session = makeSession("small");
+    const updated = {
+      ...session,
+      stats: { ...session.stats, message_count: 2 },
+    };
+
+    saveCachedSessions("claudecode", [session]);
+    syncSessionSearchIndex("claudecode", [session], (sessionId) =>
+      makeSessionData(sessionId, "old search content"),
+    );
+
+    saveCachedSessions("claudecode", [updated]);
+    const result = syncSessionSearchIndex("claudecode", [updated], () => ({
+      ...updated,
+      messages: [
+        {
+          id: "small-m1",
+          role: "user",
+          time_created: now,
+          parts: [{ type: "text", text: "old search content" }],
+        },
+        {
+          id: "small-m2",
+          role: "assistant",
+          time_created: now + 1,
+          parts: [{ type: "text", text: "instant incremental token" }],
+        },
+      ],
+    }));
+
+    expect(result).toMatchObject({
+      mode: "incremental",
+      changed: 1,
+      indexed: 1,
+      deleted: 0,
+    });
+    expect(result?.rebuildDurationMs).toBeUndefined();
+    expect(searchSessions("instant")).toHaveLength(1);
+  });
+
   it("upserts normalized message rows for indexed sessions", () => {
     const session = {
       ...makeSession("s1"),

@@ -29,6 +29,7 @@ const CACHE_SCHEMA_VERSION = 7;
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const CACHE_FILENAME = "codesesh.db";
 const LEGACY_CACHE_FILENAME = "scan-cache.json";
+const SEARCH_INDEX_BULK_SYNC_THRESHOLD = 100;
 
 export interface SessionCacheMeta {
   id: string;
@@ -40,6 +41,23 @@ export interface CachedResult {
   sessions: SessionHead[];
   meta: Record<string, SessionCacheMeta>;
   timestamp: number;
+}
+
+export interface SearchIndexSyncOptions {
+  isBulk?: boolean;
+  bulkThreshold?: number;
+}
+
+export interface SearchIndexSyncResult {
+  agentName: string;
+  mode: "bulk" | "incremental";
+  sessions: number;
+  changed: number;
+  deleted: number;
+  indexed: number;
+  skipped: number;
+  durationMs: number;
+  rebuildDurationMs?: number;
 }
 
 interface ScalarRow extends DatabaseRow {
@@ -327,7 +345,13 @@ function createSearchTables(db: SQLiteDatabase): void {
       content='session_documents',
       content_rowid='id'
     );
+  `);
 
+  createSearchTriggers(db);
+}
+
+function createSearchTriggers(db: SQLiteDatabase): void {
+  db.exec(`
     CREATE TRIGGER IF NOT EXISTS session_documents_ai AFTER INSERT ON session_documents BEGIN
       INSERT INTO session_documents_fts(rowid, title, content_text)
       VALUES (new.id, new.title, new.content_text);
@@ -344,6 +368,14 @@ function createSearchTables(db: SQLiteDatabase): void {
       INSERT INTO session_documents_fts(rowid, title, content_text)
       VALUES (new.id, new.title, new.content_text);
     END;
+  `);
+}
+
+function dropSearchTriggers(db: SQLiteDatabase): void {
+  db.exec(`
+    DROP TRIGGER IF EXISTS session_documents_ai;
+    DROP TRIGGER IF EXISTS session_documents_ad;
+    DROP TRIGGER IF EXISTS session_documents_au;
   `);
 }
 
@@ -914,6 +946,15 @@ function rebuildSearchIndex(db: SQLiteDatabase): void {
   db.exec("INSERT INTO session_documents_fts(session_documents_fts) VALUES ('rebuild')");
 }
 
+function shouldBulkSyncSearchIndex(options: SearchIndexSyncOptions, changedCount: number): boolean {
+  if (options.isBulk != null) {
+    return options.isBulk;
+  }
+
+  const threshold = options.bulkThreshold ?? SEARCH_INDEX_BULK_SYNC_THRESHOLD;
+  return threshold > 0 && changedCount >= threshold;
+}
+
 function ensureFtsConsistency(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents_fts")) {
     createSearchTables(db);
@@ -1364,12 +1405,14 @@ export function syncSessionSearchIndex(
   agentName: string,
   sessions: SessionHead[],
   loadSessionData: (sessionId: string) => SessionData,
-): void {
+  options: SearchIndexSyncOptions = {},
+): SearchIndexSyncResult | null {
   if (!hasCacheStorage()) {
-    return;
+    return null;
   }
 
-  withCacheDb((db) => {
+  return withCacheDb((db) => {
+    const startedAt = performance.now();
     const existingRows = db
       .prepare(
         "SELECT session_id, content_hash FROM session_documents WHERE agent_name = ? ORDER BY id",
@@ -1397,6 +1440,8 @@ export function syncSessionSearchIndex(
         existingMap.get(session.id) !== sessionContentHash(session) ||
         messageCountMap.get(session.id) !== session.stats.message_count,
     );
+    const changedCount = toDelete.length + toUpsert.length;
+    const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
 
     const loaded = toUpsert
       .map((session) => {
@@ -1555,7 +1600,34 @@ export function syncSessionSearchIndex(
       }
     });
 
-    write();
+    let rebuildDurationMs: number | undefined;
+    const needsRebuild = isBulk && (toDelete.length > 0 || loaded.length > 0);
+
+    if (needsRebuild) {
+      dropSearchTriggers(db);
+      try {
+        write();
+        const rebuildStartedAt = performance.now();
+        rebuildSearchIndex(db);
+        rebuildDurationMs = performance.now() - rebuildStartedAt;
+      } finally {
+        createSearchTriggers(db);
+      }
+    } else {
+      write();
+    }
+
+    return {
+      agentName,
+      mode: isBulk ? "bulk" : "incremental",
+      sessions: sessions.length,
+      changed: toUpsert.length,
+      deleted: toDelete.length,
+      indexed: loaded.length,
+      skipped: toUpsert.length - loaded.length,
+      durationMs: performance.now() - startedAt,
+      rebuildDurationMs,
+    };
   });
 }
 
