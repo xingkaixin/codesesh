@@ -16,6 +16,8 @@ export type SmartTag =
   | "exploration"
   | "planning";
 
+export type FileActivityKind = "read" | "edit" | "write" | "delete";
+
 export type CostSource = "recorded" | "estimated";
 
 export interface SessionHead {
@@ -36,6 +38,20 @@ export interface SessionHead {
   };
   smart_tags?: SmartTag[];
   smart_tags_source_updated_at?: number;
+}
+
+export interface SessionFileActivity {
+  agent_name: string;
+  session_id: string;
+  project_identity_key: string;
+  path: string;
+  kind: FileActivityKind;
+  count: number;
+  latest_time: number;
+}
+
+export interface FileActivityResult extends SessionFileActivity {
+  session: SessionHead;
 }
 
 export type ProjectIdentityKind =
@@ -124,6 +140,7 @@ export interface SessionData {
   messages: Message[];
   smart_tags?: SmartTag[];
   smart_tags_source_updated_at?: number;
+  file_activity?: SessionFileActivity[];
 }
 
 export interface ProjectGroup {
@@ -194,6 +211,7 @@ export interface DashboardData {
   dailyTokenActivity: DailyTokenBucket[];
   modelDistribution: ModelDistributionEntry[];
   recentSessions: DashboardRecentSession[];
+  recentFileActivities: FileActivityResult[];
   window: { from: number; to: number; days: number };
 }
 

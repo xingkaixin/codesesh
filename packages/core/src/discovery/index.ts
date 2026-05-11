@@ -8,9 +8,17 @@ export {
   clearCache,
   getCacheInfo,
   listCachedProjectGroups,
+  listFileActivity,
+  listSessionFileActivity,
+  searchFileActivitySessions,
   searchSessions,
   syncSessionSearchIndex,
 } from "./cache.js";
-export type { SearchIndexSyncOptions, SearchIndexSyncResult } from "./cache.js";
+export type {
+  FileActivityOptions,
+  FileActivityResult,
+  SearchIndexSyncOptions,
+  SearchIndexSyncResult,
+} from "./cache.js";
 export { perf } from "../utils/index.js";
 export type { PerfMarker } from "../utils/index.js";

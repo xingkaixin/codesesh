@@ -8,6 +8,7 @@ import type {
   DashboardAgentStat,
   DashboardDailyBucket,
   DailyTokenBucket,
+  FileActivityResult,
   ModelDistributionEntry,
   DashboardRecentSession,
 } from "../lib/api";
@@ -589,14 +590,73 @@ function RecentSessions({
   );
 }
 
+function RecentFileActivity({ activity }: { activity: FileActivityResult[] }) {
+  if (activity.length === 0) {
+    return (
+      <div className="rounded-sm border border-[var(--console-border)] bg-white p-4 text-sm text-[var(--console-muted)]">
+        No file activity yet
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
+          Recently Touched Files
+        </h3>
+        <span className="console-mono text-[11px] text-[var(--console-muted)]">
+          {activity.length} files
+        </span>
+      </div>
+      <ul className="space-y-2">
+        {activity.map((item) => {
+          const updated = item.latest_time;
+          return (
+            <li key={`${item.agent_name}/${item.session_id}/${item.kind}/${item.path}`}>
+              <Link
+                to={`/${item.session.slug}`}
+                className="block rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--console-muted)]">
+                    {item.kind}
+                  </span>
+                  <span className="console-mono min-w-0 flex-1 truncate text-xs text-[var(--console-text)]">
+                    {item.path}
+                  </span>
+                  <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
+                    {formatRelativeTime(updated)}
+                  </span>
+                </div>
+                <p className="console-mono mt-1 line-clamp-1 text-[11px] text-[var(--console-muted)]">
+                  {item.session.project_identity?.displayName ?? item.session.directory} ·{" "}
+                  {item.session.title} · {item.count} events
+                </p>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export function Dashboard({
   data,
   bookmarkedSessions,
   isBookmarked,
   onToggleBookmark,
 }: DashboardProps) {
-  const { totals, perAgent, dailyActivity, dailyTokenActivity, modelDistribution, recentSessions } =
-    data;
+  const {
+    totals,
+    perAgent,
+    dailyActivity,
+    dailyTokenActivity,
+    modelDistribution,
+    recentSessions,
+    recentFileActivities = [],
+  } = data;
 
   return (
     <div data-testid="dashboard" className="mx-auto max-w-5xl space-y-4">
@@ -633,6 +693,8 @@ export function Dashboard({
         isBookmarked={isBookmarked}
         onToggleBookmark={onToggleBookmark}
       />
+
+      <RecentFileActivity activity={recentFileActivities} />
 
       <BookmarkedSessions
         sessions={bookmarkedSessions}

@@ -6,6 +6,11 @@ export { perf, type PerfMarker } from "./perf.js";
 export { classifySessionTags, getSmartTagSourceTimestamp } from "./smart-tags.js";
 export { estimateTokenCost } from "./cost.js";
 export {
+  extractFileActivityOccurrences,
+  extractSessionFileActivity,
+  summarizeFileActivity,
+} from "./file-activity.js";
+export {
   cleanInternalText,
   cleanMessagePart,
   cleanMessageParts,
