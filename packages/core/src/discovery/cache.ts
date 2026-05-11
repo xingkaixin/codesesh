@@ -959,6 +959,7 @@ function ensureFtsConsistency(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents_fts")) {
     createSearchTables(db);
   }
+  createSearchTriggers(db);
 
   try {
     db.exec(
@@ -1539,7 +1540,7 @@ export function syncSessionSearchIndex(
         indexed_at = excluded.indexed_at
     `);
 
-    const write = db.transaction(() => {
+    const writeRows = () => {
       for (const sessionId of toDelete) {
         deleteRow.run(agentName, sessionId);
         deleteMessages.run(agentName, sessionId, 0);
@@ -1598,23 +1599,22 @@ export function syncSessionSearchIndex(
           Date.now(),
         );
       }
-    });
+    };
 
     let rebuildDurationMs: number | undefined;
     const needsRebuild = isBulk && (toDelete.length > 0 || loaded.length > 0);
 
     if (needsRebuild) {
-      dropSearchTriggers(db);
-      try {
-        write();
+      db.transaction(() => {
+        dropSearchTriggers(db);
+        writeRows();
         const rebuildStartedAt = performance.now();
         rebuildSearchIndex(db);
         rebuildDurationMs = performance.now() - rebuildStartedAt;
-      } finally {
         createSearchTriggers(db);
-      }
+      })();
     } else {
-      write();
+      db.transaction(writeRows)();
     }
 
     return {

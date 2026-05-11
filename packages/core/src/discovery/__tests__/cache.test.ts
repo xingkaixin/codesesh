@@ -559,6 +559,64 @@ describe("searchSessions", () => {
     expect(searchSessions("instant")).toHaveLength(1);
   });
 
+  it("restores missing FTS triggers before incremental sync", () => {
+    const session = makeSession("trigger");
+    const updated = {
+      ...session,
+      title: "Updated trigger",
+      stats: { ...session.stats, message_count: 2 },
+    };
+
+    saveCachedSessions("claudecode", [session]);
+    syncSessionSearchIndex("claudecode", [session], (sessionId) =>
+      makeSessionData(sessionId, "old trigger content"),
+    );
+
+    const db = new Database(getCachePath());
+    try {
+      db.exec(`
+        DROP TRIGGER session_documents_ai;
+        DROP TRIGGER session_documents_ad;
+        DROP TRIGGER session_documents_au;
+      `);
+    } finally {
+      db.close();
+    }
+
+    saveCachedSessions("claudecode", [updated]);
+    syncSessionSearchIndex("claudecode", [updated], () => ({
+      ...updated,
+      messages: [
+        {
+          id: "trigger-m1",
+          role: "user",
+          time_created: now,
+          parts: [{ type: "text", text: "old trigger content" }],
+        },
+        {
+          id: "trigger-m2",
+          role: "assistant",
+          time_created: now + 1,
+          parts: [{ type: "text", text: "healed trigger content" }],
+        },
+      ],
+    }));
+
+    const triggerDb = new Database(getCachePath(), { readonly: true });
+    try {
+      const row = triggerDb
+        .prepare(
+          "SELECT COUNT(*) AS value FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'session_documents_%'",
+        )
+        .get() as { value?: number };
+      expect(row.value).toBe(3);
+    } finally {
+      triggerDb.close();
+    }
+
+    expect(searchSessions("healed")).toHaveLength(1);
+  });
+
   it("upserts normalized message rows for indexed sessions", () => {
     const session = {
       ...makeSession("s1"),
