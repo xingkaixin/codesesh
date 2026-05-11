@@ -1408,10 +1408,6 @@ export function syncSessionSearchIndex(
   loadSessionData: (sessionId: string) => SessionData,
   options: SearchIndexSyncOptions = {},
 ): SearchIndexSyncResult | null {
-  if (!hasCacheStorage()) {
-    return null;
-  }
-
   return withCacheDb((db) => {
     const startedAt = performance.now();
     const existingRows = db

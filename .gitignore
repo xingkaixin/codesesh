@@ -3,6 +3,8 @@ dist/
 .turbo/
 *.tsbuildinfo
 coverage/
+playwright-report/
+test-results/
 
 # IDE
 .vscode/

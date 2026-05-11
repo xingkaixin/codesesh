@@ -209,9 +209,13 @@ export function openDb(dbPath: string): SQLiteDatabase | null {
   try {
     mkdirSync(dirname(dbPath), { recursive: true });
     const db = DatabaseConstructor(dbPath);
-    db.pragma("journal_mode = WAL");
-    db.pragma("synchronous = NORMAL");
-    db.pragma("foreign_keys = ON");
+    try {
+      db.pragma("journal_mode = WAL");
+      db.pragma("synchronous = NORMAL");
+      db.pragma("foreign_keys = ON");
+    } catch {
+      // The database remains usable when SQLite rejects connection-level tuning.
+    }
     return db;
   } catch {
     return null;

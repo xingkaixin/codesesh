@@ -353,7 +353,9 @@ export function subscribeSessionUpdates(
   });
 
   source.onerror = () => {
-    console.error("Session update stream disconnected");
+    if (source.readyState !== EventSource.CLOSED) {
+      console.warn("Session update stream disconnected");
+    }
   };
 
   return () => {

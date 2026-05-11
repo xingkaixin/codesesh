@@ -677,12 +677,6 @@ export default function App() {
         ? `${dashboard.totals.sessions.toLocaleString("en-US")} total sessions across ${dashboard.perAgent.length} agents`
         : "Aggregated view across all agents";
   }
-  if (isSearchMode && viewState.mode !== "root") {
-    headerTitle = "Search";
-    headerSubtitle = searchLoading
-      ? `Searching for "${activeSearchQuery}"`
-      : `${searchResults.length} matches for "${activeSearchQuery}"`;
-  }
   if (viewState.mode === "agent" && activeAgentKey) {
     headerTitle = activeAgent?.displayName ?? activeAgentKey;
     headerSubtitle = `${sidebarSessions.length} sessions`;
@@ -711,6 +705,12 @@ export default function App() {
   if (viewState.mode === "missingSession") {
     headerTitle = "Session Not Found";
     headerSubtitle = `Session not found in /${activeAgentKey}`;
+  }
+  if (isSearchMode) {
+    headerTitle = "Search";
+    headerSubtitle = searchLoading
+      ? `Searching for "${activeSearchQuery}"`
+      : `${searchResults.length} matches for "${activeSearchQuery}"`;
   }
 
   const breadcrumbItems = useMemo<BreadcrumbItem[]>(() => {

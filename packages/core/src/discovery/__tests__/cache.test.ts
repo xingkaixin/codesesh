@@ -421,6 +421,21 @@ describe("getCacheInfo", () => {
 });
 
 describe("searchSessions", () => {
+  it("creates cache storage when syncing search index first", () => {
+    const session = makeSession("first-search");
+
+    const result = syncSessionSearchIndex("claudecode", [session], (sessionId) =>
+      makeSessionData(sessionId, "first search creates the sqlite cache"),
+    );
+
+    expect(result).toMatchObject({
+      changed: 1,
+      indexed: 1,
+      skipped: 0,
+    });
+    expect(searchSessions("sqlite")).toHaveLength(1);
+  });
+
   it("indexes session content and returns highlighted matches", () => {
     const session = {
       ...makeSession("s1"),
