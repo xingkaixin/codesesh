@@ -249,6 +249,8 @@ export interface SearchQueryFilters {
   fileKind?: FileActivityKind;
   costMin?: number;
   costMax?: number;
+  costMinExclusive?: boolean;
+  costMaxExclusive?: boolean;
 }
 
 export interface ParsedSearchQuery {
@@ -268,6 +270,8 @@ export interface SearchOptions {
   fileKind?: FileActivityKind;
   costMin?: number;
   costMax?: number;
+  costMinExclusive?: boolean;
+  costMaxExclusive?: boolean;
   from?: number;
   to?: number;
   limit?: number;
@@ -1291,7 +1295,31 @@ function escapeFtsTerm(value: string): string {
 }
 
 function splitSearchTokens(input: string): string[] {
-  return input.match(/"[^"]+"|\S+/g) ?? [];
+  const tokens: string[] = [];
+  let token = "";
+  let inQuote = false;
+
+  for (const char of input) {
+    if (char === '"') {
+      inQuote = !inQuote;
+      token += char;
+      continue;
+    }
+    if (/\s/.test(char) && !inQuote) {
+      if (token) {
+        tokens.push(token);
+        token = "";
+      }
+      continue;
+    }
+    token += char;
+  }
+
+  if (token) {
+    tokens.push(token);
+  }
+
+  return tokens;
 }
 
 function unwrapSearchValue(value: string): string {
@@ -1314,8 +1342,13 @@ function parseCostQualifier(value: string, filters: SearchQueryFilters): void {
   const comparison = raw.match(/^(>=|>|<=|<)(\d+(?:\.\d+)?)$/);
   if (comparison) {
     const amount = Number(comparison[2]);
-    if (comparison[1]?.includes(">")) filters.costMin = amount;
-    else filters.costMax = amount;
+    if (comparison[1]?.includes(">")) {
+      filters.costMin = amount;
+      filters.costMinExclusive = comparison[1] === ">";
+    } else {
+      filters.costMax = amount;
+      filters.costMaxExclusive = comparison[1] === "<";
+    }
     return;
   }
 
@@ -2035,9 +2068,26 @@ function mergeSearchQueryOptions(query: string, options: SearchOptions) {
       fileKind: options.fileKind ?? parsed.filters.fileKind,
       costMin: options.costMin ?? parsed.filters.costMin,
       costMax: options.costMax ?? parsed.filters.costMax,
+      costMinExclusive: options.costMinExclusive ?? parsed.filters.costMinExclusive,
+      costMaxExclusive: options.costMaxExclusive ?? parsed.filters.costMaxExclusive,
     },
     parsed,
   };
+}
+
+function sessionMatchesSearchCost(session: SessionHead, options: SearchOptions): boolean {
+  const cost = session.stats.total_cost;
+  if (options.costMin != null) {
+    if (options.costMinExclusive ? cost <= options.costMin : cost < options.costMin) {
+      return false;
+    }
+  }
+  if (options.costMax != null) {
+    if (options.costMaxExclusive ? cost >= options.costMax : cost > options.costMax) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function likePattern(value: string): string {
@@ -2110,11 +2160,11 @@ function buildSessionSearchFilters(options: SearchOptions): {
     params.push(options.to);
   }
   if (options.costMin != null) {
-    clauses.push("s.total_cost >= ?");
+    clauses.push(options.costMinExclusive ? "s.total_cost > ?" : "s.total_cost >= ?");
     params.push(options.costMin);
   }
   if (options.costMax != null) {
-    clauses.push("s.total_cost <= ?");
+    clauses.push(options.costMaxExclusive ? "s.total_cost < ?" : "s.total_cost <= ?");
     params.push(options.costMax);
   }
 
@@ -2469,6 +2519,7 @@ export function searchFileActivitySessions(
   for (const row of rows) {
     const key = `${row.agent_name}/${row.session_id}`;
     if (seen.has(key)) continue;
+    if (!sessionMatchesSearchCost(row.session, search.options)) continue;
     seen.add(key);
     results.push({
       agentName: row.agent_name,

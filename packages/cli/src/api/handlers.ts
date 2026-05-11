@@ -220,8 +220,13 @@ function sanitizeClientLogData(value: unknown): Record<string, unknown> {
 }
 
 function sessionMatchesCostFilter(session: SessionHead, options: SearchOptions): boolean {
-  if (options.costMin != null && session.stats.total_cost < options.costMin) return false;
-  if (options.costMax != null && session.stats.total_cost > options.costMax) return false;
+  const cost = session.stats.total_cost;
+  if (options.costMin != null) {
+    if (options.costMinExclusive ? cost <= options.costMin : cost < options.costMin) return false;
+  }
+  if (options.costMax != null) {
+    if (options.costMaxExclusive ? cost >= options.costMax : cost > options.costMax) return false;
+  }
   return true;
 }
 
@@ -243,6 +248,8 @@ function mergeSearchOptions(options: SearchOptions, filters: SearchQueryFilters)
     fileKind: options.fileKind ?? filters.fileKind,
     costMin: options.costMin ?? filters.costMin,
     costMax: options.costMax ?? filters.costMax,
+    costMinExclusive: options.costMinExclusive ?? filters.costMinExclusive,
+    costMaxExclusive: options.costMaxExclusive ?? filters.costMaxExclusive,
   };
 }
 
