@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { SearchIndexSyncResult } from "@codesesh/core";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -159,3 +160,27 @@ export class AppLogger {
 }
 
 export const appLogger = new AppLogger();
+
+export function logSearchIndexSync(
+  context: string,
+  result: SearchIndexSyncResult | null,
+  data: Record<string, unknown> = {},
+): void {
+  if (!result || result.mode !== "bulk" || result.rebuildDurationMs == null) {
+    return;
+  }
+
+  appLogger.info("search_index.sync", {
+    context,
+    agent: result.agentName,
+    mode: result.mode,
+    sessions: result.sessions,
+    changed: result.changed,
+    deleted: result.deleted,
+    indexed: result.indexed,
+    skipped: result.skipped,
+    duration_ms: Math.round(result.durationMs),
+    rebuild_duration_ms: Math.round(result.rebuildDurationMs),
+    ...data,
+  });
+}

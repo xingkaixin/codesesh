@@ -249,6 +249,38 @@ describe("LiveScanStore", () => {
     expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["session", "added"]);
   });
 
+  it("marks search index sync as bulk when many paths are pending", async () => {
+    const previous = makeSession("session", { title: "old", time_updated: 1000 });
+    const updated = makeSession("session", { title: "new", time_updated: 2000 });
+    const codex = makeAgent("codex", {
+      checkForChanges: vi.fn(() => ({
+        hasChanges: true,
+        changedIds: ["session"],
+        timestamp: 3000,
+      })),
+      incrementalScan: vi.fn(() => [updated]),
+    });
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [previous],
+      byAgent: { codex: [previous] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+    (store as any).pendingRefreshPathCounts.set("codex", 101);
+    await (store as any).runRefresh("codex");
+
+    expect(core.syncSessionSearchIndex).toHaveBeenLastCalledWith(
+      "codex",
+      [updated],
+      expect.any(Function),
+      { isBulk: true },
+    );
+  });
+
   it("removes sessions when an agent becomes unavailable", async () => {
     const previous = makeSession("session");
     const codex = makeAgent("codex", {

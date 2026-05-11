@@ -21,7 +21,7 @@ import {
   syncSessionSearchIndex,
   upsertBookmark,
 } from "@codesesh/core";
-import { appLogger } from "../logging.js";
+import { appLogger, logSearchIndexSync } from "../logging.js";
 
 export interface ScanResultSource {
   getSnapshot(): ScanResult;
@@ -242,9 +242,10 @@ export function handleSearchSessions(
 
   for (const indexedAgent of scanResult.agents) {
     const sessions = scanResult.byAgent[indexedAgent.name] ?? [];
-    syncSessionSearchIndex(indexedAgent.name, sessions, (sessionId) =>
+    const syncResult = syncSessionSearchIndex(indexedAgent.name, sessions, (sessionId) =>
       indexedAgent.getSessionData(sessionId),
     );
+    logSearchIndexSync("api.search", syncResult);
   }
 
   const results = searchSessions(query, {
