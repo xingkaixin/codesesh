@@ -1,10 +1,23 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
-import { BaseAgent, matchesScanWindow } from "./base.js";
+import {
+  BaseAgent,
+  filteredSession,
+  getParsedSession,
+  matchesScanWindow,
+  parsedSession,
+} from "./base.js";
 import type { AgentScanOptions, SessionCacheMeta, ChangeCheckResult } from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
 import { getCursorDataPath } from "../discovery/paths.js";
 import { openDbReadOnly, isSqliteAvailable, type SQLiteDatabase } from "../utils/sqlite.js";
+import { resolveSessionTitle } from "../utils/title-fallback.js";
+import { isInternalEventType } from "../utils/parse-cleanup.js";
+import {
+  cleanInternalText,
+  cleanParsedMessages,
+  firstUserMessageTitle,
+} from "../utils/session-normalization.js";
 import { perf } from "../utils/perf.js";
 import { estimateTokenCost } from "../utils/cost.js";
 
@@ -114,9 +127,8 @@ function normalizeToolOutputParts(output: unknown, timestampMs: number): Message
   if (output == null) return [];
 
   if (typeof output === "string") {
-    return output.trim()
-      ? [{ type: "text" as const, text: output, time_created: timestampMs }]
-      : [];
+    const text = cleanInternalText(output);
+    return text ? [{ type: "text" as const, text, time_created: timestampMs }] : [];
   }
 
   if (Array.isArray(output)) {
@@ -126,17 +138,19 @@ function normalizeToolOutputParts(output: unknown, timestampMs: number): Message
         const text = String(
           (item as Record<string, unknown>).text ?? (item as Record<string, unknown>).content ?? "",
         );
-        if (text.trim()) parts.push({ type: "text", text, time_created: timestampMs });
-      } else if (typeof item === "string" && item.trim()) {
-        parts.push({ type: "text", text: item, time_created: timestampMs });
+        const cleaned = cleanInternalText(text);
+        if (cleaned) parts.push({ type: "text", text: cleaned, time_created: timestampMs });
+      } else if (typeof item === "string") {
+        const text = cleanInternalText(item);
+        if (text) parts.push({ type: "text", text, time_created: timestampMs });
       }
     }
     return parts;
   }
 
   // For object output, stringify for readability
-  const text = String(output);
-  return text.trim() ? [{ type: "text", text, time_created: timestampMs }] : [];
+  const text = cleanInternalText(String(output));
+  return text ? [{ type: "text", text, time_created: timestampMs }] : [];
 }
 
 /** Extract a timestamp (in ms) from a chat message */
@@ -148,6 +162,10 @@ function extractTimestamp(msg: ChatMessage): number {
     return msg.timestamp;
   }
   return 0;
+}
+
+function isInternalBubble(bubble: BubbleData): boolean {
+  return ["eventType", "kind", "subtype", "name"].some((key) => isInternalEventType(bubble[key]));
 }
 
 /** Build a normalized tool state object from an action entry */
@@ -202,7 +220,7 @@ function buildToolPart(action: ActionEntry, timestampMs: number): MessagePart {
 /** Build a MessagePart for terminal command actions */
 function buildTerminalToolPart(action: ActionEntry, timestampMs: number): MessagePart {
   const command = String(action.input?.command ?? "");
-  const description = String(action.input?.commandDescription ?? "");
+  const description = cleanInternalText(String(action.input?.commandDescription ?? ""));
 
   return {
     type: "tool",
@@ -386,7 +404,8 @@ export class CursorAgent extends BaseAgent {
             composer.updatedAt ?? composer.lastUpdatedAt ?? composer.lastSendTime ?? createdAt;
           if (!matchesScanWindow(updatedAt, options)) continue;
 
-          const title = this.extractTitle(composer);
+          const fastTitle = this.extractTitle(composer);
+          const hasFastMessages = Array.isArray(composer.chatMessages);
           const fastMessageCount = composer.chatMessages?.length ?? 0;
           const hasSubagents =
             Array.isArray(composer.subagentInfos) && composer.subagentInfos.length > 0;
@@ -397,21 +416,27 @@ export class CursorAgent extends BaseAgent {
                 input: composer.inputTokenCount ?? 0,
                 output: composer.outputTokenCount ?? 0,
               }) ?? 0;
-            heads.push({
-              id: composerId,
-              slug: `cursor/${composerId}`,
-              title,
-              directory,
-              time_created: createdAt,
-              time_updated: updatedAt || undefined,
-              stats: {
-                message_count: fastMessageCount,
-                total_input_tokens: composer.inputTokenCount ?? 0,
-                total_output_tokens: composer.outputTokenCount ?? 0,
-                total_cost: totalCost,
-                cost_source: totalCost > 0 ? "estimated" : undefined,
-              },
-            });
+            const head = getParsedSession(
+              hasFastMessages && fastMessageCount === 0 && !hasSubagents
+                ? filteredSession<SessionHead>("no visible messages")
+                : parsedSession<SessionHead>({
+                    id: composerId,
+                    slug: `cursor/${composerId}`,
+                    title: fastTitle,
+                    directory,
+                    time_created: createdAt,
+                    time_updated: updatedAt || undefined,
+                    stats: {
+                      message_count: fastMessageCount,
+                      total_input_tokens: composer.inputTokenCount ?? 0,
+                      total_output_tokens: composer.outputTokenCount ?? 0,
+                      total_cost: totalCost,
+                      cost_source: totalCost > 0 ? "estimated" : undefined,
+                    },
+                  }),
+            );
+            if (!head) continue;
+            heads.push(head);
             this.composerCache.set(composerId, composer);
             this.sessionMetaMap.set(composerId, {
               id: composerId,
@@ -425,16 +450,22 @@ export class CursorAgent extends BaseAgent {
           const sessionId = requestId || composerId;
 
           // Load actual messages to filter out empty composers
-          const messages = this.loadMessagesFromBubbles(
-            db,
-            composerId,
-            sessionId,
-            composer.modelConfig?.modelName ?? composer.model ?? null,
+          const parsedMessages = cleanParsedMessages(
+            this.loadMessagesFromBubbles(
+              db,
+              composerId,
+              sessionId,
+              composer.modelConfig?.modelName ?? composer.model ?? null,
+            ),
           );
-          if (messages.length === 0 && !hasSubagents) {
-            continue; // Skip empty sessions
-          }
+          const messages = getParsedSession(
+            parsedMessages.length === 0 && !hasSubagents
+              ? filteredSession<Message[]>("no visible messages")
+              : parsedSession(parsedMessages),
+          );
+          if (!messages) continue;
           const messageCount = messages.length;
+          const title = this.extractTitle(composer, messages);
 
           const directory = workspacePathMap.get(composerId) ?? "";
 
@@ -585,7 +616,6 @@ export class CursorAgent extends BaseAgent {
       }
 
       const composerId = composer.id || composer.composerId || "";
-      const title = this.extractTitle(composer);
       const createdAt = composer.createdAt ?? 0;
       const updatedAt = composer.updatedAt ?? createdAt;
 
@@ -597,12 +627,17 @@ export class CursorAgent extends BaseAgent {
         composer.modelConfig?.modelName ?? composer.model ?? null,
       );
 
+      // Append subagent messages
+      this.appendSubagentMessages(db, composer, messages);
+      const cleanedMessages = cleanParsedMessages(messages);
+      const title = this.extractTitle(composer, cleanedMessages);
+
       // Aggregate stats
       let totalInputTokens = 0;
       let totalOutputTokens = 0;
       let totalCost = 0;
 
-      for (const msg of messages) {
+      for (const msg of cleanedMessages) {
         totalInputTokens += msg.tokens?.input ?? 0;
         totalOutputTokens += msg.tokens?.output ?? 0;
         totalCost += msg.cost ?? 0;
@@ -619,9 +654,6 @@ export class CursorAgent extends BaseAgent {
           }) ?? 0;
       }
 
-      // Append subagent messages
-      this.appendSubagentMessages(db, composer, messages);
-
       // Retrieve directory from cache (populated during scan) or build map on demand
       const cachedDir = this.composerCache.get(`__dir__${composerId}`);
       const directory =
@@ -637,13 +669,13 @@ export class CursorAgent extends BaseAgent {
         time_created: createdAt,
         time_updated: updatedAt || undefined,
         stats: {
-          message_count: messages.length,
+          message_count: cleanedMessages.length,
           total_input_tokens: totalInputTokens,
           total_output_tokens: totalOutputTokens,
           total_cost: totalCost,
           cost_source: totalCost > 0 ? "estimated" : undefined,
         },
-        messages,
+        messages: cleanedMessages,
       };
     } finally {
       db.close();
@@ -708,23 +740,10 @@ export class CursorAgent extends BaseAgent {
   }
 
   /** Extract title from composer (like agent-dump) */
-  private extractTitle(composer: ComposerData): string {
-    if (composer.name && typeof composer.name === "string" && composer.name.trim()) {
-      return composer.name.trim();
-    }
-    if (composer.title && typeof composer.title === "string" && composer.title.trim()) {
-      return composer.title.trim();
-    }
-    if (composer.text && typeof composer.text === "string" && composer.text.trim()) {
-      const firstLine = composer.text
-        .split("\n")
-        .find((l) => l.trim())
-        ?.trim()
-        .slice(0, 80);
-      if (firstLine) return firstLine;
-    }
-    const composerId = composer.composerId || composer.id || "";
-    return `Cursor Session ${composerId.slice(0, 8)}`;
+  private extractTitle(composer: ComposerData, messages: Message[] = []): string {
+    const explicit = composer.name || composer.title;
+    const messageTitle = firstUserMessageTitle(messages) ?? composer.text;
+    return resolveSessionTitle(explicit, messageTitle, null);
   }
 
   /** Count messages from bubbles */
@@ -772,6 +791,7 @@ export class CursorAgent extends BaseAgent {
       for (const row of rows) {
         try {
           const bubble = JSON.parse(row.value) as BubbleData;
+          if (isInternalBubble(bubble)) continue;
           const bubbleId = row.key.split(":").pop() || String(messageIndex);
 
           // Determine role: type 2 = assistant, otherwise user
@@ -800,7 +820,7 @@ export class CursorAgent extends BaseAgent {
           const parts: MessagePart[] = [];
 
           // Text content
-          const text = bubble.text?.trim();
+          const text = cleanInternalText(bubble.text ?? "");
           if (text) {
             parts.push({ type: "text", text, time_created: timestampMs });
           }
@@ -913,7 +933,7 @@ export class CursorAgent extends BaseAgent {
       type: "tool",
       tool: normalizedName,
       callID: toolData.toolCallId || "",
-      title: `Tool: ${toolName}`,
+      title: `Tool: ${normalizedName}`,
       state,
       time_created: timestampMs,
     };
@@ -968,13 +988,14 @@ export class CursorAgent extends BaseAgent {
         const timestampMs = extractTimestamp(chatMsg);
         const parts: MessagePart[] = [];
 
-        const text = chatMsg.text ?? "";
-        if (text.trim()) {
+        const text = cleanInternalText(chatMsg.text ?? "");
+        if (text) {
           parts.push({ type: "text", text, time_created: timestampMs });
         }
 
         if (role === "assistant" && Array.isArray(chatMsg.actions)) {
           for (const action of chatMsg.actions) {
+            if (isInternalEventType(action.type) || isInternalEventType(action.tool)) continue;
             const part = convertActionToPart(action as ActionEntry, timestampMs);
             if (part) parts.push(part);
           }

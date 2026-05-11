@@ -1,4 +1,22 @@
-import type { SessionHead, SessionData } from "../types/index.js";
+import type { SessionHead, SessionData, ParseSessionResult } from "../types/index.js";
+
+export type { ParseSessionResult };
+
+export function parsedSession<T>(session: T): ParseSessionResult<T> {
+  return { status: "parsed", data: session };
+}
+
+export function skippedSession<T>(reason: string): ParseSessionResult<T> {
+  return { status: "skipped", reason };
+}
+
+export function filteredSession<T>(reason: string): ParseSessionResult<T> {
+  return { status: "filtered", reason };
+}
+
+export function getParsedSession<T>(result: ParseSessionResult<T>): T | null {
+  return result.status === "parsed" ? result.data : null;
+}
 
 export interface SessionCacheMeta {
   id: string;

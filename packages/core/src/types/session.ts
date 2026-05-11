@@ -127,3 +127,8 @@ export interface SessionData {
   smart_tags?: SmartTag[];
   smart_tags_source_updated_at?: number;
 }
+
+export type ParseSessionResult<T> =
+  | { status: "parsed"; data: T }
+  | { status: "skipped"; reason?: string }
+  | { status: "filtered"; reason?: string };

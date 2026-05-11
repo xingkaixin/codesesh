@@ -267,6 +267,148 @@ describe("CodexAgent cache refresh", () => {
     expect(head?.model_usage).toEqual({ "gpt-5.5": 120, "gpt-5.4": 50 });
   });
 
+  it("falls back to untitled when no title source is available", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    const sessionFile = join(
+      tempDir,
+      "rollout-2026-04-20T10-00-00-019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa.jsonl",
+    );
+
+    writeFileSync(
+      sessionFile,
+      [
+        '{"timestamp":"2026-04-20T10:00:00Z","type":"session_meta","payload":{}}',
+        '{"timestamp":"2026-04-20T10:01:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}}',
+        "",
+      ].join("\n"),
+    );
+
+    const agent = new CodexAgent() as any;
+    agent.sessionIndexCache = new Map();
+
+    const head = agent.parseSessionHead(sessionFile);
+
+    expect(head?.title).toBe("Untitled Session");
+  });
+
+  it("filters internal-only sessions", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const sessionFile = join(
+      tempDir,
+      "rollout-2026-04-20T10-00-00-019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa.jsonl",
+    );
+
+    writeFileSync(
+      sessionFile,
+      [
+        '{"timestamp":"2026-04-20T10:00:00Z","type":"progress","payload":{"type":"progress"}}',
+        "",
+      ].join("\n"),
+    );
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+
+    expect(agent.scan()).toEqual([]);
+  });
+
+  it("cleans internal tag blocks from messages and tool output", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const sessionId = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+    const sessionFile = join(tempDir, `rollout-2026-04-20T10-00-00-${sessionId}.jsonl`);
+
+    writeFileSync(
+      sessionFile,
+      [
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:00Z",
+          type: "session_meta",
+          payload: { cwd: "/tmp/project" },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:01Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [
+              { type: "input_text", text: "<environment_context>noise</environment_context>" },
+            ],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:02Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content:
+              "Visible request\n<command-name>clear</command-name>\n<local-command-stdout>noise</local-command-stdout>",
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:03Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "assistant",
+            content: [
+              {
+                type: "output_text",
+                text: "Visible answer <system-reminder>hidden</system-reminder>",
+              },
+            ],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:04Z",
+          type: "response_item",
+          payload: {
+            type: "function_call",
+            call_id: "call-1",
+            name: "exec_command",
+            arguments: '{"cmd":"pwd"}',
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:05Z",
+          type: "response_item",
+          payload: {
+            type: "function_call_output",
+            call_id: "call-1",
+            output: "Visible output\n<local-command-stdout>/tmp/project</local-command-stdout>",
+          },
+        }),
+        "",
+      ].join("\n"),
+    );
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+
+    const [head] = agent.scan();
+    const data = agent.getSessionData(sessionId);
+    const toolPart = data.messages[1]?.parts.find((part) => part.type === "tool");
+
+    expect(head?.title).toBe("Visible request");
+    expect(data.messages[0]?.parts).toEqual([
+      expect.objectContaining({ type: "text", text: "Visible request" }),
+    ]);
+    expect(data.messages[1]?.parts[0]).toMatchObject({
+      type: "text",
+      text: "Visible answer",
+    });
+    expect(toolPart).toMatchObject({
+      type: "tool",
+      tool: "bash",
+      state: {
+        output: [expect.objectContaining({ type: "text", text: "Visible output" })],
+      },
+    });
+  });
+
   it("parses messages, plans, tools, outputs, and token usage", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
     tempDirs.push(tempDir);

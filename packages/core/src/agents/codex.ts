@@ -8,11 +8,24 @@ import {
   statSync,
 } from "node:fs";
 import { join, basename } from "node:path";
-import { BaseAgent, matchesScanWindow } from "./base.js";
+import {
+  BaseAgent,
+  filteredSession,
+  getParsedSession,
+  matchesScanWindow,
+  parsedSession,
+  skippedSession,
+} from "./base.js";
+import type { ParseSessionResult } from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
 import { parseJsonlLines } from "../utils/jsonl.js";
-import { resolveSessionTitle, basenameTitle } from "../utils/title-fallback.js";
+import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
+import {
+  cleanInternalText,
+  cleanParsedMessages,
+  isInternalEventType,
+} from "../utils/session-normalization.js";
 import { perf } from "../utils/perf.js";
 import { estimateTokenCost } from "../utils/cost.js";
 
@@ -87,15 +100,6 @@ function extractModelName(raw: unknown): string | null {
 function extractCachedInputTokens(usage: Record<string, unknown> | undefined): number {
   if (!usage) return 0;
   return Number(usage["cached_input_tokens"] ?? usage["cache_read_input_tokens"] ?? 0);
-}
-
-// ---------------------------------------------------------------------------
-// Title helpers
-// ---------------------------------------------------------------------------
-
-function normalizeTitleText(text: string): string {
-  const line = text.split("\n").find((l) => l.trim());
-  return line?.trim().slice(0, 80) || "";
 }
 
 // ---------------------------------------------------------------------------
@@ -301,7 +305,7 @@ export class CodexAgent extends BaseAgent {
     for (const file of files) {
       try {
         const parseMarker = perf.start(`parseSessionHead:${basename(file)}`);
-        const head = this.parseSessionHead(file, options);
+        const head = getParsedSession(this.parseSessionHeadResult(file, options));
         perf.end(parseMarker);
 
         if (head) {
@@ -591,6 +595,7 @@ export class CodexAgent extends BaseAgent {
     if (pendingPlan && currentAssistantIndex !== null) {
       messages[currentAssistantIndex]!.parts.push(pendingPlan);
     }
+    const cleanedMessages = cleanParsedMessages(messages);
 
     return {
       id: meta.id,
@@ -600,14 +605,14 @@ export class CodexAgent extends BaseAgent {
       time_created: meta.createdAt,
       time_updated: meta.updatedAt,
       stats: {
-        message_count: messages.length,
+        message_count: cleanedMessages.length,
         total_input_tokens: totalInputTokens,
         total_output_tokens: totalOutputTokens,
         total_cache_read_tokens: totalCacheReadTokens || undefined,
         total_cost: totalCost,
         cost_source: totalCost > 0 ? "estimated" : undefined,
       },
-      messages,
+      messages: cleanedMessages,
     };
   }
 
@@ -683,13 +688,20 @@ export class CodexAgent extends BaseAgent {
   }
 
   private parseSessionHead(filePath: string, options?: AgentScanOptions): SessionHead | null {
+    return getParsedSession(this.parseSessionHeadResult(filePath, options));
+  }
+
+  private parseSessionHeadResult(
+    filePath: string,
+    options?: AgentScanOptions,
+  ): ParseSessionResult<SessionHead> {
     if (options?.fast) {
-      return this.parseFastSessionHead(filePath);
+      return this.parseFastSessionHeadResult(filePath);
     }
 
     const content = readFileSync(filePath, "utf-8");
     const lines = content.split("\n").filter((l) => l.trim());
-    if (lines.length === 0) return null;
+    if (lines.length === 0) return skippedSession("empty file");
 
     const sessionId = extractSessionId(filePath);
 
@@ -697,7 +709,7 @@ export class CodexAgent extends BaseAgent {
     try {
       firstRecord = JSON.parse(lines[0]!);
     } catch {
-      return null;
+      return skippedSession("malformed first record");
     }
 
     const payload = (firstRecord["payload"] ?? {}) as Record<string, unknown>;
@@ -731,17 +743,22 @@ export class CodexAgent extends BaseAgent {
 
     const COUNTED_TYPES = new Set(["message", "function_call", "function_call_output"]);
 
+    let hasNonInternalRecord = false;
+
     for (const line of lines) {
       try {
         const data = JSON.parse(line);
         const recordType = String(data["type"] ?? "");
+        const payload = (data["payload"] ?? {}) as Record<string, unknown>;
+        const payloadType = String(payload["type"] ?? "");
+        if (isInternalEventType(recordType) || isInternalEventType(payloadType)) continue;
+        hasNonInternalRecord = true;
         const recordTs =
           parseTimestampMs(data) ||
           parseTimestampMs((data["payload"] ?? {}) as Record<string, unknown>);
         if (recordTs > updatedAt) updatedAt = recordTs;
 
         if (recordType === "session_meta" || recordType === "turn_context") {
-          const payload = (data["payload"] ?? {}) as Record<string, unknown>;
           const nextModel = extractModelName(payload["model"]);
           if (nextModel) {
             activeModel = nextModel;
@@ -751,7 +768,7 @@ export class CodexAgent extends BaseAgent {
         }
 
         if (recordType === "response_item") {
-          const p = (data["payload"] ?? {}) as Record<string, unknown>;
+          const p = payload;
           const pType = String(p["type"] ?? "");
           if (COUNTED_TYPES.has(pType)) {
             messageCount++;
@@ -823,9 +840,11 @@ export class CodexAgent extends BaseAgent {
       }
     }
 
+    if (!hasNonInternalRecord) return filteredSession("internal events only");
+
     const directory = payload["cwd"] ? String(payload["cwd"]) : "";
 
-    return {
+    return parsedSession({
       id: sessionId,
       slug: `codex/${sessionId}`,
       title,
@@ -841,13 +860,17 @@ export class CodexAgent extends BaseAgent {
         cost_source: totalCost > 0 ? "estimated" : undefined,
       },
       model_usage: Object.keys(modelUsageMap).length > 0 ? modelUsageMap : undefined,
-    };
+    });
   }
 
   private parseFastSessionHead(filePath: string): SessionHead | null {
+    return getParsedSession(this.parseFastSessionHeadResult(filePath));
+  }
+
+  private parseFastSessionHeadResult(filePath: string): ParseSessionResult<SessionHead> {
     const prefix = this.readFilePrefix(filePath);
     const lines = prefix.split("\n").filter((l) => l.trim());
-    if (lines.length === 0) return null;
+    if (lines.length === 0) return skippedSession("empty file");
 
     const sessionId = extractSessionId(filePath);
 
@@ -855,7 +878,7 @@ export class CodexAgent extends BaseAgent {
     try {
       firstRecord = JSON.parse(lines[0]!);
     } catch {
-      return null;
+      return skippedSession("malformed first record");
     }
 
     const payload = (firstRecord["payload"] ?? {}) as Record<string, unknown>;
@@ -867,7 +890,7 @@ export class CodexAgent extends BaseAgent {
     const directoryTitle = basenameTitle(directory || null);
     const title = resolveSessionTitle(indexTitle, messageTitle, directoryTitle);
 
-    return {
+    return parsedSession({
       id: sessionId,
       slug: `codex/${sessionId}`,
       title,
@@ -880,37 +903,34 @@ export class CodexAgent extends BaseAgent {
         total_output_tokens: 0,
         total_cost: 0,
       },
-    };
+    });
   }
 
   private extractTitleFromLines(lines: string[]): string | null {
-    let userMessageCount = 0;
     for (const line of lines.slice(0, 20)) {
       try {
         const data = JSON.parse(line);
         const recordType = String(data["type"] ?? "");
-        if (recordType !== "response_item") continue;
+        if (recordType !== "response_item" || isInternalEventType(recordType)) continue;
 
         const payload = (data["payload"] ?? {}) as Record<string, unknown>;
         const pType = String(payload["type"] ?? "");
-        if (pType !== "message") continue;
+        if (pType !== "message" || isInternalEventType(pType)) continue;
         if (String(payload["role"] ?? "") !== "user") continue;
 
-        // Skip the first user message (context injection); use the second
-        userMessageCount++;
-        if (userMessageCount < 2) continue;
-
         const content = payload["content"];
+        let text: string | null = null;
         if (Array.isArray(content)) {
-          const texts = content
+          text = content
             .filter((item) => typeof item === "object" && item !== null && "text" in item)
             .map((item) => String((item as Record<string, unknown>)["text"] ?? ""))
             .join(" ");
-          return normalizeTitleText(texts);
+        } else if (typeof content === "string") {
+          text = content;
         }
-        if (typeof content === "string") {
-          return normalizeTitleText(content);
-        }
+        if (!text || isDeveloperLikeUserMessage(text)) continue;
+        const title = normalizeTitleText(text);
+        if (title) return title;
       } catch {
         // skip
       }
@@ -934,6 +954,9 @@ export class CodexAgent extends BaseAgent {
     pendingPlan: MessagePart | null;
   } {
     const recordType = String(data["type"] ?? "");
+    if (isInternalEventType(recordType)) {
+      return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
+    }
 
     // Skip non-response records
     if (recordType === "session_meta" || recordType === "event_msg") {
@@ -946,6 +969,9 @@ export class CodexAgent extends BaseAgent {
 
     const payload = (data["payload"] ?? {}) as Record<string, unknown>;
     const payloadType = String(payload["type"] ?? "");
+    if (isInternalEventType(payloadType)) {
+      return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
+    }
     const timestampMs = parseTimestampMs(data) || parseTimestampMs(payload);
 
     switch (payloadType) {
@@ -1059,7 +1085,7 @@ export class CodexAgent extends BaseAgent {
     }
 
     // Build text part (strip the proposed plan tags)
-    const displayText = fullText.replace(PROPOSED_PLAN_PATTERN, "").trim();
+    const displayText = cleanInternalText(fullText.replace(PROPOSED_PLAN_PATTERN, ""));
     if (!displayText) {
       return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
     }
@@ -1117,17 +1143,18 @@ export class CodexAgent extends BaseAgent {
           .join(" ")
       : String(content ?? "");
 
-    if (!text.trim()) {
+    const visibleText = cleanInternalText(text);
+    if (!visibleText) {
       return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
     }
 
     // Skip injected developer/system context messages
-    if (isDeveloperLikeUserMessage(text)) {
+    if (isDeveloperLikeUserMessage(visibleText)) {
       return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
     }
 
     // Check for plan approval
-    if (text.trimStart().startsWith(PLAN_APPROVAL_PREFIX)) {
+    if (visibleText.trimStart().startsWith(PLAN_APPROVAL_PREFIX)) {
       // Finalize pending plan by attaching it to current assistant
       if (pendingPlan && currentAssistantIndex !== null) {
         messages[currentAssistantIndex]!.parts.push(pendingPlan);
@@ -1140,7 +1167,7 @@ export class CodexAgent extends BaseAgent {
           messageId: "",
           role: "user",
           timestampMs,
-          parts: [{ type: "text", text: text.trim(), time_created: timestampMs }],
+          parts: [{ type: "text", text: visibleText, time_created: timestampMs }],
         }),
       );
 
@@ -1150,7 +1177,7 @@ export class CodexAgent extends BaseAgent {
     }
 
     // Check for subagent notification
-    const subagentMatch = text.match(SUBAGENT_NOTIFICATION_PATTERN);
+    const subagentMatch = visibleText.match(SUBAGENT_NOTIFICATION_PATTERN);
     if (subagentMatch) {
       try {
         const notifPayload = JSON.parse(subagentMatch[1]!) as Record<string, unknown>;
@@ -1191,7 +1218,7 @@ export class CodexAgent extends BaseAgent {
         messageId: "",
         role: "user",
         timestampMs,
-        parts: [{ type: "text", text: text.trim(), time_created: timestampMs }],
+        parts: [{ type: "text", text: visibleText, time_created: timestampMs }],
       }),
     );
 
@@ -1347,8 +1374,8 @@ export class CodexAgent extends BaseAgent {
     const location = pendingToolCalls.get(callId);
     if (!location) return;
 
-    const outputText = String(payload["output"] ?? "");
-    const outputParts: MessagePart[] = outputText.trim()
+    const outputText = cleanInternalText(String(payload["output"] ?? ""));
+    const outputParts: MessagePart[] = outputText
       ? [{ type: "text", text: outputText, time_created: timestampMs }]
       : [];
 
@@ -1449,8 +1476,8 @@ export class CodexAgent extends BaseAgent {
     const location = pendingToolCalls.get(callId);
     if (!location) return;
 
-    const outputText = String(payload["output"] ?? "");
-    const outputParts: MessagePart[] = outputText.trim()
+    const outputText = cleanInternalText(String(payload["output"] ?? ""));
+    const outputParts: MessagePart[] = outputText
       ? [{ type: "text", text: outputText, time_created: timestampMs }]
       : [];
 
