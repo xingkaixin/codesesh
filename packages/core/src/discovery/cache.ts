@@ -6,14 +6,17 @@ import { existsSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type {
+  FileActivityKind,
   Message,
   MessagePart,
   ProjectGroup,
   ProjectIdentityKind,
+  SessionFileActivity,
   SessionData,
   SessionHead,
 } from "../types/index.js";
 import { buildProjectGroups, computeIdentity, realFs } from "../projects/index.js";
+import { extractSessionFileActivity } from "../utils/file-activity.js";
 import {
   columnExists,
   getUserVersion,
@@ -25,7 +28,7 @@ import {
   type SQLiteDatabase,
 } from "../utils/sqlite.js";
 
-const CACHE_SCHEMA_VERSION = 7;
+const CACHE_SCHEMA_VERSION = 8;
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const CACHE_FILENAME = "codesesh.db";
 const LEGACY_CACHE_FILENAME = "scan-cache.json";
@@ -112,6 +115,20 @@ interface MessageCountRow extends DatabaseRow {
   value?: number;
 }
 
+interface MessageBackfillRow extends DatabaseRow {
+  message_id?: string;
+  role?: Message["role"];
+  time_created?: number;
+  time_completed?: number | null;
+  agent?: string | null;
+  mode?: string | null;
+  model?: string | null;
+  provider?: string | null;
+  parts_json?: string;
+  subagent_id?: string | null;
+  nickname?: string | null;
+}
+
 interface SearchResultRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
@@ -132,6 +149,14 @@ interface SearchResultRow extends DatabaseRow {
   cost_source?: string | null;
   total_tokens?: number | null;
   snippet?: string | null;
+}
+
+interface FileActivityRow extends SearchResultRow {
+  project_identity_key?: string;
+  path?: string;
+  kind?: FileActivityKind;
+  count?: number;
+  latest_time?: number;
 }
 
 interface ProjectGroupRow extends DatabaseRow {
@@ -198,6 +223,22 @@ export interface SearchOptions {
   from?: number;
   to?: number;
   limit?: number;
+}
+
+export interface FileActivityOptions {
+  agent?: string;
+  sessionId?: string;
+  projectKey?: string;
+  cwd?: string;
+  path?: string;
+  kind?: FileActivityKind;
+  from?: number;
+  to?: number;
+  limit?: number;
+}
+
+export interface FileActivityResult extends SessionFileActivity {
+  session: SessionHead;
 }
 
 function getCacheDir(): string {
@@ -318,6 +359,33 @@ function createSessionTables(db: SQLiteDatabase): void {
 
     CREATE INDEX IF NOT EXISTS idx_messages_session
       ON messages(agent_name, session_id, message_index);
+  `);
+}
+
+function createFileActivityTables(db: SQLiteDatabase): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_file_activity (
+      agent_name TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      project_identity_key TEXT NOT NULL,
+      path TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      count INTEGER NOT NULL,
+      latest_time INTEGER NOT NULL,
+      PRIMARY KEY (agent_name, session_id, project_identity_key, path, kind),
+      FOREIGN KEY (agent_name, session_id)
+        REFERENCES sessions(agent_name, session_id)
+        ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_file_activity_project_latest
+      ON session_file_activity(project_identity_key, latest_time);
+
+    CREATE INDEX IF NOT EXISTS idx_file_activity_path
+      ON session_file_activity(path);
+
+    CREATE INDEX IF NOT EXISTS idx_file_activity_kind
+      ON session_file_activity(kind);
   `);
 }
 
@@ -460,6 +528,7 @@ function recreateProjectGroupsView(db: SQLiteDatabase): void {
 function createLatestCacheSchema(db: SQLiteDatabase): void {
   createCacheTables(db);
   createSessionTables(db);
+  createFileActivityTables(db);
   createSearchTables(db);
   createProjectTables(db);
 }
@@ -630,6 +699,37 @@ function upsertSessionRow(
   );
 }
 
+function prepareInsertFileActivity(db: SQLiteDatabase): SQLiteStatement {
+  return db.prepare(`
+    INSERT INTO session_file_activity(
+      agent_name,
+      session_id,
+      project_identity_key,
+      path,
+      kind,
+      count,
+      latest_time
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+}
+
+function writeFileActivityRows(
+  statement: SQLiteStatement,
+  activities: SessionFileActivity[],
+): void {
+  for (const activity of activities) {
+    statement.run(
+      activity.agent_name,
+      activity.session_id,
+      activity.project_identity_key,
+      activity.path,
+      activity.kind,
+      activity.count,
+      activity.latest_time,
+    );
+  }
+}
+
 function sessionFromRow(row: SessionRow): SessionHead {
   const session: SessionHead = {
     id: String(row.session_id),
@@ -711,6 +811,9 @@ function readLegacyCacheVersion(db: SQLiteDatabase): number {
 }
 
 function inferCacheSchemaVersion(db: SQLiteDatabase): number {
+  if (tableExists(db, "session_file_activity")) {
+    return 8;
+  }
   if (tableExists(db, "sessions") || tableExists(db, "messages")) {
     return 7;
   }
@@ -746,6 +849,7 @@ function hasAnyCacheSchema(db: SQLiteDatabase): boolean {
     "cached_sessions",
     "sessions",
     "messages",
+    "session_file_activity",
     "session_documents",
     "session_documents_fts",
     "project_sessions",
@@ -930,6 +1034,82 @@ function backfillStructuredSessions(db: SQLiteDatabase): void {
   }
 }
 
+function messageFromBackfillRow(row: MessageBackfillRow): Message {
+  const role = row.role === "assistant" || row.role === "tool" ? row.role : "user";
+  return {
+    id: String(row.message_id ?? ""),
+    role,
+    agent: row.agent ?? null,
+    time_created: Number(row.time_created ?? 0),
+    time_completed: row.time_completed == null ? null : Number(row.time_completed),
+    mode: row.mode ?? null,
+    model: row.model ?? null,
+    provider: row.provider ?? null,
+    parts: JSON.parse(String(row.parts_json ?? "[]")) as MessagePart[],
+    subagent_id: row.subagent_id ?? undefined,
+    nickname: row.nickname ?? undefined,
+  };
+}
+
+function backfillFileActivity(db: SQLiteDatabase): void {
+  createFileActivityTables(db);
+  if (!tableExists(db, "sessions") || !tableExists(db, "messages")) {
+    return;
+  }
+
+  const sessions = db
+    .prepare(
+      `
+        SELECT agent_name, session_id, project_identity_key
+        FROM sessions
+        ORDER BY agent_name, session_id
+      `,
+    )
+    .all() as SessionRow[];
+  const loadMessages = db.prepare(`
+    SELECT
+      message_id,
+      role,
+      time_created,
+      time_completed,
+      agent,
+      mode,
+      model,
+      provider,
+      parts_json,
+      subagent_id,
+      nickname
+    FROM messages
+    WHERE agent_name = ? AND session_id = ?
+    ORDER BY message_index
+  `);
+  const deleteActivity = db.prepare(
+    "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
+  );
+  const insertActivity = prepareInsertFileActivity(db);
+
+  for (const session of sessions) {
+    if (!session.agent_name || !session.session_id || !session.project_identity_key) {
+      continue;
+    }
+
+    try {
+      const rows = loadMessages.all(session.agent_name, session.session_id) as MessageBackfillRow[];
+      const messages = rows.map((row) => messageFromBackfillRow(row));
+      const activities = extractSessionFileActivity(
+        String(session.agent_name),
+        String(session.session_id),
+        String(session.project_identity_key),
+        messages,
+      );
+      deleteActivity.run(session.agent_name, session.session_id);
+      writeFileActivityRows(insertActivity, activities);
+    } catch {
+      continue;
+    }
+  }
+}
+
 function invalidateSearchContentHashes(db: SQLiteDatabase): void {
   if (
     tableExists(db, "session_documents") &&
@@ -1000,6 +1180,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       "cached_sessions",
       "sessions",
       "messages",
+      "session_file_activity",
       "session_documents",
       "project_sessions",
     ],
@@ -1017,11 +1198,11 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
         },
       },
       { version: 7, migrate: backfillStructuredSessions },
+      { version: 8, migrate: backfillFileActivity },
     ],
   });
 
   createLatestCacheSchema(db);
-  ensureFtsConsistency(db);
 
   if (getUserVersion(db) <= CACHE_SCHEMA_VERSION) {
     setCacheSchemaVersion(db);
@@ -1273,6 +1454,9 @@ export function saveCachedSessions(
     const deleteSearchDocument = db.prepare(
       "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
     );
+    const deleteFileActivity = db.prepare(
+      "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
+    );
     const deleteProjectSessions = db.prepare("DELETE FROM project_sessions WHERE agent_name = ?");
     const upsertAgent = db.prepare(`
       INSERT INTO agent_cache(agent_name, timestamp)
@@ -1311,6 +1495,7 @@ export function saveCachedSessions(
         const sessionId = String(row.session_id);
         if (!sessionIds.has(sessionId)) {
           deleteSearchDocument.run(agentName, sessionId);
+          deleteFileActivity.run(agentName, sessionId);
           deleteSession.run(agentName, sessionId);
         }
       }
@@ -1356,6 +1541,7 @@ export function clearCache(): void {
       DELETE FROM agent_cache;
       DELETE FROM cached_sessions;
       DELETE FROM session_documents;
+      DELETE FROM session_file_activity;
       DELETE FROM messages;
       DELETE FROM sessions;
       DELETE FROM project_sessions;
@@ -1409,6 +1595,7 @@ export function syncSessionSearchIndex(
   options: SearchIndexSyncOptions = {},
 ): SearchIndexSyncResult | null {
   return withCacheDb((db) => {
+    ensureFtsConsistency(db);
     const startedAt = performance.now();
     const existingRows = db
       .prepare(
@@ -1445,11 +1632,22 @@ export function syncSessionSearchIndex(
         try {
           const data = loadSessionData(session.id);
           const messages = normalizeMessages(data);
+          const identity =
+            session.project_identity ??
+            data.project_identity ??
+            computeIdentity(session.directory, realFs);
           return {
             session,
+            identity,
             messages,
             contentText: buildSessionContentFromMessages(data.title ?? session.title, messages),
             contentHash: sessionContentHash(session),
+            fileActivity: extractSessionFileActivity(
+              agentName,
+              session.id,
+              identity.key,
+              data.messages,
+            ),
           };
         } catch {
           return null;
@@ -1463,7 +1661,11 @@ export function syncSessionSearchIndex(
     const deleteMessages = db.prepare(
       "DELETE FROM messages WHERE agent_name = ? AND session_id = ? AND message_index >= ?",
     );
+    const deleteFileActivity = db.prepare(
+      "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
+    );
     const upsertIndexedSession = prepareUpsertIndexedSession(db);
+    const insertFileActivity = prepareInsertFileActivity(db);
     const upsertMessage = db.prepare(`
       INSERT INTO messages(
         agent_name,
@@ -1539,13 +1741,12 @@ export function syncSessionSearchIndex(
     const writeRows = () => {
       for (const sessionId of toDelete) {
         deleteRow.run(agentName, sessionId);
+        deleteFileActivity.run(agentName, sessionId);
         deleteMessages.run(agentName, sessionId, 0);
       }
 
       for (const entry of loaded) {
         const activityTime = entry.session.time_updated ?? entry.session.time_created;
-        const identity =
-          entry.session.project_identity ?? computeIdentity(entry.session.directory, realFs);
         upsertSessionRow(
           upsertIndexedSession,
           agentName,
@@ -1554,6 +1755,8 @@ export function syncSessionSearchIndex(
           sessionSortIndexMap.get(entry.session.id) ?? 0,
           null,
         );
+        deleteFileActivity.run(agentName, entry.session.id);
+        writeFileActivityRows(insertFileActivity, entry.fileActivity);
         for (const message of entry.messages) {
           upsertMessage.run(
             agentName,
@@ -1584,9 +1787,9 @@ export function syncSessionSearchIndex(
           entry.session.slug,
           entry.session.title,
           entry.session.directory,
-          identity.kind,
-          identity.key,
-          identity.displayName,
+          entry.identity.kind,
+          entry.identity.key,
+          entry.identity.displayName,
           entry.session.time_created,
           entry.session.time_updated ?? null,
           activityTime,
@@ -1627,6 +1830,39 @@ export function syncSessionSearchIndex(
   });
 }
 
+function sessionHeadFromSearchRow(row: SearchResultRow): SessionHead {
+  return {
+    id: String(row.session_id),
+    slug: String(row.slug),
+    title: String(row.title),
+    directory: String(row.directory),
+    project_identity: row.project_identity_key
+      ? {
+          kind: row.project_identity_kind ?? "path",
+          key: String(row.project_identity_key),
+          displayName: String(row.project_display_name ?? ""),
+        }
+      : undefined,
+    time_created: Number(row.time_created),
+    time_updated: row.time_updated == null ? undefined : Number(row.time_updated),
+    stats: {
+      message_count: Number(row.message_count ?? 0),
+      total_input_tokens: Number(row.total_input_tokens ?? 0),
+      total_output_tokens: Number(row.total_output_tokens ?? 0),
+      total_cache_read_tokens:
+        row.total_cache_read_tokens == null ? undefined : Number(row.total_cache_read_tokens),
+      total_cache_create_tokens:
+        row.total_cache_create_tokens == null ? undefined : Number(row.total_cache_create_tokens),
+      total_cost: Number(row.total_cost ?? 0),
+      cost_source:
+        row.cost_source == null
+          ? undefined
+          : (String(row.cost_source) as SessionHead["stats"]["cost_source"]),
+      total_tokens: row.total_tokens == null ? undefined : Number(row.total_tokens),
+    },
+  };
+}
+
 export function searchSessions(query: string, options: SearchOptions = {}): SearchResult[] {
   const normalizedQuery = query.trim();
   if (!normalizedQuery || !hasCacheStorage()) {
@@ -1636,6 +1872,7 @@ export function searchSessions(query: string, options: SearchOptions = {}): Sear
   const ftsQuery = toFtsQuery(normalizedQuery);
 
   const results = withCacheDb((db) => {
+    ensureFtsConsistency(db);
     const rows = db
       .prepare(
         `
@@ -1690,43 +1927,172 @@ export function searchSessions(query: string, options: SearchOptions = {}): Sear
 
     return rows.map((row) => ({
       agentName: String(row.agent_name),
-      session: {
-        id: String(row.session_id),
-        slug: String(row.slug),
-        title: String(row.title),
-        directory: String(row.directory),
-        project_identity: row.project_identity_key
-          ? {
-              kind: row.project_identity_kind ?? "path",
-              key: String(row.project_identity_key),
-              displayName: String(row.project_display_name ?? ""),
-            }
-          : undefined,
-        time_created: Number(row.time_created),
-        time_updated: row.time_updated == null ? undefined : Number(row.time_updated),
-        stats: {
-          message_count: Number(row.message_count ?? 0),
-          total_input_tokens: Number(row.total_input_tokens ?? 0),
-          total_output_tokens: Number(row.total_output_tokens ?? 0),
-          total_cache_read_tokens:
-            row.total_cache_read_tokens == null ? undefined : Number(row.total_cache_read_tokens),
-          total_cache_create_tokens:
-            row.total_cache_create_tokens == null
-              ? undefined
-              : Number(row.total_cache_create_tokens),
-          total_cost: Number(row.total_cost ?? 0),
-          cost_source:
-            row.cost_source == null
-              ? undefined
-              : (String(row.cost_source) as SessionHead["stats"]["cost_source"]),
-          total_tokens: row.total_tokens == null ? undefined : Number(row.total_tokens),
-        },
-      },
+      session: sessionHeadFromSearchRow(row),
       snippet: String(row.snippet ?? ""),
     }));
   });
 
   return results ?? [];
+}
+
+function normalizeFilePathSearch(value: string): string {
+  return value.trim().replace(/^"|"$/g, "");
+}
+
+function fileActivityFilters(options: FileActivityOptions): {
+  projectKey: string | null;
+  cwdKey: string | null;
+  cwdLike: string | null;
+  pathLike: string | null;
+} {
+  const path = options.path ? normalizeFilePathSearch(options.path) : "";
+  return {
+    projectKey: options.projectKey ?? null,
+    cwdKey: options.cwd ? computeIdentity(options.cwd, realFs).key : null,
+    cwdLike: options.cwd ? `%${options.cwd.toLowerCase()}%` : null,
+    pathLike: path ? `%${path.toLowerCase()}%` : null,
+  };
+}
+
+function fileActivityFromRow(row: FileActivityRow): SessionFileActivity {
+  return {
+    agent_name: String(row.agent_name),
+    session_id: String(row.session_id),
+    project_identity_key: String(row.project_identity_key ?? ""),
+    path: String(row.path ?? ""),
+    kind: (row.kind ?? "read") as FileActivityKind,
+    count: Number(row.count ?? 0),
+    latest_time: Number(row.latest_time ?? 0),
+  };
+}
+
+export function listFileActivity(options: FileActivityOptions = {}): FileActivityResult[] {
+  if (!hasCacheStorage()) {
+    return [];
+  }
+
+  const filters = fileActivityFilters(options);
+  const rows = withCacheDb(
+    (db) =>
+      db
+        .prepare(
+          `
+          SELECT
+            fa.agent_name,
+            fa.session_id,
+            fa.project_identity_key,
+            fa.path,
+            fa.kind,
+            fa.count,
+            fa.latest_time,
+            s.slug,
+            s.title,
+            s.directory,
+            s.project_identity_kind,
+            s.project_display_name,
+            s.time_created,
+            s.time_updated,
+            s.message_count,
+            s.total_input_tokens,
+            s.total_output_tokens,
+            s.total_cache_read_tokens,
+            s.total_cache_create_tokens,
+            s.total_cost,
+            s.cost_source,
+            s.total_tokens
+          FROM session_file_activity fa
+          JOIN sessions s ON s.agent_name = fa.agent_name AND s.session_id = fa.session_id
+          WHERE (? IS NULL OR fa.agent_name = ?)
+            AND (? IS NULL OR fa.session_id = ?)
+            AND (? IS NULL OR fa.project_identity_key = ?)
+            AND (? IS NULL OR s.project_identity_key = ? OR LOWER(s.directory) LIKE ?)
+            AND (? IS NULL OR LOWER(fa.path) LIKE ?)
+            AND (? IS NULL OR fa.kind = ?)
+            AND (? IS NULL OR fa.latest_time >= ?)
+            AND (? IS NULL OR fa.latest_time <= ?)
+          ORDER BY fa.latest_time DESC, fa.count DESC, fa.path
+          LIMIT ?
+        `,
+        )
+        .all(
+          options.agent ?? null,
+          options.agent ?? null,
+          options.sessionId ?? null,
+          options.sessionId ?? null,
+          filters.projectKey,
+          filters.projectKey,
+          filters.cwdKey,
+          filters.cwdKey,
+          filters.cwdLike,
+          filters.pathLike,
+          filters.pathLike,
+          options.kind ?? null,
+          options.kind ?? null,
+          options.from ?? null,
+          options.from ?? null,
+          options.to ?? null,
+          options.to ?? null,
+          options.limit ?? 50,
+        ) as FileActivityRow[],
+  );
+
+  return (rows ?? []).map((row) => ({
+    ...fileActivityFromRow(row),
+    session: sessionHeadFromSearchRow(row),
+  }));
+}
+
+export function listSessionFileActivity(
+  agentName: string,
+  sessionId: string,
+): SessionFileActivity[] {
+  return listFileActivity({ agent: agentName, sessionId, limit: 500 }).map(
+    ({ session: _session, ...activity }) => activity,
+  );
+}
+
+function highlightFilePath(path: string, query: string): string {
+  const needle = normalizeFilePathSearch(query);
+  if (!needle) return path;
+  const lower = path.toLowerCase();
+  const index = lower.indexOf(needle.toLowerCase());
+  if (index < 0) return path;
+  return `${path.slice(0, index)}<mark>${path.slice(index, index + needle.length)}</mark>${path.slice(
+    index + needle.length,
+  )}`;
+}
+
+export function searchFileActivitySessions(
+  query: string,
+  options: SearchOptions = {},
+): SearchResult[] {
+  const path = normalizeFilePathSearch(query);
+  if (!path) return [];
+
+  const rows = listFileActivity({
+    agent: options.agent,
+    cwd: options.cwd,
+    path,
+    from: options.from,
+    to: options.to,
+    limit: (options.limit ?? 50) * 3,
+  });
+  const seen = new Set<string>();
+  const results: SearchResult[] = [];
+
+  for (const row of rows) {
+    const key = `${row.agent_name}/${row.session_id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    results.push({
+      agentName: row.agent_name,
+      session: row.session,
+      snippet: `${row.kind} ${highlightFilePath(row.path, path)} · ${row.count} events`,
+    });
+    if (results.length >= (options.limit ?? 50)) break;
+  }
+
+  return results;
 }
 
 export function listCachedProjectGroups(sessions?: SessionHead[]): ProjectGroup[] {

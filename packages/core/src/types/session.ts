@@ -22,6 +22,27 @@ export type SmartTag =
   | "exploration"
   | "planning";
 
+export type FileActivityKind = "read" | "edit" | "write" | "delete";
+
+export interface SessionFileActivity {
+  agent_name: string;
+  session_id: string;
+  project_identity_key: string;
+  path: string;
+  kind: FileActivityKind;
+  count: number;
+  latest_time: number;
+}
+
+export interface SessionFileActivityOccurrence {
+  path: string;
+  kind: FileActivityKind;
+  time: number;
+  tool_label: string;
+  message_index: number;
+  tool_index: number;
+}
+
 export type ProjectIdentityKind =
   | "git_remote"
   | "git_common_dir"
@@ -126,6 +147,7 @@ export interface SessionData {
   messages: Message[];
   smart_tags?: SmartTag[];
   smart_tags_source_updated_at?: number;
+  file_activity?: SessionFileActivity[];
 }
 
 export type ParseSessionResult<T> =

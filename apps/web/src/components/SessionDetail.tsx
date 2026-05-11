@@ -24,7 +24,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { ModelConfig } from "../config";
 import { cn } from "../lib/utils";
-import type { Message, MessagePart, SessionData } from "../lib/api";
+import type { Message, MessagePart, SessionData, SessionFileActivity } from "../lib/api";
 import { InteractiveReceipt } from "./InteractiveReceipt";
 import { MarkdownContent } from "./MarkdownContent";
 import {
@@ -501,6 +501,48 @@ function buildFileChangeSummary(messages: Message[]): {
       delete: summarizeFileChangeItems(fileChanges.delete),
     },
   };
+}
+
+function buildFileChangeSummaryFromActivity(
+  activity: SessionFileActivity[] | undefined,
+  anchorSummary: FileChangeSummary,
+): FileChangeSummary {
+  if (!activity) return anchorSummary;
+
+  const fromActivity: FileChangeSummary = {
+    read: [],
+    edit: [],
+    write: [],
+    delete: [],
+  };
+  const anchorMap = new Map<string, FileChangeSummaryItem>();
+
+  for (const kind of ["read", "edit", "write", "delete"] as const) {
+    for (const item of anchorSummary[kind]) {
+      anchorMap.set(`${kind}\0${item.path}`, item);
+    }
+  }
+
+  for (const item of activity) {
+    const anchors = anchorMap.get(`${item.kind}\0${item.path}`);
+    fromActivity[item.kind].push({
+      path: item.path,
+      count: item.count,
+      latestTime: item.latest_time,
+      latestAnchorId: anchors?.latestAnchorId ?? "",
+      toolLabel: anchors?.toolLabel ?? item.kind,
+      anchors: anchors?.anchors ?? [],
+    });
+  }
+
+  for (const kind of ["read", "edit", "write", "delete"] as const) {
+    fromActivity[kind].sort((a, b) => {
+      if (b.latestTime !== a.latestTime) return b.latestTime - a.latestTime;
+      return a.path.localeCompare(b.path);
+    });
+  }
+
+  return fromActivity;
 }
 
 function formatTrackedPath(path: string, baseDirectory: string) {
@@ -1456,9 +1498,13 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
     () => normalizedMessages.filter((msg) => hasVisibleContent(msg)),
     [normalizedMessages],
   );
-  const { toolAnchorIds, summary: fileChangeSummary } = useMemo(
+  const { toolAnchorIds, summary: localFileChangeSummary } = useMemo(
     () => buildFileChangeSummary(visibleMessages),
     [visibleMessages],
+  );
+  const fileChangeSummary = useMemo(
+    () => buildFileChangeSummaryFromActivity(session.file_activity, localFileChangeSummary),
+    [session.file_activity, localFileChangeSummary],
   );
   const toc = useMemo(() => buildSessionDetailToc(visibleMessages), [visibleMessages]);
   const [selectedFilters, setSelectedFilters] = useState<Set<string>>(() => new Set(toc.filterIds));
@@ -1709,7 +1755,7 @@ function FileTrackerSection({
         <div className="space-y-1 border-t border-[var(--console-border)] p-2">
           {items.map((item) => (
             <FileTrackerItem
-              key={`${item.path}:${item.latestAnchorId}`}
+              key={`${item.path}:${item.latestAnchorId || item.latestTime}`}
               item={item}
               baseDirectory={baseDirectory}
             />

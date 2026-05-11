@@ -9,17 +9,22 @@ import type {
 import {
   BookmarkStorageUnavailableError,
   deleteBookmark,
+  extractSessionFileActivity,
   getAgentInfoMap,
   classifySessionTags,
   computeIdentity,
   getSmartTagSourceTimestamp,
   importBookmarks,
+  listFileActivity,
   listCachedProjectGroups,
   listBookmarks,
   realFs,
+  searchFileActivitySessions,
   searchSessions,
   syncSessionSearchIndex,
   upsertBookmark,
+  type FileActivityKind,
+  type FileActivityResult,
 } from "@codesesh/core";
 import { appLogger, logSearchIndexSync } from "../logging.js";
 
@@ -248,6 +253,21 @@ function fallbackSearchSessions(
   return results;
 }
 
+function mergeSearchResults(results: ApiSearchResult[], limit: number): ApiSearchResult[] {
+  const seen = new Set<string>();
+  const merged: ApiSearchResult[] = [];
+
+  for (const result of results) {
+    const key = `${result.agentName}/${result.session.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(result);
+    if (merged.length >= limit) break;
+  }
+
+  return merged;
+}
+
 export function handleGetConfig(c: Context, defaults: SessionListDefaults) {
   return c.json({
     window: {
@@ -353,13 +373,17 @@ export function handleSearchSessions(
     logSearchIndexSync("api.search", syncResult);
   }
 
-  let results: ApiSearchResult[] = searchSessions(query, {
+  const searchOptions = {
     agent,
     cwd,
     from,
     to,
     limit: 50,
-  });
+  };
+  let results: ApiSearchResult[] = mergeSearchResults(
+    [...searchFileActivitySessions(query, searchOptions), ...searchSessions(query, searchOptions)],
+    50,
+  );
   if (results.length === 0) {
     results = fallbackSearchSessions(scanResult, query, {
       agent,
@@ -371,6 +395,37 @@ export function handleSearchSessions(
   }
 
   return c.json({ results });
+}
+
+function parseFileActivityKind(value: string | undefined): FileActivityKind | undefined {
+  if (value === "read" || value === "edit" || value === "write" || value === "delete") {
+    return value;
+  }
+  return undefined;
+}
+
+function optionalQueryValue(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+}
+
+export function handleGetFileActivity(c: Context, defaults: SessionListDefaults = {}) {
+  const limitValue = Number(c.req.query("limit"));
+  const limit = Number.isFinite(limitValue) && limitValue > 0 ? Math.min(limitValue, 200) : 50;
+
+  return c.json({
+    activity: listFileActivity({
+      agent: optionalQueryValue(c.req.query("agent")),
+      sessionId: optionalQueryValue(c.req.query("sessionId")),
+      projectKey: optionalQueryValue(c.req.query("projectKey")),
+      cwd: optionalQueryValue(c.req.query("cwd")),
+      path: optionalQueryValue(c.req.query("path")),
+      kind: parseFileActivityKind(optionalQueryValue(c.req.query("kind"))),
+      from: parseDateParam(c.req.query("from"), defaults.from),
+      to: parseDateParam(c.req.query("to"), defaults.to),
+      limit,
+    }),
+  });
 }
 
 export async function handleGetSessionData(c: Context, scanSource: ScanResultSource) {
@@ -397,6 +452,8 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
     const smartTags = classifySessionTags(data);
     const tagDuration = performance.now() - tagStartedAt;
     const head = scanResult.byAgent[agentName]?.find((item) => item.id === sessionId);
+    const projectIdentity =
+      data.project_identity ?? head?.project_identity ?? computeIdentity(data.directory, realFs);
     appLogger.info("api.session_data", {
       agent: agentName,
       session_id: sessionId,
@@ -407,9 +464,15 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
     });
     return c.json({
       ...data,
-      project_identity: data.project_identity ?? head?.project_identity,
+      project_identity: projectIdentity,
       smart_tags: smartTags,
       smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
+      file_activity: extractSessionFileActivity(
+        agentName,
+        sessionId,
+        projectIdentity.key,
+        data.messages,
+      ),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load session";
@@ -558,6 +621,7 @@ export interface DashboardData {
   dailyTokenActivity: DailyTokenBucket[];
   modelDistribution: ModelDistributionEntry[];
   recentSessions: DashboardRecentSession[];
+  recentFileActivities: FileActivityResult[];
   /** Time window covered by dailyActivity (inclusive, ms) */
   window: { from: number; to: number; days: number };
 }
@@ -745,6 +809,7 @@ export function handleGetDashboard(
     dailyTokenActivity,
     modelDistribution,
     recentSessions,
+    recentFileActivities: listFileActivity({ from, to, limit: 12 }),
     window: { from, to, days },
   };
 

@@ -6,8 +6,10 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearCache,
   getCacheInfo,
+  listFileActivity,
   listCachedProjectGroups,
   loadCachedSessions,
+  searchFileActivitySessions,
   searchSessions,
   saveCachedSessions,
   syncSessionSearchIndex,
@@ -183,7 +185,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(7);
+    expect(getUserVersion(getCachePath())).toBe(8);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -340,7 +342,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(7);
+    expect(getUserVersion(getCachePath())).toBe(8);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
@@ -703,6 +705,68 @@ describe("searchSessions", () => {
     }
 
     expect(searchSessions("updated")).toHaveLength(1);
+  });
+
+  it("indexes file activity from tool calls", () => {
+    const session = {
+      ...makeSession("files"),
+      project_identity: {
+        kind: "git_remote" as const,
+        key: "github.com/acme/app",
+        displayName: "app",
+      },
+      stats: { ...makeSession("files").stats, message_count: 2 },
+    };
+
+    saveCachedSessions("claudecode", [session]);
+    syncSessionSearchIndex("claudecode", [session], () => ({
+      ...session,
+      messages: [
+        {
+          id: "m1",
+          role: "assistant",
+          time_created: now,
+          parts: [
+            {
+              type: "tool",
+              tool: "Read",
+              time_created: now,
+              state: { input: { file_path: "src/App.tsx" } },
+            },
+            {
+              type: "tool",
+              tool: "patch",
+              time_created: now + 10,
+              state: {
+                input: {
+                  content: [
+                    { type: "edit_file", path: "src/App.tsx" },
+                    { type: "write_file", path: "src/new.ts" },
+                    { type: "delete_file", path: "src/old.ts" },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      ],
+    }));
+
+    expect(
+      listFileActivity({
+        projectKey: "github.com/acme/app",
+        path: "src/App",
+        limit: 10,
+      }).map(({ kind, path, count }) => ({ kind, path, count })),
+    ).toEqual([
+      { kind: "edit", path: "src/App.tsx", count: 1 },
+      { kind: "read", path: "src/App.tsx", count: 1 },
+    ]);
+
+    const searchResults = searchFileActivitySessions("src/new.ts");
+    expect(searchResults).toHaveLength(1);
+    expect(searchResults[0]?.session.id).toBe("files");
+    expect(searchResults[0]?.snippet).toContain("<mark>src/new.ts</mark>");
   });
 
   it("upserts parent session rows before indexed messages", () => {
