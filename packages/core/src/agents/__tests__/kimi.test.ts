@@ -169,4 +169,75 @@ describe("KimiAgent cache refresh", () => {
       },
     });
   });
+
+  it("uses the first user message as fallback title", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-test-"));
+    tempDirs.push(basePath);
+    const sessionDir = createSessionDir(basePath, "fallback-title", "", 1_000);
+    writeFileSync(
+      join(sessionDir, "context.jsonl"),
+      JSON.stringify({ role: "user", content: "Fallback title" }) + "\n",
+    );
+
+    const agent = createAgent(basePath);
+    const [head] = agent.scan();
+
+    expect(head?.title).toBe("Fallback title");
+  });
+
+  it("falls back to untitled when no title text is available", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-test-"));
+    tempDirs.push(basePath);
+    const sessionDir = createSessionDir(basePath, "untitled", "", 1_000);
+    writeFileSync(
+      join(sessionDir, "context.jsonl"),
+      JSON.stringify({
+        role: "assistant",
+        content: [{ type: "text", text: "Assistant only" }],
+      }) + "\n",
+    );
+
+    const agent = createAgent(basePath);
+    const [head] = agent.scan();
+
+    expect(head?.title).toBe("Untitled Session");
+  });
+
+  it("cleans internal tag blocks from parsed messages", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-test-"));
+    tempDirs.push(basePath);
+    const sessionDir = createSessionDir(basePath, "tagged-context", "Context", 1_000);
+    writeFileSync(
+      join(sessionDir, "context.jsonl"),
+      [
+        JSON.stringify({
+          role: "user",
+          content:
+            "Visible request\n<command-name>clear</command-name>\n<local-command-stdout>noise</local-command-stdout>",
+        }),
+        JSON.stringify({
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "Visible answer <system-reminder>hidden</system-reminder>",
+            },
+          ],
+        }),
+        "",
+      ].join("\n"),
+    );
+
+    const agent = createAgent(basePath);
+    agent.scan();
+
+    const data = agent.getSessionData("tagged-context");
+
+    expect(data.messages[0]?.parts).toEqual([
+      expect.objectContaining({ type: "text", text: "Visible request" }),
+    ]);
+    expect(data.messages[1]?.parts).toEqual([
+      expect.objectContaining({ type: "text", text: "Visible answer" }),
+    ]);
+  });
 });

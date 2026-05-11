@@ -1,10 +1,25 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
-import { BaseAgent, matchesScanWindow } from "./base.js";
+import {
+  BaseAgent,
+  getParsedSession,
+  matchesScanWindow,
+  parsedSession,
+  skippedSession,
+} from "./base.js";
+import type {
+  AgentScanOptions,
+  ChangeCheckResult,
+  ParseSessionResult,
+  SessionCacheMeta,
+} from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
 import { parseJsonlLines } from "../utils/jsonl.js";
+import { normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
+import { isInternalEventType } from "../utils/parse-cleanup.js";
+import { cleanInternalText, cleanParsedMessages } from "../utils/session-normalization.js";
 import { perf } from "../utils/perf.js";
 import { estimateTokenCost } from "../utils/cost.js";
 
@@ -22,8 +37,6 @@ const KIMI_IGNORED_TOOLS = new Set(["SetTodoList"]);
 function mapToolTitle(toolName: string): string {
   return KIMI_TOOL_TITLE_MAP[toolName] ?? toolName;
 }
-
-import type { AgentScanOptions, SessionCacheMeta, ChangeCheckResult } from "./base.js";
 
 interface SessionMeta extends SessionCacheMeta {
   id: string;
@@ -54,41 +67,82 @@ function normalizeToolArguments(raw: unknown): unknown {
 
 function normalizeToolOutputParts(content: unknown, timestampMs: number): MessagePart[] {
   if (typeof content === "string") {
-    return content.trim()
-      ? [{ type: "text" as const, text: content, time_created: timestampMs }]
-      : [];
+    const text = cleanInternalText(content);
+    return text ? [{ type: "text" as const, text, time_created: timestampMs }] : [];
   }
   if (Array.isArray(content)) {
     const parts: MessagePart[] = [];
     for (const item of content) {
       if (typeof item === "object" && item !== null && "text" in item) {
         const text = String((item as Record<string, unknown>).text ?? "");
-        if (text.trim()) parts.push({ type: "text", text, time_created: timestampMs });
-      } else if (typeof item === "string" && item.trim()) {
-        parts.push({ type: "text", text: item, time_created: timestampMs });
+        const cleaned = cleanInternalText(text);
+        if (cleaned) parts.push({ type: "text", text: cleaned, time_created: timestampMs });
+      } else if (typeof item === "string") {
+        const text = cleanInternalText(item);
+        if (text) parts.push({ type: "text", text, time_created: timestampMs });
       }
     }
     return parts;
   }
   if (content == null) return [];
-  const text = String(content);
-  return text.trim() ? [{ type: "text", text, time_created: timestampMs }] : [];
+  const text = cleanInternalText(String(content));
+  return text ? [{ type: "text", text, time_created: timestampMs }] : [];
 }
 
 function normalizeWireToolOutputParts(returnValue: unknown, timestampMs: number): MessagePart[] {
   if (returnValue == null) return [];
   if (typeof returnValue === "string") {
-    return returnValue.trim()
-      ? [{ type: "text" as const, text: returnValue, time_created: timestampMs }]
-      : [];
+    const text = cleanInternalText(returnValue);
+    return text ? [{ type: "text" as const, text, time_created: timestampMs }] : [];
   }
   if (typeof returnValue === "object") {
-    return [
-      { type: "text", text: JSON.stringify(returnValue, null, 2), time_created: timestampMs },
-    ];
+    const text = cleanInternalText(JSON.stringify(returnValue, null, 2));
+    return text ? [{ type: "text", text, time_created: timestampMs }] : [];
   }
-  const text = String(returnValue);
-  return text.trim() ? [{ type: "text", text, time_created: timestampMs }] : [];
+  const text = cleanInternalText(String(returnValue));
+  return text ? [{ type: "text", text, time_created: timestampMs }] : [];
+}
+
+function kimiContentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+
+  return content
+    .map((item) => {
+      if (typeof item === "string") return item;
+      if (typeof item === "object" && item !== null) {
+        const record = item as Record<string, unknown>;
+        return String(record.text ?? record.content ?? "");
+      }
+      return "";
+    })
+    .join(" ");
+}
+
+function extractFirstUserTitle(contextFile: string | null, wireFile: string | null): string | null {
+  if (contextFile && existsSync(contextFile)) {
+    const content = readFileSync(contextFile, "utf-8");
+    for (const record of parseJsonlLines(content)) {
+      if (record.role !== "user") continue;
+      const title = normalizeTitleText(kimiContentText(record.content));
+      if (title) return title;
+    }
+  }
+
+  if (wireFile && existsSync(wireFile)) {
+    const content = readFileSync(wireFile, "utf-8");
+    for (const record of parseJsonlLines(content)) {
+      const message = (record.message ?? {}) as Record<string, unknown>;
+      if (message.type !== "TurnBegin") continue;
+      const payload = (message.payload ?? {}) as Record<string, unknown>;
+      const userInput = payload.user_input;
+      if (!Array.isArray(userInput)) continue;
+      const title = normalizeTitleText(kimiContentText(userInput));
+      if (title) return title;
+    }
+  }
+
+  return null;
 }
 
 export class KimiAgent extends BaseAgent {
@@ -173,13 +227,19 @@ export class KimiAgent extends BaseAgent {
 
   /** Parse session directory, preferring state.json over metadata.json */
   private parseSessionDir(sessionDir: string): SessionMeta | null {
+    return getParsedSession(this.parseSessionDirResult(sessionDir));
+  }
+
+  private parseSessionDirResult(sessionDir: string): ParseSessionResult<SessionMeta> {
     try {
       const sessionId = basename(sessionDir);
       const projectHash = basename(dirname(sessionDir));
       const contextFile = join(sessionDir, "context.jsonl");
       const wireFile = join(sessionDir, "wire.jsonl");
 
-      if (!existsSync(contextFile) && !existsSync(wireFile)) return null;
+      if (!existsSync(contextFile) && !existsSync(wireFile)) {
+        return skippedSession("missing transcript");
+      }
 
       const statePath = join(sessionDir, "state.json");
       const metaPath = join(sessionDir, "metadata.json");
@@ -201,6 +261,9 @@ export class KimiAgent extends BaseAgent {
       }
 
       const cwd = this.projectMap.get(projectHash) || "";
+      const existingContextFile = existsSync(contextFile) ? contextFile : null;
+      const existingWireFile = existsSync(wireFile) ? wireFile : null;
+      const messageTitle = extractFirstUserTitle(existingContextFile, existingWireFile);
       const createdAt =
         wireMtime !== null
           ? wireMtime * 1000
@@ -208,18 +271,18 @@ export class KimiAgent extends BaseAgent {
             ? statSync(metaFile).mtimeMs
             : statSync(sessionDir).mtimeMs;
 
-      return {
+      return parsedSession({
         id: sessionId,
-        title: title || "Untitled Session",
+        title: resolveSessionTitle(title, messageTitle, null),
         sourcePath: sessionDir,
         cwd,
-        contextFile: existsSync(contextFile) ? contextFile : null,
-        wireFile: existsSync(wireFile) ? wireFile : null,
+        contextFile: existingContextFile,
+        wireFile: existingWireFile,
         createdAt,
         metaFile,
-      };
+      });
     } catch {
-      return null;
+      return skippedSession("malformed metadata");
     }
   }
 
@@ -236,7 +299,7 @@ export class KimiAgent extends BaseAgent {
     for (const dir of sessionDirs) {
       try {
         const parseMarker = perf.start(`parseSessionDir:${basename(dir)}`);
-        const meta = this.parseSessionDir(dir);
+        const meta = getParsedSession(this.parseSessionDirResult(dir));
         perf.end(parseMarker);
 
         if (!meta) continue;
@@ -279,7 +342,7 @@ export class KimiAgent extends BaseAgent {
     const currentIds = new Set<string>();
 
     for (const dir of this.listSessionDirs()) {
-      const meta = this.parseSessionDir(dir);
+      const meta = getParsedSession(this.parseSessionDirResult(dir));
       if (!meta) continue;
 
       currentIds.add(meta.id);
@@ -334,7 +397,7 @@ export class KimiAgent extends BaseAgent {
 
     for (const dir of this.listSessionDirs()) {
       try {
-        const meta = this.parseSessionDir(dir);
+        const meta = getParsedSession(this.parseSessionDirResult(dir));
         if (!meta) continue;
 
         if (changedIdSet.has(meta.id)) {
@@ -382,11 +445,11 @@ export class KimiAgent extends BaseAgent {
       seq++;
       try {
         const role = String(record.role ?? "");
-        if (role === "_checkpoint" || role === "_usage") continue;
+        if (role === "_checkpoint" || role === "_usage" || isInternalEventType(role)) continue;
 
         if (role === "user") {
-          const text = String(record.content ?? "");
-          if (text.trim()) {
+          const text = cleanInternalText(kimiContentText(record.content));
+          if (text) {
             messages.push(
               this.buildMessage({
                 messageId: `context-${seq}`,
@@ -461,6 +524,7 @@ export class KimiAgent extends BaseAgent {
       try {
         const message = (record.message ?? {}) as Record<string, unknown>;
         const msgType = String(message.type ?? "");
+        if (isInternalEventType(msgType)) continue;
         const payload = (message.payload ?? {}) as Record<string, unknown>;
         const timestamp = Number(record.timestamp ?? 0);
         const timestampMs = Number.isFinite(timestamp) ? Math.floor(timestamp * 1000) : 0;
@@ -490,8 +554,8 @@ export class KimiAgent extends BaseAgent {
         if (msgType === "TurnBegin") {
           const userInput = payload.user_input;
           if (Array.isArray(userInput) && userInput.length > 0) {
-            const text = String((userInput[0] as Record<string, unknown>)?.text ?? "");
-            if (text.trim()) {
+            const text = cleanInternalText(kimiContentText(userInput));
+            if (text) {
               messages.push(
                 this.buildMessage({
                   messageId: `wire-${seq}`,
@@ -516,13 +580,13 @@ export class KimiAgent extends BaseAgent {
           const assistant = messages[currentAssistantIndex]!;
           const partType = String(payload.type ?? "");
           if (partType === "think") {
-            const text = String(payload.think ?? "");
-            if (text.trim()) {
+            const text = cleanInternalText(String(payload.think ?? ""));
+            if (text) {
               assistant.parts.push({ type: "reasoning", text, time_created: timestampMs });
             }
           } else if (partType === "text") {
-            const text = String(payload.text ?? "");
-            if (text.trim()) {
+            const text = cleanInternalText(String(payload.text ?? ""));
+            if (text) {
               assistant.parts.push({ type: "text", text, time_created: timestampMs });
             }
           }
@@ -665,11 +729,11 @@ export class KimiAgent extends BaseAgent {
         const partType = String(ci.type ?? "");
 
         if (partType === "think") {
-          const text = String(ci.think ?? "");
-          if (text.trim()) parts.push({ type: "reasoning", text, time_created: fallbackTs });
+          const text = cleanInternalText(String(ci.think ?? ""));
+          if (text) parts.push({ type: "reasoning", text, time_created: fallbackTs });
         } else if (partType === "text") {
-          const text = String(ci.text ?? "");
-          if (text.trim()) parts.push({ type: "text", text, time_created: fallbackTs });
+          const text = cleanInternalText(String(ci.text ?? ""));
+          if (text) parts.push({ type: "text", text, time_created: fallbackTs });
         }
       }
     }
@@ -865,8 +929,9 @@ export class KimiAgent extends BaseAgent {
     messages: Message[],
     stats: SessionData["stats"],
   ): SessionData {
-    stats.message_count = messages.length;
-    const totalCost = messages.reduce((sum, message) => sum + (message.cost ?? 0), 0);
+    const cleanedMessages = cleanParsedMessages(messages);
+    stats.message_count = cleanedMessages.length;
+    const totalCost = cleanedMessages.reduce((sum, message) => sum + (message.cost ?? 0), 0);
     if (totalCost > 0) {
       stats.total_cost = Number(totalCost.toFixed(8));
       stats.cost_source = "estimated";
@@ -879,7 +944,7 @@ export class KimiAgent extends BaseAgent {
       time_created: meta.createdAt,
       time_updated: meta.createdAt,
       stats,
-      messages,
+      messages: cleanedMessages,
     };
   }
 }

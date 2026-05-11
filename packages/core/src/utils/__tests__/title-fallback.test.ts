@@ -93,4 +93,10 @@ describe("resolveSessionTitle", () => {
   it("normalizes whitespace in chosen candidate", () => {
     expect(resolveSessionTitle("  spaced  out  ", null, null)).toBe("spaced out");
   });
+
+  it("ignores internal command tags while resolving title", () => {
+    expect(resolveSessionTitle("<command-name>clear</command-name>", "Visible title", null)).toBe(
+      "Visible title",
+    );
+  });
 });

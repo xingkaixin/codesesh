@@ -197,4 +197,82 @@ describe("ClaudeCodeAgent cache refresh", () => {
       parts: [{ type: "text", text: "detached output" }],
     });
   });
+
+  it("filters internal-only sessions", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-test-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+
+    mkdirSync(projectDir, { recursive: true });
+    writeFileSync(
+      join(projectDir, "internal-only.jsonl"),
+      [
+        JSON.stringify({
+          type: "progress",
+          timestamp: "2026-04-20T10:00:00Z",
+          message: { role: "", content: "" },
+        }),
+        "",
+      ].join("\n"),
+    );
+
+    const agent = new ClaudeCodeAgent() as any;
+    agent.basePath = basePath;
+
+    expect(agent.scan()).toEqual([]);
+  });
+
+  it("cleans internal tag blocks from visible messages", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-test-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    const sessionId = "tagged-session";
+
+    mkdirSync(projectDir, { recursive: true });
+    writeFileSync(
+      join(projectDir, `${sessionId}.jsonl`),
+      [
+        JSON.stringify({
+          type: "user",
+          uuid: "user-1",
+          timestamp: "2026-04-20T10:00:00Z",
+          cwd: "/tmp/project",
+          message: {
+            role: "user",
+            content:
+              "Visible request\n<command-name>clear</command-name>\n<local-command-stdout>noise</local-command-stdout>",
+          },
+        }),
+        JSON.stringify({
+          type: "assistant",
+          uuid: "assistant-1",
+          timestamp: "2026-04-20T10:00:01Z",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "text",
+                text: "Visible answer <system-reminder>hidden</system-reminder>",
+              },
+            ],
+          },
+        }),
+        "",
+      ].join("\n"),
+    );
+
+    const agent = new ClaudeCodeAgent() as any;
+    agent.basePath = basePath;
+
+    const [head] = agent.scan();
+    const data = agent.getSessionData(sessionId);
+
+    expect(head?.title).toBe("Visible request");
+    expect(data.messages[0]?.parts).toEqual([
+      expect.objectContaining({ type: "text", text: "Visible request" }),
+    ]);
+    expect(data.messages[1]?.parts).toEqual([
+      expect.objectContaining({ type: "text", text: "Visible answer" }),
+    ]);
+  });
 });

@@ -1,10 +1,20 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
-import { BaseAgent, matchesScanWindow } from "./base.js";
+import {
+  BaseAgent,
+  filteredSession,
+  getParsedSession,
+  matchesScanWindow,
+  parsedSession,
+  skippedSession,
+} from "./base.js";
+import type { ParseSessionResult } from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
 import { parseJsonlLines } from "../utils/jsonl.js";
-import { resolveSessionTitle, basenameTitle } from "../utils/title-fallback.js";
+import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
+import { isInternalEventType } from "../utils/parse-cleanup.js";
+import { cleanInternalText, cleanParsedMessages } from "../utils/session-normalization.js";
 import { perf } from "../utils/perf.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import type { AgentScanOptions, SessionCacheMeta, ChangeCheckResult } from "./base.js";
@@ -30,12 +40,6 @@ function parseTimestampMs(data: Record<string, unknown>): number {
   } catch {
     return 0;
   }
-}
-
-function normalizeTitleText(text: string): string {
-  // First non-empty line, truncated
-  const line = text.split("\n").find((l) => l.trim());
-  return line?.trim().slice(0, 80) || "";
 }
 
 export class ClaudeCodeAgent extends BaseAgent {
@@ -88,7 +92,7 @@ export class ClaudeCodeAgent extends BaseAgent {
           if (!matchesScanWindow(statSync(file).mtimeMs, options)) continue;
 
           const parseMarker = perf.start(`parseSessionHead:${basename(file)}`);
-          const head = this.parseSessionHead(file, projectDir);
+          const head = getParsedSession(this.parseSessionHeadResult(file, projectDir));
           perf.end(parseMarker);
 
           if (head) {
@@ -162,7 +166,9 @@ export class ClaudeCodeAgent extends BaseAgent {
       }
     }
 
-    for (const msg of messages) {
+    const cleanedMessages = cleanParsedMessages(messages);
+
+    for (const msg of cleanedMessages) {
       totalCost += msg.cost ?? 0;
       totalInputTokens += msg.tokens?.input ?? 0;
       totalOutputTokens += msg.tokens?.output ?? 0;
@@ -179,7 +185,7 @@ export class ClaudeCodeAgent extends BaseAgent {
       time_created: meta.createdAt,
       time_updated: meta.updatedAt,
       stats: {
-        message_count: messages.length,
+        message_count: cleanedMessages.length,
         total_input_tokens: totalInputTokens,
         total_output_tokens: totalOutputTokens,
         total_cost: totalCost,
@@ -187,7 +193,7 @@ export class ClaudeCodeAgent extends BaseAgent {
         total_cache_read_tokens: totalCacheRead,
         total_cache_create_tokens: totalCacheCreate,
       },
-      messages,
+      messages: cleanedMessages,
     };
   }
 
@@ -271,7 +277,7 @@ export class ClaudeCodeAgent extends BaseAgent {
 
           // 只处理变更的会话
           if (changedIds.includes(sessionId)) {
-            const head = this.parseSessionHead(file, projectDir);
+            const head = getParsedSession(this.parseSessionHeadResult(file, projectDir));
             if (head) {
               sessionMap.set(head.id, head);
               this.sessionMetaMap.set(head.id, {
@@ -298,7 +304,7 @@ export class ClaudeCodeAgent extends BaseAgent {
         try {
           const sessionId = basename(file, ".jsonl");
           if (!sessionMap.has(sessionId)) {
-            const head = this.parseSessionHead(file, projectDir);
+            const head = getParsedSession(this.parseSessionHeadResult(file, projectDir));
             if (head) {
               sessionMap.set(head.id, head);
               this.sessionMetaMap.set(head.id, {
@@ -374,10 +380,17 @@ export class ClaudeCodeAgent extends BaseAgent {
   }
 
   private parseSessionHead(filePath: string, projectDir: string): SessionHead | null {
+    return getParsedSession(this.parseSessionHeadResult(filePath, projectDir));
+  }
+
+  private parseSessionHeadResult(
+    filePath: string,
+    projectDir: string,
+  ): ParseSessionResult<SessionHead> {
     const content = readFileSync(filePath, "utf-8");
     const lines = content.split("\n").filter((l) => l.trim());
 
-    if (lines.length === 0) return null;
+    if (lines.length === 0) return skippedSession("empty file");
 
     const sessionId = basename(filePath, ".jsonl");
 
@@ -385,7 +398,7 @@ export class ClaudeCodeAgent extends BaseAgent {
     try {
       firstRecord = JSON.parse(lines[0]!);
     } catch {
-      return null;
+      return skippedSession("malformed first record");
     }
 
     const createdAt = parseTimestampMs(firstRecord) || statSync(filePath).mtimeMs;
@@ -410,6 +423,7 @@ export class ClaudeCodeAgent extends BaseAgent {
     for (const line of lines) {
       try {
         const data = JSON.parse(line);
+        if (isInternalEventType(data["type"])) continue;
         const ts = parseTimestampMs(data);
         if (ts > updatedAt) updatedAt = ts;
 
@@ -472,8 +486,9 @@ export class ClaudeCodeAgent extends BaseAgent {
     const title = resolveSessionTitle(explicitTitle, messageTitle, directoryTitle);
 
     const hasModelUsage = Object.keys(modelUsageMap).length > 0;
+    if (messageCount === 0) return filteredSession("no visible messages");
 
-    return {
+    return parsedSession({
       id: sessionId,
       slug: `claudecode/${sessionId}`,
       title,
@@ -490,13 +505,14 @@ export class ClaudeCodeAgent extends BaseAgent {
         total_cache_create_tokens: totalCacheCreateTokens,
       },
       model_usage: hasModelUsage ? modelUsageMap : undefined,
-    };
+    });
   }
 
   private extractTitle(lines: string[]): string | null {
     for (const line of lines.slice(0, 20)) {
       try {
         const data = JSON.parse(line);
+        if (isInternalEventType(data["type"])) continue;
         const msg = data["message"];
         if (!msg || typeof msg !== "object") continue;
         if ((msg as Record<string, unknown>)["role"] !== "user") continue;
@@ -505,14 +521,16 @@ export class ClaudeCodeAgent extends BaseAgent {
         if (!content) continue;
 
         if (typeof content === "string") {
-          return normalizeTitleText(content);
+          const title = normalizeTitleText(content);
+          if (title) return title;
         }
         if (Array.isArray(content)) {
           const texts = content
             .filter((item) => typeof item === "object" && item !== null && "text" in item)
             .map((item) => String((item as Record<string, unknown>)["text"] ?? ""))
             .join(" ");
-          return normalizeTitleText(texts);
+          const title = normalizeTitleText(texts);
+          if (title) return title;
         }
       } catch {
         // skip
@@ -534,6 +552,7 @@ export class ClaudeCodeAgent extends BaseAgent {
     if (data["isMeta"] === true) return;
 
     const msgType = String(data["type"] ?? "");
+    if (isInternalEventType(msgType)) return;
 
     if (msgType === "assistant") {
       this.convertAssistantRecord(
@@ -582,8 +601,8 @@ export class ClaudeCodeAgent extends BaseAgent {
         const partType = String(part["type"] ?? "");
 
         if (partType === "thinking") {
-          const text = String(part["thinking"] ?? "");
-          if (text.trim()) {
+          const text = cleanInternalText(String(part["thinking"] ?? ""));
+          if (text) {
             currentAssistantIndex = this.appendAssistantReasoning(
               messages,
               { messageId: uuid, msg, timestampMs, text },
@@ -594,8 +613,8 @@ export class ClaudeCodeAgent extends BaseAgent {
         }
 
         if (partType === "text") {
-          const text = String(part["text"] ?? "");
-          if (text.trim()) {
+          const text = cleanInternalText(String(part["text"] ?? ""));
+          if (text) {
             currentAssistantIndex = this.appendAssistantText(
               messages,
               { messageId: uuid, msg, timestampMs, text },
@@ -910,7 +929,8 @@ export class ClaudeCodeAgent extends BaseAgent {
 
   private normalizeUserTextParts(content: unknown, timestampMs: number): MessagePart[] {
     if (typeof content === "string") {
-      return content.trim() ? [this.buildTextPart(content, timestampMs)] : [];
+      const text = cleanInternalText(content);
+      return text ? [this.buildTextPart(text, timestampMs)] : [];
     }
     if (!Array.isArray(content)) return [];
 
@@ -919,10 +939,11 @@ export class ClaudeCodeAgent extends BaseAgent {
       if (typeof item === "object" && item !== null) {
         const ci = item as Record<string, unknown>;
         if (ci["type"] === "tool_result") continue;
-        const text = String(ci["text"] ?? "");
-        if (text.trim()) parts.push(this.buildTextPart(text, timestampMs));
-      } else if (typeof item === "string" && item.trim()) {
-        parts.push(this.buildTextPart(item, timestampMs));
+        const text = cleanInternalText(String(ci["text"] ?? ""));
+        if (text) parts.push(this.buildTextPart(text, timestampMs));
+      } else if (typeof item === "string") {
+        const text = cleanInternalText(item);
+        if (text) parts.push(this.buildTextPart(text, timestampMs));
       }
     }
     return parts;
@@ -930,7 +951,8 @@ export class ClaudeCodeAgent extends BaseAgent {
 
   private normalizeClaudeToolOutput(content: unknown, timestampMs: number): MessagePart[] {
     if (typeof content === "string") {
-      return content.trim() ? [this.buildTextPart(content, timestampMs)] : [];
+      const text = cleanInternalText(content);
+      return text ? [this.buildTextPart(text, timestampMs)] : [];
     }
     if (content === null || content === undefined) return [];
 
@@ -943,16 +965,18 @@ export class ClaudeCodeAgent extends BaseAgent {
               (item as Record<string, unknown>)["content"] ??
               "",
           );
-          if (text.trim()) parts.push(this.buildTextPart(text, timestampMs));
-        } else if (typeof item === "string" && item.trim()) {
-          parts.push(this.buildTextPart(item, timestampMs));
+          const cleaned = cleanInternalText(text);
+          if (cleaned) parts.push(this.buildTextPart(cleaned, timestampMs));
+        } else if (typeof item === "string") {
+          const text = cleanInternalText(item);
+          if (text) parts.push(this.buildTextPart(text, timestampMs));
         }
       }
       return parts;
     }
 
-    const text = String(content);
-    return text.trim() ? [this.buildTextPart(text, timestampMs)] : [];
+    const text = cleanInternalText(String(content));
+    return text ? [this.buildTextPart(text, timestampMs)] : [];
   }
 
   // --- Tool backfill ---

@@ -1,11 +1,29 @@
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { BaseAgent } from "./base.js";
-import type { AgentScanOptions, SessionCacheMeta, ChangeCheckResult } from "./base.js";
+import {
+  BaseAgent,
+  filteredSession,
+  getParsedSession,
+  parsedSession,
+  skippedSession,
+} from "./base.js";
+import type {
+  AgentScanOptions,
+  ChangeCheckResult,
+  ParseSessionResult,
+  SessionCacheMeta,
+} from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
 import { openDbReadOnly, isSqliteAvailable, type SQLiteDatabase } from "../utils/sqlite.js";
 import { estimateTokenCost } from "../utils/cost.js";
+import { resolveSessionTitle } from "../utils/title-fallback.js";
+import { isInternalEventType } from "../utils/parse-cleanup.js";
+import {
+  cleanInternalText,
+  cleanParsedMessages,
+  firstUserMessageTitle,
+} from "../utils/session-normalization.js";
 
 export class OpenCodeAgent extends BaseAgent {
   readonly name = "opencode";
@@ -36,9 +54,11 @@ export class OpenCodeAgent extends BaseAgent {
     try {
       const cutoffTime = options?.from ?? Date.now() - 3650 * 24 * 60 * 60 * 1000;
 
-      const hasMessageTable = db
-        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'message'")
-        .get();
+      const hasMessageTable = Boolean(
+        db
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'message'")
+          .get(),
+      );
 
       let rows: Record<string, unknown>[];
       if (hasMessageTable) {
@@ -70,34 +90,15 @@ export class OpenCodeAgent extends BaseAgent {
 
       const heads: SessionHead[] = [];
       for (const row of rows) {
-        const id = String(row.id ?? "");
-        const title = String(row.title ?? "").trim() || "Untitled";
-        const timeCreated = Number(row.time_created ?? 0);
-        const timeUpdated = Number(row.time_updated ?? timeCreated);
-        const slug = `opencode/${id}`;
-        const directory = String(row.directory ?? "");
-        const stats = hasMessageTable ? this.readSessionStats(db, id) : null;
+        const head = getParsedSession(this.parseSessionHeadRow(db, row, hasMessageTable));
+        if (!head) continue;
 
-        heads.push({
-          id,
-          slug,
-          title,
-          directory,
-          time_created: timeCreated,
-          time_updated: timeUpdated,
-          stats: {
-            message_count: stats?.message_count ?? Number(row.message_count ?? 0),
-            total_input_tokens: stats?.total_input_tokens ?? 0,
-            total_output_tokens: stats?.total_output_tokens ?? 0,
-            total_cost: stats?.total_cost ?? 0,
-            cost_source: stats?.cost_source,
-          },
-        });
+        heads.push(head);
 
         // Store session metadata for caching
         if (this.dbPath) {
-          this.sessionMetaMap.set(id, {
-            id,
+          this.sessionMetaMap.set(head.id, {
+            id: head.id,
             sourcePath: this.dbPath,
           });
         }
@@ -109,6 +110,38 @@ export class OpenCodeAgent extends BaseAgent {
     } finally {
       db.close();
     }
+  }
+
+  private parseSessionHeadRow(
+    db: SQLiteDatabase,
+    row: Record<string, unknown>,
+    hasMessageTable: boolean,
+  ): ParseSessionResult<SessionHead> {
+    const id = String(row.id ?? "");
+    if (!id) return skippedSession("missing session id");
+
+    const timeCreated = Number(row.time_created ?? 0);
+    const timeUpdated = Number(row.time_updated ?? timeCreated);
+    const stats = hasMessageTable ? this.readSessionStats(db, id) : null;
+    const messageCount = stats?.message_count ?? Number(row.message_count ?? 0);
+    if (hasMessageTable && messageCount === 0) return filteredSession("no visible messages");
+    const messageTitle = hasMessageTable ? this.readFirstUserTitle(db, id) : null;
+
+    return parsedSession({
+      id,
+      slug: `opencode/${id}`,
+      title: resolveSessionTitle(String(row.title ?? ""), messageTitle, null),
+      directory: String(row.directory ?? ""),
+      time_created: timeCreated,
+      time_updated: timeUpdated,
+      stats: {
+        message_count: messageCount,
+        total_input_tokens: stats?.total_input_tokens ?? 0,
+        total_output_tokens: stats?.total_output_tokens ?? 0,
+        total_cost: stats?.total_cost ?? 0,
+        cost_source: stats?.cost_source,
+      },
+    });
   }
 
   getSessionMetaMap(): Map<string, SessionCacheMeta> {
@@ -157,19 +190,86 @@ export class OpenCodeAgent extends BaseAgent {
     return this.scan();
   }
 
+  private readMessageParts(db: SQLiteDatabase, messageId: unknown): MessagePart[] {
+    const partRows = db
+      .prepare("SELECT * FROM part WHERE message_id = ? ORDER BY time_created ASC")
+      .all(messageId) as Record<string, unknown>[];
+    const parts: MessagePart[] = [];
+
+    for (const partRow of partRows) {
+      const partData = JSON.parse(String(partRow.data ?? "{}")) as Record<string, unknown>;
+      const partType = String(partData.type ?? "");
+      if (isInternalEventType(partType)) continue;
+
+      if (partType === "text" || partType === "reasoning") {
+        const text = cleanInternalText(String(partData.text ?? ""));
+        if (text) {
+          parts.push({
+            type: partType as "text" | "reasoning",
+            text,
+            time_created: Number(partRow.time_created ?? 0),
+          });
+        }
+      } else if (partType === "tool") {
+        parts.push({
+          type: "tool",
+          tool: String(partData.tool ?? ""),
+          callID: String(partData.callID ?? ""),
+          title: cleanInternalText(String(partData.title ?? "")),
+          state: (partData.state ?? {}) as MessagePart["state"],
+          time_created: Number(partRow.time_created ?? 0),
+        });
+      }
+    }
+
+    return parts;
+  }
+
+  private readFirstUserTitle(db: SQLiteDatabase, sessionId: string): string | null {
+    const rows = db
+      .prepare(
+        "SELECT id, data, time_created FROM message WHERE session_id = ? ORDER BY time_created ASC",
+      )
+      .all(sessionId) as Record<string, unknown>[];
+
+    for (const row of rows) {
+      const msgData = JSON.parse(String(row.data ?? "{}")) as Record<string, unknown>;
+      if (isInternalEventType(msgData.type)) continue;
+      if (String(msgData.role ?? "") !== "user") continue;
+      const parts = this.readMessageParts(db, row.id);
+      const title = firstUserMessageTitle([
+        {
+          id: String(row.id ?? ""),
+          role: "user",
+          agent: null,
+          time_created: Number(row.time_created ?? 0),
+          parts,
+        },
+      ]);
+      if (title) return title;
+    }
+
+    return null;
+  }
+
   private readSessionStats(db: SQLiteDatabase, sessionId: string): SessionHead["stats"] | null {
     try {
       const rows = db
-        .prepare("SELECT data FROM message WHERE session_id = ? ORDER BY time_created ASC")
-        .all(sessionId) as Array<{ data?: string }>;
+        .prepare("SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created ASC")
+        .all(sessionId) as Array<{ id?: unknown; data?: string }>;
 
       let totalCost = 0;
       let totalInputTokens = 0;
       let totalOutputTokens = 0;
       let hasEstimatedCost = false;
+      let messageCount = 0;
 
       for (const row of rows) {
         const msgData = JSON.parse(String(row.data ?? "{}")) as Record<string, unknown>;
+        if (isInternalEventType(msgData.type)) continue;
+        const parts = this.readMessageParts(db, row.id);
+        if (parts.length === 0) continue;
+
         const cost = Number(msgData.cost ?? 0);
         const tokens = msgData.tokens as Record<string, unknown> | undefined;
         const inputTokens = Number(tokens?.input ?? 0);
@@ -182,10 +282,11 @@ export class OpenCodeAgent extends BaseAgent {
         totalCost += cost || estimatedCost || 0;
         totalInputTokens += inputTokens;
         totalOutputTokens += outputTokens;
+        messageCount++;
       }
 
       return {
-        message_count: rows.length,
+        message_count: messageCount,
         total_input_tokens: totalInputTokens,
         total_output_tokens: totalOutputTokens,
         total_cost: totalCost,
@@ -220,7 +321,6 @@ export class OpenCodeAgent extends BaseAgent {
       }
 
       const id = String(sessionRow.id ?? sessionId);
-      const title = String(sessionRow.title ?? "Untitled");
       const slug = `opencode/${id}`;
       const directory = String(sessionRow.directory ?? "");
       const timeCreated = Number(sessionRow.time_created ?? 0);
@@ -239,8 +339,8 @@ export class OpenCodeAgent extends BaseAgent {
 
       for (const msgRow of msgRows) {
         const msgData = JSON.parse(String(msgRow.data ?? "{}")) as Record<string, unknown>;
+        if (isInternalEventType(msgData.type)) continue;
 
-        const parts: MessagePart[] = [];
         const cost = Number(msgData.cost ?? 0);
         const tokens = msgData.tokens as Record<string, unknown> | undefined;
         const inputTokens = Number(tokens?.input ?? 0);
@@ -250,38 +350,8 @@ export class OpenCodeAgent extends BaseAgent {
           cost > 0 ? null : estimateTokenCost(model, { input: inputTokens, output: outputTokens });
         const resolvedCost = cost || estimatedCost || 0;
 
-        if (estimatedCost !== null) hasEstimatedCost = true;
-        totalCost += resolvedCost;
-        totalInputTokens += inputTokens;
-        totalOutputTokens += outputTokens;
-
-        // Get parts for this message
-        const partRows = db
-          .prepare("SELECT * FROM part WHERE message_id = ? ORDER BY time_created ASC")
-          .all(msgRow.id) as Record<string, unknown>[];
-
-        for (const partRow of partRows) {
-          const partData = JSON.parse(String(partRow.data ?? "{}")) as Record<string, unknown>;
-          const partType = String(partData.type ?? "");
-
-          if (partType === "text" || partType === "reasoning") {
-            parts.push({
-              type: partType as "text" | "reasoning",
-              text: partData.text ?? "",
-              time_created: Number(partRow.time_created ?? 0),
-            });
-          } else if (partType === "tool") {
-            parts.push({
-              type: "tool",
-              tool: String(partData.tool ?? ""),
-              callID: String(partData.callID ?? ""),
-              title: String(partData.title ?? ""),
-              state: (partData.state ?? {}) as MessagePart["state"],
-              time_created: Number(partRow.time_created ?? 0),
-            });
-          }
-          // Skip step-start, step-finish parts
-        }
+        const parts = this.readMessageParts(db, msgRow.id);
+        if (parts.length === 0) continue;
 
         messages.push({
           id: String(msgRow.id ?? ""),
@@ -298,6 +368,19 @@ export class OpenCodeAgent extends BaseAgent {
         });
       }
 
+      const cleanedMessages = cleanParsedMessages(messages);
+      const title = resolveSessionTitle(
+        String(sessionRow.title ?? ""),
+        firstUserMessageTitle(cleanedMessages),
+        null,
+      );
+      for (const message of cleanedMessages) {
+        totalCost += message.cost ?? 0;
+        totalInputTokens += message.tokens?.input ?? 0;
+        totalOutputTokens += message.tokens?.output ?? 0;
+        if (message.cost_source === "estimated") hasEstimatedCost = true;
+      }
+
       return {
         id,
         title,
@@ -308,13 +391,13 @@ export class OpenCodeAgent extends BaseAgent {
         time_updated: timeUpdated,
         summary_files: sessionRow.summary_files ?? undefined,
         stats: {
-          message_count: messages.length,
+          message_count: cleanedMessages.length,
           total_input_tokens: totalInputTokens,
           total_output_tokens: totalOutputTokens,
           total_cost: totalCost,
           cost_source: totalCost > 0 ? (hasEstimatedCost ? "estimated" : "recorded") : undefined,
         },
-        messages,
+        messages: cleanedMessages,
       };
     } finally {
       db.close();

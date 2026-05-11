@@ -1,11 +1,18 @@
 import { basename } from "node:path";
+import { cleanDisplayText } from "./parse-cleanup.js";
 
 const TITLE_MAX_LENGTH = 100;
 const UNTITLED_SESSION = "Untitled Session";
 
 /** Normalize extracted title text for display. */
 export function normalizeTitleText(text: string): string | null {
-  const cleaned = text.replace(/\s+/g, " ").trim();
+  const visible =
+    cleanDisplayText(text)
+      ?.split("\n")
+      .find((line) => line.trim())
+      ?.trim() ?? null;
+  if (!visible) return null;
+  const cleaned = visible.replace(/\s+/g, " ").trim();
   if (!cleaned) return null;
   return cleaned.slice(0, TITLE_MAX_LENGTH);
 }
