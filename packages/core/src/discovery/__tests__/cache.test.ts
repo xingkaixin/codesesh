@@ -9,6 +9,7 @@ import {
   listFileActivity,
   listCachedProjectGroups,
   loadCachedSessions,
+  parseSearchQuery,
   searchFileActivitySessions,
   searchSessions,
   saveCachedSessions,
@@ -423,6 +424,25 @@ describe("getCacheInfo", () => {
 });
 
 describe("searchSessions", () => {
+  it("parses lightweight structured search qualifiers", () => {
+    expect(
+      parseSearchQuery(
+        'agent:codex project:codesesh tag:feature-dev tool:apply_patch file:"src/App.tsx" cost:>1 needle',
+      ),
+    ).toEqual({
+      text: "needle",
+      filters: {
+        agent: "codex",
+        project: "codesesh",
+        tags: ["feature-dev"],
+        tools: ["apply_patch"],
+        file: "src/App.tsx",
+        costMin: 1,
+      },
+      hasQualifiers: true,
+    });
+  });
+
   it("creates cache storage when syncing search index first", () => {
     const session = makeSession("first-search");
 
@@ -777,6 +797,97 @@ describe("searchSessions", () => {
     const directWriteResults = searchFileActivitySessions("src/direct.ts");
     expect(directWriteResults).toHaveLength(1);
     expect(directWriteResults[0]?.snippet).toContain("write");
+  });
+
+  it("combines full text with structured filters", () => {
+    const codex = {
+      ...makeSession("structured"),
+      slug: "codex/structured",
+      title: "Structured Retrieval",
+      directory: "/tmp/codesesh",
+      project_identity: {
+        kind: "path" as const,
+        key: "/tmp/codesesh",
+        displayName: "codesesh",
+      },
+      smart_tags: ["feature-dev" as const],
+      smart_tags_source_updated_at: now,
+      stats: {
+        message_count: 2,
+        total_input_tokens: 1,
+        total_output_tokens: 1,
+        total_cost: 2,
+      },
+    };
+    const other = {
+      ...makeSession("other"),
+      slug: "cursor/other",
+      directory: "/tmp/other",
+      smart_tags: ["docs" as const],
+    };
+
+    saveCachedSessions("codex", [codex]);
+    saveCachedSessions("cursor", [other]);
+    syncSessionSearchIndex("codex", [codex], () => ({
+      ...codex,
+      messages: [
+        {
+          id: "structured-user",
+          role: "user",
+          time_created: now,
+          parts: [{ type: "text", text: "needle structured search" }],
+        },
+        {
+          id: "structured-tool",
+          role: "assistant",
+          time_created: now + 1,
+          mode: "tool",
+          parts: [
+            {
+              type: "tool",
+              tool: "apply_patch",
+              state: { input: { path: "src/App.tsx" } },
+            },
+          ],
+        },
+      ],
+    }));
+    syncSessionSearchIndex("cursor", [other], () => makeSessionData("other", "needle other"));
+
+    const results = searchSessions(
+      "needle agent:codex project:codesesh tag:feature-dev tool:apply_patch file:App.tsx cost:>1",
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.session.id).toBe("structured");
+    expect(results[0]?.matchType).toBe("user_message");
+    expect(results[0]?.session.smart_tags).toEqual(["feature-dev"]);
+  });
+
+  it("returns recent sessions for structured-only queries", () => {
+    const recent = {
+      ...makeSession("recent"),
+      slug: "codex/recent",
+      time_updated: now + 10,
+      smart_tags: ["testing" as const],
+    };
+    const old = {
+      ...makeSession("old"),
+      slug: "codex/old",
+      time_updated: now - 10,
+      smart_tags: ["docs" as const],
+    };
+
+    saveCachedSessions("codex", [old, recent]);
+    syncSessionSearchIndex("codex", [old, recent], (sessionId) =>
+      makeSessionData(sessionId, "indexed content"),
+    );
+
+    const results = searchSessions("agent:codex tag:testing");
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.session.id).toBe("recent");
+    expect(results[0]?.matchType).toBe("recent");
   });
 
   it("upserts parent session rows before indexed messages", () => {

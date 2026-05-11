@@ -329,14 +329,15 @@ describe("LiveScanStore", () => {
       opencodeRoot: join(tempDir, "opencode"),
     });
 
+    const existingSession = makeSession("existing");
     const newSession = makeSession("new");
     const codex = makeAgent("codex", {
       scan: vi.fn(() => [newSession]),
     });
     core.createRegisteredAgents.mockReturnValue([codex]);
     core.scanSessions.mockResolvedValue({
-      sessions: [],
-      byAgent: { codex: [] },
+      sessions: [existingSession],
+      byAgent: { codex: [existingSession] },
       agents: [codex],
     });
 
@@ -392,13 +393,14 @@ describe("LiveScanStore", () => {
       opencodeRoot: join(tempDir, "opencode"),
     });
 
+    const existingSession = makeSession("existing");
     const codex = makeAgent("codex", {
       scan: vi.fn(() => [makeSession("new")]),
     });
     core.createRegisteredAgents.mockReturnValue([codex]);
     core.scanSessions.mockResolvedValue({
-      sessions: [],
-      byAgent: { codex: [] },
+      sessions: [existingSession],
+      byAgent: { codex: [existingSession] },
       agents: [codex],
     });
 
@@ -440,6 +442,7 @@ describe("LiveScanStore", () => {
       opencodeRoot: join(tempDir, "opencode"),
     });
 
+    const existingSession = makeSession("existing");
     const codex = makeAgent("codex", {
       scan: vi
         .fn()
@@ -450,8 +453,8 @@ describe("LiveScanStore", () => {
     });
     core.createRegisteredAgents.mockReturnValue([codex]);
     core.scanSessions.mockResolvedValue({
-      sessions: [],
-      byAgent: { codex: [] },
+      sessions: [existingSession],
+      byAgent: { codex: [existingSession] },
       agents: [codex],
     });
 

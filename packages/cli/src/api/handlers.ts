@@ -18,15 +18,18 @@ import {
   listFileActivity,
   listCachedProjectGroups,
   listBookmarks,
+  parseSearchQuery,
   realFs,
   searchFileActivitySessions,
   searchSessions,
-  syncSessionSearchIndex,
   upsertBookmark,
   type FileActivityKind,
   type FileActivityResult,
+  type SearchMatchType,
+  type SearchOptions,
+  type SearchQueryFilters,
 } from "@codesesh/core";
-import { appLogger, logSearchIndexSync } from "../logging.js";
+import { appLogger } from "../logging.js";
 
 export interface ScanResultSource {
   getSnapshot(): ScanResult;
@@ -48,6 +51,7 @@ interface ApiSearchResult {
   agentName: string;
   session: SessionHead;
   snippet: string;
+  matchType: SearchMatchType;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -109,6 +113,67 @@ function parseDateParam(
   return Number.isNaN(ts) ? fallback : ts;
 }
 
+function parseNumberParam(value: string | undefined): number | undefined {
+  if (value == null || !value.trim()) return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function searchParams(c: Context): URLSearchParams {
+  return new URL(c.req.url ?? "http://localhost/", "http://localhost/").searchParams;
+}
+
+function queryValues(params: URLSearchParams, ...names: string[]): string[] {
+  return names.flatMap((name) =>
+    params
+      .getAll(name)
+      .flatMap((value) => value.split(","))
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+}
+
+function parseSmartTags(values: string[]): SmartTag[] | undefined {
+  const tags = values
+    .map((value) => value.toLowerCase())
+    .filter((value): value is SmartTag =>
+      [
+        "bugfix",
+        "refactoring",
+        "feature-dev",
+        "testing",
+        "docs",
+        "git-ops",
+        "build-deploy",
+        "exploration",
+        "planning",
+      ].includes(value),
+    );
+  return tags.length > 0 ? [...new Set(tags)] : undefined;
+}
+
+function parseSearchOptions(c: Context, defaults: SessionListDefaults): SearchOptions {
+  const params = searchParams(c);
+  const limitValue = parseNumberParam(params.get("limit") ?? undefined);
+  return {
+    agent: optionalQueryValue(params.get("agent") ?? undefined),
+    project: optionalQueryValue(params.get("project") ?? undefined),
+    projectKey: optionalQueryValue(params.get("projectKey") ?? undefined),
+    cwd: optionalQueryValue(params.get("cwd") ?? undefined),
+    tags: parseSmartTags(queryValues(params, "tag", "tags", "signal")),
+    tools: queryValues(params, "tool", "tools").map((tool) => tool.toLowerCase()),
+    file: optionalQueryValue(params.get("file") ?? params.get("path") ?? undefined),
+    fileKind: parseFileActivityKind(
+      optionalQueryValue(params.get("fileKind") ?? params.get("fileActivity") ?? undefined),
+    ),
+    costMin: parseNumberParam(params.get("costMin") ?? undefined),
+    costMax: parseNumberParam(params.get("costMax") ?? undefined),
+    from: parseDateParam(params.get("from") ?? undefined, defaults.from),
+    to: parseDateParam(params.get("to") ?? undefined, defaults.to),
+    limit: limitValue && limitValue > 0 ? Math.min(limitValue, 100) : 50,
+  };
+}
+
 function filterSessionsByWindow(
   sessions: SessionHead[],
   from: number | undefined,
@@ -154,103 +219,31 @@ function sanitizeClientLogData(value: unknown): Record<string, unknown> {
   );
 }
 
-function appendSearchText(value: unknown, chunks: string[]): void {
-  if (value == null) return;
-  if (typeof value === "string") {
-    if (value.trim()) chunks.push(value);
-    return;
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    chunks.push(String(value));
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      appendSearchText(item, chunks);
-    }
-    return;
-  }
-  if (isRecord(value)) {
-    for (const item of Object.values(value)) {
-      appendSearchText(item, chunks);
-    }
-  }
+function sessionMatchesCostFilter(session: SessionHead, options: SearchOptions): boolean {
+  if (options.costMin != null && session.stats.total_cost < options.costMin) return false;
+  if (options.costMax != null && session.stats.total_cost > options.costMax) return false;
+  return true;
 }
 
-function parseFallbackSearchTerms(query: string): string[] {
-  return (query.match(/"[^"]+"|\S+/g) ?? [])
-    .map((term) => term.replace(/^"|"$/g, "").trim().toLowerCase())
-    .filter((term) => term && term !== "or");
+function mergeSearchLists<T>(left: T[] | undefined, right: T[] | undefined): T[] | undefined {
+  const values = [...(left ?? []), ...(right ?? [])];
+  return values.length > 0 ? [...new Set(values)] : undefined;
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function buildFallbackSearchSnippet(text: string, terms: string[]): string {
-  const lower = text.toLowerCase();
-  const term = terms.find((item) => lower.includes(item)) ?? terms[0] ?? "";
-  if (!term) return text.slice(0, 160);
-
-  const index = lower.indexOf(term);
-  const start = Math.max(0, index - 80);
-  const end = Math.min(text.length, index + term.length + 80);
-  const snippet = text
-    .slice(start, end)
-    .replace(new RegExp(escapeRegExp(term), "gi"), (match) => `<mark>${match}</mark>`);
-  return `${start > 0 ? "… " : ""}${snippet}${end < text.length ? " …" : ""}`;
-}
-
-function matchesFallbackSearch(text: string, terms: string[]): boolean {
-  const lower = text.toLowerCase();
-  return terms.every((term) => lower.includes(term));
-}
-
-function fallbackSearchSessions(
-  scanResult: ScanResult,
-  query: string,
-  options: { agent?: string; cwd?: string; from?: number; to?: number; limit: number },
-): ApiSearchResult[] {
-  const terms = parseFallbackSearchTerms(query);
-  if (terms.length === 0) return [];
-
-  const agentEntries = options.agent
-    ? ([[options.agent, scanResult.byAgent[options.agent] ?? []]] as Array<[string, SessionHead[]]>)
-    : Object.entries(scanResult.byAgent);
-  const results: ApiSearchResult[] = [];
-
-  for (const [agentName, agentSessions] of agentEntries) {
-    const agent = scanResult.agents.find((item) => item.name === agentName);
-    if (!agent) continue;
-
-    let sessions = filterSessionsByActivityWindow(agentSessions, options.from, options.to);
-    if (options.cwd) {
-      sessions = sessions.filter((session) => matchesProjectScope(session, options.cwd!));
-    }
-
-    for (const session of sessions) {
-      const chunks = [session.title, session.directory];
-      try {
-        const data = agent.getSessionData(session.id);
-        appendSearchText(data.title, chunks);
-        appendSearchText(data.messages, chunks);
-      } catch {
-        continue;
-      }
-
-      const text = chunks.join("\n");
-      if (!matchesFallbackSearch(text, terms)) continue;
-
-      results.push({
-        agentName,
-        session,
-        snippet: buildFallbackSearchSnippet(text, terms),
-      });
-      if (results.length >= options.limit) return results;
-    }
-  }
-
-  return results;
+function mergeSearchOptions(options: SearchOptions, filters: SearchQueryFilters): SearchOptions {
+  return {
+    ...options,
+    agent: options.agent ?? filters.agent,
+    project: options.project ?? filters.project,
+    projectKey: options.projectKey ?? filters.projectKey,
+    cwd: options.cwd ?? filters.cwd,
+    tags: mergeSearchLists(options.tags, filters.tags),
+    tools: mergeSearchLists(options.tools, filters.tools),
+    file: options.file ?? filters.file,
+    fileKind: options.fileKind ?? filters.fileKind,
+    costMin: options.costMin ?? filters.costMin,
+    costMax: options.costMax ?? filters.costMax,
+  };
 }
 
 function mergeSearchResults(results: ApiSearchResult[], limit: number): ApiSearchResult[] {
@@ -266,6 +259,56 @@ function mergeSearchResults(results: ApiSearchResult[], limit: number): ApiSearc
   }
 
   return merged;
+}
+
+function matchesRecentSearchFilters(session: SessionHead, options: SearchOptions): boolean {
+  if (options.projectKey && session.project_identity?.key !== options.projectKey) return false;
+  if (options.cwd && !matchesProjectScope(session, options.cwd)) return false;
+  if (options.project) {
+    const projectNeedle = options.project.toLowerCase();
+    const projectText = [
+      session.project_identity?.key,
+      session.project_identity?.displayName,
+      session.directory,
+    ]
+      .filter(Boolean)
+      .join("\n")
+      .toLowerCase();
+    if (!projectText.includes(projectNeedle)) return false;
+  }
+  if (options.tags?.length && !options.tags.every((tag) => session.smart_tags?.includes(tag))) {
+    return false;
+  }
+  if (!sessionMatchesCostFilter(session, options)) return false;
+  return true;
+}
+
+function recentSearchSessions(
+  scanResult: ScanResult,
+  options: SearchOptions & { limit: number },
+): ApiSearchResult[] {
+  const entries = options.agent
+    ? ([[options.agent, scanResult.byAgent[options.agent] ?? []]] as Array<[string, SessionHead[]]>)
+    : Object.entries(scanResult.byAgent);
+
+  return entries
+    .flatMap(([agentName, sessions]) =>
+      filterSessionsByActivityWindow(sessions, options.from, options.to)
+        .filter((session) => matchesRecentSearchFilters(session, options))
+        .map((session) => ({ agentName, session })),
+    )
+    .toSorted(
+      (a, b) =>
+        (b.session.time_updated ?? b.session.time_created) -
+        (a.session.time_updated ?? a.session.time_created),
+    )
+    .slice(0, options.limit)
+    .map(({ agentName, session }) => ({
+      agentName,
+      session,
+      snippet: `Recent session · ${session.directory}`,
+      matchType: "recent",
+    }));
 }
 
 export function handleGetConfig(c: Context, defaults: SessionListDefaults) {
@@ -355,44 +398,38 @@ export function handleSearchSessions(
   defaults: SessionListDefaults = {},
 ) {
   const query = c.req.query("q")?.trim() ?? "";
-  if (!query) {
-    return c.json({ results: [] });
-  }
-
   const scanResult = scanSource.getSnapshot();
-  const agent = c.req.query("agent");
-  const cwd = c.req.query("cwd");
-  const from = parseDateParam(c.req.query("from"), defaults.from);
-  const to = parseDateParam(c.req.query("to"), defaults.to);
-
-  for (const indexedAgent of scanResult.agents) {
-    const sessions = scanResult.byAgent[indexedAgent.name] ?? [];
-    const syncResult = syncSessionSearchIndex(indexedAgent.name, sessions, (sessionId) =>
-      indexedAgent.getSessionData(sessionId),
-    );
-    logSearchIndexSync("api.search", syncResult);
-  }
-
-  const searchOptions = {
-    agent,
-    cwd,
-    from,
-    to,
-    limit: 50,
-  };
-  let results: ApiSearchResult[] = mergeSearchResults(
-    [...searchFileActivitySessions(query, searchOptions), ...searchSessions(query, searchOptions)],
-    50,
+  const searchOptions = parseSearchOptions(c, defaults);
+  const parsedQuery = parseSearchQuery(query);
+  const mergedSearchOptions = mergeSearchOptions(searchOptions, parsedQuery.filters);
+  const textQuery = parsedQuery.text || (parsedQuery.hasQualifiers ? "" : query);
+  const needsIndexedSearch = Boolean(
+    textQuery ||
+    mergedSearchOptions.file ||
+    mergedSearchOptions.fileKind ||
+    mergedSearchOptions.tools?.length,
   );
-  if (results.length === 0) {
-    results = fallbackSearchSessions(scanResult, query, {
-      agent,
-      cwd,
-      from,
-      to,
-      limit: 50,
+
+  if (!needsIndexedSearch) {
+    return c.json({
+      results: recentSearchSessions(
+        scanResult,
+        mergedSearchOptions as SearchOptions & { limit: number },
+      ),
     });
   }
+
+  const fileQuery =
+    mergedSearchOptions.file ??
+    (!parsedQuery.text ? parsedQuery.filters.file : undefined) ??
+    (!parsedQuery.hasQualifiers && query ? parsedQuery.text || query : "");
+  const results: ApiSearchResult[] = mergeSearchResults(
+    [
+      ...(fileQuery ? searchFileActivitySessions(fileQuery, mergedSearchOptions) : []),
+      ...searchSessions(query, mergedSearchOptions),
+    ],
+    mergedSearchOptions.limit ?? 50,
+  );
 
   return c.json({ results });
 }
@@ -418,6 +455,7 @@ export function handleGetFileActivity(c: Context, defaults: SessionListDefaults 
       agent: optionalQueryValue(c.req.query("agent")),
       sessionId: optionalQueryValue(c.req.query("sessionId")),
       projectKey: optionalQueryValue(c.req.query("projectKey")),
+      project: optionalQueryValue(c.req.query("project")),
       cwd: optionalQueryValue(c.req.query("cwd")),
       path: optionalQueryValue(c.req.query("path")),
       kind: parseFileActivityKind(optionalQueryValue(c.req.query("kind"))),

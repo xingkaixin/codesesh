@@ -1,5 +1,7 @@
 import { existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Worker } from "node:worker_threads";
 import {
   createRegisteredAgents,
   filterSessions,
@@ -14,6 +16,7 @@ import {
   type SessionCacheMeta,
   type SessionHead,
 } from "@codesesh/core";
+import type { SearchIndexWorkerMessage } from "./search-index-worker.js";
 import { appLogger, logSearchIndexSync } from "./logging.js";
 
 export interface SessionsUpdatedEvent {
@@ -48,6 +51,7 @@ interface StablePathState {
 }
 
 const REFRESH_DEBOUNCE_MS = 200;
+const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
 const PENDING_REFRESH_DELAY_MS = 100;
 const WRITE_STABILITY_THRESHOLD_MS = 250;
 const WRITE_STABILITY_POLL_MS = 100;
@@ -277,6 +281,8 @@ export class LiveScanStore {
   private stablePaths = new Map<string, StablePathState>();
   private pendingEvent: SessionsUpdatedEvent | null = null;
   private pendingEventTimer: NodeJS.Timeout | null = null;
+  private initialSearchIndexTimer: NodeJS.Timeout | null = null;
+  private searchIndexWorker: Worker | null = null;
 
   constructor(
     private readonly watchEnabled = true,
@@ -317,6 +323,10 @@ export class LiveScanStore {
     });
     if (this.watchEnabled) {
       this.startWatching();
+      this.initialSearchIndexTimer = setTimeout(() => {
+        this.initialSearchIndexTimer = null;
+        this.startSearchIndexWorker("scan.initial.background");
+      }, 1000);
     }
   }
 
@@ -352,6 +362,14 @@ export class LiveScanStore {
     if (this.pendingEventTimer) {
       clearTimeout(this.pendingEventTimer);
       this.pendingEventTimer = null;
+    }
+    if (this.initialSearchIndexTimer) {
+      clearTimeout(this.initialSearchIndexTimer);
+      this.initialSearchIndexTimer = null;
+    }
+    if (this.searchIndexWorker) {
+      await this.searchIndexWorker.terminate();
+      this.searchIndexWorker = null;
     }
     this.pendingEvent = null;
 
@@ -397,6 +415,57 @@ export class LiveScanStore {
 
   private hasStartupWindow(): boolean {
     return this.startupScanOptions.from != null || this.startupScanOptions.to != null;
+  }
+
+  private getSearchIndexWorkerUrl(): URL | null {
+    const workerUrl = new URL("./search-index-worker.js", import.meta.url);
+    if (workerUrl.protocol === "file:" && !existsSync(fileURLToPath(workerUrl))) {
+      return null;
+    }
+    return workerUrl;
+  }
+
+  private startSearchIndexWorker(context: string): void {
+    if (this.searchIndexWorker) return;
+
+    const workerUrl = this.getSearchIndexWorkerUrl();
+    if (!workerUrl) {
+      appLogger.warn("search_index.worker_missing", { context });
+      return;
+    }
+
+    const worker = new Worker(workerUrl, {
+      workerData: {
+        context,
+        agentNames: this.agents.map((agent) => agent.name),
+        sessionsByAgent: this.byAgent,
+        metaByAgent: Object.fromEntries(
+          this.agents.map((agent) => [agent.name, buildAgentCacheMeta(agent)]),
+        ),
+      },
+    });
+    worker.unref();
+    this.searchIndexWorker = worker;
+
+    worker.on("message", (message: SearchIndexWorkerMessage) => {
+      if (message.type === "sync-result") {
+        logSearchIndexSync(message.context, message.result);
+      } else if (message.type === "done") {
+        appLogger.info(`${message.context}.done`, {
+          duration_ms: Math.round(message.durationMs),
+          sessions: message.sessions,
+        });
+      }
+    });
+    worker.on("error", (error) => {
+      appLogger.error("search_index.worker_error", { context, error });
+    });
+    worker.on("exit", (code) => {
+      this.searchIndexWorker = null;
+      if (code !== 0) {
+        appLogger.warn("search_index.worker_exit", { context, code });
+      }
+    });
   }
 
   private applyScanResult(result: ScanResult): void {
@@ -663,7 +732,11 @@ export class LiveScanStore {
         agentName,
         (this.pendingRefreshPathCounts.get(agentName) ?? 0) + 1,
       );
-      this.scheduleRefresh(agentName);
+      const delayMs =
+        (this.byAgent[agentName]?.length ?? 0) === 0
+          ? EMPTY_AGENT_REFRESH_DEBOUNCE_MS
+          : REFRESH_DEBOUNCE_MS;
+      this.scheduleRefresh(agentName, delayMs);
     }
   }
 
