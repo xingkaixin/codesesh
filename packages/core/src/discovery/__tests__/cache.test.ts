@@ -735,6 +735,12 @@ describe("searchSessions", () => {
             },
             {
               type: "tool",
+              tool: "write_file",
+              time_created: now + 5,
+              state: { input: { path: "src/direct.ts" } },
+            },
+            {
+              type: "tool",
               tool: "patch",
               time_created: now + 10,
               state: {
@@ -767,6 +773,10 @@ describe("searchSessions", () => {
     expect(searchResults).toHaveLength(1);
     expect(searchResults[0]?.session.id).toBe("files");
     expect(searchResults[0]?.snippet).toContain("<mark>src/new.ts</mark>");
+
+    const directWriteResults = searchFileActivitySessions("src/direct.ts");
+    expect(directWriteResults).toHaveLength(1);
+    expect(directWriteResults[0]?.snippet).toContain("write");
   });
 
   it("upserts parent session rows before indexed messages", () => {

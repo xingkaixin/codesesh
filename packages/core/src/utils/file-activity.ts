@@ -123,7 +123,12 @@ function classifyToolKind(part: MessagePart): FileActivityKind | null {
   ) {
     return "edit";
   }
-  if (toolName === "write" || toolName === "writefile" || toolName === "create_file") {
+  if (
+    toolName === "write" ||
+    toolName === "writefile" ||
+    toolName === "write_file" ||
+    toolName === "create_file"
+  ) {
     return "write";
   }
   if (toolName === "delete" || toolName === "delete_file") {
