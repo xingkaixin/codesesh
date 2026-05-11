@@ -14,6 +14,8 @@ import {
 
 const BOOKMARK_DB_FILENAME = "state.db";
 const BOOKMARK_SCHEMA_VERSION = 1;
+const MEMORY_STATE_STORE = "memory";
+const memoryBookmarks = new Map<string, BookmarkRecord>();
 
 export class BookmarkStorageUnavailableError extends Error {
   constructor() {
@@ -47,6 +49,10 @@ interface BookmarkRow extends DatabaseRow {
 }
 
 function getStateDir(): string {
+  if (process.env.CODESESH_STATE_DIR) {
+    return process.env.CODESESH_STATE_DIR;
+  }
+
   const p = platform();
   if (p === "darwin") {
     return join(homedir(), "Library", "Application Support", "codesesh");
@@ -60,6 +66,39 @@ function getStateDir(): string {
 
 function getStateDbPath(): string {
   return join(getStateDir(), BOOKMARK_DB_FILENAME);
+}
+
+function useMemoryStateStore(): boolean {
+  return process.env.CODESESH_STATE_STORE === MEMORY_STATE_STORE;
+}
+
+function getBookmarkKey(agentKey: string, sessionId: string): string {
+  return JSON.stringify([agentKey, sessionId]);
+}
+
+function getActivityTime(bookmark: BookmarkRecord): number {
+  return bookmark.time_updated ?? bookmark.time_created;
+}
+
+function sortBookmarks(bookmarks: BookmarkRecord[]): BookmarkRecord[] {
+  return bookmarks.sort((a, b) => {
+    const activityDelta = getActivityTime(b) - getActivityTime(a);
+    return activityDelta || b.bookmarked_at - a.bookmarked_at;
+  });
+}
+
+function listMemoryBookmarks(): BookmarkRecord[] {
+  return sortBookmarks(Array.from(memoryBookmarks.values()));
+}
+
+function upsertMemoryBookmark(bookmark: Omit<BookmarkRecord, "bookmarked_at">): BookmarkRecord {
+  const key = getBookmarkKey(bookmark.agentKey, bookmark.sessionId);
+  const saved = {
+    ...bookmark,
+    bookmarked_at: memoryBookmarks.get(key)?.bookmarked_at ?? Date.now(),
+  };
+  memoryBookmarks.set(key, saved);
+  return saved;
 }
 
 function createStateSchema(db: SQLiteDatabase): void {
@@ -182,6 +221,10 @@ function toBookmarkRecord(row: BookmarkRow): BookmarkRecord {
 }
 
 export function listBookmarks(): BookmarkRecord[] {
+  if (useMemoryStateStore()) {
+    return listMemoryBookmarks();
+  }
+
   return withStateDb((db) => {
     const rows = db
       .prepare(
@@ -207,6 +250,10 @@ export function listBookmarks(): BookmarkRecord[] {
 }
 
 export function upsertBookmark(bookmark: Omit<BookmarkRecord, "bookmarked_at">): BookmarkRecord {
+  if (useMemoryStateStore()) {
+    return upsertMemoryBookmark(bookmark);
+  }
+
   return withStateDb((db) => {
     const existing = db
       .prepare(
@@ -259,6 +306,13 @@ export function upsertBookmark(bookmark: Omit<BookmarkRecord, "bookmarked_at">):
 export function importBookmarks(
   bookmarks: Omit<BookmarkRecord, "bookmarked_at">[],
 ): BookmarkRecord[] {
+  if (useMemoryStateStore()) {
+    for (const bookmark of bookmarks) {
+      upsertMemoryBookmark(bookmark);
+    }
+    return listMemoryBookmarks();
+  }
+
   return withStateDb((db) => {
     const existingRows = db
       .prepare("SELECT agent_name, session_id, bookmarked_at FROM bookmarks")
@@ -334,6 +388,11 @@ export function importBookmarks(
 }
 
 export function deleteBookmark(agentKey: string, sessionId: string): void {
+  if (useMemoryStateStore()) {
+    memoryBookmarks.delete(getBookmarkKey(agentKey, sessionId));
+    return;
+  }
+
   withStateDb((db) => {
     db.prepare(
       `

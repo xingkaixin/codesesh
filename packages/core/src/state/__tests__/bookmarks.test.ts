@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
@@ -68,6 +68,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  rmSync(join(testHomeDir, "custom-state"), { recursive: true, force: true });
+  vi.unstubAllEnvs();
   rmSync(getStateDir(), { recursive: true, force: true });
 });
 
@@ -114,6 +116,26 @@ describe("bookmarks state storage", () => {
 
   it("deletes a bookmark by agent and session", () => {
     upsertBookmark(makeBookmark());
+    deleteBookmark("codex", "s1");
+    expect(listBookmarks()).toEqual([]);
+  });
+
+  it("uses an explicit state directory when configured", () => {
+    const stateDir = join(testHomeDir, "custom-state");
+    vi.stubEnv("CODESESH_STATE_DIR", stateDir);
+
+    upsertBookmark(makeBookmark());
+
+    expect(getUserVersion(join(stateDir, "state.db"))).toBe(1);
+  });
+
+  it("uses memory state storage when configured", () => {
+    vi.stubEnv("CODESESH_STATE_STORE", "memory");
+
+    expect(upsertBookmark(makeBookmark()).bookmarked_at).toBe(now);
+    expect(listBookmarks()).toEqual([{ ...makeBookmark(), bookmarked_at: now }]);
+    expect(existsSync(getStatePath())).toBe(false);
+
     deleteBookmark("codex", "s1");
     expect(listBookmarks()).toEqual([]);
   });

@@ -39,6 +39,12 @@ interface ClientLogPayload {
   data?: unknown;
 }
 
+interface ApiSearchResult {
+  agentName: string;
+  session: SessionHead;
+  snippet: string;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -141,6 +147,105 @@ function sanitizeClientLogData(value: unknown): Record<string, unknown> {
         return [key, String(item).slice(0, 300)];
       }),
   );
+}
+
+function appendSearchText(value: unknown, chunks: string[]): void {
+  if (value == null) return;
+  if (typeof value === "string") {
+    if (value.trim()) chunks.push(value);
+    return;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    chunks.push(String(value));
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      appendSearchText(item, chunks);
+    }
+    return;
+  }
+  if (isRecord(value)) {
+    for (const item of Object.values(value)) {
+      appendSearchText(item, chunks);
+    }
+  }
+}
+
+function parseFallbackSearchTerms(query: string): string[] {
+  return (query.match(/"[^"]+"|\S+/g) ?? [])
+    .map((term) => term.replace(/^"|"$/g, "").trim().toLowerCase())
+    .filter((term) => term && term !== "or");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildFallbackSearchSnippet(text: string, terms: string[]): string {
+  const lower = text.toLowerCase();
+  const term = terms.find((item) => lower.includes(item)) ?? terms[0] ?? "";
+  if (!term) return text.slice(0, 160);
+
+  const index = lower.indexOf(term);
+  const start = Math.max(0, index - 80);
+  const end = Math.min(text.length, index + term.length + 80);
+  const snippet = text
+    .slice(start, end)
+    .replace(new RegExp(escapeRegExp(term), "gi"), (match) => `<mark>${match}</mark>`);
+  return `${start > 0 ? "… " : ""}${snippet}${end < text.length ? " …" : ""}`;
+}
+
+function matchesFallbackSearch(text: string, terms: string[]): boolean {
+  const lower = text.toLowerCase();
+  return terms.every((term) => lower.includes(term));
+}
+
+function fallbackSearchSessions(
+  scanResult: ScanResult,
+  query: string,
+  options: { agent?: string; cwd?: string; from?: number; to?: number; limit: number },
+): ApiSearchResult[] {
+  const terms = parseFallbackSearchTerms(query);
+  if (terms.length === 0) return [];
+
+  const agentEntries = options.agent
+    ? ([[options.agent, scanResult.byAgent[options.agent] ?? []]] as Array<[string, SessionHead[]]>)
+    : Object.entries(scanResult.byAgent);
+  const results: ApiSearchResult[] = [];
+
+  for (const [agentName, agentSessions] of agentEntries) {
+    const agent = scanResult.agents.find((item) => item.name === agentName);
+    if (!agent) continue;
+
+    let sessions = filterSessionsByActivityWindow(agentSessions, options.from, options.to);
+    if (options.cwd) {
+      sessions = sessions.filter((session) => matchesProjectScope(session, options.cwd!));
+    }
+
+    for (const session of sessions) {
+      const chunks = [session.title, session.directory];
+      try {
+        const data = agent.getSessionData(session.id);
+        appendSearchText(data.title, chunks);
+        appendSearchText(data.messages, chunks);
+      } catch {
+        continue;
+      }
+
+      const text = chunks.join("\n");
+      if (!matchesFallbackSearch(text, terms)) continue;
+
+      results.push({
+        agentName,
+        session,
+        snippet: buildFallbackSearchSnippet(text, terms),
+      });
+      if (results.length >= options.limit) return results;
+    }
+  }
+
+  return results;
 }
 
 export function handleGetConfig(c: Context, defaults: SessionListDefaults) {
@@ -248,13 +353,22 @@ export function handleSearchSessions(
     logSearchIndexSync("api.search", syncResult);
   }
 
-  const results = searchSessions(query, {
+  let results: ApiSearchResult[] = searchSessions(query, {
     agent,
     cwd,
     from,
     to,
     limit: 50,
   });
+  if (results.length === 0) {
+    results = fallbackSearchSessions(scanResult, query, {
+      agent,
+      cwd,
+      from,
+      to,
+      limit: 50,
+    });
+  }
 
   return c.json({ results });
 }
