@@ -1,6 +1,15 @@
 declare const __APP_VERSION__: string;
 
-import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ModelConfig } from "./config";
 import type {
@@ -8,10 +17,13 @@ import type {
   AppConfig,
   BookmarkedSessionSnapshot,
   DashboardData,
+  FileActivityKind,
+  SearchRequestOptions,
   SearchResult,
   SessionHead,
   SessionData,
   SessionsUpdatedEvent,
+  SmartTag,
 } from "./lib/api";
 import {
   deleteBookmark,
@@ -39,7 +51,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { BookmarkButton } from "./components/BookmarkButton";
 import { CopyResumeButton } from "./components/CopyResumeButton";
 import { SessionTreeSidebar } from "./components/SessionTreeSidebar";
-import { SmartTagChips } from "./components/SmartTagChips";
+import { SMART_TAG_LABELS, SmartTagChips } from "./components/SmartTagChips";
 import {
   clearLegacyBookmarks,
   getSessionBookmarkKey,
@@ -127,6 +139,15 @@ function formatWindowLabel(config: AppConfig | null): string | null {
   return `${fromStr} → ${toStr}`;
 }
 
+function formatSearchSubtitle(query: string, loading: boolean, count: number) {
+  if (loading) return query ? `Searching for "${query}"` : "Loading recent sessions";
+  return query ? `${count} matches for "${query}"` : `${count} recent sessions`;
+}
+
+function getSessionAgentKey(session: SessionHead): string {
+  return session.slug.split("/")[0]?.toLowerCase() || "unknown";
+}
+
 function formatRelativeTime(timestamp?: number) {
   if (!timestamp) return "unknown";
   const diff = Date.now() - timestamp;
@@ -156,7 +177,64 @@ interface BreadcrumbItem {
   to?: string;
 }
 
+type CostRangeId = "paid" | "one_plus" | "ten_plus";
+
+interface SearchFilterState {
+  agent?: string;
+  projectKey?: string;
+  tag?: SmartTag;
+  tool?: string;
+  fileKind?: FileActivityKind;
+  costRange?: CostRangeId;
+}
+
+interface SearchProjectOption {
+  key: string;
+  label: string;
+  count: number;
+}
+
 const SHORTCUT_HINT_STORAGE_KEY = "codesesh.shortcuts-hint-dismissed";
+
+const SMART_TAG_OPTIONS: SmartTag[] = [
+  "bugfix",
+  "refactoring",
+  "feature-dev",
+  "testing",
+  "docs",
+  "git-ops",
+  "build-deploy",
+  "exploration",
+  "planning",
+];
+
+const SEARCH_TOOL_OPTIONS = ["apply_patch", "bash", "read", "edit", "grep"] as const;
+
+const FILE_ACTIVITY_OPTIONS: Array<{ kind: FileActivityKind; label: string }> = [
+  { kind: "read", label: "Read" },
+  { kind: "edit", label: "Edit" },
+  { kind: "write", label: "Write" },
+  { kind: "delete", label: "Delete" },
+];
+
+const COST_RANGE_OPTIONS: Array<{
+  id: CostRangeId;
+  label: string;
+  costMin: number;
+}> = [
+  { id: "paid", label: "Cost > $0", costMin: 0.000001 },
+  { id: "one_plus", label: "Cost >= $1", costMin: 1 },
+  { id: "ten_plus", label: "Cost >= $10", costMin: 10 },
+];
+
+const SEARCH_MATCH_LABELS: Record<SearchResult["matchType"], string> = {
+  recent: "Recent",
+  title: "Title",
+  user_message: "User message",
+  assistant_reply: "Assistant reply",
+  tool_output: "Tool output",
+  file_path: "File path",
+};
 
 const SHORTCUT_GROUPS = [
   {
@@ -170,6 +248,7 @@ const SHORTCUT_GROUPS = [
   {
     title: "Search",
     items: [
+      { keys: "Cmd/Ctrl K", description: "Open global search" },
       { keys: "/", description: "Focus the search box" },
       { keys: "Esc", description: "Exit search or close the current detail view" },
     ],
@@ -210,6 +289,8 @@ export default function App() {
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [draftSearchQuery, setDraftSearchQuery] = useState("");
   const [activeSearchQuery, setActiveSearchQuery] = useState("");
+  const [searchMode, setSearchMode] = useState(false);
+  const [searchFilters, setSearchFilters] = useState<SearchFilterState>({});
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [selectedSidebarSessionId, setSelectedSidebarSessionId] = useState<string | null>(null);
@@ -268,7 +349,7 @@ export default function App() {
     () => new Map(agents.map((agent) => [agent.name.toLowerCase(), agent.displayName])),
     [agents],
   );
-  const isSearchMode = activeSearchQuery.length > 0;
+  const isSearchMode = searchMode;
 
   const viewState = useMemo(
     () => parseViewState(location.pathname, validAgentKeys),
@@ -437,6 +518,41 @@ export default function App() {
     [bookmarks],
   );
 
+  const searchRequestOptions = useMemo<SearchRequestOptions>(() => {
+    const selectedCost = COST_RANGE_OPTIONS.find((option) => option.id === searchFilters.costRange);
+    return {
+      agent: searchFilters.agent,
+      projectKey: searchFilters.projectKey,
+      tag: searchFilters.tag,
+      tool: searchFilters.tool,
+      fileKind: searchFilters.fileKind,
+      costMin: selectedCost?.costMin,
+    };
+  }, [searchFilters]);
+  const usesServerSearch =
+    activeSearchQuery.trim().length > 0 || Boolean(searchFilters.tool || searchFilters.fileKind);
+  const recentSearchResults = useMemo<SearchResult[]>(() => {
+    const selectedCost = COST_RANGE_OPTIONS.find((option) => option.id === searchFilters.costRange);
+    return sessions
+      .filter((item) => {
+        if (searchFilters.agent && getSessionAgentKey(item) !== searchFilters.agent) return false;
+        if (searchFilters.projectKey && item.project_identity?.key !== searchFilters.projectKey) {
+          return false;
+        }
+        if (searchFilters.tag && !item.smart_tags?.includes(searchFilters.tag)) return false;
+        if (selectedCost && item.stats.total_cost < selectedCost.costMin) return false;
+        return true;
+      })
+      .toSorted((a, b) => (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created))
+      .slice(0, 50)
+      .map((sessionItem) => ({
+        agentName: getSessionAgentKey(sessionItem),
+        session: sessionItem,
+        snippet: `Recent session · ${sessionItem.directory}`,
+        matchType: "recent" as const,
+      }));
+  }, [searchFilters, sessions]);
+
   // Stable key for session fetch
   const sessionFetchKey =
     viewState.mode === "session"
@@ -452,8 +568,8 @@ export default function App() {
           console.error("Failed to refresh dashboard:", err);
           return null;
         }),
-        activeSearchQuery
-          ? fetchSearchResults(activeSearchQuery).catch((err) => {
+        isSearchMode && usesServerSearch
+          ? fetchSearchResults(activeSearchQuery, searchRequestOptions).catch((err) => {
               console.error("Failed to refresh search results:", err);
               return { results: [] };
             })
@@ -489,8 +605,13 @@ export default function App() {
   });
 
   useEffect(() => {
-    if (!activeSearchQuery) {
+    if (!isSearchMode) {
       setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+    if (!usesServerSearch) {
+      setSearchResults(recentSearchResults);
       setSearchLoading(false);
       return;
     }
@@ -500,7 +621,7 @@ export default function App() {
     const startedAt = performance.now();
     logClientEvent("search.start", { query_length: activeSearchQuery.length });
 
-    void fetchSearchResults(activeSearchQuery)
+    void fetchSearchResults(activeSearchQuery, searchRequestOptions)
       .then((data) => {
         if (cancelled) return;
         setSearchResults(data.results);
@@ -526,7 +647,13 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeSearchQuery]);
+  }, [
+    activeSearchQuery,
+    isSearchMode,
+    recentSearchResults,
+    searchRequestOptions,
+    usesServerSearch,
+  ]);
 
   // Load session detail
   useEffect(() => {
@@ -664,15 +791,32 @@ export default function App() {
     [activeAgentKey, agents],
   );
 
+  const projectOptions = useMemo<SearchProjectOption[]>(() => {
+    const byKey = new Map<string, SearchProjectOption>();
+    for (const item of sessions) {
+      const identity = item.project_identity;
+      if (!identity?.key) continue;
+      const current = byKey.get(identity.key);
+      if (current) {
+        current.count += 1;
+      } else {
+        byKey.set(identity.key, {
+          key: identity.key,
+          label: identity.displayName || item.directory,
+          count: 1,
+        });
+      }
+    }
+    return [...byKey.values()].toSorted((a, b) => b.count - a.count).slice(0, 8);
+  }, [sessions]);
+
   // Header
   let headerTitle = "CodeSesh";
   let headerSubtitle: ReactNode = "Select an agent to browse sessions";
   if (viewState.mode === "root") {
     headerTitle = isSearchMode ? "Search" : "Dashboard";
     headerSubtitle = isSearchMode
-      ? searchLoading
-        ? `Searching for "${activeSearchQuery}"`
-        : `${searchResults.length} matches for "${activeSearchQuery}"`
+      ? formatSearchSubtitle(activeSearchQuery, searchLoading, searchResults.length)
       : dashboard
         ? `${dashboard.totals.sessions.toLocaleString("en-US")} total sessions across ${dashboard.perAgent.length} agents`
         : "Aggregated view across all agents";
@@ -708,9 +852,7 @@ export default function App() {
   }
   if (isSearchMode) {
     headerTitle = "Search";
-    headerSubtitle = searchLoading
-      ? `Searching for "${activeSearchQuery}"`
-      : `${searchResults.length} matches for "${activeSearchQuery}"`;
+    headerSubtitle = formatSearchSubtitle(activeSearchQuery, searchLoading, searchResults.length);
   }
 
   const breadcrumbItems = useMemo<BreadcrumbItem[]>(() => {
@@ -767,7 +909,14 @@ export default function App() {
         loading={searchLoading}
         results={searchResults}
         agentNameMap={agentNameMap}
-        onOpenResult={() => setActiveSearchQuery("")}
+        agents={agents}
+        projects={projectOptions}
+        filters={searchFilters}
+        onChangeFilters={setSearchFilters}
+        onOpenResult={() => {
+          setSearchMode(false);
+          setActiveSearchQuery("");
+        }}
         selectedIndex={selectedSearchIndex}
         registerResultRef={(key, node) => {
           if (node) searchResultRefs.current.set(key, node);
@@ -851,6 +1000,8 @@ export default function App() {
 
   function runSearch() {
     setActiveSearchQuery(draftSearchQuery.trim());
+    setSearchMode(true);
+    setSelectedSearchIndex(0);
   }
 
   function dismissShortcutHint() {
@@ -863,12 +1014,23 @@ export default function App() {
   }
 
   const handleGlobalKeydown = useEffectEvent((event: KeyboardEvent) => {
+    const key = event.key;
+    if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === "k") {
+      event.preventDefault();
+      setSearchMode(true);
+      setSelectedSearchIndex(0);
+      window.setTimeout(() => {
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }, 0);
+      return;
+    }
+
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.isComposing) return;
 
     const target = event.target;
     const inEditable = isEditableTarget(target);
-    const key = event.key;
 
     if (shortcutHelpOpen) {
       if (key === "Escape") {
@@ -896,6 +1058,7 @@ export default function App() {
     if (key === "/") {
       event.preventDefault();
       dismissShortcutHint();
+      setSearchMode(true);
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
       return;
@@ -903,7 +1066,8 @@ export default function App() {
 
     if (key === "Escape") {
       event.preventDefault();
-      if (activeSearchQuery) {
+      if (isSearchMode) {
+        setSearchMode(false);
         setActiveSearchQuery("");
         setDraftSearchQuery("");
         return;
@@ -946,6 +1110,7 @@ export default function App() {
         if (!result) return;
         event.preventDefault();
         dismissShortcutHint();
+        setSearchMode(false);
         setActiveSearchQuery("");
         navigate(`/${result.agentName.toLowerCase()}/${result.session.id}`, {
           state: { searchQuery: activeSearchQuery },
@@ -1004,9 +1169,9 @@ export default function App() {
   }, []);
 
   return (
-    <div className="console-ui h-screen overflow-hidden bg-[var(--console-bg)] text-[var(--console-text)]">
-      <header className="h-14 shrink-0 border-b border-[var(--console-border)] bg-white/85 backdrop-blur-sm">
-        <div className="grid h-full grid-cols-[auto_1fr_auto] items-center gap-4 px-4">
+    <div className="console-ui flex h-screen flex-col overflow-hidden bg-[var(--console-bg)] text-[var(--console-text)]">
+      <header className="shrink-0 border-b border-[var(--console-border)] bg-white/85 backdrop-blur-sm">
+        <div className="grid min-h-14 grid-cols-[auto_1fr] items-center gap-3 px-4 py-2 sm:grid-cols-[auto_1fr_auto] sm:py-0">
           <Link to="/" className="flex items-center gap-2 text-[var(--console-text)]">
             <img src="/logo.svg?v=3" alt="CodeSesh" className="h-6 w-6 rounded-sm" />
             <span className="console-mono text-sm font-semibold uppercase tracking-[0.05em]">
@@ -1014,7 +1179,7 @@ export default function App() {
             </span>
           </Link>
           <form
-            className="mx-auto flex w-full max-w-[560px] items-center justify-center gap-2"
+            className="order-3 col-span-2 flex w-full items-center justify-center gap-2 sm:order-none sm:col-span-1 sm:mx-auto sm:max-w-[560px]"
             onSubmit={(event) => {
               event.preventDefault();
               runSearch();
@@ -1036,7 +1201,7 @@ export default function App() {
               Search
             </button>
           </form>
-          <div className="flex items-center justify-end gap-3">
+          <div className="flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={() => {
@@ -1046,24 +1211,24 @@ export default function App() {
               className="console-mono rounded-sm border border-[var(--console-border)] bg-white px-2 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-[var(--console-surface-muted)]"
               title="Show keyboard shortcuts"
             >
-              ? Shortcuts
+              ?<span className="hidden sm:inline"> Shortcuts</span>
             </button>
             {formatWindowLabel(appConfig) ? (
               <span
-                className="console-mono rounded-sm border border-[var(--console-border)] bg-white px-2 py-1 text-xs text-[var(--console-text)]"
+                className="console-mono hidden rounded-sm border border-[var(--console-border)] bg-white px-2 py-1 text-xs text-[var(--console-text)] md:inline-flex"
                 title="Time window applied to agent counts, dashboard, and session list"
               >
                 {formatWindowLabel(appConfig)}
               </span>
             ) : null}
-            <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-muted)]">
+            <span className="console-mono hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-muted)] sm:inline-flex">
               v{__APP_VERSION__}
             </span>
           </div>
         </div>
       </header>
 
-      <div className="flex h-[calc(100vh-56px)] min-h-0">
+      <div className="flex min-h-0 flex-1">
         <aside className="hidden w-64 shrink-0 flex-col border-r border-[var(--console-border)] bg-[var(--console-sidebar-bg)] lg:flex">
           <div className="console-scrollbar flex-1 space-y-8 overflow-y-auto px-4 py-6">
             <section>
@@ -1363,6 +1528,10 @@ function SearchResultsPanel({
   loading,
   results,
   agentNameMap,
+  agents,
+  projects,
+  filters,
+  onChangeFilters,
   onOpenResult,
   selectedIndex,
   registerResultRef,
@@ -1371,41 +1540,63 @@ function SearchResultsPanel({
   loading: boolean;
   results: SearchResult[];
   agentNameMap: Map<string, string>;
+  agents: AgentInfo[];
+  projects: SearchProjectOption[];
+  filters: SearchFilterState;
+  onChangeFilters: Dispatch<SetStateAction<SearchFilterState>>;
   onOpenResult: () => void;
   selectedIndex: number;
   registerResultRef: (key: string, node: HTMLAnchorElement | null) => void;
 }) {
+  const filterBar = (
+    <SearchFilterBar
+      agents={agents}
+      projects={projects}
+      filters={filters}
+      onChangeFilters={onChangeFilters}
+    />
+  );
+
   if (loading) {
     return (
-      <div className="grid gap-3">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div
-            key={index}
-            className="animate-pulse rounded-sm border border-[var(--console-border)] bg-white/80 p-4"
-          >
-            <div className="h-3 w-32 rounded bg-[var(--console-surface-muted)]" />
-            <div className="mt-3 h-4 w-2/3 rounded bg-[var(--console-surface-muted)]" />
-            <div className="mt-2 h-3 w-full rounded bg-[var(--console-surface-muted)]" />
-            <div className="mt-1 h-3 w-5/6 rounded bg-[var(--console-surface-muted)]" />
-          </div>
-        ))}
+      <div className="flex flex-col gap-3">
+        {filterBar}
+        <div className="grid gap-3">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div
+              key={index}
+              className="animate-pulse rounded-sm border border-[var(--console-border)] bg-white/80 p-4"
+            >
+              <div className="h-3 w-32 rounded bg-[var(--console-surface-muted)]" />
+              <div className="mt-3 h-4 w-2/3 rounded bg-[var(--console-surface-muted)]" />
+              <div className="mt-2 h-3 w-full rounded bg-[var(--console-surface-muted)]" />
+              <div className="mt-1 h-3 w-5/6 rounded bg-[var(--console-surface-muted)]" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
 
   if (results.length === 0) {
     return (
-      <div className="rounded-sm border border-[var(--console-border)] bg-white/80 p-6">
-        <h2 className="console-mono text-sm font-semibold text-[var(--console-text)]">
-          No matches
-        </h2>
-        <p className="console-mono mt-2 text-xs text-[var(--console-muted)]">Query: {query}</p>
+      <div className="flex flex-col gap-3">
+        {filterBar}
+        <div className="rounded-sm border border-[var(--console-border)] bg-white/80 p-6">
+          <h2 className="console-mono text-sm font-semibold text-[var(--console-text)]">
+            {query ? "No matches" : "No recent sessions"}
+          </h2>
+          {query ? (
+            <p className="console-mono mt-2 text-xs text-[var(--console-muted)]">Query: {query}</p>
+          ) : null}
+        </div>
       </div>
     );
   }
 
   return (
     <div className="grid gap-3">
+      {filterBar}
       <div className="console-mono text-[11px] text-[var(--console-muted)]">
         Navigate j k · Open Enter · Exit Esc
       </div>
@@ -1431,6 +1622,9 @@ function SearchResultsPanel({
               <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--console-muted)]">
                 {agentLabel}
               </span>
+              <span className="console-mono rounded-sm border border-[var(--console-border)] bg-white px-1.5 py-0.5 text-[10px] uppercase text-[var(--console-muted)]">
+                {SEARCH_MATCH_LABELS[result.matchType]}
+              </span>
               <span className="console-mono text-[11px] text-[var(--console-muted)]">
                 {result.session.directory}
               </span>
@@ -1438,6 +1632,7 @@ function SearchResultsPanel({
             <h2 className="console-mono mt-3 text-sm font-semibold text-[var(--console-text)]">
               {result.session.title}
             </h2>
+            <SmartTagChips tags={result.session.smart_tags} className="mt-2" />
             <p
               className="console-mono mt-2 text-xs leading-6 text-[var(--console-muted)] [&_mark]:bg-[var(--console-accent)] [&_mark]:px-0.5 [&_mark]:text-white"
               dangerouslySetInnerHTML={{
@@ -1448,5 +1643,161 @@ function SearchResultsPanel({
         );
       })}
     </div>
+  );
+}
+
+function SearchFilterBar({
+  agents,
+  projects,
+  filters,
+  onChangeFilters,
+}: {
+  agents: AgentInfo[];
+  projects: SearchProjectOption[];
+  filters: SearchFilterState;
+  onChangeFilters: Dispatch<SetStateAction<SearchFilterState>>;
+}) {
+  const hasActiveFilters = Object.values(filters).some(Boolean);
+  const setFilter = <K extends keyof SearchFilterState>(key: K, value: SearchFilterState[K]) => {
+    onChangeFilters((current) => ({
+      ...current,
+      [key]: current[key] === value ? undefined : value,
+    }));
+  };
+
+  return (
+    <div className="rounded-sm border border-[var(--console-border)] bg-white/85 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
+          Scope
+        </span>
+        <FilterChip
+          active={!filters.projectKey}
+          label="All"
+          onClick={() => onChangeFilters((current) => ({ ...current, projectKey: undefined }))}
+        />
+        {projects.map((project) => (
+          <FilterChip
+            key={project.key}
+            active={filters.projectKey === project.key}
+            label={`${project.label} · ${project.count}`}
+            onClick={() => setFilter("projectKey", project.key)}
+          />
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
+          Agent
+        </span>
+        <FilterChip
+          active={!filters.agent}
+          label="All Agents"
+          onClick={() => onChangeFilters((current) => ({ ...current, agent: undefined }))}
+        />
+        {agents.map((agent) => (
+          <FilterChip
+            key={agent.name}
+            active={filters.agent === agent.name}
+            label={agent.displayName}
+            onClick={() => setFilter("agent", agent.name)}
+          />
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
+          Tag
+        </span>
+        {SMART_TAG_OPTIONS.map((tag) => (
+          <FilterChip
+            key={tag}
+            active={filters.tag === tag}
+            label={SMART_TAG_LABELS[tag]}
+            onClick={() => setFilter("tag", tag)}
+          />
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
+          Signal
+        </span>
+        {SEARCH_TOOL_OPTIONS.map((tool) => (
+          <FilterChip
+            key={tool}
+            active={filters.tool === tool}
+            label={`tool:${tool}`}
+            onClick={() => setFilter("tool", tool)}
+          />
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
+          File Activity
+        </span>
+        {FILE_ACTIVITY_OPTIONS.map((option) => (
+          <FilterChip
+            key={option.kind}
+            active={filters.fileKind === option.kind}
+            label={option.label}
+            onClick={() => setFilter("fileKind", option.kind)}
+          />
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
+          Cost Range
+        </span>
+        <FilterChip
+          active={!filters.costRange}
+          label="Any Cost"
+          onClick={() => onChangeFilters((current) => ({ ...current, costRange: undefined }))}
+        />
+        {COST_RANGE_OPTIONS.map((option) => (
+          <FilterChip
+            key={option.id}
+            active={filters.costRange === option.id}
+            label={option.label}
+            onClick={() => setFilter("costRange", option.id)}
+          />
+        ))}
+        {hasActiveFilters ? (
+          <button
+            type="button"
+            onClick={() => onChangeFilters({})}
+            className="console-mono ml-auto rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[10px] text-[var(--console-muted)] transition-colors hover:bg-white"
+          >
+            Clear
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function FilterChip({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`console-mono rounded-sm border px-2 py-1 text-[10px] transition-colors ${
+        active
+          ? "border-[var(--console-border-strong)] bg-[var(--console-accent)] text-white"
+          : "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-muted)] hover:bg-white"
+      }`}
+    >
+      {label}
+    </button>
   );
 }

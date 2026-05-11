@@ -227,6 +227,17 @@ export interface SearchResult {
   agentName: string;
   session: SessionHead;
   snippet: string;
+  matchType: "recent" | "title" | "user_message" | "assistant_reply" | "tool_output" | "file_path";
+}
+
+export interface SearchRequestOptions {
+  agent?: string;
+  projectKey?: string;
+  tag?: SmartTag;
+  tool?: string;
+  fileKind?: FileActivityKind;
+  costMin?: number;
+  costMax?: number;
 }
 
 export interface BookmarkedSessionSnapshot {
@@ -294,9 +305,19 @@ export async function fetchDashboard(window?: AppConfig["window"]): Promise<Dash
   return res.json();
 }
 
-export async function fetchSearchResults(query: string): Promise<{ results: SearchResult[] }> {
+export async function fetchSearchResults(
+  query: string,
+  options: SearchRequestOptions = {},
+): Promise<{ results: SearchResult[] }> {
   const params = new URLSearchParams();
   params.set("q", query);
+  if (options.agent) params.set("agent", options.agent);
+  if (options.projectKey) params.set("projectKey", options.projectKey);
+  if (options.tag) params.set("tag", options.tag);
+  if (options.tool) params.set("tool", options.tool);
+  if (options.fileKind) params.set("fileActivity", options.fileKind);
+  if (options.costMin != null) params.set("costMin", String(options.costMin));
+  if (options.costMax != null) params.set("costMax", String(options.costMax));
   const res = await fetch(`/api/search?${params}`);
   if (!res.ok) throw new Error("Failed to fetch search results");
   return res.json();

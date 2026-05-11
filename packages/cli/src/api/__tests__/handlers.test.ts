@@ -6,6 +6,7 @@ import {
   handleGetProjects,
   handleGetSessions,
   handleGetSessionData,
+  handleSearchSessions,
   type ScanResultSource,
 } from "../handlers.js";
 import type { ScanResult, SessionHead, SessionData } from "@codesesh/core";
@@ -254,6 +255,55 @@ describe("handleGetSessions", () => {
     const response = c.json.mock.calls[0]![0];
     // Invalid date → filter not applied
     expect(response.sessions).toHaveLength(2);
+  });
+});
+
+describe("handleSearchSessions", () => {
+  it("returns recent sessions for empty query from the scan snapshot", () => {
+    const older = makeSession("older", {
+      time_created: 1000,
+      time_updated: 1000,
+    });
+    const newer = makeSession("newer", {
+      time_created: 2000,
+      time_updated: 2000,
+    });
+    const c = makeMockContext({ query: { q: "" } });
+    handleSearchSessions(
+      c,
+      makeScanSource({
+        sessions: [older, newer],
+        byAgent: { claudecode: [older, newer] },
+      }),
+    );
+
+    const response = c.json.mock.calls[0]![0];
+    expect(response.results.map((result: { session: SessionHead }) => result.session.id)).toEqual([
+      "newer",
+      "older",
+    ]);
+    expect(response.results[0].matchType).toBe("recent");
+  });
+
+  it("applies typed qualifiers on the recent-session path", () => {
+    const claude = makeSession("claude", { slug: "claudecode/claude" });
+    const codex = makeSession("codex", { slug: "codex/codex" });
+    const c = makeMockContext({ query: { q: "agent:codex" } });
+    handleSearchSessions(
+      c,
+      makeScanSource({
+        sessions: [claude, codex],
+        byAgent: {
+          claudecode: [claude],
+          codex: [codex],
+        },
+      }),
+    );
+
+    const response = c.json.mock.calls[0]![0];
+    expect(response.results).toHaveLength(1);
+    expect(response.results[0].agentName).toBe("codex");
+    expect(response.results[0].session.id).toBe("codex");
   });
 });
 

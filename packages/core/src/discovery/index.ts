@@ -10,6 +10,7 @@ export {
   listCachedProjectGroups,
   listFileActivity,
   listSessionFileActivity,
+  parseSearchQuery,
   searchFileActivitySessions,
   searchSessions,
   syncSessionSearchIndex,
@@ -17,8 +18,12 @@ export {
 export type {
   FileActivityOptions,
   FileActivityResult,
+  ParsedSearchQuery,
   SearchIndexSyncOptions,
   SearchIndexSyncResult,
+  SearchMatchType,
+  SearchOptions,
+  SearchQueryFilters,
 } from "./cache.js";
 export { perf } from "../utils/index.js";
 export type { PerfMarker } from "../utils/index.js";
