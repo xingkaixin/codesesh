@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.1] - 2026-05-12
+
+### Bug Fixes
+
+- Fixed project detail routing for path-based projects by using a single encoded route key. (#18)
+
+### Changelog Detail
+
+- #18 fix(projects): use single route encoding @xingkaixin
+
 ## [0.6.0] - 2026-05-12
 
 ### Features

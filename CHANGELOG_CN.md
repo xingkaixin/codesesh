@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.1] - 2026-05-12
+
+### 问题修复
+
+- 修复基于路径的项目详情路由，项目 route key 现在使用单层编码。 (#18)
+
+### Changelog Detail
+
+- #18 fix(projects): use single route encoding @xingkaixin
+
 ## [0.6.0] - 2026-05-12
 
 ### 新功能
