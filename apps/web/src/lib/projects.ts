@@ -26,6 +26,5 @@ export function decodeProjectRouteKey(value: string): string {
 }
 
 export function getProjectPath(project: ProjectRouteIdentity): string {
-  // React Router decodes path segments before App parses them, so key needs one spare encode pass.
-  return `/projects/${encodeURIComponent(project.kind)}/${encodeURIComponent(encodeURIComponent(project.key))}`;
+  return `/projects/${encodeURIComponent(project.kind)}/${encodeURIComponent(project.key)}`;
 }
