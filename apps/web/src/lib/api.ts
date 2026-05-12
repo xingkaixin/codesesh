@@ -309,12 +309,13 @@ export async function fetchSessionData(agent: string, sessionId: string): Promis
 
 export async function fetchDashboard(
   window?: AppConfig["window"],
-  filters: { projectKey?: string; agent?: string } = {},
+  filters: { projectKind?: ProjectIdentityKind; projectKey?: string; agent?: string } = {},
 ): Promise<DashboardData> {
   const params = new URLSearchParams();
   if (window?.from != null) params.set("from", new Date(window.from).toISOString());
   if (window?.to != null) params.set("to", new Date(window.to).toISOString());
   if (window?.days != null && window.days > 0) params.set("days", String(window.days));
+  if (filters.projectKind) params.set("projectKind", filters.projectKind);
   if (filters.projectKey) params.set("projectKey", filters.projectKey);
   if (filters.agent) params.set("agent", filters.agent);
   const suffix = params.toString();

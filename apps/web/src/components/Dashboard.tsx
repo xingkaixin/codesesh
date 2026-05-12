@@ -492,7 +492,7 @@ function TopProjects({ projects }: { projects: ProjectGroup[] }) {
           return (
             <li key={`${project.identityKind}:${project.identityKey}`}>
               <Link
-                to={getProjectPath(project.identityKey)}
+                to={getProjectPath({ kind: project.identityKind, key: project.identityKey })}
                 className="block rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
               >
                 <div className="flex items-center gap-2">

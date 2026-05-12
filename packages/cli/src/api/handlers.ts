@@ -73,6 +73,7 @@ interface ApiProjectGroup extends ProjectGroup {
 
 interface DashboardScope {
   agent?: string;
+  projectKind?: string;
   projectKey?: string;
 }
 
@@ -374,7 +375,11 @@ function attachProjectMetrics(
 
 function matchesDashboardScope(session: SessionHead, scope: DashboardScope): boolean {
   if (scope.agent && getSessionAgentName(session) !== scope.agent) return false;
-  if (scope.projectKey && session.project_identity?.key !== scope.projectKey) return false;
+  if (scope.projectKey) {
+    const identity = session.project_identity;
+    if (!identity || identity.key !== scope.projectKey) return false;
+    if (scope.projectKind && identity.kind !== scope.projectKind) return false;
+  }
   return true;
 }
 
@@ -849,6 +854,7 @@ export function handleGetDashboard(
   );
   const scope: DashboardScope = {
     agent: optionalQueryValue(c.req.query("agent"))?.toLowerCase(),
+    projectKind: optionalQueryValue(c.req.query("projectKind")),
     projectKey: optionalQueryValue(c.req.query("projectKey")),
   };
 
