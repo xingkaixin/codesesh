@@ -25,6 +25,7 @@ import type {
   SessionsUpdatedEvent,
   SmartTag,
   ProjectGroup,
+  ProjectIdentityKind,
 } from "./lib/api";
 import {
   deleteBookmark,
@@ -62,14 +63,26 @@ import {
   mergeBookmarksWithSessions,
   toBookmarkedSessionSnapshot,
 } from "./lib/bookmarks";
-import { getProjectPath } from "./lib/projects";
+import {
+  decodeProjectRouteKey,
+  getProjectIdentityKey,
+  getProjectPath,
+  isProjectIdentityKind,
+  type ProjectRouteIdentity,
+} from "./lib/projects";
 
 type BrowseBy = "agents" | "projects";
 
 type ViewState =
   | { mode: "root"; activeAgentKey: null; activeSessionSlug: null }
   | { mode: "projects"; activeAgentKey: null; activeSessionSlug: null }
-  | { mode: "project"; activeAgentKey: null; activeSessionSlug: null; activeProjectKey: string }
+  | {
+      mode: "project";
+      activeAgentKey: null;
+      activeSessionSlug: null;
+      activeProjectKind: ProjectIdentityKind;
+      activeProjectKey: string;
+    }
   | { mode: "agent"; activeAgentKey: string; activeSessionSlug: null }
   | { mode: "session"; activeAgentKey: string; activeSessionSlug: string }
   | { mode: "missingAgent"; activeAgentKey: null; activeSessionSlug: null; attemptedKey: string }
@@ -97,13 +110,18 @@ function parseViewState(pathname: string, validAgentKeys: Set<string>): ViewStat
     if (segments.length === 1) {
       return { mode: "projects", activeAgentKey: null, activeSessionSlug: null };
     }
-    if (segments.length === 2) {
+    if (segments.length === 3) {
       try {
+        const kind = decodeURIComponent(segments[1]!);
+        if (!isProjectIdentityKind(kind)) {
+          return { mode: "invalidRoute", activeAgentKey: null, activeSessionSlug: null };
+        }
         return {
           mode: "project",
           activeAgentKey: null,
           activeSessionSlug: null,
-          activeProjectKey: decodeURIComponent(segments[1]!),
+          activeProjectKind: kind,
+          activeProjectKey: decodeProjectRouteKey(segments[2]!),
         };
       } catch {
         return { mode: "invalidRoute", activeAgentKey: null, activeSessionSlug: null };
@@ -172,6 +190,19 @@ function formatSearchSubtitle(query: string, loading: boolean, count: number) {
 
 function getSessionAgentKey(session: SessionHead): string {
   return session.slug.split("/")[0]?.toLowerCase() || "unknown";
+}
+
+function getProjectGroupIdentity(project: ProjectGroup): ProjectRouteIdentity {
+  return { kind: project.identityKind, key: project.identityKey };
+}
+
+function matchesProjectIdentity(
+  identity: SessionHead["project_identity"] | SessionData["project_identity"] | undefined,
+  project: ProjectRouteIdentity | null,
+): boolean {
+  return Boolean(
+    identity && project && identity.kind === project.kind && identity.key === project.key,
+  );
 }
 
 function formatRelativeTime(timestamp?: number) {
@@ -426,7 +457,8 @@ export default function App() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [projects, setProjects] = useState<ProjectGroup[]>([]);
   const [browseBy, setBrowseBy] = useState<BrowseBy>("agents");
-  const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
+  const [selectedProjectIdentity, setSelectedProjectIdentity] =
+    useState<ProjectRouteIdentity | null>(null);
   const [projectDashboard, setProjectDashboard] = useState<DashboardData | null>(null);
   const [projectDashboardLoading, setProjectDashboardLoading] = useState(false);
   const [projectDashboardError, setProjectDashboardError] = useState<string | null>(null);
@@ -520,7 +552,12 @@ export default function App() {
   useEffect(() => {
     if (viewState.mode === "projects" || viewState.mode === "project") {
       setBrowseBy("projects");
-      if (viewState.mode === "project") setSelectedProjectKey(viewState.activeProjectKey);
+      if (viewState.mode === "project") {
+        setSelectedProjectIdentity({
+          kind: viewState.activeProjectKind,
+          key: viewState.activeProjectKey,
+        });
+      }
       return;
     }
     if (viewState.mode === "agent" || viewState.mode === "missingAgent") {
@@ -658,27 +695,66 @@ export default function App() {
   }
 
   const activeAgentKey = viewState.activeAgentKey;
+  const activeProjectKind = viewState.mode === "project" ? viewState.activeProjectKind : null;
   const activeProjectKey = viewState.mode === "project" ? viewState.activeProjectKey : null;
-  const selectedProjectNavigationKey =
-    browseBy === "projects" ? (activeProjectKey ?? selectedProjectKey) : null;
+  const activeProjectIdentity = useMemo<ProjectRouteIdentity | null>(
+    () =>
+      activeProjectKind && activeProjectKey
+        ? { kind: activeProjectKind, key: activeProjectKey }
+        : null,
+    [activeProjectKind, activeProjectKey],
+  );
+  const activeProjectIdentityKey = activeProjectIdentity
+    ? getProjectIdentityKey(activeProjectIdentity)
+    : null;
+  const openedSessionHead = useMemo(() => {
+    if (viewState.mode !== "session") return null;
+    return (
+      sessions.find(
+        (sessionItem) =>
+          getSessionAgentKey(sessionItem) === viewState.activeAgentKey &&
+          sessionItem.id === viewState.activeSessionSlug,
+      ) ?? null
+    );
+  }, [sessions, viewState]);
+  const openedSessionData =
+    viewState.mode === "session" && session?.id === viewState.activeSessionSlug ? session : null;
+  const openedSessionProjectIdentity =
+    openedSessionData?.project_identity ?? openedSessionHead?.project_identity ?? null;
+  const selectedProjectNavigationIdentity =
+    browseBy === "projects"
+      ? (activeProjectIdentity ??
+        (viewState.mode === "session" ? openedSessionProjectIdentity : selectedProjectIdentity))
+      : null;
+  const selectedProjectNavigationId = selectedProjectNavigationIdentity
+    ? getProjectIdentityKey(selectedProjectNavigationIdentity)
+    : null;
   const agentSidebarSessions = useMemo(
     () => (activeAgentKey ? (sessionsByAgent[activeAgentKey] ?? []) : []),
     [activeAgentKey, sessionsByAgent],
   );
   const projectSidebarSessions = useMemo(
     () =>
-      selectedProjectNavigationKey
+      selectedProjectNavigationId
         ? sessions
             .filter(
               (sessionItem) =>
-                sessionItem.project_identity?.key === selectedProjectNavigationKey &&
+                matchesProjectIdentity(
+                  sessionItem.project_identity,
+                  selectedProjectNavigationIdentity,
+                ) &&
                 (!selectedProjectAgent || getSessionAgentKey(sessionItem) === selectedProjectAgent),
             )
             .toSorted(
               (a, b) => (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created),
             )
         : [],
-    [selectedProjectAgent, selectedProjectNavigationKey, sessions],
+    [
+      selectedProjectAgent,
+      selectedProjectNavigationId,
+      selectedProjectNavigationIdentity,
+      sessions,
+    ],
   );
   const sidebarSessions = browseBy === "projects" ? projectSidebarSessions : agentSidebarSessions;
   const bookmarkedSidebarSessionIds = useMemo(() => {
@@ -759,6 +835,7 @@ export default function App() {
           }),
           viewState.mode === "project"
             ? fetchDashboard(appConfig?.window, {
+                projectKind: viewState.activeProjectKind,
                 projectKey: viewState.activeProjectKey,
                 agent: selectedProjectAgent,
               }).catch((err) => {
@@ -897,8 +974,8 @@ export default function App() {
   }, [sessionFetchKey, viewState.activeAgentKey, viewState.activeSessionSlug, viewState.mode]);
 
   useEffect(() => {
-    if (activeProjectKey) setSelectedProjectAgent(undefined);
-  }, [activeProjectKey]);
+    if (activeProjectIdentityKey) setSelectedProjectAgent(undefined);
+  }, [activeProjectIdentityKey]);
 
   useEffect(() => {
     if (!activeProjectKey || !appConfig) {
@@ -913,6 +990,7 @@ export default function App() {
     setProjectDashboardError(null);
 
     void fetchDashboard(appConfig.window, {
+      projectKind: activeProjectKind ?? undefined,
       projectKey: activeProjectKey,
       agent: selectedProjectAgent,
     })
@@ -934,7 +1012,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeProjectKey, appConfig, selectedProjectAgent]);
+  }, [activeProjectKind, activeProjectKey, appConfig, selectedProjectAgent]);
 
   useEffect(() => {
     const unsubscribe = subscribeSessionUpdates((event) => {
@@ -1016,12 +1094,12 @@ export default function App() {
   }, [sessions]);
   const activeProjectSessions = useMemo(
     () =>
-      activeProjectKey
-        ? landingSessions.filter(
-            (sessionItem) => sessionItem.project_identity?.key === activeProjectKey,
+      activeProjectIdentity
+        ? landingSessions.filter((sessionItem) =>
+            matchesProjectIdentity(sessionItem.project_identity, activeProjectIdentity),
           )
         : [],
-    [activeProjectKey, landingSessions],
+    [activeProjectIdentity, landingSessions],
   );
 
   const landingAgentItems = useMemo<LandingAgentItem[]>(() => {
@@ -1040,12 +1118,20 @@ export default function App() {
     [activeAgentKey, agents],
   );
   const activeProject = useMemo(
-    () => projects.find((project) => project.identityKey === activeProjectKey) ?? null,
-    [activeProjectKey, projects],
+    () =>
+      projects.find(
+        (project) =>
+          activeProjectIdentityKey === getProjectIdentityKey(getProjectGroupIdentity(project)),
+      ) ?? null,
+    [activeProjectIdentityKey, projects],
   );
   const selectedProjectNavigation = useMemo(
-    () => projects.find((project) => project.identityKey === selectedProjectNavigationKey) ?? null,
-    [projects, selectedProjectNavigationKey],
+    () =>
+      projects.find(
+        (project) =>
+          selectedProjectNavigationId === getProjectIdentityKey(getProjectGroupIdentity(project)),
+      ) ?? null,
+    [projects, selectedProjectNavigationId],
   );
 
   const projectOptions = useMemo<SearchProjectOption[]>(() => {
@@ -1159,13 +1245,17 @@ export default function App() {
       ];
     }
 
-    if (viewState.mode === "session" && browseBy === "projects" && selectedProjectNavigationKey) {
+    if (
+      viewState.mode === "session" &&
+      browseBy === "projects" &&
+      selectedProjectNavigationIdentity
+    ) {
       return [
         dashboardCrumb,
         { label: "Projects", to: "/projects" },
         {
-          label: selectedProjectNavigation?.displayName ?? selectedProjectNavigationKey,
-          to: getProjectPath(selectedProjectNavigationKey),
+          label: selectedProjectNavigation?.displayName ?? selectedProjectNavigationIdentity.key,
+          to: getProjectPath(selectedProjectNavigationIdentity),
         },
         { label: session?.title || viewState.activeSessionSlug || "Conversation" },
       ];
@@ -1205,7 +1295,7 @@ export default function App() {
     browseBy,
     isSearchMode,
     selectedProjectNavigation,
-    selectedProjectNavigationKey,
+    selectedProjectNavigationIdentity,
     session?.title,
     viewState,
   ]);
@@ -1347,7 +1437,10 @@ export default function App() {
     setBrowseBy(next);
     setSelectedSidebarSessionId(null);
     if (next === "projects") {
-      navigate(selectedProjectKey ? getProjectPath(selectedProjectKey) : "/projects");
+      const project =
+        openedSessionProjectIdentity ??
+        (viewState.mode === "session" ? null : selectedProjectIdentity);
+      navigate(project ? getProjectPath(project) : "/projects");
       return;
     }
     navigate("/");
@@ -1413,8 +1506,8 @@ export default function App() {
         return;
       }
       if (viewState.mode === "session" && viewState.activeAgentKey) {
-        if (browseBy === "projects" && selectedProjectNavigationKey) {
-          navigate(getProjectPath(selectedProjectNavigationKey));
+        if (browseBy === "projects" && selectedProjectNavigationIdentity) {
+          navigate(getProjectPath(selectedProjectNavigationIdentity));
           return;
         }
         navigate(`/${viewState.activeAgentKey}`);
@@ -1641,12 +1734,14 @@ export default function App() {
                       );
                     })
                   : projects.map((project) => {
-                      const isSelected = selectedProjectNavigationKey === project.identityKey;
+                      const projectIdentity = getProjectGroupIdentity(project);
+                      const isSelected =
+                        selectedProjectNavigationId === getProjectIdentityKey(projectIdentity);
                       return (
                         <li key={`${project.identityKind}:${project.identityKey}`}>
                           <Link
-                            to={getProjectPath(project.identityKey)}
-                            onClick={() => setSelectedProjectKey(project.identityKey)}
+                            to={getProjectPath(projectIdentity)}
+                            onClick={() => setSelectedProjectIdentity(projectIdentity)}
                             className={`ml-4 flex min-w-0 items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
                               isSelected
                                 ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
@@ -1747,7 +1842,7 @@ export default function App() {
                 <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
                   Select an agent
                 </span>
-              ) : browseBy === "projects" && !selectedProjectNavigationKey ? (
+              ) : browseBy === "projects" && !selectedProjectNavigationId ? (
                 <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
                   Select a project
                 </span>

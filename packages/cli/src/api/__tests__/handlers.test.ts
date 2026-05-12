@@ -411,7 +411,7 @@ describe("handleGetDashboard", () => {
     expect(response.dailyActivity).toHaveLength(30);
   });
 
-  it("scopes dashboard data by project and agent", () => {
+  it("scopes dashboard data by project identity and agent", () => {
     const now = Date.now();
     const appClaude = makeSession("app-claude", {
       slug: "claudecode/app-claude",
@@ -446,17 +446,28 @@ describe("handleGetDashboard", () => {
         total_cost: 0.9,
       },
     });
+    const sameKeyPathCodex = makeSession("same-key-path-codex", {
+      slug: "codex/same-key-path-codex",
+      time_updated: now,
+      project_identity: { kind: "path", key: "github.com/acme/app", displayName: "app path" },
+      stats: {
+        message_count: 7,
+        total_input_tokens: 20,
+        total_output_tokens: 10,
+        total_cost: 0.7,
+      },
+    });
     const c = makeMockContext({
-      query: { projectKey: "github.com/acme/app", agent: "codex" },
+      query: { projectKind: "git_remote", projectKey: "github.com/acme/app", agent: "codex" },
     });
 
     handleGetDashboard(
       c,
       makeScanSource({
-        sessions: [appClaude, appCodex, otherCodex],
+        sessions: [appClaude, appCodex, otherCodex, sameKeyPathCodex],
         byAgent: {
           claudecode: [appClaude],
-          codex: [appCodex, otherCodex],
+          codex: [appCodex, otherCodex, sameKeyPathCodex],
         },
       }),
     );

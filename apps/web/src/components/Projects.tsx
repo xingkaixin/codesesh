@@ -79,7 +79,7 @@ function ProjectListItem({ project }: { project: ProjectGroup }) {
   return (
     <li>
       <Link
-        to={getProjectPath(project.identityKey)}
+        to={getProjectPath({ kind: project.identityKind, key: project.identityKey })}
         className="block rounded-sm border border-[var(--console-border)] bg-white/85 p-4 transition-colors hover:border-[var(--console-border-strong)] hover:bg-white"
       >
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
