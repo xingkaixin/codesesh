@@ -314,11 +314,25 @@ describe("handleGetProjects", () => {
         slug: "claudecode/a",
         project_identity: { kind: "git_remote", key: "github.com/acme/app", displayName: "app" },
         time_updated: 100,
+        stats: {
+          message_count: 2,
+          total_input_tokens: 10,
+          total_output_tokens: 5,
+          total_cost: 0.1,
+        },
       }),
       makeSession("b", {
         slug: "codex/b",
         project_identity: { kind: "git_remote", key: "github.com/acme/app", displayName: "app" },
         time_updated: 200,
+        stats: {
+          message_count: 3,
+          total_input_tokens: 1,
+          total_output_tokens: 2,
+          total_cost: 0.2,
+          total_tokens: 20,
+          cost_source: "estimated",
+        },
       }),
     ];
     const c = makeMockContext();
@@ -332,6 +346,26 @@ describe("handleGetProjects", () => {
         sources: ["claudecode", "codex"],
         sessionCount: 2,
         lastActivity: 200,
+        messages: 5,
+        tokens: 35,
+        cost: 0.30000000000000004,
+        cost_source: "estimated",
+        agentStats: [
+          {
+            name: "claudecode",
+            sessions: 1,
+            messages: 2,
+            tokens: 15,
+            cost: 0.1,
+          },
+          {
+            name: "codex",
+            sessions: 1,
+            messages: 3,
+            tokens: 20,
+            cost: 0.2,
+          },
+        ],
       },
     ]);
   });
@@ -375,6 +409,68 @@ describe("handleGetDashboard", () => {
     expect(response.totals.cost).toBeCloseTo(0.15);
     expect(response.totals.cost_source).toBe("recorded");
     expect(response.dailyActivity).toHaveLength(30);
+  });
+
+  it("scopes dashboard data by project and agent", () => {
+    const now = Date.now();
+    const appClaude = makeSession("app-claude", {
+      slug: "claudecode/app-claude",
+      time_updated: now,
+      project_identity: { kind: "git_remote", key: "github.com/acme/app", displayName: "app" },
+      stats: {
+        message_count: 2,
+        total_input_tokens: 10,
+        total_output_tokens: 5,
+        total_cost: 0.1,
+      },
+    });
+    const appCodex = makeSession("app-codex", {
+      slug: "codex/app-codex",
+      time_updated: now,
+      project_identity: { kind: "git_remote", key: "github.com/acme/app", displayName: "app" },
+      stats: {
+        message_count: 4,
+        total_input_tokens: 30,
+        total_output_tokens: 10,
+        total_cost: 0.2,
+      },
+    });
+    const otherCodex = makeSession("other-codex", {
+      slug: "codex/other-codex",
+      time_updated: now,
+      project_identity: { kind: "path", key: "/repo/other", displayName: "other" },
+      stats: {
+        message_count: 9,
+        total_input_tokens: 100,
+        total_output_tokens: 50,
+        total_cost: 0.9,
+      },
+    });
+    const c = makeMockContext({
+      query: { projectKey: "github.com/acme/app", agent: "codex" },
+    });
+
+    handleGetDashboard(
+      c,
+      makeScanSource({
+        sessions: [appClaude, appCodex, otherCodex],
+        byAgent: {
+          claudecode: [appClaude],
+          codex: [appCodex, otherCodex],
+        },
+      }),
+    );
+
+    const response = c.json.mock.calls[0]![0];
+    expect(response.totals.sessions).toBe(1);
+    expect(response.totals.messages).toBe(4);
+    expect(response.totals.tokens).toBe(40);
+    expect(response.totals.cost).toBeCloseTo(0.2);
+    expect(response.perAgent).toHaveLength(1);
+    expect(response.perAgent[0]?.name).toBe("codex");
+    expect(response.recentSessions.map((session: SessionHead) => session.id)).toEqual([
+      "app-codex",
+    ]);
   });
 
   it("marks dashboard totals as estimated when any session uses estimated cost", () => {

@@ -24,6 +24,7 @@ import type {
   SessionData,
   SessionsUpdatedEvent,
   SmartTag,
+  ProjectGroup,
 } from "./lib/api";
 import {
   deleteBookmark,
@@ -31,6 +32,7 @@ import {
   fetchBookmarks,
   fetchConfig,
   fetchDashboard,
+  fetchProjects,
   fetchSearchResults,
   fetchSessions,
   fetchSessionData,
@@ -47,6 +49,7 @@ import {
   type LandingAgentItem,
 } from "./components/DetailLanding";
 import { Dashboard } from "./components/Dashboard";
+import { ProjectDashboardView, ProjectsOverview } from "./components/Projects";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { BookmarkButton } from "./components/BookmarkButton";
 import { CopyResumeButton } from "./components/CopyResumeButton";
@@ -59,9 +62,14 @@ import {
   mergeBookmarksWithSessions,
   toBookmarkedSessionSnapshot,
 } from "./lib/bookmarks";
+import { getProjectPath } from "./lib/projects";
+
+type BrowseBy = "agents" | "projects";
 
 type ViewState =
   | { mode: "root"; activeAgentKey: null; activeSessionSlug: null }
+  | { mode: "projects"; activeAgentKey: null; activeSessionSlug: null }
+  | { mode: "project"; activeAgentKey: null; activeSessionSlug: null; activeProjectKey: string }
   | { mode: "agent"; activeAgentKey: string; activeSessionSlug: null }
   | { mode: "session"; activeAgentKey: string; activeSessionSlug: string }
   | { mode: "missingAgent"; activeAgentKey: null; activeSessionSlug: null; attemptedKey: string }
@@ -84,6 +92,24 @@ function parseViewState(pathname: string, validAgentKeys: Set<string>): ViewStat
 
   if (segments.length === 0) {
     return { mode: "root", activeAgentKey: null, activeSessionSlug: null };
+  }
+  if (segments[0]?.toLowerCase() === "projects") {
+    if (segments.length === 1) {
+      return { mode: "projects", activeAgentKey: null, activeSessionSlug: null };
+    }
+    if (segments.length === 2) {
+      try {
+        return {
+          mode: "project",
+          activeAgentKey: null,
+          activeSessionSlug: null,
+          activeProjectKey: decodeURIComponent(segments[1]!),
+        };
+      } catch {
+        return { mode: "invalidRoute", activeAgentKey: null, activeSessionSlug: null };
+      }
+    }
+    return { mode: "invalidRoute", activeAgentKey: null, activeSessionSlug: null };
   }
   if (segments.length === 1) {
     const key = segments[0]!.toLowerCase();
@@ -273,6 +299,118 @@ function isEditableTarget(target: EventTarget | null) {
   );
 }
 
+function BrowseByToggle({
+  value,
+  onChange,
+}: {
+  value: BrowseBy;
+  onChange: (value: BrowseBy) => void;
+}) {
+  const options: Array<{ value: BrowseBy; label: string }> = [
+    { value: "projects", label: "Projects" },
+    { value: "agents", label: "Agents" },
+  ];
+
+  return (
+    <div role="radiogroup" aria-label="Browse by" className="grid gap-1.5">
+      {options.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(option.value)}
+            className={`console-mono flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left text-xs transition-colors ${
+              active
+                ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
+                : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+            }`}
+          >
+            <span
+              className={`flex size-3 shrink-0 items-center justify-center rounded-full border ${
+                active ? "border-[var(--console-accent)]" : "border-[var(--console-border-strong)]"
+              }`}
+            >
+              {active ? (
+                <span className="size-1.5 rounded-full bg-[var(--console-accent)]" />
+              ) : null}
+            </span>
+            <span>{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SidebarFlatSessionList({
+  sessions,
+  activeSessionId,
+  selectedSessionId,
+  bookmarkedSessionIds,
+  onSelectSession,
+  onToggleBookmark,
+}: {
+  sessions: SessionHead[];
+  activeSessionId: string | null;
+  selectedSessionId: string | null;
+  bookmarkedSessionIds: Set<string>;
+  onSelectSession: (session: SessionHead) => void;
+  onToggleBookmark: (session: SessionHead) => void;
+}) {
+  return (
+    <div className="console-scrollbar h-[min(560px,calc(100vh-410px))] min-h-56 overflow-y-auto">
+      <ul className="space-y-1">
+        {sessions.map((sessionItem) => {
+          const agentKey = getSessionAgentKey(sessionItem);
+          const agentConfig = ModelConfig.agents[agentKey];
+          const active = activeSessionId === sessionItem.id;
+          const selected = selectedSessionId === sessionItem.id;
+          return (
+            <li key={sessionItem.slug}>
+              <div
+                className={`flex items-start gap-1 rounded-sm border px-2 py-1.5 transition-colors ${
+                  active || selected
+                    ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
+                    : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => onSelectSession(sessionItem)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {agentConfig?.icon ? (
+                      <img
+                        src={agentConfig.icon}
+                        alt={agentConfig.name}
+                        className="size-3.5 shrink-0 object-contain"
+                      />
+                    ) : null}
+                    <span className="console-mono line-clamp-1 text-xs text-[var(--console-text)]">
+                      {sessionItem.title}
+                    </span>
+                  </span>
+                  <span className="console-mono mt-0.5 block truncate text-[10px] text-[var(--console-muted)]">
+                    {formatRelativeTime(sessionItem.time_updated ?? sessionItem.time_created)}
+                  </span>
+                </button>
+                <BookmarkButton
+                  active={bookmarkedSessionIds.has(sessionItem.id)}
+                  onToggle={() => onToggleBookmark(sessionItem)}
+                />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export default function App() {
   const navigate = useNavigate();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -286,6 +424,13 @@ export default function App() {
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [liveNotice, setLiveNotice] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [projects, setProjects] = useState<ProjectGroup[]>([]);
+  const [browseBy, setBrowseBy] = useState<BrowseBy>("agents");
+  const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
+  const [projectDashboard, setProjectDashboard] = useState<DashboardData | null>(null);
+  const [projectDashboardLoading, setProjectDashboardLoading] = useState(false);
+  const [projectDashboardError, setProjectDashboardError] = useState<string | null>(null);
+  const [selectedProjectAgent, setSelectedProjectAgent] = useState<string | undefined>(undefined);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [draftSearchQuery, setDraftSearchQuery] = useState("");
   const [activeSearchQuery, setActiveSearchQuery] = useState("");
@@ -310,23 +455,30 @@ export default function App() {
       try {
         const config = await fetchConfig();
         setAppConfig(config);
-        const [agentList, sessionList, dashboardData, bookmarkData] = await Promise.all([
-          fetchAgents(),
-          fetchSessions({ from: config.window.from, to: config.window.to }),
-          fetchDashboard(config.window).catch((err) => {
-            console.error("Failed to load dashboard:", err);
-            return null;
-          }),
-          fetchBookmarks(),
-        ]);
+        const [agentList, sessionList, dashboardData, projectData, bookmarkData] =
+          await Promise.all([
+            fetchAgents(),
+            fetchSessions({ from: config.window.from, to: config.window.to }),
+            fetchDashboard(config.window).catch((err) => {
+              console.error("Failed to load dashboard:", err);
+              return null;
+            }),
+            fetchProjects().catch((err) => {
+              console.error("Failed to load projects:", err);
+              return { projects: [] };
+            }),
+            fetchBookmarks(),
+          ]);
         setAgents(agentList);
         setSessions(sessionList.sessions);
+        setProjects(projectData.projects);
         setBookmarks(bookmarkData.bookmarks);
         if (dashboardData) setDashboard(dashboardData);
         logClientEvent("app.load.done", {
           duration_ms: Math.round(performance.now() - startedAt),
           agents: agentList.length,
           sessions: sessionList.sessions.length,
+          projects: projectData.projects.length,
           dashboard: Boolean(dashboardData),
         });
       } catch (err) {
@@ -364,6 +516,17 @@ export default function App() {
       session: viewState.activeSessionSlug,
     });
   }, [location.pathname, viewState.mode, viewState.activeAgentKey, viewState.activeSessionSlug]);
+
+  useEffect(() => {
+    if (viewState.mode === "projects" || viewState.mode === "project") {
+      setBrowseBy("projects");
+      if (viewState.mode === "project") setSelectedProjectKey(viewState.activeProjectKey);
+      return;
+    }
+    if (viewState.mode === "agent" || viewState.mode === "missingAgent") {
+      setBrowseBy("agents");
+    }
+  }, [viewState]);
   const detailHighlightQuery = isSearchMode
     ? activeSearchQuery
     : typeof location.state === "object" &&
@@ -495,20 +658,41 @@ export default function App() {
   }
 
   const activeAgentKey = viewState.activeAgentKey;
-  const sidebarSessions = useMemo(
+  const activeProjectKey = viewState.mode === "project" ? viewState.activeProjectKey : null;
+  const selectedProjectNavigationKey =
+    browseBy === "projects" ? (activeProjectKey ?? selectedProjectKey) : null;
+  const agentSidebarSessions = useMemo(
     () => (activeAgentKey ? (sessionsByAgent[activeAgentKey] ?? []) : []),
     [activeAgentKey, sessionsByAgent],
   );
+  const projectSidebarSessions = useMemo(
+    () =>
+      selectedProjectNavigationKey
+        ? sessions
+            .filter(
+              (sessionItem) =>
+                sessionItem.project_identity?.key === selectedProjectNavigationKey &&
+                (!selectedProjectAgent || getSessionAgentKey(sessionItem) === selectedProjectAgent),
+            )
+            .toSorted(
+              (a, b) => (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created),
+            )
+        : [],
+    [selectedProjectAgent, selectedProjectNavigationKey, sessions],
+  );
+  const sidebarSessions = browseBy === "projects" ? projectSidebarSessions : agentSidebarSessions;
   const bookmarkedSidebarSessionIds = useMemo(() => {
-    if (!activeAgentKey) return new Set<string>();
+    if (sidebarSessions.length === 0) return new Set<string>();
     return new Set(
       sidebarSessions
         .filter((sessionItem) =>
-          bookmarkKeySet.has(getSessionBookmarkKey(activeAgentKey, sessionItem.id)),
+          bookmarkKeySet.has(
+            getSessionBookmarkKey(getSessionAgentKey(sessionItem), sessionItem.id),
+          ),
         )
         .map((sessionItem) => sessionItem.id),
     );
-  }, [activeAgentKey, bookmarkKeySet, sidebarSessions]);
+  }, [bookmarkKeySet, sidebarSessions]);
 
   const bookmarkedSessions = useMemo(
     () =>
@@ -561,23 +745,39 @@ export default function App() {
 
   const syncLiveUpdate = useEffectEvent(async (event: SessionsUpdatedEvent) => {
     try {
-      const [agentList, sessionList, dashboardData, searchData] = await Promise.all([
-        fetchAgents(),
-        fetchSessions({ from: appConfig?.window.from, to: appConfig?.window.to }),
-        fetchDashboard(appConfig?.window).catch((err) => {
-          console.error("Failed to refresh dashboard:", err);
-          return null;
-        }),
-        isSearchMode && usesServerSearch
-          ? fetchSearchResults(activeSearchQuery, searchRequestOptions).catch((err) => {
-              console.error("Failed to refresh search results:", err);
-              return { results: [] };
-            })
-          : Promise.resolve<{ results: SearchResult[] } | null>(null),
-      ]);
+      const [agentList, sessionList, dashboardData, projectData, projectDashboardData, searchData] =
+        await Promise.all([
+          fetchAgents(),
+          fetchSessions({ from: appConfig?.window.from, to: appConfig?.window.to }),
+          fetchDashboard(appConfig?.window).catch((err) => {
+            console.error("Failed to refresh dashboard:", err);
+            return null;
+          }),
+          fetchProjects().catch((err) => {
+            console.error("Failed to refresh projects:", err);
+            return { projects: [] };
+          }),
+          viewState.mode === "project"
+            ? fetchDashboard(appConfig?.window, {
+                projectKey: viewState.activeProjectKey,
+                agent: selectedProjectAgent,
+              }).catch((err) => {
+                console.error("Failed to refresh project dashboard:", err);
+                return null;
+              })
+            : Promise.resolve<DashboardData | null>(null),
+          isSearchMode && usesServerSearch
+            ? fetchSearchResults(activeSearchQuery, searchRequestOptions).catch((err) => {
+                console.error("Failed to refresh search results:", err);
+                return { results: [] };
+              })
+            : Promise.resolve<{ results: SearchResult[] } | null>(null),
+        ]);
       setAgents(agentList);
       setSessions(sessionList.sessions);
+      setProjects(projectData.projects);
       if (dashboardData) setDashboard(dashboardData);
+      if (projectDashboardData) setProjectDashboard(projectDashboardData);
       if (searchData) setSearchResults(searchData.results);
 
       if (viewState.mode === "session") {
@@ -697,6 +897,46 @@ export default function App() {
   }, [sessionFetchKey, viewState.activeAgentKey, viewState.activeSessionSlug, viewState.mode]);
 
   useEffect(() => {
+    if (activeProjectKey) setSelectedProjectAgent(undefined);
+  }, [activeProjectKey]);
+
+  useEffect(() => {
+    if (!activeProjectKey || !appConfig) {
+      setProjectDashboard(null);
+      setProjectDashboardError(null);
+      setProjectDashboardLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setProjectDashboardLoading(true);
+    setProjectDashboardError(null);
+
+    void fetchDashboard(appConfig.window, {
+      projectKey: activeProjectKey,
+      agent: selectedProjectAgent,
+    })
+      .then((data) => {
+        if (cancelled) return;
+        setProjectDashboard(data);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("Failed to load project dashboard:", err);
+        setProjectDashboard(null);
+        setProjectDashboardError("Failed to load project dashboard");
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setProjectDashboardLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectKey, appConfig, selectedProjectAgent]);
+
+  useEffect(() => {
     const unsubscribe = subscribeSessionUpdates((event) => {
       void syncLiveUpdate(event);
     });
@@ -774,6 +1014,15 @@ export default function App() {
       };
     });
   }, [sessions]);
+  const activeProjectSessions = useMemo(
+    () =>
+      activeProjectKey
+        ? landingSessions.filter(
+            (sessionItem) => sessionItem.project_identity?.key === activeProjectKey,
+          )
+        : [],
+    [activeProjectKey, landingSessions],
+  );
 
   const landingAgentItems = useMemo<LandingAgentItem[]>(() => {
     return agents
@@ -789,6 +1038,14 @@ export default function App() {
   const activeAgent = useMemo(
     () => agents.find((agent) => agent.name.toLowerCase() === activeAgentKey) ?? null,
     [activeAgentKey, agents],
+  );
+  const activeProject = useMemo(
+    () => projects.find((project) => project.identityKey === activeProjectKey) ?? null,
+    [activeProjectKey, projects],
+  );
+  const selectedProjectNavigation = useMemo(
+    () => projects.find((project) => project.identityKey === selectedProjectNavigationKey) ?? null,
+    [projects, selectedProjectNavigationKey],
   );
 
   const projectOptions = useMemo<SearchProjectOption[]>(() => {
@@ -820,6 +1077,16 @@ export default function App() {
       : dashboard
         ? `${dashboard.totals.sessions.toLocaleString("en-US")} total sessions across ${dashboard.perAgent.length} agents`
         : "Aggregated view across all agents";
+  }
+  if (viewState.mode === "projects") {
+    headerTitle = "Projects";
+    headerSubtitle = `${projects.length.toLocaleString("en-US")} projects across ${sessions.length.toLocaleString("en-US")} sessions`;
+  }
+  if (viewState.mode === "project") {
+    headerTitle = activeProject?.displayName ?? "Project";
+    headerSubtitle = activeProject
+      ? `${activeProject.sessionCount.toLocaleString("en-US")} sessions · ${activeProject.agentStats.length} agents`
+      : viewState.activeProjectKey;
   }
   if (viewState.mode === "agent" && activeAgentKey) {
     headerTitle = activeAgent?.displayName ?? activeAgentKey;
@@ -862,11 +1129,46 @@ export default function App() {
 
     const dashboardCrumb: BreadcrumbItem = {
       label: "Dashboard",
-      to: viewState.mode === "root" ? undefined : "/",
+      to:
+        (browseBy === "agents" && viewState.mode === "root") ||
+        (browseBy === "projects" && viewState.mode === "projects")
+          ? undefined
+          : browseBy === "projects"
+            ? "/projects"
+            : "/",
     };
 
     if (viewState.mode === "root") {
       return [{ label: "Dashboard" }];
+    }
+
+    const projectsCrumb: BreadcrumbItem = {
+      label: "Projects",
+      to: viewState.mode === "project" ? "/projects" : undefined,
+    };
+
+    if (viewState.mode === "projects") {
+      return [dashboardCrumb, { label: "Projects" }];
+    }
+
+    if (viewState.mode === "project") {
+      return [
+        dashboardCrumb,
+        projectsCrumb,
+        { label: activeProject?.displayName ?? viewState.activeProjectKey },
+      ];
+    }
+
+    if (viewState.mode === "session" && browseBy === "projects" && selectedProjectNavigationKey) {
+      return [
+        dashboardCrumb,
+        { label: "Projects", to: "/projects" },
+        {
+          label: selectedProjectNavigation?.displayName ?? selectedProjectNavigationKey,
+          to: getProjectPath(selectedProjectNavigationKey),
+        },
+        { label: session?.title || viewState.activeSessionSlug || "Conversation" },
+      ];
     }
 
     if (viewState.mode === "missingAgent") {
@@ -896,7 +1198,17 @@ export default function App() {
     }
 
     return [dashboardCrumb, { label: "Invalid Route" }];
-  }, [activeAgent, activeAgentKey, isSearchMode, session?.title, viewState]);
+  }, [
+    activeAgent,
+    activeAgentKey,
+    activeProject,
+    browseBy,
+    isSearchMode,
+    selectedProjectNavigation,
+    selectedProjectNavigationKey,
+    session?.title,
+    viewState,
+  ]);
 
   // Content
   let content: ReactNode;
@@ -934,6 +1246,7 @@ export default function App() {
     content = dashboard ? (
       <Dashboard
         data={dashboard}
+        projects={projects}
         bookmarkedSessions={bookmarkedSessions}
         isBookmarked={isSessionBookmarked}
         onToggleBookmark={(session, agentKey) => {
@@ -951,6 +1264,23 @@ export default function App() {
         agentItems={landingAgentItems}
         isBookmarked={isSessionBookmarked}
         onToggleBookmark={(session) => toggleSessionBookmark(session, session.agentKey)}
+      />
+    );
+  } else if (viewState.mode === "projects") {
+    content = <ProjectsOverview projects={projects} />;
+  } else if (viewState.mode === "project") {
+    content = (
+      <ProjectDashboardView
+        project={activeProject}
+        projectKey={viewState.activeProjectKey}
+        dashboard={projectDashboard}
+        loading={projectDashboardLoading}
+        error={projectDashboardError}
+        sessions={activeProjectSessions}
+        activeAgent={selectedProjectAgent}
+        onChangeAgent={setSelectedProjectAgent}
+        isBookmarked={isSessionBookmarked}
+        onToggleSessionBookmark={toggleSessionBookmark}
       />
     );
   } else if (viewState.mode === "agent" && activeAgentKey) {
@@ -1013,6 +1343,16 @@ export default function App() {
     }
   }
 
+  function changeBrowseBy(next: BrowseBy) {
+    setBrowseBy(next);
+    setSelectedSidebarSessionId(null);
+    if (next === "projects") {
+      navigate(selectedProjectKey ? getProjectPath(selectedProjectKey) : "/projects");
+      return;
+    }
+    navigate("/");
+  }
+
   const handleGlobalKeydown = useEffectEvent((event: KeyboardEvent) => {
     const key = event.key;
     if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === "k") {
@@ -1073,6 +1413,10 @@ export default function App() {
         return;
       }
       if (viewState.mode === "session" && viewState.activeAgentKey) {
+        if (browseBy === "projects" && selectedProjectNavigationKey) {
+          navigate(getProjectPath(selectedProjectNavigationKey));
+          return;
+        }
         navigate(`/${viewState.activeAgentKey}`);
       }
       return;
@@ -1119,7 +1463,8 @@ export default function App() {
       return;
     }
 
-    if (!activeAgentKey || sidebarSessions.length === 0) return;
+    if (browseBy === "agents" && !activeAgentKey) return;
+    if (sidebarSessions.length === 0) return;
 
     const moveSidebarSelection = (offset: number) => {
       dismissShortcutHint();
@@ -1159,7 +1504,7 @@ export default function App() {
       if (!selected) return;
       event.preventDefault();
       dismissShortcutHint();
-      navigate(`/${activeAgentKey}/${selected.id}`);
+      navigate(browseBy === "projects" ? `/${selected.slug}` : `/${activeAgentKey}/${selected.id}`);
     }
   });
 
@@ -1233,14 +1578,28 @@ export default function App() {
           <div className="console-scrollbar flex-1 space-y-8 overflow-y-auto px-4 py-6">
             <section>
               <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
+                BROWSE BY
+              </h3>
+              <BrowseByToggle value={browseBy} onChange={changeBrowseBy} />
+            </section>
+
+            <section>
+              <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
                 NAVIGATION
               </h3>
-              <ul className="space-y-1">
+              <ul
+                className={`space-y-1 ${
+                  browseBy === "projects"
+                    ? "console-scrollbar max-h-[min(280px,calc(100vh-440px))] overflow-y-auto pr-1"
+                    : ""
+                }`}
+              >
                 <li>
                   <Link
-                    to="/"
+                    to={browseBy === "projects" ? "/projects" : "/"}
                     className={`flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
-                      viewState.mode === "root"
+                      (browseBy === "agents" && viewState.mode === "root") ||
+                      (browseBy === "projects" && viewState.mode === "projects")
                         ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
                         : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
                     }`}
@@ -1249,44 +1608,75 @@ export default function App() {
                     <span className="console-mono line-clamp-1 flex-1 text-xs">Dashboard</span>
                   </Link>
                 </li>
-                {agents.map((agent) => {
-                  const key = agent.name.toLowerCase();
-                  const isSelected = key === activeAgentKey;
-                  const config = ModelConfig.agents[key];
-                  return (
-                    <li key={agent.name}>
-                      <Link
-                        to={`/${key}`}
-                        className={`ml-4 flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
-                          isSelected
-                            ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
-                            : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
-                        }`}
-                      >
-                        {config?.icon && (
-                          <img
-                            src={config.icon}
-                            alt={agent.displayName}
-                            className="size-3.5 object-contain"
-                          />
-                        )}
-                        <span className="console-mono line-clamp-1 flex-1 text-xs">
-                          {agent.displayName}
-                        </span>
-                        <span className="console-mono text-[11px] text-[var(--console-muted)]">
-                          {agent.count}
-                        </span>
-                      </Link>
-                    </li>
-                  );
-                })}
-                {agents.length === 0 && !loading && (
+                {browseBy === "agents"
+                  ? agents.map((agent) => {
+                      const key = agent.name.toLowerCase();
+                      const isSelected = key === activeAgentKey;
+                      const config = ModelConfig.agents[key];
+                      return (
+                        <li key={agent.name}>
+                          <Link
+                            to={`/${key}`}
+                            className={`ml-4 flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
+                              isSelected
+                                ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
+                                : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+                            }`}
+                          >
+                            {config?.icon && (
+                              <img
+                                src={config.icon}
+                                alt={agent.displayName}
+                                className="size-3.5 object-contain"
+                              />
+                            )}
+                            <span className="console-mono line-clamp-1 flex-1 text-xs">
+                              {agent.displayName}
+                            </span>
+                            <span className="console-mono text-[11px] text-[var(--console-muted)]">
+                              {agent.count}
+                            </span>
+                          </Link>
+                        </li>
+                      );
+                    })
+                  : projects.map((project) => {
+                      const isSelected = selectedProjectNavigationKey === project.identityKey;
+                      return (
+                        <li key={`${project.identityKind}:${project.identityKey}`}>
+                          <Link
+                            to={getProjectPath(project.identityKey)}
+                            onClick={() => setSelectedProjectKey(project.identityKey)}
+                            className={`ml-4 flex min-w-0 items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
+                              isSelected
+                                ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
+                                : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+                            }`}
+                          >
+                            <span className="console-mono min-w-0 flex-1 truncate text-xs">
+                              {project.displayName}
+                            </span>
+                            <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
+                              {project.sessionCount}
+                            </span>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                {browseBy === "agents" && agents.length === 0 && !loading ? (
                   <li>
                     <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
                       No agents found
                     </span>
                   </li>
-                )}
+                ) : null}
+                {browseBy === "projects" && projects.length === 0 && !loading ? (
+                  <li>
+                    <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
+                      No projects found
+                    </span>
+                  </li>
+                ) : null}
               </ul>
             </section>
 
@@ -1347,20 +1737,40 @@ export default function App() {
             <section>
               <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
                 SESSIONS
-                {activeAgentKey ? (
+                {sidebarSessions.length > 0 ? (
                   <span className="ml-2 text-[10px] font-normal text-[var(--console-muted)]">
                     Navigate j k · Open Enter
                   </span>
                 ) : null}
               </h3>
-              {!activeAgentKey ? (
+              {browseBy === "agents" && !activeAgentKey ? (
                 <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
                   Select an agent
+                </span>
+              ) : browseBy === "projects" && !selectedProjectNavigationKey ? (
+                <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
+                  Select a project
                 </span>
               ) : sidebarSessions.length === 0 ? (
                 <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
                   No sessions yet
                 </span>
+              ) : browseBy === "projects" ? (
+                <SidebarFlatSessionList
+                  sessions={sidebarSessions}
+                  activeSessionId={
+                    viewState.mode === "session" ? viewState.activeSessionSlug : null
+                  }
+                  selectedSessionId={selectedSidebarSessionId}
+                  bookmarkedSessionIds={bookmarkedSidebarSessionIds}
+                  onSelectSession={(sessionItem) => {
+                    setSelectedSidebarSessionId(sessionItem.id);
+                    navigate(`/${sessionItem.slug}`);
+                  }}
+                  onToggleBookmark={(sessionItem) =>
+                    toggleSessionBookmark(sessionItem, getSessionAgentKey(sessionItem))
+                  }
+                />
               ) : (
                 <SessionTreeSidebar
                   sessions={sidebarSessions}
@@ -1370,11 +1780,12 @@ export default function App() {
                   selectedSessionId={selectedSidebarSessionId}
                   onSelectSession={(sessionId) => {
                     setSelectedSidebarSessionId(sessionId);
-                    navigate(`/${activeAgentKey}/${sessionId}`);
+                    const selected = sidebarSessions.find((item) => item.id === sessionId);
+                    if (selected) navigate(`/${selected.slug}`);
                   }}
                   bookmarkedSessionIds={bookmarkedSidebarSessionIds}
                   onToggleBookmark={(sessionItem) =>
-                    toggleSessionBookmark(sessionItem, activeAgentKey)
+                    toggleSessionBookmark(sessionItem, getSessionAgentKey(sessionItem))
                   }
                 />
               )}
@@ -1411,7 +1822,11 @@ export default function App() {
                     ? "Session"
                     : viewState.mode === "root"
                       ? "Dashboard"
-                      : "Landing"}
+                      : viewState.mode === "projects"
+                        ? "Projects"
+                        : viewState.mode === "project"
+                          ? "Project"
+                          : "Landing"}
                 </span>
                 <h1 className="console-mono text-xl font-semibold tracking-tight text-[var(--console-text)]">
                   {headerTitle}

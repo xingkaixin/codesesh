@@ -150,6 +150,19 @@ export interface ProjectGroup {
   sources: string[];
   sessionCount: number;
   lastActivity: number | null;
+  messages: number;
+  tokens: number;
+  cost: number;
+  cost_source?: CostSource;
+  agentStats: ProjectAgentStat[];
+}
+
+export interface ProjectAgentStat {
+  name: string;
+  sessions: number;
+  messages: number;
+  tokens: number;
+  cost: number;
 }
 
 export interface SessionsUpdatedEvent {
@@ -294,11 +307,16 @@ export async function fetchSessionData(agent: string, sessionId: string): Promis
   return res.json();
 }
 
-export async function fetchDashboard(window?: AppConfig["window"]): Promise<DashboardData> {
+export async function fetchDashboard(
+  window?: AppConfig["window"],
+  filters: { projectKey?: string; agent?: string } = {},
+): Promise<DashboardData> {
   const params = new URLSearchParams();
   if (window?.from != null) params.set("from", new Date(window.from).toISOString());
   if (window?.to != null) params.set("to", new Date(window.to).toISOString());
   if (window?.days != null && window.days > 0) params.set("days", String(window.days));
+  if (filters.projectKey) params.set("projectKey", filters.projectKey);
+  if (filters.agent) params.set("agent", filters.agent);
   const suffix = params.toString();
   const res = await fetch(suffix ? `/api/dashboard?${suffix}` : "/api/dashboard");
   if (!res.ok) throw new Error("Failed to fetch dashboard");
