@@ -11,14 +11,17 @@ import type {
   FileActivityResult,
   ModelDistributionEntry,
   DashboardRecentSession,
+  ProjectGroup,
 } from "../lib/api";
 import { getSessionBookmarkKey } from "../lib/bookmarks";
+import { getProjectPath } from "../lib/projects";
 import { BookmarkButton } from "./BookmarkButton";
 import { SmartTagChips } from "./SmartTagChips";
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "./ui/chart";
 
 interface DashboardProps {
   data: DashboardData;
+  projects?: ProjectGroup[];
   bookmarkedSessions: BookmarkedSessionSnapshot[];
   isBookmarked: (agentKey: string, sessionId: string) => boolean;
   onToggleBookmark: (
@@ -467,6 +470,71 @@ function AgentDistribution({ perAgent }: { perAgent: DashboardAgentStat[] }) {
   );
 }
 
+function TopProjects({ projects }: { projects: ProjectGroup[] }) {
+  if (projects.length === 0) return null;
+
+  return (
+    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
+          Projects
+        </h3>
+        <Link
+          to="/projects"
+          className="console-mono text-[11px] text-[var(--console-muted)] transition-colors hover:text-[var(--console-text)]"
+        >
+          View all
+        </Link>
+      </div>
+      <ul className="space-y-2">
+        {projects.slice(0, 5).map((project) => {
+          const topAgents = project.agentStats.slice(0, 3);
+          return (
+            <li key={`${project.identityKind}:${project.identityKey}`}>
+              <Link
+                to={getProjectPath(project.identityKey)}
+                className="block rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="console-mono min-w-0 flex-1 truncate text-xs text-[var(--console-text)]">
+                    {project.displayName}
+                  </span>
+                  <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
+                    {formatNumber(project.sessionCount)} · {formatMoney(project.cost)}
+                  </span>
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  {topAgents.map((agent) => {
+                    const config = ModelConfig.agents[agent.name];
+                    return (
+                      <span
+                        key={agent.name}
+                        className="console-mono inline-flex items-center gap-1 rounded-sm border border-[var(--console-border)] bg-white px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]"
+                      >
+                        {config?.icon ? (
+                          <img
+                            src={config.icon}
+                            alt={config.name}
+                            className="size-3 object-contain"
+                          />
+                        ) : null}
+                        {config?.name ?? agent.name} · {agent.sessions}
+                      </span>
+                    );
+                  })}
+                  <span className="console-mono min-w-0 truncate text-[10px] text-[var(--console-muted)]">
+                    {formatCompact(project.tokens)} tokens
+                  </span>
+                </div>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function BookmarkedSessions({
   sessions,
   onToggleBookmark,
@@ -644,6 +712,7 @@ function RecentFileActivity({ activity }: { activity: FileActivityResult[] }) {
 
 export function Dashboard({
   data,
+  projects = [],
   bookmarkedSessions,
   isBookmarked,
   onToggleBookmark,
@@ -687,6 +756,8 @@ export function Dashboard({
         <ModelDistribution entries={modelDistribution} />
         <AgentDistribution perAgent={perAgent} />
       </div>
+
+      <TopProjects projects={projects} />
 
       <RecentSessions
         sessions={recentSessions}

@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import type {
   BookmarkRecord,
+  ProjectGroup,
   ScanResult,
   SessionData,
   SessionHead,
@@ -54,6 +55,27 @@ interface ApiSearchResult {
   matchType: SearchMatchType;
 }
 
+interface ApiProjectAgentStat {
+  name: string;
+  sessions: number;
+  messages: number;
+  tokens: number;
+  cost: number;
+}
+
+interface ApiProjectGroup extends ProjectGroup {
+  messages: number;
+  tokens: number;
+  cost: number;
+  cost_source?: SessionHead["stats"]["cost_source"];
+  agentStats: ApiProjectAgentStat[];
+}
+
+interface DashboardScope {
+  agent?: string;
+  projectKey?: string;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -98,6 +120,10 @@ function parseBookmarkPayload(value: unknown): Omit<BookmarkRecord, "bookmarked_
 
 function getTotalTokens(stats: SessionHead["stats"]): number {
   return stats.total_tokens ?? stats.total_input_tokens + stats.total_output_tokens;
+}
+
+function getSessionAgentName(session: SessionHead): string {
+  return session.slug.split("/")[0]?.toLowerCase() || "unknown";
 }
 
 function getSessionActivityTime(session: SessionHead): number {
@@ -268,6 +294,98 @@ function mergeSearchResults(results: ApiSearchResult[], limit: number): ApiSearc
   return merged;
 }
 
+function getProjectGroupKey(identityKind: string, identityKey: string): string {
+  return `${identityKind}:${identityKey}`;
+}
+
+function attachProjectMetrics(
+  projects: ProjectGroup[],
+  sessions: SessionHead[],
+): ApiProjectGroup[] {
+  const metrics = new Map<
+    string,
+    {
+      messages: number;
+      tokens: number;
+      cost: number;
+      hasEstimatedCost: boolean;
+      agentStats: Map<string, ApiProjectAgentStat>;
+    }
+  >();
+
+  for (const session of sessions) {
+    const identity = session.project_identity;
+    if (!identity) continue;
+    const key = getProjectGroupKey(identity.kind, identity.key);
+    let current = metrics.get(key);
+    if (!current) {
+      current = {
+        messages: 0,
+        tokens: 0,
+        cost: 0,
+        hasEstimatedCost: false,
+        agentStats: new Map(),
+      };
+      metrics.set(key, current);
+    }
+
+    const tokens = getTotalTokens(session.stats);
+    const cost = session.stats.total_cost ?? 0;
+    current.messages += session.stats.message_count;
+    current.tokens += tokens;
+    current.cost += cost;
+    if (session.stats.cost_source === "estimated") current.hasEstimatedCost = true;
+
+    const agentName = getSessionAgentName(session);
+    const agent = current.agentStats.get(agentName);
+    if (agent) {
+      agent.sessions += 1;
+      agent.messages += session.stats.message_count;
+      agent.tokens += tokens;
+      agent.cost += cost;
+    } else {
+      current.agentStats.set(agentName, {
+        name: agentName,
+        sessions: 1,
+        messages: session.stats.message_count,
+        tokens,
+        cost,
+      });
+    }
+  }
+
+  return projects.map((project) => {
+    const metric = metrics.get(getProjectGroupKey(project.identityKind, project.identityKey));
+    return {
+      ...project,
+      messages: metric?.messages ?? 0,
+      tokens: metric?.tokens ?? 0,
+      cost: metric?.cost ?? 0,
+      cost_source:
+        metric && metric.cost > 0
+          ? metric.hasEstimatedCost
+            ? "estimated"
+            : "recorded"
+          : undefined,
+      agentStats: [...(metric?.agentStats.values() ?? [])].sort((a, b) => b.sessions - a.sessions),
+    };
+  });
+}
+
+function matchesDashboardScope(session: SessionHead, scope: DashboardScope): boolean {
+  if (scope.agent && getSessionAgentName(session) !== scope.agent) return false;
+  if (scope.projectKey && session.project_identity?.key !== scope.projectKey) return false;
+  return true;
+}
+
+function filterSessionsByDashboardScope(
+  sessions: SessionHead[],
+  scope: DashboardScope,
+): SessionHead[] {
+  if (!scope.agent && !scope.projectKey) return sessions;
+  return sessions.filter((session) => matchesDashboardScope(session, scope));
+}
+
 function matchesRecentSearchFilters(session: SessionHead, options: SearchOptions): boolean {
   if (options.projectKey && session.project_identity?.key !== options.projectKey) return false;
   if (options.cwd && !matchesProjectScope(session, options.cwd)) return false;
@@ -352,10 +470,9 @@ export function handleGetProjects(
 ) {
   const scanResult = scanSource.getSnapshot();
   const { from, to } = defaults;
+  const sessions = filterSessionsByActivityWindow(scanResult.sessions, from, to);
   return c.json({
-    projects: listCachedProjectGroups(
-      filterSessionsByActivityWindow(scanResult.sessions, from, to),
-    ),
+    projects: attachProjectMetrics(listCachedProjectGroups(sessions), sessions),
   });
 }
 
@@ -730,12 +847,22 @@ export function handleGetDashboard(
     c.req.query("from"),
     c.req.query("to"),
   );
+  const scope: DashboardScope = {
+    agent: optionalQueryValue(c.req.query("agent"))?.toLowerCase(),
+    projectKey: optionalQueryValue(c.req.query("projectKey")),
+  };
 
-  const windowed = filterSessionsByActivityWindow(scanResult.sessions, from, to);
+  const scopedSessions = filterSessionsByDashboardScope(scanResult.sessions, scope);
+  const windowed = filterSessionsByActivityWindow(scopedSessions, from, to);
+  const scopedByAgent = Object.fromEntries(
+    Object.entries(scanResult.byAgent)
+      .filter(([name]) => !scope.agent || name.toLowerCase() === scope.agent)
+      .map(([name, sessions]) => [name, filterSessionsByDashboardScope(sessions, scope)]),
+  );
 
   const agentInfo = getAgentInfoMap(
     Object.fromEntries(
-      Object.entries(scanResult.byAgent).map(([name, sessions]) => [
+      Object.entries(scopedByAgent).map(([name, sessions]) => [
         name,
         filterSessionsByActivityWindow(sessions, from, to).length,
       ]),
@@ -757,7 +884,7 @@ export function handleGetDashboard(
     if (activity > latestActivity) latestActivity = activity;
   }
 
-  const perAgent: DashboardAgentStat[] = Object.entries(scanResult.byAgent)
+  const perAgent: DashboardAgentStat[] = Object.entries(scopedByAgent)
     .map(([name, sessions]) => {
       const info = agentInfoMap.get(name);
       const agentWindowed = filterSessionsByActivityWindow(sessions, from, to);
@@ -836,7 +963,7 @@ export function handleGetDashboard(
     .sort((a, b) => getSessionActivityTime(b) - getSessionActivityTime(a))
     .slice(0, 10)
     .map((session) => {
-      const agentKey = session.slug.split("/")[0] ?? "unknown";
+      const agentKey = getSessionAgentName(session);
       return { ...session, agentName: agentKey };
     });
 
@@ -854,7 +981,13 @@ export function handleGetDashboard(
     dailyTokenActivity,
     modelDistribution,
     recentSessions,
-    recentFileActivities: listFileActivity({ from, to, limit: 12 }),
+    recentFileActivities: listFileActivity({
+      agent: scope.agent,
+      projectKey: scope.projectKey,
+      from,
+      to,
+      limit: 12,
+    }),
     window: { from, to, days },
   };
 
