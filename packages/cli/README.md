@@ -19,16 +19,18 @@ Your browser will open at `http://localhost:4321` with all your sessions ready t
 ## Features
 
 - **Unified Timeline** — Browse sessions across all your AI agents in a single, searchable interface
-- **Full-Text Search** — Search across session titles and conversation content with highlighted matches
+- **Structured Global Search** — Search titles, messages, tool output, and file paths with filters for agent, project, smart tag, tool, file activity, and cost
 - **Dashboard & Activity Trends** — See totals, daily activity, agent distribution, model usage, token trends, smart tags, bookmarks, and recent sessions
+- **Project Browse Mode** — Open a dedicated projects view with project-level metrics, sessions, and cross-agent drill-down
 - **Project-Aware Session Tree** — Group sessions by repository or project identity across supported agents
 - **Smart Tags** — Automatically label bugfix, refactoring, feature work, testing, docs, planning, git, build/deploy, and exploration sessions
 - **Bookmarks** — Save important sessions and keep them visible from the dashboard
 - **Full Conversation Replay** — Read every message, tool call, and reasoning step exactly as it happened
-- **File Change Tracking** — Jump to files that were read, edited, created, deleted, or moved
+- **File Activity Index** — Jump to files that were read, edited, created, deleted, or moved, and search sessions by file activity
 - **Keyboard Navigation** — Move through views, focus search, and open shortcuts without leaving the keyboard
+- **Claude Code Resume Commands** — Copy worktree-aware `claude --resume` commands from Claude Code session details
 - **Cost & Token Visibility** — See token totals, cache tokens, recorded costs, and model-based cost estimates
-- **SQLite-Backed Cache & Search Index** — Restore session lists quickly and reuse the same local store for search
+- **SQLite Cache, Migrations & Search Index** — Restore session lists quickly, upgrade local schemas safely, and reuse the same local store for search
 - **Zero Configuration** — Just run it. CodeSesh auto-discovers everything on your filesystem
 - **100% Local & Private** — Your data stays on your machine. No accounts, no cloud sync, no cloud telemetry
 - **Live Refresh** — Local session changes are picked up automatically while the server is running
@@ -87,6 +89,7 @@ npx codesesh --trace
 | `--trace`   | —     | `false` | Print performance trace logs                                |
 | `--cache`   | —     | `true`  | Use cached scan results when available                      |
 | `--clear-cache` | — | `false` | Clear scan cache before starting                            |
+| `-v`        | —     | —       | Print version number                                        |
 
 ## Requirements
 

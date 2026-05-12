@@ -17,16 +17,18 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 **What you get:**
 
 - **Unified Timeline** — Browse sessions across all your AI agents in a single, searchable interface
-- **Full-Text Search** — Search across session titles and conversation content with highlighted matches
+- **Structured Global Search** — Search titles, messages, tool output, and file paths with filters for agent, project, smart tag, tool, file activity, and cost
 - **Dashboard & Activity Trends** — Track daily activity, agent distribution, recent sessions, latest activity, token usage, model usage, smart tags, and cost at a glance
+- **Project Browse Mode** — Open a dedicated projects view with project-level metrics, sessions, and cross-agent drill-down
 - **Project-Aware Session Tree** — Group sessions by repository or project identity across every supported agent
 - **Smart Tags** — Automatically label sessions such as bugfix, refactoring, feature work, testing, docs, planning, git operations, build/deploy, and exploration
 - **Bookmarks** — Save important sessions and keep them visible from the dashboard
 - **Full Conversation Replay** — Read every message, tool call, and reasoning step exactly as it happened
-- **File Change Tracking** — Jump from the session detail table of contents to files that were read, edited, created, deleted, or moved
+- **File Activity Index** — Jump to files that were read, edited, created, deleted, or moved, and search sessions by file activity
 - **Keyboard Navigation** — Move through views, focus search, and open shortcuts without leaving the keyboard
+- **Claude Code Resume Commands** — Copy worktree-aware `claude --resume` commands from Claude Code session details
 - **Cost & Token Visibility** — See token totals, cache tokens, recorded costs, and model-based cost estimates
-- **SQLite-Backed Cache & Search Index** — Restore session lists quickly and reuse the same local store for search
+- **SQLite Cache, Migrations & Search Index** — Restore session lists quickly, upgrade local schemas safely, and reuse the same local store for search
 - **Zero Configuration** — Just run it. CodeSesh auto-discovers everything on your filesystem
 - **100% Local & Private** — Your data stays on your machine. No accounts, no cloud sync, no cloud telemetry
 - **Live Refresh** — File changes are picked up automatically, and the UI stays in sync without a restart
@@ -174,13 +176,14 @@ npx codesesh -j
 Once CodeSesh is running, here's what you'll find:
 
 1. **Dashboard** — Start from a summary view with total sessions, total messages, total tokens, latest activity, daily activity, agent distribution, model distribution, token trends, smart tags, bookmarks, and recent sessions.
-2. **Search** — Query session titles and conversation text from the top bar, then jump into highlighted matches.
-3. **Session Tree Sidebar** — Browse sessions grouped by project identity and filter by agent or smart tag.
-4. **Session List** — Browse your sessions sorted by most recent. Each card shows the session title, working directory, message count, and total cost at a glance.
-5. **Smart Tags & Bookmarks** — Spot session intent quickly, pin sessions you want to revisit, and manage them from the dashboard or session views.
-6. **Session Detail** — Click any session to open a full replay with a receipt-style summary, user messages, assistant responses, tool invocations, reasoning steps, model labels, and tracked file changes.
-7. **Keyboard Shortcuts** — Use the shortcuts panel to navigate sessions, focus search, and move between grouped content faster.
-8. **Live Updates** — New or changed local sessions are reflected automatically while the server is running.
+2. **Structured Global Search** — Query titles, messages, tool output, and file paths, then narrow results by agent, project, tag, tool, file activity, or cost.
+3. **Projects** — Browse project-level totals, recent activity, agent mix, scoped dashboards, and sessions for a single repository or project identity.
+4. **Session Tree Sidebar** — Browse sessions grouped by agent or project identity and filter by agent or smart tag.
+5. **Session List** — Browse your sessions sorted by most recent. Each card shows the session title, working directory, message count, and total cost at a glance.
+6. **Smart Tags & Bookmarks** — Spot session intent quickly, pin sessions you want to revisit, and manage them from the dashboard or session views.
+7. **Session Detail** — Click any session to open a full replay with a receipt-style summary, user messages, assistant responses, tool invocations, reasoning steps, model labels, tracked file activity, and Claude Code resume command copy.
+8. **Keyboard Shortcuts** — Use the shortcuts panel to navigate sessions, open global search, focus search, and move between grouped content faster.
+9. **Live Updates** — New or changed local sessions are reflected automatically while the server is running.
 
 ---
 

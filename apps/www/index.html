@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="CodeSesh turns local AI coding history from Claude Code, Cursor, Kimi, Codex, and OpenCode into browsable, searchable, replayable engineering memory."
+      content="CodeSesh turns local AI coding history from Claude Code, Cursor, Kimi, Codex, and OpenCode into project-aware, structurally searchable, replayable engineering memory."
     />
     <meta
       name="keywords"
@@ -24,7 +24,7 @@
     <meta property="og:title" content="CodeSesh — Reusable Engineering Memory for AI Coding" />
     <meta
       property="og:description"
-      content="Discover, aggregate, and visualize local AI agent sessions so coding work across tools stays searchable and replayable."
+      content="Discover, aggregate, search, and replay local AI agent sessions with project browsing, file activity indexing, and local SQLite storage."
     />
     <meta property="og:image" content="https://codesesh.xingkaixin.me/og-image.png" />
     <meta property="og:image:width" content="1200" />
@@ -37,7 +37,7 @@
     <meta name="twitter:title" content="CodeSesh — Reusable Engineering Memory for AI Coding" />
     <meta
       name="twitter:description"
-      content="Discover, aggregate, and visualize local AI agent sessions so coding work across tools stays searchable and replayable."
+      content="Discover, aggregate, search, and replay local AI agent sessions with project browsing, file activity indexing, and local SQLite storage."
     />
     <meta name="twitter:image" content="https://codesesh.xingkaixin.me/og-image.png" />
 
@@ -80,7 +80,7 @@
             "name": "CodeSesh",
             "applicationCategory": "DeveloperApplication",
             "operatingSystem": "Windows, macOS, Linux",
-            "description": "CodeSesh turns local AI coding history from Claude Code, Cursor, Kimi, Codex, and OpenCode into browsable, searchable, replayable engineering memory.",
+            "description": "CodeSesh turns local AI coding history from Claude Code, Cursor, Kimi, Codex, and OpenCode into project-aware, structurally searchable, replayable engineering memory.",
             "url": "https://codesesh.xingkaixin.me",
             "codeRepository": "https://github.com/xingkaixin/codesesh",
             "installUrl": "https://www.npmjs.com/package/codesesh",
@@ -102,16 +102,18 @@
             },
             "featureList": [
               "Engineering memory overview",
+              "Project browse mode",
               "Project-aware session tree",
               "Smart tags",
-              "Full-text search",
+              "Structured global search",
               "Unified timeline",
               "Full conversation replay",
-              "File change tracking",
+              "Global file activity index",
               "Keyboard navigation",
               "Live refresh",
               "Cost and token visibility",
-              "SQLite local index",
+              "SQLite migrations and local index",
+              "Claude Code resume command copy",
               "Zero configuration",
               "Local and private"
             ]
@@ -125,7 +127,7 @@
                 "name": "What is CodeSesh?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from Claude Code, Cursor, Kimi, Codex, and OpenCode into a browsable engineering memory layer for recovering decisions, file changes, and complete collaboration paths."
+                  "text": "CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from Claude Code, Cursor, Kimi, Codex, and OpenCode into a project-aware engineering memory layer for recovering decisions, file activity, and complete collaboration paths."
                 }
               },
               {
@@ -133,7 +135,7 @@
                 "name": "Which AI coding tools does CodeSesh support?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "CodeSesh currently supports Claude Code, Cursor, Kimi, Codex, and OpenCode. Each tool connects through an agent adapter in the core package, then contributes sessions to unified lists, project trees, search indexes, smart tags, token statistics, and full replay views."
+                  "text": "CodeSesh currently supports Claude Code, Cursor, Kimi, Codex, and OpenCode. Each tool connects through an agent adapter in the core package, then contributes sessions to unified lists, project browsing, structured search indexes, file activity, smart tags, token statistics, and full replay views."
                 }
               },
               {

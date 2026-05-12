@@ -2,7 +2,7 @@
 
 CodeSesh turns local AI coding history into reusable engineering memory.
 
-It discovers local sessions from Claude Code, Cursor, Kimi, Codex, and OpenCode, then preserves problems, reasoning, attempts, file changes, and outcomes in one searchable memory layer.
+It discovers local sessions from Claude Code, Cursor, Kimi, Codex, and OpenCode, then preserves problems, reasoning, attempts, file activity, and outcomes in one project-aware searchable memory layer.
 
 ## Start
 
@@ -18,9 +18,9 @@ CodeSesh runs locally and opens a Web UI at `http://localhost:4321`.
 
 See collaboration patterns through agent activity, token trends, smart tags, and bookmarked sessions.
 
-### Full-Text Search
+### Structured Global Search
 
-Search titles and message content to return to the right engineering context.
+Search titles, messages, tool output, and file paths, then filter by project, tag, tool, file activity, and cost.
 
 ### Session Replay
 
@@ -45,6 +45,7 @@ CodeSesh brings local sessions from different agents into one index.
 CodeSesh puts sessions back into project, task, and engineering context.
 
 - Engineering Memory Overview: see cross-agent activity, models, tokens, smart tags, and bookmarked sessions together.
+- Project Browse Mode: open a project overview with project-level metrics, sessions, and cross-agent drill-down.
 - Project-Aware Session Tree: group sessions by repository and project identity across supported agents.
 - Smart Tags: label bugfix, refactor, feature, testing, docs, planning, Git, build, and exploration work.
 
@@ -52,7 +53,7 @@ CodeSesh puts sessions back into project, task, and engineering context.
 
 CodeSesh brings old decisions, paths, and context back into the current task.
 
-- Full-Text Search: search titles and conversation content with highlighted matches.
+- Structured Global Search: search titles, messages, tool output, and file paths with project, tag, tool, file activity, and cost filters.
 - Session Bookmarks: save important records so solutions, debugging paths, and key decisions stay traceable.
 - Keyboard Navigation: move across views, focus search, and navigate groups from the keyboard.
 
@@ -61,9 +62,10 @@ CodeSesh brings old decisions, paths, and context back into the current task.
 CodeSesh reconstructs the full path from problem to result.
 
 - Full Conversation Replay: read every message, tool call, and reasoning step in sequence.
-- File Change Tracking: jump to files that were read, edited, created, deleted, or moved.
+- File Activity Index: jump to files that were read, edited, created, deleted, or moved, and recover sessions by file activity.
 - Cost and Token Visibility: see token totals, cache tokens, recorded costs, and model-based estimates.
-- SQLite Local Index: use one local database for fast session restore and full-text indexing.
+- SQLite Migrations and Local Index: use one local database for fast restore, structured search, file activity indexing, and schema migrations.
+- Claude Code Resume Commands: copy worktree-aware `claude --resume` commands from Claude Code session details.
 - Local and Private: session data stays on your machine.
 
 ## Supported Agents
@@ -78,11 +80,11 @@ CodeSesh reconstructs the full path from problem to result.
 
 ### What is CodeSesh?
 
-CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from Claude Code, Cursor, Kimi, Codex, and OpenCode into a browsable engineering memory layer for recovering decisions, file changes, and complete collaboration paths.
+CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from Claude Code, Cursor, Kimi, Codex, and OpenCode into a project-aware engineering memory layer for recovering decisions, file activity, and complete collaboration paths.
 
 ### Which AI coding tools does CodeSesh support?
 
-CodeSesh currently supports Claude Code, Cursor, Kimi, Codex, and OpenCode. Each tool connects through an agent adapter in the core package, then contributes sessions to unified lists, project trees, search indexes, smart tags, token statistics, and full replay views.
+CodeSesh currently supports Claude Code, Cursor, Kimi, Codex, and OpenCode. Each tool connects through an agent adapter in the core package, then contributes sessions to unified lists, project browsing, structured search indexes, file activity, smart tags, token statistics, and full replay views.
 
 ### Does CodeSesh upload local AI session data?
 

@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.6.0] - 2026-05-12
+
+### Features
+
+- Added project browse mode with a `/projects` overview, project-scoped dashboards, cross-agent project session navigation, and project identity preservation in routes. (#17)
+- Added structured global search with query qualifiers and UI filters for agent, project, smart tag, tool, file activity, and cost ranges. (#16)
+- Added a global file activity index that records read, edit, write, and delete events from tool calls, then exposes them through search and API filters. (#15)
+- Added SQLite schema migrations and backup support so local cache upgrades can evolve the shared session, search, bookmark, and file activity store. (#9)
+- Added a Claude Code copy-resume-command button that builds worktree-aware `claude --resume` commands from the session detail view. (#6)
+
+### Reliability
+
+- Unified agent parse cleanup so internal tool/event noise is normalized consistently across supported adapters. (#13)
+- Normalized session persistence around structured session rows, parent session upserts, project identity backfills, and file activity data. (#11)
+- Hardened the LiveScan watcher with a more durable refresh pipeline and a non-recursive watch fallback. (#10)
+
+### Performance
+
+- Optimized FTS bulk sync with bulk/incremental modes and more durable trigger handling for large cache updates. (#12)
+
+### Tests
+
+- Added Playwright e2e coverage and SQLite migration smoke tests, including a longer migration timeout for slower environments. (#14)
+
+### Changelog Detail
+
+- #17 feat(projects): add project browse mode @xingkaixin
+- #16 Add structured global search @xingkaixin
+- #15 Add global file activity index @xingkaixin
+- #14 Add e2e and migration smoke tests @xingkaixin
+- #13 feat(core): unify agent parse cleanup @xingkaixin
+- #12 perf(search): optimize FTS bulk sync @xingkaixin
+- #11 feat(cache): normalize session persistence @xingkaixin
+- #10 refactor: harden livescan watcher @xingkaixin
+- #9 feat: Add SQLite migrations and backups @xingkaixin
+- #6 feat(web): add copy-resume-command button to Claude Code sidebar @nengqi
+
 ## [0.5.0] - 2026-05-02
 
 - feat(core): add smart tag classification for bugfixes, refactors, features, tests, docs, planning, git, build, and exploration workflows

@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.6.0] - 2026-05-12
+
+### 新功能
+
+- 新增项目浏览模式，支持 `/projects` 项目总览、项目级 Dashboard、跨 Agent 项目会话导航，并在路由中保留项目身份。 (#17)
+- 新增结构化全局搜索，支持通过查询限定符和界面筛选按 Agent、项目、智能标签、工具、文件活动和成本区间检索。 (#16)
+- 新增全局文件活动索引，从工具调用中记录 read、edit、write、delete 事件，并接入搜索和 API 筛选。 (#15)
+- 新增 SQLite schema 迁移与备份机制，让本地会话缓存、搜索、收藏和文件活动存储可以随版本演进。 (#9)
+- Claude Code 会话详情新增复制恢复命令按钮，可生成兼容 worktree 的 `claude --resume` 命令。 (#6)
+
+### 稳定性
+
+- 统一各 Agent 解析后的内容清理流程，集中处理内部工具和事件噪声。 (#13)
+- 规范化会话持久化，补齐结构化会话行、父会话 upsert、项目身份回填和文件活动数据写入。 (#11)
+- 强化 LiveScan watcher 刷新链路，并增加非递归监听回退。 (#10)
+
+### 性能
+
+- 优化 FTS 批量同步，按更新规模选择 bulk/incremental 模式，并增强触发器持久性。 (#12)
+
+### 测试
+
+- 新增 Playwright e2e 覆盖和 SQLite 迁移 smoke tests，并提高迁移测试在慢环境中的超时时间。 (#14)
+
+### Changelog Detail
+
+- #17 feat(projects): add project browse mode @xingkaixin
+- #16 Add structured global search @xingkaixin
+- #15 Add global file activity index @xingkaixin
+- #14 Add e2e and migration smoke tests @xingkaixin
+- #13 feat(core): unify agent parse cleanup @xingkaixin
+- #12 perf(search): optimize FTS bulk sync @xingkaixin
+- #11 feat(cache): normalize session persistence @xingkaixin
+- #10 refactor: harden livescan watcher @xingkaixin
+- #9 feat: Add SQLite migrations and backups @xingkaixin
+- #6 feat(web): add copy-resume-command button to Claude Code sidebar @nengqi
+
 ## [0.5.0] - 2026-05-02
 
 - feat(core): 增加智能标签分类，覆盖修复、重构、功能开发、测试、文档、规划、Git、构建发布和探索类会话

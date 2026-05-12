@@ -61,7 +61,7 @@ const copy = {
     meta: {
       title: "CodeSesh — 可复用的 AI 编码工程记忆",
       description:
-        "CodeSesh 把 Claude Code、Cursor、Kimi、Codex 和 OpenCode 的本地 AI 编码历史，沉淀成可浏览、可检索、可复盘的工程记忆。",
+        "CodeSesh 把 Claude Code、Cursor、Kimi、Codex 和 OpenCode 的本地 AI 编码历史，沉淀成按项目组织、可结构化检索、可复盘的工程记忆。",
     },
     header: {
       github: "GitHub",
@@ -70,7 +70,7 @@ const copy = {
     hero: {
       title: ["把 AI 编码历史，", "变成可复用的", "工程记忆。"],
       latest: "最新版",
-      body: "CodeSesh 自动发现 Claude Code、Cursor、Kimi、Codex 和 OpenCode 的本地会话，把问题、推理、尝试、文件变更和结果沉淀成可浏览、可检索、可复盘的工程记忆。",
+      body: "CodeSesh 自动发现 Claude Code、Cursor、Kimi、Codex 和 OpenCode 的本地会话，把问题、推理、尝试、文件活动和结果沉淀成按项目组织、可结构化检索、可复盘的工程记忆。",
       commandTitle: "从本地开始积累",
       command: "npx codesesh",
       copied: "已复制",
@@ -84,7 +84,7 @@ const copy = {
     tour: {
       label: "Product Tour",
       title: ["工程记忆", "如何在日常里生长"],
-      body: "从全局概览到会话回放，从项目树到全文检索，CodeSesh 让散落在不同 Agent 里的编码过程重新变得可见。",
+      body: "从全局概览到会话回放，从项目浏览到结构化搜索，CodeSesh 让散落在不同 Agent 里的编码过程重新变得可见。",
       expand: "展开",
       close: "关闭",
       previous: "上一张",
@@ -99,8 +99,9 @@ const copy = {
       },
       {
         image: "/demo/search.png",
-        title: "全文检索",
-        description: "搜索标题和消息内容，快速回到曾经发生过的工程上下文。",
+        title: "结构化全局搜索",
+        description:
+          "按标题、消息、工具输出和文件路径检索，并用项目、标签、工具、文件活动和成本缩小范围。",
       },
       {
         image: "/demo/session-detail.png",
@@ -168,8 +169,9 @@ const copy = {
           items: [
             {
               icon: Search,
-              title: "全文检索",
-              description: "搜索会话标题和对话内容，用高亮结果快速找回工程上下文。",
+              title: "结构化全局搜索",
+              description:
+                "搜索标题、消息、工具输出和文件路径，并按项目、标签、工具、文件活动和成本筛选。",
             },
             {
               icon: Bookmark,
@@ -194,8 +196,8 @@ const copy = {
             },
             {
               icon: ListTree,
-              title: "文件变更追踪",
-              description: "跳转到被读取、编辑、创建、删除或移动的文件，把对话和代码变更连起来。",
+              title: "文件活动索引",
+              description: "跳转到被读取、编辑、创建、删除或移动的文件，并按文件活动找回相关会话。",
             },
             {
               icon: BarChart3,
@@ -205,8 +207,8 @@ const copy = {
             },
             {
               icon: Database,
-              title: "SQLite 本地索引",
-              description: "用本地数据库支撑快速恢复和全文检索，让历史会话可以长期积累。",
+              title: "SQLite 迁移与本地索引",
+              description: "用本地数据库支撑快速恢复、结构化检索、文件活动索引和 schema 迁移。",
             },
             {
               icon: Shield,
@@ -230,12 +232,12 @@ const copy = {
         {
           question: "CodeSesh 是什么？",
           answer:
-            "CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放 AI 编码会话历史。它把 Claude Code、Cursor、Kimi、Codex 和 OpenCode 的本地记录整理成一个可浏览的工程记忆层，帮助开发者找回历史决策、文件变更和完整协作过程。",
+            "CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放 AI 编码会话历史。它把 Claude Code、Cursor、Kimi、Codex 和 OpenCode 的本地记录整理成一个按项目组织的工程记忆层，帮助开发者找回历史决策、文件活动和完整协作过程。",
         },
         {
           question: "CodeSesh 支持哪些 AI 编码工具？",
           answer:
-            "CodeSesh 当前支持 Claude Code、Cursor、Kimi、Codex 和 OpenCode。每个工具通过 core 包里的 Agent 适配器接入，扫描本地会话存储后统一生成会话列表、项目树、搜索索引、标签、Token 统计和会话详情。",
+            "CodeSesh 当前支持 Claude Code、Cursor、Kimi、Codex 和 OpenCode。每个工具通过 core 包里的 Agent 适配器接入，扫描本地会话存储后统一生成会话列表、项目浏览、结构化搜索索引、文件活动、标签、Token 统计和会话详情。",
         },
         {
           question: "CodeSesh 会上传本地 AI 会话数据吗？",
@@ -254,7 +256,7 @@ const copy = {
     meta: {
       title: "CodeSesh — Reusable Engineering Memory for AI Coding",
       description:
-        "CodeSesh turns local AI coding history from Claude Code, Cursor, Kimi, Codex, and OpenCode into browsable, searchable, replayable engineering memory.",
+        "CodeSesh turns local AI coding history from Claude Code, Cursor, Kimi, Codex, and OpenCode into project-aware, structurally searchable, replayable engineering memory.",
     },
     header: {
       github: "GitHub",
@@ -263,7 +265,7 @@ const copy = {
     hero: {
       title: ["Turn AI coding history", "into reusable engineering memory."],
       latest: "Latest",
-      body: "CodeSesh discovers local sessions from Claude Code, Cursor, Kimi, Codex, and OpenCode, then preserves problems, reasoning, attempts, file changes, and outcomes in one searchable memory layer.",
+      body: "CodeSesh discovers local sessions from Claude Code, Cursor, Kimi, Codex, and OpenCode, then preserves problems, reasoning, attempts, file activity, and outcomes in one project-aware searchable memory layer.",
       commandTitle: "Start from your machine",
       command: "npx codesesh",
       copied: "Copied",
@@ -277,7 +279,7 @@ const copy = {
     tour: {
       label: "Product Tour",
       title: "How engineering memory compounds in daily work",
-      body: "From overview to replay, from project trees to full-text search, CodeSesh makes coding history across agents visible again.",
+      body: "From overview to replay, from project browsing to structured search, CodeSesh makes coding history across agents visible again.",
       expand: "Expand",
       close: "Close",
       previous: "Previous",
@@ -293,9 +295,9 @@ const copy = {
       },
       {
         image: "/demo/search.png",
-        title: "Full-Text Search",
+        title: "Structured Global Search",
         description:
-          "Search titles and message content to return to the right engineering context.",
+          "Search titles, messages, tool output, and file paths, then filter by project, tag, tool, file activity, and cost.",
       },
       {
         image: "/demo/session-detail.png",
@@ -368,8 +370,9 @@ const copy = {
           items: [
             {
               icon: Search,
-              title: "Full-Text Search",
-              description: "Search titles and conversation content with highlighted matches.",
+              title: "Structured Global Search",
+              description:
+                "Search titles, messages, tool output, and file paths with project, tag, tool, file activity, and cost filters.",
             },
             {
               icon: Bookmark,
@@ -396,8 +399,9 @@ const copy = {
             },
             {
               icon: ListTree,
-              title: "File Change Tracking",
-              description: "Jump to files that were read, edited, created, deleted, or moved.",
+              title: "File Activity Index",
+              description:
+                "Jump to files that were read, edited, created, deleted, or moved, and recover sessions by file activity.",
             },
             {
               icon: BarChart3,
@@ -407,9 +411,9 @@ const copy = {
             },
             {
               icon: Database,
-              title: "SQLite Local Index",
+              title: "SQLite Migrations & Local Index",
               description:
-                "Use one local database for fast session restore and full-text indexing.",
+                "Use one local database for fast restore, structured search, file activity indexing, and schema migrations.",
             },
             {
               icon: Shield,
@@ -434,12 +438,12 @@ const copy = {
         {
           question: "What is CodeSesh?",
           answer:
-            "CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from Claude Code, Cursor, Kimi, Codex, and OpenCode into a browsable engineering memory layer for recovering decisions, file changes, and complete collaboration paths.",
+            "CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from Claude Code, Cursor, Kimi, Codex, and OpenCode into a project-aware engineering memory layer for recovering decisions, file activity, and complete collaboration paths.",
         },
         {
           question: "Which AI coding tools does CodeSesh support?",
           answer:
-            "CodeSesh currently supports Claude Code, Cursor, Kimi, Codex, and OpenCode. Each tool connects through an agent adapter in the core package, then contributes sessions to unified lists, project trees, search indexes, smart tags, token statistics, and full replay views.",
+            "CodeSesh currently supports Claude Code, Cursor, Kimi, Codex, and OpenCode. Each tool connects through an agent adapter in the core package, then contributes sessions to unified lists, project browsing, structured search indexes, file activity, smart tags, token statistics, and full replay views.",
         },
         {
           question: "Does CodeSesh upload local AI session data?",
