@@ -1,0 +1,38 @@
+---
+import { copy, type Locale } from "../data/landing";
+import HeadingText from "./HeadingText.astro";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = copy[locale].faq;
+---
+
+<section class="border-t border-[var(--console-border)] px-6 py-20" aria-label={t.label}>
+  <div class="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[0.75fr_1.25fr]">
+    <div>
+      <p class="console-mono text-xs font-bold uppercase tracking-[0.16em] text-[var(--console-muted)]">
+        {t.label}
+      </p>
+      <h2 class="landing-heading mt-4 max-w-lg text-3xl font-semibold leading-tight tracking-tight text-[var(--console-accent-strong)] md:text-4xl">
+        <HeadingText value={t.title} />
+      </h2>
+      <p class="mt-5 max-w-md text-base leading-8 text-[var(--console-muted)]">{t.body}</p>
+    </div>
+
+    <div class="divide-y divide-[var(--console-border)] border-y border-[var(--console-border)]">
+      {
+        t.items.map((item) => (
+          <article class="py-6">
+            <h3 class="text-lg font-semibold tracking-tight text-[var(--console-text)]">
+              {item.question}
+            </h3>
+            <p class="mt-3 text-sm leading-7 text-[var(--console-muted)]">{item.answer}</p>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>

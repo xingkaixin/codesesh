@@ -1,0 +1,63 @@
+---
+import { copy, type Locale } from "../data/landing";
+import HeadingText from "./HeadingText.astro";
+import Icon from "./Icon.astro";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = copy[locale].features;
+---
+
+<section class="px-6 py-24" aria-label={t.label}>
+  <div class="mx-auto grid max-w-6xl gap-12 lg:grid-cols-[0.78fr_1.22fr]">
+    <div class="lg:sticky lg:top-28 lg:self-start">
+      <p class="console-mono text-xs font-bold uppercase tracking-[0.16em] text-[var(--console-muted)]">
+        {t.label}
+      </p>
+      <h2 class="landing-heading mt-4 max-w-md text-3xl font-semibold leading-tight tracking-tight text-[var(--console-accent-strong)] md:text-4xl">
+        <HeadingText value={t.title} />
+      </h2>
+      <p class="mt-5 max-w-md text-base leading-8 text-[var(--console-muted)]">{t.body}</p>
+    </div>
+
+    <div class="space-y-5">
+      {
+        t.groups.map((group) => (
+          <article class="rounded-md border border-[var(--console-border)] bg-white p-6">
+            <div class="grid gap-6 md:grid-cols-[0.42fr_0.58fr]">
+              <div>
+                <h3 class="text-xl font-semibold tracking-tight text-[var(--console-text)]">
+                  {group.title}
+                </h3>
+                <p class="mt-3 text-sm leading-7 text-[var(--console-muted)]">
+                  {group.description}
+                </p>
+              </div>
+
+              <ul class="space-y-4">
+                {group.items.map((item) => (
+                  <li class="grid grid-cols-[2rem_1fr] gap-3">
+                    <div class="flex size-8 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)]">
+                      <Icon name={item.icon} class="size-4 text-[var(--console-accent)]" />
+                    </div>
+                    <div>
+                      <h4 class="console-mono text-xs font-bold text-[var(--console-text)]">
+                        {item.title}
+                      </h4>
+                      <p class="mt-1 text-sm leading-6 text-[var(--console-muted)]">
+                        {item.description}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>

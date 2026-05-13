@@ -1,0 +1,19 @@
+---
+import type { HeadingCopy } from "../data/landing";
+
+interface Props {
+  value: HeadingCopy;
+}
+
+const { value } = Astro.props;
+---
+
+{
+  Array.isArray(value)
+    ? value.map((line) => (
+        <span class="block">
+          {line}
+        </span>
+      ))
+    : value
+}

@@ -1,0 +1,169 @@
+---
+import { copy, type Locale } from "../data/landing";
+import HeadingText from "./HeadingText.astro";
+import Icon from "./Icon.astro";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = copy[locale].tour;
+const scenes = copy[locale].scenes;
+---
+
+<section class="border-y border-[var(--console-border)] bg-white px-6 py-24">
+  <div class="mx-auto max-w-6xl">
+    <div class="grid gap-8 md:grid-cols-[0.78fr_1.22fr] md:items-end">
+      <div>
+        <p class="console-mono text-xs font-bold uppercase tracking-[0.16em] text-[var(--console-muted)]">
+          {t.label}
+        </p>
+        <h2 class="landing-heading mt-4 max-w-xl text-3xl font-semibold leading-tight tracking-tight text-[var(--console-accent-strong)] md:text-4xl">
+          <HeadingText value={t.title} />
+        </h2>
+      </div>
+      <p class="max-w-2xl text-base leading-8 text-[var(--console-muted)]">{t.body}</p>
+    </div>
+
+    <div class="mt-14 grid gap-6 lg:grid-cols-2">
+      {
+        scenes.map((scene, index) => (
+          <article class="group relative overflow-hidden rounded-md border border-[var(--console-border)] bg-white text-left shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
+            <div class="border-b border-[var(--console-border)] bg-white px-6 py-5">
+              <p class="console-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--console-muted)]">
+                {scene.title}
+              </p>
+              <p class="mt-2 max-w-xl text-sm leading-6 text-[var(--console-text)]">
+                {scene.description}
+              </p>
+            </div>
+
+            <div class="bg-[var(--console-surface-muted)] p-4">
+              <div class="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[#f8f8f8]">
+                <img
+                  src={scene.image}
+                  alt={`${scene.title} demo`}
+                  class="aspect-[1586/992] h-auto w-full object-cover object-top"
+                  loading="lazy"
+                />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              data-scene-open={String(index)}
+              class="absolute right-6 bottom-6 inline-flex items-center gap-2 rounded-sm border border-white/70 bg-white/92 px-3 py-2 text-xs font-medium text-[var(--console-text)] opacity-0 shadow-lg transition-all duration-200 group-hover:opacity-100 group-focus-within:opacity-100 hover:scale-[1.02]"
+              aria-label={`${t.expand} ${scene.title}`}
+            >
+              <Icon name="expand" class="size-3.5" />
+              {t.expand}
+            </button>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+{
+  scenes.map((scene, index) => (
+    <dialog
+      id={`scene-dialog-${locale}-${index}`}
+      data-scene-dialog
+      data-scene-index={String(index)}
+      class="m-0 h-screen max-h-none w-screen max-w-none bg-transparent p-0 backdrop:bg-black/55 backdrop:backdrop-blur-sm"
+      aria-label={`${scene.title} preview`}
+    >
+      <div class="flex min-h-screen items-center justify-center p-4" data-scene-backdrop>
+        <div class="relative flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-md border border-white/20 bg-[#f7f7f7] shadow-[0_40px_120px_rgba(15,23,42,0.45)]">
+          <div class="flex items-start justify-between gap-4 border-b border-[var(--console-border)] bg-white px-5 py-4">
+            <div>
+              <p class="console-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--console-muted)]">
+                {scene.title}
+              </p>
+              <p class="mt-2 max-w-2xl text-sm leading-6 text-[var(--console-text)]">
+                {scene.description}
+              </p>
+            </div>
+            <button
+              type="button"
+              data-scene-close
+              class="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--console-text)] transition-colors hover:bg-white"
+            >
+              {t.close}
+            </button>
+          </div>
+
+          <div class="flex items-center justify-between gap-3 border-b border-[var(--console-border)] bg-[rgba(255,255,255,0.82)] px-4 py-3">
+            <button
+              type="button"
+              data-scene-prev
+              class="inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-white px-3 py-2 text-xs font-medium text-[var(--console-text)] transition-colors hover:bg-[var(--console-surface-muted)]"
+            >
+              <Icon name="chevron-left" class="size-4" />
+              {t.previous}
+            </button>
+            <p class="console-mono text-[11px] uppercase tracking-[0.16em] text-[var(--console-muted)]">
+              {t.closeHint}
+            </p>
+            <button
+              type="button"
+              data-scene-next
+              class="inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-white px-3 py-2 text-xs font-medium text-[var(--console-text)] transition-colors hover:bg-[var(--console-surface-muted)]"
+            >
+              {t.next}
+              <Icon name="chevron-right" class="size-4" />
+            </button>
+          </div>
+
+          <div class="overflow-auto bg-[var(--console-surface-muted)] p-4">
+            <div class="mx-auto min-w-[56rem] overflow-hidden rounded-sm border border-[var(--console-border)] bg-white shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
+              <img
+                src={scene.image}
+                alt={`${scene.title} enlarged preview`}
+                class="h-auto w-full object-cover object-top"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </dialog>
+  ))
+}
+
+<script>
+  const dialogs = Array.from(document.querySelectorAll<HTMLDialogElement>("[data-scene-dialog]"));
+
+  function openScene(index: number) {
+    const dialog = dialogs[index];
+    if (!dialog) return;
+
+    dialogs.forEach((item) => {
+      if (item !== dialog && item.open) item.close();
+    });
+    dialog.showModal();
+  }
+
+  document.querySelectorAll<HTMLButtonElement>("[data-scene-open]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number(button.dataset.sceneOpen);
+      openScene(index);
+    });
+  });
+
+  dialogs.forEach((dialog, index) => {
+    dialog.querySelector("[data-scene-close]")?.addEventListener("click", () => dialog.close());
+    dialog.querySelector("[data-scene-backdrop]")?.addEventListener("click", (event) => {
+      if (event.target === event.currentTarget) dialog.close();
+    });
+    dialog.querySelector("[data-scene-prev]")?.addEventListener("click", () => {
+      dialog.close();
+      openScene((index - 1 + dialogs.length) % dialogs.length);
+    });
+    dialog.querySelector("[data-scene-next]")?.addEventListener("click", () => {
+      dialog.close();
+      openScene((index + 1) % dialogs.length);
+    });
+  });
+</script>

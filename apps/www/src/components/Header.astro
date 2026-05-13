@@ -1,0 +1,50 @@
+---
+import { copy, localeRoutes, type Locale } from "../data/landing";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = copy[locale].header;
+---
+
+<header class="sticky top-0 z-50 border-b border-[var(--console-border)] bg-white/88 backdrop-blur-md">
+  <div class="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+    <a href={localeRoutes[locale]} class="flex items-center gap-2 text-[var(--console-text)]">
+      <img src="/logo.svg?v=2" alt="CodeSesh" class="h-7 w-7 rounded-sm" />
+      <span class="console-mono text-sm font-semibold uppercase tracking-[0.05em]">CodeSesh</span>
+    </a>
+    <nav class="flex items-center gap-3">
+      <a
+        href="https://github.com/xingkaixin/codesesh"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="console-mono text-xs text-[var(--console-muted)] transition-colors hover:text-[var(--console-text)]"
+      >
+        {t.github}
+      </a>
+      <div
+        class="flex items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-0.5"
+        aria-label={t.languageLabel}
+      >
+        {
+          (["zh", "en"] as const).map((item) => (
+            <a
+              href={localeRoutes[item]}
+              class:list={[
+                "console-mono rounded-[3px] px-2 py-1 text-[10px] font-semibold transition-colors",
+                locale === item
+                  ? "bg-white text-[var(--console-text)] shadow-sm"
+                  : "text-[var(--console-muted)] hover:text-[var(--console-text)]",
+              ]}
+              aria-current={locale === item ? "page" : undefined}
+            >
+              {item === "zh" ? "中文" : "EN"}
+            </a>
+          ))
+        }
+      </div>
+    </nav>
+  </div>
+</header>

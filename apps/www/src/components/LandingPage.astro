@@ -1,0 +1,28 @@
+---
+import type { Locale } from "../data/landing";
+import Agents from "./Agents.astro";
+import FAQ from "./FAQ.astro";
+import Features from "./Features.astro";
+import Footer from "./Footer.astro";
+import Header from "./Header.astro";
+import Hero from "./Hero.astro";
+import ProductShowcase from "./ProductShowcase.astro";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+---
+
+<div class="console-ui min-h-screen bg-[var(--console-bg)] bg-grid text-[var(--console-text)]">
+  <Header locale={locale} />
+  <main>
+    <Hero locale={locale} />
+    <ProductShowcase locale={locale} />
+    <Features locale={locale} />
+    <Agents locale={locale} />
+    <FAQ locale={locale} />
+  </main>
+  <Footer />
+</div>
