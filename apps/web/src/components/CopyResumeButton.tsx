@@ -3,17 +3,16 @@ import { useEffect, useState } from "react";
 import { buildResumeCommand } from "../lib/build-resume-command";
 
 interface CopyResumeButtonProps {
-  /** Session ID, will be shell-quoted into `--resume <id>`. */
+  /** Session ID, will be shell-quoted into the resume command. */
   sessionId: string;
+  agentName: string;
   /**
    * Session directory — pass `session.directory` from SessionHead.
    *
-   * Why this field specifically: in claudecode adapter, SessionHead.directory
-   * is derived from the first user record's `cwd`, which is the actual working
+   * Why this field specifically: SessionHead.directory is the actual working
    * directory at session start. For worktree sessions this is the worktree
-   * path, not the main repo root — `claude --resume` must be invoked from
-   * there to find the same context. project_identity.path_root would route a
-   * worktree session back to the wrong dir.
+   * path, not the main repo root, so resume must be invoked from there to find
+   * the same context.
    */
   directory?: string | null;
   className?: string;
@@ -48,15 +47,22 @@ async function writeToClipboard(text: string): Promise<boolean> {
   return ok;
 }
 
-export function CopyResumeButton({ sessionId, directory, className = "" }: CopyResumeButtonProps) {
+export function CopyResumeButton({
+  agentName,
+  sessionId,
+  directory,
+  className = "",
+}: CopyResumeButtonProps) {
   const [copied, setCopied] = useState(false);
-  const command = buildResumeCommand({ sessionId, directory });
+  const command = buildResumeCommand({ agentName, sessionId, directory });
 
   useEffect(() => {
     if (!copied) return;
     const timer = window.setTimeout(() => setCopied(false), 1500);
     return () => window.clearTimeout(timer);
   }, [copied]);
+
+  if (!command) return null;
 
   return (
     <button
@@ -68,9 +74,7 @@ export function CopyResumeButton({ sessionId, directory, className = "" }: CopyR
           if (ok) setCopied(true);
         });
       }}
-      aria-label={
-        copied ? `Resume command copied: ${command}` : `Copy claude --resume command: ${command}`
-      }
+      aria-label={copied ? `Resume command copied: ${command}` : `Copy resume command: ${command}`}
       title={copied ? `Copied: ${command}` : `Copy: ${command}`}
       className={`console-mono inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[11px] transition-colors ${className} ${
         copied
