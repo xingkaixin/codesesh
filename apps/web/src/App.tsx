@@ -1952,11 +1952,12 @@ export default function App() {
                     Esc back
                   </span>
                 ) : null}
-                {!isSearchMode &&
-                viewState.mode === "session" &&
-                session &&
-                activeAgentKey === "claudecode" ? (
-                  <CopyResumeButton sessionId={session.id} directory={session.directory} />
+                {!isSearchMode && viewState.mode === "session" && session ? (
+                  <CopyResumeButton
+                    agentName={viewState.activeAgentKey}
+                    sessionId={session.id}
+                    directory={session.directory}
+                  />
                 ) : null}
               </div>
               {liveNotice ? (
