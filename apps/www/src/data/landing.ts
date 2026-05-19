@@ -144,23 +144,23 @@ export const copy = {
     },
     scenes: [
       {
-        image: "/demo/dashboard.png",
+        image: "/demo/dashboard.webp",
         title: "工程记忆概览",
         description: "从 Agent 活跃度、Token 趋势、智能标签和收藏会话里看见协作脉络。",
       },
       {
-        image: "/demo/search.png",
+        image: "/demo/search.webp",
         title: "结构化全局搜索",
         description:
           "按标题、消息、工具输出和文件路径检索，并用项目、标签、工具、文件活动和成本缩小范围。",
       },
       {
-        image: "/demo/session-detail.png",
+        image: "/demo/session-detail.webp",
         title: "会话回放",
         description: "按时间线回看消息、工具调用和文件变更，复盘一次功能或 bug 的完整路径。",
       },
       {
-        image: "/demo/shortcuts.png",
+        image: "/demo/shortcuts.webp",
         title: "键盘导航",
         description: "在项目、会话和搜索结果之间高效移动，让历史浏览进入日常工作流。",
       },
@@ -339,25 +339,25 @@ export const copy = {
     },
     scenes: [
       {
-        image: "/demo/dashboard.png",
+        image: "/demo/dashboard.webp",
         title: "Engineering Memory Overview",
         description:
           "See collaboration patterns through agent activity, token trends, smart tags, and bookmarked sessions.",
       },
       {
-        image: "/demo/search.png",
+        image: "/demo/search.webp",
         title: "Structured Global Search",
         description:
           "Search titles, messages, tool output, and file paths, then filter by project, tag, tool, file activity, and cost.",
       },
       {
-        image: "/demo/session-detail.png",
+        image: "/demo/session-detail.webp",
         title: "Session Replay",
         description:
           "Replay messages, tool calls, and file changes in the order a feature or bug fix unfolded.",
       },
       {
-        image: "/demo/shortcuts.png",
+        image: "/demo/shortcuts.webp",
         title: "Keyboard Navigation",
         description:
           "Move through projects, sessions, and results efficiently so browsing history fits daily work.",
