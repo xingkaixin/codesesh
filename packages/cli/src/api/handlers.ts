@@ -9,6 +9,7 @@ import type {
 } from "@codesesh/core";
 import {
   BookmarkStorageUnavailableError,
+  createProjectScopeMatcher,
   deleteBookmark,
   extractSessionFileActivity,
   getAgentInfoMap,
@@ -24,8 +25,10 @@ import {
   searchFileActivitySessions,
   searchSessions,
   upsertBookmark,
+  matchesProjectScope as sessionMatchesProjectScope,
   type FileActivityKind,
   type FileActivityResult,
+  type ProjectScopeMatcher,
   type SearchMatchType,
   type SearchOptions,
   type SearchQueryFilters,
@@ -223,13 +226,6 @@ function filterSessionsByActivityWindow(
   });
 }
 
-function matchesProjectScope(session: SessionHead, cwd: string): boolean {
-  if (!session.directory) return false;
-  const identity = computeIdentity(cwd, realFs);
-  if (session.project_identity?.key === identity.key) return true;
-  return session.directory.toLowerCase().includes(cwd.toLowerCase());
-}
-
 function sanitizeClientLogData(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) return {};
 
@@ -391,9 +387,13 @@ function filterSessionsByDashboardScope(
   return sessions.filter((session) => matchesDashboardScope(session, scope));
 }
 
-function matchesRecentSearchFilters(session: SessionHead, options: SearchOptions): boolean {
+function matchesRecentSearchFilters(
+  session: SessionHead,
+  options: SearchOptions,
+  projectScope: ProjectScopeMatcher | null,
+): boolean {
   if (options.projectKey && session.project_identity?.key !== options.projectKey) return false;
-  if (options.cwd && !matchesProjectScope(session, options.cwd)) return false;
+  if (projectScope && !sessionMatchesProjectScope(session, projectScope)) return false;
   if (options.project) {
     const projectNeedle = options.project.toLowerCase();
     const projectText = [
@@ -417,6 +417,7 @@ function recentSearchSessions(
   scanResult: ScanResult,
   options: SearchOptions & { limit: number },
 ): ApiSearchResult[] {
+  const projectScope = options.cwd ? createProjectScopeMatcher(options.cwd) : null;
   const entries = options.agent
     ? ([[options.agent, scanResult.byAgent[options.agent] ?? []]] as Array<[string, SessionHead[]]>)
     : Object.entries(scanResult.byAgent);
@@ -424,7 +425,7 @@ function recentSearchSessions(
   return entries
     .flatMap(([agentName, sessions]) =>
       filterSessionsByActivityWindow(sessions, options.from, options.to)
-        .filter((session) => matchesRecentSearchFilters(session, options))
+        .filter((session) => matchesRecentSearchFilters(session, options, projectScope))
         .map((session) => ({ agentName, session })),
     )
     .toSorted(
@@ -507,7 +508,8 @@ export function handleGetSessions(
   if (projectKey) {
     sessions = sessions.filter((s) => s.project_identity?.key === projectKey);
   } else if (cwd) {
-    sessions = sessions.filter((s) => matchesProjectScope(s, cwd));
+    const projectScope = createProjectScopeMatcher(cwd);
+    sessions = sessions.filter((s) => sessionMatchesProjectScope(s, projectScope));
   }
   sessions = filterSessionsByActivityWindow(sessions, from, to);
   if (tag) {

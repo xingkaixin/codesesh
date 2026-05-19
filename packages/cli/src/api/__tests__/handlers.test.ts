@@ -180,11 +180,30 @@ describe("handleGetSessions", () => {
     expect(response.sessions[0].id).toBe("s1");
   });
 
-  it("filters by cwd (substring match)", () => {
-    const c = makeMockContext({ query: { cwd: "project" } });
-    handleGetSessions(c, makeScanSource());
+  it("filters by cwd using project scope match", () => {
+    const sessions = [
+      makeSession("exact", { directory: "/home/user/project" }),
+      makeSession("child", { directory: "/home/user/project/src" }),
+      makeSession("parent", { directory: "/home/user" }),
+      makeSession("identity", {
+        directory: "/elsewhere",
+        project_identity: {
+          kind: "path",
+          key: "/home/user/project",
+          displayName: "project",
+        },
+      }),
+      makeSession("sibling", { directory: "/home/user/projectile" }),
+    ];
+    const c = makeMockContext({ query: { cwd: "/home/user/project" } });
+    handleGetSessions(c, makeScanSource({ sessions, byAgent: { claudecode: sessions } }));
     const response = c.json.mock.calls[0]![0];
-    expect(response.sessions).toHaveLength(2);
+    expect(response.sessions.map((session: SessionHead) => session.id)).toEqual([
+      "exact",
+      "child",
+      "parent",
+      "identity",
+    ]);
   });
 
   it("filters by project identity key", () => {

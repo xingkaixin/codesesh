@@ -1,10 +1,9 @@
-import { resolve, sep } from "node:path";
 import { availableParallelism } from "node:os";
 import { Worker } from "node:worker_threads";
 import type { ProjectIdentity, SessionHead, SmartTag } from "../types/index.js";
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import { createRegisteredAgents } from "../agents/index.js";
-import { computeIdentity, realFs } from "../projects/index.js";
+import { computeIdentity, filterSessionsByProjectScope, realFs } from "../projects/index.js";
 import { classifySessionTags, getSmartTagSourceTimestamp, perf } from "../utils/index.js";
 import { loadCachedSessions, saveCachedSessions } from "./cache.js";
 
@@ -44,23 +43,6 @@ export interface ScanProgress {
   changedCount?: number;
 }
 
-/**
- * Bidirectional path scope match (mirrors agent-dump's is_path_scope_match).
- * Matches when:
- *   - paths are equal
- *   - queryPath is a parent of sessionPath  (session is inside the queried project)
- *   - sessionPath is a parent of queryPath  (session root contains the queried path)
- */
-function isPathScopeMatch(queryPath: string, sessionPath: string): boolean {
-  if (!sessionPath) return false;
-  const q = resolve(queryPath);
-  const s = resolve(sessionPath);
-  const sepNorm = (p: string) => p.replaceAll(sep, "/");
-  const sn = sepNorm(s);
-  const qn = sepNorm(q);
-  return sn === qn || sn.startsWith(qn + "/") || qn.startsWith(sn + "/");
-}
-
 function createIdentityResolver() {
   const cache = new Map<string, ProjectIdentity>();
   return (directory: string | null | undefined) => {
@@ -84,19 +66,11 @@ function attachProjectIdentities(sessions: SessionHead[]): SessionHead[] {
   });
 }
 
-function isProjectScopeMatch(queryPath: string, session: SessionHead): boolean {
-  if (!session.directory) return false;
-  const queryIdentity = computeIdentity(queryPath, realFs);
-  if (session.project_identity?.key === queryIdentity.key) return true;
-  return isPathScopeMatch(queryPath, session.directory);
-}
-
 export function filterSessions(sessions: SessionHead[], options: ScanOptions): SessionHead[] {
   let result = sessions;
 
   if (options.cwd) {
-    const cwd = options.cwd;
-    result = result.filter((s) => isProjectScopeMatch(cwd, s));
+    result = filterSessionsByProjectScope(result, options.cwd);
   }
 
   if (options.from != null) {
