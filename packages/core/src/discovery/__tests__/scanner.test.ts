@@ -47,15 +47,23 @@ describe("filterSessions", () => {
     expect(filterSessions(sessions, {})).toHaveLength(2);
   });
 
-  it("filters by cwd using path scope match", () => {
+  it("filters by cwd using project scope match", () => {
     const sessions = [
-      makeSession("a", { directory: "/home/user/project/src" }),
-      makeSession("b", { directory: "/home/user/other" }),
-      makeSession("c", { directory: "/home/user/project" }),
+      makeSession("exact", { directory: "/home/user/project" }),
+      makeSession("child", { directory: "/home/user/project/src" }),
+      makeSession("parent", { directory: "/home/user" }),
+      makeSession("identity", {
+        directory: "/elsewhere",
+        project_identity: {
+          kind: "path",
+          key: "/home/user/project",
+          displayName: "project",
+        },
+      }),
+      makeSession("sibling", { directory: "/home/user/projectile" }),
     ];
     const result = filterSessions(sessions, { cwd: "/home/user/project" });
-    expect(result).toHaveLength(2);
-    expect(result.map((s) => s.id)).toEqual(["a", "c"]);
+    expect(result.map((s) => s.id)).toEqual(["exact", "child", "parent", "identity"]);
   });
 
   it("filters by cwd excluding non-matching directories", () => {
