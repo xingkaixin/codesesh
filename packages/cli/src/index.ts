@@ -5,6 +5,12 @@ import { printScanResults } from "./output.js";
 import { VERSION } from "./version.js";
 import { appLogger } from "./logging.js";
 import {
+  DEFAULT_PORT,
+  DEFAULT_PORT_FALLBACK_ATTEMPTS,
+  hasExplicitPortArg,
+  parsePort,
+} from "./ports.js";
+import {
   createRegisteredAgents,
   getAgentInfoMap,
   refreshPricingCache,
@@ -37,7 +43,7 @@ const main = defineCommand({
       type: "string",
       alias: "p",
       description: "HTTP server port",
-      default: "4321",
+      default: String(DEFAULT_PORT),
     },
     agent: {
       type: "string",
@@ -96,7 +102,8 @@ const main = defineCommand({
   },
   async run({ args }) {
     const startedAt = performance.now();
-    const port = parseInt(args.port as string, 10) || 4321;
+    const port = parsePort(args.port as string | undefined);
+    const explicitPort = hasExplicitPortArg(process.argv.slice(2));
     const noOpen = args.noOpen as boolean;
     const jsonOnly = args.json as boolean;
     const trace = args.trace as boolean;
@@ -227,6 +234,7 @@ const main = defineCommand({
         defaultSessionFrom: listDefaultFrom,
         defaultSessionTo: listDefaultTo,
         defaultSessionDays: listDefaultDays,
+        portFallbackAttempts: explicitPort ? 1 : DEFAULT_PORT_FALLBACK_ATTEMPTS,
       }));
     } catch (error) {
       console.error(getServerStartupErrorMessage(error, port));

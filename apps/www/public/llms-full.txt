@@ -88,7 +88,7 @@ npx codesesh
 The command starts a local server and opens the Web UI at:
 
 ```text
-http://localhost:4321
+http://localhost:4521
 ```
 
 Published CLI requirement:
@@ -116,7 +116,7 @@ CodeSesh runs on the user's machine and uses a local SQLite index with a local W
 
 ### How do you install and start CodeSesh?
 
-The fastest way to start CodeSesh is running `npx codesesh` in a terminal. CodeSesh scans supported local AI coding sessions and opens the Web UI at `http://localhost:4321`. The published CLI requires Node.js 18+; source development uses Node.js 22.12+ and pnpm 10+.
+The fastest way to start CodeSesh is running `npx codesesh` in a terminal. CodeSesh scans supported local AI coding sessions and opens the Web UI at `http://localhost:4521`; if that default port is busy, it automatically tries the next available port. The published CLI requires Node.js 18+; source development uses Node.js 22.12+ and pnpm 10+.
 
 ## Common CLI Usage
 
@@ -340,5 +340,5 @@ npx codesesh
 启动后打开本地 Web UI：
 
 ```text
-http://localhost:4321
+http://localhost:4521
 ```

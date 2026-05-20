@@ -298,7 +298,7 @@ export const copy = {
         {
           question: "如何安装和启动 CodeSesh？",
           answer:
-            "最快的启动方式是在终端运行 npx codesesh。CodeSesh 会扫描受支持的本地 AI 编码会话，并在 http://localhost:4321 打开 Web UI。发布版需要 Node.js 18+，源码开发环境使用 Node.js 20.19+ 和 pnpm 10+。",
+            "最快的启动方式是在终端运行 npx codesesh。CodeSesh 会扫描受支持的本地 AI 编码会话，并在 http://localhost:4521 打开 Web UI；如果默认端口被占用，会自动尝试下一个可用端口。发布版需要 Node.js 18+，源码开发环境使用 Node.js 20.19+ 和 pnpm 10+。",
         },
       ],
     },
@@ -504,7 +504,7 @@ export const copy = {
         {
           question: "How do you install and start CodeSesh?",
           answer:
-            "The fastest way to start CodeSesh is running npx codesesh. CodeSesh scans supported local AI coding sessions and opens the Web UI at http://localhost:4321. The published CLI requires Node.js 18+; source development uses Node.js 20.19+ and pnpm 10+.",
+            "The fastest way to start CodeSesh is running npx codesesh. CodeSesh scans supported local AI coding sessions and opens the Web UI at http://localhost:4521; if that default port is busy, it automatically tries the next available port. The published CLI requires Node.js 18+; source development uses Node.js 20.19+ and pnpm 10+.",
         },
       ],
     },

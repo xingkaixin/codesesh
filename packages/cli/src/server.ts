@@ -3,6 +3,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { existsSync } from "node:fs";
 import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ScanResultSource } from "./api/handlers.js";
@@ -14,6 +15,7 @@ export interface CreateServerOptions {
   defaultSessionFrom?: number;
   defaultSessionTo?: number;
   defaultSessionDays?: number;
+  portFallbackAttempts?: number;
 }
 
 function findWebDistPath(): string | null {
@@ -61,6 +63,17 @@ export function getServerStartupErrorMessage(error: unknown, port: number): stri
   }
 
   return error instanceof Error ? error.message : `启动服务器失败: ${String(error)}`;
+}
+
+function isAddressInUse(error: unknown): boolean {
+  return (
+    typeof error === "object" && error !== null && "code" in error && error.code === "EADDRINUSE"
+  );
+}
+
+function getListeningPort(server: Server, fallback: number): number {
+  const address = server.address();
+  return typeof address === "object" && address !== null ? (address as AddressInfo).port : fallback;
 }
 
 export async function createServer(
@@ -115,27 +128,48 @@ export async function createServer(
     app.get("/*", serveStatic({ root: webDistPath, path: "index.html" }));
   }
 
-  const server = serve({ fetch: app.fetch, port });
+  const attempts = Math.max(1, options.portFallbackAttempts ?? 1);
+  let server: Server | null = null;
+  let actualPort = port;
 
-  try {
-    await waitForListening(server);
-  } catch (error) {
-    appLogger.error("server.listen.error", { port, error });
-    server.close();
-    if (store.shutdown) {
-      await store.shutdown();
+  for (let offset = 0; offset < attempts; offset += 1) {
+    const candidatePort = port + offset;
+    server = serve({ fetch: app.fetch, port: candidatePort });
+
+    try {
+      await waitForListening(server);
+      actualPort = getListeningPort(server, candidatePort);
+      break;
+    } catch (error) {
+      appLogger.error("server.listen.error", { port: candidatePort, error });
+      server.close();
+
+      if (isAddressInUse(error) && offset < attempts - 1) {
+        continue;
+      }
+
+      if (store.shutdown) {
+        await store.shutdown();
+      }
+
+      if (isAddressInUse(error) && attempts > 1) {
+        throw new Error(
+          `端口 ${port}-${port + attempts - 1} 均已被占用，请关闭现有进程或改用 --port 指定其他端口。`,
+        );
+      }
+
+      throw new Error(getServerStartupErrorMessage(error, candidatePort));
     }
-    throw new Error(getServerStartupErrorMessage(error, port));
   }
 
-  const url = `http://localhost:${port}`;
-  appLogger.info("server.listen", { port, url });
+  const url = `http://localhost:${actualPort}`;
+  appLogger.info("server.listen", { port: actualPort, requested_port: port, url });
 
   return {
     url,
     shutdown: () => {
-      appLogger.info("server.shutdown", { port });
-      server.close();
+      appLogger.info("server.shutdown", { port: actualPort });
+      server?.close();
       if (store.shutdown) {
         void store.shutdown();
       }

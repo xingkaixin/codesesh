@@ -63,7 +63,7 @@ More agents coming soon. Adding a new one is [a single file](#extending).
 npx codesesh
 ```
 
-Your browser will open at `http://localhost:4321` with all your sessions ready to browse.
+Your browser will open at `http://localhost:4521` with all your sessions ready to browse. If that default port is busy, CodeSesh automatically tries the next available port.
 
 ### Build from Source
 
@@ -85,10 +85,10 @@ The local server uses `packages/cli/dist/index.js` and opens the same Web UI.
 ### Basic Usage
 
 ```bash
-# Start the web UI (default port 4321)
+# Start the web UI (default port 4521)
 npx codesesh
 
-# Choose a custom port
+# Choose a custom port (fails if the port is busy)
 npx codesesh --port 8080
 npx codesesh -p 8080
 
@@ -154,7 +154,7 @@ npx codesesh -j
 
 | Flag | Alias | Default | Description |
 |------|-------|---------|-------------|
-| `--port` | `-p` | `4321` | HTTP server port |
+| `--port` | `-p` | `4521` | HTTP server port |
 | `--days` | `-d` | `7` | Only include sessions active in the last N days (`0` = all time) |
 | `--cwd` | — | — | Filter to sessions from a project directory (`.` = current dir) |
 | `--agent` | `-a` | all | Filter to specific agent(s), comma-separated |

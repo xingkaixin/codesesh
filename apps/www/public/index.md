@@ -10,7 +10,7 @@ It discovers local sessions from Claude Code, Cursor, Kimi, Codex, and OpenCode,
 npx codesesh
 ```
 
-CodeSesh runs locally and opens a Web UI at `http://localhost:4321`.
+CodeSesh runs locally and opens a Web UI at `http://localhost:4521`.
 
 ## Product Tour
 
@@ -92,7 +92,7 @@ CodeSesh runs on the user's machine and uses a local SQLite index with a local W
 
 ### How do you install and start CodeSesh?
 
-The fastest way to start CodeSesh is running `npx codesesh` in a terminal. CodeSesh scans supported local AI coding sessions and opens the Web UI at `http://localhost:4321`. The published CLI requires Node.js 18+; source development uses Node.js 22.12+ and pnpm 10+.
+The fastest way to start CodeSesh is running `npx codesesh` in a terminal. CodeSesh scans supported local AI coding sessions and opens the Web UI at `http://localhost:4521`; if that default port is busy, it automatically tries the next available port. The published CLI requires Node.js 18+; source development uses Node.js 22.12+ and pnpm 10+.
 
 ## Links
 

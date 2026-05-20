@@ -3,6 +3,12 @@ import { createServer, getServerStartupErrorMessage } from "../server.js";
 import { printScanResults } from "../output.js";
 import { createRegisteredAgents, refreshPricingCache, type ScanOptions } from "@codesesh/core";
 import { LiveScanStore } from "../live-scan.js";
+import {
+  DEFAULT_PORT,
+  DEFAULT_PORT_FALLBACK_ATTEMPTS,
+  hasExplicitPortArg,
+  parsePort,
+} from "../ports.js";
 
 export const serveCommand = defineCommand({
   meta: {
@@ -13,7 +19,7 @@ export const serveCommand = defineCommand({
     port: {
       type: "string",
       alias: "p",
-      default: "4321",
+      default: String(DEFAULT_PORT),
     },
     agent: {
       type: "string",
@@ -39,7 +45,8 @@ export const serveCommand = defineCommand({
     },
   },
   async run({ args }) {
-    const port = parseInt(args.port as string, 10) || 4321;
+    const port = parsePort(args.port as string | undefined);
+    const explicitPort = hasExplicitPortArg(process.argv.slice(2));
     const noOpen = args["no-open"] as boolean;
     const jsonOnly = args.json as boolean;
     void refreshPricingCache();
@@ -89,6 +96,7 @@ export const serveCommand = defineCommand({
       ({ url } = await createServer(port, store, {
         defaultSessionFrom: listDefaultFrom,
         defaultSessionTo: listDefaultTo,
+        portFallbackAttempts: explicitPort ? 1 : DEFAULT_PORT_FALLBACK_ATTEMPTS,
       }));
     } catch (error) {
       console.error(getServerStartupErrorMessage(error, port));
