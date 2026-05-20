@@ -30,6 +30,8 @@ export interface SessionsUpdatedEvent {
   removedSessions: number;
   totalSessions: number;
   timestamp: number;
+  changedSessionHeads: Array<{ agentName: string; session: SessionHead }>;
+  removedSessionRefs: Array<{ agentName: string; sessionId: string }>;
 }
 
 type StoreListener = (event: SessionsUpdatedEvent) => void;
@@ -158,6 +160,8 @@ function buildRefreshDiff(
       removedSessions,
       totalSessions: nextSessions.length,
       timestamp: Date.now(),
+      changedSessionHeads: changedSessions.map(({ session }) => ({ agentName, session })),
+      removedSessionRefs: removedSessionIds.map((sessionId) => ({ agentName, sessionId })),
     },
   };
 }
@@ -226,6 +230,25 @@ function mergeEvents(
   previous: SessionsUpdatedEvent,
   next: SessionsUpdatedEvent,
 ): SessionsUpdatedEvent {
+  const changedSessionHeads = new Map<string, { agentName: string; session: SessionHead }>();
+  const removedSessionRefs = new Map<string, { agentName: string; sessionId: string }>();
+  const sessionKey = (agentName: string, sessionId: string) => `${agentName}\0${sessionId}`;
+  const addChanged = (item: { agentName: string; session: SessionHead }) => {
+    const key = sessionKey(item.agentName, item.session.id);
+    removedSessionRefs.delete(key);
+    changedSessionHeads.set(key, item);
+  };
+  const addRemoved = (item: { agentName: string; sessionId: string }) => {
+    const key = sessionKey(item.agentName, item.sessionId);
+    changedSessionHeads.delete(key);
+    removedSessionRefs.set(key, item);
+  };
+
+  for (const item of previous.changedSessionHeads) addChanged(item);
+  for (const item of previous.removedSessionRefs) addRemoved(item);
+  for (const item of next.changedSessionHeads) addChanged(item);
+  for (const item of next.removedSessionRefs) addRemoved(item);
+
   return {
     type: "sessions-updated",
     changedAgents: Array.from(new Set([...previous.changedAgents, ...next.changedAgents])),
@@ -234,6 +257,8 @@ function mergeEvents(
     removedSessions: previous.removedSessions + next.removedSessions,
     totalSessions: next.totalSessions,
     timestamp: next.timestamp,
+    changedSessionHeads: [...changedSessionHeads.values()],
+    removedSessionRefs: [...removedSessionRefs.values()],
   };
 }
 

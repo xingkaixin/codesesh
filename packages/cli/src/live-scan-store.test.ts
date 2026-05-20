@@ -267,6 +267,11 @@ describe("LiveScanStore", () => {
         updatedSessions: 1,
         removedSessions: 0,
         totalSessions: 2,
+        changedSessionHeads: [
+          { agentName: "codex", session: updated },
+          { agentName: "codex", session: added },
+        ],
+        removedSessionRefs: [],
       }),
     ]);
     expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["session", "added"]);
@@ -332,6 +337,8 @@ describe("LiveScanStore", () => {
         updatedSessions: 0,
         removedSessions: 1,
         totalSessions: 0,
+        changedSessionHeads: [],
+        removedSessionRefs: [{ agentName: "codex", sessionId: "session" }],
       }),
     ]);
     expect(store.getSnapshot().sessions).toEqual([]);
@@ -549,6 +556,11 @@ describe("LiveScanStore", () => {
         updatedSessions: 0,
         removedSessions: 0,
         totalSessions: 4,
+        changedSessionHeads: [
+          { agentName: "codex", session: expect.objectContaining({ id: "codex-new" }) },
+          { agentName: "kimi", session: expect.objectContaining({ id: "kimi-new" }) },
+        ],
+        removedSessionRefs: [],
       }),
     ]);
   });

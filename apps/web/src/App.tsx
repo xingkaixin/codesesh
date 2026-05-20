@@ -208,6 +208,34 @@ function formatRelativeTime(timestamp?: number) {
   return `${days}d ago`;
 }
 
+function compareSessionActivityDesc(a: SessionHead, b: SessionHead): number {
+  return (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created);
+}
+
+function applyLiveSessionUpdate(
+  sessions: SessionHead[],
+  event: SessionsUpdatedEvent,
+): SessionHead[] | null {
+  if (!event.changedSessionHeads || !event.removedSessionRefs) return null;
+
+  const byKey = new Map(
+    sessions.map((sessionItem) => [
+      getSessionRouteKey(getSessionAgentKey(sessionItem), sessionItem.id),
+      sessionItem,
+    ]),
+  );
+
+  for (const { agentName, sessionId } of event.removedSessionRefs) {
+    byKey.delete(getSessionRouteKey(agentName, sessionId));
+  }
+
+  for (const { agentName, session: sessionItem } of event.changedSessionHeads) {
+    byKey.set(getSessionRouteKey(agentName, sessionItem.id), sessionItem);
+  }
+
+  return [...byKey.values()].sort(compareSessionActivityDesc);
+}
+
 function toSafeSnippetHtml(snippet: string): string {
   return snippet
     .replaceAll("&", "&amp;")
@@ -802,10 +830,17 @@ export default function App() {
 
   const syncLiveUpdate = useEffectEvent(async (event: SessionsUpdatedEvent) => {
     try {
+      const canApplySessionUpdate = Boolean(event.changedSessionHeads && event.removedSessionRefs);
+      if (canApplySessionUpdate) {
+        setSessions((current) => applyLiveSessionUpdate(current, event) ?? current);
+      }
+
       const [agentList, sessionList, dashboardData, projectData, projectDashboardData, searchData] =
         await Promise.all([
           fetchAgents(),
-          fetchSessions({ from: appConfig?.window.from, to: appConfig?.window.to }),
+          canApplySessionUpdate
+            ? Promise.resolve<{ sessions: SessionHead[] } | null>(null)
+            : fetchSessions({ from: appConfig?.window.from, to: appConfig?.window.to }),
           fetchDashboard(appConfig?.window).catch((err) => {
             console.error("Failed to refresh dashboard:", err);
             return null;
@@ -832,7 +867,7 @@ export default function App() {
             : Promise.resolve<{ results: SearchResult[] } | null>(null),
         ]);
       setAgents(agentList);
-      setSessions(sessionList.sessions);
+      if (sessionList) setSessions(sessionList.sessions);
       setProjects(projectData.projects);
       if (dashboardData) setDashboard(dashboardData);
       if (projectDashboardData) setProjectDashboard(projectDashboardData);
