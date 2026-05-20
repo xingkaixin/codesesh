@@ -5,7 +5,12 @@ import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import { createRegisteredAgents } from "../agents/index.js";
 import { computeIdentity, filterSessionsByProjectScope, realFs } from "../projects/index.js";
 import { classifySessionTags, getSmartTagSourceTimestamp, perf } from "../utils/index.js";
-import { loadCachedSessions, saveCachedSessions } from "./cache.js";
+import {
+  loadCachedSessions,
+  saveCachedSessionChanges,
+  saveCachedSessions,
+  type SessionHeadChange,
+} from "./cache.js";
 
 export interface ScanOptions {
   /** Filter to specific agent name(s) */
@@ -108,6 +113,52 @@ function buildAgentCacheMeta(agent: BaseAgent): Record<string, SessionCacheMeta>
   }
 
   return meta;
+}
+
+function sessionCacheValue(session: SessionHead): string {
+  return JSON.stringify(session);
+}
+
+function buildCacheChanges(
+  cachedSessions: SessionHead[],
+  updatedSessions: SessionHead[],
+  changedIds: string[] = [],
+): { changes: SessionHeadChange[]; removedSessionIds: string[] } {
+  const cachedMap = new Map(cachedSessions.map((session) => [session.id, session]));
+  const updatedIds = new Set(updatedSessions.map((session) => session.id));
+  const changedIdSet = new Set(changedIds);
+  const removedSessionIds = cachedSessions
+    .filter((session) => !updatedIds.has(session.id))
+    .map((session) => session.id);
+  const changes: SessionHeadChange[] = [];
+
+  updatedSessions.forEach((session, sortIndex) => {
+    const cached = cachedMap.get(session.id);
+    if (
+      !cached ||
+      changedIdSet.has(session.id) ||
+      (cached !== session && sessionCacheValue(cached) !== sessionCacheValue(session))
+    ) {
+      changes.push({ session, sortIndex });
+    }
+  });
+
+  return { changes, removedSessionIds };
+}
+
+function saveCachedSessionDiff(
+  agent: BaseAgent,
+  cachedSessions: SessionHead[],
+  updatedSessions: SessionHead[],
+  changedIds: string[] = [],
+): void {
+  const diff = buildCacheChanges(cachedSessions, updatedSessions, changedIds);
+  saveCachedSessionChanges(
+    agent.name,
+    diff.changes,
+    diff.removedSessionIds,
+    buildAgentCacheMeta(agent),
+  );
 }
 
 function getSmartTagWorkerCount(sessionCount: number): number {
@@ -328,7 +379,12 @@ async function scanAgentSmart(
               : await ensureSessionTags(agent, sessionsWithIdentity);
 
           if (options.writeCache !== false && options.from == null && options.to == null) {
-            saveCachedSessions(agent.name, tagged.sessions, buildAgentCacheMeta(agent));
+            saveCachedSessionDiff(
+              agent,
+              cached.sessions,
+              tagged.sessions,
+              checkResult.changedIds ?? [],
+            );
           }
 
           onProgress?.({
@@ -355,7 +411,7 @@ async function scanAgentSmart(
         options.from == null &&
         options.to == null
       ) {
-        saveCachedSessions(agent.name, tagged.sessions, buildAgentCacheMeta(agent));
+        saveCachedSessionDiff(agent, cached.sessions, tagged.sessions);
       }
 
       const filtered = filterSessions(tagged.sessions, options);
