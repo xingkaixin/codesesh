@@ -80,6 +80,19 @@ interface DashboardScope {
   projectKey?: string;
 }
 
+interface DashboardAgentAggregate {
+  sessions: number;
+  messages: number;
+  tokens: number;
+}
+
+interface DashboardRecentCandidate {
+  session: SessionHead;
+  activity: number;
+}
+
+const DASHBOARD_RECENT_LIMIT = 10;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -367,24 +380,6 @@ function attachProjectMetrics(
       agentStats: [...(metric?.agentStats.values() ?? [])].sort((a, b) => b.sessions - a.sessions),
     };
   });
-}
-
-function matchesDashboardScope(session: SessionHead, scope: DashboardScope): boolean {
-  if (scope.agent && getSessionAgentName(session) !== scope.agent) return false;
-  if (scope.projectKey) {
-    const identity = session.project_identity;
-    if (!identity || identity.key !== scope.projectKey) return false;
-    if (scope.projectKind && identity.kind !== scope.projectKind) return false;
-  }
-  return true;
-}
-
-function filterSessionsByDashboardScope(
-  sessions: SessionHead[],
-  scope: DashboardScope,
-): SessionHead[] {
-  if (!scope.agent && !scope.projectKey) return sessions;
-  return sessions.filter((session) => matchesDashboardScope(session, scope));
 }
 
 function matchesRecentSearchFilters(
@@ -860,59 +855,25 @@ export function handleGetDashboard(
     projectKey: optionalQueryValue(c.req.query("projectKey")),
   };
 
-  const scopedSessions = filterSessionsByDashboardScope(scanResult.sessions, scope);
-  const windowed = filterSessionsByActivityWindow(scopedSessions, from, to);
-  const scopedByAgent = Object.fromEntries(
-    Object.entries(scanResult.byAgent)
-      .filter(([name]) => !scope.agent || name.toLowerCase() === scope.agent)
-      .map(([name, sessions]) => [name, filterSessionsByDashboardScope(sessions, scope)]),
-  );
+  const agentMetrics = new Map<string, DashboardAgentAggregate>();
+  const agentMetricKeyByName = new Map<string, string>();
+  for (const name of Object.keys(scanResult.byAgent)) {
+    if (scope.agent && name.toLowerCase() !== scope.agent) continue;
+    agentMetrics.set(name, { sessions: 0, messages: 0, tokens: 0 });
+    agentMetricKeyByName.set(name.toLowerCase(), name);
+  }
 
-  const agentInfo = getAgentInfoMap(
-    Object.fromEntries(
-      Object.entries(scopedByAgent).map(([name, sessions]) => [
-        name,
-        filterSessionsByActivityWindow(sessions, from, to).length,
-      ]),
-    ),
-  );
+  const agentInfo = getAgentInfoMap({});
   const agentInfoMap = new Map(agentInfo.map((a) => [a.name, a]));
 
+  let totalSessions = 0;
   let totalMessages = 0;
   let totalTokens = 0;
   let totalCost = 0;
   let hasEstimatedCost = false;
   let latestActivity = 0;
-  for (const session of windowed) {
-    totalMessages += session.stats.message_count;
-    totalTokens += getTotalTokens(session.stats);
-    totalCost += session.stats.total_cost ?? 0;
-    if (session.stats.cost_source === "estimated") hasEstimatedCost = true;
-    const activity = getSessionActivityTime(session);
-    if (activity > latestActivity) latestActivity = activity;
-  }
-
-  const perAgent: DashboardAgentStat[] = Object.entries(scopedByAgent)
-    .map(([name, sessions]) => {
-      const info = agentInfoMap.get(name);
-      const agentWindowed = filterSessionsByActivityWindow(sessions, from, to);
-      let messages = 0;
-      let tokens = 0;
-      for (const s of agentWindowed) {
-        messages += s.stats.message_count;
-        tokens += getTotalTokens(s.stats);
-      }
-      return {
-        name,
-        displayName: info?.displayName ?? name,
-        icon: info?.icon ?? "",
-        sessions: agentWindowed.length,
-        messages,
-        tokens,
-      };
-    })
-    .filter((item) => item.sessions > 0)
-    .sort((a, b) => b.sessions - a.sessions);
+  const recentCandidates: DashboardRecentCandidate[] = [];
+  const modelAgg = new Map<string, { tokens: number; sessions: number }>();
 
   // Daily activity buckets — one bucket per local day in [from, to]
   const dailyMap = new Map<string, DashboardDailyBucket>();
@@ -926,14 +887,40 @@ export function handleGetDashboard(
     dailyTokenMap.set(key, { date: key, input: 0, output: 0, cache_read: 0, cache_create: 0 });
   }
 
-  const modelAgg = new Map<string, { tokens: number; sessions: number }>();
+  for (const session of scanResult.sessions) {
+    const agentName = getSessionAgentName(session);
+    if (scope.agent && agentName !== scope.agent) continue;
+    if (scope.projectKey) {
+      const identity = session.project_identity;
+      if (!identity || identity.key !== scope.projectKey) continue;
+      if (scope.projectKind && identity.kind !== scope.projectKind) continue;
+    }
 
-  for (const session of windowed) {
-    const key = toLocalDateKey(getSessionActivityTime(session));
+    const activity = getSessionActivityTime(session);
+    if (activity < from || activity > to) continue;
+
+    const messageCount = session.stats.message_count;
+    const sessionTokens = getTotalTokens(session.stats);
+    totalSessions += 1;
+    totalMessages += messageCount;
+    totalTokens += sessionTokens;
+    totalCost += session.stats.total_cost ?? 0;
+    if (session.stats.cost_source === "estimated") hasEstimatedCost = true;
+    if (activity > latestActivity) latestActivity = activity;
+
+    const metricKey = agentMetricKeyByName.get(agentName);
+    if (metricKey) {
+      const metric = agentMetrics.get(metricKey)!;
+      metric.sessions += 1;
+      metric.messages += messageCount;
+      metric.tokens += sessionTokens;
+    }
+
+    const key = toLocalDateKey(activity);
     const bucket = dailyMap.get(key);
     if (bucket) {
       bucket.sessions += 1;
-      bucket.messages += session.stats.message_count;
+      bucket.messages += messageCount;
     }
 
     const tokenBucket = dailyTokenMap.get(key);
@@ -958,7 +945,34 @@ export function handleGetDashboard(
         }
       }
     }
+
+    let recentIndex = recentCandidates.length;
+    for (let i = 0; i < recentCandidates.length; i += 1) {
+      if (activity > recentCandidates[i]!.activity) {
+        recentIndex = i;
+        break;
+      }
+    }
+    if (recentIndex < DASHBOARD_RECENT_LIMIT) {
+      recentCandidates.splice(recentIndex, 0, { session, activity });
+      if (recentCandidates.length > DASHBOARD_RECENT_LIMIT) recentCandidates.pop();
+    }
   }
+
+  const perAgent: DashboardAgentStat[] = [...agentMetrics.entries()]
+    .map(([name, metrics]) => {
+      const info = agentInfoMap.get(name);
+      return {
+        name,
+        displayName: info?.displayName ?? name,
+        icon: info?.icon ?? "",
+        sessions: metrics.sessions,
+        messages: metrics.messages,
+        tokens: metrics.tokens,
+      };
+    })
+    .filter((item) => item.sessions > 0)
+    .sort((a, b) => b.sessions - a.sessions);
 
   const dailyActivity = [...dailyMap.values()];
   const dailyTokenActivity = [...dailyTokenMap.values()];
@@ -967,17 +981,14 @@ export function handleGetDashboard(
     .map(([model, { tokens, sessions: count }]) => ({ model, tokens, sessions: count }))
     .sort((a, b) => b.tokens - a.tokens);
 
-  const recentSessions: DashboardRecentSession[] = [...windowed]
-    .sort((a, b) => getSessionActivityTime(b) - getSessionActivityTime(a))
-    .slice(0, 10)
-    .map((session) => {
-      const agentKey = getSessionAgentName(session);
-      return { ...session, agentName: agentKey };
-    });
+  const recentSessions: DashboardRecentSession[] = recentCandidates.map(({ session }) => {
+    const agentKey = getSessionAgentName(session);
+    return { ...session, agentName: agentKey };
+  });
 
   const data: DashboardData = {
     totals: {
-      sessions: windowed.length,
+      sessions: totalSessions,
       messages: totalMessages,
       tokens: totalTokens,
       cost: totalCost,
