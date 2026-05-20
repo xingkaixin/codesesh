@@ -268,7 +268,7 @@ Status: Draft
 - [ ] P1-3：为 `LiveScanStore.runRefresh()` 设计 changed/new/removed ids 传递契约。
 - [ ] P1-4：为 cache 层增加增量 upsert/delete，并验证与全量保存结果一致。
 - [ ] P1-5：为 `syncSessionSearchIndex()` 增加 changed ids 路径，bulk 仍保留全量 rebuild。
-- [ ] P1-6：评估并实现 message-level FTS，消除搜索结果 N+1 message scan。
+- [x] P1-6：评估并实现 message-level FTS，消除搜索结果 N+1 message scan。
 - [ ] P1-7：重写 `listFileActivity()` 动态 WHERE，并用 `EXPLAIN QUERY PLAN` 验证索引。
 - [ ] P1-8：构建 `SessionDetail` display model，复用 `MessageBlock[]`。
 - [ ] P1-9：评估详情页 message virtualization，确认 anchors 和 keyboard/scroll 行为可保留。
@@ -279,6 +279,7 @@ Status: Draft
 ## 实现记录
 
 - 2026-05-20：完成 P1-2。`handleGetDashboard()` 改为在一次 session 扫描中完成 totals、per-agent、daily buckets、token buckets、model distribution 和 recent top 10 聚合；recent top 10 使用固定容量候选集，避免对窗口内全量 session 排序。验证：`pnpm --filter codesesh test`、`pnpm --filter codesesh lint`、`pnpm --filter codesesh format:check`、`pnpm --filter codesesh build`、`git diff --check`、`pnpm bench:perf -- --iterations 1`（236 sessions；dashboard visible 11956ms；detail 139ms）。
+- 2026-05-20：完成 P1-6。新增 `messages_fts` message-level FTS 表和 `messages` 触发器，schema 升级到 v9；`searchSessions()` 保留 session-level FTS 排序，但对返回候选结果只做一次批量 message FTS 查询来解析 `matchType` / `snippet`，移除每条结果单独加载全量 messages 的 N+1 路径。验证：`pnpm --filter @codesesh/core exec vitest run src/discovery/__tests__/cache.test.ts`、`pnpm --filter @codesesh/core exec vitest run src/discovery/__tests__/migration-smoke.test.ts`、`pnpm --filter @codesesh/core test`、`pnpm --filter @codesesh/core lint`、`pnpm --filter @codesesh/core format:check`、`pnpm --filter @codesesh/core build`、`git diff --check`、`pnpm bench:perf -- --iterations 1`（242 sessions；dashboard visible 5081ms；detail 183ms）。
 
 ## 测试矩阵
 
