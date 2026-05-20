@@ -249,6 +249,7 @@ interface SearchProjectOption {
   key: string;
   label: string;
   count: number;
+  showCount?: boolean;
 }
 
 const SHORTCUT_HINT_STORAGE_KEY = "codesesh.shortcuts-hint-dismissed";
@@ -1152,6 +1153,37 @@ export default function App() {
     }
     return [...byKey.values()].toSorted((a, b) => b.count - a.count).slice(0, 8);
   }, [sessions]);
+  const searchProjectOptions = useMemo<SearchProjectOption[]>(() => {
+    if (!usesServerSearch) return projectOptions;
+
+    const byKey = new Map<string, SearchProjectOption>();
+    const sourceResults = searchLoading ? [] : searchResults;
+
+    for (const result of sourceResults) {
+      const identity = result.session.project_identity;
+      if (!identity?.key) continue;
+      const current = byKey.get(identity.key);
+      if (current) {
+        current.count += 1;
+      } else {
+        byKey.set(identity.key, {
+          key: identity.key,
+          label: identity.displayName || result.session.directory,
+          count: 1,
+          showCount: false,
+        });
+      }
+    }
+
+    if (searchFilters.projectKey && !byKey.has(searchFilters.projectKey)) {
+      const selected = projectOptions.find((project) => project.key === searchFilters.projectKey);
+      if (selected) {
+        byKey.set(selected.key, { ...selected, count: 0, showCount: false });
+      }
+    }
+
+    return [...byKey.values()].toSorted((a, b) => b.count - a.count).slice(0, 8);
+  }, [projectOptions, searchFilters.projectKey, searchLoading, searchResults, usesServerSearch]);
 
   // Header
   let headerTitle = "CodeSesh";
@@ -1312,7 +1344,7 @@ export default function App() {
         results={searchResults}
         agentNameMap={agentNameMap}
         agents={agents}
-        projects={projectOptions}
+        projects={searchProjectOptions}
         filters={searchFilters}
         onChangeFilters={setSearchFilters}
         onOpenResult={() => {
@@ -2191,7 +2223,9 @@ function SearchFilterBar({
           <FilterChip
             key={project.key}
             active={filters.projectKey === project.key}
-            label={`${project.label} · ${project.count}`}
+            label={
+              project.showCount === false ? project.label : `${project.label} · ${project.count}`
+            }
             onClick={() => setFilter("projectKey", project.key)}
           />
         ))}

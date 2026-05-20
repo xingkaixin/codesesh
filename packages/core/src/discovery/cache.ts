@@ -30,7 +30,7 @@ import {
   type SQLiteDatabase,
 } from "../utils/sqlite.js";
 
-const CACHE_SCHEMA_VERSION = 9;
+const CACHE_SCHEMA_VERSION = 10;
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const CACHE_FILENAME = "codesesh.db";
 const LEGACY_CACHE_FILENAME = "scan-cache.json";
@@ -498,12 +498,69 @@ function createFileActivityTables(db: SQLiteDatabase): void {
     CREATE INDEX IF NOT EXISTS idx_file_activity_project_latest
       ON session_file_activity(project_identity_key, latest_time);
 
+    CREATE INDEX IF NOT EXISTS idx_file_activity_latest
+      ON session_file_activity(latest_time DESC, count DESC, path);
+
+    CREATE INDEX IF NOT EXISTS idx_file_activity_agent_latest
+      ON session_file_activity(agent_name, latest_time DESC, count DESC, path);
+
+    CREATE INDEX IF NOT EXISTS idx_file_activity_project_latest_ordered
+      ON session_file_activity(project_identity_key, latest_time DESC, count DESC, path);
+
     CREATE INDEX IF NOT EXISTS idx_file_activity_path
       ON session_file_activity(path);
 
     CREATE INDEX IF NOT EXISTS idx_file_activity_kind
       ON session_file_activity(kind);
   `);
+
+  createFileActivityPathSearchTables(db);
+}
+
+function createFileActivityPathSearchTables(db: SQLiteDatabase): void {
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS session_file_activity_path_fts USING fts5(
+      path,
+      content='session_file_activity',
+      content_rowid='rowid',
+      tokenize='trigram'
+    );
+  `);
+
+  createFileActivityPathSearchTriggers(db);
+}
+
+function createFileActivityPathSearchTriggers(db: SQLiteDatabase): void {
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS session_file_activity_path_ai
+    AFTER INSERT ON session_file_activity BEGIN
+      INSERT INTO session_file_activity_path_fts(rowid, path)
+      VALUES (new.rowid, new.path);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS session_file_activity_path_ad
+    AFTER DELETE ON session_file_activity BEGIN
+      INSERT INTO session_file_activity_path_fts(session_file_activity_path_fts, rowid, path)
+      VALUES ('delete', old.rowid, old.path);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS session_file_activity_path_au
+    AFTER UPDATE ON session_file_activity BEGIN
+      INSERT INTO session_file_activity_path_fts(session_file_activity_path_fts, rowid, path)
+      VALUES ('delete', old.rowid, old.path);
+      INSERT INTO session_file_activity_path_fts(rowid, path)
+      VALUES (new.rowid, new.path);
+    END;
+  `);
+}
+
+function rebuildFileActivityPathIndex(db: SQLiteDatabase): void {
+  if (!tableExists(db, "session_file_activity_path_fts")) {
+    return;
+  }
+  db.exec(
+    "INSERT INTO session_file_activity_path_fts(session_file_activity_path_fts) VALUES ('rebuild')",
+  );
 }
 
 function createSearchTables(db: SQLiteDatabase): void {
@@ -976,6 +1033,9 @@ function readLegacyCacheVersion(db: SQLiteDatabase): number {
 }
 
 function inferCacheSchemaVersion(db: SQLiteDatabase): number {
+  if (tableExists(db, "session_file_activity_path_fts")) {
+    return 10;
+  }
   if (tableExists(db, "messages_fts")) {
     return 9;
   }
@@ -1018,6 +1078,7 @@ function hasAnyCacheSchema(db: SQLiteDatabase): boolean {
     "sessions",
     "messages",
     "session_file_activity",
+    "session_file_activity_path_fts",
     "session_documents",
     "session_documents_fts",
     "project_sessions",
@@ -1397,6 +1458,13 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
         migrate(db) {
           createMessageSearchTables(db);
           rebuildMessageSearchIndex(db);
+        },
+      },
+      {
+        version: 10,
+        migrate(db) {
+          createFileActivityPathSearchTables(db);
+          rebuildFileActivityPathIndex(db);
         },
       },
     ],
@@ -2389,6 +2457,12 @@ function likePattern(value: string): string {
     .replace(/[\\%_]/g, "\\$&")}%`;
 }
 
+function filePathFtsQuery(value: string): string | null {
+  const path = normalizeFilePathSearch(value);
+  if (path.length < 3) return null;
+  return `"${path.replaceAll('"', '""')}"`;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -2432,8 +2506,16 @@ function buildSessionSearchFilters(options: SearchOptions): {
   if (options.file || options.fileKind) {
     const fileClauses = ["fa.agent_name = s.agent_name", "fa.session_id = s.session_id"];
     if (options.file) {
-      fileClauses.push("LOWER(fa.path) LIKE ? ESCAPE '\\'");
-      params.push(likePattern(options.file));
+      const pathQuery = filePathFtsQuery(options.file);
+      if (pathQuery) {
+        fileClauses.push(
+          "fa.rowid IN (SELECT rowid FROM session_file_activity_path_fts WHERE path MATCH ?)",
+        );
+        params.push(pathQuery);
+      } else {
+        fileClauses.push("LOWER(fa.path) LIKE ? ESCAPE '\\'");
+        params.push(likePattern(options.file));
+      }
     }
     if (options.fileKind) {
       fileClauses.push("fa.kind = ?");
@@ -2711,6 +2793,7 @@ function fileActivityFilters(options: FileActivityOptions): {
   projectLike: string | null;
   cwdKey: string | null;
   cwdLike: string | null;
+  path: string;
   pathLike: string | null;
 } {
   const path = options.path ? normalizeFilePathSearch(options.path) : "";
@@ -2719,6 +2802,7 @@ function fileActivityFilters(options: FileActivityOptions): {
     projectLike: options.project ? likePattern(options.project) : null,
     cwdKey: options.cwd ? computeIdentity(options.cwd, realFs).key : null,
     cwdLike: options.cwd ? likePattern(options.cwd) : null,
+    path,
     pathLike: path ? likePattern(path) : null,
   };
 }
@@ -2735,12 +2819,73 @@ function fileActivityFromRow(row: FileActivityRow): SessionFileActivity {
   };
 }
 
+function buildFileActivityWhere(options: FileActivityOptions): {
+  where: string;
+  params: unknown[];
+} {
+  const filters = fileActivityFilters(options);
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+
+  if (options.agent != null) {
+    clauses.push("fa.agent_name = ?");
+    params.push(options.agent);
+  }
+  if (options.sessionId != null) {
+    clauses.push("fa.session_id = ?");
+    params.push(options.sessionId);
+  }
+  if (filters.projectKey != null) {
+    clauses.push("fa.project_identity_key = ?");
+    params.push(filters.projectKey);
+  }
+  if (filters.projectLike != null) {
+    clauses.push(
+      "(LOWER(fa.project_identity_key) LIKE ? ESCAPE '\\' OR LOWER(s.project_display_name) LIKE ? ESCAPE '\\' OR LOWER(s.directory) LIKE ? ESCAPE '\\')",
+    );
+    params.push(filters.projectLike, filters.projectLike, filters.projectLike);
+  }
+  if (filters.cwdKey != null) {
+    clauses.push("(s.project_identity_key = ? OR LOWER(s.directory) LIKE ? ESCAPE '\\')");
+    params.push(filters.cwdKey, filters.cwdLike);
+  }
+  if (filters.pathLike != null) {
+    const pathQuery = filePathFtsQuery(filters.path);
+    if (pathQuery) {
+      clauses.push(
+        "fa.rowid IN (SELECT rowid FROM session_file_activity_path_fts WHERE path MATCH ?)",
+      );
+      params.push(pathQuery);
+    } else {
+      clauses.push("LOWER(fa.path) LIKE ? ESCAPE '\\'");
+      params.push(filters.pathLike);
+    }
+  }
+  if (options.kind != null) {
+    clauses.push("fa.kind = ?");
+    params.push(options.kind);
+  }
+  if (options.from != null) {
+    clauses.push("fa.latest_time >= ?");
+    params.push(options.from);
+  }
+  if (options.to != null) {
+    clauses.push("fa.latest_time <= ?");
+    params.push(options.to);
+  }
+
+  return {
+    where: clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "",
+    params,
+  };
+}
+
 export function listFileActivity(options: FileActivityOptions = {}): FileActivityResult[] {
   if (!hasCacheStorage()) {
     return [];
   }
 
-  const filters = fileActivityFilters(options);
+  const filters = buildFileActivityWhere(options);
   const rows = withCacheDb(
     (db) =>
       db
@@ -2771,43 +2916,12 @@ export function listFileActivity(options: FileActivityOptions = {}): FileActivit
             s.total_tokens
           FROM session_file_activity fa
           JOIN sessions s ON s.agent_name = fa.agent_name AND s.session_id = fa.session_id
-          WHERE (? IS NULL OR fa.agent_name = ?)
-            AND (? IS NULL OR fa.session_id = ?)
-            AND (? IS NULL OR fa.project_identity_key = ?)
-            AND (? IS NULL OR LOWER(fa.project_identity_key) LIKE ? ESCAPE '\\' OR LOWER(s.project_display_name) LIKE ? ESCAPE '\\' OR LOWER(s.directory) LIKE ? ESCAPE '\\')
-            AND (? IS NULL OR s.project_identity_key = ? OR LOWER(s.directory) LIKE ? ESCAPE '\\')
-            AND (? IS NULL OR LOWER(fa.path) LIKE ? ESCAPE '\\')
-            AND (? IS NULL OR fa.kind = ?)
-            AND (? IS NULL OR fa.latest_time >= ?)
-            AND (? IS NULL OR fa.latest_time <= ?)
+          ${filters.where}
           ORDER BY fa.latest_time DESC, fa.count DESC, fa.path
           LIMIT ?
         `,
         )
-        .all(
-          options.agent ?? null,
-          options.agent ?? null,
-          options.sessionId ?? null,
-          options.sessionId ?? null,
-          filters.projectKey,
-          filters.projectKey,
-          filters.projectLike,
-          filters.projectLike,
-          filters.projectLike,
-          filters.projectLike,
-          filters.cwdKey,
-          filters.cwdKey,
-          filters.cwdLike,
-          filters.pathLike,
-          filters.pathLike,
-          options.kind ?? null,
-          options.kind ?? null,
-          options.from ?? null,
-          options.from ?? null,
-          options.to ?? null,
-          options.to ?? null,
-          options.limit ?? 50,
-        ) as FileActivityRow[],
+        .all(...filters.params, options.limit ?? 50) as FileActivityRow[],
   );
 
   return (rows ?? []).map((row) => ({

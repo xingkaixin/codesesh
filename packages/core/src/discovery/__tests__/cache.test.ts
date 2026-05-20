@@ -188,7 +188,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(9);
+    expect(getUserVersion(getCachePath())).toBe(10);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -345,7 +345,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(9);
+    expect(getUserVersion(getCachePath())).toBe(10);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
@@ -1118,6 +1118,20 @@ describe("searchSessions", () => {
       { kind: "read", path: "src/App.tsx", count: 1 },
     ]);
 
+    expect(
+      listFileActivity({
+        agent: "claudecode",
+        sessionId: "files",
+        projectKey: "github.com/acme/app",
+        cwd: "/tmp/project",
+        path: "src/App",
+        kind: "edit",
+        from: now + 9,
+        to: now + 11,
+        limit: 10,
+      }).map(({ kind, path, count }) => ({ kind, path, count })),
+    ).toEqual([{ kind: "edit", path: "src/App.tsx", count: 1 }]);
+
     const searchResults = searchFileActivitySessions("src/new.ts");
     expect(searchResults).toHaveLength(1);
     expect(searchResults[0]?.session.id).toBe("files");
@@ -1126,6 +1140,97 @@ describe("searchSessions", () => {
     const directWriteResults = searchFileActivitySessions("src/direct.ts");
     expect(directWriteResults).toHaveLength(1);
     expect(directWriteResults[0]?.snippet).toContain("write");
+  });
+
+  it("uses latest-time indexes for recent file activity query plans", () => {
+    saveCachedSessions("claudecode", [makeSession("indexed")]);
+
+    const db = new Database(getCachePath(), { readonly: true });
+    try {
+      const explain = (where: string, ...params: unknown[]) =>
+        (
+          db
+            .prepare(
+              `
+                EXPLAIN QUERY PLAN
+                SELECT
+                  fa.agent_name,
+                  fa.session_id,
+                  fa.project_identity_key,
+                  fa.path,
+                  fa.kind,
+                  fa.count,
+                  fa.latest_time
+                FROM session_file_activity fa
+                JOIN sessions s ON s.agent_name = fa.agent_name AND s.session_id = fa.session_id
+                ${where}
+                ORDER BY fa.latest_time DESC, fa.count DESC, fa.path
+                LIMIT ?
+              `,
+            )
+            .all(...params, 50) as Array<{ detail?: string }>
+        )
+          .map((row) => String(row.detail ?? ""))
+          .join("\n");
+
+      expect(explain("")).toContain("USING INDEX idx_file_activity_latest");
+      expect(explain("WHERE fa.agent_name = ?", "claudecode")).toContain(
+        "USING INDEX idx_file_activity_agent_latest",
+      );
+      expect(explain("WHERE fa.project_identity_key = ?", "/tmp/project")).toContain(
+        "USING INDEX idx_file_activity_project_latest_ordered",
+      );
+      const pathPlan = explain(
+        "WHERE fa.rowid IN (SELECT rowid FROM session_file_activity_path_fts WHERE path MATCH ?)",
+        '"src/App"',
+      );
+      expect(pathPlan).toContain("session_file_activity_path_fts");
+      expect(pathPlan).not.toContain("SCAN fa\n");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rebuilds path search index when migrating existing file activity rows", () => {
+    const session = makeSession("path-migration");
+
+    saveCachedSessions("claudecode", [session]);
+    syncSessionSearchIndex("claudecode", [session], () => ({
+      ...session,
+      messages: [
+        {
+          id: "path-migration-tool",
+          role: "assistant",
+          time_created: now,
+          parts: [
+            {
+              type: "tool",
+              tool: "Read",
+              state: { input: { file_path: "src/migrated/App.tsx" } },
+            },
+          ],
+        },
+      ],
+    }));
+
+    const db = new Database(getCachePath());
+    try {
+      db.exec(`
+        DROP TRIGGER IF EXISTS session_file_activity_path_ai;
+        DROP TRIGGER IF EXISTS session_file_activity_path_ad;
+        DROP TRIGGER IF EXISTS session_file_activity_path_au;
+        DROP TABLE IF EXISTS session_file_activity_path_fts;
+        PRAGMA user_version = 9;
+      `);
+      db.prepare("UPDATE cache_meta SET value = '9' WHERE key = 'version'").run();
+    } finally {
+      db.close();
+    }
+
+    expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
+      "src/migrated/App.tsx",
+    ]);
+    expect(getUserVersion(getCachePath())).toBe(10);
   });
 
   it("combines full text with structured filters", () => {
