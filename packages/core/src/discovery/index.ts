@@ -5,6 +5,7 @@ export type { ScanResult, ScanOptions } from "./scanner.js";
 export {
   loadCachedSessions,
   saveCachedSessions,
+  saveCachedSessionChanges,
   clearCache,
   getCacheInfo,
   listCachedProjectGroups,
@@ -14,6 +15,7 @@ export {
   searchFileActivitySessions,
   searchSessions,
   syncSessionSearchIndex,
+  syncSessionSearchIndexChanges,
 } from "./cache.js";
 export type {
   FileActivityOptions,
@@ -24,6 +26,7 @@ export type {
   SearchMatchType,
   SearchOptions,
   SearchQueryFilters,
+  SessionHeadChange,
 } from "./cache.js";
 export { perf } from "../utils/index.js";
 export type { PerfMarker } from "../utils/index.js";

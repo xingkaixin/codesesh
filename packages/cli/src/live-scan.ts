@@ -9,11 +9,14 @@ import {
   resolveProviderRoots,
   scanSessions,
   syncSessionSearchIndex,
+  syncSessionSearchIndexChanges,
   saveCachedSessions,
+  saveCachedSessionChanges,
   type BaseAgent,
   type ScanResult,
   type ScanOptions,
   type SessionCacheMeta,
+  type SessionHeadChange,
   type SessionHead,
 } from "@codesesh/core";
 import type { SearchIndexWorkerMessage } from "./search-index-worker.js";
@@ -50,6 +53,12 @@ interface StablePathState {
   timer: NodeJS.Timeout | null;
 }
 
+interface SessionRefreshDiff {
+  event: SessionsUpdatedEvent | null;
+  changedSessions: SessionHeadChange[];
+  removedSessionIds: string[];
+}
+
 const REFRESH_DEBOUNCE_MS = 200;
 const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
 const PENDING_REFRESH_DELAY_MS = 100;
@@ -78,59 +87,78 @@ function sessionSignature(session: SessionHead): string {
   ]);
 }
 
-function buildAgentCacheMeta(agent: BaseAgent): Record<string, SessionCacheMeta> {
+function buildAgentCacheMeta(
+  agent: BaseAgent,
+  sessionIds?: Set<string>,
+): Record<string, SessionCacheMeta> {
   const metaMap = agent.getSessionMetaMap?.();
   const meta: Record<string, SessionCacheMeta> = {};
   if (!metaMap) return meta;
 
   for (const [id, data] of metaMap.entries()) {
+    if (sessionIds && !sessionIds.has(id)) continue;
     meta[id] = { id, ...(data as Record<string, unknown>) } as SessionCacheMeta;
   }
 
   return meta;
 }
 
-function buildUpdateEvent(
+function buildRefreshDiff(
   agentName: string,
   previousSessions: SessionHead[],
   nextSessions: SessionHead[],
-): SessionsUpdatedEvent | null {
+  candidateChangedIds: string[] = [],
+): SessionRefreshDiff {
   const previousMap = new Map(previousSessions.map((session) => [session.id, session]));
   const nextMap = new Map(nextSessions.map((session) => [session.id, session]));
+  const candidateChangedIdSet = new Set(candidateChangedIds);
+  const changedSessions: SessionHeadChange[] = [];
+  const removedSessionIds: string[] = [];
 
   let newSessions = 0;
   let updatedSessions = 0;
   let removedSessions = 0;
 
-  for (const [id, session] of nextMap.entries()) {
+  nextSessions.forEach((session, index) => {
+    const id = session.id;
     const previous = previousMap.get(id);
     if (!previous) {
       newSessions += 1;
-      continue;
+      changedSessions.push({ session, sortIndex: index });
+      return;
     }
-    if (sessionSignature(previous) !== sessionSignature(session)) {
+    const hasSignatureChange = sessionSignature(previous) !== sessionSignature(session);
+    if (hasSignatureChange) {
       updatedSessions += 1;
     }
-  }
+    if (candidateChangedIdSet.has(id) || hasSignatureChange) {
+      changedSessions.push({ session, sortIndex: index });
+    }
+  });
 
   for (const id of previousMap.keys()) {
     if (!nextMap.has(id)) {
       removedSessions += 1;
+      removedSessionIds.push(id);
     }
   }
 
   if (newSessions === 0 && updatedSessions === 0 && removedSessions === 0) {
-    return null;
+    return { event: null, changedSessions, removedSessionIds };
   }
 
   return {
-    type: "sessions-updated",
-    changedAgents: [agentName],
-    newSessions,
-    updatedSessions,
-    removedSessions,
-    totalSessions: nextSessions.length,
-    timestamp: Date.now(),
+    changedSessions,
+    removedSessionIds,
+    event: {
+      type: "sessions-updated",
+      changedAgents: [agentName],
+      newSessions,
+      updatedSessions,
+      removedSessions,
+      totalSessions: nextSessions.length,
+      timestamp: Date.now(),
+    },
   };
 }
 
@@ -795,6 +823,8 @@ export class LiveScanStore {
 
     const previousSessions = this.byAgent[agentName] ?? [];
     let nextSessions = previousSessions;
+    let preciseChangedIds: string[] | null = null;
+    let usedIncrementalScan = false;
 
     if (!agent.isAvailable()) {
       nextSessions = [];
@@ -813,6 +843,8 @@ export class LiveScanStore {
         return;
       }
 
+      preciseChangedIds = checkResult.changedIds ?? null;
+      usedIncrementalScan = Array.isArray(checkResult.changedIds);
       nextSessions = await Promise.resolve(
         agent.incrementalScan(previousSessions, checkResult.changedIds ?? []),
       );
@@ -822,24 +854,52 @@ export class LiveScanStore {
     }
 
     nextSessions = this.applyFilters(nextSessions);
-    if (!this.hasStartupWindow()) {
-      saveCachedSessions(agentName, nextSessions, buildAgentCacheMeta(agent));
-    }
+    const diff = buildRefreshDiff(
+      agentName,
+      previousSessions,
+      nextSessions,
+      preciseChangedIds ?? [],
+    );
     const searchIndexOptions =
       pendingPathCount >= SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD ? { isBulk: true } : undefined;
-    const syncResult = searchIndexOptions
-      ? syncSessionSearchIndex(
+    const canPersistIncrementally =
+      usedIncrementalScan && !searchIndexOptions && !this.hasStartupWindow();
+    const changedSessionIds = canPersistIncrementally
+      ? new Set(diff.changedSessions.map(({ session }) => session.id))
+      : undefined;
+    const cacheMeta = buildAgentCacheMeta(agent, changedSessionIds);
+    if (!this.hasStartupWindow()) {
+      if (canPersistIncrementally) {
+        saveCachedSessionChanges(
           agentName,
-          nextSessions,
-          (sessionId) => agent.getSessionData(sessionId),
-          searchIndexOptions,
-        )
-      : syncSessionSearchIndex(agentName, nextSessions, (sessionId) =>
-          agent.getSessionData(sessionId),
+          diff.changedSessions,
+          diff.removedSessionIds,
+          cacheMeta,
         );
+      } else {
+        saveCachedSessions(agentName, nextSessions, cacheMeta);
+      }
+    }
+    const syncResult = canPersistIncrementally
+      ? syncSessionSearchIndexChanges(
+          agentName,
+          diff.changedSessions,
+          diff.removedSessionIds,
+          (sessionId) => agent.getSessionData(sessionId),
+        )
+      : searchIndexOptions
+        ? syncSessionSearchIndex(
+            agentName,
+            nextSessions,
+            (sessionId) => agent.getSessionData(sessionId),
+            searchIndexOptions,
+          )
+        : syncSessionSearchIndex(agentName, nextSessions, (sessionId) =>
+            agent.getSessionData(sessionId),
+          );
     logSearchIndexSync("scan.refresh", syncResult, { pending_paths: pendingPathCount });
 
-    const event = buildUpdateEvent(agentName, previousSessions, nextSessions);
+    const event = diff.event;
     this.byAgent[agentName] = sortSessions(nextSessions);
     this.rebuildSessions();
 

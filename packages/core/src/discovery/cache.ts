@@ -9,6 +9,7 @@ import type {
   FileActivityKind,
   Message,
   MessagePart,
+  ProjectIdentity,
   ProjectGroup,
   ProjectIdentityKind,
   SessionFileActivity,
@@ -46,6 +47,11 @@ export interface CachedResult {
   sessions: SessionHead[];
   meta: Record<string, SessionCacheMeta>;
   timestamp: number;
+}
+
+export interface SessionHeadChange {
+  session: SessionHead;
+  sortIndex: number;
 }
 
 export interface SearchIndexSyncOptions {
@@ -221,6 +227,16 @@ interface StructuredMessageRecord {
   nickname?: string | null;
   contentText: string;
   toolMetadataJson?: string | null;
+}
+
+interface LoadedSearchIndexEntry {
+  session: SessionHead;
+  identity: ProjectIdentity;
+  messages: StructuredMessageRecord[];
+  contentText: string;
+  contentHash: string;
+  fileActivity: SessionFileActivity[];
+  sortIndex: number;
 }
 
 export interface SearchResult {
@@ -604,6 +620,36 @@ function sourcePathFromMetaJson(metaJson: string | null | undefined): string | n
   return sourcePathFromMeta(meta);
 }
 
+function prepareUpsertCachedSession(db: SQLiteDatabase): SQLiteStatement {
+  return db.prepare(`
+    INSERT INTO cached_sessions(agent_name, session_id, session_json, meta_json)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(agent_name, session_id) DO UPDATE SET
+      session_json = excluded.session_json,
+      meta_json = excluded.meta_json
+  `);
+}
+
+function prepareUpsertProjectSession(db: SQLiteDatabase): SQLiteStatement {
+  return db.prepare(`
+    INSERT INTO project_sessions(
+      agent_name,
+      session_id,
+      identity_kind,
+      identity_key,
+      display_name,
+      directory,
+      activity_time
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(agent_name, session_id) DO UPDATE SET
+      identity_kind = excluded.identity_kind,
+      identity_key = excluded.identity_key,
+      display_name = excluded.display_name,
+      directory = excluded.directory,
+      activity_time = excluded.activity_time
+  `);
+}
+
 function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
   return db.prepare(`
     INSERT INTO sessions(
@@ -781,6 +827,23 @@ function writeFileActivityRows(
       activity.latest_time,
     );
   }
+}
+
+function writeProjectSessionRow(
+  statement: SQLiteStatement,
+  agentName: string,
+  session: SessionHead,
+  identity: ProjectIdentity,
+): void {
+  statement.run(
+    agentName,
+    session.id,
+    identity.kind,
+    identity.key,
+    identity.displayName,
+    session.directory,
+    session.time_updated ?? session.time_created,
+  );
 }
 
 function sessionFromRow(row: SessionRow): SessionHead {
@@ -1666,8 +1729,14 @@ export function saveCachedSessions(
     const deleteSearchDocument = db.prepare(
       "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
     );
+    const deleteMessages = db.prepare(
+      "DELETE FROM messages WHERE agent_name = ? AND session_id = ?",
+    );
     const deleteFileActivity = db.prepare(
       "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
+    );
+    const deleteProjectSession = db.prepare(
+      "DELETE FROM project_sessions WHERE agent_name = ? AND session_id = ?",
     );
     const deleteProjectSessions = db.prepare("DELETE FROM project_sessions WHERE agent_name = ?");
     const upsertAgent = db.prepare(`
@@ -1675,22 +1744,9 @@ export function saveCachedSessions(
       VALUES (?, ?)
       ON CONFLICT(agent_name) DO UPDATE SET timestamp = excluded.timestamp
     `);
-    const insertCachedSession = db.prepare(`
-      INSERT INTO cached_sessions(agent_name, session_id, session_json, meta_json)
-      VALUES (?, ?, ?, ?)
-    `);
+    const upsertCachedSession = prepareUpsertCachedSession(db);
     const upsertSession = prepareUpsertSession(db);
-    const insertProjectSession = db.prepare(`
-      INSERT INTO project_sessions(
-        agent_name,
-        session_id,
-        identity_kind,
-        identity_key,
-        display_name,
-        directory,
-        activity_time
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
+    const upsertProjectSession = prepareUpsertProjectSession(db);
 
     const write = db.transaction(() => {
       const timestamp = Date.now();
@@ -1707,7 +1763,9 @@ export function saveCachedSessions(
         const sessionId = String(row.session_id);
         if (!sessionIds.has(sessionId)) {
           deleteSearchDocument.run(agentName, sessionId);
+          deleteMessages.run(agentName, sessionId);
           deleteFileActivity.run(agentName, sessionId);
+          deleteProjectSession.run(agentName, sessionId);
           deleteSession.run(agentName, sessionId);
         }
       }
@@ -1716,7 +1774,7 @@ export function saveCachedSessions(
         const identity = session.project_identity ?? computeIdentity(session.directory, realFs);
         const sessionMeta = meta[session.id];
         const metaJson = sessionMeta ? JSON.stringify(sessionMeta) : null;
-        insertCachedSession.run(agentName, session.id, JSON.stringify(session), metaJson);
+        upsertCachedSession.run(agentName, session.id, JSON.stringify(session), metaJson);
         upsertSessionRow(
           upsertSession,
           agentName,
@@ -1725,16 +1783,80 @@ export function saveCachedSessions(
           index,
           sourcePathFromMeta(sessionMeta),
         );
-        insertProjectSession.run(
-          agentName,
-          session.id,
-          identity.kind,
-          identity.key,
-          identity.displayName,
-          session.directory,
-          session.time_updated ?? session.time_created,
-        );
+        writeProjectSessionRow(upsertProjectSession, agentName, session, identity);
       });
+    });
+
+    write();
+    deleteLegacyCacheFile();
+  });
+}
+
+export function saveCachedSessionChanges(
+  agentName: string,
+  changes: SessionHeadChange[],
+  removedSessionIds: string[],
+  meta: Record<string, SessionCacheMeta> = {},
+): void {
+  if (changes.length === 0 && removedSessionIds.length === 0) {
+    return;
+  }
+
+  withCacheDb((db) => {
+    const deleteLegacySession = db.prepare(
+      "DELETE FROM cached_sessions WHERE agent_name = ? AND session_id = ?",
+    );
+    const deleteSession = db.prepare(
+      "DELETE FROM sessions WHERE agent_name = ? AND session_id = ?",
+    );
+    const deleteSearchDocument = db.prepare(
+      "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
+    );
+    const deleteMessages = db.prepare(
+      "DELETE FROM messages WHERE agent_name = ? AND session_id = ?",
+    );
+    const deleteFileActivity = db.prepare(
+      "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
+    );
+    const deleteProjectSession = db.prepare(
+      "DELETE FROM project_sessions WHERE agent_name = ? AND session_id = ?",
+    );
+    const upsertAgent = db.prepare(`
+      INSERT INTO agent_cache(agent_name, timestamp)
+      VALUES (?, ?)
+      ON CONFLICT(agent_name) DO UPDATE SET timestamp = excluded.timestamp
+    `);
+    const upsertCachedSession = prepareUpsertCachedSession(db);
+    const upsertSession = prepareUpsertSession(db);
+    const upsertProjectSession = prepareUpsertProjectSession(db);
+
+    const write = db.transaction(() => {
+      upsertAgent.run(agentName, Date.now());
+
+      for (const sessionId of new Set(removedSessionIds)) {
+        deleteLegacySession.run(agentName, sessionId);
+        deleteSearchDocument.run(agentName, sessionId);
+        deleteMessages.run(agentName, sessionId);
+        deleteFileActivity.run(agentName, sessionId);
+        deleteProjectSession.run(agentName, sessionId);
+        deleteSession.run(agentName, sessionId);
+      }
+
+      for (const { session, sortIndex } of changes) {
+        const identity = session.project_identity ?? computeIdentity(session.directory, realFs);
+        const sessionMeta = meta[session.id];
+        const metaJson = sessionMeta ? JSON.stringify(sessionMeta) : null;
+        upsertCachedSession.run(agentName, session.id, JSON.stringify(session), metaJson);
+        upsertSessionRow(
+          upsertSession,
+          agentName,
+          session,
+          metaJson,
+          sortIndex,
+          sourcePathFromMeta(sessionMeta),
+        );
+        writeProjectSessionRow(upsertProjectSession, agentName, session, identity);
+      }
     });
 
     write();
@@ -1801,6 +1923,180 @@ export function getCacheInfo(): { lastScanTime: number | null; size: number } {
   return info ?? { lastScanTime: null, size: 0 };
 }
 
+function loadSearchIndexEntry(
+  agentName: string,
+  change: SessionHeadChange,
+  loadSessionData: (sessionId: string) => SessionData,
+): LoadedSearchIndexEntry | null {
+  try {
+    const data = loadSessionData(change.session.id);
+    const messages = normalizeMessages(data);
+    const identity =
+      change.session.project_identity ??
+      data.project_identity ??
+      computeIdentity(change.session.directory, realFs);
+    return {
+      session: change.session,
+      identity,
+      messages,
+      contentText: buildSessionContentFromMessages(data.title ?? change.session.title, messages),
+      contentHash: sessionContentHash(change.session),
+      fileActivity: extractSessionFileActivity(
+        agentName,
+        change.session.id,
+        identity.key,
+        data.messages,
+      ),
+      sortIndex: change.sortIndex,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeSearchIndexRows(
+  db: SQLiteDatabase,
+  agentName: string,
+  removedSessionIds: string[],
+  entries: LoadedSearchIndexEntry[],
+): void {
+  const deleteRow = db.prepare(
+    "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
+  );
+  const deleteMessages = db.prepare(
+    "DELETE FROM messages WHERE agent_name = ? AND session_id = ? AND message_index >= ?",
+  );
+  const deleteFileActivity = db.prepare(
+    "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
+  );
+  const upsertIndexedSession = prepareUpsertIndexedSession(db);
+  const insertFileActivity = prepareInsertFileActivity(db);
+  const upsertMessage = db.prepare(`
+    INSERT INTO messages(
+      agent_name,
+      session_id,
+      message_index,
+      message_id,
+      role,
+      time_created,
+      time_completed,
+      agent,
+      mode,
+      model,
+      provider,
+      tokens_json,
+      cost,
+      cost_source,
+      parts_json,
+      subagent_id,
+      nickname,
+      content_text,
+      tool_metadata_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(agent_name, session_id, message_index) DO UPDATE SET
+      message_id = excluded.message_id,
+      role = excluded.role,
+      time_created = excluded.time_created,
+      time_completed = excluded.time_completed,
+      agent = excluded.agent,
+      mode = excluded.mode,
+      model = excluded.model,
+      provider = excluded.provider,
+      tokens_json = excluded.tokens_json,
+      cost = excluded.cost,
+      cost_source = excluded.cost_source,
+      parts_json = excluded.parts_json,
+      subagent_id = excluded.subagent_id,
+      nickname = excluded.nickname,
+      content_text = excluded.content_text,
+      tool_metadata_json = excluded.tool_metadata_json
+  `);
+  const upsertRow = db.prepare(`
+    INSERT INTO session_documents(
+      agent_name,
+      session_id,
+      slug,
+      title,
+      directory,
+      project_identity_kind,
+      project_identity_key,
+      project_display_name,
+      time_created,
+      time_updated,
+      activity_time,
+      content_text,
+      content_hash,
+      indexed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(agent_name, session_id) DO UPDATE SET
+      slug = excluded.slug,
+      title = excluded.title,
+      directory = excluded.directory,
+      project_identity_kind = excluded.project_identity_kind,
+      project_identity_key = excluded.project_identity_key,
+      project_display_name = excluded.project_display_name,
+      time_created = excluded.time_created,
+      time_updated = excluded.time_updated,
+      activity_time = excluded.activity_time,
+      content_text = excluded.content_text,
+      content_hash = excluded.content_hash,
+      indexed_at = excluded.indexed_at
+  `);
+
+  for (const sessionId of new Set(removedSessionIds)) {
+    deleteRow.run(agentName, sessionId);
+    deleteFileActivity.run(agentName, sessionId);
+    deleteMessages.run(agentName, sessionId, 0);
+  }
+
+  for (const entry of entries) {
+    const activityTime = entry.session.time_updated ?? entry.session.time_created;
+    upsertSessionRow(upsertIndexedSession, agentName, entry.session, null, entry.sortIndex, null);
+    deleteFileActivity.run(agentName, entry.session.id);
+    writeFileActivityRows(insertFileActivity, entry.fileActivity);
+    for (const message of entry.messages) {
+      upsertMessage.run(
+        agentName,
+        entry.session.id,
+        message.index,
+        message.id,
+        message.role,
+        message.timeCreated,
+        message.timeCompleted ?? null,
+        message.agent ?? null,
+        message.mode ?? null,
+        message.model ?? null,
+        message.provider ?? null,
+        message.tokensJson ?? null,
+        message.cost ?? null,
+        message.costSource ?? null,
+        message.partsJson,
+        message.subagentId ?? null,
+        message.nickname ?? null,
+        message.contentText,
+        message.toolMetadataJson ?? null,
+      );
+    }
+    deleteMessages.run(agentName, entry.session.id, entry.messages.length);
+    upsertRow.run(
+      agentName,
+      entry.session.id,
+      entry.session.slug,
+      entry.session.title,
+      entry.session.directory,
+      entry.identity.kind,
+      entry.identity.key,
+      entry.identity.displayName,
+      entry.session.time_created,
+      entry.session.time_updated ?? null,
+      activityTime,
+      entry.contentText,
+      entry.contentHash,
+      Date.now(),
+    );
+  }
+}
+
 export function syncSessionSearchIndex(
   agentName: string,
   sessions: SessionHead[],
@@ -1841,177 +2137,16 @@ export function syncSessionSearchIndex(
     const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
 
     const loaded = toUpsert
-      .map((session) => {
-        try {
-          const data = loadSessionData(session.id);
-          const messages = normalizeMessages(data);
-          const identity =
-            session.project_identity ??
-            data.project_identity ??
-            computeIdentity(session.directory, realFs);
-          return {
-            session,
-            identity,
-            messages,
-            contentText: buildSessionContentFromMessages(data.title ?? session.title, messages),
-            contentHash: sessionContentHash(session),
-            fileActivity: extractSessionFileActivity(
-              agentName,
-              session.id,
-              identity.key,
-              data.messages,
-            ),
-          };
-        } catch {
-          return null;
-        }
-      })
-      .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-
-    const deleteRow = db.prepare(
-      "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
-    );
-    const deleteMessages = db.prepare(
-      "DELETE FROM messages WHERE agent_name = ? AND session_id = ? AND message_index >= ?",
-    );
-    const deleteFileActivity = db.prepare(
-      "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
-    );
-    const upsertIndexedSession = prepareUpsertIndexedSession(db);
-    const insertFileActivity = prepareInsertFileActivity(db);
-    const upsertMessage = db.prepare(`
-      INSERT INTO messages(
-        agent_name,
-        session_id,
-        message_index,
-        message_id,
-        role,
-        time_created,
-        time_completed,
-        agent,
-        mode,
-        model,
-        provider,
-        tokens_json,
-        cost,
-        cost_source,
-        parts_json,
-        subagent_id,
-        nickname,
-        content_text,
-        tool_metadata_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(agent_name, session_id, message_index) DO UPDATE SET
-        message_id = excluded.message_id,
-        role = excluded.role,
-        time_created = excluded.time_created,
-        time_completed = excluded.time_completed,
-        agent = excluded.agent,
-        mode = excluded.mode,
-        model = excluded.model,
-        provider = excluded.provider,
-        tokens_json = excluded.tokens_json,
-        cost = excluded.cost,
-        cost_source = excluded.cost_source,
-        parts_json = excluded.parts_json,
-        subagent_id = excluded.subagent_id,
-        nickname = excluded.nickname,
-        content_text = excluded.content_text,
-        tool_metadata_json = excluded.tool_metadata_json
-    `);
-    const upsertRow = db.prepare(`
-      INSERT INTO session_documents(
-        agent_name,
-        session_id,
-        slug,
-        title,
-        directory,
-        project_identity_kind,
-        project_identity_key,
-        project_display_name,
-        time_created,
-        time_updated,
-        activity_time,
-        content_text,
-        content_hash,
-        indexed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(agent_name, session_id) DO UPDATE SET
-        slug = excluded.slug,
-        title = excluded.title,
-        directory = excluded.directory,
-        project_identity_kind = excluded.project_identity_kind,
-        project_identity_key = excluded.project_identity_key,
-        project_display_name = excluded.project_display_name,
-        time_created = excluded.time_created,
-        time_updated = excluded.time_updated,
-        activity_time = excluded.activity_time,
-        content_text = excluded.content_text,
-        content_hash = excluded.content_hash,
-        indexed_at = excluded.indexed_at
-    `);
-
-    const writeRows = () => {
-      for (const sessionId of toDelete) {
-        deleteRow.run(agentName, sessionId);
-        deleteFileActivity.run(agentName, sessionId);
-        deleteMessages.run(agentName, sessionId, 0);
-      }
-
-      for (const entry of loaded) {
-        const activityTime = entry.session.time_updated ?? entry.session.time_created;
-        upsertSessionRow(
-          upsertIndexedSession,
+      .map((session) =>
+        loadSearchIndexEntry(
           agentName,
-          entry.session,
-          null,
-          sessionSortIndexMap.get(entry.session.id) ?? 0,
-          null,
-        );
-        deleteFileActivity.run(agentName, entry.session.id);
-        writeFileActivityRows(insertFileActivity, entry.fileActivity);
-        for (const message of entry.messages) {
-          upsertMessage.run(
-            agentName,
-            entry.session.id,
-            message.index,
-            message.id,
-            message.role,
-            message.timeCreated,
-            message.timeCompleted ?? null,
-            message.agent ?? null,
-            message.mode ?? null,
-            message.model ?? null,
-            message.provider ?? null,
-            message.tokensJson ?? null,
-            message.cost ?? null,
-            message.costSource ?? null,
-            message.partsJson,
-            message.subagentId ?? null,
-            message.nickname ?? null,
-            message.contentText,
-            message.toolMetadataJson ?? null,
-          );
-        }
-        deleteMessages.run(agentName, entry.session.id, entry.messages.length);
-        upsertRow.run(
-          agentName,
-          entry.session.id,
-          entry.session.slug,
-          entry.session.title,
-          entry.session.directory,
-          entry.identity.kind,
-          entry.identity.key,
-          entry.identity.displayName,
-          entry.session.time_created,
-          entry.session.time_updated ?? null,
-          activityTime,
-          entry.contentText,
-          entry.contentHash,
-          Date.now(),
-        );
-      }
-    };
+          { session, sortIndex: sessionSortIndexMap.get(session.id) ?? 0 },
+          loadSessionData,
+        ),
+      )
+      .filter((entry): entry is LoadedSearchIndexEntry => entry !== null);
+
+    const writeRows = () => writeSearchIndexRows(db, agentName, toDelete, loaded);
 
     let rebuildDurationMs: number | undefined;
     const needsRebuild = isBulk && (toDelete.length > 0 || loaded.length > 0);
@@ -2035,6 +2170,83 @@ export function syncSessionSearchIndex(
       sessions: sessions.length,
       changed: toUpsert.length,
       deleted: toDelete.length,
+      indexed: loaded.length,
+      skipped: toUpsert.length - loaded.length,
+      durationMs: performance.now() - startedAt,
+      rebuildDurationMs,
+    };
+  });
+}
+
+export function syncSessionSearchIndexChanges(
+  agentName: string,
+  changes: SessionHeadChange[],
+  removedSessionIds: string[],
+  loadSessionData: (sessionId: string) => SessionData,
+  options: SearchIndexSyncOptions = {},
+): SearchIndexSyncResult | null {
+  if (changes.length === 0 && removedSessionIds.length === 0) {
+    return {
+      agentName,
+      mode: "incremental",
+      sessions: 0,
+      changed: 0,
+      deleted: 0,
+      indexed: 0,
+      skipped: 0,
+      durationMs: 0,
+    };
+  }
+
+  return withCacheDb((db) => {
+    ensureFtsConsistency(db);
+    const startedAt = performance.now();
+    const getIndexedRow = db.prepare(
+      "SELECT content_hash FROM session_documents WHERE agent_name = ? AND session_id = ?",
+    );
+    const getMessageCount = db.prepare(
+      "SELECT COUNT(*) AS value FROM messages WHERE agent_name = ? AND session_id = ?",
+    );
+    const toUpsert = changes.filter(({ session }) => {
+      const indexed = getIndexedRow.get(agentName, session.id) as IndexedSearchRow | undefined;
+      const messageCount = getMessageCount.get(agentName, session.id) as
+        | MessageCountRow
+        | undefined;
+      return (
+        String(indexed?.content_hash ?? "") !== sessionContentHash(session) ||
+        Number(messageCount?.value ?? 0) !== session.stats.message_count
+      );
+    });
+    const uniqueRemovedSessionIds = Array.from(new Set(removedSessionIds));
+    const changedCount = uniqueRemovedSessionIds.length + toUpsert.length;
+    const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
+    const loaded = toUpsert
+      .map((change) => loadSearchIndexEntry(agentName, change, loadSessionData))
+      .filter((entry): entry is LoadedSearchIndexEntry => entry !== null);
+    const writeRows = () => writeSearchIndexRows(db, agentName, uniqueRemovedSessionIds, loaded);
+
+    let rebuildDurationMs: number | undefined;
+    const needsRebuild = isBulk && (uniqueRemovedSessionIds.length > 0 || loaded.length > 0);
+
+    if (needsRebuild) {
+      db.transaction(() => {
+        dropSearchTriggers(db);
+        writeRows();
+        const rebuildStartedAt = performance.now();
+        rebuildSearchIndex(db);
+        rebuildDurationMs = performance.now() - rebuildStartedAt;
+        createSearchTriggers(db);
+      })();
+    } else {
+      db.transaction(writeRows)();
+    }
+
+    return {
+      agentName,
+      mode: isBulk ? "bulk" : "incremental",
+      sessions: changes.length,
+      changed: toUpsert.length,
+      deleted: uniqueRemovedSessionIds.length,
       indexed: loaded.length,
       skipped: toUpsert.length - loaded.length,
       durationMs: performance.now() - startedAt,
