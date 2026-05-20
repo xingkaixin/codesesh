@@ -94,7 +94,7 @@ async function findFreePort() {
   });
   const address = server.address();
   await new Promise((resolvePromise) => server.close(resolvePromise));
-  return typeof address === "object" && address ? address.port : 4321;
+  return typeof address === "object" && address ? address.port : 4521;
 }
 
 async function waitForServer(url, child, timeoutMs) {

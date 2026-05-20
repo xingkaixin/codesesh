@@ -68,7 +68,7 @@ CLI 启动时应有结构化的控制台输出：
 
   Found 95 sessions across 3 agents
 
-  ➜ http://localhost:4321
+  ➜ http://localhost:4521
 ```
 
 ### 2.2 Web UI
