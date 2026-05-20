@@ -21,18 +21,13 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ModelConfig } from "../config";
 import { cn } from "../lib/utils";
 import type { Message, MessagePart, SessionData, SessionFileActivity } from "../lib/api";
 import { InteractiveReceipt } from "./InteractiveReceipt";
 import { MarkdownContent } from "./MarkdownContent";
-import {
-  buildMessageBlocks,
-  extractMessageText,
-  hasVisibleContent,
-  type MessageBlock,
-} from "./session-detail/blocks";
+import { extractMessageText, type MessageBlock } from "./session-detail/blocks";
 import { isCodexTurnAbortedMessage } from "./session-detail/codex-abort";
 import {
   buildCodexPatchOutputContent,
@@ -49,9 +44,14 @@ import {
 import {
   buildSessionDetailToc,
   filterSessionMessages,
+  type FilteredSessionMessage,
   type SessionDetailToc,
   type TocFilterId,
 } from "./session-detail/toc";
+import {
+  buildMessageDisplayModels,
+  type MessageDisplayModel,
+} from "./session-detail/display-model";
 import { detectLanguageByFilePath } from "./tool-output/language";
 import { ToolOutputRenderer } from "./tool-output/ToolOutputRenderer";
 import type { DiffBlock, DiffLineItem, ToolOutputContent } from "./tool-output/types";
@@ -140,6 +140,11 @@ const TOOL_STATUS_META: Record<
     icon: LoaderCircle,
   },
 };
+
+const MESSAGE_LIST_GAP_PX = 32;
+const VIRTUALIZED_MESSAGE_THRESHOLD = 80;
+const VIRTUALIZED_MESSAGE_ESTIMATE_PX = 280;
+const VIRTUALIZED_MESSAGE_OVERSCAN = 6;
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -439,11 +444,13 @@ function summarizeFileChangeItems(records: FileChangeRecord[]): FileChangeSummar
     });
 }
 
-function buildFileChangeSummary(messages: Message[]): {
+function buildFileChangeSummary(messages: MessageDisplayModel[]): {
   toolAnchorIds: Map<MessagePart, string>;
+  anchorMessageIndexes: Map<string, number>;
   summary: FileChangeSummary;
 } {
   const toolAnchorIds = new Map<MessagePart, string>();
+  const anchorMessageIndexes = new Map<string, number>();
   const fileChanges: Record<FileChangeKind, FileChangeRecord[]> = {
     read: [],
     edit: [],
@@ -451,49 +458,53 @@ function buildFileChangeSummary(messages: Message[]): {
     delete: [],
   };
 
-  messages.forEach((message, messageIndex) => {
+  messages.forEach(({ msg: message, blocks, index: messageIndex }) => {
     let toolIndex = 0;
 
-    for (const part of message.parts) {
-      if (part.type !== "tool") continue;
+    for (const block of blocks) {
+      if (block.type !== "tool") continue;
 
-      const anchorId = buildToolAnchorId(messageIndex, toolIndex);
-      toolIndex += 1;
-      toolAnchorIds.set(part, anchorId);
+      for (const part of block.parts) {
+        const anchorId = buildToolAnchorId(messageIndex, toolIndex);
+        toolIndex += 1;
+        toolAnchorIds.set(part, anchorId);
+        anchorMessageIndexes.set(anchorId, messageIndex);
 
-      const inputValue = getToolInputValue(part);
-      const toolLabel = normalizeToolLabel(part);
-      const time = part.time_created ?? message.time_created;
+        const inputValue = getToolInputValue(part);
+        const toolLabel = normalizeToolLabel(part);
+        const time = part.time_created ?? message.time_created;
 
-      const patchEntries = getCodexPatchEntries(inputValue);
-      if (patchEntries.length > 0) {
-        for (const entry of patchEntries) {
-          const path = (entry.path || entry.oldPath).trim();
-          if (!path) continue;
+        const patchEntries = getCodexPatchEntries(inputValue);
+        if (patchEntries.length > 0) {
+          for (const entry of patchEntries) {
+            const path = (entry.path || entry.oldPath).trim();
+            if (!path) continue;
 
-          const kind =
-            entry.type === "write_file"
-              ? "write"
-              : entry.type === "delete_file"
-                ? "delete"
-                : "edit";
+            const kind =
+              entry.type === "write_file"
+                ? "write"
+                : entry.type === "delete_file"
+                  ? "delete"
+                  : "edit";
+            fileChanges[kind].push({ kind, path, anchorId, time, toolLabel });
+          }
+          continue;
+        }
+
+        const kind = classifyToolKind(part);
+        if (!kind) continue;
+
+        const paths = extractPathsFromToolInput(inputValue);
+        for (const path of paths) {
           fileChanges[kind].push({ kind, path, anchorId, time, toolLabel });
         }
-        continue;
-      }
-
-      const kind = classifyToolKind(part);
-      if (!kind) continue;
-
-      const paths = extractPathsFromToolInput(inputValue);
-      for (const path of paths) {
-        fileChanges[kind].push({ kind, path, anchorId, time, toolLabel });
       }
     }
   });
 
   return {
     toolAnchorIds,
+    anchorMessageIndexes,
     summary: {
       read: summarizeFileChangeItems(fileChanges.read),
       edit: summarizeFileChangeItems(fileChanges.edit),
@@ -552,9 +563,24 @@ function formatTrackedPath(path: string, baseDirectory: string) {
   return path;
 }
 
-function scrollToToolAnchor(anchorId: string) {
+function scrollToToolAnchor(anchorId: string, prepareAnchor?: () => void) {
   if (typeof document === "undefined") return;
-  const element = document.getElementById(anchorId);
+  let element = document.getElementById(anchorId);
+  if (!element && prepareAnchor) {
+    prepareAnchor();
+    let attempts = 0;
+    const retryScroll = () => {
+      element = document.getElementById(anchorId);
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      attempts += 1;
+      if (attempts < 8) requestAnimationFrame(retryScroll);
+    };
+    requestAnimationFrame(retryScroll);
+    return;
+  }
   if (!element) return;
   element.scrollIntoView({ behavior: "smooth", block: "center" });
 }
@@ -1483,6 +1509,405 @@ function formatMessageTime(rawTime: number | string) {
 }
 
 // ---------------------------------------------------------------------------
+// Message list virtualization
+// ---------------------------------------------------------------------------
+
+interface MessageListHandle {
+  scrollToIndex: (index: number) => void;
+}
+
+interface MessageListProps {
+  messages: FilteredSessionMessage[];
+  toolAnchorIds: Map<MessagePart, string>;
+  sessionAgentKey: string;
+  highlightQuery?: string;
+  apiRef: { current: MessageListHandle | null };
+}
+
+interface VirtualMeasurement {
+  start: number;
+  end: number;
+}
+
+type ScrollParent = HTMLElement | Window;
+
+function isWindowScrollParent(parent: ScrollParent): parent is Window {
+  return parent === window;
+}
+
+function buildVirtualMeasurements(
+  count: number,
+  heights: Array<number | undefined>,
+): {
+  items: VirtualMeasurement[];
+  totalSize: number;
+} {
+  const items: VirtualMeasurement[] = [];
+  let offset = 0;
+
+  for (let index = 0; index < count; index += 1) {
+    const height = heights[index] ?? VIRTUALIZED_MESSAGE_ESTIMATE_PX;
+    const start = offset;
+    const end = start + height;
+    items.push({ start, end });
+    offset = end + (index === count - 1 ? 0 : MESSAGE_LIST_GAP_PX);
+  }
+
+  return { items, totalSize: offset };
+}
+
+function findFirstEndAfter(items: VirtualMeasurement[], offset: number) {
+  let low = 0;
+  let high = items.length;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    const item = items[mid];
+    if (item && item.end < offset) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  return low;
+}
+
+function findFirstStartAfter(items: VirtualMeasurement[], offset: number) {
+  let low = 0;
+  let high = items.length;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    const item = items[mid];
+    if (item && item.start <= offset) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  return low;
+}
+
+function findScrollParent(node: HTMLElement): ScrollParent {
+  let parent = node.parentElement;
+
+  while (parent) {
+    const { overflowY } = window.getComputedStyle(parent);
+    if (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") return parent;
+    parent = parent.parentElement;
+  }
+
+  return window;
+}
+
+function getScrollTop(parent: ScrollParent) {
+  return isWindowScrollParent(parent) ? window.scrollY : parent.scrollTop;
+}
+
+function getViewportHeight(parent: ScrollParent) {
+  return isWindowScrollParent(parent) ? window.innerHeight || 900 : parent.clientHeight;
+}
+
+function getListTop(node: HTMLElement, parent: ScrollParent) {
+  if (isWindowScrollParent(parent)) return node.getBoundingClientRect().top + window.scrollY;
+
+  const parentRect = parent.getBoundingClientRect();
+  const nodeRect = node.getBoundingClientRect();
+  return parent.scrollTop + nodeRect.top - parentRect.top;
+}
+
+function scrollParentTo(parent: ScrollParent, top: number) {
+  if (isWindowScrollParent(parent)) {
+    window.scrollTo({ top, behavior: "auto" });
+    return;
+  }
+
+  parent.scrollTo({ top, behavior: "auto" });
+}
+
+function MessageList({
+  messages,
+  toolAnchorIds,
+  sessionAgentKey,
+  highlightQuery,
+  apiRef,
+}: MessageListProps) {
+  const shouldVirtualize = messages.length > VIRTUALIZED_MESSAGE_THRESHOLD;
+
+  useEffect(() => {
+    if (!shouldVirtualize) apiRef.current = null;
+  }, [apiRef, shouldVirtualize]);
+
+  if (shouldVirtualize) {
+    return (
+      <VirtualizedMessageList
+        messages={messages}
+        toolAnchorIds={toolAnchorIds}
+        sessionAgentKey={sessionAgentKey}
+        highlightQuery={highlightQuery}
+        apiRef={apiRef}
+      />
+    );
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-8">
+      {messages.map(({ msg, blocks, index }) => (
+        <MessageItem
+          key={`${msg.id}:${index}`}
+          msg={msg}
+          blocks={blocks}
+          toolAnchorIds={toolAnchorIds}
+          formatTokens={formatTokens}
+          sessionAgentKey={sessionAgentKey}
+          highlightQuery={highlightQuery}
+        />
+      ))}
+    </div>
+  );
+}
+
+function VirtualizedMessageList({
+  messages,
+  toolAnchorIds,
+  sessionAgentKey,
+  highlightQuery,
+  apiRef,
+}: MessageListProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const scrollParentRef = useRef<ScrollParent | null>(null);
+  const [measuredHeights, setMeasuredHeights] = useState<Array<number | undefined>>([]);
+  const [forcedIndex, setForcedIndex] = useState<number | null>(null);
+  const [viewport, setViewport] = useState(() => ({
+    scrollTop: 0,
+    height: 900,
+    listTop: 0,
+  }));
+  const viewportRef = useRef(viewport);
+
+  useEffect(() => {
+    viewportRef.current = viewport;
+  }, [viewport]);
+
+  const updateViewport = useCallback(() => {
+    if (typeof window === "undefined") return;
+
+    const node = containerRef.current;
+    const scrollParent = node ? findScrollParent(node) : window;
+    scrollParentRef.current = scrollParent;
+    const listTop = node ? getListTop(node, scrollParent) : 0;
+    const next = {
+      scrollTop: getScrollTop(scrollParent),
+      height: getViewportHeight(scrollParent),
+      listTop,
+    };
+
+    const current = viewportRef.current;
+    if (
+      Math.abs(current.scrollTop - next.scrollTop) < 1 &&
+      Math.abs(current.height - next.height) < 1 &&
+      Math.abs(current.listTop - next.listTop) < 1
+    ) {
+      return;
+    }
+
+    viewportRef.current = next;
+    setViewport(next);
+  }, []);
+
+  useEffect(() => {
+    updateViewport();
+    const scrollParent = scrollParentRef.current ?? window;
+    let frame = 0;
+    const scheduleUpdate = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        updateViewport();
+      });
+    };
+
+    scrollParent.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+    const interval = window.setInterval(updateViewport, 100);
+
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(scheduleUpdate);
+      if (containerRef.current) observer.observe(containerRef.current);
+      if (!isWindowScrollParent(scrollParent)) observer.observe(scrollParent);
+      if (document.body) observer.observe(document.body);
+    }
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.clearInterval(interval);
+      scrollParent.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+    };
+  }, [updateViewport]);
+
+  useEffect(() => {
+    setMeasuredHeights([]);
+    setForcedIndex(null);
+    updateViewport();
+  }, [messages, updateViewport]);
+
+  const measurements = useMemo(
+    () => buildVirtualMeasurements(messages.length, measuredHeights),
+    [measuredHeights, messages.length],
+  );
+
+  const measureItem = useCallback((index: number, height: number) => {
+    const nextHeight = Math.ceil(height);
+    if (!Number.isFinite(nextHeight) || nextHeight <= 0) return;
+
+    setMeasuredHeights((current) => {
+      const currentHeight = current[index];
+      if (currentHeight != null && Math.abs(currentHeight - nextHeight) <= 1) return current;
+
+      const next = [...current];
+      next[index] = nextHeight;
+      return next;
+    });
+  }, []);
+
+  const virtualItems = useMemo(() => {
+    if (messages.length === 0) return [];
+
+    const localStart = Math.max(0, viewport.scrollTop - viewport.listTop);
+    const localEnd = localStart + viewport.height;
+    const startIndex = Math.max(
+      0,
+      findFirstEndAfter(measurements.items, localStart) - VIRTUALIZED_MESSAGE_OVERSCAN,
+    );
+    const endIndex = Math.min(
+      messages.length,
+      findFirstStartAfter(measurements.items, localEnd) + VIRTUALIZED_MESSAGE_OVERSCAN,
+    );
+
+    const items: Array<{ index: number; start: number }> = [];
+    for (let index = startIndex; index < endIndex; index += 1) {
+      const measurement = measurements.items[index];
+      if (measurement) items.push({ index, start: measurement.start });
+    }
+
+    if (forcedIndex != null && forcedIndex >= 0 && forcedIndex < messages.length) {
+      const measurement = measurements.items[forcedIndex];
+      if (measurement && !items.some((item) => item.index === forcedIndex)) {
+        items.push({ index: forcedIndex, start: measurement.start });
+        items.sort((a, b) => a.start - b.start);
+      }
+    }
+
+    return items;
+  }, [forcedIndex, measurements, messages.length, viewport]);
+
+  const scrollToIndex = useCallback(
+    (index: number) => {
+      if (typeof window === "undefined") return;
+      const measurement = measurements.items[index];
+      if (!measurement) return;
+
+      setForcedIndex(index);
+      const node = containerRef.current;
+      const scrollParent = node ? findScrollParent(node) : (scrollParentRef.current ?? window);
+      scrollParentRef.current = scrollParent;
+      const listTop = node ? getListTop(node, scrollParent) : 0;
+      const nextTop = Math.max(0, listTop + measurement.start - 24);
+      scrollParentTo(scrollParent, nextTop);
+      const nextViewport = {
+        scrollTop: nextTop,
+        height: getViewportHeight(scrollParent),
+        listTop,
+      };
+      viewportRef.current = nextViewport;
+      setViewport(nextViewport);
+    },
+    [measurements.items],
+  );
+
+  useEffect(() => {
+    apiRef.current = { scrollToIndex };
+    return () => {
+      if (apiRef.current?.scrollToIndex === scrollToIndex) apiRef.current = null;
+    };
+  }, [apiRef, scrollToIndex]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative min-w-0"
+      style={{ height: Math.max(1, measurements.totalSize) }}
+    >
+      {virtualItems.map(({ index, start }) => {
+        const item = messages[index];
+        if (!item) return null;
+
+        return (
+          <VirtualizedMessageRow
+            key={`${item.msg.id}:${item.index}`}
+            index={index}
+            top={start}
+            onMeasure={measureItem}
+          >
+            <MessageItem
+              msg={item.msg}
+              blocks={item.blocks}
+              toolAnchorIds={toolAnchorIds}
+              formatTokens={formatTokens}
+              sessionAgentKey={sessionAgentKey}
+              highlightQuery={highlightQuery}
+            />
+          </VirtualizedMessageRow>
+        );
+      })}
+    </div>
+  );
+}
+
+function VirtualizedMessageRow({
+  index,
+  top,
+  onMeasure,
+  children,
+}: {
+  index: number;
+  top: number;
+  onMeasure: (index: number, height: number) => void;
+  children: ReactNode;
+}) {
+  const rowRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const node = rowRef.current;
+    if (!node) return;
+
+    const measure = () => onMeasure(index, node.getBoundingClientRect().height);
+    measure();
+
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [index, onMeasure]);
+
+  return (
+    <div
+      ref={rowRef}
+      className="absolute left-0 top-0 w-full"
+      style={{ transform: `translateY(${top}px)` }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // SessionDetail (main export)
 // ---------------------------------------------------------------------------
 
@@ -1494,31 +1919,54 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
     () => normalizeMessagesForDisplay(session.messages, sessionAgentKey),
     [session.messages, sessionAgentKey],
   );
-  const visibleMessages = useMemo(
-    () => normalizedMessages.filter((msg) => hasVisibleContent(msg)),
+  const messageModels = useMemo(
+    () => buildMessageDisplayModels(normalizedMessages),
     [normalizedMessages],
   );
-  const { toolAnchorIds, summary: localFileChangeSummary } = useMemo(
-    () => buildFileChangeSummary(visibleMessages),
-    [visibleMessages],
+  const {
+    toolAnchorIds,
+    anchorMessageIndexes,
+    summary: localFileChangeSummary,
+  } = useMemo(() => buildFileChangeSummary(messageModels), [messageModels]);
+  const toc = useMemo(() => buildSessionDetailToc(messageModels), [messageModels]);
+  const [selectedFilters, setSelectedFilters] = useState<Set<string>>(() => new Set(toc.filterIds));
+  const tocSignature = useMemo(() => [...toc.filterIds].toSorted().join("|"), [toc.filterIds]);
+  const selectedFilterSignature = useMemo(
+    () => [...selectedFilters].toSorted().join("|"),
+    [selectedFilters],
   );
+  const filteredMessages = useMemo(
+    () => filterSessionMessages(messageModels, selectedFilters),
+    [messageModels, selectedFilters],
+  );
+  const virtualListRef = useRef<MessageListHandle | null>(null);
+  const anchorListIndexes = useMemo(() => {
+    const indexes = new Map<number, number>();
+    filteredMessages.forEach((item, listIndex) => {
+      indexes.set(item.index, listIndex);
+    });
+    return indexes;
+  }, [filteredMessages]);
   const fileChangeSummary = useMemo(
     () => buildFileChangeSummaryFromActivity(session.file_activity, localFileChangeSummary),
     [session.file_activity, localFileChangeSummary],
   );
-  const toc = useMemo(() => buildSessionDetailToc(visibleMessages), [visibleMessages]);
-  const [selectedFilters, setSelectedFilters] = useState<Set<string>>(() => new Set(toc.filterIds));
-  const tocSignature = useMemo(() => [...toc.filterIds].toSorted().join("|"), [toc.filterIds]);
-  const filteredMessages = useMemo(
-    () => filterSessionMessages(visibleMessages, selectedFilters),
-    [visibleMessages, selectedFilters],
+  const handleJumpToAnchor = useCallback(
+    (anchorId: string) => {
+      const messageIndex = anchorMessageIndexes.get(anchorId);
+      const listIndex = messageIndex == null ? undefined : anchorListIndexes.get(messageIndex);
+      scrollToToolAnchor(anchorId, () => {
+        if (listIndex != null) virtualListRef.current?.scrollToIndex(listIndex);
+      });
+    },
+    [anchorListIndexes, anchorMessageIndexes],
   );
 
   useEffect(() => {
     setSelectedFilters(new Set(toc.filterIds));
   }, [tocSignature, toc.filterIds]);
 
-  if (visibleMessages.length === 0) {
+  if (messageModels.length === 0) {
     return (
       <div
         data-testid="session-detail"
@@ -1554,20 +2002,18 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
               return next;
             })
           }
+          onJumpToAnchor={handleJumpToAnchor}
         />
         <div className="flex min-w-0 flex-col gap-8">
           {filteredMessages.length > 0 ? (
-            filteredMessages.map(({ msg, blocks }, index) => (
-              <MessageItem
-                key={index}
-                msg={msg}
-                blocks={blocks}
-                toolAnchorIds={toolAnchorIds}
-                formatTokens={formatTokens}
-                sessionAgentKey={sessionAgentKey}
-                highlightQuery={highlightQuery}
-              />
-            ))
+            <MessageList
+              key={`${session.id}:${selectedFilterSignature}`}
+              messages={filteredMessages}
+              toolAnchorIds={toolAnchorIds}
+              sessionAgentKey={sessionAgentKey}
+              highlightQuery={highlightQuery}
+              apiRef={virtualListRef}
+            />
           ) : (
             <div className="rounded-sm border border-[var(--console-border)] bg-white p-6 text-sm text-[var(--console-muted)]">
               当前筛选条件下暂无可展示的消息内容。
@@ -1598,12 +2044,14 @@ function SessionToc({
   baseDirectory,
   selectedFilters,
   onToggle,
+  onJumpToAnchor,
 }: {
   toc: SessionDetailToc;
   fileChangeSummary: FileChangeSummary;
   baseDirectory: string;
   selectedFilters: Set<string>;
   onToggle: (filterId: string) => void;
+  onJumpToAnchor: (anchorId: string) => void;
 }) {
   const toolsEnabled = selectedFilters.has("tools_all");
 
@@ -1668,7 +2116,11 @@ function SessionToc({
             ) : null}
           </div>
         </div>
-        <FileChangeTracker summary={fileChangeSummary} baseDirectory={baseDirectory} />
+        <FileChangeTracker
+          summary={fileChangeSummary}
+          baseDirectory={baseDirectory}
+          onJumpToAnchor={onJumpToAnchor}
+        />
       </div>
     </aside>
   );
@@ -1677,9 +2129,11 @@ function SessionToc({
 function FileChangeTracker({
   summary,
   baseDirectory,
+  onJumpToAnchor,
 }: {
   summary: FileChangeSummary;
   baseDirectory: string;
+  onJumpToAnchor: (anchorId: string) => void;
 }) {
   const sections = [
     { key: "read" as const, label: "Read", Icon: FileSearch, items: summary.read },
@@ -1711,6 +2165,7 @@ function FileChangeTracker({
             Icon={Icon}
             items={items}
             baseDirectory={baseDirectory}
+            onJumpToAnchor={onJumpToAnchor}
           />
         ))}
       </div>
@@ -1723,11 +2178,13 @@ function FileTrackerSection({
   Icon,
   items,
   baseDirectory,
+  onJumpToAnchor,
 }: {
   label: string;
   Icon: typeof LoaderCircle;
   items: FileChangeSummaryItem[];
   baseDirectory: string;
+  onJumpToAnchor: (anchorId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -1758,6 +2215,7 @@ function FileTrackerSection({
               key={`${item.path}:${item.latestAnchorId || item.latestTime}`}
               item={item}
               baseDirectory={baseDirectory}
+              onJumpToAnchor={onJumpToAnchor}
             />
           ))}
         </div>
@@ -1769,9 +2227,11 @@ function FileTrackerSection({
 function FileTrackerItem({
   item,
   baseDirectory,
+  onJumpToAnchor,
 }: {
   item: FileChangeSummaryItem;
   baseDirectory: string;
+  onJumpToAnchor: (anchorId: string) => void;
 }) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -1782,7 +2242,7 @@ function FileTrackerItem({
     setCurrentIndex(normalizedIndex);
     const anchor = item.anchors[normalizedIndex];
     if (anchor) {
-      scrollToToolAnchor(anchor.anchorId);
+      onJumpToAnchor(anchor.anchorId);
     }
   }
 
@@ -1891,7 +2351,7 @@ function MessageItem({
   highlightQuery,
 }: {
   msg: Message;
-  blocks?: MessageBlock[];
+  blocks: MessageBlock[];
   toolAnchorIds: Map<MessagePart, string>;
   formatTokens: (n: number) => string;
   sessionAgentKey: string;
@@ -1899,7 +2359,6 @@ function MessageItem({
 }) {
   const isUser = msg.role === "user";
   const isAbortMessage = isCodexTurnAbortedMessage(msg, sessionAgentKey);
-  const renderedBlocks = blocks || buildMessageBlocks(msg.parts);
 
   const getAgentAvatar = () => {
     const agentKey = sessionAgentKey.toLowerCase();
@@ -1954,7 +2413,7 @@ function MessageItem({
           {isAbortMessage ? (
             <AbortToolItem />
           ) : (
-            renderedBlocks.map((block, index) => {
+            blocks.map((block, index) => {
               if (block.type === "reasoning") {
                 return (
                   <ReasoningSection

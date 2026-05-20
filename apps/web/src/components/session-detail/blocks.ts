@@ -1,4 +1,4 @@
-import type { Message, MessagePart } from "../../lib/api";
+import type { MessagePart } from "../../lib/api";
 
 export type MessageBlockType = "reasoning" | "text" | "tool" | "plan";
 
@@ -59,8 +59,4 @@ export function buildMessageBlocks(parts: MessagePart[]): MessageBlock[] {
     blocks.push({ type: part.type, parts: [part] });
     return blocks;
   }, []);
-}
-
-export function hasVisibleContent(msg: Message): boolean {
-  return buildMessageBlocks(msg.parts).length > 0;
 }

@@ -270,8 +270,8 @@ Status: Draft
 - [ ] P1-5：为 `syncSessionSearchIndex()` 增加 changed ids 路径，bulk 仍保留全量 rebuild。
 - [x] P1-6：评估并实现 message-level FTS，消除搜索结果 N+1 message scan。
 - [ ] P1-7：重写 `listFileActivity()` 动态 WHERE，并用 `EXPLAIN QUERY PLAN` 验证索引。
-- [ ] P1-8：构建 `SessionDetail` display model，复用 `MessageBlock[]`。
-- [ ] P1-9：评估详情页 message virtualization，确认 anchors 和 keyboard/scroll 行为可保留。
+- [x] P1-8：构建 `SessionDetail` display model，复用 `MessageBlock[]`。
+- [x] P1-9：评估详情页 message virtualization，确认 anchors 和 keyboard/scroll 行为可保留。
 - [ ] P1-10：在 `App.tsx` 建立 session indexes，减少重复 `filter()` / `find()`。
 - [ ] 验证：每项优化至少运行相关 package tests。
 - [ ] 验证：完成 P1-2 / P1-3 / P1-6 / P1-8 后运行 `pnpm bench:perf` 记录前后结果。
@@ -280,6 +280,7 @@ Status: Draft
 
 - 2026-05-20：完成 P1-2。`handleGetDashboard()` 改为在一次 session 扫描中完成 totals、per-agent、daily buckets、token buckets、model distribution 和 recent top 10 聚合；recent top 10 使用固定容量候选集，避免对窗口内全量 session 排序。验证：`pnpm --filter codesesh test`、`pnpm --filter codesesh lint`、`pnpm --filter codesesh format:check`、`pnpm --filter codesesh build`、`git diff --check`、`pnpm bench:perf -- --iterations 1`（236 sessions；dashboard visible 11956ms；detail 139ms）。
 - 2026-05-20：完成 P1-6。新增 `messages_fts` message-level FTS 表和 `messages` 触发器，schema 升级到 v9；`searchSessions()` 保留 session-level FTS 排序，但对返回候选结果只做一次批量 message FTS 查询来解析 `matchType` / `snippet`，移除每条结果单独加载全量 messages 的 N+1 路径。验证：`pnpm --filter @codesesh/core exec vitest run src/discovery/__tests__/cache.test.ts`、`pnpm --filter @codesesh/core exec vitest run src/discovery/__tests__/migration-smoke.test.ts`、`pnpm --filter @codesesh/core test`、`pnpm --filter @codesesh/core lint`、`pnpm --filter @codesesh/core format:check`、`pnpm --filter @codesesh/core build`、`git diff --check`、`pnpm bench:perf -- --iterations 1`（242 sessions；dashboard visible 5081ms；detail 183ms）。
+- 2026-05-20：完成 P1-8 / P1-9。`SessionDetail` 先构建一次 `MessageDisplayModel[]`，TOC、filter、render 和 file tracker 复用同一批 `MessageBlock[]`；长会话消息列表改为绑定实际滚动父级的窗口化渲染，并在 file tracker 跳转远端 tool anchor 时强制挂载目标 message，保持锚点可达。验证：`pnpm --filter @codesesh/web test`、`pnpm --filter @codesesh/web lint`、`pnpm --filter @codesesh/web format:check`、`pnpm --filter @codesesh/web exec tsc -b`、`pnpm --filter codesesh build`；Browser 验证 2500-message 会话初屏只挂载 8 个 article，滚动后约 11 个 article，File Tracker `Next` 锚点可跳到远端 tool 区域且无新增 console error；`pnpm bench:perf -- --iterations 1`（247 sessions；dashboard visible 14478ms；detail 230ms）。
 
 ## 测试矩阵
 

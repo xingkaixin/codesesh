@@ -1,6 +1,6 @@
-import type { Message, MessagePart } from "../../lib/api";
+import type { MessagePart } from "../../lib/api";
+import type { MessageDisplayModel } from "./display-model";
 import type { MessageBlock } from "./blocks";
-import { buildMessageBlocks } from "./blocks";
 
 export type TocFilterId = "user" | "agent_message" | "thinking" | "plan" | "tools_all";
 
@@ -18,8 +18,9 @@ export interface SessionDetailToc {
 }
 
 export interface FilteredSessionMessage {
-  msg: Message;
+  msg: MessageDisplayModel["msg"];
   blocks: MessageBlock[];
+  index: number;
 }
 
 function buildToolLabel(part: MessagePart) {
@@ -46,7 +47,7 @@ function countToolPart(toolMap: Map<string, ToolFilterItem>, part: MessagePart) 
   toolMap.set(key, { id, toolKey: key, label: buildToolLabel(part), count: 1 });
 }
 
-export function buildSessionDetailToc(messages: Message[]): SessionDetailToc {
+export function buildSessionDetailToc(messages: MessageDisplayModel[]): SessionDetailToc {
   const counts: Record<TocFilterId, number> = {
     user: 0,
     agent_message: 0,
@@ -57,8 +58,7 @@ export function buildSessionDetailToc(messages: Message[]): SessionDetailToc {
   const filterIds = new Set<string>();
   const toolMap = new Map<string, ToolFilterItem>();
 
-  for (const msg of messages) {
-    const blocks = buildMessageBlocks(msg.parts);
+  for (const { msg, blocks } of messages) {
     for (const block of blocks) {
       if (msg.role === "user") {
         counts.user += 1;
@@ -102,7 +102,11 @@ function isToolPartVisible(part: MessagePart, filters: Set<string>) {
   return filters.has(`tool:${normalizeToolKey(part)}`);
 }
 
-function isBlockVisible(block: MessageBlock, msg: Message, filters: Set<string>) {
+function isBlockVisible(
+  block: MessageBlock,
+  msg: MessageDisplayModel["msg"],
+  filters: Set<string>,
+) {
   if (msg.role === "user") return filters.has("user");
   if (block.type === "text") return filters.has("agent_message");
   if (block.type === "reasoning") return filters.has("thinking");
@@ -117,17 +121,17 @@ function filterToolBlock(block: MessageBlock, filters: Set<string>): MessageBloc
 }
 
 export function filterSessionMessages(
-  messages: Message[],
+  messages: MessageDisplayModel[],
   selectedFilters: Set<string>,
 ): FilteredSessionMessage[] {
   return messages
-    .map((msg) => {
-      const blocks = buildMessageBlocks(msg.parts)
-        .filter((b) => isBlockVisible(b, msg, selectedFilters))
+    .map((model) => {
+      const blocks = model.blocks
+        .filter((b) => isBlockVisible(b, model.msg, selectedFilters))
         .map((b) => (b.type === "tool" ? filterToolBlock(b, selectedFilters) : b))
         .filter((b): b is MessageBlock => b != null);
       if (blocks.length === 0) return null;
-      return { msg, blocks };
+      return { msg: model.msg, blocks, index: model.index };
     })
     .filter((item): item is FilteredSessionMessage => item != null);
 }
