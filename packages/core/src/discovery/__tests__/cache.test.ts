@@ -12,8 +12,10 @@ import {
   parseSearchQuery,
   searchFileActivitySessions,
   searchSessions,
+  saveCachedSessionChanges,
   saveCachedSessions,
   syncSessionSearchIndex,
+  syncSessionSearchIndexChanges,
   type SessionCacheMeta,
 } from "../cache.js";
 import type { SessionData, SessionHead } from "../../types/index.js";
@@ -394,6 +396,49 @@ describe("saveCachedSessions", () => {
   });
 });
 
+describe("saveCachedSessionChanges", () => {
+  it("updates changed sessions and removes deleted sessions", () => {
+    const unchanged = makeSession("unchanged");
+    const changed = makeSession("changed");
+    const removed = makeSession("removed");
+
+    saveCachedSessions("claudecode", [unchanged, changed, removed], {
+      unchanged: { id: "unchanged", sourcePath: "/tmp/unchanged" },
+      changed: { id: "changed", sourcePath: "/tmp/changed-old" },
+      removed: { id: "removed", sourcePath: "/tmp/removed" },
+    });
+
+    const updated = {
+      ...changed,
+      title: "Changed updated",
+      time_updated: now + 1_000,
+    };
+
+    saveCachedSessionChanges("claudecode", [{ session: updated, sortIndex: 0 }], ["removed"], {
+      changed: { id: "changed", sourcePath: "/tmp/changed-new" },
+    });
+
+    const cached = loadCachedSessions("claudecode");
+    expect(cached?.sessions.map((session) => session.id)).toEqual(["changed", "unchanged"]);
+    expect(cached?.sessions[0]?.title).toBe("Changed updated");
+    expect(cached?.meta.changed?.sourcePath).toBe("/tmp/changed-new");
+    expect(cached?.meta.unchanged?.sourcePath).toBe("/tmp/unchanged");
+    expect(cached?.meta.removed).toBeUndefined();
+
+    const db = new Database(getCachePath(), { readonly: true });
+    try {
+      for (const table of ["cached_sessions", "sessions", "project_sessions"]) {
+        const row = db
+          .prepare(`SELECT COUNT(*) AS value FROM ${table} WHERE session_id = ?`)
+          .get("removed") as { value?: number };
+        expect(Number(row.value ?? 0)).toBe(0);
+      }
+    } finally {
+      db.close();
+    }
+  });
+});
+
 describe("clearCache", () => {
   it("clears sqlite rows", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
@@ -626,6 +671,82 @@ describe("searchSessions", () => {
     });
     expect(result?.rebuildDurationMs).toBeUndefined();
     expect(searchSessions("instant")).toHaveLength(1);
+  });
+
+  it("syncs changed search rows without diffing untouched sessions", () => {
+    const keep = {
+      ...makeSession("keep"),
+      stats: { ...makeSession("keep").stats, message_count: 2 },
+    };
+    const changed = {
+      ...makeSession("changed"),
+      stats: { ...makeSession("changed").stats, message_count: 2 },
+    };
+    const removed = {
+      ...makeSession("removed"),
+      stats: { ...makeSession("removed").stats, message_count: 2 },
+    };
+    const sessions = [keep, changed, removed];
+    const sessionMap = new Map(sessions.map((session) => [session.id, session]));
+    const makeIndexedData = (session: SessionHead, text: string, path: string): SessionData => ({
+      ...session,
+      messages: [
+        {
+          id: `${session.id}-m1`,
+          role: "user",
+          time_created: now,
+          parts: [{ type: "text", text }],
+        },
+        {
+          id: `${session.id}-m2`,
+          role: "assistant",
+          time_created: now + 1,
+          parts: [{ type: "tool", tool: "read", input: { path } }],
+        },
+      ],
+    });
+
+    saveCachedSessions("claudecode", sessions);
+    syncSessionSearchIndex("claudecode", sessions, (sessionId) =>
+      makeIndexedData(sessionMap.get(sessionId)!, `${sessionId}token`, `src/${sessionId}.ts`),
+    );
+
+    const updated = {
+      ...changed,
+      title: "Changed updated",
+      stats: { ...changed.stats, message_count: 2 },
+    };
+    const loadChanged = vi.fn((sessionId: string) => {
+      if (sessionId !== "changed") {
+        throw new Error(`unexpected load ${sessionId}`);
+      }
+      return makeIndexedData(updated, "updatedtoken", "src/changed-new.ts");
+    });
+
+    saveCachedSessionChanges("claudecode", [{ session: updated, sortIndex: 0 }], ["removed"]);
+    const result = syncSessionSearchIndexChanges(
+      "claudecode",
+      [{ session: updated, sortIndex: 0 }],
+      ["removed"],
+      loadChanged,
+    );
+
+    expect(loadChanged).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      mode: "incremental",
+      changed: 1,
+      deleted: 1,
+      indexed: 1,
+    });
+    expect(searchSessions("updatedtoken").map((item) => item.session.id)).toEqual(["changed"]);
+    expect(searchSessions("changedtoken")).toHaveLength(0);
+    expect(searchSessions("removedtoken")).toHaveLength(0);
+    expect(searchSessions("keeptoken").map((item) => item.session.id)).toEqual(["keep"]);
+    expect(
+      listFileActivity({ agent: "claudecode" })
+        .map((item) => item.path)
+        .sort(),
+    ).toEqual(["src/changed-new.ts", "src/keep.ts"]);
   });
 
   it("restores missing FTS triggers before incremental sync", () => {

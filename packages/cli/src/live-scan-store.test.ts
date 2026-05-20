@@ -27,7 +27,9 @@ const core = vi.hoisted(() => ({
   })),
   scanSessions: vi.fn(),
   saveCachedSessions: vi.fn(),
+  saveCachedSessionChanges: vi.fn(),
   syncSessionSearchIndex: vi.fn(),
+  syncSessionSearchIndexChanges: vi.fn(),
 }));
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -48,7 +50,9 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     resolveProviderRoots: core.resolveProviderRoots,
     scanSessions: core.scanSessions,
     saveCachedSessions: core.saveCachedSessions,
+    saveCachedSessionChanges: core.saveCachedSessionChanges,
     syncSessionSearchIndex: core.syncSessionSearchIndex,
+    syncSessionSearchIndexChanges: core.syncSessionSearchIndexChanges,
   };
 });
 
@@ -207,6 +211,13 @@ describe("LiveScanStore", () => {
         timestamp: 3000,
       })),
       incrementalScan: vi.fn(() => [updated, added]),
+      getSessionMetaMap: vi.fn(
+        () =>
+          new Map([
+            ["session", { id: "session", sourcePath: "/tmp/s" }],
+            ["unrelated", { id: "unrelated", sourcePath: "/tmp/unrelated" }],
+          ]),
+      ),
     });
 
     core.createRegisteredAgents.mockReturnValue([codex]);
@@ -228,12 +239,24 @@ describe("LiveScanStore", () => {
       "session",
       "added",
     ]);
-    expect(core.saveCachedSessions).toHaveBeenCalledWith("codex", [updated, added], {
-      session: { id: "session", sourcePath: "/tmp/s" },
-    });
-    expect(core.syncSessionSearchIndex).toHaveBeenCalledWith(
+    expect(core.saveCachedSessions).not.toHaveBeenCalled();
+    expect(core.saveCachedSessionChanges).toHaveBeenCalledWith(
       "codex",
-      [updated, added],
+      [
+        { session: updated, sortIndex: 0 },
+        { session: added, sortIndex: 1 },
+      ],
+      [],
+      { session: { id: "session", sourcePath: "/tmp/s" } },
+    );
+    expect(core.syncSessionSearchIndex).not.toHaveBeenCalled();
+    expect(core.syncSessionSearchIndexChanges).toHaveBeenCalledWith(
+      "codex",
+      [
+        { session: updated, sortIndex: 0 },
+        { session: added, sortIndex: 1 },
+      ],
+      [],
       expect.any(Function),
     );
     expect(events).toEqual([
