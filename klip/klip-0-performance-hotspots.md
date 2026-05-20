@@ -264,7 +264,7 @@ Status: Draft
 ## 持续跟进 Checklist
 
 - [ ] P1-1：重构 `cwd` scope matcher，预计算 query identity，并补 core/API tests。
-- [ ] P1-2：将 `handleGetDashboard()` 改为单 pass 聚合，并保持 response shape 不变。
+- [x] P1-2：将 `handleGetDashboard()` 改为单 pass 聚合，并保持 response shape 不变。
 - [ ] P1-3：为 `LiveScanStore.runRefresh()` 设计 changed/new/removed ids 传递契约。
 - [ ] P1-4：为 cache 层增加增量 upsert/delete，并验证与全量保存结果一致。
 - [ ] P1-5：为 `syncSessionSearchIndex()` 增加 changed ids 路径，bulk 仍保留全量 rebuild。
@@ -275,6 +275,10 @@ Status: Draft
 - [ ] P1-10：在 `App.tsx` 建立 session indexes，减少重复 `filter()` / `find()`。
 - [ ] 验证：每项优化至少运行相关 package tests。
 - [ ] 验证：完成 P1-2 / P1-3 / P1-6 / P1-8 后运行 `pnpm bench:perf` 记录前后结果。
+
+## 实现记录
+
+- 2026-05-20：完成 P1-2。`handleGetDashboard()` 改为在一次 session 扫描中完成 totals、per-agent、daily buckets、token buckets、model distribution 和 recent top 10 聚合；recent top 10 使用固定容量候选集，避免对窗口内全量 session 排序。验证：`pnpm --filter codesesh test`、`pnpm --filter codesesh lint`、`pnpm --filter codesesh format:check`、`pnpm --filter codesesh build`、`git diff --check`、`pnpm bench:perf -- --iterations 1`（236 sessions；dashboard visible 11956ms；detail 139ms）。
 
 ## 测试矩阵
 
@@ -300,7 +304,7 @@ Status: Draft
 - 已运行 complexity scanner，分别扫描 `packages/core`、`packages/cli`、`apps/web`。
 - 已人工复核 scanner 高噪声区域，排除测试文件和 `.claude/worktrees`。
 - 已确认根脚本存在 `pnpm test`、`pnpm build`、`pnpm lint`、`pnpm bench:perf`。
-- 本文未运行测试或 benchmark，因为本次只新增跟踪文档。
+- 原始审计未运行测试或 benchmark；已实现项的验证命令记录在「实现记录」。
 
 ## 关键参考位置
 

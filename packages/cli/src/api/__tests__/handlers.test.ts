@@ -80,9 +80,13 @@ class MockAgent extends BaseAgent {
 
 function makeScanResult(overrides?: Partial<ScanResult>): ScanResult {
   const agent = new MockAgent();
+  const sessions = [
+    makeSession("s1", { slug: "claudecode/s1" }),
+    makeSession("s2", { slug: "claudecode/s2" }),
+  ];
   return {
-    sessions: [makeSession("s1"), makeSession("s2")],
-    byAgent: { claudecode: [makeSession("s1"), makeSession("s2")] },
+    sessions,
+    byAgent: { claudecode: sessions },
     agents: [agent],
     ...overrides,
   };
@@ -501,6 +505,56 @@ describe("handleGetDashboard", () => {
     expect(response.recentSessions.map((session: SessionHead) => session.id)).toEqual([
       "app-codex",
     ]);
+  });
+
+  it("scopes dashboard data by agent and keeps the ten most recent sessions", () => {
+    const now = Date.now();
+    const codexSessions = Array.from({ length: 12 }, (_, index) =>
+      makeSession(`codex-${index}`, {
+        slug: `codex/codex-${index}`,
+        time_created: now - index * 1000,
+        time_updated: now - index * 1000,
+        stats: {
+          message_count: 1,
+          total_input_tokens: 2,
+          total_output_tokens: 1,
+          total_cost: 0,
+        },
+      }),
+    );
+    const claudeSession = makeSession("claude", {
+      slug: "claudecode/claude",
+      time_created: now,
+      time_updated: now,
+    });
+    const c = makeMockContext({ query: { agent: "codex" } });
+
+    handleGetDashboard(
+      c,
+      makeScanSource({
+        sessions: [claudeSession, ...codexSessions],
+        byAgent: {
+          claudecode: [claudeSession],
+          codex: codexSessions,
+        },
+      }),
+    );
+
+    const response = c.json.mock.calls[0]![0];
+    expect(response.totals.sessions).toBe(12);
+    expect(response.perAgent).toEqual([
+      {
+        name: "codex",
+        displayName: "Codex",
+        icon: "/icon/agent/codex.svg",
+        sessions: 12,
+        messages: 12,
+        tokens: 36,
+      },
+    ]);
+    expect(response.recentSessions.map((session: SessionHead) => session.id)).toEqual(
+      codexSessions.slice(0, 10).map((session) => session.id),
+    );
   });
 
   it("marks dashboard totals as estimated when any session uses estimated cost", () => {
