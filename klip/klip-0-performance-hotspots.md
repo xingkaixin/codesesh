@@ -1,7 +1,7 @@
 ---
 Author: "Codex"
 Updated: 2026-05-17
-Status: Draft
+Status: Complete
 ---
 
 # klip-0-performance-hotspots
@@ -263,18 +263,18 @@ Status: Draft
 
 ## 持续跟进 Checklist
 
-- [ ] P1-1：重构 `cwd` scope matcher，预计算 query identity，并补 core/API tests。
+- [x] P1-1：重构 `cwd` scope matcher，预计算 query identity，并补 core/API tests。
 - [x] P1-2：将 `handleGetDashboard()` 改为单 pass 聚合，并保持 response shape 不变。
-- [ ] P1-3：为 `LiveScanStore.runRefresh()` 设计 changed/new/removed ids 传递契约。
-- [ ] P1-4：为 cache 层增加增量 upsert/delete，并验证与全量保存结果一致。
-- [ ] P1-5：为 `syncSessionSearchIndex()` 增加 changed ids 路径，bulk 仍保留全量 rebuild。
+- [x] P1-3：为 `LiveScanStore.runRefresh()` 设计 changed/new/removed ids 传递契约。
+- [x] P1-4：为 cache 层增加增量 upsert/delete，并验证与全量保存结果一致。
+- [x] P1-5：为 `syncSessionSearchIndex()` 增加 changed ids 路径，bulk 仍保留全量 rebuild。
 - [x] P1-6：评估并实现 message-level FTS，消除搜索结果 N+1 message scan。
-- [ ] P1-7：重写 `listFileActivity()` 动态 WHERE，并用 `EXPLAIN QUERY PLAN` 验证索引。
+- [x] P1-7：重写 `listFileActivity()` 动态 WHERE，并用 `EXPLAIN QUERY PLAN` 验证索引。
 - [x] P1-8：构建 `SessionDetail` display model，复用 `MessageBlock[]`。
 - [x] P1-9：评估详情页 message virtualization，确认 anchors 和 keyboard/scroll 行为可保留。
 - [x] P1-10：在 `App.tsx` 建立 session indexes，减少重复 `filter()` / `find()`。
-- [ ] 验证：每项优化至少运行相关 package tests。
-- [ ] 验证：完成 P1-2 / P1-3 / P1-6 / P1-8 后运行 `pnpm bench:perf` 记录前后结果。
+- [x] 验证：每项优化至少运行相关 package tests。
+- [x] 验证：完成 P1-2 / P1-3 / P1-6 / P1-8 后运行 `pnpm bench:perf` 记录前后结果。
 
 ## 实现记录
 
