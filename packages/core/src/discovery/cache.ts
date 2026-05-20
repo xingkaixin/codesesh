@@ -30,7 +30,7 @@ import {
   type SQLiteDatabase,
 } from "../utils/sqlite.js";
 
-const CACHE_SCHEMA_VERSION = 8;
+const CACHE_SCHEMA_VERSION = 9;
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const CACHE_FILENAME = "codesesh.db";
 const LEGACY_CACHE_FILENAME = "scan-cache.json";
@@ -124,6 +124,9 @@ interface MessageCountRow extends DatabaseRow {
 }
 
 interface MessageSearchRow extends DatabaseRow {
+  agent_name?: string;
+  session_id?: string;
+  message_index?: number;
   role?: Message["role"];
   mode?: string | null;
   content_text?: string;
@@ -431,6 +434,51 @@ function createSessionTables(db: SQLiteDatabase): void {
   `);
 }
 
+function createMessageSearchTables(db: SQLiteDatabase): void {
+  if (!tableExists(db, "messages")) {
+    createSessionTables(db);
+  }
+
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+      content_text,
+      content='messages',
+      content_rowid='rowid'
+    );
+  `);
+
+  createMessageSearchTriggers(db);
+}
+
+function createMessageSearchTriggers(db: SQLiteDatabase): void {
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+      INSERT INTO messages_fts(rowid, content_text)
+      VALUES (new.rowid, new.content_text);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+      INSERT INTO messages_fts(messages_fts, rowid, content_text)
+      VALUES ('delete', old.rowid, old.content_text);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+      INSERT INTO messages_fts(messages_fts, rowid, content_text)
+      VALUES ('delete', old.rowid, old.content_text);
+      INSERT INTO messages_fts(rowid, content_text)
+      VALUES (new.rowid, new.content_text);
+    END;
+  `);
+}
+
+function dropMessageSearchTriggers(db: SQLiteDatabase): void {
+  db.exec(`
+    DROP TRIGGER IF EXISTS messages_ai;
+    DROP TRIGGER IF EXISTS messages_ad;
+    DROP TRIGGER IF EXISTS messages_au;
+  `);
+}
+
 function createFileActivityTables(db: SQLiteDatabase): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS session_file_activity (
@@ -597,6 +645,7 @@ function recreateProjectGroupsView(db: SQLiteDatabase): void {
 function createLatestCacheSchema(db: SQLiteDatabase): void {
   createCacheTables(db);
   createSessionTables(db);
+  createMessageSearchTables(db);
   createFileActivityTables(db);
   createSearchTables(db);
   createProjectTables(db);
@@ -927,6 +976,9 @@ function readLegacyCacheVersion(db: SQLiteDatabase): number {
 }
 
 function inferCacheSchemaVersion(db: SQLiteDatabase): number {
+  if (tableExists(db, "messages_fts")) {
+    return 9;
+  }
   if (tableExists(db, "session_file_activity")) {
     return 8;
   }
@@ -1242,6 +1294,13 @@ function rebuildSearchIndex(db: SQLiteDatabase): void {
   db.exec("INSERT INTO session_documents_fts(session_documents_fts) VALUES ('rebuild')");
 }
 
+function rebuildMessageSearchIndex(db: SQLiteDatabase): void {
+  if (!tableExists(db, "messages_fts")) {
+    return;
+  }
+  db.exec("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')");
+}
+
 function shouldBulkSyncSearchIndex(options: SearchIndexSyncOptions, changedCount: number): boolean {
   if (options.isBulk != null) {
     return options.isBulk;
@@ -1256,6 +1315,12 @@ function ensureFtsReady(db: SQLiteDatabase): void {
     createSearchTables(db);
   }
   createSearchTriggers(db);
+
+  const needsMessageSearchRebuild = !tableExists(db, "messages_fts");
+  createMessageSearchTables(db);
+  if (needsMessageSearchRebuild) {
+    rebuildMessageSearchIndex(db);
+  }
 }
 
 function ensureFtsConsistency(db: SQLiteDatabase): void {
@@ -1269,9 +1334,11 @@ function ensureFtsConsistency(db: SQLiteDatabase): void {
     db.exec(
       "INSERT INTO session_documents_fts(session_documents_fts, rank) VALUES ('integrity-check', 1)",
     );
+    db.exec("INSERT INTO messages_fts(messages_fts, rank) VALUES ('integrity-check', 1)");
     ftsIntegrityCheckedPath = cachePath;
   } catch {
     rebuildSearchIndex(db);
+    rebuildMessageSearchIndex(db);
     ftsIntegrityCheckedPath = cachePath;
   }
 }
@@ -1325,6 +1392,13 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       },
       { version: 7, migrate: backfillStructuredSessions },
       { version: 8, migrate: backfillFileActivity },
+      {
+        version: 9,
+        migrate(db) {
+          createMessageSearchTables(db);
+          rebuildMessageSearchIndex(db);
+        },
+      },
     ],
   });
 
@@ -2154,11 +2228,14 @@ export function syncSessionSearchIndex(
     if (needsRebuild) {
       db.transaction(() => {
         dropSearchTriggers(db);
+        dropMessageSearchTriggers(db);
         writeRows();
         const rebuildStartedAt = performance.now();
         rebuildSearchIndex(db);
+        rebuildMessageSearchIndex(db);
         rebuildDurationMs = performance.now() - rebuildStartedAt;
         createSearchTriggers(db);
+        createMessageSearchTriggers(db);
       })();
     } else {
       db.transaction(writeRows)();
@@ -2231,11 +2308,14 @@ export function syncSessionSearchIndexChanges(
     if (needsRebuild) {
       db.transaction(() => {
         dropSearchTriggers(db);
+        dropMessageSearchTriggers(db);
         writeRows();
         const rebuildStartedAt = performance.now();
         rebuildSearchIndex(db);
+        rebuildMessageSearchIndex(db);
         rebuildDurationMs = performance.now() - rebuildStartedAt;
         createSearchTriggers(db);
+        createMessageSearchTriggers(db);
       })();
     } else {
       db.transaction(writeRows)();
@@ -2453,12 +2533,70 @@ function messageMatchType(row: MessageSearchRow): SearchMatchType {
   return "assistant_reply";
 }
 
-function resolveSearchMatch(
+function searchResultRowKey(row: Pick<SearchResultRow, "agent_name" | "session_id">): string {
+  return `${String(row.agent_name)}\u0000${String(row.session_id)}`;
+}
+
+function fetchMessageSearchMatches(
   db: SQLiteDatabase,
+  rows: SearchResultRow[],
+  ftsQuery: string,
+  terms: { terms: string[]; mode: "all" | "any" },
+): Map<string, { snippet: string; matchType: SearchMatchType }> {
+  const candidates = rows.filter((row) => !textMatchesTerms(String(row.title ?? ""), terms));
+  if (candidates.length === 0) {
+    return new Map();
+  }
+
+  const clauses: string[] = [];
+  const params: unknown[] = [ftsQuery];
+  for (const row of candidates) {
+    clauses.push("(m.agent_name = ? AND m.session_id = ?)");
+    params.push(String(row.agent_name), String(row.session_id));
+  }
+
+  const messageRows = db
+    .prepare(
+      `
+        SELECT
+          m.agent_name,
+          m.session_id,
+          m.message_index,
+          m.role,
+          m.mode,
+          m.content_text,
+          m.tool_metadata_json
+        FROM messages_fts
+        JOIN messages m ON m.rowid = messages_fts.rowid
+        WHERE messages_fts MATCH ?
+          AND (${clauses.join(" OR ")})
+        ORDER BY m.message_index
+      `,
+    )
+    .all(...params) as MessageSearchRow[];
+  const matches = new Map<string, { snippet: string; matchType: SearchMatchType }>();
+
+  for (const message of messageRows) {
+    const key = searchResultRowKey(message);
+    if (matches.has(key)) continue;
+
+    const text = String(message.content_text ?? "");
+    if (!textMatchesTerms(text, terms)) continue;
+
+    matches.set(key, {
+      snippet: buildTermSnippet(text, terms),
+      matchType: messageMatchType(message),
+    });
+  }
+
+  return matches;
+}
+
+function resolveSearchMatch(
   row: SearchResultRow,
-  textQuery: string,
+  terms: { terms: string[]; mode: "all" | "any" },
+  messageMatches: Map<string, { snippet: string; matchType: SearchMatchType }>,
 ): { snippet: string; matchType: SearchMatchType } {
-  const terms = parseTextTerms(textQuery);
   const title = String(row.title ?? "");
 
   if (terms.terms.length === 0) {
@@ -2472,24 +2610,9 @@ function resolveSearchMatch(
     return { snippet: buildTermSnippet(title, terms), matchType: "title" };
   }
 
-  const messages = db
-    .prepare(
-      `
-        SELECT role, mode, content_text, tool_metadata_json
-        FROM messages
-        WHERE agent_name = ? AND session_id = ?
-        ORDER BY message_index
-      `,
-    )
-    .all(row.agent_name, row.session_id) as MessageSearchRow[];
-
-  for (const message of messages) {
-    const text = String(message.content_text ?? "");
-    if (!textMatchesTerms(text, terms)) continue;
-    return {
-      snippet: buildTermSnippet(text, terms),
-      matchType: messageMatchType(message),
-    };
+  const messageMatch = messageMatches.get(searchResultRowKey(row));
+  if (messageMatch) {
+    return messageMatch;
   }
 
   return {
@@ -2502,9 +2625,16 @@ function rowsToSearchResults(
   db: SQLiteDatabase,
   rows: SearchResultRow[],
   textQuery: string,
+  ftsQuery = toFtsQuery(textQuery),
 ): SearchResult[] {
+  const terms = parseTextTerms(textQuery);
+  const messageMatches =
+    terms.terms.length > 0 && ftsQuery
+      ? fetchMessageSearchMatches(db, rows, ftsQuery, terms)
+      : new Map<string, { snippet: string; matchType: SearchMatchType }>();
+
   return rows.map((row) => {
-    const match = resolveSearchMatch(db, row, textQuery);
+    const match = resolveSearchMatch(row, terms, messageMatches);
     return {
       agentName: String(row.agent_name),
       session: sessionHeadFromSearchRow(row),
@@ -2566,7 +2696,7 @@ export function searchSessions(query: string, options: SearchOptions = {}): Sear
       )
       .all(ftsQuery, ...filters.params, search.options.limit ?? 50) as SearchResultRow[];
 
-    return rowsToSearchResults(db, rows, normalizedQuery);
+    return rowsToSearchResults(db, rows, normalizedQuery, ftsQuery);
   });
 
   return results ?? [];

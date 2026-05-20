@@ -188,7 +188,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(8);
+    expect(getUserVersion(getCachePath())).toBe(9);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -345,7 +345,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(8);
+    expect(getUserVersion(getCachePath())).toBe(9);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
@@ -561,6 +561,182 @@ describe("searchSessions", () => {
       total_cost: 0.03,
     });
     expect(results[0]?.snippet).toContain("<mark>sqlite</mark>");
+  });
+
+  it("resolves search match metadata from message-level FTS", () => {
+    const title = {
+      ...makeSession("title"),
+      title: "titleonly search title",
+    };
+    const user = makeSession("user");
+    const assistant = makeSession("assistant");
+    const tool = makeSession("tool");
+    const quoted = makeSession("quoted");
+    const orFirst = {
+      ...makeSession("or-first"),
+      stats: { ...makeSession("or-first").stats, message_count: 2 },
+    };
+    const sessions = [title, user, assistant, tool, quoted, orFirst];
+    const dataById = new Map<string, SessionData>([
+      [
+        "title",
+        {
+          ...title,
+          messages: [
+            {
+              id: "title-m1",
+              role: "user",
+              time_created: now,
+              parts: [{ type: "text", text: "body without the title token" }],
+            },
+          ],
+        },
+      ],
+      [
+        "user",
+        {
+          ...user,
+          messages: [
+            {
+              id: "user-m1",
+              role: "user",
+              time_created: now,
+              parts: [{ type: "text", text: "userneedle request" }],
+            },
+          ],
+        },
+      ],
+      [
+        "assistant",
+        {
+          ...assistant,
+          messages: [
+            {
+              id: "assistant-m1",
+              role: "assistant",
+              time_created: now,
+              parts: [{ type: "text", text: "assistantneedle reply" }],
+            },
+          ],
+        },
+      ],
+      [
+        "tool",
+        {
+          ...tool,
+          messages: [
+            {
+              id: "tool-m1",
+              role: "assistant",
+              mode: "tool",
+              time_created: now,
+              parts: [
+                {
+                  type: "tool",
+                  tool: "bash",
+                  state: { status: "completed", output: "toolneedle output" },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      [
+        "quoted",
+        {
+          ...quoted,
+          messages: [
+            {
+              id: "quoted-m1",
+              role: "user",
+              time_created: now,
+              parts: [{ type: "text", text: "exact quoted phrase marker" }],
+            },
+          ],
+        },
+      ],
+      [
+        "or-first",
+        {
+          ...orFirst,
+          messages: [
+            {
+              id: "or-first-m1",
+              role: "assistant",
+              time_created: now,
+              parts: [{ type: "text", text: "betaneedle first" }],
+            },
+            {
+              id: "or-first-m2",
+              role: "user",
+              time_created: now + 1,
+              parts: [{ type: "text", text: "alphaneedle second" }],
+            },
+          ],
+        },
+      ],
+    ]);
+
+    saveCachedSessions("claudecode", sessions);
+    syncSessionSearchIndex("claudecode", sessions, (sessionId) => dataById.get(sessionId)!);
+
+    expect(searchSessions("titleonly")[0]?.matchType).toBe("title");
+    expect(searchSessions("userneedle")[0]?.matchType).toBe("user_message");
+    expect(searchSessions("assistantneedle")[0]?.matchType).toBe("assistant_reply");
+    expect(searchSessions("toolneedle")[0]?.matchType).toBe("tool_output");
+    expect(searchSessions('"quoted phrase"')[0]?.snippet).toContain("<mark>quoted phrase</mark>");
+
+    const orResults = searchSessions("alphaneedle OR betaneedle");
+    expect(orResults[0]?.session.id).toBe("or-first");
+    expect(orResults[0]?.matchType).toBe("assistant_reply");
+    expect(orResults[0]?.snippet).toContain("<mark>betaneedle</mark>");
+  });
+
+  it("uses a single message FTS lookup for result match metadata", () => {
+    const sessions = Array.from({ length: 3 }, (_, sessionIndex) => ({
+      ...makeSession(`bulk-match-${sessionIndex}`),
+      stats: { ...makeSession(`bulk-match-${sessionIndex}`).stats, message_count: 30 },
+    }));
+
+    saveCachedSessions("claudecode", sessions);
+    syncSessionSearchIndex("claudecode", sessions, (sessionId) => ({
+      ...sessions.find((session) => session.id === sessionId)!,
+      messages: Array.from({ length: 30 }, (_, messageIndex) => ({
+        id: `${sessionId}-m${messageIndex}`,
+        role: "user" as const,
+        time_created: now + messageIndex,
+        parts: [
+          {
+            type: "text" as const,
+            text: messageIndex === 29 ? `bulkneedle ${sessionId}` : `filler ${messageIndex}`,
+          },
+        ],
+      })),
+    }));
+
+    const preparedSql: string[] = [];
+    const originalPrepare = Database.prototype.prepare;
+    const prepareSpy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+      this: Database.Database,
+      source: string,
+    ) {
+      preparedSql.push(source);
+      return originalPrepare.call(this, source);
+    });
+
+    try {
+      expect(searchSessions("bulkneedle")).toHaveLength(3);
+    } finally {
+      prepareSpy.mockRestore();
+    }
+
+    const normalizedSql = preparedSql.map((sql) => sql.replace(/\s+/g, " ").trim());
+    expect(normalizedSql.filter((sql) => sql.includes("FROM messages_fts"))).toHaveLength(1);
+    expect(
+      normalizedSql.some((sql) =>
+        /FROM messages WHERE agent_name = \? AND session_id = \? ORDER BY message_index/.test(sql),
+      ),
+    ).toBe(false);
   });
 
   it("bulk sync rebuilds FTS for large initial indexes", () => {
