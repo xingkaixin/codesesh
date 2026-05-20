@@ -787,7 +787,7 @@ export interface DashboardData {
   recentSessions: DashboardRecentSession[];
   recentFileActivities: FileActivityResult[];
   /** Time window covered by dailyActivity (inclusive, ms) */
-  window: { from: number; to: number; days: number };
+  window: { from?: number; to: number; days?: number };
 }
 
 function toLocalDateKey(ts: number): string {
@@ -809,13 +809,14 @@ function resolveDashboardWindow(
   queryDays: string | undefined,
   queryFrom: string | undefined,
   queryTo: string | undefined,
-): { from: number; to: number; days: number } {
+): { from?: number; to: number; days?: number } {
   const now = Date.now();
 
   const toTs = parseDateParam(queryTo, defaults.to) ?? now;
 
   // Resolve days (preferred): query, defaults.days, or derive from defaults.from
-  const parsedDays = queryDays ? parseInt(queryDays, 10) : NaN;
+  const hasQueryDays = queryDays != null && queryDays.trim() !== "";
+  const parsedDays = hasQueryDays ? parseInt(queryDays, 10) : NaN;
   let days: number | undefined =
     Number.isFinite(parsedDays) && parsedDays > 0 ? parsedDays : defaults.days;
 
@@ -824,6 +825,9 @@ function resolveDashboardWindow(
   if (fromFromQuery != null) {
     fromTs = fromFromQuery;
     days ??= Math.max(1, Math.ceil((toTs - fromTs) / 86400000));
+  } else if (parsedDays === 0 || (!hasQueryDays && defaults.days === 0)) {
+    days = 0;
+    return { to: toTs, days };
   } else if (defaults.from != null) {
     fromTs = defaults.from;
     days ??= Math.max(1, Math.ceil((toTs - fromTs) / 86400000));
@@ -878,13 +882,15 @@ export function handleGetDashboard(
   // Daily activity buckets — one bucket per local day in [from, to]
   const dailyMap = new Map<string, DashboardDailyBucket>();
   const dailyTokenMap = new Map<string, DailyTokenBucket>();
-  const bucketStart = startOfLocalDay(from);
-  const bucketDays = Math.floor((startOfLocalDay(to) - bucketStart) / 86400000) + 1;
-  for (let i = 0; i < bucketDays; i += 1) {
-    const ts = bucketStart + i * 86400000;
-    const key = toLocalDateKey(ts);
-    dailyMap.set(key, { date: key, sessions: 0, messages: 0 });
-    dailyTokenMap.set(key, { date: key, input: 0, output: 0, cache_read: 0, cache_create: 0 });
+  if (from != null) {
+    const bucketStart = startOfLocalDay(from);
+    const bucketDays = Math.floor((startOfLocalDay(to) - bucketStart) / 86400000) + 1;
+    for (let i = 0; i < bucketDays; i += 1) {
+      const ts = bucketStart + i * 86400000;
+      const key = toLocalDateKey(ts);
+      dailyMap.set(key, { date: key, sessions: 0, messages: 0 });
+      dailyTokenMap.set(key, { date: key, input: 0, output: 0, cache_read: 0, cache_create: 0 });
+    }
   }
 
   for (const session of scanResult.sessions) {
@@ -897,7 +903,8 @@ export function handleGetDashboard(
     }
 
     const activity = getSessionActivityTime(session);
-    if (activity < from || activity > to) continue;
+    if (from != null && activity < from) continue;
+    if (activity > to) continue;
 
     const messageCount = session.stats.message_count;
     const sessionTokens = getTotalTokens(session.stats);
@@ -917,22 +924,26 @@ export function handleGetDashboard(
     }
 
     const key = toLocalDateKey(activity);
-    const bucket = dailyMap.get(key);
-    if (bucket) {
-      bucket.sessions += 1;
-      bucket.messages += messageCount;
+    let bucket = dailyMap.get(key);
+    if (!bucket) {
+      bucket = { date: key, sessions: 0, messages: 0 };
+      dailyMap.set(key, bucket);
     }
+    bucket.sessions += 1;
+    bucket.messages += messageCount;
 
-    const tokenBucket = dailyTokenMap.get(key);
-    if (tokenBucket) {
-      const cacheRead = session.stats.total_cache_read_tokens ?? 0;
-      const cacheCreate = session.stats.total_cache_create_tokens ?? 0;
-      const pureInput = session.stats.total_input_tokens - cacheRead - cacheCreate;
-      tokenBucket.input += Math.max(0, pureInput);
-      tokenBucket.output += session.stats.total_output_tokens;
-      tokenBucket.cache_read += cacheRead;
-      tokenBucket.cache_create += cacheCreate;
+    let tokenBucket = dailyTokenMap.get(key);
+    if (!tokenBucket) {
+      tokenBucket = { date: key, input: 0, output: 0, cache_read: 0, cache_create: 0 };
+      dailyTokenMap.set(key, tokenBucket);
     }
+    const cacheRead = session.stats.total_cache_read_tokens ?? 0;
+    const cacheCreate = session.stats.total_cache_create_tokens ?? 0;
+    const pureInput = session.stats.total_input_tokens - cacheRead - cacheCreate;
+    tokenBucket.input += Math.max(0, pureInput);
+    tokenBucket.output += session.stats.total_output_tokens;
+    tokenBucket.cache_read += cacheRead;
+    tokenBucket.cache_create += cacheCreate;
 
     if (session.model_usage) {
       for (const [model, tokens] of Object.entries(session.model_usage)) {
@@ -974,8 +985,10 @@ export function handleGetDashboard(
     .filter((item) => item.sessions > 0)
     .sort((a, b) => b.sessions - a.sessions);
 
-  const dailyActivity = [...dailyMap.values()];
-  const dailyTokenActivity = [...dailyTokenMap.values()];
+  const dailyActivity = [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date));
+  const dailyTokenActivity = [...dailyTokenMap.values()].sort((a, b) =>
+    a.date.localeCompare(b.date),
+  );
 
   const modelDistribution: ModelDistributionEntry[] = [...modelAgg.entries()]
     .map(([model, { tokens, sessions: count }]) => ({ model, tokens, sessions: count }))

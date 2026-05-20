@@ -586,6 +586,43 @@ describe("handleGetDashboard", () => {
     expect(response.window.days).toBe(7);
   });
 
+  it("honors days 0 as an all-time dashboard window", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-20T12:00:00Z"));
+
+    const oldSession = makeSession("old", {
+      slug: "claudecode/old",
+      time_created: new Date("2026-04-20T10:00:00Z").getTime(),
+      time_updated: new Date("2026-04-20T10:00:00Z").getTime(),
+      stats: {
+        message_count: 3,
+        total_input_tokens: 10,
+        total_output_tokens: 5,
+        total_cost: 0,
+      },
+    });
+    const c = makeMockContext();
+
+    handleGetDashboard(
+      c,
+      makeScanSource({ sessions: [oldSession], byAgent: { claudecode: [oldSession] } }),
+      { days: 0 },
+    );
+
+    const response = c.json.mock.calls[0]![0];
+    expect(response.totals.sessions).toBe(1);
+    expect(response.recentSessions[0]?.id).toBe("old");
+    expect(response.dailyActivity).toEqual([
+      {
+        date: "2026-04-20",
+        sessions: 1,
+        messages: 3,
+      },
+    ]);
+    expect(response.window.from).toBeUndefined();
+    expect(response.window.days).toBe(0);
+  });
+
   it("produces per-agent breakdown sorted by session count", () => {
     const c = makeMockContext();
     handleGetDashboard(c, makeScanSource());

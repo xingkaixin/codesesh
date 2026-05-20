@@ -153,6 +153,8 @@ const main = defineCommand({
       if (!Number.isNaN(days) && days > 0) {
         listDefaultFrom = Date.now() - days * 24 * 60 * 60 * 1000;
         listDefaultDays = days;
+      } else if (days === 0) {
+        listDefaultDays = 0;
       }
     }
     const listDefaultTo = args.to ? parseDateToTimestamp(args.to as string) : undefined;

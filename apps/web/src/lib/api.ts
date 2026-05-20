@@ -225,7 +225,7 @@ export interface DashboardData {
   modelDistribution: ModelDistributionEntry[];
   recentSessions: DashboardRecentSession[];
   recentFileActivities: FileActivityResult[];
-  window: { from: number; to: number; days: number };
+  window: { from?: number; to: number; days?: number };
 }
 
 export interface AppConfig {
