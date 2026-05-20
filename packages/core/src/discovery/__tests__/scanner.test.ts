@@ -136,6 +136,7 @@ describe("filterSessions", () => {
 
 vi.mock("../cache.js", () => ({
   loadCachedSessions: vi.fn(() => null),
+  saveCachedSessionChanges: vi.fn(),
   saveCachedSessions: vi.fn(),
 }));
 
@@ -156,10 +157,11 @@ vi.mock("../../agents/index.js", () => ({
 
 import { scanSessions, scanSessionsAsync } from "../scanner.js";
 import { createRegisteredAgents } from "../../agents/index.js";
-import { loadCachedSessions, saveCachedSessions } from "../cache.js";
+import { loadCachedSessions, saveCachedSessionChanges, saveCachedSessions } from "../cache.js";
 
 const mockedCreateRegisteredAgents = vi.mocked(createRegisteredAgents);
 const mockedLoadCachedSessions = vi.mocked(loadCachedSessions);
+const mockedSaveCachedSessionChanges = vi.mocked(saveCachedSessionChanges);
 const mockedSaveCachedSessions = vi.mocked(saveCachedSessions);
 
 beforeEach(() => {
@@ -348,16 +350,79 @@ describe("scanSessions", () => {
 
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions[0]!.id).toBe("fresh");
-    expect(mockedSaveCachedSessions).toHaveBeenCalledWith(
+    expect(mockedSaveCachedSessions).not.toHaveBeenCalled();
+    expect(mockedSaveCachedSessionChanges).toHaveBeenCalledWith(
       "test",
       [
-        expect.objectContaining({
-          ...refreshedSessions[0]!,
-          project_identity: expect.objectContaining({ kind: "path", key: "/home/user/project" }),
-          smart_tags: [],
-          smart_tags_source_updated_at: 1000,
-        }),
+        {
+          session: expect.objectContaining({
+            ...refreshedSessions[0]!,
+            project_identity: expect.objectContaining({ kind: "path", key: "/home/user/project" }),
+            smart_tags: [],
+            smart_tags_source_updated_at: 1000,
+          }),
+          sortIndex: 0,
+        },
       ],
+      ["cached"],
+      {},
+    );
+  });
+
+  it("writes only changed sessions after smart refresh", async () => {
+    const projectIdentity = {
+      kind: "path" as const,
+      key: "/home/user/project",
+      displayName: "project",
+    };
+    const keep = makeSession("keep", { project_identity: projectIdentity });
+    const changed = makeSession("changed");
+    const removed = makeSession("removed");
+    const updatedChanged = makeSession("changed", { title: "Updated changed" });
+    const added = makeSession("added");
+
+    mockedLoadCachedSessions.mockReturnValue({
+      sessions: [keep, changed, removed],
+      meta: {},
+      timestamp: Date.now(),
+    });
+    mockedCreateRegisteredAgents.mockReturnValue([
+      createTestAgent({
+        name: "test",
+        available: true,
+        sessions: [keep, updatedChanged, added],
+        checkForChangesResult: {
+          hasChanges: true,
+          changedIds: ["changed"],
+          timestamp: Date.now(),
+        },
+        incrementalScanResult: [keep, updatedChanged, added],
+      }),
+    ]);
+
+    await scanSessions({ useCache: true, includeSmartTags: false });
+
+    expect(mockedSaveCachedSessions).not.toHaveBeenCalled();
+    expect(mockedSaveCachedSessionChanges).toHaveBeenCalledWith(
+      "test",
+      [
+        {
+          session: expect.objectContaining({
+            id: "changed",
+            title: "Updated changed",
+            project_identity: expect.objectContaining({ kind: "path", key: "/home/user/project" }),
+          }),
+          sortIndex: 1,
+        },
+        {
+          session: expect.objectContaining({
+            id: "added",
+            project_identity: expect.objectContaining({ kind: "path", key: "/home/user/project" }),
+          }),
+          sortIndex: 2,
+        },
+      ],
+      ["removed"],
       {},
     );
   });
