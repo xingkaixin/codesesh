@@ -551,7 +551,14 @@ export function InteractiveReceipt({ session, toc }: InteractiveReceiptProps) {
     let startedAt = performance.now();
     let lastMetrics: SheetMetrics | null = null;
     let stableFrames = 0;
+    let idleFrames = 0;
     let isVisible = false;
+    let anchorVisible = true;
+    let running = false;
+    const desktopMedia = window.matchMedia("(min-width: 1280px)");
+
+    const shouldRun = () =>
+      desktopMedia.matches && document.visibilityState === "visible" && anchorVisible;
 
     const getSheetMetrics = (): SheetMetrics => {
       const rect = anchor.getBoundingClientRect();
@@ -573,6 +580,15 @@ export function InteractiveReceipt({ session, toc }: InteractiveReceiptProps) {
       hitSurface.style.visibility = visible ? "visible" : "hidden";
     };
 
+    const stopLoop = () => {
+      running = false;
+      if (animationFrame) {
+        window.cancelAnimationFrame(animationFrame);
+        animationFrame = 0;
+      }
+      setVisible(false);
+    };
+
     const resetSheet = (metrics: SheetMetrics, time = performance.now()) => {
       sheet = createSheet(metrics);
       lastMetrics = metrics;
@@ -587,8 +603,24 @@ export function InteractiveReceipt({ session, toc }: InteractiveReceiptProps) {
       canvas.height = Math.floor(height * ratio);
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       stableFrames = 0;
+      idleFrames = 0;
       setVisible(false);
       resetSheet(getSheetMetrics());
+      if (shouldRun()) startLoop();
+    };
+
+    const startLoop = () => {
+      if (running || !shouldRun()) return;
+      running = true;
+      animationFrame = window.requestAnimationFrame(tick);
+    };
+
+    const syncLoopState = () => {
+      if (shouldRun()) {
+        resize();
+      } else {
+        stopLoop();
+      }
     };
 
     const getPoint = (event: PointerEvent) => {
@@ -610,6 +642,8 @@ export function InteractiveReceipt({ session, toc }: InteractiveReceiptProps) {
       pointer.vx = 0;
       pointer.vy = 0;
       pointer.grabbedIndex = target;
+      idleFrames = 0;
+      startLoop();
     };
 
     const onPointerMove = (event: PointerEvent) => {
@@ -743,6 +777,12 @@ export function InteractiveReceipt({ session, toc }: InteractiveReceiptProps) {
     };
 
     const tick = (time: number) => {
+      if (!running) return;
+      if (!shouldRun()) {
+        stopLoop();
+        return;
+      }
+
       const metrics = getSheetMetrics();
       const changed = metricsChanged(lastMetrics, metrics);
       if (changed && pointer.id == null) {
@@ -758,25 +798,41 @@ export function InteractiveReceipt({ session, toc }: InteractiveReceiptProps) {
       integrate(time);
       constrain();
       draw();
+      idleFrames = pointer.id == null ? idleFrames + 1 : 0;
       if (stableFrames >= 2) setVisible(true);
+      if (stableFrames >= 2 && idleFrames >= 90) {
+        running = false;
+        animationFrame = 0;
+        return;
+      }
       animationFrame = window.requestAnimationFrame(tick);
     };
 
     setVisible(false);
-    resize();
+    if (shouldRun()) resize();
     const observer = new ResizeObserver(resize);
     observer.observe(anchor);
-    window.addEventListener("resize", resize);
+    const intersectionObserver = new IntersectionObserver(([entry]) => {
+      anchorVisible = Boolean(entry?.isIntersecting);
+      syncLoopState();
+    });
+    intersectionObserver.observe(anchor);
+    desktopMedia.addEventListener("change", syncLoopState);
+    document.addEventListener("visibilitychange", syncLoopState);
+    window.addEventListener("resize", syncLoopState);
     hitSurface.addEventListener("pointerdown", onPointerDown);
     hitSurface.addEventListener("pointermove", onPointerMove);
     hitSurface.addEventListener("pointerup", releasePointer);
     hitSurface.addEventListener("pointercancel", releasePointer);
-    animationFrame = window.requestAnimationFrame(tick);
+    startLoop();
 
     return () => {
-      window.cancelAnimationFrame(animationFrame);
+      stopLoop();
       observer.disconnect();
-      window.removeEventListener("resize", resize);
+      intersectionObserver.disconnect();
+      desktopMedia.removeEventListener("change", syncLoopState);
+      document.removeEventListener("visibilitychange", syncLoopState);
+      window.removeEventListener("resize", syncLoopState);
       hitSurface.removeEventListener("pointerdown", onPointerDown);
       hitSurface.removeEventListener("pointermove", onPointerMove);
       hitSurface.removeEventListener("pointerup", releasePointer);
