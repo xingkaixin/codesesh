@@ -173,6 +173,8 @@ export interface SessionsUpdatedEvent {
   removedSessions: number;
   totalSessions: number;
   timestamp: number;
+  changedSessionHeads?: Array<{ agentName: string; session: SessionHead }>;
+  removedSessionRefs?: Array<{ agentName: string; sessionId: string }>;
 }
 
 export interface DashboardAgentStat {
