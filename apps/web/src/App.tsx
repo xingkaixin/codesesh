@@ -44,11 +44,7 @@ import {
 } from "./lib/api";
 import { SessionDetail } from "./components/SessionDetail";
 import { SessionDetailSkeleton } from "./components/SessionDetailSkeleton";
-import {
-  DetailLanding,
-  type LandingSession,
-  type LandingAgentItem,
-} from "./components/DetailLanding";
+import { DetailLanding, type LandingAgentItem } from "./components/DetailLanding";
 import { Dashboard } from "./components/Dashboard";
 import { ProjectDashboardView, ProjectsOverview } from "./components/Projects";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -70,6 +66,13 @@ import {
   isProjectIdentityKind,
   type ProjectRouteIdentity,
 } from "./lib/projects";
+import {
+  buildSessionIndexes,
+  buildSidebarSessionLookup,
+  getProjectAgentKey,
+  getSessionAgentKey,
+  getSessionRouteKey,
+} from "./lib/session-indexes";
 
 type BrowseBy = "agents" | "projects";
 
@@ -188,21 +191,8 @@ function formatSearchSubtitle(query: string, loading: boolean, count: number) {
   return query ? `${count} matches for "${query}"` : `${count} recent sessions`;
 }
 
-function getSessionAgentKey(session: SessionHead): string {
-  return session.slug.split("/")[0]?.toLowerCase() || "unknown";
-}
-
 function getProjectGroupIdentity(project: ProjectGroup): ProjectRouteIdentity {
   return { kind: project.identityKind, key: project.identityKey };
-}
-
-function matchesProjectIdentity(
-  identity: SessionHead["project_identity"] | SessionData["project_identity"] | undefined,
-  project: ProjectRouteIdentity | null,
-): boolean {
-  return Boolean(
-    identity && project && identity.kind === project.kind && identity.key === project.key,
-  );
 }
 
 function formatRelativeTime(timestamp?: number) {
@@ -574,24 +564,7 @@ export default function App() {
       ? location.state.searchQuery
       : "";
 
-  const sessionsByAgent = useMemo(() => {
-    const grouped: Record<string, SessionHead[]> = {};
-    for (const a of agents) {
-      grouped[a.name] = [];
-    }
-    for (const s of sessions) {
-      const agentKey = s.slug.split("/")[0]?.toLowerCase();
-      if (agentKey && grouped[agentKey]) {
-        grouped[agentKey].push(s);
-      }
-    }
-    for (const key of Object.keys(grouped)) {
-      grouped[key]!.sort(
-        (a, b) => (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created),
-      );
-    }
-    return grouped;
-  }, [sessions, agents]);
+  const sessionIndexes = useMemo(() => buildSessionIndexes(sessions, agents), [sessions, agents]);
 
   useEffect(() => {
     let cancelled = false;
@@ -711,13 +684,11 @@ export default function App() {
   const openedSessionHead = useMemo(() => {
     if (viewState.mode !== "session") return null;
     return (
-      sessions.find(
-        (sessionItem) =>
-          getSessionAgentKey(sessionItem) === viewState.activeAgentKey &&
-          sessionItem.id === viewState.activeSessionSlug,
+      sessionIndexes.byRouteKey.get(
+        getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionSlug),
       ) ?? null
     );
-  }, [sessions, viewState]);
+  }, [sessionIndexes, viewState]);
   const openedSessionData =
     viewState.mode === "session" && session?.id === viewState.activeSessionSlug ? session : null;
   const openedSessionProjectIdentity =
@@ -731,33 +702,25 @@ export default function App() {
     ? getProjectIdentityKey(selectedProjectNavigationIdentity)
     : null;
   const agentSidebarSessions = useMemo(
-    () => (activeAgentKey ? (sessionsByAgent[activeAgentKey] ?? []) : []),
-    [activeAgentKey, sessionsByAgent],
+    () => (activeAgentKey ? (sessionIndexes.byAgent.get(activeAgentKey) ?? []) : []),
+    [activeAgentKey, sessionIndexes],
   );
-  const projectSidebarSessions = useMemo(
-    () =>
-      selectedProjectNavigationId
-        ? sessions
-            .filter(
-              (sessionItem) =>
-                matchesProjectIdentity(
-                  sessionItem.project_identity,
-                  selectedProjectNavigationIdentity,
-                ) &&
-                (!selectedProjectAgent || getSessionAgentKey(sessionItem) === selectedProjectAgent),
-            )
-            .toSorted(
-              (a, b) => (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created),
-            )
-        : [],
-    [
-      selectedProjectAgent,
-      selectedProjectNavigationId,
-      selectedProjectNavigationIdentity,
-      sessions,
-    ],
-  );
+  const projectSidebarSessions = useMemo(() => {
+    if (!selectedProjectNavigationId) return [];
+    if (selectedProjectAgent) {
+      return (
+        sessionIndexes.byProjectAgentKey.get(
+          getProjectAgentKey(selectedProjectNavigationId, selectedProjectAgent),
+        ) ?? []
+      );
+    }
+    return sessionIndexes.byProjectIdentityKey.get(selectedProjectNavigationId) ?? [];
+  }, [selectedProjectAgent, selectedProjectNavigationId, sessionIndexes]);
   const sidebarSessions = browseBy === "projects" ? projectSidebarSessions : agentSidebarSessions;
+  const sidebarSessionLookup = useMemo(
+    () => buildSidebarSessionLookup(sidebarSessions),
+    [sidebarSessions],
+  );
   const bookmarkedSidebarSessionIds = useMemo(() => {
     if (sidebarSessions.length === 0) return new Set<string>();
     return new Set(
@@ -794,25 +757,42 @@ export default function App() {
     activeSearchQuery.trim().length > 0 || Boolean(searchFilters.tool || searchFilters.fileKind);
   const recentSearchResults = useMemo<SearchResult[]>(() => {
     const selectedCost = COST_RANGE_OPTIONS.find((option) => option.id === searchFilters.costRange);
-    return sessions
-      .filter((item) => {
-        if (searchFilters.agent && getSessionAgentKey(item) !== searchFilters.agent) return false;
-        if (searchFilters.projectKey && item.project_identity?.key !== searchFilters.projectKey) {
-          return false;
-        }
-        if (searchFilters.tag && !item.smart_tags?.includes(searchFilters.tag)) return false;
-        if (selectedCost && item.stats.total_cost < selectedCost.costMin) return false;
-        return true;
-      })
-      .toSorted((a, b) => (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created))
-      .slice(0, 50)
-      .map((sessionItem) => ({
+    const agentSessions = searchFilters.agent
+      ? (sessionIndexes.byAgent.get(searchFilters.agent) ?? [])
+      : null;
+    const projectSessions = searchFilters.projectKey
+      ? (sessionIndexes.byProjectKey.get(searchFilters.projectKey) ?? [])
+      : null;
+    const sourceSessions =
+      agentSessions && projectSessions
+        ? agentSessions.length <= projectSessions.length
+          ? agentSessions
+          : projectSessions
+        : (agentSessions ?? projectSessions ?? sessionIndexes.sessionsByActivity);
+    const results: SearchResult[] = [];
+
+    for (const sessionItem of sourceSessions) {
+      if (searchFilters.agent && getSessionAgentKey(sessionItem) !== searchFilters.agent) continue;
+      if (
+        searchFilters.projectKey &&
+        sessionItem.project_identity?.key !== searchFilters.projectKey
+      ) {
+        continue;
+      }
+      if (searchFilters.tag && !sessionItem.smart_tags?.includes(searchFilters.tag)) continue;
+      if (selectedCost && sessionItem.stats.total_cost < selectedCost.costMin) continue;
+
+      results.push({
         agentName: getSessionAgentKey(sessionItem),
         session: sessionItem,
         snippet: `Recent session · ${sessionItem.directory}`,
         matchType: "recent" as const,
-      }));
-  }, [searchFilters, sessions]);
+      });
+      if (results.length >= 50) break;
+    }
+
+    return results;
+  }, [searchFilters, sessionIndexes]);
 
   // Stable key for session fetch
   const sessionFetchKey =
@@ -1082,25 +1062,13 @@ export default function App() {
   }, [isSearchMode, searchResults, selectedSearchIndex]);
 
   // Build landing data
-  const landingSessions = useMemo<LandingSession[]>(() => {
-    return sessions.map((s) => {
-      const agentKey = s.slug.split("/")[0]?.toLowerCase() || "unknown";
-      return {
-        ...s,
-        agentKey,
-        sessionSlug: s.id,
-        fullPath: s.slug,
-      };
-    });
-  }, [sessions]);
+  const landingSessions = sessionIndexes.landingSessions;
   const activeProjectSessions = useMemo(
     () =>
-      activeProjectIdentity
-        ? landingSessions.filter((sessionItem) =>
-            matchesProjectIdentity(sessionItem.project_identity, activeProjectIdentity),
-          )
+      activeProjectIdentityKey
+        ? (sessionIndexes.byLandingProjectIdentityKey.get(activeProjectIdentityKey) ?? [])
         : [],
-    [activeProjectIdentity, landingSessions],
+    [activeProjectIdentityKey, sessionIndexes],
   );
 
   const landingAgentItems = useMemo<LandingAgentItem[]>(() => {
@@ -1135,24 +1103,7 @@ export default function App() {
     [projects, selectedProjectNavigationId],
   );
 
-  const projectOptions = useMemo<SearchProjectOption[]>(() => {
-    const byKey = new Map<string, SearchProjectOption>();
-    for (const item of sessions) {
-      const identity = item.project_identity;
-      if (!identity?.key) continue;
-      const current = byKey.get(identity.key);
-      if (current) {
-        current.count += 1;
-      } else {
-        byKey.set(identity.key, {
-          key: identity.key,
-          label: identity.displayName || item.directory,
-          count: 1,
-        });
-      }
-    }
-    return [...byKey.values()].toSorted((a, b) => b.count - a.count).slice(0, 8);
-  }, [sessions]);
+  const projectOptions = sessionIndexes.projectOptions;
   const searchProjectOptions = useMemo<SearchProjectOption[]>(() => {
     if (!usesServerSearch) return projectOptions;
 
@@ -1406,7 +1357,7 @@ export default function App() {
       />
     );
   } else if (viewState.mode === "agent" && activeAgentKey) {
-    const agentSessions = landingSessions.filter((s) => s.agentKey === activeAgentKey);
+    const agentSessions = sessionIndexes.byLandingAgent.get(activeAgentKey) ?? [];
     content = (
       <DetailLanding
         type="agent"
@@ -1424,7 +1375,7 @@ export default function App() {
       content = (
         <DetailLanding
           type="missing-session"
-          sessions={landingSessions.filter((s) => s.agentKey === viewState.activeAgentKey)}
+          sessions={sessionIndexes.byLandingAgent.get(viewState.activeAgentKey) ?? []}
           agentItems={landingAgentItems}
           activeAgentKey={viewState.activeAgentKey}
           attemptedSessionSlug={viewState.activeSessionSlug}
@@ -1593,9 +1544,10 @@ export default function App() {
 
     const moveSidebarSelection = (offset: number) => {
       dismissShortcutHint();
-      const currentIndex = sidebarSessions.findIndex(
-        (sessionItem) => sessionItem.id === selectedSidebarSessionId,
-      );
+      const currentIndex =
+        selectedSidebarSessionId != null
+          ? (sidebarSessionLookup.indexById.get(selectedSidebarSessionId) ?? -1)
+          : -1;
       const baseIndex =
         currentIndex >= 0 ? currentIndex : offset >= 0 ? -1 : sidebarSessions.length;
       const nextIndex = Math.max(0, Math.min(baseIndex + offset, sidebarSessions.length - 1));
@@ -1625,7 +1577,10 @@ export default function App() {
       return;
     }
     if (key === "Enter") {
-      const selected = sidebarSessions.find((item) => item.id === selectedSidebarSessionId);
+      const selected =
+        selectedSidebarSessionId != null
+          ? sidebarSessionLookup.byId.get(selectedSidebarSessionId)
+          : null;
       if (!selected) return;
       event.preventDefault();
       dismissShortcutHint();
@@ -1907,7 +1862,7 @@ export default function App() {
                   selectedSessionId={selectedSidebarSessionId}
                   onSelectSession={(sessionId) => {
                     setSelectedSidebarSessionId(sessionId);
-                    const selected = sidebarSessions.find((item) => item.id === sessionId);
+                    const selected = sidebarSessionLookup.byId.get(sessionId);
                     if (selected) navigate(`/${selected.slug}`);
                   }}
                   bookmarkedSessionIds={bookmarkedSidebarSessionIds}
