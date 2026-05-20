@@ -30,7 +30,7 @@ import {
   type SQLiteDatabase,
 } from "../utils/sqlite.js";
 
-const CACHE_SCHEMA_VERSION = 10;
+const CACHE_SCHEMA_VERSION = 11;
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const CACHE_FILENAME = "codesesh.db";
 const LEGACY_CACHE_FILENAME = "scan-cache.json";
@@ -147,6 +147,13 @@ interface MessageBackfillRow extends DatabaseRow {
   nickname?: string | null;
 }
 
+interface MessageToolBackfillRow extends DatabaseRow {
+  agent_name?: string;
+  session_id?: string;
+  message_index?: number;
+  tool_metadata_json?: string | null;
+}
+
 interface SearchResultRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
@@ -230,6 +237,7 @@ interface StructuredMessageRecord {
   nickname?: string | null;
   contentText: string;
   toolMetadataJson?: string | null;
+  toolNames: string[];
 }
 
 interface LoadedSearchIndexEntry {
@@ -431,6 +439,26 @@ function createSessionTables(db: SQLiteDatabase): void {
 
     CREATE INDEX IF NOT EXISTS idx_messages_session
       ON messages(agent_name, session_id, message_index);
+  `);
+
+  createMessageToolTables(db);
+}
+
+function createMessageToolTables(db: SQLiteDatabase): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS message_tools (
+      agent_name TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      message_index INTEGER NOT NULL,
+      tool_name TEXT NOT NULL,
+      PRIMARY KEY (agent_name, session_id, message_index, tool_name),
+      FOREIGN KEY (agent_name, session_id, message_index)
+        REFERENCES messages(agent_name, session_id, message_index)
+        ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_message_tools_filter
+      ON message_tools(tool_name, agent_name, session_id);
   `);
 }
 
@@ -918,6 +946,17 @@ function prepareInsertFileActivity(db: SQLiteDatabase): SQLiteStatement {
   `);
 }
 
+function prepareInsertMessageTool(db: SQLiteDatabase): SQLiteStatement {
+  return db.prepare(`
+    INSERT OR IGNORE INTO message_tools(
+      agent_name,
+      session_id,
+      message_index,
+      tool_name
+    ) VALUES (?, ?, ?, ?)
+  `);
+}
+
 function writeFileActivityRows(
   statement: SQLiteStatement,
   activities: SessionFileActivity[],
@@ -1033,6 +1072,9 @@ function readLegacyCacheVersion(db: SQLiteDatabase): number {
 }
 
 function inferCacheSchemaVersion(db: SQLiteDatabase): number {
+  if (tableExists(db, "message_tools")) {
+    return 11;
+  }
   if (tableExists(db, "session_file_activity_path_fts")) {
     return 10;
   }
@@ -1077,6 +1119,7 @@ function hasAnyCacheSchema(db: SQLiteDatabase): boolean {
     "cached_sessions",
     "sessions",
     "messages",
+    "message_tools",
     "session_file_activity",
     "session_file_activity_path_fts",
     "session_documents",
@@ -1280,6 +1323,35 @@ function messageFromBackfillRow(row: MessageBackfillRow): Message {
   };
 }
 
+function backfillMessageTools(db: SQLiteDatabase): void {
+  createMessageToolTables(db);
+  if (!tableExists(db, "messages")) {
+    return;
+  }
+
+  db.exec("DELETE FROM message_tools");
+  const rows = db
+    .prepare(
+      `
+        SELECT agent_name, session_id, message_index, tool_metadata_json
+        FROM messages
+        WHERE tool_metadata_json IS NOT NULL
+      `,
+    )
+    .all() as MessageToolBackfillRow[];
+  const insertTool = prepareInsertMessageTool(db);
+
+  for (const row of rows) {
+    if (!row.agent_name || !row.session_id || row.message_index == null) {
+      continue;
+    }
+
+    for (const toolName of toolNamesFromMetadataJson(row.tool_metadata_json)) {
+      insertTool.run(row.agent_name, row.session_id, row.message_index, toolName);
+    }
+  }
+}
+
 function backfillFileActivity(db: SQLiteDatabase): void {
   createFileActivityTables(db);
   if (!tableExists(db, "sessions") || !tableExists(db, "messages")) {
@@ -1434,6 +1506,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       "cached_sessions",
       "sessions",
       "messages",
+      "message_tools",
       "session_file_activity",
       "session_documents",
       "project_sessions",
@@ -1465,6 +1538,12 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
         migrate(db) {
           createFileActivityPathSearchTables(db);
           rebuildFileActivityPathIndex(db);
+        },
+      },
+      {
+        version: 11,
+        migrate(db) {
+          backfillMessageTools(db);
         },
       },
     ],
@@ -1697,6 +1776,40 @@ function compactRecord(record: Record<string, unknown>): Record<string, unknown>
   return Object.fromEntries(Object.entries(record).filter(([, value]) => value != null));
 }
 
+function normalizeToolName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const name = value.trim().toLowerCase();
+  return name || null;
+}
+
+function toolNamesFromMetadataJson(value: unknown): string[] {
+  if (!value) return [];
+
+  try {
+    const metadata = JSON.parse(String(value));
+    if (!Array.isArray(metadata)) return [];
+    const tools = new Set<string>();
+    for (const item of metadata) {
+      if (item == null || typeof item !== "object") continue;
+      const toolName = normalizeToolName((item as Record<string, unknown>).tool);
+      if (toolName) tools.add(toolName);
+    }
+    return [...tools];
+  } catch {
+    return [];
+  }
+}
+
+function toolNamesFromMessage(message: Message): string[] {
+  const tools = new Set<string>();
+  for (const part of message.parts) {
+    if (part.type !== "tool") continue;
+    const toolName = normalizeToolName(part.tool);
+    if (toolName) tools.add(toolName);
+  }
+  return [...tools];
+}
+
 function summarizeToolPart(part: MessagePart): Record<string, unknown> {
   const state =
     part.state == null
@@ -1763,6 +1876,7 @@ function normalizeMessages(session: SessionData): StructuredMessageRecord[] {
       nickname: message.nickname ?? null,
       contentText: buildMessageText(message),
       toolMetadataJson: toolMetadata.length > 0 ? JSON.stringify(toolMetadata) : null,
+      toolNames: toolNamesFromMessage(message),
     };
   });
 }
@@ -1874,6 +1988,9 @@ export function saveCachedSessions(
     const deleteMessages = db.prepare(
       "DELETE FROM messages WHERE agent_name = ? AND session_id = ?",
     );
+    const deleteMessageTools = db.prepare(
+      "DELETE FROM message_tools WHERE agent_name = ? AND session_id = ?",
+    );
     const deleteFileActivity = db.prepare(
       "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
     );
@@ -1905,6 +2022,7 @@ export function saveCachedSessions(
         const sessionId = String(row.session_id);
         if (!sessionIds.has(sessionId)) {
           deleteSearchDocument.run(agentName, sessionId);
+          deleteMessageTools.run(agentName, sessionId);
           deleteMessages.run(agentName, sessionId);
           deleteFileActivity.run(agentName, sessionId);
           deleteProjectSession.run(agentName, sessionId);
@@ -1957,6 +2075,9 @@ export function saveCachedSessionChanges(
     const deleteMessages = db.prepare(
       "DELETE FROM messages WHERE agent_name = ? AND session_id = ?",
     );
+    const deleteMessageTools = db.prepare(
+      "DELETE FROM message_tools WHERE agent_name = ? AND session_id = ?",
+    );
     const deleteFileActivity = db.prepare(
       "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
     );
@@ -1978,6 +2099,7 @@ export function saveCachedSessionChanges(
       for (const sessionId of new Set(removedSessionIds)) {
         deleteLegacySession.run(agentName, sessionId);
         deleteSearchDocument.run(agentName, sessionId);
+        deleteMessageTools.run(agentName, sessionId);
         deleteMessages.run(agentName, sessionId);
         deleteFileActivity.run(agentName, sessionId);
         deleteProjectSession.run(agentName, sessionId);
@@ -2019,6 +2141,7 @@ export function clearCache(): void {
       DELETE FROM cached_sessions;
       DELETE FROM session_documents;
       DELETE FROM session_file_activity;
+      DELETE FROM message_tools;
       DELETE FROM messages;
       DELETE FROM sessions;
       DELETE FROM project_sessions;
@@ -2108,11 +2231,15 @@ function writeSearchIndexRows(
   const deleteMessages = db.prepare(
     "DELETE FROM messages WHERE agent_name = ? AND session_id = ? AND message_index >= ?",
   );
+  const deleteMessageTools = db.prepare(
+    "DELETE FROM message_tools WHERE agent_name = ? AND session_id = ? AND message_index >= ?",
+  );
   const deleteFileActivity = db.prepare(
     "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
   );
   const upsertIndexedSession = prepareUpsertIndexedSession(db);
   const insertFileActivity = prepareInsertFileActivity(db);
+  const insertMessageTool = prepareInsertMessageTool(db);
   const upsertMessage = db.prepare(`
     INSERT INTO messages(
       agent_name,
@@ -2188,6 +2315,7 @@ function writeSearchIndexRows(
   for (const sessionId of new Set(removedSessionIds)) {
     deleteRow.run(agentName, sessionId);
     deleteFileActivity.run(agentName, sessionId);
+    deleteMessageTools.run(agentName, sessionId, 0);
     deleteMessages.run(agentName, sessionId, 0);
   }
 
@@ -2195,6 +2323,7 @@ function writeSearchIndexRows(
     const activityTime = entry.session.time_updated ?? entry.session.time_created;
     upsertSessionRow(upsertIndexedSession, agentName, entry.session, null, entry.sortIndex, null);
     deleteFileActivity.run(agentName, entry.session.id);
+    deleteMessageTools.run(agentName, entry.session.id, 0);
     writeFileActivityRows(insertFileActivity, entry.fileActivity);
     for (const message of entry.messages) {
       upsertMessage.run(
@@ -2218,6 +2347,9 @@ function writeSearchIndexRows(
         message.contentText,
         message.toolMetadataJson ?? null,
       );
+      for (const toolName of message.toolNames) {
+        insertMessageTool.run(agentName, entry.session.id, message.index, toolName);
+      }
     }
     deleteMessages.run(agentName, entry.session.id, entry.messages.length);
     upsertRow.run(
@@ -2498,10 +2630,12 @@ function buildSessionSearchFilters(options: SearchOptions): {
     params.push(`%"${tag}"%`);
   }
   for (const tool of options.tools ?? []) {
+    const toolName = normalizeToolName(tool);
+    if (!toolName) continue;
     clauses.push(
-      "EXISTS (SELECT 1 FROM messages m WHERE m.agent_name = s.agent_name AND m.session_id = s.session_id AND LOWER(m.tool_metadata_json) LIKE ? ESCAPE '\\')",
+      "EXISTS (SELECT 1 FROM message_tools mt WHERE mt.tool_name = ? AND mt.agent_name = s.agent_name AND mt.session_id = s.session_id)",
     );
-    params.push(likePattern(tool));
+    params.push(toolName);
   }
   if (options.file || options.fileKind) {
     const fileClauses = ["fa.agent_name = s.agent_name", "fa.session_id = s.session_id"];

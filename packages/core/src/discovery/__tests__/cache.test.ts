@@ -188,7 +188,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(10);
+    expect(getUserVersion(getCachePath())).toBe(11);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -345,7 +345,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(10);
+    expect(getUserVersion(getCachePath())).toBe(11);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
@@ -1056,6 +1056,73 @@ describe("searchSessions", () => {
     expect(searchSessions("updated")).toHaveLength(1);
   });
 
+  it("uses the structured tool index for tool filters", () => {
+    const target = {
+      ...makeSession("tool-target"),
+      stats: { ...makeSession("tool-target").stats, message_count: 1 },
+    };
+    const other = {
+      ...makeSession("tool-other"),
+      stats: { ...makeSession("tool-other").stats, message_count: 1 },
+    };
+
+    saveCachedSessions("claudecode", [target, other]);
+    syncSessionSearchIndex("claudecode", [target, other], (sessionId) => ({
+      ...(sessionId === target.id ? target : other),
+      messages: [
+        {
+          id: `${sessionId}-tool`,
+          role: "assistant",
+          time_created: now,
+          parts: [
+            {
+              type: "tool",
+              tool: sessionId === target.id ? "apply_patch" : "grep",
+              state: { status: "completed" },
+            },
+          ],
+        },
+      ],
+    }));
+
+    expect(searchSessions("tool:apply_patch").map((result) => result.session.id)).toEqual([
+      "tool-target",
+    ]);
+
+    const db = new Database(getCachePath(), { readonly: true });
+    try {
+      const rows = db
+        .prepare("SELECT session_id, tool_name FROM message_tools ORDER BY session_id, tool_name")
+        .all();
+      expect(rows).toEqual([
+        { session_id: "tool-other", tool_name: "grep" },
+        { session_id: "tool-target", tool_name: "apply_patch" },
+      ]);
+
+      const plan = db
+        .prepare(
+          `
+            EXPLAIN QUERY PLAN
+            SELECT s.session_id
+            FROM sessions s
+            WHERE EXISTS (
+              SELECT 1
+              FROM message_tools mt
+              WHERE mt.tool_name = ?
+                AND mt.agent_name = s.agent_name
+                AND mt.session_id = s.session_id
+            )
+          `,
+        )
+        .all("apply_patch")
+        .map((row) => String((row as { detail?: unknown }).detail ?? ""))
+        .join("\n");
+      expect(plan).toContain("idx_message_tools_filter");
+    } finally {
+      db.close();
+    }
+  });
+
   it("indexes file activity from tool calls", () => {
     const session = {
       ...makeSession("files"),
@@ -1230,7 +1297,7 @@ describe("searchSessions", () => {
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(10);
+    expect(getUserVersion(getCachePath())).toBe(11);
   });
 
   it("combines full text with structured filters", () => {
