@@ -37,7 +37,7 @@ const PROPOSED_PLAN_PATTERN = /<proposed_plan>\s*([\s\S]*?)\s*<\/proposed_plan>/
 const PLAN_APPROVAL_PREFIX = "PLEASE IMPLEMENT THIS PLAN";
 const SUBAGENT_NOTIFICATION_PATTERN =
   /<subagent_notification>\s*([\s\S]*?)\s*<\/subagent_notification>/;
-const RECENT_SESSION_REVALIDATION_WINDOW_MS = 24 * 60 * 60 * 1000;
+const HEAD_INDEX_VERSION = "codex-head-v1";
 
 const DEVELOPER_LIKE_USER_MARKERS = [
   "agents.md instructions for",
@@ -247,6 +247,10 @@ interface SessionMeta extends SessionCacheMeta {
   id: string;
   title: string;
   sourcePath: string;
+  sourceMtimeMs: number;
+  indexPath: string | null;
+  indexMtimeMs: number | null;
+  headIndexVersion: string;
   directory: string;
   model: string | null;
   messageCount: number;
@@ -309,16 +313,7 @@ export class CodexAgent extends BaseAgent {
 
         if (head) {
           heads.push(head);
-          this.sessionMetaMap.set(head.id, {
-            id: head.id,
-            title: head.title,
-            sourcePath: file,
-            directory: head.directory,
-            model: null,
-            messageCount: head.stats.message_count,
-            createdAt: head.time_created,
-            updatedAt: head.time_updated ?? head.time_created,
-          });
+          this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, file));
         }
       } catch {
         // skip malformed files
@@ -340,7 +335,7 @@ export class CodexAgent extends BaseAgent {
   /**
    * 检测文件系统变更
    */
-  checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
+  checkForChanges(_sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
     if (!this.basePath) {
       return { hasChanges: false, timestamp: Date.now() };
     }
@@ -363,18 +358,12 @@ export class CodexAgent extends BaseAgent {
       }
 
       try {
-        if (statSync(meta.sourcePath).mtimeMs > sinceTimestamp) {
+        if (this.hasMetaChanged(meta)) {
           changedIds.add(session.id);
         }
       } catch {
         changedIds.add(session.id);
       }
-    }
-
-    const now = Date.now();
-    for (const session of cachedSessions) {
-      if (now - session.time_created > RECENT_SESSION_REVALIDATION_WINDOW_MS) continue;
-      changedIds.add(session.id);
     }
 
     const hasAddedSessions = currentFiles.some((file) => !cachedIds.has(extractSessionId(file)));
@@ -416,16 +405,7 @@ export class CodexAgent extends BaseAgent {
           const head = this.parseSessionHead(file);
           if (head) {
             sessionMap.set(head.id, head);
-            this.sessionMetaMap.set(head.id, {
-              id: head.id,
-              title: head.title,
-              sourcePath: file,
-              directory: head.directory,
-              model: null,
-              messageCount: head.stats.message_count,
-              createdAt: head.time_created,
-              updatedAt: head.time_updated ?? head.time_created,
-            });
+            this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, file));
           }
         }
       } catch {
@@ -441,16 +421,7 @@ export class CodexAgent extends BaseAgent {
           const head = this.parseSessionHead(file);
           if (head) {
             sessionMap.set(head.id, head);
-            this.sessionMetaMap.set(head.id, {
-              id: head.id,
-              title: head.title,
-              sourcePath: file,
-              directory: head.directory,
-              model: null,
-              messageCount: head.stats.message_count,
-              createdAt: head.time_created,
-              updatedAt: head.time_updated ?? head.time_created,
-            });
+            this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, file));
           }
         }
       } catch {
@@ -648,13 +619,52 @@ export class CodexAgent extends BaseAgent {
     return files;
   }
 
+  private buildSessionMeta(head: SessionHead, file: string): SessionMeta {
+    const indexPath = this.getSessionIndexPath();
+    return {
+      id: head.id,
+      title: head.title,
+      sourcePath: file,
+      sourceMtimeMs: statSync(file).mtimeMs,
+      indexPath: existsSync(indexPath) ? indexPath : null,
+      indexMtimeMs: this.getFileMtimeMs(indexPath),
+      headIndexVersion: HEAD_INDEX_VERSION,
+      directory: head.directory,
+      model: null,
+      messageCount: head.stats.message_count,
+      createdAt: head.time_created,
+      updatedAt: head.time_updated ?? head.time_created,
+    };
+  }
+
+  private hasMetaChanged(meta: SessionMeta): boolean {
+    if (meta.headIndexVersion !== HEAD_INDEX_VERSION) return true;
+    if (typeof meta.sourceMtimeMs !== "number") return true;
+    if (statSync(meta.sourcePath).mtimeMs !== meta.sourceMtimeMs) return true;
+
+    const indexPath = meta.indexPath ?? this.getSessionIndexPath();
+    return this.getFileMtimeMs(indexPath) !== (meta.indexMtimeMs ?? null);
+  }
+
+  private getSessionIndexPath(): string {
+    const roots = resolveProviderRoots();
+    return join(roots.codexRoot, "session_index.jsonl");
+  }
+
+  private getFileMtimeMs(filePath: string): number | null {
+    try {
+      return statSync(filePath).mtimeMs;
+    } catch {
+      return null;
+    }
+  }
+
   // ---- Session index ----
 
   private loadSessionIndex(): void {
     if (this.sessionIndexCache.size > 0) return;
 
-    const roots = resolveProviderRoots();
-    const indexPath = join(roots.codexRoot, "session_index.jsonl");
+    const indexPath = this.getSessionIndexPath();
     if (!existsSync(indexPath)) return;
 
     try {

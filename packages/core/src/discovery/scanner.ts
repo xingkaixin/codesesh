@@ -365,7 +365,7 @@ async function scanAgentSmart(
               : await ensureSessionTags(agent, sessionsWithIdentity, options.smartTagWorkerUrl);
           timing.tags = performance.now() - t4;
 
-          if (options.writeCache !== false && options.from == null && options.to == null) {
+          if (options.writeCache !== false) {
             saveCachedSessionDiff(
               agent,
               cached.sessions,
@@ -399,12 +399,7 @@ async function scanAgentSmart(
           : await ensureSessionTags(agent, cachedWithIdentity, options.smartTagWorkerUrl);
       timing.tags = performance.now() - t4;
 
-      if (
-        tagged.changed &&
-        options.writeCache !== false &&
-        options.from == null &&
-        options.to == null
-      ) {
+      if (tagged.changed && options.writeCache !== false) {
         saveCachedSessionDiff(agent, cached.sessions, tagged.sessions);
       }
 

@@ -1,4 +1,19 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
+
+const coreMocks = vi.hoisted(() => ({
+  loadCachedSessionData: vi.fn(),
+  listSessionFileActivity: vi.fn(() => []),
+}));
+
+vi.mock("@codesesh/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core")>();
+  return {
+    ...actual,
+    loadCachedSessionData: coreMocks.loadCachedSessionData,
+    listSessionFileActivity: coreMocks.listSessionFileActivity,
+  };
+});
+
 import {
   handleGetAgents,
   handleGetConfig,
@@ -112,6 +127,9 @@ function toLocalDateKey(ts: number): string {
 // --- Tests ---
 
 afterEach(() => {
+  coreMocks.loadCachedSessionData.mockReset();
+  coreMocks.listSessionFileActivity.mockReset();
+  coreMocks.listSessionFileActivity.mockReturnValue([]);
   vi.useRealTimers();
 });
 
@@ -749,11 +767,27 @@ describe("handleGetDashboard", () => {
 
 describe("handleGetSessionData", () => {
   it("returns session data for valid agent and id", async () => {
+    coreMocks.loadCachedSessionData.mockReturnValue({
+      id: "s1",
+      slug: "claudecode/s1",
+      title: "Test Session",
+      directory: "/home/user/project",
+      time_created: 1000,
+      time_updated: 1000,
+      messages: [],
+      stats: {
+        message_count: 0,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 0,
+      },
+    });
     const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
     await handleGetSessionData(c, makeScanSource());
     expect(c.json).toHaveBeenCalled();
     const response = c.json.mock.calls[0]![0];
     expect(response.title).toBe("Test Session");
+    expect(coreMocks.loadCachedSessionData).toHaveBeenCalledWith("claudecode", "s1");
   });
 
   it("returns 400 when session ID is missing", async () => {
@@ -768,13 +802,19 @@ describe("handleGetSessionData", () => {
     expect(c.json).toHaveBeenCalledWith({ error: "Unknown agent: unknown" }, 404);
   });
 
-  it("returns 500 when agent throws", async () => {
-    const agent = new MockAgent();
-    agent.getSessionData = () => {
-      throw new Error("DB not found");
-    };
+  it("returns 404 when the SQLite session cache is missing", async () => {
+    coreMocks.loadCachedSessionData.mockReturnValue(null);
     const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
-    await handleGetSessionData(c, makeScanSource({ agents: [agent] }));
+    await handleGetSessionData(c, makeScanSource());
+    expect(c.json).toHaveBeenCalledWith({ error: "Session cache not ready" }, 404);
+  });
+
+  it("returns 500 when SQLite cache loading throws", async () => {
+    coreMocks.loadCachedSessionData.mockImplementation(() => {
+      throw new Error("DB not found");
+    });
+    const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
+    await handleGetSessionData(c, makeScanSource());
     expect(c.json).toHaveBeenCalledWith({ error: "DB not found" }, 500);
   });
 });

@@ -6,6 +6,7 @@ import type { SessionHead } from "@codesesh/core";
 
 const fsWatch = vi.hoisted(() => ({
   watch: vi.fn(),
+  existsSync: vi.fn(),
   watchers: [] as Array<{
     path: string;
     options: { recursive?: boolean };
@@ -32,10 +33,35 @@ const core = vi.hoisted(() => ({
   syncSessionSearchIndexChanges: vi.fn(),
 }));
 
+const workerThreads = vi.hoisted(() => ({
+  workers: [] as Array<{
+    url: URL;
+    workerData: any;
+    on: ReturnType<typeof vi.fn>;
+    unref: ReturnType<typeof vi.fn>;
+    terminate: ReturnType<typeof vi.fn>;
+  }>,
+  Worker: vi.fn(function (this: unknown, url: URL, options?: { workerData?: unknown }) {
+    const worker = {
+      url,
+      workerData: options?.workerData,
+      on: vi.fn(() => worker),
+      unref: vi.fn(),
+      terminate: vi.fn(async () => undefined),
+    };
+    workerThreads.workers.push(worker);
+    return worker;
+  }),
+}));
+
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
+  fsWatch.existsSync.mockImplementation((path: Parameters<typeof actual.existsSync>[0]) =>
+    String(path).endsWith("search-index-worker.js") ? true : actual.existsSync(path),
+  );
   return {
     ...actual,
+    existsSync: fsWatch.existsSync,
     watch: fsWatch.watch,
   };
 });
@@ -55,6 +81,10 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     syncSessionSearchIndexChanges: core.syncSessionSearchIndexChanges,
   };
 });
+
+vi.mock("node:worker_threads", () => ({
+  Worker: workerThreads.Worker,
+}));
 
 import { LiveScanStore, resolveAgentWatchTargets, type SessionsUpdatedEvent } from "./live-scan.js";
 import { appLogger } from "./logging.js";
@@ -146,6 +176,7 @@ describe("LiveScanStore", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fsWatch.watchers.length = 0;
+    workerThreads.workers.length = 0;
     fsWatch.watch.mockImplementation(
       (
         path: string,
@@ -240,25 +271,22 @@ describe("LiveScanStore", () => {
       "added",
     ]);
     expect(core.saveCachedSessions).not.toHaveBeenCalled();
-    expect(core.saveCachedSessionChanges).toHaveBeenCalledWith(
-      "codex",
-      [
-        { session: updated, sortIndex: 0 },
-        { session: added, sortIndex: 1 },
-      ],
-      [],
-      { session: { id: "session", sourcePath: "/tmp/s" } },
-    );
+    expect(core.saveCachedSessionChanges).not.toHaveBeenCalled();
     expect(core.syncSessionSearchIndex).not.toHaveBeenCalled();
-    expect(core.syncSessionSearchIndexChanges).toHaveBeenCalledWith(
-      "codex",
-      [
-        { session: updated, sortIndex: 0 },
-        { session: added, sortIndex: 1 },
-      ],
-      [],
-      expect.any(Function),
-    );
+    expect(core.syncSessionSearchIndexChanges).not.toHaveBeenCalled();
+    expect(workerThreads.workers[0]?.workerData.jobs).toEqual([
+      {
+        kind: "changes",
+        context: "scan.refresh",
+        agentName: "codex",
+        changes: [
+          { session: updated, sortIndex: 0 },
+          { session: added, sortIndex: 1 },
+        ],
+        removedSessionIds: [],
+        meta: { session: { id: "session", sourcePath: "/tmp/s" } },
+      },
+    ]);
     expect(events).toEqual([
       expect.objectContaining({
         type: "sessions-updated",
@@ -301,11 +329,11 @@ describe("LiveScanStore", () => {
     (store as any).pendingRefreshPathCounts.set("codex", 101);
     await (store as any).runRefresh("codex");
 
-    expect(core.syncSessionSearchIndex).toHaveBeenLastCalledWith(
-      "codex",
-      [updated],
-      expect.any(Function),
-      { isBulk: true },
+    expect(workerThreads.workers[0]?.workerData.jobs[0]).toEqual(
+      expect.objectContaining({
+        kind: "changes",
+        searchIndexOptions: { isBulk: true },
+      }),
     );
   });
 
@@ -328,9 +356,17 @@ describe("LiveScanStore", () => {
     await store.initialize();
     await (store as any).runRefresh("codex");
 
-    expect(core.saveCachedSessions).toHaveBeenCalledWith("codex", [], {
-      session: { id: "session", sourcePath: "/tmp/s" },
-    });
+    expect(core.saveCachedSessions).not.toHaveBeenCalled();
+    expect(workerThreads.workers[0]?.workerData.jobs).toEqual([
+      {
+        kind: "full",
+        context: "scan.refresh",
+        agentName: "codex",
+        sessions: [],
+        meta: { session: { id: "session", sourcePath: "/tmp/s" } },
+        saveCache: true,
+      },
+    ]);
     expect(events).toEqual([
       expect.objectContaining({
         newSessions: 0,
@@ -376,20 +412,28 @@ describe("LiveScanStore", () => {
     store.subscribe((event) => events.push(event));
 
     await store.initialize();
-    expect(fsWatch.watchers).toEqual([
-      expect.objectContaining({
-        path: codexRoot,
-        options: { recursive: true },
-      }),
-    ]);
+    expect(fsWatch.watchers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: sessionsDir,
+          options: { recursive: true },
+        }),
+        expect.objectContaining({
+          path: codexRoot,
+          options: { recursive: true },
+        }),
+      ]),
+    );
+    const sessionsWatcher = fsWatch.watchers.find((watcher) => watcher.path === sessionsDir);
+    expect(sessionsWatcher).toBeDefined();
 
     writeFileSync(sessionFile, "partial");
-    fsWatch.watchers[0]!.listener("change", join("sessions", "new.jsonl"));
+    sessionsWatcher!.listener("change", "new.jsonl");
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(150);
 
     appendFileSync(sessionFile, "\ncomplete");
-    fsWatch.watchers[0]!.listener("change", join("sessions", "new.jsonl"));
+    sessionsWatcher!.listener("change", "new.jsonl");
     await Promise.resolve();
     expect(codex.scan).not.toHaveBeenCalled();
 
