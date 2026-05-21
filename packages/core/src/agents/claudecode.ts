@@ -19,12 +19,16 @@ import { perf } from "../utils/perf.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import type { AgentScanOptions, SessionCacheMeta, ChangeCheckResult } from "./base.js";
 
-const RECENT_SESSION_REVALIDATION_WINDOW_MS = 24 * 60 * 60 * 1000;
+const HEAD_INDEX_VERSION = "claudecode-head-v1";
 
 interface SessionMeta extends SessionCacheMeta {
   id: string;
   title: string;
   sourcePath: string;
+  sourceMtimeMs: number;
+  indexPath: string | null;
+  indexMtimeMs: number | null;
+  headIndexVersion: string;
   directory: string;
   model: string | null | undefined;
   messageCount: number;
@@ -97,16 +101,7 @@ export class ClaudeCodeAgent extends BaseAgent {
 
           if (head) {
             heads.push(head);
-            this.sessionMetaMap.set(head.id, {
-              id: head.id,
-              title: head.title,
-              sourcePath: file,
-              directory: head.directory,
-              model: head.stats.total_tokens ? "unknown" : undefined,
-              messageCount: head.stats.message_count,
-              createdAt: head.time_created,
-              updatedAt: head.time_updated ?? head.time_created,
-            });
+            this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, file, projectDir));
           }
         } catch {
           // skip malformed files
@@ -202,15 +197,13 @@ export class ClaudeCodeAgent extends BaseAgent {
    * - 已有 session：statSync 检测文件修改（APFS 写文件不更新 dir mtime，必须 file-level）
    * - 新 session 检测：readdirSync 文件列表比对，比 dir statSync 快 ~10x
    */
-  checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
+  checkForChanges(_sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
     if (!this.basePath) {
       return { hasChanges: false, timestamp: Date.now() };
     }
 
     const changedIds = new Set<string>();
-    const now = Date.now();
 
-    // 检查已有 session 文件的 mtime（唯一能检测到文件内容修改的方式）
     for (const session of cachedSessions) {
       const meta = this.sessionMetaMap.get(session.id);
       if (!meta) {
@@ -218,21 +211,12 @@ export class ClaudeCodeAgent extends BaseAgent {
         continue;
       }
       try {
-        if (statSync(meta.sourcePath).mtimeMs > sinceTimestamp) {
+        if (this.hasMetaChanged(meta)) {
           changedIds.add(session.id);
           delete this.sessionsIndexCache[basename(dirname(meta.sourcePath))];
         }
       } catch {
         changedIds.add(session.id);
-      }
-    }
-
-    for (const session of cachedSessions) {
-      if (now - session.time_created > RECENT_SESSION_REVALIDATION_WINDOW_MS) continue;
-      changedIds.add(session.id);
-      const meta = this.sessionMetaMap.get(session.id);
-      if (meta) {
-        delete this.sessionsIndexCache[basename(dirname(meta.sourcePath))];
       }
     }
 
@@ -278,16 +262,7 @@ export class ClaudeCodeAgent extends BaseAgent {
             const head = getParsedSession(this.parseSessionHeadResult(file, projectDir));
             if (head) {
               sessionMap.set(head.id, head);
-              this.sessionMetaMap.set(head.id, {
-                id: head.id,
-                title: head.title,
-                sourcePath: file,
-                directory: head.directory,
-                model: head.stats.total_tokens ? "unknown" : undefined,
-                messageCount: head.stats.message_count,
-                createdAt: head.time_created,
-                updatedAt: head.time_updated ?? head.time_created,
-              });
+              this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, file, projectDir));
             }
           }
         } catch {
@@ -322,13 +297,52 @@ export class ClaudeCodeAgent extends BaseAgent {
     }
   }
 
+  private buildSessionMeta(head: SessionHead, file: string, projectDir: string): SessionMeta {
+    const indexPath = this.getSessionsIndexPath(projectDir);
+    return {
+      id: head.id,
+      title: head.title,
+      sourcePath: file,
+      sourceMtimeMs: statSync(file).mtimeMs,
+      indexPath: existsSync(indexPath) ? indexPath : null,
+      indexMtimeMs: this.getFileMtimeMs(indexPath),
+      headIndexVersion: HEAD_INDEX_VERSION,
+      directory: head.directory,
+      model: head.stats.total_tokens ? "unknown" : undefined,
+      messageCount: head.stats.message_count,
+      createdAt: head.time_created,
+      updatedAt: head.time_updated ?? head.time_created,
+    };
+  }
+
+  private hasMetaChanged(meta: SessionMeta): boolean {
+    if (meta.headIndexVersion !== HEAD_INDEX_VERSION) return true;
+    if (typeof meta.sourceMtimeMs !== "number") return true;
+    if (statSync(meta.sourcePath).mtimeMs !== meta.sourceMtimeMs) return true;
+
+    const indexPath = meta.indexPath ?? this.getSessionsIndexPath(dirname(meta.sourcePath));
+    return this.getFileMtimeMs(indexPath) !== (meta.indexMtimeMs ?? null);
+  }
+
+  private getSessionsIndexPath(projectDir: string): string {
+    return join(projectDir, "sessions-index.json");
+  }
+
+  private getFileMtimeMs(filePath: string): number | null {
+    try {
+      return statSync(filePath).mtimeMs;
+    } catch {
+      return null;
+    }
+  }
+
   private loadSessionsIndex(projectDir: string): Map<string, Record<string, unknown>> {
     const cacheKey = basename(projectDir);
     if (cacheKey in this.sessionsIndexCache) {
       return this.sessionsIndexCache[cacheKey];
     }
 
-    const indexPath = join(projectDir, "sessions-index.json");
+    const indexPath = this.getSessionsIndexPath(projectDir);
     const map = new Map<string, Record<string, unknown>>();
 
     if (existsSync(indexPath)) {

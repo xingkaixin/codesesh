@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -33,9 +33,26 @@ afterEach(() => {
 });
 
 describe("ClaudeCodeAgent cache refresh", () => {
-  it("revalidates recent sessions and invalidates sessions index cache", () => {
+  it("detects sessions-index fingerprint changes without recent-session revalidation", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-cache-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    const sessionFile = join(projectDir, "session-1.jsonl");
+    const indexFile = join(projectDir, "sessions-index.json");
+    mkdirSync(projectDir, { recursive: true });
+    writeFileSync(
+      sessionFile,
+      JSON.stringify({
+        type: "user",
+        timestamp: "2026-04-20T10:00:00Z",
+        cwd: "/tmp/project",
+        message: { role: "user", content: "hello" },
+      }),
+    );
+    writeFileSync(indexFile, JSON.stringify({ entries: [{ sessionId: "session-1" }] }));
+
     const agent = new ClaudeCodeAgent() as any;
-    agent.basePath = "/tmp/claudecode";
+    agent.basePath = basePath;
     agent.sessionsIndexCache = { project: new Map([["stale", {}]]) };
     agent.sessionMetaMap = new Map([
       [
@@ -43,7 +60,11 @@ describe("ClaudeCodeAgent cache refresh", () => {
         {
           id: "session-1",
           title: "Old",
-          sourcePath: "/tmp/claudecode/project/session-1.jsonl",
+          sourcePath: sessionFile,
+          sourceMtimeMs: statSync(sessionFile).mtimeMs,
+          indexPath: indexFile,
+          indexMtimeMs: statSync(indexFile).mtimeMs - 1,
+          headIndexVersion: "claudecode-head-v1",
           directory: "/tmp/project",
           model: null,
           messageCount: 1,
@@ -53,10 +74,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
       ],
     ]);
 
-    const now = Date.now();
-    const result = agent.checkForChanges(now, [
-      makeSession("session-1", { time_created: now - 60_000 }),
-    ]);
+    const result = agent.checkForChanges(Date.now(), [makeSession("session-1")]);
 
     expect(result.hasChanges).toBe(true);
     expect(result.changedIds).toContain("session-1");

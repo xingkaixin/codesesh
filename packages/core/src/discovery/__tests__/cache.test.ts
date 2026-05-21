@@ -8,6 +8,7 @@ import {
   getCacheInfo,
   listFileActivity,
   listCachedProjectGroups,
+  loadCachedSessionData,
   loadCachedSessions,
   parseSearchQuery,
   searchFileActivitySessions,
@@ -533,6 +534,57 @@ describe("searchSessions", () => {
       skipped: 0,
     });
     expect(searchSessions("sqlite")).toHaveLength(1);
+  });
+
+  it("loads full session data from the SQLite message cache", () => {
+    const session = {
+      ...makeSession("cached-detail"),
+      stats: {
+        message_count: 1,
+        total_input_tokens: 3,
+        total_output_tokens: 5,
+        total_cost: 0.02,
+        cost_source: "estimated",
+      },
+    };
+    syncSessionSearchIndex("codex", [session], (sessionId) => ({
+      ...makeSessionData(sessionId, "detail view reads sqlite"),
+      messages: [
+        {
+          id: "m1",
+          role: "assistant",
+          time_created: now,
+          tokens: { input: 3, output: 5 },
+          cost: 0.02,
+          cost_source: "estimated",
+          parts: [{ type: "text", text: "detail view reads sqlite" }],
+        },
+      ],
+    }));
+
+    const data = loadCachedSessionData("codex", "cached-detail");
+
+    expect(data).toMatchObject({
+      id: "cached-detail",
+      title: "Session cached-detail",
+      stats: {
+        message_count: 1,
+        total_input_tokens: 3,
+        total_output_tokens: 5,
+        total_cost: 0.02,
+        cost_source: "estimated",
+      },
+      messages: [
+        {
+          id: "m1",
+          role: "assistant",
+          tokens: { input: 3, output: 5 },
+          cost: 0.02,
+          cost_source: "estimated",
+          parts: [{ type: "text", text: "detail view reads sqlite" }],
+        },
+      ],
+    });
   });
 
   it("indexes session content and returns highlighted matches", () => {

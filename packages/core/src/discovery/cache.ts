@@ -23,6 +23,7 @@ import {
   columnExists,
   getUserVersion,
   openDb,
+  openDbReadOnly,
   runSchemaMigrations,
   setUserVersion,
   tableExists,
@@ -145,6 +146,12 @@ interface MessageBackfillRow extends DatabaseRow {
   parts_json?: string;
   subagent_id?: string | null;
   nickname?: string | null;
+}
+
+interface CachedMessageRow extends MessageBackfillRow {
+  tokens_json?: string | null;
+  cost?: number | null;
+  cost_source?: SessionHead["stats"]["cost_source"] | null;
 }
 
 interface MessageToolBackfillRow extends DatabaseRow {
@@ -344,6 +351,19 @@ function withCacheDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
 
   try {
     ensureSchema(db, cachePath);
+    return fn(db);
+  } catch {
+    return null;
+  } finally {
+    db.close();
+  }
+}
+
+function withCacheDbReadOnly<T>(fn: (db: SQLiteDatabase) => T): T | null {
+  const db = openDbReadOnly(getCachePath());
+  if (!db) return null;
+
+  try {
     return fn(db);
   } catch {
     return null;
@@ -1323,6 +1343,21 @@ function messageFromBackfillRow(row: MessageBackfillRow): Message {
   };
 }
 
+function messageFromCachedRow(row: CachedMessageRow): Message {
+  const message = messageFromBackfillRow(row);
+  const tokens = parseOptionalJson<Message["tokens"]>(row.tokens_json);
+  if (tokens) {
+    message.tokens = tokens;
+  }
+  if (row.cost != null) {
+    message.cost = Number(row.cost);
+  }
+  if (row.cost_source) {
+    message.cost_source = row.cost_source;
+  }
+  return message;
+}
+
 function backfillMessageTools(db: SQLiteDatabase): void {
   createMessageToolTables(db);
   if (!tableExists(db, "messages")) {
@@ -1968,6 +2003,95 @@ export function loadCachedSessions(agentName: string): CachedResult | null {
     }
 
     return { sessions, meta, timestamp };
+  });
+}
+
+export function loadCachedSessionData(agentName: string, sessionId: string): SessionData | null {
+  if (!hasCacheStorage()) {
+    return null;
+  }
+
+  return withCacheDbReadOnly((db) => {
+    const row = db
+      .prepare(
+        `
+          SELECT
+            session_id,
+            sort_index,
+            slug,
+            title,
+            source_path,
+            directory,
+            project_identity_kind,
+            project_identity_key,
+            project_display_name,
+            time_created,
+            time_updated,
+            message_count,
+            total_input_tokens,
+            total_output_tokens,
+            total_cache_read_tokens,
+            total_cache_create_tokens,
+            total_cost,
+            cost_source,
+            total_tokens,
+            model_usage_json,
+            smart_tags_json,
+            smart_tags_source_updated_at,
+            meta_json
+          FROM sessions
+          WHERE agent_name = ? AND session_id = ?
+        `,
+      )
+      .get(agentName, sessionId) as SessionRow | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    const messageRows = db
+      .prepare(
+        `
+          SELECT
+            message_id,
+            role,
+            time_created,
+            time_completed,
+            agent,
+            mode,
+            model,
+            provider,
+            tokens_json,
+            cost,
+            cost_source,
+            parts_json,
+            subagent_id,
+            nickname
+          FROM messages
+          WHERE agent_name = ? AND session_id = ?
+          ORDER BY message_index
+        `,
+      )
+      .all(agentName, sessionId) as CachedMessageRow[];
+
+    const head = sessionFromRow(row);
+    const fileActivityRows = db
+      .prepare(
+        `
+          SELECT agent_name, session_id, project_identity_key, path, kind, count, latest_time
+          FROM session_file_activity
+          WHERE agent_name = ? AND session_id = ?
+          ORDER BY latest_time DESC, count DESC, path
+          LIMIT 500
+        `,
+      )
+      .all(agentName, sessionId) as FileActivityRow[];
+
+    return {
+      ...head,
+      messages: messageRows.map((messageRow) => messageFromCachedRow(messageRow)),
+      file_activity: fileActivityRows.map((activityRow) => fileActivityFromRow(activityRow)),
+    };
   });
 }
 

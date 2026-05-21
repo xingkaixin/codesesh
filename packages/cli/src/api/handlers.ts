@@ -11,13 +11,14 @@ import {
   BookmarkStorageUnavailableError,
   createProjectScopeMatcher,
   deleteBookmark,
-  extractSessionFileActivity,
   getAgentInfoMap,
   classifySessionTags,
   computeIdentity,
   getSmartTagSourceTimestamp,
   importBookmarks,
+  loadCachedSessionData,
   listFileActivity,
+  listSessionFileActivity,
   listCachedProjectGroups,
   listBookmarks,
   parseSearchQuery,
@@ -610,10 +611,18 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
 
   try {
     const loadStartedAt = performance.now();
-    const data: SessionData = agent.getSessionData(sessionId);
+    const data: SessionData | null = loadCachedSessionData(agentName, sessionId);
     const loadDuration = performance.now() - loadStartedAt;
+    if (!data) {
+      appLogger.warn("api.session_data.cache_miss", {
+        agent: agentName,
+        session_id: sessionId,
+        duration_ms: Math.round(performance.now() - startedAt),
+      });
+      return c.json({ error: "Session cache not ready" }, 404);
+    }
     const tagStartedAt = performance.now();
-    const smartTags = classifySessionTags(data);
+    const smartTags = data.smart_tags ?? classifySessionTags(data);
     const tagDuration = performance.now() - tagStartedAt;
     const head = scanResult.byAgent[agentName]?.find((item) => item.id === sessionId);
     const projectIdentity =
@@ -631,12 +640,7 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
       project_identity: projectIdentity,
       smart_tags: smartTags,
       smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
-      file_activity: extractSessionFileActivity(
-        agentName,
-        sessionId,
-        projectIdentity.key,
-        data.messages,
-      ),
+      file_activity: data.file_activity ?? listSessionFileActivity(agentName, sessionId),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load session";

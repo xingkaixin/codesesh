@@ -11,7 +11,8 @@ describe("resolveAgentWatchTargets", () => {
     vi.stubEnv("CODEX_HOME", "/tmp/codex-home");
 
     expect(resolveAgentWatchTargets("codex")).toEqual([
-      { root: "/tmp/codex-home", path: join("/tmp/codex-home", "sessions") },
+      { path: join("/tmp/codex-home", "sessions") },
+      { path: join("/tmp/codex-home", "session_index.jsonl") },
     ]);
   });
 

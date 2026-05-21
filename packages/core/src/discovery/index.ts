@@ -4,6 +4,7 @@ export { filterSessions, scanSessions, scanSessionsAsync } from "./scanner.js";
 export type { ScanResult, ScanOptions } from "./scanner.js";
 export {
   loadCachedSessions,
+  loadCachedSessionData,
   saveCachedSessions,
   saveCachedSessionChanges,
   clearCache,

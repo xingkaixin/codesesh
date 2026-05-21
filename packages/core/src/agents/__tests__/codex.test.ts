@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -28,6 +28,7 @@ function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionH
 describe("CodexAgent cache refresh", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     for (const dir of tempDirs) {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -74,32 +75,47 @@ describe("CodexAgent cache refresh", () => {
     expect(result.changedIds).toContain("019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb");
   });
 
-  it("revalidates recent sessions even without file changes", () => {
+  it("detects session index fingerprint changes without recent-session revalidation", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    const codexHome = join(tempDir, ".codex");
+    const sessionsDir = join(codexHome, "sessions");
+    mkdirSync(sessionsDir, { recursive: true });
+    vi.stubEnv("CODEX_HOME", codexHome);
     const recentFile = join(
-      tempDir,
+      sessionsDir,
       "rollout-2026-04-20T10-00-00-019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa.jsonl",
     );
+    const indexFile = join(codexHome, "session_index.jsonl");
 
     writeFileSync(
       recentFile,
       '{"type":"session_meta","payload":{"timestamp":"2026-04-20T10:00:00Z"}}\n',
     );
+    writeFileSync(
+      indexFile,
+      '{"id":"019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa","thread_name":"Old title"}\n',
+    );
 
     const agent = new CodexAgent() as any;
-    agent.basePath = tempDir;
+    agent.basePath = sessionsDir;
     agent.sessionIndexCache = new Map([["stale", "stale"]]);
     agent.sessionMetaMap = new Map([
       [
         "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
-        { id: "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa", sourcePath: recentFile },
+        {
+          id: "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
+          sourcePath: recentFile,
+          sourceMtimeMs: statSync(recentFile).mtimeMs,
+          indexPath: indexFile,
+          indexMtimeMs: statSync(indexFile).mtimeMs - 1,
+          headIndexVersion: "codex-head-v1",
+        },
       ],
     ]);
     agent.listRolloutFiles = () => [recentFile];
 
-    const now = Date.now();
-    const result = agent.checkForChanges(now, [
-      makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa", { time_created: now - 60_000 }),
+    const result = agent.checkForChanges(Date.now(), [
+      makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa"),
     ]);
 
     expect(result.hasChanges).toBe(true);

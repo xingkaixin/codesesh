@@ -4,7 +4,12 @@ const isWatch = process.argv.includes("--watch");
 const bundleCore = process.env.BUNDLE_CORE === "true";
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/search-index-worker.ts", "src/smart-tag-worker.ts"],
+  entry: [
+    "src/index.ts",
+    "src/search-index-worker.ts",
+    "src/scan-refresh-worker.ts",
+    "src/smart-tag-worker.ts",
+  ],
   format: ["esm"],
   dts: false,
   clean: !isWatch,

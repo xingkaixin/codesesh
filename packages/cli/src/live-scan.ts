@@ -8,10 +8,6 @@ import {
   getCursorDataPath,
   resolveProviderRoots,
   scanSessions,
-  syncSessionSearchIndex,
-  syncSessionSearchIndexChanges,
-  saveCachedSessions,
-  saveCachedSessionChanges,
   type BaseAgent,
   type ScanResult,
   type ScanOptions,
@@ -19,7 +15,8 @@ import {
   type SessionHeadChange,
   type SessionHead,
 } from "@codesesh/core";
-import type { SearchIndexWorkerMessage } from "./search-index-worker.js";
+import type { SearchIndexWorkerJob, SearchIndexWorkerMessage } from "./search-index-worker.js";
+import type { ScanRefreshWorkerMessage } from "./scan-refresh-worker.js";
 import { appLogger, logSearchIndexSync } from "./logging.js";
 
 export interface SessionsUpdatedEvent {
@@ -293,7 +290,10 @@ export function resolveAgentWatchTargets(agentName: string): WatchTarget[] {
         { path: "data/claudecode" },
       ];
     case "codex":
-      return [{ root: roots.codexRoot, path: join(roots.codexRoot, "sessions") }];
+      return [
+        { path: join(roots.codexRoot, "sessions") },
+        { path: join(roots.codexRoot, "session_index.jsonl") },
+      ];
     case "cursor":
       return cursorDataPath
         ? [
@@ -336,6 +336,7 @@ export class LiveScanStore {
   private pendingEventTimer: NodeJS.Timeout | null = null;
   private initialSearchIndexTimer: NodeJS.Timeout | null = null;
   private searchIndexWorker: Worker | null = null;
+  private pendingSearchIndexJobs: SearchIndexWorkerJob[] = [];
 
   constructor(
     private readonly watchEnabled = true,
@@ -358,10 +359,6 @@ export class LiveScanStore {
       useCache: this.scanOptions.useCache ?? true,
       smartRefresh: false,
       smartTagWorkerUrl: this.getSmartTagWorkerUrl() ?? undefined,
-      writeCache:
-        this.startupScanOptions.from != null || this.startupScanOptions.to != null
-          ? false
-          : undefined,
       includeSmartTags:
         this.startupScanOptions.from != null || this.startupScanOptions.to != null
           ? false
@@ -440,6 +437,7 @@ export class LiveScanStore {
       await this.searchIndexWorker.terminate();
       this.searchIndexWorker = null;
     }
+    this.pendingSearchIndexJobs = [];
     this.pendingEvent = null;
 
     await Promise.all(this.watchers.map((watcher) => watcher.close()));
@@ -502,8 +500,85 @@ export class LiveScanStore {
     return workerUrl;
   }
 
+  private getScanRefreshWorkerUrl(): URL | null {
+    const workerUrl = new URL("./scan-refresh-worker.js", import.meta.url);
+    if (workerUrl.protocol === "file:" && !existsSync(fileURLToPath(workerUrl))) {
+      return null;
+    }
+    return workerUrl;
+  }
+
+  private scanAgentInWorker(
+    agent: BaseAgent,
+    previousSessions: SessionHead[],
+    changedIds: string[] | null,
+  ): Promise<{ sessions: SessionHead[]; meta: Record<string, SessionCacheMeta> }> | null {
+    const workerUrl = this.getScanRefreshWorkerUrl();
+    if (!workerUrl) return null;
+
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(workerUrl, {
+        workerData: {
+          agentName: agent.name,
+          previousSessions,
+          changedIds,
+          startupScanOptions: this.startupScanOptions,
+          meta: buildAgentCacheMeta(agent),
+        },
+      });
+      worker.unref();
+
+      let settled = false;
+      const finish = (callback: () => void) => {
+        if (settled) return;
+        settled = true;
+        void worker.terminate();
+        callback();
+      };
+
+      worker.once("message", (message: ScanRefreshWorkerMessage) => {
+        if (message.type === "done") {
+          finish(() => resolve({ sessions: message.sessions, meta: message.meta }));
+          return;
+        }
+        finish(() => reject(new Error(message.error)));
+      });
+      worker.once("error", (error) => {
+        finish(() => reject(error));
+      });
+      worker.once("exit", (code) => {
+        if (!settled && code !== 0) {
+          finish(() => reject(new Error(`Scan refresh worker exited with code ${code}`)));
+        }
+      });
+    });
+  }
+
   private startSearchIndexWorker(context: string): void {
-    if (this.searchIndexWorker) return;
+    this.enqueueSearchIndexJobs(
+      context,
+      this.agents.map((agent) => ({
+        kind: "full",
+        context,
+        agentName: agent.name,
+        sessions: this.byAgent[agent.name] ?? [],
+        meta: buildAgentCacheMeta(agent),
+      })),
+    );
+  }
+
+  private enqueueSearchIndexJobs(context: string, jobs: SearchIndexWorkerJob[]): void {
+    if (jobs.length === 0) return;
+
+    if (this.searchIndexWorker) {
+      this.pendingSearchIndexJobs.push(...jobs);
+      appLogger.debug("search_index.worker_queued", {
+        context,
+        jobs: jobs.length,
+        pending_jobs: this.pendingSearchIndexJobs.length,
+      });
+      return;
+    }
 
     const workerUrl = this.getSearchIndexWorkerUrl();
     if (!workerUrl) {
@@ -514,11 +589,10 @@ export class LiveScanStore {
     const worker = new Worker(workerUrl, {
       workerData: {
         context,
-        agentNames: this.agents.map((agent) => agent.name),
-        sessionsByAgent: this.byAgent,
-        metaByAgent: Object.fromEntries(
-          this.agents.map((agent) => [agent.name, buildAgentCacheMeta(agent)]),
-        ),
+        jobs,
+        agentNames: [],
+        sessionsByAgent: {},
+        metaByAgent: {},
       },
     });
     worker.unref();
@@ -541,6 +615,11 @@ export class LiveScanStore {
       this.searchIndexWorker = null;
       if (code !== 0) {
         appLogger.warn("search_index.worker_exit", { context, code });
+      }
+      if (this.pendingSearchIndexJobs.length > 0) {
+        const pendingJobs = this.pendingSearchIndexJobs;
+        this.pendingSearchIndexJobs = [];
+        this.enqueueSearchIndexJobs("search_index.worker.drain", pendingJobs);
       }
     });
   }
@@ -874,14 +953,27 @@ export class LiveScanStore {
     let nextSessions = previousSessions;
     let preciseChangedIds: string[] | null = null;
     let usedIncrementalScan = false;
+    let availabilityDuration = 0;
+    let checkDuration = 0;
+    let scanDuration = 0;
+    let filterDuration = 0;
+    let diffDuration = 0;
+    let persistDuration = 0;
+    let searchIndexDuration = 0;
 
-    if (!agent.isAvailable()) {
+    const availabilityStartedAt = performance.now();
+    const isAvailable = agent.isAvailable();
+    availabilityDuration = performance.now() - availabilityStartedAt;
+
+    if (!isAvailable) {
       nextSessions = [];
       this.refreshTimestamps.set(agentName, Date.now());
     } else if (previousSessions.length > 0 && agent.checkForChanges && agent.incrementalScan) {
+      const checkStartedAt = performance.now();
       const checkResult = await Promise.resolve(
         agent.checkForChanges(this.refreshTimestamps.get(agentName) ?? 0, previousSessions),
       );
+      checkDuration = performance.now() - checkStartedAt;
 
       this.refreshTimestamps.set(agentName, checkResult.timestamp);
       if (!checkResult.hasChanges) {
@@ -894,59 +986,83 @@ export class LiveScanStore {
 
       preciseChangedIds = checkResult.changedIds ?? null;
       usedIncrementalScan = Array.isArray(checkResult.changedIds);
-      nextSessions = await Promise.resolve(
-        agent.incrementalScan(previousSessions, checkResult.changedIds ?? []),
+      const scanStartedAt = performance.now();
+      const workerResult = this.scanAgentInWorker(
+        agent,
+        previousSessions,
+        checkResult.changedIds ?? [],
       );
+      if (workerResult) {
+        const result = await workerResult;
+        nextSessions = result.sessions;
+        agent.setSessionMetaMap?.(new Map(Object.entries(result.meta)));
+      } else {
+        nextSessions = await Promise.resolve(
+          agent.incrementalScan(previousSessions, checkResult.changedIds ?? []),
+        );
+      }
+      scanDuration = performance.now() - scanStartedAt;
     } else {
-      nextSessions = await Promise.resolve(agent.scan(this.startupScanOptions));
+      const scanStartedAt = performance.now();
+      const workerResult = this.scanAgentInWorker(agent, previousSessions, null);
+      if (workerResult) {
+        const result = await workerResult;
+        nextSessions = result.sessions;
+        agent.setSessionMetaMap?.(new Map(Object.entries(result.meta)));
+      } else {
+        nextSessions = await Promise.resolve(agent.scan(this.startupScanOptions));
+      }
+      scanDuration = performance.now() - scanStartedAt;
       this.refreshTimestamps.set(agentName, Date.now());
     }
 
+    const filterStartedAt = performance.now();
     nextSessions = this.applyFilters(nextSessions);
+    filterDuration = performance.now() - filterStartedAt;
+    const diffStartedAt = performance.now();
     const diff = buildRefreshDiff(
       agentName,
       previousSessions,
       nextSessions,
       preciseChangedIds ?? [],
     );
+    diffDuration = performance.now() - diffStartedAt;
     const searchIndexOptions =
       pendingPathCount >= SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD ? { isBulk: true } : undefined;
-    const canPersistIncrementally =
-      usedIncrementalScan && !searchIndexOptions && !this.hasStartupWindow();
+    const canPersistIncrementally = usedIncrementalScan;
     const changedSessionIds = canPersistIncrementally
       ? new Set(diff.changedSessions.map(({ session }) => session.id))
       : undefined;
     const cacheMeta = buildAgentCacheMeta(agent, changedSessionIds);
-    if (!this.hasStartupWindow()) {
-      if (canPersistIncrementally) {
-        saveCachedSessionChanges(
+    const persistStartedAt = performance.now();
+    const persistentJob: SearchIndexWorkerJob | null = canPersistIncrementally
+      ? {
+          kind: "changes",
+          context: "scan.refresh",
           agentName,
-          diff.changedSessions,
-          diff.removedSessionIds,
-          cacheMeta,
-        );
-      } else {
-        saveCachedSessions(agentName, nextSessions, cacheMeta);
-      }
-    }
-    const syncResult = canPersistIncrementally
-      ? syncSessionSearchIndexChanges(
-          agentName,
-          diff.changedSessions,
-          diff.removedSessionIds,
-          (sessionId) => agent.getSessionData(sessionId),
-        )
-      : searchIndexOptions
-        ? syncSessionSearchIndex(
+          changes: diff.changedSessions,
+          removedSessionIds: diff.removedSessionIds,
+          meta: cacheMeta,
+          ...(searchIndexOptions ? { searchIndexOptions } : {}),
+        }
+      : !this.hasStartupWindow()
+        ? {
+            kind: "full",
+            context: "scan.refresh",
             agentName,
-            nextSessions,
-            (sessionId) => agent.getSessionData(sessionId),
-            searchIndexOptions,
-          )
-        : syncSessionSearchIndex(agentName, nextSessions, (sessionId) =>
-            agent.getSessionData(sessionId),
-          );
-    logSearchIndexSync("scan.refresh", syncResult, { pending_paths: pendingPathCount });
+            sessions: nextSessions,
+            meta: buildAgentCacheMeta(agent),
+            saveCache: true,
+            ...(searchIndexOptions ? { searchIndexOptions } : {}),
+          }
+        : null;
+    if (persistentJob) {
+      this.enqueueSearchIndexJobs("scan.refresh", [persistentJob]);
+    }
+    persistDuration = performance.now() - persistStartedAt;
+    const searchIndexStartedAt = performance.now();
+    searchIndexDuration = performance.now() - searchIndexStartedAt;
+    logSearchIndexSync("scan.refresh", null, { pending_paths: pendingPathCount });
 
     const event = diff.event;
     this.byAgent[agentName] = sortSessions(nextSessions);
@@ -964,11 +1080,15 @@ export class LiveScanStore {
       updated_sessions: event?.updatedSessions ?? 0,
       removed_sessions: event?.removedSessions ?? 0,
       pending_paths: pendingPathCount,
-      search_index_mode: syncResult?.mode,
-      search_index_rebuild_duration_ms:
-        syncResult?.rebuildDurationMs == null
-          ? undefined
-          : Math.round(syncResult.rebuildDurationMs),
+      availability_ms: Math.round(availabilityDuration),
+      check_ms: Math.round(checkDuration),
+      scan_ms: Math.round(scanDuration),
+      filter_ms: Math.round(filterDuration),
+      diff_ms: Math.round(diffDuration),
+      persist_ms: Math.round(persistDuration),
+      search_index_ms: Math.round(searchIndexDuration),
+      persistent_index_worker_job: persistentJob?.kind,
+      persistent_index_skipped: !persistentJob || undefined,
     });
   }
 }
