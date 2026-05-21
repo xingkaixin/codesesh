@@ -357,6 +357,7 @@ export class LiveScanStore {
       ...this.startupScanOptions,
       useCache: this.scanOptions.useCache ?? true,
       smartRefresh: false,
+      smartTagWorkerUrl: this.getSmartTagWorkerUrl() ?? undefined,
       writeCache:
         this.startupScanOptions.from != null || this.startupScanOptions.to != null
           ? false
@@ -373,6 +374,21 @@ export class LiveScanStore {
       agents: Object.fromEntries(
         Object.entries(this.byAgent).map(([key, value]) => [key, value.length]),
       ),
+      agent_timings: initialResult.timings
+        ? Object.fromEntries(
+            Object.entries(initialResult.timings).map(([name, t]) => [
+              name,
+              {
+                total_ms: Math.round(t.total),
+                cache_load_ms: t.cacheLoad != null ? Math.round(t.cacheLoad) : undefined,
+                check_changes_ms: t.checkChanges != null ? Math.round(t.checkChanges) : undefined,
+                scan_ms: t.scan != null ? Math.round(t.scan) : undefined,
+                identity_ms: t.identity != null ? Math.round(t.identity) : undefined,
+                tags_ms: t.tags != null ? Math.round(t.tags) : undefined,
+              },
+            ]),
+          )
+        : undefined,
     });
     if (this.watchEnabled) {
       this.startWatching();
@@ -472,6 +488,14 @@ export class LiveScanStore {
 
   private getSearchIndexWorkerUrl(): URL | null {
     const workerUrl = new URL("./search-index-worker.js", import.meta.url);
+    if (workerUrl.protocol === "file:" && !existsSync(fileURLToPath(workerUrl))) {
+      return null;
+    }
+    return workerUrl;
+  }
+
+  private getSmartTagWorkerUrl(): URL | null {
+    const workerUrl = new URL("./smart-tag-worker.js", import.meta.url);
     if (workerUrl.protocol === "file:" && !existsSync(fileURLToPath(workerUrl))) {
       return null;
     }

@@ -37,6 +37,7 @@ const PROPOSED_PLAN_PATTERN = /<proposed_plan>\s*([\s\S]*?)\s*<\/proposed_plan>/
 const PLAN_APPROVAL_PREFIX = "PLEASE IMPLEMENT THIS PLAN";
 const SUBAGENT_NOTIFICATION_PATTERN =
   /<subagent_notification>\s*([\s\S]*?)\s*<\/subagent_notification>/;
+const RECENT_SESSION_REVALIDATION_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const DEVELOPER_LIKE_USER_MARKERS = [
   "agents.md instructions for",
@@ -58,8 +59,6 @@ const CODEX_TOOL_TITLE_MAP: Record<string, string> = {
   spawn_agent: "subagent",
   subagent: "subagent",
 };
-
-const RECENT_SESSION_REVALIDATION_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Session ID extraction
@@ -346,33 +345,25 @@ export class CodexAgent extends BaseAgent {
       return { hasChanges: false, timestamp: Date.now() };
     }
 
-    const now = Date.now();
-    const changedIds = new Set<string>();
     const currentFiles = this.listRolloutFiles();
     const currentIds = new Set(currentFiles.map((file) => extractSessionId(file)));
     const cachedIds = new Set(cachedSessions.map((session) => session.id));
-    const recentIds = cachedSessions
-      .filter((session) => now - session.time_created <= RECENT_SESSION_REVALIDATION_WINDOW_MS)
-      .map((session) => session.id);
-
-    for (const sessionId of recentIds) {
-      changedIds.add(sessionId);
-    }
+    const changedIds = new Set<string>();
 
     for (const session of cachedSessions) {
-      const meta = this.sessionMetaMap.get(session.id);
       if (!currentIds.has(session.id)) {
         changedIds.add(session.id);
         continue;
       }
+
+      const meta = this.sessionMetaMap.get(session.id);
       if (!meta) {
         changedIds.add(session.id);
         continue;
       }
 
       try {
-        const stat = statSync(meta.sourcePath);
-        if (stat.mtimeMs > sinceTimestamp) {
+        if (statSync(meta.sourcePath).mtimeMs > sinceTimestamp) {
           changedIds.add(session.id);
         }
       } catch {
@@ -380,8 +371,14 @@ export class CodexAgent extends BaseAgent {
       }
     }
 
+    const now = Date.now();
+    for (const session of cachedSessions) {
+      if (now - session.time_created > RECENT_SESSION_REVALIDATION_WINDOW_MS) continue;
+      changedIds.add(session.id);
+    }
+
     const hasAddedSessions = currentFiles.some((file) => !cachedIds.has(extractSessionId(file)));
-    if (recentIds.length > 0) {
+    if (hasAddedSessions || changedIds.size > 0) {
       this.sessionIndexCache.clear();
     }
 
@@ -630,13 +627,18 @@ export class CodexAgent extends BaseAgent {
   private walkDirForRolloutFiles(dir: string, options?: AgentScanOptions): string[] {
     const files: string[] = [];
     try {
-      for (const entry of readdirSync(dir)) {
-        const fullPath = join(dir, entry);
-        const stat = statSync(fullPath);
-        if (stat.isDirectory()) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = join(dir, entry.name);
+        if (entry.isDirectory()) {
           files.push(...this.walkDirForRolloutFiles(fullPath, options));
-        } else if (entry.endsWith(".jsonl") && entry.startsWith("rollout-")) {
-          if (!matchesScanWindow(stat.mtimeMs, options)) continue;
+        } else if (entry.name.endsWith(".jsonl") && entry.name.startsWith("rollout-")) {
+          if (options?.from != null || options?.to != null) {
+            try {
+              if (!matchesScanWindow(statSync(fullPath).mtimeMs, options)) continue;
+            } catch {
+              continue;
+            }
+          }
           files.push(fullPath);
         }
       }
