@@ -31,12 +31,15 @@ export interface ScanOptions {
   includeSmartTags?: boolean;
   /** Prefer lightweight metadata over complete statistics when the UI needs a fast first paint */
   fast?: boolean;
+  /** URL to the compiled smart-tag worker file; omit to use synchronous fallback */
+  smartTagWorkerUrl?: URL | string;
 }
 
 export interface ScanResult {
   sessions: SessionHead[];
   byAgent: Record<string, SessionHead[]>;
   agents: BaseAgent[];
+  timings?: Record<string, AgentScanTiming>;
 }
 
 /** 扫描状态更新回调 */
@@ -89,11 +92,21 @@ export function filterSessions(sessions: SessionHead[], options: ScanOptions): S
   return result;
 }
 
+export interface AgentScanTiming {
+  cacheLoad?: number;
+  checkChanges?: number;
+  scan?: number;
+  identity?: number;
+  tags?: number;
+  total: number;
+}
+
 interface AgentScanResult {
   agent: BaseAgent;
   heads: SessionHead[];
   fromCache?: boolean;
   refreshed?: boolean;
+  timing?: AgentScanTiming;
 }
 
 interface SmartTagWorkerResult {
@@ -162,7 +175,7 @@ function saveCachedSessionDiff(
 }
 
 function getSmartTagWorkerCount(sessionCount: number): number {
-  if (sessionCount < 8) return 1;
+  if (sessionCount < 50) return 1;
   return Math.min(sessionCount, Math.max(1, Math.min(4, availableParallelism() - 1)));
 }
 
@@ -205,61 +218,16 @@ function ensureSessionTagsSync(
 }
 
 async function classifySessionTagsInWorker(
+  workerUrl: URL | string,
   agentName: string,
   sessionIds: string[],
+  meta: Record<string, SessionCacheMeta>,
 ): Promise<SmartTagWorkerResult[]> {
   return new Promise((resolveWorker, rejectWorker) => {
-    const worker = new Worker(
-      `
-        const { parentPort, workerData } = require("node:worker_threads");
-
-        (async () => {
-          const {
-            createRegisteredAgents,
-            classifySessionTags,
-            getSmartTagSourceTimestamp,
-          } = await import("@codesesh/core");
-
-          const agent = createRegisteredAgents().find((item) => item.name === workerData.agentName);
-          const results = [];
-
-          if (agent) {
-            for (const sessionId of workerData.sessionIds) {
-              try {
-                const data = agent.getSessionData(sessionId);
-                results.push({
-                  id: sessionId,
-                  tags: classifySessionTags(data),
-                  sourceUpdatedAt: getSmartTagSourceTimestamp(data),
-                });
-              } catch (error) {
-                results.push({
-                  id: sessionId,
-                  error: error instanceof Error ? error.message : String(error),
-                });
-              }
-            }
-          }
-
-          parentPort?.postMessage(results);
-        })().catch((error) => {
-          parentPort?.postMessage([
-            {
-              id: "",
-              error: error instanceof Error ? error.message : String(error),
-            },
-          ]);
-        });
-      `,
-      {
-        eval: true,
-        workerData: { agentName, sessionIds },
-      },
-    );
-
-    worker.once("message", (results: SmartTagWorkerResult[]) => {
-      resolveWorker(results);
+    const worker = new Worker(workerUrl, {
+      workerData: { agentName, sessionIds, meta },
     });
+    worker.once("message", (results: SmartTagWorkerResult[]) => resolveWorker(results));
     worker.once("error", rejectWorker);
     worker.once("exit", (code) => {
       if (code !== 0) {
@@ -272,6 +240,7 @@ async function classifySessionTagsInWorker(
 async function ensureSessionTags(
   agent: BaseAgent,
   sessions: SessionHead[],
+  workerUrl?: URL | string,
 ): Promise<{ sessions: SessionHead[]; changed: boolean }> {
   const staleSessions = sessions.filter((session) => {
     const sourceUpdatedAt = session.time_updated ?? session.time_created;
@@ -283,18 +252,21 @@ async function ensureSessionTags(
     return { sessions, changed: false };
   }
 
-  const workerCount = getSmartTagWorkerCount(staleSessions.length);
+  const workerCount = workerUrl ? getSmartTagWorkerCount(staleSessions.length) : 1;
   if (workerCount <= 1) {
     return ensureSessionTagsSync(agent, sessions);
   }
 
+  const meta = buildAgentCacheMeta(agent);
   try {
     const results = (
       await Promise.all(
         chunkSessions(
           staleSessions.map((session) => session.id),
           workerCount,
-        ).map((sessionIds) => classifySessionTagsInWorker(agent.name, sessionIds)),
+        ).map((sessionIds) =>
+          classifySessionTagsInWorker(workerUrl!, agent.name, sessionIds, meta),
+        ),
       )
     ).flat();
     const resultMap = new Map(results.filter((item) => item.tags).map((item) => [item.id, item]));
@@ -327,12 +299,17 @@ async function scanAgentSmart(
   options: ScanOptions,
   onProgress?: (progress: ScanProgress) => void,
 ): Promise<AgentScanResult | null> {
+  const agentStart = performance.now();
+  const timing: AgentScanTiming = { total: 0 };
   const useCache = options.useCache ?? true;
   const canValidateCache = Boolean(agent.checkForChanges && agent.incrementalScan);
 
   // 1. 尝试加载缓存
   if (useCache) {
+    const t0 = performance.now();
     const cached = loadCachedSessions(agent.name);
+    timing.cacheLoad = performance.now() - t0;
+
     if (cached !== null) {
       // 恢复元数据
       if (agent.setSessionMetaMap) {
@@ -358,9 +335,11 @@ async function scanAgentSmart(
       if (canValidateCache) {
         onProgress?.({ agent: agent.name, phase: "checking" });
 
+        const t1 = performance.now();
         const checkResult = await Promise.resolve(
           agent.checkForChanges!(cached.timestamp, cached.sessions),
         );
+        timing.checkChanges = performance.now() - t1;
 
         if (checkResult.hasChanges) {
           onProgress?.({
@@ -369,14 +348,22 @@ async function scanAgentSmart(
             changedCount: checkResult.changedIds?.length,
           });
 
+          const t2 = performance.now();
           const updatedSessions = await Promise.resolve(
             agent.incrementalScan!(cached.sessions, checkResult.changedIds || []),
           );
+          timing.scan = performance.now() - t2;
+
+          const t3 = performance.now();
           const sessionsWithIdentity = attachProjectIdentities(updatedSessions);
+          timing.identity = performance.now() - t3;
+
+          const t4 = performance.now();
           const tagged =
             options.includeSmartTags === false
               ? { sessions: sessionsWithIdentity, changed: false }
-              : await ensureSessionTags(agent, sessionsWithIdentity);
+              : await ensureSessionTags(agent, sessionsWithIdentity, options.smartTagWorkerUrl);
+          timing.tags = performance.now() - t4;
 
           if (options.writeCache !== false && options.from == null && options.to == null) {
             saveCachedSessionDiff(
@@ -394,17 +381,24 @@ async function scanAgentSmart(
           });
 
           const filtered = filterSessions(tagged.sessions, options);
-          return { agent, heads: filtered, fromCache: true, refreshed: true };
+          timing.total = performance.now() - agentStart;
+          return { agent, heads: filtered, fromCache: true, refreshed: true, timing };
         }
 
         onProgress?.({ agent: agent.name, phase: "complete", newCount: cached.sessions.length });
       }
 
+      const t3 = performance.now();
       const cachedWithIdentity = attachProjectIdentities(cached.sessions);
+      timing.identity = performance.now() - t3;
+
+      const t4 = performance.now();
       const tagged =
         options.includeSmartTags === false
           ? { sessions: cachedWithIdentity, changed: false }
-          : await ensureSessionTags(agent, cachedWithIdentity);
+          : await ensureSessionTags(agent, cachedWithIdentity, options.smartTagWorkerUrl);
+      timing.tags = performance.now() - t4;
+
       if (
         tagged.changed &&
         options.writeCache !== false &&
@@ -415,12 +409,13 @@ async function scanAgentSmart(
       }
 
       const filtered = filterSessions(tagged.sessions, options);
-      return { agent, heads: filtered, fromCache: true };
+      timing.total = performance.now() - agentStart;
+      return { agent, heads: filtered, fromCache: true, timing };
     }
   }
 
   // 无缓存或缓存失效，执行完整扫描
-  return scanAgentFull(agent, options, onProgress);
+  return scanAgentFull(agent, options, onProgress, timing, agentStart);
 }
 
 /**
@@ -430,6 +425,8 @@ async function scanAgentFull(
   agent: BaseAgent,
   options: ScanOptions,
   onProgress?: (progress: ScanProgress) => void,
+  timing: AgentScanTiming = { total: 0 },
+  agentStart = performance.now(),
 ): Promise<AgentScanResult | null> {
   const availMarker = perf.start(`agent:${agent.name}:isAvailable`);
   const isAvail = agent.isAvailable();
@@ -441,13 +438,21 @@ async function scanAgentFull(
 
   try {
     const scanMarker = perf.start(`agent:${agent.name}:scan`);
+    const t0 = performance.now();
     const heads = agent.scan({ from: options.from, to: options.to, fast: options.fast });
     perf.end(scanMarker);
+    timing.scan = performance.now() - t0;
+
+    const t1 = performance.now();
     const headsWithIdentity = attachProjectIdentities(heads);
+    timing.identity = performance.now() - t1;
+
+    const t2 = performance.now();
     const tagged =
       options.includeSmartTags === false
         ? { sessions: headsWithIdentity, changed: false }
-        : await ensureSessionTags(agent, headsWithIdentity);
+        : await ensureSessionTags(agent, headsWithIdentity, options.smartTagWorkerUrl);
+    timing.tags = performance.now() - t2;
 
     // 收集元数据
     const meta = buildAgentCacheMeta(agent);
@@ -460,7 +465,8 @@ async function scanAgentFull(
     onProgress?.({ agent: agent.name, phase: "complete", newCount: tagged.sessions.length });
 
     const filtered = filterSessions(tagged.sessions, options);
-    return { agent, heads: filtered, fromCache: false };
+    timing.total = performance.now() - agentStart;
+    return { agent, heads: filtered, fromCache: false, timing };
   } catch (err) {
     console.error(`Error scanning ${agent.name}:`, err);
     return { agent, heads: [], fromCache: false };
@@ -498,16 +504,20 @@ export async function scanSessions(
   const results = await Promise.all(scanPromises);
 
   // 处理结果
+  const timings: Record<string, AgentScanTiming> = {};
   for (const result of results) {
     if (result) {
       availableAgents.push(result.agent);
       byAgent[result.agent.name] = result.heads;
       allSessions.push(...result.heads);
+      if (result.timing) {
+        timings[result.agent.name] = result.timing;
+      }
     }
   }
 
   perf.end(scanMarker);
-  return { sessions: allSessions, byAgent, agents: availableAgents };
+  return { sessions: allSessions, byAgent, agents: availableAgents, timings };
 }
 
 /**

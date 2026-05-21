@@ -199,65 +199,65 @@ export class ClaudeCodeAgent extends BaseAgent {
 
   /**
    * 检测文件系统变更
-   * 通过比较文件修改时间判断是否有新内容
+   * - 已有 session：statSync 检测文件修改（APFS 写文件不更新 dir mtime，必须 file-level）
+   * - 新 session 检测：readdirSync 文件列表比对，比 dir statSync 快 ~10x
    */
   checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
     if (!this.basePath) {
       return { hasChanges: false, timestamp: Date.now() };
     }
 
-    const now = Date.now();
     const changedIds = new Set<string>();
-    const recentSessions = cachedSessions.filter(
-      (session) => now - session.time_created <= RECENT_SESSION_REVALIDATION_WINDOW_MS,
-    );
+    const now = Date.now();
 
-    for (const session of recentSessions) {
-      changedIds.add(session.id);
-      const meta = this.sessionMetaMap.get(session.id);
-      if (!meta) continue;
-      delete this.sessionsIndexCache[basename(dirname(meta.sourcePath))];
-    }
-
+    // 检查已有 session 文件的 mtime（唯一能检测到文件内容修改的方式）
     for (const session of cachedSessions) {
       const meta = this.sessionMetaMap.get(session.id);
       if (!meta) {
         changedIds.add(session.id);
         continue;
       }
-
       try {
-        const stat = statSync(meta.sourcePath);
-        // 如果文件修改时间晚于缓存时间，说明有变更
-        if (stat.mtimeMs > sinceTimestamp) {
+        if (statSync(meta.sourcePath).mtimeMs > sinceTimestamp) {
           changedIds.add(session.id);
+          delete this.sessionsIndexCache[basename(dirname(meta.sourcePath))];
         }
       } catch {
-        // 文件可能被删除，也视为变更
         changedIds.add(session.id);
       }
     }
 
-    // 检查是否有新文件（简单实现：比较缓存数量和实际文件数量）
-    try {
-      let totalFiles = 0;
-      for (const dir of this.listProjectDirs()) {
-        totalFiles += this.listJsonlFiles(dir).length;
+    for (const session of cachedSessions) {
+      if (now - session.time_created > RECENT_SESSION_REVALIDATION_WINDOW_MS) continue;
+      changedIds.add(session.id);
+      const meta = this.sessionMetaMap.get(session.id);
+      if (meta) {
+        delete this.sessionsIndexCache[basename(dirname(meta.sourcePath))];
       }
-      const hasNewFiles = totalFiles > cachedSessions.length;
-
-      return {
-        hasChanges: changedIds.size > 0 || hasNewFiles,
-        changedIds: Array.from(changedIds),
-        timestamp: Date.now(),
-      };
-    } catch {
-      return {
-        hasChanges: changedIds.size > 0,
-        changedIds: Array.from(changedIds),
-        timestamp: Date.now(),
-      };
     }
+
+    // 用 readdirSync 比对文件列表检测新 session（比 dir statSync 快 ~10x）
+    const cachedIdSet = new Set(cachedSessions.map((s) => s.id));
+    let hasNewFiles = false;
+    try {
+      outer: for (const dir of this.listProjectDirs()) {
+        try {
+          for (const file of this.listJsonlFiles(dir)) {
+            if (!cachedIdSet.has(basename(file, ".jsonl"))) {
+              hasNewFiles = true;
+              delete this.sessionsIndexCache[basename(dir)];
+              break outer;
+            }
+          }
+        } catch {}
+      }
+    } catch {}
+
+    return {
+      hasChanges: changedIds.size > 0 || hasNewFiles,
+      changedIds: Array.from(changedIds),
+      timestamp: Date.now(),
+    };
   }
 
   /**
@@ -266,44 +266,15 @@ export class ClaudeCodeAgent extends BaseAgent {
   incrementalScan(cachedSessions: SessionHead[], changedIds: string[]): SessionHead[] {
     if (!this.basePath) return cachedSessions;
 
-    // 创建缓存会话的 Map 便于更新
     const sessionMap = new Map(cachedSessions.map((s) => [s.id, s]));
+    const changedSet = new Set(changedIds);
 
-    // 重新扫描变更的会话
+    // 单次遍历：变更的 session 重新解析，新出现的 session 直接添加
     for (const projectDir of this.listProjectDirs()) {
       for (const file of this.listJsonlFiles(projectDir)) {
         try {
           const sessionId = basename(file, ".jsonl");
-
-          // 只处理变更的会话
-          if (changedIds.includes(sessionId)) {
-            const head = getParsedSession(this.parseSessionHeadResult(file, projectDir));
-            if (head) {
-              sessionMap.set(head.id, head);
-              this.sessionMetaMap.set(head.id, {
-                id: head.id,
-                title: head.title,
-                sourcePath: file,
-                directory: head.directory,
-                model: head.stats.total_tokens ? "unknown" : undefined,
-                messageCount: head.stats.message_count,
-                createdAt: head.time_created,
-                updatedAt: head.time_updated ?? head.time_created,
-              });
-            }
-          }
-        } catch {
-          // skip malformed files
-        }
-      }
-    }
-
-    // 检查是否有新文件需要添加
-    for (const projectDir of this.listProjectDirs()) {
-      for (const file of this.listJsonlFiles(projectDir)) {
-        try {
-          const sessionId = basename(file, ".jsonl");
-          if (!sessionMap.has(sessionId)) {
+          if (changedSet.has(sessionId) || !sessionMap.has(sessionId)) {
             const head = getParsedSession(this.parseSessionHeadResult(file, projectDir));
             if (head) {
               sessionMap.set(head.id, head);
