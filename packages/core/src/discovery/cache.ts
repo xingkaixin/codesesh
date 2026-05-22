@@ -3275,11 +3275,10 @@ export function listFileActivity(options: FileActivityOptions = {}): FileActivit
   }
 
   const filters = buildFileActivityWhere(options);
-  const rows = withCacheDb(
-    (db) =>
-      db
-        .prepare(
-          `
+  const queryRows = (db: SQLiteDatabase) =>
+    db
+      .prepare(
+        `
           SELECT
             fa.agent_name,
             fa.session_id,
@@ -3309,9 +3308,13 @@ export function listFileActivity(options: FileActivityOptions = {}): FileActivit
           ORDER BY fa.latest_time DESC, fa.count DESC, fa.path
           LIMIT ?
         `,
-        )
-        .all(...filters.params, options.limit ?? 50) as FileActivityRow[],
-  );
+      )
+      .all(...filters.params, options.limit ?? 50) as FileActivityRow[];
+
+  let rows = withCacheDbReadOnly(queryRows);
+  if (rows == null && options.path) {
+    rows = withCacheDb(queryRows);
+  }
 
   return (rows ?? []).map((row) => ({
     ...fileActivityFromRow(row),
