@@ -26,6 +26,9 @@ const core = vi.hoisted(() => ({
     kimiRoot: "/tmp/kimi",
     opencodeRoot: "/tmp/opencode",
   })),
+  isAgentCacheInitialized: vi.fn(),
+  loadCachedSessions: vi.fn(),
+  markAgentCacheInitialized: vi.fn(),
   scanSessions: vi.fn(),
   saveCachedSessions: vi.fn(),
   saveCachedSessionChanges: vi.fn(),
@@ -89,6 +92,9 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     createRegisteredAgents: core.createRegisteredAgents,
     filterSessions: core.filterSessions,
     getCursorDataPath: core.getCursorDataPath,
+    isAgentCacheInitialized: core.isAgentCacheInitialized,
+    loadCachedSessions: core.loadCachedSessions,
+    markAgentCacheInitialized: core.markAgentCacheInitialized,
     resolveProviderRoots: core.resolveProviderRoots,
     scanSessions: core.scanSessions,
     saveCachedSessions: core.saveCachedSessions,
@@ -207,6 +213,9 @@ describe("LiveScanStore", () => {
       ) => registerMockWatcher(path, options, listener),
     );
     core.getCursorDataPath.mockReturnValue("/tmp/cursor");
+    core.isAgentCacheInitialized.mockReturnValue(true);
+    core.loadCachedSessions.mockReturnValue(null);
+    core.markAgentCacheInitialized.mockReset();
     core.resolveProviderRoots.mockReturnValue({
       claudeRoot: "/tmp/claude",
       codexRoot: "/tmp/codex",
@@ -270,7 +279,7 @@ describe("LiveScanStore", () => {
     ]);
   });
 
-  it("can initialize from cache and refresh the initial scan in the background", async () => {
+  it("can initialize from cache and refresh sessions in the background", async () => {
     vi.useFakeTimers();
     const cached = makeSession("cached", { title: "cached", time_updated: 1000 });
     const fresh = makeSession("fresh", { title: "fresh", time_updated: 2000 });
@@ -288,7 +297,9 @@ describe("LiveScanStore", () => {
 
     const store = new LiveScanStore(false, {}, {}, { deferInitialRefresh: true });
     const events: unknown[] = [];
+    const statusEvents: unknown[] = [];
     store.subscribe((event) => events.push(event));
+    store.subscribeScanStatus((event) => statusEvents.push(event));
 
     await store.initialize();
 
@@ -306,19 +317,20 @@ describe("LiveScanStore", () => {
     expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["cached"]);
 
     store.startBackgroundRefresh();
+    expect(statusEvents.at(-1)).toEqual(
+      expect.objectContaining({
+        type: "scan-status",
+        active: true,
+        phase: "scanning",
+        pendingAgents: ["codex"],
+        totalAgents: 1,
+      }),
+    );
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(250);
 
     expect(codex.scan).toHaveBeenCalled();
     expect(workerThreads.workers[0]?.workerData.jobs).toEqual([
-      expect.objectContaining({
-        kind: "full",
-        context: "scan.initial.background",
-        agentName: "codex",
-        sessions: [cached],
-      }),
-    ]);
-    expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
       expect.objectContaining({
         kind: "full",
         context: "scan.refresh",
@@ -335,6 +347,284 @@ describe("LiveScanStore", () => {
         newSessions: 1,
         removedSessions: 1,
         totalSessions: 1,
+      }),
+    ]);
+    expect(statusEvents.at(-1)).toEqual(
+      expect.objectContaining({
+        type: "scan-status",
+        active: false,
+        phase: "idle",
+        completedAgents: ["codex"],
+        totalAgents: 1,
+      }),
+    );
+  });
+
+  it("uses full cache change checks for a cached startup time window", async () => {
+    vi.useFakeTimers();
+    const old = makeSession("old", { time_updated: 1000 });
+    const recent = makeSession("recent", { time_updated: 5000 });
+    const codex = makeAgent("codex", {
+      scan: vi.fn(() => [old, recent]),
+      checkForChanges: vi.fn(() => ({
+        hasChanges: false,
+        timestamp: 2000,
+      })),
+      incrementalScan: vi.fn(() => [old, recent]),
+      setSessionMetaMap: vi.fn(),
+    });
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValueOnce({
+      sessions: [recent],
+      byAgent: { codex: [recent] },
+      agents: [codex],
+      cacheTimestamps: { codex: 1000 },
+    });
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [old, recent],
+      byAgent: { codex: [old, recent] },
+      meta: {
+        old: { id: "old", sourcePath: "/tmp/old" },
+        recent: { id: "recent", sourcePath: "/tmp/recent" },
+      },
+      timestamp: 1000,
+    });
+    core.filterSessions.mockImplementation((sessions: SessionHead[], options: { from?: number }) =>
+      options.from == null
+        ? sessions
+        : sessions.filter(
+            (session) => (session.time_updated ?? session.time_created) >= options.from!,
+          ),
+    );
+
+    const store = new LiveScanStore(false, {}, { from: 3000 }, { deferInitialRefresh: true });
+    await store.initialize();
+
+    store.startBackgroundRefresh();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(codex.checkForChanges).toHaveBeenCalledWith(1000, [old, recent]);
+    expect(codex.setSessionMetaMap).toHaveBeenCalledWith(
+      new Map([
+        ["old", { id: "old", sourcePath: "/tmp/old" }],
+        ["recent", { id: "recent", sourcePath: "/tmp/recent" }],
+      ]),
+    );
+    expect(codex.scan).not.toHaveBeenCalled();
+    expect(codex.incrementalScan).not.toHaveBeenCalled();
+    expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent"]);
+    expect(workerThreads.workers).toHaveLength(0);
+  });
+
+  it("builds a full cache before applying the startup time window when no cache is available", async () => {
+    vi.useFakeTimers();
+    const old = makeSession("old", { time_updated: 1000 });
+    const recent = makeSession("recent", { time_updated: 5000 });
+    const codex = makeAgent("codex", {
+      scan: vi.fn((options?: { from?: number }) => (options?.from ? [recent] : [old, recent])),
+      checkForChanges: vi.fn(() => ({
+        hasChanges: true,
+        changedIds: ["recent"],
+        timestamp: 2000,
+      })),
+      incrementalScan: vi.fn(() => [recent]),
+    });
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValueOnce({
+      sessions: [],
+      byAgent: {},
+      agents: [codex],
+    });
+    core.filterSessions.mockImplementation((sessions: SessionHead[], options: { from?: number }) =>
+      options.from == null
+        ? sessions
+        : sessions.filter(
+            (session) => (session.time_updated ?? session.time_created) >= options.from!,
+          ),
+    );
+
+    const store = new LiveScanStore(false, {}, { from: 3000 }, { deferInitialRefresh: true });
+    await store.initialize();
+
+    store.startBackgroundRefresh();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(core.loadCachedSessions).toHaveBeenCalledWith("codex", { ignoreTtl: true });
+    expect(codex.scan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onProgress: expect.any(Function),
+      }),
+    );
+    expect(codex.scan.mock.calls[0]?.[0]).not.toHaveProperty("from");
+    expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent"]);
+    expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
+      expect.objectContaining({
+        kind: "full",
+        context: "scan.refresh",
+        agentName: "codex",
+        sessions: [
+          { ...old, project_identity: projectIdentity },
+          { ...recent, project_identity: projectIdentity },
+        ],
+        saveCache: true,
+      }),
+    ]);
+    expect(workerThreads.workers).toHaveLength(1);
+  });
+
+  it("persists incremental changes outside the startup time window", async () => {
+    vi.useFakeTimers();
+    const old = makeSession("old", { title: "old", time_updated: 1000 });
+    const updatedOld = makeSession("old", { title: "updated", time_updated: 1000 });
+    const recent = makeSession("recent", { time_updated: 5000 });
+    const updatedOldWithProject = { ...updatedOld, project_identity: projectIdentity };
+    const codex = makeAgent("codex", {
+      checkForChanges: vi.fn(() => ({
+        hasChanges: true,
+        changedIds: ["old"],
+        timestamp: 2000,
+      })),
+      incrementalScan: vi.fn(() => [updatedOld, recent]),
+      setSessionMetaMap: vi.fn(),
+      getSessionMetaMap: vi.fn(
+        () =>
+          new Map([
+            ["old", { id: "old", sourcePath: "/tmp/old" }],
+            ["recent", { id: "recent", sourcePath: "/tmp/recent" }],
+          ]),
+      ),
+    });
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValueOnce({
+      sessions: [recent],
+      byAgent: { codex: [recent] },
+      agents: [codex],
+      cacheTimestamps: { codex: 1000 },
+    });
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [old, recent],
+      byAgent: { codex: [old, recent] },
+      meta: {
+        old: { id: "old", sourcePath: "/tmp/old" },
+        recent: { id: "recent", sourcePath: "/tmp/recent" },
+      },
+      timestamp: 1000,
+    });
+    core.filterSessions.mockImplementation((sessions: SessionHead[], options: { from?: number }) =>
+      options.from == null
+        ? sessions
+        : sessions.filter(
+            (session) => (session.time_updated ?? session.time_created) >= options.from!,
+          ),
+    );
+
+    const store = new LiveScanStore(false, {}, { from: 3000 }, { deferInitialRefresh: true });
+    const events: unknown[] = [];
+    store.subscribe((event) => events.push(event));
+    await store.initialize();
+
+    store.startBackgroundRefresh();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(codex.checkForChanges).toHaveBeenCalledWith(1000, [old, recent]);
+    expect(codex.incrementalScan).toHaveBeenCalledWith([old, recent], ["old"]);
+    expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent"]);
+    expect(events).toEqual([]);
+    expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
+      {
+        kind: "changes",
+        context: "scan.refresh",
+        agentName: "codex",
+        changes: [{ session: updatedOldWithProject, sortIndex: 0 }],
+        removedSessionIds: [],
+        meta: { old: { id: "old", sourcePath: "/tmp/old" } },
+      },
+    ]);
+  });
+
+  it("uses source fingerprints to refresh only changed file-backed sessions", async () => {
+    vi.useFakeTimers();
+    const previous = makeSession("session", { title: "old", time_updated: 1000 });
+    const updated = makeSession("session", { title: "new", time_updated: 2000 });
+    const added = makeSession("added", { time_updated: 2500 });
+    const updatedWithProject = { ...updated, project_identity: projectIdentity };
+    const addedWithProject = { ...added, project_identity: projectIdentity };
+    const scanSessionSource = vi.fn((sourcePath: string) =>
+      sourcePath === "/tmp/s" ? updated : added,
+    );
+    const codex = makeAgent("codex", {
+      checkForChanges: vi.fn(() => {
+        throw new Error("checkForChanges should not run for source-backed agents");
+      }),
+      incrementalScan: vi.fn(),
+      listSessionSources: vi.fn(() => [
+        { sessionId: "session", sourcePath: "/tmp/s", fingerprint: "next" },
+        { sessionId: "added", sourcePath: "/tmp/added", fingerprint: "new" },
+      ]),
+      scanSessionSource,
+      getSessionMetaMap: vi.fn(
+        () =>
+          new Map([
+            ["session", { id: "session", sourcePath: "/tmp/s", sourceFingerprint: "next" }],
+            ["added", { id: "added", sourcePath: "/tmp/added", sourceFingerprint: "new" }],
+          ]),
+      ),
+      setSessionMetaMap: vi.fn(),
+    });
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [previous],
+      byAgent: { codex: [previous] },
+      agents: [codex],
+    });
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [previous],
+      meta: {
+        session: { id: "session", sourcePath: "/tmp/s", sourceFingerprint: "old" },
+      },
+      timestamp: 1000,
+    });
+
+    const store = new LiveScanStore(false);
+    const events: unknown[] = [];
+    store.subscribe((event) => events.push(event));
+    await store.initialize();
+    await (store as any).runRefresh("codex");
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(codex.checkForChanges).not.toHaveBeenCalled();
+    expect(codex.incrementalScan).not.toHaveBeenCalled();
+    expect(scanSessionSource).toHaveBeenCalledTimes(2);
+    expect(scanSessionSource).toHaveBeenCalledWith("/tmp/s");
+    expect(scanSessionSource).toHaveBeenCalledWith("/tmp/added");
+    expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
+      {
+        kind: "changes",
+        context: "scan.refresh",
+        agentName: "codex",
+        changes: [
+          { session: updatedWithProject, sortIndex: 0 },
+          { session: addedWithProject, sortIndex: 1 },
+        ],
+        removedSessionIds: [],
+        meta: {
+          session: { id: "session", sourcePath: "/tmp/s", sourceFingerprint: "next" },
+          added: { id: "added", sourcePath: "/tmp/added", sourceFingerprint: "new" },
+        },
+      },
+    ]);
+    expect(events).toEqual([
+      expect.objectContaining({
+        newSessions: 1,
+        updatedSessions: 1,
+        removedSessions: 0,
       }),
     ]);
   });
@@ -503,19 +793,11 @@ describe("LiveScanStore", () => {
     const events: unknown[] = [];
     store.subscribe((event) => events.push(event));
     await store.initialize();
+    const workerCount = workerThreads.workers.length;
     await (store as any).runRefresh("codex");
 
     expect(core.saveCachedSessions).not.toHaveBeenCalled();
-    expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
-      {
-        kind: "full",
-        context: "scan.refresh",
-        agentName: "codex",
-        sessions: [],
-        meta: { session: { id: "session", sourcePath: "/tmp/s" } },
-        saveCache: true,
-      },
-    ]);
+    expect(workerThreads.workers).toHaveLength(workerCount);
     expect(events).toEqual([
       expect.objectContaining({
         newSessions: 0,

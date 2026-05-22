@@ -7,6 +7,7 @@ import { computeIdentity, filterSessionsByProjectScope, realFs } from "../projec
 import { classifySessionTags, getSmartTagSourceTimestamp, perf } from "../utils/index.js";
 import {
   loadCachedSessions,
+  markAgentCacheInitialized,
   saveCachedSessionChanges,
   saveCachedSessions,
   type SessionHeadChange,
@@ -478,7 +479,20 @@ async function scanAgentFull(
   try {
     const scanMarker = perf.start(`agent:${agent.name}:scan`);
     const t0 = performance.now();
-    const heads = agent.scan({ from: options.from, to: options.to, fast: options.fast });
+    const heads = agent.scan({
+      from: options.from,
+      to: options.to,
+      fast: options.fast,
+      onProgress: (progress) => {
+        onProgress?.({
+          agent: agent.name,
+          phase: "incremental",
+          cachedCount: progress.total,
+          newCount: progress.sessions,
+          changedCount: progress.processed,
+        });
+      },
+    });
     perf.end(scanMarker);
     timing.scan = performance.now() - t0;
 
@@ -499,6 +513,7 @@ async function scanAgentFull(
     // 保存到缓存
     if (options.writeCache !== false && options.from == null && options.to == null) {
       saveCachedSessions(agent.name, tagged.sessions, meta);
+      markAgentCacheInitialized(agent.name);
     }
 
     onProgress?.({ agent: agent.name, phase: "complete", newCount: tagged.sessions.length });

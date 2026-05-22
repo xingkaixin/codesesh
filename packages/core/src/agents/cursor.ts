@@ -392,6 +392,8 @@ export class CursorAgent extends BaseAgent {
         .all() as Array<{ key: string; value: string }>;
 
       const heads: SessionHead[] = [];
+      options?.onProgress?.({ total: rows.length, processed: 0, sessions: 0 });
+      let processed = 0;
 
       for (const row of rows) {
         try {
@@ -518,6 +520,9 @@ export class CursorAgent extends BaseAgent {
           });
         } catch {
           // skip malformed entries
+        } finally {
+          processed += 1;
+          options?.onProgress?.({ total: rows.length, processed, sessions: heads.length });
         }
       }
 

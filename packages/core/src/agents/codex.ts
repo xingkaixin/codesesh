@@ -263,7 +263,12 @@ function extractPatchContent(
 // Session meta
 // ---------------------------------------------------------------------------
 
-import type { AgentScanOptions, SessionCacheMeta, ChangeCheckResult } from "./base.js";
+import type {
+  AgentScanOptions,
+  ChangeCheckResult,
+  SessionCacheMeta,
+  SessionSourceRef,
+} from "./base.js";
 
 interface SessionMeta extends SessionCacheMeta {
   id: string;
@@ -327,7 +332,9 @@ export class CodexAgent extends BaseAgent {
     const listMarker = perf.start("listRolloutFiles");
     const files = this.listRolloutFiles(options);
     perf.end(listMarker);
+    options?.onProgress?.({ total: files.length, processed: 0, sessions: 0 });
 
+    let processed = 0;
     for (const file of files) {
       try {
         const parseMarker = perf.start(`parseSessionHead:${basename(file)}`);
@@ -340,11 +347,33 @@ export class CodexAgent extends BaseAgent {
         }
       } catch {
         // skip malformed files
+      } finally {
+        processed += 1;
+        options?.onProgress?.({ total: files.length, processed, sessions: heads.length });
       }
     }
 
     perf.end(scanMarker);
     return heads;
+  }
+
+  listSessionSources(): SessionSourceRef[] {
+    if (!this.basePath) return [];
+    this.loadSessionIndex();
+    return this.listRolloutFiles().map((file) => ({
+      sessionId: extractSessionId(file),
+      sourcePath: file,
+      fingerprint: this.sourceFingerprint(file),
+    }));
+  }
+
+  scanSessionSource(sourcePath: string): SessionHead | null {
+    this.loadSessionIndex();
+    const head = getParsedSession(this.parseSessionHeadResult(sourcePath));
+    if (head) {
+      this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, sourcePath));
+    }
+    return head;
   }
 
   getSessionMetaMap(): Map<string, SessionCacheMeta> {
@@ -648,6 +677,7 @@ export class CodexAgent extends BaseAgent {
       id: head.id,
       title: head.title,
       sourcePath: file,
+      sourceFingerprint: this.sourceFingerprint(file),
       sourceMtimeMs: statSync(file).mtimeMs,
       indexPath: existsSync(indexPath) ? indexPath : null,
       indexMtimeMs: this.getFileMtimeMs(indexPath),
@@ -669,6 +699,18 @@ export class CodexAgent extends BaseAgent {
 
     const indexPath = meta.indexPath ?? this.getSessionIndexPath();
     return this.getFileMtimeMs(indexPath) !== (meta.indexMtimeMs ?? null);
+  }
+
+  private sourceFingerprint(file: string): string {
+    const stat = statSync(file);
+    const indexPath = this.getSessionIndexPath();
+    return JSON.stringify([
+      HEAD_INDEX_VERSION,
+      PARSER_VERSION,
+      stat.mtimeMs,
+      stat.size,
+      this.getFileMtimeMs(indexPath),
+    ]);
   }
 
   private getSessionIndexPath(): string {

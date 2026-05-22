@@ -22,6 +22,7 @@ import type {
   SearchResult,
   SessionHead,
   SessionData,
+  ScanStatusEvent,
   SessionsUpdatedEvent,
   SmartTag,
   ProjectGroup,
@@ -34,6 +35,7 @@ import {
   fetchConfig,
   fetchDashboard,
   fetchProjects,
+  fetchScanStatus,
   fetchSearchResults,
   fetchSessions,
   fetchSessionData,
@@ -189,6 +191,57 @@ function formatWindowLabel(config: AppConfig | null): string | null {
 function formatSearchSubtitle(query: string, loading: boolean, count: number) {
   if (loading) return query ? `Searching for "${query}"` : "Loading recent sessions";
   return query ? `${count} matches for "${query}"` : `${count} recent sessions`;
+}
+
+function formatScanStatusLabel(status: ScanStatusEvent | null): string | null {
+  if (!status?.active) return null;
+
+  const completed = status.completedAgents.length;
+  const total = status.totalAgents;
+  const current = status.scanningAgents[0];
+  const currentStatus = current ? status.agentStatuses[current] : null;
+  const itemProgress =
+    currentStatus?.total && currentStatus.processed != null
+      ? ` · ${currentStatus.processed}/${currentStatus.total}`
+      : "";
+  const agentProgress =
+    total > 0
+      ? current
+        ? ` · ${current}${itemProgress} · ${completed}/${total} agents ready`
+        : ` · ${completed}/${total} agents ready`
+      : "";
+
+  if (status.phase === "initializing") {
+    return `First-run setup: indexing all local sessions${agentProgress}. Your selected time window appears after this finishes.`;
+  }
+  if (status.phase === "indexing") return "Preparing local session index";
+
+  if (total > 0) {
+    return current
+      ? `Checking for new or changed sessions · ${current}${itemProgress} · ${completed}/${total} agents ready`
+      : `Checking for new or changed sessions · ${completed}/${total} agents ready`;
+  }
+  return "Checking for new or changed sessions";
+}
+
+function formatAgentScanProgress(status: ScanStatusEvent | null, agentName: string): string | null {
+  const agentStatus = status?.agentStatuses[agentName];
+  if (!agentStatus || agentStatus.status === "complete") return null;
+  if (agentStatus.total && agentStatus.processed != null) {
+    return `${agentStatus.processed}/${agentStatus.total}`;
+  }
+  return agentStatus.status === "scanning" ? "Scanning" : "Pending";
+}
+
+function getAgentDisplayCount(
+  status: ScanStatusEvent | null,
+  agentName: string,
+  fallback: number,
+): number {
+  const agentStatus = status?.agentStatuses[agentName];
+  return agentStatus?.status === "complete" && agentStatus.sessions != null
+    ? agentStatus.sessions
+    : fallback;
 }
 
 function getProjectGroupIdentity(project: ProjectGroup): ProjectRouteIdentity {
@@ -352,9 +405,11 @@ function isEditableTarget(target: EventTarget | null) {
 function BrowseByToggle({
   value,
   onChange,
+  projectsDisabled = false,
 }: {
   value: BrowseBy;
   onChange: (value: BrowseBy) => void;
+  projectsDisabled?: boolean;
 }) {
   const options: Array<{ value: BrowseBy; label: string }> = [
     { value: "projects", label: "Projects" },
@@ -365,18 +420,25 @@ function BrowseByToggle({
     <div role="radiogroup" aria-label="Browse by" className="grid gap-1.5">
       {options.map((option) => {
         const active = value === option.value;
+        const disabled = option.value === "projects" && projectsDisabled;
         return (
           <button
             key={option.value}
             type="button"
             role="radio"
             aria-checked={active}
+            disabled={disabled}
             onClick={() => onChange(option.value)}
             className={`console-mono flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left text-xs transition-colors ${
-              active
-                ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
-                : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+              disabled
+                ? "cursor-not-allowed border-transparent text-[var(--console-muted)] opacity-45"
+                : active
+                  ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
+                  : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
             }`}
+            title={
+              disabled ? "Project grouping is available after the current scan finishes" : undefined
+            }
           >
             <span
               className={`flex size-3 shrink-0 items-center justify-center rounded-full border ${
@@ -489,6 +551,7 @@ export default function App() {
   const [searchFilters, setSearchFilters] = useState<SearchFilterState>({});
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [scanStatus, setScanStatus] = useState<ScanStatusEvent | null>(null);
   const [selectedSidebarSessionId, setSelectedSidebarSessionId] = useState<string | null>(null);
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
@@ -506,7 +569,7 @@ export default function App() {
       try {
         const config = await fetchConfig();
         setAppConfig(config);
-        const [agentList, sessionList, dashboardData, projectData, bookmarkData] =
+        const [agentList, sessionList, dashboardData, projectData, bookmarkData, statusData] =
           await Promise.all([
             fetchAgents(),
             fetchSessions({ from: config.window.from, to: config.window.to }),
@@ -519,11 +582,16 @@ export default function App() {
               return { projects: [] };
             }),
             fetchBookmarks(),
+            fetchScanStatus().catch((err) => {
+              console.error("Failed to load scan status:", err);
+              return null;
+            }),
           ]);
         setAgents(agentList);
         setSessions(sessionList.sessions);
         setProjects(projectData.projects);
         setBookmarks(bookmarkData.bookmarks);
+        if (statusData) setScanStatus(statusData);
         if (dashboardData) setDashboard(dashboardData);
         logClientEvent("app.load.done", {
           duration_ms: Math.round(performance.now() - startedAt),
@@ -783,6 +851,8 @@ export default function App() {
   }, [searchFilters]);
   const usesServerSearch =
     activeSearchQuery.trim().length > 0 || Boolean(searchFilters.tool || searchFilters.fileKind);
+  const scanStatusLabel = formatScanStatusLabel(scanStatus);
+  const isScanActive = scanStatus?.active === true;
   const recentSearchResults = useMemo<SearchResult[]>(() => {
     const selectedCost = COST_RANGE_OPTIONS.find((option) => option.id === searchFilters.costRange);
     const agentSessions = searchFilters.agent
@@ -1029,9 +1099,14 @@ export default function App() {
   }, [activeProjectKind, activeProjectKey, appConfig, selectedProjectAgent]);
 
   useEffect(() => {
-    const unsubscribe = subscribeSessionUpdates((event) => {
-      void syncLiveUpdate(event);
-    });
+    const unsubscribe = subscribeSessionUpdates(
+      (event) => {
+        void syncLiveUpdate(event);
+      },
+      (event) => {
+        setScanStatus(event);
+      },
+    );
 
     return unsubscribe;
   }, []);
@@ -1450,6 +1525,7 @@ export default function App() {
   }
 
   function changeBrowseBy(next: BrowseBy) {
+    if (next === "projects" && isScanActive) return;
     setBrowseBy(next);
     setSelectedSidebarSessionId(null);
     if (next === "projects") {
@@ -1693,7 +1769,11 @@ export default function App() {
               <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
                 BROWSE BY
               </h3>
-              <BrowseByToggle value={browseBy} onChange={changeBrowseBy} />
+              <BrowseByToggle
+                value={browseBy}
+                onChange={changeBrowseBy}
+                projectsDisabled={isScanActive}
+              />
             </section>
 
             <section>
@@ -1726,30 +1806,65 @@ export default function App() {
                       const key = agent.name.toLowerCase();
                       const isSelected = key === activeAgentKey;
                       const config = ModelConfig.agents[key];
+                      const agentProgress = formatAgentScanProgress(scanStatus, agent.name);
+                      const disabled = isScanActive && agentProgress !== null;
+                      const className = `ml-4 flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
+                        disabled
+                          ? "cursor-not-allowed border-transparent text-[var(--console-muted)] opacity-50"
+                          : isSelected
+                            ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
+                            : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+                      }`;
+                      const content = (
+                        <>
+                          {config?.icon && (
+                            <img
+                              src={config.icon}
+                              alt={agent.displayName}
+                              className="size-3.5 object-contain"
+                            />
+                          )}
+                          <span className="console-mono line-clamp-1 flex-1 text-xs">
+                            {agent.displayName}
+                          </span>
+                          <span className="console-mono text-[11px] text-[var(--console-muted)]">
+                            {agentProgress ??
+                              getAgentDisplayCount(scanStatus, agent.name, agent.count)}
+                          </span>
+                        </>
+                      );
                       return (
                         <li key={agent.name}>
-                          <Link
-                            to={`/${key}`}
-                            className={`ml-4 flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
-                              isSelected
-                                ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
-                                : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
-                            }`}
-                          >
-                            {config?.icon && (
-                              <img
-                                src={config.icon}
-                                alt={agent.displayName}
-                                className="size-3.5 object-contain"
+                          {disabled ? (
+                            <span
+                              className={className}
+                              title="Available after this agent scan completes"
+                            >
+                              {content}
+                            </span>
+                          ) : (
+                            <Link to={`/${key}`} className={className}>
+                              {content}
+                            </Link>
+                          )}
+                          {agentProgress ? (
+                            <span className="ml-4 mt-1 block h-1 overflow-hidden rounded-sm bg-[var(--console-surface-muted)]">
+                              <span
+                                className="block h-full bg-[var(--console-accent)]"
+                                style={{
+                                  width: `${
+                                    scanStatus?.agentStatuses[agent.name]?.total
+                                      ? Math.round(
+                                          ((scanStatus.agentStatuses[agent.name]?.processed ?? 0) /
+                                            scanStatus.agentStatuses[agent.name]!.total!) *
+                                            100,
+                                        )
+                                      : 8
+                                  }%`,
+                                }}
                               />
-                            )}
-                            <span className="console-mono line-clamp-1 flex-1 text-xs">
-                              {agent.displayName}
                             </span>
-                            <span className="console-mono text-[11px] text-[var(--console-muted)]">
-                              {agent.count}
-                            </span>
-                          </Link>
+                          ) : null}
                         </li>
                       );
                     })
@@ -1781,14 +1896,14 @@ export default function App() {
                 {browseBy === "agents" && agents.length === 0 && !loading ? (
                   <li>
                     <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-                      No agents found
+                      {scanStatus?.active ? "Scanning agents..." : "No agents found"}
                     </span>
                   </li>
                 ) : null}
                 {browseBy === "projects" && projects.length === 0 && !loading ? (
                   <li>
                     <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-                      No projects found
+                      {scanStatus?.active ? "Scanning projects..." : "No projects found"}
                     </span>
                   </li>
                 ) : null}
@@ -1868,7 +1983,7 @@ export default function App() {
                 </span>
               ) : sidebarSessions.length === 0 ? (
                 <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-                  No sessions yet
+                  {scanStatus?.active ? "Scanning sessions..." : "No sessions yet"}
                 </span>
               ) : browseBy === "projects" ? (
                 <SidebarFlatSessionList
@@ -1983,6 +2098,11 @@ export default function App() {
               {liveNotice ? (
                 <p className="console-mono mt-2 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
                   {liveNotice}
+                </p>
+              ) : null}
+              {scanStatusLabel && viewState.mode === "root" ? (
+                <p className="console-mono mt-2 inline-flex max-w-4xl rounded-sm border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-2 py-1 text-[11px] leading-relaxed text-[var(--console-warning)]">
+                  {scanStatusLabel}
                 </p>
               ) : null}
             </div>

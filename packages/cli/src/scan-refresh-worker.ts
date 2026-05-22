@@ -1,12 +1,17 @@
 import { parentPort, workerData } from "node:worker_threads";
 import {
   createRegisteredAgents,
+  type AgentScanProgress,
   type ScanOptions,
   type SessionCacheMeta,
   type SessionHead,
 } from "@codesesh/core";
 
 export type ScanRefreshWorkerMessage =
+  | {
+      type: "progress";
+      progress: AgentScanProgress;
+    }
   | {
       type: "done";
       sessions: SessionHead[];
@@ -23,7 +28,7 @@ interface ScanRefreshWorkerData {
   agentName: string;
   previousSessions: SessionHead[];
   changedIds: string[] | null;
-  startupScanOptions: Pick<ScanOptions, "from" | "to">;
+  scanOptions: Pick<ScanOptions, "from" | "to" | "fast">;
   meta: Record<string, SessionCacheMeta>;
 }
 
@@ -58,7 +63,15 @@ try {
     ? []
     : data.changedIds && agent.incrementalScan
       ? agent.incrementalScan(data.previousSessions, data.changedIds)
-      : agent.scan(data.startupScanOptions);
+      : agent.scan({
+          ...data.scanOptions,
+          onProgress: (progress) => {
+            parentPort?.postMessage({
+              type: "progress",
+              progress,
+            } satisfies ScanRefreshWorkerMessage);
+          },
+        });
 
   parentPort?.postMessage({
     type: "done",

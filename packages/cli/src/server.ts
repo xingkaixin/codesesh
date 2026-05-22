@@ -78,7 +78,10 @@ function getListeningPort(server: Server, fallback: number): number {
 
 export async function createServer(
   port: number,
-  store: ScanResultSource & Partial<Pick<LiveScanStore, "subscribe" | "shutdown">>,
+  store: ScanResultSource &
+    Partial<
+      Pick<LiveScanStore, "getScanStatus" | "subscribe" | "subscribeScanStatus" | "shutdown">
+    >,
   options: CreateServerOptions = {},
 ): Promise<{ url: string; shutdown: () => Promise<void> }> {
   const app = new Hono();

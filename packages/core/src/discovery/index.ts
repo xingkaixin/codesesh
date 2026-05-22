@@ -5,6 +5,8 @@ export type { ScanResult, ScanOptions } from "./scanner.js";
 export {
   loadCachedSessions,
   loadCachedSessionData,
+  isAgentCacheInitialized,
+  markAgentCacheInitialized,
   saveCachedSessions,
   saveCachedSessionChanges,
   clearCache,

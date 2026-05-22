@@ -6,6 +6,7 @@ import {
   handleGetDashboard,
   handleGetFileActivity,
   handleGetProjects,
+  handleGetScanStatus,
   handleDeleteBookmark,
   handleImportBookmarks,
   handlePostClientLog,
@@ -36,8 +37,12 @@ function createSseResponse(store: LiveScanStore, signal: AbortSignal): Response 
         };
 
         write("connected", { timestamp: Date.now() });
+        write("scan-status", store.getScanStatus());
 
-        const unsubscribe = store.subscribe((event) => {
+        const unsubscribeSessions = store.subscribe((event) => {
+          write(event.type, event);
+        });
+        const unsubscribeScanStatus = store.subscribeScanStatus((event) => {
           write(event.type, event);
         });
 
@@ -47,7 +52,8 @@ function createSseResponse(store: LiveScanStore, signal: AbortSignal): Response 
 
         const close = () => {
           clearInterval(heartbeat);
-          unsubscribe();
+          unsubscribeSessions();
+          unsubscribeScanStatus();
           controller.close();
         };
 
@@ -80,6 +86,9 @@ export function createApiRoutes(
   };
 
   api.get("/config", (c) => handleGetConfig(c, listDefaults));
+  if (store) {
+    api.get("/status", (c) => handleGetScanStatus(c, store));
+  }
   api.get("/agents", (c) => handleGetAgents(c, scanSource, listDefaults));
   api.get("/projects", (c) => handleGetProjects(c, scanSource, listDefaults));
   api.get("/sessions", (c) => handleGetSessions(c, scanSource, listDefaults));

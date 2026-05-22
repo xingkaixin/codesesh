@@ -178,6 +178,31 @@ export interface SessionsUpdatedEvent {
   removedSessionRefs?: Array<{ agentName: string; sessionId: string }>;
 }
 
+export interface ScanStatusEvent {
+  type: "scan-status";
+  active: boolean;
+  phase: "idle" | "indexing" | "initializing" | "scanning";
+  pendingAgents: string[];
+  scanningAgents: string[];
+  completedAgents: string[];
+  agentStatuses: Record<string, AgentScanStatus>;
+  totalAgents: number;
+  startedAt?: number;
+  updatedAt: number;
+  completedAt?: number;
+}
+
+export interface AgentScanStatus {
+  agentName: string;
+  status: "pending" | "scanning" | "complete";
+  total?: number;
+  processed?: number;
+  sessions?: number;
+  startedAt?: number;
+  updatedAt: number;
+  completedAt?: number;
+}
+
 export interface DashboardAgentStat {
   name: string;
   displayName: string;
@@ -271,6 +296,12 @@ export interface BookmarkedSessionSnapshot {
 export async function fetchConfig(): Promise<AppConfig> {
   const res = await fetch("/api/config");
   if (!res.ok) throw new Error("Failed to fetch config");
+  return res.json();
+}
+
+export async function fetchScanStatus(): Promise<ScanStatusEvent> {
+  const res = await fetch("/api/status");
+  if (!res.ok) throw new Error("Failed to fetch scan status");
   return res.json();
 }
 
@@ -402,6 +433,7 @@ export function logClientEvent(event: string, data: Record<string, unknown> = {}
 
 export function subscribeSessionUpdates(
   onUpdate: (event: SessionsUpdatedEvent) => void,
+  onScanStatus?: (event: ScanStatusEvent) => void,
 ): () => void {
   const source = new EventSource("/api/events");
 
@@ -410,6 +442,15 @@ export function subscribeSessionUpdates(
       onUpdate(JSON.parse(event.data) as SessionsUpdatedEvent);
     } catch (error) {
       console.error("Failed to parse session update event:", error);
+    }
+  });
+
+  source.addEventListener("scan-status", (event) => {
+    if (!onScanStatus) return;
+    try {
+      onScanStatus(JSON.parse(event.data) as ScanStatusEvent);
+    } catch (error) {
+      console.error("Failed to parse scan status event:", error);
     }
   });
 
