@@ -831,6 +831,68 @@ describe("handleGetSessionData", () => {
     expect(response.file_activity).toEqual([]);
   });
 
+  it("falls back to the current agent index when cached messages are missing", async () => {
+    coreMocks.loadCachedSessionData.mockReturnValue({
+      id: "s1",
+      slug: "claudecode/s1",
+      title: "Cached Session",
+      directory: "/home/user/project",
+      time_created: 1000,
+      time_updated: 1000,
+      messages: [],
+      stats: {
+        message_count: 1,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 0,
+      },
+    });
+
+    class AgentWithDetail extends MockAgent {
+      override getSessionData(_sessionId: string): SessionData {
+        return {
+          id: "s1",
+          slug: "claudecode/s1",
+          title: "Source Session",
+          directory: "/home/user/project",
+          time_created: 1000,
+          time_updated: 1000,
+          messages: [
+            {
+              id: "m1",
+              role: "user",
+              time_created: 1000,
+              parts: [{ type: "text", text: "hello" }],
+            },
+          ],
+          stats: {
+            message_count: 1,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            total_cost: 0,
+          },
+        };
+      }
+    }
+
+    const sessions = [makeSession("s1", { slug: "claudecode/s1" })];
+    const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
+
+    await handleGetSessionData(
+      c,
+      makeScanSource({
+        sessions,
+        byAgent: { claudecode: sessions },
+        agents: [new AgentWithDetail()],
+      }),
+    );
+
+    const response = c.json.mock.calls[0]![0];
+    expect(response.title).toBe("Source Session");
+    expect(response.messages).toHaveLength(1);
+    expect(coreMocks.listSessionFileActivity).not.toHaveBeenCalled();
+  });
+
   it("returns 500 when SQLite cache loading throws", async () => {
     coreMocks.loadCachedSessionData.mockImplementation(() => {
       throw new Error("DB not found");

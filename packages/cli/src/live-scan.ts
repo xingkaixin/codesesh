@@ -7,13 +7,17 @@ import {
   computeIdentity,
   filterSessions,
   getCursorDataPath,
+  isAgentCacheInitialized,
+  loadCachedSessions,
   realFs,
   resolveProviderRoots,
   scanSessions,
+  type AgentScanProgress,
   type BaseAgent,
   type ScanResult,
   type ScanOptions,
   type SessionCacheMeta,
+  type SessionSourceRef,
   type SessionHeadChange,
   type SessionHead,
 } from "@codesesh/core";
@@ -33,7 +37,33 @@ export interface SessionsUpdatedEvent {
   removedSessionRefs: Array<{ agentName: string; sessionId: string }>;
 }
 
+export interface ScanStatusEvent {
+  type: "scan-status";
+  active: boolean;
+  phase: "idle" | "indexing" | "initializing" | "scanning";
+  pendingAgents: string[];
+  scanningAgents: string[];
+  completedAgents: string[];
+  agentStatuses: Record<string, AgentScanStatus>;
+  totalAgents: number;
+  startedAt?: number;
+  updatedAt: number;
+  completedAt?: number;
+}
+
+export interface AgentScanStatus {
+  agentName: string;
+  status: "pending" | "scanning" | "complete";
+  total?: number;
+  processed?: number;
+  sessions?: number;
+  startedAt?: number;
+  updatedAt: number;
+  completedAt?: number;
+}
+
 type StoreListener = (event: SessionsUpdatedEvent) => void;
+type ScanStatusListener = (event: ScanStatusEvent) => void;
 
 interface WatchTarget {
   path: string;
@@ -192,6 +222,18 @@ function buildRefreshDiff(
       removedSessionRefs: removedSessionIds.map((sessionId) => ({ agentName, sessionId })),
     },
   };
+}
+
+function restoreAgentCacheMeta(agent: BaseAgent, meta: Record<string, SessionCacheMeta>): void {
+  agent.setSessionMetaMap?.(new Map(Object.entries(meta)));
+}
+
+function sourceFingerprintFromMeta(meta: SessionCacheMeta | undefined): string | null {
+  return typeof meta?.sourceFingerprint === "string" ? meta.sourceFingerprint : null;
+}
+
+function sourcePathFromMeta(meta: SessionCacheMeta | undefined): string | null {
+  return typeof meta?.sourcePath === "string" ? meta.sourcePath : null;
 }
 
 function toAbsolutePath(path: string): string {
@@ -355,6 +397,17 @@ export class LiveScanStore {
   private byAgent: Record<string, SessionHead[]> = {};
   private sessions: SessionHead[] = [];
   private listeners = new Set<StoreListener>();
+  private scanStatusListeners = new Set<ScanStatusListener>();
+  private scanStatus: Omit<ScanStatusEvent, "type"> = {
+    active: false,
+    phase: "idle",
+    pendingAgents: [],
+    scanningAgents: [],
+    completedAgents: [],
+    agentStatuses: {},
+    totalAgents: 0,
+    updatedAt: Date.now(),
+  };
   private refreshTimers = new Map<string, NodeJS.Timeout>();
   private refreshTimestamps = new Map<string, number>();
   private refreshInFlight = new Set<string>();
@@ -390,18 +443,13 @@ export class LiveScanStore {
     });
     const initialResult = await scanSessions({
       ...this.scanOptions,
-      ...this.startupScanOptions,
+      ...(deferInitialRefresh ? this.startupScanOptions : {}),
       useCache: this.scanOptions.useCache ?? true,
       smartRefresh: false,
       cacheOnly: deferInitialRefresh,
       writeCache: deferInitialRefresh ? false : this.scanOptions.writeCache,
       smartTagWorkerUrl: this.getSmartTagWorkerUrl() ?? undefined,
-      includeSmartTags:
-        deferInitialRefresh ||
-        this.startupScanOptions.from != null ||
-        this.startupScanOptions.to != null
-          ? false
-          : undefined,
+      includeSmartTags: deferInitialRefresh ? false : undefined,
     });
     this.applyScanResult(initialResult);
     const indexStartedAt = performance.now();
@@ -445,11 +493,15 @@ export class LiveScanStore {
     if (this.backgroundRefreshTimer) {
       return;
     }
+    const agentNames = this.agents.map((agent) => agent.name);
+    this.startScanBatch(agentNames, "scanning");
     this.backgroundRefreshTimer = setTimeout(() => {
       this.backgroundRefreshTimer = null;
-      void this.refreshInitialIndex();
-      for (const agent of this.agents) {
-        this.scheduleRefresh(agent.name, 0);
+      for (const agentName of agentNames) {
+        this.scheduleRefresh(agentName, 0);
+      }
+      if (agentNames.length === 0) {
+        this.finishScanBatch();
       }
     }, 0);
   }
@@ -462,10 +514,33 @@ export class LiveScanStore {
     };
   }
 
+  getScanStatus(): ScanStatusEvent {
+    return {
+      type: "scan-status",
+      ...this.scanStatus,
+      pendingAgents: [...this.scanStatus.pendingAgents],
+      scanningAgents: [...this.scanStatus.scanningAgents],
+      completedAgents: [...this.scanStatus.completedAgents],
+      agentStatuses: Object.fromEntries(
+        Object.entries(this.scanStatus.agentStatuses).map(([agentName, status]) => [
+          agentName,
+          { ...status },
+        ]),
+      ),
+    };
+  }
+
   subscribe(listener: StoreListener): () => void {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
+    };
+  }
+
+  subscribeScanStatus(listener: ScanStatusListener): () => void {
+    this.scanStatusListeners.add(listener);
+    return () => {
+      this.scanStatusListeners.delete(listener);
     };
   }
 
@@ -521,6 +596,167 @@ export class LiveScanStore {
     }
   }
 
+  private emitScanStatus(): void {
+    const event = this.getScanStatus();
+    for (const listener of this.scanStatusListeners) {
+      listener(event);
+    }
+  }
+
+  private updateScanStatus(next: Omit<ScanStatusEvent, "type">): void {
+    this.scanStatus = next;
+    this.emitScanStatus();
+  }
+
+  private startScanBatch(agentNames: string[], phase: ScanStatusEvent["phase"]): void {
+    const uniqueAgentNames = [...new Set(agentNames)];
+    const now = Date.now();
+    const agentStatuses = Object.fromEntries(
+      uniqueAgentNames.map((agentName) => [
+        agentName,
+        {
+          agentName,
+          status: "pending" as const,
+          processed: 0,
+          sessions: this.byAgent[agentName]?.length ?? 0,
+          updatedAt: now,
+        },
+      ]),
+    );
+    this.updateScanStatus({
+      active: uniqueAgentNames.length > 0,
+      phase: uniqueAgentNames.length > 0 ? phase : "idle",
+      pendingAgents: uniqueAgentNames,
+      scanningAgents: [],
+      completedAgents: [],
+      agentStatuses,
+      totalAgents: uniqueAgentNames.length,
+      startedAt: uniqueAgentNames.length > 0 ? now : undefined,
+      updatedAt: now,
+      completedAt: uniqueAgentNames.length > 0 ? undefined : now,
+    });
+  }
+
+  private setScanPhase(phase: ScanStatusEvent["phase"]): void {
+    if (!this.scanStatus.active) return;
+    this.updateScanStatus({
+      ...this.scanStatus,
+      phase,
+      updatedAt: Date.now(),
+    });
+  }
+
+  private beginAgentScan(agentName: string): void {
+    if (!this.scanStatus.active) {
+      this.startScanBatch([agentName], "scanning");
+    }
+
+    const pendingAgents = this.scanStatus.pendingAgents.filter((agent) => agent !== agentName);
+    const scanningAgents = [...new Set([...this.scanStatus.scanningAgents, agentName])];
+    const completedAgents = this.scanStatus.completedAgents.filter((agent) => agent !== agentName);
+    const existingStatus = this.scanStatus.agentStatuses[agentName];
+    const agentStatuses = {
+      ...this.scanStatus.agentStatuses,
+      [agentName]: {
+        agentName,
+        status: "scanning" as const,
+        total: existingStatus?.total,
+        processed: existingStatus?.processed ?? 0,
+        sessions: existingStatus?.sessions ?? this.byAgent[agentName]?.length ?? 0,
+        startedAt: existingStatus?.startedAt ?? Date.now(),
+        updatedAt: Date.now(),
+      },
+    };
+    this.updateScanStatus({
+      ...this.scanStatus,
+      active: true,
+      phase: this.scanStatus.phase === "initializing" ? "initializing" : "scanning",
+      pendingAgents,
+      scanningAgents,
+      completedAgents,
+      agentStatuses,
+      totalAgents: Math.max(
+        this.scanStatus.totalAgents,
+        pendingAgents.length + scanningAgents.length,
+      ),
+      updatedAt: Date.now(),
+      completedAt: undefined,
+    });
+  }
+
+  private updateAgentScanProgress(agentName: string, progress: AgentScanProgress): void {
+    const status = this.scanStatus.agentStatuses[agentName];
+    if (!status || status.status !== "scanning") return;
+    this.updateScanStatus({
+      ...this.scanStatus,
+      agentStatuses: {
+        ...this.scanStatus.agentStatuses,
+        [agentName]: {
+          ...status,
+          total: progress.total ?? status.total,
+          processed: progress.processed ?? status.processed,
+          sessions: progress.sessions ?? status.sessions,
+          updatedAt: Date.now(),
+        },
+      },
+      updatedAt: Date.now(),
+    });
+  }
+
+  private finishAgentScan(agentName: string): void {
+    const pendingAgents = this.scanStatus.pendingAgents.filter((agent) => agent !== agentName);
+    const scanningAgents = this.scanStatus.scanningAgents.filter((agent) => agent !== agentName);
+    const completedAgents = [...new Set([...this.scanStatus.completedAgents, agentName])];
+    const active = pendingAgents.length > 0 || scanningAgents.length > 0;
+    const now = Date.now();
+    const previousStatus = this.scanStatus.agentStatuses[agentName];
+    const sessions = this.byAgent[agentName]?.length ?? previousStatus?.sessions ?? 0;
+    const total = previousStatus?.total ?? previousStatus?.processed;
+
+    this.updateScanStatus({
+      ...this.scanStatus,
+      active,
+      phase: active ? "scanning" : "idle",
+      pendingAgents,
+      scanningAgents,
+      completedAgents,
+      agentStatuses: {
+        ...this.scanStatus.agentStatuses,
+        [agentName]: {
+          agentName,
+          status: "complete",
+          total,
+          processed: total,
+          sessions,
+          startedAt: previousStatus?.startedAt,
+          updatedAt: now,
+          completedAt: now,
+        },
+      },
+      updatedAt: now,
+      completedAt: active ? undefined : now,
+    });
+  }
+
+  private finishScanBatch(): void {
+    const now = Date.now();
+    this.updateScanStatus({
+      ...this.scanStatus,
+      active: false,
+      phase: "idle",
+      pendingAgents: [],
+      scanningAgents: [],
+      agentStatuses: Object.fromEntries(
+        Object.entries(this.scanStatus.agentStatuses).map(([agentName, status]) => [
+          agentName,
+          { ...status, status: "complete", completedAt: status.completedAt ?? now, updatedAt: now },
+        ]),
+      ),
+      updatedAt: now,
+      completedAt: now,
+    });
+  }
+
   private queueEvent(event: SessionsUpdatedEvent): void {
     this.pendingEvent = this.pendingEvent ? mergeEvents(this.pendingEvent, event) : event;
     if (this.pendingEventTimer) {
@@ -539,10 +775,6 @@ export class LiveScanStore {
 
   private rebuildSessions(): void {
     this.sessions = sortSessions(Object.values(this.byAgent).flat());
-  }
-
-  private hasStartupWindow(): boolean {
-    return this.startupScanOptions.from != null || this.startupScanOptions.to != null;
   }
 
   private getSearchIndexWorkerUrl(): URL | null {
@@ -573,6 +805,7 @@ export class LiveScanStore {
     agent: BaseAgent,
     previousSessions: SessionHead[],
     changedIds: string[] | null,
+    scanOptions: Pick<ScanOptions, "from" | "to" | "fast">,
   ): Promise<{ sessions: SessionHead[]; meta: Record<string, SessionCacheMeta> }> | null {
     const workerUrl = this.getScanRefreshWorkerUrl();
     if (!workerUrl) return null;
@@ -583,7 +816,7 @@ export class LiveScanStore {
           agentName: agent.name,
           previousSessions,
           changedIds,
-          startupScanOptions: this.startupScanOptions,
+          scanOptions,
           meta: buildAgentCacheMeta(agent),
         },
       });
@@ -597,7 +830,11 @@ export class LiveScanStore {
         callback();
       };
 
-      worker.once("message", (message: ScanRefreshWorkerMessage) => {
+      worker.on("message", (message: ScanRefreshWorkerMessage) => {
+        if (message.type === "progress") {
+          this.updateAgentScanProgress(agent.name, message.progress);
+          return;
+        }
         if (message.type === "done") {
           finish(() => resolve({ sessions: message.sessions, meta: message.meta }));
           return;
@@ -616,13 +853,25 @@ export class LiveScanStore {
   }
 
   private buildFullSearchIndexJobs(context: string): SearchIndexWorkerJob[] {
-    return this.agents.map((agent) => ({
-      kind: "full",
-      context,
-      agentName: agent.name,
-      sessions: this.byAgent[agent.name] ?? [],
-      meta: buildAgentCacheMeta(agent),
-    }));
+    return this.agents.map((agent) => {
+      const cached = loadCachedSessions(agent.name, { ignoreTtl: true });
+      if (cached) {
+        return {
+          kind: "full",
+          context,
+          agentName: agent.name,
+          sessions: cached.sessions,
+          meta: cached.meta,
+        };
+      }
+      return {
+        kind: "full",
+        context,
+        agentName: agent.name,
+        sessions: this.byAgent[agent.name] ?? [],
+        meta: buildAgentCacheMeta(agent),
+      };
+    });
   }
 
   private enqueueSearchIndexJobs(context: string, jobs: SearchIndexWorkerJob[]): Promise<void> {
@@ -740,6 +989,67 @@ export class LiveScanStore {
 
   private applyFilters(sessions: SessionHead[]): SessionHead[] {
     return filterSessions(sessions, { ...this.scanOptions, ...this.startupScanOptions });
+  }
+
+  private canSyncSources(agent: BaseAgent): agent is BaseAgent & {
+    listSessionSources: () => SessionSourceRef[];
+    scanSessionSource: (sourcePath: string) => SessionHead | null;
+  } {
+    return Boolean(agent.listSessionSources && agent.scanSessionSource);
+  }
+
+  private syncAgentSources(
+    agent: BaseAgent & {
+      listSessionSources: () => SessionSourceRef[];
+      scanSessionSource: (sourcePath: string) => SessionHead | null;
+    },
+    cachedSessions: SessionHead[],
+    cachedMeta: Record<string, SessionCacheMeta>,
+  ): {
+    sessions: SessionHead[];
+    changedIds: string[];
+    persistenceDiff: Pick<SessionRefreshDiff, "changedSessions" | "removedSessionIds">;
+  } {
+    const sessionMap = new Map(cachedSessions.map((session) => [session.id, session]));
+    const sourceRefs = agent.listSessionSources();
+    const currentIds = new Set(sourceRefs.map((source) => source.sessionId));
+    const changedIds = new Set<string>();
+
+    for (const source of sourceRefs) {
+      const cachedSession = sessionMap.get(source.sessionId);
+      const cached = cachedMeta[source.sessionId];
+      const sameSource = sourcePathFromMeta(cached) === source.sourcePath;
+      const sameFingerprint = sourceFingerprintFromMeta(cached) === source.fingerprint;
+      if (cachedSession && sameSource && sameFingerprint) continue;
+
+      const next = agent.scanSessionSource(source.sourcePath);
+      changedIds.add(source.sessionId);
+      if (next) {
+        sessionMap.set(next.id, next);
+      } else {
+        sessionMap.delete(source.sessionId);
+      }
+    }
+
+    for (const session of cachedSessions) {
+      if (!currentIds.has(session.id)) {
+        sessionMap.delete(session.id);
+        changedIds.add(session.id);
+      }
+    }
+
+    const sessions = attachMissingProjectIdentities([...sessionMap.values()]);
+    const persistenceDiff = buildRefreshDiff(
+      agent.name,
+      cachedSessions,
+      sessions,
+      [...changedIds],
+    );
+    return {
+      sessions,
+      changedIds: [...changedIds],
+      persistenceDiff,
+    };
   }
 
   private async refreshInitialIndex(): Promise<void> {
@@ -1020,6 +1330,7 @@ export class LiveScanStore {
     }
 
     this.refreshInFlight.add(agentName);
+    this.beginAgentScan(agentName);
 
     try {
       await this.runRefresh(agentName);
@@ -1028,6 +1339,7 @@ export class LiveScanStore {
       console.error(`[${agentName}] Session refresh failed:`, error);
     } finally {
       this.refreshInFlight.delete(agentName);
+      this.finishAgentScan(agentName);
 
       if (this.pendingRefreshes.delete(agentName)) {
         this.scheduleRefresh(agentName, PENDING_REFRESH_DELAY_MS);
@@ -1046,9 +1358,19 @@ export class LiveScanStore {
     }
 
     const previousSessions = this.byAgent[agentName] ?? [];
+    const cached = loadCachedSessions(agentName, { ignoreTtl: true });
+    const refreshBaseline = cached?.sessions ?? previousSessions;
+    const cacheTimestamp = cached?.timestamp ?? this.refreshTimestamps.get(agentName) ?? 0;
+    if (cached) {
+      restoreAgentCacheMeta(agent, cached.meta);
+    }
+    const isInitialized = isAgentCacheInitialized(agentName);
     let nextSessions = previousSessions;
+    let fullScanSessions: SessionHead[] | null = null;
     let preciseChangedIds: string[] | null = null;
     let usedIncrementalScan = false;
+    let persistenceDiff: Pick<SessionRefreshDiff, "changedSessions" | "removedSessionIds"> | null =
+      null;
     let availabilityDuration = 0;
     let checkDuration = 0;
     let scanDuration = 0;
@@ -1056,6 +1378,7 @@ export class LiveScanStore {
     let diffDuration = 0;
     let persistDuration = 0;
     let searchIndexDuration = 0;
+    let persistentJobKind: SearchIndexWorkerJob["kind"] | undefined;
 
     const availabilityStartedAt = performance.now();
     const isAvailable = agent.isAvailable();
@@ -1064,10 +1387,44 @@ export class LiveScanStore {
     if (!isAvailable) {
       nextSessions = [];
       this.refreshTimestamps.set(agentName, Date.now());
-    } else if (previousSessions.length > 0 && agent.checkForChanges && agent.incrementalScan) {
+    } else if (!isInitialized) {
+      this.setScanPhase("initializing");
+      const scanStartedAt = performance.now();
+      const workerResult = this.scanAgentInWorker(agent, previousSessions, null, {});
+      if (workerResult) {
+        const result = await workerResult;
+        nextSessions = result.sessions;
+        agent.setSessionMetaMap?.(new Map(Object.entries(result.meta)));
+      } else {
+        nextSessions = await Promise.resolve(
+          agent.scan({
+            onProgress: (progress) => this.updateAgentScanProgress(agentName, progress),
+          }),
+        );
+      }
+      fullScanSessions = attachMissingProjectIdentities(nextSessions);
+      nextSessions = fullScanSessions;
+      scanDuration = performance.now() - scanStartedAt;
+      this.refreshTimestamps.set(agentName, Date.now());
+    } else if (cached && this.canSyncSources(agent)) {
+      const scanStartedAt = performance.now();
+      const result = this.syncAgentSources(agent, cached.sessions, cached.meta);
+      nextSessions = result.sessions;
+      preciseChangedIds = result.changedIds;
+      usedIncrementalScan = true;
+      persistenceDiff = result.persistenceDiff;
+      scanDuration = performance.now() - scanStartedAt;
+      this.refreshTimestamps.set(agentName, Date.now());
+      if (result.changedIds.length === 0) {
+        appLogger.debug("scan.refresh.unchanged", {
+          agent: agentName,
+          duration_ms: Math.round(performance.now() - startedAt),
+        });
+      }
+    } else if (refreshBaseline.length > 0 && agent.checkForChanges && agent.incrementalScan) {
       const checkStartedAt = performance.now();
       const checkResult = await Promise.resolve(
-        agent.checkForChanges(this.refreshTimestamps.get(agentName) ?? 0, previousSessions),
+        agent.checkForChanges(cacheTimestamp, refreshBaseline),
       );
       checkDuration = performance.now() - checkStartedAt;
 
@@ -1083,31 +1440,34 @@ export class LiveScanStore {
       preciseChangedIds = checkResult.changedIds ?? null;
       usedIncrementalScan = Array.isArray(checkResult.changedIds);
       const scanStartedAt = performance.now();
-      const workerResult = this.scanAgentInWorker(
-        agent,
-        previousSessions,
-        checkResult.changedIds ?? [],
+      nextSessions = await Promise.resolve(
+        agent.incrementalScan(refreshBaseline, checkResult.changedIds ?? []),
       );
+      const nextBaseline = attachMissingProjectIdentities(nextSessions);
+      persistenceDiff = buildRefreshDiff(
+        agentName,
+        refreshBaseline,
+        nextBaseline,
+        preciseChangedIds ?? [],
+      );
+      nextSessions = nextBaseline;
+      scanDuration = performance.now() - scanStartedAt;
+    } else {
+      const scanStartedAt = performance.now();
+      const workerResult = this.scanAgentInWorker(agent, previousSessions, null, {});
       if (workerResult) {
         const result = await workerResult;
         nextSessions = result.sessions;
         agent.setSessionMetaMap?.(new Map(Object.entries(result.meta)));
       } else {
         nextSessions = await Promise.resolve(
-          agent.incrementalScan(previousSessions, checkResult.changedIds ?? []),
+          agent.scan({
+            onProgress: (progress) => this.updateAgentScanProgress(agentName, progress),
+          }),
         );
       }
-      scanDuration = performance.now() - scanStartedAt;
-    } else {
-      const scanStartedAt = performance.now();
-      const workerResult = this.scanAgentInWorker(agent, previousSessions, null);
-      if (workerResult) {
-        const result = await workerResult;
-        nextSessions = result.sessions;
-        agent.setSessionMetaMap?.(new Map(Object.entries(result.meta)));
-      } else {
-        nextSessions = await Promise.resolve(agent.scan(this.startupScanOptions));
-      }
+      fullScanSessions = attachMissingProjectIdentities(nextSessions);
+      nextSessions = fullScanSessions;
       scanDuration = performance.now() - scanStartedAt;
       this.refreshTimestamps.set(agentName, Date.now());
     }
@@ -1128,8 +1488,11 @@ export class LiveScanStore {
     const searchIndexOptions =
       pendingPathCount >= SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD ? { isBulk: true } : undefined;
     const canPersistIncrementally = usedIncrementalScan;
+    const persistentChanges = persistenceDiff?.changedSessions ?? diff.changedSessions;
+    const persistentRemovedSessionIds =
+      persistenceDiff?.removedSessionIds ?? diff.removedSessionIds;
     const changedSessionIds = canPersistIncrementally
-      ? new Set(diff.changedSessions.map(({ session }) => session.id))
+      ? new Set(persistentChanges.map(({ session }) => session.id))
       : undefined;
     const cacheMeta = buildAgentCacheMeta(agent, changedSessionIds);
     const persistStartedAt = performance.now();
@@ -1138,24 +1501,33 @@ export class LiveScanStore {
           kind: "changes",
           context: "scan.refresh",
           agentName,
-          changes: diff.changedSessions,
-          removedSessionIds: diff.removedSessionIds,
+          changes: persistentChanges,
+          removedSessionIds: persistentRemovedSessionIds,
           meta: cacheMeta,
           ...(searchIndexOptions ? { searchIndexOptions } : {}),
         }
-      : !this.hasStartupWindow()
+      : fullScanSessions
         ? {
             kind: "full",
             context: "scan.refresh",
             agentName,
-            sessions: nextSessions,
+            sessions: fullScanSessions,
             meta: buildAgentCacheMeta(agent),
             saveCache: true,
             ...(searchIndexOptions ? { searchIndexOptions } : {}),
           }
         : null;
     if (persistentJob) {
-      await this.enqueueSearchIndexJobs("scan.refresh", [persistentJob]);
+      persistentJobKind = persistentJob.kind;
+      const persist = this.enqueueSearchIndexJobs("scan.refresh", [persistentJob]);
+      if (!isInitialized && persistentJob.kind === "full") {
+        await persist;
+      } else {
+        void persist.catch((error) => {
+          appLogger.error("scan.refresh.persist.error", { agent: agentName, error });
+          console.error(`[${agentName}] Session persistence failed:`, error);
+        });
+      }
     }
     persistDuration = performance.now() - persistStartedAt;
     const searchIndexStartedAt = performance.now();
@@ -1185,7 +1557,7 @@ export class LiveScanStore {
       diff_ms: Math.round(diffDuration),
       persist_ms: Math.round(persistDuration),
       search_index_ms: Math.round(searchIndexDuration),
-      persistent_index_worker_job: persistentJob?.kind,
+      persistent_index_worker_job: persistentJobKind,
       persistent_index_skipped: !persistentJob || undefined,
     });
   }

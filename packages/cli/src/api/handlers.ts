@@ -41,6 +41,34 @@ export interface ScanResultSource {
   getSnapshot(): ScanResult;
 }
 
+export interface ScanStatusSource {
+  getScanStatus(): {
+    type: "scan-status";
+    active: boolean;
+    phase: "idle" | "indexing" | "initializing" | "scanning";
+    pendingAgents: string[];
+    scanningAgents: string[];
+    completedAgents: string[];
+    agentStatuses: Record<
+      string,
+      {
+        agentName: string;
+        status: "pending" | "scanning" | "complete";
+        total?: number;
+        processed?: number;
+        sessions?: number;
+        startedAt?: number;
+        updatedAt: number;
+        completedAt?: number;
+      }
+    >;
+    totalAgents: number;
+    startedAt?: number;
+    updatedAt: number;
+    completedAt?: number;
+  };
+}
+
 export interface SessionListDefaults {
   from?: number;
   to?: number;
@@ -449,6 +477,10 @@ export function handleGetConfig(c: Context, defaults: SessionListDefaults) {
   });
 }
 
+export function handleGetScanStatus(c: Context, scanSource: ScanStatusSource) {
+  return c.json(scanSource.getScanStatus());
+}
+
 export function handleGetAgents(
   c: Context,
   scanSource: ScanResultSource,
@@ -614,7 +646,14 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
     const head = scanResult.byAgent[agentName]?.find((item) => item.id === sessionId);
     const loadStartedAt = performance.now();
     const cachedData = loadCachedSessionData(agentName, sessionId);
-    const data: SessionData | null = cachedData ?? (head ? agent.getSessionData(sessionId) : null);
+    const cachedMessageCount = cachedData?.stats.message_count ?? 0;
+    const cacheHasExpectedMessages =
+      cachedData !== null && (cachedData.messages.length > 0 || cachedMessageCount === 0);
+    const data: SessionData | null = cacheHasExpectedMessages
+      ? cachedData
+      : head
+        ? agent.getSessionData(sessionId)
+        : null;
     const loadDuration = performance.now() - loadStartedAt;
     if (!data) {
       appLogger.warn("api.session_data.cache_miss", {
@@ -631,7 +670,7 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
       data.project_identity ?? head?.project_identity ?? computeIdentity(data.directory, realFs);
     const fileActivity =
       data.file_activity ??
-      (cachedData
+      (cacheHasExpectedMessages && cachedData
         ? listSessionFileActivity(agentName, sessionId)
         : extractSessionFileActivity(agentName, sessionId, projectIdentity.key, data.messages));
     appLogger.info("api.session_data", {

@@ -109,21 +109,25 @@ export class OpenCodeAgent extends BaseAgent {
           )
         : new Map<string, OpenCodeHeadContext>();
       const heads: SessionHead[] = [];
+      options?.onProgress?.({ total: rows.length, processed: 0, sessions: 0 });
+      let processed = 0;
       for (const row of rows) {
         const head = getParsedSession(
           this.parseSessionHeadRow(row, hasMessageTable, headContexts.get(String(row.id ?? ""))),
         );
-        if (!head) continue;
+        if (head) {
+          heads.push(head);
 
-        heads.push(head);
-
-        // Store session metadata for caching
-        if (this.dbPath) {
-          this.sessionMetaMap.set(head.id, {
-            id: head.id,
-            sourcePath: this.dbPath,
-          });
+          // Store session metadata for caching
+          if (this.dbPath) {
+            this.sessionMetaMap.set(head.id, {
+              id: head.id,
+              sourcePath: this.dbPath,
+            });
+          }
         }
+        processed += 1;
+        options?.onProgress?.({ total: rows.length, processed, sessions: heads.length });
       }
 
       return heads;

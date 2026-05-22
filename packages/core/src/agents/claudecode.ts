@@ -17,7 +17,12 @@ import { isInternalEventType } from "../utils/parse-cleanup.js";
 import { cleanInternalText, cleanParsedMessages } from "../utils/session-normalization.js";
 import { perf } from "../utils/perf.js";
 import { estimateTokenCost } from "../utils/cost.js";
-import type { AgentScanOptions, SessionCacheMeta, ChangeCheckResult } from "./base.js";
+import type {
+  AgentScanOptions,
+  ChangeCheckResult,
+  SessionCacheMeta,
+  SessionSourceRef,
+} from "./base.js";
 
 const HEAD_INDEX_VERSION = "claudecode-head-v1";
 
@@ -86,15 +91,25 @@ export class ClaudeCodeAgent extends BaseAgent {
     const projectDirs = this.listProjectDirs();
     perf.end(listMarker);
 
-    for (const projectDir of projectDirs) {
+    const filesByProject = projectDirs.map((projectDir) => {
       const fileMarker = perf.start(`listJsonlFiles:${basename(projectDir)}`);
-      const files = this.listJsonlFiles(projectDir);
+      const files = this.listJsonlFiles(projectDir).filter((file) => {
+        try {
+          return matchesScanWindow(statSync(file).mtimeMs, options);
+        } catch {
+          return false;
+        }
+      });
       perf.end(fileMarker);
+      return { projectDir, files };
+    });
+    const totalFiles = filesByProject.reduce((total, item) => total + item.files.length, 0);
+    options?.onProgress?.({ total: totalFiles, processed: 0, sessions: 0 });
 
+    let processed = 0;
+    for (const { projectDir, files } of filesByProject) {
       for (const file of files) {
         try {
-          if (!matchesScanWindow(statSync(file).mtimeMs, options)) continue;
-
           const parseMarker = perf.start(`parseSessionHead:${basename(file)}`);
           const head = getParsedSession(this.parseSessionHeadResult(file, projectDir));
           perf.end(parseMarker);
@@ -105,12 +120,40 @@ export class ClaudeCodeAgent extends BaseAgent {
           }
         } catch {
           // skip malformed files
+        } finally {
+          processed += 1;
+          options?.onProgress?.({ total: totalFiles, processed, sessions: heads.length });
         }
       }
     }
 
     perf.end(scanMarker);
     return heads;
+  }
+
+  listSessionSources(): SessionSourceRef[] {
+    if (!this.basePath) return [];
+    const refs: SessionSourceRef[] = [];
+    for (const projectDir of this.listProjectDirs()) {
+      for (const file of this.listJsonlFiles(projectDir)) {
+        const sessionId = basename(file, ".jsonl");
+        refs.push({
+          sessionId,
+          sourcePath: file,
+          fingerprint: this.sourceFingerprint(file, projectDir),
+        });
+      }
+    }
+    return refs;
+  }
+
+  scanSessionSource(sourcePath: string): SessionHead | null {
+    const projectDir = dirname(sourcePath);
+    const head = getParsedSession(this.parseSessionHeadResult(sourcePath, projectDir));
+    if (head) {
+      this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, sourcePath, projectDir));
+    }
+    return head;
   }
 
   getSessionMetaMap(): Map<string, SessionCacheMeta> {
@@ -303,6 +346,7 @@ export class ClaudeCodeAgent extends BaseAgent {
       id: head.id,
       title: head.title,
       sourcePath: file,
+      sourceFingerprint: this.sourceFingerprint(file, projectDir),
       sourceMtimeMs: statSync(file).mtimeMs,
       indexPath: existsSync(indexPath) ? indexPath : null,
       indexMtimeMs: this.getFileMtimeMs(indexPath),
@@ -322,6 +366,17 @@ export class ClaudeCodeAgent extends BaseAgent {
 
     const indexPath = meta.indexPath ?? this.getSessionsIndexPath(dirname(meta.sourcePath));
     return this.getFileMtimeMs(indexPath) !== (meta.indexMtimeMs ?? null);
+  }
+
+  private sourceFingerprint(file: string, projectDir: string): string {
+    const stat = statSync(file);
+    const indexPath = this.getSessionsIndexPath(projectDir);
+    return JSON.stringify([
+      HEAD_INDEX_VERSION,
+      stat.mtimeMs,
+      stat.size,
+      this.getFileMtimeMs(indexPath),
+    ]);
   }
 
   private getSessionsIndexPath(projectDir: string): string {

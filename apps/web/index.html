@@ -9,9 +9,195 @@
     />
     <link rel="icon" type="image/svg+xml" href="/logo.svg?v=3" />
     <title>CodeSesh</title>
+    <style>
+      :root {
+        --console-bg: #f7f7f7;
+        --console-sidebar-bg: #fbfbfb;
+        --console-surface-muted: #f5f5f5;
+        --console-border: #e5e5e5;
+        --console-text: #1a1a1a;
+        --console-muted: #666666;
+      }
+
+      body {
+        margin: 0;
+        background: var(--console-bg);
+        color: var(--console-text);
+        font-family:
+          "Avenir Next",
+          "PingFang SC",
+          -apple-system,
+          sans-serif;
+      }
+
+      .app-shell {
+        display: flex;
+        height: 100vh;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .app-header {
+        display: grid;
+        min-height: 56px;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 12px;
+        border-bottom: 1px solid var(--console-border);
+        background: rgba(255, 255, 255, 0.85);
+        padding: 0 16px;
+      }
+
+      .app-brand,
+      .app-search,
+      .app-pill,
+      .app-sidebar-line,
+      .app-card,
+      .app-line {
+        border-radius: 2px;
+      }
+
+      .app-brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font: 600 13px "SFMono-Regular", Menlo, monospace;
+        letter-spacing: 0.05em;
+      }
+
+      .app-brand img {
+        width: 24px;
+        height: 24px;
+      }
+
+      .app-search {
+        height: 28px;
+        max-width: 560px;
+        border: 1px solid var(--console-border);
+        background: white;
+      }
+
+      .app-pill {
+        height: 26px;
+        width: 88px;
+        border: 1px solid var(--console-border);
+        background: var(--console-surface-muted);
+      }
+
+      .app-body {
+        display: flex;
+        min-height: 0;
+        flex: 1;
+      }
+
+      .app-sidebar {
+        width: 256px;
+        border-right: 1px solid var(--console-border);
+        background: var(--console-sidebar-bg);
+        padding: 24px 16px;
+      }
+
+      .app-sidebar-line {
+        height: 26px;
+        margin-bottom: 8px;
+        background: var(--console-surface-muted);
+      }
+
+      .app-main {
+        min-width: 0;
+        flex: 1;
+      }
+
+      .app-titlebar {
+        border-bottom: 1px solid var(--console-border);
+        background: rgba(255, 255, 255, 0.7);
+        padding: 18px 32px;
+      }
+
+      .app-title {
+        height: 24px;
+        width: 220px;
+        border-radius: 2px;
+        background: var(--console-surface-muted);
+      }
+
+      .app-content {
+        display: grid;
+        gap: 12px;
+        padding: 24px 32px;
+      }
+
+      .app-card {
+        height: 96px;
+        border: 1px solid var(--console-border);
+        background: rgba(255, 255, 255, 0.8);
+        padding: 16px;
+      }
+
+      .app-line {
+        height: 12px;
+        margin-bottom: 12px;
+        background: var(--console-surface-muted);
+      }
+
+      .app-line.short {
+        width: 46%;
+      }
+
+      @media (max-width: 1023px) {
+        .app-sidebar {
+          display: none;
+        }
+
+        .app-header {
+          grid-template-columns: auto 1fr;
+        }
+
+        .app-pill {
+          display: none;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="app-shell">
+        <header class="app-header">
+          <div class="app-brand">
+            <img src="/logo.svg?v=3" alt="CodeSesh" />
+            <span>CodeSesh</span>
+          </div>
+          <div class="app-search"></div>
+          <div class="app-pill"></div>
+        </header>
+        <div class="app-body">
+          <aside class="app-sidebar">
+            <div class="app-sidebar-line" style="width: 58%"></div>
+            <div class="app-sidebar-line" style="width: 82%"></div>
+            <div class="app-sidebar-line" style="width: 72%"></div>
+            <div class="app-sidebar-line" style="width: 88%; margin-top: 32px"></div>
+            <div class="app-sidebar-line" style="width: 68%"></div>
+          </aside>
+          <main class="app-main">
+            <section class="app-titlebar">
+              <div class="app-title"></div>
+            </section>
+            <section class="app-content">
+              <div class="app-card">
+                <div class="app-line short"></div>
+                <div class="app-line"></div>
+                <div class="app-line" style="width: 72%"></div>
+              </div>
+              <div class="app-card">
+                <div class="app-line short"></div>
+                <div class="app-line"></div>
+                <div class="app-line" style="width: 64%"></div>
+              </div>
+            </section>
+          </main>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

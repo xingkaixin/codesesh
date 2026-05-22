@@ -189,7 +189,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(12);
+    expect(getUserVersion(getCachePath())).toBe(13);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -346,7 +346,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(12);
+    expect(getUserVersion(getCachePath())).toBe(13);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
@@ -1349,7 +1349,7 @@ describe("searchSessions", () => {
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(12);
+    expect(getUserVersion(getCachePath())).toBe(13);
   });
 
   it("refreshes cached project identities when migrating to schema version 12", () => {

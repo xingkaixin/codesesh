@@ -1,6 +1,7 @@
 import { parentPort, workerData } from "node:worker_threads";
 import {
   createRegisteredAgents,
+  markAgentCacheInitialized,
   saveCachedSessionChanges,
   saveCachedSessions,
   syncSessionSearchIndex,
@@ -96,6 +97,9 @@ for (const job of jobs) {
       (sessionId) => agent.getSessionData(sessionId),
       job.searchIndexOptions,
     );
+    if (job.saveCache && result?.skipped === 0) {
+      markAgentCacheInitialized(job.agentName);
+    }
   }
   parentPort?.postMessage({
     type: "sync-result",

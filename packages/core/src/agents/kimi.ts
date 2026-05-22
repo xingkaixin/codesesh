@@ -13,6 +13,7 @@ import type {
   ChangeCheckResult,
   ParseSessionResult,
   SessionCacheMeta,
+  SessionSourceRef,
 } from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
@@ -295,16 +296,26 @@ export class KimiAgent extends BaseAgent {
     const sessionDirs = this.listSessionDirs();
     perf.end(listMarker);
 
-    const heads: SessionHead[] = [];
+    const metas: SessionMeta[] = [];
     for (const dir of sessionDirs) {
       try {
         const parseMarker = perf.start(`parseSessionDir:${basename(dir)}`);
         const meta = getParsedSession(this.parseSessionDirResult(dir));
         perf.end(parseMarker);
+        if (meta && matchesScanWindow(meta.createdAt, options)) {
+          metas.push(meta);
+        }
+      } catch {
+        // skip
+      }
+    }
+    options?.onProgress?.({ total: metas.length, processed: 0, sessions: 0 });
 
-        if (!meta) continue;
-        if (!matchesScanWindow(meta.createdAt, options)) continue;
-
+    const heads: SessionHead[] = [];
+    let processed = 0;
+    for (const meta of metas) {
+      try {
+        meta.sourceFingerprint = this.sourceFingerprint(meta);
         this.sessionMetaMap.set(meta.id, meta);
         const stats = this.extractStats(meta.sourcePath);
         heads.push({
@@ -318,11 +329,48 @@ export class KimiAgent extends BaseAgent {
         });
       } catch {
         // skip
+      } finally {
+        processed += 1;
+        options?.onProgress?.({ total: metas.length, processed, sessions: heads.length });
       }
     }
 
     perf.end(scanMarker);
     return heads;
+  }
+
+  listSessionSources(): SessionSourceRef[] {
+    if (!this.basePath) return [];
+    const refs: SessionSourceRef[] = [];
+    for (const dir of this.listSessionDirs()) {
+      const meta = getParsedSession(this.parseSessionDirResult(dir));
+      if (!meta) continue;
+      meta.sourceFingerprint = this.sourceFingerprint(meta);
+      this.sessionMetaMap.set(meta.id, meta);
+      refs.push({
+        sessionId: meta.id,
+        sourcePath: meta.sourcePath,
+        fingerprint: this.sourceFingerprint(meta),
+      });
+    }
+    return refs;
+  }
+
+  scanSessionSource(sourcePath: string): SessionHead | null {
+    const meta = getParsedSession(this.parseSessionDirResult(sourcePath));
+    if (!meta) return null;
+    meta.sourceFingerprint = this.sourceFingerprint(meta);
+    this.sessionMetaMap.set(meta.id, meta);
+    const stats = this.extractStats(meta.sourcePath);
+    return {
+      id: meta.id,
+      slug: `kimi/${meta.id}`,
+      title: meta.title,
+      directory: meta.cwd,
+      time_created: meta.createdAt,
+      time_updated: meta.createdAt,
+      stats,
+    };
   }
 
   getSessionMetaMap(): Map<string, SessionCacheMeta> {
@@ -685,6 +733,22 @@ export class KimiAgent extends BaseAgent {
   }
 
   // --- Helpers ---
+
+  private sourceFingerprint(meta: SessionMeta): string {
+    const fileMtime = (path: string | null) => {
+      if (!path) return null;
+      try {
+        return statSync(path).mtimeMs;
+      } catch {
+        return null;
+      }
+    };
+    return JSON.stringify([
+      fileMtime(meta.metaFile),
+      fileMtime(meta.contextFile),
+      fileMtime(meta.wireFile),
+    ]);
+  }
 
   private buildMessage(opts: {
     messageId: string;

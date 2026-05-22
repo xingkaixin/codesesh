@@ -28,6 +28,13 @@ export interface AgentScanOptions {
   from?: number;
   to?: number;
   fast?: boolean;
+  onProgress?: (progress: AgentScanProgress) => void;
+}
+
+export interface AgentScanProgress {
+  total?: number;
+  processed?: number;
+  sessions?: number;
 }
 
 export function matchesScanWindow(activityTime: number, options?: AgentScanOptions): boolean {
@@ -44,6 +51,12 @@ export interface ChangeCheckResult {
   changedIds?: string[];
   /** 检测时间戳 */
   timestamp: number;
+}
+
+export interface SessionSourceRef {
+  sessionId: string;
+  sourcePath: string;
+  fingerprint: string;
 }
 
 export abstract class BaseAgent {
@@ -96,4 +109,8 @@ export abstract class BaseAgent {
     cachedSessions: SessionHead[],
     changedIds: string[],
   ): Promise<SessionHead[]> | SessionHead[];
+
+  listSessionSources?(): SessionSourceRef[];
+
+  scanSessionSource?(sourcePath: string): SessionHead | null;
 }

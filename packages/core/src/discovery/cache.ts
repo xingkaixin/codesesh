@@ -31,7 +31,8 @@ import {
   type SQLiteDatabase,
 } from "../utils/sqlite.js";
 
-const CACHE_SCHEMA_VERSION = 12;
+const CACHE_SCHEMA_VERSION = 13;
+export const CACHE_INITIALIZATION_VERSION = "session-cache-v2";
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const CACHE_FILENAME = "codesesh.db";
 const LEGACY_CACHE_FILENAME = "scan-cache.json";
@@ -397,6 +398,13 @@ function createCacheTables(db: SQLiteDatabase): void {
       session_json TEXT NOT NULL,
       meta_json TEXT,
       PRIMARY KEY (agent_name, session_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS cache_initialization (
+      agent_name TEXT PRIMARY KEY,
+      initialized_at INTEGER NOT NULL,
+      index_version TEXT NOT NULL,
+      last_sync_at INTEGER NOT NULL
     );
   `);
 }
@@ -1606,6 +1614,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
     backupLabel: "cache-migration",
     backupTables: [
       "agent_cache",
+      "cache_initialization",
       "cached_sessions",
       "sessions",
       "messages",
@@ -1655,6 +1664,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
           refreshProjectIdentities(db);
         },
       },
+      { version: 13, migrate: createCacheTables },
     ],
   });
 
@@ -2015,7 +2025,10 @@ function deleteLegacyCacheFile(): void {
   }
 }
 
-export function loadCachedSessions(agentName: string): CachedResult | null {
+export function loadCachedSessions(
+  agentName: string,
+  options: { ignoreTtl?: boolean } = {},
+): CachedResult | null {
   if (!hasCacheStorage()) {
     return null;
   }
@@ -2026,7 +2039,7 @@ export function loadCachedSessions(agentName: string): CachedResult | null {
       .get(agentName) as ScalarRow | undefined;
     const timestamp = Number(timestampRow?.value ?? 0);
 
-    if (!timestamp || Date.now() - timestamp > CACHE_TTL) {
+    if (!timestamp || (!options.ignoreTtl && Date.now() - timestamp > CACHE_TTL)) {
       return null;
     }
 
@@ -2077,6 +2090,49 @@ export function loadCachedSessions(agentName: string): CachedResult | null {
     }
 
     return { sessions, meta, timestamp };
+  });
+}
+
+export function isAgentCacheInitialized(
+  agentName: string,
+  indexVersion = CACHE_INITIALIZATION_VERSION,
+): boolean {
+  if (!hasCacheStorage()) {
+    return false;
+  }
+
+  return (
+    withCacheDbReadOnly((db) => {
+      if (!tableExists(db, "cache_initialization")) return false;
+      const row = db
+        .prepare(
+          `
+            SELECT index_version
+            FROM cache_initialization
+            WHERE agent_name = ?
+          `,
+        )
+        .get(agentName) as { index_version?: string } | undefined;
+      return row?.index_version === indexVersion;
+    }) ?? false
+  );
+}
+
+export function markAgentCacheInitialized(
+  agentName: string,
+  indexVersion = CACHE_INITIALIZATION_VERSION,
+): void {
+  withCacheDb((db) => {
+    const now = Date.now();
+    db.prepare(
+      `
+        INSERT INTO cache_initialization(agent_name, initialized_at, index_version, last_sync_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(agent_name) DO UPDATE SET
+          index_version = excluded.index_version,
+          last_sync_at = excluded.last_sync_at
+      `,
+    ).run(agentName, now, indexVersion, now);
   });
 }
 
@@ -2336,6 +2392,7 @@ export function clearCache(): void {
   withCacheDb((db) => {
     db.exec(`
       DELETE FROM agent_cache;
+      DELETE FROM cache_initialization;
       DELETE FROM cached_sessions;
       DELETE FROM session_documents;
       DELETE FROM session_file_activity;
