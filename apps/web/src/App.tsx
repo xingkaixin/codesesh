@@ -889,8 +889,6 @@ export default function App() {
 
       if (event.newSessions > 0) {
         setLiveNotice(`发现 ${event.newSessions} 个新会话，列表已自动刷新`);
-      } else if (event.updatedSessions > 0) {
-        setLiveNotice("会话内容已同步");
       }
     } catch (err) {
       console.error("Failed to sync live session update:", err);

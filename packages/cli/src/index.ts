@@ -228,18 +228,34 @@ const main = defineCommand({
     printScanResults(agents, result);
 
     // Start server
-    let url: string;
+    let app: Awaited<ReturnType<typeof createServer>>;
     try {
-      ({ url } = await createServer(port, store, {
+      app = await createServer(port, store, {
         defaultSessionFrom: listDefaultFrom,
         defaultSessionTo: listDefaultTo,
         defaultSessionDays: listDefaultDays,
         portFallbackAttempts: explicitPort ? 1 : DEFAULT_PORT_FALLBACK_ATTEMPTS,
-      }));
+      });
     } catch (error) {
       console.error(getServerStartupErrorMessage(error, port));
       process.exit(1);
     }
+
+    const { url } = app;
+    let shuttingDown = false;
+    const shutdown = async (signal: NodeJS.Signals) => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      appLogger.info("cli.shutdown", { signal });
+      await app.shutdown();
+      process.exit(0);
+    };
+    process.once("SIGINT", (signal) => {
+      void shutdown(signal);
+    });
+    process.once("SIGTERM", (signal) => {
+      void shutdown(signal);
+    });
 
     console.log(`  ${url}`);
     console.log("");

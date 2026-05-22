@@ -51,7 +51,7 @@ describe("createServer", () => {
     expect(app.url).toMatch(/^http:\/\/localhost:\d+$/);
     expect(app.url).not.toBe("http://localhost:0");
 
-    app.shutdown();
+    await app.shutdown();
   });
 
   it("falls back to the next port when enabled", async () => {
@@ -63,7 +63,7 @@ describe("createServer", () => {
 
       expect(app.url).toBe(`http://localhost:${port + 1}`);
     } finally {
-      app?.shutdown();
+      await app?.shutdown();
       await close(blocker);
     }
   });

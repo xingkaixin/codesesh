@@ -53,8 +53,10 @@ try {
     agent.setSessionMetaMap(new Map(Object.entries(data.meta)));
   }
 
-  const sessions =
-    data.changedIds && agent.incrementalScan
+  const isAvailable = agent.isAvailable();
+  const sessions = !isAvailable
+    ? []
+    : data.changedIds && agent.incrementalScan
       ? agent.incrementalScan(data.previousSessions, data.changedIds)
       : agent.scan(data.startupScanOptions);
 
