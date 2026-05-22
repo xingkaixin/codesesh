@@ -227,7 +227,7 @@ const main = defineCommand({
 
     // Print console output
     const agents = createRegisteredAgents();
-    printScanResults(agents, result);
+    printScanResults(agents);
 
     // Start server
     let app: Awaited<ReturnType<typeof createServer>>;

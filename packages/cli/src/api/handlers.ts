@@ -14,6 +14,7 @@ import {
   getAgentInfoMap,
   classifySessionTags,
   computeIdentity,
+  extractSessionFileActivity,
   getSmartTagSourceTimestamp,
   importBookmarks,
   loadCachedSessionData,
@@ -610,8 +611,10 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
   }
 
   try {
+    const head = scanResult.byAgent[agentName]?.find((item) => item.id === sessionId);
     const loadStartedAt = performance.now();
-    const data: SessionData | null = loadCachedSessionData(agentName, sessionId);
+    const cachedData = loadCachedSessionData(agentName, sessionId);
+    const data: SessionData | null = cachedData ?? (head ? agent.getSessionData(sessionId) : null);
     const loadDuration = performance.now() - loadStartedAt;
     if (!data) {
       appLogger.warn("api.session_data.cache_miss", {
@@ -624,9 +627,13 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
     const tagStartedAt = performance.now();
     const smartTags = data.smart_tags ?? classifySessionTags(data);
     const tagDuration = performance.now() - tagStartedAt;
-    const head = scanResult.byAgent[agentName]?.find((item) => item.id === sessionId);
     const projectIdentity =
       data.project_identity ?? head?.project_identity ?? computeIdentity(data.directory, realFs);
+    const fileActivity =
+      data.file_activity ??
+      (cachedData
+        ? listSessionFileActivity(agentName, sessionId)
+        : extractSessionFileActivity(agentName, sessionId, projectIdentity.key, data.messages));
     appLogger.info("api.session_data", {
       agent: agentName,
       session_id: sessionId,
@@ -640,7 +647,7 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
       project_identity: projectIdentity,
       smart_tags: smartTags,
       smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
-      file_activity: data.file_activity ?? listSessionFileActivity(agentName, sessionId),
+      file_activity: fileActivity,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load session";

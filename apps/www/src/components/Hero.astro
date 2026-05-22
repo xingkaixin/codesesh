@@ -10,43 +10,37 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = copy[locale].hero;
-const terminal = copy[locale].terminal;
 const command = "$ npx codesesh";
-const outputLines = [
+type TerminalSegment = {
+  text: string;
+  className?: string;
+};
+
+const outputLines: TerminalSegment[][] = [
   [{ text: "\u00A0" }],
-  [{ text: " ╭─────────────CodeSesh───────────────╮", className: "text-[#64748b]" }],
-  [{ text: " │ local session scan", className: "text-[#64748b]" }],
+  [{ text: " ╭────────────CodeSesh──────────────╮", className: "text-[#64748b]" }],
+  [{ text: " │                                  │", className: "text-[#64748b]" }],
   [
-    { text: " │ ", className: "text-[#64748b]" },
-    { text: `v${packageJson.version} • ${terminal.discovered}`, className: "text-[#e2e8f0]" },
+    { text: " │  ", className: "text-[#64748b]" },
+    { text: `v${packageJson.version} • local session browser`, className: "text-[#e2e8f0]" },
+    { text: "  │", className: "text-[#64748b]" },
   ],
-  [{ text: " │ SQLite local index ready", className: "text-[#64748b]" }],
-  [{ text: " ╰────────────────────────────────────╯", className: "text-[#64748b]" }],
-  [{ text: "\u00A0" }],
-  [
-    { text: " ✔", className: "text-[#4ade80]" },
-    { text: " Claude Code 91 sessions" },
-  ],
-  [
-    { text: " ✔", className: "text-[#4ade80]" },
-    { text: " Cursor 18 sessions" },
-  ],
-  [
-    { text: " ✔", className: "text-[#4ade80]" },
-    { text: " Kimi 2 sessions" },
-  ],
-  [
-    { text: " ✔", className: "text-[#4ade80]" },
-    { text: " Codex 30 sessions" },
-  ],
-  [
-    { text: " ✔", className: "text-[#4ade80]" },
-    { text: " OpenCode indexed" },
-  ],
+  [{ text: " │                                  │", className: "text-[#64748b]" }],
+  [{ text: " ╰──────────────────────────────────╯", className: "text-[#64748b]" }],
   [{ text: "\u00A0" }],
   [
     { text: "ℹ ", className: "text-[#38bdf8]" },
-    { text: terminal.active, className: "text-[#38bdf8]" },
+    {
+      text: "Indexing Claude Code, OpenCode, Kimi-Cli, Codex, Cursor sessions in the background.",
+      className: "text-[#38bdf8]",
+    },
+  ],
+  [
+    { text: "ℹ ", className: "text-[#38bdf8]" },
+    {
+      text: "The Web UI will update automatically as sessions are discovered.",
+      className: "text-[#38bdf8]",
+    },
   ],
   [{ text: "\u00A0" }],
   [{ text: " http://localhost:4521", className: "text-[#38bdf8]" }],
