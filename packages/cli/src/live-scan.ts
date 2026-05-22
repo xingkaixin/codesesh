@@ -58,6 +58,13 @@ interface SessionRefreshDiff {
   removedSessionIds: string[];
 }
 
+interface SearchIndexJobBatch {
+  context: string;
+  jobs: SearchIndexWorkerJob[];
+  resolve: () => void;
+  reject: (error: Error) => void;
+}
+
 const REFRESH_DEBOUNCE_MS = 200;
 const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
 const PENDING_REFRESH_DELAY_MS = 100;
@@ -127,10 +134,11 @@ function buildRefreshDiff(
       return;
     }
     const hasSignatureChange = sessionSignature(previous) !== sessionSignature(session);
-    if (hasSignatureChange) {
+    const hasContentChange = candidateChangedIdSet.has(id);
+    if (hasSignatureChange || hasContentChange) {
       updatedSessions += 1;
     }
-    if (candidateChangedIdSet.has(id) || hasSignatureChange) {
+    if (hasContentChange || hasSignatureChange) {
       changedSessions.push({ session, sortIndex: index });
     }
   });
@@ -334,9 +342,8 @@ export class LiveScanStore {
   private stablePaths = new Map<string, StablePathState>();
   private pendingEvent: SessionsUpdatedEvent | null = null;
   private pendingEventTimer: NodeJS.Timeout | null = null;
-  private initialSearchIndexTimer: NodeJS.Timeout | null = null;
   private searchIndexWorker: Worker | null = null;
-  private pendingSearchIndexJobs: SearchIndexWorkerJob[] = [];
+  private pendingSearchIndexJobs: SearchIndexJobBatch[] = [];
 
   constructor(
     private readonly watchEnabled = true,
@@ -365,8 +372,15 @@ export class LiveScanStore {
           : undefined,
     });
     this.applyScanResult(initialResult);
+    const indexStartedAt = performance.now();
+    await this.enqueueSearchIndexJobs(
+      "scan.initial",
+      this.buildFullSearchIndexJobs("scan.initial"),
+    );
+    const indexDuration = performance.now() - indexStartedAt;
     appLogger.info("scan.initial.done", {
       duration_ms: Math.round(performance.now() - startedAt),
+      index_ms: Math.round(indexDuration),
       sessions: this.sessions.length,
       agents: Object.fromEntries(
         Object.entries(this.byAgent).map(([key, value]) => [key, value.length]),
@@ -389,10 +403,6 @@ export class LiveScanStore {
     });
     if (this.watchEnabled) {
       this.startWatching();
-      this.initialSearchIndexTimer = setTimeout(() => {
-        this.initialSearchIndexTimer = null;
-        this.startSearchIndexWorker("scan.initial.background");
-      }, 1000);
     }
   }
 
@@ -417,7 +427,6 @@ export class LiveScanStore {
     }
     this.refreshTimers.clear();
     this.pendingRefreshPathCounts.clear();
-
     for (const state of this.stablePaths.values()) {
       if (state.timer) {
         clearTimeout(state.timer);
@@ -429,13 +438,12 @@ export class LiveScanStore {
       clearTimeout(this.pendingEventTimer);
       this.pendingEventTimer = null;
     }
-    if (this.initialSearchIndexTimer) {
-      clearTimeout(this.initialSearchIndexTimer);
-      this.initialSearchIndexTimer = null;
-    }
     if (this.searchIndexWorker) {
       await this.searchIndexWorker.terminate();
       this.searchIndexWorker = null;
+    }
+    for (const batch of this.pendingSearchIndexJobs) {
+      batch.reject(new Error("Live scan store shut down"));
     }
     this.pendingSearchIndexJobs = [];
     this.pendingEvent = null;
@@ -554,42 +562,49 @@ export class LiveScanStore {
     });
   }
 
-  private startSearchIndexWorker(context: string): void {
-    this.enqueueSearchIndexJobs(
+  private buildFullSearchIndexJobs(context: string): SearchIndexWorkerJob[] {
+    return this.agents.map((agent) => ({
+      kind: "full",
       context,
-      this.agents.map((agent) => ({
-        kind: "full",
-        context,
-        agentName: agent.name,
-        sessions: this.byAgent[agent.name] ?? [],
-        meta: buildAgentCacheMeta(agent),
-      })),
-    );
+      agentName: agent.name,
+      sessions: this.byAgent[agent.name] ?? [],
+      meta: buildAgentCacheMeta(agent),
+    }));
   }
 
-  private enqueueSearchIndexJobs(context: string, jobs: SearchIndexWorkerJob[]): void {
-    if (jobs.length === 0) return;
+  private enqueueSearchIndexJobs(context: string, jobs: SearchIndexWorkerJob[]): Promise<void> {
+    if (jobs.length === 0) return Promise.resolve();
 
-    if (this.searchIndexWorker) {
-      this.pendingSearchIndexJobs.push(...jobs);
-      appLogger.debug("search_index.worker_queued", {
-        context,
-        jobs: jobs.length,
-        pending_jobs: this.pendingSearchIndexJobs.length,
-      });
-      return;
-    }
+    return new Promise((resolve, reject) => {
+      const batch: SearchIndexJobBatch = { context, jobs, resolve, reject };
 
+      if (this.searchIndexWorker) {
+        this.pendingSearchIndexJobs.push(batch);
+        appLogger.debug("search_index.worker_queued", {
+          context,
+          jobs: jobs.length,
+          pending_jobs: this.pendingSearchIndexJobs.length,
+        });
+        return;
+      }
+
+      this.startSearchIndexJobBatch(batch);
+    });
+  }
+
+  private startSearchIndexJobBatch(batch: SearchIndexJobBatch): void {
     const workerUrl = this.getSearchIndexWorkerUrl();
     if (!workerUrl) {
-      appLogger.warn("search_index.worker_missing", { context });
+      appLogger.warn("search_index.worker_missing", { context: batch.context });
+      batch.resolve();
       return;
     }
 
+    let settled = false;
     const worker = new Worker(workerUrl, {
       workerData: {
-        context,
-        jobs,
+        context: batch.context,
+        jobs: batch.jobs,
         agentNames: [],
         sessionsByAgent: {},
         metaByAgent: {},
@@ -606,20 +621,29 @@ export class LiveScanStore {
           duration_ms: Math.round(message.durationMs),
           sessions: message.sessions,
         });
+        settled = true;
+        batch.resolve();
       }
     });
     worker.on("error", (error) => {
-      appLogger.error("search_index.worker_error", { context, error });
+      appLogger.error("search_index.worker_error", { context: batch.context, error });
+      if (!settled) {
+        settled = true;
+        batch.reject(error);
+      }
     });
     worker.on("exit", (code) => {
       this.searchIndexWorker = null;
       if (code !== 0) {
-        appLogger.warn("search_index.worker_exit", { context, code });
+        appLogger.warn("search_index.worker_exit", { context: batch.context, code });
+        if (!settled) {
+          settled = true;
+          batch.reject(new Error(`Search index worker exited with code ${code}`));
+        }
       }
       if (this.pendingSearchIndexJobs.length > 0) {
-        const pendingJobs = this.pendingSearchIndexJobs;
-        this.pendingSearchIndexJobs = [];
-        this.enqueueSearchIndexJobs("search_index.worker.drain", pendingJobs);
+        const pendingBatch = this.pendingSearchIndexJobs.shift()!;
+        this.startSearchIndexJobBatch(pendingBatch);
       }
     });
   }
@@ -1057,7 +1081,7 @@ export class LiveScanStore {
           }
         : null;
     if (persistentJob) {
-      this.enqueueSearchIndexJobs("scan.refresh", [persistentJob]);
+      await this.enqueueSearchIndexJobs("scan.refresh", [persistentJob]);
     }
     persistDuration = performance.now() - persistStartedAt;
     const searchIndexStartedAt = performance.now();

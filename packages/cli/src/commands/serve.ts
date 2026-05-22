@@ -91,17 +91,32 @@ export const serveCommand = defineCommand({
     printScanResults(agents, result);
 
     // Start server
-    let url: string;
+    let app: Awaited<ReturnType<typeof createServer>>;
     try {
-      ({ url } = await createServer(port, store, {
+      app = await createServer(port, store, {
         defaultSessionFrom: listDefaultFrom,
         defaultSessionTo: listDefaultTo,
         portFallbackAttempts: explicitPort ? 1 : DEFAULT_PORT_FALLBACK_ATTEMPTS,
-      }));
+      });
     } catch (error) {
       console.error(getServerStartupErrorMessage(error, port));
       process.exit(1);
     }
+
+    const { url } = app;
+    let shuttingDown = false;
+    const shutdown = async () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      await app.shutdown();
+      process.exit(0);
+    };
+    process.once("SIGINT", () => {
+      void shutdown();
+    });
+    process.once("SIGTERM", () => {
+      void shutdown();
+    });
 
     if (!noOpen) {
       const open = (await import("open")).default;

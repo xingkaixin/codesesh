@@ -80,7 +80,7 @@ export async function createServer(
   port: number,
   store: ScanResultSource & Partial<Pick<LiveScanStore, "subscribe" | "shutdown">>,
   options: CreateServerOptions = {},
-): Promise<{ url: string; shutdown: () => void }> {
+): Promise<{ url: string; shutdown: () => Promise<void> }> {
   const app = new Hono();
 
   app.use("*", async (c, next) => {
@@ -167,11 +167,17 @@ export async function createServer(
 
   return {
     url,
-    shutdown: () => {
+    shutdown: async () => {
       appLogger.info("server.shutdown", { port: actualPort });
-      server?.close();
+      await new Promise<void>((resolve) => {
+        if (!server) {
+          resolve();
+          return;
+        }
+        server.close(() => resolve());
+      });
       if (store.shutdown) {
-        void store.shutdown();
+        await store.shutdown();
       }
     },
   };

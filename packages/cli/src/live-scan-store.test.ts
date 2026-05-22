@@ -45,7 +45,23 @@ const workerThreads = vi.hoisted(() => ({
     const worker = {
       url,
       workerData: options?.workerData,
-      on: vi.fn(() => worker),
+      on: vi.fn((event: string, handler: (message: unknown) => void) => {
+        if (event === "message") {
+          queueMicrotask(() => {
+            const jobs = (options?.workerData as { jobs?: unknown[] } | undefined)?.jobs ?? [];
+            handler({
+              type: "done",
+              context: (options?.workerData as { context?: string } | undefined)?.context ?? "",
+              durationMs: 0,
+              sessions: jobs.length,
+            });
+          });
+        }
+        if (event === "exit") {
+          queueMicrotask(() => handler(0));
+        }
+        return worker;
+      }),
       unref: vi.fn(),
       terminate: vi.fn(async () => undefined),
     };
@@ -228,6 +244,20 @@ describe("LiveScanStore", () => {
     expect(snapshot.byAgent.codex.map((session) => session.id)).toEqual(["newer", "older"]);
     expect(snapshot.byAgent.kimi).toEqual([]);
     expect(snapshot.sessions.map((session) => session.id)).toEqual(["newer", "older"]);
+    expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
+      expect.objectContaining({
+        kind: "full",
+        context: "scan.initial",
+        agentName: "codex",
+        sessions: [newer, older],
+      }),
+      expect.objectContaining({
+        kind: "full",
+        context: "scan.initial",
+        agentName: "kimi",
+        sessions: [],
+      }),
+    ]);
   });
 
   it("emits refresh events and persists changed agent sessions", async () => {
@@ -274,7 +304,7 @@ describe("LiveScanStore", () => {
     expect(core.saveCachedSessionChanges).not.toHaveBeenCalled();
     expect(core.syncSessionSearchIndex).not.toHaveBeenCalled();
     expect(core.syncSessionSearchIndexChanges).not.toHaveBeenCalled();
-    expect(workerThreads.workers[0]?.workerData.jobs).toEqual([
+    expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
       {
         kind: "changes",
         context: "scan.refresh",
@@ -329,12 +359,49 @@ describe("LiveScanStore", () => {
     (store as any).pendingRefreshPathCounts.set("codex", 101);
     await (store as any).runRefresh("codex");
 
-    expect(workerThreads.workers[0]?.workerData.jobs[0]).toEqual(
+    expect(workerThreads.workers.at(-1)?.workerData.jobs[0]).toEqual(
       expect.objectContaining({
         kind: "changes",
         searchIndexOptions: { isBulk: true },
       }),
     );
+  });
+
+  it("emits an update event when changed session content keeps the same head signature", async () => {
+    const previous = makeSession("session", { title: "same", time_updated: 1000 });
+    const codex = makeAgent("codex", {
+      checkForChanges: vi.fn(() => ({
+        hasChanges: true,
+        changedIds: ["session"],
+        timestamp: 3000,
+      })),
+      incrementalScan: vi.fn(() => [previous]),
+    });
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [previous],
+      byAgent: { codex: [previous] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore(false);
+    const events: unknown[] = [];
+    store.subscribe((event) => events.push(event));
+    await store.initialize();
+    await (store as any).runRefresh("codex");
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "sessions-updated",
+        changedAgents: ["codex"],
+        newSessions: 0,
+        updatedSessions: 1,
+        removedSessions: 0,
+        changedSessionHeads: [{ agentName: "codex", session: previous }],
+        removedSessionRefs: [],
+      }),
+    ]);
   });
 
   it("removes sessions when an agent becomes unavailable", async () => {
@@ -357,7 +424,7 @@ describe("LiveScanStore", () => {
     await (store as any).runRefresh("codex");
 
     expect(core.saveCachedSessions).not.toHaveBeenCalled();
-    expect(workerThreads.workers[0]?.workerData.jobs).toEqual([
+    expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
       {
         kind: "full",
         context: "scan.refresh",
