@@ -9,6 +9,7 @@ const projectIdentityKinds = new Set<string>([
   "git_remote",
   "git_common_dir",
   "manifest_path",
+  "synthetic",
   "path",
   "loose",
 ]);

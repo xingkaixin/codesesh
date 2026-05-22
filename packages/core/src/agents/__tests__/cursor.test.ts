@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { CursorAgent } from "../cursor.js";
+import type { MessagePart } from "../../types/index.js";
 
 let tempDirs: string[] = [];
 
@@ -61,7 +62,7 @@ describe("CursorAgent parsing", () => {
     });
 
     const data = agent.getSessionData("composer-1");
-    const toolPart = data.messages[1]?.parts.find((part) => part.type === "tool");
+    const toolPart = data.messages[1]?.parts.find((part: MessagePart) => part.type === "tool");
 
     expect(data.title).toBe("Visible request");
     expect(data.messages[0]?.parts).toEqual([

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexAgent } from "../codex.js";
-import type { SessionHead } from "../../types/index.js";
+import type { Message, MessagePart, SessionHead } from "../../types/index.js";
 
 let tempDirs: string[] = [];
 
@@ -406,7 +406,7 @@ describe("CodexAgent cache refresh", () => {
 
     const [head] = agent.scan();
     const data = agent.getSessionData(sessionId);
-    const toolPart = data.messages[1]?.parts.find((part) => part.type === "tool");
+    const toolPart = data.messages[1]?.parts.find((part: MessagePart) => part.type === "tool");
 
     expect(head?.title).toBe("Visible request");
     expect(data.messages[0]?.parts).toEqual([
@@ -588,14 +588,14 @@ describe("CodexAgent cache refresh", () => {
 
     const [head] = agent.scan();
     const data = agent.getSessionData(sessionId);
-    const assistantWithTools = data.messages.find((message) =>
-      message.parts.some((part) => part.type === "tool" && part.tool === "bash"),
+    const assistantWithTools = data.messages.find((message: Message) =>
+      message.parts.some((part: MessagePart) => part.type === "tool" && part.tool === "bash"),
     );
     const bashPart = assistantWithTools?.parts.find(
-      (part) => part.type === "tool" && part.tool === "bash",
+      (part: MessagePart) => part.type === "tool" && part.tool === "bash",
     );
     const patchPart = assistantWithTools?.parts.find(
-      (part) => part.type === "tool" && part.tool === "patch",
+      (part: MessagePart) => part.type === "tool" && part.tool === "patch",
     );
 
     expect(head).toMatchObject({
@@ -610,7 +610,7 @@ describe("CodexAgent cache refresh", () => {
       },
       model_usage: { "gpt-5.5": 125 },
     });
-    expect(data.messages.map((message) => message.role)).toEqual([
+    expect(data.messages.map((message: Message) => message.role)).toEqual([
       "user",
       "assistant",
       "user",

@@ -858,7 +858,7 @@ export class KimiAgent extends BaseAgent {
 
   private extractStats(sessionDir: string): SessionData["stats"] {
     let totalCost = 0;
-    const stats = {
+    const stats: SessionData["stats"] = {
       total_cost: 0,
       total_input_tokens: 0,
       total_output_tokens: 0,

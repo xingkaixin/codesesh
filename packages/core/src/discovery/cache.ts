@@ -31,7 +31,7 @@ import {
   type SQLiteDatabase,
 } from "../utils/sqlite.js";
 
-const CACHE_SCHEMA_VERSION = 11;
+const CACHE_SCHEMA_VERSION = 12;
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const CACHE_FILENAME = "codesesh.db";
 const LEGACY_CACHE_FILENAME = "scan-cache.json";
@@ -224,6 +224,13 @@ interface ProjectBackfillDocumentRow extends DatabaseRow {
   time_created?: number;
   time_updated?: number | null;
   activity_time?: number;
+}
+
+interface ProjectIdentityRefreshRow extends DatabaseRow {
+  id?: number;
+  agent_name?: string;
+  session_id?: string;
+  directory?: string;
 }
 
 interface StructuredMessageRecord {
@@ -1229,6 +1236,67 @@ function migrateProjectIdentity(db: SQLiteDatabase): void {
   backfillSessionDocumentProjects(db);
 }
 
+function refreshProjectIdentities(db: SQLiteDatabase): void {
+  if (
+    tableExists(db, "sessions") &&
+    columnExists(db, "sessions", "project_identity_key") &&
+    columnExists(db, "sessions", "directory")
+  ) {
+    const rows = db
+      .prepare("SELECT agent_name, session_id, directory FROM sessions")
+      .all() as ProjectIdentityRefreshRow[];
+    const update = db.prepare(`
+      UPDATE sessions
+      SET
+        project_identity_kind = ?,
+        project_identity_key = ?,
+        project_display_name = ?
+      WHERE agent_name = ? AND session_id = ?
+    `);
+    const updateFileActivity =
+      tableExists(db, "session_file_activity") &&
+      columnExists(db, "session_file_activity", "project_identity_key")
+        ? db.prepare(`
+            UPDATE session_file_activity
+            SET project_identity_key = ?
+            WHERE agent_name = ? AND session_id = ?
+          `)
+        : null;
+
+    for (const row of rows) {
+      const identity = computeIdentity(String(row.directory ?? ""), realFs);
+      update.run(identity.kind, identity.key, identity.displayName, row.agent_name, row.session_id);
+      updateFileActivity?.run(identity.key, row.agent_name, row.session_id);
+    }
+  }
+
+  if (
+    tableExists(db, "project_sessions") &&
+    columnExists(db, "project_sessions", "identity_key") &&
+    columnExists(db, "project_sessions", "directory")
+  ) {
+    const rows = db
+      .prepare("SELECT agent_name, session_id, directory FROM project_sessions")
+      .all() as ProjectIdentityRefreshRow[];
+    const update = db.prepare(`
+      UPDATE project_sessions
+      SET
+        identity_kind = ?,
+        identity_key = ?,
+        display_name = ?
+      WHERE agent_name = ? AND session_id = ?
+    `);
+
+    for (const row of rows) {
+      const identity = computeIdentity(String(row.directory ?? ""), realFs);
+      update.run(identity.kind, identity.key, identity.displayName, row.agent_name, row.session_id);
+    }
+  }
+
+  backfillSessionDocumentProjects(db);
+  recreateProjectGroupsView(db);
+}
+
 function backfillStructuredSessions(db: SQLiteDatabase): void {
   createSessionTables(db);
   recreateProjectGroupsView(db);
@@ -1579,6 +1647,12 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
         version: 11,
         migrate(db) {
           backfillMessageTools(db);
+        },
+      },
+      {
+        version: 12,
+        migrate(db) {
+          refreshProjectIdentities(db);
         },
       },
     ],
