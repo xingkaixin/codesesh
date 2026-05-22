@@ -80,9 +80,7 @@ describe("session detail display model", () => {
       tool: ".js",
       title: "Tool: .js",
     } satisfies MessagePart;
-    const models = buildMessageDisplayModels([
-      createMessage("assistant", "assistant", [jsTool]),
-    ]);
+    const models = buildMessageDisplayModels([createMessage("assistant", "assistant", [jsTool])]);
 
     const toc = buildSessionDetailToc(models);
     expect(toc.tools).toEqual([{ id: "tool:js", toolKey: "js", label: "js", count: 1 }]);
