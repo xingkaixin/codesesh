@@ -4,6 +4,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "dev:www": "pnpm --filter @codesesh/www dev",
     "serve": "node --watch packages/cli/dist/index.js",
     "clean": "turbo run clean",
     "lint": "turbo run lint",
@@ -14,7 +15,8 @@
     "test:e2e": "playwright test",
     "test:migration": "vitest run packages/core/src/discovery/__tests__/migration-smoke.test.ts",
     "bench:perf": "node scripts/benchmark-performance.mjs",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "deploy:www": "pnpm --filter @codesesh/www deploy:cf"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.4",
