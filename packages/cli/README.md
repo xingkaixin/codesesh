@@ -28,7 +28,7 @@ Your browser will open at `http://localhost:4521` with all your sessions ready t
 - **Full Conversation Replay** — Read every message, tool call, and reasoning step exactly as it happened
 - **File Activity Index** — Jump to files that were read, edited, created, deleted, or moved, and search sessions by file activity
 - **Keyboard Navigation** — Move through views, focus search, and open shortcuts without leaving the keyboard
-- **Claude Code Resume Commands** — Copy worktree-aware `claude --resume` commands from Claude Code session details
+- **Agent Resume Commands** — Copy worktree-aware resume commands from supported agent session details
 - **Cost & Token Visibility** — See token totals, cache tokens, recorded costs, and model-based cost estimates
 - **SQLite Cache, Migrations & Search Index** — Restore session lists quickly, upgrade local schemas safely, and reuse the same local store for search
 - **Zero Configuration** — Just run it. CodeSesh auto-discovers everything on your filesystem
@@ -51,7 +51,7 @@ Your browser will open at `http://localhost:4521` with all your sessions ready t
 # Start the web UI (default port 4521)
 npx codesesh
 
-# Choose a custom port (fails if the port is busy)
+# Choose a custom starting port
 npx codesesh --port 8080
 
 # Only show sessions active in the last 3 days
@@ -77,7 +77,7 @@ npx codesesh --trace
 
 | Flag        | Alias | Default | Description                                                 |
 | ----------- | ----- | ------- | ----------------------------------------------------------- |
-| `--port`    | `-p`  | `4521`  | HTTP server port                                            |
+| `--port`    | `-p`  | `4521`  | HTTP server starting port; falls back to the next available port if busy |
 | `--days`    | `-d`  | `7`     | Only include sessions active in the last N days (`0` = all time) |
 | `--cwd`     | —     | —       | Filter to sessions from a project directory                 |
 | `--agent`   | `-a`  | all     | Filter to specific agent(s), comma-separated                |

@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.7.0] - 2026-05-22
+
+### Features
+
+- Added resume command copying across supported agents, extending the session detail recovery workflow beyond Claude Code. (#19)
+- Grouped Codex scratch chats under a stable project identity so temporary Codex sessions stay organized. (#32)
+- Improved session cache initialization so the Web UI can start from a coherent cache state more reliably. (#38)
+
+### Bug Fixes
+
+- Fixed cache, live refresh, and cold-start edge cases around project identity, incremental persistence, serving order, and session details. (#20, #22, #31, #34, #37)
+- Fixed search and file activity hot paths by removing message-match N+1 work and optimizing file activity lookup. (#23, #24)
+- Added dynamic port fallback when the requested HTTP port is unavailable. (#28)
+- Improved Codex tool display and normalized namespaced Codex tool labels. (#35, #36)
+
+### Performance
+
+- Optimized dashboard aggregation, session detail rendering, app session derivations, startup scans, follow-up hot paths, and startup refresh scheduling. (#21, #25, #26, #27, #29, #33)
+- Added session cache fingerprints to avoid unnecessary cache refresh work. (#30)
+
+### Changelog Detail
+
+- #38 feat: improve session cache initialization @xingkaixin
+- #37 fix: handle cold-start session details @xingkaixin
+- #36 fix: improve Codex tool display @xingkaixin
+- #35 fix(codex): normalize namespaced tool labels @xingkaixin
+- #34 fix(cli): normalize project identity on refresh @xingkaixin
+- #33 perf: defer startup refresh @xingkaixin
+- #32 [codex] Group Codex scratch chats @xingkaixin
+- #31 fix(cli): sync session cache before serving @xingkaixin
+- #30 perf: track session cache fingerprints @xingkaixin
+- #29 perf: improve startup scan performance @xingkaixin
+- #28 fix(cli): add dynamic port fallback @xingkaixin
+- #27 perf: fix follow-up performance hotspots @xingkaixin
+- #26 perf(web): index app session derivations @xingkaixin
+- #25 perf(web): optimize session detail rendering @xingkaixin
+- #24 fix: optimize file activity search @xingkaixin
+- #23 fix(search): remove message match N+1 @xingkaixin
+- #22 fix: persist live refresh incrementally @xingkaixin
+- #21 perf: optimize dashboard aggregation @xingkaixin
+- #20 fix: cache project scope identity @xingkaixin
+- #19 feat(web): add agent resume copy commands @xingkaixin
+
 ## [0.6.1] - 2026-05-12
 
 ### Bug Fixes

@@ -26,7 +26,7 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 - **Full Conversation Replay** — Read every message, tool call, and reasoning step exactly as it happened
 - **File Activity Index** — Jump to files that were read, edited, created, deleted, or moved, and search sessions by file activity
 - **Keyboard Navigation** — Move through views, focus search, and open shortcuts without leaving the keyboard
-- **Claude Code Resume Commands** — Copy worktree-aware `claude --resume` commands from Claude Code session details
+- **Agent Resume Commands** — Copy worktree-aware resume commands from supported agent session details
 - **Cost & Token Visibility** — See token totals, cache tokens, recorded costs, and model-based cost estimates
 - **SQLite Cache, Migrations & Search Index** — Restore session lists quickly, upgrade local schemas safely, and reuse the same local store for search
 - **Zero Configuration** — Just run it. CodeSesh auto-discovers everything on your filesystem
@@ -88,7 +88,7 @@ The local server uses `packages/cli/dist/index.js` and opens the same Web UI.
 # Start the web UI (default port 4521)
 npx codesesh
 
-# Choose a custom port (fails if the port is busy)
+# Choose a custom starting port
 npx codesesh --port 8080
 npx codesesh -p 8080
 
@@ -154,7 +154,7 @@ npx codesesh -j
 
 | Flag | Alias | Default | Description |
 |------|-------|---------|-------------|
-| `--port` | `-p` | `4521` | HTTP server port |
+| `--port` | `-p` | `4521` | HTTP server starting port; falls back to the next available port if busy |
 | `--days` | `-d` | `7` | Only include sessions active in the last N days (`0` = all time) |
 | `--cwd` | — | — | Filter to sessions from a project directory (`.` = current dir) |
 | `--agent` | `-a` | all | Filter to specific agent(s), comma-separated |
@@ -181,7 +181,7 @@ Once CodeSesh is running, here's what you'll find:
 4. **Session Tree Sidebar** — Browse sessions grouped by agent or project identity and filter by agent or smart tag.
 5. **Session List** — Browse your sessions sorted by most recent. Each card shows the session title, working directory, message count, and total cost at a glance.
 6. **Smart Tags & Bookmarks** — Spot session intent quickly, pin sessions you want to revisit, and manage them from the dashboard or session views.
-7. **Session Detail** — Click any session to open a full replay with a receipt-style summary, user messages, assistant responses, tool invocations, reasoning steps, model labels, tracked file activity, and Claude Code resume command copy.
+7. **Session Detail** — Click any session to open a full replay with a receipt-style summary, user messages, assistant responses, tool invocations, reasoning steps, model labels, tracked file activity, and agent resume command copy.
 8. **Keyboard Shortcuts** — Use the shortcuts panel to navigate sessions, open global search, focus search, and move between grouped content faster.
 9. **Live Updates** — New or changed local sessions are reflected automatically while the server is running.
 

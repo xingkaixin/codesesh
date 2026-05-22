@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.7.0] - 2026-05-22
+
+### 新功能
+
+- 会话详情中的恢复命令复制扩展到更多受支持 Agent，不再只覆盖 Claude Code。 (#19)
+- Codex scratch chats 会按稳定项目身份聚合，临时 Codex 会话更容易归类浏览。 (#32)
+- 改进会话缓存初始化，让 Web UI 启动时更可靠地拿到一致的缓存状态。 (#38)
+
+### 问题修复
+
+- 修复项目身份缓存、实时刷新增量持久化、服务前缓存同步、刷新时项目身份归一化和冷启动会话详情等边界问题。 (#20, #22, #31, #34, #37)
+- 修复搜索和文件活动热路径，移除 message match N+1，并优化文件活动检索。 (#23, #24)
+- HTTP 端口不可用时新增动态端口 fallback。 (#28)
+- 优化 Codex 工具展示，并归一化 namespaced Codex 工具标签。 (#35, #36)
+
+### 性能
+
+- 优化 Dashboard 聚合、会话详情渲染、前端会话派生索引、启动扫描、后续操作热点和启动刷新调度。 (#21, #25, #26, #27, #29, #33)
+- 增加会话缓存 fingerprint，减少不必要的缓存刷新。 (#30)
+
+### Changelog Detail
+
+- #38 feat: improve session cache initialization @xingkaixin
+- #37 fix: handle cold-start session details @xingkaixin
+- #36 fix: improve Codex tool display @xingkaixin
+- #35 fix(codex): normalize namespaced tool labels @xingkaixin
+- #34 fix(cli): normalize project identity on refresh @xingkaixin
+- #33 perf: defer startup refresh @xingkaixin
+- #32 [codex] Group Codex scratch chats @xingkaixin
+- #31 fix(cli): sync session cache before serving @xingkaixin
+- #30 perf: track session cache fingerprints @xingkaixin
+- #29 perf: improve startup scan performance @xingkaixin
+- #28 fix(cli): add dynamic port fallback @xingkaixin
+- #27 perf: fix follow-up performance hotspots @xingkaixin
+- #26 perf(web): index app session derivations @xingkaixin
+- #25 perf(web): optimize session detail rendering @xingkaixin
+- #24 fix: optimize file activity search @xingkaixin
+- #23 fix(search): remove message match N+1 @xingkaixin
+- #22 fix: persist live refresh incrementally @xingkaixin
+- #21 perf: optimize dashboard aggregation @xingkaixin
+- #20 fix: cache project scope identity @xingkaixin
+- #19 feat(web): add agent resume copy commands @xingkaixin
+
 ## [0.6.1] - 2026-05-12
 
 ### 问题修复
