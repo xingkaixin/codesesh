@@ -162,6 +162,12 @@ function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionH
   };
 }
 
+const projectIdentity = {
+  kind: "path" as const,
+  key: "/tmp/project",
+  displayName: "project",
+};
+
 function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
   return {
     name,
@@ -317,7 +323,7 @@ describe("LiveScanStore", () => {
         kind: "full",
         context: "scan.refresh",
         agentName: "codex",
-        sessions: [fresh],
+        sessions: [{ ...fresh, project_identity: projectIdentity }],
       }),
     ]);
     expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["fresh"]);
@@ -338,6 +344,8 @@ describe("LiveScanStore", () => {
     const previous = makeSession("session", { title: "old", time_updated: 1000 });
     const updated = makeSession("session", { title: "new", time_updated: 2000 });
     const added = makeSession("added", { time_updated: 1500 });
+    const updatedWithProject = { ...updated, project_identity: projectIdentity };
+    const addedWithProject = { ...added, project_identity: projectIdentity };
     const codex = makeAgent("codex", {
       checkForChanges: vi.fn(() => ({
         hasChanges: true,
@@ -383,8 +391,8 @@ describe("LiveScanStore", () => {
         context: "scan.refresh",
         agentName: "codex",
         changes: [
-          { session: updated, sortIndex: 0 },
-          { session: added, sortIndex: 1 },
+          { session: updatedWithProject, sortIndex: 0 },
+          { session: addedWithProject, sortIndex: 1 },
         ],
         removedSessionIds: [],
         meta: { session: { id: "session", sourcePath: "/tmp/s" } },
@@ -399,8 +407,8 @@ describe("LiveScanStore", () => {
         removedSessions: 0,
         totalSessions: 2,
         changedSessionHeads: [
-          { agentName: "codex", session: updated },
-          { agentName: "codex", session: added },
+          { agentName: "codex", session: updatedWithProject },
+          { agentName: "codex", session: addedWithProject },
         ],
         removedSessionRefs: [],
       }),
@@ -442,6 +450,7 @@ describe("LiveScanStore", () => {
 
   it("emits an update event when changed session content keeps the same head signature", async () => {
     const previous = makeSession("session", { title: "same", time_updated: 1000 });
+    const previousWithProject = { ...previous, project_identity: projectIdentity };
     const codex = makeAgent("codex", {
       checkForChanges: vi.fn(() => ({
         hasChanges: true,
@@ -471,7 +480,7 @@ describe("LiveScanStore", () => {
         newSessions: 0,
         updatedSessions: 1,
         removedSessions: 0,
-        changedSessionHeads: [{ agentName: "codex", session: previous }],
+        changedSessionHeads: [{ agentName: "codex", session: previousWithProject }],
         removedSessionRefs: [],
       }),
     ]);
