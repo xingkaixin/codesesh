@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { CursorAgent } from "../cursor.js";
 import { OpenCodeAgent } from "../opencode.js";
+import type { MessagePart } from "../../types/index.js";
 
 let tempDirs: string[] = [];
 
@@ -61,7 +62,7 @@ describe("SQLite-backed agent parse contracts", () => {
 
     const [head] = agent.scan({ from: 0 });
     const data = agent.getSessionData("composer-1");
-    const tool = data.messages[1]?.parts.find((part) => part.type === "tool");
+    const tool = data.messages[1]?.parts.find((part: MessagePart) => part.type === "tool");
 
     expect(head?.title).toBe("Visible request");
     expect(data.messages).toHaveLength(2);

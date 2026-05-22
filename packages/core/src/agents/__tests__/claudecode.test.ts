@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ClaudeCodeAgent } from "../claudecode.js";
-import type { SessionHead } from "../../types/index.js";
+import type { Message, MessagePart, SessionHead } from "../../types/index.js";
 
 let tempDirs: string[] = [];
 
@@ -161,7 +161,9 @@ describe("ClaudeCodeAgent cache refresh", () => {
     const [head] = agent.scan();
     const data = agent.getSessionData(sessionId);
     const assistant = data.messages[1];
-    const readTool = assistant?.parts.find((part) => part.type === "tool" && part.tool === "Read");
+    const readTool = assistant?.parts.find(
+      (part: MessagePart) => part.type === "tool" && part.tool === "Read",
+    );
 
     expect(head).toMatchObject({
       id: sessionId,
@@ -176,7 +178,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
       },
       model_usage: { "claude-sonnet-4-5-20250929": 135 },
     });
-    expect(data.messages.map((message) => message.role)).toEqual([
+    expect(data.messages.map((message: Message) => message.role)).toEqual([
       "user",
       "assistant",
       "user",
@@ -206,9 +208,11 @@ describe("ClaudeCodeAgent cache refresh", () => {
         meta: { commandName: "read" },
       },
     });
-    expect(assistant?.parts.some((part) => part.type === "tool" && part.tool === "TodoWrite")).toBe(
-      false,
-    );
+    expect(
+      assistant?.parts.some(
+        (part: MessagePart) => part.type === "tool" && part.tool === "TodoWrite",
+      ),
+    ).toBe(false);
     expect(data.messages[2]?.parts).toMatchObject([{ type: "text", text: "Continue" }]);
     expect(data.messages[3]).toMatchObject({
       role: "tool",

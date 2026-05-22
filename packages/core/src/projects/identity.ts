@@ -1,4 +1,4 @@
-import { homedir } from "node:os";
+import * as os from "node:os";
 import * as path from "node:path";
 import type { ProjectIdentity, ProjectIdentityKind } from "../types/index.js";
 import { fallbackDisplayName } from "./display-name.js";
@@ -23,7 +23,10 @@ const PARSEABLE_MANIFESTS = ["package.json", "Cargo.toml", "pyproject.toml"] as 
 
 const LOOSE_DIRS = new Set(["/tmp", "/private/tmp"]);
 const LOOSE_HOME_DIRS = ["Desktop", "Downloads", "Documents"];
-type PathOps = Pick<typeof path.posix, "dirname" | "isAbsolute" | "join" | "resolve">;
+type PathOps = Pick<
+  typeof path.posix,
+  "dirname" | "isAbsolute" | "join" | "relative" | "resolve" | "sep"
+>;
 
 export function normalizeGitRemote(url: string): string | null {
   if (!url) return null;
@@ -40,7 +43,7 @@ export function computeIdentity(cwd: string | null | undefined, fs: IdentityFs):
 
   const pathOps = getPathOps(cwd);
   const absoluteCwd = pathOps.resolve(cwd);
-  const homeDir = homedir();
+  const homeDir = os.homedir();
   const homePathOps = getPathOps(homeDir);
   const home = homePathOps === pathOps ? pathOps.resolve(homeDir) : homeDir;
   if (absoluteCwd === home || LOOSE_DIRS.has(absoluteCwd)) return loose();
@@ -88,6 +91,11 @@ export function computeIdentity(cwd: string | null | undefined, fs: IdentityFs):
     };
   }
 
+  if (homePathOps === pathOps) {
+    const synthetic = synthesizeCodexScratchIdentity(absoluteCwd, home, pathOps);
+    if (synthetic) return synthetic;
+  }
+
   return {
     kind: "path",
     key: absoluteCwd,
@@ -97,6 +105,24 @@ export function computeIdentity(cwd: string | null | undefined, fs: IdentityFs):
 
 function loose(): ProjectIdentity {
   return { kind: "loose", key: "loose", displayName: "Loose" };
+}
+
+function synthesizeCodexScratchIdentity(
+  absoluteCwd: string,
+  home: string,
+  pathOps: PathOps,
+): ProjectIdentity | null {
+  const root = pathOps.resolve(pathOps.join(home, "Documents", "Codex"));
+  const child = pathOps.relative(root, absoluteCwd);
+  if (
+    !child ||
+    child === ".." ||
+    child.startsWith(`..${pathOps.sep}`) ||
+    pathOps.isAbsolute(child)
+  ) {
+    return null;
+  }
+  return { kind: "synthetic", key: "codex:scratch", displayName: "Chats" };
 }
 
 function getPathOps(input: string): PathOps {

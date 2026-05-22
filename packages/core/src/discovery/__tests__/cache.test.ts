@@ -189,7 +189,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(11);
+    expect(getUserVersion(getCachePath())).toBe(12);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -346,7 +346,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(11);
+    expect(getUserVersion(getCachePath())).toBe(12);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
@@ -537,14 +537,14 @@ describe("searchSessions", () => {
   });
 
   it("loads full session data from the SQLite message cache", () => {
-    const session = {
+    const session: SessionHead = {
       ...makeSession("cached-detail"),
       stats: {
         message_count: 1,
         total_input_tokens: 3,
         total_output_tokens: 5,
         total_cost: 0.02,
-        cost_source: "estimated",
+        cost_source: "estimated" as const,
       },
     };
     syncSessionSearchIndex("codex", [session], (sessionId) => ({
@@ -1349,7 +1349,52 @@ describe("searchSessions", () => {
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(11);
+    expect(getUserVersion(getCachePath())).toBe(12);
+  });
+
+  it("refreshes cached project identities when migrating to schema version 12", () => {
+    const directory = join(testHomeDir, "Documents", "Codex", "2026-05-22", "new-chat");
+    saveCachedSessions("codex", [{ ...makeSession("codex-scratch"), directory }]);
+
+    const db = new Database(getCachePath());
+    try {
+      db.prepare(
+        `
+          UPDATE sessions
+          SET project_identity_kind = 'path',
+              project_identity_key = ?,
+              project_display_name = 'new-chat'
+        `,
+      ).run(directory);
+      db.prepare(
+        `
+          UPDATE project_sessions
+          SET identity_kind = 'path',
+              identity_key = ?,
+              display_name = 'new-chat'
+        `,
+      ).run(directory);
+      db.pragma("user_version = 11");
+      db.prepare("UPDATE cache_meta SET value = '11' WHERE key = 'version'").run();
+    } finally {
+      db.close();
+    }
+
+    expect(listCachedProjectGroups()).toEqual([
+      {
+        identityKind: "synthetic",
+        identityKey: "codex:scratch",
+        displayName: "Chats",
+        sources: ["codex"],
+        sessionCount: 1,
+        lastActivity: now,
+      },
+    ]);
+    expect(loadCachedSessions("codex")?.sessions[0]?.project_identity).toEqual({
+      kind: "synthetic",
+      key: "codex:scratch",
+      displayName: "Chats",
+    });
   });
 
   it("combines full text with structured filters", () => {
