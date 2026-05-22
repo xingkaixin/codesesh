@@ -24,16 +24,42 @@ export interface FilteredSessionMessage {
 }
 
 function buildToolLabel(part: MessagePart) {
+  if (isNodeReplBrowserTool(part)) return "Browser";
   if (typeof part.title === "string" && part.title.trim()) {
-    return part.title.trim().replace(/^tool:\s*/i, "");
+    return cleanToolLabel(part.title);
   }
-  if (typeof part.tool === "string" && part.tool.trim()) return part.tool.trim();
+  if (typeof part.tool === "string" && part.tool.trim()) return cleanToolLabel(part.tool);
   return "tool";
 }
 
 function normalizeToolKey(part: MessagePart) {
+  if (isNodeReplBrowserTool(part)) return "browser";
   const raw = typeof part.tool === "string" && part.tool.trim() ? part.tool : buildToolLabel(part);
-  return raw.trim().toLowerCase();
+  return cleanToolLabel(raw).toLowerCase();
+}
+
+function cleanToolLabel(value: string) {
+  return value.trim().replace(/^tool:\s*/i, "").replace(/^\.+(?=\w)/, "");
+}
+
+function toRecord(value: unknown) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+}
+
+function toPlainText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isNodeReplBrowserTool(part: MessagePart) {
+  const metadata = toRecord(part.state?.metadata);
+  const namespace = toPlainText(metadata.namespace);
+  return (
+    cleanToolLabel(toPlainText(part.tool)).toLowerCase() === "js" &&
+    (namespace === "mcp__node_repl__" || namespace === "mcp__node_repl__.js")
+  );
 }
 
 function countToolPart(toolMap: Map<string, ToolFilterItem>, part: MessagePart) {

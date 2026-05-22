@@ -73,4 +73,41 @@ describe("session detail display model", () => {
     expect(filtered[0]?.msg.id).toBe("assistant");
     expect(filtered[0]?.blocks).toEqual([{ type: "tool", parts: [readTool] }]);
   });
+
+  it("normalizes legacy leading-dot tool labels", () => {
+    const jsTool = {
+      type: "tool",
+      tool: ".js",
+      title: "Tool: .js",
+    } satisfies MessagePart;
+    const models = buildMessageDisplayModels([
+      createMessage("assistant", "assistant", [jsTool]),
+    ]);
+
+    const toc = buildSessionDetailToc(models);
+    expect(toc.tools).toEqual([{ id: "tool:js", toolKey: "js", label: "js", count: 1 }]);
+
+    const filtered = filterSessionMessages(models, new Set(["tools_all", "tool:js"]));
+    expect(filtered[0]?.blocks).toEqual([{ type: "tool", parts: [jsTool] }]);
+  });
+
+  it("labels Codex node repl js tools as Browser", () => {
+    const browserTool = {
+      type: "tool",
+      tool: "js",
+      title: "Tool: js",
+      state: { metadata: { name: "js", namespace: "mcp__node_repl__" } },
+    } satisfies MessagePart;
+    const models = buildMessageDisplayModels([
+      createMessage("assistant", "assistant", [browserTool]),
+    ]);
+
+    const toc = buildSessionDetailToc(models);
+    expect(toc.tools).toEqual([
+      { id: "tool:browser", toolKey: "browser", label: "Browser", count: 1 },
+    ]);
+
+    const filtered = filterSessionMessages(models, new Set(["tools_all", "tool:browser"]));
+    expect(filtered[0]?.blocks).toEqual([{ type: "tool", parts: [browserTool] }]);
+  });
 });
