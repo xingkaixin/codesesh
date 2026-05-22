@@ -39,7 +39,10 @@ function normalizeToolKey(part: MessagePart) {
 }
 
 function cleanToolLabel(value: string) {
-  return value.trim().replace(/^tool:\s*/i, "").replace(/^\.+(?=\w)/, "");
+  return value
+    .trim()
+    .replace(/^tool:\s*/i, "")
+    .replace(/^\.+(?=\w)/, "");
 }
 
 function toRecord(value: unknown) {
