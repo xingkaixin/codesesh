@@ -58,10 +58,6 @@ interface LandingCopy {
     copyCommand: string;
     runtime: string;
   };
-  terminal: {
-    discovered: string;
-    active: string;
-  };
   tour: {
     label: string;
     title: HeadingCopy;
@@ -127,10 +123,6 @@ export const copy = {
       copied: "已复制",
       copyCommand: "复制命令",
       runtime: "需要 Node.js 18+ · 从终端本地运行",
-    },
-    terminal: {
-      discovered: "123 sessions discovered",
-      active: "Local index ready",
     },
     tour: {
       label: "Product Tour",
@@ -322,10 +314,6 @@ export const copy = {
       copied: "Copied",
       copyCommand: "Copy command",
       runtime: "Requires Node.js 18+ · Runs locally from your terminal",
-    },
-    terminal: {
-      discovered: "123 sessions discovered",
-      active: "Local index ready",
     },
     tour: {
       label: "Product Tour",

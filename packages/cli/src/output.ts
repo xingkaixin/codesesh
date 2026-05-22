@@ -1,48 +1,21 @@
 import { consola } from "consola";
 import type { BaseAgent } from "@codesesh/core";
-import type { ScanResult } from "@codesesh/core";
 import { VERSION } from "./version.js";
 
-export function printScanResults(agents: BaseAgent[], result: ScanResult): void {
+export function printScanResults(agents: BaseAgent[]): void {
   consola.log("");
   consola.box({
     title: "CodeSesh",
-    message: `v${VERSION} • ${result.sessions.length} sessions discovered`,
+    message: `v${VERSION} • local session browser`,
     style: {
       padding: 1,
       borderColor: "cyan",
     },
   });
   consola.log("");
-
-  const rows: string[] = [];
-  let availableCount = 0;
-
-  for (const agent of agents) {
-    const sessions = result.byAgent[agent.name];
-    const count = sessions?.length ?? 0;
-    if (count > 0) {
-      availableCount++;
-      rows.push(`  ${green("✔")} ${pad(agent.displayName)} ${dim(`${count} sessions`)}`);
-    } else {
-      rows.push(`  ${dim("✖")} ${pad(agent.displayName)} ${dim("not found")}`);
-    }
-  }
-
-  consola.log(rows.join("\n"));
+  consola.info(
+    `Indexing ${agents.map((agent) => agent.displayName).join(", ")} sessions in the background.`,
+  );
+  consola.info("The Web UI will update automatically as sessions are discovered.");
   consola.log("");
-  consola.info(`Active: ${availableCount}/${agents.length} agents`);
-  consola.log("");
-}
-
-function pad(text: string, length = 16): string {
-  return text.padEnd(length);
-}
-
-function green(text: string): string {
-  return `\x1b[32m${text}\x1b[0m`;
-}
-
-function dim(text: string): string {
-  return `\x1b[2m${text}\x1b[0m`;
 }

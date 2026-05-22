@@ -80,6 +80,7 @@ class MockAgent extends BaseAgent {
       id: "s1",
       slug: "claudecode/s1",
       title: "Test Session",
+      directory: "/home/user/project",
       time_created: 1000,
       time_updated: 1000,
       messages: [],
@@ -805,8 +806,29 @@ describe("handleGetSessionData", () => {
   it("returns 404 when the SQLite session cache is missing", async () => {
     coreMocks.loadCachedSessionData.mockReturnValue(null);
     const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
-    await handleGetSessionData(c, makeScanSource());
+    await handleGetSessionData(
+      c,
+      makeScanSource({
+        sessions: [],
+        byAgent: { claudecode: [] },
+      }),
+    );
     expect(c.json).toHaveBeenCalledWith({ error: "Session cache not ready" }, 404);
+  });
+
+  it("loads session data from the current agent index when SQLite cache is empty", async () => {
+    coreMocks.loadCachedSessionData.mockReturnValue(null);
+    const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
+
+    await handleGetSessionData(c, makeScanSource());
+
+    const response = c.json.mock.calls[0]![0];
+    expect(response.title).toBe("Test Session");
+    expect(response.project_identity).toMatchObject({
+      kind: "path",
+      key: "/home/user/project",
+    });
+    expect(response.file_activity).toEqual([]);
   });
 
   it("returns 500 when SQLite cache loading throws", async () => {
