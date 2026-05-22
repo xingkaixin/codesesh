@@ -1039,12 +1039,7 @@ export class LiveScanStore {
     }
 
     const sessions = attachMissingProjectIdentities([...sessionMap.values()]);
-    const persistenceDiff = buildRefreshDiff(
-      agent.name,
-      cachedSessions,
-      sessions,
-      [...changedIds],
-    );
+    const persistenceDiff = buildRefreshDiff(agent.name, cachedSessions, sessions, [...changedIds]);
     return {
       sessions,
       changedIds: [...changedIds],
