@@ -25,6 +25,8 @@ export interface ScanOptions {
   useCache?: boolean;
   /** Enable smart refresh (fast cache + background incremental scan) */
   smartRefresh?: boolean;
+  /** Return cached session heads without validating the filesystem */
+  cacheOnly?: boolean;
   /** Persist scan results to the SQLite cache */
   writeCache?: boolean;
   /** Classify sessions by reading full conversation content */
@@ -40,6 +42,7 @@ export interface ScanResult {
   byAgent: Record<string, SessionHead[]>;
   agents: BaseAgent[];
   timings?: Record<string, AgentScanTiming>;
+  cacheTimestamps?: Record<string, number>;
 }
 
 /** 扫描状态更新回调 */
@@ -107,6 +110,7 @@ interface AgentScanResult {
   fromCache?: boolean;
   refreshed?: boolean;
   timing?: AgentScanTiming;
+  cacheTimestamp?: number;
 }
 
 interface SmartTagWorkerResult {
@@ -320,6 +324,28 @@ async function scanAgentSmart(
         agent.setSessionMetaMap(metaMap);
       }
 
+      if (options.cacheOnly) {
+        onProgress?.({
+          agent: agent.name,
+          phase: "cache",
+          cachedCount: cached.sessions.length,
+        });
+        onProgress?.({ agent: agent.name, phase: "complete", newCount: cached.sessions.length });
+        const t3 = performance.now();
+        const cachedWithIdentity = attachProjectIdentities(cached.sessions);
+        timing.identity = performance.now() - t3;
+
+        const filtered = filterSessions(cachedWithIdentity, options);
+        timing.total = performance.now() - agentStart;
+        return {
+          agent,
+          heads: filtered,
+          fromCache: true,
+          timing,
+          cacheTimestamp: cached.timestamp,
+        };
+      }
+
       const isAvail = agent.isAvailable();
       if (!isAvail) {
         return null;
@@ -382,7 +408,14 @@ async function scanAgentSmart(
 
           const filtered = filterSessions(tagged.sessions, options);
           timing.total = performance.now() - agentStart;
-          return { agent, heads: filtered, fromCache: true, refreshed: true, timing };
+          return {
+            agent,
+            heads: filtered,
+            fromCache: true,
+            refreshed: true,
+            timing,
+            cacheTimestamp: checkResult.timestamp,
+          };
         }
 
         onProgress?.({ agent: agent.name, phase: "complete", newCount: cached.sessions.length });
@@ -405,8 +438,19 @@ async function scanAgentSmart(
 
       const filtered = filterSessions(tagged.sessions, options);
       timing.total = performance.now() - agentStart;
-      return { agent, heads: filtered, fromCache: true, timing };
+      return {
+        agent,
+        heads: filtered,
+        fromCache: true,
+        timing,
+        cacheTimestamp: cached.timestamp,
+      };
     }
+  }
+
+  if (options.cacheOnly) {
+    timing.total = performance.now() - agentStart;
+    return null;
   }
 
   // 无缓存或缓存失效，执行完整扫描
@@ -480,6 +524,7 @@ export async function scanSessions(
   const byAgent: Record<string, SessionHead[]> = {};
   const allSessions: SessionHead[] = [];
   const availableAgents: BaseAgent[] = [];
+  const cacheTimestamps: Record<string, number> = {};
 
   const agentFilter = options.agents?.length
     ? new Set(options.agents.map((a) => a.toLowerCase()))
@@ -508,11 +553,20 @@ export async function scanSessions(
       if (result.timing) {
         timings[result.agent.name] = result.timing;
       }
+      if (result.cacheTimestamp != null) {
+        cacheTimestamps[result.agent.name] = result.cacheTimestamp;
+      }
     }
   }
 
   perf.end(scanMarker);
-  return { sessions: allSessions, byAgent, agents: availableAgents, timings };
+  return {
+    sessions: allSessions,
+    byAgent,
+    agents: availableAgents,
+    timings,
+    cacheTimestamps: Object.keys(cacheTimestamps).length > 0 ? cacheTimestamps : undefined,
+  };
 }
 
 /**

@@ -178,7 +178,9 @@ const main = defineCommand({
     const startupScanOptions =
       targetSession || jsonOnly ? {} : { from: listDefaultFrom, to: listDefaultTo };
 
-    const store = new LiveScanStore(!jsonOnly, scanOptions, startupScanOptions);
+    const store = new LiveScanStore(!jsonOnly, scanOptions, startupScanOptions, {
+      deferInitialRefresh: !jsonOnly,
+    });
     await store.initialize();
     const result = store.getSnapshot();
     appLogger.info("cli.scan_ready", {
@@ -242,6 +244,9 @@ const main = defineCommand({
     }
 
     const { url } = app;
+    if (!jsonOnly) {
+      store.startBackgroundRefresh();
+    }
     let shuttingDown = false;
     const shutdown = async (signal: NodeJS.Signals) => {
       if (shuttingDown) return;
