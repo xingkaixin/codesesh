@@ -4,8 +4,10 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import {
   createRegisteredAgents,
+  computeIdentity,
   filterSessions,
   getCursorDataPath,
+  realFs,
   resolveProviderRoots,
   scanSessions,
   type BaseAgent,
@@ -111,6 +113,23 @@ function buildAgentCacheMeta(
   }
 
   return meta;
+}
+
+function attachMissingProjectIdentities(sessions: SessionHead[]): SessionHead[] {
+  const identities = new Map<string, ReturnType<typeof computeIdentity>>();
+
+  return sessions.map((session) => {
+    if (session.project_identity) return session;
+
+    const directory = session.directory || "";
+    let identity = identities.get(directory);
+    if (!identity) {
+      identity = computeIdentity(directory, realFs);
+      identities.set(directory, identity);
+    }
+
+    return { ...session, project_identity: identity };
+  });
 }
 
 function buildRefreshDiff(
@@ -1092,6 +1111,8 @@ export class LiveScanStore {
       scanDuration = performance.now() - scanStartedAt;
       this.refreshTimestamps.set(agentName, Date.now());
     }
+
+    nextSessions = attachMissingProjectIdentities(nextSessions);
 
     const filterStartedAt = performance.now();
     nextSessions = this.applyFilters(nextSessions);
