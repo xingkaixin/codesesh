@@ -292,9 +292,9 @@ function toStringValue(value: unknown) {
 
 function normalizeToolLabel(part: MessagePart) {
   if (typeof part.title === "string" && part.title.trim()) {
-    return part.title.trim().replace(/^tool:\s*/i, "");
+    return cleanToolTitle(part.title);
   }
-  if (typeof part.tool === "string" && part.tool.trim()) return part.tool.trim();
+  if (typeof part.tool === "string" && part.tool.trim()) return cleanToolTitle(part.tool);
   return "tool";
 }
 
@@ -600,7 +600,7 @@ function normalizeEscapedNewlines(text: string) {
 function cleanToolTitle(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return "";
-  return trimmed.replace(/^tool:\s*/i, "");
+  return trimmed.replace(/^tool:\s*/i, "").replace(/^\.+(?=\w)/, "");
 }
 
 function getToolTitle(tool: MessagePart, fallback = "Tool") {
@@ -620,6 +620,22 @@ function getOutputOrErrorText(state: NormalizedToolState) {
   const errorText = formatToolOutput(state.errorValue);
   if (errorText !== "No output captured.") return errorText;
   return "No output captured.";
+}
+
+function extractCodexNodeReplTextOutput(outputText: string) {
+  const marker = "Output:\n";
+  const markerIndex = outputText.indexOf(marker);
+  if (markerIndex === -1) return outputText;
+
+  const rawOutput = outputText.slice(markerIndex + marker.length).trim();
+  const parsed = parseJsonText<unknown>(rawOutput);
+  if (!Array.isArray(parsed)) return outputText;
+
+  const text = parsed
+    .map((item) => toPlainText(toRecord(item).text))
+    .filter(Boolean)
+    .join("\n");
+  return text || outputText;
 }
 
 function getFilePathFromInput(inputValue: unknown) {
@@ -1231,13 +1247,37 @@ function buildCodexToolStrategy(
   state: NormalizedToolState,
 ): ToolDisplayStrategy {
   const defaultStrategy = buildDefaultToolStrategy(tool, state);
-  const toolKey = (tool.tool || "").toLowerCase();
+  const toolKey = normalizeToolName(tool);
+  const metadata = toRecord(state.metadataValue);
+  const namespace = toPlainText(metadata.namespace);
 
   if (toolKey === "skill") {
     return buildSkillToolStrategy(tool, state, defaultStrategy);
   }
 
-  if (toolKey === "exec_command") {
+  if (
+    toolKey === "js" &&
+    (namespace === "mcp__node_repl__" || namespace === "mcp__node_repl__.js")
+  ) {
+    const input = toRecord(state.inputValue);
+    const title = toPlainText(input.title);
+    return {
+      ...defaultStrategy,
+      Icon: SquareTerminal,
+      title: "Browser",
+      secondaryText: title || undefined,
+      details: [],
+      showInputPreview: false,
+      outputContent: {
+        kind: "plain",
+        text: extractCodexNodeReplTextOutput(getOutputOrErrorText(state)),
+        language: "text",
+        isCode: false,
+      },
+    };
+  }
+
+  if (toolKey === "exec_command" || toolKey === "bash") {
     const display = buildCodexExecCommandDisplay(
       state.inputValue,
       getOutputOrErrorText(state),

@@ -532,6 +532,56 @@ describe("CodexAgent cache refresh", () => {
     });
   });
 
+  it("uses the tool name when the MCP namespace has no display segment", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const sessionId = "019da001-0000-7000-8000-000000000000";
+    const sessionFile = join(tempDir, `rollout-2026-04-20T10-00-00-${sessionId}.jsonl`);
+
+    writeFileSync(
+      sessionFile,
+      [
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:00Z",
+          type: "session_meta",
+          payload: { cwd: "/tmp/project" },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:01Z",
+          type: "response_item",
+          payload: {
+            type: "function_call",
+            call_id: "call-node",
+            name: "js",
+            namespace: "mcp__node_repl__",
+            arguments: '{"code":"1 + 1"}',
+          },
+        }),
+        "",
+      ].join("\n"),
+    );
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+
+    agent.scan();
+    const data = agent.getSessionData(sessionId);
+    const toolPart = data.messages[0]?.parts.find((part: MessagePart) => part.type === "tool");
+
+    expect(toolPart).toMatchObject({
+      type: "tool",
+      tool: "js",
+      title: "Tool: js",
+      state: {
+        arguments: { code: "1 + 1" },
+        metadata: {
+          name: "js",
+          namespace: "mcp__node_repl__",
+        },
+      },
+    });
+  });
+
   it("parses messages, plans, tools, outputs, and token usage", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
     tempDirs.push(tempDir);

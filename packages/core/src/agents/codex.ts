@@ -117,7 +117,13 @@ function resolveToolIdentity(
   if (!namespaceText) return { tool: name };
 
   const namespaceName = namespaceText.split("__").at(-1) ?? namespaceText;
-  const toolName = name.replace(/^_+/, "");
+  const toolName = name.replace(/^[_.]+/, "");
+  if (!namespaceName) {
+    return {
+      tool: toolName || name,
+      metadata: { name, namespace: namespaceText },
+    };
+  }
 
   return {
     tool: `${namespaceName}.${toolName || name}`,
