@@ -217,7 +217,9 @@ describe("LiveScanStore", () => {
   });
 
   it("initializes a sorted snapshot for allowed registered agents", async () => {
-    const codex = makeAgent("codex");
+    const codex = makeAgent("codex", {
+      scan: vi.fn(() => [fresh]),
+    });
     const kimi = makeAgent("kimi");
     const older = makeSession("older", { time_updated: 1000 });
     const newer = makeSession("newer", { time_updated: 2000 });
@@ -233,13 +235,15 @@ describe("LiveScanStore", () => {
     await store.initialize();
 
     const snapshot = store.getSnapshot();
-    expect(core.scanSessions).toHaveBeenCalledWith({
-      agents: ["codex", "kimi"],
-      useCache: true,
-      smartRefresh: false,
-      writeCache: undefined,
-      includeSmartTags: undefined,
-    });
+    expect(core.scanSessions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agents: ["codex", "kimi"],
+        useCache: true,
+        smartRefresh: false,
+        writeCache: undefined,
+        includeSmartTags: undefined,
+      }),
+    );
     expect(snapshot.agents.map((agent) => agent.name)).toEqual(["codex", "kimi"]);
     expect(snapshot.byAgent.codex.map((session) => session.id)).toEqual(["newer", "older"]);
     expect(snapshot.byAgent.kimi).toEqual([]);
@@ -256,6 +260,75 @@ describe("LiveScanStore", () => {
         context: "scan.initial",
         agentName: "kimi",
         sessions: [],
+      }),
+    ]);
+  });
+
+  it("can initialize from cache and refresh the initial scan in the background", async () => {
+    vi.useFakeTimers();
+    const cached = makeSession("cached", { title: "cached", time_updated: 1000 });
+    const fresh = makeSession("fresh", { title: "fresh", time_updated: 2000 });
+    const codex = makeAgent("codex", {
+      scan: vi.fn(() => [fresh]),
+    });
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValueOnce({
+      sessions: [cached],
+      byAgent: { codex: [cached] },
+      agents: [codex],
+      cacheTimestamps: { codex: 500 },
+    });
+
+    const store = new LiveScanStore(false, {}, {}, { deferInitialRefresh: true });
+    const events: unknown[] = [];
+    store.subscribe((event) => events.push(event));
+
+    await store.initialize();
+
+    expect(core.scanSessions).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        useCache: true,
+        smartRefresh: false,
+        cacheOnly: true,
+        writeCache: false,
+        includeSmartTags: false,
+      }),
+    );
+    expect(workerThreads.workers).toHaveLength(0);
+    expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["cached"]);
+
+    store.startBackgroundRefresh();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(codex.scan).toHaveBeenCalled();
+    expect(workerThreads.workers[0]?.workerData.jobs).toEqual([
+      expect.objectContaining({
+        kind: "full",
+        context: "scan.initial.background",
+        agentName: "codex",
+        sessions: [cached],
+      }),
+    ]);
+    expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
+      expect.objectContaining({
+        kind: "full",
+        context: "scan.refresh",
+        agentName: "codex",
+        sessions: [fresh],
+      }),
+    ]);
+    expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["fresh"]);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "sessions-updated",
+        changedAgents: ["codex"],
+        newSessions: 1,
+        removedSessions: 1,
+        totalSessions: 1,
       }),
     ]);
   });

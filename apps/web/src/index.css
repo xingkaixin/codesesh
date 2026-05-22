@@ -190,6 +190,12 @@
   margin-top: 0.75rem;
 }
 
+.console-markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .console-markdown p {
   margin: 0;
 }
@@ -283,11 +289,14 @@
   background: #f5f5f5;
   border: 1px solid #e5e7eb;
   border-radius: 0.125rem;
+  overflow-wrap: anywhere;
   padding: 0.08rem 0.32rem;
+  white-space: pre-wrap;
 }
 
 .console-markdown pre {
   margin: 0;
+  max-width: 100%;
   border: 1px solid #e5e7eb;
   background: #fafafa;
   border-radius: 0.125rem;
@@ -298,5 +307,7 @@
 .console-markdown pre code {
   border: none;
   background: transparent;
+  overflow-wrap: normal;
   padding: 0;
+  white-space: pre;
 }

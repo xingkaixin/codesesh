@@ -65,6 +65,10 @@ interface SearchIndexJobBatch {
   reject: (error: Error) => void;
 }
 
+interface LiveScanStoreOptions {
+  deferInitialRefresh?: boolean;
+}
+
 const REFRESH_DEBOUNCE_MS = 200;
 const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
 const PENDING_REFRESH_DELAY_MS = 100;
@@ -342,45 +346,57 @@ export class LiveScanStore {
   private stablePaths = new Map<string, StablePathState>();
   private pendingEvent: SessionsUpdatedEvent | null = null;
   private pendingEventTimer: NodeJS.Timeout | null = null;
+  private backgroundRefreshTimer: NodeJS.Timeout | null = null;
   private searchIndexWorker: Worker | null = null;
   private pendingSearchIndexJobs: SearchIndexJobBatch[] = [];
+  private shuttingDown = false;
 
   constructor(
     private readonly watchEnabled = true,
     private readonly scanOptions: ScanOptions = {},
     private readonly startupScanOptions: Pick<ScanOptions, "from" | "to"> = {},
+    private readonly storeOptions: LiveScanStoreOptions = {},
   ) {}
 
   async initialize(): Promise<void> {
     const startedAt = performance.now();
+    const deferInitialRefresh = this.storeOptions.deferInitialRefresh === true;
     appLogger.info("scan.initial.start", {
       watch_enabled: this.watchEnabled,
       agents: this.scanOptions.agents,
       use_cache: this.scanOptions.useCache ?? true,
       startup_from: this.startupScanOptions.from,
       startup_to: this.startupScanOptions.to,
+      deferred: deferInitialRefresh || undefined,
     });
     const initialResult = await scanSessions({
       ...this.scanOptions,
       ...this.startupScanOptions,
       useCache: this.scanOptions.useCache ?? true,
       smartRefresh: false,
+      cacheOnly: deferInitialRefresh,
+      writeCache: deferInitialRefresh ? false : this.scanOptions.writeCache,
       smartTagWorkerUrl: this.getSmartTagWorkerUrl() ?? undefined,
       includeSmartTags:
-        this.startupScanOptions.from != null || this.startupScanOptions.to != null
+        deferInitialRefresh ||
+        this.startupScanOptions.from != null ||
+        this.startupScanOptions.to != null
           ? false
           : undefined,
     });
     this.applyScanResult(initialResult);
     const indexStartedAt = performance.now();
-    await this.enqueueSearchIndexJobs(
-      "scan.initial",
-      this.buildFullSearchIndexJobs("scan.initial"),
-    );
+    if (!deferInitialRefresh) {
+      await this.enqueueSearchIndexJobs(
+        "scan.initial",
+        this.buildFullSearchIndexJobs("scan.initial"),
+      );
+    }
     const indexDuration = performance.now() - indexStartedAt;
     appLogger.info("scan.initial.done", {
       duration_ms: Math.round(performance.now() - startedAt),
-      index_ms: Math.round(indexDuration),
+      index_ms: deferInitialRefresh ? undefined : Math.round(indexDuration),
+      deferred: deferInitialRefresh || undefined,
       sessions: this.sessions.length,
       agents: Object.fromEntries(
         Object.entries(this.byAgent).map(([key, value]) => [key, value.length]),
@@ -406,6 +422,19 @@ export class LiveScanStore {
     }
   }
 
+  startBackgroundRefresh(): void {
+    if (this.backgroundRefreshTimer) {
+      return;
+    }
+    this.backgroundRefreshTimer = setTimeout(() => {
+      this.backgroundRefreshTimer = null;
+      void this.refreshInitialIndex();
+      for (const agent of this.agents) {
+        this.scheduleRefresh(agent.name, 0);
+      }
+    }, 0);
+  }
+
   getSnapshot(): ScanResult {
     return {
       sessions: this.sessions,
@@ -422,6 +451,7 @@ export class LiveScanStore {
   }
 
   async shutdown(): Promise<void> {
+    this.shuttingDown = true;
     for (const timer of this.refreshTimers.values()) {
       clearTimeout(timer);
     }
@@ -437,6 +467,10 @@ export class LiveScanStore {
     if (this.pendingEventTimer) {
       clearTimeout(this.pendingEventTimer);
       this.pendingEventTimer = null;
+    }
+    if (this.backgroundRefreshTimer) {
+      clearTimeout(this.backgroundRefreshTimer);
+      this.backgroundRefreshTimer = null;
     }
     if (this.searchIndexWorker) {
       await this.searchIndexWorker.terminate();
@@ -672,7 +706,7 @@ export class LiveScanStore {
     this.byAgent = {};
     for (const agent of this.agents) {
       this.byAgent[agent.name] = sortSessions(result.byAgent[agent.name] ?? []);
-      this.refreshTimestamps.set(agent.name, Date.now());
+      this.refreshTimestamps.set(agent.name, result.cacheTimestamps?.[agent.name] ?? Date.now());
     }
 
     this.rebuildSessions();
@@ -687,6 +721,25 @@ export class LiveScanStore {
 
   private applyFilters(sessions: SessionHead[]): SessionHead[] {
     return filterSessions(sessions, { ...this.scanOptions, ...this.startupScanOptions });
+  }
+
+  private async refreshInitialIndex(): Promise<void> {
+    const startedAt = performance.now();
+    const context = "scan.initial.background";
+
+    try {
+      await this.enqueueSearchIndexJobs(context, this.buildFullSearchIndexJobs(context));
+      appLogger.info(`${context}.complete`, {
+        duration_ms: Math.round(performance.now() - startedAt),
+        sessions: this.sessions.length,
+      });
+    } catch (error) {
+      if (this.shuttingDown) {
+        return;
+      }
+      appLogger.error(`${context}.error`, { error });
+      console.error("[search] Background index sync failed:", error);
+    }
   }
 
   private startWatching(): void {

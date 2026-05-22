@@ -62,6 +62,7 @@ export const serveCommand = defineCommand({
       !jsonOnly,
       scanOptions,
       jsonOnly ? {} : { from: listDefaultFrom, to: listDefaultTo },
+      { deferInitialRefresh: !jsonOnly },
     );
 
     await store.initialize();
@@ -104,6 +105,9 @@ export const serveCommand = defineCommand({
     }
 
     const { url } = app;
+    if (!jsonOnly) {
+      store.startBackgroundRefresh();
+    }
     let shuttingDown = false;
     const shutdown = async () => {
       if (shuttingDown) return;
