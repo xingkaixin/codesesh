@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.1] - 2026-05-22
+
+### Bug Fixes
+
+- Avoid using the writable cache connection for file activity reads, except when path filtering requires FTS. (#40)
+
+### Changelog Detail
+
+- #40 fix: avoid writable file activity reads @xingkaixin
+
 ## [0.7.0] - 2026-05-22
 
 ### Features

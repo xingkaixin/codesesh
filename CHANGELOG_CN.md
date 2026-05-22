@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.1] - 2026-05-22
+
+### 问题修复
+
+- 文件活动读取优先使用只读缓存连接，仅在路径筛选需要 FTS 时回退到可写连接。 (#40)
+
+### Changelog Detail
+
+- #40 fix: avoid writable file activity reads @xingkaixin
+
 ## [0.7.0] - 2026-05-22
 
 ### 新功能
