@@ -2069,18 +2069,18 @@ function SessionToc({
             {TOC_META.filter(({ id }) => toc.counts[id] > 0).map(({ id, label }) => (
               <label
                 key={id}
-                className="flex cursor-pointer items-center gap-3 rounded-sm px-2 py-2 transition-colors hover:bg-[var(--console-surface-muted)]"
+                className="flex cursor-pointer items-start gap-3 rounded-sm px-2 py-2 transition-colors hover:bg-[var(--console-surface-muted)]"
               >
                 <input
                   type="checkbox"
                   checked={selectedFilters.has(id)}
                   onChange={() => onToggle(id)}
-                  className="size-3.5 rounded border-[var(--console-border-strong)] accent-[var(--console-accent-strong)]"
+                  className="mt-0.5 size-3.5 shrink-0 rounded border-[var(--console-border-strong)] accent-[var(--console-accent-strong)]"
                 />
-                <span className="console-mono min-w-0 flex-1 text-xs text-[var(--console-text)]">
+                <span className="console-mono min-w-0 flex-1 break-all text-xs leading-relaxed text-[var(--console-text)]">
                   {label}
                 </span>
-                <span className="console-mono text-[11px] text-[var(--console-muted)]">
+                <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
                   {toc.counts[id]}
                 </span>
               </label>
@@ -2091,7 +2091,7 @@ function SessionToc({
                   <label
                     key={tool.id}
                     className={cn(
-                      "flex items-center gap-3 rounded-sm px-2 py-2 transition-colors",
+                      "flex items-start gap-3 rounded-sm px-2 py-2 transition-colors",
                       toolsEnabled
                         ? "cursor-pointer hover:bg-[var(--console-surface-muted)]"
                         : "cursor-not-allowed opacity-50",
@@ -2102,12 +2102,12 @@ function SessionToc({
                       checked={toolsEnabled && selectedFilters.has(tool.id)}
                       disabled={!toolsEnabled}
                       onChange={() => onToggle(tool.id)}
-                      className="size-3.5 rounded border-[var(--console-border-strong)] accent-[var(--console-accent-strong)]"
+                      className="mt-0.5 size-3.5 shrink-0 rounded border-[var(--console-border-strong)] accent-[var(--console-accent-strong)]"
                     />
-                    <span className="console-mono min-w-0 flex-1 text-xs text-[var(--console-muted)]">
+                    <span className="console-mono min-w-0 flex-1 break-all text-xs leading-relaxed text-[var(--console-muted)]">
                       {tool.label}
                     </span>
-                    <span className="console-mono text-[11px] text-[var(--console-muted)]">
+                    <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
                       {tool.count}
                     </span>
                   </label>

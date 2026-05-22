@@ -38,6 +38,7 @@ const PLAN_APPROVAL_PREFIX = "PLEASE IMPLEMENT THIS PLAN";
 const SUBAGENT_NOTIFICATION_PATTERN =
   /<subagent_notification>\s*([\s\S]*?)\s*<\/subagent_notification>/;
 const HEAD_INDEX_VERSION = "codex-head-v1";
+const PARSER_VERSION = "codex-parser-v3";
 
 const DEVELOPER_LIKE_USER_MARKERS = [
   "agents.md instructions for",
@@ -105,8 +106,23 @@ function extractCachedInputTokens(usage: Record<string, unknown> | undefined): n
 // Tool helpers
 // ---------------------------------------------------------------------------
 
-function mapToolTitle(name: string): string {
-  return CODEX_TOOL_TITLE_MAP[name] ?? name;
+function resolveToolIdentity(
+  name: string,
+  namespace: unknown,
+): { tool: string; metadata?: { name: string; namespace: string } } {
+  const mappedName = CODEX_TOOL_TITLE_MAP[name];
+  if (mappedName) return { tool: mappedName };
+
+  const namespaceText = typeof namespace === "string" ? namespace.trim() : "";
+  if (!namespaceText) return { tool: name };
+
+  const namespaceName = namespaceText.split("__").at(-1) ?? namespaceText;
+  const toolName = name.replace(/^_+/, "");
+
+  return {
+    tool: `${namespaceName}.${toolName || name}`,
+    metadata: { name, namespace: namespaceText },
+  };
 }
 
 function normalizeToolArguments(raw: unknown): unknown {
@@ -251,6 +267,7 @@ interface SessionMeta extends SessionCacheMeta {
   indexPath: string | null;
   indexMtimeMs: number | null;
   headIndexVersion: string;
+  parserVersion: string;
   directory: string;
   model: string | null;
   messageCount: number;
@@ -629,6 +646,7 @@ export class CodexAgent extends BaseAgent {
       indexPath: existsSync(indexPath) ? indexPath : null,
       indexMtimeMs: this.getFileMtimeMs(indexPath),
       headIndexVersion: HEAD_INDEX_VERSION,
+      parserVersion: PARSER_VERSION,
       directory: head.directory,
       model: null,
       messageCount: head.stats.message_count,
@@ -639,6 +657,7 @@ export class CodexAgent extends BaseAgent {
 
   private hasMetaChanged(meta: SessionMeta): boolean {
     if (meta.headIndexVersion !== HEAD_INDEX_VERSION) return true;
+    if (meta.parserVersion !== PARSER_VERSION) return true;
     if (typeof meta.sourceMtimeMs !== "number") return true;
     if (statSync(meta.sourcePath).mtimeMs !== meta.sourceMtimeMs) return true;
 
@@ -1321,17 +1340,18 @@ export class CodexAgent extends BaseAgent {
       return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan: null };
     }
 
-    const mappedName = mapToolTitle(name);
+    const toolIdentity = resolveToolIdentity(name, payload["namespace"]);
     const arguments_ = normalizeToolArguments(payload["arguments"]);
 
     const toolPart: MessagePart = {
       type: "tool",
-      tool: mappedName,
+      tool: toolIdentity.tool,
       callID: callId,
-      title: `Tool: ${mappedName}`,
+      title: `Tool: ${toolIdentity.tool}`,
       state: {
         arguments: arguments_,
         output: null,
+        metadata: toolIdentity.metadata,
       },
       time_created: timestampMs,
     };
@@ -1422,18 +1442,19 @@ export class CodexAgent extends BaseAgent {
       return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan: null };
     }
 
-    const mappedName = mapToolTitle(name);
+    const toolIdentity = resolveToolIdentity(name, payload["namespace"]);
     const rawInput = payload["input"];
     const normalizedInput = normalizeCustomToolArguments(name, rawInput);
 
     const toolPart: MessagePart = {
       type: "tool",
-      tool: mappedName,
+      tool: toolIdentity.tool,
       callID: callId,
-      title: `Tool: ${mappedName}`,
+      title: `Tool: ${toolIdentity.tool}`,
       state: {
         arguments: normalizedInput,
         output: null,
+        metadata: toolIdentity.metadata,
       },
       time_created: timestampMs,
     };

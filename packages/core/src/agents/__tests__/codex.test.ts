@@ -123,6 +123,45 @@ describe("CodexAgent cache refresh", () => {
     expect(agent.sessionIndexCache.size).toBe(0);
   });
 
+  it("invalidates cached sessions when the parser version changes", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const sessionFile = join(
+      tempDir,
+      "rollout-2026-04-20T10-00-00-019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa.jsonl",
+    );
+
+    writeFileSync(
+      sessionFile,
+      '{"type":"session_meta","payload":{"timestamp":"2026-04-20T10:00:00Z"}}\n',
+    );
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.sessionMetaMap = new Map([
+      [
+        "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
+        {
+          id: "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
+          sourcePath: sessionFile,
+          sourceMtimeMs: statSync(sessionFile).mtimeMs,
+          indexPath: null,
+          indexMtimeMs: null,
+          headIndexVersion: "codex-head-v1",
+          parserVersion: "codex-parser-v2",
+        },
+      ],
+    ]);
+    agent.listRolloutFiles = () => [sessionFile];
+
+    const result = agent.checkForChanges(Date.now(), [
+      makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa"),
+    ]);
+
+    expect(result.hasChanges).toBe(true);
+    expect(result.changedIds).toContain("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa");
+  });
+
   it("removes deleted sessions and adds new sessions during incremental scan", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
     const oldA = join(
@@ -421,6 +460,74 @@ describe("CodexAgent cache refresh", () => {
       tool: "bash",
       state: {
         output: [expect.objectContaining({ type: "text", text: "Visible output" })],
+      },
+    });
+  });
+
+  it("normalizes namespaced MCP function calls for display", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const sessionId = "019da000-0000-7000-8000-000000000000";
+    const sessionFile = join(tempDir, `rollout-2026-04-20T10-00-00-${sessionId}.jsonl`);
+
+    writeFileSync(
+      sessionFile,
+      [
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:00Z",
+          type: "session_meta",
+          payload: { cwd: "/tmp/project" },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:01Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: "List labels" }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:02Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "Checking Linear" }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:03Z",
+          type: "response_item",
+          payload: {
+            type: "function_call",
+            call_id: "call-linear",
+            name: "_list_issue_labels",
+            namespace: "mcp__codex_apps__linear",
+            arguments: '{"team":"research&develop"}',
+          },
+        }),
+        "",
+      ].join("\n"),
+    );
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+
+    agent.scan();
+    const data = agent.getSessionData(sessionId);
+    const toolPart = data.messages[1]?.parts.find((part: MessagePart) => part.type === "tool");
+
+    expect(toolPart).toMatchObject({
+      type: "tool",
+      tool: "linear.list_issue_labels",
+      title: "Tool: linear.list_issue_labels",
+      state: {
+        arguments: { team: "research&develop" },
+        metadata: {
+          name: "_list_issue_labels",
+          namespace: "mcp__codex_apps__linear",
+        },
       },
     });
   });
