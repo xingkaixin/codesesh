@@ -1,5 +1,7 @@
 # CodeSesh
 
+
+
 > **One place to see every AI coding session you've ever had.**
 
 You've been coding with AI agents — Claude Code, Cursor, Kimi, Codex, OpenCode — and the conversations are scattered everywhere on your filesystem. Context is lost. Cost is invisible. History is buried.

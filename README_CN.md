@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/codesesh-logo-kinetic.svg" alt="CodeSesh Logo" width="128" height="128">
+</p>
+
 # CodeSesh
 
 > **一个地方，看遍你所有的 AI 编程会话。**
