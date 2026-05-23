@@ -1,5 +1,8 @@
 # CodeSesh
 
+<p align="center">
+  <img src="assets/codesesh-logo-kinetic.svg" alt="CodeSesh Logo" width="128" height="128">
+</p>
 
 
 > **One place to see every AI coding session you've ever had.**
