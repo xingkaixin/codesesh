@@ -359,6 +359,28 @@ describe("scanSessions", () => {
     expect(mockedSaveCachedSessions).not.toHaveBeenCalled();
   });
 
+  it("uses cached sessions even when last refresh is old", async () => {
+    mockedLoadCachedSessions.mockReturnValue({
+      sessions: [makeSession("cached")],
+      meta: {},
+      timestamp: 0,
+    });
+    mockedCreateRegisteredAgents.mockReturnValue([
+      createTestAgent({
+        name: "test",
+        available: true,
+        sessions: [makeSession("fresh")],
+      }),
+    ]);
+
+    const result = await scanSessions({ useCache: true, cacheOnly: true });
+
+    expect(mockedLoadCachedSessions).toHaveBeenCalledWith("test");
+    expect(result.sessions.map((session) => session.id)).toEqual(["cached"]);
+    expect(mockedSaveCachedSessionChanges).not.toHaveBeenCalled();
+    expect(mockedSaveCachedSessions).not.toHaveBeenCalled();
+  });
+
   it("refreshes stale cache before returning results", async () => {
     const cachedSessions = [makeSession("cached")];
     const refreshedSessions = [makeSession("fresh")];

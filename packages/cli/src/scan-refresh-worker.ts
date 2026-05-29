@@ -5,6 +5,7 @@ import {
   type ScanOptions,
   type SessionCacheMeta,
   type SessionHead,
+  type SessionSourceRef,
 } from "@codesesh/core";
 
 export type ScanRefreshWorkerMessage =
@@ -16,6 +17,7 @@ export type ScanRefreshWorkerMessage =
       type: "done";
       sessions: SessionHead[];
       meta: Record<string, SessionCacheMeta>;
+      changedIds?: string[];
       durationMs: number;
     }
   | {
@@ -28,6 +30,7 @@ interface ScanRefreshWorkerData {
   agentName: string;
   previousSessions: SessionHead[];
   changedIds: string[] | null;
+  sourceSync?: boolean;
   scanOptions: Pick<ScanOptions, "from" | "to" | "fast">;
   meta: Record<string, SessionCacheMeta>;
 }
@@ -45,10 +48,71 @@ function serializeMeta(agent: {
   return meta;
 }
 
+function sourceFingerprintFromMeta(meta: SessionCacheMeta | undefined): string | null {
+  return typeof meta?.sourceFingerprint === "string" ? meta.sourceFingerprint : null;
+}
+
+function sourcePathFromMeta(meta: SessionCacheMeta | undefined): string | null {
+  return typeof meta?.sourcePath === "string" ? meta.sourcePath : null;
+}
+
+function canSyncSources(agent: unknown): agent is {
+  listSessionSources: () => SessionSourceRef[];
+  scanSessionSource: (sourcePath: string) => SessionHead | null;
+} {
+  return (
+    typeof agent === "object" &&
+    agent !== null &&
+    "listSessionSources" in agent &&
+    "scanSessionSource" in agent &&
+    typeof agent.listSessionSources === "function" &&
+    typeof agent.scanSessionSource === "function"
+  );
+}
+
+function syncAgentSources(
+  agent: {
+    listSessionSources: () => SessionSourceRef[];
+    scanSessionSource: (sourcePath: string) => SessionHead | null;
+  },
+  cachedSessions: SessionHead[],
+  cachedMeta: Record<string, SessionCacheMeta>,
+): { sessions: SessionHead[]; changedIds: string[] } {
+  const sessionMap = new Map(cachedSessions.map((session) => [session.id, session]));
+  const sourceRefs = agent.listSessionSources();
+  const currentIds = new Set(sourceRefs.map((source) => source.sessionId));
+  const changedIds = new Set<string>();
+
+  for (const source of sourceRefs) {
+    const cachedSession = sessionMap.get(source.sessionId);
+    const cached = cachedMeta[source.sessionId];
+    const sameSource = sourcePathFromMeta(cached) === source.sourcePath;
+    const sameFingerprint = sourceFingerprintFromMeta(cached) === source.fingerprint;
+    if (cachedSession && sameSource && sameFingerprint) continue;
+
+    const next = agent.scanSessionSource(source.sourcePath);
+    changedIds.add(source.sessionId);
+    if (next) {
+      sessionMap.set(next.id, next);
+    } else {
+      sessionMap.delete(source.sessionId);
+    }
+  }
+
+  for (const session of cachedSessions) {
+    if (!currentIds.has(session.id)) {
+      sessionMap.delete(session.id);
+      changedIds.add(session.id);
+    }
+  }
+
+  return { sessions: [...sessionMap.values()], changedIds: [...changedIds] };
+}
+
 const data = workerData as ScanRefreshWorkerData;
 const startedAt = performance.now();
 
-try {
+async function run(): Promise<void> {
   const agent = createRegisteredAgents().find((item) => item.name === data.agentName);
   if (!agent) {
     throw new Error(`Unknown agent: ${data.agentName}`);
@@ -59,26 +123,42 @@ try {
   }
 
   const isAvailable = agent.isAvailable();
-  const sessions = !isAvailable
-    ? []
-    : data.changedIds && agent.incrementalScan
-      ? agent.incrementalScan(data.previousSessions, data.changedIds)
-      : agent.scan({
-          ...data.scanOptions,
-          onProgress: (progress) => {
-            parentPort?.postMessage({
-              type: "progress",
-              progress,
-            } satisfies ScanRefreshWorkerMessage);
-          },
-        });
+  let sessions: SessionHead[];
+  let changedIds: string[] | undefined;
+
+  if (!isAvailable) {
+    sessions = [];
+  } else if (data.sourceSync && canSyncSources(agent)) {
+    const result = syncAgentSources(agent, data.previousSessions, data.meta);
+    sessions = result.sessions;
+    changedIds = result.changedIds;
+  } else if (data.changedIds && agent.incrementalScan) {
+    sessions = await Promise.resolve(agent.incrementalScan(data.previousSessions, data.changedIds));
+  } else {
+    sessions = await Promise.resolve(
+      agent.scan({
+        ...data.scanOptions,
+        onProgress: (progress) => {
+          parentPort?.postMessage({
+            type: "progress",
+            progress,
+          } satisfies ScanRefreshWorkerMessage);
+        },
+      }),
+    );
+  }
 
   parentPort?.postMessage({
     type: "done",
     sessions,
     meta: serializeMeta(agent),
+    changedIds,
     durationMs: performance.now() - startedAt,
   } satisfies ScanRefreshWorkerMessage);
+}
+
+try {
+  await run();
 } catch (error) {
   parentPort?.postMessage({
     type: "error",

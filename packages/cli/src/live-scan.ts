@@ -228,14 +228,6 @@ function restoreAgentCacheMeta(agent: BaseAgent, meta: Record<string, SessionCac
   agent.setSessionMetaMap?.(new Map(Object.entries(meta)));
 }
 
-function sourceFingerprintFromMeta(meta: SessionCacheMeta | undefined): string | null {
-  return typeof meta?.sourceFingerprint === "string" ? meta.sourceFingerprint : null;
-}
-
-function sourcePathFromMeta(meta: SessionCacheMeta | undefined): string | null {
-  return typeof meta?.sourcePath === "string" ? meta.sourcePath : null;
-}
-
 function toAbsolutePath(path: string): string {
   return isAbsolute(path) ? path : resolve(path);
 }
@@ -793,12 +785,8 @@ export class LiveScanStore {
     return workerUrl;
   }
 
-  private getScanRefreshWorkerUrl(): URL | null {
-    const workerUrl = new URL("./scan-refresh-worker.js", import.meta.url);
-    if (workerUrl.protocol === "file:" && !existsSync(fileURLToPath(workerUrl))) {
-      return null;
-    }
-    return workerUrl;
+  private getScanRefreshWorkerUrl(): URL {
+    return new URL("./scan-refresh-worker.js", import.meta.url);
   }
 
   private scanAgentInWorker(
@@ -806,9 +794,13 @@ export class LiveScanStore {
     previousSessions: SessionHead[],
     changedIds: string[] | null,
     scanOptions: Pick<ScanOptions, "from" | "to" | "fast">,
-  ): Promise<{ sessions: SessionHead[]; meta: Record<string, SessionCacheMeta> }> | null {
+    workerOptions: { sourceSync?: boolean; meta?: Record<string, SessionCacheMeta> } = {},
+  ): Promise<{
+    sessions: SessionHead[];
+    meta: Record<string, SessionCacheMeta>;
+    changedIds?: string[];
+  }> {
     const workerUrl = this.getScanRefreshWorkerUrl();
-    if (!workerUrl) return null;
 
     return new Promise((resolve, reject) => {
       const worker = new Worker(workerUrl, {
@@ -816,8 +808,9 @@ export class LiveScanStore {
           agentName: agent.name,
           previousSessions,
           changedIds,
+          sourceSync: workerOptions.sourceSync,
           scanOptions,
-          meta: buildAgentCacheMeta(agent),
+          meta: workerOptions.meta ?? buildAgentCacheMeta(agent),
         },
       });
       worker.unref();
@@ -836,7 +829,13 @@ export class LiveScanStore {
           return;
         }
         if (message.type === "done") {
-          finish(() => resolve({ sessions: message.sessions, meta: message.meta }));
+          finish(() =>
+            resolve({
+              sessions: message.sessions,
+              meta: message.meta,
+              changedIds: message.changedIds,
+            }),
+          );
           return;
         }
         finish(() => reject(new Error(message.error)));
@@ -854,7 +853,7 @@ export class LiveScanStore {
 
   private buildFullSearchIndexJobs(context: string): SearchIndexWorkerJob[] {
     return this.agents.map((agent) => {
-      const cached = loadCachedSessions(agent.name, { ignoreTtl: true });
+      const cached = loadCachedSessions(agent.name);
       if (cached) {
         return {
           kind: "full",
@@ -996,55 +995,6 @@ export class LiveScanStore {
     scanSessionSource: (sourcePath: string) => SessionHead | null;
   } {
     return Boolean(agent.listSessionSources && agent.scanSessionSource);
-  }
-
-  private syncAgentSources(
-    agent: BaseAgent & {
-      listSessionSources: () => SessionSourceRef[];
-      scanSessionSource: (sourcePath: string) => SessionHead | null;
-    },
-    cachedSessions: SessionHead[],
-    cachedMeta: Record<string, SessionCacheMeta>,
-  ): {
-    sessions: SessionHead[];
-    changedIds: string[];
-    persistenceDiff: Pick<SessionRefreshDiff, "changedSessions" | "removedSessionIds">;
-  } {
-    const sessionMap = new Map(cachedSessions.map((session) => [session.id, session]));
-    const sourceRefs = agent.listSessionSources();
-    const currentIds = new Set(sourceRefs.map((source) => source.sessionId));
-    const changedIds = new Set<string>();
-
-    for (const source of sourceRefs) {
-      const cachedSession = sessionMap.get(source.sessionId);
-      const cached = cachedMeta[source.sessionId];
-      const sameSource = sourcePathFromMeta(cached) === source.sourcePath;
-      const sameFingerprint = sourceFingerprintFromMeta(cached) === source.fingerprint;
-      if (cachedSession && sameSource && sameFingerprint) continue;
-
-      const next = agent.scanSessionSource(source.sourcePath);
-      changedIds.add(source.sessionId);
-      if (next) {
-        sessionMap.set(next.id, next);
-      } else {
-        sessionMap.delete(source.sessionId);
-      }
-    }
-
-    for (const session of cachedSessions) {
-      if (!currentIds.has(session.id)) {
-        sessionMap.delete(session.id);
-        changedIds.add(session.id);
-      }
-    }
-
-    const sessions = attachMissingProjectIdentities([...sessionMap.values()]);
-    const persistenceDiff = buildRefreshDiff(agent.name, cachedSessions, sessions, [...changedIds]);
-    return {
-      sessions,
-      changedIds: [...changedIds],
-      persistenceDiff,
-    };
   }
 
   private async refreshInitialIndex(): Promise<void> {
@@ -1353,7 +1303,7 @@ export class LiveScanStore {
     }
 
     const previousSessions = this.byAgent[agentName] ?? [];
-    const cached = loadCachedSessions(agentName, { ignoreTtl: true });
+    const cached = loadCachedSessions(agentName);
     const refreshBaseline = cached?.sessions ?? previousSessions;
     const cacheTimestamp = cached?.timestamp ?? this.refreshTimestamps.get(agentName) ?? 0;
     if (cached) {
@@ -1385,32 +1335,38 @@ export class LiveScanStore {
     } else if (!isInitialized) {
       this.setScanPhase("initializing");
       const scanStartedAt = performance.now();
-      const workerResult = this.scanAgentInWorker(agent, previousSessions, null, {});
-      if (workerResult) {
-        const result = await workerResult;
-        nextSessions = result.sessions;
-        agent.setSessionMetaMap?.(new Map(Object.entries(result.meta)));
-      } else {
-        nextSessions = await Promise.resolve(
-          agent.scan({
-            onProgress: (progress) => this.updateAgentScanProgress(agentName, progress),
-          }),
-        );
-      }
+      const result = await this.scanAgentInWorker(agent, previousSessions, null, {});
+      nextSessions = result.sessions;
+      agent.setSessionMetaMap?.(new Map(Object.entries(result.meta)));
       fullScanSessions = attachMissingProjectIdentities(nextSessions);
       nextSessions = fullScanSessions;
       scanDuration = performance.now() - scanStartedAt;
       this.refreshTimestamps.set(agentName, Date.now());
     } else if (cached && this.canSyncSources(agent)) {
       const scanStartedAt = performance.now();
-      const result = this.syncAgentSources(agent, cached.sessions, cached.meta);
+      const result = await this.scanAgentInWorker(
+        agent,
+        cached.sessions,
+        null,
+        {},
+        {
+          sourceSync: true,
+          meta: cached.meta,
+        },
+      );
       nextSessions = result.sessions;
-      preciseChangedIds = result.changedIds;
+      agent.setSessionMetaMap?.(new Map(Object.entries(result.meta)));
+      preciseChangedIds = result.changedIds ?? [];
       usedIncrementalScan = true;
-      persistenceDiff = result.persistenceDiff;
+      persistenceDiff = buildRefreshDiff(
+        agentName,
+        cached.sessions,
+        attachMissingProjectIdentities(nextSessions),
+        preciseChangedIds,
+      );
       scanDuration = performance.now() - scanStartedAt;
       this.refreshTimestamps.set(agentName, Date.now());
-      if (result.changedIds.length === 0) {
+      if (preciseChangedIds.length === 0) {
         appLogger.debug("scan.refresh.unchanged", {
           agent: agentName,
           duration_ms: Math.round(performance.now() - startedAt),
@@ -1449,18 +1405,9 @@ export class LiveScanStore {
       scanDuration = performance.now() - scanStartedAt;
     } else {
       const scanStartedAt = performance.now();
-      const workerResult = this.scanAgentInWorker(agent, previousSessions, null, {});
-      if (workerResult) {
-        const result = await workerResult;
-        nextSessions = result.sessions;
-        agent.setSessionMetaMap?.(new Map(Object.entries(result.meta)));
-      } else {
-        nextSessions = await Promise.resolve(
-          agent.scan({
-            onProgress: (progress) => this.updateAgentScanProgress(agentName, progress),
-          }),
-        );
-      }
+      const result = await this.scanAgentInWorker(agent, previousSessions, null, {});
+      nextSessions = result.sessions;
+      agent.setSessionMetaMap?.(new Map(Object.entries(result.meta)));
       fullScanSessions = attachMissingProjectIdentities(nextSessions);
       nextSessions = fullScanSessions;
       scanDuration = performance.now() - scanStartedAt;

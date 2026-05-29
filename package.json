@@ -3,6 +3,8 @@
   "private": true,
   "scripts": {
     "build": "turbo run build",
+    "build:app": "pnpm --filter codesesh build",
+    "run:app": "pnpm --filter codesesh start",
     "dev": "turbo run dev",
     "dev:www": "pnpm --filter @codesesh/www dev",
     "serve": "node --watch packages/cli/dist/index.js",
