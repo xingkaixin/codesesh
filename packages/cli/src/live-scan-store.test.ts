@@ -48,6 +48,24 @@ const workerThreads = vi.hoisted(() => ({
   Worker: vi.fn(function (this: unknown, url: URL, options?: { workerData?: unknown }) {
     const workerData = options?.workerData as any;
     const runSourceSync = (agent: any) => {
+      const parseSourceFingerprint = (fingerprint: string) => {
+        try {
+          const parsed = JSON.parse(fingerprint);
+          return Array.isArray(parsed) ? parsed : null;
+        } catch {
+          return null;
+        }
+      };
+      const sourceFingerprintMatches = (source: any, cachedSession: SessionHead, cached: any) => {
+        if (cached?.sourceFingerprint === source.fingerprint) return true;
+        const current = parseSourceFingerprint(source.fingerprint);
+        return (
+          Boolean(current) &&
+          typeof cached?.sourceMtimeMs === "number" &&
+          cached.sourceMtimeMs === current[2] &&
+          (current![4] == null || cachedSession.title === current![4])
+        );
+      };
       const sessionMap = new Map(
         (workerData.previousSessions ?? []).map((session: SessionHead) => [session.id, session]),
       );
@@ -61,7 +79,7 @@ const workerThreads = vi.hoisted(() => ({
         if (
           cachedSession &&
           cached?.sourcePath === source.sourcePath &&
-          cached?.sourceFingerprint === source.fingerprint
+          sourceFingerprintMatches(source, cachedSession as SessionHead, cached)
         ) {
           continue;
         }
@@ -718,6 +736,82 @@ describe("LiveScanStore", () => {
         newSessions: 1,
         updatedSessions: 1,
         removedSessions: 0,
+      }),
+    ]);
+  });
+
+  it("does not rescan legacy Codex cache entries when only the fingerprint format changed", async () => {
+    const previous = makeSession("session", { title: "same title", time_updated: 1000 });
+    const scanSessionSource = vi.fn(() => makeSession("session", { title: "same title" }));
+    const legacyFingerprint = JSON.stringify([
+      "codex-head-v1",
+      "codex-parser-v3",
+      1234,
+      5678,
+      9999,
+    ]);
+    const currentFingerprint = JSON.stringify([
+      "codex-head-v1",
+      "codex-parser-v3",
+      1234,
+      5678,
+      "same title",
+    ]);
+    const codex = makeAgent("codex", {
+      listSessionSources: vi.fn(() => [
+        {
+          sessionId: "session",
+          sourcePath: "/tmp/s",
+          fingerprint: currentFingerprint,
+        },
+      ]),
+      scanSessionSource,
+      getSessionMetaMap: vi.fn(
+        () =>
+          new Map([
+            [
+              "session",
+              {
+                id: "session",
+                sourcePath: "/tmp/s",
+                sourceFingerprint: legacyFingerprint,
+                sourceMtimeMs: 1234,
+              },
+            ],
+          ]),
+      ),
+      setSessionMetaMap: vi.fn(),
+    });
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [previous],
+      byAgent: { codex: [previous] },
+      agents: [codex],
+    });
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [previous],
+      meta: {
+        session: {
+          id: "session",
+          sourcePath: "/tmp/s",
+          sourceFingerprint: legacyFingerprint,
+          sourceMtimeMs: 1234,
+        },
+      },
+      timestamp: 1000,
+    });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+    await (store as any).runRefresh("codex");
+
+    expect(scanSessionSource).not.toHaveBeenCalled();
+    expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
+      expect.objectContaining({
+        kind: "changes",
+        changes: [],
+        removedSessionIds: [],
       }),
     ]);
   });
