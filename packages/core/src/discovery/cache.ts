@@ -33,7 +33,6 @@ import {
 
 const CACHE_SCHEMA_VERSION = 13;
 export const CACHE_INITIALIZATION_VERSION = "session-cache-v2";
-const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const CACHE_FILENAME = "codesesh.db";
 const LEGACY_CACHE_FILENAME = "scan-cache.json";
 const SEARCH_INDEX_BULK_SYNC_THRESHOLD = 100;
@@ -2025,10 +2024,7 @@ function deleteLegacyCacheFile(): void {
   }
 }
 
-export function loadCachedSessions(
-  agentName: string,
-  options: { ignoreTtl?: boolean } = {},
-): CachedResult | null {
+export function loadCachedSessions(agentName: string): CachedResult | null {
   if (!hasCacheStorage()) {
     return null;
   }
@@ -2039,7 +2035,7 @@ export function loadCachedSessions(
       .get(agentName) as ScalarRow | undefined;
     const timestamp = Number(timestampRow?.value ?? 0);
 
-    if (!timestamp || (!options.ignoreTtl && Date.now() - timestamp > CACHE_TTL)) {
+    if (!timestamp) {
       return null;
     }
 

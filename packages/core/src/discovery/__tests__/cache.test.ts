@@ -153,10 +153,10 @@ describe("loadCachedSessions", () => {
     expect(loadCachedSessions("claudecode")).toBeNull();
   });
 
-  it("returns null when cache is too old", () => {
+  it("returns cached sessions even when last refresh is old", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     dateNowSpy.mockReturnValue(now + 8 * 24 * 60 * 60 * 1000);
-    expect(loadCachedSessions("claudecode")).toBeNull();
+    expect(loadCachedSessions("claudecode")?.sessions.map((session) => session.id)).toEqual(["s1"]);
   });
 
   it("returns cached sessions and meta when valid", () => {
