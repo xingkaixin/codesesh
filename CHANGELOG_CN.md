@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.2] - 2026-05-30
+
+### 问题修复
+
+- 启动刷新改为不阻塞服务可用性，后台刷新继续执行时 HTTP 服务可以先启动。 (#42)
+- 避免 Codex index 元数据更新触发重复刷新风暴。 (#43)
+
+### 文档
+
+- 增加动态 CodeSesh logo，并更新 README 品牌展示。
+
+### Changelog Detail
+
+- #43 fix(codex): avoid refresh storms from index updates @xingkaixin
+- #42 fix: avoid blocking startup refresh @xingkaixin
+
 ## [0.7.1] - 2026-05-22
 
 ### 问题修复

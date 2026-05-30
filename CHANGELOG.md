@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.2] - 2026-05-30
+
+### Bug Fixes
+
+- Avoid blocking startup refresh work so the server can become available while background refresh continues. (#42)
+- Avoid Codex refresh storms triggered by index metadata updates. (#43)
+
+### Documentation
+
+- Added the animated CodeSesh logo and refreshed README branding.
+
+### Changelog Detail
+
+- #43 fix(codex): avoid refresh storms from index updates @xingkaixin
+- #42 fix: avoid blocking startup refresh @xingkaixin
+
 ## [0.7.1] - 2026-05-22
 
 ### Bug Fixes
