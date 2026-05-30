@@ -75,8 +75,9 @@ describe("CodexAgent cache refresh", () => {
     expect(result.changedIds).toContain("019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb");
   });
 
-  it("detects session index fingerprint changes without recent-session revalidation", () => {
+  it("ignores unrelated session index changes during cache validation", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
     const codexHome = join(tempDir, ".codex");
     const sessionsDir = join(codexHome, "sessions");
     mkdirSync(sessionsDir, { recursive: true });
@@ -98,29 +99,72 @@ describe("CodexAgent cache refresh", () => {
 
     const agent = new CodexAgent() as any;
     agent.basePath = sessionsDir;
-    agent.sessionIndexCache = new Map([["stale", "stale"]]);
+    agent.sessionIndexCache = new Map();
     agent.sessionMetaMap = new Map([
       [
         "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
         {
           id: "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
+          title: "Old title",
           sourcePath: recentFile,
           sourceMtimeMs: statSync(recentFile).mtimeMs,
           indexPath: indexFile,
           indexMtimeMs: statSync(indexFile).mtimeMs - 1,
           headIndexVersion: "codex-head-v1",
+          parserVersion: "codex-parser-v3",
         },
       ],
     ]);
     agent.listRolloutFiles = () => [recentFile];
 
     const result = agent.checkForChanges(Date.now(), [
-      makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa"),
+      makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa", { title: "Old title" }),
     ]);
 
-    expect(result.hasChanges).toBe(true);
-    expect(result.changedIds).toContain("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa");
-    expect(agent.sessionIndexCache.size).toBe(0);
+    expect(result.hasChanges).toBe(false);
+    expect(result.changedIds).toEqual([]);
+  });
+
+  it("uses per-session Codex titles in source fingerprints", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const codexHome = join(tempDir, ".codex");
+    const sessionsDir = join(codexHome, "sessions");
+    mkdirSync(sessionsDir, { recursive: true });
+    vi.stubEnv("CODEX_HOME", codexHome);
+    const sessionId = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+    const sessionFile = join(sessionsDir, `rollout-2026-04-20T10-00-00-${sessionId}.jsonl`);
+    const indexFile = join(codexHome, "session_index.jsonl");
+
+    writeFileSync(
+      sessionFile,
+      '{"type":"session_meta","payload":{"timestamp":"2026-04-20T10:00:00Z"}}\n',
+    );
+    writeFileSync(indexFile, `{"id":"${sessionId}","thread_name":"Old title"}\n`);
+
+    const firstAgent = new CodexAgent() as any;
+    firstAgent.basePath = sessionsDir;
+    const firstFingerprint = firstAgent.listSessionSources()[0]?.fingerprint;
+
+    writeFileSync(
+      indexFile,
+      [
+        `{"id":"${sessionId}","thread_name":"Old title"}`,
+        '{"id":"019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb","thread_name":"Other title"}',
+        "",
+      ].join("\n"),
+    );
+    const unrelatedAgent = new CodexAgent() as any;
+    unrelatedAgent.basePath = sessionsDir;
+    const unrelatedFingerprint = unrelatedAgent.listSessionSources()[0]?.fingerprint;
+
+    writeFileSync(indexFile, `{"id":"${sessionId}","thread_name":"New title"}\n`);
+    const renamedAgent = new CodexAgent() as any;
+    renamedAgent.basePath = sessionsDir;
+    const renamedFingerprint = renamedAgent.listSessionSources()[0]?.fingerprint;
+
+    expect(unrelatedFingerprint).toBe(firstFingerprint);
+    expect(renamedFingerprint).not.toBe(firstFingerprint);
   });
 
   it("invalidates cached sessions when the parser version changes", () => {

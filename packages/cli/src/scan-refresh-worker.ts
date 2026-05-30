@@ -52,6 +52,33 @@ function sourceFingerprintFromMeta(meta: SessionCacheMeta | undefined): string |
   return typeof meta?.sourceFingerprint === "string" ? meta.sourceFingerprint : null;
 }
 
+function parseSourceFingerprint(fingerprint: string): unknown[] | null {
+  try {
+    const parsed = JSON.parse(fingerprint);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function sourceFingerprintMatches(
+  source: SessionSourceRef,
+  cachedSession: SessionHead,
+  cached: SessionCacheMeta | undefined,
+): boolean {
+  const cachedFingerprint = sourceFingerprintFromMeta(cached);
+  if (cachedFingerprint === source.fingerprint) return true;
+
+  const current = parseSourceFingerprint(source.fingerprint);
+  if (!current || current.length < 5) return false;
+
+  return (
+    typeof cached?.sourceMtimeMs === "number" &&
+    cached.sourceMtimeMs === current[2] &&
+    (current[4] == null || cachedSession.title === current[4])
+  );
+}
+
 function sourcePathFromMeta(meta: SessionCacheMeta | undefined): string | null {
   return typeof meta?.sourcePath === "string" ? meta.sourcePath : null;
 }
@@ -87,7 +114,8 @@ function syncAgentSources(
     const cachedSession = sessionMap.get(source.sessionId);
     const cached = cachedMeta[source.sessionId];
     const sameSource = sourcePathFromMeta(cached) === source.sourcePath;
-    const sameFingerprint = sourceFingerprintFromMeta(cached) === source.fingerprint;
+    const sameFingerprint =
+      cachedSession && sourceFingerprintMatches(source, cachedSession, cached);
     if (cachedSession && sameSource && sameFingerprint) continue;
 
     const next = agent.scanSessionSource(source.sourcePath);

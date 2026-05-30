@@ -697,19 +697,19 @@ export class CodexAgent extends BaseAgent {
     if (typeof meta.sourceMtimeMs !== "number") return true;
     if (statSync(meta.sourcePath).mtimeMs !== meta.sourceMtimeMs) return true;
 
-    const indexPath = meta.indexPath ?? this.getSessionIndexPath();
-    return this.getFileMtimeMs(indexPath) !== (meta.indexMtimeMs ?? null);
+    const indexTitle = this.getTitleForSession(meta.id);
+    return indexTitle !== null && indexTitle !== meta.title;
   }
 
   private sourceFingerprint(file: string): string {
     const stat = statSync(file);
-    const indexPath = this.getSessionIndexPath();
+    const sessionId = extractSessionId(file);
     return JSON.stringify([
       HEAD_INDEX_VERSION,
       PARSER_VERSION,
       stat.mtimeMs,
       stat.size,
-      this.getFileMtimeMs(indexPath),
+      this.getTitleForSession(sessionId),
     ]);
   }
 
