@@ -27,6 +27,11 @@ import { cn } from "../lib/utils";
 import type { Message, MessagePart, SessionData, SessionFileActivity } from "../lib/api";
 import { InteractiveReceipt } from "./InteractiveReceipt";
 import { MarkdownContent } from "./MarkdownContent";
+import {
+  isRenderProfilerEnabled,
+  recordRenderProfileEntry,
+  RenderProfiler,
+} from "./RenderProfiler";
 import { extractMessageText, type MessageBlock } from "./session-detail/blocks";
 import { isCodexTurnAbortedMessage } from "./session-detail/codex-abort";
 import {
@@ -591,6 +596,55 @@ function parseJsonText<T>(value: string): T | null {
   } catch {
     return null;
   }
+}
+
+function measureSessionDetailWork<T>(id: string, compute: () => T): T {
+  if (!isRenderProfilerEnabled()) return compute();
+
+  const startedAt = performance.now();
+  const value = compute();
+  const endedAt = performance.now();
+  recordRenderProfileEntry({
+    id,
+    source: "custom-timing",
+    phase: "measure",
+    actualDuration: Math.round((endedAt - startedAt) * 100) / 100,
+    baseDuration: 0,
+    startTime: startedAt,
+    commitTime: endedAt,
+  });
+  return value;
+}
+
+function DeferredInteractiveReceipt({
+  session,
+  toc,
+}: {
+  session: SessionData;
+  toc: SessionDetailToc;
+}) {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    setReady(false);
+    let secondFrame = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => setReady(true));
+    });
+
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      if (secondFrame) cancelAnimationFrame(secondFrame);
+    };
+  }, [session.id]);
+
+  if (!ready) return <aside className="hidden xl:block" aria-hidden="true" />;
+
+  return (
+    <RenderProfiler id="InteractiveReceipt">
+      <InteractiveReceipt key={session.id} session={session} toc={toc} />
+    </RenderProfiler>
+  );
 }
 
 function normalizeEscapedNewlines(text: string) {
@@ -1956,19 +2010,37 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
   const sessionAgentKey =
     sessionSlug.split("/")[0] || ModelConfig.getDefaultAgentKey() || "claudecode";
   const normalizedMessages = useMemo(
-    () => normalizeMessagesForDisplay(session.messages, sessionAgentKey),
+    () =>
+      measureSessionDetailWork("SessionDetail:normalizeMessages", () =>
+        normalizeMessagesForDisplay(session.messages, sessionAgentKey),
+      ),
     [session.messages, sessionAgentKey],
   );
   const messageModels = useMemo(
-    () => buildMessageDisplayModels(normalizedMessages),
+    () =>
+      measureSessionDetailWork("SessionDetail:buildMessageDisplayModels", () =>
+        buildMessageDisplayModels(normalizedMessages),
+      ),
     [normalizedMessages],
   );
   const {
     toolAnchorIds,
     anchorMessageIndexes,
     summary: localFileChangeSummary,
-  } = useMemo(() => buildFileChangeSummary(messageModels), [messageModels]);
-  const toc = useMemo(() => buildSessionDetailToc(messageModels), [messageModels]);
+  } = useMemo(
+    () =>
+      measureSessionDetailWork("SessionDetail:buildFileChangeSummary", () =>
+        buildFileChangeSummary(messageModels),
+      ),
+    [messageModels],
+  );
+  const toc = useMemo(
+    () =>
+      measureSessionDetailWork("SessionDetail:buildSessionDetailToc", () =>
+        buildSessionDetailToc(messageModels),
+      ),
+    [messageModels],
+  );
   const [selectedFilters, setSelectedFilters] = useState<Set<string>>(() => new Set(toc.filterIds));
   const tocSignature = useMemo(() => [...toc.filterIds].toSorted().join("|"), [toc.filterIds]);
   const selectedFilterSignature = useMemo(
@@ -1976,19 +2048,27 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
     [selectedFilters],
   );
   const filteredMessages = useMemo(
-    () => filterSessionMessages(messageModels, selectedFilters),
+    () =>
+      measureSessionDetailWork("SessionDetail:filterSessionMessages", () =>
+        filterSessionMessages(messageModels, selectedFilters),
+      ),
     [messageModels, selectedFilters],
   );
   const virtualListRef = useRef<MessageListHandle | null>(null);
   const anchorListIndexes = useMemo(() => {
-    const indexes = new Map<number, number>();
-    filteredMessages.forEach((item, listIndex) => {
-      indexes.set(item.index, listIndex);
+    return measureSessionDetailWork("SessionDetail:buildAnchorListIndexes", () => {
+      const indexes = new Map<number, number>();
+      filteredMessages.forEach((item, listIndex) => {
+        indexes.set(item.index, listIndex);
+      });
+      return indexes;
     });
-    return indexes;
   }, [filteredMessages]);
   const fileChangeSummary = useMemo(
-    () => buildFileChangeSummaryFromActivity(session.file_activity, localFileChangeSummary),
+    () =>
+      measureSessionDetailWork("SessionDetail:mergeFileActivitySummary", () =>
+        buildFileChangeSummaryFromActivity(session.file_activity, localFileChangeSummary),
+      ),
     [session.file_activity, localFileChangeSummary],
   );
   const handleJumpToAnchor = useCallback(
@@ -2046,21 +2126,29 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
         />
         <div className="flex min-w-0 flex-col gap-8">
           {filteredMessages.length > 0 ? (
-            <MessageList
-              key={`${session.id}:${selectedFilterSignature}`}
-              messages={filteredMessages}
-              toolAnchorIds={toolAnchorIds}
-              sessionAgentKey={sessionAgentKey}
-              highlightQuery={highlightQuery}
-              apiRef={virtualListRef}
-            />
+            <RenderProfiler
+              id="MessageList"
+              detail={{
+                messages: filteredMessages.length,
+                virtualized: filteredMessages.length > VIRTUALIZED_MESSAGE_THRESHOLD,
+              }}
+            >
+              <MessageList
+                key={`${session.id}:${selectedFilterSignature}`}
+                messages={filteredMessages}
+                toolAnchorIds={toolAnchorIds}
+                sessionAgentKey={sessionAgentKey}
+                highlightQuery={highlightQuery}
+                apiRef={virtualListRef}
+              />
+            </RenderProfiler>
           ) : (
             <div className="rounded-sm border border-[var(--console-border)] bg-white p-6 text-sm text-[var(--console-muted)]">
               当前筛选条件下暂无可展示的消息内容。
             </div>
           )}
         </div>
-        <InteractiveReceipt key={session.id} session={session} toc={toc} />
+        <DeferredInteractiveReceipt session={session} toc={toc} />
       </div>
     </div>
   );

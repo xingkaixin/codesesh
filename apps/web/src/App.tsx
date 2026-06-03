@@ -1,6 +1,7 @@
 declare const __APP_VERSION__: string;
 
 import {
+  useCallback,
   useEffect,
   useEffectEvent,
   useMemo,
@@ -53,6 +54,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { BookmarkButton } from "./components/BookmarkButton";
 import { CopyResumeButton } from "./components/CopyResumeButton";
 import { SessionTreeSidebar } from "./components/SessionTreeSidebar";
+import { RenderProfiler } from "./components/RenderProfiler";
 import { SMART_TAG_LABELS, SmartTagChips } from "./components/SmartTagChips";
 import {
   clearLegacyBookmarks,
@@ -717,52 +719,60 @@ export default function App() {
     [bookmarks],
   );
 
-  function isSessionBookmarked(agentKey: string, sessionId: string): boolean {
-    return bookmarkKeySet.has(getSessionBookmarkKey(agentKey, sessionId));
-  }
+  const isSessionBookmarked = useCallback(
+    (agentKey: string, sessionId: string): boolean =>
+      bookmarkKeySet.has(getSessionBookmarkKey(agentKey, sessionId)),
+    [bookmarkKeySet],
+  );
 
-  function toggleBookmark(snapshot: BookmarkedSessionSnapshot) {
-    const key = getSessionBookmarkKey(snapshot.agentKey, snapshot.sessionId);
-    const exists = bookmarkKeySet.has(key);
-    const previous = bookmarks;
-    const next = exists
-      ? previous.filter(
-          (bookmark) => getSessionBookmarkKey(bookmark.agentKey, bookmark.sessionId) !== key,
-        )
-      : [...previous, snapshot].toSorted((a, b) => {
-          const aTime = a.time_updated ?? a.time_created;
-          const bTime = b.time_updated ?? b.time_created;
-          return bTime - aTime;
-        });
+  const toggleBookmark = useCallback(
+    (snapshot: BookmarkedSessionSnapshot) => {
+      const key = getSessionBookmarkKey(snapshot.agentKey, snapshot.sessionId);
+      const exists = bookmarkKeySet.has(key);
+      const previous = bookmarks;
+      const next = exists
+        ? previous.filter(
+            (bookmark) => getSessionBookmarkKey(bookmark.agentKey, bookmark.sessionId) !== key,
+          )
+        : [...previous, snapshot].toSorted((a, b) => {
+            const aTime = a.time_updated ?? a.time_created;
+            const bTime = b.time_updated ?? b.time_created;
+            return bTime - aTime;
+          });
 
-    setBookmarks(next);
-    logClientEvent(exists ? "bookmark.delete" : "bookmark.add", {
-      agent: snapshot.agentKey,
-      session: snapshot.sessionId,
-    });
+      setBookmarks(next);
+      logClientEvent(exists ? "bookmark.delete" : "bookmark.add", {
+        agent: snapshot.agentKey,
+        session: snapshot.sessionId,
+      });
 
-    void (
-      exists
-        ? deleteBookmark(snapshot.agentKey, snapshot.sessionId)
-        : upsertBookmark({
-            agentKey: snapshot.agentKey,
-            sessionId: snapshot.sessionId,
-            fullPath: snapshot.fullPath,
-            title: snapshot.title,
-            directory: snapshot.directory,
-            time_created: snapshot.time_created,
-            time_updated: snapshot.time_updated,
-            stats: snapshot.stats,
-          })
-    ).catch((error) => {
-      console.error("Failed to toggle bookmark:", error);
-      setBookmarks(previous);
-    });
-  }
+      void (
+        exists
+          ? deleteBookmark(snapshot.agentKey, snapshot.sessionId)
+          : upsertBookmark({
+              agentKey: snapshot.agentKey,
+              sessionId: snapshot.sessionId,
+              fullPath: snapshot.fullPath,
+              title: snapshot.title,
+              directory: snapshot.directory,
+              time_created: snapshot.time_created,
+              time_updated: snapshot.time_updated,
+              stats: snapshot.stats,
+            })
+      ).catch((error) => {
+        console.error("Failed to toggle bookmark:", error);
+        setBookmarks(previous);
+      });
+    },
+    [bookmarkKeySet, bookmarks],
+  );
 
-  function toggleSessionBookmark(session: SessionHead, agentKey: string) {
-    toggleBookmark(toBookmarkedSessionSnapshot(session, agentKey));
-  }
+  const toggleSessionBookmark = useCallback(
+    (session: SessionHead, agentKey: string) => {
+      toggleBookmark(toBookmarkedSessionSnapshot(session, agentKey));
+    },
+    [toggleBookmark],
+  );
 
   const activeAgentKey = viewState.activeAgentKey;
   const activeProjectKind = viewState.mode === "project" ? viewState.activeProjectKind : null;
@@ -836,6 +846,30 @@ export default function App() {
         (a, b) => (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created),
       ),
     [bookmarks],
+  );
+
+  const handleSelectFlatSidebarSession = useCallback(
+    (sessionItem: SessionHead) => {
+      setSelectedSidebarSessionId(sessionItem.id);
+      navigate(`/${sessionItem.slug}`);
+    },
+    [navigate],
+  );
+
+  const handleToggleSidebarSessionBookmark = useCallback(
+    (sessionItem: SessionHead) => {
+      toggleSessionBookmark(sessionItem, getSessionAgentKey(sessionItem));
+    },
+    [toggleSessionBookmark],
+  );
+
+  const handleSelectTreeSidebarSession = useCallback(
+    (sessionId: string) => {
+      setSelectedSidebarSessionId(sessionId);
+      const selected = sidebarSessionLookup.byId.get(sessionId);
+      if (selected) navigate(`/${selected.slug}`);
+    },
+    [navigate, sidebarSessionLookup],
   );
 
   const searchRequestOptions = useMemo<SearchRequestOptions>(() => {
@@ -1397,25 +1431,30 @@ export default function App() {
     content = <SessionDetailSkeleton />;
   } else if (isSearchMode) {
     content = (
-      <SearchResultsPanel
-        query={activeSearchQuery}
-        loading={searchLoading}
-        results={searchResults}
-        agentNameMap={agentNameMap}
-        agents={agents}
-        projects={searchProjectOptions}
-        filters={searchFilters}
-        onChangeFilters={setSearchFilters}
-        onOpenResult={() => {
-          setSearchMode(false);
-          setActiveSearchQuery("");
-        }}
-        selectedIndex={selectedSearchIndex}
-        registerResultRef={(key, node) => {
-          if (node) searchResultRefs.current.set(key, node);
-          else searchResultRefs.current.delete(key);
-        }}
-      />
+      <RenderProfiler
+        id="SearchResultsPanel"
+        detail={{ results: searchResults.length, loading: searchLoading }}
+      >
+        <SearchResultsPanel
+          query={activeSearchQuery}
+          loading={searchLoading}
+          results={searchResults}
+          agentNameMap={agentNameMap}
+          agents={agents}
+          projects={searchProjectOptions}
+          filters={searchFilters}
+          onChangeFilters={setSearchFilters}
+          onOpenResult={() => {
+            setSearchMode(false);
+            setActiveSearchQuery("");
+          }}
+          selectedIndex={selectedSearchIndex}
+          registerResultRef={(key, node) => {
+            if (node) searchResultRefs.current.set(key, node);
+            else searchResultRefs.current.delete(key);
+          }}
+        />
+      </RenderProfiler>
     );
   } else if (error) {
     content = (
@@ -1425,19 +1464,24 @@ export default function App() {
     );
   } else if (viewState.mode === "root") {
     content = dashboard ? (
-      <Dashboard
-        data={dashboard}
-        projects={projects}
-        bookmarkedSessions={bookmarkedSessions}
-        isBookmarked={isSessionBookmarked}
-        onToggleBookmark={(session, agentKey) => {
-          if ("agentName" in session) {
-            toggleSessionBookmark(session, agentKey ?? session.agentName.toLowerCase());
-            return;
-          }
-          toggleBookmark(session);
-        }}
-      />
+      <RenderProfiler
+        id="Dashboard"
+        detail={{ sessions: dashboard.totals.sessions, projects: projects.length }}
+      >
+        <Dashboard
+          data={dashboard}
+          projects={projects}
+          bookmarkedSessions={bookmarkedSessions}
+          isBookmarked={isSessionBookmarked}
+          onToggleBookmark={(session, agentKey) => {
+            if ("agentName" in session) {
+              toggleSessionBookmark(session, agentKey ?? session.agentName.toLowerCase());
+              return;
+            }
+            toggleBookmark(session);
+          }}
+        />
+      </RenderProfiler>
     ) : (
       <DetailLanding
         type="global"
@@ -1492,7 +1536,14 @@ export default function App() {
         />
       );
     } else {
-      content = <SessionDetail session={session} highlightQuery={detailHighlightQuery} />;
+      content = (
+        <RenderProfiler
+          id="SessionDetail"
+          detail={{ messages: session.messages.length, session: session.id }}
+        >
+          <SessionDetail session={session} highlightQuery={detailHighlightQuery} />
+        </RenderProfiler>
+      );
     }
   } else if (viewState.mode === "missingAgent") {
     content = (
@@ -1993,31 +2044,25 @@ export default function App() {
                   }
                   selectedSessionId={selectedSidebarSessionId}
                   bookmarkedSessionIds={bookmarkedSidebarSessionIds}
-                  onSelectSession={(sessionItem) => {
-                    setSelectedSidebarSessionId(sessionItem.id);
-                    navigate(`/${sessionItem.slug}`);
-                  }}
-                  onToggleBookmark={(sessionItem) =>
-                    toggleSessionBookmark(sessionItem, getSessionAgentKey(sessionItem))
-                  }
+                  onSelectSession={handleSelectFlatSidebarSession}
+                  onToggleBookmark={handleToggleSidebarSessionBookmark}
                 />
               ) : (
-                <SessionTreeSidebar
-                  sessions={sidebarSessions}
-                  activeSessionId={
-                    viewState.mode === "session" ? viewState.activeSessionSlug : null
-                  }
-                  selectedSessionId={selectedSidebarSessionId}
-                  onSelectSession={(sessionId) => {
-                    setSelectedSidebarSessionId(sessionId);
-                    const selected = sidebarSessionLookup.byId.get(sessionId);
-                    if (selected) navigate(`/${selected.slug}`);
-                  }}
-                  bookmarkedSessionIds={bookmarkedSidebarSessionIds}
-                  onToggleBookmark={(sessionItem) =>
-                    toggleSessionBookmark(sessionItem, getSessionAgentKey(sessionItem))
-                  }
-                />
+                <RenderProfiler
+                  id="SessionTreeSidebar"
+                  detail={{ sessions: sidebarSessions.length }}
+                >
+                  <SessionTreeSidebar
+                    sessions={sidebarSessions}
+                    activeSessionId={
+                      viewState.mode === "session" ? viewState.activeSessionSlug : null
+                    }
+                    selectedSessionId={selectedSidebarSessionId}
+                    onSelectSession={handleSelectTreeSidebarSession}
+                    bookmarkedSessionIds={bookmarkedSidebarSessionIds}
+                    onToggleBookmark={handleToggleSidebarSessionBookmark}
+                  />
+                </RenderProfiler>
               )}
             </section>
           </div>
@@ -2109,7 +2154,18 @@ export default function App() {
           </section>
 
           <section className="console-scrollbar bg-grid min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
-            <ErrorBoundary>{content}</ErrorBoundary>
+            <ErrorBoundary>
+              <RenderProfiler
+                id="MainContent"
+                detail={{
+                  mode: viewState.mode,
+                  search: isSearchMode,
+                  sessions: sessions.length,
+                }}
+              >
+                {content}
+              </RenderProfiler>
+            </ErrorBoundary>
           </section>
         </main>
       </div>

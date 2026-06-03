@@ -23,6 +23,10 @@ function parseArgs(argv) {
     port: 0,
     timeoutMs: 120_000,
     headless: true,
+    reactProfile: false,
+    coldStart: false,
+    target: "auto",
+    navigation: "direct",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -47,17 +51,33 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg === "--headed") {
       options.headless = false;
+    } else if (arg === "--react-profile") {
+      options.reactProfile = true;
+    } else if (arg === "--cold") {
+      options.coldStart = true;
+    } else if (arg === "--target" && next) {
+      options.target = next;
+      index += 1;
+    } else if (arg === "--navigation" && next) {
+      options.navigation = next;
+      index += 1;
     }
   }
 
-  if (!Number.isFinite(options.days) || options.days < 1) {
-    throw new Error("--days must be a positive number");
+  if (!Number.isFinite(options.days) || options.days < 0) {
+    throw new Error("--days must be 0 or a positive number");
   }
   if (!Number.isFinite(options.iterations) || options.iterations < 1) {
     throw new Error("--iterations must be a positive number");
   }
   if (!Number.isFinite(options.timeoutMs) || options.timeoutMs < 1000) {
     throw new Error("--timeout must be at least 1000ms");
+  }
+  if (!["auto", "latest", "smallest", "largest", "lightest", "heaviest"].includes(options.target)) {
+    throw new Error("--target must be one of: auto, latest, smallest, largest, lightest, heaviest");
+  }
+  if (!["direct", "click"].includes(options.navigation)) {
+    throw new Error("--navigation must be one of: direct, click");
   }
 
   return options;
@@ -80,10 +100,76 @@ function summarize(values) {
 }
 
 function printSummary(label, values) {
+  if (values.length === 0) {
+    console.log(`${label}: no samples`);
+    return;
+  }
+
   const summary = summarize(values);
   console.log(
     `${label}: avg ${formatMs(summary.avg)} | p50 ${formatMs(summary.p50)} | p95 ${formatMs(summary.p95)} | min ${formatMs(summary.min)} | max ${formatMs(summary.max)}`,
   );
+}
+
+function summarizeReactProfile(entries) {
+  const groups = new Map();
+
+  for (const entry of entries) {
+    const id = String(entry.id ?? "unknown");
+    const source = String(entry.source ?? "unknown");
+    const key = `${source}:${id}`;
+    const actualDuration = Number(entry.actualDuration);
+    if (!Number.isFinite(actualDuration)) continue;
+
+    const group = groups.get(key) ?? {
+      id,
+      source,
+      commits: 0,
+      totalActualDuration: 0,
+      maxActualDuration: 0,
+    };
+    group.commits += 1;
+    group.totalActualDuration += actualDuration;
+    group.maxActualDuration = Math.max(group.maxActualDuration, actualDuration);
+    groups.set(key, group);
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      avgActualDuration: group.totalActualDuration / group.commits,
+    }))
+    .sort((a, b) => b.totalActualDuration - a.totalActualDuration);
+}
+
+function printReactProfileSummary(label, entries) {
+  if (entries.length === 0) {
+    console.log(
+      `${label}: no React profile entries. Confirm the served web bundle includes RenderProfiler and localStorage.codeseshProfiler is set.`,
+    );
+    return;
+  }
+
+  console.log(label);
+  for (const group of summarizeReactProfile(entries).slice(0, 8)) {
+    console.log(
+      `  [${group.source}] ${group.id}: commits ${group.commits}, total ${formatMs(group.totalActualDuration)}, max ${formatMs(group.maxActualDuration)}, avg ${formatMs(group.avgActualDuration)}`,
+    );
+  }
+}
+
+function withTimeout(promise, timeoutMs, label) {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 async function findFreePort() {
@@ -144,16 +230,15 @@ function stopCli(child) {
   }
 }
 
-function spawnCli(port, days) {
-  const child = spawn(
-    process.execPath,
-    [cliPath, "--port", String(port), "--days", String(days), "--noOpen", "--no-cache"],
-    {
-      cwd: repoRoot,
-      env: { ...process.env, FORCE_COLOR: "0" },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
+function spawnCli(port, days, coldStart) {
+  const args = [cliPath, "--port", String(port), "--days", String(days), "--noOpen"];
+  if (coldStart) args.push("--no-cache");
+
+  const child = spawn(process.execPath, args, {
+    cwd: repoRoot,
+    env: { ...process.env, FORCE_COLOR: "0" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 
   let output = "";
   child.stdout.on("data", (chunk) => {
@@ -205,7 +290,7 @@ function restoreCache(backup) {
 }
 
 function restoreActiveCaches() {
-  for (const backup of [...activeCacheBackups]) {
+  for (const backup of activeCacheBackups) {
     restoreCache(backup);
   }
 }
@@ -234,6 +319,78 @@ async function getWindowedSessions(url) {
   return response.json();
 }
 
+async function waitForWindowedSessions(url, timeoutMs) {
+  const startedAt = performance.now();
+  let lastResult = { sessions: [] };
+
+  while (performance.now() - startedAt < timeoutMs) {
+    lastResult = await getWindowedSessions(url);
+    if (Array.isArray(lastResult.sessions) && lastResult.sessions.length > 0) {
+      return lastResult;
+    }
+
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+  }
+
+  return lastResult;
+}
+
+function getSessionMessageCount(session) {
+  const value = Number(session?.stats?.message_count);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function getSessionTokenCount(session) {
+  const stats = session?.stats ?? {};
+  const total = Number(stats.total_tokens);
+  if (Number.isFinite(total) && total > 0) return total;
+
+  const input = Number(stats.total_input_tokens);
+  const output = Number(stats.total_output_tokens);
+  const fallback = (Number.isFinite(input) ? input : 0) + (Number.isFinite(output) ? output : 0);
+  return fallback > 0 ? fallback : null;
+}
+
+function formatSessionTokenCount(session) {
+  return getSessionTokenCount(session)?.toLocaleString("en-US") ?? "unknown";
+}
+
+function sortByKnownTokens(sessions) {
+  const withTokens = sessions.filter((session) => getSessionTokenCount(session) != null);
+  return withTokens.toSorted((a, b) => getSessionTokenCount(a) - getSessionTokenCount(b));
+}
+
+function selectBenchmarkTarget(sessions, targetMode) {
+  if (targetMode === "latest") return sessions[0];
+
+  const sortedByMessages = [...sessions].sort(
+    (a, b) => getSessionMessageCount(a) - getSessionMessageCount(b),
+  );
+  if (targetMode === "smallest") return sortedByMessages[0];
+  if (targetMode === "largest") return sortedByMessages[sortedByMessages.length - 1];
+
+  const sortedByTokens = sortByKnownTokens(sessions);
+  if (targetMode === "lightest") return sortedByTokens[0] ?? sortedByMessages[0];
+  if (targetMode === "heaviest") {
+    return (
+      sortedByTokens[sortedByTokens.length - 1] ?? sortedByMessages[sortedByMessages.length - 1]
+    );
+  }
+
+  const representative = sessions
+    .filter((session) => {
+      const count = getSessionMessageCount(session);
+      const tokens = getSessionTokenCount(session);
+      return count >= 20 && count <= 250 && (tokens == null || tokens <= 150_000);
+    })
+    .toSorted(
+      (a, b) =>
+        Math.abs(getSessionMessageCount(a) - 120) - Math.abs(getSessionMessageCount(b) - 120),
+    );
+
+  return representative[0] ?? sessions[0];
+}
+
 async function clickSessionLink(page, targetPath) {
   return page.evaluate((path) => {
     const link = [...document.querySelectorAll("a")].find((anchor) => {
@@ -246,16 +403,55 @@ async function clickSessionLink(page, targetPath) {
   }, targetPath);
 }
 
+async function waitForSessionDetailVisible(page, target, timeoutMs) {
+  try {
+    await withTimeout(
+      page.waitForFunction(
+        ({ title }) => {
+          if (document.querySelector('[data-testid="session-detail"]')) return true;
+
+          const normalizedTitle = String(title ?? "").trim();
+          if (!normalizedTitle) return false;
+
+          return [...document.querySelectorAll("h1,h2,h3")].some((element) =>
+            element.textContent?.includes(normalizedTitle),
+          );
+        },
+        { title: target.title },
+        { timeout: timeoutMs },
+      ),
+      timeoutMs,
+      "session detail UI",
+    );
+  } catch (error) {
+    const diagnostics = await withTimeout(
+      page.evaluate(() => ({
+        url: window.location.href,
+        bodyText: document.body.textContent?.replace(/\s+/g, " ").trim().slice(0, 500) ?? "",
+      })),
+      1000,
+      "session detail diagnostics",
+    ).catch(() => ({
+      url: "(unavailable)",
+      bodyText: "(renderer did not respond to diagnostics)",
+    }));
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Timed out waiting for session detail UI. ${message}\nURL: ${diagnostics.url}\nBody: ${diagnostics.bodyText}`,
+    );
+  }
+}
+
 async function runIteration(iteration, options) {
   const port = options.port || (await findFreePort());
   const url = `http://localhost:${port}`;
-  const cacheBackup = moveCacheAside();
+  const cacheBackup = options.coldStart ? moveCacheAside() : null;
   let cli = null;
   let browser = null;
 
   try {
     const startedAt = performance.now();
-    cli = spawnCli(port, options.days);
+    cli = spawnCli(port, options.days, options.coldStart);
 
     await waitForServer(url, cli.child, options.timeoutMs);
     const serverReadyMs = performance.now() - startedAt;
@@ -263,6 +459,11 @@ async function runIteration(iteration, options) {
 
     browser = await launchBrowser(options.headless);
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    if (options.reactProfile) {
+      await context.addInitScript(() => {
+        window.localStorage.setItem("codeseshProfiler", "1");
+      });
+    }
     const page = await context.newPage();
 
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: options.timeoutMs });
@@ -273,37 +474,73 @@ async function runIteration(iteration, options) {
     const dashboardReadyMs = performance.now() - startedAt;
     console.log(`#${iteration} dashboard visible in ${formatMs(dashboardReadyMs)}`);
 
-    const { sessions } = await getWindowedSessions(url);
+    const { sessions } = await waitForWindowedSessions(url, options.timeoutMs);
     if (!Array.isArray(sessions) || sessions.length === 0) {
-      throw new Error(`No sessions found in the last ${options.days} days`);
+      const windowLabel = options.days === 0 ? "all time" : `the last ${options.days} days`;
+      const retryHint =
+        options.days === 0
+          ? "Check that local agent session paths are configured and contain sessions."
+          : "Retry with a wider window, for example --days 365, or use --days 0 for all time.";
+      throw new Error(`No sessions found in ${windowLabel}. ${retryHint}`);
     }
     console.log(`#${iteration} loaded ${sessions.length} windowed sessions`);
 
-    const target = sessions[0];
+    const target = selectBenchmarkTarget(sessions, options.target);
     const [agentKey, sessionId] = String(target.slug).split("/");
     const targetPath = `/${target.slug}`;
     const sessionApiPath = `/api/sessions/${agentKey}/${sessionId}`;
-    console.log(`#${iteration} clicking ${targetPath}`);
+    console.log(
+      `#${iteration} opening ${targetPath} (${getSessionMessageCount(target)} messages, ${formatSessionTokenCount(target)} tokens, target=${options.target}, navigation=${options.navigation})`,
+    );
     const clickStartedAt = performance.now();
-    const responsePromise = page.waitForResponse((response) => {
-      const path = new URL(response.url()).pathname;
-      return path === sessionApiPath && response.ok();
-    }, { timeout: options.timeoutMs });
 
-    const clicked = await clickSessionLink(page, targetPath);
-    console.log(`#${iteration} click dispatched`);
-    if (!clicked) {
-      throw new Error(`Session link not found: ${targetPath}`);
+    if (options.navigation === "click") {
+      const responsePromise = page.waitForResponse(
+        (response) => {
+          const path = new URL(response.url()).pathname;
+          return path === sessionApiPath && response.ok();
+        },
+        { timeout: options.timeoutMs },
+      );
+
+      const clicked = await clickSessionLink(page, targetPath);
+      console.log(`#${iteration} click dispatched`);
+      if (!clicked) {
+        throw new Error(`Session link not found: ${targetPath}`);
+      }
+
+      await responsePromise;
+    } else {
+      const responsePromise = page.waitForResponse(
+        (response) => {
+          const path = new URL(response.url()).pathname;
+          return path === sessionApiPath && response.ok();
+        },
+        { timeout: options.timeoutMs },
+      );
+
+      await page.goto(`${url}${targetPath}`, {
+        waitUntil: "domcontentloaded",
+        timeout: options.timeoutMs,
+      });
+      await responsePromise;
     }
 
-    await responsePromise;
     console.log(`#${iteration} detail API returned`);
-    await page.locator('[data-testid="session-detail"]').waitFor({
-      state: "visible",
-      timeout: options.timeoutMs,
-    });
+    await waitForSessionDetailVisible(page, target, options.timeoutMs);
     const sessionClickMs = performance.now() - clickStartedAt;
     console.log(`#${iteration} session detail visible in ${formatMs(sessionClickMs)}`);
+
+    const reactProfileEntries = options.reactProfile
+      ? await withTimeout(
+          page.evaluate(() => window.__CODESHESH_RENDER_PROFILE__ ?? []),
+          2000,
+          "React profile collection",
+        ).catch(() => [])
+      : [];
+    if (options.reactProfile) {
+      printReactProfileSummary(`#${iteration} React profile`, reactProfileEntries);
+    }
 
     await browser.close();
     browser = null;
@@ -318,6 +555,8 @@ async function runIteration(iteration, options) {
       serverReadyMs,
       dashboardReadyMs,
       sessionClickMs,
+      reactProfileEntries,
+      reactProfileSummary: summarizeReactProfile(reactProfileEntries),
     };
   } catch (error) {
     const output = cli?.getOutput() ?? "";
@@ -332,7 +571,7 @@ async function runIteration(iteration, options) {
     if (cli) {
       stopCli(cli.child);
     }
-    restoreCache(cacheBackup);
+    if (cacheBackup) restoreCache(cacheBackup);
   }
 }
 
@@ -345,7 +584,7 @@ async function main() {
   const results = [];
 
   console.log(
-    `Running CodeSesh performance benchmark: days=${options.days}, iterations=${options.iterations}`,
+    `Running CodeSesh performance benchmark: days=${options.days}, iterations=${options.iterations}, cold=${options.coldStart}, target=${options.target}, navigation=${options.navigation}`,
   );
 
   for (let iteration = 1; iteration <= options.iterations; iteration += 1) {
@@ -365,6 +604,12 @@ async function main() {
     "Click session to visible detail",
     results.map((result) => result.sessionClickMs),
   );
+  if (options.reactProfile) {
+    printReactProfileSummary(
+      "Combined React profile",
+      results.flatMap((result) => result.reactProfileEntries),
+    );
+  }
   console.log("");
   console.log(JSON.stringify({ options, results }, null, 2));
 }

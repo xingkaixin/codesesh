@@ -1,7 +1,8 @@
 import type { FileTreeSortEntry } from "@pierre/trees";
 import { FileTree, useFileTree } from "@pierre/trees/react";
-import { useEffect, useMemo, useRef, type CSSProperties, type MouseEvent } from "react";
+import { memo, useEffect, useMemo, useRef, type CSSProperties, type MouseEvent } from "react";
 import type { SessionHead } from "../lib/api";
+import { isRenderProfilerEnabled, recordRenderProfileEntry } from "./RenderProfiler";
 
 interface SessionTreeSidebarProps {
   sessions: SessionHead[];
@@ -218,7 +219,25 @@ function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel {
   };
 }
 
-export function SessionTreeSidebar({
+function measureSessionTreeWork<T>(id: string, compute: () => T): T {
+  if (!isRenderProfilerEnabled()) return compute();
+
+  const startedAt = performance.now();
+  const value = compute();
+  const endedAt = performance.now();
+  recordRenderProfileEntry({
+    id,
+    source: "custom-timing",
+    phase: "measure",
+    actualDuration: Math.round((endedAt - startedAt) * 100) / 100,
+    baseDuration: 0,
+    startTime: startedAt,
+    commitTime: endedAt,
+  });
+  return value;
+}
+
+export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   sessions,
   activeSessionId,
   selectedSessionId,
@@ -226,7 +245,13 @@ export function SessionTreeSidebar({
   bookmarkedSessionIds,
   onToggleBookmark,
 }: SessionTreeSidebarProps) {
-  const modelData = useMemo(() => buildSessionTreeModel(sessions), [sessions]);
+  const modelData = useMemo(
+    () =>
+      measureSessionTreeWork("SessionTreeSidebar:buildTreeModel", () =>
+        buildSessionTreeModel(sessions),
+      ),
+    [sessions],
+  );
   const sortOrderRef = useRef(modelData.sortOrderByPath);
   const sessionIdByPathRef = useRef(modelData.sessionIdByPath);
   const groupCountByPathRef = useRef(modelData.groupCountByPath);
@@ -337,4 +362,4 @@ export function SessionTreeSidebar({
       <FileTree model={model} style={{ height: "100%" }} aria-label="Sessions" />
     </div>
   );
-}
+});
