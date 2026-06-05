@@ -54,15 +54,15 @@
   "dependencies": {
     "@codesesh/core": "workspace:*",
     "@hono/node-server": "^1.14.0",
-    "better-sqlite3": "^12.9.0",
+    "better-sqlite3": "^12.10.0",
     "citty": "^0.1.6",
     "consola": "^3.4.2",
-    "hono": "^4.7.4",
+    "hono": "^4.12.23",
     "open": "^10.1.2"
   },
   "devDependencies": {
     "@codesesh/web": "workspace:*",
-    "@types/node": "^22.14.0",
+    "@types/node": "^22.19.19",
     "tsup": "^8.4.0",
     "typescript": "^5.9.3"
   },
