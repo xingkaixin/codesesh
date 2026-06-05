@@ -59,7 +59,7 @@ More agents coming soon. Adding a new one is [a single file](#extending).
 ### Prerequisites
 
 - Node.js 18+ for the published CLI
-- Node.js 22.12+ and pnpm 10+ for building from source
+- Node.js 24 and pnpm 11.5.1 for building from source
 
 ### Install & Run
 
@@ -214,8 +214,21 @@ pnpm test
 pnpm test:watch
 pnpm test:coverage
 
+# Performance benchmark
+pnpm bench:perf
+
 # Deploy landing page to Cloudflare Pages
 pnpm --filter @codesesh/www deploy:cf
+```
+
+### Performance Benchmark
+
+```bash
+# Warm-cache benchmark against an automatically selected representative session
+pnpm bench:perf -- --days 0 --iterations 3
+
+# Cold-start benchmark with React render profiling enabled
+pnpm bench:perf -- --cold --react-profile --target heaviest --navigation direct
 ```
 
 ### Dev Workflow (watch mode)
