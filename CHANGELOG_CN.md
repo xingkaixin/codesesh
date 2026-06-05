@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.8.0] - 2026-06-05
+
+### 新功能
+
+- Web UI 新增可选的 React 渲染 profiler，支持通过 localStorage 开关采集组件渲染耗时、自定义会话详情测量，并可选择记录慢提交事件。 (#45)
+
+### 性能
+
+- 会话详情 receipt 延后渲染，并 memoize 侧边栏与收藏相关 handler，减少重型详情页和会话树渲染工作。 (#45)
+- 扩展性能 benchmark 脚本，支持 warm/cold 缓存模式、直接访问或点击导航、代表性目标选择、`--days 0`、React profile 采集和更完整的超时诊断。 (#45)
+
+### 构建
+
+- pnpm 升级到 11.5.1，并在 `mise.toml` 中固定；CI/release workflow 改为使用仓库声明的 package manager 版本。 (#46)
+- 更新 CLI、core、Web app、落地页和测试工具链依赖，包括 React、React Router、Hono、better-sqlite3、Tailwind、Vite、Astro、Vitest、Playwright、oxlint 和 Turbo。 (#46)
+
+### Changelog Detail
+
+- #46 build: upgrade dependencies and pnpm @xingkaixin
+- #45 feat(perf): add benchmark profiling @xingkaixin
+
 ## [0.7.2] - 2026-05-30
 
 ### 问题修复

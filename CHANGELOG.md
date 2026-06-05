@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.8.0] - 2026-06-05
+
+### Features
+
+- Added an opt-in React render profiler for the Web UI, with localStorage controls, per-component render timing, custom session-detail measurements, and optional client event logging for slow commits. (#45)
+
+### Performance
+
+- Deferred the session detail receipt render and memoized sidebar/bookmark handlers to reduce heavy detail-page and session-tree render work. (#45)
+- Expanded the performance benchmark script with warm/cold cache modes, direct or click navigation, representative target selection, `--days 0` support, React profile collection, and richer timeout diagnostics. (#45)
+
+### Build
+
+- Upgraded pnpm to 11.5.1, pinned it in `mise.toml`, and let CI/release workflows use the package manager version declared by the repo. (#46)
+- Updated runtime and build dependencies across the CLI, core, web app, landing page, and test tooling, including React, React Router, Hono, better-sqlite3, Tailwind, Vite, Astro, Vitest, Playwright, oxlint, and Turbo. (#46)
+
+### Changelog Detail
+
+- #46 build: upgrade dependencies and pnpm @xingkaixin
+- #45 feat(perf): add benchmark profiling @xingkaixin
+
 ## [0.7.2] - 2026-05-30
 
 ### Bug Fixes

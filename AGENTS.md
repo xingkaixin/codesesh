@@ -4,7 +4,7 @@
 
 ## 技术栈
 
-- **Monorepo**：pnpm + Turbo
+- **Monorepo**：pnpm 11.5.1 + Turbo
 - **语言**：TypeScript 5.x，tsup 打包
 - **Server**：Hono（HTTP API）+ Citty（CLI 解析）
 - **Web**：React 19 + React Router + Tailwind CSS 4 + Radix UI
