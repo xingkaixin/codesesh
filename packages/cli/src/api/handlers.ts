@@ -494,7 +494,7 @@ export function handleGetAgents(
       filterSessionsByWindow(sessions, from, to).length,
     ]),
   );
-  const info = getAgentInfoMap(counts);
+  const info = getAgentInfoMap(counts).filter((agent) => agent.count > 0);
   return c.json(info);
 }
 

@@ -143,6 +143,31 @@ describe("handleGetAgents", () => {
     expect(Array.isArray(response)).toBe(true);
   });
 
+  it("omits agents with no sessions in the current window", () => {
+    const c = makeMockContext();
+    const now = Date.now();
+    const old = makeSession("old", {
+      slug: "codex/old",
+      time_created: now - 30 * 86400000,
+      time_updated: now - 30 * 86400000,
+    });
+    const recent = makeSession("recent", {
+      slug: "claudecode/recent",
+      time_created: now - 86400000,
+      time_updated: now - 86400000,
+    });
+    handleGetAgents(
+      c,
+      makeScanSource({
+        sessions: [old, recent],
+        byAgent: { codex: [old], claudecode: [recent] },
+      }),
+      { from: now - 7 * 86400000 },
+    );
+    const response = c.json.mock.calls[0]![0];
+    expect(response.map((agent: { name: string }) => agent.name)).toEqual(["claudecode"]);
+  });
+
   it("applies default time window to agent counts", () => {
     const c = makeMockContext();
     const from = Date.now() - 7 * 86400000;
