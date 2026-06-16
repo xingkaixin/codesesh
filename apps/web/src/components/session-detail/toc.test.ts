@@ -74,6 +74,27 @@ describe("session detail display model", () => {
     expect(filtered[0]?.blocks).toEqual([{ type: "tool", parts: [readTool] }]);
   });
 
+  it("filters tool items without requiring the Tools parent filter", () => {
+    const readTool = {
+      type: "tool",
+      tool: "Read",
+      state: { input: { path: "a.ts" } },
+    } satisfies MessagePart;
+    const writeTool = {
+      type: "tool",
+      tool: "Write",
+      state: { input: { path: "b.ts" } },
+    } satisfies MessagePart;
+    const models = buildMessageDisplayModels([
+      createMessage("assistant", "assistant", [readTool, writeTool]),
+    ]);
+
+    const filtered = filterSessionMessages(models, new Set(["tool:read"]));
+
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]?.blocks).toEqual([{ type: "tool", parts: [readTool] }]);
+  });
+
   it("normalizes legacy leading-dot tool labels", () => {
     const jsTool = {
       type: "tool",

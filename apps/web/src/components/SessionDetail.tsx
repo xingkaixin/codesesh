@@ -5,6 +5,7 @@ import {
   BookOpenText,
   Bot,
   CalendarRange,
+  Check,
   CircleHelp,
   CheckCircle2,
   ChevronDown,
@@ -18,15 +19,23 @@ import {
   LoaderCircle,
   Lightbulb,
   MessageCircleX,
+  Minus,
   NotebookPen,
   SquareTerminal,
   UserRound,
   Wrench,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { ModelConfig } from "../config";
-import { cn } from "../lib/utils";
 import type { Message, MessagePart, SessionData, SessionFileActivity } from "../lib/api";
 import { InteractiveReceipt } from "./InteractiveReceipt";
 import { MarkdownContent } from "./MarkdownContent";
@@ -2435,13 +2444,7 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
           selectedFilters={selectedFilters}
           onToggle={(filterId) =>
             setSelectedFilters((current) => {
-              const next = new Set(current);
-              if (next.has(filterId)) {
-                next.delete(filterId);
-              } else {
-                next.add(filterId);
-              }
-              return next;
+              return toggleTocFilter(current, filterId, toc);
             })
           }
           onJumpToAnchor={handleJumpToAnchor}
@@ -2489,6 +2492,95 @@ const TOC_META: Array<{ id: TocFilterId; label: string }> = [
   { id: "tools_all", label: "Tools" },
 ];
 
+function getTocToolIds(toc: SessionDetailToc) {
+  return toc.tools.map((tool) => tool.id);
+}
+
+function toggleTocFilter(currentFilters: Set<string>, filterId: string, toc: SessionDetailToc) {
+  const next = new Set(currentFilters);
+  const toolIds = getTocToolIds(toc);
+
+  if (filterId === "tools_all") {
+    const selectedToolCount = toolIds.filter((id) => next.has(id)).length;
+    const shouldSelectAllTools = selectedToolCount < toolIds.length;
+    if (shouldSelectAllTools) {
+      next.add("tools_all");
+      for (const toolId of toolIds) next.add(toolId);
+    } else {
+      next.delete("tools_all");
+      for (const toolId of toolIds) next.delete(toolId);
+    }
+    return next;
+  }
+
+  if (filterId.startsWith("tool:")) {
+    if (next.has(filterId)) {
+      next.delete(filterId);
+    } else {
+      next.add(filterId);
+    }
+
+    const selectedToolCount = toolIds.filter((id) => next.has(id)).length;
+    if (selectedToolCount === toolIds.length) {
+      next.add("tools_all");
+    } else {
+      next.delete("tools_all");
+    }
+    return next;
+  }
+
+  if (next.has(filterId)) {
+    next.delete(filterId);
+  } else {
+    next.add(filterId);
+  }
+  return next;
+}
+
+function TocCheckbox({
+  checked,
+  indeterminate = false,
+  onChange,
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  onChange: () => void;
+}) {
+  const checkboxRef = useRef<HTMLInputElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (checkboxRef.current) checkboxRef.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+
+  return (
+    <span className="relative mt-0.5 size-3.5 shrink-0">
+      <input
+        ref={checkboxRef}
+        type="checkbox"
+        checked={checked}
+        aria-checked={indeterminate ? "mixed" : checked}
+        data-indeterminate={indeterminate ? "true" : undefined}
+        onChange={onChange}
+        className="absolute inset-0 z-10 size-full cursor-pointer opacity-0"
+      />
+      <span
+        aria-hidden="true"
+        className={`flex size-3.5 items-center justify-center rounded border ${
+          checked || indeterminate
+            ? "border-[var(--console-accent-strong)] bg-[var(--console-accent-strong)] text-white"
+            : "border-[var(--console-border-strong)] bg-white text-transparent"
+        }`}
+      >
+        {indeterminate ? (
+          <Minus className="size-2.5 stroke-[3]" />
+        ) : checked ? (
+          <Check className="size-2.5 stroke-[3]" />
+        ) : null}
+      </span>
+    </span>
+  );
+}
+
 function SessionToc({
   toc,
   fileChangeSummary,
@@ -2504,7 +2596,10 @@ function SessionToc({
   onToggle: (filterId: string) => void;
   onJumpToAnchor: (anchorId: string) => void;
 }) {
-  const toolsEnabled = selectedFilters.has("tools_all");
+  const toolIds = getTocToolIds(toc);
+  const selectedToolCount = toolIds.filter((id) => selectedFilters.has(id)).length;
+  const allToolsSelected = toolIds.length > 0 && selectedToolCount === toolIds.length;
+  const someToolsSelected = selectedToolCount > 0 && selectedToolCount < toolIds.length;
 
   return (
     <aside className="console-scrollbar lg:sticky lg:top-4 lg:max-h-[calc(100dvh-14rem)] lg:overflow-y-auto lg:overscroll-contain">
@@ -2522,11 +2617,10 @@ function SessionToc({
                 key={id}
                 className="flex cursor-pointer items-start gap-3 rounded-sm px-2 py-2 transition-colors hover:bg-[var(--console-surface-muted)]"
               >
-                <input
-                  type="checkbox"
-                  checked={selectedFilters.has(id)}
+                <TocCheckbox
+                  checked={id === "tools_all" ? allToolsSelected : selectedFilters.has(id)}
+                  indeterminate={id === "tools_all" ? someToolsSelected : false}
                   onChange={() => onToggle(id)}
-                  className="mt-0.5 size-3.5 shrink-0 rounded border-[var(--console-border-strong)] accent-[var(--console-accent-strong)]"
                 />
                 <span className="console-mono min-w-0 flex-1 break-all text-xs leading-relaxed text-[var(--console-text)]">
                   {label}
@@ -2541,19 +2635,11 @@ function SessionToc({
                 {toc.tools.map((tool) => (
                   <label
                     key={tool.id}
-                    className={cn(
-                      "flex items-start gap-3 rounded-sm px-2 py-2 transition-colors",
-                      toolsEnabled
-                        ? "cursor-pointer hover:bg-[var(--console-surface-muted)]"
-                        : "cursor-not-allowed opacity-50",
-                    )}
+                    className="flex cursor-pointer items-start gap-3 rounded-sm px-2 py-2 transition-colors hover:bg-[var(--console-surface-muted)]"
                   >
-                    <input
-                      type="checkbox"
-                      checked={toolsEnabled && selectedFilters.has(tool.id)}
-                      disabled={!toolsEnabled}
+                    <TocCheckbox
+                      checked={selectedFilters.has(tool.id)}
                       onChange={() => onToggle(tool.id)}
-                      className="mt-0.5 size-3.5 shrink-0 rounded border-[var(--console-border-strong)] accent-[var(--console-accent-strong)]"
                     />
                     <span className="console-mono min-w-0 flex-1 break-all text-xs leading-relaxed text-[var(--console-muted)]">
                       {tool.label}
