@@ -703,10 +703,7 @@ export class PiAgent extends BaseAgent {
     });
   }
 
-  private convertSummaryEntry(
-    entry: Record<string, unknown>,
-    timestampMs: number,
-  ): Message | null {
+  private convertSummaryEntry(entry: Record<string, unknown>, timestampMs: number): Message | null {
     const type = entry["type"];
     if (type !== "compaction" && type !== "branch_summary" && type !== "custom_message") {
       return null;
