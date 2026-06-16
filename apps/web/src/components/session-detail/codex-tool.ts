@@ -329,20 +329,23 @@ export function buildCodexExecCommandDisplay(
   inputValue: unknown,
   outputText: string,
   detectLanguageByFilePath: (filePath: string) => ToolOutputLanguage,
+  formatPathForDisplay: (path: string) => string = (path) => path,
+  formatTextForDisplay: (text: string) => string = (text) => text,
 ) {
   const input = toRecord(inputValue);
   const command = toPlainText(input.cmd);
   const workdir = toPlainText(input.workdir);
   const escalation = toPlainText(input.sandbox_permissions);
   const justification = toPlainText(input.justification);
+  const displayCommand = formatTextForDisplay(command);
 
   const details: ToolDetailItem[] = [];
-  appendDetail(details, "Command", command);
-  appendDetail(details, "Workdir", workdir);
+  appendDetail(details, "Command", displayCommand);
+  appendDetail(details, "Workdir", formatPathForDisplay(workdir));
   appendDetail(details, "Escalation", escalation);
   appendDetail(details, "Justification", justification);
 
-  const commandPreview = truncateText(command);
+  const commandPreview = truncateText(displayCommand);
   const secondaryText = justification
     ? [justification, commandPreview].filter(Boolean).join("\n")
     : commandPreview || undefined;

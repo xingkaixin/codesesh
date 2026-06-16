@@ -851,6 +851,16 @@ function getDisplayPath(filePath: string, baseDirectory?: string) {
   return normalizedPath;
 }
 
+function getDisplayTextWithRelativePaths(text: string, baseDirectory?: string) {
+  const normalizedBase = (baseDirectory ?? "").replace(/\/+$/, "");
+  if (!text || !normalizedBase) return text;
+
+  return text.replace(
+    new RegExp(`${escapeRegExp(normalizedBase)}(?=$|/|[\\s"'\\)\\]}:;,])`, "g"),
+    ".",
+  );
+}
+
 function getPiTodoTaskFromDetails(state: NormalizedToolState) {
   const input = toRecord(state.inputValue);
   const details = toRecord(state.metadataValue);
@@ -1036,8 +1046,12 @@ function normalizeToolState(part: MessagePart): NormalizedToolState {
 function buildDefaultToolStrategy(
   tool: MessagePart,
   state: NormalizedToolState,
+  baseDirectory?: string,
 ): ToolDisplayStrategy {
-  const preview = state.command || state.inputText || "{}";
+  const preview = getDisplayTextWithRelativePaths(
+    state.command || state.inputText || "{}",
+    baseDirectory,
+  );
   const compactPreview = preview.replace(/\s+/g, " ").trim();
   const previewText =
     compactPreview.length > 72 ? `${compactPreview.slice(0, 72)}...` : compactPreview;
@@ -1062,9 +1076,10 @@ function buildSkillToolStrategy(
   tool: MessagePart,
   state: NormalizedToolState,
   defaultStrategy: ToolDisplayStrategy,
+  baseDirectory?: string,
 ): ToolDisplayStrategy {
   const input = toRecord(state.inputValue);
-  const name = toPlainText(input.name);
+  const name = getDisplayTextWithRelativePaths(toPlainText(input.name), baseDirectory);
 
   return {
     ...defaultStrategy,
@@ -1079,18 +1094,20 @@ function buildSkillToolStrategy(
 function buildClaudeToolStrategy(
   tool: MessagePart,
   state: NormalizedToolState,
+  baseDirectory?: string,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state);
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
   const toolKey = (tool.tool || "").toLowerCase();
   const input = toRecord(state.inputValue);
   const filePath = getFilePathFromInput(state.inputValue);
+  const displayPath = getDisplayPath(filePath, baseDirectory);
 
   if (toolKey === "read") {
     return {
       ...defaultStrategy,
       Icon: BookOpenText,
       title: "read",
-      secondaryText: filePath || undefined,
+      secondaryText: displayPath || undefined,
       showInputPreview: false,
       outputContent: {
         kind: "plain",
@@ -1104,12 +1121,12 @@ function buildClaudeToolStrategy(
   if (toolKey === "edit") {
     const oldValue = toStringValue(input.old_string);
     const newValue = toStringValue(input.new_string);
-    const diffBlocks = buildStructuredDiffFromTexts(filePath, oldValue, newValue);
+    const diffBlocks = buildStructuredDiffFromTexts(displayPath || filePath, oldValue, newValue);
     return {
       ...defaultStrategy,
       Icon: FilePenLine,
       title: "edit",
-      secondaryText: filePath || undefined,
+      secondaryText: displayPath || undefined,
       showInputPreview: false,
       outputContent:
         diffBlocks.length > 0
@@ -1123,7 +1140,7 @@ function buildClaudeToolStrategy(
       ...defaultStrategy,
       Icon: NotebookPen,
       title: "write",
-      secondaryText: filePath || undefined,
+      secondaryText: displayPath || undefined,
       showInputPreview: false,
       outputContent: {
         kind: "plain",
@@ -1140,8 +1157,9 @@ function buildClaudeToolStrategy(
 function buildOpencodeToolStrategy(
   tool: MessagePart,
   state: NormalizedToolState,
+  baseDirectory?: string,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state);
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
   const toolKey = (tool.tool || "").toLowerCase();
   const input = toRecord(state.inputValue);
 
@@ -1165,7 +1183,7 @@ function buildOpencodeToolStrategy(
   if (toolKey === "grep") {
     const path = toPlainText(input.path);
     const pattern = toPlainText(input.pattern);
-    const details = [path, pattern].filter(Boolean).join(" · ");
+    const details = [getDisplayPath(path, baseDirectory), pattern].filter(Boolean).join(" · ");
     return {
       ...defaultStrategy,
       Icon: FileSearch,
@@ -1184,10 +1202,11 @@ function buildOpencodeToolStrategy(
   if (toolKey === "bash") {
     const description = toPlainText(input.description);
     const command = toPlainText(input.command);
+    const displayCommand = getDisplayTextWithRelativePaths(command, baseDirectory);
     const secondaryText = description
-      ? `${description}${command ? ` (${command})` : ""}`
-      : command
-        ? `(${command})`
+      ? `${description}${displayCommand ? ` (${displayCommand})` : ""}`
+      : displayCommand
+        ? `(${displayCommand})`
         : undefined;
     return {
       ...defaultStrategy,
@@ -1206,11 +1225,12 @@ function buildOpencodeToolStrategy(
 
   if (toolKey === "read") {
     const filePath = getFilePathFromInput(state.inputValue);
+    const displayPath = getDisplayPath(filePath, baseDirectory);
     return {
       ...defaultStrategy,
       Icon: BookOpenText,
       title: tool.tool || "read",
-      secondaryText: filePath || undefined,
+      secondaryText: displayPath || undefined,
       showInputPreview: false,
       outputContent: {
         kind: "plain",
@@ -1223,11 +1243,12 @@ function buildOpencodeToolStrategy(
 
   if (toolKey === "edit") {
     const filePath = getFilePathFromInput(state.inputValue);
+    const displayPath = getDisplayPath(filePath, baseDirectory);
     return {
       ...defaultStrategy,
       Icon: FilePenLine,
       title: tool.tool || "edit",
-      secondaryText: filePath || undefined,
+      secondaryText: displayPath || undefined,
       showInputPreview: false,
       outputContent: {
         kind: "plain",
@@ -1240,12 +1261,13 @@ function buildOpencodeToolStrategy(
 
   if (toolKey === "write") {
     const filePath = getFilePathFromInput(state.inputValue);
+    const displayPath = getDisplayPath(filePath, baseDirectory);
     const isSuccessfulWrite = state.status === "completed";
     return {
       ...defaultStrategy,
       Icon: NotebookPen,
       title: tool.tool || "write",
-      secondaryText: filePath || undefined,
+      secondaryText: displayPath || undefined,
       showInputPreview: false,
       outputContent: {
         kind: "plain",
@@ -1257,14 +1279,18 @@ function buildOpencodeToolStrategy(
   }
 
   if (toolKey === "skill") {
-    return buildSkillToolStrategy(tool, state, defaultStrategy);
+    return buildSkillToolStrategy(tool, state, defaultStrategy, baseDirectory);
   }
 
   return defaultStrategy;
 }
 
-function buildKimiToolStrategy(tool: MessagePart, state: NormalizedToolState): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state);
+function buildKimiToolStrategy(
+  tool: MessagePart,
+  state: NormalizedToolState,
+  baseDirectory?: string,
+): ToolDisplayStrategy {
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
   const toolKey = (tool.tool || "").toLowerCase();
   const input = toRecord(state.inputValue);
 
@@ -1288,7 +1314,7 @@ function buildKimiToolStrategy(tool: MessagePart, state: NormalizedToolState): T
   if (toolKey === "grep") {
     const path = toPlainText(input.path);
     const pattern = toPlainText(input.pattern);
-    const details = [path, pattern].filter(Boolean).join(" · ");
+    const details = [getDisplayPath(path, baseDirectory), pattern].filter(Boolean).join(" · ");
     return {
       ...defaultStrategy,
       Icon: FileSearch,
@@ -1306,11 +1332,12 @@ function buildKimiToolStrategy(tool: MessagePart, state: NormalizedToolState): T
 
   if (toolKey === "shell") {
     const command = toPlainText(input.command);
+    const displayCommand = getDisplayTextWithRelativePaths(command, baseDirectory);
     return {
       ...defaultStrategy,
       Icon: SquareTerminal,
       title: tool.title || "bash",
-      secondaryText: command ? `(${command})` : undefined,
+      secondaryText: displayCommand ? `(${displayCommand})` : undefined,
       showInputPreview: false,
       outputContent: {
         kind: "plain",
@@ -1323,11 +1350,12 @@ function buildKimiToolStrategy(tool: MessagePart, state: NormalizedToolState): T
 
   if (toolKey === "readfile") {
     const filePath = getFilePathFromInput(state.inputValue);
+    const displayPath = getDisplayPath(filePath, baseDirectory);
     return {
       ...defaultStrategy,
       Icon: BookOpenText,
       title: tool.title || "read",
-      secondaryText: filePath || undefined,
+      secondaryText: displayPath || undefined,
       showInputPreview: false,
       outputContent: {
         kind: "plain",
@@ -1340,12 +1368,13 @@ function buildKimiToolStrategy(tool: MessagePart, state: NormalizedToolState): T
 
   if (toolKey === "strreplacefile") {
     const filePath = getFilePathFromInput(state.inputValue);
-    const diffBlocks = buildKimiEditDiffBlocks(state, filePath);
+    const displayPath = getDisplayPath(filePath, baseDirectory);
+    const diffBlocks = buildKimiEditDiffBlocks(state, displayPath || filePath);
     return {
       ...defaultStrategy,
       Icon: FilePenLine,
       title: tool.title || "edit",
-      secondaryText: filePath || undefined,
+      secondaryText: displayPath || undefined,
       showInputPreview: false,
       outputContent:
         diffBlocks.length > 0
@@ -1356,11 +1385,12 @@ function buildKimiToolStrategy(tool: MessagePart, state: NormalizedToolState): T
 
   if (toolKey === "writefile") {
     const filePath = getFilePathFromInput(state.inputValue);
+    const displayPath = getDisplayPath(filePath, baseDirectory);
     return {
       ...defaultStrategy,
       Icon: NotebookPen,
       title: tool.title || "write",
-      secondaryText: filePath || undefined,
+      secondaryText: displayPath || undefined,
       showInputPreview: false,
       outputContent: {
         kind: "plain",
@@ -1377,14 +1407,18 @@ function buildKimiToolStrategy(tool: MessagePart, state: NormalizedToolState): T
 function buildCodexToolStrategy(
   tool: MessagePart,
   state: NormalizedToolState,
+  baseDirectory?: string,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state);
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
   const toolKey = normalizeToolName(tool);
   const metadata = toRecord(state.metadataValue);
   const namespace = toPlainText(metadata.namespace);
+  const formatPathForDisplay = (path: string) => getDisplayPath(path, baseDirectory);
+  const formatTextForDisplay = (text: string) =>
+    getDisplayTextWithRelativePaths(text, baseDirectory);
 
   if (toolKey === "skill") {
-    return buildSkillToolStrategy(tool, state, defaultStrategy);
+    return buildSkillToolStrategy(tool, state, defaultStrategy, baseDirectory);
   }
 
   if (
@@ -1414,6 +1448,8 @@ function buildCodexToolStrategy(
       state.inputValue,
       getOutputOrErrorText(state),
       detectLanguageByFilePath,
+      formatPathForDisplay,
+      formatTextForDisplay,
     );
     return {
       ...defaultStrategy,
@@ -1483,6 +1519,7 @@ function buildCodexToolStrategy(
         entries,
         getOutputOrErrorText(state),
         detectLanguageByFilePath,
+        formatPathForDisplay,
       ),
     };
   }
@@ -1512,11 +1549,13 @@ function buildCodexToolStrategy(
 function buildCursorToolStrategy(
   tool: MessagePart,
   state: NormalizedToolState,
+  baseDirectory?: string,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state);
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
   const toolKey = (tool.tool || "").toLowerCase();
   const input = toRecord(state.inputValue);
   const filePath = getFilePathFromInput(state.inputValue);
+  const displayPath = getDisplayPath(filePath, baseDirectory);
 
   if (toolKey === "read_file_v2") {
     const content = extractCursorReadContent(state.outputValue);
@@ -1524,7 +1563,7 @@ function buildCursorToolStrategy(
       ...defaultStrategy,
       Icon: BookOpenText,
       title: "read",
-      secondaryText: filePath || undefined,
+      secondaryText: displayPath || undefined,
       details:
         content === "No output captured."
           ? [
@@ -1550,7 +1589,7 @@ function buildCursorToolStrategy(
       ...defaultStrategy,
       Icon: FilePenLine,
       title: "edit",
-      secondaryText: filePath || undefined,
+      secondaryText: displayPath || undefined,
       showInputPreview: false,
       outputContent: {
         kind: "plain",
@@ -1564,7 +1603,7 @@ function buildCursorToolStrategy(
   if (toolKey === "ripgrep_raw_search") {
     const pattern = toPlainText(input.pattern);
     const path = toPlainText(input.path);
-    const summary = [path, pattern].filter(Boolean).join(" · ");
+    const summary = [getDisplayPath(path, baseDirectory), pattern].filter(Boolean).join(" · ");
     return {
       ...defaultStrategy,
       Icon: FileSearch,
@@ -1584,7 +1623,9 @@ function buildCursorToolStrategy(
   if (toolKey === "glob_file_search") {
     const pattern = toPlainText(input.globPattern);
     const targetDirectory = toPlainText(input.targetDirectory);
-    const summary = [targetDirectory, pattern].filter(Boolean).join(" · ");
+    const summary = [getDisplayPath(targetDirectory, baseDirectory), pattern]
+      .filter(Boolean)
+      .join(" · ");
     return {
       ...defaultStrategy,
       Icon: FileSearch,
@@ -1603,11 +1644,12 @@ function buildCursorToolStrategy(
 
   if (toolKey === "run_terminal_command_v2") {
     const command = toPlainText(input.command);
+    const displayCommand = getDisplayTextWithRelativePaths(command, baseDirectory);
     const description = toPlainText(input.commandDescription);
     const secondaryText = description
-      ? `${description}${command ? ` (${command})` : ""}`
-      : command
-        ? `(${command})`
+      ? `${description}${displayCommand ? ` (${displayCommand})` : ""}`
+      : displayCommand
+        ? `(${displayCommand})`
         : undefined;
     return {
       ...defaultStrategy,
@@ -1633,7 +1675,7 @@ function buildPiToolStrategy(
   state: NormalizedToolState,
   baseDirectory?: string,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state);
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
   const toolKey = (tool.tool || "").toLowerCase();
   const input = toRecord(state.inputValue);
   const metadata = toRecord(state.metadataValue);
@@ -1800,11 +1842,12 @@ function buildPiToolStrategy(
 
   if (toolKey === "bash" || toolKey === "batch") {
     const command = toPlainText(input.command);
+    const displayCommand = getDisplayTextWithRelativePaths(command, baseDirectory);
     return {
       ...defaultStrategy,
       Icon: SquareTerminal,
       title: toolKey === "batch" ? "batch" : "bash",
-      secondaryText: command ? `(${command})` : undefined,
+      secondaryText: displayCommand ? `(${displayCommand})` : undefined,
       showInputPreview: false,
       outputContent: {
         kind: "plain",
@@ -1825,13 +1868,16 @@ function getToolDisplayStrategy(
   baseDirectory?: string,
 ): ToolDisplayStrategy {
   const normalizedAgentKey = sessionAgentKey.toLowerCase();
-  if (normalizedAgentKey === "opencode") return buildOpencodeToolStrategy(tool, state);
-  if (normalizedAgentKey === "codex") return buildCodexToolStrategy(tool, state);
-  if (normalizedAgentKey === "kimi") return buildKimiToolStrategy(tool, state);
-  if (normalizedAgentKey === "claudecode") return buildClaudeToolStrategy(tool, state);
-  if (normalizedAgentKey === "cursor") return buildCursorToolStrategy(tool, state);
+  if (normalizedAgentKey === "opencode")
+    return buildOpencodeToolStrategy(tool, state, baseDirectory);
+  if (normalizedAgentKey === "codex") return buildCodexToolStrategy(tool, state, baseDirectory);
+  if (normalizedAgentKey === "kimi") return buildKimiToolStrategy(tool, state, baseDirectory);
+  if (normalizedAgentKey === "claudecode") {
+    return buildClaudeToolStrategy(tool, state, baseDirectory);
+  }
+  if (normalizedAgentKey === "cursor") return buildCursorToolStrategy(tool, state, baseDirectory);
   if (normalizedAgentKey === "pi") return buildPiToolStrategy(tool, state, baseDirectory);
-  return buildDefaultToolStrategy(tool, state);
+  return buildDefaultToolStrategy(tool, state, baseDirectory);
 }
 
 // ---------------------------------------------------------------------------
@@ -3092,6 +3138,7 @@ function ToolItem({
   const [expanded, setExpanded] = useState(false);
   const state = normalizeToolState(tool);
   const strategy = getToolDisplayStrategy(sessionAgentKey, tool, state, baseDirectory);
+  const inputPreviewText = getDisplayTextWithRelativePaths(state.inputText || "{}", baseDirectory);
   const statusMeta = TOOL_STATUS_META[state.status];
   const StatusIcon = statusMeta.icon;
   const ToolIcon = strategy.Icon;
@@ -3186,7 +3233,7 @@ function ToolItem({
                 Input Preview
               </span>
               <pre className="console-mono mt-1 max-h-[200px] overflow-x-auto whitespace-pre-wrap break-all text-xs leading-relaxed text-[var(--console-muted)]">
-                {renderHighlightedText(state.inputText || "{}", highlightQuery)}
+                {renderHighlightedText(inputPreviewText, highlightQuery)}
               </pre>
             </div>
           ) : null}
