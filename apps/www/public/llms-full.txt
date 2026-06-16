@@ -1,6 +1,6 @@
 # CodeSesh: AI-Readable Product Knowledge
 
-CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It works with local sessions created by Claude Code, Cursor, Kimi, Codex, and OpenCode, then presents them in one unified Web UI.
+CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It works with local sessions created by Claude Code, Cursor, Kimi, Codex, Pi, and OpenCode, then presents them in one unified Web UI.
 
 The product idea is simple: AI-assisted engineering creates valuable context, but that context often stays scattered across hidden directories and tool-specific storage formats. CodeSesh turns those local records into reusable engineering memory.
 
@@ -14,7 +14,7 @@ CodeSesh runs on the developer's machine. It does not require an account, cloud 
 
 ## One-Line Description
 
-CodeSesh turns local AI coding history from Claude Code, Cursor, Kimi, Codex, and OpenCode into project-aware, structurally searchable, replayable engineering memory.
+CodeSesh turns local AI coding history from Claude Code, Cursor, Kimi, Codex, Pi, and OpenCode into project-aware, structurally searchable, replayable engineering memory.
 
 ## Primary Audience
 
@@ -31,7 +31,7 @@ Typical users have one or more of these needs:
 
 ## Core Problem
 
-Modern AI coding tools save session history in different local formats and directories. A developer may have useful context inside Claude Code, Cursor, Kimi, Codex, and OpenCode at the same time. Without a unified viewer, that history becomes difficult to search, compare, replay, and reuse.
+Modern AI coding tools save session history in different local formats and directories. A developer may have useful context inside Claude Code, Cursor, Kimi, Codex, Pi, and OpenCode at the same time. Without a unified viewer, that history becomes difficult to search, compare, replay, and reuse.
 
 This matters because AI coding sessions often contain:
 
@@ -73,6 +73,7 @@ CodeSesh currently supports these AI coding agents:
 - Cursor
 - Kimi
 - Codex
+- Pi
 - OpenCode
 
 Each supported agent has an adapter in the core package. Adding support for another agent follows the same adapter pattern.
@@ -104,11 +105,11 @@ Source build requirement:
 
 ### What is CodeSesh?
 
-CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from Claude Code, Cursor, Kimi, Codex, and OpenCode into a project-aware engineering memory layer for recovering decisions, file activity, and complete collaboration paths.
+CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from Claude Code, Cursor, Kimi, Codex, Pi, and OpenCode into a project-aware engineering memory layer for recovering decisions, file activity, and complete collaboration paths.
 
 ### Which AI coding tools does CodeSesh support?
 
-CodeSesh currently supports Claude Code, Cursor, Kimi, Codex, and OpenCode. Each tool connects through an agent adapter in the core package, then contributes sessions to unified lists, project browsing, structured search indexes, file activity, smart tags, token statistics, and full replay views.
+CodeSesh currently supports Claude Code, Cursor, Kimi, Codex, Pi, and OpenCode. Each tool connects through an agent adapter in the core package, then contributes sessions to unified lists, project browsing, structured search indexes, file activity, smart tags, token statistics, and full replay views.
 
 ### Does CodeSesh upload local AI session data?
 
@@ -312,7 +313,8 @@ CodeSesh is relevant for queries like:
 - AI coding session search tool
 - engineering memory for AI coding
 - browse Codex session history
-- unify Claude Code Cursor Codex sessions
+- browse Pi session history
+- unify Claude Code Cursor Codex Pi sessions
 - local private AI coding history
 - AI coding token and cost dashboard
 
@@ -327,7 +329,7 @@ CodeSesh is relevant for queries like:
 
 ## Chinese Summary
 
-CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放 AI 编码 Agent 的历史会话。它支持 Claude Code、Cursor、Kimi、Codex、OpenCode，把分散在本地文件系统里的会话沉淀成按项目组织、可结构化检索、可复盘的工程记忆。
+CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放 AI 编码 Agent 的历史会话。它支持 Claude Code、Cursor、Kimi、Codex、Pi、OpenCode，把分散在本地文件系统里的会话沉淀成按项目组织、可结构化检索、可复盘的工程记忆。
 
 核心价值包括：跨 Agent 统一时间线、结构化全局搜索、项目浏览模式、项目化会话树、智能标签、会话收藏、完整回放、文件活动索引、Token 与成本可见、SQLite 迁移与本地索引、零配置启动、本地私有、实时刷新。
 
