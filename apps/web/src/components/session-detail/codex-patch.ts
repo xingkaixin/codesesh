@@ -85,11 +85,12 @@ function getSectionLabel(entry: CodexPatchEntry) {
 function buildCodexPatchSections(
   entries: CodexPatchEntry[],
   detectLanguageByFilePath: (filePath: string) => ToolOutputLanguage,
+  formatPathForDisplay: (path: string) => string,
 ) {
   return entries.reduce<FileSectionItem[]>((sections, entry) => {
     if (entry.type === "write_file") {
       sections.push({
-        label: getSectionLabel(entry),
+        label: formatPathForDisplay(getSectionLabel(entry)),
         operation: "write",
         language: detectLanguageByFilePath(entry.path),
         isCode: true,
@@ -100,7 +101,7 @@ function buildCodexPatchSections(
 
     if (entry.type === "edit_file") {
       sections.push({
-        label: getSectionLabel(entry),
+        label: formatPathForDisplay(getSectionLabel(entry)),
         operation: "edit",
         language: "diff",
         isCode: true,
@@ -111,7 +112,7 @@ function buildCodexPatchSections(
 
     if (entry.type === "delete_file") {
       sections.push({
-        label: getSectionLabel(entry),
+        label: formatPathForDisplay(getSectionLabel(entry)),
         operation: "edit",
         language: "text",
         isCode: false,
@@ -122,15 +123,15 @@ function buildCodexPatchSections(
 
     if (entry.type === "move_file") {
       sections.push({
-        label: getSectionLabel(entry),
+        label: formatPathForDisplay(getSectionLabel(entry)),
         operation: "edit",
         language: "text",
         isCode: false,
         text:
           entry.targetPath && entry.path
-            ? `Moved from ${entry.path} to ${entry.targetPath}`
+            ? `Moved from ${formatPathForDisplay(entry.path)} to ${formatPathForDisplay(entry.targetPath)}`
             : entry.oldPath
-              ? `Moved from ${entry.oldPath}`
+              ? `Moved from ${formatPathForDisplay(entry.oldPath)}`
               : "File moved.",
       });
     }
@@ -143,8 +144,9 @@ export function buildCodexPatchOutputContent(
   entries: CodexPatchEntry[],
   fallbackText: string,
   detectLanguageByFilePath: (filePath: string) => ToolOutputLanguage,
+  formatPathForDisplay: (path: string) => string = (path) => path,
 ): ToolOutputContent {
-  const sections = buildCodexPatchSections(entries, detectLanguageByFilePath);
+  const sections = buildCodexPatchSections(entries, detectLanguageByFilePath, formatPathForDisplay);
   if (sections.length > 0) {
     return {
       kind: "file-sections",
