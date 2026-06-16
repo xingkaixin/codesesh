@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.9.0] - 2026-06-16
+
+### 新功能
+
+- 新增 Pi coding agent 支持，包括本地会话发现、解析、Agent 注册、图标、CLI 包元数据、README 覆盖和产品落地页文案。 (#49, #52)
+
+### 问题修复
+
+- 当前统计范围内会话数为 0 的 Agent 不再显示，避免未使用或统计期内未活跃的 Agent 干扰 Dashboard 汇总。 (#48)
+- 支持在已知会话工作目录时，为各 Agent 的工具展示使用相对文件路径，减少会话详情中的绝对路径噪音。 (#50)
+- 会话详情左侧目录筛选改为三态选择，用户可以快速清空当前已选分组，并看到部分选择状态。 (#51)
+
+### Changelog Detail
+
+- #52 feat(www): add Pi to landing page @xingkaixin
+- #51 fix(web): add TOC tool filter tristate @xingkaixin
+- #50 fix(agent): show relative tool paths @xingkaixin
+- #49 feat(agent): add Pi session support @xingkaixin
+- #48 fix(api): hide empty agents @xingkaixin
+
 ## [0.8.0] - 2026-06-05
 
 ### 新功能
