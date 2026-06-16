@@ -127,7 +127,6 @@ export function buildSessionDetailToc(messages: MessageDisplayModel[]): SessionD
 }
 
 function isToolPartVisible(part: MessagePart, filters: Set<string>) {
-  if (!filters.has("tools_all")) return false;
   return filters.has(`tool:${normalizeToolKey(part)}`);
 }
 
