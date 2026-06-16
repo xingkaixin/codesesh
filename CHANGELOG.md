@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.9.0] - 2026-06-16
+
+### Features
+
+- Added Pi as a supported coding agent, including local session discovery, parsing, agent registration, icons, CLI package metadata, README coverage, and product landing page copy. (#49, #52)
+
+### Bug Fixes
+
+- Hide agents with zero sessions in the current statistics window so unused or inactive agents do not clutter dashboard summaries. (#48)
+- Show relative file paths for supported agent tool displays when the session working directory is known, reducing noisy absolute paths in session details. (#50)
+- Updated the session detail table of contents filter to use tri-state selection, so users can quickly clear all currently selected groups and see partial-selection state. (#51)
+
+### Changelog Detail
+
+- #52 feat(www): add Pi to landing page @xingkaixin
+- #51 fix(web): add TOC tool filter tristate @xingkaixin
+- #50 fix(agent): show relative tool paths @xingkaixin
+- #49 feat(agent): add Pi session support @xingkaixin
+- #48 fix(api): hide empty agents @xingkaixin
+
 ## [0.8.0] - 2026-06-05
 
 ### Features
