@@ -33,6 +33,7 @@ export interface ProviderRoots {
   claudeRoot: string;
   kimiRoot: string;
   opencodeRoot: string;
+  piRoot: string;
 }
 
 export function resolveProviderRoots(): ProviderRoots {
@@ -42,6 +43,7 @@ export function resolveProviderRoots(): ProviderRoots {
     claudeRoot: envPath("CLAUDE_CONFIG_DIR") ?? join(home, ".claude"),
     kimiRoot: envPath("KIMI_SHARE_DIR") ?? join(home, ".kimi"),
     opencodeRoot: join(getDataHome(), "opencode"),
+    piRoot: envPath("PI_HOME") ?? join(home, ".pi"),
   };
 }
 

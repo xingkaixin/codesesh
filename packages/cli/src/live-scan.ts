@@ -359,6 +359,11 @@ export function resolveAgentWatchTargets(agentName: string): WatchTarget[] {
         { path: join(roots.codexRoot, "sessions") },
         { path: join(roots.codexRoot, "session_index.jsonl") },
       ];
+    case "pi":
+      return [
+        { root: roots.piRoot, path: join(roots.piRoot, "agent", "sessions") },
+        { root: "data/pi", path: "data/pi" },
+      ];
     case "cursor":
       return cursorDataPath
         ? [

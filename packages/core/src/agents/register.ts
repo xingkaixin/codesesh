@@ -4,6 +4,7 @@ import { OpenCodeAgent } from "./opencode.js";
 import { KimiAgent } from "./kimi.js";
 import { CodexAgent } from "./codex.js";
 import { CursorAgent } from "./cursor.js";
+import { PiAgent } from "./pi.js";
 
 registerAgent({
   name: "claudecode",
@@ -31,6 +32,13 @@ registerAgent({
   displayName: "Codex",
   icon: "/icon/agent/codex.svg",
   create: () => new CodexAgent(),
+});
+
+registerAgent({
+  name: "pi",
+  displayName: "Pi",
+  icon: "/icon/agent/pi.svg",
+  create: () => new PiAgent(),
 });
 
 registerAgent({

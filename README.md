@@ -7,7 +7,7 @@
 
 > **One place to see every AI coding session you've ever had.**
 
-You've been coding with AI agents — Claude Code, Cursor, Kimi, Codex, OpenCode — and the conversations are scattered everywhere on your filesystem. Context is lost. Cost is invisible. History is buried.
+You've been coding with AI agents — Claude Code, Cursor, Kimi, Codex, Pi, OpenCode — and the conversations are scattered everywhere on your filesystem. Context is lost. Cost is invisible. History is buried.
 
 **CodeSesh** fixes that. It scans your local machine, finds every AI agent session, and surfaces them in a unified, beautiful Web UI. Think of it as a time machine for your AI-assisted development workflow.
 
@@ -48,6 +48,7 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 | Cursor | Supported |
 | Kimi | Supported |
 | Codex | Supported |
+| Pi | Supported |
 | OpenCode | Supported |
 
 More agents coming soon. Adding a new one is [a single file](#extending).

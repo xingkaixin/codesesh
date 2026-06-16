@@ -16,6 +16,15 @@ describe("resolveAgentWatchTargets", () => {
     ]);
   });
 
+  it("watches Pi session files", () => {
+    vi.stubEnv("PI_HOME", "/tmp/pi-home");
+
+    expect(resolveAgentWatchTargets("pi")).toEqual([
+      { root: "/tmp/pi-home", path: join("/tmp/pi-home", "agent", "sessions") },
+      { root: "data/pi", path: "data/pi" },
+    ]);
+  });
+
   it("keeps Claude Code watch depth aligned with project/session layout", () => {
     vi.stubEnv("CLAUDE_CONFIG_DIR", "/tmp/claude-home");
 

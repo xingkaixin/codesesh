@@ -1,6 +1,6 @@
 # CodeSesh
 
-**用途**：发现、聚合、可视化本地 AI 编码 Agent（Claude Code、Cursor、Kimi、Codex、OpenCode）的历史会话，通过 Web UI 统一浏览。
+**用途**：发现、聚合、可视化本地 AI 编码 Agent（Claude Code、Cursor、Kimi、Codex、Pi、OpenCode）的历史会话，通过 Web UI 统一浏览。
 
 ## 技术栈
 
