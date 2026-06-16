@@ -33,6 +33,7 @@ beforeEach(() => {
   vi.stubEnv("CODEX_HOME", undefined);
   vi.stubEnv("CLAUDE_CONFIG_DIR", undefined);
   vi.stubEnv("KIMI_SHARE_DIR", undefined);
+  vi.stubEnv("PI_HOME", undefined);
   vi.stubEnv("CURSOR_DATA_PATH", undefined);
   vi.stubEnv("XDG_DATA_HOME", undefined);
   vi.stubEnv("LOCALAPPDATA", undefined);
@@ -50,6 +51,7 @@ describe("resolveProviderRoots", () => {
     expectPath(roots.codexRoot).toBe("/home/user/.codex");
     expectPath(roots.claudeRoot).toBe("/home/user/.claude");
     expectPath(roots.kimiRoot).toBe("/home/user/.kimi");
+    expectPath(roots.piRoot).toBe("/home/user/.pi");
   });
 
   it("respects CODEX_HOME override", () => {
@@ -71,6 +73,13 @@ describe("resolveProviderRoots", () => {
     mockedHomedir.mockReturnValue("/home/user");
     const roots = resolveProviderRoots();
     expectPath(roots.kimiRoot).toBe("/custom/kimi");
+  });
+
+  it("respects PI_HOME override", () => {
+    vi.stubEnv("PI_HOME", "/custom/pi");
+    mockedHomedir.mockReturnValue("/home/user");
+    const roots = resolveProviderRoots();
+    expectPath(roots.piRoot).toBe("/custom/pi");
   });
 
   it("computes opencodeRoot from getDataHome", () => {

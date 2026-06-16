@@ -8,6 +8,10 @@ export const ModelConfig = {
       name: "Codex",
       icon: "/icon/agent/codex.svg",
     },
+    pi: {
+      name: "Pi",
+      icon: "/icon/agent/pi.svg",
+    },
     cursor: {
       name: "Cursor",
       icon: "/icon/agent/cursor.svg",

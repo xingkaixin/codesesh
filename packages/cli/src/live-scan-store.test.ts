@@ -25,6 +25,7 @@ const core = vi.hoisted(() => ({
     codexRoot: "/tmp/codex",
     kimiRoot: "/tmp/kimi",
     opencodeRoot: "/tmp/opencode",
+    piRoot: "/tmp/pi",
   })),
   isAgentCacheInitialized: vi.fn(),
   loadCachedSessions: vi.fn(),
@@ -328,6 +329,7 @@ describe("LiveScanStore", () => {
       codexRoot: "/tmp/codex",
       kimiRoot: "/tmp/kimi",
       opencodeRoot: "/tmp/opencode",
+      piRoot: "/tmp/pi",
     });
     core.filterSessions.mockImplementation((sessions: SessionHead[]) => sessions);
   });
@@ -1011,6 +1013,7 @@ describe("LiveScanStore", () => {
       codexRoot,
       kimiRoot: join(tempDir, "kimi"),
       opencodeRoot: join(tempDir, "opencode"),
+      piRoot: join(tempDir, "pi"),
     });
 
     const existingSession = makeSession("existing");
@@ -1083,6 +1086,7 @@ describe("LiveScanStore", () => {
       codexRoot,
       kimiRoot: join(tempDir, "kimi"),
       opencodeRoot: join(tempDir, "opencode"),
+      piRoot: join(tempDir, "pi"),
     });
 
     const existingSession = makeSession("existing");
@@ -1132,6 +1136,7 @@ describe("LiveScanStore", () => {
       codexRoot,
       kimiRoot: join(tempDir, "kimi"),
       opencodeRoot: join(tempDir, "opencode"),
+      piRoot: join(tempDir, "pi"),
     });
 
     const existingSession = makeSession("existing");
