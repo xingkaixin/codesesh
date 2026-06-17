@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.1] - 2026-06-17
+
+### 新功能
+
+- 会话详情中的恢复命令复制现已支持 Pi，与其他受支持 Agent 一致。 (#55)
+
+### 问题修复
+
+- 对 Claude Code 按请求的 usage 成本去重，避免同一段 usage 重复计入导致 Token 与成本汇总偏高。 (#54)
+
+### Changelog Detail
+
+- #55 feat(resume): add Pi session command @xingkaixin
+- #54 fix(claude): dedupe request usage costs @xingkaixin
+
 ## [0.9.0] - 2026-06-16
 
 ### 新功能

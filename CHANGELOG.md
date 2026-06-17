@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.1] - 2026-06-17
+
+### Features
+
+- Session detail resume command copying now includes Pi, matching other supported agents. (#55)
+
+### Bug Fixes
+
+- Deduplicate Claude Code per-request usage costs so token and cost totals are not inflated when the same usage block appears more than once. (#54)
+
+### Changelog Detail
+
+- #55 feat(resume): add Pi session command @xingkaixin
+- #54 fix(claude): dedupe request usage costs @xingkaixin
+
 ## [0.9.0] - 2026-06-16
 
 ### Features
