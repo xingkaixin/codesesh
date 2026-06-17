@@ -24,7 +24,15 @@ import type {
   SessionSourceRef,
 } from "./base.js";
 
-const HEAD_INDEX_VERSION = "claudecode-head-v1";
+const HEAD_INDEX_VERSION = "claudecode-head-v2";
+
+interface ClaudeUsage {
+  key: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheCreate: number;
+}
 
 interface SessionMeta extends SessionCacheMeta {
   id: string;
@@ -49,6 +57,32 @@ function parseTimestampMs(data: Record<string, unknown>): number {
   } catch {
     return 0;
   }
+}
+
+function numericUsage(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function extractClaudeUsage(
+  data: Record<string, unknown>,
+  msg: Record<string, unknown>,
+): ClaudeUsage | null {
+  const usage = msg["usage"];
+  if (!usage || typeof usage !== "object") return null;
+
+  const u = usage as Record<string, unknown>;
+  const requestId = typeof data["requestId"] === "string" ? data["requestId"].trim() : "";
+  const uuid = typeof data["uuid"] === "string" ? data["uuid"].trim() : "";
+  const key = requestId || uuid;
+  if (!key) return null;
+
+  return {
+    key,
+    input: numericUsage(u["input_tokens"]),
+    output: numericUsage(u["output_tokens"]),
+    cacheRead: numericUsage(u["cache_read_input_tokens"]),
+    cacheCreate: numericUsage(u["cache_creation_input_tokens"]),
+  };
 }
 
 export class ClaudeCodeAgent extends BaseAgent {
@@ -178,6 +212,7 @@ export class ClaudeCodeAgent extends BaseAgent {
     const pendingToolCalls = new Map<string, [number, number]>();
     const ignoredToolCallIds = new Set<string>();
     const assistantUuidToToolCalls = new Map<string, string[]>();
+    const countedUsageKeys = new Set<string>();
     const assistantState = {
       currentIndex: null as number | null,
       latestTextIndex: null as number | null,
@@ -197,6 +232,7 @@ export class ClaudeCodeAgent extends BaseAgent {
           pendingToolCalls,
           ignoredToolCallIds,
           assistantUuidToToolCalls,
+          countedUsageKeys,
           assistantState,
         );
       } catch {
@@ -459,6 +495,7 @@ export class ClaudeCodeAgent extends BaseAgent {
     let totalCacheCreateTokens = 0;
     let totalCost = 0;
     const modelUsageMap: Record<string, number> = {};
+    const countedUsageKeys = new Set<string>();
 
     for (const line of lines) {
       try {
@@ -482,14 +519,13 @@ export class ClaudeCodeAgent extends BaseAgent {
             if (typeof m === "string" && m.trim()) model = m.trim();
           }
           if (role === "assistant") {
-            const usage = (msg as Record<string, unknown>)["usage"] as
-              | Record<string, unknown>
-              | undefined;
-            if (usage && typeof usage === "object") {
-              const inputTokens = (usage["input_tokens"] as number) ?? 0;
-              const cacheRead = (usage["cache_read_input_tokens"] as number) ?? 0;
-              const cacheCreate = (usage["cache_creation_input_tokens"] as number) ?? 0;
-              const outputTokens = (usage["output_tokens"] as number) ?? 0;
+            const usage = extractClaudeUsage(data, msg as Record<string, unknown>);
+            if (usage && !countedUsageKeys.has(usage.key)) {
+              countedUsageKeys.add(usage.key);
+              const inputTokens = usage.input;
+              const cacheRead = usage.cacheRead;
+              const cacheCreate = usage.cacheCreate;
+              const outputTokens = usage.output;
 
               totalInputTokens += inputTokens + cacheRead + cacheCreate;
               totalOutputTokens += outputTokens;
@@ -587,6 +623,7 @@ export class ClaudeCodeAgent extends BaseAgent {
     pendingToolCalls: Map<string, [number, number]>,
     ignoredToolCallIds: Set<string>,
     assistantUuidToToolCalls: Map<string, string[]>,
+    countedUsageKeys: Set<string>,
     assistantState: { currentIndex: number | null; latestTextIndex: number | null },
   ): void {
     if (data["isMeta"] === true) return;
@@ -601,6 +638,7 @@ export class ClaudeCodeAgent extends BaseAgent {
         pendingToolCalls,
         ignoredToolCallIds,
         assistantUuidToToolCalls,
+        countedUsageKeys,
         assistantState,
       );
     } else if (msgType === "user") {
@@ -623,6 +661,7 @@ export class ClaudeCodeAgent extends BaseAgent {
     pendingToolCalls: Map<string, [number, number]>,
     ignoredToolCallIds: Set<string>,
     assistantUuidToToolCalls: Map<string, string[]>,
+    countedUsageKeys: Set<string>,
     assistantState: { currentIndex: number | null; latestTextIndex: number | null },
   ): void {
     const msg = (data["message"] ?? {}) as Record<string, unknown>;
@@ -645,7 +684,7 @@ export class ClaudeCodeAgent extends BaseAgent {
           if (text) {
             currentAssistantIndex = this.appendAssistantReasoning(
               messages,
-              { messageId: uuid, msg, timestampMs, text },
+              { messageId: uuid, data, msg, timestampMs, text, countedUsageKeys },
               currentAssistantIndex,
             );
           }
@@ -657,7 +696,7 @@ export class ClaudeCodeAgent extends BaseAgent {
           if (text) {
             currentAssistantIndex = this.appendAssistantText(
               messages,
-              { messageId: uuid, msg, timestampMs, text },
+              { messageId: uuid, data, msg, timestampMs, text, countedUsageKeys },
               currentAssistantIndex,
             );
             latestAssistantTextIndex = currentAssistantIndex;
@@ -678,10 +717,12 @@ export class ClaudeCodeAgent extends BaseAgent {
         const toolPart = this.buildToolPart(part, timestampMs);
         const [msgIndex, partIndex] = this.attachToolCallToLatestAssistant(messages, {
           messageId: uuid,
+          data,
           msg,
           timestampMs,
           toolPart,
           latestTextIndex: latestAssistantTextIndex,
+          countedUsageKeys,
         });
         currentAssistantIndex = msgIndex;
         if (toolCallId) {
@@ -850,21 +891,24 @@ export class ClaudeCodeAgent extends BaseAgent {
     };
   }
 
-  private applyAssistantMetadata(message: Message, msg: Record<string, unknown>): void {
+  private applyAssistantMetadata(
+    message: Message,
+    data: Record<string, unknown>,
+    msg: Record<string, unknown>,
+    countedUsageKeys: Set<string>,
+  ): void {
     const model = msg["model"];
     if (model && typeof model === "string" && !message.model) {
       message.model = model;
     }
-    const usage = msg["usage"];
-    if (usage && typeof usage === "object" && !message.tokens) {
-      const u = usage as Record<string, unknown>;
-      const cacheRead = (u["cache_read_input_tokens"] as number) ?? 0;
-      const cacheCreate = (u["cache_creation_input_tokens"] as number) ?? 0;
+    const usage = extractClaudeUsage(data, msg);
+    if (usage && !message.tokens && !countedUsageKeys.has(usage.key)) {
+      countedUsageKeys.add(usage.key);
       message.tokens = {
-        input: ((u["input_tokens"] as number) ?? 0) + cacheCreate + cacheRead,
-        output: (u["output_tokens"] as number) ?? 0,
-        cache_read: cacheRead,
-        cache_create: cacheCreate,
+        input: usage.input + usage.cacheCreate + usage.cacheRead,
+        output: usage.output,
+        cache_read: usage.cacheRead,
+        cache_create: usage.cacheCreate,
       };
       const cost = estimateTokenCost(message.model, message.tokens);
       if (cost !== null) {
@@ -878,7 +922,14 @@ export class ClaudeCodeAgent extends BaseAgent {
 
   private appendAssistantReasoning(
     messages: Message[],
-    opts: { messageId: string; msg: Record<string, unknown>; timestampMs: number; text: string },
+    opts: {
+      messageId: string;
+      data: Record<string, unknown>;
+      msg: Record<string, unknown>;
+      timestampMs: number;
+      text: string;
+      countedUsageKeys: Set<string>;
+    },
     currentIndex: number | null,
   ): number {
     const part = this.buildReasoningPart(opts.text, opts.timestampMs);
@@ -889,7 +940,7 @@ export class ClaudeCodeAgent extends BaseAgent {
       const hasTool = message.parts.some((p) => p.type === "tool");
       if (!hasText && !hasTool) {
         this.appendPartIfNew(message, part);
-        this.applyAssistantMetadata(message, opts.msg);
+        this.applyAssistantMetadata(message, opts.data, opts.msg, opts.countedUsageKeys);
         return currentIndex;
       }
     }
@@ -901,14 +952,21 @@ export class ClaudeCodeAgent extends BaseAgent {
       parts: [part],
       agent: "claude",
     });
-    this.applyAssistantMetadata(message, opts.msg);
+    this.applyAssistantMetadata(message, opts.data, opts.msg, opts.countedUsageKeys);
     messages.push(message);
     return messages.length - 1;
   }
 
   private appendAssistantText(
     messages: Message[],
-    opts: { messageId: string; msg: Record<string, unknown>; timestampMs: number; text: string },
+    opts: {
+      messageId: string;
+      data: Record<string, unknown>;
+      msg: Record<string, unknown>;
+      timestampMs: number;
+      text: string;
+      countedUsageKeys: Set<string>;
+    },
     currentIndex: number | null,
   ): number {
     const part = this.buildTextPart(opts.text, opts.timestampMs);
@@ -918,7 +976,7 @@ export class ClaudeCodeAgent extends BaseAgent {
       const hasTool = message.parts.some((p) => p.type === "tool");
       if (!hasTool) {
         this.appendPartIfNew(message, part);
-        this.applyAssistantMetadata(message, opts.msg);
+        this.applyAssistantMetadata(message, opts.data, opts.msg, opts.countedUsageKeys);
         return currentIndex;
       }
     }
@@ -930,7 +988,7 @@ export class ClaudeCodeAgent extends BaseAgent {
       parts: [part],
       agent: "claude",
     });
-    this.applyAssistantMetadata(message, opts.msg);
+    this.applyAssistantMetadata(message, opts.data, opts.msg, opts.countedUsageKeys);
     messages.push(message);
     return messages.length - 1;
   }
@@ -939,16 +997,18 @@ export class ClaudeCodeAgent extends BaseAgent {
     messages: Message[],
     opts: {
       messageId: string;
+      data: Record<string, unknown>;
       msg: Record<string, unknown>;
       timestampMs: number;
       toolPart: MessagePart;
       latestTextIndex: number | null;
+      countedUsageKeys: Set<string>;
     },
   ): [number, number] {
     if (opts.latestTextIndex !== null) {
       const message = messages[opts.latestTextIndex]!;
       message.parts.push(opts.toolPart);
-      this.applyAssistantMetadata(message, opts.msg);
+      this.applyAssistantMetadata(message, opts.data, opts.msg, opts.countedUsageKeys);
       return [opts.latestTextIndex, message.parts.length - 1];
     }
 
@@ -960,7 +1020,7 @@ export class ClaudeCodeAgent extends BaseAgent {
       agent: "claude",
       mode: "tool",
     });
-    this.applyAssistantMetadata(message, opts.msg);
+    this.applyAssistantMetadata(message, opts.data, opts.msg, opts.countedUsageKeys);
     messages.push(message);
     return [messages.length - 1, 0];
   }
