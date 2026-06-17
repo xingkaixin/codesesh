@@ -220,6 +220,91 @@ describe("ClaudeCodeAgent cache refresh", () => {
     });
   });
 
+  it("counts repeated Claude request usage once across assistant fragments", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-test-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    const sessionId = "session-fragments";
+    const sessionFile = join(projectDir, `${sessionId}.jsonl`);
+    const usage = {
+      input_tokens: 100,
+      cache_read_input_tokens: 10,
+      cache_creation_input_tokens: 5,
+      output_tokens: 20,
+    };
+
+    mkdirSync(projectDir, { recursive: true });
+    writeFileSync(
+      sessionFile,
+      [
+        JSON.stringify({
+          type: "user",
+          uuid: "user-1",
+          timestamp: "2026-04-20T10:00:00Z",
+          cwd: "/tmp/project",
+          message: { role: "user", content: "Inspect the repository" },
+        }),
+        JSON.stringify({
+          type: "assistant",
+          uuid: "assistant-thinking",
+          parentUuid: "user-1",
+          requestId: "req-1",
+          timestamp: "2026-04-20T10:00:01Z",
+          message: {
+            role: "assistant",
+            model: "claude-sonnet-4-5-20250929",
+            usage,
+            content: [{ type: "thinking", thinking: "Need file list" }],
+          },
+        }),
+        JSON.stringify({
+          type: "assistant",
+          uuid: "assistant-tool",
+          parentUuid: "assistant-thinking",
+          requestId: "req-1",
+          timestamp: "2026-04-20T10:00:02Z",
+          message: {
+            role: "assistant",
+            model: "claude-sonnet-4-5-20250929",
+            usage,
+            content: [
+              {
+                type: "tool_use",
+                id: "tool-1",
+                name: "Read",
+                input: { file_path: "package.json" },
+              },
+            ],
+          },
+        }),
+        "",
+      ].join("\n"),
+    );
+
+    const agent = new ClaudeCodeAgent() as any;
+    agent.basePath = basePath;
+
+    const [head] = agent.scan();
+    const data = agent.getSessionData(sessionId);
+
+    expect(head?.stats).toMatchObject({
+      total_input_tokens: 115,
+      total_output_tokens: 20,
+      total_cache_read_tokens: 10,
+      total_cache_create_tokens: 5,
+      total_cost: 0.00062175,
+    });
+    expect(head?.model_usage).toEqual({ "claude-sonnet-4-5-20250929": 135 });
+    expect(data.stats).toMatchObject({
+      total_input_tokens: 115,
+      total_output_tokens: 20,
+      total_cache_read_tokens: 10,
+      total_cache_create_tokens: 5,
+      total_cost: 0.00062175,
+    });
+    expect(data.messages.filter((message: Message) => message.cost > 0)).toHaveLength(1);
+  });
+
   it("filters internal-only sessions", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-test-"));
     tempDirs.push(basePath);
