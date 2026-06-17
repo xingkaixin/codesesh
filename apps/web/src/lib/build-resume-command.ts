@@ -21,6 +21,7 @@ const RESUME_COMMAND_PREFIX_BY_AGENT = {
   codex: "codex resume",
   kimi: "kimi -r",
   opencode: "opencode -s",
+  pi: "pi --session",
 } as const;
 
 type ResumeAgentKey = keyof typeof RESUME_COMMAND_PREFIX_BY_AGENT;

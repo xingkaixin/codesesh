@@ -39,6 +39,7 @@ describe("buildResumeCommand", () => {
     ["codex", "codex resume"],
     ["kimi", "kimi -r"],
     ["opencode", "opencode -s"],
+    ["pi", "pi --session"],
   ])("emits the %s resume command", (agentName, prefix) => {
     expect(
       buildResumeCommand({
@@ -109,6 +110,7 @@ describe("buildResumeCommand", () => {
     expect(buildResumeCommand({ agentName: "opencode", sessionId: "abc" })).toBe(
       "opencode -s 'abc'",
     );
+    expect(buildResumeCommand({ agentName: "pi", sessionId: "abc" })).toBe("pi --session 'abc'");
   });
 
   it("falls back to no-cd command when directory is whitespace-only", () => {
