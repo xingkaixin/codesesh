@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import {
-  BaseAgent,
+  FileSystemSessionSource,
   filteredSession,
   getParsedSession,
   matchesScanWindow,
@@ -9,7 +9,6 @@ import {
 } from "./base.js";
 import type {
   AgentScanOptions,
-  ChangeCheckResult,
   ParseSessionResult,
   SessionCacheMeta,
   SessionSourceRef,
@@ -146,12 +145,11 @@ function buildCurrentPathEntries(entries: Record<string, unknown>[]): Record<str
   return path.reverse();
 }
 
-export class PiAgent extends BaseAgent {
+export class PiAgent extends FileSystemSessionSource<SessionMeta> {
   readonly name = "pi";
   readonly displayName = "Pi";
 
   private basePath: string | null = null;
-  private sessionMetaMap = new Map<string, SessionMeta>();
 
   private findBasePath(): string | null {
     const roots = resolveProviderRoots();
@@ -207,83 +205,6 @@ export class PiAgent extends BaseAgent {
       this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, sourcePath));
     }
     return head;
-  }
-
-  getSessionMetaMap(): Map<string, SessionCacheMeta> {
-    return this.sessionMetaMap;
-  }
-
-  setSessionMetaMap(meta: Map<string, SessionCacheMeta>): void {
-    this.sessionMetaMap = meta as Map<string, SessionMeta>;
-  }
-
-  checkForChanges(_sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
-    if (!this.basePath) return { hasChanges: false, timestamp: Date.now() };
-
-    const currentFiles = this.listSessionFiles();
-    const currentIds = new Set(currentFiles.map((file) => extractSessionIdFromFilename(file)));
-    const cachedIds = new Set(cachedSessions.map((session) => session.id));
-    const changedIds = new Set<string>();
-
-    for (const session of cachedSessions) {
-      if (!currentIds.has(session.id)) {
-        changedIds.add(session.id);
-        continue;
-      }
-
-      const meta = this.sessionMetaMap.get(session.id);
-      if (!meta) {
-        changedIds.add(session.id);
-        continue;
-      }
-
-      try {
-        if (this.hasMetaChanged(meta)) changedIds.add(session.id);
-      } catch {
-        changedIds.add(session.id);
-      }
-    }
-
-    const hasAddedSessions = currentFiles.some(
-      (file) => !cachedIds.has(extractSessionIdFromFilename(file)),
-    );
-    return {
-      hasChanges: changedIds.size > 0 || hasAddedSessions,
-      changedIds: [...changedIds],
-      timestamp: Date.now(),
-    };
-  }
-
-  incrementalScan(cachedSessions: SessionHead[], changedIds: string[]): SessionHead[] {
-    if (!this.basePath) return cachedSessions;
-
-    const sessionMap = new Map(cachedSessions.map((session) => [session.id, session]));
-    const changedSet = new Set(changedIds);
-    const currentFiles = this.listSessionFiles();
-    const currentIds = new Set(currentFiles.map((file) => extractSessionIdFromFilename(file)));
-
-    for (const session of cachedSessions) {
-      if (!currentIds.has(session.id)) {
-        sessionMap.delete(session.id);
-        this.sessionMetaMap.delete(session.id);
-      }
-    }
-
-    for (const file of currentFiles) {
-      try {
-        const sessionId = extractSessionIdFromFilename(file);
-        if (!changedSet.has(sessionId) && sessionMap.has(sessionId)) continue;
-        const head = getParsedSession(this.parseSessionHeadResult(file));
-        if (head) {
-          sessionMap.set(head.id, head);
-          this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, file));
-        }
-      } catch {
-        // skip malformed files
-      }
-    }
-
-    return [...sessionMap.values()];
   }
 
   getSessionData(sessionId: string): SessionData {
@@ -353,12 +274,6 @@ export class PiAgent extends BaseAgent {
       createdAt: head.time_created,
       updatedAt: head.time_updated ?? head.time_created,
     };
-  }
-
-  private hasMetaChanged(meta: SessionMeta): boolean {
-    if (meta.headIndexVersion !== HEAD_INDEX_VERSION) return true;
-    if (meta.parserVersion !== PARSER_VERSION) return true;
-    return statSync(meta.sourcePath).mtimeMs !== meta.sourceMtimeMs;
   }
 
   private sourceFingerprint(file: string): string {

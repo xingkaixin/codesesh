@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { join, basename } from "node:path";
 import {
-  BaseAgent,
+  FileSystemSessionSource,
   filteredSession,
   getParsedSession,
   matchesScanWindow,
@@ -263,12 +263,7 @@ function extractPatchContent(
 // Session meta
 // ---------------------------------------------------------------------------
 
-import type {
-  AgentScanOptions,
-  ChangeCheckResult,
-  SessionCacheMeta,
-  SessionSourceRef,
-} from "./base.js";
+import type { AgentScanOptions, SessionCacheMeta, SessionSourceRef } from "./base.js";
 
 interface SessionMeta extends SessionCacheMeta {
   id: string;
@@ -290,13 +285,13 @@ interface SessionMeta extends SessionCacheMeta {
 // CodexAgent
 // ---------------------------------------------------------------------------
 
-export class CodexAgent extends BaseAgent {
+export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
   readonly name = "codex";
   readonly displayName = "Codex";
 
   private basePath: string | null = null;
   private sessionIndexCache = new Map<string, string>();
-  private sessionMetaMap = new Map<string, SessionMeta>();
+  private sessionIndexMtime: number | null = null;
 
   // ---- BaseAgent implementation ----
 
@@ -374,114 +369,6 @@ export class CodexAgent extends BaseAgent {
       this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, sourcePath));
     }
     return head;
-  }
-
-  getSessionMetaMap(): Map<string, SessionCacheMeta> {
-    return this.sessionMetaMap;
-  }
-
-  setSessionMetaMap(meta: Map<string, SessionCacheMeta>): void {
-    this.sessionMetaMap = meta as Map<string, SessionMeta>;
-  }
-
-  /**
-   * 检测文件系统变更
-   */
-  checkForChanges(_sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
-    if (!this.basePath) {
-      return { hasChanges: false, timestamp: Date.now() };
-    }
-
-    const currentFiles = this.listRolloutFiles();
-    const currentIds = new Set(currentFiles.map((file) => extractSessionId(file)));
-    const cachedIds = new Set(cachedSessions.map((session) => session.id));
-    const changedIds = new Set<string>();
-
-    for (const session of cachedSessions) {
-      if (!currentIds.has(session.id)) {
-        changedIds.add(session.id);
-        continue;
-      }
-
-      const meta = this.sessionMetaMap.get(session.id);
-      if (!meta) {
-        changedIds.add(session.id);
-        continue;
-      }
-
-      try {
-        if (this.hasMetaChanged(meta)) {
-          changedIds.add(session.id);
-        }
-      } catch {
-        changedIds.add(session.id);
-      }
-    }
-
-    const hasAddedSessions = currentFiles.some((file) => !cachedIds.has(extractSessionId(file)));
-    if (hasAddedSessions || changedIds.size > 0) {
-      this.sessionIndexCache.clear();
-    }
-
-    return {
-      hasChanges: changedIds.size > 0 || hasAddedSessions,
-      changedIds: Array.from(changedIds),
-      timestamp: Date.now(),
-    };
-  }
-
-  /**
-   * 增量扫描
-   */
-  incrementalScan(cachedSessions: SessionHead[], changedIds: string[]): SessionHead[] {
-    if (!this.basePath) return cachedSessions;
-
-    const sessionMap = new Map(cachedSessions.map((s) => [s.id, s]));
-    const changedSet = new Set(changedIds);
-    const currentFiles = this.listRolloutFiles();
-    const currentIds = new Set(currentFiles.map((file) => extractSessionId(file)));
-
-    for (const session of cachedSessions) {
-      if (!currentIds.has(session.id)) {
-        sessionMap.delete(session.id);
-        this.sessionMetaMap.delete(session.id);
-      }
-    }
-
-    // 重新扫描变更的会话
-    for (const file of currentFiles) {
-      try {
-        const sessionId = extractSessionId(file);
-
-        if (changedSet.has(sessionId)) {
-          const head = this.parseSessionHead(file);
-          if (head) {
-            sessionMap.set(head.id, head);
-            this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, file));
-          }
-        }
-      } catch {
-        // skip
-      }
-    }
-
-    // 检查新文件
-    for (const file of currentFiles) {
-      try {
-        const sessionId = extractSessionId(file);
-        if (!sessionMap.has(sessionId)) {
-          const head = this.parseSessionHead(file);
-          if (head) {
-            sessionMap.set(head.id, head);
-            this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, file));
-          }
-        }
-      } catch {
-        // skip
-      }
-    }
-
-    return Array.from(sessionMap.values());
   }
 
   getSessionData(sessionId: string): SessionData {
@@ -691,16 +578,6 @@ export class CodexAgent extends BaseAgent {
     };
   }
 
-  private hasMetaChanged(meta: SessionMeta): boolean {
-    if (meta.headIndexVersion !== HEAD_INDEX_VERSION) return true;
-    if (meta.parserVersion !== PARSER_VERSION) return true;
-    if (typeof meta.sourceMtimeMs !== "number") return true;
-    if (statSync(meta.sourcePath).mtimeMs !== meta.sourceMtimeMs) return true;
-
-    const indexTitle = this.getTitleForSession(meta.id);
-    return indexTitle !== null && indexTitle !== meta.title;
-  }
-
   private sourceFingerprint(file: string): string {
     const stat = statSync(file);
     const sessionId = extractSessionId(file);
@@ -729,10 +606,16 @@ export class CodexAgent extends BaseAgent {
   // ---- Session index ----
 
   private loadSessionIndex(): void {
-    if (this.sessionIndexCache.size > 0) return;
-
     const indexPath = this.getSessionIndexPath();
-    if (!existsSync(indexPath)) return;
+    const mtime = this.getFileMtimeMs(indexPath);
+
+    // Invalidate when the index file mtime advances so long-running processes
+    // pick up title changes without relying on callers to evict manually.
+    if (this.sessionIndexCache.size > 0 && this.sessionIndexMtime === mtime) return;
+
+    this.sessionIndexCache.clear();
+    this.sessionIndexMtime = mtime;
+    if (mtime === null) return;
 
     try {
       const content = readFileSync(indexPath, "utf-8");

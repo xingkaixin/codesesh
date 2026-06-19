@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
 import {
-  BaseAgent,
+  FileSystemSessionSource,
   getParsedSession,
   matchesScanWindow,
   parsedSession,
@@ -10,7 +10,6 @@ import {
 } from "./base.js";
 import type {
   AgentScanOptions,
-  ChangeCheckResult,
   ParseSessionResult,
   SessionCacheMeta,
   SessionSourceRef,
@@ -146,12 +145,11 @@ function extractFirstUserTitle(contextFile: string | null, wireFile: string | nu
   return null;
 }
 
-export class KimiAgent extends BaseAgent {
+export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
   readonly name = "kimi";
   readonly displayName = "Kimi-Cli";
 
   private basePath: string | null = null;
-  private sessionMetaMap = new Map<string, SessionMeta>();
   private projectMap = new Map<string, string>();
   private defaultModel: string | null = null;
 
@@ -345,8 +343,6 @@ export class KimiAgent extends BaseAgent {
     for (const dir of this.listSessionDirs()) {
       const meta = getParsedSession(this.parseSessionDirResult(dir));
       if (!meta) continue;
-      meta.sourceFingerprint = this.sourceFingerprint(meta);
-      this.sessionMetaMap.set(meta.id, meta);
       refs.push({
         sessionId: meta.id,
         sourcePath: meta.sourcePath,
@@ -371,102 +367,6 @@ export class KimiAgent extends BaseAgent {
       time_updated: meta.createdAt,
       stats,
     };
-  }
-
-  getSessionMetaMap(): Map<string, SessionCacheMeta> {
-    return this.sessionMetaMap;
-  }
-
-  setSessionMetaMap(meta: Map<string, SessionCacheMeta>): void {
-    this.sessionMetaMap = meta as Map<string, SessionMeta>;
-  }
-
-  /**
-   * 检测文件系统变更
-   */
-  checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
-    const changedIds = new Set<string>();
-    const cachedIds = new Set(cachedSessions.map((session) => session.id));
-    const currentIds = new Set<string>();
-
-    for (const dir of this.listSessionDirs()) {
-      const meta = getParsedSession(this.parseSessionDirResult(dir));
-      if (!meta) continue;
-
-      currentIds.add(meta.id);
-      this.sessionMetaMap.set(meta.id, meta);
-
-      if (!cachedIds.has(meta.id)) {
-        changedIds.add(meta.id);
-        continue;
-      }
-
-      const dataFile = meta.wireFile || meta.contextFile;
-      try {
-        const metaStat = statSync(meta.metaFile);
-        if (metaStat.mtimeMs > sinceTimestamp) {
-          changedIds.add(meta.id);
-          continue;
-        }
-        if (dataFile) {
-          const dataStat = statSync(dataFile);
-          if (dataStat.mtimeMs > sinceTimestamp) {
-            changedIds.add(meta.id);
-          }
-        }
-      } catch {
-        changedIds.add(meta.id);
-      }
-    }
-
-    for (const session of cachedSessions) {
-      if (!currentIds.has(session.id)) changedIds.add(session.id);
-    }
-
-    const changedIdList = Array.from(changedIds);
-    return {
-      hasChanges: changedIdList.length > 0,
-      changedIds: changedIdList,
-      timestamp: Date.now(),
-    };
-  }
-
-  /**
-   * 增量扫描
-   */
-  incrementalScan(cachedSessions: SessionHead[], changedIds: string[]): SessionHead[] {
-    const sessionMap = new Map(cachedSessions.map((s) => [s.id, s]));
-    const changedIdSet = new Set(changedIds);
-
-    for (const id of changedIdSet) {
-      sessionMap.delete(id);
-      this.sessionMetaMap.delete(id);
-    }
-
-    for (const dir of this.listSessionDirs()) {
-      try {
-        const meta = getParsedSession(this.parseSessionDirResult(dir));
-        if (!meta) continue;
-
-        if (changedIdSet.has(meta.id)) {
-          this.sessionMetaMap.set(meta.id, meta);
-          const stats = this.extractStats(meta.sourcePath);
-          sessionMap.set(meta.id, {
-            id: meta.id,
-            slug: `kimi/${meta.id}`,
-            title: meta.title,
-            directory: meta.cwd,
-            time_created: meta.createdAt,
-            time_updated: meta.createdAt,
-            stats,
-          });
-        }
-      } catch {
-        // skip
-      }
-    }
-
-    return Array.from(sessionMap.values());
   }
 
   getSessionData(sessionId: string): SessionData {
