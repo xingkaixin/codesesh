@@ -12,6 +12,8 @@ const canonicalUrl = new URL(localeRoutes[locale], siteUrl).toString();
 const englishUrl = new URL(localeRoutes.en, siteUrl).toString();
 const chineseUrl = new URL(localeRoutes.zh, siteUrl).toString();
 const language = locale === "zh" ? "zh-CN" : "en";
+const ogLocale = locale === "zh" ? "zh_CN" : "en_US";
+const ogLocaleAlternate = locale === "zh" ? "en_US" : "zh_CN";
 const featureList = t.features.groups.flatMap((group) => group.items.map((item) => item.title));
 const jsonLd = {
   "@context": "https://schema.org",
@@ -107,6 +109,8 @@ const jsonLd = {
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content={t.meta.title} />
     <meta property="og:site_name" content="CodeSesh" />
+    <meta property="og:locale" content={ogLocale} />
+    <meta property="og:locale:alternate" content={ogLocaleAlternate} />
 
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={t.meta.title} />

@@ -43,7 +43,7 @@ const scenes = copy[locale].scenes;
               <div class="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[#f8f8f8]">
                 <img
                   src={scene.image}
-                  alt={`${scene.title} demo`}
+                  alt={scene.description}
                   class="aspect-[1586/992] h-auto w-full object-cover object-top"
                   loading="lazy"
                 />
@@ -121,7 +121,7 @@ const scenes = copy[locale].scenes;
             <div class="mx-auto min-w-[56rem] overflow-hidden rounded-sm border border-[var(--console-border)] bg-white shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
               <img
                 src={scene.image}
-                alt={`${scene.title} enlarged preview`}
+                alt={scene.title}
                 class="h-auto w-full object-cover object-top"
               />
             </div>
