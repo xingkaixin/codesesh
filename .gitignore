@@ -25,6 +25,7 @@ Thumbs.db
 # agent
 .claude
 .agents
+.issues
 
 
 # cf
