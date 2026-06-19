@@ -12,6 +12,7 @@ import {
   realFs,
   resolveProviderRoots,
   scanSessions,
+  FileSystemSessionSource,
   type AgentScanProgress,
   type BaseAgent,
   type ScanResult,
@@ -133,9 +134,8 @@ function buildAgentCacheMeta(
   agent: BaseAgent,
   sessionIds?: Set<string>,
 ): Record<string, SessionCacheMeta> {
-  const metaMap = agent.getSessionMetaMap?.();
+  const metaMap = agent.getSessionMetaMap();
   const meta: Record<string, SessionCacheMeta> = {};
-  if (!metaMap) return meta;
 
   for (const [id, data] of metaMap.entries()) {
     if (sessionIds && !sessionIds.has(id)) continue;
@@ -225,7 +225,7 @@ function buildRefreshDiff(
 }
 
 function restoreAgentCacheMeta(agent: BaseAgent, meta: Record<string, SessionCacheMeta>): void {
-  agent.setSessionMetaMap?.(new Map(Object.entries(meta)));
+  agent.setSessionMetaMap(new Map(Object.entries(meta)));
 }
 
 function toAbsolutePath(path: string): string {
@@ -995,13 +995,6 @@ export class LiveScanStore {
     return filterSessions(sessions, { ...this.scanOptions, ...this.startupScanOptions });
   }
 
-  private canSyncSources(agent: BaseAgent): agent is BaseAgent & {
-    listSessionSources: () => SessionSourceRef[];
-    scanSessionSource: (sourcePath: string) => SessionHead | null;
-  } {
-    return Boolean(agent.listSessionSources && agent.scanSessionSource);
-  }
-
   private async refreshInitialIndex(): Promise<void> {
     const startedAt = performance.now();
     const context = "scan.initial.background";
@@ -1347,7 +1340,10 @@ export class LiveScanStore {
       nextSessions = fullScanSessions;
       scanDuration = performance.now() - scanStartedAt;
       this.refreshTimestamps.set(agentName, Date.now());
-    } else if (cached && this.canSyncSources(agent)) {
+    } else if (cached && agent instanceof FileSystemSessionSource) {
+      // File-system agents refresh via precise per-source fingerprint sync.
+      // Database agents lack per-file fingerprints and fall through to the
+      // checkForChanges branch below.
       const scanStartedAt = performance.now();
       const result = await this.scanAgentInWorker(
         agent,
@@ -1360,7 +1356,7 @@ export class LiveScanStore {
         },
       );
       nextSessions = result.sessions;
-      agent.setSessionMetaMap?.(new Map(Object.entries(result.meta)));
+      agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       preciseChangedIds = result.changedIds ?? [];
       usedIncrementalScan = true;
       persistenceDiff = buildRefreshDiff(
@@ -1377,7 +1373,7 @@ export class LiveScanStore {
           duration_ms: Math.round(performance.now() - startedAt),
         });
       }
-    } else if (refreshBaseline.length > 0 && agent.checkForChanges && agent.incrementalScan) {
+    } else if (refreshBaseline.length > 0) {
       const checkStartedAt = performance.now();
       const checkResult = await Promise.resolve(
         agent.checkForChanges(cacheTimestamp, refreshBaseline),
@@ -1412,7 +1408,7 @@ export class LiveScanStore {
       const scanStartedAt = performance.now();
       const result = await this.scanAgentInWorker(agent, previousSessions, null, {});
       nextSessions = result.sessions;
-      agent.setSessionMetaMap?.(new Map(Object.entries(result.meta)));
+      agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       fullScanSessions = attachMissingProjectIdentities(nextSessions);
       nextSessions = fullScanSessions;
       scanDuration = performance.now() - scanStartedAt;

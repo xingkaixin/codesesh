@@ -68,13 +68,16 @@ describe("KimiAgent cache refresh", () => {
   it("detects added session directories during cache validation", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-test-"));
     tempDirs.push(basePath);
-    const cachedAt = 2_000;
     createSessionDir(basePath, "old-session", "Old", 1_000);
-    createSessionDir(basePath, "new-session", "New", 1_000);
 
     const agent = createAgent(basePath);
+    // Seed baseline meta so old-session is recognized as known.
+    agent.scan();
 
-    const result = agent.checkForChanges(cachedAt, [makeSession("old-session")]);
+    // A new session appears on disk after the baseline scan.
+    createSessionDir(basePath, "new-session", "New", 1_000);
+
+    const result = agent.checkForChanges(Date.now(), [makeSession("old-session")]);
 
     expect(result.hasChanges).toBe(true);
     expect(result.changedIds).toEqual(["new-session"]);

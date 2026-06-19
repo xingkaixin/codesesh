@@ -39,6 +39,22 @@ class TestAgent extends BaseAgent {
   getSessionData(): SessionData {
     return {} as SessionData;
   }
+
+  checkForChanges(): ChangeCheckResult {
+    return { hasChanges: false, changedIds: [], timestamp: Date.now() };
+  }
+
+  incrementalScan(cached: SessionHead[]): SessionHead[] {
+    return cached;
+  }
+
+  getSessionMetaMap(): Map<string, SessionCacheMeta> {
+    return new Map();
+  }
+
+  setSessionMetaMap(): void {
+    // no-op
+  }
 }
 
 describe("filterSessions", () => {
@@ -200,14 +216,13 @@ function createTestAgent(overrides: {
       total_cost: 0,
     },
   });
-  agent.getSessionMetaMap = overrides.metaMap ? () => overrides.metaMap! : undefined;
-  agent.setSessionMetaMap = undefined;
-  agent.checkForChanges = overrides.checkForChangesResult
-    ? () => overrides.checkForChangesResult!
-    : undefined;
-  agent.incrementalScan = overrides.incrementalScanResult
-    ? () => overrides.incrementalScanResult!
-    : undefined;
+  agent.getSessionMetaMap = overrides.metaMap ? () => overrides.metaMap! : agent.getSessionMetaMap;
+  if (overrides.checkForChangesResult) {
+    agent.checkForChanges = () => overrides.checkForChangesResult!;
+  }
+  if (overrides.incrementalScanResult) {
+    agent.incrementalScan = () => overrides.incrementalScanResult!;
+  }
   return agent as BaseAgent;
 }
 
