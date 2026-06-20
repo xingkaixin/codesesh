@@ -28,8 +28,14 @@ import {
   searchSessions,
   upsertBookmark,
   matchesProjectScope as sessionMatchesProjectScope,
+  buildDashboard,
+  getSessionAgentName,
+  getSessionActivityTime,
+  getTotalTokens,
+  startOfLocalDay,
+  type DashboardData,
+  type DashboardScope,
   type FileActivityKind,
-  type FileActivityResult,
   type ProjectScopeMatcher,
   type SearchMatchType,
   type SearchOptions,
@@ -104,25 +110,6 @@ interface ApiProjectGroup extends ProjectGroup {
   agentStats: ApiProjectAgentStat[];
 }
 
-interface DashboardScope {
-  agent?: string;
-  projectKind?: string;
-  projectKey?: string;
-}
-
-interface DashboardAgentAggregate {
-  sessions: number;
-  messages: number;
-  tokens: number;
-}
-
-interface DashboardRecentCandidate {
-  session: SessionHead;
-  activity: number;
-}
-
-const DASHBOARD_RECENT_LIMIT = 10;
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -163,18 +150,6 @@ function parseBookmarkPayload(value: unknown): Omit<BookmarkRecord, "bookmarked_
     time_updated: value.time_updated,
     stats: value.stats,
   };
-}
-
-function getTotalTokens(stats: SessionHead["stats"]): number {
-  return stats.total_tokens ?? stats.total_input_tokens + stats.total_output_tokens;
-}
-
-function getSessionAgentName(session: SessionHead): string {
-  return session.slug.split("/")[0]?.toLowerCase() || "unknown";
-}
-
-function getSessionActivityTime(session: SessionHead): number {
-  return session.time_updated ?? session.time_created;
 }
 
 function parseDateParam(
@@ -785,75 +760,6 @@ export function handleDeleteBookmark(c: Context) {
   }
 }
 
-export interface DashboardAgentStat {
-  name: string;
-  displayName: string;
-  icon: string;
-  sessions: number;
-  messages: number;
-  tokens: number;
-}
-
-export interface DashboardDailyBucket {
-  /** Local YYYY-MM-DD */
-  date: string;
-  sessions: number;
-  messages: number;
-}
-
-export interface DailyTokenBucket {
-  date: string;
-  input: number;
-  output: number;
-  cache_read: number;
-  cache_create: number;
-}
-
-export interface ModelDistributionEntry {
-  model: string;
-  tokens: number;
-  sessions: number;
-}
-
-export interface DashboardTotals {
-  sessions: number;
-  messages: number;
-  tokens: number;
-  cost: number;
-  cost_source?: "recorded" | "estimated";
-  latestActivity?: number;
-}
-
-export interface DashboardRecentSession extends SessionHead {
-  agentName: string;
-}
-
-export interface DashboardData {
-  totals: DashboardTotals;
-  perAgent: DashboardAgentStat[];
-  dailyActivity: DashboardDailyBucket[];
-  dailyTokenActivity: DailyTokenBucket[];
-  modelDistribution: ModelDistributionEntry[];
-  recentSessions: DashboardRecentSession[];
-  recentFileActivities: FileActivityResult[];
-  /** Time window covered by dailyActivity (inclusive, ms) */
-  window: { from?: number; to: number; days?: number };
-}
-
-function toLocalDateKey(ts: number): string {
-  const d = new Date(ts);
-  const year = d.getFullYear();
-  const month = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function startOfLocalDay(ts: number): number {
-  const d = new Date(ts);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
 function resolveDashboardWindow(
   defaults: SessionListDefaults,
   queryDays: string | undefined,
@@ -909,160 +815,19 @@ export function handleGetDashboard(
     projectKey: optionalQueryValue(c.req.query("projectKey")),
   };
 
-  const agentMetrics = new Map<string, DashboardAgentAggregate>();
-  const agentMetricKeyByName = new Map<string, string>();
-  for (const name of Object.keys(scanResult.byAgent)) {
-    if (scope.agent && name.toLowerCase() !== scope.agent) continue;
-    agentMetrics.set(name, { sessions: 0, messages: 0, tokens: 0 });
-    agentMetricKeyByName.set(name.toLowerCase(), name);
-  }
-
   const agentInfo = getAgentInfoMap({});
   const agentInfoMap = new Map(agentInfo.map((a) => [a.name, a]));
 
-  let totalSessions = 0;
-  let totalMessages = 0;
-  let totalTokens = 0;
-  let totalCost = 0;
-  let hasEstimatedCost = false;
-  let latestActivity = 0;
-  const recentCandidates: DashboardRecentCandidate[] = [];
-  const modelAgg = new Map<string, { tokens: number; sessions: number }>();
-
-  // Daily activity buckets — one bucket per local day in [from, to]
-  const dailyMap = new Map<string, DashboardDailyBucket>();
-  const dailyTokenMap = new Map<string, DailyTokenBucket>();
-  if (from != null) {
-    const bucketStart = startOfLocalDay(from);
-    const bucketDays = Math.floor((startOfLocalDay(to) - bucketStart) / 86400000) + 1;
-    for (let i = 0; i < bucketDays; i += 1) {
-      const ts = bucketStart + i * 86400000;
-      const key = toLocalDateKey(ts);
-      dailyMap.set(key, { date: key, sessions: 0, messages: 0 });
-      dailyTokenMap.set(key, { date: key, input: 0, output: 0, cache_read: 0, cache_create: 0 });
-    }
-  }
-
-  for (const session of scanResult.sessions) {
-    const agentName = getSessionAgentName(session);
-    if (scope.agent && agentName !== scope.agent) continue;
-    if (scope.projectKey) {
-      const identity = session.project_identity;
-      if (!identity || identity.key !== scope.projectKey) continue;
-      if (scope.projectKind && identity.kind !== scope.projectKind) continue;
-    }
-
-    const activity = getSessionActivityTime(session);
-    if (from != null && activity < from) continue;
-    if (activity > to) continue;
-
-    const messageCount = session.stats.message_count;
-    const sessionTokens = getTotalTokens(session.stats);
-    totalSessions += 1;
-    totalMessages += messageCount;
-    totalTokens += sessionTokens;
-    totalCost += session.stats.total_cost ?? 0;
-    if (session.stats.cost_source === "estimated") hasEstimatedCost = true;
-    if (activity > latestActivity) latestActivity = activity;
-
-    const metricKey = agentMetricKeyByName.get(agentName);
-    if (metricKey) {
-      const metric = agentMetrics.get(metricKey)!;
-      metric.sessions += 1;
-      metric.messages += messageCount;
-      metric.tokens += sessionTokens;
-    }
-
-    const key = toLocalDateKey(activity);
-    let bucket = dailyMap.get(key);
-    if (!bucket) {
-      bucket = { date: key, sessions: 0, messages: 0 };
-      dailyMap.set(key, bucket);
-    }
-    bucket.sessions += 1;
-    bucket.messages += messageCount;
-
-    let tokenBucket = dailyTokenMap.get(key);
-    if (!tokenBucket) {
-      tokenBucket = { date: key, input: 0, output: 0, cache_read: 0, cache_create: 0 };
-      dailyTokenMap.set(key, tokenBucket);
-    }
-    const cacheRead = session.stats.total_cache_read_tokens ?? 0;
-    const cacheCreate = session.stats.total_cache_create_tokens ?? 0;
-    const pureInput = session.stats.total_input_tokens - cacheRead - cacheCreate;
-    tokenBucket.input += Math.max(0, pureInput);
-    tokenBucket.output += session.stats.total_output_tokens;
-    tokenBucket.cache_read += cacheRead;
-    tokenBucket.cache_create += cacheCreate;
-
-    if (session.model_usage) {
-      for (const [model, tokens] of Object.entries(session.model_usage)) {
-        const entry = modelAgg.get(model);
-        if (entry) {
-          entry.tokens += tokens;
-          entry.sessions += 1;
-        } else {
-          modelAgg.set(model, { tokens, sessions: 1 });
-        }
-      }
-    }
-
-    let recentIndex = recentCandidates.length;
-    for (let i = 0; i < recentCandidates.length; i += 1) {
-      if (activity > recentCandidates[i]!.activity) {
-        recentIndex = i;
-        break;
-      }
-    }
-    if (recentIndex < DASHBOARD_RECENT_LIMIT) {
-      recentCandidates.splice(recentIndex, 0, { session, activity });
-      if (recentCandidates.length > DASHBOARD_RECENT_LIMIT) recentCandidates.pop();
-    }
-  }
-
-  const perAgent: DashboardAgentStat[] = [...agentMetrics.entries()]
-    .map(([name, metrics]) => {
-      const info = agentInfoMap.get(name);
-      return {
-        name,
-        displayName: info?.displayName ?? name,
-        icon: info?.icon ?? "",
-        sessions: metrics.sessions,
-        messages: metrics.messages,
-        tokens: metrics.tokens,
-      };
-    })
-    .filter((item) => item.sessions > 0)
-    .sort((a, b) => b.sessions - a.sessions);
-
-  const dailyActivity = [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date));
-  const dailyTokenActivity = [...dailyTokenMap.values()].sort((a, b) =>
-    a.date.localeCompare(b.date),
-  );
-
-  const modelDistribution: ModelDistributionEntry[] = [...modelAgg.entries()]
-    .map(([model, { tokens, sessions: count }]) => ({ model, tokens, sessions: count }))
-    .sort((a, b) => b.tokens - a.tokens);
-
-  const recentSessions: DashboardRecentSession[] = recentCandidates.map(({ session }) => {
-    const agentKey = getSessionAgentName(session);
-    return { ...session, agentName: agentKey };
+  const aggregate = buildDashboard(scanResult.sessions, {
+    byAgentNames: Object.keys(scanResult.byAgent),
+    scope,
+    from,
+    to,
+    agentInfoMap,
   });
 
   const data: DashboardData = {
-    totals: {
-      sessions: totalSessions,
-      messages: totalMessages,
-      tokens: totalTokens,
-      cost: totalCost,
-      cost_source: totalCost > 0 ? (hasEstimatedCost ? "estimated" : "recorded") : undefined,
-      latestActivity: latestActivity || undefined,
-    },
-    perAgent,
-    dailyActivity,
-    dailyTokenActivity,
-    modelDistribution,
-    recentSessions,
+    ...aggregate,
     recentFileActivities: listFileActivity({
       agent: scope.agent,
       projectKey: scope.projectKey,
