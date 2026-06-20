@@ -27,7 +27,6 @@ import type {
   SessionsUpdatedEvent,
   SmartTag,
   ProjectGroup,
-  ProjectIdentityKind,
 } from "./lib/api";
 import {
   deleteBookmark,
@@ -63,13 +62,17 @@ import {
   mergeBookmarksWithSessions,
   toBookmarkedSessionSnapshot,
 } from "./lib/bookmarks";
+import { parseViewState } from "./lib/view-state";
 import {
-  decodeProjectRouteKey,
-  getProjectIdentityKey,
-  getProjectPath,
-  isProjectIdentityKind,
-  type ProjectRouteIdentity,
-} from "./lib/projects";
+  formatAgentScanProgress,
+  formatRelativeTime,
+  formatScanStatusLabel,
+  formatSearchSubtitle,
+  formatWindowLabel,
+  getAgentDisplayCount,
+} from "./lib/scan-format";
+import { applyLiveSessionUpdate } from "./lib/live-update";
+import { getProjectIdentityKey, getProjectPath, type ProjectRouteIdentity } from "./lib/projects";
 import {
   buildSessionIndexes,
   buildSidebarSessionLookup,
@@ -80,215 +83,8 @@ import {
 
 type BrowseBy = "agents" | "projects";
 
-type ViewState =
-  | { mode: "root"; activeAgentKey: null; activeSessionSlug: null }
-  | { mode: "projects"; activeAgentKey: null; activeSessionSlug: null }
-  | {
-      mode: "project";
-      activeAgentKey: null;
-      activeSessionSlug: null;
-      activeProjectKind: ProjectIdentityKind;
-      activeProjectKey: string;
-    }
-  | { mode: "agent"; activeAgentKey: string; activeSessionSlug: null }
-  | { mode: "session"; activeAgentKey: string; activeSessionSlug: string }
-  | { mode: "missingAgent"; activeAgentKey: null; activeSessionSlug: null; attemptedKey: string }
-  | {
-      mode: "missingSession";
-      activeAgentKey: string;
-      activeSessionSlug: string;
-      attemptedSessionSlug: string;
-    }
-  | { mode: "invalidRoute"; activeAgentKey: null; activeSessionSlug: null };
-
-function parseViewState(pathname: string, validAgentKeys: Set<string>): ViewState {
-  const trimmed = pathname.replace(/^\/+|\/+$/g, "");
-  const segments = trimmed
-    ? trimmed
-        .split("/")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : [];
-
-  if (segments.length === 0) {
-    return { mode: "root", activeAgentKey: null, activeSessionSlug: null };
-  }
-  if (segments[0]?.toLowerCase() === "projects") {
-    if (segments.length === 1) {
-      return { mode: "projects", activeAgentKey: null, activeSessionSlug: null };
-    }
-    if (segments.length === 3) {
-      try {
-        const kind = decodeURIComponent(segments[1]!);
-        if (!isProjectIdentityKind(kind)) {
-          return { mode: "invalidRoute", activeAgentKey: null, activeSessionSlug: null };
-        }
-        return {
-          mode: "project",
-          activeAgentKey: null,
-          activeSessionSlug: null,
-          activeProjectKind: kind,
-          activeProjectKey: decodeProjectRouteKey(segments[2]!),
-        };
-      } catch {
-        return { mode: "invalidRoute", activeAgentKey: null, activeSessionSlug: null };
-      }
-    }
-    return { mode: "invalidRoute", activeAgentKey: null, activeSessionSlug: null };
-  }
-  if (segments.length === 1) {
-    const key = segments[0]!.toLowerCase();
-    if (validAgentKeys.has(key)) {
-      return { mode: "agent", activeAgentKey: key, activeSessionSlug: null };
-    }
-    return {
-      mode: "missingAgent",
-      activeAgentKey: null,
-      activeSessionSlug: null,
-      attemptedKey: key,
-    };
-  }
-  if (segments.length === 2) {
-    const key = segments[0]!.toLowerCase();
-    const slug = segments[1]!;
-    if (validAgentKeys.has(key) && slug) {
-      return { mode: "session", activeAgentKey: key, activeSessionSlug: slug };
-    }
-    if (validAgentKeys.has(key)) {
-      return {
-        mode: "missingSession",
-        activeAgentKey: key,
-        activeSessionSlug: slug,
-        attemptedSessionSlug: slug,
-      };
-    }
-    return {
-      mode: "missingAgent",
-      activeAgentKey: null,
-      activeSessionSlug: null,
-      attemptedKey: key,
-    };
-  }
-  return { mode: "invalidRoute", activeAgentKey: null, activeSessionSlug: null };
-}
-
-function formatIsoDate(ts: number): string {
-  const d = new Date(ts);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function formatWindowLabel(config: AppConfig | null): string | null {
-  if (!config) return null;
-  const { from, to, days } = config.window;
-  if (from == null) return "All time";
-  const fromStr = formatIsoDate(from);
-  const toStr = formatIsoDate(to ?? Date.now());
-  if (days) return `Last ${days}d · ${fromStr} → ${toStr}`;
-  return `${fromStr} → ${toStr}`;
-}
-
-function formatSearchSubtitle(query: string, loading: boolean, count: number) {
-  if (loading) return query ? `Searching for "${query}"` : "Loading recent sessions";
-  return query ? `${count} matches for "${query}"` : `${count} recent sessions`;
-}
-
-function formatScanStatusLabel(status: ScanStatusEvent | null): string | null {
-  if (!status?.active) return null;
-
-  const completed = status.completedAgents.length;
-  const total = status.totalAgents;
-  const current = status.scanningAgents[0];
-  const currentStatus = current ? status.agentStatuses[current] : null;
-  const itemProgress =
-    currentStatus?.total && currentStatus.processed != null
-      ? ` · ${currentStatus.processed}/${currentStatus.total}`
-      : "";
-  const agentProgress =
-    total > 0
-      ? current
-        ? ` · ${current}${itemProgress} · ${completed}/${total} agents ready`
-        : ` · ${completed}/${total} agents ready`
-      : "";
-
-  if (status.phase === "initializing") {
-    return `First-run setup: indexing all local sessions${agentProgress}. Your selected time window appears after this finishes.`;
-  }
-  if (status.phase === "indexing") return "Preparing local session index";
-
-  if (total > 0) {
-    return current
-      ? `Checking for new or changed sessions · ${current}${itemProgress} · ${completed}/${total} agents ready`
-      : `Checking for new or changed sessions · ${completed}/${total} agents ready`;
-  }
-  return "Checking for new or changed sessions";
-}
-
-function formatAgentScanProgress(status: ScanStatusEvent | null, agentName: string): string | null {
-  const agentStatus = status?.agentStatuses[agentName];
-  if (!agentStatus || agentStatus.status === "complete") return null;
-  if (agentStatus.total && agentStatus.processed != null) {
-    return `${agentStatus.processed}/${agentStatus.total}`;
-  }
-  return agentStatus.status === "scanning" ? "Scanning" : "Pending";
-}
-
-function getAgentDisplayCount(
-  status: ScanStatusEvent | null,
-  agentName: string,
-  fallback: number,
-): number {
-  const agentStatus = status?.agentStatuses[agentName];
-  return agentStatus?.status === "complete" && agentStatus.sessions != null
-    ? agentStatus.sessions
-    : fallback;
-}
-
 function getProjectGroupIdentity(project: ProjectGroup): ProjectRouteIdentity {
   return { kind: project.identityKind, key: project.identityKey };
-}
-
-function formatRelativeTime(timestamp?: number) {
-  if (!timestamp) return "unknown";
-  const diff = Date.now() - timestamp;
-  if (Number.isNaN(diff) || diff < 0) return "just now";
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-function compareSessionActivityDesc(a: SessionHead, b: SessionHead): number {
-  return (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created);
-}
-
-function applyLiveSessionUpdate(
-  sessions: SessionHead[],
-  event: SessionsUpdatedEvent,
-): SessionHead[] | null {
-  if (!event.changedSessionHeads || !event.removedSessionRefs) return null;
-
-  const byKey = new Map(
-    sessions.map((sessionItem) => [
-      getSessionRouteKey(getSessionAgentKey(sessionItem), sessionItem.id),
-      sessionItem,
-    ]),
-  );
-
-  for (const { agentName, sessionId } of event.removedSessionRefs) {
-    byKey.delete(getSessionRouteKey(agentName, sessionId));
-  }
-
-  for (const { agentName, session: sessionItem } of event.changedSessionHeads) {
-    byKey.set(getSessionRouteKey(agentName, sessionItem.id), sessionItem);
-  }
-
-  return [...byKey.values()].sort(compareSessionActivityDesc);
 }
 
 function toSafeSnippetHtml(snippet: string): string {
