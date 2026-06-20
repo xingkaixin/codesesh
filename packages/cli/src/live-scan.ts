@@ -4,15 +4,18 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import {
   createRegisteredAgents,
-  computeIdentity,
   filterSessions,
   getCursorDataPath,
   isAgentCacheInitialized,
   loadCachedSessions,
-  realFs,
   resolveProviderRoots,
   scanSessions,
   FileSystemSessionSource,
+  attachMissingProjectIdentities,
+  buildAgentCacheMeta,
+  computeSessionDiff,
+  sessionSignature,
+  sortSessions,
   type AgentScanProgress,
   type BaseAgent,
   type ScanResult,
@@ -109,115 +112,35 @@ const WRITE_STABILITY_POLL_MS = 100;
 const NEW_SESSION_EVENT_WINDOW_MS = 250;
 const SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD = 100;
 
-function sortSessions(sessions: SessionHead[]): SessionHead[] {
-  return [...sessions].sort(
-    (a, b) => (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created),
-  );
-}
-
-function sessionSignature(session: SessionHead): string {
-  return JSON.stringify([
-    session.title,
-    session.directory,
-    session.time_created,
-    session.time_updated ?? session.time_created,
-    session.stats.message_count,
-    session.stats.total_input_tokens,
-    session.stats.total_output_tokens,
-    session.stats.total_cost,
-    session.stats.total_tokens ?? 0,
-  ]);
-}
-
-function buildAgentCacheMeta(
-  agent: BaseAgent,
-  sessionIds?: Set<string>,
-): Record<string, SessionCacheMeta> {
-  const metaMap = agent.getSessionMetaMap();
-  const meta: Record<string, SessionCacheMeta> = {};
-
-  for (const [id, data] of metaMap.entries()) {
-    if (sessionIds && !sessionIds.has(id)) continue;
-    meta[id] = { id, ...(data as Record<string, unknown>) } as SessionCacheMeta;
-  }
-
-  return meta;
-}
-
-function attachMissingProjectIdentities(sessions: SessionHead[]): SessionHead[] {
-  const identities = new Map<string, ReturnType<typeof computeIdentity>>();
-
-  return sessions.map((session) => {
-    if (session.project_identity) return session;
-
-    const directory = session.directory || "";
-    let identity = identities.get(directory);
-    if (!identity) {
-      identity = computeIdentity(directory, realFs);
-      identities.set(directory, identity);
-    }
-
-    return { ...session, project_identity: identity };
-  });
-}
-
 function buildRefreshDiff(
   agentName: string,
   previousSessions: SessionHead[],
   nextSessions: SessionHead[],
   candidateChangedIds: string[] = [],
 ): SessionRefreshDiff {
-  const previousMap = new Map(previousSessions.map((session) => [session.id, session]));
-  const nextMap = new Map(nextSessions.map((session) => [session.id, session]));
-  const candidateChangedIdSet = new Set(candidateChangedIds);
-  const changedSessions: SessionHeadChange[] = [];
-  const removedSessionIds: string[] = [];
+  const { changes, removedSessionIds, counts } = computeSessionDiff(
+    previousSessions,
+    nextSessions,
+    candidateChangedIds,
+    sessionSignature,
+  );
 
-  let newSessions = 0;
-  let updatedSessions = 0;
-  let removedSessions = 0;
-
-  nextSessions.forEach((session, index) => {
-    const id = session.id;
-    const previous = previousMap.get(id);
-    if (!previous) {
-      newSessions += 1;
-      changedSessions.push({ session, sortIndex: index });
-      return;
-    }
-    const hasSignatureChange = sessionSignature(previous) !== sessionSignature(session);
-    const hasContentChange = candidateChangedIdSet.has(id);
-    if (hasSignatureChange || hasContentChange) {
-      updatedSessions += 1;
-    }
-    if (hasContentChange || hasSignatureChange) {
-      changedSessions.push({ session, sortIndex: index });
-    }
-  });
-
-  for (const id of previousMap.keys()) {
-    if (!nextMap.has(id)) {
-      removedSessions += 1;
-      removedSessionIds.push(id);
-    }
-  }
-
-  if (newSessions === 0 && updatedSessions === 0 && removedSessions === 0) {
-    return { event: null, changedSessions, removedSessionIds };
+  if (counts.new === 0 && counts.updated === 0 && counts.removed === 0) {
+    return { event: null, changedSessions: changes, removedSessionIds };
   }
 
   return {
-    changedSessions,
+    changedSessions: changes,
     removedSessionIds,
     event: {
       type: "sessions-updated",
       changedAgents: [agentName],
-      newSessions,
-      updatedSessions,
-      removedSessions,
+      newSessions: counts.new,
+      updatedSessions: counts.updated,
+      removedSessions: counts.removed,
       totalSessions: nextSessions.length,
       timestamp: Date.now(),
-      changedSessionHeads: changedSessions.map(({ session }) => ({ agentName, session })),
+      changedSessionHeads: changes.map(({ session }) => ({ agentName, session })),
       removedSessionRefs: removedSessionIds.map((sessionId) => ({ agentName, sessionId })),
     },
   };

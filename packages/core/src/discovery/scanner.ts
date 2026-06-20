@@ -1,17 +1,22 @@
 import { availableParallelism } from "node:os";
 import { Worker } from "node:worker_threads";
-import type { ProjectIdentity, SessionHead, SmartTag } from "../types/index.js";
+import type { SessionHead, SmartTag } from "../types/index.js";
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import { createRegisteredAgents } from "../agents/index.js";
-import { computeIdentity, filterSessionsByProjectScope, realFs } from "../projects/index.js";
+import { filterSessionsByProjectScope } from "../projects/index.js";
 import { classifySessionTags, getSmartTagSourceTimestamp, perf } from "../utils/index.js";
 import {
   loadCachedSessions,
   markAgentCacheInitialized,
   saveCachedSessionChanges,
   saveCachedSessions,
-  type SessionHeadChange,
 } from "./cache.js";
+import {
+  attachMissingProjectIdentities,
+  buildAgentCacheMeta,
+  computeSessionDiff,
+  sessionSignature,
+} from "./orchestrate.js";
 
 export interface ScanOptions {
   /** Filter to specific agent name(s) */
@@ -53,29 +58,6 @@ export interface ScanProgress {
   cachedCount?: number;
   newCount?: number;
   changedCount?: number;
-}
-
-function createIdentityResolver() {
-  const cache = new Map<string, ProjectIdentity>();
-  return (directory: string | null | undefined) => {
-    const key = directory || "";
-    const cached = cache.get(key);
-    if (cached) return cached;
-    const identity = computeIdentity(directory, realFs);
-    cache.set(key, identity);
-    return identity;
-  };
-}
-
-function attachProjectIdentities(sessions: SessionHead[]): SessionHead[] {
-  const resolveIdentity = createIdentityResolver();
-  return sessions.map((session) => {
-    if (session.project_identity) return session;
-    return {
-      ...session,
-      project_identity: resolveIdentity(session.directory),
-    };
-  });
 }
 
 export function filterSessions(sessions: SessionHead[], options: ScanOptions): SessionHead[] {
@@ -121,56 +103,13 @@ interface SmartTagWorkerResult {
   error?: string;
 }
 
-function buildAgentCacheMeta(agent: BaseAgent): Record<string, SessionCacheMeta> {
-  const metaMap = agent.getSessionMetaMap?.();
-  const meta: Record<string, SessionCacheMeta> = {};
-  if (!metaMap) return meta;
-
-  for (const [id, data] of metaMap.entries()) {
-    meta[id] = { id, ...(data as Record<string, unknown>) } as SessionCacheMeta;
-  }
-
-  return meta;
-}
-
-function sessionCacheValue(session: SessionHead): string {
-  return JSON.stringify(session);
-}
-
-function buildCacheChanges(
-  cachedSessions: SessionHead[],
-  updatedSessions: SessionHead[],
-  changedIds: string[] = [],
-): { changes: SessionHeadChange[]; removedSessionIds: string[] } {
-  const cachedMap = new Map(cachedSessions.map((session) => [session.id, session]));
-  const updatedIds = new Set(updatedSessions.map((session) => session.id));
-  const changedIdSet = new Set(changedIds);
-  const removedSessionIds = cachedSessions
-    .filter((session) => !updatedIds.has(session.id))
-    .map((session) => session.id);
-  const changes: SessionHeadChange[] = [];
-
-  updatedSessions.forEach((session, sortIndex) => {
-    const cached = cachedMap.get(session.id);
-    if (
-      !cached ||
-      changedIdSet.has(session.id) ||
-      (cached !== session && sessionCacheValue(cached) !== sessionCacheValue(session))
-    ) {
-      changes.push({ session, sortIndex });
-    }
-  });
-
-  return { changes, removedSessionIds };
-}
-
 function saveCachedSessionDiff(
   agent: BaseAgent,
   cachedSessions: SessionHead[],
   updatedSessions: SessionHead[],
   changedIds: string[] = [],
 ): void {
-  const diff = buildCacheChanges(cachedSessions, updatedSessions, changedIds);
+  const diff = computeSessionDiff(cachedSessions, updatedSessions, changedIds, sessionSignature);
   saveCachedSessionChanges(
     agent.name,
     diff.changes,
@@ -330,7 +269,7 @@ async function scanAgentSmart(
         });
         onProgress?.({ agent: agent.name, phase: "complete", newCount: cached.sessions.length });
         const t3 = performance.now();
-        const cachedWithIdentity = attachProjectIdentities(cached.sessions);
+        const cachedWithIdentity = attachMissingProjectIdentities(cached.sessions);
         timing.identity = performance.now() - t3;
 
         const filtered = filterSessions(cachedWithIdentity, options);
@@ -378,7 +317,7 @@ async function scanAgentSmart(
         timing.scan = performance.now() - t2;
 
         const t3 = performance.now();
-        const sessionsWithIdentity = attachProjectIdentities(updatedSessions);
+        const sessionsWithIdentity = attachMissingProjectIdentities(updatedSessions);
         timing.identity = performance.now() - t3;
 
         const t4 = performance.now();
@@ -418,7 +357,7 @@ async function scanAgentSmart(
       onProgress?.({ agent: agent.name, phase: "complete", newCount: cached.sessions.length });
 
       const t3 = performance.now();
-      const cachedWithIdentity = attachProjectIdentities(cached.sessions);
+      const cachedWithIdentity = attachMissingProjectIdentities(cached.sessions);
       timing.identity = performance.now() - t3;
 
       const t4 = performance.now();
@@ -492,7 +431,7 @@ async function scanAgentFull(
     timing.scan = performance.now() - t0;
 
     const t1 = performance.now();
-    const headsWithIdentity = attachProjectIdentities(heads);
+    const headsWithIdentity = attachMissingProjectIdentities(heads);
     timing.identity = performance.now() - t1;
 
     const t2 = performance.now();
