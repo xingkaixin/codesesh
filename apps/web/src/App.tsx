@@ -72,11 +72,7 @@ import {
   getAgentDisplayCount,
 } from "./lib/scan-format";
 import { applyLiveSessionUpdate } from "./lib/live-update";
-import {
-  getProjectIdentityKey,
-  getProjectPath,
-  type ProjectRouteIdentity,
-} from "./lib/projects";
+import { getProjectIdentityKey, getProjectPath, type ProjectRouteIdentity } from "./lib/projects";
 import {
   buildSessionIndexes,
   buildSidebarSessionLookup,
@@ -87,15 +83,9 @@ import {
 
 type BrowseBy = "agents" | "projects";
 
-
-
-
 function getProjectGroupIdentity(project: ProjectGroup): ProjectRouteIdentity {
   return { kind: project.identityKind, key: project.identityKey };
 }
-
-
-
 
 function toSafeSnippetHtml(snippet: string): string {
   return snippet
