@@ -1,13 +1,13 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 import {
-  BaseAgent,
+  DatabaseSessionSource,
   filteredSession,
   getParsedSession,
   matchesScanWindow,
   parsedSession,
 } from "./base.js";
-import type { AgentScanOptions, SessionCacheMeta, ChangeCheckResult } from "./base.js";
+import type { AgentScanOptions } from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
 import { getCursorDataPath } from "../discovery/paths.js";
 import { openDbReadOnly, isSqliteAvailable, type SQLiteDatabase } from "../utils/sqlite.js";
@@ -259,7 +259,7 @@ function convertActionToPart(action: ActionEntry, timestampMs: number): MessageP
 // CursorAgent
 // ---------------------------------------------------------------------------
 
-export class CursorAgent extends BaseAgent {
+export class CursorAgent extends DatabaseSessionSource {
   readonly name = "cursor";
   readonly displayName = "Cursor";
 
@@ -268,8 +268,12 @@ export class CursorAgent extends BaseAgent {
   // Cache composer data from scan so getSessionData can reuse it
   private composerCache = new Map<string, ComposerData>();
 
-  // Session metadata for caching
-  private sessionMetaMap = new Map<string, { id: string; sourcePath: string }>();
+  protected getDatabasePath(): string | null {
+    if (!this.dbPath) {
+      this.dbPath = this.findDbPath();
+    }
+    return this.dbPath;
+  }
 
   private findDbPath(): string | null {
     if (!isSqliteAvailable()) return null;
@@ -533,54 +537,6 @@ export class CursorAgent extends BaseAgent {
     } finally {
       db.close();
     }
-  }
-
-  getSessionMetaMap(): Map<string, SessionCacheMeta> {
-    return this.sessionMetaMap as Map<string, SessionCacheMeta>;
-  }
-
-  setSessionMetaMap(meta: Map<string, SessionCacheMeta>): void {
-    this.sessionMetaMap = meta as Map<string, { id: string; sourcePath: string }>;
-  }
-
-  /**
-   * 检测数据库变更
-   * 对于 SQLite，检测数据库文件修改时间
-   */
-  checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
-    if (!this.dbPath) {
-      this.dbPath = this.findDbPath();
-    }
-    if (!this.dbPath || !existsSync(this.dbPath)) {
-      return { hasChanges: false, timestamp: Date.now() };
-    }
-
-    try {
-      // 检测数据库文件修改时间
-      const stat = statSync(this.dbPath);
-      const hasChanges = stat.mtimeMs > sinceTimestamp;
-
-      // 如果数据库有变更，标记所有缓存会话需要刷新
-      // 因为 SQLite 内部变更检测较复杂，简单起见全部刷新
-      const changedIds = hasChanges ? cachedSessions.map((s) => s.id) : [];
-
-      return {
-        hasChanges,
-        changedIds,
-        timestamp: Date.now(),
-      };
-    } catch {
-      return { hasChanges: false, timestamp: Date.now() };
-    }
-  }
-
-  /**
-   * 增量扫描 - 重新查询数据库
-   */
-  incrementalScan(_cachedSessions: SessionHead[], _changedIds: string[]): SessionHead[] {
-    // 对于 Cursor，直接重新执行完整扫描
-    // 因为 scan() 方法已经做了很好的优化
-    return this.scan();
   }
 
   getSessionData(sessionId: string): SessionData {

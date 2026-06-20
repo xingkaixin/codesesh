@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionHead } from "@codesesh/core";
+import { FileSystemSessionSource, type SessionHead } from "@codesesh/core";
 
 const fsWatch = vi.hoisted(() => ({
   watch: vi.fn(),
@@ -283,11 +283,10 @@ const projectIdentity = {
 };
 
 function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
-  return {
+  const agent: Record<string, unknown> = {
     name,
     displayName: name,
     isAvailable: vi.fn(() => true),
-    scan: vi.fn(() => []),
     getSessionData: vi.fn(() => ({
       id: "session",
       title: "session",
@@ -304,8 +303,50 @@ function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
       messages: [],
     })),
     getSessionMetaMap: vi.fn(() => new Map([["session", { id: "session", sourcePath: "/tmp/s" }]])),
-    ...overrides,
+    setSessionMetaMap: vi.fn(),
+    // Database-style agents detect changes via checkForChanges and rescan via
+    // incrementalScan (which delegates to scan), mirroring DatabaseSessionSource.
+    checkForChanges: vi.fn(() => ({ hasChanges: true, changedIds: [], timestamp: 0 })),
+    incrementalScan: vi.fn(() => agent.scan()),
   };
+  agent.scan = vi.fn(() => []);
+  Object.assign(agent, overrides);
+  return agent;
+}
+
+/**
+ * Builds a mock agent that is a real FileSystemSessionSource instance, so the
+ * live-scan refresh routes it through the source-sync path. Each primitive is
+ * overridable via vi.fn.
+ */
+function makeFileSystemAgent(
+  name: string,
+  overrides: {
+    listSessionSources?: ReturnType<typeof vi.fn>;
+    scanSessionSource?: ReturnType<typeof vi.fn>;
+    getSessionMetaMap?: ReturnType<typeof vi.fn>;
+    setSessionMetaMap?: ReturnType<typeof vi.fn>;
+    checkForChanges?: ReturnType<typeof vi.fn>;
+    incrementalScan?: ReturnType<typeof vi.fn>;
+  } = {},
+) {
+  const agent = Object.create(FileSystemSessionSource.prototype) as InstanceType<
+    typeof FileSystemSessionSource
+  >;
+  Object.defineProperty(agent, "name", { value: name, configurable: true });
+  Object.defineProperty(agent, "displayName", { value: name, configurable: true });
+  agent.isAvailable = vi.fn(() => true);
+  agent.scan = vi.fn(() => []);
+  agent.getSessionData = vi.fn(() => ({}));
+  agent.listSessionSources = overrides.listSessionSources ?? vi.fn(() => []);
+  agent.scanSessionSource = overrides.scanSessionSource ?? vi.fn(() => null);
+  agent.getSessionMetaMap = overrides.getSessionMetaMap ?? vi.fn(() => new Map());
+  agent.setSessionMetaMap = overrides.setSessionMetaMap ?? vi.fn();
+  agent.checkForChanges =
+    overrides.checkForChanges ??
+    vi.fn(() => ({ hasChanges: false, changedIds: [], timestamp: Date.now() }));
+  agent.incrementalScan = overrides.incrementalScan ?? vi.fn((cached: SessionHead[]) => cached);
+  return agent;
 }
 
 describe("LiveScanStore", () => {
@@ -442,10 +483,11 @@ describe("LiveScanStore", () => {
     expect(workerThreads.workers.find((worker) => worker.workerData.jobs)?.workerData.jobs).toEqual(
       [
         expect.objectContaining({
-          kind: "full",
+          kind: "changes",
           context: "scan.refresh",
           agentName: "codex",
-          sessions: [{ ...fresh, project_identity: projectIdentity }],
+          changes: [{ session: { ...fresh, project_identity: projectIdentity }, sortIndex: 0 }],
+          removedSessionIds: ["cached"],
         }),
       ],
     );
@@ -671,7 +713,7 @@ describe("LiveScanStore", () => {
     const scanSessionSource = vi.fn((sourcePath: string) =>
       sourcePath === "/tmp/s" ? updated : added,
     );
-    const codex = makeAgent("codex", {
+    const codex = makeFileSystemAgent("codex", {
       checkForChanges: vi.fn(() => {
         throw new Error("checkForChanges should not run for source-backed agents");
       }),
@@ -759,7 +801,7 @@ describe("LiveScanStore", () => {
       5678,
       "same title",
     ]);
-    const codex = makeAgent("codex", {
+    const codex = makeFileSystemAgent("codex", {
       listSessionSources: vi.fn(() => [
         {
           sessionId: "session",

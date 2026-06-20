@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 describe("ClaudeCodeAgent cache refresh", () => {
-  it("detects sessions-index fingerprint changes without recent-session revalidation", () => {
+  it("detects sessions-index changes via fingerprint comparison", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-cache-"));
     tempDirs.push(basePath);
     const projectDir = join(basePath, "project");
@@ -53,32 +53,28 @@ describe("ClaudeCodeAgent cache refresh", () => {
 
     const agent = new ClaudeCodeAgent() as any;
     agent.basePath = basePath;
-    agent.sessionsIndexCache = { project: new Map([["stale", {}]]) };
-    agent.sessionMetaMap = new Map([
-      [
-        "session-1",
-        {
-          id: "session-1",
-          title: "Old",
-          sourcePath: sessionFile,
-          sourceMtimeMs: statSync(sessionFile).mtimeMs,
-          indexPath: indexFile,
-          indexMtimeMs: statSync(indexFile).mtimeMs - 1,
-          headIndexVersion: "claudecode-head-v1",
-          directory: "/tmp/project",
-          model: null,
-          messageCount: 1,
-          createdAt: 1000,
-          updatedAt: 1000,
-        },
-      ],
-    ]);
 
-    const result = agent.checkForChanges(Date.now(), [makeSession("session-1")]);
+    // Seed baseline: a full scan populates metaMap with the source fingerprint.
+    agent.scan();
+    const baselineFingerprint = agent.listSessionSources()[0]?.fingerprint;
+    expect(baselineFingerprint).toBeDefined();
 
-    expect(result.hasChanges).toBe(true);
-    expect(result.changedIds).toContain("session-1");
-    expect(agent.sessionsIndexCache.project).toBeUndefined();
+    // No changes yet.
+    const unchanged = agent.checkForChanges(Date.now(), [makeSession("session-1")]);
+    expect(unchanged.hasChanges).toBe(false);
+
+    // Rewrite the index file (bumps its mtime → fingerprint changes).
+    const later = new Date(Date.now() + 2000);
+    writeFileSync(indexFile, JSON.stringify({ entries: [{ sessionId: "session-1" }] }), {
+      flag: "w",
+    });
+    utimesSync(indexFile, later, later);
+
+    const changed = agent.checkForChanges(Date.now(), [makeSession("session-1")]);
+    expect(changed.hasChanges).toBe(true);
+    expect(changed.changedIds).toContain("session-1");
+    // The fingerprint now reflects the new index mtime.
+    expect(agent.listSessionSources()[0]?.fingerprint).not.toBe(baselineFingerprint);
   });
 
   it("parses indexed sessions with assistant tools and tool results", () => {
@@ -302,7 +298,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
       total_cache_create_tokens: 5,
       total_cost: 0.00062175,
     });
-    expect(data.messages.filter((message: Message) => message.cost > 0)).toHaveLength(1);
+    expect(data.messages.filter((message: Message) => (message.cost ?? 0) > 0)).toHaveLength(1);
   });
 
   it("filters internal-only sessions", () => {

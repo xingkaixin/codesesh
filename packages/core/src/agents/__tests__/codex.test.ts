@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -82,47 +82,42 @@ describe("CodexAgent cache refresh", () => {
     const sessionsDir = join(codexHome, "sessions");
     mkdirSync(sessionsDir, { recursive: true });
     vi.stubEnv("CODEX_HOME", codexHome);
-    const recentFile = join(
-      sessionsDir,
-      "rollout-2026-04-20T10-00-00-019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa.jsonl",
-    );
+    const sessionId = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+    const recentFile = join(sessionsDir, `rollout-2026-04-20T10-00-00-${sessionId}.jsonl`);
     const indexFile = join(codexHome, "session_index.jsonl");
 
     writeFileSync(
       recentFile,
       '{"type":"session_meta","payload":{"timestamp":"2026-04-20T10:00:00Z"}}\n',
     );
-    writeFileSync(
-      indexFile,
-      '{"id":"019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa","thread_name":"Old title"}\n',
-    );
+    writeFileSync(indexFile, `{"id":"${sessionId}","thread_name":"Old title"}\n`);
 
     const agent = new CodexAgent() as any;
     agent.basePath = sessionsDir;
-    agent.sessionIndexCache = new Map();
-    agent.sessionMetaMap = new Map([
+    // Seed baseline meta with the live fingerprint.
+    agent.scan();
+    const baselineFingerprint = agent.listSessionSources()[0]?.fingerprint;
+
+    // Append an unrelated index entry (mtime changes, but this session's
+    // title is unchanged → its fingerprint must stay stable).
+    const later = new Date(Date.now() + 2000);
+    writeFileSync(
+      indexFile,
       [
-        "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
-        {
-          id: "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
-          title: "Old title",
-          sourcePath: recentFile,
-          sourceMtimeMs: statSync(recentFile).mtimeMs,
-          indexPath: indexFile,
-          indexMtimeMs: statSync(indexFile).mtimeMs - 1,
-          headIndexVersion: "codex-head-v1",
-          parserVersion: "codex-parser-v3",
-        },
-      ],
-    ]);
-    agent.listRolloutFiles = () => [recentFile];
+        `{"id":"${sessionId}","thread_name":"Old title"}`,
+        '{"id":"019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb","thread_name":"Other title"}',
+        "",
+      ].join("\n"),
+    );
+    utimesSync(indexFile, later, later);
 
     const result = agent.checkForChanges(Date.now(), [
-      makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa", { title: "Old title" }),
+      makeSession(sessionId, { title: "Old title" }),
     ]);
 
     expect(result.hasChanges).toBe(false);
     expect(result.changedIds).toEqual([]);
+    expect(agent.listSessionSources()[0]?.fingerprint).toBe(baselineFingerprint);
   });
 
   it("uses per-session Codex titles in source fingerprints", () => {
@@ -223,21 +218,9 @@ describe("CodexAgent cache refresh", () => {
 
     const agent = new CodexAgent() as any;
     agent.basePath = tempDir;
-    agent.sessionMetaMap = new Map([
-      [
-        "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
-        { id: "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa", sourcePath: oldA },
-      ],
-      [
-        "019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb",
-        {
-          id: "019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb",
-          sourcePath: join(tempDir, "missing.jsonl"),
-        },
-      ],
-    ]);
-    agent.listRolloutFiles = () => [oldA, newC];
-    agent.parseSessionHead = (file: string) => {
+    // Drive the new primitives directly: listSessionSources enumerates the
+    // on-disk files, scanSessionSource parses each head.
+    agent.scanSessionSource = (file: string) => {
       if (file === oldA) return makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa");
       if (file === newC) return makeSession("019dcccc-cccc-7ccc-cccc-cccccccccccc");
       return null;
@@ -248,7 +231,7 @@ describe("CodexAgent cache refresh", () => {
         makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa"),
         makeSession("019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb"),
       ],
-      ["019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb"],
+      ["019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb", "019dcccc-cccc-7ccc-cccc-cccccccccccc"],
     );
 
     expect(sessions.map((session: SessionHead) => session.id).sort()).toEqual([

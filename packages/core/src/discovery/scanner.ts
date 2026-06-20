@@ -307,7 +307,6 @@ async function scanAgentSmart(
   const agentStart = performance.now();
   const timing: AgentScanTiming = { total: 0 };
   const useCache = options.useCache ?? true;
-  const canValidateCache = Boolean(agent.checkForChanges && agent.incrementalScan);
 
   // 1. 尝试加载缓存
   if (useCache) {
@@ -317,13 +316,11 @@ async function scanAgentSmart(
 
     if (cached !== null) {
       // 恢复元数据
-      if (agent.setSessionMetaMap) {
-        const metaMap = new Map<string, SessionCacheMeta>();
-        for (const [id, meta] of Object.entries(cached.meta)) {
-          metaMap.set(id, meta);
-        }
-        agent.setSessionMetaMap(metaMap);
+      const metaMap = new Map<string, SessionCacheMeta>();
+      for (const [id, meta] of Object.entries(cached.meta)) {
+        metaMap.set(id, meta);
       }
+      agent.setSessionMetaMap(metaMap);
 
       if (options.cacheOnly) {
         onProgress?.({
@@ -359,68 +356,66 @@ async function scanAgentSmart(
         cachedCount: cached.sessions.length,
       });
 
-      if (canValidateCache) {
-        onProgress?.({ agent: agent.name, phase: "checking" });
+      onProgress?.({ agent: agent.name, phase: "checking" });
 
-        const t1 = performance.now();
-        const checkResult = await Promise.resolve(
-          agent.checkForChanges!(cached.timestamp, cached.sessions),
+      const t1 = performance.now();
+      const checkResult = await Promise.resolve(
+        agent.checkForChanges(cached.timestamp, cached.sessions),
+      );
+      timing.checkChanges = performance.now() - t1;
+
+      if (checkResult.hasChanges) {
+        onProgress?.({
+          agent: agent.name,
+          phase: "incremental",
+          changedCount: checkResult.changedIds?.length,
+        });
+
+        const t2 = performance.now();
+        const updatedSessions = await Promise.resolve(
+          agent.incrementalScan(cached.sessions, checkResult.changedIds || []),
         );
-        timing.checkChanges = performance.now() - t1;
+        timing.scan = performance.now() - t2;
 
-        if (checkResult.hasChanges) {
-          onProgress?.({
-            agent: agent.name,
-            phase: "incremental",
-            changedCount: checkResult.changedIds?.length,
-          });
+        const t3 = performance.now();
+        const sessionsWithIdentity = attachProjectIdentities(updatedSessions);
+        timing.identity = performance.now() - t3;
 
-          const t2 = performance.now();
-          const updatedSessions = await Promise.resolve(
-            agent.incrementalScan!(cached.sessions, checkResult.changedIds || []),
-          );
-          timing.scan = performance.now() - t2;
+        const t4 = performance.now();
+        const tagged =
+          options.includeSmartTags === false
+            ? { sessions: sessionsWithIdentity, changed: false }
+            : await ensureSessionTags(agent, sessionsWithIdentity, options.smartTagWorkerUrl);
+        timing.tags = performance.now() - t4;
 
-          const t3 = performance.now();
-          const sessionsWithIdentity = attachProjectIdentities(updatedSessions);
-          timing.identity = performance.now() - t3;
-
-          const t4 = performance.now();
-          const tagged =
-            options.includeSmartTags === false
-              ? { sessions: sessionsWithIdentity, changed: false }
-              : await ensureSessionTags(agent, sessionsWithIdentity, options.smartTagWorkerUrl);
-          timing.tags = performance.now() - t4;
-
-          if (options.writeCache !== false) {
-            saveCachedSessionDiff(
-              agent,
-              cached.sessions,
-              tagged.sessions,
-              checkResult.changedIds ?? [],
-            );
-          }
-
-          onProgress?.({
-            agent: agent.name,
-            phase: "complete",
-            newCount: tagged.sessions.length,
-          });
-
-          const filtered = filterSessions(tagged.sessions, options);
-          timing.total = performance.now() - agentStart;
-          return {
+        if (options.writeCache !== false) {
+          saveCachedSessionDiff(
             agent,
-            heads: filtered,
-            fromCache: true,
-            refreshed: true,
-            timing,
-            cacheTimestamp: checkResult.timestamp,
-          };
+            cached.sessions,
+            tagged.sessions,
+            checkResult.changedIds ?? [],
+          );
         }
 
-        onProgress?.({ agent: agent.name, phase: "complete", newCount: cached.sessions.length });
+        onProgress?.({
+          agent: agent.name,
+          phase: "complete",
+          newCount: tagged.sessions.length,
+        });
+
+        const filtered = filterSessions(tagged.sessions, options);
+        timing.total = performance.now() - agentStart;
+        return {
+          agent,
+          heads: filtered,
+          fromCache: true,
+          refreshed: true,
+          timing,
+          cacheTimestamp: checkResult.timestamp,
+        };
       }
+
+      onProgress?.({ agent: agent.name, phase: "complete", newCount: cached.sessions.length });
 
       const t3 = performance.now();
       const cachedWithIdentity = attachProjectIdentities(cached.sessions);

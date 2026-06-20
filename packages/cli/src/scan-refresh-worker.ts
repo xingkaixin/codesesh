@@ -1,6 +1,7 @@
 import { parentPort, workerData } from "node:worker_threads";
 import {
   createRegisteredAgents,
+  FileSystemSessionSource,
   type AgentScanProgress,
   type ScanOptions,
   type SessionCacheMeta,
@@ -36,11 +37,9 @@ interface ScanRefreshWorkerData {
 }
 
 function serializeMeta(agent: {
-  getSessionMetaMap?: () => Map<string, SessionCacheMeta>;
+  getSessionMetaMap: () => Map<string, SessionCacheMeta>;
 }): Record<string, SessionCacheMeta> {
-  const metaMap = agent.getSessionMetaMap?.();
-  if (!metaMap) return {};
-
+  const metaMap = agent.getSessionMetaMap();
   const meta: Record<string, SessionCacheMeta> = {};
   for (const [id, data] of metaMap.entries()) {
     meta[id] = { id, ...(data as Record<string, unknown>) } as SessionCacheMeta;
@@ -61,13 +60,18 @@ function parseSourceFingerprint(fingerprint: string): unknown[] | null {
   }
 }
 
+/**
+ * Compare a live source fingerprint against the cached meta. A direct string
+ * match is the fast path; the fallback tolerates older cache entries written by
+ * a different fingerprint format as long as the underlying mtime (array slot 2)
+ * is unchanged, so a fingerprint-format bump does not force a full rescan.
+ */
 function sourceFingerprintMatches(
   source: SessionSourceRef,
   cachedSession: SessionHead,
   cached: SessionCacheMeta | undefined,
 ): boolean {
-  const cachedFingerprint = sourceFingerprintFromMeta(cached);
-  if (cachedFingerprint === source.fingerprint) return true;
+  if (sourceFingerprintFromMeta(cached) === source.fingerprint) return true;
 
   const current = parseSourceFingerprint(source.fingerprint);
   if (!current || current.length < 5) return false;
@@ -83,25 +87,13 @@ function sourcePathFromMeta(meta: SessionCacheMeta | undefined): string | null {
   return typeof meta?.sourcePath === "string" ? meta.sourcePath : null;
 }
 
-function canSyncSources(agent: unknown): agent is {
-  listSessionSources: () => SessionSourceRef[];
-  scanSessionSource: (sourcePath: string) => SessionHead | null;
-} {
-  return (
-    typeof agent === "object" &&
-    agent !== null &&
-    "listSessionSources" in agent &&
-    "scanSessionSource" in agent &&
-    typeof agent.listSessionSources === "function" &&
-    typeof agent.scanSessionSource === "function"
-  );
-}
-
+/**
+ * Source-level incremental sync, mirroring FileSystemSessionSource.incrementalScan.
+ * Kept standalone because the worker cannot share the agent's live metaMap with
+ * the main thread — it receives cached meta via workerData instead.
+ */
 function syncAgentSources(
-  agent: {
-    listSessionSources: () => SessionSourceRef[];
-    scanSessionSource: (sourcePath: string) => SessionHead | null;
-  },
+  agent: FileSystemSessionSource,
   cachedSessions: SessionHead[],
   cachedMeta: Record<string, SessionCacheMeta>,
 ): { sessions: SessionHead[]; changedIds: string[] } {
@@ -146,9 +138,7 @@ async function run(): Promise<void> {
     throw new Error(`Unknown agent: ${data.agentName}`);
   }
 
-  if (agent.setSessionMetaMap) {
-    agent.setSessionMetaMap(new Map(Object.entries(data.meta)));
-  }
+  agent.setSessionMetaMap(new Map(Object.entries(data.meta)));
 
   const isAvailable = agent.isAvailable();
   let sessions: SessionHead[];
@@ -156,11 +146,11 @@ async function run(): Promise<void> {
 
   if (!isAvailable) {
     sessions = [];
-  } else if (data.sourceSync && canSyncSources(agent)) {
+  } else if (data.sourceSync && agent instanceof FileSystemSessionSource) {
     const result = syncAgentSources(agent, data.previousSessions, data.meta);
     sessions = result.sessions;
     changedIds = result.changedIds;
-  } else if (data.changedIds && agent.incrementalScan) {
+  } else if (data.changedIds) {
     sessions = await Promise.resolve(agent.incrementalScan(data.previousSessions, data.changedIds));
   } else {
     sessions = await Promise.resolve(

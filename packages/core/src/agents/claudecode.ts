@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
 import {
-  BaseAgent,
+  FileSystemSessionSource,
   filteredSession,
   getParsedSession,
   matchesScanWindow,
@@ -17,12 +17,7 @@ import { isInternalEventType } from "../utils/parse-cleanup.js";
 import { cleanInternalText, cleanParsedMessages } from "../utils/session-normalization.js";
 import { perf } from "../utils/perf.js";
 import { estimateTokenCost } from "../utils/cost.js";
-import type {
-  AgentScanOptions,
-  ChangeCheckResult,
-  SessionCacheMeta,
-  SessionSourceRef,
-} from "./base.js";
+import type { AgentScanOptions, SessionCacheMeta, SessionSourceRef } from "./base.js";
 
 const HEAD_INDEX_VERSION = "claudecode-head-v2";
 
@@ -85,14 +80,14 @@ function extractClaudeUsage(
   };
 }
 
-export class ClaudeCodeAgent extends BaseAgent {
+export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
   readonly name = "claudecode";
   readonly displayName = "Claude Code";
 
   private basePath: string | null = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private sessionsIndexCache: Record<string, any> = {};
-  private sessionMetaMap = new Map<string, SessionMeta>();
+  private sessionsIndexMtime: Record<string, number | null> = {};
 
   private findBasePath(): string | null {
     const roots = resolveProviderRoots();
@@ -190,14 +185,6 @@ export class ClaudeCodeAgent extends BaseAgent {
     return head;
   }
 
-  getSessionMetaMap(): Map<string, SessionCacheMeta> {
-    return this.sessionMetaMap;
-  }
-
-  setSessionMetaMap(meta: Map<string, SessionCacheMeta>): void {
-    this.sessionMetaMap = meta as Map<string, SessionMeta>;
-  }
-
   getSessionData(sessionId: string): SessionData {
     const meta = this.sessionMetaMap.get(sessionId);
     if (!meta) {
@@ -271,88 +258,6 @@ export class ClaudeCodeAgent extends BaseAgent {
     };
   }
 
-  /**
-   * 检测文件系统变更
-   * - 已有 session：statSync 检测文件修改（APFS 写文件不更新 dir mtime，必须 file-level）
-   * - 新 session 检测：readdirSync 文件列表比对，比 dir statSync 快 ~10x
-   */
-  checkForChanges(_sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
-    if (!this.basePath) {
-      return { hasChanges: false, timestamp: Date.now() };
-    }
-
-    const changedIds = new Set<string>();
-
-    for (const session of cachedSessions) {
-      const meta = this.sessionMetaMap.get(session.id);
-      if (!meta) {
-        changedIds.add(session.id);
-        continue;
-      }
-      try {
-        if (this.hasMetaChanged(meta)) {
-          changedIds.add(session.id);
-          delete this.sessionsIndexCache[basename(dirname(meta.sourcePath))];
-        }
-      } catch {
-        changedIds.add(session.id);
-      }
-    }
-
-    // 用 readdirSync 比对文件列表检测新 session（比 dir statSync 快 ~10x）
-    const cachedIdSet = new Set(cachedSessions.map((s) => s.id));
-    let hasNewFiles = false;
-    try {
-      outer: for (const dir of this.listProjectDirs()) {
-        try {
-          for (const file of this.listJsonlFiles(dir)) {
-            if (!cachedIdSet.has(basename(file, ".jsonl"))) {
-              hasNewFiles = true;
-              delete this.sessionsIndexCache[basename(dir)];
-              break outer;
-            }
-          }
-        } catch {}
-      }
-    } catch {}
-
-    return {
-      hasChanges: changedIds.size > 0 || hasNewFiles,
-      changedIds: Array.from(changedIds),
-      timestamp: Date.now(),
-    };
-  }
-
-  /**
-   * 增量扫描 - 只扫描变更的会话
-   */
-  incrementalScan(cachedSessions: SessionHead[], changedIds: string[]): SessionHead[] {
-    if (!this.basePath) return cachedSessions;
-
-    const sessionMap = new Map(cachedSessions.map((s) => [s.id, s]));
-    const changedSet = new Set(changedIds);
-
-    // 单次遍历：变更的 session 重新解析，新出现的 session 直接添加
-    for (const projectDir of this.listProjectDirs()) {
-      for (const file of this.listJsonlFiles(projectDir)) {
-        try {
-          const sessionId = basename(file, ".jsonl");
-          if (changedSet.has(sessionId) || !sessionMap.has(sessionId)) {
-            const head = getParsedSession(this.parseSessionHeadResult(file, projectDir));
-            if (head) {
-              sessionMap.set(head.id, head);
-              this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, file, projectDir));
-            }
-          }
-        } catch {
-          // skip malformed files
-        }
-      }
-    }
-
-    return Array.from(sessionMap.values());
-  }
-
   // --- Private helpers ---
 
   private listProjectDirs(): string[] {
@@ -395,15 +300,6 @@ export class ClaudeCodeAgent extends BaseAgent {
     };
   }
 
-  private hasMetaChanged(meta: SessionMeta): boolean {
-    if (meta.headIndexVersion !== HEAD_INDEX_VERSION) return true;
-    if (typeof meta.sourceMtimeMs !== "number") return true;
-    if (statSync(meta.sourcePath).mtimeMs !== meta.sourceMtimeMs) return true;
-
-    const indexPath = meta.indexPath ?? this.getSessionsIndexPath(dirname(meta.sourcePath));
-    return this.getFileMtimeMs(indexPath) !== (meta.indexMtimeMs ?? null);
-  }
-
   private sourceFingerprint(file: string, projectDir: string): string {
     const stat = statSync(file);
     const indexPath = this.getSessionsIndexPath(projectDir);
@@ -429,11 +325,15 @@ export class ClaudeCodeAgent extends BaseAgent {
 
   private loadSessionsIndex(projectDir: string): Map<string, Record<string, unknown>> {
     const cacheKey = basename(projectDir);
-    if (cacheKey in this.sessionsIndexCache) {
+    const indexPath = this.getSessionsIndexPath(projectDir);
+    const mtime = this.getFileMtimeMs(indexPath);
+
+    // Invalidate when the index file mtime advances so long-running processes
+    // pick up title changes without relying on callers to evict manually.
+    if (cacheKey in this.sessionsIndexCache && this.sessionsIndexMtime[cacheKey] === mtime) {
       return this.sessionsIndexCache[cacheKey];
     }
 
-    const indexPath = this.getSessionsIndexPath(projectDir);
     const map = new Map<string, Record<string, unknown>>();
 
     if (existsSync(indexPath)) {
@@ -452,6 +352,7 @@ export class ClaudeCodeAgent extends BaseAgent {
     }
 
     this.sessionsIndexCache[cacheKey] = map;
+    this.sessionsIndexMtime[cacheKey] = mtime;
     return map;
   }
 

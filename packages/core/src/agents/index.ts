@@ -1,4 +1,4 @@
-export { BaseAgent } from "./base.js";
+export { BaseAgent, FileSystemSessionSource, DatabaseSessionSource } from "./base.js";
 export { filteredSession, getParsedSession, parsedSession, skippedSession } from "./base.js";
 export type {
   AgentScanProgress,
