@@ -18,7 +18,6 @@ import {
   type ScanResult,
   type ScanOptions,
   type SessionCacheMeta,
-  type SessionSourceRef,
   type SessionHeadChange,
   type SessionHead,
 } from "@codesesh/core";
