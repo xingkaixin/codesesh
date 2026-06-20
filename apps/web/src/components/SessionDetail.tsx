@@ -165,7 +165,6 @@ const VIRTUALIZED_MESSAGE_OVERSCAN = 6;
 // Small helpers
 // ---------------------------------------------------------------------------
 
-
 function buildHighlightPattern(query?: string): RegExp | null {
   const normalized = query?.trim();
   if (!normalized) return null;
