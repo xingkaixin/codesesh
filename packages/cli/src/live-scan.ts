@@ -1,14 +1,11 @@
-import { existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import {
   createRegisteredAgents,
   filterSessions,
-  getCursorDataPath,
   isAgentCacheInitialized,
   loadCachedSessions,
-  resolveProviderRoots,
   scanSessions,
   FileSystemSessionSource,
   attachMissingProjectIdentities,
@@ -26,6 +23,9 @@ import {
 } from "@codesesh/core";
 import type { SearchIndexWorkerJob, SearchIndexWorkerMessage } from "./search-index-worker.js";
 import type { ScanRefreshWorkerMessage } from "./scan-refresh-worker.js";
+import { SessionWatcher, resolveAgentWatchTargets } from "./session-watcher.js";
+
+export { resolveAgentWatchTargets };
 import { appLogger, logSearchIndexSync } from "./logging.js";
 
 export interface SessionsUpdatedEvent {
@@ -68,25 +68,6 @@ export interface AgentScanStatus {
 type StoreListener = (event: SessionsUpdatedEvent) => void;
 type ScanStatusListener = (event: ScanStatusEvent) => void;
 
-interface WatchTarget {
-  path: string;
-  root?: string;
-}
-
-interface WatchScope {
-  agentName: string;
-  targetPath: string;
-}
-
-interface StablePathState {
-  path: string;
-  agentNames: Set<string>;
-  lastMtimeMs: number | null;
-  lastSize: number | null;
-  stableSince: number;
-  timer: NodeJS.Timeout | null;
-}
-
 interface SessionRefreshDiff {
   event: SessionsUpdatedEvent | null;
   changedSessions: SessionHeadChange[];
@@ -107,8 +88,6 @@ interface LiveScanStoreOptions {
 const REFRESH_DEBOUNCE_MS = 200;
 const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
 const PENDING_REFRESH_DELAY_MS = 100;
-const WRITE_STABILITY_THRESHOLD_MS = 250;
-const WRITE_STABILITY_POLL_MS = 100;
 const NEW_SESSION_EVENT_WINDOW_MS = 250;
 const SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD = 100;
 
@@ -150,66 +129,6 @@ function restoreAgentCacheMeta(agent: BaseAgent, meta: Record<string, SessionCac
   agent.setSessionMetaMap(new Map(Object.entries(meta)));
 }
 
-function toAbsolutePath(path: string): string {
-  return isAbsolute(path) ? path : resolve(path);
-}
-
-function closestWatchablePath(targetPath: string): string | null {
-  if (!isAbsolute(targetPath) && !existsSync(targetPath)) {
-    return null;
-  }
-
-  let current = toAbsolutePath(targetPath);
-
-  while (!existsSync(current)) {
-    const parent = dirname(current);
-    if (parent === current) {
-      return null;
-    }
-    current = parent;
-  }
-
-  return current;
-}
-
-function getWatchRoot(path: string): string {
-  const stat = statSync(path);
-  return stat.isDirectory() ? path : dirname(path);
-}
-
-function isRecursiveWatchSupported(
-  platform = process.platform,
-  nodeVersion = process.versions.node,
-): boolean {
-  if (platform === "darwin" || platform === "win32") {
-    return true;
-  }
-  if (platform !== "linux" && platform !== "aix" && platform !== "ibmi") {
-    return false;
-  }
-
-  const [major = 0, minor = 0] = nodeVersion.split(".").map((part) => Number(part));
-  return major > 19 || (major === 19 && minor >= 1);
-}
-
-function isRecursiveWatchUnavailable(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ERR_FEATURE_UNAVAILABLE_ON_PLATFORM"
-  );
-}
-
-function isSameOrChildPath(parentPath: string, childPath: string): boolean {
-  const path = relative(parentPath, childPath);
-  return path === "" || (!path.startsWith("..") && !isAbsolute(path));
-}
-
-function isRelatedPath(changedPath: string, targetPath: string): boolean {
-  return isSameOrChildPath(targetPath, changedPath) || isSameOrChildPath(changedPath, targetPath);
-}
-
 function mergeEvents(
   previous: SessionsUpdatedEvent,
   next: SessionsUpdatedEvent,
@@ -246,71 +165,6 @@ function mergeEvents(
   };
 }
 
-function mergeScopes(target: WatchScope[], scopes: WatchScope[]): void {
-  for (const scope of scopes) {
-    if (
-      !target.some(
-        (item) => item.agentName === scope.agentName && item.targetPath === scope.targetPath,
-      )
-    ) {
-      target.push(scope);
-    }
-  }
-}
-
-function resolveWatchEventPath(watchPath: string, filename: string | Buffer | null): string {
-  const filenameText = filename?.toString();
-  if (!filenameText) {
-    return watchPath;
-  }
-  return isAbsolute(filenameText) ? filenameText : join(watchPath, filenameText);
-}
-
-export function resolveAgentWatchTargets(agentName: string): WatchTarget[] {
-  const roots = resolveProviderRoots();
-  const cursorDataPath = getCursorDataPath();
-
-  switch (agentName) {
-    case "claudecode":
-      return [
-        { root: roots.claudeRoot, path: join(roots.claudeRoot, "projects") },
-        { path: "data/claudecode" },
-      ];
-    case "codex":
-      return [
-        { path: join(roots.codexRoot, "sessions") },
-        { path: join(roots.codexRoot, "session_index.jsonl") },
-      ];
-    case "pi":
-      return [
-        { root: roots.piRoot, path: join(roots.piRoot, "agent", "sessions") },
-        { root: "data/pi", path: "data/pi" },
-      ];
-    case "cursor":
-      return cursorDataPath
-        ? [
-            {
-              root: cursorDataPath,
-              path: join(cursorDataPath, "globalStorage", "state.vscdb"),
-            },
-            { root: cursorDataPath, path: join(cursorDataPath, "workspaceStorage") },
-          ]
-        : [];
-    case "kimi":
-      return [
-        { root: roots.kimiRoot, path: join(roots.kimiRoot, "sessions") },
-        { path: "data/kimi" },
-      ];
-    case "opencode":
-      return [
-        { root: roots.opencodeRoot, path: join(roots.opencodeRoot, "opencode.db") },
-        { root: "data/opencode", path: "data/opencode/opencode.db" },
-      ];
-    default:
-      return [];
-  }
-}
-
 export class LiveScanStore {
   private agents: BaseAgent[] = [];
   private byAgent: Record<string, SessionHead[]> = {};
@@ -332,9 +186,7 @@ export class LiveScanStore {
   private refreshInFlight = new Set<string>();
   private pendingRefreshes = new Set<string>();
   private pendingRefreshPathCounts = new Map<string, number>();
-  private watchers: FSWatcher[] = [];
-  private fallbackWatchScopes = new Map<string, WatchScope[]>();
-  private stablePaths = new Map<string, StablePathState>();
+  private watcher: SessionWatcher | null = null;
   private pendingEvent: SessionsUpdatedEvent | null = null;
   private pendingEventTimer: NodeJS.Timeout | null = null;
   private backgroundRefreshTimer: NodeJS.Timeout | null = null;
@@ -404,7 +256,21 @@ export class LiveScanStore {
         : undefined,
     });
     if (this.watchEnabled) {
-      this.startWatching();
+      this.watcher = new SessionWatcher();
+      this.watcher.onAgentsChanged((agentNames) => {
+        for (const agentName of agentNames) {
+          this.pendingRefreshPathCounts.set(
+            agentName,
+            (this.pendingRefreshPathCounts.get(agentName) ?? 0) + 1,
+          );
+          const delayMs =
+            (this.byAgent[agentName]?.length ?? 0) === 0
+              ? EMPTY_AGENT_REFRESH_DEBOUNCE_MS
+              : REFRESH_DEBOUNCE_MS;
+          this.scheduleRefresh(agentName, delayMs);
+        }
+      });
+      this.watcher.start(this.agents.map((agent) => agent.name));
     }
   }
 
@@ -470,12 +336,6 @@ export class LiveScanStore {
     }
     this.refreshTimers.clear();
     this.pendingRefreshPathCounts.clear();
-    for (const state of this.stablePaths.values()) {
-      if (state.timer) {
-        clearTimeout(state.timer);
-      }
-    }
-    this.stablePaths.clear();
 
     if (this.pendingEventTimer) {
       clearTimeout(this.pendingEventTimer);
@@ -495,9 +355,10 @@ export class LiveScanStore {
     this.pendingSearchIndexJobs = [];
     this.pendingEvent = null;
 
-    await Promise.all(this.watchers.map((watcher) => watcher.close()));
-    this.watchers = [];
-    this.fallbackWatchScopes.clear();
+    if (this.watcher) {
+      await this.watcher.dispose();
+      this.watcher = null;
+    }
   }
 
   private emit(event: SessionsUpdatedEvent): void {
@@ -934,242 +795,6 @@ export class LiveScanStore {
       appLogger.error(`${context}.error`, { error });
       console.error("[search] Background index sync failed:", error);
     }
-  }
-
-  private startWatching(): void {
-    const scopesByRoot = new Map<string, WatchScope[]>();
-
-    for (const agent of this.agents) {
-      const watchTargets = resolveAgentWatchTargets(agent.name);
-
-      if (watchTargets.length === 0) {
-        appLogger.debug("watch.skip", { agent: agent.name });
-        continue;
-      }
-
-      for (const target of watchTargets) {
-        const watchRootPath = closestWatchablePath(target.root ?? target.path);
-        if (!watchRootPath) continue;
-
-        let rootPath: string;
-        try {
-          rootPath = getWatchRoot(watchRootPath);
-        } catch (error) {
-          this.reportWatchError("watch.resolve.error", { path: watchRootPath, error });
-          continue;
-        }
-        const targetPath = toAbsolutePath(target.path);
-        const scopes = scopesByRoot.get(rootPath) ?? [];
-        if (
-          !scopes.some((scope) => scope.agentName === agent.name && scope.targetPath === targetPath)
-        ) {
-          scopes.push({ agentName: agent.name, targetPath });
-        }
-        scopesByRoot.set(rootPath, scopes);
-      }
-    }
-
-    for (const [rootPath, scopes] of scopesByRoot.entries()) {
-      const agents = Array.from(new Set(scopes.map((scope) => scope.agentName)));
-      appLogger.info("watch.start", {
-        root: rootPath,
-        agents,
-        targets: scopes.map((scope) => ({
-          agent: scope.agentName,
-          path: scope.targetPath,
-        })),
-      });
-
-      if (isRecursiveWatchSupported()) {
-        const started = this.watchDirectory(rootPath, scopes, true);
-        if (started) {
-          continue;
-        }
-      }
-
-      this.watchDirectoryTree(rootPath, scopes);
-    }
-  }
-
-  private watchDirectory(path: string, scopes: WatchScope[], recursive: boolean): boolean {
-    try {
-      const watcher = watch(path, { recursive }, (eventType, filename) => {
-        queueMicrotask(() => {
-          try {
-            const activeScopes = recursive
-              ? scopes
-              : (this.fallbackWatchScopes.get(path) ?? scopes);
-            this.handleWatchEvent(path, activeScopes, eventType, filename);
-            if (!recursive) {
-              this.watchNewDirectories(path, filename, activeScopes);
-            }
-          } catch (error) {
-            this.reportWatchError("watch.event.error", { path, recursive, error });
-          }
-        });
-      });
-
-      watcher.on("error", (error) => {
-        this.reportWatchError("watch.error", { path, recursive, error });
-      });
-
-      this.watchers.push(watcher);
-      return true;
-    } catch (error) {
-      if (recursive && isRecursiveWatchUnavailable(error)) {
-        appLogger.warn("watch.recursive_unavailable", { path, error });
-        return false;
-      }
-
-      this.reportWatchError("watch.start.error", { path, recursive, error });
-      return false;
-    }
-  }
-
-  private watchDirectoryTree(rootPath: string, scopes: WatchScope[]): void {
-    const pending = [rootPath];
-
-    while (pending.length > 0) {
-      const dirPath = pending.pop()!;
-      this.watchFallbackDirectory(dirPath, scopes);
-
-      try {
-        for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
-          if (entry.isDirectory()) {
-            pending.push(join(dirPath, entry.name));
-          }
-        }
-      } catch (error) {
-        this.reportWatchError("watch.scan.error", { path: dirPath, error });
-      }
-    }
-  }
-
-  private watchFallbackDirectory(path: string, scopes: WatchScope[]): void {
-    const existingScopes = this.fallbackWatchScopes.get(path);
-    if (existingScopes) {
-      mergeScopes(existingScopes, scopes);
-      return;
-    }
-
-    const storedScopes = [...scopes];
-    this.fallbackWatchScopes.set(path, storedScopes);
-    if (!this.watchDirectory(path, storedScopes, false)) {
-      this.fallbackWatchScopes.delete(path);
-    }
-  }
-
-  private watchNewDirectories(
-    watchPath: string,
-    filename: string | Buffer | null,
-    scopes: WatchScope[],
-  ): void {
-    const path = resolveWatchEventPath(watchPath, filename);
-    try {
-      if (statSync(path).isDirectory()) {
-        this.watchDirectoryTree(path, scopes);
-      }
-    } catch {}
-  }
-
-  private handleWatchEvent(
-    watchPath: string,
-    scopes: WatchScope[],
-    eventType: string,
-    filename: string | Buffer | null,
-  ): void {
-    const changedPath = resolveWatchEventPath(watchPath, filename);
-    const agentNames = new Set(
-      scopes
-        .filter((scope) => isRelatedPath(changedPath, scope.targetPath))
-        .map((scope) => scope.agentName),
-    );
-
-    if (agentNames.size === 0) {
-      return;
-    }
-
-    appLogger.debug("watch.event", {
-      event: eventType,
-      path: changedPath,
-      agents: Array.from(agentNames),
-    });
-    this.waitForStablePath(changedPath, agentNames);
-  }
-
-  private waitForStablePath(path: string, agentNames: Set<string>): void {
-    const existing = this.stablePaths.get(path);
-    if (existing) {
-      for (const agentName of agentNames) {
-        existing.agentNames.add(agentName);
-      }
-      return;
-    }
-
-    const state: StablePathState = {
-      path,
-      agentNames: new Set(agentNames),
-      lastMtimeMs: null,
-      lastSize: null,
-      stableSince: Date.now(),
-      timer: null,
-    };
-    this.stablePaths.set(path, state);
-    this.pollStablePath(path);
-  }
-
-  private pollStablePath(path: string): void {
-    const state = this.stablePaths.get(path);
-    if (!state) {
-      return;
-    }
-
-    let size: number;
-    let mtimeMs: number;
-    try {
-      const stat = statSync(path);
-      size = stat.size;
-      mtimeMs = stat.mtimeMs;
-    } catch {
-      this.stablePaths.delete(path);
-      this.scheduleRefreshForAgents(state.agentNames);
-      return;
-    }
-
-    const now = Date.now();
-    const unchanged = state.lastSize === size && state.lastMtimeMs === mtimeMs;
-    if (!unchanged) {
-      state.lastSize = size;
-      state.lastMtimeMs = mtimeMs;
-      state.stableSince = now;
-    }
-
-    if (unchanged && now - state.stableSince >= WRITE_STABILITY_THRESHOLD_MS) {
-      this.stablePaths.delete(path);
-      this.scheduleRefreshForAgents(state.agentNames);
-      return;
-    }
-
-    state.timer = setTimeout(() => this.pollStablePath(path), WRITE_STABILITY_POLL_MS);
-  }
-
-  private scheduleRefreshForAgents(agentNames: Set<string>): void {
-    for (const agentName of agentNames) {
-      this.pendingRefreshPathCounts.set(
-        agentName,
-        (this.pendingRefreshPathCounts.get(agentName) ?? 0) + 1,
-      );
-      const delayMs =
-        (this.byAgent[agentName]?.length ?? 0) === 0
-          ? EMPTY_AGENT_REFRESH_DEBOUNCE_MS
-          : REFRESH_DEBOUNCE_MS;
-      this.scheduleRefresh(agentName, delayMs);
-    }
-  }
-
-  private reportWatchError(event: string, data: Record<string, unknown>): void {
-    appLogger.error(event, data);
-    console.error("[watch] File watcher failed:", data.error);
   }
 
   private scheduleRefresh(agentName: string, delayMs = REFRESH_DEBOUNCE_MS): void {
