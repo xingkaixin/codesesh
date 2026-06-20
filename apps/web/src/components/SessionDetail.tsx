@@ -69,9 +69,29 @@ import {
   buildMessageDisplayModels,
   type MessageDisplayModel,
 } from "./session-detail/display-model";
+import { escapeRegExp, parseJsonText } from "./session-detail/utils";
+import {
+  type NormalizedToolState,
+  type ToolDisplayStrategy,
+  type ToolStatus,
+  compactText,
+  extractCommand,
+  formatToolOutput,
+  getOutputOrErrorText,
+  getToolTitle,
+  joinToolText,
+  normalizeEscapedNewlines,
+  normalizeToolLabel,
+  normalizeToolName,
+  parseInputCandidate,
+  toDisplayText,
+  toPlainText,
+  toRecord,
+  toStringValue,
+} from "./session-detail/tool-normalize";
 import { detectLanguageByFilePath } from "./tool-output/language";
 import { ToolOutputRenderer } from "./tool-output/ToolOutputRenderer";
-import type { DiffBlock, DiffLineItem, ToolOutputContent } from "./tool-output/types";
+import type { DiffBlock, DiffLineItem } from "./tool-output/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -80,28 +100,6 @@ import type { DiffBlock, DiffLineItem, ToolOutputContent } from "./tool-output/t
 interface SessionDetailProps {
   session: SessionData;
   highlightQuery?: string;
-}
-
-type ToolStatus = "running" | "completed" | "error";
-
-interface NormalizedToolState {
-  status: ToolStatus;
-  inputValue: unknown;
-  outputValue: unknown;
-  errorValue: unknown;
-  metadataValue: unknown;
-  inputText: string;
-  command: string;
-}
-
-interface ToolDisplayStrategy {
-  Icon: typeof LoaderCircle;
-  title: string;
-  secondaryText?: string;
-  details: ToolDetailItem[];
-  expandable: boolean;
-  showInputPreview: boolean;
-  outputContent: ToolOutputContent;
 }
 
 type FileChangeKind = "read" | "edit" | "write" | "delete";
@@ -167,9 +165,6 @@ const VIRTUALIZED_MESSAGE_OVERSCAN = 6;
 // Small helpers
 // ---------------------------------------------------------------------------
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 function buildHighlightPattern(query?: string): RegExp | null {
   const normalized = query?.trim();
@@ -202,121 +197,6 @@ function renderHighlightedText(text: string, query?: string) {
 
 function MessageMarkdown({ text, highlightQuery }: { text: string; highlightQuery?: string }) {
   return <MarkdownContent text={text} highlightQuery={highlightQuery} />;
-}
-
-function toDisplayText(value: unknown) {
-  if (value == null) return "";
-
-  if (typeof value === "string") {
-    const text = value.trim();
-    if (!text) return "";
-    try {
-      const parsed = JSON.parse(text) as unknown;
-      return JSON.stringify(parsed, null, 2);
-    } catch {
-      return value;
-    }
-  }
-
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") {
-      return `${value}`;
-    }
-    if (typeof value === "symbol") {
-      return value.description ? `Symbol(${value.description})` : "Symbol";
-    }
-    if (typeof value === "function") return "[Function]";
-    return "[Unserializable value]";
-  }
-}
-
-function parseInputCandidate(inputValue: unknown) {
-  if (typeof inputValue !== "string") return inputValue;
-  try {
-    return JSON.parse(inputValue) as unknown;
-  } catch {
-    return inputValue;
-  }
-}
-
-function extractToolTextSegments(value: unknown): string[] {
-  if (typeof value === "string") return [value];
-  if (Array.isArray(value)) return value.flatMap((item) => extractToolTextSegments(item));
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    if (typeof record.text === "string") return [record.text];
-    if (record.content !== undefined) return extractToolTextSegments(record.content);
-  }
-  return [];
-}
-
-function stripSystemTag(text: string) {
-  return text
-    .replace(/^<system>/i, "")
-    .replace(/<\/system>$/i, "")
-    .trim();
-}
-
-function joinToolText(value: unknown, includeSystem = true) {
-  const segments = extractToolTextSegments(value)
-    .map((segment) => segment.trim())
-    .filter((segment) => {
-      if (includeSystem) return Boolean(segment);
-      return Boolean(segment) && !/^<system>[\s\S]*<\/system>$/i.test(segment);
-    });
-
-  if (segments.length === 0) return "";
-
-  return segments
-    .map((segment) =>
-      includeSystem && /^<system>[\s\S]*<\/system>$/i.test(segment)
-        ? stripSystemTag(segment)
-        : segment,
-    )
-    .join("\n");
-}
-
-function extractCommand(inputValue: unknown) {
-  const parsed = parseInputCandidate(inputValue);
-  if (parsed && typeof parsed === "object") {
-    const input = parsed as { cmd?: unknown; command?: unknown };
-    if (typeof input.cmd === "string") return input.cmd;
-    if (typeof input.command === "string") return input.command;
-  }
-  return "";
-}
-
-function compactText(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function toRecord(value: unknown) {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return {};
-}
-
-function toPlainText(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function toStringValue(value: unknown) {
-  return typeof value === "string" ? value : "";
-}
-
-function normalizeToolLabel(part: MessagePart) {
-  if (typeof part.title === "string" && part.title.trim()) {
-    return cleanToolTitle(part.title);
-  }
-  if (typeof part.tool === "string" && part.tool.trim()) return cleanToolTitle(part.tool);
-  return "tool";
-}
-
-function normalizeToolName(part: MessagePart) {
-  return normalizeToolLabel(part).trim().toLowerCase();
 }
 
 function buildToolAnchorId(messageIndex: number, toolIndex: number) {
@@ -602,14 +482,6 @@ function scrollToToolAnchor(anchorId: string, prepareAnchor?: () => void) {
   element.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-function parseJsonText<T>(value: string): T | null {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
-}
-
 function measureSessionDetailWork<T>(id: string, compute: () => T): T {
   if (!isRenderProfilerEnabled()) return compute();
 
@@ -657,35 +529,6 @@ function DeferredInteractiveReceipt({
       <InteractiveReceipt key={session.id} session={session} toc={toc} />
     </RenderProfiler>
   );
-}
-
-function normalizeEscapedNewlines(text: string) {
-  return text.replace(/\\n/g, "\n");
-}
-
-function cleanToolTitle(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  return trimmed.replace(/^tool:\s*/i, "").replace(/^\.+(?=\w)/, "");
-}
-
-function getToolTitle(tool: MessagePart, fallback = "Tool") {
-  return cleanToolTitle(toPlainText(tool.title)) || toPlainText(tool.tool) || fallback;
-}
-
-function formatToolOutput(value: unknown) {
-  const structuredText = joinToolText(value);
-  const text = structuredText || toDisplayText(value);
-  const normalized = normalizeEscapedNewlines(text);
-  return normalized || "No output captured.";
-}
-
-function getOutputOrErrorText(state: NormalizedToolState) {
-  const outputText = formatToolOutput(state.outputValue);
-  if (outputText !== "No output captured.") return outputText;
-  const errorText = formatToolOutput(state.errorValue);
-  if (errorText !== "No output captured.") return errorText;
-  return "No output captured.";
 }
 
 function extractCodexNodeReplTextOutput(outputText: string) {
