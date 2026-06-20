@@ -1,5 +1,4 @@
 /* eslint-disable react/no-array-index-key */
-import { diffLines, type Change } from "diff";
 import {
   Funnel,
   BookOpenText,
@@ -36,7 +35,7 @@ import {
   type ReactNode,
 } from "react";
 import { ModelConfig } from "../config";
-import type { Message, MessagePart, SessionData, SessionFileActivity } from "../lib/api";
+import type { Message, MessagePart, SessionData } from "../lib/api";
 import { InteractiveReceipt } from "./InteractiveReceipt";
 import { MarkdownContent } from "./MarkdownContent";
 import {
@@ -65,10 +64,7 @@ import {
   type SessionDetailToc,
   type TocFilterId,
 } from "./session-detail/toc";
-import {
-  buildMessageDisplayModels,
-  type MessageDisplayModel,
-} from "./session-detail/display-model";
+import { buildMessageDisplayModels } from "./session-detail/display-model";
 import { escapeRegExp, parseJsonText } from "./session-detail/utils";
 import {
   type NormalizedToolState,
@@ -81,7 +77,6 @@ import {
   getToolTitle,
   joinToolText,
   normalizeEscapedNewlines,
-  normalizeToolLabel,
   normalizeToolName,
   parseInputCandidate,
   toDisplayText,
@@ -89,9 +84,27 @@ import {
   toRecord,
   toStringValue,
 } from "./session-detail/tool-normalize";
+import {
+  type FileChangeKind,
+  type FileChangeSummary,
+  type FileChangeSummaryItem,
+  buildFileChangeSummary,
+  buildFileChangeSummaryFromActivity,
+} from "./session-detail/file-change";
+import {
+  formatTrackedPath,
+  getDisplayPath,
+  getDisplayTextWithRelativePaths,
+  getFilePathFromInput,
+} from "./session-detail/path-extract";
+import {
+  buildKimiEditDiffBlocks,
+  buildPiEditDiffBlocks,
+  buildStructuredDiffFromTexts,
+  extractEditDiff,
+} from "./session-detail/diff";
 import { detectLanguageByFilePath } from "./tool-output/language";
 import { ToolOutputRenderer } from "./tool-output/ToolOutputRenderer";
-import type { DiffBlock, DiffLineItem } from "./tool-output/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -100,32 +113,6 @@ import type { DiffBlock, DiffLineItem } from "./tool-output/types";
 interface SessionDetailProps {
   session: SessionData;
   highlightQuery?: string;
-}
-
-type FileChangeKind = "read" | "edit" | "write" | "delete";
-
-interface FileChangeRecord {
-  kind: FileChangeKind;
-  path: string;
-  anchorId: string;
-  time: number;
-  toolLabel: string;
-}
-
-interface FileChangeSummaryItem {
-  path: string;
-  count: number;
-  latestTime: number;
-  latestAnchorId: string;
-  toolLabel: string;
-  anchors: Array<{ anchorId: string; time: number; toolLabel: string }>;
-}
-
-interface FileChangeSummary {
-  read: FileChangeSummaryItem[];
-  edit: FileChangeSummaryItem[];
-  write: FileChangeSummaryItem[];
-  delete: FileChangeSummaryItem[];
 }
 
 // ---------------------------------------------------------------------------
@@ -196,267 +183,6 @@ function renderHighlightedText(text: string, query?: string) {
 
 function MessageMarkdown({ text, highlightQuery }: { text: string; highlightQuery?: string }) {
   return <MarkdownContent text={text} highlightQuery={highlightQuery} />;
-}
-
-function buildToolAnchorId(messageIndex: number, toolIndex: number) {
-  return `tool-${messageIndex}-${toolIndex}`;
-}
-
-function looksLikeFilePath(value: string) {
-  const text = value.trim();
-  if (!text || text.length > 300) return false;
-  if (text.includes("\n")) return false;
-  if (/^[a-z]+:\/\//i.test(text)) return false;
-  if (/[<>{}]/.test(text)) return false;
-  if (text.startsWith("/")) return true;
-  if (text.startsWith("./") || text.startsWith("../") || text.startsWith("~/")) return true;
-  if (text.includes("/") || text.includes("\\")) return true;
-  return /^[A-Za-z0-9_.@-]+\.[A-Za-z0-9_-]+$/.test(text);
-}
-
-function shouldTreatAsPathKey(key: string) {
-  const normalized = key.trim().toLowerCase();
-  if (!normalized) return false;
-  if (
-    normalized.includes("command") ||
-    normalized.includes("content") ||
-    normalized.includes("text") ||
-    normalized.includes("prompt") ||
-    normalized.includes("url") ||
-    normalized.includes("body") ||
-    normalized.includes("title") ||
-    normalized.includes("description") ||
-    normalized === "cwd" ||
-    normalized === "workdir" ||
-    normalized === "directory"
-  ) {
-    return false;
-  }
-  return (
-    normalized === "path" ||
-    normalized === "paths" ||
-    normalized.includes("file") ||
-    normalized.includes("path")
-  );
-}
-
-function collectPathsFromValue(
-  value: unknown,
-  keyHint: string,
-  paths: Set<string>,
-  depth = 0,
-): void {
-  if (value == null || depth > 4) return;
-
-  if (typeof value === "string") {
-    if (shouldTreatAsPathKey(keyHint) && looksLikeFilePath(value)) {
-      paths.add(value.trim());
-    }
-    return;
-  }
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      collectPathsFromValue(item, keyHint, paths, depth + 1);
-    }
-    return;
-  }
-
-  if (typeof value === "object") {
-    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-      collectPathsFromValue(nested, key, paths, depth + 1);
-    }
-  }
-}
-
-function extractPathsFromToolInput(inputValue: unknown) {
-  const paths = new Set<string>();
-  collectPathsFromValue(inputValue, "", paths);
-  return [...paths];
-}
-
-function getToolInputValue(part: MessagePart) {
-  return part.state?.arguments ?? part.state?.input ?? part.input ?? null;
-}
-
-function classifyToolKind(part: MessagePart): FileChangeKind | null {
-  const toolName = normalizeToolName(part);
-  if (toolName === "read") return "read";
-  if (
-    toolName === "edit" ||
-    toolName === "multiedit" ||
-    toolName === "apply_patch" ||
-    toolName === "notebookedit"
-  ) {
-    return "edit";
-  }
-  if (toolName === "write" || toolName === "create_file" || toolName === "write_file") {
-    return "write";
-  }
-  if (toolName === "delete" || toolName === "delete_file") {
-    return "delete";
-  }
-  return null;
-}
-
-function summarizeFileChangeItems(records: FileChangeRecord[]): FileChangeSummaryItem[] {
-  const grouped = new Map<string, FileChangeSummaryItem>();
-
-  for (const record of records) {
-    const current = grouped.get(record.path);
-    if (current) {
-      current.count += 1;
-      current.anchors.push({
-        anchorId: record.anchorId,
-        time: record.time,
-        toolLabel: record.toolLabel,
-      });
-      if (record.time >= current.latestTime) {
-        current.latestTime = record.time;
-        current.latestAnchorId = record.anchorId;
-        current.toolLabel = record.toolLabel;
-      }
-      continue;
-    }
-
-    grouped.set(record.path, {
-      path: record.path,
-      count: 1,
-      latestTime: record.time,
-      latestAnchorId: record.anchorId,
-      toolLabel: record.toolLabel,
-      anchors: [{ anchorId: record.anchorId, time: record.time, toolLabel: record.toolLabel }],
-    });
-  }
-
-  return [...grouped.values()]
-    .map((item) => ({
-      ...item,
-      anchors: item.anchors.toSorted((a, b) => a.time - b.time),
-    }))
-    .toSorted((a, b) => {
-      if (b.latestTime !== a.latestTime) return b.latestTime - a.latestTime;
-      return a.path.localeCompare(b.path);
-    });
-}
-
-function buildFileChangeSummary(messages: MessageDisplayModel[]): {
-  toolAnchorIds: Map<MessagePart, string>;
-  anchorMessageIndexes: Map<string, number>;
-  summary: FileChangeSummary;
-} {
-  const toolAnchorIds = new Map<MessagePart, string>();
-  const anchorMessageIndexes = new Map<string, number>();
-  const fileChanges: Record<FileChangeKind, FileChangeRecord[]> = {
-    read: [],
-    edit: [],
-    write: [],
-    delete: [],
-  };
-
-  messages.forEach(({ msg: message, blocks, index: messageIndex }) => {
-    let toolIndex = 0;
-
-    for (const block of blocks) {
-      if (block.type !== "tool") continue;
-
-      for (const part of block.parts) {
-        const anchorId = buildToolAnchorId(messageIndex, toolIndex);
-        toolIndex += 1;
-        toolAnchorIds.set(part, anchorId);
-        anchorMessageIndexes.set(anchorId, messageIndex);
-
-        const inputValue = getToolInputValue(part);
-        const toolLabel = normalizeToolLabel(part);
-        const time = part.time_created ?? message.time_created;
-
-        const patchEntries = getCodexPatchEntries(inputValue);
-        if (patchEntries.length > 0) {
-          for (const entry of patchEntries) {
-            const path = (entry.path || entry.oldPath).trim();
-            if (!path) continue;
-
-            const kind =
-              entry.type === "write_file"
-                ? "write"
-                : entry.type === "delete_file"
-                  ? "delete"
-                  : "edit";
-            fileChanges[kind].push({ kind, path, anchorId, time, toolLabel });
-          }
-          continue;
-        }
-
-        const kind = classifyToolKind(part);
-        if (!kind) continue;
-
-        const paths = extractPathsFromToolInput(inputValue);
-        for (const path of paths) {
-          fileChanges[kind].push({ kind, path, anchorId, time, toolLabel });
-        }
-      }
-    }
-  });
-
-  return {
-    toolAnchorIds,
-    anchorMessageIndexes,
-    summary: {
-      read: summarizeFileChangeItems(fileChanges.read),
-      edit: summarizeFileChangeItems(fileChanges.edit),
-      write: summarizeFileChangeItems(fileChanges.write),
-      delete: summarizeFileChangeItems(fileChanges.delete),
-    },
-  };
-}
-
-function buildFileChangeSummaryFromActivity(
-  activity: SessionFileActivity[] | undefined,
-  anchorSummary: FileChangeSummary,
-): FileChangeSummary {
-  if (!activity) return anchorSummary;
-
-  const fromActivity: FileChangeSummary = {
-    read: [],
-    edit: [],
-    write: [],
-    delete: [],
-  };
-  const anchorMap = new Map<string, FileChangeSummaryItem>();
-
-  for (const kind of ["read", "edit", "write", "delete"] as const) {
-    for (const item of anchorSummary[kind]) {
-      anchorMap.set(`${kind}\0${item.path}`, item);
-    }
-  }
-
-  for (const item of activity) {
-    const anchors = anchorMap.get(`${item.kind}\0${item.path}`);
-    fromActivity[item.kind].push({
-      path: item.path,
-      count: item.count,
-      latestTime: item.latest_time,
-      latestAnchorId: anchors?.latestAnchorId ?? "",
-      toolLabel: anchors?.toolLabel ?? item.kind,
-      anchors: anchors?.anchors ?? [],
-    });
-  }
-
-  for (const kind of ["read", "edit", "write", "delete"] as const) {
-    fromActivity[kind].sort((a, b) => {
-      if (b.latestTime !== a.latestTime) return b.latestTime - a.latestTime;
-      return a.path.localeCompare(b.path);
-    });
-  }
-
-  return fromActivity;
-}
-
-function formatTrackedPath(path: string, baseDirectory: string) {
-  if (path.startsWith(`${baseDirectory}/`)) {
-    return path.slice(baseDirectory.length + 1);
-  }
-  return path;
 }
 
 function scrollToToolAnchor(anchorId: string, prepareAnchor?: () => void) {
@@ -546,18 +272,6 @@ function extractCodexNodeReplTextOutput(outputText: string) {
   return text || outputText;
 }
 
-function getFilePathFromInput(inputValue: unknown) {
-  const input = toRecord(inputValue);
-  const filePath =
-    toPlainText(input.filePath) ||
-    toPlainText(input.file_path) ||
-    toPlainText(input.path) ||
-    toPlainText(input.targetFile) ||
-    toPlainText(input.effectiveUri) ||
-    toPlainText(input.relativeWorkspacePath);
-  return filePath || "";
-}
-
 function getCursorOutputRecord(rawOutput: unknown) {
   if (rawOutput && typeof rawOutput === "object" && !Array.isArray(rawOutput)) {
     return rawOutput as Record<string, unknown>;
@@ -615,103 +329,6 @@ function formatCursorSearchOutput(rawOutput: unknown) {
   return lines.length > 0 ? lines.join("\n") : "No output captured.";
 }
 
-function buildStructuredDiffFromTexts(
-  filePath: string,
-  oldValue: string,
-  newValue: string,
-): DiffBlock[] {
-  if (!oldValue.trim() && !newValue.trim()) return [];
-  return [
-    {
-      label: getDiffBlockLabel(filePath),
-      lines: diffPartsToLines(
-        diffLines(normalizeEscapedNewlines(oldValue), normalizeEscapedNewlines(newValue)),
-      ),
-    },
-  ];
-}
-
-function createDiffBlock(oldValue: string, newValue: string) {
-  const oldLines = normalizeEscapedNewlines(oldValue).split("\n");
-  const newLines = normalizeEscapedNewlines(newValue).split("\n");
-  const diffLines = [
-    "@@",
-    ...oldLines.map((line) => `- ${line}`),
-    ...newLines.map((line) => `+ ${line}`),
-  ];
-  return diffLines.join("\n");
-}
-
-function splitDiffChunkLines(value: string) {
-  const normalized = normalizeEscapedNewlines(value);
-  const lines = normalized.split("\n");
-  if (normalized.endsWith("\n")) lines.pop();
-  return lines;
-}
-
-function diffPartsToLines(parts: Change[]): DiffLineItem[] {
-  return parts.flatMap((part) => {
-    const type: DiffLineItem["type"] = part.added ? "add" : part.removed ? "remove" : "context";
-    return splitDiffChunkLines(part.value).map((line) => ({ type, text: line }));
-  });
-}
-
-function getKimiEditEntries(inputValue: unknown) {
-  const input = toRecord(inputValue);
-  const rawEdit = input.edit;
-  if (Array.isArray(rawEdit)) return rawEdit;
-  if (rawEdit && typeof rawEdit === "object") return [rawEdit];
-  return [];
-}
-
-function getDiffBlockLabel(filePath: string) {
-  const normalizedPath = filePath.trim();
-  if (!normalizedPath) return "edit";
-  const fileName = normalizedPath.split("/").pop() || normalizedPath;
-  return fileName === normalizedPath ? fileName : `${fileName} · ${normalizedPath}`;
-}
-
-function buildKimiEditDiffBlocks(state: NormalizedToolState, filePath: string): DiffBlock[] {
-  const edits = getKimiEditEntries(state.inputValue);
-  const label = getDiffBlockLabel(filePath);
-
-  return edits
-    .map((entry) => {
-      const edit = toRecord(entry);
-      const oldValue = toStringValue(edit.old);
-      const newValue = toStringValue(edit.new);
-      if (!oldValue.trim() && !newValue.trim()) return null;
-      return {
-        label,
-        lines: diffPartsToLines(
-          diffLines(normalizeEscapedNewlines(oldValue), normalizeEscapedNewlines(newValue)),
-        ),
-      };
-    })
-    .filter((block): block is DiffBlock => block != null && block.lines.length > 0);
-}
-
-function getDisplayPath(filePath: string, baseDirectory?: string) {
-  const normalizedPath = filePath.trim();
-  const normalizedBase = (baseDirectory ?? "").replace(/\/+$/, "");
-  if (!normalizedPath || !normalizedBase) return normalizedPath;
-  if (normalizedPath === normalizedBase) return ".";
-  if (normalizedPath.startsWith(`${normalizedBase}/`)) {
-    return normalizedPath.slice(normalizedBase.length + 1);
-  }
-  return normalizedPath;
-}
-
-function getDisplayTextWithRelativePaths(text: string, baseDirectory?: string) {
-  const normalizedBase = (baseDirectory ?? "").replace(/\/+$/, "");
-  if (!text || !normalizedBase) return text;
-
-  return text.replace(
-    new RegExp(`${escapeRegExp(normalizedBase)}(?=$|/|[\\s"'\\)\\]}:;,])`, "g"),
-    ".",
-  );
-}
-
 function getPiTodoTaskFromDetails(state: NormalizedToolState) {
   const input = toRecord(state.inputValue);
   const details = toRecord(state.metadataValue);
@@ -731,41 +348,6 @@ function getPiTodoStatusChange(state: NormalizedToolState) {
   return `${match[1]} -> ${match[2]}`;
 }
 
-function buildPiEditDiffBlocks(state: NormalizedToolState, filePath: string): DiffBlock[] {
-  const input = toRecord(state.inputValue);
-  const edits = Array.isArray(input.edits) ? input.edits : [];
-  const label = getDiffBlockLabel(filePath);
-  const blocks = edits
-    .map((entry) => {
-      const edit = toRecord(entry);
-      const oldValue = toStringValue(edit.oldText) || toStringValue(edit.old);
-      const newValue = toStringValue(edit.newText) || toStringValue(edit.new);
-      if (!oldValue.trim() && !newValue.trim()) return null;
-      return {
-        label,
-        lines: diffPartsToLines(
-          diffLines(normalizeEscapedNewlines(oldValue), normalizeEscapedNewlines(newValue)),
-        ),
-      };
-    })
-    .filter((block): block is DiffBlock => block != null && block.lines.length > 0);
-
-  if (blocks.length > 0) return blocks;
-
-  const metadata = toRecord(state.metadataValue);
-  const patch = toStringValue(metadata.patch) || toStringValue(metadata.diff);
-  if (!patch.trim()) return [];
-  return [
-    {
-      label,
-      lines: patch.split("\n").map((line) => ({
-        type: line.startsWith("+") ? "add" : line.startsWith("-") ? "remove" : "context",
-        text: line,
-      })),
-    },
-  ];
-}
-
 function buildPiSubagentResultDetails(text: string): ToolDetailItem[] {
   const firstLine = text.split("\n")[0] ?? "";
   const agentMatch = firstLine.match(/^Agent:\s*(.+)$/i);
@@ -774,27 +356,6 @@ function buildPiSubagentResultDetails(text: string): ToolDetailItem[] {
   if (agentMatch?.[1]) details.push({ label: "Agent", value: agentMatch[1].trim() });
   if (summaryLine) details.push({ label: "Summary", value: summaryLine.trim() });
   return details;
-}
-
-function extractEditDiff(state: NormalizedToolState) {
-  const metadata = toRecord(state.metadataValue);
-  const diffText = toStringValue(metadata.diff);
-  if (diffText.trim()) return normalizeEscapedNewlines(diffText);
-
-  const edits = getKimiEditEntries(state.inputValue);
-  const generatedDiff = edits
-    .map((entry) => {
-      const edit = toRecord(entry);
-      const oldValue = toStringValue(edit.old);
-      const newValue = toStringValue(edit.new);
-      if (!oldValue.trim() && !newValue.trim()) return "";
-      return createDiffBlock(oldValue, newValue);
-    })
-    .filter(Boolean)
-    .join("\n\n");
-  if (generatedDiff.trim()) return generatedDiff;
-
-  return getOutputOrErrorText(state);
 }
 
 function extractWriteContent(state: NormalizedToolState) {
