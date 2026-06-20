@@ -3,6 +3,13 @@ export type { ProviderRoots } from "./paths.js";
 export { filterSessions, scanSessions, scanSessionsAsync } from "./scanner.js";
 export type { ScanResult, ScanOptions } from "./scanner.js";
 export {
+  attachMissingProjectIdentities,
+  buildAgentCacheMeta,
+  computeSessionDiff,
+  sessionSignature,
+  sortSessions,
+} from "./orchestrate.js";
+export {
   loadCachedSessions,
   loadCachedSessionData,
   isAgentCacheInitialized,
