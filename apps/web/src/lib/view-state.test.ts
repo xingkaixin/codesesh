@@ -18,12 +18,20 @@ describe("parseViewState", () => {
 
   it("parses agent path", () => {
     const result = parseViewState("/claudecode", agents);
-    expect(result).toEqual({ mode: "agent", activeAgentKey: "claudecode", activeSessionSlug: null });
+    expect(result).toEqual({
+      mode: "agent",
+      activeAgentKey: "claudecode",
+      activeSessionSlug: null,
+    });
   });
 
   it("parses session path", () => {
     const result = parseViewState("/codex/abc-123", agents);
-    expect(result).toEqual({ mode: "session", activeAgentKey: "codex", activeSessionSlug: "abc-123" });
+    expect(result).toEqual({
+      mode: "session",
+      activeAgentKey: "codex",
+      activeSessionSlug: "abc-123",
+    });
   });
 
   it("returns missingAgent for unknown agent", () => {
