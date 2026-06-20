@@ -7,9 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type Dispatch,
   type ReactNode,
-  type SetStateAction,
 } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ModelConfig } from "./config";
@@ -18,14 +16,12 @@ import type {
   AppConfig,
   BookmarkedSessionSnapshot,
   DashboardData,
-  FileActivityKind,
   SearchRequestOptions,
   SearchResult,
   SessionHead,
   SessionData,
   ScanStatusEvent,
   SessionsUpdatedEvent,
-  SmartTag,
   ProjectGroup,
 } from "./lib/api";
 import {
@@ -54,7 +50,7 @@ import { BookmarkButton } from "./components/BookmarkButton";
 import { CopyResumeButton } from "./components/CopyResumeButton";
 import { SessionTreeSidebar } from "./components/SessionTreeSidebar";
 import { RenderProfiler } from "./components/RenderProfiler";
-import { SMART_TAG_LABELS, SmartTagChips } from "./components/SmartTagChips";
+import { SmartTagChips } from "./components/SmartTagChips";
 import {
   clearLegacyBookmarks,
   getSessionBookmarkKey,
@@ -63,6 +59,15 @@ import {
   toBookmarkedSessionSnapshot,
 } from "./lib/bookmarks";
 import { parseViewState } from "./lib/view-state";
+import { BrowseByToggle } from "./components/app/BrowseByToggle";
+import { SidebarFlatSessionList } from "./components/app/SidebarFlatSessionList";
+import { SearchResultsPanel } from "./components/app/SearchResultsPanel";
+import { COST_RANGE_OPTIONS } from "./components/app/SearchFilterBar";
+import {
+  type BrowseBy,
+  type SearchFilterState,
+  type SearchProjectOption,
+} from "./components/app/types";
 import {
   formatAgentScanProgress,
   formatRelativeTime,
@@ -81,21 +86,8 @@ import {
   getSessionRouteKey,
 } from "./lib/session-indexes";
 
-type BrowseBy = "agents" | "projects";
-
 function getProjectGroupIdentity(project: ProjectGroup): ProjectRouteIdentity {
   return { kind: project.identityKind, key: project.identityKey };
-}
-
-function toSafeSnippetHtml(snippet: string): string {
-  return snippet
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;")
-    .replaceAll("&lt;mark&gt;", "<mark>")
-    .replaceAll("&lt;/mark&gt;", "</mark>");
 }
 
 interface BreadcrumbItem {
@@ -103,65 +95,7 @@ interface BreadcrumbItem {
   to?: string;
 }
 
-type CostRangeId = "paid" | "one_plus" | "ten_plus";
-
-interface SearchFilterState {
-  agent?: string;
-  projectKey?: string;
-  tag?: SmartTag;
-  tool?: string;
-  fileKind?: FileActivityKind;
-  costRange?: CostRangeId;
-}
-
-interface SearchProjectOption {
-  key: string;
-  label: string;
-  count: number;
-  showCount?: boolean;
-}
-
 const SHORTCUT_HINT_STORAGE_KEY = "codesesh.shortcuts-hint-dismissed";
-
-const SMART_TAG_OPTIONS: SmartTag[] = [
-  "bugfix",
-  "refactoring",
-  "feature-dev",
-  "testing",
-  "docs",
-  "git-ops",
-  "build-deploy",
-  "exploration",
-  "planning",
-];
-
-const SEARCH_TOOL_OPTIONS = ["apply_patch", "bash", "read", "edit", "grep"] as const;
-
-const FILE_ACTIVITY_OPTIONS: Array<{ kind: FileActivityKind; label: string }> = [
-  { kind: "read", label: "Read" },
-  { kind: "edit", label: "Edit" },
-  { kind: "write", label: "Write" },
-  { kind: "delete", label: "Delete" },
-];
-
-const COST_RANGE_OPTIONS: Array<{
-  id: CostRangeId;
-  label: string;
-  costMin: number;
-}> = [
-  { id: "paid", label: "Cost > $0", costMin: 0.000001 },
-  { id: "one_plus", label: "Cost >= $1", costMin: 1 },
-  { id: "ten_plus", label: "Cost >= $10", costMin: 10 },
-];
-
-const SEARCH_MATCH_LABELS: Record<SearchResult["matchType"], string> = {
-  recent: "Recent",
-  title: "Title",
-  user_message: "User message",
-  assistant_reply: "Assistant reply",
-  tool_output: "Tool output",
-  file_path: "File path",
-};
 
 const SHORTCUT_GROUPS = [
   {
@@ -197,127 +131,6 @@ function isEditableTarget(target: EventTarget | null) {
     tagName === "textarea" ||
     tagName === "select" ||
     target.isContentEditable
-  );
-}
-
-function BrowseByToggle({
-  value,
-  onChange,
-  projectsDisabled = false,
-}: {
-  value: BrowseBy;
-  onChange: (value: BrowseBy) => void;
-  projectsDisabled?: boolean;
-}) {
-  const options: Array<{ value: BrowseBy; label: string }> = [
-    { value: "projects", label: "Projects" },
-    { value: "agents", label: "Agents" },
-  ];
-
-  return (
-    <div role="radiogroup" aria-label="Browse by" className="grid gap-1.5">
-      {options.map((option) => {
-        const active = value === option.value;
-        const disabled = option.value === "projects" && projectsDisabled;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            disabled={disabled}
-            onClick={() => onChange(option.value)}
-            className={`console-mono flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left text-xs transition-colors ${
-              disabled
-                ? "cursor-not-allowed border-transparent text-[var(--console-muted)] opacity-45"
-                : active
-                  ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
-                  : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
-            }`}
-            title={
-              disabled ? "Project grouping is available after the current scan finishes" : undefined
-            }
-          >
-            <span
-              className={`flex size-3 shrink-0 items-center justify-center rounded-full border ${
-                active ? "border-[var(--console-accent)]" : "border-[var(--console-border-strong)]"
-              }`}
-            >
-              {active ? (
-                <span className="size-1.5 rounded-full bg-[var(--console-accent)]" />
-              ) : null}
-            </span>
-            <span>{option.label}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function SidebarFlatSessionList({
-  sessions,
-  activeSessionId,
-  selectedSessionId,
-  bookmarkedSessionIds,
-  onSelectSession,
-  onToggleBookmark,
-}: {
-  sessions: SessionHead[];
-  activeSessionId: string | null;
-  selectedSessionId: string | null;
-  bookmarkedSessionIds: Set<string>;
-  onSelectSession: (session: SessionHead) => void;
-  onToggleBookmark: (session: SessionHead) => void;
-}) {
-  return (
-    <div className="console-scrollbar h-[min(560px,calc(100vh-410px))] min-h-56 overflow-y-auto">
-      <ul className="space-y-1">
-        {sessions.map((sessionItem) => {
-          const agentKey = getSessionAgentKey(sessionItem);
-          const agentConfig = ModelConfig.agents[agentKey];
-          const active = activeSessionId === sessionItem.id;
-          const selected = selectedSessionId === sessionItem.id;
-          return (
-            <li key={sessionItem.slug}>
-              <div
-                className={`flex items-start gap-1 rounded-sm border px-2 py-1.5 transition-colors ${
-                  active || selected
-                    ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
-                    : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => onSelectSession(sessionItem)}
-                  className="min-w-0 flex-1 text-left"
-                >
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    {agentConfig?.icon ? (
-                      <img
-                        src={agentConfig.icon}
-                        alt={agentConfig.name}
-                        className="size-3.5 shrink-0 object-contain"
-                      />
-                    ) : null}
-                    <span className="console-mono line-clamp-1 text-xs text-[var(--console-text)]">
-                      {sessionItem.title}
-                    </span>
-                  </span>
-                  <span className="console-mono mt-0.5 block truncate text-[10px] text-[var(--console-muted)]">
-                    {formatRelativeTime(sessionItem.time_updated ?? sessionItem.time_created)}
-                  </span>
-                </button>
-                <BookmarkButton
-                  active={bookmarkedSessionIds.has(sessionItem.id)}
-                  onToggle={() => onToggleBookmark(sessionItem)}
-                />
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
   );
 }
 
@@ -2023,286 +1836,5 @@ export default function App() {
         </div>
       ) : null}
     </div>
-  );
-}
-
-function SearchResultsPanel({
-  query,
-  loading,
-  results,
-  agentNameMap,
-  agents,
-  projects,
-  filters,
-  onChangeFilters,
-  onOpenResult,
-  selectedIndex,
-  registerResultRef,
-}: {
-  query: string;
-  loading: boolean;
-  results: SearchResult[];
-  agentNameMap: Map<string, string>;
-  agents: AgentInfo[];
-  projects: SearchProjectOption[];
-  filters: SearchFilterState;
-  onChangeFilters: Dispatch<SetStateAction<SearchFilterState>>;
-  onOpenResult: () => void;
-  selectedIndex: number;
-  registerResultRef: (key: string, node: HTMLAnchorElement | null) => void;
-}) {
-  const filterBar = (
-    <SearchFilterBar
-      agents={agents}
-      projects={projects}
-      filters={filters}
-      onChangeFilters={onChangeFilters}
-    />
-  );
-
-  if (loading) {
-    return (
-      <div className="flex flex-col gap-3">
-        {filterBar}
-        <div className="grid gap-3">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <div
-              key={index}
-              className="animate-pulse rounded-sm border border-[var(--console-border)] bg-white/80 p-4"
-            >
-              <div className="h-3 w-32 rounded bg-[var(--console-surface-muted)]" />
-              <div className="mt-3 h-4 w-2/3 rounded bg-[var(--console-surface-muted)]" />
-              <div className="mt-2 h-3 w-full rounded bg-[var(--console-surface-muted)]" />
-              <div className="mt-1 h-3 w-5/6 rounded bg-[var(--console-surface-muted)]" />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (results.length === 0) {
-    return (
-      <div className="flex flex-col gap-3">
-        {filterBar}
-        <div className="rounded-sm border border-[var(--console-border)] bg-white/80 p-6">
-          <h2 className="console-mono text-sm font-semibold text-[var(--console-text)]">
-            {query ? "No matches" : "No recent sessions"}
-          </h2>
-          {query ? (
-            <p className="console-mono mt-2 text-xs text-[var(--console-muted)]">Query: {query}</p>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-3">
-      {filterBar}
-      <div className="console-mono text-[11px] text-[var(--console-muted)]">
-        Navigate j k · Open Enter · Exit Esc
-      </div>
-      {results.map((result, index) => {
-        const agentKey = result.agentName.toLowerCase();
-        const agentLabel = agentNameMap.get(agentKey) ?? result.agentName;
-        const resultKey = `${result.agentName}/${result.session.id}`;
-
-        return (
-          <Link
-            key={resultKey}
-            ref={(node) => registerResultRef(resultKey, node)}
-            to={`/${agentKey}/${result.session.id}`}
-            state={{ searchQuery: query }}
-            onClick={onOpenResult}
-            className={`rounded-sm border bg-white/85 p-4 transition-colors hover:border-[var(--console-border-strong)] hover:bg-white ${
-              index === selectedIndex
-                ? "border-[var(--console-border-strong)]"
-                : "border-[var(--console-border)]"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--console-muted)]">
-                {agentLabel}
-              </span>
-              <span className="console-mono rounded-sm border border-[var(--console-border)] bg-white px-1.5 py-0.5 text-[10px] uppercase text-[var(--console-muted)]">
-                {SEARCH_MATCH_LABELS[result.matchType]}
-              </span>
-              <span className="console-mono text-[11px] text-[var(--console-muted)]">
-                {result.session.directory}
-              </span>
-            </div>
-            <h2 className="console-mono mt-3 text-sm font-semibold text-[var(--console-text)]">
-              {result.session.title}
-            </h2>
-            <SmartTagChips tags={result.session.smart_tags} className="mt-2" />
-            <p
-              className="console-mono mt-2 text-xs leading-6 text-[var(--console-muted)] [&_mark]:bg-[var(--console-accent)] [&_mark]:px-0.5 [&_mark]:text-white"
-              dangerouslySetInnerHTML={{
-                __html: toSafeSnippetHtml(result.snippet || result.session.title),
-              }}
-            />
-          </Link>
-        );
-      })}
-    </div>
-  );
-}
-
-function SearchFilterBar({
-  agents,
-  projects,
-  filters,
-  onChangeFilters,
-}: {
-  agents: AgentInfo[];
-  projects: SearchProjectOption[];
-  filters: SearchFilterState;
-  onChangeFilters: Dispatch<SetStateAction<SearchFilterState>>;
-}) {
-  const hasActiveFilters = Object.values(filters).some(Boolean);
-  const setFilter = <K extends keyof SearchFilterState>(key: K, value: SearchFilterState[K]) => {
-    onChangeFilters((current) => ({
-      ...current,
-      [key]: current[key] === value ? undefined : value,
-    }));
-  };
-
-  return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white/85 p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
-          Scope
-        </span>
-        <FilterChip
-          active={!filters.projectKey}
-          label="All"
-          onClick={() => onChangeFilters((current) => ({ ...current, projectKey: undefined }))}
-        />
-        {projects.map((project) => (
-          <FilterChip
-            key={project.key}
-            active={filters.projectKey === project.key}
-            label={
-              project.showCount === false ? project.label : `${project.label} · ${project.count}`
-            }
-            onClick={() => setFilter("projectKey", project.key)}
-          />
-        ))}
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
-          Agent
-        </span>
-        <FilterChip
-          active={!filters.agent}
-          label="All Agents"
-          onClick={() => onChangeFilters((current) => ({ ...current, agent: undefined }))}
-        />
-        {agents.map((agent) => (
-          <FilterChip
-            key={agent.name}
-            active={filters.agent === agent.name}
-            label={agent.displayName}
-            onClick={() => setFilter("agent", agent.name)}
-          />
-        ))}
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
-          Tag
-        </span>
-        {SMART_TAG_OPTIONS.map((tag) => (
-          <FilterChip
-            key={tag}
-            active={filters.tag === tag}
-            label={SMART_TAG_LABELS[tag]}
-            onClick={() => setFilter("tag", tag)}
-          />
-        ))}
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
-          Signal
-        </span>
-        {SEARCH_TOOL_OPTIONS.map((tool) => (
-          <FilterChip
-            key={tool}
-            active={filters.tool === tool}
-            label={`tool:${tool}`}
-            onClick={() => setFilter("tool", tool)}
-          />
-        ))}
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
-          File Activity
-        </span>
-        {FILE_ACTIVITY_OPTIONS.map((option) => (
-          <FilterChip
-            key={option.kind}
-            active={filters.fileKind === option.kind}
-            label={option.label}
-            onClick={() => setFilter("fileKind", option.kind)}
-          />
-        ))}
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
-          Cost Range
-        </span>
-        <FilterChip
-          active={!filters.costRange}
-          label="Any Cost"
-          onClick={() => onChangeFilters((current) => ({ ...current, costRange: undefined }))}
-        />
-        {COST_RANGE_OPTIONS.map((option) => (
-          <FilterChip
-            key={option.id}
-            active={filters.costRange === option.id}
-            label={option.label}
-            onClick={() => setFilter("costRange", option.id)}
-          />
-        ))}
-        {hasActiveFilters ? (
-          <button
-            type="button"
-            onClick={() => onChangeFilters({})}
-            className="console-mono ml-auto rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[10px] text-[var(--console-muted)] transition-colors hover:bg-white"
-          >
-            Clear
-          </button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function FilterChip({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`console-mono rounded-sm border px-2 py-1 text-[10px] transition-colors ${
-        active
-          ? "border-[var(--console-border-strong)] bg-[var(--console-accent)] text-white"
-          : "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-muted)] hover:bg-white"
-      }`}
-    >
-      {label}
-    </button>
   );
 }
