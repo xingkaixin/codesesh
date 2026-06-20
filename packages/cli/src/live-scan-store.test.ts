@@ -340,8 +340,7 @@ function makeFileSystemAgent(
   agent.getSessionData = vi.fn(() => ({}));
   agent.listSessionSources = overrides.listSessionSources ?? vi.fn(() => []);
   agent.scanSessionSource = overrides.scanSessionSource ?? vi.fn(() => null);
-  agent.getSessionMetaMap =
-    overrides.getSessionMetaMap ?? vi.fn(() => new Map());
+  agent.getSessionMetaMap = overrides.getSessionMetaMap ?? vi.fn(() => new Map());
   agent.setSessionMetaMap = overrides.setSessionMetaMap ?? vi.fn();
   agent.checkForChanges =
     overrides.checkForChanges ??
