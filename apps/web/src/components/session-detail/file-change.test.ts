@@ -114,7 +114,17 @@ describe("buildFileChangeSummaryFromActivity", () => {
       delete: [],
     };
     const result = buildFileChangeSummaryFromActivity(
-      [{ kind: "read", path: "/a.ts", count: 3, latest_time: 200 }],
+      [
+        {
+          kind: "read",
+          path: "/a.ts",
+          count: 3,
+          latest_time: 200,
+          agent_name: "claudecode",
+          session_id: "s1",
+          project_identity_key: "proj",
+        },
+      ],
       anchor,
     );
     expect(result.read[0]!.count).toBe(3);
