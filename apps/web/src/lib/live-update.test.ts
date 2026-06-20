@@ -25,7 +25,10 @@ describe("compareSessionActivityDesc", () => {
 describe("applyLiveSessionUpdate", () => {
   it("returns null for incomplete event", () => {
     expect(
-      applyLiveSessionUpdate([], { changedSessionHeads: null, removedSessionRefs: null } as never),
+      applyLiveSessionUpdate([], {
+        changedSessionHeads: null,
+        removedSessionRefs: null,
+      } as unknown as never),
     ).toBeNull();
   });
 
@@ -34,7 +37,7 @@ describe("applyLiveSessionUpdate", () => {
     const event = {
       changedSessionHeads: [{ agentName: "codex", session: makeSession("c", 300) }],
       removedSessionRefs: [{ agentName: "codex", sessionId: "a" }],
-    } as SessionsUpdatedEvent;
+    } as unknown as SessionsUpdatedEvent;
 
     const result = applyLiveSessionUpdate(sessions, event);
     expect(result).not.toBeNull();
@@ -45,7 +48,7 @@ describe("applyLiveSessionUpdate", () => {
     const event = {
       changedSessionHeads: [{ agentName: "codex", session: makeSession("new", 999) }],
       removedSessionRefs: [],
-    } as SessionsUpdatedEvent;
+    } as unknown as SessionsUpdatedEvent;
     const result = applyLiveSessionUpdate([makeSession("old", 100)], event);
     expect(result![0]!.id).toBe("new");
   });

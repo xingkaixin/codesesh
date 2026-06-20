@@ -51,7 +51,7 @@ describe("formatScanStatusLabel", () => {
         scanningAgents: [],
         totalAgents: 0,
         agentStatuses: {},
-      } as ScanStatusEvent),
+      } as unknown as ScanStatusEvent),
     ).toBe("Preparing local session index");
   });
 });
