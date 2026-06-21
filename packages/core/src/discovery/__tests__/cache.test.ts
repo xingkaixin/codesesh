@@ -46,12 +46,17 @@ function getLegacyCachePath(): string {
   return join(getCacheDir(), "scan-cache.json");
 }
 
+// Isolated temp directory for session fixtures so computeIdentity always
+// resolves to a "path" identity regardless of what manifests exist in /tmp.
+const FIXTURE_DIR = mkdtempSync(join(tmpdir(), "codesesh-identity-"));
+const FIXTURE_DIR_NAME = FIXTURE_DIR.split(/[\\/]/).pop()!;
+
 function makeSession(id: string): SessionHead {
   return {
     id,
     slug: `agent/${id}`,
     title: `Session ${id}`,
-    directory: "/tmp/project",
+    directory: FIXTURE_DIR,
     time_created: now,
     time_updated: now,
     stats: {
@@ -350,8 +355,8 @@ describe("saveCachedSessions", () => {
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
-        identityKey: "/tmp/project",
-        displayName: "project",
+        identityKey: FIXTURE_DIR,
+        displayName: FIXTURE_DIR_NAME,
         sources: ["claudecode"],
         sessionCount: 1,
         lastActivity: now,
@@ -1242,7 +1247,7 @@ describe("searchSessions", () => {
         agent: "claudecode",
         sessionId: "files",
         projectKey: "github.com/acme/app",
-        cwd: "/tmp/project",
+        cwd: FIXTURE_DIR,
         path: "src/App",
         kind: "edit",
         from: now + 9,
@@ -1599,7 +1604,7 @@ describe("searchSessions", () => {
         "fts-empty",
         "claudecode/fts-empty",
         "FTS Empty",
-        "/tmp/project",
+        FIXTURE_DIR,
         now,
         now,
         now,

@@ -4,6 +4,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FileSystemSessionSource, type SessionHead } from "@codesesh/core";
 
+// Isolated temp directory for session fixtures so computeIdentity always
+// resolves to a "path" identity regardless of manifests in /tmp.
+const FIXTURE_DIR = mkdtempSync(join(tmpdir(), "codesesh-lsstore-"));
+const FIXTURE_DIR_NAME = FIXTURE_DIR.split(/[\\/]/).pop()!;
+
 const fsWatch = vi.hoisted(() => ({
   watch: vi.fn(),
   existsSync: vi.fn(),
@@ -263,7 +268,7 @@ function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionH
     id,
     slug: `codex/${id}`,
     title: id,
-    directory: "/tmp/project",
+    directory: FIXTURE_DIR,
     time_created: 1000,
     time_updated: 1000,
     stats: {
@@ -278,8 +283,8 @@ function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionH
 
 const projectIdentity = {
   kind: "path" as const,
-  key: "/tmp/project",
-  displayName: "project",
+  key: FIXTURE_DIR,
+  displayName: FIXTURE_DIR_NAME,
 };
 
 function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
@@ -291,7 +296,7 @@ function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
       id: "session",
       title: "session",
       slug: `${name}/session`,
-      directory: "/tmp/project",
+      directory: FIXTURE_DIR,
       time_created: 1000,
       time_updated: 1000,
       stats: {
