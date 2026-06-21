@@ -64,14 +64,14 @@ function getWatchRoot(path: string): string {
   return stat.isDirectory() ? path : dirname(path);
 }
 
-function isRecursiveWatchSupported(
+export function isRecursiveWatchSupported(
   platform = process.platform,
   nodeVersion = process.versions.node,
 ): boolean {
   if (platform === "darwin" || platform === "win32") {
     return true;
   }
-  if (platform !== "linux" && platform !== "aix") {
+  if (platform !== "linux" && platform !== "aix" && platform !== "ibmi") {
     return false;
   }
 
