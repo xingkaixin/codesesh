@@ -1,11 +1,22 @@
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { defineConfig, devices } from "playwright/test";
 
 const port = Number(process.env.CODESESH_E2E_PORT ?? 4387);
 const e2eHome = mkdtempSync(join(tmpdir(), "codesesh-e2e-home-"));
 const fixtureRoot = resolve("tests/e2e/fixtures");
+
+// Rewrite the fixture session's cwd to an isolated temp dir so computeIdentity
+// resolves deterministically regardless of stray manifests (e.g. /tmp/package.json).
+const e2eProjectDir = join(e2eHome, "codesesh-e2e");
+mkdirSync(e2eProjectDir, { recursive: true });
+const fixtureSessionPath = resolve(fixtureRoot, "claude/projects/codesesh-e2e/e2e-dashboard.jsonl");
+const fixtureSessionContent = readFileSync(fixtureSessionPath, "utf8").replaceAll(
+  "__E2E_PROJECT_DIR__",
+  e2eProjectDir,
+);
+writeFileSync(fixtureSessionPath, fixtureSessionContent);
 
 export default defineConfig({
   testDir: "./tests/e2e",

@@ -7,6 +7,11 @@ import { listBookmarks, type BookmarkRecord } from "../../state/bookmarks.js";
 import { listCachedProjectGroups, loadCachedSessions, searchSessions } from "../cache.js";
 import type { SessionHead } from "../../types/index.js";
 
+// Isolated temp directory so computeIdentity resolves to a deterministic
+// "path" identity regardless of manifests in /tmp.
+const FIXTURE_DIR = mkdtempSync(join(tmpdir(), "codesesh-smoke-"));
+const FIXTURE_DIR_NAME = FIXTURE_DIR.split(/[\\/]/).pop()!;
+
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-migration-smoke-"));
 const now = 1_700_000_000_000;
 
@@ -42,11 +47,11 @@ function makeSession(): SessionHead {
     id: "legacy-smoke",
     slug: "claudecode/legacy-smoke",
     title: "Legacy smoke session",
-    directory: "/tmp/codesesh-legacy",
+    directory: FIXTURE_DIR,
     project_identity: {
       kind: "path",
-      key: "/tmp/codesesh-legacy",
-      displayName: "codesesh-legacy",
+      key: FIXTURE_DIR,
+      displayName: FIXTURE_DIR_NAME,
     },
     time_created: now - 1_000,
     time_updated: now,
@@ -249,8 +254,8 @@ describe("sqlite migration smoke", () => {
     expect(projects).toEqual([
       {
         identityKind: "path",
-        identityKey: "/tmp/codesesh-legacy",
-        displayName: "codesesh-legacy",
+        identityKey: FIXTURE_DIR,
+        displayName: FIXTURE_DIR_NAME,
         sources: ["claudecode"],
         sessionCount: 1,
         lastActivity: now,
@@ -265,7 +270,7 @@ describe("sqlite migration smoke", () => {
         sessionId: "legacy-smoke",
         fullPath: "claudecode/legacy-smoke",
         title: "Legacy smoke session",
-        directory: "/tmp/codesesh-legacy",
+        directory: FIXTURE_DIR,
         time_created: now - 1_000,
         time_updated: now,
         stats: {
