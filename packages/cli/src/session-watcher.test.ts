@@ -26,7 +26,11 @@ vi.mock("./logging.js", () => ({
   appLogger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { SessionWatcher, resolveAgentWatchTargets } from "./session-watcher.js";
+import {
+  SessionWatcher,
+  resolveAgentWatchTargets,
+  isRecursiveWatchSupported,
+} from "./session-watcher.js";
 
 function registerMockWatcher(
   path: string,
@@ -125,6 +129,31 @@ describe("SessionWatcher", () => {
       vi.unstubAllEnvs();
       rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("isRecursiveWatchSupported", () => {
+  it("supports ibmi on Node 19.1+", () => {
+    expect(isRecursiveWatchSupported("ibmi", "19.1.0")).toBe(true);
+    expect(isRecursiveWatchSupported("ibmi", "20.0.0")).toBe(true);
+  });
+
+  it("does not support ibmi on older Node", () => {
+    expect(isRecursiveWatchSupported("ibmi", "18.0.0")).toBe(false);
+    expect(isRecursiveWatchSupported("ibmi", "19.0.0")).toBe(false);
+  });
+
+  it("supports linux on Node 19.1+", () => {
+    expect(isRecursiveWatchSupported("linux", "19.1.0")).toBe(true);
+  });
+
+  it("always supports darwin and win32", () => {
+    expect(isRecursiveWatchSupported("darwin", "18.0.0")).toBe(true);
+    expect(isRecursiveWatchSupported("win32", "18.0.0")).toBe(true);
+  });
+
+  it("does not support unknown platforms", () => {
+    expect(isRecursiveWatchSupported("freebsd", "20.0.0")).toBe(false);
   });
 });
 
