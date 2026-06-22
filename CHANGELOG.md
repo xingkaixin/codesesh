@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.10.0] - 2026-06-22
+
+This release focuses on internal architecture refactoring across core, CLI, and the Web app, decomposing large modules into focused ones for maintainability.
+
+### Bug Fixes
+
+- Restored recursive file watch support on IBM i so live session refresh works again on that platform. (#70)
+- Corrected SEO/AEO metadata inconsistencies on the product landing page. (#57)
+
+### Documentation
+
+- Synced the `llms-full.txt` build requirements to Node 24 and pnpm 11.5.1. (#68)
+
+### Refactor
+
+- Reshaped the agent adapter seam to centralize change detection. (#58)
+- Split the cache module by concern and converged shared scan orchestration helpers. (#59, #60)
+- Extracted a `SessionWatcher` deep module from `LiveScanStore` and sank dashboard aggregation into core. (#61, #62)
+- Decomposed the Web `App` and `SessionDetail` into focused subcomponents and pure logic modules (tool normalization, path extraction, diff, file change, tool strategy). (#63, #64, #65, #66, #67)
+
+### Tests
+
+- Isolated project identity tests from host `/tmp` manifests. (#69)
+
+### Changelog Detail
+
+- #70 fix(watcher): restore ibmi recursive watch support @xingkaixin
+- #69 test: isolate project identity from host /tmp manifests @xingkaixin
+- #68 fix(www): sync llms-full.txt build requirements to Node 24 / pnpm 11.5.1 @xingkaixin
+- #67 refactor(web): extract App subcomponents @xingkaixin
+- #66 refactor(web): extract App pure logic into lib modules @xingkaixin
+- #65 refactor(web): extract tool-strategy module from SessionDetail @xingkaixin
+- #64 refactor(web): extract path-extract, diff, file-change modules @xingkaixin
+- #63 refactor(web): extract tool-normalize module from SessionDetail @xingkaixin
+- #62 refactor(analytics): sink dashboard aggregation to core @xingkaixin
+- #61 refactor(cli): extract SessionWatcher deep module from LiveScanStore @xingkaixin
+- #60 refactor(scan): converge shared orchestration helpers @xingkaixin
+- #59 refactor(cache): split god module by concern @xingkaixin
+- #58 refactor(agent): reshape adapter seam for change detection @xingkaixin
+- #57 fix(www): correct landing page SEO/AEO inconsistencies @xingkaixin
+
 ## [0.9.1] - 2026-06-17
 
 ### Features
