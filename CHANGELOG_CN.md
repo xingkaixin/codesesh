@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.10.0] - 2026-06-22
+
+本版本以内部架构重构为主，覆盖 core、CLI 与 Web，将多个大模块拆分为职责单一的模块，提升可维护性。
+
+### 问题修复
+
+- 恢复 IBM i 平台的递归文件监听支持，让该平台上的实时会话刷新重新可用。 (#70)
+- 修正产品落地页 SEO/AEO 元数据中的不一致。 (#57)
+
+### 文档
+
+- 将 `llms-full.txt` 的构建要求同步为 Node 24 与 pnpm 11.5.1。 (#68)
+
+### 重构
+
+- 重塑 Agent 适配器 seam，集中变更检测逻辑。 (#58)
+- 缓存模块按职责拆分，并收敛共享的扫描编排 helper。 (#59, #60)
+- 从 `LiveScanStore` 提取 `SessionWatcher` 深模块，并将 Dashboard 聚合下沉到 core。 (#61, #62)
+- 拆分 Web 端 `App` 与 `SessionDetail`，抽出工具归一化、路径提取、diff、文件变更、工具策略等纯逻辑模块与子组件。 (#63, #64, #65, #66, #67)
+
+### 测试
+
+- 将项目身份测试与宿主 `/tmp` 上的 manifest 隔离。 (#69)
+
+### Changelog Detail
+
+- #70 fix(watcher): restore ibmi recursive watch support @xingkaixin
+- #69 test: isolate project identity from host /tmp manifests @xingkaixin
+- #68 fix(www): sync llms-full.txt build requirements to Node 24 / pnpm 11.5.1 @xingkaixin
+- #67 refactor(web): extract App subcomponents @xingkaixin
+- #66 refactor(web): extract App pure logic into lib modules @xingkaixin
+- #65 refactor(web): extract tool-strategy module from SessionDetail @xingkaixin
+- #64 refactor(web): extract path-extract, diff, file-change modules @xingkaixin
+- #63 refactor(web): extract tool-normalize module from SessionDetail @xingkaixin
+- #62 refactor(analytics): sink dashboard aggregation to core @xingkaixin
+- #61 refactor(cli): extract SessionWatcher deep module from LiveScanStore @xingkaixin
+- #60 refactor(scan): converge shared orchestration helpers @xingkaixin
+- #59 refactor(cache): split god module by concern @xingkaixin
+- #58 refactor(agent): reshape adapter seam for change detection @xingkaixin
+- #57 fix(www): correct landing page SEO/AEO inconsistencies @xingkaixin
+
 ## [0.9.1] - 2026-06-17
 
 ### 新功能
