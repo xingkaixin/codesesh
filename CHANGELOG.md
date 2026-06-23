@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.11.0] - 2026-06-23
+
+### Features
+
+- Added ZCode as a supported coding agent, including local session discovery, OpenCode-compatible SQLite parsing, live watch targets, Web UI icon coverage, and ZCode-specific tool displays. (#72)
+
+### Bug Fixes
+
+- Improved Web layout behavior around session details by collapsing side panels on tablet, overlaying the session receipt, measuring virtual rows before paint, and making the app sidebar collapsible. (#72)
+
+### Refactor
+
+- Extracted the shared OpenCode SQLite source so OpenCode-compatible agents can reuse the same parser without duplicating adapter logic. (#72)
+
+### Changelog Detail
+
+- #72 feat(agents): add ZCode session support @xingkaixin
+
 ## [0.10.0] - 2026-06-22
 
 This release focuses on internal architecture refactoring across core, CLI, and the Web app, decomposing large modules into focused ones for maintainability.

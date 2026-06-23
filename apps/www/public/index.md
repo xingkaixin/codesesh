@@ -2,7 +2,7 @@
 
 CodeSesh turns local AI coding history into reusable engineering memory.
 
-It discovers local sessions from Claude Code, Cursor, Kimi, Codex, Pi, and OpenCode, then preserves problems, reasoning, attempts, file activity, and outcomes in one project-aware searchable memory layer.
+It discovers local sessions from Claude Code, Cursor, Kimi, Codex, Pi, OpenCode, and ZCode, then preserves problems, reasoning, attempts, file activity, and outcomes in one project-aware searchable memory layer.
 
 ## Start
 
@@ -38,7 +38,7 @@ CodeSesh brings local sessions from different agents into one index.
 
 - Zero Configuration: run one command and scan supported agent sessions on your filesystem.
 - Live Refresh: local session changes appear automatically as new collaboration records are written.
-- Unified Timeline: browse Claude Code, Cursor, Kimi, Codex, Pi, and OpenCode sessions in one interface.
+- Unified Timeline: browse Claude Code, Cursor, Kimi, Codex, Pi, OpenCode, and ZCode sessions in one interface.
 
 ### Organize
 
@@ -76,16 +76,17 @@ CodeSesh reconstructs the full path from problem to result.
 - Codex
 - Pi
 - OpenCode
+- ZCode
 
 ## FAQ
 
 ### What is CodeSesh?
 
-CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from Claude Code, Cursor, Kimi, Codex, Pi, and OpenCode into a project-aware engineering memory layer for recovering decisions, file activity, and complete collaboration paths.
+CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from Claude Code, Cursor, Kimi, Codex, Pi, OpenCode, and ZCode into a project-aware engineering memory layer for recovering decisions, file activity, and complete collaboration paths.
 
 ### Which AI coding tools does CodeSesh support?
 
-CodeSesh currently supports Claude Code, Cursor, Kimi, Codex, Pi, and OpenCode. Each tool connects through an agent adapter in the core package, then contributes sessions to unified lists, project browsing, structured search indexes, file activity, smart tags, token statistics, and full replay views.
+CodeSesh currently supports Claude Code, Cursor, Kimi, Codex, Pi, OpenCode, and ZCode. Each tool connects through an agent adapter in the core package, then contributes sessions to unified lists, project browsing, structured search indexes, file activity, smart tags, token statistics, and full replay views.
 
 ### Does CodeSesh upload local AI session data?
 
@@ -105,4 +106,4 @@ The fastest way to start CodeSesh is running `npx codesesh` in a terminal. CodeS
 
 ## 中文说明
 
-CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放 Claude Code、Cursor、Kimi、Codex、Pi、OpenCode 的本地 AI 编码历史，把分散的协作记录沉淀成可复用的工程记忆。
+CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放 Claude Code、Cursor、Kimi、Codex、Pi、OpenCode、ZCode 的本地 AI 编码历史，把分散的协作记录沉淀成可复用的工程记忆。
