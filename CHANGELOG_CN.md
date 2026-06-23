@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.11.0] - 2026-06-23
+
+### 新功能
+
+- 新增 ZCode coding agent 支持，包括本地会话发现、OpenCode 兼容 SQLite 解析、实时监听目标、Web UI 图标覆盖和 ZCode 专属工具展示。 (#72)
+
+### 问题修复
+
+- 改进会话详情相关的 Web 布局行为：平板视口下折叠侧栏、覆盖展示 session receipt、在 paint 前测量虚拟行，并让应用侧边栏可折叠。 (#72)
+
+### 重构
+
+- 提取共享 OpenCode SQLite source，让 OpenCode 兼容 Agent 复用同一套解析逻辑，避免适配器重复实现。 (#72)
+
+### Changelog Detail
+
+- #72 feat(agents): add ZCode session support @xingkaixin
+
 ## [0.10.0] - 2026-06-22
 
 本版本以内部架构重构为主，覆盖 core、CLI 与 Web，将多个大模块拆分为职责单一的模块，提升可维护性。
