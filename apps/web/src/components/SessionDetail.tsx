@@ -15,6 +15,7 @@ import {
   MessageCircleX,
   Minus,
   NotebookPen,
+  X,
   UserRound,
   XCircle,
 } from "lucide-react";
@@ -663,6 +664,7 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
     [messageModels],
   );
   const [selectedFilters, setSelectedFilters] = useState<Set<string>>(() => new Set(toc.filterIds));
+  const [openAuxPanel, setOpenAuxPanel] = useState<"toc" | "files" | null>(null);
   const tocSignature = useMemo(() => [...toc.filterIds].toSorted().join("|"), [toc.filterIds]);
   const selectedFilterSignature = useMemo(
     () => [...selectedFilters].toSorted().join("|"),
@@ -726,7 +728,29 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
       <SessionSummarySection
         summary={typeof session.summary_files === "string" ? session.summary_files : undefined}
       />
-      <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_320px] lg:items-start">
+      <div className="grid gap-6 min-[1025px]:grid-cols-[240px_minmax(0,1fr)] min-[1025px]:items-start min-[1280px]:grid-cols-[220px_minmax(0,1fr)_320px]">
+        <SessionDetailAuxControls
+          toc={toc}
+          fileChangeSummary={fileChangeSummary}
+          onOpen={setOpenAuxPanel}
+        />
+        <SessionDetailAuxOverlay
+          openPanel={openAuxPanel}
+          toc={toc}
+          fileChangeSummary={fileChangeSummary}
+          baseDirectory={session.directory}
+          selectedFilters={selectedFilters}
+          onClose={() => setOpenAuxPanel(null)}
+          onToggle={(filterId) =>
+            setSelectedFilters((current) => {
+              return toggleTocFilter(current, filterId, toc);
+            })
+          }
+          onJumpToAnchor={(anchorId) => {
+            setOpenAuxPanel(null);
+            handleJumpToAnchor(anchorId);
+          }}
+        />
         <SessionToc
           toc={toc}
           fileChangeSummary={fileChangeSummary}
@@ -827,6 +851,125 @@ function toggleTocFilter(currentFilters: Set<string>, filterId: string, toc: Ses
   return next;
 }
 
+function getFileTrackerItemCount(summary: FileChangeSummary) {
+  return summary.read.length + summary.edit.length + summary.write.length + summary.delete.length;
+}
+
+function SessionDetailAuxControls({
+  toc,
+  fileChangeSummary,
+  onOpen,
+}: {
+  toc: SessionDetailToc;
+  fileChangeSummary: FileChangeSummary;
+  onOpen: (panel: "toc" | "files") => void;
+}) {
+  const fileCount = getFileTrackerItemCount(fileChangeSummary);
+
+  return (
+    <div className="flex flex-wrap gap-2 min-[1025px]:hidden">
+      <button
+        type="button"
+        onClick={() => onOpen("toc")}
+        className="console-mono inline-flex h-9 items-center gap-2 rounded-sm border border-[var(--console-border)] bg-white px-3 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--console-text)] shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:bg-[var(--console-surface-muted)]"
+      >
+        <Funnel className="size-3.5 text-[var(--console-accent)]" />
+        TOC
+        <span className="text-[var(--console-muted)]">{toc.counts.tools_all}</span>
+      </button>
+      {fileCount > 0 ? (
+        <button
+          type="button"
+          onClick={() => onOpen("files")}
+          className="console-mono inline-flex h-9 items-center gap-2 rounded-sm border border-[var(--console-border)] bg-white px-3 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--console-text)] shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:bg-[var(--console-surface-muted)]"
+        >
+          <FileText className="size-3.5 text-[var(--console-accent)]" />
+          Files
+          <span className="text-[var(--console-muted)]">{fileCount}</span>
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function SessionDetailAuxOverlay({
+  openPanel,
+  toc,
+  fileChangeSummary,
+  baseDirectory,
+  selectedFilters,
+  onClose,
+  onToggle,
+  onJumpToAnchor,
+}: {
+  openPanel: "toc" | "files" | null;
+  toc: SessionDetailToc;
+  fileChangeSummary: FileChangeSummary;
+  baseDirectory: string;
+  selectedFilters: Set<string>;
+  onClose: () => void;
+  onToggle: (filterId: string) => void;
+  onJumpToAnchor: (anchorId: string) => void;
+}) {
+  useEffect(() => {
+    if (!openPanel) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    const previousOverflow = document.body.style.overflow;
+    const desktopQuery = window.matchMedia("(min-width: 1025px)");
+    const closeOnDesktop = () => {
+      if (desktopQuery.matches) onClose();
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+    desktopQuery.addEventListener("change", closeOnDesktop);
+    closeOnDesktop();
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+      desktopQuery.removeEventListener("change", closeOnDesktop);
+    };
+  }, [onClose, openPanel]);
+
+  if (!openPanel) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 min-[1025px]:hidden">
+      <button
+        type="button"
+        aria-label="Close navigation panel"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/30"
+      />
+      <aside className="console-scrollbar absolute right-0 top-0 h-full w-[min(90vw,380px)] overflow-y-auto border-l border-[var(--console-border)] bg-[var(--console-bg)] p-3 shadow-[-10px_0_30px_rgba(15,23,42,0.16)]">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <span className="console-mono text-xs font-semibold uppercase tracking-[0.16em] text-[var(--console-text)]">
+            {openPanel === "toc" ? "Session TOC" : "File Tracker"}
+          </span>
+          <button
+            type="button"
+            aria-label="Close navigation panel"
+            onClick={onClose}
+            className="rounded-sm border border-[var(--console-border)] bg-white p-2 text-[var(--console-muted)] transition-colors hover:bg-[var(--console-surface-muted)]"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        {openPanel === "toc" ? (
+          <SessionTocFilterPanel toc={toc} selectedFilters={selectedFilters} onToggle={onToggle} />
+        ) : (
+          <FileChangeTracker
+            summary={fileChangeSummary}
+            baseDirectory={baseDirectory}
+            onJumpToAnchor={onJumpToAnchor}
+          />
+        )}
+      </aside>
+    </div>
+  );
+}
+
 function TocCheckbox({
   checked,
   indeterminate = false,
@@ -886,63 +1029,10 @@ function SessionToc({
   onToggle: (filterId: string) => void;
   onJumpToAnchor: (anchorId: string) => void;
 }) {
-  const toolIds = getTocToolIds(toc);
-  const selectedToolCount = toolIds.filter((id) => selectedFilters.has(id)).length;
-  const allToolsSelected = toolIds.length > 0 && selectedToolCount === toolIds.length;
-  const someToolsSelected = selectedToolCount > 0 && selectedToolCount < toolIds.length;
-
   return (
-    <aside className="console-scrollbar lg:sticky lg:top-4 lg:max-h-[calc(100dvh-14rem)] lg:overflow-y-auto lg:overscroll-contain">
+    <aside className="console-scrollbar hidden min-[1025px]:sticky min-[1025px]:top-4 min-[1025px]:block min-[1025px]:max-h-[calc(100dvh-14rem)] min-[1025px]:overflow-y-auto min-[1025px]:overscroll-contain">
       <div className="space-y-4">
-        <div className="rounded-sm border border-[var(--console-border)] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-          <div className="flex items-center gap-2 border-b border-[var(--console-border)] px-4 py-3">
-            <Funnel className="size-3.5 text-[var(--console-accent)]" />
-            <span className="console-mono text-xs font-semibold uppercase tracking-[0.16em] text-[var(--console-text)]">
-              Session TOC
-            </span>
-          </div>
-          <div className="space-y-1 p-3">
-            {TOC_META.filter(({ id }) => toc.counts[id] > 0).map(({ id, label }) => (
-              <label
-                key={id}
-                className="flex cursor-pointer items-start gap-3 rounded-sm px-2 py-2 transition-colors hover:bg-[var(--console-surface-muted)]"
-              >
-                <TocCheckbox
-                  checked={id === "tools_all" ? allToolsSelected : selectedFilters.has(id)}
-                  indeterminate={id === "tools_all" ? someToolsSelected : false}
-                  onChange={() => onToggle(id)}
-                />
-                <span className="console-mono min-w-0 flex-1 break-all text-xs leading-relaxed text-[var(--console-text)]">
-                  {label}
-                </span>
-                <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
-                  {toc.counts[id]}
-                </span>
-              </label>
-            ))}
-            {toc.tools.length > 0 ? (
-              <div className="space-y-1 border-t border-[var(--console-border)] pt-2">
-                {toc.tools.map((tool) => (
-                  <label
-                    key={tool.id}
-                    className="flex cursor-pointer items-start gap-3 rounded-sm px-2 py-2 transition-colors hover:bg-[var(--console-surface-muted)]"
-                  >
-                    <TocCheckbox
-                      checked={selectedFilters.has(tool.id)}
-                      onChange={() => onToggle(tool.id)}
-                    />
-                    <span className="console-mono min-w-0 flex-1 break-all text-xs leading-relaxed text-[var(--console-muted)]">
-                      {tool.label}
-                    </span>
-                    <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
-                      {tool.count}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        </div>
+        <SessionTocFilterPanel toc={toc} selectedFilters={selectedFilters} onToggle={onToggle} />
         <FileChangeTracker
           summary={fileChangeSummary}
           baseDirectory={baseDirectory}
@@ -950,6 +1040,73 @@ function SessionToc({
         />
       </div>
     </aside>
+  );
+}
+
+function SessionTocFilterPanel({
+  toc,
+  selectedFilters,
+  onToggle,
+}: {
+  toc: SessionDetailToc;
+  selectedFilters: Set<string>;
+  onToggle: (filterId: string) => void;
+}) {
+  const toolIds = getTocToolIds(toc);
+  const selectedToolCount = toolIds.filter((id) => selectedFilters.has(id)).length;
+  const allToolsSelected = toolIds.length > 0 && selectedToolCount === toolIds.length;
+  const someToolsSelected = selectedToolCount > 0 && selectedToolCount < toolIds.length;
+
+  return (
+    <div className="rounded-sm border border-[var(--console-border)] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center gap-2 border-b border-[var(--console-border)] px-4 py-3">
+        <Funnel className="size-3.5 text-[var(--console-accent)]" />
+        <span className="console-mono text-xs font-semibold uppercase tracking-[0.16em] text-[var(--console-text)]">
+          Session TOC
+        </span>
+      </div>
+      <div className="space-y-1 p-3">
+        {TOC_META.filter(({ id }) => toc.counts[id] > 0).map(({ id, label }) => (
+          <label
+            key={id}
+            className="flex cursor-pointer items-start gap-3 rounded-sm px-2 py-2 transition-colors hover:bg-[var(--console-surface-muted)]"
+          >
+            <TocCheckbox
+              checked={id === "tools_all" ? allToolsSelected : selectedFilters.has(id)}
+              indeterminate={id === "tools_all" ? someToolsSelected : false}
+              onChange={() => onToggle(id)}
+            />
+            <span className="console-mono min-w-0 flex-1 break-all text-xs leading-relaxed text-[var(--console-text)]">
+              {label}
+            </span>
+            <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
+              {toc.counts[id]}
+            </span>
+          </label>
+        ))}
+        {toc.tools.length > 0 ? (
+          <div className="space-y-1 border-t border-[var(--console-border)] pt-2">
+            {toc.tools.map((tool) => (
+              <label
+                key={tool.id}
+                className="flex cursor-pointer items-start gap-3 rounded-sm px-2 py-2 transition-colors hover:bg-[var(--console-surface-muted)]"
+              >
+                <TocCheckbox
+                  checked={selectedFilters.has(tool.id)}
+                  onChange={() => onToggle(tool.id)}
+                />
+                <span className="console-mono min-w-0 flex-1 break-all text-xs leading-relaxed text-[var(--console-muted)]">
+                  {tool.label}
+                </span>
+                <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
+                  {tool.count}
+                </span>
+              </label>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
