@@ -4,6 +4,10 @@ export const ModelConfig = {
       name: "OpenCode",
       icon: "/icon/agent/opencode.svg",
     },
+    zcode: {
+      name: "ZCode",
+      icon: "/icon/agent/zcode.svg",
+    },
     codex: {
       name: "Codex",
       icon: "/icon/agent/codex.svg",
