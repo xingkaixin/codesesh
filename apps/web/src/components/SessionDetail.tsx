@@ -661,7 +661,7 @@ function VirtualizedMessageRow({
 }) {
   const rowRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const node = rowRef.current;
     if (!node) return;
 
