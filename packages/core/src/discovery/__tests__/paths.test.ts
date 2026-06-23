@@ -19,7 +19,7 @@ vi.mock("node:fs", async (importOriginal) => {
 
 import { homedir, platform } from "node:os";
 import { existsSync } from "node:fs";
-import { resolveProviderRoots, getCursorDataPath } from "../paths.js";
+import { resolveProviderRoots, getCursorDataPath, getZCodeDataPath } from "../paths.js";
 
 /** Normalize path separators so tests work on both Unix and Windows */
 const expectPath = (actual: string) => expect(actual.replace(/\\/g, "/"));
@@ -52,6 +52,7 @@ describe("resolveProviderRoots", () => {
     expectPath(roots.claudeRoot).toBe("/home/user/.claude");
     expectPath(roots.kimiRoot).toBe("/home/user/.kimi");
     expectPath(roots.piRoot).toBe("/home/user/.pi");
+    expectPath(roots.zcodeRoot!).toBe("/home/user/.zcode");
   });
 
   it("respects CODEX_HOME override", () => {
@@ -119,5 +120,24 @@ describe("getCursorDataPath", () => {
     mockedPlatform.mockReturnValue("darwin");
     mockedExistsSync.mockReturnValue(false);
     expect(getCursorDataPath()).toBeNull();
+  });
+});
+
+describe("getZCodeDataPath", () => {
+  it("returns the macOS ZCode root", () => {
+    mockedPlatform.mockReturnValue("darwin");
+    mockedHomedir.mockReturnValue("/home/user");
+    expectPath(getZCodeDataPath()!).toBe("/home/user/.zcode");
+  });
+
+  it("returns the Windows ZCode root", () => {
+    mockedPlatform.mockReturnValue("win32");
+    mockedHomedir.mockReturnValue("/home/user");
+    expectPath(getZCodeDataPath()!).toBe("/home/user/.zcode");
+  });
+
+  it("does not probe a Linux default path", () => {
+    mockedPlatform.mockReturnValue("linux");
+    expect(getZCodeDataPath()).toBeNull();
   });
 });

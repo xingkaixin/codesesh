@@ -34,6 +34,7 @@ export interface ProviderRoots {
   kimiRoot: string;
   opencodeRoot: string;
   piRoot: string;
+  zcodeRoot: string | null;
 }
 
 export function resolveProviderRoots(): ProviderRoots {
@@ -44,6 +45,7 @@ export function resolveProviderRoots(): ProviderRoots {
     kimiRoot: envPath("KIMI_SHARE_DIR") ?? join(home, ".kimi"),
     opencodeRoot: join(getDataHome(), "opencode"),
     piRoot: envPath("PI_HOME") ?? join(home, ".pi"),
+    zcodeRoot: getZCodeDataPath(),
   };
 }
 
@@ -62,6 +64,14 @@ export function getCursorDataPath(): string | null {
   if (p === "win32") {
     const appData = envPath("APPDATA") ?? join(homedir(), "AppData", "Roaming");
     return firstExisting(join(appData, "Cursor", "User"));
+  }
+  return null;
+}
+
+export function getZCodeDataPath(): string | null {
+  const p = platform();
+  if (p === "darwin" || p === "win32") {
+    return join(homedir(), ".zcode");
   }
   return null;
 }

@@ -157,6 +157,10 @@ export function resolveAgentWatchTargets(agentName: string): WatchTarget[] {
         { root: roots.opencodeRoot, path: join(roots.opencodeRoot, "opencode.db") },
         { root: "data/opencode", path: "data/opencode/opencode.db" },
       ];
+    case "zcode":
+      return roots.zcodeRoot
+        ? [{ root: roots.zcodeRoot, path: join(roots.zcodeRoot, "cli", "db", "db.sqlite") }]
+        : [];
     default:
       return [];
   }
