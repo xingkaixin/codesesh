@@ -6,6 +6,7 @@ import type { SessionDetailToc } from "./session-detail/toc";
 interface InteractiveReceiptProps {
   session: SessionData;
   toc: SessionDetailToc;
+  minWidthQuery?: string;
 }
 
 interface ReceiptPayload {
@@ -513,7 +514,11 @@ function findGrabTarget(particles: Particle[], x: number, y: number) {
   return bestIndex;
 }
 
-export function InteractiveReceipt({ session, toc }: InteractiveReceiptProps) {
+export function InteractiveReceipt({
+  session,
+  toc,
+  minWidthQuery = "(min-width: 1025px)",
+}: InteractiveReceiptProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const hitSurfaceRef = useRef<HTMLDivElement | null>(null);
@@ -555,7 +560,7 @@ export function InteractiveReceipt({ session, toc }: InteractiveReceiptProps) {
     let isVisible = false;
     let anchorVisible = true;
     let running = false;
-    const desktopMedia = window.matchMedia("(min-width: 1280px)");
+    const desktopMedia = window.matchMedia(minWidthQuery);
 
     const shouldRun = () =>
       desktopMedia.matches && document.visibilityState === "visible" && anchorVisible;
@@ -838,22 +843,20 @@ export function InteractiveReceipt({ session, toc }: InteractiveReceiptProps) {
       hitSurface.removeEventListener("pointerup", releasePointer);
       hitSurface.removeEventListener("pointercancel", releasePointer);
     };
-  }, [payload]);
+  }, [minWidthQuery, payload]);
 
   return (
-    <aside className="hidden xl:block">
-      <div ref={anchorRef} className="sticky top-4 h-[560px]">
-        <canvas
-          ref={canvasRef}
-          className="invisible pointer-events-none fixed inset-0 z-40 block h-screen w-screen touch-none"
-          aria-hidden="true"
-        />
-        <div
-          ref={hitSurfaceRef}
-          className="invisible fixed left-0 top-0 z-40 cursor-grab touch-none active:cursor-grabbing"
-          aria-label="Interactive thermal receipt with Verlet paper simulation"
-        />
-      </div>
-    </aside>
+    <div ref={anchorRef} className="h-[calc(100dvh-5.5rem)] min-h-[420px]">
+      <canvas
+        ref={canvasRef}
+        className="invisible pointer-events-none fixed inset-0 z-[61] block h-screen w-screen touch-none"
+        aria-hidden="true"
+      />
+      <div
+        ref={hitSurfaceRef}
+        className="invisible fixed left-0 top-0 z-[62] cursor-grab touch-none active:cursor-grabbing"
+        aria-label="Interactive thermal receipt with Verlet paper simulation"
+      />
+    </div>
   );
 }

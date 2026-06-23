@@ -31,6 +31,7 @@ const core = vi.hoisted(() => ({
     kimiRoot: "/tmp/kimi",
     opencodeRoot: "/tmp/opencode",
     piRoot: "/tmp/pi",
+    zcodeRoot: "/tmp/zcode",
   })),
   isAgentCacheInitialized: vi.fn(),
   loadCachedSessions: vi.fn(),
@@ -376,6 +377,7 @@ describe("LiveScanStore", () => {
       kimiRoot: "/tmp/kimi",
       opencodeRoot: "/tmp/opencode",
       piRoot: "/tmp/pi",
+      zcodeRoot: "/tmp/zcode",
     });
     core.filterSessions.mockImplementation((sessions: SessionHead[]) => sessions);
   });
@@ -1061,6 +1063,7 @@ describe("LiveScanStore", () => {
       kimiRoot: join(tempDir, "kimi"),
       opencodeRoot: join(tempDir, "opencode"),
       piRoot: join(tempDir, "pi"),
+      zcodeRoot: join(tempDir, "zcode"),
     });
 
     const existingSession = makeSession("existing");
@@ -1134,6 +1137,7 @@ describe("LiveScanStore", () => {
       kimiRoot: join(tempDir, "kimi"),
       opencodeRoot: join(tempDir, "opencode"),
       piRoot: join(tempDir, "pi"),
+      zcodeRoot: join(tempDir, "zcode"),
     });
 
     const existingSession = makeSession("existing");
@@ -1184,6 +1188,7 @@ describe("LiveScanStore", () => {
       kimiRoot: join(tempDir, "kimi"),
       opencodeRoot: join(tempDir, "opencode"),
       piRoot: join(tempDir, "pi"),
+      zcodeRoot: join(tempDir, "zcode"),
     });
 
     const existingSession = makeSession("existing");
@@ -1281,7 +1286,7 @@ describe("LiveScanStore", () => {
 });
 
 describe("resolveAgentWatchTargets", () => {
-  it("resolves cursor and opencode watch targets", () => {
+  it("resolves cursor, OpenCode, and ZCode watch targets", () => {
     expect(resolveAgentWatchTargets("cursor")).toEqual([
       {
         root: "/tmp/cursor",
@@ -1293,6 +1298,18 @@ describe("resolveAgentWatchTargets", () => {
       { root: "/tmp/opencode", path: join("/tmp/opencode", "opencode.db") },
       { root: "data/opencode", path: "data/opencode/opencode.db" },
     ]);
+    expect(resolveAgentWatchTargets("zcode")).toEqual([
+      { root: "/tmp/zcode", path: join("/tmp/zcode", "cli", "db", "db.sqlite") },
+    ]);
+    core.resolveProviderRoots.mockReturnValue({
+      claudeRoot: "/tmp/claude",
+      codexRoot: "/tmp/codex",
+      kimiRoot: "/tmp/kimi",
+      opencodeRoot: "/tmp/opencode",
+      piRoot: "/tmp/pi",
+      zcodeRoot: null,
+    });
+    expect(resolveAgentWatchTargets("zcode")).toEqual([]);
     expect(resolveAgentWatchTargets("unknown")).toEqual([]);
   });
 });

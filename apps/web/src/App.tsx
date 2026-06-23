@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ModelConfig } from "./config";
 import type {
@@ -167,6 +168,7 @@ export default function App() {
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [shortcutHintDismissed, setShortcutHintDismissed] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchResultRefs = useRef(new Map<string, HTMLAnchorElement>());
@@ -1366,12 +1368,28 @@ export default function App() {
     <div className="console-ui flex h-screen flex-col overflow-hidden bg-[var(--console-bg)] text-[var(--console-text)]">
       <header className="shrink-0 border-b border-[var(--console-border)] bg-white/85 backdrop-blur-sm">
         <div className="grid min-h-14 grid-cols-[auto_1fr] items-center gap-3 px-4 py-2 sm:grid-cols-[auto_1fr_auto] sm:py-0">
-          <Link to="/" className="flex items-center gap-2 text-[var(--console-text)]">
-            <img src="/logo.svg?v=3" alt="CodeSesh" className="h-6 w-6 rounded-sm" />
-            <span className="console-mono text-sm font-semibold uppercase tracking-[0.05em]">
-              CodeSesh
-            </span>
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-expanded={!sidebarCollapsed}
+              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+              className="hidden rounded-sm border border-[var(--console-border)] bg-white p-1.5 text-[var(--console-muted)] transition-colors hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] lg:inline-flex"
+            >
+              {sidebarCollapsed ? (
+                <PanelLeftOpen className="size-4" />
+              ) : (
+                <PanelLeftClose className="size-4" />
+              )}
+            </button>
+            <Link to="/" className="flex items-center gap-2 text-[var(--console-text)]">
+              <img src="/logo.svg?v=3" alt="CodeSesh" className="h-6 w-6 rounded-sm" />
+              <span className="console-mono text-sm font-semibold uppercase tracking-[0.05em]">
+                CodeSesh
+              </span>
+            </Link>
+          </div>
           <form
             className="order-3 col-span-2 flex w-full items-center justify-center gap-2 sm:order-none sm:col-span-1 sm:mx-auto sm:max-w-[560px]"
             onSubmit={(event) => {
@@ -1423,7 +1441,11 @@ export default function App() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-64 shrink-0 flex-col border-r border-[var(--console-border)] bg-[var(--console-sidebar-bg)] lg:flex">
+        <aside
+          className={`w-64 shrink-0 flex-col border-r border-[var(--console-border)] bg-[var(--console-sidebar-bg)] ${
+            sidebarCollapsed ? "hidden" : "hidden lg:flex"
+          }`}
+        >
           <div className="console-scrollbar flex-1 space-y-8 overflow-y-auto px-4 py-6">
             <section>
               <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">

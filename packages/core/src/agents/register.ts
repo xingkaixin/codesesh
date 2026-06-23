@@ -5,6 +5,7 @@ import { KimiAgent } from "./kimi.js";
 import { CodexAgent } from "./codex.js";
 import { CursorAgent } from "./cursor.js";
 import { PiAgent } from "./pi.js";
+import { ZCodeAgent } from "./zcode.js";
 
 registerAgent({
   name: "claudecode",
@@ -18,6 +19,13 @@ registerAgent({
   displayName: "OpenCode",
   icon: "/icon/agent/opencode.svg",
   create: () => new OpenCodeAgent(),
+});
+
+registerAgent({
+  name: "zcode",
+  displayName: "ZCode",
+  icon: "/icon/agent/zcode.svg",
+  create: () => new ZCodeAgent(),
 });
 
 registerAgent({

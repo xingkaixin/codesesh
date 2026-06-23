@@ -3,18 +3,19 @@ import { firstExisting, resolveProviderRoots } from "../discovery/paths.js";
 import { isSqliteAvailable } from "../utils/sqlite.js";
 import { OpenCodeSqliteAgent } from "./opencode-sqlite.js";
 
-function findOpenCodeDbPath(): string | null {
+function findZCodeDbPath(): string | null {
   if (!isSqliteAvailable()) return null;
   const roots = resolveProviderRoots();
-  return firstExisting(join(roots.opencodeRoot, "opencode.db"), "data/opencode/opencode.db");
+  if (!roots.zcodeRoot) return null;
+  return firstExisting(join(roots.zcodeRoot, "cli", "db", "db.sqlite"));
 }
 
-export class OpenCodeAgent extends OpenCodeSqliteAgent {
+export class ZCodeAgent extends OpenCodeSqliteAgent {
   constructor() {
     super({
-      name: "opencode",
-      displayName: "OpenCode",
-      findDbPath: findOpenCodeDbPath,
+      name: "zcode",
+      displayName: "ZCode",
+      findDbPath: findZCodeDbPath,
     });
   }
 }
