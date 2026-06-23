@@ -194,27 +194,90 @@ function DeferredInteractiveReceipt({
   session: SessionData;
   toc: SessionDetailToc;
 }) {
+  const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    setOpen(false);
+  }, [session.id]);
+
+  useEffect(() => {
+    if (!open) {
+      setReady(false);
+      return;
+    }
+
     setReady(false);
     let secondFrame = 0;
     const firstFrame = requestAnimationFrame(() => {
       secondFrame = requestAnimationFrame(() => setReady(true));
     });
+    const desktopQuery = window.matchMedia("(min-width: 1025px)");
+    const closeOnSmallViewport = () => {
+      if (!desktopQuery.matches) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+    desktopQuery.addEventListener("change", closeOnSmallViewport);
+    closeOnSmallViewport();
 
     return () => {
       cancelAnimationFrame(firstFrame);
       if (secondFrame) cancelAnimationFrame(secondFrame);
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+      desktopQuery.removeEventListener("change", closeOnSmallViewport);
     };
-  }, [session.id]);
-
-  if (!ready) return <aside className="hidden xl:block" aria-hidden="true" />;
+  }, [open]);
 
   return (
-    <RenderProfiler id="InteractiveReceipt">
-      <InteractiveReceipt key={session.id} session={session} toc={toc} />
-    </RenderProfiler>
+    <>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label="Open session receipt"
+        onClick={() => setOpen(true)}
+        className="console-mono fixed right-0 top-1/2 z-40 hidden h-32 w-10 -translate-y-1/2 items-center justify-center rounded-l-sm border border-r-0 border-[var(--console-border)] bg-white text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--console-text)] shadow-[-2px_4px_14px_rgba(15,23,42,0.14)] transition-colors hover:bg-[var(--console-surface-muted)] min-[1025px]:flex"
+      >
+        <span className="[writing-mode:vertical-rl]">Receipt</span>
+      </button>
+      {open ? (
+        <div className="fixed inset-0 z-[60] hidden min-[1025px]:block">
+          <button
+            type="button"
+            aria-label="Close session receipt"
+            onClick={() => setOpen(false)}
+            className="absolute inset-0 bg-black/20"
+          />
+          <aside className="absolute right-0 top-0 z-10 h-full w-[min(92vw,430px)] border-l border-[var(--console-border)] bg-[var(--console-bg)] p-4 shadow-[-12px_0_32px_rgba(15,23,42,0.18)]">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <span className="console-mono text-xs font-semibold uppercase tracking-[0.16em] text-[var(--console-text)]">
+                Session Receipt
+              </span>
+              <button
+                type="button"
+                aria-label="Close session receipt"
+                onClick={() => setOpen(false)}
+                className="rounded-sm border border-[var(--console-border)] bg-white p-2 text-[var(--console-muted)] transition-colors hover:bg-[var(--console-surface-muted)]"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            {ready ? (
+              <RenderProfiler id="InteractiveReceipt">
+                <InteractiveReceipt key={session.id} session={session} toc={toc} />
+              </RenderProfiler>
+            ) : (
+              <div className="h-[calc(100dvh-5.5rem)] min-h-[420px] rounded-sm border border-[var(--console-border)] bg-white" />
+            )}
+          </aside>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -728,7 +791,7 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
       <SessionSummarySection
         summary={typeof session.summary_files === "string" ? session.summary_files : undefined}
       />
-      <div className="grid gap-6 min-[1025px]:grid-cols-[240px_minmax(0,1fr)] min-[1025px]:items-start min-[1280px]:grid-cols-[220px_minmax(0,1fr)_320px]">
+      <div className="grid gap-6 min-[1025px]:grid-cols-[240px_minmax(0,1fr)] min-[1025px]:items-start min-[1280px]:grid-cols-[220px_minmax(0,1fr)]">
         <SessionDetailAuxControls
           toc={toc}
           fileChangeSummary={fileChangeSummary}
@@ -788,8 +851,8 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
             </div>
           )}
         </div>
-        <DeferredInteractiveReceipt session={session} toc={toc} />
       </div>
+      <DeferredInteractiveReceipt session={session} toc={toc} />
     </div>
   );
 }
