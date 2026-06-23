@@ -124,6 +124,39 @@ export function buildPiEditDiffBlocks(state: NormalizedToolState, filePath: stri
   ];
 }
 
+function parseZCodePatchLine(line: string): DiffLineItem {
+  if (line.startsWith("@@")) return { type: "context", text: line };
+  if (line.startsWith("+")) return { type: "add", text: line.slice(1) };
+  if (line.startsWith("-")) return { type: "remove", text: line.slice(1) };
+  if (line.startsWith(" ")) return { type: "context", text: line.slice(1) };
+  return { type: "context", text: line };
+}
+
+export function buildZCodeEditDiffBlocks(
+  state: NormalizedToolState,
+  filePath: string,
+): DiffBlock[] {
+  const metadata = toRecord(state.metadataValue);
+  const display = toRecord(metadata.display);
+  const patches = Array.isArray(display.structuredPatch) ? display.structuredPatch : [];
+  const displayPath = toStringValue(display.filePath) || filePath;
+
+  return patches
+    .map((entry) => {
+      const patch = toRecord(entry);
+      const lines = Array.isArray(patch.lines) ? patch.lines : [];
+      const parsedLines = lines
+        .map((line) => (typeof line === "string" ? parseZCodePatchLine(line) : null))
+        .filter((line): line is DiffLineItem => line != null);
+      if (parsedLines.length === 0) return null;
+      return {
+        label: getDiffBlockLabel(displayPath),
+        lines: parsedLines,
+      };
+    })
+    .filter((block): block is DiffBlock => block != null);
+}
+
 export function extractEditDiff(state: NormalizedToolState) {
   const metadata = toRecord(state.metadataValue);
   const diffText = toStringValue(metadata.diff);
