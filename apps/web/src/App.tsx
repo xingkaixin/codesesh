@@ -4,21 +4,8 @@ import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNo
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ModelConfig } from "./config";
-import type {
-  AgentInfo,
-  AppConfig,
-  SessionHead,
-  SessionsUpdatedEvent,
-  ProjectGroup,
-} from "./lib/api";
-import {
-  fetchAgents,
-  fetchConfig,
-  fetchProjects,
-  fetchSessions,
-  logClientEvent,
-  subscribeSessionUpdates,
-} from "./lib/api";
+import type { SessionHead, SessionsUpdatedEvent, ProjectGroup } from "./lib/api";
+import { logClientEvent, subscribeSessionUpdates } from "./lib/api";
 import { SessionDetail } from "./components/SessionDetail";
 import { SessionDetailSkeleton } from "./components/SessionDetailSkeleton";
 import { DetailLanding, type LandingAgentItem } from "./components/DetailLanding";
@@ -38,6 +25,10 @@ import { useSessionSearch } from "./hooks/useSessionSearch";
 import { useBookmarks } from "./hooks/useBookmarks";
 import { useDashboard } from "./hooks/useDashboard";
 import { useProjectDashboard } from "./hooks/useProjectDashboard";
+import { useAppConfig } from "./hooks/useAppConfig";
+import { useAgents } from "./hooks/useAgents";
+import { useSessions } from "./hooks/useSessions";
+import { useProjects } from "./hooks/useProjects";
 import { BrowseByToggle } from "./components/app/BrowseByToggle";
 import { SidebarFlatSessionList } from "./components/app/SidebarFlatSessionList";
 import { SearchResultsPanel } from "./components/app/SearchResultsPanel";
@@ -50,7 +41,6 @@ import {
   formatWindowLabel,
   getAgentDisplayCount,
 } from "./lib/scan-format";
-import { applyLiveSessionUpdate } from "./lib/live-update";
 import { getProjectIdentityKey, getProjectPath, type ProjectRouteIdentity } from "./lib/projects";
 import {
   buildSessionIndexes,
@@ -110,17 +100,21 @@ function isEditableTarget(target: EventTarget | null) {
 
 export default function App() {
   const navigate = useNavigate();
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
-  const [sessions, setSessions] = useState<SessionHead[]>([]);
+  const { appConfig, refresh: refreshAppConfig } = useAppConfig();
+  const { agents, validAgentKeys, agentNameMap, refresh: refreshAgents } = useAgents();
+  const {
+    sessions,
+    refresh: refreshSessions,
+    applyLiveEvent: applySessionsLiveEvent,
+  } = useSessions();
+  const { projects, refresh: refreshProjects } = useProjects();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [liveNotice, setLiveNotice] = useState<string | null>(null);
-  const [projects, setProjects] = useState<ProjectGroup[]>([]);
   const [browseBy, setBrowseBy] = useState<BrowseBy>("agents");
   const [selectedProjectIdentity, setSelectedProjectIdentity] =
     useState<ProjectRouteIdentity | null>(null);
-  const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const { scanStatus, setScanStatus } = useScanStatus();
   const [selectedSidebarSessionId, setSelectedSidebarSessionId] = useState<string | null>(null);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
@@ -134,24 +128,17 @@ export default function App() {
     logClientEvent("app.load.start", { path: window.location.pathname });
     (async () => {
       try {
-        const config = await fetchConfig();
-        setAppConfig(config);
-        const [agentList, sessionList, projectData] = await Promise.all([
-          fetchAgents(),
-          fetchSessions({ from: config.window.from, to: config.window.to }),
-          fetchProjects().catch((err) => {
-            console.error("Failed to load projects:", err);
-            return { projects: [] };
-          }),
+        const config = await refreshAppConfig();
+        const [agentList, sessionList, projectList] = await Promise.all([
+          refreshAgents(),
+          refreshSessions(config.window),
+          refreshProjects(),
         ]);
-        setAgents(agentList);
-        setSessions(sessionList.sessions);
-        setProjects(projectData.projects);
         logClientEvent("app.load.done", {
           duration_ms: Math.round(performance.now() - startedAt),
           agents: agentList.length,
-          sessions: sessionList.sessions.length,
-          projects: projectData.projects.length,
+          sessions: sessionList.length,
+          projects: projectList.length,
         });
       } catch (err) {
         console.error("Failed to load data:", err);
@@ -165,14 +152,9 @@ export default function App() {
       }
     })();
     return () => ac.abort();
-  }, []);
+  }, [refreshAppConfig, refreshAgents, refreshSessions, refreshProjects]);
 
   const location = useLocation();
-  const validAgentKeys = useMemo(() => new Set(agents.map((a) => a.name.toLowerCase())), [agents]);
-  const agentNameMap = useMemo(
-    () => new Map(agents.map((agent) => [agent.name.toLowerCase(), agent.displayName])),
-    [agents],
-  );
   const viewState = useMemo(
     () => parseViewState(location.pathname, validAgentKeys),
     [location.pathname, validAgentKeys],
@@ -349,22 +331,14 @@ export default function App() {
     try {
       const canApplySessionUpdate = Boolean(event.changedSessionHeads && event.removedSessionRefs);
       if (canApplySessionUpdate) {
-        setSessions((current) => applyLiveSessionUpdate(current, event) ?? current);
+        applySessionsLiveEvent(event);
       }
 
-      const [agentList, sessionList, projectData] = await Promise.all([
-        fetchAgents(),
-        canApplySessionUpdate
-          ? Promise.resolve<{ sessions: SessionHead[] } | null>(null)
-          : fetchSessions({ from: appConfig?.window.from, to: appConfig?.window.to }),
-        fetchProjects().catch((err) => {
-          console.error("Failed to refresh projects:", err);
-          return { projects: [] };
-        }),
+      await Promise.all([
+        refreshAgents(),
+        canApplySessionUpdate || !appConfig ? Promise.resolve() : refreshSessions(appConfig.window),
+        refreshProjects(),
       ]);
-      setAgents(agentList);
-      if (sessionList) setSessions(sessionList.sessions);
-      setProjects(projectData.projects);
 
       await refreshDashboard();
       await refreshProjectDashboard();
