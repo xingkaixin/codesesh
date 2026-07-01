@@ -20,7 +20,6 @@ import type {
   SearchRequestOptions,
   SearchResult,
   SessionHead,
-  SessionData,
   SessionsUpdatedEvent,
   ProjectGroup,
 } from "./lib/api";
@@ -33,7 +32,6 @@ import {
   fetchProjects,
   fetchSearchResults,
   fetchSessions,
-  fetchSessionData,
   importBookmarks,
   logClientEvent,
   subscribeSessionUpdates,
@@ -59,6 +57,7 @@ import {
 } from "./lib/bookmarks";
 import { parseViewState } from "./lib/view-state";
 import { useScanStatus } from "./hooks/useScanStatus";
+import { useSessionDetail } from "./hooks/useSessionDetail";
 import { BrowseByToggle } from "./components/app/BrowseByToggle";
 import { SidebarFlatSessionList } from "./components/app/SidebarFlatSessionList";
 import { SearchResultsPanel } from "./components/app/SearchResultsPanel";
@@ -142,9 +141,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [session, setSession] = useState<SessionData | null>(null);
-  const [sessionLoading, setSessionLoading] = useState(false);
-  const [sessionError, setSessionError] = useState<string | null>(null);
   const [liveNotice, setLiveNotice] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [projects, setProjects] = useState<ProjectGroup[]>([]);
@@ -233,6 +229,13 @@ export default function App() {
     () => parseViewState(location.pathname, validAgentKeys),
     [location.pathname, validAgentKeys],
   );
+
+  const {
+    session,
+    sessionLoading,
+    sessionError,
+    refresh: refreshSessionDetail,
+  } = useSessionDetail(viewState);
 
   useEffect(() => {
     logClientEvent("route.change", {
@@ -531,12 +534,6 @@ export default function App() {
     return results;
   }, [searchFilters, sessionIndexes]);
 
-  // Stable key for session fetch
-  const sessionFetchKey =
-    viewState.mode === "session"
-      ? `${viewState.activeAgentKey}/${viewState.activeSessionSlug}`
-      : "";
-
   const syncLiveUpdate = useEffectEvent(async (event: SessionsUpdatedEvent) => {
     try {
       const canApplySessionUpdate = Boolean(event.changedSessionHeads && event.removedSessionRefs);
@@ -583,17 +580,7 @@ export default function App() {
       if (searchData) setSearchResults(searchData.results);
 
       if (viewState.mode === "session") {
-        try {
-          const data = await fetchSessionData(
-            viewState.activeAgentKey,
-            viewState.activeSessionSlug,
-          );
-          setSession(data);
-          setSessionError(null);
-        } catch {
-          setSession(null);
-          setSessionError("Session not found");
-        }
+        await refreshSessionDetail();
       }
 
       if (event.newSessions > 0) {
@@ -654,47 +641,6 @@ export default function App() {
     searchRequestOptions,
     usesServerSearch,
   ]);
-
-  // Load session detail
-  useEffect(() => {
-    if (viewState.mode !== "session") {
-      setSession(null);
-      setSessionError(null);
-      return;
-    }
-    const ac = new AbortController();
-    setSessionLoading(true);
-    setSessionError(null);
-    const startedAt = performance.now();
-    logClientEvent("session.open.start", {
-      agent: viewState.activeAgentKey,
-      session: viewState.activeSessionSlug,
-    });
-    (async () => {
-      try {
-        const data = await fetchSessionData(viewState.activeAgentKey, viewState.activeSessionSlug);
-        setSession(data);
-        logClientEvent("session.open.done", {
-          agent: viewState.activeAgentKey,
-          session: viewState.activeSessionSlug,
-          duration_ms: Math.round(performance.now() - startedAt),
-          messages: data.messages.length,
-        });
-      } catch (err) {
-        logClientEvent("session.open.error", {
-          agent: viewState.activeAgentKey,
-          session: viewState.activeSessionSlug,
-          duration_ms: Math.round(performance.now() - startedAt),
-          error: err instanceof Error ? err.message : String(err),
-        });
-        setSessionError("Session not found");
-        setSession(null);
-      } finally {
-        setSessionLoading(false);
-      }
-    })();
-    return () => ac.abort();
-  }, [sessionFetchKey, viewState.activeAgentKey, viewState.activeSessionSlug, viewState.mode]);
 
   useEffect(() => {
     if (activeProjectIdentityKey) setSelectedProjectAgent(undefined);
