@@ -40,12 +40,25 @@ function opts(overrides?: Partial<Parameters<typeof buildDashboard>[1]>) {
 describe("getTotalTokens / getSessionAgentName / getSessionActivityTime", () => {
   it("getTotalTokens prefers total_tokens when present", () => {
     expect(
-      getTotalTokens({ total_tokens: 99, total_input_tokens: 1, total_output_tokens: 2 }),
+      getTotalTokens({
+        message_count: 1,
+        total_cost: 0,
+        total_tokens: 99,
+        total_input_tokens: 1,
+        total_output_tokens: 2,
+      }),
     ).toBe(99);
   });
 
   it("getTotalTokens falls back to input + output", () => {
-    expect(getTotalTokens({ total_input_tokens: 10, total_output_tokens: 5 })).toBe(15);
+    expect(
+      getTotalTokens({
+        message_count: 1,
+        total_cost: 0,
+        total_input_tokens: 10,
+        total_output_tokens: 5,
+      }),
+    ).toBe(15);
   });
 
   it("getSessionAgentName extracts agent from slug", () => {
