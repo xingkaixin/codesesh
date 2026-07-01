@@ -1389,24 +1389,32 @@ export function buildZCodeToolStrategy(
   return defaultStrategy;
 }
 
+type ToolStrategyBuilder = (
+  tool: MessagePart,
+  state: NormalizedToolState,
+  baseDirectory?: string,
+) => ToolDisplayStrategy;
+
+// agentKey → 展示策略 builder。新增 agent 时在此登记一行；值类型保证 builder
+// 签名一致，未登记的 agent 走 buildDefaultToolStrategy 兜底（默认渲染，非错误）。
+const TOOL_STRATEGY_BUILDERS: Record<string, ToolStrategyBuilder> = {
+  claudecode: buildClaudeToolStrategy,
+  opencode: buildOpencodeToolStrategy,
+  kimi: buildKimiToolStrategy,
+  codex: buildCodexToolStrategy,
+  cursor: buildCursorToolStrategy,
+  pi: buildPiToolStrategy,
+  zcode: buildZCodeToolStrategy,
+};
+
 export function getToolDisplayStrategy(
   sessionAgentKey: string,
   tool: MessagePart,
   state: NormalizedToolState,
   baseDirectory?: string,
 ): ToolDisplayStrategy {
-  const normalizedAgentKey = sessionAgentKey.toLowerCase();
-  if (normalizedAgentKey === "opencode")
-    return buildOpencodeToolStrategy(tool, state, baseDirectory);
-  if (normalizedAgentKey === "codex") return buildCodexToolStrategy(tool, state, baseDirectory);
-  if (normalizedAgentKey === "kimi") return buildKimiToolStrategy(tool, state, baseDirectory);
-  if (normalizedAgentKey === "claudecode") {
-    return buildClaudeToolStrategy(tool, state, baseDirectory);
-  }
-  if (normalizedAgentKey === "cursor") return buildCursorToolStrategy(tool, state, baseDirectory);
-  if (normalizedAgentKey === "pi") return buildPiToolStrategy(tool, state, baseDirectory);
-  if (normalizedAgentKey === "zcode") return buildZCodeToolStrategy(tool, state, baseDirectory);
-  return buildDefaultToolStrategy(tool, state, baseDirectory);
+  const builder = TOOL_STRATEGY_BUILDERS[sessionAgentKey.toLowerCase()] ?? buildDefaultToolStrategy;
+  return builder(tool, state, baseDirectory);
 }
 
 // ---------------------------------------------------------------------------
