@@ -7,7 +7,6 @@ import { ModelConfig } from "./config";
 import type {
   AgentInfo,
   AppConfig,
-  DashboardData,
   SessionHead,
   SessionsUpdatedEvent,
   ProjectGroup,
@@ -15,7 +14,6 @@ import type {
 import {
   fetchAgents,
   fetchConfig,
-  fetchDashboard,
   fetchProjects,
   fetchSessions,
   logClientEvent,
@@ -38,6 +36,8 @@ import { useScanStatus } from "./hooks/useScanStatus";
 import { useSessionDetail } from "./hooks/useSessionDetail";
 import { useSessionSearch } from "./hooks/useSessionSearch";
 import { useBookmarks } from "./hooks/useBookmarks";
+import { useDashboard } from "./hooks/useDashboard";
+import { useProjectDashboard } from "./hooks/useProjectDashboard";
 import { BrowseByToggle } from "./components/app/BrowseByToggle";
 import { SidebarFlatSessionList } from "./components/app/SidebarFlatSessionList";
 import { SearchResultsPanel } from "./components/app/SearchResultsPanel";
@@ -116,15 +116,10 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const [liveNotice, setLiveNotice] = useState<string | null>(null);
-  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [projects, setProjects] = useState<ProjectGroup[]>([]);
   const [browseBy, setBrowseBy] = useState<BrowseBy>("agents");
   const [selectedProjectIdentity, setSelectedProjectIdentity] =
     useState<ProjectRouteIdentity | null>(null);
-  const [projectDashboard, setProjectDashboard] = useState<DashboardData | null>(null);
-  const [projectDashboardLoading, setProjectDashboardLoading] = useState(false);
-  const [projectDashboardError, setProjectDashboardError] = useState<string | null>(null);
-  const [selectedProjectAgent, setSelectedProjectAgent] = useState<string | undefined>(undefined);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const { scanStatus, setScanStatus } = useScanStatus();
   const [selectedSidebarSessionId, setSelectedSidebarSessionId] = useState<string | null>(null);
@@ -141,13 +136,9 @@ export default function App() {
       try {
         const config = await fetchConfig();
         setAppConfig(config);
-        const [agentList, sessionList, dashboardData, projectData] = await Promise.all([
+        const [agentList, sessionList, projectData] = await Promise.all([
           fetchAgents(),
           fetchSessions({ from: config.window.from, to: config.window.to }),
-          fetchDashboard(config.window).catch((err) => {
-            console.error("Failed to load dashboard:", err);
-            return null;
-          }),
           fetchProjects().catch((err) => {
             console.error("Failed to load projects:", err);
             return { projects: [] };
@@ -156,13 +147,11 @@ export default function App() {
         setAgents(agentList);
         setSessions(sessionList.sessions);
         setProjects(projectData.projects);
-        if (dashboardData) setDashboard(dashboardData);
         logClientEvent("app.load.done", {
           duration_ms: Math.round(performance.now() - startedAt),
           agents: agentList.length,
           sessions: sessionList.sessions.length,
           projects: projectData.projects.length,
-          dashboard: Boolean(dashboardData),
         });
       } catch (err) {
         console.error("Failed to load data:", err);
@@ -267,6 +256,17 @@ export default function App() {
   const activeProjectIdentityKey = activeProjectIdentity
     ? getProjectIdentityKey(activeProjectIdentity)
     : null;
+
+  const { dashboard, refresh: refreshDashboard } = useDashboard(appConfig);
+  const {
+    projectDashboard,
+    projectDashboardLoading,
+    projectDashboardError,
+    selectedProjectAgent,
+    setSelectedProjectAgent,
+    refresh: refreshProjectDashboard,
+  } = useProjectDashboard(appConfig, activeProjectKind, activeProjectKey, activeProjectIdentityKey);
+
   const openedSessionHead = useMemo(() => {
     if (viewState.mode !== "session") return null;
     return (
@@ -352,36 +352,22 @@ export default function App() {
         setSessions((current) => applyLiveSessionUpdate(current, event) ?? current);
       }
 
-      const [agentList, sessionList, dashboardData, projectData, projectDashboardData] =
-        await Promise.all([
-          fetchAgents(),
-          canApplySessionUpdate
-            ? Promise.resolve<{ sessions: SessionHead[] } | null>(null)
-            : fetchSessions({ from: appConfig?.window.from, to: appConfig?.window.to }),
-          fetchDashboard(appConfig?.window).catch((err) => {
-            console.error("Failed to refresh dashboard:", err);
-            return null;
-          }),
-          fetchProjects().catch((err) => {
-            console.error("Failed to refresh projects:", err);
-            return { projects: [] };
-          }),
-          viewState.mode === "project"
-            ? fetchDashboard(appConfig?.window, {
-                projectKind: viewState.activeProjectKind,
-                projectKey: viewState.activeProjectKey,
-                agent: selectedProjectAgent,
-              }).catch((err) => {
-                console.error("Failed to refresh project dashboard:", err);
-                return null;
-              })
-            : Promise.resolve<DashboardData | null>(null),
-        ]);
+      const [agentList, sessionList, projectData] = await Promise.all([
+        fetchAgents(),
+        canApplySessionUpdate
+          ? Promise.resolve<{ sessions: SessionHead[] } | null>(null)
+          : fetchSessions({ from: appConfig?.window.from, to: appConfig?.window.to }),
+        fetchProjects().catch((err) => {
+          console.error("Failed to refresh projects:", err);
+          return { projects: [] };
+        }),
+      ]);
       setAgents(agentList);
       if (sessionList) setSessions(sessionList.sessions);
       setProjects(projectData.projects);
-      if (dashboardData) setDashboard(dashboardData);
-      if (projectDashboardData) setProjectDashboard(projectDashboardData);
+
+      await refreshDashboard();
+      await refreshProjectDashboard();
 
       if (viewState.mode === "session") {
         await refreshSessionDetail();
@@ -396,47 +382,6 @@ export default function App() {
       console.error("Failed to sync live session update:", err);
     }
   });
-
-  useEffect(() => {
-    if (activeProjectIdentityKey) setSelectedProjectAgent(undefined);
-  }, [activeProjectIdentityKey]);
-
-  useEffect(() => {
-    if (!activeProjectKey || !appConfig) {
-      setProjectDashboard(null);
-      setProjectDashboardError(null);
-      setProjectDashboardLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setProjectDashboardLoading(true);
-    setProjectDashboardError(null);
-
-    void fetchDashboard(appConfig.window, {
-      projectKind: activeProjectKind ?? undefined,
-      projectKey: activeProjectKey,
-      agent: selectedProjectAgent,
-    })
-      .then((data) => {
-        if (cancelled) return;
-        setProjectDashboard(data);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.error("Failed to load project dashboard:", err);
-        setProjectDashboard(null);
-        setProjectDashboardError("Failed to load project dashboard");
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setProjectDashboardLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeProjectKind, activeProjectKey, appConfig, selectedProjectAgent]);
 
   useEffect(() => {
     const unsubscribe = subscribeSessionUpdates(
