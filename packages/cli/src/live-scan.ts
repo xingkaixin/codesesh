@@ -591,7 +591,10 @@ export class LiveScanStore {
   }
 
   private enqueueBackfill(agentName: string): void {
-    if (this.backfillQueue.includes(agentName) || this.scanStatus.backfill.currentAgent === agentName) {
+    if (
+      this.backfillQueue.includes(agentName) ||
+      this.scanStatus.backfill.currentAgent === agentName
+    ) {
       return;
     }
     this.backfillQueue.push(agentName);
@@ -634,7 +637,13 @@ export class LiveScanStore {
     }
 
     try {
-      const result = await this.scanAgentInWorker(agent, baseline, null, {}, { sourceSync: true, meta });
+      const result = await this.scanAgentInWorker(
+        agent,
+        baseline,
+        null,
+        {},
+        { sourceSync: true, meta },
+      );
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const fullSessions = attachMissingProjectIdentities(result.sessions);
       const filtered = this.applyFilters(fullSessions);

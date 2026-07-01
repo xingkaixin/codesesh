@@ -96,10 +96,12 @@ describe("ClaudeCodeAgent cache refresh", () => {
     const agent = new ClaudeCodeAgent() as any;
     agent.basePath = basePath;
 
-    expect(agent.listSessionSources().map((ref: { sessionId: string }) => ref.sessionId).sort()).toEqual([
-      "new-session",
-      "old-session",
-    ]);
+    expect(
+      agent
+        .listSessionSources()
+        .map((ref: { sessionId: string }) => ref.sessionId)
+        .sort(),
+    ).toEqual(["new-session", "old-session"]);
 
     const windowed = agent.listSessionSources({ from: Date.now() - 24 * 60 * 60 * 1000 });
     expect(windowed.map((ref: { sessionId: string }) => ref.sessionId)).toEqual(["new-session"]);
