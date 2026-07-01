@@ -7,24 +7,19 @@ import { ModelConfig } from "./config";
 import type {
   AgentInfo,
   AppConfig,
-  BookmarkedSessionSnapshot,
   DashboardData,
   SessionHead,
   SessionsUpdatedEvent,
   ProjectGroup,
 } from "./lib/api";
 import {
-  deleteBookmark,
   fetchAgents,
-  fetchBookmarks,
   fetchConfig,
   fetchDashboard,
   fetchProjects,
   fetchSessions,
-  importBookmarks,
   logClientEvent,
   subscribeSessionUpdates,
-  upsertBookmark,
 } from "./lib/api";
 import { SessionDetail } from "./components/SessionDetail";
 import { SessionDetailSkeleton } from "./components/SessionDetailSkeleton";
@@ -37,17 +32,12 @@ import { CopyResumeButton } from "./components/CopyResumeButton";
 import { SessionTreeSidebar } from "./components/SessionTreeSidebar";
 import { RenderProfiler } from "./components/RenderProfiler";
 import { SmartTagChips } from "./components/SmartTagChips";
-import {
-  clearLegacyBookmarks,
-  getSessionBookmarkKey,
-  loadLegacyBookmarks,
-  mergeBookmarksWithSessions,
-  toBookmarkedSessionSnapshot,
-} from "./lib/bookmarks";
+import { getSessionBookmarkKey } from "./lib/bookmarks";
 import { parseViewState } from "./lib/view-state";
 import { useScanStatus } from "./hooks/useScanStatus";
 import { useSessionDetail } from "./hooks/useSessionDetail";
 import { useSessionSearch } from "./hooks/useSessionSearch";
+import { useBookmarks } from "./hooks/useBookmarks";
 import { BrowseByToggle } from "./components/app/BrowseByToggle";
 import { SidebarFlatSessionList } from "./components/app/SidebarFlatSessionList";
 import { SearchResultsPanel } from "./components/app/SearchResultsPanel";
@@ -122,7 +112,6 @@ export default function App() {
   const navigate = useNavigate();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [sessions, setSessions] = useState<SessionHead[]>([]);
-  const [bookmarks, setBookmarks] = useState<BookmarkedSessionSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -152,24 +141,21 @@ export default function App() {
       try {
         const config = await fetchConfig();
         setAppConfig(config);
-        const [agentList, sessionList, dashboardData, projectData, bookmarkData] =
-          await Promise.all([
-            fetchAgents(),
-            fetchSessions({ from: config.window.from, to: config.window.to }),
-            fetchDashboard(config.window).catch((err) => {
-              console.error("Failed to load dashboard:", err);
-              return null;
-            }),
-            fetchProjects().catch((err) => {
-              console.error("Failed to load projects:", err);
-              return { projects: [] };
-            }),
-            fetchBookmarks(),
-          ]);
+        const [agentList, sessionList, dashboardData, projectData] = await Promise.all([
+          fetchAgents(),
+          fetchSessions({ from: config.window.from, to: config.window.to }),
+          fetchDashboard(config.window).catch((err) => {
+            console.error("Failed to load dashboard:", err);
+            return null;
+          }),
+          fetchProjects().catch((err) => {
+            console.error("Failed to load projects:", err);
+            return { projects: [] };
+          }),
+        ]);
         setAgents(agentList);
         setSessions(sessionList.sessions);
         setProjects(projectData.projects);
-        setBookmarks(bookmarkData.bookmarks);
         if (dashboardData) setDashboard(dashboardData);
         logClientEvent("app.load.done", {
           duration_ms: Math.round(performance.now() - startedAt),
@@ -265,115 +251,8 @@ export default function App() {
       ? location.state.searchQuery
       : "";
 
-  useEffect(() => {
-    let cancelled = false;
-
-    setBookmarks((prev) => {
-      const next = mergeBookmarksWithSessions(prev, sessions);
-      if (next === prev) return prev;
-      void importBookmarks(
-        next.map(({ bookmarked_at: _bookmarkedAt, ...bookmark }) => bookmark),
-      ).catch((error) => {
-        if (!cancelled) {
-          console.error("Failed to sync bookmark snapshots:", error);
-        }
-      });
-      return next;
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [sessions]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void (async () => {
-      const legacy = loadLegacyBookmarks();
-      if (legacy.length === 0) return;
-
-      try {
-        const data = await importBookmarks(
-          legacy.map(({ bookmarked_at: _bookmarkedAt, ...bookmark }) => bookmark),
-        );
-        if (cancelled) return;
-        setBookmarks(data.bookmarks);
-        clearLegacyBookmarks();
-      } catch (error) {
-        if (!cancelled) {
-          console.error("Failed to migrate legacy bookmarks:", error);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const bookmarkKeySet = useMemo(
-    () =>
-      new Set(
-        bookmarks.map((bookmark) => getSessionBookmarkKey(bookmark.agentKey, bookmark.sessionId)),
-      ),
-    [bookmarks],
-  );
-
-  const isSessionBookmarked = useCallback(
-    (agentKey: string, sessionId: string): boolean =>
-      bookmarkKeySet.has(getSessionBookmarkKey(agentKey, sessionId)),
-    [bookmarkKeySet],
-  );
-
-  const toggleBookmark = useCallback(
-    (snapshot: BookmarkedSessionSnapshot) => {
-      const key = getSessionBookmarkKey(snapshot.agentKey, snapshot.sessionId);
-      const exists = bookmarkKeySet.has(key);
-      const previous = bookmarks;
-      const next = exists
-        ? previous.filter(
-            (bookmark) => getSessionBookmarkKey(bookmark.agentKey, bookmark.sessionId) !== key,
-          )
-        : [...previous, snapshot].toSorted((a, b) => {
-            const aTime = a.time_updated ?? a.time_created;
-            const bTime = b.time_updated ?? b.time_created;
-            return bTime - aTime;
-          });
-
-      setBookmarks(next);
-      logClientEvent(exists ? "bookmark.delete" : "bookmark.add", {
-        agent: snapshot.agentKey,
-        session: snapshot.sessionId,
-      });
-
-      void (
-        exists
-          ? deleteBookmark(snapshot.agentKey, snapshot.sessionId)
-          : upsertBookmark({
-              agentKey: snapshot.agentKey,
-              sessionId: snapshot.sessionId,
-              fullPath: snapshot.fullPath,
-              title: snapshot.title,
-              directory: snapshot.directory,
-              time_created: snapshot.time_created,
-              time_updated: snapshot.time_updated,
-              stats: snapshot.stats,
-            })
-      ).catch((error) => {
-        console.error("Failed to toggle bookmark:", error);
-        setBookmarks(previous);
-      });
-    },
-    [bookmarkKeySet, bookmarks],
-  );
-
-  const toggleSessionBookmark = useCallback(
-    (session: SessionHead, agentKey: string) => {
-      toggleBookmark(toBookmarkedSessionSnapshot(session, agentKey));
-    },
-    [toggleBookmark],
-  );
+  const { bookmarkedSessions, isSessionBookmarked, toggleBookmark, toggleSessionBookmark } =
+    useBookmarks(sessions);
 
   const activeAgentKey = viewState.activeAgentKey;
   const activeProjectKind = viewState.mode === "project" ? viewState.activeProjectKind : null;
@@ -433,21 +312,11 @@ export default function App() {
     return new Set(
       sidebarSessions
         .filter((sessionItem) =>
-          bookmarkKeySet.has(
-            getSessionBookmarkKey(getSessionAgentKey(sessionItem), sessionItem.id),
-          ),
+          isSessionBookmarked(getSessionAgentKey(sessionItem), sessionItem.id),
         )
         .map((sessionItem) => sessionItem.id),
     );
-  }, [bookmarkKeySet, sidebarSessions]);
-
-  const bookmarkedSessions = useMemo(
-    () =>
-      bookmarks.toSorted(
-        (a, b) => (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created),
-      ),
-    [bookmarks],
-  );
+  }, [isSessionBookmarked, sidebarSessions]);
 
   const handleSelectFlatSidebarSession = useCallback(
     (sessionItem: SessionHead) => {
