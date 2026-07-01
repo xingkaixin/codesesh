@@ -1,14 +1,6 @@
 declare const __APP_VERSION__: string;
 
-import {
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ModelConfig } from "./config";
@@ -17,8 +9,6 @@ import type {
   AppConfig,
   BookmarkedSessionSnapshot,
   DashboardData,
-  SearchRequestOptions,
-  SearchResult,
   SessionHead,
   SessionsUpdatedEvent,
   ProjectGroup,
@@ -30,7 +20,6 @@ import {
   fetchConfig,
   fetchDashboard,
   fetchProjects,
-  fetchSearchResults,
   fetchSessions,
   importBookmarks,
   logClientEvent,
@@ -58,15 +47,11 @@ import {
 import { parseViewState } from "./lib/view-state";
 import { useScanStatus } from "./hooks/useScanStatus";
 import { useSessionDetail } from "./hooks/useSessionDetail";
+import { useSessionSearch } from "./hooks/useSessionSearch";
 import { BrowseByToggle } from "./components/app/BrowseByToggle";
 import { SidebarFlatSessionList } from "./components/app/SidebarFlatSessionList";
 import { SearchResultsPanel } from "./components/app/SearchResultsPanel";
-import { COST_RANGE_OPTIONS } from "./components/app/SearchFilterBar";
-import {
-  type BrowseBy,
-  type SearchFilterState,
-  type SearchProjectOption,
-} from "./components/app/types";
+import { type BrowseBy, type SearchProjectOption } from "./components/app/types";
 import {
   formatAgentScanProgress,
   formatRelativeTime,
@@ -152,21 +137,11 @@ export default function App() {
   const [projectDashboardError, setProjectDashboardError] = useState<string | null>(null);
   const [selectedProjectAgent, setSelectedProjectAgent] = useState<string | undefined>(undefined);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
-  const [draftSearchQuery, setDraftSearchQuery] = useState("");
-  const [activeSearchQuery, setActiveSearchQuery] = useState("");
-  const [searchMode, setSearchMode] = useState(false);
-  const [searchFilters, setSearchFilters] = useState<SearchFilterState>({});
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
   const { scanStatus, setScanStatus } = useScanStatus();
   const [selectedSidebarSessionId, setSelectedSidebarSessionId] = useState<string | null>(null);
-  const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [shortcutHintDismissed, setShortcutHintDismissed] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const searchResultRefs = useRef(new Map<string, HTMLAnchorElement>());
 
   // Load config + agents + sessions + dashboard (all share the same app-level window)
   useEffect(() => {
@@ -223,8 +198,6 @@ export default function App() {
     () => new Map(agents.map((agent) => [agent.name.toLowerCase(), agent.displayName])),
     [agents],
   );
-  const isSearchMode = searchMode;
-
   const viewState = useMemo(
     () => parseViewState(location.pathname, validAgentKeys),
     [location.pathname, validAgentKeys],
@@ -261,6 +234,28 @@ export default function App() {
       setBrowseBy("agents");
     }
   }, [viewState]);
+  const sessionIndexes = useMemo(() => buildSessionIndexes(sessions, agents), [sessions, agents]);
+
+  const {
+    draftSearchQuery,
+    activeSearchQuery,
+    searchMode,
+    searchFilters,
+    searchResults,
+    searchLoading,
+    usesServerSearch,
+    selectedSearchIndex,
+    searchInputRef,
+    searchResultRefs,
+    setDraftSearchQuery,
+    setSearchFilters,
+    setSelectedSearchIndex,
+    openSearch,
+    submitSearch,
+    closeSearch,
+    refresh: refreshSearch,
+  } = useSessionSearch(sessionIndexes);
+  const isSearchMode = searchMode;
   const detailHighlightQuery = isSearchMode
     ? activeSearchQuery
     : typeof location.state === "object" &&
@@ -269,8 +264,6 @@ export default function App() {
         typeof location.state.searchQuery === "string"
       ? location.state.searchQuery
       : "";
-
-  const sessionIndexes = useMemo(() => buildSessionIndexes(sessions, agents), [sessions, agents]);
 
   useEffect(() => {
     let cancelled = false;
@@ -480,59 +473,8 @@ export default function App() {
     [navigate, sidebarSessionLookup],
   );
 
-  const searchRequestOptions = useMemo<SearchRequestOptions>(() => {
-    const selectedCost = COST_RANGE_OPTIONS.find((option) => option.id === searchFilters.costRange);
-    return {
-      agent: searchFilters.agent,
-      projectKey: searchFilters.projectKey,
-      tag: searchFilters.tag,
-      tool: searchFilters.tool,
-      fileKind: searchFilters.fileKind,
-      costMin: selectedCost?.costMin,
-    };
-  }, [searchFilters]);
-  const usesServerSearch =
-    activeSearchQuery.trim().length > 0 || Boolean(searchFilters.tool || searchFilters.fileKind);
   const scanStatusLabel = formatScanStatusLabel(scanStatus);
   const isScanActive = scanStatus?.active === true;
-  const recentSearchResults = useMemo<SearchResult[]>(() => {
-    const selectedCost = COST_RANGE_OPTIONS.find((option) => option.id === searchFilters.costRange);
-    const agentSessions = searchFilters.agent
-      ? (sessionIndexes.byAgent.get(searchFilters.agent) ?? [])
-      : null;
-    const projectSessions = searchFilters.projectKey
-      ? (sessionIndexes.byProjectKey.get(searchFilters.projectKey) ?? [])
-      : null;
-    const sourceSessions =
-      agentSessions && projectSessions
-        ? agentSessions.length <= projectSessions.length
-          ? agentSessions
-          : projectSessions
-        : (agentSessions ?? projectSessions ?? sessionIndexes.sessionsByActivity);
-    const results: SearchResult[] = [];
-
-    for (const sessionItem of sourceSessions) {
-      if (searchFilters.agent && getSessionAgentKey(sessionItem) !== searchFilters.agent) continue;
-      if (
-        searchFilters.projectKey &&
-        sessionItem.project_identity?.key !== searchFilters.projectKey
-      ) {
-        continue;
-      }
-      if (searchFilters.tag && !sessionItem.smart_tags?.includes(searchFilters.tag)) continue;
-      if (selectedCost && sessionItem.stats.total_cost < selectedCost.costMin) continue;
-
-      results.push({
-        agentName: getSessionAgentKey(sessionItem),
-        session: sessionItem,
-        snippet: `Recent session · ${sessionItem.directory}`,
-        matchType: "recent" as const,
-      });
-      if (results.length >= 50) break;
-    }
-
-    return results;
-  }, [searchFilters, sessionIndexes]);
 
   const syncLiveUpdate = useEffectEvent(async (event: SessionsUpdatedEvent) => {
     try {
@@ -541,7 +483,7 @@ export default function App() {
         setSessions((current) => applyLiveSessionUpdate(current, event) ?? current);
       }
 
-      const [agentList, sessionList, dashboardData, projectData, projectDashboardData, searchData] =
+      const [agentList, sessionList, dashboardData, projectData, projectDashboardData] =
         await Promise.all([
           fetchAgents(),
           canApplySessionUpdate
@@ -565,23 +507,18 @@ export default function App() {
                 return null;
               })
             : Promise.resolve<DashboardData | null>(null),
-          isSearchMode && usesServerSearch
-            ? fetchSearchResults(activeSearchQuery, searchRequestOptions).catch((err) => {
-                console.error("Failed to refresh search results:", err);
-                return { results: [] };
-              })
-            : Promise.resolve<{ results: SearchResult[] } | null>(null),
         ]);
       setAgents(agentList);
       if (sessionList) setSessions(sessionList.sessions);
       setProjects(projectData.projects);
       if (dashboardData) setDashboard(dashboardData);
       if (projectDashboardData) setProjectDashboard(projectDashboardData);
-      if (searchData) setSearchResults(searchData.results);
 
       if (viewState.mode === "session") {
         await refreshSessionDetail();
       }
+
+      await refreshSearch();
 
       if (event.newSessions > 0) {
         setLiveNotice(`发现 ${event.newSessions} 个新会话，列表已自动刷新`);
@@ -590,57 +527,6 @@ export default function App() {
       console.error("Failed to sync live session update:", err);
     }
   });
-
-  useEffect(() => {
-    if (!isSearchMode) {
-      setSearchResults([]);
-      setSearchLoading(false);
-      return;
-    }
-    if (!usesServerSearch) {
-      setSearchResults(recentSearchResults);
-      setSearchLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setSearchLoading(true);
-    const startedAt = performance.now();
-    logClientEvent("search.start", { query_length: activeSearchQuery.length });
-
-    void fetchSearchResults(activeSearchQuery, searchRequestOptions)
-      .then((data) => {
-        if (cancelled) return;
-        setSearchResults(data.results);
-        logClientEvent("search.done", {
-          duration_ms: Math.round(performance.now() - startedAt),
-          results: data.results.length,
-        });
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.error("Failed to load search results:", err);
-        logClientEvent("search.error", {
-          duration_ms: Math.round(performance.now() - startedAt),
-          error: err instanceof Error ? err.message : String(err),
-        });
-        setSearchResults([]);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setSearchLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    activeSearchQuery,
-    isSearchMode,
-    recentSearchResults,
-    searchRequestOptions,
-    usesServerSearch,
-  ]);
 
   useEffect(() => {
     if (activeProjectIdentityKey) setSelectedProjectAgent(undefined);
@@ -719,13 +605,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (isSearchMode) {
-      setSelectedSearchIndex((current) => {
-        if (searchResults.length === 0) return 0;
-        return Math.min(current, searchResults.length - 1);
-      });
-      return;
-    }
+    if (isSearchMode) return;
 
     if (viewState.mode === "session") {
       setSelectedSidebarSessionId(viewState.activeSessionSlug);
@@ -738,21 +618,7 @@ export default function App() {
     }
 
     setSelectedSidebarSessionId(null);
-  }, [
-    isSearchMode,
-    searchResults.length,
-    viewState.mode,
-    viewState.activeSessionSlug,
-    sidebarSessions,
-  ]);
-
-  useEffect(() => {
-    if (!isSearchMode) return;
-    const selectedResult = searchResults[selectedSearchIndex];
-    if (!selectedResult) return;
-    const key = `${selectedResult.agentName}/${selectedResult.session.id}`;
-    searchResultRefs.current.get(key)?.scrollIntoView({ block: "nearest" });
-  }, [isSearchMode, searchResults, selectedSearchIndex]);
+  }, [isSearchMode, viewState.mode, viewState.activeSessionSlug, sidebarSessions]);
 
   // Build landing data
   const landingSessions = sessionIndexes.landingSessions;
@@ -995,10 +861,7 @@ export default function App() {
           projects={searchProjectOptions}
           filters={searchFilters}
           onChangeFilters={setSearchFilters}
-          onOpenResult={() => {
-            setSearchMode(false);
-            setActiveSearchQuery("");
-          }}
+          onOpenResult={closeSearch}
           selectedIndex={selectedSearchIndex}
           registerResultRef={(key, node) => {
             if (node) searchResultRefs.current.set(key, node);
@@ -1111,12 +974,6 @@ export default function App() {
     content = <div className="text-sm text-[var(--console-muted)]">Invalid route.</div>;
   }
 
-  function runSearch() {
-    setActiveSearchQuery(draftSearchQuery.trim());
-    setSearchMode(true);
-    setSelectedSearchIndex(0);
-  }
-
   function dismissShortcutHint() {
     setShortcutHintDismissed(true);
     try {
@@ -1144,12 +1001,8 @@ export default function App() {
     const key = event.key;
     if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === "k") {
       event.preventDefault();
-      setSearchMode(true);
+      openSearch();
       setSelectedSearchIndex(0);
-      window.setTimeout(() => {
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-      }, 0);
       return;
     }
 
@@ -1185,17 +1038,14 @@ export default function App() {
     if (key === "/") {
       event.preventDefault();
       dismissShortcutHint();
-      setSearchMode(true);
-      searchInputRef.current?.focus();
-      searchInputRef.current?.select();
+      openSearch();
       return;
     }
 
     if (key === "Escape") {
       event.preventDefault();
       if (isSearchMode) {
-        setSearchMode(false);
-        setActiveSearchQuery("");
+        closeSearch();
         setDraftSearchQuery("");
         return;
       }
@@ -1241,8 +1091,7 @@ export default function App() {
         if (!result) return;
         event.preventDefault();
         dismissShortcutHint();
-        setSearchMode(false);
-        setActiveSearchQuery("");
+        closeSearch();
         navigate(`/${result.agentName.toLowerCase()}/${result.session.id}`, {
           state: { searchQuery: activeSearchQuery },
         });
@@ -1334,7 +1183,7 @@ export default function App() {
             className="order-3 col-span-2 flex w-full items-center justify-center gap-2 sm:order-none sm:col-span-1 sm:mx-auto sm:max-w-[560px]"
             onSubmit={(event) => {
               event.preventDefault();
-              runSearch();
+              submitSearch();
             }}
           >
             <label className="flex min-w-0 flex-1 items-center rounded-sm border border-[var(--console-border)] bg-white px-2 py-1">
