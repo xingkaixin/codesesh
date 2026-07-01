@@ -160,11 +160,16 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     return heads;
   }
 
-  listSessionSources(): SessionSourceRef[] {
+  listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {
     if (!this.basePath) return [];
     const refs: SessionSourceRef[] = [];
     for (const projectDir of this.listProjectDirs()) {
       for (const file of this.listJsonlFiles(projectDir)) {
+        try {
+          if (!matchesScanWindow(statSync(file).mtimeMs, options)) continue;
+        } catch {
+          continue;
+        }
         const sessionId = basename(file, ".jsonl");
         refs.push({
           sessionId,

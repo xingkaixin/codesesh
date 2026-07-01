@@ -139,21 +139,62 @@ export function isAgentCacheInitialized(
   );
 }
 
+/**
+ * Marks the cache as warm/usable so refreshes can rely on incremental checks
+ * instead of a raw full scan. This is deliberately independent of full-history
+ * reconciliation: a first scan may be bounded to a display window, so
+ * last_sync_at defaults to 0 (never synced) here and is only advanced by
+ * markAgentFullSyncCompleted once a genuine unbounded pass completes.
+ */
 export function markAgentCacheInitialized(
   agentName: string,
   indexVersion = CACHE_INITIALIZATION_VERSION,
 ): void {
   withCacheDb((db) => {
-    const now = Date.now();
     db.prepare(
       `
         INSERT INTO cache_initialization(agent_name, initialized_at, index_version, last_sync_at)
-        VALUES (?, ?, ?, ?)
+        VALUES (?, ?, ?, 0)
         ON CONFLICT(agent_name) DO UPDATE SET
-          index_version = excluded.index_version,
-          last_sync_at = excluded.last_sync_at
+          index_version = excluded.index_version
       `,
-    ).run(agentName, now, indexVersion, now);
+    ).run(agentName, Date.now(), indexVersion);
+  });
+}
+
+/** Timestamp of the agent's last full (unbounded) history reconciliation, or null if none yet. */
+export function getAgentLastFullSyncAt(agentName: string): number | null {
+  if (!hasCacheStorage()) {
+    return null;
+  }
+
+  return (
+    withCacheDbReadOnly((db) => {
+      if (!tableExists(db, "cache_initialization")) return null;
+      const row = db
+        .prepare(
+          `
+            SELECT last_sync_at
+            FROM cache_initialization
+            WHERE agent_name = ?
+          `,
+        )
+        .get(agentName) as { last_sync_at?: number } | undefined;
+      return row?.last_sync_at || null;
+    }) ?? null
+  );
+}
+
+/** Record that a full (unbounded) history reconciliation just completed for this agent. */
+export function markAgentFullSyncCompleted(agentName: string): void {
+  withCacheDb((db) => {
+    db.prepare(
+      `
+        UPDATE cache_initialization
+        SET last_sync_at = ?
+        WHERE agent_name = ?
+      `,
+    ).run(Date.now(), agentName);
   });
 }
 

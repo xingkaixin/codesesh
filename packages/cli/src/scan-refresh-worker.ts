@@ -2,6 +2,7 @@ import { parentPort, workerData } from "node:worker_threads";
 import {
   createRegisteredAgents,
   FileSystemSessionSource,
+  matchesScanWindow,
   type AgentScanProgress,
   type ScanOptions,
   type SessionCacheMeta,
@@ -88,6 +89,21 @@ function sourcePathFromMeta(meta: SessionCacheMeta | undefined): string | null {
 }
 
 /**
+ * A cached session outside the current scan window was never enumerated this
+ * pass, so its absence from sourceRefs doesn't mean it was deleted on disk —
+ * treat it as still present. Sessions with no recorded mtime predate this
+ * field; keep them too rather than risk a false-positive removal.
+ */
+function wasEnumeratedThisPass(
+  cached: SessionCacheMeta | undefined,
+  windowOptions: Pick<ScanOptions, "from" | "to"> | undefined,
+): boolean {
+  if (windowOptions?.from == null && windowOptions?.to == null) return true;
+  const mtimeMs = cached?.sourceMtimeMs;
+  return typeof mtimeMs !== "number" || matchesScanWindow(mtimeMs, windowOptions);
+}
+
+/**
  * Source-level incremental sync, mirroring FileSystemSessionSource.incrementalScan.
  * Kept standalone because the worker cannot share the agent's live metaMap with
  * the main thread — it receives cached meta via workerData instead.
@@ -96,9 +112,10 @@ function syncAgentSources(
   agent: FileSystemSessionSource,
   cachedSessions: SessionHead[],
   cachedMeta: Record<string, SessionCacheMeta>,
+  windowOptions?: Pick<ScanOptions, "from" | "to">,
 ): { sessions: SessionHead[]; changedIds: string[] } {
   const sessionMap = new Map(cachedSessions.map((session) => [session.id, session]));
-  const sourceRefs = agent.listSessionSources();
+  const sourceRefs = agent.listSessionSources(windowOptions);
   const currentIds = new Set(sourceRefs.map((source) => source.sessionId));
   const changedIds = new Set<string>();
 
@@ -120,10 +137,10 @@ function syncAgentSources(
   }
 
   for (const session of cachedSessions) {
-    if (!currentIds.has(session.id)) {
-      sessionMap.delete(session.id);
-      changedIds.add(session.id);
-    }
+    if (currentIds.has(session.id)) continue;
+    if (!wasEnumeratedThisPass(cachedMeta[session.id], windowOptions)) continue;
+    sessionMap.delete(session.id);
+    changedIds.add(session.id);
   }
 
   return { sessions: [...sessionMap.values()], changedIds: [...changedIds] };
@@ -147,7 +164,7 @@ async function run(): Promise<void> {
   if (!isAvailable) {
     sessions = [];
   } else if (data.sourceSync && agent instanceof FileSystemSessionSource) {
-    const result = syncAgentSources(agent, data.previousSessions, data.meta);
+    const result = syncAgentSources(agent, data.previousSessions, data.meta, data.scanOptions);
     sessions = result.sessions;
     changedIds = result.changedIds;
   } else if (data.changedIds) {

@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -130,6 +130,38 @@ describe("PiAgent", () => {
       text: "Alternate branch should not count",
     });
     expect(tool).toBeUndefined();
+  });
+
+  it("bounds listSessionSources to the mtime window when options are passed", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-pi-test-"));
+    tempDirs.push(tempDir);
+    const piHome = join(tempDir, ".pi");
+    const sessionsDir = join(piHome, "agent", "sessions", "--tmp-project--");
+    mkdirSync(sessionsDir, { recursive: true });
+    vi.stubEnv("PI_HOME", piHome);
+
+    const oldFile = join(sessionsDir, "2026-04-20T10-00-00_old-session.jsonl");
+    const newFile = join(sessionsDir, "2026-04-20T10-05-00_new-session.jsonl");
+    writeFileSync(oldFile, "");
+    writeFileSync(newFile, "");
+
+    const oldTime = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const newTime = new Date();
+    utimesSync(oldFile, oldTime, oldTime);
+    utimesSync(newFile, newTime, newTime);
+
+    const agent = new PiAgent();
+    agent.isAvailable();
+
+    expect(
+      agent
+        .listSessionSources()
+        .map((ref) => ref.sourcePath)
+        .sort(),
+    ).toEqual([oldFile, newFile].sort());
+
+    const windowed = agent.listSessionSources({ from: Date.now() - 24 * 60 * 60 * 1000 });
+    expect(windowed.map((ref) => ref.sourcePath)).toEqual([newFile]);
   });
 
   it("uses session names and parses assistant tools on the selected leaf", () => {

@@ -337,12 +337,12 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     return heads;
   }
 
-  listSessionSources(): SessionSourceRef[] {
+  listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {
     if (!this.basePath) return [];
     const refs: SessionSourceRef[] = [];
     for (const dir of this.listSessionDirs()) {
       const meta = getParsedSession(this.parseSessionDirResult(dir));
-      if (!meta) continue;
+      if (!meta || !matchesScanWindow(meta.createdAt, options)) continue;
       refs.push({
         sessionId: meta.id,
         sourcePath: meta.sourcePath,

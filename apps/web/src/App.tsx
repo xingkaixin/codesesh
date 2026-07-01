@@ -37,6 +37,7 @@ import { SearchResultsPanel } from "./components/app/SearchResultsPanel";
 import { type BrowseBy, type SearchProjectOption } from "./components/app/types";
 import {
   formatAgentScanProgress,
+  formatBackfillLabel,
   formatRelativeTime,
   formatScanStatusLabel,
   formatSearchSubtitle,
@@ -297,6 +298,7 @@ export default function App() {
   );
 
   const scanStatusLabel = formatScanStatusLabel(scanStatus);
+  const backfillLabel = formatBackfillLabel(scanStatus);
   const isScanActive = scanStatus?.active === true;
 
   const { liveNotice } = useLiveSync({
@@ -1285,6 +1287,11 @@ export default function App() {
               {scanStatusLabel && viewState.mode === "root" ? (
                 <p className="console-mono mt-2 inline-flex max-w-4xl rounded-sm border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-2 py-1 text-[11px] leading-relaxed text-[var(--console-warning)]">
                   {scanStatusLabel}
+                </p>
+              ) : null}
+              {!scanStatusLabel && backfillLabel && viewState.mode === "root" ? (
+                <p className="console-mono mt-2 inline-flex max-w-4xl rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] leading-relaxed text-[var(--console-text)]">
+                  {backfillLabel}
                 </p>
               ) : null}
             </div>

@@ -153,6 +153,7 @@ describe("filterSessions", () => {
 vi.mock("../cache.js", () => ({
   loadCachedSessions: vi.fn(() => null),
   markAgentCacheInitialized: vi.fn(),
+  markAgentFullSyncCompleted: vi.fn(),
   saveCachedSessionChanges: vi.fn(),
   saveCachedSessions: vi.fn(),
 }));

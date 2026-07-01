@@ -58,6 +58,14 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
   return "Checking for new or changed sessions";
 }
 
+export function formatBackfillLabel(status: ScanStatusEvent | null): string | null {
+  if (!status?.backfill?.active) return null;
+  const current = status.backfill.currentAgent;
+  return current
+    ? `Reconciling full session history in the background · ${current}`
+    : "Reconciling full session history in the background";
+}
+
 export function formatAgentScanProgress(
   status: ScanStatusEvent | null,
   agentName: string,
