@@ -4,8 +4,8 @@ import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNo
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ModelConfig } from "./config";
-import type { SessionHead, SessionsUpdatedEvent, ProjectGroup } from "./lib/api";
-import { logClientEvent, subscribeSessionUpdates } from "./lib/api";
+import type { SessionHead, ProjectGroup } from "./lib/api";
+import { logClientEvent } from "./lib/api";
 import { SessionDetail } from "./components/SessionDetail";
 import { SessionDetailSkeleton } from "./components/SessionDetailSkeleton";
 import { DetailLanding, type LandingAgentItem } from "./components/DetailLanding";
@@ -29,6 +29,8 @@ import { useAppConfig } from "./hooks/useAppConfig";
 import { useAgents } from "./hooks/useAgents";
 import { useSessions } from "./hooks/useSessions";
 import { useProjects } from "./hooks/useProjects";
+import { useInitialLoad } from "./hooks/useInitialLoad";
+import { useLiveSync } from "./hooks/useLiveSync";
 import { BrowseByToggle } from "./components/app/BrowseByToggle";
 import { SidebarFlatSessionList } from "./components/app/SidebarFlatSessionList";
 import { SearchResultsPanel } from "./components/app/SearchResultsPanel";
@@ -108,10 +110,13 @@ export default function App() {
     applyLiveEvent: applySessionsLiveEvent,
   } = useSessions();
   const { projects, refresh: refreshProjects } = useProjects();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { loading, error } = useInitialLoad({
+    refreshAppConfig,
+    refreshAgents,
+    refreshSessions,
+    refreshProjects,
+  });
 
-  const [liveNotice, setLiveNotice] = useState<string | null>(null);
   const [browseBy, setBrowseBy] = useState<BrowseBy>("agents");
   const [selectedProjectIdentity, setSelectedProjectIdentity] =
     useState<ProjectRouteIdentity | null>(null);
@@ -120,39 +125,6 @@ export default function App() {
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [shortcutHintDismissed, setShortcutHintDismissed] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
-  // Load config + agents + sessions + dashboard (all share the same app-level window)
-  useEffect(() => {
-    const ac = new AbortController();
-    const startedAt = performance.now();
-    logClientEvent("app.load.start", { path: window.location.pathname });
-    (async () => {
-      try {
-        const config = await refreshAppConfig();
-        const [agentList, sessionList, projectList] = await Promise.all([
-          refreshAgents(),
-          refreshSessions(config.window),
-          refreshProjects(),
-        ]);
-        logClientEvent("app.load.done", {
-          duration_ms: Math.round(performance.now() - startedAt),
-          agents: agentList.length,
-          sessions: sessionList.length,
-          projects: projectList.length,
-        });
-      } catch (err) {
-        console.error("Failed to load data:", err);
-        logClientEvent("app.load.error", {
-          duration_ms: Math.round(performance.now() - startedAt),
-          error: err instanceof Error ? err.message : String(err),
-        });
-        setError("Failed to load data. Is the CLI server running?");
-      } finally {
-        setLoading(false);
-      }
-    })();
-    return () => ac.abort();
-  }, [refreshAppConfig, refreshAgents, refreshSessions, refreshProjects]);
 
   const location = useLocation();
   const viewState = useMemo(
@@ -327,62 +299,19 @@ export default function App() {
   const scanStatusLabel = formatScanStatusLabel(scanStatus);
   const isScanActive = scanStatus?.active === true;
 
-  const syncLiveUpdate = useEffectEvent(async (event: SessionsUpdatedEvent) => {
-    try {
-      const canApplySessionUpdate = Boolean(event.changedSessionHeads && event.removedSessionRefs);
-      if (canApplySessionUpdate) {
-        applySessionsLiveEvent(event);
-      }
-
-      await Promise.all([
-        refreshAgents(),
-        canApplySessionUpdate || !appConfig ? Promise.resolve() : refreshSessions(appConfig.window),
-        refreshProjects(),
-      ]);
-
-      await refreshDashboard();
-      await refreshProjectDashboard();
-
-      if (viewState.mode === "session") {
-        await refreshSessionDetail();
-      }
-
-      await refreshSearch();
-
-      if (event.newSessions > 0) {
-        setLiveNotice(`发现 ${event.newSessions} 个新会话，列表已自动刷新`);
-      }
-    } catch (err) {
-      console.error("Failed to sync live session update:", err);
-    }
+  const { liveNotice } = useLiveSync({
+    appConfig,
+    viewState,
+    applySessionsLiveEvent,
+    refreshAgents,
+    refreshSessions,
+    refreshProjects,
+    refreshDashboard,
+    refreshProjectDashboard,
+    refreshSessionDetail,
+    refreshSearch,
+    setScanStatus,
   });
-
-  useEffect(() => {
-    const unsubscribe = subscribeSessionUpdates(
-      (event) => {
-        void syncLiveUpdate(event);
-      },
-      (event) => {
-        setScanStatus(event);
-      },
-    );
-
-    return unsubscribe;
-  }, [setScanStatus]);
-
-  useEffect(() => {
-    if (!liveNotice) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      setLiveNotice(null);
-    }, 3500);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [liveNotice]);
 
   useEffect(() => {
     try {
