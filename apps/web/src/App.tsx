@@ -21,7 +21,6 @@ import type {
   SearchResult,
   SessionHead,
   SessionData,
-  ScanStatusEvent,
   SessionsUpdatedEvent,
   ProjectGroup,
 } from "./lib/api";
@@ -32,7 +31,6 @@ import {
   fetchConfig,
   fetchDashboard,
   fetchProjects,
-  fetchScanStatus,
   fetchSearchResults,
   fetchSessions,
   fetchSessionData,
@@ -60,6 +58,7 @@ import {
   toBookmarkedSessionSnapshot,
 } from "./lib/bookmarks";
 import { parseViewState } from "./lib/view-state";
+import { useScanStatus } from "./hooks/useScanStatus";
 import { BrowseByToggle } from "./components/app/BrowseByToggle";
 import { SidebarFlatSessionList } from "./components/app/SidebarFlatSessionList";
 import { SearchResultsPanel } from "./components/app/SearchResultsPanel";
@@ -163,7 +162,7 @@ export default function App() {
   const [searchFilters, setSearchFilters] = useState<SearchFilterState>({});
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [scanStatus, setScanStatus] = useState<ScanStatusEvent | null>(null);
+  const { scanStatus, setScanStatus } = useScanStatus();
   const [selectedSidebarSessionId, setSelectedSidebarSessionId] = useState<string | null>(null);
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
@@ -182,7 +181,7 @@ export default function App() {
       try {
         const config = await fetchConfig();
         setAppConfig(config);
-        const [agentList, sessionList, dashboardData, projectData, bookmarkData, statusData] =
+        const [agentList, sessionList, dashboardData, projectData, bookmarkData] =
           await Promise.all([
             fetchAgents(),
             fetchSessions({ from: config.window.from, to: config.window.to }),
@@ -195,16 +194,11 @@ export default function App() {
               return { projects: [] };
             }),
             fetchBookmarks(),
-            fetchScanStatus().catch((err) => {
-              console.error("Failed to load scan status:", err);
-              return null;
-            }),
           ]);
         setAgents(agentList);
         setSessions(sessionList.sessions);
         setProjects(projectData.projects);
         setBookmarks(bookmarkData.bookmarks);
-        if (statusData) setScanStatus(statusData);
         if (dashboardData) setDashboard(dashboardData);
         logClientEvent("app.load.done", {
           duration_ms: Math.round(performance.now() - startedAt),
@@ -754,7 +748,7 @@ export default function App() {
     );
 
     return unsubscribe;
-  }, []);
+  }, [setScanStatus]);
 
   useEffect(() => {
     if (!liveNotice) {
