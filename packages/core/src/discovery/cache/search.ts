@@ -67,7 +67,7 @@ export interface SearchIndexSyncResult {
   rebuildDurationMs?: number;
 }
 
-export interface MessageSearchRow extends DatabaseRow {
+interface MessageSearchRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
   message_index?: number;
@@ -102,7 +102,7 @@ export interface SearchResultRow extends DatabaseRow {
   snippet?: string | null;
 }
 
-export interface LoadedSearchIndexEntry {
+interface LoadedSearchIndexEntry {
   session: SessionHead;
   identity: ProjectIdentity;
   messages: StructuredMessageRecord[];
@@ -166,10 +166,7 @@ export interface SearchOptions {
   limit?: number;
 }
 
-export function shouldBulkSyncSearchIndex(
-  options: SearchIndexSyncOptions,
-  changedCount: number,
-): boolean {
+function shouldBulkSyncSearchIndex(options: SearchIndexSyncOptions, changedCount: number): boolean {
   if (options.isBulk != null) {
     return options.isBulk;
   }
@@ -178,7 +175,7 @@ export function shouldBulkSyncSearchIndex(
   return threshold > 0 && changedCount >= threshold;
 }
 
-export function sessionContentHash(session: SessionHead): string {
+function sessionContentHash(session: SessionHead): string {
   return JSON.stringify([
     session.slug,
     session.title,
@@ -196,11 +193,11 @@ export function sessionContentHash(session: SessionHead): string {
   ]);
 }
 
-export function escapeFtsTerm(value: string): string {
+function escapeFtsTerm(value: string): string {
   return value.replaceAll('"', '""');
 }
 
-export function splitSearchTokens(input: string): string[] {
+function splitSearchTokens(input: string): string[] {
   const tokens: string[] = [];
   let token = "";
   let inQuote = false;
@@ -228,7 +225,7 @@ export function splitSearchTokens(input: string): string[] {
   return tokens;
 }
 
-export function unwrapSearchValue(value: string): string {
+function unwrapSearchValue(value: string): string {
   const trimmed = value.trim();
   if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
     return trimmed.slice(1, -1).trim();
@@ -236,7 +233,7 @@ export function unwrapSearchValue(value: string): string {
   return trimmed;
 }
 
-export function parseCostQualifier(value: string, filters: SearchQueryFilters): void {
+function parseCostQualifier(value: string, filters: SearchQueryFilters): void {
   const raw = unwrapSearchValue(value);
   const range = raw.match(/^(\d+(?:\.\d+)?)\.\.(\d+(?:\.\d+)?)$/);
   if (range) {
@@ -265,12 +262,12 @@ export function parseCostQualifier(value: string, filters: SearchQueryFilters): 
   }
 }
 
-export function appendUnique<T>(values: T[] | undefined, value: T): T[] {
+function appendUnique<T>(values: T[] | undefined, value: T): T[] {
   if (values?.includes(value)) return values;
   return [...(values ?? []), value];
 }
 
-export function isSmartTag(value: string): value is SmartTag {
+function isSmartTag(value: string): value is SmartTag {
   return (
     value === "bugfix" ||
     value === "refactoring" ||
@@ -340,7 +337,7 @@ export function parseSearchQuery(input: string): ParsedSearchQuery {
   };
 }
 
-export function toFtsQuery(input: string): string {
+function toFtsQuery(input: string): string {
   const tokens = splitSearchTokens(input);
   const mapped = tokens
     .map((token) => {
@@ -364,7 +361,7 @@ export function toFtsQuery(input: string): string {
   return mapped.join(" ");
 }
 
-export function loadSearchIndexEntry(
+function loadSearchIndexEntry(
   agentName: string,
   change: SessionHeadChange,
   loadSessionData: (sessionId: string) => SessionData,
@@ -395,7 +392,7 @@ export function loadSearchIndexEntry(
   }
 }
 
-export function writeSearchIndexRows(
+function writeSearchIndexRows(
   db: SQLiteDatabase,
   agentName: string,
   removedSessionIds: string[],
@@ -761,7 +758,7 @@ export function sessionMatchesSearchCost(session: SessionHead, options: SearchOp
   return true;
 }
 
-export function buildSessionSearchFilters(options: SearchOptions): {
+function buildSessionSearchFilters(options: SearchOptions): {
   where: string;
   params: unknown[];
 } {
@@ -844,7 +841,7 @@ export function buildSessionSearchFilters(options: SearchOptions): {
   };
 }
 
-export function searchSessionColumns(): string {
+function searchSessionColumns(): string {
   return `
     s.agent_name,
     s.session_id,
@@ -870,7 +867,7 @@ export function searchSessionColumns(): string {
   `;
 }
 
-export function parseTextTerms(input: string): { terms: string[]; mode: "all" | "any" } {
+function parseTextTerms(input: string): { terms: string[]; mode: "all" | "any" } {
   const tokens = splitSearchTokens(input);
   return {
     terms: tokens
@@ -881,21 +878,18 @@ export function parseTextTerms(input: string): { terms: string[]; mode: "all" | 
   };
 }
 
-export function textMatchesTerms(text: string, terms: { terms: string[]; mode: "all" | "any" }) {
+function textMatchesTerms(text: string, terms: { terms: string[]; mode: "all" | "any" }) {
   const lower = text.toLowerCase();
   if (terms.terms.length === 0) return true;
   if (terms.mode === "any") return terms.terms.some((term) => lower.includes(term));
   return terms.terms.every((term) => lower.includes(term));
 }
 
-export function highlightTerm(text: string, term: string): string {
+function highlightTerm(text: string, term: string): string {
   return text.replace(new RegExp(escapeRegExp(term), "gi"), (match) => `<mark>${match}</mark>`);
 }
 
-export function buildTermSnippet(
-  text: string,
-  terms: { terms: string[]; mode: "all" | "any" },
-): string {
+function buildTermSnippet(text: string, terms: { terms: string[]; mode: "all" | "any" }): string {
   const lower = text.toLowerCase();
   const term = terms.terms.find((item) => lower.includes(item)) ?? terms.terms[0] ?? "";
   if (!term) return text.slice(0, 180);
@@ -908,19 +902,17 @@ export function buildTermSnippet(
   }`;
 }
 
-export function messageMatchType(row: MessageSearchRow): SearchMatchType {
+function messageMatchType(row: MessageSearchRow): SearchMatchType {
   if (row.role === "user") return "user_message";
   if (row.role === "tool" || row.mode === "tool" || row.tool_metadata_json) return "tool_output";
   return "assistant_reply";
 }
 
-export function searchResultRowKey(
-  row: Pick<SearchResultRow, "agent_name" | "session_id">,
-): string {
+function searchResultRowKey(row: Pick<SearchResultRow, "agent_name" | "session_id">): string {
   return `${String(row.agent_name)}\u0000${String(row.session_id)}`;
 }
 
-export function fetchMessageSearchMatches(
+function fetchMessageSearchMatches(
   db: SQLiteDatabase,
   rows: SearchResultRow[],
   ftsQuery: string,
@@ -975,7 +967,7 @@ export function fetchMessageSearchMatches(
   return matches;
 }
 
-export function resolveSearchMatch(
+function resolveSearchMatch(
   row: SearchResultRow,
   terms: { terms: string[]; mode: "all" | "any" },
   messageMatches: Map<string, { snippet: string; matchType: SearchMatchType }>,
@@ -1004,7 +996,7 @@ export function resolveSearchMatch(
   };
 }
 
-export function rowsToSearchResults(
+function rowsToSearchResults(
   db: SQLiteDatabase,
   rows: SearchResultRow[],
   textQuery: string,
