@@ -4,8 +4,10 @@ import { Worker } from "node:worker_threads";
 import {
   createRegisteredAgents,
   filterSessions,
+  getAgentLastFullSyncAt,
   isAgentCacheInitialized,
   loadCachedSessions,
+  markAgentFullSyncCompleted,
   scanSessions,
   FileSystemSessionSource,
   attachMissingProjectIdentities,
@@ -52,6 +54,19 @@ export interface ScanStatusEvent {
   startedAt?: number;
   updatedAt: number;
   completedAt?: number;
+  backfill: BackfillStatus;
+}
+
+/**
+ * Full-history reconciliation runs independently of the main scan phase above:
+ * startup only syncs the display window, so a low-priority background pass
+ * (capped at one agent at a time) periodically re-checks the rest of history.
+ */
+export interface BackfillStatus {
+  active: boolean;
+  pendingAgents: string[];
+  currentAgent?: string;
+  completedAgents: string[];
 }
 
 export interface AgentScanStatus {
@@ -90,6 +105,8 @@ const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
 const PENDING_REFRESH_DELAY_MS = 100;
 const NEW_SESSION_EVENT_WINDOW_MS = 250;
 const SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD = 100;
+/** Old files rarely change, but it's not impossible — reconcile full history at most this often. */
+const BACKFILL_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 function buildRefreshDiff(
   agentName: string,
@@ -180,7 +197,10 @@ export class LiveScanStore {
     agentStatuses: {},
     totalAgents: 0,
     updatedAt: Date.now(),
+    backfill: { active: false, pendingAgents: [], completedAgents: [] },
   };
+  private backfillQueue: string[] = [];
+  private backfillRunning = false;
   private refreshTimers = new Map<string, NodeJS.Timeout>();
   private refreshTimestamps = new Map<string, number>();
   private refreshInFlight = new Set<string>();
@@ -288,6 +308,11 @@ export class LiveScanStore {
       if (agentNames.length === 0) {
         this.finishScanBatch();
       }
+      for (const agent of this.agents) {
+        if (this.needsBackfill(agent)) {
+          this.enqueueBackfill(agent.name);
+        }
+      }
     }, 0);
   }
 
@@ -312,6 +337,11 @@ export class LiveScanStore {
           { ...status },
         ]),
       ),
+      backfill: {
+        ...this.scanStatus.backfill,
+        pendingAgents: [...this.scanStatus.backfill.pendingAgents],
+        completedAgents: [...this.scanStatus.backfill.completedAgents],
+      },
     };
   }
 
@@ -404,6 +434,7 @@ export class LiveScanStore {
       ]),
     );
     this.updateScanStatus({
+      ...this.scanStatus,
       active: uniqueAgentNames.length > 0,
       phase: uniqueAgentNames.length > 0 ? phase : "idle",
       pendingAgents: uniqueAgentNames,
@@ -535,6 +566,123 @@ export class LiveScanStore {
       updatedAt: now,
       completedAt: now,
     });
+  }
+
+  private updateBackfillStatus(patch: Partial<BackfillStatus>): void {
+    this.updateScanStatus({
+      ...this.scanStatus,
+      backfill: { ...this.scanStatus.backfill, ...patch },
+      updatedAt: Date.now(),
+    });
+  }
+
+  /**
+   * Only FileSystemSessionSource agents pay the O(history) enumeration cost this
+   * guards against: database agents already do a cheap single-file mtime check.
+   * With no startup window configured, the regular refresh path already walks
+   * full history, so backfill would be redundant.
+   */
+  private needsBackfill(agent: BaseAgent): boolean {
+    if (this.startupScanOptions.from == null && this.startupScanOptions.to == null) return false;
+    if (!(agent instanceof FileSystemSessionSource)) return false;
+    if (!agent.isAvailable()) return false;
+    const lastSyncAt = getAgentLastFullSyncAt(agent.name);
+    return lastSyncAt == null || Date.now() - lastSyncAt > BACKFILL_INTERVAL_MS;
+  }
+
+  private enqueueBackfill(agentName: string): void {
+    if (
+      this.backfillQueue.includes(agentName) ||
+      this.scanStatus.backfill.currentAgent === agentName
+    ) {
+      return;
+    }
+    this.backfillQueue.push(agentName);
+    this.updateBackfillStatus({ active: true, pendingAgents: [...this.backfillQueue] });
+    this.pumpBackfillQueue();
+  }
+
+  private pumpBackfillQueue(): void {
+    if (this.backfillRunning) return;
+    const agentName = this.backfillQueue.shift();
+    if (!agentName) return;
+
+    this.backfillRunning = true;
+    this.updateBackfillStatus({ currentAgent: agentName, pendingAgents: [...this.backfillQueue] });
+
+    void this.runBackfill(agentName).finally(() => {
+      this.backfillRunning = false;
+      this.updateBackfillStatus({
+        currentAgent: undefined,
+        completedAgents: [...new Set([...this.scanStatus.backfill.completedAgents, agentName])],
+        active: this.backfillQueue.length > 0,
+      });
+      this.pumpBackfillQueue();
+    });
+  }
+
+  /** Unbounded per-source sync to reconcile the full session history, not just the display window. */
+  private async runBackfill(agentName: string): Promise<void> {
+    const startedAt = performance.now();
+    const agent = this.agents.find((item) => item.name === agentName);
+    if (!agent || !(agent instanceof FileSystemSessionSource) || !agent.isAvailable()) {
+      return;
+    }
+
+    const cached = loadCachedSessions(agentName);
+    const baseline = cached?.sessions ?? this.byAgent[agentName] ?? [];
+    const meta = cached?.meta ?? buildAgentCacheMeta(agent);
+    if (cached) {
+      restoreAgentCacheMeta(agent, cached.meta);
+    }
+
+    try {
+      const result = await this.scanAgentInWorker(
+        agent,
+        baseline,
+        null,
+        {},
+        { sourceSync: true, meta },
+      );
+      agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
+      const fullSessions = attachMissingProjectIdentities(result.sessions);
+      const filtered = this.applyFilters(fullSessions);
+      const diff = buildRefreshDiff(
+        agentName,
+        this.byAgent[agentName] ?? [],
+        filtered,
+        result.changedIds ?? [],
+      );
+
+      this.byAgent[agentName] = sortSessions(filtered);
+      this.rebuildSessions();
+
+      await this.enqueueSearchIndexJobs("scan.backfill", [
+        {
+          kind: "full",
+          context: "scan.backfill",
+          agentName,
+          sessions: fullSessions,
+          meta: buildAgentCacheMeta(agent),
+          saveCache: true,
+        },
+      ]);
+      markAgentFullSyncCompleted(agentName);
+
+      if (diff.event) {
+        diff.event.totalSessions = this.sessions.length;
+        this.emit(diff.event);
+      }
+      appLogger.info("scan.backfill.done", {
+        agent: agentName,
+        duration_ms: Math.round(performance.now() - startedAt),
+        sessions: fullSessions.length,
+        changed: result.changedIds?.length ?? 0,
+      });
+    } catch (error) {
+      appLogger.error("scan.backfill.error", { agent: agentName, error });
+      console.error(`[${agentName}] Backfill failed:`, error);
+    }
   }
 
   private queueEvent(event: SessionsUpdatedEvent): void {
@@ -878,9 +1026,16 @@ export class LiveScanStore {
       nextSessions = [];
       this.refreshTimestamps.set(agentName, Date.now());
     } else if (!isInitialized) {
+      // First-ever scan is bounded to the display window so startup stays fast;
+      // needsBackfill() picks up the rest of history in the background.
       this.setScanPhase("initializing");
       const scanStartedAt = performance.now();
-      const result = await this.scanAgentInWorker(agent, previousSessions, null, {});
+      const result = await this.scanAgentInWorker(
+        agent,
+        previousSessions,
+        null,
+        this.startupScanOptions,
+      );
       nextSessions = result.sessions;
       agent.setSessionMetaMap?.(new Map(Object.entries(result.meta)));
       fullScanSessions = attachMissingProjectIdentities(nextSessions);
@@ -888,15 +1043,16 @@ export class LiveScanStore {
       scanDuration = performance.now() - scanStartedAt;
       this.refreshTimestamps.set(agentName, Date.now());
     } else if (cached && agent instanceof FileSystemSessionSource) {
-      // File-system agents refresh via precise per-source fingerprint sync.
-      // Database agents lack per-file fingerprints and fall through to the
-      // checkForChanges branch below.
+      // File-system agents refresh via precise per-source fingerprint sync,
+      // bounded to the display window; the background backfill pass
+      // periodically reconciles sessions outside it. Database agents lack
+      // per-file fingerprints and fall through to the checkForChanges branch below.
       const scanStartedAt = performance.now();
       const result = await this.scanAgentInWorker(
         agent,
         cached.sessions,
         null,
-        {},
+        this.startupScanOptions,
         {
           sourceSync: true,
           meta: cached.meta,

@@ -190,9 +190,9 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     return heads;
   }
 
-  listSessionSources(): SessionSourceRef[] {
+  listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {
     if (!this.basePath) return [];
-    return this.listSessionFiles().map((file) => ({
+    return this.listSessionFiles(options).map((file) => ({
       sessionId: extractSessionIdFromFilename(file),
       sourcePath: file,
       fingerprint: this.sourceFingerprint(file),

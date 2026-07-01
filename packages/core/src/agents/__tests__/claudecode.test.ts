@@ -77,6 +77,36 @@ describe("ClaudeCodeAgent cache refresh", () => {
     expect(agent.listSessionSources()[0]?.fingerprint).not.toBe(baselineFingerprint);
   });
 
+  it("bounds listSessionSources to the mtime window when options are passed", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-window-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    mkdirSync(projectDir, { recursive: true });
+
+    const oldFile = join(projectDir, "old-session.jsonl");
+    const newFile = join(projectDir, "new-session.jsonl");
+    writeFileSync(oldFile, "");
+    writeFileSync(newFile, "");
+
+    const oldTime = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const newTime = new Date();
+    utimesSync(oldFile, oldTime, oldTime);
+    utimesSync(newFile, newTime, newTime);
+
+    const agent = new ClaudeCodeAgent() as any;
+    agent.basePath = basePath;
+
+    expect(
+      agent
+        .listSessionSources()
+        .map((ref: { sessionId: string }) => ref.sessionId)
+        .sort(),
+    ).toEqual(["new-session", "old-session"]);
+
+    const windowed = agent.listSessionSources({ from: Date.now() - 24 * 60 * 60 * 1000 });
+    expect(windowed.map((ref: { sessionId: string }) => ref.sessionId)).toEqual(["new-session"]);
+  });
+
   it("parses indexed sessions with assistant tools and tool results", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-test-"));
     tempDirs.push(basePath);

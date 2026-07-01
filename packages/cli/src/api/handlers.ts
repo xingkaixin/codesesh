@@ -72,6 +72,12 @@ export interface ScanStatusSource {
     startedAt?: number;
     updatedAt: number;
     completedAt?: number;
+    backfill: {
+      active: boolean;
+      pendingAgents: string[];
+      currentAgent?: string;
+      completedAgents: string[];
+    };
   };
 }
 

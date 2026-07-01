@@ -190,6 +190,14 @@ export interface ScanStatusEvent {
   startedAt?: number;
   updatedAt: number;
   completedAt?: number;
+  backfill: BackfillStatus;
+}
+
+export interface BackfillStatus {
+  active: boolean;
+  pendingAgents: string[];
+  currentAgent?: string;
+  completedAgents: string[];
 }
 
 export interface AgentScanStatus {

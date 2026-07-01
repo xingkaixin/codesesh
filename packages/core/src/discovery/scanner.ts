@@ -8,6 +8,7 @@ import { classifySessionTags, getSmartTagSourceTimestamp, perf } from "../utils/
 import {
   loadCachedSessions,
   markAgentCacheInitialized,
+  markAgentFullSyncCompleted,
   saveCachedSessionChanges,
   saveCachedSessions,
 } from "./cache.js";
@@ -448,6 +449,7 @@ async function scanAgentFull(
     if (options.writeCache !== false && options.from == null && options.to == null) {
       saveCachedSessions(agent.name, tagged.sessions, meta);
       markAgentCacheInitialized(agent.name);
+      markAgentFullSyncCompleted(agent.name);
     }
 
     onProgress?.({ agent: agent.name, phase: "complete", newCount: tagged.sessions.length });

@@ -120,6 +120,45 @@ describe("CodexAgent cache refresh", () => {
     expect(agent.listSessionSources()[0]?.fingerprint).toBe(baselineFingerprint);
   });
 
+  it("bounds listSessionSources to the mtime window when options are passed", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const oldFile = join(
+      tempDir,
+      "rollout-2026-04-20T10-00-00-019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa.jsonl",
+    );
+    const newFile = join(
+      tempDir,
+      "rollout-2026-04-20T10-05-00-019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb.jsonl",
+    );
+    writeFileSync(
+      oldFile,
+      '{"type":"session_meta","payload":{"timestamp":"2026-04-20T10:00:00Z"}}\n',
+    );
+    writeFileSync(
+      newFile,
+      '{"type":"session_meta","payload":{"timestamp":"2026-04-20T10:05:00Z"}}\n',
+    );
+
+    const oldTime = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const newTime = new Date();
+    utimesSync(oldFile, oldTime, oldTime);
+    utimesSync(newFile, newTime, newTime);
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+
+    expect(
+      agent
+        .listSessionSources()
+        .map((ref: { sourcePath: string }) => ref.sourcePath)
+        .sort(),
+    ).toEqual([oldFile, newFile].sort());
+
+    const windowed = agent.listSessionSources({ from: Date.now() - 24 * 60 * 60 * 1000 });
+    expect(windowed.map((ref: { sourcePath: string }) => ref.sourcePath)).toEqual([newFile]);
+  });
+
   it("uses per-session Codex titles in source fingerprints", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
     tempDirs.push(tempDir);

@@ -123,8 +123,8 @@ export abstract class FileSystemSessionSource<
 > extends BaseAgent {
   protected sessionMetaMap = new Map<string, TMeta>();
 
-  /** 枚举所有会话源及其指纹。 */
-  abstract listSessionSources(): SessionSourceRef[];
+  /** 枚举所有会话源及其指纹。传入 options 时按 mtime 限定扫描窗口。 */
+  abstract listSessionSources(options?: AgentScanOptions): SessionSourceRef[];
 
   /** 解析单个源并写入 metaMap，返回会话 head（解析失败/不可见返回 null）。 */
   abstract scanSessionSource(sourcePath: string): SessionHead | null;

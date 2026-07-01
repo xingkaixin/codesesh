@@ -14,6 +14,8 @@ export {
   loadCachedSessionData,
   isAgentCacheInitialized,
   markAgentCacheInitialized,
+  getAgentLastFullSyncAt,
+  markAgentFullSyncCompleted,
   saveCachedSessions,
   saveCachedSessionChanges,
   clearCache,

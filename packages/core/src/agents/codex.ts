@@ -352,10 +352,10 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     return heads;
   }
 
-  listSessionSources(): SessionSourceRef[] {
+  listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {
     if (!this.basePath) return [];
     this.loadSessionIndex();
-    return this.listRolloutFiles().map((file) => ({
+    return this.listRolloutFiles(options).map((file) => ({
       sessionId: extractSessionId(file),
       sourcePath: file,
       fingerprint: this.sourceFingerprint(file),

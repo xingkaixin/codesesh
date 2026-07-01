@@ -13,11 +13,13 @@ export {
 export {
   CACHE_INITIALIZATION_VERSION,
   clearCache,
+  getAgentLastFullSyncAt,
   getCacheInfo,
   isAgentCacheInitialized,
   loadCachedSessionData,
   loadCachedSessions,
   markAgentCacheInitialized,
+  markAgentFullSyncCompleted,
   saveCachedSessionChanges,
   saveCachedSessions,
   type CachedResult,

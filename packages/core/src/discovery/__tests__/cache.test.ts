@@ -5,11 +5,15 @@ import Database from "better-sqlite3";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearCache,
+  getAgentLastFullSyncAt,
   getCacheInfo,
+  isAgentCacheInitialized,
   listFileActivity,
   listCachedProjectGroups,
   loadCachedSessionData,
   loadCachedSessions,
+  markAgentCacheInitialized,
+  markAgentFullSyncCompleted,
   parseSearchQuery,
   searchFileActivitySessions,
   searchSessions,
@@ -458,6 +462,37 @@ describe("clearCache", () => {
     writeFileSync(getLegacyCachePath(), JSON.stringify({ stale: true }), "utf-8");
     clearCache();
     expect(() => readFileSync(getLegacyCachePath(), "utf-8")).toThrow();
+  });
+});
+
+describe("cache initialization tracking", () => {
+  it("is not initialized and has no full-sync timestamp before any write", () => {
+    expect(isAgentCacheInitialized("claudecode")).toBe(false);
+    expect(getAgentLastFullSyncAt("claudecode")).toBeNull();
+  });
+
+  it("marks the cache initialized without advancing last full sync", () => {
+    markAgentCacheInitialized("claudecode");
+
+    expect(isAgentCacheInitialized("claudecode")).toBe(true);
+    expect(getAgentLastFullSyncAt("claudecode")).toBeNull();
+  });
+
+  it("advances last full sync only once markAgentFullSyncCompleted runs", () => {
+    markAgentCacheInitialized("claudecode");
+    markAgentFullSyncCompleted("claudecode");
+
+    expect(getAgentLastFullSyncAt("claudecode")).toBe(now);
+  });
+
+  it("re-initializing an already-synced agent preserves its last full sync", () => {
+    markAgentCacheInitialized("claudecode");
+    markAgentFullSyncCompleted("claudecode");
+
+    dateNowSpy.mockReturnValue(now + 1000);
+    markAgentCacheInitialized("claudecode");
+
+    expect(getAgentLastFullSyncAt("claudecode")).toBe(now);
   });
 });
 

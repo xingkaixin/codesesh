@@ -115,6 +115,27 @@ describe("KimiAgent cache refresh", () => {
     expect(agent.getSessionMetaMap().has("deleted-session")).toBe(false);
   });
 
+  it("bounds listSessionSources to the createdAt window when options are passed", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-test-"));
+    tempDirs.push(basePath);
+    const oldTime = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const newTime = Date.now();
+    createSessionDir(basePath, "old-session", "Old", oldTime);
+    createSessionDir(basePath, "new-session", "New", newTime);
+
+    const agent = createAgent(basePath);
+
+    expect(
+      agent
+        .listSessionSources()
+        .map((ref) => ref.sessionId)
+        .sort(),
+    ).toEqual(["new-session", "old-session"]);
+
+    const windowed = agent.listSessionSources({ from: Date.now() - 24 * 60 * 60 * 1000 });
+    expect(windowed.map((ref) => ref.sessionId)).toEqual(["new-session"]);
+  });
+
   it("parses context messages with tool calls and backfilled output", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-test-"));
     tempDirs.push(basePath);
