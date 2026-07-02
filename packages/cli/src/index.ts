@@ -45,6 +45,11 @@ const main = defineCommand({
       description: "HTTP server port",
       default: String(DEFAULT_PORT),
     },
+    host: {
+      type: "string",
+      description: "HTTP server bind address (default 127.0.0.1, local access only)",
+      default: "127.0.0.1",
+    },
     agent: {
       type: "string",
       alias: "a",
@@ -237,6 +242,7 @@ const main = defineCommand({
         defaultSessionTo: listDefaultTo,
         defaultSessionDays: listDefaultDays,
         portFallbackAttempts: explicitPort ? 1 : DEFAULT_PORT_FALLBACK_ATTEMPTS,
+        hostname: args.host as string,
       });
     } catch (error) {
       console.error(getServerStartupErrorMessage(error, port));
