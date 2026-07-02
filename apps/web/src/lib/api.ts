@@ -425,36 +425,78 @@ export function logClientEvent(event: string, data: Record<string, unknown> = {}
   }).catch(() => {});
 }
 
+const INITIAL_RETRY_MS = 1_000;
+const MAX_RETRY_MS = 30_000;
+
+function jitter(delayMs: number): number {
+  const spread = delayMs * 0.2;
+  return delayMs + (Math.random() * 2 - 1) * spread;
+}
+
 export function subscribeSessionUpdates(
   onUpdate: (event: SessionsUpdatedEvent) => void,
   onScanStatus?: (event: ScanStatusEvent) => void,
+  onReconnect?: () => void,
+  onDisconnect?: () => void,
 ): () => void {
-  const source = new EventSource("/api/events");
+  let disposed = false;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let retryDelayMs = INITIAL_RETRY_MS;
+  let hasConnectedOnce = false;
+  let disconnectNotified = false;
+  let currentSource: EventSource | undefined;
 
-  source.addEventListener("sessions-updated", (event) => {
-    try {
-      onUpdate(JSON.parse(event.data) as SessionsUpdatedEvent);
-    } catch (error) {
-      console.error("Failed to parse session update event:", error);
-    }
-  });
+  const connect = () => {
+    const source = new EventSource("/api/events");
+    currentSource = source;
 
-  source.addEventListener("scan-status", (event) => {
-    if (!onScanStatus) return;
-    try {
-      onScanStatus(JSON.parse(event.data) as ScanStatusEvent);
-    } catch (error) {
-      console.error("Failed to parse scan status event:", error);
-    }
-  });
+    source.addEventListener("sessions-updated", (event) => {
+      try {
+        onUpdate(JSON.parse(event.data) as SessionsUpdatedEvent);
+      } catch (error) {
+        console.error("Failed to parse session update event:", error);
+      }
+    });
 
-  source.onerror = () => {
-    if (source.readyState !== EventSource.CLOSED) {
-      console.warn("Session update stream disconnected");
-    }
+    source.addEventListener("scan-status", (event) => {
+      if (!onScanStatus) return;
+      try {
+        onScanStatus(JSON.parse(event.data) as ScanStatusEvent);
+      } catch (error) {
+        console.error("Failed to parse scan status event:", error);
+      }
+    });
+
+    source.onopen = () => {
+      retryDelayMs = INITIAL_RETRY_MS;
+      disconnectNotified = false;
+      if (hasConnectedOnce) {
+        onReconnect?.();
+      }
+      hasConnectedOnce = true;
+    };
+
+    source.onerror = () => {
+      if (source.readyState !== EventSource.CLOSED) return;
+      source.close();
+      if (disposed) return;
+      if (!disconnectNotified) {
+        disconnectNotified = true;
+        onDisconnect?.();
+      }
+      const delay = jitter(retryDelayMs);
+      retryDelayMs = Math.min(retryDelayMs * 2, MAX_RETRY_MS);
+      retryTimer = setTimeout(connect, delay);
+    };
   };
 
+  connect();
+
   return () => {
-    source.close();
+    disposed = true;
+    if (retryTimer !== undefined) {
+      clearTimeout(retryTimer);
+    }
+    currentSource?.close();
   };
 }
