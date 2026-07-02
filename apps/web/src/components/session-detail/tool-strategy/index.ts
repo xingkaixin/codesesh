@@ -4,12 +4,9 @@
  *
  * This is the registry entry point: getToolDisplayStrategy dispatches by
  * agentKey to the builder in the matching ./<agent>.ts file. Common
- * infrastructure (normalizeToolState, normalizeMessagesForDisplay, the
- * default/skill strategies, and extractors shared by 2+ agents) lives in
- * ./shared.ts.
- *
- * cursor/pi/zcode builders have not moved yet (CS-19 step 2) — imported here
- * from the legacy ../tool-strategy shell in the meantime.
+ * infrastructure lives in ./shared.ts (default/skill strategies, extractors
+ * shared by 2+ agents); agent-agnostic normalization (normalizeToolState,
+ * normalizeMessagesForDisplay) lives in ../tool-normalize.ts.
  *
  * Pure logic — no React. Consumed by SessionDetail's ToolItem / MessageItem.
  */
@@ -19,27 +16,30 @@ import { buildClaudeToolStrategy } from "./claudecode";
 import { buildOpencodeToolStrategy } from "./opencode";
 import { buildKimiToolStrategy } from "./kimi";
 import { buildCodexToolStrategy } from "./codex";
-import {
-  buildCursorToolStrategy,
-  buildPiToolStrategy,
-  buildZCodeToolStrategy,
-} from "../tool-strategy";
+import { buildCursorToolStrategy } from "./cursor";
+import { buildPiToolStrategy } from "./pi";
+import { buildZCodeToolStrategy } from "./zcode";
 import { buildDefaultToolStrategy } from "./shared";
 
 export type { NormalizedToolState, ToolDisplayStrategy, ToolStatus } from "../tool-normalize";
+export {
+  getAssistantDisplayLabel,
+  normalizeMessagesForDisplay,
+  normalizeToolState,
+} from "../tool-normalize";
 export {
   buildDefaultToolStrategy,
   buildSkillToolStrategy,
   extractReadContent,
   extractWriteContent,
-  getAssistantDisplayLabel,
-  normalizeMessagesForDisplay,
-  normalizeToolState,
 } from "./shared";
 export { buildClaudeToolStrategy } from "./claudecode";
 export { buildOpencodeToolStrategy } from "./opencode";
 export { buildKimiToolStrategy } from "./kimi";
 export { buildCodexToolStrategy, extractCodexNodeReplTextOutput } from "./codex";
+export { buildCursorToolStrategy } from "./cursor";
+export { buildPiToolStrategy } from "./pi";
+export { buildZCodeToolStrategy } from "./zcode";
 
 type ToolStrategyBuilder = (
   tool: MessagePart,

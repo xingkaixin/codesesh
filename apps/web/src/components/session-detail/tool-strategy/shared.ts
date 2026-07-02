@@ -1,24 +1,20 @@
 /**
- * Cross-agent tool-strategy infrastructure: state normalization, message
- * normalization, and the default/skill strategy builders + extractors reused
- * by 2+ agent builders (claudecode, opencode, kimi, pi, zcode).
+ * Cross-agent tool-strategy infrastructure: the default/skill strategy
+ * builders and extractors reused by 2+ agent builders (claudecode, opencode,
+ * kimi, pi, zcode).
  *
  * Pure logic — no React. Consumed by the per-agent builders in this folder.
  */
-import type { Message, MessagePart } from "../../../lib/api";
+import type { MessagePart } from "../../../lib/api";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
   type ToolStatus,
-  compactText,
-  extractCommand,
   formatToolOutput,
   getOutputOrErrorText,
   getToolTitle,
   joinToolText,
   normalizeEscapedNewlines,
-  parseInputCandidate,
-  toDisplayText,
   toPlainText,
   toRecord,
   toStringValue,
@@ -54,62 +50,6 @@ export function extractWriteContent(state: NormalizedToolState) {
     if (contentText.trim()) return normalizeEscapedNewlines(contentText);
   }
   return getOutputOrErrorText(state);
-}
-
-export function getAssistantDisplayLabel(msg: Message) {
-  const nickname = compactText(msg.nickname);
-  if (msg.role === "assistant" && nickname) return `AGENT (${nickname})`;
-  if (msg.role === "user") return "USER";
-  if (msg.role === "tool") return "TOOL";
-  return "AGENT";
-}
-
-export function normalizeMessagesForDisplay(messages: Message[], sessionAgentKey: string) {
-  if (sessionAgentKey.toLowerCase() !== "cursor") return messages;
-
-  const normalized: Message[] = [];
-  for (const msg of messages) {
-    if (msg.role !== "tool") {
-      normalized.push({ ...msg, parts: [...msg.parts] });
-      continue;
-    }
-    const previous = normalized.at(-1);
-    if (previous?.role === "assistant") {
-      previous.parts.push(...msg.parts);
-      continue;
-    }
-    normalized.push({ ...msg, parts: [...msg.parts] });
-  }
-  return normalized;
-}
-
-// ---------------------------------------------------------------------------
-// Tool state normalization
-// ---------------------------------------------------------------------------
-
-export function normalizeToolState(part: MessagePart): NormalizedToolState {
-  const rawState = (part.state || {}) as Record<string, unknown>;
-  const rawStatus = rawState.status;
-  const status: ToolStatus =
-    rawStatus === "running" || rawStatus === "error" || rawStatus === "completed"
-      ? rawStatus
-      : "completed";
-
-  const outputValue = rawState.output ?? rawState.result ?? "";
-  const errorValue = rawState.error ?? "";
-  const inputValue = parseInputCandidate(rawState.input ?? rawState.arguments ?? {});
-  const metadataValue = rawState.metadata ?? {};
-  const command = extractCommand(inputValue);
-
-  return {
-    status,
-    command,
-    inputValue,
-    outputValue,
-    errorValue,
-    metadataValue,
-    inputText: toDisplayText(inputValue),
-  };
 }
 
 // ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@
  * in ./utils and are re-exported here for convenience.
  */
 import type { LoaderCircle } from "lucide-react";
-import type { MessagePart } from "../../lib/api";
+import type { Message, MessagePart } from "../../lib/api";
 import type { ToolOutputContent } from "../tool-output/types";
 import type { ToolDetailItem } from "./codex-tool";
 import {
@@ -159,4 +159,64 @@ export function getOutputOrErrorText(state: NormalizedToolState) {
   const errorText = formatToolOutput(state.errorValue);
   if (errorText !== "No output captured.") return errorText;
   return "No output captured.";
+}
+
+// ---------------------------------------------------------------------------
+// Tool state normalization
+// ---------------------------------------------------------------------------
+
+export function normalizeToolState(part: MessagePart): NormalizedToolState {
+  const rawState = (part.state || {}) as Record<string, unknown>;
+  const rawStatus = rawState.status;
+  const status: ToolStatus =
+    rawStatus === "running" || rawStatus === "error" || rawStatus === "completed"
+      ? rawStatus
+      : "completed";
+
+  const outputValue = rawState.output ?? rawState.result ?? "";
+  const errorValue = rawState.error ?? "";
+  const inputValue = parseInputCandidate(rawState.input ?? rawState.arguments ?? {});
+  const metadataValue = rawState.metadata ?? {};
+  const command = extractCommand(inputValue);
+
+  return {
+    status,
+    command,
+    inputValue,
+    outputValue,
+    errorValue,
+    metadataValue,
+    inputText: toDisplayText(inputValue),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Message normalization
+// ---------------------------------------------------------------------------
+
+export function getAssistantDisplayLabel(msg: Message) {
+  const nickname = compactText(msg.nickname);
+  if (msg.role === "assistant" && nickname) return `AGENT (${nickname})`;
+  if (msg.role === "user") return "USER";
+  if (msg.role === "tool") return "TOOL";
+  return "AGENT";
+}
+
+export function normalizeMessagesForDisplay(messages: Message[], sessionAgentKey: string) {
+  if (sessionAgentKey.toLowerCase() !== "cursor") return messages;
+
+  const normalized: Message[] = [];
+  for (const msg of messages) {
+    if (msg.role !== "tool") {
+      normalized.push({ ...msg, parts: [...msg.parts] });
+      continue;
+    }
+    const previous = normalized.at(-1);
+    if (previous?.role === "assistant") {
+      previous.parts.push(...msg.parts);
+      continue;
+    }
+    normalized.push({ ...msg, parts: [...msg.parts] });
+  }
+  return normalized;
 }

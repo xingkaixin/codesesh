@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message, MessagePart } from "../../lib/api";
 import {
-  formatMessageTime,
   getAssistantDisplayLabel,
   getToolDisplayStrategy,
   normalizeMessagesForDisplay,
@@ -179,14 +178,6 @@ describe("getToolDisplayStrategy", () => {
       kind: "plain",
       text: "No output captured.",
     });
-  });
-});
-
-describe("formatMessageTime", () => {
-  it("formats a millisecond timestamp", () => {
-    const result = formatMessageTime(Date.now());
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
   });
 });
 
