@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatCostSource,
+  formatMessageTime,
   formatMoney,
   formatNumber,
   formatRelativeTime,
@@ -125,5 +126,13 @@ describe("formatTokens", () => {
 
   it("formats negative values as-is", () => {
     expect(formatTokens(-500)).toBe("-500");
+  });
+});
+
+describe("formatMessageTime", () => {
+  it("formats a millisecond timestamp", () => {
+    const result = formatMessageTime(Date.now());
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
   });
 });

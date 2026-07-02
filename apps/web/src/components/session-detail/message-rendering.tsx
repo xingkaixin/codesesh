@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { Message, MessagePart } from "../../lib/api";
 import { ModelConfig } from "../../config";
+import { formatMessageTime } from "../../lib/format";
 import { MarkdownContent } from "../MarkdownContent";
 import { ToolOutputRenderer } from "../tool-output/ToolOutputRenderer";
 import { extractMessageText, type MessageBlock } from "./blocks";
@@ -22,7 +23,6 @@ import { getDisplayTextWithRelativePaths } from "./path-extract";
 import { escapeRegExp } from "./utils";
 import {
   type ToolStatus,
-  formatMessageTime,
   getAssistantDisplayLabel,
   getToolDisplayStrategy,
   normalizeToolState,
