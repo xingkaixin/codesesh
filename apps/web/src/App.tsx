@@ -1,6 +1,6 @@
 declare const __APP_VERSION__: string;
 
-import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { SessionHead } from "./lib/api";
@@ -27,6 +27,7 @@ import { useSessions } from "./hooks/useSessions";
 import { useProjects } from "./hooks/useProjects";
 import { useInitialLoad } from "./hooks/useInitialLoad";
 import { useLiveSync } from "./hooks/useLiveSync";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { AppSidebar } from "./components/app/AppSidebar";
 import { SearchResultsPanel } from "./components/app/SearchResultsPanel";
 import { type BrowseBy, type SearchProjectOption } from "./components/app/types";
@@ -78,17 +79,6 @@ const SHORTCUT_GROUPS = [
     ],
   },
 ] as const;
-
-function isEditableTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) return false;
-  const tagName = target.tagName.toLowerCase();
-  return (
-    tagName === "input" ||
-    tagName === "textarea" ||
-    tagName === "select" ||
-    target.isContentEditable
-  );
-}
 
 export default function App() {
   const navigate = useNavigate();
@@ -704,161 +694,28 @@ export default function App() {
     navigate("/");
   }
 
-  const handleGlobalKeydown = useEffectEvent((event: KeyboardEvent) => {
-    const key = event.key;
-    if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === "k") {
-      event.preventDefault();
-      openSearch();
-      setSelectedSearchIndex(0);
-      return;
-    }
-
-    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
-    if (event.isComposing) return;
-
-    const target = event.target;
-    const inEditable = isEditableTarget(target);
-
-    if (shortcutHelpOpen) {
-      if (key === "Escape") {
-        event.preventDefault();
-        setShortcutHelpOpen(false);
-      }
-      return;
-    }
-
-    if (inEditable) {
-      if (key === "Escape") {
-        event.preventDefault();
-        if (target instanceof HTMLElement) target.blur();
-      }
-      return;
-    }
-
-    if (key === "?") {
-      event.preventDefault();
-      setShortcutHelpOpen(true);
-      dismissShortcutHint();
-      return;
-    }
-
-    if (key === "/") {
-      event.preventDefault();
-      dismissShortcutHint();
-      openSearch();
-      return;
-    }
-
-    if (key === "Escape") {
-      event.preventDefault();
-      if (isSearchMode) {
-        closeSearch();
-        setDraftSearchQuery("");
-        return;
-      }
-      if (viewState.mode === "session" && viewState.activeAgentKey) {
-        if (browseBy === "projects" && selectedProjectNavigationIdentity) {
-          navigate(getProjectPath(selectedProjectNavigationIdentity));
-          return;
-        }
-        navigate(`/${viewState.activeAgentKey}`);
-      }
-      return;
-    }
-
-    if (isSearchMode) {
-      if (searchResults.length === 0) return;
-
-      if (key === "j") {
-        event.preventDefault();
-        dismissShortcutHint();
-        setSelectedSearchIndex((current) => Math.min(current + 1, searchResults.length - 1));
-        return;
-      }
-      if (key === "k") {
-        event.preventDefault();
-        dismissShortcutHint();
-        setSelectedSearchIndex((current) => Math.max(current - 1, 0));
-        return;
-      }
-      if (key === "g") {
-        event.preventDefault();
-        dismissShortcutHint();
-        setSelectedSearchIndex(0);
-        return;
-      }
-      if (key === "G") {
-        event.preventDefault();
-        dismissShortcutHint();
-        setSelectedSearchIndex(searchResults.length - 1);
-        return;
-      }
-      if (key === "Enter") {
-        const result = searchResults[selectedSearchIndex];
-        if (!result) return;
-        event.preventDefault();
-        dismissShortcutHint();
-        closeSearch();
-        navigate(`/${result.agentName.toLowerCase()}/${result.session.id}`, {
-          state: { searchQuery: activeSearchQuery },
-        });
-      }
-      return;
-    }
-
-    if (browseBy === "agents" && !activeAgentKey) return;
-    if (sidebarSessions.length === 0) return;
-
-    const moveSidebarSelection = (offset: number) => {
-      dismissShortcutHint();
-      const currentIndex =
-        selectedSidebarSessionId != null
-          ? (sidebarSessionLookup.indexById.get(selectedSidebarSessionId) ?? -1)
-          : -1;
-      const baseIndex =
-        currentIndex >= 0 ? currentIndex : offset >= 0 ? -1 : sidebarSessions.length;
-      const nextIndex = Math.max(0, Math.min(baseIndex + offset, sidebarSessions.length - 1));
-      setSelectedSidebarSessionId(sidebarSessions[nextIndex]?.id ?? null);
-    };
-
-    if (key === "j") {
-      event.preventDefault();
-      moveSidebarSelection(1);
-      return;
-    }
-    if (key === "k") {
-      event.preventDefault();
-      moveSidebarSelection(-1);
-      return;
-    }
-    if (key === "g") {
-      event.preventDefault();
-      dismissShortcutHint();
-      setSelectedSidebarSessionId(sidebarSessions[0]?.id ?? null);
-      return;
-    }
-    if (key === "G") {
-      event.preventDefault();
-      dismissShortcutHint();
-      setSelectedSidebarSessionId(sidebarSessions.at(-1)?.id ?? null);
-      return;
-    }
-    if (key === "Enter") {
-      const selected =
-        selectedSidebarSessionId != null
-          ? sidebarSessionLookup.byId.get(selectedSidebarSessionId)
-          : null;
-      if (!selected) return;
-      event.preventDefault();
-      dismissShortcutHint();
-      navigate(browseBy === "projects" ? `/${selected.slug}` : `/${activeAgentKey}/${selected.id}`);
-    }
+  useKeyboardShortcuts({
+    viewState,
+    browseBy,
+    navigate,
+    activeAgentKey,
+    sidebarSessions,
+    sidebarSessionLookup,
+    selectedSidebarSessionId,
+    setSelectedSidebarSessionId,
+    selectedProjectNavigationIdentity,
+    shortcutHelpOpen,
+    setShortcutHelpOpen,
+    dismissShortcutHint,
+    isSearchMode,
+    activeSearchQuery,
+    searchResults,
+    selectedSearchIndex,
+    setSelectedSearchIndex,
+    setDraftSearchQuery,
+    openSearch,
+    closeSearch,
   });
-
-  useEffect(() => {
-    window.addEventListener("keydown", handleGlobalKeydown);
-    return () => window.removeEventListener("keydown", handleGlobalKeydown);
-  }, []);
 
   return (
     <div className="console-ui flex h-screen flex-col overflow-hidden bg-[var(--console-bg)] text-[var(--console-text)]">
