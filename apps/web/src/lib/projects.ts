@@ -1,8 +1,12 @@
-import type { ProjectIdentityKind } from "./api";
+import type { ProjectGroup, ProjectIdentityKind } from "./api";
 
 export interface ProjectRouteIdentity {
   kind: ProjectIdentityKind;
   key: string;
+}
+
+export function getProjectGroupIdentity(project: ProjectGroup): ProjectRouteIdentity {
+  return { kind: project.identityKind, key: project.identityKey };
 }
 
 const projectIdentityKinds = new Set<string>([
