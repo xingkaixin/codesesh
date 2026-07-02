@@ -2,6 +2,22 @@ import { createServer as createNodeServer, type Server as NodeServer } from "nod
 import { describe, expect, it, vi } from "vitest";
 import { createServer } from "./server.js";
 
+const serveOptionsLog = vi.hoisted(() => [] as { hostname?: string; port?: number }[]);
+
+vi.mock("@hono/node-server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@hono/node-server")>();
+  return {
+    ...actual,
+    serve: (options: Parameters<typeof actual.serve>[0]) => {
+      serveOptionsLog.push({
+        hostname: (options as { hostname?: string }).hostname,
+        port: (options as { port?: number }).port,
+      });
+      return actual.serve(options);
+    },
+  };
+});
+
 function createStore() {
   return {
     getSnapshot: () => ({ sessions: [], byAgent: {}, agents: [] }),
@@ -12,7 +28,7 @@ function createStore() {
 async function listen(server: NodeServer, port: number): Promise<number> {
   return new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, () => {
+    server.listen(port, "127.0.0.1", () => {
       server.off("error", reject);
       const address = server.address();
       resolve(typeof address === "object" && address !== null ? address.port : port);
@@ -65,6 +81,31 @@ describe("createServer", () => {
     } finally {
       await app?.shutdown();
       await close(blocker);
+    }
+  });
+
+  it("binds to 127.0.0.1 by default", async () => {
+    const app = await createServer(0, createStore());
+
+    expect(serveOptionsLog.at(-1)?.hostname).toBe("127.0.0.1");
+    expect(app.url).toMatch(/^http:\/\/localhost:\d+$/);
+
+    await app.shutdown();
+  });
+
+  it("binds to the provided hostname and reflects it in the url", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const app = await createServer(0, createStore(), { hostname: "0.0.0.0" });
+
+      expect(serveOptionsLog.at(-1)?.hostname).toBe("0.0.0.0");
+      expect(app.url).toMatch(/^http:\/\/0\.0\.0\.0:\d+$/);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("0.0.0.0"));
+
+      await app.shutdown();
+    } finally {
+      warnSpy.mockRestore();
     }
   });
 

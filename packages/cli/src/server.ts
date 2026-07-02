@@ -16,6 +16,7 @@ export interface CreateServerOptions {
   defaultSessionTo?: number;
   defaultSessionDays?: number;
   portFallbackAttempts?: number;
+  hostname?: string;
 }
 
 function findWebDistPath(): string | null {
@@ -132,12 +133,13 @@ export async function createServer(
   }
 
   const attempts = Math.max(1, options.portFallbackAttempts ?? 1);
+  const hostname = options.hostname ?? "127.0.0.1";
   let server: Server | null = null;
   let actualPort = port;
 
   for (let offset = 0; offset < attempts; offset += 1) {
     const candidatePort = port + offset;
-    server = serve({ fetch: app.fetch, port: candidatePort });
+    server = serve({ fetch: app.fetch, port: candidatePort, hostname });
 
     try {
       await waitForListening(server);
@@ -165,8 +167,16 @@ export async function createServer(
     }
   }
 
-  const url = `http://localhost:${actualPort}`;
-  appLogger.info("server.listen", { port: actualPort, requested_port: port, url });
+  const isLoopback = hostname === "127.0.0.1" || hostname === "localhost";
+  const url = isLoopback ? `http://localhost:${actualPort}` : `http://${hostname}:${actualPort}`;
+  appLogger.info("server.listen", { port: actualPort, requested_port: port, hostname, url });
+
+  if (!isLoopback) {
+    appLogger.warn("server.listen.exposed", { hostname, port: actualPort });
+    console.warn(
+      `\n⚠ 服务监听 ${hostname}，局域网内其他设备可读取你的全部 AI 会话记录（无鉴权）。\n`,
+    );
+  }
 
   return {
     url,
