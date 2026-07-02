@@ -37,12 +37,12 @@ import { SearchResultsPanel } from "./components/app/SearchResultsPanel";
 import { type BrowseBy, type SearchProjectOption } from "./components/app/types";
 import {
   formatAgentScanProgress,
-  formatRelativeTime,
   formatScanStatusLabel,
   formatSearchSubtitle,
   formatWindowLabel,
   getAgentDisplayCount,
 } from "./lib/scan-format";
+import { formatRelativeTime } from "./lib/format";
 import { getProjectIdentityKey, getProjectPath, type ProjectRouteIdentity } from "./lib/projects";
 import {
   buildSessionIndexes,
