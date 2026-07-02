@@ -301,28 +301,29 @@ export interface BookmarkedSessionSnapshot {
   bookmarked_at: number;
 }
 
+async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, init);
+  if (!res.ok) {
+    const method = init?.method ?? "GET";
+    throw new Error(`${method} ${path} failed: ${res.status} ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 export async function fetchConfig(): Promise<AppConfig> {
-  const res = await fetch("/api/config");
-  if (!res.ok) throw new Error("Failed to fetch config");
-  return res.json();
+  return fetchJson("/api/config");
 }
 
 export async function fetchScanStatus(): Promise<ScanStatusEvent> {
-  const res = await fetch("/api/status");
-  if (!res.ok) throw new Error("Failed to fetch scan status");
-  return res.json();
+  return fetchJson("/api/status");
 }
 
 export async function fetchAgents(): Promise<AgentInfo[]> {
-  const res = await fetch("/api/agents");
-  if (!res.ok) throw new Error("Failed to fetch agents");
-  return res.json();
+  return fetchJson("/api/agents");
 }
 
 export async function fetchProjects(): Promise<{ projects: ProjectGroup[] }> {
-  const res = await fetch("/api/projects");
-  if (!res.ok) throw new Error("Failed to fetch projects");
-  return res.json();
+  return fetchJson("/api/projects");
 }
 
 export async function fetchSessions(
@@ -338,15 +339,11 @@ export async function fetchSessions(
   if (options.projectKey) params.set("projectKey", options.projectKey);
   if (options.from != null) params.set("from", new Date(options.from).toISOString());
   if (options.to != null) params.set("to", new Date(options.to).toISOString());
-  const res = await fetch(`/api/sessions?${params}`);
-  if (!res.ok) throw new Error("Failed to fetch sessions");
-  return res.json();
+  return fetchJson(`/api/sessions?${params}`);
 }
 
 export async function fetchSessionData(agent: string, sessionId: string): Promise<SessionData> {
-  const res = await fetch(`/api/sessions/${agent}/${sessionId}`);
-  if (!res.ok) throw new Error("Failed to fetch session data");
-  return res.json();
+  return fetchJson(`/api/sessions/${agent}/${sessionId}`);
 }
 
 export async function fetchDashboard(
@@ -361,9 +358,7 @@ export async function fetchDashboard(
   if (filters.projectKey) params.set("projectKey", filters.projectKey);
   if (filters.agent) params.set("agent", filters.agent);
   const suffix = params.toString();
-  const res = await fetch(suffix ? `/api/dashboard?${suffix}` : "/api/dashboard");
-  if (!res.ok) throw new Error("Failed to fetch dashboard");
-  return res.json();
+  return fetchJson(suffix ? `/api/dashboard?${suffix}` : "/api/dashboard");
 }
 
 export async function fetchSearchResults(
@@ -379,46 +374,37 @@ export async function fetchSearchResults(
   if (options.fileKind) params.set("fileActivity", options.fileKind);
   if (options.costMin != null) params.set("costMin", String(options.costMin));
   if (options.costMax != null) params.set("costMax", String(options.costMax));
-  const res = await fetch(`/api/search?${params}`);
-  if (!res.ok) throw new Error("Failed to fetch search results");
-  return res.json();
+  return fetchJson(`/api/search?${params}`);
 }
 
 export async function fetchBookmarks(): Promise<{ bookmarks: BookmarkedSessionSnapshot[] }> {
-  const res = await fetch("/api/bookmarks");
-  if (!res.ok) throw new Error("Failed to fetch bookmarks");
-  return res.json();
+  return fetchJson("/api/bookmarks");
 }
 
 export async function upsertBookmark(
   bookmark: Omit<BookmarkedSessionSnapshot, "bookmarked_at">,
 ): Promise<{ bookmark: BookmarkedSessionSnapshot }> {
-  const res = await fetch("/api/bookmarks", {
+  return fetchJson("/api/bookmarks", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(bookmark),
   });
-  if (!res.ok) throw new Error("Failed to save bookmark");
-  return res.json();
 }
 
 export async function importBookmarks(
   bookmarks: Omit<BookmarkedSessionSnapshot, "bookmarked_at">[],
 ): Promise<{ bookmarks: BookmarkedSessionSnapshot[] }> {
-  const res = await fetch("/api/bookmarks/import", {
+  return fetchJson("/api/bookmarks/import", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(bookmarks),
   });
-  if (!res.ok) throw new Error("Failed to import bookmarks");
-  return res.json();
 }
 
 export async function deleteBookmark(agentKey: string, sessionId: string): Promise<void> {
-  const res = await fetch(`/api/bookmarks/${agentKey}/${sessionId}`, {
+  await fetchJson(`/api/bookmarks/${agentKey}/${sessionId}`, {
     method: "DELETE",
   });
-  if (!res.ok) throw new Error("Failed to delete bookmark");
 }
 
 export function logClientEvent(event: string, data: Record<string, unknown> = {}): void {
