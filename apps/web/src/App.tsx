@@ -1,10 +1,9 @@
 declare const __APP_VERSION__: string;
 
-import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ModelConfig } from "./config";
-import type { SessionHead, ProjectGroup } from "./lib/api";
+import type { SessionHead } from "./lib/api";
 import { logClientEvent } from "./lib/api";
 import { SessionDetail } from "./components/SessionDetail";
 import { SessionDetailSkeleton } from "./components/SessionDetailSkeleton";
@@ -12,12 +11,9 @@ import { DetailLanding, type LandingAgentItem } from "./components/DetailLanding
 import { Dashboard } from "./components/Dashboard";
 import { ProjectDashboardView, ProjectsOverview } from "./components/Projects";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { BookmarkButton } from "./components/BookmarkButton";
 import { CopyResumeButton } from "./components/CopyResumeButton";
-import { SessionTreeSidebar } from "./components/SessionTreeSidebar";
 import { RenderProfiler } from "./components/RenderProfiler";
 import { SmartTagChips } from "./components/SmartTagChips";
-import { getSessionBookmarkKey } from "./lib/bookmarks";
 import { parseViewState } from "./lib/view-state";
 import { useScanStatus } from "./hooks/useScanStatus";
 import { useSessionDetail } from "./hooks/useSessionDetail";
@@ -31,19 +27,19 @@ import { useSessions } from "./hooks/useSessions";
 import { useProjects } from "./hooks/useProjects";
 import { useInitialLoad } from "./hooks/useInitialLoad";
 import { useLiveSync } from "./hooks/useLiveSync";
-import { BrowseByToggle } from "./components/app/BrowseByToggle";
-import { SidebarFlatSessionList } from "./components/app/SidebarFlatSessionList";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { AppSidebar } from "./components/app/AppSidebar";
 import { SearchResultsPanel } from "./components/app/SearchResultsPanel";
+import { ShortcutHelpDialog } from "./components/app/ShortcutHelpDialog";
 import { type BrowseBy, type SearchProjectOption } from "./components/app/types";
-import {
-  formatAgentScanProgress,
-  formatScanStatusLabel,
-  formatSearchSubtitle,
-  formatWindowLabel,
-  getAgentDisplayCount,
-} from "./lib/scan-format";
+import { formatScanStatusLabel, formatSearchSubtitle, formatWindowLabel } from "./lib/scan-format";
 import { formatRelativeTime } from "./lib/format";
-import { getProjectIdentityKey, getProjectPath, type ProjectRouteIdentity } from "./lib/projects";
+import {
+  getProjectGroupIdentity,
+  getProjectIdentityKey,
+  getProjectPath,
+  type ProjectRouteIdentity,
+} from "./lib/projects";
 import {
   buildSessionIndexes,
   buildSidebarSessionLookup,
@@ -52,53 +48,12 @@ import {
   getSessionRouteKey,
 } from "./lib/session-indexes";
 
-function getProjectGroupIdentity(project: ProjectGroup): ProjectRouteIdentity {
-  return { kind: project.identityKind, key: project.identityKey };
-}
-
 interface BreadcrumbItem {
   label: string;
   to?: string;
 }
 
 const SHORTCUT_HINT_STORAGE_KEY = "codesesh.shortcuts-hint-dismissed";
-
-const SHORTCUT_GROUPS = [
-  {
-    title: "Navigation",
-    items: [
-      { keys: "j / k", description: "Move through sessions or search results" },
-      { keys: "Enter", description: "Open the current selection" },
-      { keys: "g / G", description: "Jump to the first or last item" },
-    ],
-  },
-  {
-    title: "Search",
-    items: [
-      { keys: "Cmd/Ctrl K", description: "Open global search" },
-      { keys: "/", description: "Focus the search box" },
-      { keys: "Esc", description: "Exit search or close the current detail view" },
-    ],
-  },
-  {
-    title: "Groups",
-    items: [
-      { keys: "g / G", description: "Jump to the first or last session" },
-      { keys: "?", description: "Open this shortcuts panel" },
-    ],
-  },
-] as const;
-
-function isEditableTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) return false;
-  const tagName = target.tagName.toLowerCase();
-  return (
-    tagName === "input" ||
-    tagName === "textarea" ||
-    tagName === "select" ||
-    target.isContentEditable
-  );
-}
 
 export default function App() {
   const navigate = useNavigate();
@@ -714,161 +669,28 @@ export default function App() {
     navigate("/");
   }
 
-  const handleGlobalKeydown = useEffectEvent((event: KeyboardEvent) => {
-    const key = event.key;
-    if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === "k") {
-      event.preventDefault();
-      openSearch();
-      setSelectedSearchIndex(0);
-      return;
-    }
-
-    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
-    if (event.isComposing) return;
-
-    const target = event.target;
-    const inEditable = isEditableTarget(target);
-
-    if (shortcutHelpOpen) {
-      if (key === "Escape") {
-        event.preventDefault();
-        setShortcutHelpOpen(false);
-      }
-      return;
-    }
-
-    if (inEditable) {
-      if (key === "Escape") {
-        event.preventDefault();
-        if (target instanceof HTMLElement) target.blur();
-      }
-      return;
-    }
-
-    if (key === "?") {
-      event.preventDefault();
-      setShortcutHelpOpen(true);
-      dismissShortcutHint();
-      return;
-    }
-
-    if (key === "/") {
-      event.preventDefault();
-      dismissShortcutHint();
-      openSearch();
-      return;
-    }
-
-    if (key === "Escape") {
-      event.preventDefault();
-      if (isSearchMode) {
-        closeSearch();
-        setDraftSearchQuery("");
-        return;
-      }
-      if (viewState.mode === "session" && viewState.activeAgentKey) {
-        if (browseBy === "projects" && selectedProjectNavigationIdentity) {
-          navigate(getProjectPath(selectedProjectNavigationIdentity));
-          return;
-        }
-        navigate(`/${viewState.activeAgentKey}`);
-      }
-      return;
-    }
-
-    if (isSearchMode) {
-      if (searchResults.length === 0) return;
-
-      if (key === "j") {
-        event.preventDefault();
-        dismissShortcutHint();
-        setSelectedSearchIndex((current) => Math.min(current + 1, searchResults.length - 1));
-        return;
-      }
-      if (key === "k") {
-        event.preventDefault();
-        dismissShortcutHint();
-        setSelectedSearchIndex((current) => Math.max(current - 1, 0));
-        return;
-      }
-      if (key === "g") {
-        event.preventDefault();
-        dismissShortcutHint();
-        setSelectedSearchIndex(0);
-        return;
-      }
-      if (key === "G") {
-        event.preventDefault();
-        dismissShortcutHint();
-        setSelectedSearchIndex(searchResults.length - 1);
-        return;
-      }
-      if (key === "Enter") {
-        const result = searchResults[selectedSearchIndex];
-        if (!result) return;
-        event.preventDefault();
-        dismissShortcutHint();
-        closeSearch();
-        navigate(`/${result.agentName.toLowerCase()}/${result.session.id}`, {
-          state: { searchQuery: activeSearchQuery },
-        });
-      }
-      return;
-    }
-
-    if (browseBy === "agents" && !activeAgentKey) return;
-    if (sidebarSessions.length === 0) return;
-
-    const moveSidebarSelection = (offset: number) => {
-      dismissShortcutHint();
-      const currentIndex =
-        selectedSidebarSessionId != null
-          ? (sidebarSessionLookup.indexById.get(selectedSidebarSessionId) ?? -1)
-          : -1;
-      const baseIndex =
-        currentIndex >= 0 ? currentIndex : offset >= 0 ? -1 : sidebarSessions.length;
-      const nextIndex = Math.max(0, Math.min(baseIndex + offset, sidebarSessions.length - 1));
-      setSelectedSidebarSessionId(sidebarSessions[nextIndex]?.id ?? null);
-    };
-
-    if (key === "j") {
-      event.preventDefault();
-      moveSidebarSelection(1);
-      return;
-    }
-    if (key === "k") {
-      event.preventDefault();
-      moveSidebarSelection(-1);
-      return;
-    }
-    if (key === "g") {
-      event.preventDefault();
-      dismissShortcutHint();
-      setSelectedSidebarSessionId(sidebarSessions[0]?.id ?? null);
-      return;
-    }
-    if (key === "G") {
-      event.preventDefault();
-      dismissShortcutHint();
-      setSelectedSidebarSessionId(sidebarSessions.at(-1)?.id ?? null);
-      return;
-    }
-    if (key === "Enter") {
-      const selected =
-        selectedSidebarSessionId != null
-          ? sidebarSessionLookup.byId.get(selectedSidebarSessionId)
-          : null;
-      if (!selected) return;
-      event.preventDefault();
-      dismissShortcutHint();
-      navigate(browseBy === "projects" ? `/${selected.slug}` : `/${activeAgentKey}/${selected.id}`);
-    }
+  useKeyboardShortcuts({
+    viewState,
+    browseBy,
+    navigate,
+    activeAgentKey,
+    sidebarSessions,
+    sidebarSessionLookup,
+    selectedSidebarSessionId,
+    setSelectedSidebarSessionId,
+    selectedProjectNavigationIdentity,
+    shortcutHelpOpen,
+    setShortcutHelpOpen,
+    dismissShortcutHint,
+    isSearchMode,
+    activeSearchQuery,
+    searchResults,
+    selectedSearchIndex,
+    setSelectedSearchIndex,
+    setDraftSearchQuery,
+    openSearch,
+    closeSearch,
   });
-
-  useEffect(() => {
-    window.addEventListener("keydown", handleGlobalKeydown);
-    return () => window.removeEventListener("keydown", handleGlobalKeydown);
-  }, []);
 
   return (
     <div className="console-ui flex h-screen flex-col overflow-hidden bg-[var(--console-bg)] text-[var(--console-text)]">
@@ -947,263 +769,28 @@ export default function App() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <aside
-          className={`w-64 shrink-0 flex-col border-r border-[var(--console-border)] bg-[var(--console-sidebar-bg)] ${
-            sidebarCollapsed ? "hidden" : "hidden lg:flex"
-          }`}
-        >
-          <div className="console-scrollbar flex-1 space-y-8 overflow-y-auto px-4 py-6">
-            <section>
-              <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
-                BROWSE BY
-              </h3>
-              <BrowseByToggle
-                value={browseBy}
-                onChange={changeBrowseBy}
-                projectsDisabled={isScanActive}
-              />
-            </section>
-
-            <section>
-              <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
-                NAVIGATION
-              </h3>
-              <ul
-                className={`space-y-1 ${
-                  browseBy === "projects"
-                    ? "console-scrollbar max-h-[min(280px,calc(100vh-440px))] overflow-y-auto pr-1"
-                    : ""
-                }`}
-              >
-                <li>
-                  <Link
-                    to={browseBy === "projects" ? "/projects" : "/"}
-                    className={`flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
-                      (browseBy === "agents" && viewState.mode === "root") ||
-                      (browseBy === "projects" && viewState.mode === "projects")
-                        ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
-                        : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
-                    }`}
-                  >
-                    <img src="/logo.svg?v=3" alt="Dashboard" className="size-3.5 rounded-[2px]" />
-                    <span className="console-mono line-clamp-1 flex-1 text-xs">Dashboard</span>
-                  </Link>
-                </li>
-                {browseBy === "agents"
-                  ? agents.map((agent) => {
-                      const key = agent.name.toLowerCase();
-                      const isSelected = key === activeAgentKey;
-                      const config = ModelConfig.agents[key];
-                      const agentProgress = formatAgentScanProgress(scanStatus, agent.name);
-                      const disabled = isScanActive && agentProgress !== null;
-                      const className = `ml-4 flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
-                        disabled
-                          ? "cursor-not-allowed border-transparent text-[var(--console-muted)] opacity-50"
-                          : isSelected
-                            ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
-                            : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
-                      }`;
-                      const content = (
-                        <>
-                          {config?.icon && (
-                            <img
-                              src={config.icon}
-                              alt={agent.displayName}
-                              className="size-3.5 object-contain"
-                            />
-                          )}
-                          <span className="console-mono line-clamp-1 flex-1 text-xs">
-                            {agent.displayName}
-                          </span>
-                          <span className="console-mono text-[11px] text-[var(--console-muted)]">
-                            {agentProgress ??
-                              getAgentDisplayCount(scanStatus, agent.name, agent.count)}
-                          </span>
-                        </>
-                      );
-                      return (
-                        <li key={agent.name}>
-                          {disabled ? (
-                            <span
-                              className={className}
-                              title="Available after this agent scan completes"
-                            >
-                              {content}
-                            </span>
-                          ) : (
-                            <Link to={`/${key}`} className={className}>
-                              {content}
-                            </Link>
-                          )}
-                          {agentProgress ? (
-                            <span className="ml-4 mt-1 block h-1 overflow-hidden rounded-sm bg-[var(--console-surface-muted)]">
-                              <span
-                                className="block h-full bg-[var(--console-accent)]"
-                                style={{
-                                  width: `${
-                                    scanStatus?.agentStatuses[agent.name]?.total
-                                      ? Math.round(
-                                          ((scanStatus.agentStatuses[agent.name]?.processed ?? 0) /
-                                            scanStatus.agentStatuses[agent.name]!.total!) *
-                                            100,
-                                        )
-                                      : 8
-                                  }%`,
-                                }}
-                              />
-                            </span>
-                          ) : null}
-                        </li>
-                      );
-                    })
-                  : projects.map((project) => {
-                      const projectIdentity = getProjectGroupIdentity(project);
-                      const isSelected =
-                        selectedProjectNavigationId === getProjectIdentityKey(projectIdentity);
-                      return (
-                        <li key={`${project.identityKind}:${project.identityKey}`}>
-                          <Link
-                            to={getProjectPath(projectIdentity)}
-                            onClick={() => setSelectedProjectIdentity(projectIdentity)}
-                            className={`ml-4 flex min-w-0 items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
-                              isSelected
-                                ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
-                                : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
-                            }`}
-                          >
-                            <span className="console-mono min-w-0 flex-1 truncate text-xs">
-                              {project.displayName}
-                            </span>
-                            <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
-                              {project.sessionCount}
-                            </span>
-                          </Link>
-                        </li>
-                      );
-                    })}
-                {browseBy === "agents" && agents.length === 0 && !loading ? (
-                  <li>
-                    <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-                      {scanStatus?.active ? "Scanning agents..." : "No agents found"}
-                    </span>
-                  </li>
-                ) : null}
-                {browseBy === "projects" && projects.length === 0 && !loading ? (
-                  <li>
-                    <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-                      {scanStatus?.active ? "Scanning projects..." : "No projects found"}
-                    </span>
-                  </li>
-                ) : null}
-              </ul>
-            </section>
-
-            <section>
-              <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
-                BOOKMARKS
-              </h3>
-              {bookmarkedSessions.length === 0 ? (
-                <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-                  No bookmarks yet
-                </span>
-              ) : (
-                <ul className="space-y-1">
-                  {bookmarkedSessions.map((session) => {
-                    const isActive =
-                      viewState.mode === "session" &&
-                      viewState.activeAgentKey === session.agentKey &&
-                      viewState.activeSessionSlug === session.sessionId;
-                    const agent = ModelConfig.agents[session.agentKey];
-                    return (
-                      <li key={getSessionBookmarkKey(session.agentKey, session.sessionId)}>
-                        <div
-                          className={`flex items-start gap-2 rounded-sm border px-2 py-1.5 transition-colors ${
-                            isActive
-                              ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
-                              : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
-                          }`}
-                        >
-                          <Link
-                            to={`/${session.fullPath}`}
-                            className="flex min-w-0 flex-1 items-start gap-2"
-                          >
-                            {agent?.icon ? (
-                              <img
-                                src={agent.icon}
-                                alt={agent.name}
-                                className="mt-0.5 size-3.5 shrink-0 object-contain"
-                              />
-                            ) : null}
-                            <div className="min-w-0 flex-1">
-                              <span className="console-mono line-clamp-1 block text-xs">
-                                {session.title}
-                              </span>
-                              <span className="console-mono mt-0.5 line-clamp-1 block text-[10px] text-[var(--console-muted)]">
-                                {agent?.name ?? session.agentKey}
-                              </span>
-                            </div>
-                          </Link>
-                          <BookmarkButton active onToggle={() => toggleBookmark(session)} />
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
-
-            <section>
-              <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
-                SESSIONS
-                {sidebarSessions.length > 0 ? (
-                  <span className="ml-2 text-[10px] font-normal text-[var(--console-muted)]">
-                    Navigate j k · Open Enter
-                  </span>
-                ) : null}
-              </h3>
-              {browseBy === "agents" && !activeAgentKey ? (
-                <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-                  Select an agent
-                </span>
-              ) : browseBy === "projects" && !selectedProjectNavigationId ? (
-                <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-                  Select a project
-                </span>
-              ) : sidebarSessions.length === 0 ? (
-                <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-                  {scanStatus?.active ? "Scanning sessions..." : "No sessions yet"}
-                </span>
-              ) : browseBy === "projects" ? (
-                <SidebarFlatSessionList
-                  sessions={sidebarSessions}
-                  activeSessionId={
-                    viewState.mode === "session" ? viewState.activeSessionSlug : null
-                  }
-                  selectedSessionId={selectedSidebarSessionId}
-                  bookmarkedSessionIds={bookmarkedSidebarSessionIds}
-                  onSelectSession={handleSelectFlatSidebarSession}
-                  onToggleBookmark={handleToggleSidebarSessionBookmark}
-                />
-              ) : (
-                <RenderProfiler
-                  id="SessionTreeSidebar"
-                  detail={{ sessions: sidebarSessions.length }}
-                >
-                  <SessionTreeSidebar
-                    sessions={sidebarSessions}
-                    activeSessionId={
-                      viewState.mode === "session" ? viewState.activeSessionSlug : null
-                    }
-                    selectedSessionId={selectedSidebarSessionId}
-                    onSelectSession={handleSelectTreeSidebarSession}
-                    bookmarkedSessionIds={bookmarkedSidebarSessionIds}
-                    onToggleBookmark={handleToggleSidebarSessionBookmark}
-                  />
-                </RenderProfiler>
-              )}
-            </section>
-          </div>
-        </aside>
+        <AppSidebar
+          sidebarCollapsed={sidebarCollapsed}
+          browseBy={browseBy}
+          onChangeBrowseBy={changeBrowseBy}
+          isScanActive={isScanActive}
+          viewState={viewState}
+          agents={agents}
+          activeAgentKey={activeAgentKey}
+          scanStatus={scanStatus}
+          projects={projects}
+          selectedProjectNavigationId={selectedProjectNavigationId}
+          onSelectProject={setSelectedProjectIdentity}
+          loading={loading}
+          bookmarkedSessions={bookmarkedSessions}
+          onToggleBookmark={toggleBookmark}
+          sidebarSessions={sidebarSessions}
+          selectedSidebarSessionId={selectedSidebarSessionId}
+          bookmarkedSidebarSessionIds={bookmarkedSidebarSessionIds}
+          onSelectFlatSidebarSession={handleSelectFlatSidebarSession}
+          onToggleSidebarSessionBookmark={handleToggleSidebarSessionBookmark}
+          onSelectTreeSidebarSession={handleSelectTreeSidebarSession}
+        />
 
         <main className="flex min-w-0 flex-1 flex-col">
           <section className="shrink-0 border-b border-[var(--console-border)] bg-white/70 px-4 py-4 backdrop-blur-sm md:px-8">
@@ -1306,63 +893,7 @@ export default function App() {
           </section>
         </main>
       </div>
-      {shortcutHelpOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4"
-          onClick={() => setShortcutHelpOpen(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Keyboard shortcuts"
-            className="w-full max-w-2xl rounded-sm border border-[var(--console-border-strong)] bg-white p-5 shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="console-mono text-[11px] uppercase tracking-[0.16em] text-[var(--console-muted)]">
-                  Keyboard Shortcuts
-                </p>
-                <h2 className="console-mono mt-2 text-xl font-semibold text-[var(--console-text)]">
-                  Navigate without leaving the keyboard
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShortcutHelpOpen(false)}
-                className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-white"
-              >
-                Esc
-              </button>
-            </div>
-
-            <div className="mt-5 grid gap-4 md:grid-cols-3">
-              {SHORTCUT_GROUPS.map((group) => (
-                <div
-                  key={group.title}
-                  className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-4"
-                >
-                  <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
-                    {group.title}
-                  </h3>
-                  <div className="mt-3 space-y-3">
-                    {group.items.map((item) => (
-                      <div key={item.keys}>
-                        <p className="console-mono text-xs text-[var(--console-text)]">
-                          {item.keys}
-                        </p>
-                        <p className="mt-1 text-sm leading-6 text-[var(--console-muted)]">
-                          {item.description}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
     </div>
   );
 }
