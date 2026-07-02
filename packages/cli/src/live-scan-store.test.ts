@@ -965,7 +965,7 @@ describe("LiveScanStore", () => {
 
     const store = new LiveScanStore(false);
     await store.initialize();
-    (store as any).pendingRefreshPathCounts.set("codex", 101);
+    (store as any).getRefreshState("codex").pendingPathCount = 101;
     await (store as any).runRefresh("codex");
 
     expect(workerThreads.workers.at(-1)?.workerData.jobs[0]).toEqual(
