@@ -168,9 +168,7 @@ export async function createServer(
   }
 
   const isLoopback = hostname === "127.0.0.1" || hostname === "localhost";
-  const url = isLoopback
-    ? `http://localhost:${actualPort}`
-    : `http://${hostname}:${actualPort}`;
+  const url = isLoopback ? `http://localhost:${actualPort}` : `http://${hostname}:${actualPort}`;
   appLogger.info("server.listen", { port: actualPort, requested_port: port, hostname, url });
 
   if (!isLoopback) {
