@@ -1,36 +1,15 @@
 import { Link } from "react-router-dom";
 import { ModelConfig } from "../config";
 import type { DashboardData, ProjectAgentStat, ProjectGroup, SessionHead } from "../lib/api";
+import { formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getProjectPath } from "../lib/projects";
 import { Dashboard } from "./Dashboard";
 import type { LandingSession } from "./DetailLanding";
-
-function formatNumber(value: number) {
-  return value.toLocaleString("en-US");
-}
 
 function formatCompact(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
   return formatNumber(value);
-}
-
-function formatMoney(value: number): string {
-  if (value === 0) return "$0.00";
-  if (value < 0.01) return `$${value.toFixed(4)}`;
-  return `$${value.toFixed(2)}`;
-}
-
-function formatRelativeTime(timestamp?: number | null) {
-  if (!timestamp) return "unknown";
-  const diff = Date.now() - timestamp;
-  if (Number.isNaN(diff) || diff < 0) return "just now";
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function getSessionTotalTokens(session: SessionHead): number {

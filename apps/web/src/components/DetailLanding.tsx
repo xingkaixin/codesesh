@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { ModelConfig } from "../config";
 import type { SessionHead } from "../lib/api";
+import { formatCostSource, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { BookmarkButton } from "./BookmarkButton";
 import { SmartTagChips } from "./SmartTagChips";
 
@@ -28,36 +29,8 @@ interface DetailLandingProps {
   onToggleBookmark: (session: LandingSession) => void;
 }
 
-function formatNumber(value: number) {
-  return value.toLocaleString("en-US");
-}
-
-function formatMoney(value: number): string {
-  if (value === 0) return "$0.00";
-  if (value < 0.01) return `$${value.toFixed(4)}`;
-  return `$${value.toFixed(2)}`;
-}
-
-function formatCostSource(source?: "recorded" | "estimated"): string | undefined {
-  if (source === "recorded") return "recorded";
-  if (source === "estimated") return "estimated";
-  return undefined;
-}
-
 function getSessionTotalTokens(stats: SessionHead["stats"]) {
   return stats.total_tokens ?? stats.total_input_tokens + stats.total_output_tokens;
-}
-
-function formatRelativeTime(timestamp?: number) {
-  if (!timestamp) return "unknown";
-  const diff = Date.now() - timestamp;
-  if (Number.isNaN(diff) || diff < 0) return "just now";
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function LandingCard({ label, value, hint }: { label: string; value: string; hint?: string }) {

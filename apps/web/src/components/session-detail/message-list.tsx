@@ -8,8 +8,8 @@ import {
   type ReactNode,
 } from "react";
 import type { MessagePart } from "../../lib/api";
+import { formatTokens } from "../../lib/format";
 import type { FilteredSessionMessage } from "./toc";
-import { formatTokens } from "./tool-strategy";
 import { MessageItem } from "./message-rendering";
 
 const MESSAGE_LIST_GAP_PX = 32;

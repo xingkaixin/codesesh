@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   formatAgentScanProgress,
   formatIsoDate,
-  formatRelativeTime,
   formatScanStatusLabel,
   formatSearchSubtitle,
   formatWindowLabel,
@@ -65,15 +64,5 @@ describe("formatAgentScanProgress", () => {
 describe("getAgentDisplayCount", () => {
   it("returns fallback when agent status missing", () => {
     expect(getAgentDisplayCount(null, "codex", 5)).toBe(5);
-  });
-});
-
-describe("formatRelativeTime", () => {
-  it("returns unknown for missing timestamp", () => {
-    expect(formatRelativeTime(undefined)).toBe("unknown");
-  });
-
-  it("returns just now for recent", () => {
-    expect(formatRelativeTime(Date.now())).toBe("just now");
   });
 });

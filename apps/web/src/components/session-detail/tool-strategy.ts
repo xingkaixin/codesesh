@@ -3,8 +3,8 @@
  * into a ToolDisplayStrategy (icon, title, details, output content with diff).
  *
  * Also owns the content extractors (read/write/search), subagent helpers,
- * normalizeToolState, normalizeMessagesForDisplay, and the format helpers
- * (formatTokens, formatMessageTime) that the message list consumes.
+ * normalizeToolState, normalizeMessagesForDisplay, and the formatMessageTime
+ * helper that the message list consumes.
  *
  * Pure logic — no React. Consumed by SessionDetail's ToolItem / MessageItem.
  */
@@ -1420,12 +1420,6 @@ export function getToolDisplayStrategy(
 // ---------------------------------------------------------------------------
 // Formatters
 // ---------------------------------------------------------------------------
-
-export function formatTokens(n: number) {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toString();
-}
 
 export function formatMessageTime(rawTime: number | string) {
   if (typeof rawTime === "number" && rawTime <= 0) return "Unknown time";

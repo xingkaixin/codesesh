@@ -1,7 +1,7 @@
 import type { SessionHead } from "../../lib/api";
 import { ModelConfig } from "../../config";
 import { getSessionAgentKey } from "../../lib/session-indexes";
-import { formatRelativeTime } from "../../lib/scan-format";
+import { formatRelativeTime } from "../../lib/format";
 import { BookmarkButton } from "../BookmarkButton";
 
 export function SidebarFlatSessionList({

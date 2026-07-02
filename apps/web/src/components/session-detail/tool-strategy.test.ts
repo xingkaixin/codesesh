@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { Message, MessagePart } from "../../lib/api";
 import {
   formatMessageTime,
-  formatTokens,
   getAssistantDisplayLabel,
   getToolDisplayStrategy,
   normalizeMessagesForDisplay,
@@ -180,14 +179,6 @@ describe("getToolDisplayStrategy", () => {
       kind: "plain",
       text: "No output captured.",
     });
-  });
-});
-
-describe("formatTokens", () => {
-  it("formats thousands and millions", () => {
-    expect(formatTokens(0)).toBe("0");
-    expect(formatTokens(1500)).toBe("1.5K");
-    expect(formatTokens(1_500_000)).toBe("1.5M");
   });
 });
 
