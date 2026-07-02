@@ -6,12 +6,23 @@ import * as api from "../lib/api";
 import { useLiveSync } from "./useLiveSync";
 
 let sessionsCb: ((event: SessionsUpdatedEvent) => void) | undefined;
+let reconnectCb: (() => void) | undefined;
+let disconnectCb: (() => void) | undefined;
 
 vi.mock("../lib/api", () => ({
-  subscribeSessionUpdates: vi.fn((onSessions: (event: SessionsUpdatedEvent) => void) => {
-    sessionsCb = onSessions;
-    return () => {};
-  }),
+  subscribeSessionUpdates: vi.fn(
+    (
+      onSessions: (event: SessionsUpdatedEvent) => void,
+      _onScanStatus?: unknown,
+      onReconnect?: () => void,
+      onDisconnect?: () => void,
+    ) => {
+      sessionsCb = onSessions;
+      reconnectCb = onReconnect;
+      disconnectCb = onDisconnect;
+      return () => {};
+    },
+  ),
 }));
 
 const appConfig = { window: { from: "a", to: "b" } } as unknown as AppConfig;
@@ -37,6 +48,8 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   sessionsCb = undefined;
+  reconnectCb = undefined;
+  disconnectCb = undefined;
 });
 
 describe("useLiveSync", () => {
@@ -69,5 +82,53 @@ describe("useLiveSync", () => {
     });
 
     await waitFor(() => expect(result.current.liveNotice).toContain("3"));
+  });
+
+  it("shows a persistent connection notice on disconnect", () => {
+    const deps = makeDeps();
+    const { result } = renderHook(() => useLiveSync(deps));
+
+    act(() => {
+      disconnectCb?.();
+    });
+
+    expect(result.current.liveNotice).toBe("实时更新已断开，重连中…");
+  });
+
+  it("clears the connection notice and refreshes everything on reconnect", async () => {
+    const deps = makeDeps();
+    const { result } = renderHook(() => useLiveSync(deps));
+
+    act(() => {
+      disconnectCb?.();
+    });
+    expect(result.current.liveNotice).toBe("实时更新已断开，重连中…");
+
+    await act(async () => {
+      reconnectCb?.();
+      await Promise.resolve();
+    });
+
+    expect(result.current.liveNotice).toBeNull();
+    expect(deps.refreshAgents).toHaveBeenCalled();
+    expect(deps.refreshDashboard).toHaveBeenCalled();
+    expect(deps.refreshSearch).toHaveBeenCalled();
+  });
+
+  it("connection notice takes priority over a transient liveNotice", async () => {
+    const deps = makeDeps();
+    const { result } = renderHook(() => useLiveSync(deps));
+
+    await act(async () => {
+      sessionsCb?.({ newSessions: 2 } as SessionsUpdatedEvent);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(result.current.liveNotice).toContain("2"));
+
+    act(() => {
+      disconnectCb?.();
+    });
+
+    expect(result.current.liveNotice).toBe("实时更新已断开，重连中…");
   });
 });

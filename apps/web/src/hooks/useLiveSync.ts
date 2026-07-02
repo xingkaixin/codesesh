@@ -23,11 +23,13 @@ interface LiveSyncDeps {
 
 /**
  * Owns the live-update subscription and its fan-out: applies incremental session
- * updates, refreshes every domain, surfaces the transient liveNotice, and routes
- * scan-status events to useScanStatus.
+ * updates, refreshes every domain, surfaces the transient liveNotice, routes
+ * scan-status events to useScanStatus, and surfaces a persistent connection
+ * notice while the SSE stream is reconnecting (takes priority over liveNotice).
  */
 export function useLiveSync(deps: LiveSyncDeps) {
   const [liveNotice, setLiveNotice] = useState<string | null>(null);
+  const [connectionNotice, setConnectionNotice] = useState<string | null>(null);
   const {
     appConfig,
     viewState,
@@ -72,6 +74,19 @@ export function useLiveSync(deps: LiveSyncDeps) {
     }
   });
 
+  const handleReconnect = useEffectEvent(() => {
+    setConnectionNotice(null);
+    void syncLiveUpdate({
+      type: "sessions-updated",
+      changedAgents: [],
+      newSessions: 0,
+      updatedSessions: 0,
+      removedSessions: 0,
+      totalSessions: 0,
+      timestamp: Date.now(),
+    });
+  });
+
   useEffect(() => {
     const unsubscribe = subscribeSessionUpdates(
       (event) => {
@@ -79,6 +94,12 @@ export function useLiveSync(deps: LiveSyncDeps) {
       },
       (event) => {
         setScanStatus(event);
+      },
+      () => {
+        handleReconnect();
+      },
+      () => {
+        setConnectionNotice("实时更新已断开，重连中…");
       },
     );
 
@@ -99,5 +120,5 @@ export function useLiveSync(deps: LiveSyncDeps) {
     };
   }, [liveNotice]);
 
-  return { liveNotice };
+  return { liveNotice: connectionNotice ?? liveNotice };
 }
