@@ -100,6 +100,14 @@ interface LiveScanStoreOptions {
   deferInitialRefresh?: boolean;
 }
 
+interface AgentRefreshState {
+  timer: NodeJS.Timeout | null;
+  inFlight: boolean;
+  pendingRerun: boolean;
+  lastRefreshAt: number;
+  pendingPathCount: number;
+}
+
 const REFRESH_DEBOUNCE_MS = 200;
 const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
 const PENDING_REFRESH_DELAY_MS = 100;
@@ -201,11 +209,7 @@ export class LiveScanStore {
   };
   private backfillQueue: string[] = [];
   private backfillRunning = false;
-  private refreshTimers = new Map<string, NodeJS.Timeout>();
-  private refreshTimestamps = new Map<string, number>();
-  private refreshInFlight = new Set<string>();
-  private pendingRefreshes = new Set<string>();
-  private pendingRefreshPathCounts = new Map<string, number>();
+  private refreshStates = new Map<string, AgentRefreshState>();
   private watcher: SessionWatcher | null = null;
   private pendingEvent: SessionsUpdatedEvent | null = null;
   private pendingEventTimer: NodeJS.Timeout | null = null;
@@ -220,6 +224,21 @@ export class LiveScanStore {
     private readonly startupScanOptions: Pick<ScanOptions, "from" | "to"> = {},
     private readonly storeOptions: LiveScanStoreOptions = {},
   ) {}
+
+  private getRefreshState(agentName: string): AgentRefreshState {
+    let state = this.refreshStates.get(agentName);
+    if (!state) {
+      state = {
+        timer: null,
+        inFlight: false,
+        pendingRerun: false,
+        lastRefreshAt: 0,
+        pendingPathCount: 0,
+      };
+      this.refreshStates.set(agentName, state);
+    }
+    return state;
+  }
 
   async initialize(): Promise<void> {
     const startedAt = performance.now();
@@ -279,10 +298,7 @@ export class LiveScanStore {
       this.watcher = new SessionWatcher();
       this.watcher.onAgentsChanged((agentNames) => {
         for (const agentName of agentNames) {
-          this.pendingRefreshPathCounts.set(
-            agentName,
-            (this.pendingRefreshPathCounts.get(agentName) ?? 0) + 1,
-          );
+          this.getRefreshState(agentName).pendingPathCount += 1;
           const delayMs =
             (this.byAgent[agentName]?.length ?? 0) === 0
               ? EMPTY_AGENT_REFRESH_DEBOUNCE_MS
@@ -361,11 +377,12 @@ export class LiveScanStore {
 
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
-    for (const timer of this.refreshTimers.values()) {
-      clearTimeout(timer);
+    for (const state of this.refreshStates.values()) {
+      if (state.timer) {
+        clearTimeout(state.timer);
+        state.timer = null;
+      }
     }
-    this.refreshTimers.clear();
-    this.pendingRefreshPathCounts.clear();
 
     if (this.pendingEventTimer) {
       clearTimeout(this.pendingEventTimer);
@@ -909,7 +926,8 @@ export class LiveScanStore {
     this.byAgent = {};
     for (const agent of this.agents) {
       this.byAgent[agent.name] = sortSessions(result.byAgent[agent.name] ?? []);
-      this.refreshTimestamps.set(agent.name, result.cacheTimestamps?.[agent.name] ?? Date.now());
+      this.getRefreshState(agent.name).lastRefreshAt =
+        result.cacheTimestamps?.[agent.name] ?? Date.now();
     }
 
     this.rebuildSessions();
@@ -947,27 +965,26 @@ export class LiveScanStore {
 
   private scheduleRefresh(agentName: string, delayMs = REFRESH_DEBOUNCE_MS): void {
     appLogger.debug("scan.refresh.schedule", { agent: agentName, delay_ms: delayMs });
-    const existing = this.refreshTimers.get(agentName);
-    if (existing) {
-      clearTimeout(existing);
+    const state = this.getRefreshState(agentName);
+    if (state.timer !== null) {
+      clearTimeout(state.timer);
     }
 
-    const timer = setTimeout(() => {
-      this.refreshTimers.delete(agentName);
+    state.timer = setTimeout(() => {
+      state.timer = null;
       void this.refreshAgent(agentName);
     }, delayMs);
-
-    this.refreshTimers.set(agentName, timer);
   }
 
   private async refreshAgent(agentName: string): Promise<void> {
-    if (this.refreshInFlight.has(agentName)) {
+    const state = this.getRefreshState(agentName);
+    if (state.inFlight) {
       appLogger.debug("scan.refresh.pending", { agent: agentName });
-      this.pendingRefreshes.add(agentName);
+      state.pendingRerun = true;
       return;
     }
 
-    this.refreshInFlight.add(agentName);
+    state.inFlight = true;
     this.beginAgentScan(agentName);
 
     try {
@@ -976,10 +993,11 @@ export class LiveScanStore {
       appLogger.error("scan.refresh.error", { agent: agentName, error });
       console.error(`[${agentName}] Session refresh failed:`, error);
     } finally {
-      this.refreshInFlight.delete(agentName);
+      state.inFlight = false;
       this.finishAgentScan(agentName);
 
-      if (this.pendingRefreshes.delete(agentName)) {
+      if (state.pendingRerun) {
+        state.pendingRerun = false;
         this.scheduleRefresh(agentName, PENDING_REFRESH_DELAY_MS);
       }
     }
@@ -987,8 +1005,9 @@ export class LiveScanStore {
 
   private async runRefresh(agentName: string): Promise<void> {
     const startedAt = performance.now();
-    const pendingPathCount = this.pendingRefreshPathCounts.get(agentName) ?? 0;
-    this.pendingRefreshPathCounts.delete(agentName);
+    const state = this.getRefreshState(agentName);
+    const pendingPathCount = state.pendingPathCount;
+    state.pendingPathCount = 0;
     const agent = this.agents.find((item) => item.name === agentName);
     if (!agent) {
       appLogger.warn("scan.refresh.missing_agent", { agent: agentName });
@@ -998,7 +1017,7 @@ export class LiveScanStore {
     const previousSessions = this.byAgent[agentName] ?? [];
     const cached = loadCachedSessions(agentName);
     const refreshBaseline = cached?.sessions ?? previousSessions;
-    const cacheTimestamp = cached?.timestamp ?? this.refreshTimestamps.get(agentName) ?? 0;
+    const cacheTimestamp = cached?.timestamp ?? state.lastRefreshAt;
     if (cached) {
       restoreAgentCacheMeta(agent, cached.meta);
     }
@@ -1024,7 +1043,7 @@ export class LiveScanStore {
 
     if (!isAvailable) {
       nextSessions = [];
-      this.refreshTimestamps.set(agentName, Date.now());
+      state.lastRefreshAt = Date.now();
     } else if (!isInitialized) {
       // First-ever scan is bounded to the display window so startup stays fast;
       // needsBackfill() picks up the rest of history in the background.
@@ -1041,7 +1060,7 @@ export class LiveScanStore {
       fullScanSessions = attachMissingProjectIdentities(nextSessions);
       nextSessions = fullScanSessions;
       scanDuration = performance.now() - scanStartedAt;
-      this.refreshTimestamps.set(agentName, Date.now());
+      state.lastRefreshAt = Date.now();
     } else if (cached && agent instanceof FileSystemSessionSource) {
       // File-system agents refresh via precise per-source fingerprint sync,
       // bounded to the display window; the background backfill pass
@@ -1069,7 +1088,7 @@ export class LiveScanStore {
         preciseChangedIds,
       );
       scanDuration = performance.now() - scanStartedAt;
-      this.refreshTimestamps.set(agentName, Date.now());
+      state.lastRefreshAt = Date.now();
       if (preciseChangedIds.length === 0) {
         appLogger.debug("scan.refresh.unchanged", {
           agent: agentName,
@@ -1083,7 +1102,7 @@ export class LiveScanStore {
       );
       checkDuration = performance.now() - checkStartedAt;
 
-      this.refreshTimestamps.set(agentName, checkResult.timestamp);
+      state.lastRefreshAt = checkResult.timestamp;
       if (!checkResult.hasChanges) {
         appLogger.debug("scan.refresh.unchanged", {
           agent: agentName,
@@ -1115,7 +1134,7 @@ export class LiveScanStore {
       fullScanSessions = attachMissingProjectIdentities(nextSessions);
       nextSessions = fullScanSessions;
       scanDuration = performance.now() - scanStartedAt;
-      this.refreshTimestamps.set(agentName, Date.now());
+      state.lastRefreshAt = Date.now();
     }
 
     nextSessions = attachMissingProjectIdentities(nextSessions);

@@ -965,7 +965,7 @@ describe("LiveScanStore", () => {
 
     const store = new LiveScanStore(false);
     await store.initialize();
-    (store as any).pendingRefreshPathCounts.set("codex", 101);
+    (store as any).getRefreshState("codex").pendingPathCount = 101;
     await (store as any).runRefresh("codex");
 
     expect(workerThreads.workers.at(-1)?.workerData.jobs[0]).toEqual(
@@ -1282,6 +1282,146 @@ describe("LiveScanStore", () => {
         removedSessionRefs: [],
       }),
     ]);
+  });
+
+  it("coalesces refresh schedules for the same agent into a single run", async () => {
+    vi.useFakeTimers();
+    const existing = makeSession("existing");
+    const codex = makeAgent("codex", {
+      checkForChanges: vi.fn(() => ({
+        hasChanges: true,
+        changedIds: ["fresh"],
+        timestamp: 3000,
+      })),
+      incrementalScan: vi.fn(() => [existing, makeSession("fresh")]),
+    });
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [existing],
+      byAgent: { codex: [existing] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+
+    // Three schedule calls arrive within the debounce window; each should
+    // reset the pending timer rather than queue additional runs.
+    (store as any).scheduleRefresh("codex");
+    await vi.advanceTimersByTimeAsync(50);
+    (store as any).scheduleRefresh("codex");
+    await vi.advanceTimersByTimeAsync(50);
+    (store as any).scheduleRefresh("codex");
+    await vi.advanceTimersByTimeAsync(199);
+    expect(codex.checkForChanges).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(codex.checkForChanges).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(codex.checkForChanges).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the slower empty-agent debounce when the agent has no known sessions", async () => {
+    vi.useFakeTimers();
+    // An agent with zero cached sessions has no baseline to run
+    // checkForChanges against, so a scheduled refresh falls through to a
+    // full worker scan instead.
+    const codex = makeAgent("codex", {
+      scan: vi.fn(() => []),
+    });
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [],
+      byAgent: { codex: [] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+
+    (store as any).scheduleRefresh("codex", 30_000);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(codex.scan).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(29_800);
+    expect(codex.scan).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues a refresh requested while one is in flight and runs it after completion", async () => {
+    vi.useFakeTimers();
+    const existing = makeSession("existing");
+    let resolveCheck: ((result: { hasChanges: boolean; timestamp: number }) => void) | null = null;
+    const checkForChanges = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveCheck = resolve;
+          }),
+      )
+      .mockImplementationOnce(() => ({ hasChanges: false, timestamp: 4000 }));
+    const codex = makeAgent("codex", {
+      checkForChanges,
+      incrementalScan: vi.fn(() => [existing, makeSession("fresh")]),
+    });
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [existing],
+      byAgent: { codex: [existing] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+
+    const firstRefresh = (store as any).refreshAgent("codex");
+    await Promise.resolve();
+    expect(checkForChanges).toHaveBeenCalledTimes(1);
+
+    // A second refresh request arrives while the first is still in flight;
+    // it must be deferred rather than run concurrently.
+    const secondRefresh = (store as any).refreshAgent("codex");
+    await Promise.resolve();
+    expect(checkForChanges).toHaveBeenCalledTimes(1);
+
+    resolveCheck!({ hasChanges: true, timestamp: 3500 });
+    await firstRefresh;
+    await secondRefresh;
+    expect(checkForChanges).toHaveBeenCalledTimes(1);
+
+    // The deferred run is scheduled after a short delay, not run inline.
+    await vi.advanceTimersByTimeAsync(99);
+    expect(checkForChanges).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(checkForChanges).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears pending refresh timers on shutdown so no refresh runs afterward", async () => {
+    vi.useFakeTimers();
+    const existing = makeSession("existing");
+    const codex = makeAgent("codex", {
+      checkForChanges: vi.fn(() => ({ hasChanges: false, timestamp: 3000 })),
+    });
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [existing],
+      byAgent: { codex: [existing] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+
+    (store as any).scheduleRefresh("codex");
+    await store.shutdown();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(codex.checkForChanges).not.toHaveBeenCalled();
   });
 });
 
