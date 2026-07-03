@@ -1,9 +1,11 @@
 import { parentPort, workerData } from "node:worker_threads";
 import {
   createRegisteredAgents,
+  getCachePath,
   markAgentCacheInitialized,
   saveCachedSessionChanges,
   saveCachedSessions,
+  setFtsIntegrityCheckedPath,
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
   type SearchIndexSyncResult,
@@ -52,9 +54,14 @@ interface SearchIndexWorkerData {
   agentNames: string[];
   sessionsByAgent: Record<string, SessionHead[]>;
   metaByAgent: Record<string, Record<string, SessionCacheMeta>>;
+  /** Set once this process has already run the FTS integrity check in an earlier batch. */
+  skipFtsIntegrityCheck?: boolean;
 }
 
 const data = workerData as SearchIndexWorkerData;
+if (data.skipFtsIntegrityCheck) {
+  setFtsIntegrityCheckedPath(getCachePath());
+}
 const startedAt = performance.now();
 const agents = createRegisteredAgents();
 const jobs =

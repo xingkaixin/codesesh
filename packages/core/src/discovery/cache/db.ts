@@ -48,6 +48,20 @@ export function setFtsIntegrityCheckedPath(path: string | null): void {
   ftsIntegrityCheckedPath = path;
 }
 
+// One-shot per-process ensureSchema guard; reset by clearCache. Once a path
+// has been schema-checked, withCacheDb skips ensureSchema's DDL exec (which
+// otherwise runs unconditionally on every open) so read-heavy callers stop
+// contending for the write lock.
+let schemaEnsuredPath: string | null = null;
+
+export function getSchemaEnsuredPath(): string | null {
+  return schemaEnsuredPath;
+}
+
+export function setSchemaEnsuredPath(path: string | null): void {
+  schemaEnsuredPath = path;
+}
+
 export function getCacheDir(): string {
   return join(homedir(), ".cache", "codesesh");
 }

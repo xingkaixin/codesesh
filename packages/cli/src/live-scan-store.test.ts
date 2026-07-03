@@ -1306,20 +1306,90 @@ describe("LiveScanStore", () => {
     const store = new LiveScanStore(false);
     await store.initialize();
 
-    // Three schedule calls arrive within the debounce window; each should
-    // reset the pending timer rather than queue additional runs.
+    // Three schedule calls arrive within the debounce window; scheduleRefresh
+    // throttles (keeps the earliest deadline) rather than debouncing, so the
+    // later calls are no-ops and the run fires 200ms after the first call.
     (store as any).scheduleRefresh("codex");
     await vi.advanceTimersByTimeAsync(50);
     (store as any).scheduleRefresh("codex");
     await vi.advanceTimersByTimeAsync(50);
     (store as any).scheduleRefresh("codex");
-    await vi.advanceTimersByTimeAsync(199);
+    await vi.advanceTimersByTimeAsync(99);
     expect(codex.checkForChanges).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(1);
     expect(codex.checkForChanges).toHaveBeenCalledTimes(1);
 
     await vi.advanceTimersByTimeAsync(500);
+    expect(codex.checkForChanges).toHaveBeenCalledTimes(1);
+  });
+
+  it("backs off the refresh delay after a slow scan to reduce scan duty cycle", async () => {
+    vi.useFakeTimers();
+    const existing = makeSession("existing");
+    const codex = makeAgent("codex", {
+      checkForChanges: vi.fn(() => ({
+        hasChanges: true,
+        changedIds: ["fresh"],
+        timestamp: 3000,
+      })),
+      incrementalScan: vi.fn(() => [existing, makeSession("fresh")]),
+    });
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [existing],
+      byAgent: { codex: [existing] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+
+    // Simulate a preceding scan that took 5s: the next refresh should be
+    // delayed to ~4x that cost, well beyond the 200ms debounce floor.
+    (store as any).getRefreshState("codex").lastRefreshDurationMs = 5_000;
+    (store as any).scheduleRefresh("codex");
+
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(codex.checkForChanges).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(codex.checkForChanges).toHaveBeenCalledTimes(1);
+  });
+
+  it("still fires on a steady stream of events instead of being starved by the adaptive backoff", async () => {
+    vi.useFakeTimers();
+    const existing = makeSession("existing");
+    const codex = makeAgent("codex", {
+      checkForChanges: vi.fn(() => ({
+        hasChanges: true,
+        changedIds: ["fresh"],
+        timestamp: 3000,
+      })),
+      incrementalScan: vi.fn(() => [existing, makeSession("fresh")]),
+    });
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [existing],
+      byAgent: { codex: [existing] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+
+    (store as any).getRefreshState("codex").lastRefreshDurationMs = 5_000;
+
+    // Writes every 3s never leave a 20s quiet gap. A plain debounce (reset on
+    // every call) would push the deadline out forever; throttling on the
+    // earliest deadline guarantees a refresh still fires around the 20s mark.
+    for (let elapsed = 0; elapsed < 21_000; elapsed += 3_000) {
+      (store as any).scheduleRefresh("codex");
+      await vi.advanceTimersByTimeAsync(3_000);
+    }
+
     expect(codex.checkForChanges).toHaveBeenCalledTimes(1);
   });
 
@@ -1422,6 +1492,29 @@ describe("LiveScanStore", () => {
 
     await vi.advanceTimersByTimeAsync(10_000);
     expect(codex.checkForChanges).not.toHaveBeenCalled();
+  });
+
+  it("skips the FTS integrity check on search-index batches after the first one completes", async () => {
+    core.createRegisteredAgents.mockReturnValue([]);
+    core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+
+    const job = {
+      kind: "full" as const,
+      context: "scan.refresh",
+      agentName: "codex",
+      sessions: [],
+      meta: {},
+    };
+    await (store as any).enqueueSearchIndexJobs("scan.refresh", [job]);
+    await (store as any).enqueueSearchIndexJobs("scan.refresh", [job]);
+
+    const searchIndexWorkers = workerThreads.workers.filter((worker) => worker.workerData.jobs);
+    expect(searchIndexWorkers).toHaveLength(2);
+    expect(searchIndexWorkers[0]?.workerData.skipFtsIntegrityCheck).toBe(false);
+    expect(searchIndexWorkers[1]?.workerData.skipFtsIntegrityCheck).toBe(true);
   });
 });
 

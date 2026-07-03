@@ -1,9 +1,12 @@
 import { parentPort, workerData } from "node:worker_threads";
 import {
+  attachMissingProjectIdentities,
   createRegisteredAgents,
+  ensureSessionTagsSync,
   FileSystemSessionSource,
   matchesScanWindow,
   type AgentScanProgress,
+  type BaseAgent,
   type ScanOptions,
   type SessionCacheMeta,
   type SessionHead,
@@ -146,6 +149,34 @@ function syncAgentSources(
   return { sessions: [...sessionMap.values()], changedIds: [...changedIds] };
 }
 
+/**
+ * A session still receiving writes will be stale again within seconds, so
+ * recomputing its tags every refresh cycle is wasted work — wait for it to
+ * settle before paying the getSessionData() parse cost.
+ */
+const TAG_SETTLE_MS = 60_000;
+
+function isSettled(session: SessionHead, now: number): boolean {
+  return now - (session.time_updated ?? session.time_created) >= TAG_SETTLE_MS;
+}
+
+/**
+ * Runs identity resolution (spawns git) and stale smart-tag reclassification
+ * on the worker thread, off the server's main event loop.
+ */
+export function finalizeSessions(agent: BaseAgent, sessions: SessionHead[]): SessionHead[] {
+  const withIdentity = attachMissingProjectIdentities(sessions);
+
+  const now = Date.now();
+  const settled = withIdentity.filter((session) => isSettled(session, now));
+  if (settled.length === 0) return withIdentity;
+
+  const taggedById = new Map(
+    ensureSessionTagsSync(agent, settled).sessions.map((session) => [session.id, session]),
+  );
+  return withIdentity.map((session) => taggedById.get(session.id) ?? session);
+}
+
 const data = workerData as ScanRefreshWorkerData;
 const startedAt = performance.now();
 
@@ -182,6 +213,8 @@ async function run(): Promise<void> {
       }),
     );
   }
+
+  sessions = finalizeSessions(agent, sessions);
 
   parentPort?.postMessage({
     type: "done",

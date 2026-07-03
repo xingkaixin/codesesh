@@ -23,6 +23,13 @@ import {
   syncSessionSearchIndexChanges,
   type SessionCacheMeta,
 } from "../cache.js";
+import { ensureFtsConsistency, withCacheDb } from "../cache/schema.js";
+import {
+  getFtsIntegrityCheckedPath,
+  getSchemaEnsuredPath,
+  setFtsIntegrityCheckedPath,
+  setSchemaEnsuredPath,
+} from "../cache/db.js";
 import type { SessionData, SessionHead } from "../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-test-"));
@@ -146,10 +153,14 @@ function getMigrationBackups(): string[] {
 beforeEach(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
   dateNowSpy.mockReturnValue(now);
+  setFtsIntegrityCheckedPath(null);
+  setSchemaEnsuredPath(null);
 });
 
 afterEach(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
+  setFtsIntegrityCheckedPath(null);
+  setSchemaEnsuredPath(null);
 });
 
 describe("loadCachedSessions", () => {
@@ -191,6 +202,49 @@ describe("loadCachedSessions", () => {
       meta: {},
       timestamp: now,
     });
+  });
+});
+
+describe("ensureFtsConsistency", () => {
+  it("runs the FTS integrity check once per cache path and marks it checked", () => {
+    withCacheDb((db) => {
+      const execSpy = vi.spyOn(db, "exec");
+      ensureFtsConsistency(db);
+      expect(
+        execSpy.mock.calls.some((call) => String(call[0]).includes("integrity-check")),
+      ).toBe(true);
+      expect(getFtsIntegrityCheckedPath()).toBe(getCachePath());
+    });
+  });
+
+  it("skips the integrity check when the cache path is already marked checked", () => {
+    withCacheDb((db) => {
+      setFtsIntegrityCheckedPath(getCachePath());
+      const execSpy = vi.spyOn(db, "exec");
+      ensureFtsConsistency(db);
+      expect(
+        execSpy.mock.calls.some((call) => String(call[0]).includes("integrity-check")),
+      ).toBe(false);
+    });
+  });
+});
+
+describe("withCacheDb schema memo", () => {
+  it("runs ensureSchema on the first open but skips it on later opens for the same path", () => {
+    withCacheDb(() => undefined);
+    expect(getSchemaEnsuredPath()).toBe(getCachePath());
+    expect(getUserVersion(getCachePath())).toBe(13);
+
+    const db = new Database(getCachePath());
+    db.pragma("user_version = 5");
+    db.close();
+
+    withCacheDb(() => undefined);
+    expect(getUserVersion(getCachePath())).toBe(5);
+
+    setSchemaEnsuredPath(null);
+    withCacheDb(() => undefined);
+    expect(getUserVersion(getCachePath())).toBe(13);
   });
 });
 
@@ -1385,6 +1439,7 @@ describe("searchSessions", () => {
     } finally {
       db.close();
     }
+    setSchemaEnsuredPath(null);
 
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
@@ -1419,6 +1474,7 @@ describe("searchSessions", () => {
     } finally {
       db.close();
     }
+    setSchemaEnsuredPath(null);
 
     expect(listCachedProjectGroups()).toEqual([
       {

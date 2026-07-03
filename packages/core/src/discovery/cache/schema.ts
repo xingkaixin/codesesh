@@ -19,7 +19,9 @@ import {
 import {
   getCachePath,
   getFtsIntegrityCheckedPath,
+  getSchemaEnsuredPath,
   setFtsIntegrityCheckedPath,
+  setSchemaEnsuredPath,
   type CacheRow,
 } from "./db.js";
 import {
@@ -89,7 +91,10 @@ export function withCacheDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
   if (!db) return null;
 
   try {
-    ensureSchema(db, cachePath);
+    if (getSchemaEnsuredPath() !== cachePath) {
+      ensureSchema(db, cachePath);
+      setSchemaEnsuredPath(cachePath);
+    }
     return fn(db);
   } catch {
     return null;
