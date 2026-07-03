@@ -210,9 +210,9 @@ describe("ensureFtsConsistency", () => {
     withCacheDb((db) => {
       const execSpy = vi.spyOn(db, "exec");
       ensureFtsConsistency(db);
-      expect(
-        execSpy.mock.calls.some((call) => String(call[0]).includes("integrity-check")),
-      ).toBe(true);
+      expect(execSpy.mock.calls.some((call) => String(call[0]).includes("integrity-check"))).toBe(
+        true,
+      );
       expect(getFtsIntegrityCheckedPath()).toBe(getCachePath());
     });
   });
@@ -222,9 +222,9 @@ describe("ensureFtsConsistency", () => {
       setFtsIntegrityCheckedPath(getCachePath());
       const execSpy = vi.spyOn(db, "exec");
       ensureFtsConsistency(db);
-      expect(
-        execSpy.mock.calls.some((call) => String(call[0]).includes("integrity-check")),
-      ).toBe(false);
+      expect(execSpy.mock.calls.some((call) => String(call[0]).includes("integrity-check"))).toBe(
+        false,
+      );
     });
   });
 });
