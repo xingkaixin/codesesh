@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.12.0] - 2026-07-03
+
+This release hardens scan refresh performance, local server safety, and live Web updates, while continuing the Web UI module split for maintainability.
+
+### Bug Fixes
+
+- Eliminated scan stalls, redundant rescans, and stale scanning indicators by moving project identity finalization into the refresh worker, memoizing cache schema setup, avoiding repeated FTS integrity checks, and throttling refreshes for rapidly changing sessions. (#98)
+- Bounded incremental scans to the active display window and moved full-history reconciliation into a low-priority background pass, reducing startup and refresh cost on large local histories. (#89)
+- Bound the CLI HTTP server to `127.0.0.1` by default and added an explicit `--host` option for external access, so unauthenticated local session data is not exposed to the LAN unless requested. (#90)
+- Reconnect the Web SSE stream after closed connections or CLI restarts, with backoff, catch-up refresh, and a persistent reconnecting notice. (#93)
+
+### Improvements
+
+- Polished the shortcut help dialog with Radix Dialog focus handling, keyboard and overlay dismissal, reduced-motion-aware animations, and simplified shortcut grouping. (#97)
+
+### Refactor
+
+- Extracted Web data hooks, sidebar, keyboard shortcuts, session detail submodules, format helpers, API helpers, and per-agent tool strategies to reduce the size of `App` and `SessionDetail` and make behavior easier to test. (#74, #75, #76, #77, #78, #79, #80, #81, #83, #84, #85, #86, #87, #91, #92, #94, #95)
+- Consolidated `LiveScanStore` refresh state into one map and removed dead cache/search exports. (#82, #96)
+
+### Tests
+
+- Completed dashboard `SessionStats` fixtures and expanded coverage around scan behavior, Web hooks, API helpers, and formatting modules. (#88)
+
+### Changelog Detail
+
+- #98 fix: eliminate scan stalls, redundant rescans, and stale scanning status @xingkaixin
+- #97 chore(web): polish shortcut help dialog with Radix and motion @xingkaixin
+- #96 refactor(cli): consolidate LiveScanStore refresh state into one map @xingkaixin
+- #95 refactor(web): split tool-strategy.ts into per-agent files @xingkaixin
+- #94 refactor(web): extract AppSidebar, useKeyboardShortcuts, ShortcutHelpDialog from App.tsx @xingkaixin
+- #93 fix(web): reconnect SSE stream after it fully closes @xingkaixin
+- #92 refactor(web): extract fetchJson helper in api.ts @xingkaixin
+- #91 refactor(web): consolidate format helpers into lib/format @xingkaixin
+- #90 fix(cli): bind HTTP server to loopback by default @xingkaixin
+- #89 fix: bound incremental scans to the display window @xingkaixin
+- #88 test(core): complete dashboard SessionStats fixtures @xingkaixin
+- #87 refactor(web): extract session-detail-aux from SessionDetail @xingkaixin
+- #86 refactor(web): extract message-list virtualization @xingkaixin
+- #85 refactor(web): extract message-rendering from SessionDetail @xingkaixin
+- #84 refactor(web): extract session-toc from SessionDetail @xingkaixin
+- #83 refactor(web): extract file-change-tracker from SessionDetail @xingkaixin
+- #82 refactor(core): collapse dead exports in cache/search.ts @xingkaixin
+- #81 refactor(web): extract useInitialLoad and useLiveSync @xingkaixin
+- #80 refactor(web): extract base data-layer hooks @xingkaixin
+- #79 refactor(web): extract dashboard hooks @xingkaixin
+- #78 refactor(web): extract useBookmarks hook @xingkaixin
+- #77 refactor(web): extract useSessionSearch hook @xingkaixin
+- #76 refactor(web): extract useSessionDetail hook @xingkaixin
+- #75 refactor(web): extract useScanStatus hook @xingkaixin
+- #74 refactor(web): table-dispatch tool strategy @xingkaixin
+
 ## [0.11.0] - 2026-06-23
 
 ### Features
