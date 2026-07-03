@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { type ScanStatusEvent, fetchScanStatus } from "../lib/api";
 
 /**
@@ -6,7 +6,14 @@ import { type ScanStatusEvent, fetchScanStatus } from "../lib/api";
  * setScanStatus so the live-update subscription can push SSE events in.
  */
 export function useScanStatus() {
-  const [scanStatus, setScanStatus] = useState<ScanStatusEvent | null>(null);
+  const [scanStatus, setScanStatusState] = useState<ScanStatusEvent | null>(null);
+
+  // The mount-time snapshot fetch races with SSE events; without this guard a
+  // stale snapshot resolving late can overwrite fresher state and freeze the
+  // scanning indicator until the next unrelated event arrives.
+  const setScanStatus = useCallback((next: ScanStatusEvent) => {
+    setScanStatusState((prev) => (prev && next.updatedAt < prev.updatedAt ? prev : next));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -20,7 +27,7 @@ export function useScanStatus() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [setScanStatus]);
 
   return { scanStatus, setScanStatus };
 }

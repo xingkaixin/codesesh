@@ -6,6 +6,7 @@
 export {
   hasCacheStorage,
   getCachePath,
+  setFtsIntegrityCheckedPath,
   type SessionCacheMeta,
   type SessionHeadChange,
 } from "./cache/db.js";

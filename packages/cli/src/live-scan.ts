@@ -102,15 +102,22 @@ interface LiveScanStoreOptions {
 
 interface AgentRefreshState {
   timer: NodeJS.Timeout | null;
+  /** Absolute time the pending timer is due to fire; lets scheduleRefresh throttle instead of debounce. */
+  timerDeadline: number;
   inFlight: boolean;
   pendingRerun: boolean;
   lastRefreshAt: number;
+  lastRefreshDurationMs: number;
   pendingPathCount: number;
 }
 
 const REFRESH_DEBOUNCE_MS = 200;
 const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
 const PENDING_REFRESH_DELAY_MS = 100;
+/** Cap on the adaptive backoff so a single expensive scan can't stall refreshes indefinitely. */
+const MAX_ADAPTIVE_REFRESH_DELAY_MS = 30_000;
+/** Space refreshes out to roughly 4x their own cost, so a slow agent doesn't dominate the event loop. */
+const ADAPTIVE_REFRESH_DELAY_MULTIPLIER = 4;
 const NEW_SESSION_EVENT_WINDOW_MS = 250;
 const SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD = 100;
 /** Old files rarely change, but it's not impossible — reconcile full history at most this often. */
@@ -217,6 +224,8 @@ export class LiveScanStore {
   private searchIndexWorker: Worker | null = null;
   private pendingSearchIndexJobs: SearchIndexJobBatch[] = [];
   private shuttingDown = false;
+  /** Set once a search-index worker in this process has completed the FTS integrity check. */
+  private ftsIntegrityChecked = false;
 
   constructor(
     private readonly watchEnabled = true,
@@ -230,9 +239,11 @@ export class LiveScanStore {
     if (!state) {
       state = {
         timer: null,
+        timerDeadline: 0,
         inFlight: false,
         pendingRerun: false,
         lastRefreshAt: 0,
+        lastRefreshDurationMs: 0,
         pendingPathCount: 0,
       };
       this.refreshStates.set(agentName, state);
@@ -381,6 +392,7 @@ export class LiveScanStore {
       if (state.timer) {
         clearTimeout(state.timer);
         state.timer = null;
+        state.timerDeadline = 0;
       }
     }
 
@@ -862,6 +874,7 @@ export class LiveScanStore {
         agentNames: [],
         sessionsByAgent: {},
         metaByAgent: {},
+        skipFtsIntegrityCheck: this.ftsIntegrityChecked,
       },
     });
     worker.unref();
@@ -876,6 +889,7 @@ export class LiveScanStore {
           sessions: message.sessions,
         });
         settled = true;
+        this.ftsIntegrityChecked = true;
         batch.resolve();
       }
     });
@@ -963,17 +977,34 @@ export class LiveScanStore {
     }
   }
 
+  /**
+   * Throttles rather than debounces: a pending timer only gets replaced by a
+   * request with an earlier deadline. Plain debounce (reset on every call)
+   * would let a steady stream of events — each arriving before the adaptive
+   * backoff elapses — push the deadline out forever and starve the refresh.
+   */
   private scheduleRefresh(agentName: string, delayMs = REFRESH_DEBOUNCE_MS): void {
-    appLogger.debug("scan.refresh.schedule", { agent: agentName, delay_ms: delayMs });
     const state = this.getRefreshState(agentName);
+    const adaptiveDelayMs = Math.min(
+      state.lastRefreshDurationMs * ADAPTIVE_REFRESH_DELAY_MULTIPLIER,
+      MAX_ADAPTIVE_REFRESH_DELAY_MS,
+    );
+    const effectiveDelayMs = Math.max(delayMs, adaptiveDelayMs);
+    const deadline = Date.now() + effectiveDelayMs;
+
     if (state.timer !== null) {
+      if (deadline >= state.timerDeadline) {
+        return;
+      }
       clearTimeout(state.timer);
     }
 
+    appLogger.debug("scan.refresh.schedule", { agent: agentName, delay_ms: effectiveDelayMs });
+    state.timerDeadline = deadline;
     state.timer = setTimeout(() => {
       state.timer = null;
       void this.refreshAgent(agentName);
-    }, delayMs);
+    }, effectiveDelayMs);
   }
 
   private async refreshAgent(agentName: string): Promise<void> {
@@ -1207,9 +1238,11 @@ export class LiveScanStore {
       event.totalSessions = this.sessions.length;
       this.emit(event);
     }
+    const totalDurationMs = performance.now() - startedAt;
+    state.lastRefreshDurationMs = totalDurationMs;
     appLogger.info("scan.refresh.done", {
       agent: agentName,
-      duration_ms: Math.round(performance.now() - startedAt),
+      duration_ms: Math.round(totalDurationMs),
       sessions: nextSessions.length,
       new_sessions: event?.newSessions ?? 0,
       updated_sessions: event?.updatedSessions ?? 0,

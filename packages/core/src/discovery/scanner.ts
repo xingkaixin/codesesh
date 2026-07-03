@@ -132,7 +132,7 @@ function chunkSessions<T>(items: T[], chunkCount: number): T[][] {
   return chunks.filter((chunk) => chunk.length > 0);
 }
 
-function ensureSessionTagsSync(
+export function ensureSessionTagsSync(
   agent: BaseAgent,
   sessions: SessionHead[],
 ): { sessions: SessionHead[]; changed: boolean } {

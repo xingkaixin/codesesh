@@ -1,6 +1,11 @@
 export { resolveProviderRoots, getCursorDataPath, firstExisting } from "./paths.js";
 export type { ProviderRoots } from "./paths.js";
-export { filterSessions, scanSessions, scanSessionsAsync } from "./scanner.js";
+export {
+  ensureSessionTagsSync,
+  filterSessions,
+  scanSessions,
+  scanSessionsAsync,
+} from "./scanner.js";
 export type { ScanResult, ScanOptions } from "./scanner.js";
 export {
   attachMissingProjectIdentities,
@@ -20,6 +25,8 @@ export {
   saveCachedSessionChanges,
   clearCache,
   getCacheInfo,
+  getCachePath,
+  setFtsIntegrityCheckedPath,
   listCachedProjectGroups,
   listFileActivity,
   listSessionFileActivity,
