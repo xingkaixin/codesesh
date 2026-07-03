@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.12.0] - 2026-07-03
+
+本版本重点强化扫描刷新性能、本地服务安全性和 Web 实时更新稳定性，同时继续拆分 Web UI 模块，提升可维护性。
+
+### 问题修复
+
+- 消除扫描卡顿、重复重扫和过期扫描状态：将项目身份收尾移入 refresh worker，缓存 schema 初始化，避免重复 FTS 完整性检查，并对快速变化的会话刷新做节流。 (#98)
+- 将增量扫描限制在当前展示时间窗口内，并把全历史对账移入低优先级后台流程，降低大历史记录下的启动和刷新成本。 (#89)
+- CLI HTTP 服务默认绑定到 `127.0.0.1`，并新增显式 `--host` 选项用于外部访问，避免未认证的本地会话数据默认暴露到局域网。 (#90)
+- Web SSE 连接在关闭或 CLI 重启后会自动重连，包含退避、补齐刷新和持续的重连提示。 (#93)
+
+### 改进
+
+- 使用 Radix Dialog 改进快捷键帮助弹窗的焦点管理、键盘和遮罩关闭、兼容 reduced-motion 的动效，并简化快捷键分组。 (#97)
+
+### 重构
+
+- 提取 Web 数据 hooks、侧边栏、键盘快捷键、会话详情子模块、格式化 helper、API helper 和各 Agent 的工具策略，减小 `App` 与 `SessionDetail` 体积并提升可测试性。 (#74, #75, #76, #77, #78, #79, #80, #81, #83, #84, #85, #86, #87, #91, #92, #94, #95)
+- 将 `LiveScanStore` 刷新状态合并为单个 map，并移除 cache/search 中的废弃导出。 (#82, #96)
+
+### 测试
+
+- 补齐 dashboard `SessionStats` fixtures，并扩展扫描行为、Web hooks、API helper 与格式化模块的测试覆盖。 (#88)
+
+### Changelog Detail
+
+- #98 fix: eliminate scan stalls, redundant rescans, and stale scanning status @xingkaixin
+- #97 chore(web): polish shortcut help dialog with Radix and motion @xingkaixin
+- #96 refactor(cli): consolidate LiveScanStore refresh state into one map @xingkaixin
+- #95 refactor(web): split tool-strategy.ts into per-agent files @xingkaixin
+- #94 refactor(web): extract AppSidebar, useKeyboardShortcuts, ShortcutHelpDialog from App.tsx @xingkaixin
+- #93 fix(web): reconnect SSE stream after it fully closes @xingkaixin
+- #92 refactor(web): extract fetchJson helper in api.ts @xingkaixin
+- #91 refactor(web): consolidate format helpers into lib/format @xingkaixin
+- #90 fix(cli): bind HTTP server to loopback by default @xingkaixin
+- #89 fix: bound incremental scans to the display window @xingkaixin
+- #88 test(core): complete dashboard SessionStats fixtures @xingkaixin
+- #87 refactor(web): extract session-detail-aux from SessionDetail @xingkaixin
+- #86 refactor(web): extract message-list virtualization @xingkaixin
+- #85 refactor(web): extract message-rendering from SessionDetail @xingkaixin
+- #84 refactor(web): extract session-toc from SessionDetail @xingkaixin
+- #83 refactor(web): extract file-change-tracker from SessionDetail @xingkaixin
+- #82 refactor(core): collapse dead exports in cache/search.ts @xingkaixin
+- #81 refactor(web): extract useInitialLoad and useLiveSync @xingkaixin
+- #80 refactor(web): extract base data-layer hooks @xingkaixin
+- #79 refactor(web): extract dashboard hooks @xingkaixin
+- #78 refactor(web): extract useBookmarks hook @xingkaixin
+- #77 refactor(web): extract useSessionSearch hook @xingkaixin
+- #76 refactor(web): extract useSessionDetail hook @xingkaixin
+- #75 refactor(web): extract useScanStatus hook @xingkaixin
+- #74 refactor(web): table-dispatch tool strategy @xingkaixin
+
 ## [0.11.0] - 2026-06-23
 
 ### 新功能
