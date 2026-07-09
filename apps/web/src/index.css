@@ -155,6 +155,17 @@
     --console-error: #b91c1c;
     --console-error-bg: #fee2e2;
     --console-error-border: #fecaca;
+    --timeline-user: #a85f82;
+    --timeline-agent: #5e86aa;
+    --timeline-tool: #a3a3a3;
+    --tt-in-dur: 150ms;
+    --tt-out-dur: 50ms;
+    --tt-scale: 0.98;
+    --tt-delay: 80ms;
+    --tt-in-ease: ease-out;
+    --tt-out-ease: ease-out;
+    --tt-bg: #ffffff;
+    --tt-fg: #2f2f2f;
   }
 
   .dark {
@@ -225,6 +236,82 @@
   .shortcut-content[data-state="closed"] {
     animation: shortcut-content-out 150ms cubic-bezier(0.23, 1, 0.32, 1);
   }
+
+  .t-tt-wrap {
+    position: relative;
+    display: inline-block;
+  }
+
+  .t-tt {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translate(-50%, 0) scale(var(--tt-scale));
+    transform-origin: 50% 100%;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--tt-bg);
+    color: var(--tt-fg);
+    white-space: nowrap;
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.06),
+      0 2px 6px 0 rgba(0, 0, 0, 0.05),
+      0 4px 42px 0 rgba(0, 0, 0, 0.06);
+    opacity: 0;
+    pointer-events: none;
+    /* Default rule controls the LEAVE state. transition-delay
+       stays unset so leaving plays without delay. */
+    transition:
+      opacity var(--tt-out-dur) var(--tt-out-ease),
+      transform var(--tt-out-dur) var(--tt-out-ease);
+  }
+
+  /* The appear delay belongs ONLY to the hover rule so leaving
+     the trigger snaps the delay back to 0 and the disappear
+     plays immediately. */
+  .t-tt-wrap:hover .t-tt,
+  .t-tt-trigger:focus-visible + .t-tt {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+    transition-duration: var(--tt-in-dur);
+    transition-timing-function: var(--tt-in-ease);
+    transition-delay: var(--tt-delay);
+  }
+
+  .session-timeline-floating-tooltip {
+    position: fixed;
+    bottom: auto;
+    z-index: 50;
+    max-width: calc(100vw - 16px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+    transform-origin: 50% 0;
+    border: 1px solid var(--console-border);
+    border-radius: 2px;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+  }
+
+  .session-timeline-segment {
+    opacity: 0.58;
+    transition: opacity 100ms ease;
+  }
+
+  .session-timeline-segment[aria-current="location"] {
+    position: relative;
+    z-index: 1;
+    opacity: 1;
+    box-shadow:
+      0 0 0 2px #ffffff,
+      0 0 0 3px var(--console-text);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .session-timeline-segment:hover {
+    opacity: 0.88;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -234,6 +321,14 @@
 
   .shortcut-content[data-state="closed"] {
     animation-name: shortcut-overlay-out;
+  }
+
+  .t-tt {
+    transition: none !important;
+  }
+
+  .session-timeline-segment {
+    transition: none;
   }
 }
 

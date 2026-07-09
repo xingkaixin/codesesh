@@ -27,6 +27,8 @@ import {
   SessionDetailAuxControls,
   SessionDetailAuxOverlay,
 } from "./session-detail/session-detail-aux";
+import { SessionMessageTimeline } from "./session-detail/session-message-timeline";
+import { buildSessionTimelineEntries } from "./session-detail/timeline";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,16 +43,27 @@ interface SessionDetailProps {
 // Small helpers
 // ---------------------------------------------------------------------------
 
-function scrollToToolAnchor(anchorId: string, prepareAnchor?: () => void) {
+function scrollToSessionAnchor({
+  anchorId,
+  behavior,
+  prepareAnchor,
+  isCurrent,
+}: {
+  anchorId: string;
+  behavior: ScrollBehavior;
+  prepareAnchor?: () => void;
+  isCurrent: () => boolean;
+}) {
   if (typeof document === "undefined") return;
   let element = document.getElementById(anchorId);
   if (!element && prepareAnchor) {
     prepareAnchor();
     let attempts = 0;
     const retryScroll = () => {
+      if (!isCurrent()) return;
       element = document.getElementById(anchorId);
       if (element) {
-        element.scrollIntoView({ behavior: "smooth", block: "center" });
+        element.scrollIntoView({ behavior, block: "center" });
         return;
       }
       attempts += 1;
@@ -60,7 +73,7 @@ function scrollToToolAnchor(anchorId: string, prepareAnchor?: () => void) {
     return;
   }
   if (!element) return;
-  element.scrollIntoView({ behavior: "smooth", block: "center" });
+  element.scrollIntoView({ behavior, block: "center" });
 }
 
 function measureSessionDetailWork<T>(id: string, compute: () => T): T {
@@ -136,6 +149,7 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
     [messageModels, selectedFilters],
   );
   const virtualListRef = useRef<MessageListHandle | null>(null);
+  const scrollRequestRef = useRef(0);
   const anchorListIndexes = useMemo(() => {
     return measureSessionDetailWork("SessionDetail:buildAnchorListIndexes", () => {
       const indexes = new Map<number, number>();
@@ -152,15 +166,30 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
       ),
     [session.file_activity, localFileChangeSummary],
   );
-  const handleJumpToAnchor = useCallback(
-    (anchorId: string) => {
-      const messageIndex = anchorMessageIndexes.get(anchorId);
+  const timelineEntries = useMemo(
+    () => buildSessionTimelineEntries(filteredMessages, toolAnchorIds),
+    [filteredMessages, toolAnchorIds],
+  );
+  const handleJumpToMessageAnchor = useCallback(
+    (anchorId: string, messageIndex: number | undefined, behavior: ScrollBehavior = "smooth") => {
+      const requestId = scrollRequestRef.current + 1;
+      scrollRequestRef.current = requestId;
       const listIndex = messageIndex == null ? undefined : anchorListIndexes.get(messageIndex);
-      scrollToToolAnchor(anchorId, () => {
-        if (listIndex != null) virtualListRef.current?.scrollToIndex(listIndex);
+      scrollToSessionAnchor({
+        anchorId,
+        behavior,
+        prepareAnchor:
+          listIndex == null ? undefined : () => virtualListRef.current?.scrollToIndex(listIndex),
+        isCurrent: () => scrollRequestRef.current === requestId,
       });
     },
-    [anchorListIndexes, anchorMessageIndexes],
+    [anchorListIndexes],
+  );
+  const handleJumpToAnchor = useCallback(
+    (anchorId: string) => {
+      handleJumpToMessageAnchor(anchorId, anchorMessageIndexes.get(anchorId));
+    },
+    [anchorMessageIndexes, handleJumpToMessageAnchor],
   );
 
   useEffect(() => {
@@ -223,23 +252,31 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
         />
         <div className="flex min-w-0 flex-col gap-8">
           {filteredMessages.length > 0 ? (
-            <RenderProfiler
-              id="MessageList"
-              detail={{
-                messages: filteredMessages.length,
-                virtualized: filteredMessages.length > VIRTUALIZED_MESSAGE_THRESHOLD,
-              }}
-            >
-              <MessageList
-                key={`${session.id}:${selectedFilterSignature}`}
-                messages={filteredMessages}
-                toolAnchorIds={toolAnchorIds}
-                sessionAgentKey={sessionAgentKey}
-                baseDirectory={session.directory}
-                highlightQuery={highlightQuery}
-                apiRef={virtualListRef}
+            <>
+              <SessionMessageTimeline
+                entries={timelineEntries}
+                onNavigate={(entry, behavior) =>
+                  handleJumpToMessageAnchor(entry.anchorId, entry.messageIndex, behavior)
+                }
               />
-            </RenderProfiler>
+              <RenderProfiler
+                id="MessageList"
+                detail={{
+                  messages: filteredMessages.length,
+                  virtualized: filteredMessages.length > VIRTUALIZED_MESSAGE_THRESHOLD,
+                }}
+              >
+                <MessageList
+                  key={`${session.id}:${selectedFilterSignature}`}
+                  messages={filteredMessages}
+                  toolAnchorIds={toolAnchorIds}
+                  sessionAgentKey={sessionAgentKey}
+                  baseDirectory={session.directory}
+                  highlightQuery={highlightQuery}
+                  apiRef={virtualListRef}
+                />
+              </RenderProfiler>
+            </>
           ) : (
             <div className="rounded-sm border border-[var(--console-border)] bg-white p-6 text-sm text-[var(--console-muted)]">
               当前筛选条件下暂无可展示的消息内容。
