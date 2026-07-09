@@ -104,6 +104,65 @@ describe("SessionMessageTimeline", () => {
     expect(onNavigate).not.toHaveBeenCalled();
   });
 
+  it("shows a minimap window mirroring the visible range when the track overflows", () => {
+    const longEntries = Array.from({ length: 100 }, (_, index) => ({
+      ...entries[index % entries.length]!,
+      id: `entry-${index}`,
+      anchorId: `entry-${index}`,
+    }));
+    const { getByTestId, timeline } = renderTimeline(longEntries);
+    Object.defineProperties(timeline, {
+      clientWidth: { configurable: true, value: 300 },
+      scrollWidth: { configurable: true, value: 1_200 },
+      scrollLeft: { configurable: true, value: 300, writable: true },
+    });
+    fireEvent.scroll(timeline);
+
+    const window = getByTestId("session-timeline-minimap-window");
+    expect(window.style.left).toBe("25%");
+    expect(window.style.width).toBe("25%");
+  });
+
+  it("hides the minimap when the track fits the viewport", () => {
+    const { queryByTestId, timeline } = renderTimeline();
+
+    fireEvent.scroll(timeline);
+
+    expect(queryByTestId("session-timeline-minimap")).toBeNull();
+  });
+
+  it("drags the minimap window to scroll the timeline", () => {
+    const longEntries = Array.from({ length: 100 }, (_, index) => ({
+      ...entries[index % entries.length]!,
+      id: `entry-${index}`,
+      anchorId: `entry-${index}`,
+    }));
+    const { getByTestId, timeline } = renderTimeline(longEntries);
+    Object.defineProperties(timeline, {
+      clientWidth: { configurable: true, value: 300 },
+      scrollWidth: { configurable: true, value: 1_200 },
+      scrollLeft: { configurable: true, value: 0, writable: true },
+    });
+    fireEvent.scroll(timeline);
+
+    const minimap = getByTestId("session-timeline-minimap");
+    Object.defineProperties(minimap, {
+      getBoundingClientRect: {
+        value: () => ({ left: 0, width: 300 }),
+      },
+      hasPointerCapture: { value: () => false },
+      releasePointerCapture: { value: vi.fn() },
+      setPointerCapture: { value: vi.fn() },
+    });
+
+    // Press outside the window: the window centers on the pointer.
+    fireEvent.pointerDown(minimap, { button: 0, clientX: 150, pointerId: 1 });
+    expect(timeline.scrollLeft).toBe(450);
+
+    fireEvent.pointerMove(minimap, { clientX: 300, pointerId: 1 });
+    expect(timeline.scrollLeft).toBe(1_050);
+  });
+
   it("renders one unclipped tooltip and hides it while scrolling", () => {
     const { getAllByRole, getByRole, queryByRole, timeline } = renderTimeline();
     const target = getAllByRole("button")[1]!;

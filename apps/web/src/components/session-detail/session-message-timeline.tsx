@@ -36,6 +36,17 @@ const KIND_CLASS: Record<SessionTimelineEntryKind, string> = {
   tool: "bg-[var(--timeline-tool)]",
 };
 
+const KIND_FALLBACK_COLOR: Record<SessionTimelineEntryKind, string> = {
+  user: "#a85f82",
+  agent: "#5e86aa",
+  tool: "#a3a3a3",
+};
+
+interface MinimapWindow {
+  start: number;
+  size: number;
+}
+
 function findScrollParent(node: HTMLElement): ScrollParent {
   let parent = node.parentElement;
 
@@ -94,9 +105,12 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
   const tooltipTriggerRef = useRef<HTMLElement | null>(null);
   const dragRef = useRef({ active: false, moved: false, startX: 0, lastIndex: -1 });
   const suppressClickRef = useRef(false);
+  const minimapCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const minimapDragRef = useRef<{ pointerId: number; grabOffset: number } | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [tooltip, setTooltip] = useState<TimelineTooltip | null>(null);
   const [scrollAvailability, setScrollAvailability] = useState({ left: false, right: false });
+  const [minimapWindow, setMinimapWindow] = useState<MinimapWindow | null>(null);
   const entryIndexes = useMemo(
     () => new Map(entries.map((entry, index) => [entry.anchorId, index])),
     [entries],
@@ -113,6 +127,17 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
     };
     setScrollAvailability((current) =>
       current.left === next.left && current.right === next.right ? current : next,
+    );
+    if (maxScrollLeft <= 0) {
+      setMinimapWindow(null);
+      return;
+    }
+    const window = {
+      start: viewport.scrollLeft / viewport.scrollWidth,
+      size: viewport.clientWidth / viewport.scrollWidth,
+    };
+    setMinimapWindow((current) =>
+      current?.start === window.start && current.size === window.size ? current : window,
     );
   }, []);
 
@@ -212,6 +237,49 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
     }
   }, [activeIndex]);
 
+  const minimapVisible = minimapWindow != null;
+
+  useEffect(() => {
+    const canvas = minimapCanvasRef.current;
+    if (!canvas || !minimapVisible) return;
+
+    const draw = () => {
+      const context = canvas.getContext("2d");
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      if (!context || !width || !height || entries.length === 0) return;
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.round(width * ratio);
+      canvas.height = Math.round(height * ratio);
+      context.scale(ratio, ratio);
+      context.clearRect(0, 0, width, height);
+      const styles = window.getComputedStyle(canvas);
+      const colors: Record<SessionTimelineEntryKind, string> = {
+        user: styles.getPropertyValue("--timeline-user").trim() || KIND_FALLBACK_COLOR.user,
+        agent: styles.getPropertyValue("--timeline-agent").trim() || KIND_FALLBACK_COLOR.agent,
+        tool: styles.getPropertyValue("--timeline-tool").trim() || KIND_FALLBACK_COLOR.tool,
+      };
+      entries.forEach((entry, index) => {
+        const x0 = (index / entries.length) * width;
+        const x1 = ((index + 1) / entries.length) * width;
+        context.fillStyle = colors[entry.kind];
+        context.fillRect(x0, 0, Math.max(x1 - x0, 0.5), height);
+      });
+    };
+
+    draw();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(draw);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [entries, minimapVisible]);
+
+  const scrollToMinimapRatio = useCallback((ratio: number, grabOffset: number) => {
+    const viewport = scrollRef.current;
+    if (!viewport) return;
+    viewport.scrollLeft = (ratio - grabOffset) * viewport.scrollWidth;
+  }, []);
+
   const showTooltip = useCallback(
     (entry: SessionTimelineEntry, trigger: HTMLElement, source: TimelineTooltip["source"]) => {
       const rect = trigger.getBoundingClientRect();
@@ -289,10 +357,11 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
         <div className="relative">
           <div
             ref={scrollRef}
+            id="session-timeline-viewport"
             role="navigation"
             aria-label="Session message timeline"
             tabIndex={0}
-            className="console-scrollbar overflow-x-auto overflow-y-hidden overscroll-x-contain py-1"
+            className="session-timeline-viewport overflow-x-auto overflow-y-hidden overscroll-x-contain py-1"
             onScroll={handleTimelineScroll}
           >
             <div
@@ -395,6 +464,62 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
             </button>
           )}
         </div>
+        {minimapWindow && (
+          <div
+            data-testid="session-timeline-minimap"
+            role="scrollbar"
+            aria-controls="session-timeline-viewport"
+            aria-orientation="horizontal"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round((minimapWindow.start / (1 - minimapWindow.size)) * 100)}
+            className="session-timeline-minimap relative mt-2 h-2.5 cursor-pointer touch-none select-none"
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              const rect = event.currentTarget.getBoundingClientRect();
+              if (rect.width <= 0) return;
+              const ratio = (event.clientX - rect.left) / rect.width;
+              const withinWindow =
+                ratio >= minimapWindow.start && ratio <= minimapWindow.start + minimapWindow.size;
+              const grabOffset = withinWindow
+                ? ratio - minimapWindow.start
+                : minimapWindow.size / 2;
+              minimapDragRef.current = { pointerId: event.pointerId, grabOffset };
+              event.currentTarget.setPointerCapture(event.pointerId);
+              scrollToMinimapRatio(ratio, grabOffset);
+            }}
+            onPointerMove={(event) => {
+              const drag = minimapDragRef.current;
+              if (!drag || drag.pointerId !== event.pointerId) return;
+              const rect = event.currentTarget.getBoundingClientRect();
+              if (rect.width <= 0) return;
+              scrollToMinimapRatio((event.clientX - rect.left) / rect.width, drag.grabOffset);
+            }}
+            onPointerUp={(event) => {
+              minimapDragRef.current = null;
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }
+            }}
+            onPointerCancel={() => {
+              minimapDragRef.current = null;
+            }}
+          >
+            <canvas
+              ref={minimapCanvasRef}
+              aria-hidden="true"
+              className="absolute inset-0 h-full w-full"
+            />
+            <div
+              data-testid="session-timeline-minimap-window"
+              className="session-timeline-minimap-window absolute inset-y-0"
+              style={{
+                left: `${minimapWindow.start * 100}%`,
+                width: `${minimapWindow.size * 100}%`,
+              }}
+            />
+          </div>
+        )}
         {tooltip &&
           createPortal(
             <span

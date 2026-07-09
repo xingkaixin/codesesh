@@ -293,6 +293,31 @@
     box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
   }
 
+  .session-timeline-viewport {
+    scrollbar-width: none;
+  }
+
+  .session-timeline-viewport::-webkit-scrollbar {
+    display: none;
+  }
+
+  .session-timeline-minimap {
+    overflow: hidden;
+    border-radius: 2px;
+  }
+
+  .session-timeline-minimap canvas {
+    opacity: 0.75;
+  }
+
+  /* The oversized shadow dims everything outside the viewport window;
+     the parent's overflow: hidden clips it to the minimap band. */
+  .session-timeline-minimap-window {
+    border: 1px solid rgba(15, 23, 42, 0.45);
+    border-radius: 2px;
+    box-shadow: 0 0 0 9999px rgba(255, 255, 255, 0.62);
+  }
+
   .session-timeline-segment {
     opacity: 0.58;
     transition: opacity 100ms ease;
