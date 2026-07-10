@@ -223,6 +223,10 @@ pnpm bench:perf
 pnpm --filter @codesesh/www deploy:cf
 ```
 
+`test:coverage` 会在 Node 环境运行 Core、CLI 测试，在 `happy-dom` 环境运行 Web 测试。
+75% 行覆盖率门槛只应用于配置中指定的 Core discovery/utils/base 模块与 CLI API 模块，
+不代表 monorepo 全部源码的覆盖率。
+
 ### 性能 Benchmark
 
 ```bash

@@ -224,6 +224,10 @@ pnpm bench:perf
 pnpm --filter @codesesh/www deploy:cf
 ```
 
+`test:coverage` runs the Core and CLI suites in Node and the Web suite in
+`happy-dom`. The 75% line threshold applies to the configured Core
+discovery/utils/base modules and CLI API modules, not every monorepo source file.
+
 ### Performance Benchmark
 
 ```bash
