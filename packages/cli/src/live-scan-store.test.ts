@@ -2,7 +2,17 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FileSystemSessionSource, type SessionHead } from "@codesesh/core";
+import {
+  FileSystemSessionSource,
+  type AgentScanOptions,
+  type ChangeCheckResult,
+  type ProviderRoots,
+  type ScanOptions,
+  type SessionCacheMeta,
+  type SessionData,
+  type SessionHead,
+  type SessionSourceRef,
+} from "@codesesh/core";
 
 // Isolated temp directory for session fixtures so computeIdentity always
 // resolves to a "path" identity regardless of manifests in /tmp.
@@ -23,16 +33,18 @@ const fsWatch = vi.hoisted(() => ({
 
 const core = vi.hoisted(() => ({
   createRegisteredAgents: vi.fn(),
-  filterSessions: vi.fn((sessions: SessionHead[]) => sessions),
+  filterSessions: vi.fn((sessions: SessionHead[], _options: ScanOptions) => sessions),
   getCursorDataPath: vi.fn(() => "/tmp/cursor"),
-  resolveProviderRoots: vi.fn(() => ({
-    claudeRoot: "/tmp/claude",
-    codexRoot: "/tmp/codex",
-    kimiRoot: "/tmp/kimi",
-    opencodeRoot: "/tmp/opencode",
-    piRoot: "/tmp/pi",
-    zcodeRoot: "/tmp/zcode",
-  })),
+  resolveProviderRoots: vi.fn(
+    (): ProviderRoots => ({
+      claudeRoot: "/tmp/claude",
+      codexRoot: "/tmp/codex",
+      kimiRoot: "/tmp/kimi",
+      opencodeRoot: "/tmp/opencode",
+      piRoot: "/tmp/pi",
+      zcodeRoot: "/tmp/zcode",
+    }),
+  ),
   isAgentCacheInitialized: vi.fn(),
   loadCachedSessions: vi.fn(),
   markAgentCacheInitialized: vi.fn(),
@@ -76,7 +88,7 @@ const workerThreads = vi.hoisted(() => ({
         return (
           Boolean(current) &&
           typeof cached?.sourceMtimeMs === "number" &&
-          cached.sourceMtimeMs === current[2] &&
+          cached.sourceMtimeMs === current![2] &&
           (current![4] == null || cachedSession.title === current![4])
         );
       };
@@ -345,7 +357,7 @@ function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
     // Database-style agents detect changes via checkForChanges and rescan via
     // incrementalScan (which delegates to scan), mirroring DatabaseSessionSource.
     checkForChanges: vi.fn(() => ({ hasChanges: true, changedIds: [], timestamp: 0 })),
-    incrementalScan: vi.fn(() => agent.scan()),
+    incrementalScan: vi.fn(() => (agent.scan as () => SessionHead[])()),
   };
   agent.scan = vi.fn(() => []);
   Object.assign(agent, overrides);
@@ -360,12 +372,12 @@ function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
 function makeFileSystemAgent(
   name: string,
   overrides: {
-    listSessionSources?: ReturnType<typeof vi.fn>;
-    scanSessionSource?: ReturnType<typeof vi.fn>;
-    getSessionMetaMap?: ReturnType<typeof vi.fn>;
-    setSessionMetaMap?: ReturnType<typeof vi.fn>;
-    checkForChanges?: ReturnType<typeof vi.fn>;
-    incrementalScan?: ReturnType<typeof vi.fn>;
+    listSessionSources?: (options?: AgentScanOptions) => SessionSourceRef[];
+    scanSessionSource?: (sourcePath: string) => SessionHead | null;
+    getSessionMetaMap?: () => Map<string, SessionCacheMeta>;
+    setSessionMetaMap?: (meta: Map<string, SessionCacheMeta>) => void;
+    checkForChanges?: (sinceTimestamp: number, cachedSessions: SessionHead[]) => ChangeCheckResult;
+    incrementalScan?: (cachedSessions: SessionHead[], changedIds: string[]) => SessionHead[];
   } = {},
 ) {
   const agent = Object.create(FileSystemSessionSource.prototype) as InstanceType<
@@ -375,7 +387,7 @@ function makeFileSystemAgent(
   Object.defineProperty(agent, "displayName", { value: name, configurable: true });
   agent.isAvailable = vi.fn(() => true);
   agent.scan = vi.fn(() => []);
-  agent.getSessionData = vi.fn(() => ({}));
+  agent.getSessionData = vi.fn(() => ({}) as SessionData);
   agent.listSessionSources = overrides.listSessionSources ?? vi.fn(() => []);
   agent.scanSessionSource = overrides.scanSessionSource ?? vi.fn(() => null);
   agent.getSessionMetaMap = overrides.getSessionMetaMap ?? vi.fn(() => new Map());
@@ -423,9 +435,7 @@ describe("LiveScanStore", () => {
   });
 
   it("initializes a sorted snapshot for allowed registered agents", async () => {
-    const codex = makeAgent("codex", {
-      scan: vi.fn(() => [fresh]),
-    });
+    const codex = makeAgent("codex");
     const kimi = makeAgent("kimi");
     const older = makeSession("older", { time_updated: 1000 });
     const newer = makeSession("newer", { time_updated: 2000 });
@@ -451,7 +461,7 @@ describe("LiveScanStore", () => {
       }),
     );
     expect(snapshot.agents.map((agent) => agent.name)).toEqual(["codex", "kimi"]);
-    expect(snapshot.byAgent.codex.map((session) => session.id)).toEqual(["newer", "older"]);
+    expect(snapshot.byAgent.codex!.map((session) => session.id)).toEqual(["newer", "older"]);
     expect(snapshot.byAgent.kimi).toEqual([]);
     expect(snapshot.sessions.map((session) => session.id)).toEqual(["newer", "older"]);
     expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
@@ -653,7 +663,7 @@ describe("LiveScanStore", () => {
         onProgress: expect.any(Function),
       }),
     );
-    expect(codex.scan.mock.calls[0]?.[0]).not.toHaveProperty("from");
+    expect((codex.scan as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).not.toHaveProperty("from");
     expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent"]);
     expect(workerThreads.workers.find((worker) => worker.workerData.jobs)?.workerData.jobs).toEqual(
       [
@@ -805,7 +815,7 @@ describe("LiveScanStore", () => {
     await vi.waitFor(() => expect(scanAgentInWorker).toHaveBeenCalledTimes(1));
 
     await (store as any).refreshAgent("kimi");
-    expect(store.getSnapshot().byAgent.kimi[0]?.title).toBe("kimi fresh");
+    expect(store.getSnapshot().byAgent.kimi![0]?.title).toBe("kimi fresh");
 
     releaseBackfill!({ sessions: [codexInitial], meta: {}, changedIds: [] });
     await backfill;

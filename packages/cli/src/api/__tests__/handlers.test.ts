@@ -3,7 +3,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 const coreMocks = vi.hoisted(() => ({
   loadCachedSessionData: vi.fn(),
   listSessionFileActivity: vi.fn(() => []),
-  executeSessionSearch: vi.fn(() => []),
+  executeSessionSearch: vi.fn((): Array<{ agentName: string; session: SessionHead }> => []),
 }));
 
 vi.mock("@codesesh/core", async (importOriginal) => {
@@ -26,7 +26,13 @@ import {
   handleSearchSessions,
   type ScanResultSource,
 } from "../handlers.js";
-import type { ScanResult, SessionHead, SessionData } from "@codesesh/core";
+import type {
+  ChangeCheckResult,
+  ScanResult,
+  SessionCacheMeta,
+  SessionHead,
+  SessionData,
+} from "@codesesh/core";
 import { BaseAgent } from "@codesesh/core";
 
 // --- Helpers ---
@@ -96,6 +102,20 @@ class MockAgent extends BaseAgent {
       },
     };
   }
+
+  checkForChanges(): ChangeCheckResult {
+    return { hasChanges: false, timestamp: Date.now() };
+  }
+
+  incrementalScan(cachedSessions: SessionHead[]): SessionHead[] {
+    return cachedSessions;
+  }
+
+  getSessionMetaMap(): Map<string, SessionCacheMeta> {
+    return new Map();
+  }
+
+  setSessionMetaMap(): void {}
 }
 
 function makeScanResult(overrides?: Partial<ScanResult>): ScanResult {
