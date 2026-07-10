@@ -44,6 +44,7 @@ const core = vi.hoisted(() => ({
 }));
 
 const workerThreads = vi.hoisted(() => ({
+  deferSearchIndexWorkers: false,
   workers: [] as Array<{
     url: URL;
     workerData: any;
@@ -51,9 +52,13 @@ const workerThreads = vi.hoisted(() => ({
     once: ReturnType<typeof vi.fn>;
     unref: ReturnType<typeof vi.fn>;
     terminate: ReturnType<typeof vi.fn>;
+    emitError: (error: Error) => void;
   }>,
   Worker: vi.fn(function (this: unknown, url: URL, options?: { workerData?: unknown }) {
     const workerData = options?.workerData as any;
+    const deferredSearchWorker = workerThreads.deferSearchIndexWorkers && workerData?.jobs;
+    const deferredExitHandlers: Array<(code: number) => void> = [];
+    const deferredErrorHandlers: Array<(error: Error) => void> = [];
     const runSourceSync = (agent: any) => {
       const parseSourceFingerprint = (fingerprint: string) => {
         try {
@@ -112,6 +117,7 @@ const workerThreads = vi.hoisted(() => ({
       workerData,
       on: vi.fn((event: string, handler: (message: unknown) => void) => {
         if (event === "message") {
+          if (deferredSearchWorker) return worker;
           queueMicrotask(() => {
             try {
               if (workerData?.agentName) {
@@ -169,18 +175,28 @@ const workerThreads = vi.hoisted(() => ({
           });
         }
         if (event === "exit") {
-          queueMicrotask(() => handler(0));
+          if (deferredSearchWorker) deferredExitHandlers.push(handler);
+          else queueMicrotask(() => handler(0));
+        }
+        if (event === "error" && deferredSearchWorker) {
+          deferredErrorHandlers.push(handler);
         }
         return worker;
       }),
       once: vi.fn((event: string, handler: (message: unknown) => void) => {
         if (event === "exit") {
-          queueMicrotask(() => handler(0));
+          if (deferredSearchWorker) deferredExitHandlers.push(handler);
+          else queueMicrotask(() => handler(0));
         }
         return worker;
       }),
       unref: vi.fn(),
-      terminate: vi.fn(async () => undefined),
+      terminate: vi.fn(async () => {
+        for (const handler of deferredExitHandlers) handler(0);
+      }),
+      emitError: (error: Error) => {
+        for (const handler of deferredErrorHandlers) handler(error);
+      },
     };
     workerThreads.workers.push(worker);
     return worker;
@@ -360,6 +376,7 @@ describe("LiveScanStore", () => {
     vi.clearAllMocks();
     fsWatch.watchers.length = 0;
     workerThreads.workers.length = 0;
+    workerThreads.deferSearchIndexWorkers = false;
     fsWatch.watch.mockImplementation(
       (
         path: string,
@@ -1688,6 +1705,92 @@ describe("LiveScanStore", () => {
 
     await vi.advanceTimersByTimeAsync(10_000);
     expect(codex.checkForChanges).not.toHaveBeenCalled();
+  });
+
+  it("does not start a pending search-index batch while shutting down", async () => {
+    core.createRegisteredAgents.mockReturnValue([]);
+    core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+    workerThreads.deferSearchIndexWorkers = true;
+    const job = {
+      kind: "full" as const,
+      context: "scan.refresh",
+      agentName: "codex",
+      sessions: [],
+      meta: {},
+    };
+
+    const current = (store as any).enqueueSearchIndexJobs("scan.refresh", [job]);
+    const pending = (store as any).enqueueSearchIndexJobs("scan.refresh", [job]);
+    const outcomes = Promise.allSettled([current, pending]);
+    expect(workerThreads.workers.filter((worker) => worker.workerData.jobs)).toHaveLength(1);
+
+    await store.shutdown();
+
+    expect(workerThreads.workers.filter((worker) => worker.workerData.jobs)).toHaveLength(1);
+    expect(await outcomes).toEqual([
+      expect.objectContaining({ status: "rejected", reason: expect.any(Error) }),
+      expect.objectContaining({ status: "rejected", reason: expect.any(Error) }),
+    ]);
+    expect((store as any).pendingSearchIndexJobs).toEqual([]);
+    expect((store as any).searchIndexWorker).toBeNull();
+  });
+
+  it("makes repeated shutdown calls share one worker termination", async () => {
+    core.createRegisteredAgents.mockReturnValue([]);
+    core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+    workerThreads.deferSearchIndexWorkers = true;
+    const job = {
+      kind: "full" as const,
+      context: "scan.refresh",
+      agentName: "codex",
+      sessions: [],
+      meta: {},
+    };
+    const batch = (store as any).enqueueSearchIndexJobs("scan.refresh", [job]);
+    const outcome = batch.catch((error: Error) => error);
+    const worker = workerThreads.workers.at(-1)!;
+
+    await Promise.all([store.shutdown(), store.shutdown()]);
+
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+    expect(await outcome).toBeInstanceOf(Error);
+    await expect((store as any).enqueueSearchIndexJobs("scan.refresh", [job])).rejects.toThrow(
+      "Live scan store shut down",
+    );
+  });
+
+  it("settles a worker error once when shutdown follows", async () => {
+    core.createRegisteredAgents.mockReturnValue([]);
+    core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+    workerThreads.deferSearchIndexWorkers = true;
+    const job = {
+      kind: "full" as const,
+      context: "scan.refresh",
+      agentName: "codex",
+      sessions: [],
+      meta: {},
+    };
+    const batch = (store as any).enqueueSearchIndexJobs("scan.refresh", [job]);
+    const outcome = Promise.allSettled([batch]);
+    const worker = workerThreads.workers.at(-1)!;
+
+    worker.emitError(new Error("index failed"));
+    await store.shutdown();
+
+    expect(await outcome).toEqual([
+      expect.objectContaining({ status: "rejected", reason: new Error("index failed") }),
+    ]);
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+    expect(workerThreads.workers.filter((item) => item.workerData.jobs)).toHaveLength(1);
   });
 
   it("skips the FTS integrity check on search-index batches after the first one completes", async () => {
