@@ -1,9 +1,4 @@
-export interface AgentInfo {
-  name: string;
-  displayName: string;
-  count: number;
-  icon?: string;
-}
+export type { AgentInfo } from "../contract/agent.js";
 
 export interface FilterOptions {
   agent?: string;

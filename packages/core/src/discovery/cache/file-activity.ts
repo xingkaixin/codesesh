@@ -6,8 +6,8 @@ import type {
   FileActivityKind,
   ProjectIdentityKind,
   SessionFileActivity,
-  SessionHead,
 } from "../../types/index.js";
+import type { FileActivityResult } from "../../contract/index.js";
 import { computeIdentity, realFs } from "../../projects/index.js";
 import type { SQLiteDatabase } from "../../utils/sqlite.js";
 import { filePathFtsQuery, hasCacheStorage, likePattern, normalizeFilePathSearch } from "./db.js";
@@ -20,6 +20,8 @@ import {
   type SearchResult,
   type SearchResultRow,
 } from "./search.js";
+
+export type { FileActivityResult };
 
 export interface FileActivityRow extends SearchResultRow {
   project_identity_key?: string;
@@ -41,10 +43,6 @@ export interface FileActivityOptions {
   from?: number;
   to?: number;
   limit?: number;
-}
-
-export interface FileActivityResult extends SessionFileActivity {
-  session: SessionHead;
 }
 
 export function fileActivityFilters(options: FileActivityOptions): {
