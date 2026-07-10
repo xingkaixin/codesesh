@@ -111,6 +111,16 @@ interface AgentRefreshState {
   pendingPathCount: number;
 }
 
+type AgentOperationKind = "backfill" | "refresh";
+type AgentOperationResult = "committed" | "failed" | "skipped" | "unchanged";
+
+interface AgentOperationLifecycle {
+  agentName: string;
+  kind: AgentOperationKind;
+  generation: number;
+  startedAt: number;
+}
+
 const REFRESH_DEBOUNCE_MS = 200;
 const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
 const PENDING_REFRESH_DELAY_MS = 100;
@@ -217,6 +227,8 @@ export class LiveScanStore {
   private backfillQueue: string[] = [];
   private backfillRunning = false;
   private refreshStates = new Map<string, AgentRefreshState>();
+  private agentOperationGenerations = new Map<string, number>();
+  private agentOperationTails = new Map<string, Promise<void>>();
   private watcher: SessionWatcher | null = null;
   private pendingEvent: SessionsUpdatedEvent | null = null;
   private pendingEventTimer: NodeJS.Timeout | null = null;
@@ -605,6 +617,68 @@ export class LiveScanStore {
     });
   }
 
+  private beginAgentOperation(
+    agentName: string,
+    kind: AgentOperationKind,
+  ): AgentOperationLifecycle {
+    const generation = (this.agentOperationGenerations.get(agentName) ?? 0) + 1;
+    const startedAt = Date.now();
+    this.agentOperationGenerations.set(agentName, generation);
+    appLogger.info("scan.agent_operation.started", {
+      agent: agentName,
+      operation: kind,
+      generation,
+      started_at: startedAt,
+    });
+    return { agentName, kind, generation, startedAt };
+  }
+
+  private completeAgentOperation(
+    lifecycle: AgentOperationLifecycle,
+    result: AgentOperationResult,
+  ): void {
+    const completedAt = Date.now();
+    appLogger.info("scan.agent_operation.completed", {
+      agent: lifecycle.agentName,
+      operation: lifecycle.kind,
+      generation: lifecycle.generation,
+      started_at: lifecycle.startedAt,
+      completed_at: completedAt,
+      duration_ms: completedAt - lifecycle.startedAt,
+      result,
+    });
+  }
+
+  private enqueueAgentOperation(
+    agentName: string,
+    kind: AgentOperationKind,
+    operation: () => Promise<AgentOperationResult>,
+  ): Promise<AgentOperationResult> {
+    const previous = this.agentOperationTails.get(agentName) ?? Promise.resolve();
+    const run = previous.then(async () => {
+      const lifecycle = this.beginAgentOperation(agentName, kind);
+      try {
+        const result = await operation();
+        this.completeAgentOperation(lifecycle, result);
+        return result;
+      } catch (error) {
+        this.completeAgentOperation(lifecycle, "failed");
+        throw error;
+      }
+    });
+    const tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.agentOperationTails.set(agentName, tail);
+    void tail.finally(() => {
+      if (this.agentOperationTails.get(agentName) === tail) {
+        this.agentOperationTails.delete(agentName);
+      }
+    });
+    return run;
+  }
+
   /**
    * Only FileSystemSessionSource agents pay the O(history) enumeration cost this
    * guards against: database agents already do a cheap single-file mtime check.
@@ -652,10 +726,14 @@ export class LiveScanStore {
 
   /** Unbounded per-source sync to reconcile the full session history, not just the display window. */
   private async runBackfill(agentName: string): Promise<void> {
+    await this.enqueueAgentOperation(agentName, "backfill", () => this.performBackfill(agentName));
+  }
+
+  private async performBackfill(agentName: string): Promise<AgentOperationResult> {
     const startedAt = performance.now();
     const agent = this.agents.find((item) => item.name === agentName);
     if (!agent || !(agent instanceof FileSystemSessionSource) || !agent.isAvailable()) {
-      return;
+      return "skipped";
     }
 
     const cached = loadCachedSessions(agentName);
@@ -708,9 +786,11 @@ export class LiveScanStore {
         sessions: fullSessions.length,
         changed: result.changedIds?.length ?? 0,
       });
+      return "committed";
     } catch (error) {
       appLogger.error("scan.backfill.error", { agent: agentName, error });
       console.error(`[${agentName}] Backfill failed:`, error);
+      return "failed";
     }
   }
 
@@ -1016,16 +1096,22 @@ export class LiveScanStore {
     }
 
     state.inFlight = true;
-    this.beginAgentScan(agentName);
 
     try {
-      await this.runRefresh(agentName);
-    } catch (error) {
-      appLogger.error("scan.refresh.error", { agent: agentName, error });
-      console.error(`[${agentName}] Session refresh failed:`, error);
+      await this.enqueueAgentOperation(agentName, "refresh", async () => {
+        this.beginAgentScan(agentName);
+        try {
+          return await this.runRefresh(agentName);
+        } catch (error) {
+          appLogger.error("scan.refresh.error", { agent: agentName, error });
+          console.error(`[${agentName}] Session refresh failed:`, error);
+          return "failed";
+        } finally {
+          this.finishAgentScan(agentName);
+        }
+      });
     } finally {
       state.inFlight = false;
-      this.finishAgentScan(agentName);
 
       if (state.pendingRerun) {
         state.pendingRerun = false;
@@ -1034,7 +1120,7 @@ export class LiveScanStore {
     }
   }
 
-  private async runRefresh(agentName: string): Promise<void> {
+  private async runRefresh(agentName: string): Promise<Exclude<AgentOperationResult, "failed">> {
     const startedAt = performance.now();
     const state = this.getRefreshState(agentName);
     const pendingPathCount = state.pendingPathCount;
@@ -1042,7 +1128,7 @@ export class LiveScanStore {
     const agent = this.agents.find((item) => item.name === agentName);
     if (!agent) {
       appLogger.warn("scan.refresh.missing_agent", { agent: agentName });
-      return;
+      return "skipped";
     }
 
     const previousSessions = this.byAgent[agentName] ?? [];
@@ -1139,7 +1225,7 @@ export class LiveScanStore {
           agent: agentName,
           duration_ms: Math.round(performance.now() - startedAt),
         });
-        return;
+        return "unchanged";
       }
 
       preciseChangedIds = checkResult.changedIds ?? null;
@@ -1258,5 +1344,6 @@ export class LiveScanStore {
       persistent_index_worker_job: persistentJobKind,
       persistent_index_skipped: !persistentJob || undefined,
     });
+    return "committed";
   }
 }
