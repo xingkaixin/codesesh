@@ -3,6 +3,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 const coreMocks = vi.hoisted(() => ({
   loadCachedSessionData: vi.fn(),
   listSessionFileActivity: vi.fn(() => []),
+  executeSessionSearch: vi.fn(() => []),
 }));
 
 vi.mock("@codesesh/core", async (importOriginal) => {
@@ -11,6 +12,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     ...actual,
     loadCachedSessionData: coreMocks.loadCachedSessionData,
     listSessionFileActivity: coreMocks.listSessionFileActivity,
+    executeSessionSearch: coreMocks.executeSessionSearch,
   };
 });
 
@@ -54,10 +56,12 @@ function makeMockContext(
   } = {},
 ) {
   const jsonFn = vi.fn().mockReturnValue({ status: 200 });
+  const params = new URLSearchParams(overrides.query ?? {});
   return {
     req: {
       query: (key: string) => overrides.query?.[key] ?? "",
       param: (key: string) => overrides.param?.[key] ?? "",
+      url: `http://localhost/${params.size ? `?${params.toString()}` : ""}`,
     },
     json: jsonFn,
   } as any;
@@ -131,6 +135,8 @@ afterEach(() => {
   coreMocks.loadCachedSessionData.mockReset();
   coreMocks.listSessionFileActivity.mockReset();
   coreMocks.listSessionFileActivity.mockReturnValue([]);
+  coreMocks.executeSessionSearch.mockReset();
+  coreMocks.executeSessionSearch.mockReturnValue([]);
   vi.useRealTimers();
 });
 
@@ -335,86 +341,38 @@ describe("handleGetSessions", () => {
 });
 
 describe("handleSearchSessions", () => {
-  it("returns recent sessions for empty query from the scan snapshot", () => {
-    const older = makeSession("older", {
-      time_created: 1000,
-      time_updated: 1000,
-    });
-    const newer = makeSession("newer", {
-      time_created: 2000,
-      time_updated: 2000,
-    });
-    const c = makeMockContext({ query: { q: "" } });
-    handleSearchSessions(
-      c,
-      makeScanSource({
-        sessions: [older, newer],
-        byAgent: { claudecode: [older, newer] },
-      }),
-    );
+  it("maps HTTP query params into a query string, SearchOptions, and the scan snapshot, then returns the module's results", () => {
+    const scanSource = makeScanSource();
+    const sentinelResults = [{ agentName: "claudecode", session: makeSession("s1") }];
+    coreMocks.executeSessionSearch.mockReturnValue(sentinelResults);
 
-    const response = c.json.mock.calls[0]![0];
-    expect(response.results.map((result: { session: SessionHead }) => result.session.id)).toEqual([
-      "newer",
-      "older",
-    ]);
-    expect(response.results[0].matchType).toBe("recent");
-  });
-
-  it("applies typed qualifiers on the recent-session path", () => {
-    const claude = makeSession("claude", { slug: "claudecode/claude" });
-    const codex = makeSession("codex", { slug: "codex/codex" });
-    const c = makeMockContext({ query: { q: "agent:codex" } });
-    handleSearchSessions(
-      c,
-      makeScanSource({
-        sessions: [claude, codex],
-        byAgent: {
-          claudecode: [claude],
-          codex: [codex],
-        },
-      }),
-    );
-
-    const response = c.json.mock.calls[0]![0];
-    expect(response.results).toHaveLength(1);
-    expect(response.results[0].agentName).toBe("codex");
-    expect(response.results[0].session.id).toBe("codex");
-  });
-
-  it("filters recent sessions by complete project identity", () => {
-    const remote = makeSession("remote", {
-      slug: "codex/remote",
-      project_identity: {
-        kind: "git_remote",
-        key: "github.com/acme/app",
-        displayName: "app",
-      },
-    });
-    const path = makeSession("path", {
-      slug: "codex/path",
-      project_identity: {
-        kind: "path",
-        key: "github.com/acme/app",
-        displayName: "app path",
-      },
-    });
     const c = makeMockContext({
-      query: { q: "", projectKind: "git_remote", projectKey: "github.com/acme/app" },
+      query: {
+        q: " needle ",
+        agent: "claudecode",
+        tag: "bugfix",
+        limit: "5",
+        projectKind: "git_remote",
+        projectKey: "github.com/acme/app",
+      },
     });
+    handleSearchSessions(c, scanSource);
 
-    handleSearchSessions(
-      c,
-      makeScanSource({ sessions: [remote, path], byAgent: { codex: [remote, path] } }),
+    expect(coreMocks.executeSessionSearch).toHaveBeenCalledWith(
+      "needle",
+      expect.objectContaining({
+        agent: "claudecode",
+        tags: ["bugfix"],
+        limit: 5,
+        projectKind: "git_remote",
+        projectKey: "github.com/acme/app",
+      }),
+      scanSource.getSnapshot(),
     );
-
-    const response = c.json.mock.calls[0]![0];
-    expect(response.results.map((result: { session: SessionHead }) => result.session.id)).toEqual([
-      "remote",
-    ]);
+    expect(c.json).toHaveBeenCalledWith({ results: sentinelResults });
   });
 
-  it("rejects incomplete project identity filters", () => {
+  it("rejects incomplete project identity filters without calling the search module", () => {
     const c = makeMockContext({ query: { q: "", projectKey: "github.com/acme/app" } });
 
     handleSearchSessions(c, makeScanSource());
@@ -423,6 +381,7 @@ describe("handleSearchSessions", () => {
       expect.objectContaining({ error: expect.any(String) }),
       400,
     );
+    expect(coreMocks.executeSessionSearch).not.toHaveBeenCalled();
   });
 });
 

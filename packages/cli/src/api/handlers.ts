@@ -12,7 +12,6 @@ import type {
   ApiProjectGroup,
   AppConfig,
   ScanStatusEvent,
-  SearchResult,
 } from "@codesesh/core/contract";
 import {
   BookmarkStorageUnavailableError,
@@ -21,6 +20,7 @@ import {
   getAgentInfoMap,
   classifySessionTags,
   computeIdentity,
+  executeSessionSearch,
   extractSessionFileActivity,
   getSmartTagSourceTimestamp,
   importBookmarks,
@@ -30,10 +30,7 @@ import {
   listSessionFileActivity,
   listCachedProjectGroups,
   listBookmarks,
-  parseSearchQuery,
   realFs,
-  searchFileActivitySessions,
-  searchSessions,
   upsertBookmark,
   matchesProjectScope as sessionMatchesProjectScope,
   matchesProjectIdentity,
@@ -45,10 +42,8 @@ import {
   type DashboardData,
   type DashboardScope,
   type FileActivityKind,
-  type ProjectScopeMatcher,
   type ProjectIdentityRef,
   type SearchOptions,
-  type SearchQueryFilters,
 } from "@codesesh/core";
 import { appLogger } from "../logging.js";
 
@@ -227,56 +222,6 @@ function sanitizeClientLogData(value: unknown): Record<string, unknown> {
   );
 }
 
-function sessionMatchesCostFilter(session: SessionHead, options: SearchOptions): boolean {
-  const cost = session.stats.total_cost;
-  if (options.costMin != null) {
-    if (options.costMinExclusive ? cost <= options.costMin : cost < options.costMin) return false;
-  }
-  if (options.costMax != null) {
-    if (options.costMaxExclusive ? cost >= options.costMax : cost > options.costMax) return false;
-  }
-  return true;
-}
-
-function mergeSearchLists<T>(left: T[] | undefined, right: T[] | undefined): T[] | undefined {
-  const values = [...(left ?? []), ...(right ?? [])];
-  return values.length > 0 ? [...new Set(values)] : undefined;
-}
-
-function mergeSearchOptions(options: SearchOptions, filters: SearchQueryFilters): SearchOptions {
-  return {
-    ...options,
-    agent: options.agent ?? filters.agent,
-    project: options.project ?? filters.project,
-    projectKind: options.projectKind ?? filters.projectKind,
-    projectKey: options.projectKey ?? filters.projectKey,
-    cwd: options.cwd ?? filters.cwd,
-    tags: mergeSearchLists(options.tags, filters.tags),
-    tools: mergeSearchLists(options.tools, filters.tools),
-    file: options.file ?? filters.file,
-    fileKind: options.fileKind ?? filters.fileKind,
-    costMin: options.costMin ?? filters.costMin,
-    costMax: options.costMax ?? filters.costMax,
-    costMinExclusive: options.costMinExclusive ?? filters.costMinExclusive,
-    costMaxExclusive: options.costMaxExclusive ?? filters.costMaxExclusive,
-  };
-}
-
-function mergeSearchResults(results: SearchResult[], limit: number): SearchResult[] {
-  const seen = new Set<string>();
-  const merged: SearchResult[] = [];
-
-  for (const result of results) {
-    const key = `${result.agentName}/${result.session.id}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(result);
-    if (merged.length >= limit) break;
-  }
-
-  return merged;
-}
-
 function getProjectGroupKey(identityKind: string, identityKey: string): string {
   return `${identityKind}:${identityKey}`;
 }
@@ -353,72 +298,6 @@ function attachProjectMetrics(
       agentStats: [...(metric?.agentStats.values() ?? [])].sort((a, b) => b.sessions - a.sessions),
     };
   });
-}
-
-function matchesRecentSearchFilters(
-  session: SessionHead,
-  options: SearchOptions,
-  projectScope: ProjectScopeMatcher | null,
-): boolean {
-  if (options.projectKind || options.projectKey) {
-    if (
-      !options.projectKind ||
-      !options.projectKey ||
-      !matchesProjectIdentity(session.project_identity, {
-        kind: options.projectKind,
-        key: options.projectKey,
-      })
-    ) {
-      return false;
-    }
-  }
-  if (projectScope && !sessionMatchesProjectScope(session, projectScope)) return false;
-  if (options.project) {
-    const projectNeedle = options.project.toLowerCase();
-    const projectText = [
-      session.project_identity?.key,
-      session.project_identity?.displayName,
-      session.directory,
-    ]
-      .filter(Boolean)
-      .join("\n")
-      .toLowerCase();
-    if (!projectText.includes(projectNeedle)) return false;
-  }
-  if (options.tags?.length && !options.tags.every((tag) => session.smart_tags?.includes(tag))) {
-    return false;
-  }
-  if (!sessionMatchesCostFilter(session, options)) return false;
-  return true;
-}
-
-function recentSearchSessions(
-  scanResult: ScanResult,
-  options: SearchOptions & { limit: number },
-): SearchResult[] {
-  const projectScope = options.cwd ? createProjectScopeMatcher(options.cwd) : null;
-  const entries = options.agent
-    ? ([[options.agent, scanResult.byAgent[options.agent] ?? []]] as Array<[string, SessionHead[]]>)
-    : Object.entries(scanResult.byAgent);
-
-  return entries
-    .flatMap(([agentName, sessions]) =>
-      filterSessionsByActivityWindow(sessions, options.from, options.to)
-        .filter((session) => matchesRecentSearchFilters(session, options, projectScope))
-        .map((session) => ({ agentName, session })),
-    )
-    .toSorted(
-      (a, b) =>
-        (b.session.time_updated ?? b.session.time_created) -
-        (a.session.time_updated ?? a.session.time_created),
-    )
-    .slice(0, options.limit)
-    .map(({ agentName, session }) => ({
-      agentName,
-      session,
-      snippet: `Recent session · ${session.directory}`,
-      matchType: "recent",
-    }));
 }
 
 export function handleGetConfig(c: Context, defaults: SessionListDefaults) {
@@ -530,37 +409,7 @@ export function handleSearchSessions(
     return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
   }
   const searchOptions = parseSearchOptions(c, defaults, projectIdentity);
-  const parsedQuery = parseSearchQuery(query);
-  const mergedSearchOptions = mergeSearchOptions(searchOptions, parsedQuery.filters);
-  const textQuery = parsedQuery.text || (parsedQuery.hasQualifiers ? "" : query);
-  const needsIndexedSearch = Boolean(
-    textQuery ||
-    mergedSearchOptions.file ||
-    mergedSearchOptions.fileKind ||
-    mergedSearchOptions.tools?.length,
-  );
-
-  if (!needsIndexedSearch) {
-    return c.json({
-      results: recentSearchSessions(
-        scanResult,
-        mergedSearchOptions as SearchOptions & { limit: number },
-      ),
-    });
-  }
-
-  const fileQuery =
-    mergedSearchOptions.file ??
-    (!parsedQuery.text ? parsedQuery.filters.file : undefined) ??
-    (!parsedQuery.hasQualifiers && query ? parsedQuery.text || query : "");
-  const results: SearchResult[] = mergeSearchResults(
-    [
-      ...(fileQuery ? searchFileActivitySessions(fileQuery, mergedSearchOptions) : []),
-      ...searchSessions(query, mergedSearchOptions),
-    ],
-    mergedSearchOptions.limit ?? 50,
-  );
-
+  const results = executeSessionSearch(query, searchOptions, scanResult);
   return c.json({ results });
 }
 
