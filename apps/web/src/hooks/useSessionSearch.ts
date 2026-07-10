@@ -5,10 +5,14 @@ import {
   fetchSearchResults,
   logClientEvent,
 } from "../lib/api";
-import { type SessionIndexes, getSessionAgentKey } from "../lib/session-indexes";
-import { getProjectIdentityKey } from "../lib/projects";
+import type { SessionIndexes } from "../lib/session-indexes";
 import type { SearchFilterState } from "../components/app/types";
 import { COST_RANGE_OPTIONS } from "../components/app/SearchFilterBar";
+import {
+  buildLocalRecentResults,
+  buildSearchRequestOptions,
+  usesServerSearch as computeUsesServerSearch,
+} from "../lib/search";
 
 /**
  * Owns the session-search domain: query/filters state, the local-vs-server
@@ -28,64 +32,22 @@ export function useSessionSearch(sessionIndexes: SessionIndexes) {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchResultRefs = useRef(new Map<string, HTMLAnchorElement>());
 
-  const searchRequestOptions = useMemo<SearchRequestOptions>(() => {
-    const selectedCost = COST_RANGE_OPTIONS.find((option) => option.id === searchFilters.costRange);
-    return {
-      agent: searchFilters.agent,
-      projectKind: searchFilters.project?.kind,
-      projectKey: searchFilters.project?.key,
-      tag: searchFilters.tag,
-      tool: searchFilters.tool,
-      fileKind: searchFilters.fileKind,
-      costMin: selectedCost?.costMin,
-    };
-  }, [searchFilters]);
+  const costMin = useMemo(
+    () => COST_RANGE_OPTIONS.find((option) => option.id === searchFilters.costRange)?.costMin,
+    [searchFilters.costRange],
+  );
 
-  const usesServerSearch =
-    activeSearchQuery.trim().length > 0 || Boolean(searchFilters.tool || searchFilters.fileKind);
+  const searchRequestOptions = useMemo<SearchRequestOptions>(
+    () => buildSearchRequestOptions(searchFilters, costMin),
+    [searchFilters, costMin],
+  );
 
-  const recentSearchResults = useMemo<SearchResult[]>(() => {
-    const selectedCost = COST_RANGE_OPTIONS.find((option) => option.id === searchFilters.costRange);
-    const agentSessions = searchFilters.agent
-      ? (sessionIndexes.byAgent.get(searchFilters.agent) ?? [])
-      : null;
-    const projectIdentityKey = searchFilters.project
-      ? getProjectIdentityKey(searchFilters.project)
-      : undefined;
-    const projectSessions = projectIdentityKey
-      ? (sessionIndexes.byProjectIdentityKey.get(projectIdentityKey) ?? [])
-      : null;
-    const sourceSessions =
-      agentSessions && projectSessions
-        ? agentSessions.length <= projectSessions.length
-          ? agentSessions
-          : projectSessions
-        : (agentSessions ?? projectSessions ?? sessionIndexes.sessionsByActivity);
-    const results: SearchResult[] = [];
+  const usesServerSearch = computeUsesServerSearch(activeSearchQuery, searchFilters);
 
-    for (const sessionItem of sourceSessions) {
-      if (searchFilters.agent && getSessionAgentKey(sessionItem) !== searchFilters.agent) continue;
-      if (
-        projectIdentityKey &&
-        (!sessionItem.project_identity ||
-          getProjectIdentityKey(sessionItem.project_identity) !== projectIdentityKey)
-      ) {
-        continue;
-      }
-      if (searchFilters.tag && !sessionItem.smart_tags?.includes(searchFilters.tag)) continue;
-      if (selectedCost && sessionItem.stats.total_cost < selectedCost.costMin) continue;
-
-      results.push({
-        agentName: getSessionAgentKey(sessionItem),
-        session: sessionItem,
-        snippet: `Recent session · ${sessionItem.directory}`,
-        matchType: "recent" as const,
-      });
-      if (results.length >= 50) break;
-    }
-
-    return results;
-  }, [searchFilters, sessionIndexes]);
+  const recentSearchResults = useMemo<SearchResult[]>(
+    () => buildLocalRecentResults(sessionIndexes, searchFilters, costMin),
+    [sessionIndexes, searchFilters, costMin],
+  );
 
   useEffect(() => {
     if (!searchMode) {
