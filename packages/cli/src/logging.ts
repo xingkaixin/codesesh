@@ -119,7 +119,7 @@ export class AppLogger {
         level,
         event,
         pid: process.pid,
-        ...toLogValue(data),
+        ...(toLogValue(data) as Record<string, unknown>),
       })}\n`;
       this.rotateIfNeeded(Buffer.byteLength(line));
       appendFileSync(this.currentPath, line, "utf8");

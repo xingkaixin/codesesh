@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
+import type { ServerType } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { existsSync } from "node:fs";
-import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,7 +37,7 @@ function findWebDistPath(): string | null {
   return null;
 }
 
-function waitForListening(server: Server): Promise<void> {
+function waitForListening(server: ServerType): Promise<void> {
   return new Promise((resolve, reject) => {
     const handleListening = () => {
       server.off("error", handleError);
@@ -72,7 +72,7 @@ function isAddressInUse(error: unknown): boolean {
   );
 }
 
-function getListeningPort(server: Server, fallback: number): number {
+function getListeningPort(server: ServerType, fallback: number): number {
   const address = server.address();
   return typeof address === "object" && address !== null ? (address as AddressInfo).port : fallback;
 }
@@ -134,7 +134,7 @@ export async function createServer(
 
   const attempts = Math.max(1, options.portFallbackAttempts ?? 1);
   const hostname = options.hostname ?? "127.0.0.1";
-  let server: Server | null = null;
+  let server: ServerType | null = null;
   let actualPort = port;
 
   for (let offset = 0; offset < attempts; offset += 1) {

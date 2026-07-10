@@ -42,8 +42,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup && node scripts/copy-web-dist.js",
-    "release": "tsup && node scripts/copy-web-dist.js",
+    "build": "tsc --noEmit && tsup && node scripts/copy-web-dist.js",
+    "release": "tsc --noEmit && tsup && node scripts/copy-web-dist.js",
     "dev": "tsup --watch",
     "clean": "rm -rf dist",
     "start": "node dist/index.js",

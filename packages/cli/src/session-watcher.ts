@@ -65,7 +65,9 @@ function getWatchRoot(path: string): string {
 }
 
 export function isRecursiveWatchSupported(
-  platform = process.platform,
+  // "ibmi" is a real process.platform value on IBM i (PASE) but is not yet
+  // declared in @types/node's Platform union.
+  platform: NodeJS.Platform | "ibmi" = process.platform,
   nodeVersion = process.versions.node,
 ): boolean {
   if (platform === "darwin" || platform === "win32") {

@@ -104,7 +104,7 @@ function parseBookmarkPayload(value: unknown): Omit<BookmarkRecord, "bookmarked_
     title: value.title,
     directory: value.directory,
     time_created: value.time_created,
-    time_updated: value.time_updated,
+    time_updated: value.time_updated ?? undefined,
     stats: value.stats,
   };
 }
@@ -469,6 +469,10 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
   const scanResult = scanSource.getSnapshot();
   const agentName = c.req.param("agent");
   const sessionId = c.req.param("id");
+
+  if (!agentName) {
+    return c.json({ error: "Missing agent name" }, 400);
+  }
 
   if (!sessionId) {
     return c.json({ error: "Missing session ID" }, 400);
