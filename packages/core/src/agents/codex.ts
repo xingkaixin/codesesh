@@ -19,7 +19,7 @@ import {
 import type { ParseSessionResult } from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
-import { parseJsonlLines } from "../utils/jsonl.js";
+import { parseJsonlLines, readJsonlFile, readJsonlFileLines } from "../utils/jsonl.js";
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import {
   cleanInternalText,
@@ -376,7 +376,6 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     if (!meta) throw new Error(`Session not found: ${sessionId}`);
     if (!existsSync(meta.sourcePath)) throw new Error(`Session file missing: ${meta.sourcePath}`);
 
-    const content = readFileSync(meta.sourcePath, "utf-8");
     const messages: Message[] = [];
     const pendingToolCalls = new Map<string, [number, number]>();
 
@@ -398,7 +397,7 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     let prevReasoning = 0;
     let prevCachedInput = 0;
 
-    for (const record of parseJsonlLines(content)) {
+    for (const record of readJsonlFile(meta.sourcePath)) {
       try {
         const recordType = String(record["type"] ?? "");
         if (recordType === "turn_context") {
@@ -661,33 +660,16 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       return this.parseFastSessionHeadResult(filePath);
     }
 
-    const content = readFileSync(filePath, "utf-8");
-    const lines = content.split("\n").filter((l) => l.trim());
-    if (lines.length === 0) return skippedSession("empty file");
-
     const sessionId = extractSessionId(filePath);
 
-    let firstRecord: Record<string, unknown>;
-    try {
-      firstRecord = JSON.parse(lines[0]!);
-    } catch {
-      return skippedSession("malformed first record");
-    }
+    let firstPayload: Record<string, unknown> = {};
+    let createdAt = 0;
+    let lineCount = 0;
+    const titleLines: string[] = [];
 
-    const payload = (firstRecord["payload"] ?? {}) as Record<string, unknown>;
-    const createdAt =
-      parseTimestampMs(firstRecord) || parseTimestampMs(payload) || statSync(filePath).mtimeMs;
-
-    // Try title from session index
-    const indexTitle = this.getTitleForSession(sessionId);
-    // Fallback: extract from first user message
-    const messageTitle = this.extractTitleFromLines(lines);
-    const directoryTitle = basenameTitle(payload["cwd"] ? String(payload["cwd"]) : null);
-
-    const title = resolveSessionTitle(indexTitle, messageTitle, directoryTitle);
-
-    // Walk all lines to count messages, extract model, and pre-accumulate tokens
-    let updatedAt = createdAt;
+    // Single streaming pass: read the first record, buffer title candidates,
+    // count messages, extract models, and pre-accumulate tokens.
+    let updatedAt = 0;
     let messageCount = 0;
     let model: string | null = null;
     let activeModel: string | null = null;
@@ -707,7 +689,24 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
 
     let hasNonInternalRecord = false;
 
-    for (const line of lines) {
+    for (const line of readJsonlFileLines(filePath)) {
+      lineCount += 1;
+      if (lineCount === 1) {
+        let firstRecord: Record<string, unknown>;
+        try {
+          firstRecord = JSON.parse(line);
+        } catch {
+          return skippedSession("malformed first record");
+        }
+        firstPayload = (firstRecord["payload"] ?? {}) as Record<string, unknown>;
+        createdAt =
+          parseTimestampMs(firstRecord) ||
+          parseTimestampMs(firstPayload) ||
+          statSync(filePath).mtimeMs;
+        updatedAt = createdAt;
+      }
+      if (titleLines.length < 20) titleLines.push(line);
+
       try {
         const data = JSON.parse(line);
         const recordType = String(data["type"] ?? "");
@@ -802,9 +801,13 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       }
     }
 
+    if (lineCount === 0) return skippedSession("empty file");
     if (!hasNonInternalRecord) return filteredSession("internal events only");
 
-    const directory = payload["cwd"] ? String(payload["cwd"]) : "";
+    const indexTitle = this.getTitleForSession(sessionId);
+    const messageTitle = this.extractTitleFromLines(titleLines);
+    const directory = firstPayload["cwd"] ? String(firstPayload["cwd"]) : "";
+    const title = resolveSessionTitle(indexTitle, messageTitle, basenameTitle(directory || null));
 
     return parsedSession({
       id: sessionId,

@@ -20,6 +20,7 @@ import { extractMessageText, type MessageBlock } from "./blocks";
 import { isCodexTurnAbortedMessage } from "./codex-abort";
 import { buildCodexPlanDisplay } from "./codex-plan";
 import { getDisplayTextWithRelativePaths } from "./path-extract";
+import { buildBlockTimelineAnchorId, buildMessageTimelineAnchorId } from "./timeline";
 import { escapeRegExp } from "./utils";
 import {
   type ToolStatus,
@@ -86,6 +87,7 @@ function MessageMarkdown({ text, highlightQuery }: { text: string; highlightQuer
 }
 
 export function MessageItem({
+  messageIndex,
   msg,
   blocks,
   toolAnchorIds,
@@ -94,6 +96,7 @@ export function MessageItem({
   baseDirectory,
   highlightQuery,
 }: {
+  messageIndex: number;
   msg: Message;
   blocks: MessageBlock[];
   toolAnchorIds: Map<MessagePart, string>;
@@ -126,7 +129,11 @@ export function MessageItem({
   const time = formatMessageTime(msg.time_created);
 
   return (
-    <article className="w-full border-l-2 border-[var(--console-thread)] pl-4 pr-3 md:pr-5">
+    <article
+      id={isUser ? buildMessageTimelineAnchorId(messageIndex) : undefined}
+      data-session-timeline-anchor={isUser ? buildMessageTimelineAnchorId(messageIndex) : undefined}
+      className="w-full scroll-mt-20 border-l-2 border-[var(--console-thread)] pl-4 pr-3 md:pr-5"
+    >
       <div className="flex gap-4">
         <div className="shrink-0 pt-1">
           <div className="flex size-8 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)]">
@@ -159,10 +166,12 @@ export function MessageItem({
             <AbortToolItem />
           ) : (
             blocks.map((block, index) => {
+              const timelineAnchorId = buildBlockTimelineAnchorId(messageIndex, index);
               if (block.type === "reasoning") {
                 return (
                   <ReasoningSection
                     key={index}
+                    anchorId={timelineAnchorId}
                     parts={block.parts}
                     highlightQuery={highlightQuery}
                   />
@@ -170,7 +179,12 @@ export function MessageItem({
               }
               if (block.type === "plan") {
                 return (
-                  <PlansSection key={index} parts={block.parts} highlightQuery={highlightQuery} />
+                  <PlansSection
+                    key={index}
+                    anchorId={timelineAnchorId}
+                    parts={block.parts}
+                    highlightQuery={highlightQuery}
+                  />
                 );
               }
               if (block.type === "tool") {
@@ -188,7 +202,9 @@ export function MessageItem({
               return (
                 <div
                   key={index}
-                  className="rounded-sm border border-[var(--console-border)] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+                  id={timelineAnchorId}
+                  data-session-timeline-anchor={timelineAnchorId}
+                  className="scroll-mt-20 rounded-sm border border-[var(--console-border)] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
                 >
                   <div className="console-markdown text-sm leading-relaxed text-[var(--console-text)]">
                     {block.parts.map((part, partIndex) => (
@@ -254,9 +270,11 @@ function AbortToolItem() {
 }
 
 function ReasoningSection({
+  anchorId,
   parts,
   highlightQuery,
 }: {
+  anchorId: string;
   parts: MessagePart[];
   highlightQuery?: string;
 }) {
@@ -267,7 +285,11 @@ function ReasoningSection({
     .join("\n\n");
 
   return (
-    <div className="overflow-hidden rounded-sm border border-[var(--console-thinking-border)] bg-[var(--console-thinking-bg)]">
+    <div
+      id={anchorId}
+      data-session-timeline-anchor={anchorId}
+      className="scroll-mt-20 overflow-hidden rounded-sm border border-[var(--console-thinking-border)] bg-[var(--console-thinking-bg)]"
+    >
       <div
         className="flex cursor-pointer items-center justify-between bg-[var(--console-surface-muted)] px-3 py-2"
         onClick={() => setExpanded(!expanded)}
@@ -323,14 +345,16 @@ function ToolsSection({
 }
 
 function PlansSection({
+  anchorId,
   parts,
   highlightQuery,
 }: {
+  anchorId: string;
   parts: MessagePart[];
   highlightQuery?: string;
 }) {
   return (
-    <div className="space-y-2">
+    <div id={anchorId} data-session-timeline-anchor={anchorId} className="scroll-mt-20 space-y-2">
       {parts.map((plan, i) => (
         <PlanItem key={i} part={plan} highlightQuery={highlightQuery} />
       ))}
@@ -432,7 +456,7 @@ function ToolItem({
   const ToolIcon = strategy.Icon;
 
   return (
-    <div id={anchorId} className="scroll-mt-6 space-y-2">
+    <div id={anchorId} data-session-timeline-anchor={anchorId} className="scroll-mt-20 space-y-2">
       <div className="flex flex-wrap items-start gap-2">
         <div
           className={`w-full md:w-[560px] rounded-sm border border-[var(--console-border-strong)] bg-white px-3 py-2 text-left shadow-[2px_2px_0_0_rgba(15,23,42,0.05)] ${

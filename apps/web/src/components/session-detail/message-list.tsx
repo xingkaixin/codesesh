@@ -165,6 +165,7 @@ export function MessageList({
       {messages.map(({ msg, blocks, index }) => (
         <MessageItem
           key={`${msg.id}:${index}`}
+          messageIndex={index}
           msg={msg}
           blocks={blocks}
           toolAnchorIds={toolAnchorIds}
@@ -365,6 +366,7 @@ function VirtualizedMessageList({
             onMeasure={measureItem}
           >
             <MessageItem
+              messageIndex={item.index}
               msg={item.msg}
               blocks={item.blocks}
               toolAnchorIds={toolAnchorIds}
