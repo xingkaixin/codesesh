@@ -5,13 +5,13 @@
  * distribution, and the recent-sessions window.
  */
 import type { AgentInfo } from "../types/index.js";
-import type { SessionHead } from "../types/session.js";
+import type { ProjectIdentityKind, SessionHead } from "../types/session.js";
 
 export const DASHBOARD_RECENT_LIMIT = 10;
 
 export interface DashboardScope {
   agent?: string;
-  projectKind?: string;
+  projectKind?: ProjectIdentityKind;
   projectKey?: string;
 }
 
@@ -162,10 +162,17 @@ export function buildDashboard(
   for (const session of sessions) {
     const agentName = getSessionAgentName(session);
     if (scope.agent && agentName !== scope.agent) continue;
-    if (scope.projectKey) {
+    if (scope.projectKind || scope.projectKey) {
       const identity = session.project_identity;
-      if (!identity || identity.key !== scope.projectKey) continue;
-      if (scope.projectKind && identity.kind !== scope.projectKind) continue;
+      if (
+        !identity ||
+        !scope.projectKind ||
+        !scope.projectKey ||
+        identity.kind !== scope.projectKind ||
+        identity.key !== scope.projectKey
+      ) {
+        continue;
+      }
     }
 
     const activity = getSessionActivityTime(session);

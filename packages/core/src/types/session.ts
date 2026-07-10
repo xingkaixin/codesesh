@@ -57,6 +57,8 @@ export interface ProjectIdentity {
   displayName: string;
 }
 
+export type ProjectIdentityRef = Pick<ProjectIdentity, "kind" | "key">;
+
 export interface ProjectGroup {
   identityKind: ProjectIdentityKind;
   identityKey: string;

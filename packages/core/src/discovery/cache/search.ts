@@ -12,7 +12,7 @@ import type {
   SessionHead,
   SmartTag,
 } from "../../types/index.js";
-import { computeIdentity, realFs } from "../../projects/index.js";
+import { computeIdentity, isProjectIdentityKind, realFs } from "../../projects/index.js";
 import { extractSessionFileActivity } from "../../utils/file-activity.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import {
@@ -130,6 +130,7 @@ export type SearchMatchType =
 export interface SearchQueryFilters {
   agent?: string;
   project?: string;
+  projectKind?: ProjectIdentityKind;
   projectKey?: string;
   cwd?: string;
   tags?: SmartTag[];
@@ -151,6 +152,7 @@ export interface ParsedSearchQuery {
 export interface SearchOptions {
   agent?: string;
   project?: string;
+  projectKind?: ProjectIdentityKind;
   projectKey?: string;
   cwd?: string;
   tags?: SmartTag[];
@@ -301,7 +303,10 @@ export function parseSearchQuery(input: string): ParsedSearchQuery {
     if (key === "agent") filters.agent = value.toLowerCase();
     else if (key === "project") filters.project = value;
     else if (key === "projectkey" || key === "project-key") filters.projectKey = value;
-    else if (key === "cwd") filters.cwd = value;
+    else if (key === "projectkind" || key === "project-kind") {
+      if (isProjectIdentityKind(value)) filters.projectKind = value;
+      else consumed = false;
+    } else if (key === "cwd") filters.cwd = value;
     else if (key === "tool") filters.tools = appendUnique(filters.tools, value.toLowerCase());
     else if (key === "file" || key === "path") filters.file = value;
     else if (key === "kind" || key === "filekind" || key === "file-kind") {
@@ -728,6 +733,7 @@ export function mergeSearchQueryOptions(query: string, options: SearchOptions) {
       ...options,
       agent: options.agent ?? parsed.filters.agent,
       project: options.project ?? parsed.filters.project,
+      projectKind: options.projectKind ?? parsed.filters.projectKind,
       projectKey: options.projectKey ?? parsed.filters.projectKey,
       cwd: options.cwd ?? parsed.filters.cwd,
       tags: mergeSearchLists(options.tags, parsed.filters.tags),
@@ -769,13 +775,20 @@ function buildSessionSearchFilters(options: SearchOptions): {
     clauses.push("s.agent_name = ?");
     params.push(options.agent);
   }
-  if (options.projectKey) {
-    clauses.push("s.project_identity_key = ?");
-    params.push(options.projectKey);
+  if (options.projectKind || options.projectKey) {
+    if (options.projectKind && options.projectKey) {
+      clauses.push("s.project_identity_kind = ? AND s.project_identity_key = ?");
+      params.push(options.projectKind, options.projectKey);
+    } else {
+      clauses.push("0");
+    }
   }
   if (options.cwd) {
-    clauses.push("(s.project_identity_key = ? OR LOWER(s.directory) LIKE ? ESCAPE '\\')");
-    params.push(computeIdentity(options.cwd, realFs).key, likePattern(options.cwd));
+    const identity = computeIdentity(options.cwd, realFs);
+    clauses.push(
+      "((s.project_identity_kind = ? AND s.project_identity_key = ?) OR LOWER(s.directory) LIKE ? ESCAPE '\\')",
+    );
+    params.push(identity.kind, identity.key, likePattern(options.cwd));
   }
   if (options.project) {
     clauses.push(

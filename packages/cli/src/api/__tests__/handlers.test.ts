@@ -262,8 +262,17 @@ describe("handleGetSessions", () => {
       makeSession("b", {
         project_identity: { kind: "path", key: "/home/user/other", displayName: "other" },
       }),
+      makeSession("same-key-path", {
+        project_identity: {
+          kind: "path",
+          key: "github.com/acme/app",
+          displayName: "app path",
+        },
+      }),
     ];
-    const c = makeMockContext({ query: { projectKey: "github.com/acme/app" } });
+    const c = makeMockContext({
+      query: { projectKind: "git_remote", projectKey: "github.com/acme/app" },
+    });
     handleGetSessions(c, makeScanSource({ sessions, byAgent: { claudecode: sessions } }));
     const response = c.json.mock.calls[0]![0];
     expect(response.sessions.map((session: SessionHead) => session.id)).toEqual(["a"]);
@@ -371,6 +380,49 @@ describe("handleSearchSessions", () => {
     expect(response.results).toHaveLength(1);
     expect(response.results[0].agentName).toBe("codex");
     expect(response.results[0].session.id).toBe("codex");
+  });
+
+  it("filters recent sessions by complete project identity", () => {
+    const remote = makeSession("remote", {
+      slug: "codex/remote",
+      project_identity: {
+        kind: "git_remote",
+        key: "github.com/acme/app",
+        displayName: "app",
+      },
+    });
+    const path = makeSession("path", {
+      slug: "codex/path",
+      project_identity: {
+        kind: "path",
+        key: "github.com/acme/app",
+        displayName: "app path",
+      },
+    });
+    const c = makeMockContext({
+      query: { q: "", projectKind: "git_remote", projectKey: "github.com/acme/app" },
+    });
+
+    handleSearchSessions(
+      c,
+      makeScanSource({ sessions: [remote, path], byAgent: { codex: [remote, path] } }),
+    );
+
+    const response = c.json.mock.calls[0]![0];
+    expect(response.results.map((result: { session: SessionHead }) => result.session.id)).toEqual([
+      "remote",
+    ]);
+  });
+
+  it("rejects incomplete project identity filters", () => {
+    const c = makeMockContext({ query: { q: "", projectKey: "github.com/acme/app" } });
+
+    handleSearchSessions(c, makeScanSource());
+
+    expect(c.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.any(String) }),
+      400,
+    );
   });
 });
 

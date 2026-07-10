@@ -1,4 +1,5 @@
 import type { ProjectGroup, ProjectIdentity, SessionHead } from "../types/index.js";
+import { getProjectIdentityKey } from "./identity.js";
 
 function getAgentName(session: SessionHead): string {
   return session.slug.split("/")[0]?.toLowerCase() || "unknown";
@@ -14,7 +15,7 @@ export function buildProjectGroups(sessions: SessionHead[]): ProjectGroup[] {
     const identity = session.project_identity;
     if (!identity) continue;
     const activity = session.time_updated ?? session.time_created;
-    const groupKey = `${identity.kind}:${identity.key}`;
+    const groupKey = getProjectIdentityKey(identity);
     const current = groups.get(groupKey);
     if (current) {
       current.sources.add(getAgentName(session));

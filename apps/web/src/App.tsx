@@ -344,12 +344,15 @@ export default function App() {
     for (const result of sourceResults) {
       const identity = result.session.project_identity;
       if (!identity?.key) continue;
-      const current = byKey.get(identity.key);
+      const projectIdentityKey = getProjectIdentityKey(identity);
+      const current = byKey.get(projectIdentityKey);
       if (current) {
         current.count += 1;
       } else {
-        byKey.set(identity.key, {
-          key: identity.key,
+        byKey.set(projectIdentityKey, {
+          key: projectIdentityKey,
+          identityKind: identity.kind,
+          identityKey: identity.key,
           label: identity.displayName || result.session.directory,
           count: 1,
           showCount: false,
@@ -357,15 +360,18 @@ export default function App() {
       }
     }
 
-    if (searchFilters.projectKey && !byKey.has(searchFilters.projectKey)) {
-      const selected = projectOptions.find((project) => project.key === searchFilters.projectKey);
+    const selectedProjectKey = searchFilters.project
+      ? getProjectIdentityKey(searchFilters.project)
+      : undefined;
+    if (selectedProjectKey && !byKey.has(selectedProjectKey)) {
+      const selected = projectOptions.find((project) => project.key === selectedProjectKey);
       if (selected) {
         byKey.set(selected.key, { ...selected, count: 0, showCount: false });
       }
     }
 
     return [...byKey.values()].toSorted((a, b) => b.count - a.count).slice(0, 8);
-  }, [projectOptions, searchFilters.projectKey, searchLoading, searchResults, usesServerSearch]);
+  }, [projectOptions, searchFilters.project, searchLoading, searchResults, usesServerSearch]);
 
   // Header
   let headerTitle = "CodeSesh";

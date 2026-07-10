@@ -1,5 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { subscribeSessionUpdates } from "./api";
+import { fetchSearchResults, fetchSessions, subscribeSessionUpdates } from "./api";
+
+describe("project identity request filters", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ["sessions", () => fetchSessions({ projectKind: "path", projectKey: "/workspace/app" })],
+    [
+      "search",
+      () => fetchSearchResults("error", { projectKind: "path", projectKey: "/workspace/app" }),
+    ],
+  ])("sends both identity fields for %s requests", async (_name, request) => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({}),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await request();
+
+    const url = new URL(fetchMock.mock.calls[0]![0], "http://localhost");
+    expect(url.searchParams.get("projectKind")).toBe("path");
+    expect(url.searchParams.get("projectKey")).toBe("/workspace/app");
+  });
+});
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];

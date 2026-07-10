@@ -6,6 +6,7 @@ import {
   logClientEvent,
 } from "../lib/api";
 import { type SessionIndexes, getSessionAgentKey } from "../lib/session-indexes";
+import { getProjectIdentityKey } from "../lib/projects";
 import type { SearchFilterState } from "../components/app/types";
 import { COST_RANGE_OPTIONS } from "../components/app/SearchFilterBar";
 
@@ -31,7 +32,8 @@ export function useSessionSearch(sessionIndexes: SessionIndexes) {
     const selectedCost = COST_RANGE_OPTIONS.find((option) => option.id === searchFilters.costRange);
     return {
       agent: searchFilters.agent,
-      projectKey: searchFilters.projectKey,
+      projectKind: searchFilters.project?.kind,
+      projectKey: searchFilters.project?.key,
       tag: searchFilters.tag,
       tool: searchFilters.tool,
       fileKind: searchFilters.fileKind,
@@ -47,8 +49,11 @@ export function useSessionSearch(sessionIndexes: SessionIndexes) {
     const agentSessions = searchFilters.agent
       ? (sessionIndexes.byAgent.get(searchFilters.agent) ?? [])
       : null;
-    const projectSessions = searchFilters.projectKey
-      ? (sessionIndexes.byProjectKey.get(searchFilters.projectKey) ?? [])
+    const projectIdentityKey = searchFilters.project
+      ? getProjectIdentityKey(searchFilters.project)
+      : undefined;
+    const projectSessions = projectIdentityKey
+      ? (sessionIndexes.byProjectIdentityKey.get(projectIdentityKey) ?? [])
       : null;
     const sourceSessions =
       agentSessions && projectSessions
@@ -61,8 +66,9 @@ export function useSessionSearch(sessionIndexes: SessionIndexes) {
     for (const sessionItem of sourceSessions) {
       if (searchFilters.agent && getSessionAgentKey(sessionItem) !== searchFilters.agent) continue;
       if (
-        searchFilters.projectKey &&
-        sessionItem.project_identity?.key !== searchFilters.projectKey
+        projectIdentityKey &&
+        (!sessionItem.project_identity ||
+          getProjectIdentityKey(sessionItem.project_identity) !== projectIdentityKey)
       ) {
         continue;
       }
