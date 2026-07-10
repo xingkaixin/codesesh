@@ -11,7 +11,7 @@
     "deploy:cf": "pnpm build && wrangler pages deploy dist --project-name codesesh"
   },
   "dependencies": {
-    "astro": "^6.4.4"
+    "astro": "^6.4.8"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",
@@ -19,6 +19,6 @@
     "@types/node": "^25.9.1",
     "tailwindcss": "^4.3.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vite": "^7.3.5"
+    "vite": "^7.3.6"
   }
 }

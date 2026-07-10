@@ -1,4 +1,4 @@
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 
 const SHORTCUT_GROUPS = [
   {
@@ -24,29 +24,19 @@ export function ShortcutHelpDialog({ open, onClose }: { open: boolean; onClose: 
   return (
     <Dialog.Root open={open} onOpenChange={(next) => (!next ? onClose() : undefined)}>
       <Dialog.Portal>
-        <Dialog.Overlay className="shortcut-overlay fixed inset-0 z-50 bg-black/35" />
-        <Dialog.Content
-          aria-describedby={undefined}
-          className="shortcut-content fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl origin-center -translate-x-1/2 -translate-y-1/2 rounded-sm border border-[var(--console-border-strong)] bg-white p-5 shadow-2xl outline-none"
-        >
+        <Dialog.Backdrop className="shortcut-overlay fixed inset-0 z-50 bg-black/35" />
+        <Dialog.Popup className="shortcut-content fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl origin-center -translate-x-1/2 -translate-y-1/2 rounded-sm border border-[var(--console-border-strong)] bg-white p-5 shadow-2xl outline-none">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="console-mono text-[11px] uppercase tracking-[0.16em] text-[var(--console-muted)]">
                 Keyboard Shortcuts
               </p>
-              <Dialog.Title asChild>
-                <h2 className="console-mono mt-2 text-xl font-semibold text-[var(--console-text)]">
-                  Navigate without leaving the keyboard
-                </h2>
+              <Dialog.Title className="console-mono mt-2 text-xl font-semibold text-[var(--console-text)]">
+                Navigate without leaving the keyboard
               </Dialog.Title>
             </div>
-            <Dialog.Close asChild>
-              <button
-                type="button"
-                className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-white"
-              >
-                Esc
-              </button>
+            <Dialog.Close className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-white">
+              Esc
             </Dialog.Close>
           </div>
 
@@ -72,7 +62,7 @@ export function ShortcutHelpDialog({ open, onClose }: { open: boolean; onClose: 
               </div>
             ))}
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );
