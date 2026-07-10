@@ -1106,6 +1106,124 @@ describe("searchSessions", () => {
     ).toEqual(["src/changed-new.ts", "src/keep.ts"]);
   });
 
+  it("reads incremental search index state in bounded batches", () => {
+    const sessions = Array.from({ length: 1_000 }, (_, index) => makeSession(`batch-${index}`));
+    const sessionMap = new Map(sessions.map((session) => [session.id, session]));
+
+    saveCachedSessions("claudecode", sessions);
+    syncSessionSearchIndex("claudecode", sessions, (sessionId) =>
+      makeSessionData(sessionMap.get(sessionId)!.id, `content ${sessionId}`),
+    );
+
+    let stateQueryExecutions = 0;
+    const originalPrepare = Database.prototype.prepare;
+    const prepareSpy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+      this: Database.Database,
+      source: string,
+    ) {
+      const statement = originalPrepare.call(this, source);
+      const normalized = source.replace(/\s+/g, " ").trim();
+      const isStateQuery =
+        normalized.startsWith("SELECT content_hash FROM session_documents") ||
+        normalized.startsWith("SELECT COUNT(*) AS value FROM messages") ||
+        normalized.startsWith("WITH requested_session_ids");
+      if (!isStateQuery) {
+        return statement;
+      }
+
+      const originalGet = statement.get.bind(statement);
+      statement.get = (...params: unknown[]) => {
+        stateQueryExecutions += 1;
+        return (originalGet as (...boundParams: unknown[]) => unknown)(...params);
+      };
+      const originalAll = statement.all.bind(statement);
+      statement.all = (...params: unknown[]) => {
+        stateQueryExecutions += 1;
+        return (originalAll as (...boundParams: unknown[]) => unknown[])(...params);
+      };
+      return statement;
+    });
+
+    const batchExecutions: number[] = [];
+    try {
+      for (const changeCount of [10, 100, 1_000]) {
+        const executionsBeforeSync = stateQueryExecutions;
+        const result = syncSessionSearchIndexChanges(
+          "claudecode",
+          sessions.slice(0, changeCount).map((session, sortIndex) => ({ session, sortIndex })),
+          [],
+          () => {
+            throw new Error("unchanged sessions must not be loaded");
+          },
+        );
+        expect(result?.changed).toBe(0);
+        batchExecutions.push(stateQueryExecutions - executionsBeforeSync);
+      }
+    } finally {
+      prepareSpy.mockRestore();
+    }
+
+    expect(batchExecutions).toEqual([1, 1, 2]);
+  });
+
+  it("preserves incremental state defaults and duplicate change semantics", () => {
+    const missingDocument = makeSession("missing-document");
+    const missingMessages = makeSession("missing-messages");
+    const zeroMessages = {
+      ...makeSession("zero-messages"),
+      stats: { ...makeSession("zero-messages").stats, message_count: 0 },
+    };
+    const sessions = [missingDocument, missingMessages, zeroMessages];
+    const sessionMap = new Map(sessions.map((session) => [session.id, session]));
+
+    saveCachedSessions("claudecode", sessions);
+    syncSessionSearchIndex("claudecode", sessions, (sessionId) => ({
+      ...sessionMap.get(sessionId)!,
+      messages: sessionId === zeroMessages.id ? [] : makeSessionData(sessionId, sessionId).messages,
+    }));
+
+    const db = new Database(getCachePath());
+    try {
+      db.prepare("DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?").run(
+        "claudecode",
+        missingDocument.id,
+      );
+      db.prepare("DELETE FROM messages WHERE agent_name = ? AND session_id = ?").run(
+        "claudecode",
+        missingMessages.id,
+      );
+    } finally {
+      db.close();
+    }
+
+    const loadSession = vi.fn((sessionId: string) =>
+      makeSessionData(sessionId, `reindexed ${sessionId}`),
+    );
+    const result = syncSessionSearchIndexChanges(
+      "claudecode",
+      [
+        { session: missingDocument, sortIndex: 0 },
+        { session: missingMessages, sortIndex: 1 },
+        { session: missingMessages, sortIndex: 1 },
+        { session: zeroMessages, sortIndex: 2 },
+      ],
+      [],
+      loadSession,
+    );
+
+    expect(result).toMatchObject({
+      sessions: 4,
+      changed: 3,
+      indexed: 3,
+      skipped: 0,
+    });
+    expect(loadSession.mock.calls.map(([sessionId]) => sessionId)).toEqual([
+      missingDocument.id,
+      missingMessages.id,
+      missingMessages.id,
+    ]);
+  });
+
   it("restores missing FTS triggers before incremental sync", () => {
     const session = makeSession("trigger");
     const updated = {

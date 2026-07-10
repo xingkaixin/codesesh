@@ -67,6 +67,16 @@ export interface SearchIndexSyncResult {
   rebuildDurationMs?: number;
 }
 
+interface SearchIndexState {
+  contentHashBySessionId: Map<string, string>;
+  messageCountBySessionId: Map<string, number>;
+}
+
+type SearchIndexStateRow = IndexedSearchRow & MessageCountRow;
+
+// Leaves room for the two agent parameters under SQLite's legacy 999-variable limit.
+const SEARCH_INDEX_STATE_BATCH_SIZE = 900;
+
 interface MessageSearchRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
@@ -193,6 +203,54 @@ function sessionContentHash(session: SessionHead): string {
     session.stats.cost_source ?? "",
     session.stats.total_tokens ?? 0,
   ]);
+}
+
+function searchIndexStateFromRows(
+  indexedRows: IndexedSearchRow[],
+  messageCountRows: MessageCountRow[],
+): SearchIndexState {
+  return {
+    contentHashBySessionId: new Map(
+      indexedRows.map((row) => [String(row.session_id), String(row.content_hash ?? "")]),
+    ),
+    messageCountBySessionId: new Map(
+      messageCountRows.map((row) => [String(row.session_id), Number(row.value ?? 0)]),
+    ),
+  };
+}
+
+function readSearchIndexState(
+  db: SQLiteDatabase,
+  agentName: string,
+  sessionIds: string[],
+): SearchIndexState {
+  const rows: SearchIndexStateRow[] = [];
+  const uniqueSessionIds = [...new Set(sessionIds)];
+
+  for (let offset = 0; offset < uniqueSessionIds.length; offset += SEARCH_INDEX_STATE_BATCH_SIZE) {
+    const batch = uniqueSessionIds.slice(offset, offset + SEARCH_INDEX_STATE_BATCH_SIZE);
+    const requestedRows = batch.map(() => "(?)").join(", ");
+    const batchRows = db
+      .prepare(
+        `
+          WITH requested_session_ids(session_id) AS (VALUES ${requestedRows})
+          SELECT
+            requested.session_id,
+            documents.content_hash,
+            COUNT(messages.message_index) AS value
+          FROM requested_session_ids AS requested
+          LEFT JOIN session_documents AS documents
+            ON documents.agent_name = ? AND documents.session_id = requested.session_id
+          LEFT JOIN messages
+            ON messages.agent_name = ? AND messages.session_id = requested.session_id
+          GROUP BY requested.session_id, documents.content_hash
+        `,
+      )
+      .all(...batch, agentName, agentName) as SearchIndexStateRow[];
+    rows.push(...batchRows);
+  }
+
+  return searchIndexStateFromRows(rows, rows);
 }
 
 function escapeFtsTerm(value: string): string {
@@ -563,18 +621,13 @@ export function syncSessionSearchIndex(
         "SELECT session_id, content_hash FROM session_documents WHERE agent_name = ? ORDER BY id",
       )
       .all(agentName) as IndexedSearchRow[];
-    const existingMap = new Map(
-      existingRows.map((row) => [String(row.session_id), String(row.content_hash ?? "")]),
-    );
     const sessionSortIndexMap = new Map(sessions.map((session, index) => [session.id, index]));
     const messageCountRows = db
       .prepare(
         "SELECT session_id, COUNT(*) AS value FROM messages WHERE agent_name = ? GROUP BY session_id",
       )
       .all(agentName) as MessageCountRow[];
-    const messageCountMap = new Map(
-      messageCountRows.map((row) => [String(row.session_id), Number(row.value ?? 0)]),
-    );
+    const searchIndexState = searchIndexStateFromRows(existingRows, messageCountRows);
     const sessionMap = new Map(sessions.map((session) => [session.id, session]));
 
     const toDelete = existingRows
@@ -582,8 +635,8 @@ export function syncSessionSearchIndex(
       .filter((sessionId) => !sessionMap.has(sessionId));
     const toUpsert = sessions.filter(
       (session) =>
-        existingMap.get(session.id) !== sessionContentHash(session) ||
-        messageCountMap.get(session.id) !== session.stats.message_count,
+        searchIndexState.contentHashBySessionId.get(session.id) !== sessionContentHash(session) ||
+        searchIndexState.messageCountBySessionId.get(session.id) !== session.stats.message_count,
     );
     const changedCount = toDelete.length + toUpsert.length;
     const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
@@ -656,22 +709,18 @@ export function syncSessionSearchIndexChanges(
   return withCacheDb((db) => {
     ensureFtsConsistency(db);
     const startedAt = performance.now();
-    const getIndexedRow = db.prepare(
-      "SELECT content_hash FROM session_documents WHERE agent_name = ? AND session_id = ?",
+    const searchIndexState = readSearchIndexState(
+      db,
+      agentName,
+      changes.map(({ session }) => session.id),
     );
-    const getMessageCount = db.prepare(
-      "SELECT COUNT(*) AS value FROM messages WHERE agent_name = ? AND session_id = ?",
+    const toUpsert = changes.filter(
+      ({ session }) =>
+        (searchIndexState.contentHashBySessionId.get(session.id) ?? "") !==
+          sessionContentHash(session) ||
+        (searchIndexState.messageCountBySessionId.get(session.id) ?? 0) !==
+          session.stats.message_count,
     );
-    const toUpsert = changes.filter(({ session }) => {
-      const indexed = getIndexedRow.get(agentName, session.id) as IndexedSearchRow | undefined;
-      const messageCount = getMessageCount.get(agentName, session.id) as
-        | MessageCountRow
-        | undefined;
-      return (
-        String(indexed?.content_hash ?? "") !== sessionContentHash(session) ||
-        Number(messageCount?.value ?? 0) !== session.stats.message_count
-      );
-    });
     const uniqueRemovedSessionIds = Array.from(new Set(removedSessionIds));
     const changedCount = uniqueRemovedSessionIds.length + toUpsert.length;
     const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
