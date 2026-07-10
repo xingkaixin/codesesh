@@ -7,6 +7,13 @@ import type {
   SessionHead,
   SmartTag,
 } from "@codesesh/core";
+import type {
+  ApiProjectAgentStat,
+  ApiProjectGroup,
+  AppConfig,
+  ScanStatusEvent,
+  SearchResult,
+} from "@codesesh/core/contract";
 import {
   BookmarkStorageUnavailableError,
   createProjectScopeMatcher,
@@ -40,7 +47,6 @@ import {
   type FileActivityKind,
   type ProjectScopeMatcher,
   type ProjectIdentityRef,
-  type SearchMatchType,
   type SearchOptions,
   type SearchQueryFilters,
 } from "@codesesh/core";
@@ -51,37 +57,7 @@ export interface ScanResultSource {
 }
 
 export interface ScanStatusSource {
-  getScanStatus(): {
-    type: "scan-status";
-    active: boolean;
-    phase: "idle" | "indexing" | "initializing" | "scanning";
-    pendingAgents: string[];
-    scanningAgents: string[];
-    completedAgents: string[];
-    agentStatuses: Record<
-      string,
-      {
-        agentName: string;
-        status: "pending" | "scanning" | "complete";
-        total?: number;
-        processed?: number;
-        sessions?: number;
-        startedAt?: number;
-        updatedAt: number;
-        completedAt?: number;
-      }
-    >;
-    totalAgents: number;
-    startedAt?: number;
-    updatedAt: number;
-    completedAt?: number;
-    backfill: {
-      active: boolean;
-      pendingAgents: string[];
-      currentAgent?: string;
-      completedAgents: string[];
-    };
-  };
+  getScanStatus(): ScanStatusEvent;
 }
 
 export interface SessionListDefaults {
@@ -94,29 +70,6 @@ export interface SessionListDefaults {
 interface ClientLogPayload {
   event?: unknown;
   data?: unknown;
-}
-
-interface ApiSearchResult {
-  agentName: string;
-  session: SessionHead;
-  snippet: string;
-  matchType: SearchMatchType;
-}
-
-interface ApiProjectAgentStat {
-  name: string;
-  sessions: number;
-  messages: number;
-  tokens: number;
-  cost: number;
-}
-
-interface ApiProjectGroup extends ProjectGroup {
-  messages: number;
-  tokens: number;
-  cost: number;
-  cost_source?: SessionHead["stats"]["cost_source"];
-  agentStats: ApiProjectAgentStat[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -309,9 +262,9 @@ function mergeSearchOptions(options: SearchOptions, filters: SearchQueryFilters)
   };
 }
 
-function mergeSearchResults(results: ApiSearchResult[], limit: number): ApiSearchResult[] {
+function mergeSearchResults(results: SearchResult[], limit: number): SearchResult[] {
   const seen = new Set<string>();
-  const merged: ApiSearchResult[] = [];
+  const merged: SearchResult[] = [];
 
   for (const result of results) {
     const key = `${result.agentName}/${result.session.id}`;
@@ -442,7 +395,7 @@ function matchesRecentSearchFilters(
 function recentSearchSessions(
   scanResult: ScanResult,
   options: SearchOptions & { limit: number },
-): ApiSearchResult[] {
+): SearchResult[] {
   const projectScope = options.cwd ? createProjectScopeMatcher(options.cwd) : null;
   const entries = options.agent
     ? ([[options.agent, scanResult.byAgent[options.agent] ?? []]] as Array<[string, SessionHead[]]>)
@@ -469,13 +422,14 @@ function recentSearchSessions(
 }
 
 export function handleGetConfig(c: Context, defaults: SessionListDefaults) {
-  return c.json({
+  const payload: AppConfig = {
     window: {
       from: defaults.from,
       to: defaults.to,
       days: defaults.days,
     },
-  });
+  };
+  return c.json(payload);
 }
 
 export function handleGetScanStatus(c: Context, scanSource: ScanStatusSource) {
@@ -599,7 +553,7 @@ export function handleSearchSessions(
     mergedSearchOptions.file ??
     (!parsedQuery.text ? parsedQuery.filters.file : undefined) ??
     (!parsedQuery.hasQualifiers && query ? parsedQuery.text || query : "");
-  const results: ApiSearchResult[] = mergeSearchResults(
+  const results: SearchResult[] = mergeSearchResults(
     [
       ...(fileQuery ? searchFileActivitySessions(fileQuery, mergedSearchOptions) : []),
       ...searchSessions(query, mergedSearchOptions),
