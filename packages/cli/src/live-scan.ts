@@ -25,6 +25,7 @@ import {
 } from "@codesesh/core";
 import type { SearchIndexWorkerJob, SearchIndexWorkerMessage } from "./search-index-worker.js";
 import type { ScanRefreshWorkerMessage } from "./scan-refresh-worker.js";
+import { PendingSearchIndexJobs, type SearchIndexJobBatch } from "./pending-search-index-jobs.js";
 import { SessionWatcher, resolveAgentWatchTargets } from "./session-watcher.js";
 
 export { resolveAgentWatchTargets };
@@ -87,15 +88,6 @@ interface SessionRefreshDiff {
   event: SessionsUpdatedEvent | null;
   changedSessions: SessionHeadChange[];
   removedSessionIds: string[];
-}
-
-interface SearchIndexJobBatch {
-  id: number;
-  context: string;
-  jobs: SearchIndexWorkerJob[];
-  settled: boolean;
-  resolve: () => void;
-  reject: (error: Error) => void;
 }
 
 interface LiveScanStoreOptions {
@@ -238,7 +230,7 @@ export class LiveScanStore {
   private searchIndexWorker: Worker | null = null;
   private activeSearchIndexBatch: SearchIndexJobBatch | null = null;
   private nextSearchIndexBatchId = 1;
-  private pendingSearchIndexJobs: SearchIndexJobBatch[] = [];
+  private pendingSearchIndexJobs = new PendingSearchIndexJobs();
   private shutdownPromise: Promise<void> | null = null;
   private shuttingDown = false;
   /** Set once a search-index worker in this process has completed the FTS integrity check. */
@@ -412,7 +404,7 @@ export class LiveScanStore {
     this.shuttingDown = true;
     appLogger.info("search_index.shutdown.started", {
       active_batch_id: this.activeSearchIndexBatch?.id,
-      pending_batches: this.pendingSearchIndexJobs.length,
+      pending_batches: this.pendingSearchIndexJobs.batchCount,
     });
     for (const state of this.refreshStates.values()) {
       if (state.timer) {
@@ -433,12 +425,10 @@ export class LiveScanStore {
     const shutdownError = new Error("Live scan store shut down");
     const worker = this.searchIndexWorker;
     const activeBatch = this.activeSearchIndexBatch;
-    const pendingBatches = this.pendingSearchIndexJobs;
     this.searchIndexWorker = null;
     this.activeSearchIndexBatch = null;
-    this.pendingSearchIndexJobs = [];
     if (activeBatch) this.settleSearchIndexBatch(activeBatch, shutdownError);
-    for (const batch of pendingBatches) this.settleSearchIndexBatch(batch, shutdownError);
+    this.pendingSearchIndexJobs.rejectAll(shutdownError);
     if (worker) await worker.terminate();
     this.pendingEvent = null;
 
@@ -447,8 +437,8 @@ export class LiveScanStore {
       this.watcher = null;
     }
     appLogger.info("search_index.shutdown.completed", {
-      active_batch_id: this.activeSearchIndexBatch?.id,
-      pending_batches: this.pendingSearchIndexJobs.length,
+      active_batch_id: activeBatch?.id,
+      pending_batches: this.pendingSearchIndexJobs.batchCount,
     });
   }
 
@@ -942,51 +932,40 @@ export class LiveScanStore {
     if (jobs.length === 0) return Promise.resolve();
     if (this.shuttingDown) return Promise.reject(new Error("Live scan store shut down"));
 
-    return new Promise((resolve, reject) => {
-      const batch: SearchIndexJobBatch = {
-        id: this.nextSearchIndexBatchId++,
+    const batchId = this.nextSearchIndexBatchId++;
+    const completion = this.pendingSearchIndexJobs.enqueue(batchId, context, jobs);
+    if (this.searchIndexWorker) {
+      appLogger.debug("search_index.worker_queued", {
+        batch_id: batchId,
         context,
-        jobs,
-        settled: false,
-        resolve,
-        reject,
-      };
-
-      if (this.searchIndexWorker) {
-        this.pendingSearchIndexJobs.push(batch);
-        appLogger.debug("search_index.worker_queued", {
-          batch_id: batch.id,
-          context,
-          jobs: jobs.length,
-          pending_jobs: this.pendingSearchIndexJobs.length,
-        });
-        return;
-      }
-
-      this.startSearchIndexJobBatch(batch);
-    });
+        jobs: jobs.length,
+        pending_batches: this.pendingSearchIndexJobs.batchCount,
+        pending_jobs: this.pendingSearchIndexJobs.jobCount,
+        pending_changes: this.pendingSearchIndexJobs.changeCount,
+      });
+    } else {
+      this.startNextSearchIndexJobBatch();
+    }
+    return completion;
   }
 
   private settleSearchIndexBatch(batch: SearchIndexJobBatch, error?: Error): void {
-    if (batch.settled) return;
-    batch.settled = true;
+    if (!this.pendingSearchIndexJobs.settle(batch, error)) return;
     appLogger.info("search_index.worker_settled", {
       batch_id: batch.id,
       context: batch.context,
       result: error ? "rejected" : "resolved",
     });
-    if (error) batch.reject(error);
-    else batch.resolve();
   }
 
   private startNextSearchIndexJobBatch(): void {
     if (this.shuttingDown || this.searchIndexWorker) return;
-    const pendingBatch = this.pendingSearchIndexJobs.shift();
+    const pendingBatch = this.pendingSearchIndexJobs.take();
     if (!pendingBatch) return;
     appLogger.info("search_index.worker_dequeued", {
       batch_id: pendingBatch.id,
       context: pendingBatch.context,
-      pending_batches: this.pendingSearchIndexJobs.length,
+      pending_batches: this.pendingSearchIndexJobs.batchCount,
     });
     this.startSearchIndexJobBatch(pendingBatch);
   }
@@ -1053,7 +1032,7 @@ export class LiveScanStore {
           batch,
           new Error(`Search index worker exited with code ${code}`),
         );
-      } else if (!batch.settled) {
+      } else {
         this.settleSearchIndexBatch(
           batch,
           new Error("Search index worker exited before completing its batch"),
