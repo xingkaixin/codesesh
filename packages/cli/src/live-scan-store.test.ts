@@ -52,11 +52,13 @@ const workerThreads = vi.hoisted(() => ({
     once: ReturnType<typeof vi.fn>;
     unref: ReturnType<typeof vi.fn>;
     terminate: ReturnType<typeof vi.fn>;
+    emitDone: () => void;
     emitError: (error: Error) => void;
   }>,
   Worker: vi.fn(function (this: unknown, url: URL, options?: { workerData?: unknown }) {
     const workerData = options?.workerData as any;
     const deferredSearchWorker = workerThreads.deferSearchIndexWorkers && workerData?.jobs;
+    const deferredMessageHandlers: Array<(message: unknown) => void> = [];
     const deferredExitHandlers: Array<(code: number) => void> = [];
     const deferredErrorHandlers: Array<(error: Error) => void> = [];
     const runSourceSync = (agent: any) => {
@@ -117,7 +119,10 @@ const workerThreads = vi.hoisted(() => ({
       workerData,
       on: vi.fn((event: string, handler: (message: unknown) => void) => {
         if (event === "message") {
-          if (deferredSearchWorker) return worker;
+          if (deferredSearchWorker) {
+            deferredMessageHandlers.push(handler);
+            return worker;
+          }
           queueMicrotask(() => {
             try {
               if (workerData?.agentName) {
@@ -194,6 +199,17 @@ const workerThreads = vi.hoisted(() => ({
       terminate: vi.fn(async () => {
         for (const handler of deferredExitHandlers) handler(0);
       }),
+      emitDone: () => {
+        for (const handler of deferredMessageHandlers) {
+          handler({
+            type: "done",
+            context: workerData?.context ?? "",
+            durationMs: 0,
+            sessions: workerData?.jobs?.length ?? 0,
+          });
+        }
+        for (const handler of deferredExitHandlers) handler(0);
+      },
       emitError: (error: Error) => {
         for (const handler of deferredErrorHandlers) handler(error);
       },
@@ -1734,8 +1750,68 @@ describe("LiveScanStore", () => {
       expect.objectContaining({ status: "rejected", reason: expect.any(Error) }),
       expect.objectContaining({ status: "rejected", reason: expect.any(Error) }),
     ]);
-    expect((store as any).pendingSearchIndexJobs).toEqual([]);
+    expect((store as any).pendingSearchIndexJobs.batchCount).toBe(0);
     expect((store as any).searchIndexWorker).toBeNull();
+  });
+
+  it("coalesces pending search-index changes to the latest session state", async () => {
+    core.createRegisteredAgents.mockReturnValue([]);
+    core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
+
+    const store = new LiveScanStore(false, {}, {}, { deferInitialRefresh: true });
+    await store.initialize();
+    workerThreads.deferSearchIndexWorkers = true;
+    const active = (store as any).enqueueSearchIndexJobs("scan.refresh", [
+      {
+        kind: "full",
+        context: "scan.refresh",
+        agentName: "codex",
+        sessions: [],
+        meta: {},
+      },
+    ]);
+    const pending = [1, 2, 3].map((version) =>
+      (store as any).enqueueSearchIndexJobs("scan.refresh", [
+        {
+          kind: "changes",
+          context: "scan.refresh",
+          agentName: "codex",
+          changes: [
+            {
+              session: makeSession("active", { title: `version ${version}` }),
+              sortIndex: 0,
+            },
+          ],
+          removedSessionIds: [],
+          meta: {},
+        },
+      ]),
+    );
+    const outcomes = Promise.allSettled([active, ...pending]);
+
+    const activeWorker = workerThreads.workers.find((worker) => worker.workerData.jobs)!;
+    activeWorker.emitDone();
+
+    const searchIndexWorkers = workerThreads.workers.filter((worker) => worker.workerData.jobs);
+    expect(searchIndexWorkers).toHaveLength(2);
+    expect(searchIndexWorkers[1]?.workerData.jobs).toEqual([
+      expect.objectContaining({
+        kind: "changes",
+        changes: [
+          expect.objectContaining({
+            session: expect.objectContaining({ id: "active", title: "version 3" }),
+          }),
+        ],
+      }),
+    ]);
+
+    searchIndexWorkers[1]!.emitDone();
+    expect(await outcomes).toEqual([
+      { status: "fulfilled", value: undefined },
+      { status: "fulfilled", value: undefined },
+      { status: "fulfilled", value: undefined },
+      { status: "fulfilled", value: undefined },
+    ]);
   });
 
   it("makes repeated shutdown calls share one worker termination", async () => {
