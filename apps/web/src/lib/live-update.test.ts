@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SAMPLE_SESSIONS_UPDATED_EVENT } from "@codesesh/core/contract";
 import { applyLiveSessionUpdate, compareSessionActivityDesc } from "./live-update";
 import type { SessionHead, SessionsUpdatedEvent } from "./api";
 
@@ -51,5 +52,11 @@ describe("applyLiveSessionUpdate", () => {
     } as unknown as SessionsUpdatedEvent;
     const result = applyLiveSessionUpdate([makeSession("old", 100)], event);
     expect(result![0]!.id).toBe("new");
+  });
+
+  it("applies a real wire SessionsUpdatedEvent fixture", () => {
+    const result = applyLiveSessionUpdate([], SAMPLE_SESSIONS_UPDATED_EVENT);
+    expect(result).not.toBeNull();
+    expect(result![0]!.id).toBe(SAMPLE_SESSIONS_UPDATED_EVENT.changedSessionHeads[0]!.session.id);
   });
 });
