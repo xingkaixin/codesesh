@@ -1,10 +1,10 @@
 import { resolve, sep } from "node:path";
-import type { SessionHead } from "../types/index.js";
-import { computeIdentity, type IdentityFs } from "./identity.js";
+import type { ProjectIdentityRef, SessionHead } from "../types/index.js";
+import { computeIdentity, matchesProjectIdentity, type IdentityFs } from "./identity.js";
 import { realFs } from "./fs.js";
 
 export interface ProjectScopeMatcher {
-  identityKey: string;
+  identity: ProjectIdentityRef;
   path: string;
 }
 
@@ -12,15 +12,16 @@ export function createProjectScopeMatcher(
   queryPath: string,
   fs: IdentityFs = realFs,
 ): ProjectScopeMatcher {
+  const identity = computeIdentity(queryPath, fs);
   return {
-    identityKey: computeIdentity(queryPath, fs).key,
+    identity: { kind: identity.kind, key: identity.key },
     path: normalizeScopePath(queryPath),
   };
 }
 
 export function matchesProjectScope(session: SessionHead, scope: ProjectScopeMatcher): boolean {
   if (!session.directory) return false;
-  if (session.project_identity?.key === scope.identityKey) return true;
+  if (matchesProjectIdentity(session.project_identity, scope.identity)) return true;
   return isPathScopeMatch(scope.path, session.directory);
 }
 

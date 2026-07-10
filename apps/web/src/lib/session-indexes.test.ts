@@ -83,11 +83,6 @@ describe("session indexes", () => {
         .get(getProjectAgentKey("path:/workspace/a", "codex"))
         ?.map((session) => session.id),
     ).toEqual(["new", "old"]);
-    expect(indexes.byProjectKey.get("/workspace/a")?.map((session) => session.id)).toEqual([
-      "new",
-      "claude",
-      "old",
-    ]);
     expect(indexes.sessionsByActivity.map((session) => session.id)).toEqual([
       "other",
       "new",
@@ -106,8 +101,52 @@ describe("session indexes", () => {
       "other",
     ]);
     expect(indexes.projectOptions).toEqual([
-      { key: "/workspace/a", label: "Project A", count: 3 },
-      { key: "/workspace/b", label: "Project B", count: 1 },
+      {
+        key: "path:/workspace/a",
+        identityKind: "path",
+        identityKey: "/workspace/a",
+        label: "Project A",
+        count: 3,
+      },
+      {
+        key: "path:/workspace/b",
+        identityKind: "path",
+        identityKey: "/workspace/b",
+        label: "Project B",
+        count: 1,
+      },
+    ]);
+  });
+
+  it("keeps equal project keys from different kinds in separate indexes", () => {
+    const remote = createSession({
+      id: "remote",
+      slug: "codex/remote",
+      title: "Remote",
+      project_identity: {
+        kind: "git_remote",
+        key: "github.com/acme/app",
+        displayName: "App",
+      },
+    });
+    const path = createSession({
+      id: "path",
+      slug: "codex/path",
+      title: "Path",
+      project_identity: {
+        kind: "path",
+        key: "github.com/acme/app",
+        displayName: "App path",
+      },
+    });
+
+    const indexes = buildSessionIndexes([remote, path], agents);
+
+    expect(indexes.byProjectIdentityKey.get("git_remote:github.com/acme/app")).toEqual([remote]);
+    expect(indexes.byProjectIdentityKey.get("path:github.com/acme/app")).toEqual([path]);
+    expect(indexes.projectOptions.map((project) => project.key)).toEqual([
+      "git_remote:github.com/acme/app",
+      "path:github.com/acme/app",
     ]);
   });
 

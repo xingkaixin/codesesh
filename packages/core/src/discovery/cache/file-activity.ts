@@ -2,7 +2,12 @@
  * File activity aggregation: per-session / cross-session file activity queries
  * and file-path search.
  */
-import type { FileActivityKind, SessionFileActivity, SessionHead } from "../../types/index.js";
+import type {
+  FileActivityKind,
+  ProjectIdentityKind,
+  SessionFileActivity,
+  SessionHead,
+} from "../../types/index.js";
 import { computeIdentity, realFs } from "../../projects/index.js";
 import type { SQLiteDatabase } from "../../utils/sqlite.js";
 import { filePathFtsQuery, hasCacheStorage, likePattern, normalizeFilePathSearch } from "./db.js";
@@ -27,6 +32,7 @@ export interface FileActivityRow extends SearchResultRow {
 export interface FileActivityOptions {
   agent?: string;
   sessionId?: string;
+  projectKind?: ProjectIdentityKind;
   projectKey?: string;
   project?: string;
   cwd?: string;
@@ -42,18 +48,23 @@ export interface FileActivityResult extends SessionFileActivity {
 }
 
 export function fileActivityFilters(options: FileActivityOptions): {
+  projectKind: ProjectIdentityKind | null;
   projectKey: string | null;
   projectLike: string | null;
+  cwdKind: ProjectIdentityKind | null;
   cwdKey: string | null;
   cwdLike: string | null;
   path: string;
   pathLike: string | null;
 } {
   const path = options.path ? normalizeFilePathSearch(options.path) : "";
+  const cwdIdentity = options.cwd ? computeIdentity(options.cwd, realFs) : null;
   return {
+    projectKind: options.projectKind ?? null,
     projectKey: options.projectKey ?? null,
     projectLike: options.project ? likePattern(options.project) : null,
-    cwdKey: options.cwd ? computeIdentity(options.cwd, realFs).key : null,
+    cwdKind: cwdIdentity?.kind ?? null,
+    cwdKey: cwdIdentity?.key ?? null,
     cwdLike: options.cwd ? likePattern(options.cwd) : null,
     path,
     pathLike: path ? likePattern(path) : null,
@@ -88,9 +99,13 @@ export function buildFileActivityWhere(options: FileActivityOptions): {
     clauses.push("fa.session_id = ?");
     params.push(options.sessionId);
   }
-  if (filters.projectKey != null) {
-    clauses.push("fa.project_identity_key = ?");
-    params.push(filters.projectKey);
+  if (filters.projectKind != null || filters.projectKey != null) {
+    if (filters.projectKind != null && filters.projectKey != null) {
+      clauses.push("s.project_identity_kind = ? AND fa.project_identity_key = ?");
+      params.push(filters.projectKind, filters.projectKey);
+    } else {
+      clauses.push("0");
+    }
   }
   if (filters.projectLike != null) {
     clauses.push(
@@ -99,8 +114,10 @@ export function buildFileActivityWhere(options: FileActivityOptions): {
     params.push(filters.projectLike, filters.projectLike, filters.projectLike);
   }
   if (filters.cwdKey != null) {
-    clauses.push("(s.project_identity_key = ? OR LOWER(s.directory) LIKE ? ESCAPE '\\')");
-    params.push(filters.cwdKey, filters.cwdLike);
+    clauses.push(
+      "((s.project_identity_kind = ? AND s.project_identity_key = ?) OR LOWER(s.directory) LIKE ? ESCAPE '\\')",
+    );
+    params.push(filters.cwdKind, filters.cwdKey, filters.cwdLike);
   }
   if (filters.pathLike != null) {
     const pathQuery = filePathFtsQuery(filters.path);
@@ -216,6 +233,7 @@ export function searchFileActivitySessions(
 
   const rows = listFileActivity({
     agent: search.options.agent,
+    projectKind: search.options.projectKind,
     projectKey: search.options.projectKey,
     project: search.options.project,
     cwd: search.options.cwd,

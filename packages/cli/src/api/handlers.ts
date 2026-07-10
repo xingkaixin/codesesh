@@ -17,6 +17,7 @@ import {
   extractSessionFileActivity,
   getSmartTagSourceTimestamp,
   importBookmarks,
+  isProjectIdentityKind,
   loadCachedSessionData,
   listFileActivity,
   listSessionFileActivity,
@@ -28,6 +29,7 @@ import {
   searchSessions,
   upsertBookmark,
   matchesProjectScope as sessionMatchesProjectScope,
+  matchesProjectIdentity,
   buildDashboard,
   getSessionAgentName,
   getSessionActivityTime,
@@ -37,6 +39,7 @@ import {
   type DashboardScope,
   type FileActivityKind,
   type ProjectScopeMatcher,
+  type ProjectIdentityRef,
   type SearchMatchType,
   type SearchOptions,
   type SearchQueryFilters,
@@ -206,13 +209,18 @@ function parseSmartTags(values: string[]): SmartTag[] | undefined {
   return tags.length > 0 ? [...new Set(tags)] : undefined;
 }
 
-function parseSearchOptions(c: Context, defaults: SessionListDefaults): SearchOptions {
+function parseSearchOptions(
+  c: Context,
+  defaults: SessionListDefaults,
+  projectIdentity?: ProjectIdentityRef,
+): SearchOptions {
   const params = searchParams(c);
   const limitValue = parseNumberParam(params.get("limit") ?? undefined);
   return {
     agent: optionalQueryValue(params.get("agent") ?? undefined),
     project: optionalQueryValue(params.get("project") ?? undefined),
-    projectKey: optionalQueryValue(params.get("projectKey") ?? undefined),
+    projectKind: projectIdentity?.kind,
+    projectKey: projectIdentity?.key,
     cwd: optionalQueryValue(params.get("cwd") ?? undefined),
     tags: parseSmartTags(queryValues(params, "tag", "tags", "signal")),
     tools: queryValues(params, "tool", "tools").map((tool) => tool.toLowerCase()),
@@ -287,6 +295,7 @@ function mergeSearchOptions(options: SearchOptions, filters: SearchQueryFilters)
     ...options,
     agent: options.agent ?? filters.agent,
     project: options.project ?? filters.project,
+    projectKind: options.projectKind ?? filters.projectKind,
     projectKey: options.projectKey ?? filters.projectKey,
     cwd: options.cwd ?? filters.cwd,
     tags: mergeSearchLists(options.tags, filters.tags),
@@ -398,7 +407,18 @@ function matchesRecentSearchFilters(
   options: SearchOptions,
   projectScope: ProjectScopeMatcher | null,
 ): boolean {
-  if (options.projectKey && session.project_identity?.key !== options.projectKey) return false;
+  if (options.projectKind || options.projectKey) {
+    if (
+      !options.projectKind ||
+      !options.projectKey ||
+      !matchesProjectIdentity(session.project_identity, {
+        kind: options.projectKind,
+        key: options.projectKey,
+      })
+    ) {
+      return false;
+    }
+  }
   if (projectScope && !sessionMatchesProjectScope(session, projectScope)) return false;
   if (options.project) {
     const projectNeedle = options.project.toLowerCase();
@@ -501,7 +521,13 @@ export function handleGetSessions(
   const agent = c.req.query("agent");
   const q = c.req.query("q")?.toLowerCase();
   const cwd = c.req.query("cwd");
-  const projectKey = c.req.query("projectKey");
+  const projectIdentity = parseProjectIdentityFilter(
+    c.req.query("projectKind"),
+    c.req.query("projectKey"),
+  );
+  if (projectIdentity === null) {
+    return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
+  }
   const tag = c.req.query("tag")?.toLowerCase();
   const from = parseDateParam(c.req.query("from"), defaults.from);
   const to = parseDateParam(c.req.query("to"), defaults.to);
@@ -515,8 +541,10 @@ export function handleGetSessions(
     sessions = [...scanResult.sessions];
   }
 
-  if (projectKey) {
-    sessions = sessions.filter((s) => s.project_identity?.key === projectKey);
+  if (projectIdentity) {
+    sessions = sessions.filter((session) =>
+      matchesProjectIdentity(session.project_identity, projectIdentity),
+    );
   } else if (cwd) {
     const projectScope = createProjectScopeMatcher(cwd);
     sessions = sessions.filter((s) => sessionMatchesProjectScope(s, projectScope));
@@ -540,7 +568,14 @@ export function handleSearchSessions(
 ) {
   const query = c.req.query("q")?.trim() ?? "";
   const scanResult = scanSource.getSnapshot();
-  const searchOptions = parseSearchOptions(c, defaults);
+  const projectIdentity = parseProjectIdentityFilter(
+    c.req.query("projectKind"),
+    c.req.query("projectKey"),
+  );
+  if (projectIdentity === null) {
+    return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
+  }
+  const searchOptions = parseSearchOptions(c, defaults, projectIdentity);
   const parsedQuery = parseSearchQuery(query);
   const mergedSearchOptions = mergeSearchOptions(searchOptions, parsedQuery.filters);
   const textQuery = parsedQuery.text || (parsedQuery.hasQualifiers ? "" : query);
@@ -587,15 +622,34 @@ function optionalQueryValue(value: string | undefined): string | undefined {
   return normalized ? normalized : undefined;
 }
 
+function parseProjectIdentityFilter(
+  kindValue: string | undefined,
+  keyValue: string | undefined,
+): ProjectIdentityRef | null | undefined {
+  const kind = optionalQueryValue(kindValue);
+  const key = optionalQueryValue(keyValue);
+  if (!kind && !key) return undefined;
+  if (!kind || !key || !isProjectIdentityKind(kind)) return null;
+  return { kind, key };
+}
+
 export function handleGetFileActivity(c: Context, defaults: SessionListDefaults = {}) {
   const limitValue = Number(c.req.query("limit"));
   const limit = Number.isFinite(limitValue) && limitValue > 0 ? Math.min(limitValue, 200) : 50;
+  const projectIdentity = parseProjectIdentityFilter(
+    c.req.query("projectKind"),
+    c.req.query("projectKey"),
+  );
+  if (projectIdentity === null) {
+    return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
+  }
 
   return c.json({
     activity: listFileActivity({
       agent: optionalQueryValue(c.req.query("agent")),
       sessionId: optionalQueryValue(c.req.query("sessionId")),
-      projectKey: optionalQueryValue(c.req.query("projectKey")),
+      projectKind: projectIdentity?.kind,
+      projectKey: projectIdentity?.key,
       project: optionalQueryValue(c.req.query("project")),
       cwd: optionalQueryValue(c.req.query("cwd")),
       path: optionalQueryValue(c.req.query("path")),
@@ -809,6 +863,13 @@ export function handleGetDashboard(
   defaults: SessionListDefaults = {},
 ) {
   const scanResult = scanSource.getSnapshot();
+  const projectIdentity = parseProjectIdentityFilter(
+    c.req.query("projectKind"),
+    c.req.query("projectKey"),
+  );
+  if (projectIdentity === null) {
+    return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
+  }
   const { from, to, days } = resolveDashboardWindow(
     defaults,
     c.req.query("days"),
@@ -817,8 +878,8 @@ export function handleGetDashboard(
   );
   const scope: DashboardScope = {
     agent: optionalQueryValue(c.req.query("agent"))?.toLowerCase(),
-    projectKind: optionalQueryValue(c.req.query("projectKind")),
-    projectKey: optionalQueryValue(c.req.query("projectKey")),
+    projectKind: projectIdentity?.kind,
+    projectKey: projectIdentity?.key,
   };
 
   const agentInfo = getAgentInfoMap({});
@@ -836,6 +897,7 @@ export function handleGetDashboard(
     ...aggregate,
     recentFileActivities: listFileActivity({
       agent: scope.agent,
+      projectKind: scope.projectKind,
       projectKey: scope.projectKey,
       from,
       to,

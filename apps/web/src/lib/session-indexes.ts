@@ -1,4 +1,4 @@
-import type { AgentInfo, SessionHead } from "./api";
+import type { AgentInfo, ProjectIdentityKind, SessionHead } from "./api";
 import { getProjectIdentityKey } from "./projects";
 
 export interface IndexedSession extends SessionHead {
@@ -9,6 +9,8 @@ export interface IndexedSession extends SessionHead {
 
 export interface SessionProjectOption {
   key: string;
+  identityKind: ProjectIdentityKind;
+  identityKey: string;
   label: string;
   count: number;
 }
@@ -18,7 +20,6 @@ export interface SessionIndexes {
   byAgent: Map<string, SessionHead[]>;
   byProjectIdentityKey: Map<string, SessionHead[]>;
   byProjectAgentKey: Map<string, SessionHead[]>;
-  byProjectKey: Map<string, SessionHead[]>;
   byLandingAgent: Map<string, IndexedSession[]>;
   byLandingProjectIdentityKey: Map<string, IndexedSession[]>;
   landingSessions: IndexedSession[];
@@ -61,7 +62,6 @@ export function buildSessionIndexes(sessions: SessionHead[], agents: AgentInfo[]
   const byAgent = new Map<string, SessionHead[]>();
   const byProjectIdentityKey = new Map<string, SessionHead[]>();
   const byProjectAgentKey = new Map<string, SessionHead[]>();
-  const byProjectKey = new Map<string, SessionHead[]>();
   const byLandingAgent = new Map<string, IndexedSession[]>();
   const byLandingProjectIdentityKey = new Map<string, IndexedSession[]>();
   const projectOptionsByKey = new Map<string, SessionProjectOption>();
@@ -96,12 +96,14 @@ export function buildSessionIndexes(sessions: SessionHead[], agents: AgentInfo[]
     const projectIdentityKey = getProjectIdentityKey(identity);
     pushMapValue(byLandingProjectIdentityKey, projectIdentityKey, indexedSession);
 
-    const option = projectOptionsByKey.get(identity.key);
+    const option = projectOptionsByKey.get(projectIdentityKey);
     if (option) {
       option.count += 1;
     } else {
-      projectOptionsByKey.set(identity.key, {
-        key: identity.key,
+      projectOptionsByKey.set(projectIdentityKey, {
+        key: projectIdentityKey,
+        identityKind: identity.kind,
+        identityKey: identity.key,
         label: identity.displayName || session.directory,
         count: 1,
       });
@@ -119,7 +121,6 @@ export function buildSessionIndexes(sessions: SessionHead[], agents: AgentInfo[]
     const projectIdentityKey = getProjectIdentityKey(identity);
     pushMapValue(byProjectIdentityKey, projectIdentityKey, session);
     pushMapValue(byProjectAgentKey, getProjectAgentKey(projectIdentityKey, agentKey), session);
-    pushMapValue(byProjectKey, identity.key, session);
   }
 
   return {
@@ -127,7 +128,6 @@ export function buildSessionIndexes(sessions: SessionHead[], agents: AgentInfo[]
     byAgent,
     byProjectIdentityKey,
     byProjectAgentKey,
-    byProjectKey,
     byLandingAgent,
     byLandingProjectIdentityKey,
     landingSessions,

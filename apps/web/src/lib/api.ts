@@ -281,6 +281,7 @@ export interface SearchResult {
 
 export interface SearchRequestOptions {
   agent?: string;
+  projectKind?: ProjectIdentityKind;
   projectKey?: string;
   tag?: SmartTag;
   tool?: string;
@@ -329,6 +330,7 @@ export async function fetchProjects(): Promise<{ projects: ProjectGroup[] }> {
 export async function fetchSessions(
   options: {
     agent?: string;
+    projectKind?: ProjectIdentityKind;
     projectKey?: string;
     from?: number;
     to?: number;
@@ -336,6 +338,7 @@ export async function fetchSessions(
 ): Promise<{ sessions: SessionHead[] }> {
   const params = new URLSearchParams();
   if (options.agent) params.set("agent", options.agent);
+  if (options.projectKind) params.set("projectKind", options.projectKind);
   if (options.projectKey) params.set("projectKey", options.projectKey);
   if (options.from != null) params.set("from", new Date(options.from).toISOString());
   if (options.to != null) params.set("to", new Date(options.to).toISOString());
@@ -368,6 +371,7 @@ export async function fetchSearchResults(
   const params = new URLSearchParams();
   params.set("q", query);
   if (options.agent) params.set("agent", options.agent);
+  if (options.projectKind) params.set("projectKind", options.projectKind);
   if (options.projectKey) params.set("projectKey", options.projectKey);
   if (options.tag) params.set("tag", options.tag);
   if (options.tool) params.set("tool", options.tool);

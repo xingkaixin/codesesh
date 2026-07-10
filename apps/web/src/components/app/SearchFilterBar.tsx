@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { AgentInfo, FileActivityKind, SmartTag } from "../../lib/api";
+import { getProjectIdentityKey } from "../../lib/projects";
 import { SMART_TAG_LABELS } from "../SmartTagChips";
 import { FilterChip } from "./FilterChip";
 import type { CostRangeId, SearchFilterState, SearchProjectOption } from "./types";
@@ -47,6 +48,7 @@ export function SearchFilterBar({
   onChangeFilters: Dispatch<SetStateAction<SearchFilterState>>;
 }) {
   const hasActiveFilters = Object.values(filters).some(Boolean);
+  const selectedProjectKey = filters.project ? getProjectIdentityKey(filters.project) : undefined;
   const setFilter = <K extends keyof SearchFilterState>(key: K, value: SearchFilterState[K]) => {
     onChangeFilters((current) => ({
       ...current,
@@ -61,18 +63,26 @@ export function SearchFilterBar({
           Scope
         </span>
         <FilterChip
-          active={!filters.projectKey}
+          active={!filters.project}
           label="All"
-          onClick={() => onChangeFilters((current) => ({ ...current, projectKey: undefined }))}
+          onClick={() => onChangeFilters((current) => ({ ...current, project: undefined }))}
         />
         {projects.map((project) => (
           <FilterChip
             key={project.key}
-            active={filters.projectKey === project.key}
+            active={selectedProjectKey === project.key}
             label={
               project.showCount === false ? project.label : `${project.label} · ${project.count}`
             }
-            onClick={() => setFilter("projectKey", project.key)}
+            onClick={() =>
+              onChangeFilters((current) => ({
+                ...current,
+                project:
+                  selectedProjectKey === project.key
+                    ? undefined
+                    : { kind: project.identityKind, key: project.identityKey },
+              }))
+            }
           />
         ))}
       </div>

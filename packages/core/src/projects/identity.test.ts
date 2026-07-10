@@ -1,6 +1,12 @@
 import { homedir } from "node:os";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { computeIdentity, normalizeGitRemote, type IdentityFs } from "./identity.js";
+import {
+  computeIdentity,
+  getProjectIdentityKey,
+  matchesProjectIdentity,
+  normalizeGitRemote,
+  type IdentityFs,
+} from "./identity.js";
 
 vi.mock("node:os", async () => {
   const actual = await vi.importActual<typeof import("node:os")>("node:os");
@@ -43,6 +49,18 @@ describe("normalizeGitRemote", () => {
     expect(normalizeGitRemote("https://github.com/xingkaixin/codesesh.git")).toBe(
       "github.com/xingkaixin/codesesh",
     );
+  });
+});
+
+describe("project identity comparison", () => {
+  it("keeps equal keys from different kinds distinct", () => {
+    const remote = { kind: "git_remote" as const, key: "github.com/acme/app" };
+    const path = { kind: "path" as const, key: "github.com/acme/app" };
+
+    expect(getProjectIdentityKey(remote)).toBe("git_remote:github.com/acme/app");
+    expect(getProjectIdentityKey(path)).toBe("path:github.com/acme/app");
+    expect(matchesProjectIdentity(remote, path)).toBe(false);
+    expect(matchesProjectIdentity(remote, { ...remote })).toBe(true);
   });
 });
 

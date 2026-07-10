@@ -12,7 +12,8 @@ vi.mock("../lib/api", () => ({
 
 const emptyIndexes = {
   byAgent: new Map(),
-  byProjectKey: new Map(),
+  byProjectIdentityKey: new Map(),
+  projectOptions: [],
   sessionsByActivity: [],
 } as unknown as SessionIndexes;
 
@@ -53,6 +54,39 @@ describe("useSessionSearch", () => {
 
     await waitFor(() => expect(result.current.searchResults).toEqual(serverResults));
     expect(api.fetchSearchResults).toHaveBeenCalledWith("hello", expect.any(Object));
+  });
+
+  it("sends both project identity fields to server search", async () => {
+    const indexes = {
+      ...emptyIndexes,
+      projectOptions: [
+        {
+          key: "git_remote:github.com/acme/app",
+          identityKind: "git_remote",
+          identityKey: "github.com/acme/app",
+          label: "App",
+          count: 1,
+        },
+      ],
+    } as SessionIndexes;
+    const { result } = renderHook(() => useSessionSearch(indexes));
+    act(() =>
+      result.current.setSearchFilters({
+        project: { kind: "git_remote", key: "github.com/acme/app" },
+      }),
+    );
+    act(() => result.current.setDraftSearchQuery("hello"));
+    act(() => result.current.submitSearch());
+
+    await waitFor(() =>
+      expect(api.fetchSearchResults).toHaveBeenCalledWith(
+        "hello",
+        expect.objectContaining({
+          projectKind: "git_remote",
+          projectKey: "github.com/acme/app",
+        }),
+      ),
+    );
   });
 
   it("closeSearch exits and clears the active query", () => {

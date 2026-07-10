@@ -66,6 +66,16 @@ describe("filterSessionsByProjectScope", () => {
         },
       }),
     );
+    sessions.push(
+      makeSession("same-key-path", {
+        directory: "/elsewhere",
+        project_identity: {
+          kind: "path",
+          key: "github.com/acme/app",
+          displayName: "app path",
+        },
+      }),
+    );
 
     const result = filterSessionsByProjectScope(sessions, "/repo/packages/web", fs);
 

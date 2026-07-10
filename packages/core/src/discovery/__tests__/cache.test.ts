@@ -567,13 +567,15 @@ describe("searchSessions", () => {
   it("parses lightweight structured search qualifiers", () => {
     expect(
       parseSearchQuery(
-        'agent:codex project:"code sesh" tag:feature-dev tool:apply_patch file:"src/App File.tsx" cost:>1 needle',
+        'agent:codex project:"code sesh" projectkind:git_remote projectkey:github.com/acme/app tag:feature-dev tool:apply_patch file:"src/App File.tsx" cost:>1 needle',
       ),
     ).toEqual({
       text: "needle",
       filters: {
         agent: "codex",
         project: "code sesh",
+        projectKind: "git_remote",
+        projectKey: "github.com/acme/app",
         tags: ["feature-dev"],
         tools: ["apply_patch"],
         file: "src/App File.tsx",
@@ -707,6 +709,39 @@ describe("searchSessions", () => {
       total_cost: 0.03,
     });
     expect(results[0]?.snippet).toContain("<mark>sqlite</mark>");
+  });
+
+  it("filters indexed search by complete project identity", () => {
+    const remote = {
+      ...makeSession("remote"),
+      project_identity: {
+        kind: "git_remote" as const,
+        key: "github.com/acme/app",
+        displayName: "app",
+      },
+    };
+    const path = {
+      ...makeSession("path"),
+      project_identity: {
+        kind: "path" as const,
+        key: "github.com/acme/app",
+        displayName: "app path",
+      },
+    };
+    const sessions = [remote, path];
+    saveCachedSessions("claudecode", sessions);
+    syncSessionSearchIndex("claudecode", sessions, (sessionId) => ({
+      ...sessions.find((session) => session.id === sessionId)!,
+      messages: makeSessionData(sessionId, "identity collision needle").messages,
+    }));
+
+    expect(
+      searchSessions("collision", {
+        projectKind: "git_remote",
+        projectKey: "github.com/acme/app",
+      }).map((result) => result.session.id),
+    ).toEqual(["remote"]);
+    expect(searchSessions("collision", { projectKey: "github.com/acme/app" })).toEqual([]);
   });
 
   it("resolves search match metadata from message-level FTS", () => {
@@ -1322,6 +1357,7 @@ describe("searchSessions", () => {
 
     expect(
       listFileActivity({
+        projectKind: "git_remote",
         projectKey: "github.com/acme/app",
         path: "src/App",
         limit: 10,
@@ -1335,6 +1371,7 @@ describe("searchSessions", () => {
       listFileActivity({
         agent: "claudecode",
         sessionId: "files",
+        projectKind: "git_remote",
         projectKey: "github.com/acme/app",
         cwd: FIXTURE_DIR,
         path: "src/App",

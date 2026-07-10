@@ -183,7 +183,7 @@ describe("buildDashboard", () => {
     expect(result.perAgent.map((p) => p.name)).toEqual(["codex"]);
   });
 
-  it("filters by projectKey", () => {
+  it("filters by complete project identity", () => {
     const result = buildDashboard(
       [
         makeSession("a", {
@@ -192,8 +192,11 @@ describe("buildDashboard", () => {
         makeSession("b", {
           project_identity: { kind: "git_remote", key: "proj-b", displayName: "B" },
         }),
+        makeSession("same-key-path", {
+          project_identity: { kind: "path", key: "proj-a", displayName: "A path" },
+        }),
       ],
-      opts({ scope: { projectKey: "proj-a" } }),
+      opts({ scope: { projectKind: "git_remote", projectKey: "proj-a" } }),
     );
     expect(result.totals.sessions).toBe(1);
   });
