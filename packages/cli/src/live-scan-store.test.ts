@@ -386,6 +386,7 @@ describe("LiveScanStore", () => {
     restoreRuntime?.();
     restoreRuntime = null;
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("initializes a sorted snapshot for allowed registered agents", async () => {
@@ -636,6 +637,201 @@ describe("LiveScanStore", () => {
       ],
     );
     expect(workerThreads.workers).toHaveLength(2);
+  });
+
+  it("serializes refresh behind an in-flight backfill for the same agent", async () => {
+    const initial = makeSession("session", { title: "initial", time_updated: 1000 });
+    const stale = makeSession("session", { title: "stale backfill", time_updated: 2000 });
+    const fresh = makeSession("session", { title: "fresh refresh", time_updated: 3000 });
+    const codex = makeFileSystemAgent("codex");
+    let releaseBackfill: ((result: unknown) => void) | undefined;
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [initial],
+      byAgent: { codex: [initial] },
+      agents: [codex],
+    });
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [initial],
+      byAgent: { codex: [initial] },
+      meta: {},
+      timestamp: 1000,
+    });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+    const logInfo = vi.spyOn(appLogger, "info").mockImplementation(() => undefined);
+    const scanAgentInWorker = vi
+      .spyOn(store as any, "scanAgentInWorker")
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseBackfill = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ sessions: [fresh], meta: {}, changedIds: [fresh.id] });
+
+    const backfill = (store as any).runBackfill("codex");
+    await vi.waitFor(() => expect(scanAgentInWorker).toHaveBeenCalledTimes(1));
+
+    const refresh = (store as any).refreshAgent("codex");
+    await Promise.resolve();
+    expect(scanAgentInWorker).toHaveBeenCalledTimes(1);
+
+    releaseBackfill!({ sessions: [stale], meta: {}, changedIds: [stale.id] });
+    await backfill;
+    await refresh;
+
+    expect(store.getSnapshot().sessions[0]?.title).toBe("fresh refresh");
+    expect(
+      logInfo.mock.calls
+        .filter(([event]) => String(event).startsWith("scan.agent_operation."))
+        .map(([event, fields]) => [event, fields?.operation, fields?.generation, fields?.result]),
+    ).toEqual([
+      ["scan.agent_operation.started", "backfill", 1, undefined],
+      ["scan.agent_operation.completed", "backfill", 1, "committed"],
+      ["scan.agent_operation.started", "refresh", 2, undefined],
+      ["scan.agent_operation.completed", "refresh", 2, "committed"],
+    ]);
+  });
+
+  it("runs a queued refresh after a backfill failure", async () => {
+    const initial = makeSession("session", { title: "initial", time_updated: 1000 });
+    const fresh = makeSession("session", { title: "fresh", time_updated: 2000 });
+    const codex = makeFileSystemAgent("codex");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [initial],
+      byAgent: { codex: [initial] },
+      agents: [codex],
+    });
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [initial],
+      byAgent: { codex: [initial] },
+      meta: {},
+      timestamp: 1000,
+    });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+    vi.spyOn(store as any, "scanAgentInWorker")
+      .mockRejectedValueOnce(new Error("backfill failed"))
+      .mockResolvedValueOnce({ sessions: [fresh], meta: {}, changedIds: [fresh.id] });
+
+    const backfill = (store as any).runBackfill("codex");
+    const refresh = (store as any).refreshAgent("codex");
+    await Promise.all([backfill, refresh]);
+
+    expect(consoleError).toHaveBeenCalledWith("[codex] Backfill failed:", expect.any(Error));
+    expect(store.getSnapshot().sessions[0]?.title).toBe("fresh");
+  });
+
+  it("allows another agent to refresh while a backfill is in flight", async () => {
+    const codexInitial = makeSession("codex-session", { slug: "codex/codex-session" });
+    const kimiInitial = makeSession("kimi-session", {
+      slug: "kimi/kimi-session",
+      title: "kimi initial",
+    });
+    const kimiFresh = makeSession("kimi-session", {
+      slug: "kimi/kimi-session",
+      title: "kimi fresh",
+      time_updated: 2000,
+    });
+    const codex = makeFileSystemAgent("codex");
+    const kimi = makeAgent("kimi", {
+      checkForChanges: vi.fn(() => ({
+        hasChanges: true,
+        changedIds: [kimiFresh.id],
+        timestamp: 2000,
+      })),
+      incrementalScan: vi.fn(() => [kimiFresh]),
+    });
+    let releaseBackfill: ((result: unknown) => void) | undefined;
+
+    core.createRegisteredAgents.mockReturnValue([codex, kimi]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [codexInitial, kimiInitial],
+      byAgent: { codex: [codexInitial], kimi: [kimiInitial] },
+      agents: [codex, kimi],
+    });
+    core.loadCachedSessions.mockReturnValue(null);
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+    const scanAgentInWorker = vi.spyOn(store as any, "scanAgentInWorker").mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseBackfill = resolve;
+        }),
+    );
+
+    const backfill = (store as any).runBackfill("codex");
+    await vi.waitFor(() => expect(scanAgentInWorker).toHaveBeenCalledTimes(1));
+
+    await (store as any).refreshAgent("kimi");
+    expect(store.getSnapshot().byAgent.kimi[0]?.title).toBe("kimi fresh");
+
+    releaseBackfill!({ sessions: [codexInitial], meta: {}, changedIds: [] });
+    await backfill;
+  });
+
+  it("coalesces refresh schedules received while backfill is active", async () => {
+    vi.useFakeTimers();
+    const initial = makeSession("session", { title: "initial", time_updated: 1000 });
+    const backfilled = makeSession("session", { title: "backfilled", time_updated: 2000 });
+    const refreshed = makeSession("session", { title: "refreshed", time_updated: 3000 });
+    const rerun = makeSession("session", { title: "rerun", time_updated: 4000 });
+    const codex = makeFileSystemAgent("codex");
+    let releaseBackfill: ((result: unknown) => void) | undefined;
+
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [initial],
+      byAgent: { codex: [initial] },
+      agents: [codex],
+    });
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [initial],
+      byAgent: { codex: [initial] },
+      meta: {},
+      timestamp: 1000,
+    });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+    const scanAgentInWorker = vi
+      .spyOn(store as any, "scanAgentInWorker")
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseBackfill = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ sessions: [refreshed], meta: {}, changedIds: [refreshed.id] })
+      .mockResolvedValueOnce({ sessions: [rerun], meta: {}, changedIds: [rerun.id] });
+
+    const backfill = (store as any).runBackfill("codex");
+    await vi.waitFor(() => expect(scanAgentInWorker).toHaveBeenCalledTimes(1));
+
+    (store as any).getRefreshState("codex").pendingPathCount += 1;
+    (store as any).scheduleRefresh("codex", 0);
+    await vi.advanceTimersByTimeAsync(0);
+    (store as any).getRefreshState("codex").pendingPathCount += 2;
+    (store as any).scheduleRefresh("codex", 0);
+    (store as any).scheduleRefresh("codex", 0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(scanAgentInWorker).toHaveBeenCalledTimes(1);
+    releaseBackfill!({ sessions: [backfilled], meta: {}, changedIds: [backfilled.id] });
+    await backfill;
+    await vi.waitFor(() => expect(scanAgentInWorker).toHaveBeenCalledTimes(2));
+
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.waitFor(() => expect(scanAgentInWorker).toHaveBeenCalledTimes(3));
+    expect(store.getSnapshot().sessions[0]?.title).toBe("rerun");
   });
 
   it("persists incremental changes outside the startup time window", async () => {
