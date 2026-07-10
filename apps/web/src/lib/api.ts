@@ -345,8 +345,12 @@ export async function fetchSessions(
   return fetchJson(`/api/sessions?${params}`);
 }
 
-export async function fetchSessionData(agent: string, sessionId: string): Promise<SessionData> {
-  return fetchJson(`/api/sessions/${agent}/${sessionId}`);
+export async function fetchSessionData(
+  agent: string,
+  sessionId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<SessionData> {
+  return fetchJson(`/api/sessions/${agent}/${sessionId}`, { signal: options.signal });
 }
 
 export async function fetchDashboard(
