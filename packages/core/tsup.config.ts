@@ -4,7 +4,7 @@ import { defineConfig } from "tsup";
 const isWatch = process.argv.includes("--watch");
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: ["src/index.ts", "src/contract/index.ts"],
   format: ["esm", "cjs"],
   dts: false,
   clean: !isWatch,

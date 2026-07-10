@@ -1,283 +1,51 @@
-export interface AgentInfo {
-  name: string;
-  displayName: string;
-  count: number;
-  icon: string;
-}
+export type {
+  AgentInfo,
+  SmartTag,
+  FileActivityKind,
+  CostSource,
+  SessionHead,
+  SessionFileActivity,
+  FileActivityResult,
+  ProjectIdentityKind,
+  ProjectIdentity,
+  MessageTokens,
+  ToolPartState,
+  MessagePart,
+  Message,
+  SessionData,
+  ScanStatusEvent,
+  BackfillStatus,
+  AgentScanStatus,
+  DashboardAgentStat,
+  DashboardDailyBucket,
+  DailyTokenBucket,
+  ModelDistributionEntry,
+  DashboardTotals,
+  DashboardRecentSession,
+  DashboardData,
+  AppConfig,
+  SearchResult,
+  SessionsUpdatedEvent,
+  ApiProjectGroup as ProjectGroup,
+  ApiProjectAgentStat as ProjectAgentStat,
+  BookmarkRecord as BookmarkedSessionSnapshot,
+} from "@codesesh/core/contract";
 
-export type SmartTag =
-  | "bugfix"
-  | "refactoring"
-  | "feature-dev"
-  | "testing"
-  | "docs"
-  | "git-ops"
-  | "build-deploy"
-  | "exploration"
-  | "planning";
-
-export type FileActivityKind = "read" | "edit" | "write" | "delete";
-
-export type CostSource = "recorded" | "estimated";
-
-export interface SessionHead {
-  id: string;
-  slug: string;
-  title: string;
-  directory: string;
-  project_identity?: ProjectIdentity;
-  time_created: number;
-  time_updated?: number;
-  stats: {
-    message_count: number;
-    total_input_tokens: number;
-    total_output_tokens: number;
-    total_cost: number;
-    cost_source?: CostSource;
-    total_tokens?: number;
-  };
-  smart_tags?: SmartTag[];
-  smart_tags_source_updated_at?: number;
-}
-
-export interface SessionFileActivity {
-  agent_name: string;
-  session_id: string;
-  project_identity_key: string;
-  path: string;
-  kind: FileActivityKind;
-  count: number;
-  latest_time: number;
-}
-
-export interface FileActivityResult extends SessionFileActivity {
-  session: SessionHead;
-}
-
-export type ProjectIdentityKind =
-  | "git_remote"
-  | "git_common_dir"
-  | "manifest_path"
-  | "synthetic"
-  | "path"
-  | "loose";
-
-export interface ProjectIdentity {
-  kind: ProjectIdentityKind;
-  key: string;
-  displayName: string;
-}
-
-export interface MessageTokens {
-  input?: number;
-  output?: number;
-  reasoning?: number;
-  cache_read?: number;
-  cache_create?: number;
-}
-
-export interface ToolPartState {
-  status?: "running" | "completed" | "error";
-  input?: unknown;
-  arguments?: unknown;
-  output?: unknown;
-  result?: unknown;
-  error?: unknown;
-  metadata?: unknown;
-  prompt?: unknown;
-  [key: string]: unknown;
-}
-
-export interface MessagePart {
-  type: "text" | "tool" | "reasoning" | "plan";
-  text?: unknown;
-  tool?: string;
-  title?: string;
-  nickname?: string;
-  subagent_id?: string;
-  input?: unknown;
-  output?: unknown;
-  approval_status?: "success" | "fail";
-  callID?: string;
-  state?: ToolPartState;
-  time_created?: number;
-}
-
-export interface Message {
-  id: string;
-  role: "user" | "assistant" | "tool";
-  agent?: string | null;
-  time_created: number;
-  time_completed?: number | null;
-  mode?: string | null;
-  model?: string | null;
-  provider?: string | null;
-  tokens?: MessageTokens;
-  cost?: number;
-  cost_source?: CostSource;
-  parts: MessagePart[];
-  subagent_id?: string;
-  nickname?: string;
-}
-
-export interface SessionData {
-  id: string;
-  title: string;
-  slug?: string | null;
-  directory: string;
-  project_identity?: ProjectIdentity;
-  version?: string | null;
-  time_created: number;
-  time_updated?: number;
-  summary_files?: unknown;
-  stats: {
-    message_count: number;
-    total_input_tokens: number;
-    total_output_tokens: number;
-    total_cost: number;
-    cost_source?: CostSource;
-    total_tokens?: number;
-  };
-  messages: Message[];
-  smart_tags?: SmartTag[];
-  smart_tags_source_updated_at?: number;
-  file_activity?: SessionFileActivity[];
-}
-
-export interface ProjectGroup {
-  identityKind: ProjectIdentityKind;
-  identityKey: string;
-  displayName: string;
-  sources: string[];
-  sessionCount: number;
-  lastActivity: number | null;
-  messages: number;
-  tokens: number;
-  cost: number;
-  cost_source?: CostSource;
-  agentStats: ProjectAgentStat[];
-}
-
-export interface ProjectAgentStat {
-  name: string;
-  sessions: number;
-  messages: number;
-  tokens: number;
-  cost: number;
-}
-
-export interface SessionsUpdatedEvent {
-  type: "sessions-updated";
-  changedAgents: string[];
-  newSessions: number;
-  updatedSessions: number;
-  removedSessions: number;
-  totalSessions: number;
-  timestamp: number;
-  changedSessionHeads?: Array<{ agentName: string; session: SessionHead }>;
-  removedSessionRefs?: Array<{ agentName: string; sessionId: string }>;
-}
-
-export interface ScanStatusEvent {
-  type: "scan-status";
-  active: boolean;
-  phase: "idle" | "indexing" | "initializing" | "scanning";
-  pendingAgents: string[];
-  scanningAgents: string[];
-  completedAgents: string[];
-  agentStatuses: Record<string, AgentScanStatus>;
-  totalAgents: number;
-  startedAt?: number;
-  updatedAt: number;
-  completedAt?: number;
-  backfill: BackfillStatus;
-}
-
-export interface BackfillStatus {
-  active: boolean;
-  pendingAgents: string[];
-  currentAgent?: string;
-  completedAgents: string[];
-}
-
-export interface AgentScanStatus {
-  agentName: string;
-  status: "pending" | "scanning" | "complete";
-  total?: number;
-  processed?: number;
-  sessions?: number;
-  startedAt?: number;
-  updatedAt: number;
-  completedAt?: number;
-}
-
-export interface DashboardAgentStat {
-  name: string;
-  displayName: string;
-  icon: string;
-  sessions: number;
-  messages: number;
-  tokens: number;
-}
-
-export interface DashboardDailyBucket {
-  date: string;
-  sessions: number;
-  messages: number;
-}
-
-export interface DailyTokenBucket {
-  date: string;
-  input: number;
-  output: number;
-  cache_read: number;
-  cache_create: number;
-}
-
-export interface ModelDistributionEntry {
-  model: string;
-  tokens: number;
-  sessions: number;
-}
-
-export interface DashboardTotals {
-  sessions: number;
-  messages: number;
-  tokens: number;
-  cost: number;
-  cost_source?: CostSource;
-  latestActivity?: number;
-}
-
-export interface DashboardRecentSession extends SessionHead {
-  agentName: string;
-}
-
-export interface DashboardData {
-  totals: DashboardTotals;
-  perAgent: DashboardAgentStat[];
-  dailyActivity: DashboardDailyBucket[];
-  dailyTokenActivity: DailyTokenBucket[];
-  modelDistribution: ModelDistributionEntry[];
-  recentSessions: DashboardRecentSession[];
-  recentFileActivities: FileActivityResult[];
-  window: { from?: number; to: number; days?: number };
-}
-
-export interface AppConfig {
-  window: {
-    from?: number;
-    to?: number;
-    days?: number;
-  };
-}
-
-export interface SearchResult {
-  agentName: string;
-  session: SessionHead;
-  snippet: string;
-  matchType: "recent" | "title" | "user_message" | "assistant_reply" | "tool_output" | "file_path";
-}
+import type {
+  AgentInfo,
+  ApiProjectGroup,
+  AppConfig,
+  BookmarkRecord as BookmarkedSessionSnapshot,
+  DashboardData,
+  FileActivityKind,
+  ProjectIdentityKind,
+  ScanStatusEvent,
+  SearchResult,
+  SessionData,
+  SessionHead,
+  SessionsUpdatedEvent,
+  SmartTag,
+} from "@codesesh/core/contract";
 
 export interface SearchRequestOptions {
   agent?: string;
@@ -288,18 +56,6 @@ export interface SearchRequestOptions {
   fileKind?: FileActivityKind;
   costMin?: number;
   costMax?: number;
-}
-
-export interface BookmarkedSessionSnapshot {
-  agentKey: string;
-  sessionId: string;
-  fullPath: string;
-  title: string;
-  directory: string;
-  time_created: number;
-  time_updated?: number;
-  stats: SessionHead["stats"];
-  bookmarked_at: number;
 }
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -323,7 +79,7 @@ export async function fetchAgents(): Promise<AgentInfo[]> {
   return fetchJson("/api/agents");
 }
 
-export async function fetchProjects(): Promise<{ projects: ProjectGroup[] }> {
+export async function fetchProjects(): Promise<{ projects: ApiProjectGroup[] }> {
   return fetchJson("/api/projects");
 }
 

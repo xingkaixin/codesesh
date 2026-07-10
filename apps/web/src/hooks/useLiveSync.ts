@@ -1,16 +1,12 @@
 import { useEffect, useEffectEvent, useState } from "react";
-import {
-  type AppConfig,
-  type ScanStatusEvent,
-  type SessionsUpdatedEvent,
-  subscribeSessionUpdates,
-} from "../lib/api";
+import { type AppConfig, type ScanStatusEvent, subscribeSessionUpdates } from "../lib/api";
+import type { LiveSessionsUpdate } from "../lib/live-update";
 import type { ViewState } from "../lib/view-state";
 
 interface LiveSyncDeps {
   appConfig: AppConfig | null;
   viewState: ViewState;
-  applySessionsLiveEvent: (event: SessionsUpdatedEvent) => void;
+  applySessionsLiveEvent: (event: LiveSessionsUpdate) => void;
   refreshAgents: () => Promise<unknown>;
   refreshSessions: (window: AppConfig["window"]) => Promise<unknown>;
   refreshProjects: () => Promise<unknown>;
@@ -44,7 +40,7 @@ export function useLiveSync(deps: LiveSyncDeps) {
     setScanStatus,
   } = deps;
 
-  const syncLiveUpdate = useEffectEvent(async (event: SessionsUpdatedEvent) => {
+  const syncLiveUpdate = useEffectEvent(async (event: LiveSessionsUpdate) => {
     try {
       const canApplySessionUpdate = Boolean(event.changedSessionHeads && event.removedSessionRefs);
       if (canApplySessionUpdate) {

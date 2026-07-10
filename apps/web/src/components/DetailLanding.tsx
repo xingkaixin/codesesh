@@ -14,7 +14,7 @@ export interface LandingSession extends SessionHead {
 export interface LandingAgentItem {
   key: string;
   name: string;
-  icon: string;
+  icon?: string;
   count: number;
 }
 
@@ -125,7 +125,9 @@ function RecommendedAgents({ agentItems }: { agentItems: LandingAgentItem[] }) {
               to={`/${agent.key}`}
               className="flex min-h-11 items-center gap-2 rounded-sm border border-transparent px-3 py-2 transition-colors duration-200 hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-accent)]"
             >
-              <img src={agent.icon} alt={agent.name} className="size-4 object-contain" />
+              {agent.icon ? (
+                <img src={agent.icon} alt={agent.name} className="size-4 object-contain" />
+              ) : null}
               <span className="console-mono flex-1 text-xs text-[var(--console-text)]">
                 {agent.name}
               </span>
@@ -310,7 +312,9 @@ export function DetailLanding({
                   to={`/${agent.key}`}
                   className="flex items-center gap-2 rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
                 >
-                  <img src={agent.icon} alt={agent.name} className="size-4 object-contain" />
+                  {agent.icon ? (
+                    <img src={agent.icon} alt={agent.name} className="size-4 object-contain" />
+                  ) : null}
                   <span className="console-mono flex-1 text-xs text-[var(--console-text)]">
                     {agent.name}
                   </span>

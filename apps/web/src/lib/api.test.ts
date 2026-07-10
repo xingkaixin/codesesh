@@ -1,10 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SAMPLE_DASHBOARD_DATA } from "@codesesh/core/contract";
 import {
+  fetchDashboard,
   fetchSearchResults,
   fetchSessionData,
   fetchSessions,
   subscribeSessionUpdates,
 } from "./api";
+
+describe("fetchDashboard", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("decodes the dashboard response as-is", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(SAMPLE_DASHBOARD_DATA),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchDashboard();
+
+    expect(result).toEqual(SAMPLE_DASHBOARD_DATA);
+  });
+});
 
 describe("fetchSessionData", () => {
   afterEach(() => {

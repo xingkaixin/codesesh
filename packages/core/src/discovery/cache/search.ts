@@ -12,6 +12,7 @@ import type {
   SessionHead,
   SmartTag,
 } from "../../types/index.js";
+import type { SearchMatchType, SearchResult } from "../../contract/index.js";
 import { computeIdentity, isProjectIdentityKind, realFs } from "../../projects/index.js";
 import { extractSessionFileActivity } from "../../utils/file-activity.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
@@ -122,20 +123,7 @@ interface LoadedSearchIndexEntry {
   sortIndex: number;
 }
 
-export interface SearchResult {
-  agentName: string;
-  session: SessionHead;
-  snippet: string;
-  matchType: SearchMatchType;
-}
-
-export type SearchMatchType =
-  | "recent"
-  | "title"
-  | "user_message"
-  | "assistant_reply"
-  | "tool_output"
-  | "file_path";
+export type { SearchMatchType, SearchResult };
 
 export interface SearchQueryFilters {
   agent?: string;

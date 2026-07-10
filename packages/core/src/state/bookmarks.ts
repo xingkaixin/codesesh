@@ -1,6 +1,7 @@
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import type { SessionStats } from "../types/index.js";
+import type { BookmarkRecord } from "../contract/index.js";
 import {
   columnExists,
   getUserVersion,
@@ -24,17 +25,7 @@ export class BookmarkStorageUnavailableError extends Error {
   }
 }
 
-export interface BookmarkRecord {
-  agentKey: string;
-  sessionId: string;
-  fullPath: string;
-  title: string;
-  directory: string;
-  time_created: number;
-  time_updated?: number;
-  stats: SessionStats;
-  bookmarked_at: number;
-}
+export type { BookmarkRecord };
 
 interface BookmarkRow extends DatabaseRow {
   agent_name?: string;

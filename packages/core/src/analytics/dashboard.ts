@@ -6,6 +6,27 @@
  */
 import type { AgentInfo } from "../types/index.js";
 import type { ProjectIdentityKind, SessionHead } from "../types/session.js";
+import type {
+  DailyTokenBucket,
+  DashboardAgentStat,
+  DashboardAggregate,
+  DashboardDailyBucket,
+  DashboardData,
+  DashboardRecentSession,
+  DashboardTotals,
+  ModelDistributionEntry,
+} from "../contract/index.js";
+
+export type {
+  DailyTokenBucket,
+  DashboardAgentStat,
+  DashboardAggregate,
+  DashboardDailyBucket,
+  DashboardData,
+  DashboardRecentSession,
+  DashboardTotals,
+  ModelDistributionEntry,
+};
 
 export const DASHBOARD_RECENT_LIMIT = 10;
 
@@ -13,39 +34,6 @@ export interface DashboardScope {
   agent?: string;
   projectKind?: ProjectIdentityKind;
   projectKey?: string;
-}
-
-export interface DashboardAgentStat {
-  name: string;
-  displayName: string;
-  icon: string;
-  sessions: number;
-  messages: number;
-  tokens: number;
-}
-
-export interface DashboardDailyBucket {
-  date: string;
-  sessions: number;
-  messages: number;
-}
-
-export interface DailyTokenBucket {
-  date: string;
-  input: number;
-  output: number;
-  cache_read: number;
-  cache_create: number;
-}
-
-export interface ModelDistributionEntry {
-  model: string;
-  tokens: number;
-  sessions: number;
-}
-
-export interface DashboardRecentSession extends SessionHead {
-  agentName: string;
 }
 
 interface DashboardAgentAggregate {
@@ -57,29 +45,6 @@ interface DashboardAgentAggregate {
 interface DashboardRecentCandidate {
   session: SessionHead;
   activity: number;
-}
-
-export interface DashboardTotals {
-  sessions: number;
-  messages: number;
-  tokens: number;
-  cost: number;
-  cost_source?: "estimated" | "recorded";
-  latestActivity?: number;
-}
-
-export interface DashboardAggregate {
-  totals: DashboardTotals;
-  perAgent: DashboardAgentStat[];
-  dailyActivity: DashboardDailyBucket[];
-  dailyTokenActivity: DailyTokenBucket[];
-  modelDistribution: ModelDistributionEntry[];
-  recentSessions: DashboardRecentSession[];
-}
-
-export interface DashboardData extends DashboardAggregate {
-  recentFileActivities: unknown[];
-  window: { from?: number; to: number; days?: number };
 }
 
 export interface DashboardOptions {

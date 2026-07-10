@@ -6,13 +6,24 @@ import type { SessionHead, SessionsUpdatedEvent } from "./api";
 import { getSessionAgentKey } from "./session-indexes";
 import { getSessionRouteKey } from "./session-indexes";
 
+/**
+ * A sessions-updated notice that may lack the incremental diff arrays.
+ * The SSE stream always sends the full wire SessionsUpdatedEvent, but a
+ * reconnect synthesizes a refresh-everything intent without that diff.
+ */
+export type LiveSessionsUpdate = Omit<
+  SessionsUpdatedEvent,
+  "changedSessionHeads" | "removedSessionRefs"
+> &
+  Partial<Pick<SessionsUpdatedEvent, "changedSessionHeads" | "removedSessionRefs">>;
+
 export function compareSessionActivityDesc(a: SessionHead, b: SessionHead): number {
   return (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created);
 }
 
 export function applyLiveSessionUpdate(
   sessions: SessionHead[],
-  event: SessionsUpdatedEvent,
+  event: LiveSessionsUpdate,
 ): SessionHead[] | null {
   if (!event.changedSessionHeads || !event.removedSessionRefs) return null;
 
