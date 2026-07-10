@@ -38,7 +38,7 @@ export function executeSessionSearch(
     return searchRecentSessions(snapshot, merged.options);
   }
 
-  return searchIndexedSessions(query, merged.parsed, merged.options);
+  return searchIndexedSessions(query, merged.text, merged.parsed, merged.options);
 }
 
 // Qualifiers alone (tag:/cost:/agent:/project:) do not force the indexed
@@ -157,17 +157,39 @@ function mergeSearchResultSources(results: SearchResult[], limit: number): Searc
   return merged;
 }
 
+// searchSessions is the only source when: there's text (FTS is the primary
+// source), tools are filtered (its empty-query SQL branch is the sole source
+// for tool-only queries), tags are filtered (listFileActivity has no tag
+// clause), or a from/to window is set (file-activity filters by
+// fa.latest_time, not the session's activity_time, so it can't stand in).
+// Otherwise, once a file path narrowed the results, the file-activity path
+// already covers everything and re-querying sessions is redundant.
+function canSkipSessionsSearch(
+  fileQuery: string,
+  textQuery: string,
+  options: SearchOptions,
+): boolean {
+  return Boolean(
+    fileQuery &&
+    !textQuery &&
+    !options.tools?.length &&
+    !options.tags?.length &&
+    options.from == null &&
+    options.to == null,
+  );
+}
+
 function searchIndexedSessions(
   query: string,
+  textQuery: string,
   parsed: ParsedSearchQuery,
   options: SearchOptions,
 ): SearchResult[] {
   const fileQuery = deriveFileQuery(query, parsed, options);
-  return mergeSearchResultSources(
-    [
-      ...(fileQuery ? searchFileActivitySessions(fileQuery, options) : []),
-      ...searchSessions(query, options),
-    ],
-    options.limit ?? 50,
-  );
+  const fileResults = fileQuery ? searchFileActivitySessions(fileQuery, options) : [];
+  const sessionResults = canSkipSessionsSearch(fileQuery, textQuery, options)
+    ? []
+    : searchSessions(query, options);
+
+  return mergeSearchResultSources([...fileResults, ...sessionResults], options.limit ?? 50);
 }

@@ -15,6 +15,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import Database from "better-sqlite3";
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import type { Message, ProjectIdentity, SessionHead, SmartTag } from "../../types/index.js";
 import type { SearchOptions } from "../../discovery/cache/search.js";
@@ -257,6 +258,24 @@ const limitSessions: FixtureSpec[] = Array.from({ length: 6 }, (_, index) => ({
   messages: [assistantMessage(`limit-${index + 1}-m1`, `docneedle content ${index + 1}`)],
 }));
 
+// Same file path, mismatched tags -- used to pin the current file+tags
+// merge quirk (see "skip redundant sessions query" below).
+const fileTagDocsMatch: FixtureSpec = {
+  id: "file-tag-docs",
+  agent: "claudecode",
+  tags: ["docs"],
+  timeUpdated: now - 14_000,
+  messages: [fileToolMessage("file-tag-docs-m1", "edit", "src/tagcheck.ts")],
+};
+
+const fileTagPlanningMismatch: FixtureSpec = {
+  id: "file-tag-planning",
+  agent: "claudecode",
+  tags: ["planning"],
+  timeUpdated: now - 14_100,
+  messages: [fileToolMessage("file-tag-planning-m1", "edit", "src/tagcheck.ts")],
+};
+
 const recentOld: FixtureSpec = {
   id: "recent-old",
   agent: "claudecode",
@@ -283,6 +302,8 @@ const syncedFixtures: FixtureSpec[] = [
   tagMergeBoth,
   tagMergeRefactoringOnly,
   tagMergeFeatDevOnly,
+  fileTagDocsMatch,
+  fileTagPlanningMismatch,
   ...limitSessions,
 ];
 
@@ -503,5 +524,71 @@ describe("search characterization: recent vs SQLite-indexed equivalence (tag fil
     expect(results.map((r) => r.session.id).sort()).toEqual(
       ["recent-mid", "lagging-session"].sort(),
     );
+  });
+});
+
+// core.searchSessions's empty-query SQL branch is the only place in this
+// module's queries that contains a literal "WHERE 1 = 1" -- its presence (or
+// absence) in the prepared statements below is a reliable proxy for whether
+// searchSessions ran.
+function withPreparedSqlCapture<T>(run: () => T): { result: T; sql: string[] } {
+  const preparedSql: string[] = [];
+  const originalPrepare = Database.prototype.prepare;
+  const prepareSpy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+    this: Database.Database,
+    source: string,
+  ) {
+    preparedSql.push(source);
+    return originalPrepare.call(this, source);
+  });
+
+  try {
+    const result = run();
+    return { result, sql: preparedSql.map((sql) => sql.replace(/\s+/g, " ").trim()) };
+  } finally {
+    prepareSpy.mockRestore();
+  }
+}
+
+function ranSearchSessions(sql: string[]): boolean {
+  return sql.some((statement) => statement.includes("WHERE 1 = 1"));
+}
+
+describe("search characterization: skip redundant sessions query for file-only searches", () => {
+  it("does not query the sessions table when file is the only filter", () => {
+    const { result, sql } = withPreparedSqlCapture(() =>
+      search("", { file: "app.tsx", limit: 50 }),
+    );
+    expect(result.map((r) => r.session.id)).toEqual(["file-only"]);
+    expect(ranSearchSessions(sql)).toBe(false);
+  });
+
+  it("still queries the sessions table for a fileKind-only search (its only data source)", () => {
+    const { result, sql } = withPreparedSqlCapture(() =>
+      search("", { fileKind: "edit", limit: 50 }),
+    );
+    expect(result.map((r) => r.session.id)).toContain("file-only");
+    expect(ranSearchSessions(sql)).toBe(true);
+  });
+
+  it("still queries the sessions table when tags are combined with a file filter", () => {
+    const { result, sql } = withPreparedSqlCapture(() =>
+      search("", { file: "tagcheck.ts", tags: ["docs"], limit: 50 }),
+    );
+    // Quirk: searchFileActivitySessions ignores the tags option, and its
+    // (tag-blind) hits win the first-write-wins dedupe over searchSessions's
+    // (tag-filtered) hits -- so a file match with a mismatched tag still
+    // surfaces even though searchSessions did run with the tag filter.
+    expect(result.map((r) => r.session.id).sort()).toEqual(
+      ["file-tag-docs", "file-tag-planning"].sort(),
+    );
+    expect(ranSearchSessions(sql)).toBe(true);
+  });
+
+  it("still queries the sessions table when a from/to window is combined with a file filter", () => {
+    const { sql } = withPreparedSqlCapture(() =>
+      search("", { file: "app.tsx", from: now - 20_000, limit: 50 }),
+    );
+    expect(ranSearchSessions(sql)).toBe(true);
   });
 });
