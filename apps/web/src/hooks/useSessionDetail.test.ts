@@ -18,6 +18,16 @@ const sessionView: ViewState = {
 
 const sample = { id: "abc", messages: [] } as unknown as SessionData;
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -30,7 +40,11 @@ describe("useSessionDetail", () => {
 
     await waitFor(() => expect(result.current.session).toEqual(sample));
     expect(result.current.sessionError).toBeNull();
-    expect(api.fetchSessionData).toHaveBeenCalledWith("claudecode", "claudecode/abc");
+    expect(api.fetchSessionData).toHaveBeenCalledWith(
+      "claudecode",
+      "claudecode/abc",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("sets an error when the fetch fails", async () => {
@@ -60,5 +74,160 @@ describe("useSessionDetail", () => {
       await result.current.refresh();
     });
     expect(result.current.session).toEqual(updated);
+  });
+
+  it("keeps the current route when an older request resolves last", async () => {
+    const requestA = deferred<SessionData>();
+    const requestB = deferred<SessionData>();
+    const viewA = sessionView;
+    const viewB: ViewState = {
+      mode: "session",
+      activeAgentKey: "codex",
+      activeSessionSlug: "def",
+    };
+    const sessionA = { id: "a", messages: [] } as unknown as SessionData;
+    const sessionB = { id: "b", messages: [] } as unknown as SessionData;
+    vi.mocked(api.fetchSessionData).mockImplementation((_agent, sessionId) =>
+      sessionId === viewA.activeSessionSlug ? requestA.promise : requestB.promise,
+    );
+    const { result, rerender } = renderHook(({ view }) => useSessionDetail(view), {
+      initialProps: { view: viewA as ViewState },
+    });
+    await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(1));
+
+    rerender({ view: viewB });
+    await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(2));
+    await act(async () => requestB.resolve(sessionB));
+    await waitFor(() => expect(result.current.session).toEqual(sessionB));
+    await act(async () => requestA.resolve(sessionA));
+
+    expect({
+      sessionId: result.current.session?.id,
+      lifecycle: vi
+        .mocked(api.logClientEvent)
+        .mock.calls.map(([event, fields]) => `${event}:${fields?.request_key}`),
+    }).toEqual({
+      sessionId: "b",
+      lifecycle: [
+        "session.open.start:claudecode/claudecode/abc",
+        "session.open.cancel:claudecode/claudecode/abc",
+        "session.open.start:codex/def",
+        "session.open.done:codex/def",
+        "session.open.stale:claudecode/claudecode/abc",
+      ],
+    });
+  });
+
+  it("does not surface an aborted route request as an error", async () => {
+    const viewB: ViewState = {
+      mode: "session",
+      activeAgentKey: "codex",
+      activeSessionSlug: "def",
+    };
+    const sessionB = { id: "b", messages: [] } as unknown as SessionData;
+    vi.mocked(api.fetchSessionData).mockImplementation((agent, _sessionId, options) => {
+      if (agent === "codex") return Promise.resolve(sessionB);
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        });
+      });
+    });
+    const { result, rerender } = renderHook(({ view }) => useSessionDetail(view), {
+      initialProps: { view: sessionView as ViewState },
+    });
+    await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(1));
+
+    rerender({ view: viewB });
+    await waitFor(() => expect(result.current.session).toEqual(sessionB));
+
+    expect(result.current.sessionError).toBeNull();
+    expect(api.logClientEvent).not.toHaveBeenCalledWith(
+      "session.open.error",
+      expect.objectContaining({ request_key: "claudecode/claudecode/abc" }),
+    );
+  });
+
+  it("does not let a stale failure clear loading for the current request", async () => {
+    const requestA = deferred<SessionData>();
+    const requestB = deferred<SessionData>();
+    const viewB: ViewState = {
+      mode: "session",
+      activeAgentKey: "codex",
+      activeSessionSlug: "def",
+    };
+    const sessionB = { id: "b", messages: [] } as unknown as SessionData;
+    vi.mocked(api.fetchSessionData).mockImplementation((_agent, sessionId) =>
+      sessionId === sessionView.activeSessionSlug ? requestA.promise : requestB.promise,
+    );
+    const { result, rerender } = renderHook(({ view }) => useSessionDetail(view), {
+      initialProps: { view: sessionView as ViewState },
+    });
+    await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(1));
+
+    rerender({ view: viewB });
+    await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(2));
+    await act(async () => requestA.reject(new Error("stale failure")));
+
+    expect(result.current.sessionLoading).toBe(true);
+    expect(result.current.sessionError).toBeNull();
+    await act(async () => requestB.resolve(sessionB));
+    await waitFor(() => expect(result.current.sessionLoading).toBe(false));
+    expect(result.current.session).toEqual(sessionB);
+  });
+
+  it("aborts without committing state after unmount", async () => {
+    const request = deferred<SessionData>();
+    vi.mocked(api.fetchSessionData).mockReturnValue(request.promise);
+    const { unmount } = renderHook(() => useSessionDetail(sessionView));
+    await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(1));
+    const signal = vi.mocked(api.fetchSessionData).mock.calls[0]?.[2]?.signal;
+
+    unmount();
+    await act(async () => request.resolve(sample));
+
+    expect(signal?.aborted).toBe(true);
+    expect(api.logClientEvent).not.toHaveBeenCalledWith(
+      "session.open.done",
+      expect.objectContaining({ request_key: "claudecode/claudecode/abc" }),
+    );
+    expect(api.logClientEvent).not.toHaveBeenCalledWith(
+      "session.open.error",
+      expect.objectContaining({ request_key: "claudecode/claudecode/abc" }),
+    );
+  });
+
+  it("does not let an old refresh overwrite a navigated session", async () => {
+    const refreshRequest = deferred<SessionData>();
+    const refreshedA = { id: "a-refreshed", messages: [] } as unknown as SessionData;
+    const sessionB = { id: "b", messages: [] } as unknown as SessionData;
+    const viewB: ViewState = {
+      mode: "session",
+      activeAgentKey: "codex",
+      activeSessionSlug: "def",
+    };
+    vi.mocked(api.fetchSessionData)
+      .mockResolvedValueOnce(sample)
+      .mockReturnValueOnce(refreshRequest.promise)
+      .mockResolvedValueOnce(sessionB);
+    const { result, rerender } = renderHook(({ view }) => useSessionDetail(view), {
+      initialProps: { view: sessionView as ViewState },
+    });
+    await waitFor(() => expect(result.current.session).toEqual(sample));
+
+    let refreshPromise!: Promise<void>;
+    act(() => {
+      refreshPromise = result.current.refresh();
+    });
+    await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(2));
+    rerender({ view: viewB });
+    await waitFor(() => expect(result.current.session).toEqual(sessionB));
+    await act(async () => refreshRequest.resolve(refreshedA));
+    await refreshPromise;
+
+    expect(result.current.session).toEqual(sessionB);
+    expect(result.current.sessionError).toBeNull();
   });
 });

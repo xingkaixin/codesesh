@@ -1,5 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchSearchResults, fetchSessions, subscribeSessionUpdates } from "./api";
+import {
+  fetchSearchResults,
+  fetchSessionData,
+  fetchSessions,
+  subscribeSessionUpdates,
+} from "./api";
+
+describe("fetchSessionData", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("forwards the abort signal to fetch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({}),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+
+    await fetchSessionData("codex", "session", { signal: controller.signal });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/codex/session", {
+      signal: controller.signal,
+    });
+  });
+});
 
 describe("project identity request filters", () => {
   afterEach(() => {
