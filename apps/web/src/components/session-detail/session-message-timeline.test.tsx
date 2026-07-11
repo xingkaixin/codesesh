@@ -123,6 +123,30 @@ describe("SessionMessageTimeline", () => {
     expect(window.style.width).toBe("25%");
   });
 
+  it("scrolls the minimap with standard scrollbar keys", () => {
+    const longEntries = Array.from({ length: 100 }, (_, index) => ({
+      ...entries[index % entries.length]!,
+      id: `entry-${index}`,
+      anchorId: `entry-${index}`,
+    }));
+    const { getByTestId, timeline } = renderTimeline(longEntries);
+    Object.defineProperties(timeline, {
+      clientWidth: { configurable: true, value: 300 },
+      scrollWidth: { configurable: true, value: 1_200 },
+      scrollLeft: { configurable: true, value: 300, writable: true },
+    });
+    fireEvent.scroll(timeline);
+    const minimap = getByTestId("session-timeline-minimap");
+
+    minimap.focus();
+    fireEvent.keyDown(minimap, { key: "ArrowRight" });
+    expect(timeline.scrollLeft).toBeGreaterThan(300);
+    fireEvent.keyDown(minimap, { key: "Home" });
+    expect(timeline.scrollLeft).toBe(0);
+    fireEvent.keyDown(minimap, { key: "End" });
+    expect(timeline.scrollLeft).toBe(900);
+  });
+
   it("hides the minimap when the track fits the viewport", () => {
     const { queryByTestId, timeline } = renderTimeline();
 

@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
@@ -280,6 +288,26 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
     viewport.scrollLeft = (ratio - grabOffset) * viewport.scrollWidth;
   }, []);
 
+  const handleMinimapKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    const viewport = scrollRef.current;
+    if (!viewport) return;
+    const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+    const step = Math.max(40, viewport.clientWidth * 0.1);
+    const page = Math.max(120, viewport.clientWidth * 0.75);
+    let next: number | null = null;
+
+    if (event.key === "ArrowLeft") next = viewport.scrollLeft - step;
+    if (event.key === "ArrowRight") next = viewport.scrollLeft + step;
+    if (event.key === "PageUp") next = viewport.scrollLeft - page;
+    if (event.key === "PageDown") next = viewport.scrollLeft + page;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = maxScrollLeft;
+    if (next == null) return;
+
+    event.preventDefault();
+    viewport.scrollLeft = Math.min(maxScrollLeft, Math.max(0, next));
+  }, []);
+
   const showTooltip = useCallback(
     (entry: SessionTimelineEntry, trigger: HTMLElement, source: TimelineTooltip["source"]) => {
       const rect = trigger.getBoundingClientRect();
@@ -473,7 +501,10 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={Math.round((minimapWindow.start / (1 - minimapWindow.size)) * 100)}
-            className="session-timeline-minimap relative mt-2 h-2.5 cursor-pointer touch-none select-none"
+            aria-label="Timeline scroll position"
+            tabIndex={0}
+            className="session-timeline-minimap relative mt-2 h-2.5 cursor-pointer touch-none select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-text)]"
+            onKeyDown={handleMinimapKeyDown}
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               const rect = event.currentTarget.getBoundingClientRect();
