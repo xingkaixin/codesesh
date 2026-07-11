@@ -4,6 +4,7 @@ import { LiveScanStore } from "./live-scan.js";
 import { printScanResults } from "./output.js";
 import { VERSION } from "./version.js";
 import { appLogger } from "./logging.js";
+import { isLoopbackHostname } from "./remote-access.js";
 import {
   DEFAULT_PORT,
   DEFAULT_PORT_FALLBACK_ATTEMPTS,
@@ -32,6 +33,20 @@ function parseSessionUri(uri: string): { agent: string; sessionId: string } | nu
   return { agent: match[1]!, sessionId: match[2]! };
 }
 
+function appendStartupPath(startupUrl: string, path: string): string {
+  const url = new URL(startupUrl);
+  url.pathname = path;
+  return url.toString();
+}
+
+function redactStartupUrl(startupUrl: string): string {
+  const url = new URL(startupUrl);
+  for (const key of url.searchParams.keys()) {
+    url.searchParams.set(key, "[redacted]");
+  }
+  return url.toString();
+}
+
 const main = defineCommand({
   meta: {
     name: "codesesh",
@@ -49,6 +64,11 @@ const main = defineCommand({
       type: "string",
       description: "HTTP server bind address (default 127.0.0.1, local access only)",
       default: "127.0.0.1",
+    },
+    "remote-access": {
+      type: "boolean",
+      description: "Allow authenticated access when binding to a non-loopback address",
+      default: false,
     },
     agent: {
       type: "string",
@@ -114,6 +134,15 @@ const main = defineCommand({
     const trace = args.trace as boolean;
     const useCache = args.cache as boolean;
     const clearCache = args["clear-cache"] as boolean;
+    const hostname = args.host as string;
+    const remoteAccess = args["remote-access"] as boolean;
+
+    if (!isLoopbackHostname(hostname) && !remoteAccess) {
+      console.error(
+        `Refusing to expose CodeSesh on ${hostname} without authentication. Add --remote-access to continue.`,
+      );
+      process.exit(1);
+    }
 
     if (trace) {
       perf.enable();
@@ -242,7 +271,8 @@ const main = defineCommand({
         defaultSessionTo: listDefaultTo,
         defaultSessionDays: listDefaultDays,
         portFallbackAttempts: explicitPort ? 1 : DEFAULT_PORT_FALLBACK_ATTEMPTS,
-        hostname: args.host as string,
+        hostname,
+        remoteAccess,
       });
     } catch (error) {
       console.error(getServerStartupErrorMessage(error, port));
@@ -271,7 +301,7 @@ const main = defineCommand({
     console.log(`  ${url}`);
     console.log("");
     appLogger.info("cli.ready", {
-      url,
+      url: redactStartupUrl(url),
       duration_ms: Math.round(performance.now() - startedAt),
       log_path: appLogger.getLogPath(),
     });
@@ -279,9 +309,9 @@ const main = defineCommand({
     if (!noOpen) {
       const open = (await import("open")).default;
       const targetUrl = targetSession
-        ? `${url}/${targetSession.agent.toLowerCase()}/${targetSession.sessionId}`
+        ? appendStartupPath(url, `/${targetSession.agent.toLowerCase()}/${targetSession.sessionId}`)
         : url;
-      appLogger.info("browser.open", { url: targetUrl });
+      appLogger.info("browser.open", { url: redactStartupUrl(targetUrl) });
       await open(targetUrl);
     }
   },
