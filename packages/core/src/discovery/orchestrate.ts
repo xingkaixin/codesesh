@@ -8,6 +8,7 @@
  * plumbing that previously had to be kept in sync by hand.
  */
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
+import { sortSessionsByActivity } from "../contract/session-index.js";
 import type { ProjectIdentity, SessionHead } from "../types/index.js";
 import type { SessionHeadChange } from "./cache.js";
 import { computeIdentity, realFs } from "../projects/index.js";
@@ -73,9 +74,7 @@ export function sessionSignature(session: SessionHead): string {
 
 /** Sort sessions by activity time, newest first. */
 export function sortSessions(sessions: SessionHead[]): SessionHead[] {
-  return [...sessions].sort(
-    (a, b) => (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created),
-  );
+  return sortSessionsByActivity(sessions);
 }
 
 export interface SessionDiffResult {

@@ -1,4 +1,10 @@
 import type { AgentInfo, ProjectIdentityKind, SessionHead } from "./api";
+import {
+  createSessionIndex,
+  getProjectAgentKey,
+  getSessionAgentKey,
+  getSessionRouteKey,
+} from "@codesesh/core/contract";
 import { getProjectIdentityKey } from "./projects";
 
 export interface IndexedSession extends SessionHead {
@@ -32,21 +38,7 @@ export interface SidebarSessionLookup {
   indexById: Map<string, number>;
 }
 
-function compareSessionActivityDesc(a: SessionHead, b: SessionHead): number {
-  return (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created);
-}
-
-export function getSessionAgentKey(session: Pick<SessionHead, "slug">): string {
-  return session.slug.split("/")[0]?.toLowerCase() || "unknown";
-}
-
-export function getSessionRouteKey(agentKey: string, sessionId: string): string {
-  return `${agentKey.toLowerCase()}/${sessionId}`;
-}
-
-export function getProjectAgentKey(projectIdentityKey: string, agentKey: string): string {
-  return `${projectIdentityKey}\0${agentKey.toLowerCase()}`;
-}
+export { getProjectAgentKey, getSessionAgentKey, getSessionRouteKey };
 
 function pushMapValue<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const current = map.get(key);
@@ -58,10 +50,8 @@ function pushMapValue<K, V>(map: Map<K, V[]>, key: K, value: V): void {
 }
 
 export function buildSessionIndexes(sessions: SessionHead[], agents: AgentInfo[]): SessionIndexes {
-  const byRouteKey = new Map<string, SessionHead>();
+  const canonical = createSessionIndex(sessions);
   const byAgent = new Map<string, SessionHead[]>();
-  const byProjectIdentityKey = new Map<string, SessionHead[]>();
-  const byProjectAgentKey = new Map<string, SessionHead[]>();
   const byLandingAgent = new Map<string, IndexedSession[]>();
   const byLandingProjectIdentityKey = new Map<string, IndexedSession[]>();
   const projectOptionsByKey = new Map<string, SessionProjectOption>();
@@ -83,9 +73,6 @@ export function buildSessionIndexes(sessions: SessionHead[], agents: AgentInfo[]
     };
 
     landingSessions.push(indexedSession);
-    const routeKey = getSessionRouteKey(agentKey, session.id);
-    if (!byRouteKey.has(routeKey)) byRouteKey.set(routeKey, session);
-
     if (knownAgentKeys.has(agentKey)) {
       byLandingAgent.get(agentKey)!.push(indexedSession);
     }
@@ -110,28 +97,19 @@ export function buildSessionIndexes(sessions: SessionHead[], agents: AgentInfo[]
     }
   }
 
-  const sessionsByActivity = sessions.toSorted(compareSessionActivityDesc);
-  for (const session of sessionsByActivity) {
-    const agentKey = getSessionAgentKey(session);
-    if (knownAgentKeys.has(agentKey)) byAgent.get(agentKey)!.push(session);
-
-    const identity = session.project_identity;
-    if (!identity?.key) continue;
-
-    const projectIdentityKey = getProjectIdentityKey(identity);
-    pushMapValue(byProjectIdentityKey, projectIdentityKey, session);
-    pushMapValue(byProjectAgentKey, getProjectAgentKey(projectIdentityKey, agentKey), session);
+  for (const agentKey of knownAgentKeys) {
+    byAgent.set(agentKey, canonical.byAgent.get(agentKey) ?? []);
   }
 
   return {
-    byRouteKey,
+    byRouteKey: canonical.byRouteKey,
     byAgent,
-    byProjectIdentityKey,
-    byProjectAgentKey,
+    byProjectIdentityKey: canonical.byProjectIdentityKey,
+    byProjectAgentKey: canonical.byProjectAgentKey,
     byLandingAgent,
     byLandingProjectIdentityKey,
     landingSessions,
-    sessionsByActivity,
+    sessionsByActivity: canonical.sessionsByActivity,
     projectOptions: [...projectOptionsByKey.values()]
       .toSorted((a, b) => b.count - a.count)
       .slice(0, 8),
