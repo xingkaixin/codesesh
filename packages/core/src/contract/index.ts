@@ -5,5 +5,6 @@ export type * from "./search.js";
 export type * from "./bookmarks.js";
 export type * from "./dashboard.js";
 export type * from "./events.js";
+export * from "./session-index.js";
 export type * from "./api.js";
 export * from "./fixtures.js";

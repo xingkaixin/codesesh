@@ -7,7 +7,7 @@ const distEntry = join(dirname(fileURLToPath(import.meta.url)), "../../../dist/c
 const distExists = existsSync(distEntry);
 
 // Requires `pnpm --filter @codesesh/core build` to have run first — the
-// contract package has no runtime code of its own to test against otherwise.
+// contract package runtime must remain browser-safe.
 describe("contract browser-safety", () => {
   it.skipIf(!distExists)(
     "bundle contains no Node built-ins, better-sqlite3, or agent registration side effects",
@@ -19,7 +19,7 @@ describe("contract browser-safety", () => {
     },
   );
 
-  it.skipIf(!distExists)("imports cleanly and exposes only pure fixture data", async () => {
+  it.skipIf(!distExists)("imports cleanly and exposes only pure runtime values", async () => {
     const contract = await import(distEntry);
     expect(Object.keys(contract).sort()).toEqual(
       [
@@ -27,6 +27,15 @@ describe("contract browser-safety", () => {
         "SAMPLE_SCAN_STATUS_EVENT",
         "SAMPLE_SESSIONS_UPDATED_EVENT",
         "SAMPLE_SESSION_HEAD",
+        "applySessionChanges",
+        "compareSessionActivityDesc",
+        "createSessionIndex",
+        "getProjectAgentKey",
+        "getProjectIdentityKey",
+        "getSessionAgentKey",
+        "getSessionRouteKey",
+        "sortSessionsByActivity",
+        "updateSessionIndex",
       ].sort(),
     );
   });
