@@ -60,8 +60,8 @@ More agents coming soon. Adding a new one is [a single file](#extending).
 
 ### Prerequisites
 
-- Node.js 18+ for the published CLI
-- Node.js 24 and pnpm 11.5.1 for building from source
+- Node.js 22+ for the published CLI
+- Node.js 24 and pnpm 11.11.0 for building from source
 
 ### Install & Run
 
