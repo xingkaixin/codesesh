@@ -18,6 +18,7 @@
     "test:e2e": "playwright test",
     "test:migration": "vitest run packages/core/src/discovery/__tests__/migration-smoke.test.ts",
     "bench:perf": "node scripts/benchmark-performance.mjs",
+    "bench:session-index": "pnpm --filter @codesesh/core build && node scripts/benchmark-session-index.mjs",
     "test:coverage": "vitest run --coverage",
     "deploy:www": "pnpm --filter @codesesh/www deploy:cf"
   },
