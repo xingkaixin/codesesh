@@ -132,6 +132,41 @@
   .animate-status-ping {
     animation: status-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
   }
+
+  .product-showcase-pressable {
+    touch-action: manipulation;
+    transition-property: transform, color, border-color;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .product-showcase-pressable:active {
+    transform: scale(0.97);
+  }
+
+  .product-showcase-expand {
+    opacity: 1;
+    transition-property: opacity, transform, color, border-color;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .product-showcase-expand {
+    opacity: 0;
+  }
+
+  .product-showcase-card:hover .product-showcase-expand,
+  .product-showcase-card:focus-within .product-showcase-expand {
+    opacity: 1;
+  }
+
+  .product-showcase-expand:hover {
+    transform: scale(1.02);
+  }
+
+  .product-showcase-expand:active {
+    transform: scale(0.97);
+  }
 }
 
 @keyframes caret-blink {
@@ -171,5 +206,15 @@
   .animate-terminal-line,
   .animate-status-ping {
     animation: none;
+  }
+
+  .product-showcase-pressable,
+  .product-showcase-pressable:hover,
+  .product-showcase-pressable:active,
+  .product-showcase-expand,
+  .product-showcase-expand:hover,
+  .product-showcase-expand:active {
+    transform: none;
+    transition-property: opacity, color, border-color;
   }
 }

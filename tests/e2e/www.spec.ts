@@ -61,7 +61,13 @@ test("falls back when the clipboard API rejects", async ({ page }) => {
 
 test("navigates showcase dialogs", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Expand Engineering Memory Overview" }).click();
+  const expand = page.getByRole("button", { name: "Expand Engineering Memory Overview" });
+  await expand.locator("xpath=ancestor::article").hover();
+  await expect(expand).toHaveCSS("opacity", "1");
+  await expand.focus();
+  await expect(expand).toBeFocused();
+  await expect(expand).toHaveCSS("opacity", "1");
+  await expand.click();
   const first = page.getByRole("dialog", {
     name: "Engineering Memory Overview preview",
   });
@@ -77,4 +83,30 @@ test("navigates showcase dialogs", async ({ page }) => {
   await expect(first).toBeVisible();
   await first.getByRole("button", { name: "Close" }).click();
   await expect(first).toBeHidden();
+});
+
+test("keeps showcase actions visible on touch", async ({ browser }, testInfo) => {
+  const context = await browser.newContext({
+    baseURL: String(testInfo.project.use.baseURL),
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 390, height: 844 },
+  });
+  const page = await context.newPage();
+  await page.goto("/");
+
+  const expand = page.getByRole("button", { name: "Expand Engineering Memory Overview" });
+  await expect(expand).toHaveCSS("opacity", "1");
+  await expand.tap();
+  await expect(page.getByRole("dialog", { name: "Engineering Memory Overview preview" })).toBeVisible();
+  await context.close();
+});
+
+test("removes showcase transforms for reduced motion", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+
+  const expand = page.getByRole("button", { name: "Expand Engineering Memory Overview" });
+  await expand.hover();
+  await expect(expand).toHaveCSS("transform", "none");
 });

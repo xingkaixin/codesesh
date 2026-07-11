@@ -74,7 +74,7 @@ test("covers dashboard, detail, search, projects, and pin flows", async ({ page 
     })
     .toBe(true);
 
-  await recentSession.getByRole("button", { name: "收藏会话" }).click();
+  await recentSession.getByRole("button", { name: "Add bookmark" }).click();
   await expect
     .poll(async () => {
       const response = await page.request.get("/api/bookmarks");
@@ -87,7 +87,7 @@ test("covers dashboard, detail, search, projects, and pin flows", async ({ page 
     })
     .toBe(true);
   await expect(page.getByText("Bookmarked Sessions")).toBeVisible();
-  await expect(recentSession.getByRole("button", { name: "取消收藏会话" })).toBeVisible();
+  await expect(recentSession.getByRole("button", { name: "Remove bookmark" })).toBeVisible();
   await expect(page.locator("section").filter({ hasText: "BOOKMARKS" })).toContainText(
     "Core browsing smoke session",
   );
