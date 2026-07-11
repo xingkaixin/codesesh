@@ -89,3 +89,40 @@ test("covers dashboard, detail, search, projects, and pin flows", async ({ page 
 
   expect(consoleErrors).toEqual([]);
 });
+
+test("keeps detail drawers modal and restores focus", async ({ page }) => {
+  await page.goto("/claudecode/e2e-dashboard");
+  await expect(page.getByTestId("session-detail")).toBeVisible();
+
+  const receiptTrigger = page.getByRole("button", { name: "Open session receipt" });
+  await receiptTrigger.click();
+  const receiptDialog = page.getByRole("dialog", { name: "Session Receipt" });
+  await expect(receiptDialog).toBeVisible();
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).overflow)).toBe("hidden");
+  await expect(page.getByRole("button", { name: "Close session receipt" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect
+    .poll(() => receiptDialog.evaluate((dialog) => dialog.contains(document.activeElement)))
+    .toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(receiptDialog).toBeHidden();
+  await expect(receiptTrigger).toBeFocused();
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).overflow)).not.toBe("hidden");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const tocTrigger = page.getByRole("button", { name: /^TOC/ });
+  await tocTrigger.click();
+  const tocDialog = page.getByRole("dialog", { name: "Session TOC" });
+  await expect(tocDialog).toBeVisible();
+  await expect(page.getByRole("button", { name: "Close session toc" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect.poll(() => tocDialog.evaluate((dialog) => dialog.contains(document.activeElement))).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(tocDialog).toBeHidden();
+  await expect(tocTrigger).toBeFocused();
+
+  await tocTrigger.click();
+  await expect(tocDialog).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(tocDialog).toBeHidden();
+});
