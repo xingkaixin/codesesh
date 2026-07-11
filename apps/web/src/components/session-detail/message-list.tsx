@@ -203,7 +203,7 @@ function VirtualizedMessageList({
   }, [viewport]);
 
   const updateViewport = useCallback(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") return null;
 
     const node = containerRef.current;
     const scrollParent = node ? findScrollParent(node) : window;
@@ -221,42 +221,74 @@ function VirtualizedMessageList({
       Math.abs(current.height - next.height) < 1 &&
       Math.abs(current.listTop - next.listTop) < 1
     ) {
-      return;
+      return scrollParent;
     }
 
     viewportRef.current = next;
     setViewport(next);
+    return scrollParent;
   }, []);
 
   useEffect(() => {
-    updateViewport();
-    const scrollParent = scrollParentRef.current ?? window;
     let frame = 0;
+    let scrollParent: ScrollParent | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+
+    const bindScrollParent = (next: ScrollParent) => {
+      if (scrollParent === next) return;
+
+      if (scrollParent) {
+        scrollParent.removeEventListener("scroll", scheduleUpdate);
+        if (resizeObserver && !isWindowScrollParent(scrollParent)) {
+          resizeObserver.unobserve(scrollParent);
+        }
+      }
+
+      scrollParent = next;
+      scrollParent.addEventListener("scroll", scheduleUpdate, { passive: true });
+      if (resizeObserver && !isWindowScrollParent(scrollParent)) {
+        resizeObserver.observe(scrollParent);
+      }
+    };
+
+    const refreshViewport = () => {
+      const nextScrollParent = updateViewport();
+      if (nextScrollParent) bindScrollParent(nextScrollParent);
+    };
+
     const scheduleUpdate = () => {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        updateViewport();
+        refreshViewport();
       });
     };
 
-    scrollParent.addEventListener("scroll", scheduleUpdate, { passive: true });
     window.addEventListener("resize", scheduleUpdate);
-    const interval = window.setInterval(updateViewport, 100);
-
-    let observer: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined") {
-      observer = new ResizeObserver(scheduleUpdate);
-      if (containerRef.current) observer.observe(containerRef.current);
-      if (!isWindowScrollParent(scrollParent)) observer.observe(scrollParent);
-      if (document.body) observer.observe(document.body);
+      resizeObserver = new ResizeObserver(scheduleUpdate);
+      if (containerRef.current) resizeObserver.observe(containerRef.current);
+      if (document.body) resizeObserver.observe(document.body);
     }
+
+    const layoutObserver = new MutationObserver(scheduleUpdate);
+    let ancestor = containerRef.current?.parentElement;
+    while (ancestor) {
+      layoutObserver.observe(ancestor, {
+        attributes: true,
+        attributeFilter: ["class", "style"],
+      });
+      ancestor = ancestor.parentElement;
+    }
+    document.fonts?.addEventListener("loadingdone", scheduleUpdate);
+    refreshViewport();
 
     return () => {
       if (frame) cancelAnimationFrame(frame);
-      observer?.disconnect();
-      window.clearInterval(interval);
-      scrollParent.removeEventListener("scroll", scheduleUpdate);
+      resizeObserver?.disconnect();
+      layoutObserver.disconnect();
+      document.fonts?.removeEventListener("loadingdone", scheduleUpdate);
+      scrollParent?.removeEventListener("scroll", scheduleUpdate);
       window.removeEventListener("resize", scheduleUpdate);
     };
   }, [updateViewport]);
