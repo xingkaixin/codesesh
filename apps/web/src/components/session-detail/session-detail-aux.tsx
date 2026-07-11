@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { FileText, Funnel, X } from "lucide-react";
+import { FileText, Funnel } from "lucide-react";
 import type { SessionData } from "../../lib/api";
 import { InteractiveReceipt } from "../InteractiveReceipt";
 import { RenderProfiler } from "../RenderProfiler";
+import { DrawerDialog } from "../DrawerDialog";
 import type { SessionDetailToc } from "./toc";
 import type { FileChangeSummary } from "./file-change";
 import { FileChangeTracker, getFileTrackerItemCount } from "./file-change-tracker";
@@ -37,20 +38,12 @@ export function DeferredInteractiveReceipt({
     const closeOnSmallViewport = () => {
       if (!desktopQuery.matches) setOpen(false);
     };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKeyDown);
     desktopQuery.addEventListener("change", closeOnSmallViewport);
     closeOnSmallViewport();
 
     return () => {
       cancelAnimationFrame(firstFrame);
       if (secondFrame) cancelAnimationFrame(secondFrame);
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", onKeyDown);
       desktopQuery.removeEventListener("change", closeOnSmallViewport);
     };
   }, [open]);
@@ -66,38 +59,15 @@ export function DeferredInteractiveReceipt({
       >
         <span className="[writing-mode:vertical-rl]">Receipt</span>
       </button>
-      {open ? (
-        <div className="fixed inset-0 z-[60] hidden min-[1025px]:block">
-          <button
-            type="button"
-            aria-label="Close session receipt"
-            onClick={() => setOpen(false)}
-            className="absolute inset-0 bg-black/20"
-          />
-          <aside className="absolute right-0 top-0 z-10 h-full w-[min(92vw,430px)] border-l border-[var(--console-border)] bg-[var(--console-bg)] p-4 shadow-[-12px_0_32px_rgba(15,23,42,0.18)]">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <span className="console-mono text-xs font-semibold uppercase tracking-[0.16em] text-[var(--console-text)]">
-                Session Receipt
-              </span>
-              <button
-                type="button"
-                aria-label="Close session receipt"
-                onClick={() => setOpen(false)}
-                className="rounded-sm border border-[var(--console-border)] bg-white p-2 text-[var(--console-muted)] transition-colors hover:bg-[var(--console-surface-muted)]"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-            {ready ? (
-              <RenderProfiler id="InteractiveReceipt">
-                <InteractiveReceipt key={session.id} session={session} toc={toc} />
-              </RenderProfiler>
-            ) : (
-              <div className="h-[calc(100dvh-5.5rem)] min-h-[420px] rounded-sm border border-[var(--console-border)] bg-white" />
-            )}
-          </aside>
-        </div>
-      ) : null}
+      <DrawerDialog open={open} onOpenChange={setOpen} title="Session Receipt" variant="desktop">
+        {ready ? (
+          <RenderProfiler id="InteractiveReceipt">
+            <InteractiveReceipt key={session.id} session={session} toc={toc} />
+          </RenderProfiler>
+        ) : (
+          <div className="h-[calc(100dvh-5.5rem)] min-h-[420px] rounded-sm border border-[var(--console-border)] bg-white" />
+        )}
+      </DrawerDialog>
     </>
   );
 }
@@ -160,50 +130,28 @@ export function SessionDetailAuxOverlay({
 }) {
   useEffect(() => {
     if (!openPanel) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    const previousOverflow = document.body.style.overflow;
     const desktopQuery = window.matchMedia("(min-width: 1025px)");
     const closeOnDesktop = () => {
       if (desktopQuery.matches) onClose();
     };
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKeyDown);
     desktopQuery.addEventListener("change", closeOnDesktop);
     closeOnDesktop();
     return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", onKeyDown);
       desktopQuery.removeEventListener("change", closeOnDesktop);
     };
   }, [onClose, openPanel]);
 
-  if (!openPanel) return null;
-
   return (
-    <div className="fixed inset-0 z-50 min-[1025px]:hidden">
-      <button
-        type="button"
-        aria-label="Close navigation panel"
-        onClick={onClose}
-        className="absolute inset-0 bg-black/30"
-      />
-      <aside className="console-scrollbar absolute right-0 top-0 h-full w-[min(90vw,380px)] overflow-y-auto border-l border-[var(--console-border)] bg-[var(--console-bg)] p-3 shadow-[-10px_0_30px_rgba(15,23,42,0.16)]">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <span className="console-mono text-xs font-semibold uppercase tracking-[0.16em] text-[var(--console-text)]">
-            {openPanel === "toc" ? "Session TOC" : "File Tracker"}
-          </span>
-          <button
-            type="button"
-            aria-label="Close navigation panel"
-            onClick={onClose}
-            className="rounded-sm border border-[var(--console-border)] bg-white p-2 text-[var(--console-muted)] transition-colors hover:bg-[var(--console-surface-muted)]"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-        {openPanel === "toc" ? (
+    <DrawerDialog
+      open={openPanel !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={openPanel === "files" ? "File Tracker" : "Session TOC"}
+      variant="mobile"
+    >
+      {openPanel ? (
+        openPanel === "toc" ? (
           <SessionTocFilterPanel toc={toc} selectedFilters={selectedFilters} onToggle={onToggle} />
         ) : (
           <FileChangeTracker
@@ -211,8 +159,8 @@ export function SessionDetailAuxOverlay({
             baseDirectory={baseDirectory}
             onJumpToAnchor={onJumpToAnchor}
           />
-        )}
-      </aside>
-    </div>
+        )
+      ) : null}
+    </DrawerDialog>
   );
 }
