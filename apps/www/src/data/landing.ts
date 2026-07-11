@@ -55,6 +55,7 @@ interface LandingCopy {
     commandTitle: string;
     command: string;
     copied: string;
+    copyFailed: string;
     copyCommand: string;
     runtime: string;
   };
@@ -123,6 +124,7 @@ export const copy = {
       commandTitle: "从本地开始积累",
       command: "npx codesesh",
       copied: "已复制",
+      copyFailed: "复制失败，请手动复制命令",
       copyCommand: "复制命令",
       runtime: "需要 Node.js 22+ · 从终端本地运行",
     },
@@ -314,6 +316,7 @@ export const copy = {
       commandTitle: "Start from your machine",
       command: "npx codesesh",
       copied: "Copied",
+      copyFailed: "Copy failed. Copy the command manually.",
       copyCommand: "Copy command",
       runtime: "Requires Node.js 22+ · Runs locally from your terminal",
     },
