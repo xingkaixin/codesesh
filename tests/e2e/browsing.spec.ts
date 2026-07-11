@@ -131,3 +131,16 @@ test("keeps detail drawers modal and restores focus", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await expect(tocDialog).toBeHidden();
 });
+
+test("renders a static receipt for reduced motion", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/claudecode/e2e-dashboard");
+  await page.getByRole("button", { name: "Open session receipt" }).click();
+
+  const receiptCanvas = page.locator('canvas[aria-hidden="true"].fixed');
+  const receiptHitSurface = page.locator(
+    '[aria-label="Interactive thermal receipt with Verlet paper simulation"]',
+  );
+  await expect(receiptCanvas).toBeVisible();
+  await expect(receiptHitSurface).toBeHidden();
+});
