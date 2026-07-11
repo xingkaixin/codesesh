@@ -1765,6 +1765,45 @@ describe("LiveScanStore", () => {
     expect(codex.checkForChanges).not.toHaveBeenCalled();
   });
 
+  it("terminates an active scan worker before shutdown completes", async () => {
+    workerThreads.deferScanRefreshWorkers = true;
+    const existing = makeSession("existing");
+    const codex = makeFileSystemAgent("codex");
+    const warn = vi.spyOn(appLogger, "warn").mockImplementation(() => undefined);
+    vi.spyOn(appLogger, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    core.isAgentCacheInitialized.mockReturnValue(false);
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [existing],
+      byAgent: { codex: [existing] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore(false);
+    await store.initialize();
+    const listener = vi.fn();
+    store.subscribe(listener);
+    const refresh = (store as any).refreshAgent("codex");
+    await vi.waitFor(() =>
+      expect(workerThreads.workers.some((worker) => worker.workerData.agentName)).toBe(true),
+    );
+    const worker = workerThreads.workers.find((item) => item.workerData.agentName)!;
+
+    await store.shutdown();
+
+    expect(warn).toHaveBeenCalledWith("scan.shutdown.active_operations", {
+      agent_operations: 1,
+      refreshes: 1,
+      backfill_running: undefined,
+      scan_workers: 1,
+    });
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+    await refresh;
+    expect(store.getSnapshot().sessions).toEqual([existing]);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it("does not start a pending search-index batch while shutting down", async () => {
     core.createRegisteredAgents.mockReturnValue([]);
     core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
