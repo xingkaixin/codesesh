@@ -27,11 +27,14 @@ export interface ApiRouteOptions {
 
 function createSseResponse(store: LiveScanStore, signal: AbortSignal): Response {
   const encoder = new TextEncoder();
+  let cancelStream = () => {};
 
   return new Response(
     new ReadableStream({
       start(controller) {
+        let isClosed = false;
         const write = (event: string, data: unknown) => {
+          if (isClosed) return;
           controller.enqueue(encoder.encode(`event: ${event}\n`));
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         };
@@ -47,20 +50,30 @@ function createSseResponse(store: LiveScanStore, signal: AbortSignal): Response 
         });
 
         const heartbeat = setInterval(() => {
-          controller.enqueue(encoder.encode(": keepalive\n\n"));
+          if (!isClosed) controller.enqueue(encoder.encode(": keepalive\n\n"));
         }, 15000);
 
-        const close = () => {
+        const cleanup = () => {
+          if (isClosed) return false;
+          isClosed = true;
           clearInterval(heartbeat);
           unsubscribeSessions();
           unsubscribeScanStatus();
-          controller.close();
+          signal.removeEventListener("abort", abortStream);
+          return true;
+        };
+        const abortStream = () => {
+          if (cleanup()) controller.close();
+        };
+        cancelStream = () => {
+          cleanup();
         };
 
-        signal.addEventListener("abort", close, { once: true });
+        if (signal.aborted) abortStream();
+        else signal.addEventListener("abort", abortStream, { once: true });
       },
       cancel() {
-        return;
+        cancelStream();
       },
     }),
     {
