@@ -16,6 +16,11 @@ test("covers dashboard, detail, search, projects, and pin flows", async ({ page 
   await expect(dashboard).toBeVisible();
   await expect(dashboard.getByText("Total Sessions")).toBeVisible();
   await expect(dashboard.getByText("Core browsing smoke session")).toBeVisible();
+  const activityChart = page.getByRole("region", { name: "Daily Activity" });
+  const activityBar = activityChart.getByRole("button").first();
+  await activityBar.focus();
+  await expect(activityBar).toBeFocused();
+  await expect(activityChart.getByRole("table", { name: "Daily Activity data" })).toBeAttached();
 
   await page
     .getByRole("link", { name: /Claude Code/ })

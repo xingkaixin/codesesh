@@ -72,10 +72,16 @@ function DailyActivityChart({ buckets }: { buckets: DashboardDailyBucket[] }) {
   }, [buckets.length]);
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+    <section
+      aria-labelledby="daily-activity-title"
+      className="rounded-sm border border-[var(--console-border)] bg-white p-4"
+    >
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
+          <h3
+            id="daily-activity-title"
+            className="console-mono text-xs font-bold uppercase text-[var(--console-text)]"
+          >
             Daily Activity
           </h3>
           <p className="console-mono mt-1 text-[11px] text-[var(--console-muted)]">
@@ -89,18 +95,22 @@ function DailyActivityChart({ buckets }: { buckets: DashboardDailyBucket[] }) {
         </span>
       </div>
 
-      <div className="flex h-32 items-end gap-[2px]" onMouseLeave={() => setHovered(null)}>
+      <div className="flex h-32 items-end gap-[2px]" onPointerLeave={() => setHovered(null)}>
         {buckets.map((bucket) => {
           const pxHeight =
             bucket.sessions > 0 ? Math.max(Math.round((bucket.sessions / maxValue) * 128), 4) : 2;
           const title = `${bucket.date} · ${bucket.sessions} sessions · ${bucket.messages} msgs`;
           const isActive = hovered?.date === bucket.date;
           return (
-            <div
+            <button
+              type="button"
               key={bucket.date}
-              title={title}
-              onMouseEnter={() => setHovered(bucket)}
-              className={`flex-1 cursor-default rounded-t-[1px] transition-opacity ${
+              aria-label={title}
+              onPointerEnter={() => setHovered(bucket)}
+              onClick={() => setHovered(bucket)}
+              onFocus={() => setHovered(bucket)}
+              onBlur={() => setHovered(null)}
+              className={`flex-1 cursor-default rounded-t-[1px] border-0 p-0 transition-opacity focus-visible:ring-2 focus-visible:ring-[var(--console-text)] focus-visible:ring-offset-2 focus-visible:outline-none ${
                 bucket.sessions > 0
                   ? "bg-[var(--console-accent)]"
                   : "bg-[var(--console-surface-muted)]"
@@ -118,7 +128,26 @@ function DailyActivityChart({ buckets }: { buckets: DashboardDailyBucket[] }) {
           </span>
         ))}
       </div>
-    </div>
+      <table className="sr-only">
+        <caption>Daily Activity data</caption>
+        <thead>
+          <tr>
+            <th scope="col">Date</th>
+            <th scope="col">Sessions</th>
+            <th scope="col">Messages</th>
+          </tr>
+        </thead>
+        <tbody>
+          {buckets.map((bucket) => (
+            <tr key={bucket.date}>
+              <th scope="row">{bucket.date}</th>
+              <td>{bucket.sessions}</td>
+              <td>{bucket.messages}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
 
@@ -163,10 +192,16 @@ function DailyTokenChart({ buckets }: { buckets: DailyTokenBucket[] }) {
   if (totalTokens === 0) return null;
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+    <section
+      aria-labelledby="daily-token-activity-title"
+      className="rounded-sm border border-[var(--console-border)] bg-white p-4"
+    >
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
+          <h3
+            id="daily-token-activity-title"
+            className="console-mono text-xs font-bold uppercase text-[var(--console-text)]"
+          >
             Daily Token Activity
           </h3>
           <p className="console-mono mt-1 text-[11px] text-[var(--console-muted)]">
@@ -188,6 +223,7 @@ function DailyTokenChart({ buckets }: { buckets: DailyTokenBucket[] }) {
               className="console-mono flex items-center gap-1.5 text-[10px] text-[var(--console-muted)]"
             >
               <span
+                aria-hidden="true"
                 className="inline-block size-2 rounded-full"
                 style={{ backgroundColor: TOKEN_COLORS[key] }}
               />
@@ -203,6 +239,7 @@ function DailyTokenChart({ buckets }: { buckets: DailyTokenBucket[] }) {
               className="console-mono flex items-center gap-1.5 text-[10px] text-[var(--console-muted)]"
             >
               <span
+                aria-hidden="true"
                 className="inline-block size-2 rounded-full"
                 style={{ backgroundColor: TOKEN_COLORS[key] }}
               />
@@ -212,7 +249,7 @@ function DailyTokenChart({ buckets }: { buckets: DailyTokenBucket[] }) {
         </div>
       )}
 
-      <div className="flex h-32 items-end gap-[2px]" onMouseLeave={() => setHovered(null)}>
+      <div className="flex h-32 items-end gap-[2px]" onPointerLeave={() => setHovered(null)}>
         {buckets.map((bucket) => {
           const total = bucket.input + bucket.output + bucket.cache_read + bucket.cache_create;
           const pxHeight = total > 0 ? Math.max(Math.round((total / maxValue) * 128), 4) : 2;
@@ -229,10 +266,15 @@ function DailyTokenChart({ buckets }: { buckets: DailyTokenBucket[] }) {
               : [];
 
           return (
-            <div
+            <button
+              type="button"
               key={bucket.date}
-              onMouseEnter={() => setHovered(bucket)}
-              className={`flex flex-1 cursor-default flex-col justify-end overflow-hidden rounded-t-[1px] transition-opacity ${
+              aria-label={`${bucket.date} · ${total} total tokens · ${bucket.input} input · ${bucket.output} output · ${bucket.cache_read} cache read · ${bucket.cache_create} cache create`}
+              onPointerEnter={() => setHovered(bucket)}
+              onClick={() => setHovered(bucket)}
+              onFocus={() => setHovered(bucket)}
+              onBlur={() => setHovered(null)}
+              className={`flex flex-1 cursor-default flex-col justify-end overflow-hidden rounded-t-[1px] border-0 p-0 transition-opacity focus-visible:ring-2 focus-visible:ring-[var(--console-text)] focus-visible:ring-offset-2 focus-visible:outline-none ${
                 isActive ? "opacity-70" : "opacity-100"
               }`}
               style={{ height: `${pxHeight}px` }}
@@ -254,7 +296,7 @@ function DailyTokenChart({ buckets }: { buckets: DailyTokenBucket[] }) {
               ) : (
                 <div className="h-full bg-[var(--console-surface-muted)]" />
               )}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -266,7 +308,30 @@ function DailyTokenChart({ buckets }: { buckets: DailyTokenBucket[] }) {
           </span>
         ))}
       </div>
-    </div>
+      <table className="sr-only">
+        <caption>Daily Token Activity data</caption>
+        <thead>
+          <tr>
+            <th scope="col">Date</th>
+            <th scope="col">Input</th>
+            <th scope="col">Output</th>
+            <th scope="col">Cache Read</th>
+            <th scope="col">Cache Create</th>
+          </tr>
+        </thead>
+        <tbody>
+          {buckets.map((bucket) => (
+            <tr key={bucket.date}>
+              <th scope="row">{bucket.date}</th>
+              <td>{bucket.input}</td>
+              <td>{bucket.output}</td>
+              <td>{bucket.cache_read}</td>
+              <td>{bucket.cache_create}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
 
@@ -314,9 +379,15 @@ function ModelDistribution({ entries }: { entries: ModelDistributionEntry[] }) {
   }, {});
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+    <section
+      aria-labelledby="model-distribution-title"
+      className="rounded-sm border border-[var(--console-border)] bg-white p-4"
+    >
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
+        <h3
+          id="model-distribution-title"
+          className="console-mono text-xs font-bold uppercase text-[var(--console-text)]"
+        >
           Model Distribution
         </h3>
         <span className="console-mono text-[11px] text-[var(--console-muted)]">
@@ -326,7 +397,11 @@ function ModelDistribution({ entries }: { entries: ModelDistributionEntry[] }) {
 
       <div className="flex items-center gap-6">
         <div className="flex shrink-0 flex-col items-center">
-          <ChartContainer config={chartConfig} className="aspect-square size-[160px]">
+          <ChartContainer
+            config={chartConfig}
+            className="aspect-square size-[160px]"
+            aria-hidden="true"
+          >
             <PieChart>
               <ChartTooltip
                 content={
@@ -364,6 +439,7 @@ function ModelDistribution({ entries }: { entries: ModelDistributionEntry[] }) {
           {chartData.map((entry) => (
             <li key={entry.model} className="flex items-center gap-2">
               <span
+                aria-hidden="true"
                 className="inline-block size-2.5 shrink-0 rounded-full"
                 style={{ backgroundColor: entry.fill }}
               />
@@ -371,13 +447,13 @@ function ModelDistribution({ entries }: { entries: ModelDistributionEntry[] }) {
                 {entry.model}
               </span>
               <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
-                {(entry.fraction * 100).toFixed(1)}%
+                {formatCompact(entry.tokens)} · {(entry.fraction * 100).toFixed(1)}%
               </span>
             </li>
           ))}
         </ul>
       </div>
-    </div>
+    </section>
   );
 }
 
