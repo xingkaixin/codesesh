@@ -57,6 +57,7 @@ const core = vi.hoisted(() => ({
 
 const workerThreads = vi.hoisted(() => ({
   deferSearchIndexWorkers: false,
+  deferScanRefreshWorkers: false,
   workers: [] as Array<{
     url: URL;
     workerData: any;
@@ -66,10 +67,12 @@ const workerThreads = vi.hoisted(() => ({
     terminate: ReturnType<typeof vi.fn>;
     emitDone: () => void;
     emitError: (error: Error) => void;
+    emitExit: (code: number) => void;
   }>,
   Worker: vi.fn(function (this: unknown, url: URL, options?: { workerData?: unknown }) {
     const workerData = options?.workerData as any;
     const deferredSearchWorker = workerThreads.deferSearchIndexWorkers && workerData?.jobs;
+    const deferredScanWorker = workerThreads.deferScanRefreshWorkers && workerData?.agentName;
     const deferredMessageHandlers: Array<(message: unknown) => void> = [];
     const deferredExitHandlers: Array<(code: number) => void> = [];
     const deferredErrorHandlers: Array<(error: Error) => void> = [];
@@ -131,7 +134,7 @@ const workerThreads = vi.hoisted(() => ({
       workerData,
       on: vi.fn((event: string, handler: (message: unknown) => void) => {
         if (event === "message") {
-          if (deferredSearchWorker) {
+          if (deferredSearchWorker || deferredScanWorker) {
             deferredMessageHandlers.push(handler);
             return worker;
           }
@@ -192,17 +195,17 @@ const workerThreads = vi.hoisted(() => ({
           });
         }
         if (event === "exit") {
-          if (deferredSearchWorker) deferredExitHandlers.push(handler);
+          if (deferredSearchWorker || deferredScanWorker) deferredExitHandlers.push(handler);
           else queueMicrotask(() => handler(0));
         }
-        if (event === "error" && deferredSearchWorker) {
+        if (event === "error" && (deferredSearchWorker || deferredScanWorker)) {
           deferredErrorHandlers.push(handler);
         }
         return worker;
       }),
       once: vi.fn((event: string, handler: (message: unknown) => void) => {
         if (event === "exit") {
-          if (deferredSearchWorker) deferredExitHandlers.push(handler);
+          if (deferredSearchWorker || deferredScanWorker) deferredExitHandlers.push(handler);
           else queueMicrotask(() => handler(0));
         }
         return worker;
@@ -224,6 +227,9 @@ const workerThreads = vi.hoisted(() => ({
       },
       emitError: (error: Error) => {
         for (const handler of deferredErrorHandlers) handler(error);
+      },
+      emitExit: (code: number) => {
+        for (const handler of deferredExitHandlers) handler(code);
       },
     };
     workerThreads.workers.push(worker);
@@ -405,6 +411,7 @@ describe("LiveScanStore", () => {
     fsWatch.watchers.length = 0;
     workerThreads.workers.length = 0;
     workerThreads.deferSearchIndexWorkers = false;
+    workerThreads.deferScanRefreshWorkers = false;
     fsWatch.watch.mockImplementation(
       (
         path: string,
@@ -875,6 +882,31 @@ describe("LiveScanStore", () => {
     await vi.advanceTimersByTimeAsync(100);
     await vi.waitFor(() => expect(scanAgentInWorker).toHaveBeenCalledTimes(3));
     expect(store.getSnapshot().sessions[0]?.title).toBe("rerun");
+  });
+
+  it("rejects a scan worker that exits successfully before sending done", async () => {
+    workerThreads.deferScanRefreshWorkers = true;
+    const store = new LiveScanStore(false);
+    const agent = makeFileSystemAgent("codex");
+    const warn = vi.spyOn(appLogger, "warn").mockImplementation(() => undefined);
+    core.createRegisteredAgents.mockReturnValue([agent]);
+
+    const refresh = (store as any).scanAgentInWorker(agent, [], null, {});
+    const worker = workerThreads.workers.at(-1)!;
+    worker.emitExit(0);
+
+    await expect(refresh).rejects.toThrow("exited before completing (code 0)");
+    expect(warn).toHaveBeenCalledWith("scan.refresh_worker.exit_before_done", {
+      agent: "codex",
+      code: 0,
+    });
+
+    workerThreads.deferScanRefreshWorkers = false;
+    await expect((store as any).scanAgentInWorker(agent, [], null, {})).resolves.toEqual({
+      sessions: [],
+      meta: {},
+      changedIds: undefined,
+    });
   });
 
   it("persists incremental changes outside the startup time window", async () => {

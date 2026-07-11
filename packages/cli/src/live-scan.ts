@@ -857,8 +857,14 @@ export class LiveScanStore {
         finish(() => reject(error));
       });
       worker.once("exit", (code) => {
-        if (!settled && code !== 0) {
-          finish(() => reject(new Error(`Scan refresh worker exited with code ${code}`)));
+        if (!settled) {
+          appLogger.warn("scan.refresh_worker.exit_before_done", {
+            agent: agent.name,
+            code,
+          });
+          finish(() =>
+            reject(new Error(`Scan refresh worker exited before completing (code ${code})`)),
+          );
         }
       });
     });
