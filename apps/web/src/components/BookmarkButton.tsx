@@ -15,8 +15,8 @@ export function BookmarkButton({ active, onToggle, className = "" }: BookmarkBut
         event.stopPropagation();
         onToggle();
       }}
-      aria-label={active ? "取消收藏会话" : "收藏会话"}
-      title={active ? "取消收藏" : "收藏"}
+      aria-label={active ? "Remove bookmark" : "Add bookmark"}
+      title={active ? "Remove bookmark" : "Add bookmark"}
       className={`inline-flex size-6 shrink-0 items-center justify-center rounded-sm border transition-colors ${className} ${
         active
           ? "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-text)]"

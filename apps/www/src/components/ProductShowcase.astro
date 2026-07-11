@@ -29,7 +29,7 @@ const scenes = copy[locale].scenes;
     <div class="mt-14 grid gap-6 lg:grid-cols-2">
       {
         scenes.map((scene, index) => (
-          <article class="group relative overflow-hidden rounded-md border border-[var(--console-border)] bg-white text-left shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
+          <article class="product-showcase-card group relative overflow-hidden rounded-md border border-[var(--console-border)] bg-white text-left shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
             <div class="border-b border-[var(--console-border)] bg-white px-6 py-5">
               <p class="console-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--console-muted)]">
                 {scene.title}
@@ -44,6 +44,8 @@ const scenes = copy[locale].scenes;
                 <img
                   src={scene.image}
                   alt={scene.description}
+                  width="1586"
+                  height="992"
                   class="aspect-[1586/992] h-auto w-full object-cover object-top"
                   loading="lazy"
                 />
@@ -53,7 +55,7 @@ const scenes = copy[locale].scenes;
             <button
               type="button"
               data-scene-open={String(index)}
-              class="absolute right-6 bottom-6 inline-flex items-center gap-2 rounded-sm border border-white/70 bg-white/92 px-3 py-2 text-xs font-medium text-[var(--console-text)] opacity-0 shadow-lg transition-all duration-200 group-hover:opacity-100 group-focus-within:opacity-100 hover:scale-[1.02]"
+              class="product-showcase-expand product-showcase-pressable absolute right-6 bottom-6 inline-flex items-center gap-2 rounded-sm border border-white/70 bg-white/92 px-3 py-2 text-xs font-medium text-[var(--console-text)] shadow-lg"
               aria-label={`${t.expand} ${scene.title}`}
             >
               <Icon name="expand" class="size-3.5" />
@@ -89,7 +91,7 @@ const scenes = copy[locale].scenes;
             <button
               type="button"
               data-scene-close
-              class="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--console-text)] transition-colors hover:bg-white"
+              class="product-showcase-pressable rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--console-text)] hover:bg-white"
             >
               {t.close}
             </button>
@@ -99,7 +101,7 @@ const scenes = copy[locale].scenes;
             <button
               type="button"
               data-scene-prev
-              class="inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-white px-3 py-2 text-xs font-medium text-[var(--console-text)] transition-colors hover:bg-[var(--console-surface-muted)]"
+              class="product-showcase-pressable inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-white px-3 py-2 text-xs font-medium text-[var(--console-text)] hover:bg-[var(--console-surface-muted)]"
             >
               <Icon name="chevron-left" class="size-4" />
               {t.previous}
@@ -110,7 +112,7 @@ const scenes = copy[locale].scenes;
             <button
               type="button"
               data-scene-next
-              class="inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-white px-3 py-2 text-xs font-medium text-[var(--console-text)] transition-colors hover:bg-[var(--console-surface-muted)]"
+              class="product-showcase-pressable inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-white px-3 py-2 text-xs font-medium text-[var(--console-text)] hover:bg-[var(--console-surface-muted)]"
             >
               {t.next}
               <Icon name="chevron-right" class="size-4" />
@@ -122,6 +124,8 @@ const scenes = copy[locale].scenes;
               <img
                 src={scene.image}
                 alt={scene.title}
+                width="1586"
+                height="992"
                 class="h-auto w-full object-cover object-top"
               />
             </div>
