@@ -23,9 +23,12 @@ import {
   type SessionHeadChange,
   type SessionHead,
 } from "@codesesh/core";
-import type { SearchIndexWorkerJob, SearchIndexWorkerMessage } from "./search-index-worker.js";
+import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 import type { ScanRefreshWorkerMessage } from "./scan-refresh-worker.js";
-import { PendingSearchIndexJobs, type SearchIndexJobBatch } from "./pending-search-index-jobs.js";
+import { SearchIndexJobRunner } from "./search-index-job-runner.js";
+import { ScanStatusModel } from "./scan-status-model.js";
+import { BackfillCoordinator } from "./backfill-coordinator.js";
+import { RefreshCoordinator, type AgentOperationResult } from "./refresh-coordinator.js";
 import { SessionWatcher, resolveAgentWatchTargets } from "./session-watcher.js";
 
 export { resolveAgentWatchTargets };
@@ -52,34 +55,8 @@ interface LiveScanStoreOptions {
   deferInitialRefresh?: boolean;
 }
 
-interface AgentRefreshState {
-  timer: NodeJS.Timeout | null;
-  /** Absolute time the pending timer is due to fire; lets scheduleRefresh throttle instead of debounce. */
-  timerDeadline: number;
-  inFlight: boolean;
-  pendingRerun: boolean;
-  lastRefreshAt: number;
-  lastRefreshDurationMs: number;
-  pendingPathCount: number;
-}
-
-type AgentOperationKind = "backfill" | "refresh";
-type AgentOperationResult = "committed" | "failed" | "skipped" | "unchanged";
-
-interface AgentOperationLifecycle {
-  agentName: string;
-  kind: AgentOperationKind;
-  generation: number;
-  startedAt: number;
-}
-
 const REFRESH_DEBOUNCE_MS = 200;
 const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
-const PENDING_REFRESH_DELAY_MS = 100;
-/** Cap on the adaptive backoff so a single expensive scan can't stall refreshes indefinitely. */
-const MAX_ADAPTIVE_REFRESH_DELAY_MS = 30_000;
-/** Space refreshes out to roughly 4x their own cost, so a slow agent doesn't dominate the event loop. */
-const ADAPTIVE_REFRESH_DELAY_MULTIPLIER = 4;
 const NEW_SESSION_EVENT_WINDOW_MS = 250;
 const SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD = 100;
 /** Old files rarely change, but it's not impossible — reconcile full history at most this often. */
@@ -165,35 +142,17 @@ export class LiveScanStore {
   private sessions: SessionHead[] = [];
   private listeners = new Set<StoreListener>();
   private scanStatusListeners = new Set<ScanStatusListener>();
-  private scanStatus: Omit<ScanStatusEvent, "type"> = {
-    active: false,
-    phase: "idle",
-    pendingAgents: [],
-    scanningAgents: [],
-    completedAgents: [],
-    agentStatuses: {},
-    totalAgents: 0,
-    updatedAt: Date.now(),
-    backfill: { active: false, pendingAgents: [], completedAgents: [] },
-  };
-  private backfillQueue: string[] = [];
-  private backfillRunning = false;
-  private refreshStates = new Map<string, AgentRefreshState>();
-  private agentOperationGenerations = new Map<string, number>();
-  private agentOperationTails = new Map<string, Promise<void>>();
+  private scanStatus = new ScanStatusModel();
+  private backfills = new BackfillCoordinator();
+  private refreshes = new RefreshCoordinator();
   private watcher: SessionWatcher | null = null;
   private pendingEvent: SessionsUpdatedEvent | null = null;
   private pendingEventTimer: NodeJS.Timeout | null = null;
   private backgroundRefreshTimer: NodeJS.Timeout | null = null;
   private scanRefreshWorkers = new Set<Worker>();
-  private searchIndexWorker: Worker | null = null;
-  private activeSearchIndexBatch: SearchIndexJobBatch | null = null;
-  private nextSearchIndexBatchId = 1;
-  private pendingSearchIndexJobs = new PendingSearchIndexJobs();
+  private searchIndexJobs = new SearchIndexJobRunner();
   private shutdownPromise: Promise<void> | null = null;
   private shuttingDown = false;
-  /** Set once a search-index worker in this process has completed the FTS integrity check. */
-  private ftsIntegrityChecked = false;
 
   constructor(
     private readonly watchEnabled = true,
@@ -201,23 +160,6 @@ export class LiveScanStore {
     private readonly startupScanOptions: Pick<ScanOptions, "from" | "to"> = {},
     private readonly storeOptions: LiveScanStoreOptions = {},
   ) {}
-
-  private getRefreshState(agentName: string): AgentRefreshState {
-    let state = this.refreshStates.get(agentName);
-    if (!state) {
-      state = {
-        timer: null,
-        timerDeadline: 0,
-        inFlight: false,
-        pendingRerun: false,
-        lastRefreshAt: 0,
-        lastRefreshDurationMs: 0,
-        pendingPathCount: 0,
-      };
-      this.refreshStates.set(agentName, state);
-    }
-    return state;
-  }
 
   async initialize(): Promise<void> {
     const startedAt = performance.now();
@@ -243,7 +185,7 @@ export class LiveScanStore {
     this.applyScanResult(initialResult);
     const indexStartedAt = performance.now();
     if (!deferInitialRefresh) {
-      await this.enqueueSearchIndexJobs(
+      await this.searchIndexJobs.enqueue(
         "scan.initial",
         this.buildFullSearchIndexJobs("scan.initial"),
       );
@@ -277,7 +219,7 @@ export class LiveScanStore {
       this.watcher = new SessionWatcher();
       this.watcher.onAgentsChanged((agentNames) => {
         for (const agentName of agentNames) {
-          this.getRefreshState(agentName).pendingPathCount += 1;
+          this.refreshes.recordChangedPaths(agentName);
           const delayMs =
             (this.byAgent[agentName]?.length ?? 0) === 0
               ? EMPTY_AGENT_REFRESH_DEBOUNCE_MS
@@ -320,24 +262,7 @@ export class LiveScanStore {
   }
 
   getScanStatus(): ScanStatusEvent {
-    return {
-      type: "scan-status",
-      ...this.scanStatus,
-      pendingAgents: [...this.scanStatus.pendingAgents],
-      scanningAgents: [...this.scanStatus.scanningAgents],
-      completedAgents: [...this.scanStatus.completedAgents],
-      agentStatuses: Object.fromEntries(
-        Object.entries(this.scanStatus.agentStatuses).map(([agentName, status]) => [
-          agentName,
-          { ...status },
-        ]),
-      ),
-      backfill: {
-        ...this.scanStatus.backfill,
-        pendingAgents: [...this.scanStatus.backfill.pendingAgents],
-        completedAgents: [...this.scanStatus.backfill.completedAgents],
-      },
-    };
+    return this.scanStatus.snapshot();
   }
 
   subscribe(listener: StoreListener): () => void {
@@ -362,26 +287,19 @@ export class LiveScanStore {
   private async performShutdown(): Promise<void> {
     this.shuttingDown = true;
     const activeOperations = {
-      agent_operations: this.agentOperationTails.size,
-      refreshes: [...this.refreshStates.values()].filter((state) => state.inFlight).length,
-      backfill_running: this.backfillRunning || undefined,
+      agent_operations: this.refreshes.activeOperationCount,
+      refreshes: this.refreshes.activeRefreshCount,
+      backfill_running: this.backfills.isRunning || undefined,
       scan_workers: this.scanRefreshWorkers.size,
     };
     if (activeOperations.agent_operations > 0 || activeOperations.scan_workers > 0) {
       appLogger.warn("scan.shutdown.active_operations", activeOperations);
     }
+    const searchIndexSnapshot = this.searchIndexJobs.snapshot();
     appLogger.info("search_index.shutdown.started", {
-      active_batch_id: this.activeSearchIndexBatch?.id,
-      pending_batches: this.pendingSearchIndexJobs.batchCount,
+      active_batch_id: searchIndexSnapshot.activeBatchId,
+      pending_batches: searchIndexSnapshot.pendingBatches,
     });
-    for (const state of this.refreshStates.values()) {
-      if (state.timer) {
-        clearTimeout(state.timer);
-        state.timer = null;
-        state.timerDeadline = 0;
-      }
-    }
-
     if (this.pendingEventTimer) {
       clearTimeout(this.pendingEventTimer);
       this.pendingEventTimer = null;
@@ -390,27 +308,21 @@ export class LiveScanStore {
       clearTimeout(this.backgroundRefreshTimer);
       this.backgroundRefreshTimer = null;
     }
-    this.backfillQueue.length = 0;
-    const shutdownError = new Error("Live scan store shut down");
-    const worker = this.searchIndexWorker;
-    const activeBatch = this.activeSearchIndexBatch;
-    this.searchIndexWorker = null;
-    this.activeSearchIndexBatch = null;
-    if (activeBatch) this.settleSearchIndexBatch(activeBatch, shutdownError);
-    this.pendingSearchIndexJobs.rejectAll(shutdownError);
-    if (worker) await worker.terminate();
+    this.backfills.clear();
+    await this.searchIndexJobs.shutdown();
     const scanWorkers = [...this.scanRefreshWorkers];
     await Promise.allSettled(scanWorkers.map((scanWorker) => scanWorker.terminate()));
-    await Promise.allSettled(this.agentOperationTails.values());
+    await this.refreshes.shutdown();
     this.pendingEvent = null;
 
     if (this.watcher) {
       await this.watcher.dispose();
       this.watcher = null;
     }
+    const stoppedSearchIndexSnapshot = this.searchIndexJobs.snapshot();
     appLogger.info("search_index.shutdown.completed", {
-      active_batch_id: activeBatch?.id,
-      pending_batches: this.pendingSearchIndexJobs.batchCount,
+      active_batch_id: searchIndexSnapshot.activeBatchId,
+      pending_batches: stoppedSearchIndexSnapshot.pendingBatches,
     });
   }
 
@@ -430,238 +342,43 @@ export class LiveScanStore {
     }
   }
 
-  private emitScanStatus(): void {
-    const event = this.getScanStatus();
-    for (const listener of this.scanStatusListeners) {
-      listener(event);
-    }
-  }
-
-  private updateScanStatus(next: Omit<ScanStatusEvent, "type">): void {
-    if (this.shuttingDown) return;
-    this.scanStatus = next;
-    this.emitScanStatus();
-  }
-
   private startScanBatch(agentNames: string[], phase: ScanStatusEvent["phase"]): void {
-    const uniqueAgentNames = [...new Set(agentNames)];
-    const now = Date.now();
-    const agentStatuses = Object.fromEntries(
-      uniqueAgentNames.map((agentName) => [
-        agentName,
-        {
-          agentName,
-          status: "pending" as const,
-          processed: 0,
-          sessions: this.byAgent[agentName]?.length ?? 0,
-          updatedAt: now,
-        },
-      ]),
+    const sessionCounts = Object.fromEntries(
+      agentNames.map((agentName) => [agentName, this.byAgent[agentName]?.length ?? 0]),
     );
-    this.updateScanStatus({
-      ...this.scanStatus,
-      active: uniqueAgentNames.length > 0,
-      phase: uniqueAgentNames.length > 0 ? phase : "idle",
-      pendingAgents: uniqueAgentNames,
-      scanningAgents: [],
-      completedAgents: [],
-      agentStatuses,
-      totalAgents: uniqueAgentNames.length,
-      startedAt: uniqueAgentNames.length > 0 ? now : undefined,
-      updatedAt: now,
-      completedAt: uniqueAgentNames.length > 0 ? undefined : now,
-    });
+    this.publishScanStatus(this.scanStatus.startBatch(agentNames, phase, sessionCounts));
   }
 
   private setScanPhase(phase: ScanStatusEvent["phase"]): void {
-    if (!this.scanStatus.active) return;
-    this.updateScanStatus({
-      ...this.scanStatus,
-      phase,
-      updatedAt: Date.now(),
-    });
+    this.publishScanStatus(this.scanStatus.setPhase(phase));
   }
 
   private beginAgentScan(agentName: string): void {
-    if (!this.scanStatus.active) {
-      this.startScanBatch([agentName], "scanning");
-    }
-
-    const pendingAgents = this.scanStatus.pendingAgents.filter((agent) => agent !== agentName);
-    const scanningAgents = [...new Set([...this.scanStatus.scanningAgents, agentName])];
-    const completedAgents = this.scanStatus.completedAgents.filter((agent) => agent !== agentName);
-    const existingStatus = this.scanStatus.agentStatuses[agentName];
-    const agentStatuses = {
-      ...this.scanStatus.agentStatuses,
-      [agentName]: {
-        agentName,
-        status: "scanning" as const,
-        total: existingStatus?.total,
-        processed: existingStatus?.processed ?? 0,
-        sessions: existingStatus?.sessions ?? this.byAgent[agentName]?.length ?? 0,
-        startedAt: existingStatus?.startedAt ?? Date.now(),
-        updatedAt: Date.now(),
-      },
-    };
-    this.updateScanStatus({
-      ...this.scanStatus,
-      active: true,
-      phase: this.scanStatus.phase === "initializing" ? "initializing" : "scanning",
-      pendingAgents,
-      scanningAgents,
-      completedAgents,
-      agentStatuses,
-      totalAgents: Math.max(
-        this.scanStatus.totalAgents,
-        pendingAgents.length + scanningAgents.length,
-      ),
-      updatedAt: Date.now(),
-      completedAt: undefined,
-    });
+    if (!this.scanStatus.snapshot().active) this.startScanBatch([agentName], "scanning");
+    this.publishScanStatus(
+      this.scanStatus.beginAgent(agentName, this.byAgent[agentName]?.length ?? 0),
+    );
   }
 
   private updateAgentScanProgress(agentName: string, progress: AgentScanProgress): void {
-    const status = this.scanStatus.agentStatuses[agentName];
-    if (!status || status.status !== "scanning") return;
-    this.updateScanStatus({
-      ...this.scanStatus,
-      agentStatuses: {
-        ...this.scanStatus.agentStatuses,
-        [agentName]: {
-          ...status,
-          total: progress.total ?? status.total,
-          processed: progress.processed ?? status.processed,
-          sessions: progress.sessions ?? status.sessions,
-          updatedAt: Date.now(),
-        },
-      },
-      updatedAt: Date.now(),
-    });
+    this.publishScanStatus(this.scanStatus.updateAgent(agentName, progress));
   }
 
   private finishAgentScan(agentName: string): void {
-    const pendingAgents = this.scanStatus.pendingAgents.filter((agent) => agent !== agentName);
-    const scanningAgents = this.scanStatus.scanningAgents.filter((agent) => agent !== agentName);
-    const completedAgents = [...new Set([...this.scanStatus.completedAgents, agentName])];
-    const active = pendingAgents.length > 0 || scanningAgents.length > 0;
-    const now = Date.now();
-    const previousStatus = this.scanStatus.agentStatuses[agentName];
-    const sessions = this.byAgent[agentName]?.length ?? previousStatus?.sessions ?? 0;
-    const total = previousStatus?.total ?? previousStatus?.processed;
-
-    this.updateScanStatus({
-      ...this.scanStatus,
-      active,
-      phase: active ? "scanning" : "idle",
-      pendingAgents,
-      scanningAgents,
-      completedAgents,
-      agentStatuses: {
-        ...this.scanStatus.agentStatuses,
-        [agentName]: {
-          agentName,
-          status: "complete",
-          total,
-          processed: total,
-          sessions,
-          startedAt: previousStatus?.startedAt,
-          updatedAt: now,
-          completedAt: now,
-        },
-      },
-      updatedAt: now,
-      completedAt: active ? undefined : now,
-    });
+    this.publishScanStatus(this.scanStatus.finishAgent(agentName, this.byAgent[agentName]?.length));
   }
 
   private finishScanBatch(): void {
-    const now = Date.now();
-    this.updateScanStatus({
-      ...this.scanStatus,
-      active: false,
-      phase: "idle",
-      pendingAgents: [],
-      scanningAgents: [],
-      agentStatuses: Object.fromEntries(
-        Object.entries(this.scanStatus.agentStatuses).map(([agentName, status]) => [
-          agentName,
-          { ...status, status: "complete", completedAt: status.completedAt ?? now, updatedAt: now },
-        ]),
-      ),
-      updatedAt: now,
-      completedAt: now,
-    });
+    this.publishScanStatus(this.scanStatus.finishBatch());
   }
 
   private updateBackfillStatus(patch: Partial<BackfillStatus>): void {
-    this.updateScanStatus({
-      ...this.scanStatus,
-      backfill: { ...this.scanStatus.backfill, ...patch },
-      updatedAt: Date.now(),
-    });
+    this.publishScanStatus(this.scanStatus.updateBackfill(patch));
   }
 
-  private beginAgentOperation(
-    agentName: string,
-    kind: AgentOperationKind,
-  ): AgentOperationLifecycle {
-    const generation = (this.agentOperationGenerations.get(agentName) ?? 0) + 1;
-    const startedAt = Date.now();
-    this.agentOperationGenerations.set(agentName, generation);
-    appLogger.info("scan.agent_operation.started", {
-      agent: agentName,
-      operation: kind,
-      generation,
-      started_at: startedAt,
-    });
-    return { agentName, kind, generation, startedAt };
-  }
-
-  private completeAgentOperation(
-    lifecycle: AgentOperationLifecycle,
-    result: AgentOperationResult,
-  ): void {
-    const completedAt = Date.now();
-    appLogger.info("scan.agent_operation.completed", {
-      agent: lifecycle.agentName,
-      operation: lifecycle.kind,
-      generation: lifecycle.generation,
-      started_at: lifecycle.startedAt,
-      completed_at: completedAt,
-      duration_ms: completedAt - lifecycle.startedAt,
-      result,
-    });
-  }
-
-  private enqueueAgentOperation(
-    agentName: string,
-    kind: AgentOperationKind,
-    operation: () => Promise<AgentOperationResult>,
-  ): Promise<AgentOperationResult> {
-    const previous = this.agentOperationTails.get(agentName) ?? Promise.resolve();
-    const run = previous.then(async () => {
-      if (this.shuttingDown) return "skipped";
-      const lifecycle = this.beginAgentOperation(agentName, kind);
-      try {
-        const result = await operation();
-        this.completeAgentOperation(lifecycle, result);
-        return result;
-      } catch (error) {
-        this.completeAgentOperation(lifecycle, "failed");
-        throw error;
-      }
-    });
-    const tail = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    this.agentOperationTails.set(agentName, tail);
-    void tail.finally(() => {
-      if (this.agentOperationTails.get(agentName) === tail) {
-        this.agentOperationTails.delete(agentName);
-      }
-    });
-    return run;
+  private publishScanStatus(event: ScanStatusEvent | null): void {
+    if (!event || this.shuttingDown) return;
+    for (const listener of this.scanStatusListeners) listener(event);
   }
 
   /**
@@ -680,40 +397,28 @@ export class LiveScanStore {
 
   private enqueueBackfill(agentName: string): void {
     if (this.shuttingDown) return;
-    if (
-      this.backfillQueue.includes(agentName) ||
-      this.scanStatus.backfill.currentAgent === agentName
-    ) {
-      return;
-    }
-    this.backfillQueue.push(agentName);
-    this.updateBackfillStatus({ active: true, pendingAgents: [...this.backfillQueue] });
+    const status = this.backfills.enqueue(agentName);
+    if (!status) return;
+    this.updateBackfillStatus(status);
     this.pumpBackfillQueue();
   }
 
   private pumpBackfillQueue(): void {
-    if (this.shuttingDown || this.backfillRunning) return;
-    const agentName = this.backfillQueue.shift();
-    if (!agentName) return;
+    if (this.shuttingDown) return;
+    const work = this.backfills.take();
+    if (!work) return;
+    this.updateBackfillStatus(work.status);
 
-    this.backfillRunning = true;
-    this.updateBackfillStatus({ currentAgent: agentName, pendingAgents: [...this.backfillQueue] });
-
-    void this.runBackfill(agentName).finally(() => {
-      this.backfillRunning = false;
+    void this.runBackfill(work.agentName).finally(() => {
       if (this.shuttingDown) return;
-      this.updateBackfillStatus({
-        currentAgent: undefined,
-        completedAgents: [...new Set([...this.scanStatus.backfill.completedAgents, agentName])],
-        active: this.backfillQueue.length > 0,
-      });
+      this.updateBackfillStatus(this.backfills.complete(work.agentName));
       this.pumpBackfillQueue();
     });
   }
 
   /** Unbounded per-source sync to reconcile the full session history, not just the display window. */
   private async runBackfill(agentName: string): Promise<void> {
-    await this.enqueueAgentOperation(agentName, "backfill", () => this.performBackfill(agentName));
+    await this.refreshes.serialize(agentName, "backfill", () => this.performBackfill(agentName));
   }
 
   private async performBackfill(agentName: string): Promise<AgentOperationResult> {
@@ -751,7 +456,7 @@ export class LiveScanStore {
       this.byAgent[agentName] = sortSessions(filtered);
       this.rebuildSessions();
 
-      await this.enqueueSearchIndexJobs("scan.backfill", [
+      await this.searchIndexJobs.enqueue("scan.backfill", [
         {
           kind: "full",
           context: "scan.backfill",
@@ -799,14 +504,6 @@ export class LiveScanStore {
 
   private rebuildSessions(): void {
     this.sessions = sortSessions(Object.values(this.byAgent).flat());
-  }
-
-  private getSearchIndexWorkerUrl(): URL | null {
-    const workerUrl = new URL("./search-index-worker.js", import.meta.url);
-    if (workerUrl.protocol === "file:" && !existsSync(fileURLToPath(workerUrl))) {
-      return null;
-    }
-    return workerUrl;
   }
 
   private getSmartTagWorkerUrl(): URL | null {
@@ -914,120 +611,6 @@ export class LiveScanStore {
     });
   }
 
-  private enqueueSearchIndexJobs(context: string, jobs: SearchIndexWorkerJob[]): Promise<void> {
-    if (jobs.length === 0) return Promise.resolve();
-    if (this.shuttingDown) return Promise.reject(new Error("Live scan store shut down"));
-
-    const batchId = this.nextSearchIndexBatchId++;
-    const completion = this.pendingSearchIndexJobs.enqueue(batchId, context, jobs);
-    if (this.searchIndexWorker) {
-      appLogger.debug("search_index.worker_queued", {
-        batch_id: batchId,
-        context,
-        jobs: jobs.length,
-        pending_batches: this.pendingSearchIndexJobs.batchCount,
-        pending_jobs: this.pendingSearchIndexJobs.jobCount,
-        pending_changes: this.pendingSearchIndexJobs.changeCount,
-      });
-    } else {
-      this.startNextSearchIndexJobBatch();
-    }
-    return completion;
-  }
-
-  private settleSearchIndexBatch(batch: SearchIndexJobBatch, error?: Error): void {
-    if (!this.pendingSearchIndexJobs.settle(batch, error)) return;
-    appLogger.info("search_index.worker_settled", {
-      batch_id: batch.id,
-      context: batch.context,
-      result: error ? "rejected" : "resolved",
-    });
-  }
-
-  private startNextSearchIndexJobBatch(): void {
-    if (this.shuttingDown || this.searchIndexWorker) return;
-    const pendingBatch = this.pendingSearchIndexJobs.take();
-    if (!pendingBatch) return;
-    appLogger.info("search_index.worker_dequeued", {
-      batch_id: pendingBatch.id,
-      context: pendingBatch.context,
-      pending_batches: this.pendingSearchIndexJobs.batchCount,
-    });
-    this.startSearchIndexJobBatch(pendingBatch);
-  }
-
-  private startSearchIndexJobBatch(batch: SearchIndexJobBatch): void {
-    if (this.shuttingDown) {
-      this.settleSearchIndexBatch(batch, new Error("Live scan store shut down"));
-      return;
-    }
-    const workerUrl = this.getSearchIndexWorkerUrl();
-    if (!workerUrl) {
-      appLogger.warn("search_index.worker_missing", { context: batch.context });
-      this.settleSearchIndexBatch(batch);
-      return;
-    }
-    appLogger.info("search_index.worker_started", {
-      batch_id: batch.id,
-      context: batch.context,
-      jobs: batch.jobs.length,
-    });
-
-    const worker = new Worker(workerUrl, {
-      workerData: {
-        context: batch.context,
-        jobs: batch.jobs,
-        agentNames: [],
-        sessionsByAgent: {},
-        metaByAgent: {},
-        skipFtsIntegrityCheck: this.ftsIntegrityChecked,
-      },
-    });
-    worker.unref();
-    this.searchIndexWorker = worker;
-    this.activeSearchIndexBatch = batch;
-
-    worker.on("message", (message: SearchIndexWorkerMessage) => {
-      if (message.type === "sync-result") {
-        logSearchIndexSync(message.context, message.result);
-      } else if (message.type === "done") {
-        appLogger.info(`${message.context}.done`, {
-          duration_ms: Math.round(message.durationMs),
-          sessions: message.sessions,
-        });
-        this.ftsIntegrityChecked = true;
-        this.settleSearchIndexBatch(batch);
-      }
-    });
-    worker.on("error", (error) => {
-      appLogger.error("search_index.worker_error", { context: batch.context, error });
-      this.settleSearchIndexBatch(batch, error);
-    });
-    worker.on("exit", (code) => {
-      appLogger.info("search_index.worker_exited", {
-        batch_id: batch.id,
-        context: batch.context,
-        code,
-        shutting_down: this.shuttingDown || undefined,
-      });
-      if (this.searchIndexWorker === worker) this.searchIndexWorker = null;
-      if (this.activeSearchIndexBatch === batch) this.activeSearchIndexBatch = null;
-      if (code !== 0) {
-        appLogger.warn("search_index.worker_exit", { context: batch.context, code });
-        this.settleSearchIndexBatch(
-          batch,
-          new Error(`Search index worker exited with code ${code}`),
-        );
-      } else {
-        this.settleSearchIndexBatch(
-          batch,
-          new Error("Search index worker exited before completing its batch"),
-        );
-      }
-      this.startNextSearchIndexJobBatch();
-    });
-  }
-
   private applyScanResult(result: ScanResult): void {
     const knownAgents = createRegisteredAgents();
     const agentMap = new Map<string, BaseAgent>();
@@ -1052,8 +635,10 @@ export class LiveScanStore {
     this.byAgent = {};
     for (const agent of this.agents) {
       this.byAgent[agent.name] = sortSessions(result.byAgent[agent.name] ?? []);
-      this.getRefreshState(agent.name).lastRefreshAt =
-        result.cacheTimestamps?.[agent.name] ?? Date.now();
+      this.refreshes.setLastRefreshAt(
+        agent.name,
+        result.cacheTimestamps?.[agent.name] ?? Date.now(),
+      );
     }
 
     this.rebuildSessions();
@@ -1075,7 +660,7 @@ export class LiveScanStore {
     const context = "scan.initial.background";
 
     try {
-      await this.enqueueSearchIndexJobs(context, this.buildFullSearchIndexJobs(context));
+      await this.searchIndexJobs.enqueue(context, this.buildFullSearchIndexJobs(context));
       appLogger.info(`${context}.complete`, {
         duration_ms: Math.round(performance.now() - startedAt),
         sessions: this.sessions.length,
@@ -1096,68 +681,27 @@ export class LiveScanStore {
    * backoff elapses — push the deadline out forever and starve the refresh.
    */
   private scheduleRefresh(agentName: string, delayMs = REFRESH_DEBOUNCE_MS): void {
-    if (this.shuttingDown) return;
-    const state = this.getRefreshState(agentName);
-    const adaptiveDelayMs = Math.min(
-      state.lastRefreshDurationMs * ADAPTIVE_REFRESH_DELAY_MULTIPLIER,
-      MAX_ADAPTIVE_REFRESH_DELAY_MS,
-    );
-    const effectiveDelayMs = Math.max(delayMs, adaptiveDelayMs);
-    const deadline = Date.now() + effectiveDelayMs;
-
-    if (state.timer !== null) {
-      if (deadline >= state.timerDeadline) {
-        return;
-      }
-      clearTimeout(state.timer);
-    }
-
-    appLogger.debug("scan.refresh.schedule", { agent: agentName, delay_ms: effectiveDelayMs });
-    state.timerDeadline = deadline;
-    state.timer = setTimeout(() => {
-      state.timer = null;
-      void this.refreshAgent(agentName);
-    }, effectiveDelayMs);
+    this.refreshes.schedule(agentName, delayMs, () => this.refreshAgent(agentName));
   }
 
   private async refreshAgent(agentName: string): Promise<void> {
-    const state = this.getRefreshState(agentName);
-    if (state.inFlight) {
-      appLogger.debug("scan.refresh.pending", { agent: agentName });
-      state.pendingRerun = true;
-      return;
-    }
-
-    state.inFlight = true;
-
-    try {
-      await this.enqueueAgentOperation(agentName, "refresh", async () => {
-        this.beginAgentScan(agentName);
-        try {
-          return await this.runRefresh(agentName);
-        } catch (error) {
-          appLogger.error("scan.refresh.error", { agent: agentName, error });
-          console.error(`[${agentName}] Session refresh failed:`, error);
-          return "failed";
-        } finally {
-          this.finishAgentScan(agentName);
-        }
-      });
-    } finally {
-      state.inFlight = false;
-
-      if (state.pendingRerun && !this.shuttingDown) {
-        state.pendingRerun = false;
-        this.scheduleRefresh(agentName, PENDING_REFRESH_DELAY_MS);
+    await this.refreshes.runRefresh(agentName, async () => {
+      this.beginAgentScan(agentName);
+      try {
+        return await this.runRefresh(agentName);
+      } catch (error) {
+        appLogger.error("scan.refresh.error", { agent: agentName, error });
+        console.error(`[${agentName}] Session refresh failed:`, error);
+        return "failed";
+      } finally {
+        this.finishAgentScan(agentName);
       }
-    }
+    });
   }
 
   private async runRefresh(agentName: string): Promise<Exclude<AgentOperationResult, "failed">> {
     const startedAt = performance.now();
-    const state = this.getRefreshState(agentName);
-    const pendingPathCount = state.pendingPathCount;
-    state.pendingPathCount = 0;
+    const pendingPathCount = this.refreshes.takePendingPathCount(agentName);
     const agent = this.agents.find((item) => item.name === agentName);
     if (!agent) {
       appLogger.warn("scan.refresh.missing_agent", { agent: agentName });
@@ -1167,7 +711,7 @@ export class LiveScanStore {
     const previousSessions = this.byAgent[agentName] ?? [];
     const cached = loadCachedSessions(agentName);
     const refreshBaseline = cached?.sessions ?? previousSessions;
-    const cacheTimestamp = cached?.timestamp ?? state.lastRefreshAt;
+    const cacheTimestamp = cached?.timestamp ?? this.refreshes.lastRefreshAt(agentName);
     if (cached) {
       restoreAgentCacheMeta(agent, cached.meta);
     }
@@ -1193,7 +737,7 @@ export class LiveScanStore {
 
     if (!isAvailable) {
       nextSessions = [];
-      state.lastRefreshAt = Date.now();
+      this.refreshes.setLastRefreshAt(agentName, Date.now());
     } else if (!isInitialized) {
       // First-ever scan is bounded to the display window so startup stays fast;
       // needsBackfill() picks up the rest of history in the background.
@@ -1210,7 +754,7 @@ export class LiveScanStore {
       fullScanSessions = attachMissingProjectIdentities(nextSessions);
       nextSessions = fullScanSessions;
       scanDuration = performance.now() - scanStartedAt;
-      state.lastRefreshAt = Date.now();
+      this.refreshes.setLastRefreshAt(agentName, Date.now());
     } else if (cached && agent instanceof FileSystemSessionSource) {
       // File-system agents refresh via precise per-source fingerprint sync,
       // bounded to the display window; the background backfill pass
@@ -1238,7 +782,7 @@ export class LiveScanStore {
         preciseChangedIds,
       );
       scanDuration = performance.now() - scanStartedAt;
-      state.lastRefreshAt = Date.now();
+      this.refreshes.setLastRefreshAt(agentName, Date.now());
       if (preciseChangedIds.length === 0) {
         appLogger.debug("scan.refresh.unchanged", {
           agent: agentName,
@@ -1252,7 +796,7 @@ export class LiveScanStore {
       );
       checkDuration = performance.now() - checkStartedAt;
 
-      state.lastRefreshAt = checkResult.timestamp;
+      this.refreshes.setLastRefreshAt(agentName, checkResult.timestamp);
       if (!checkResult.hasChanges) {
         appLogger.debug("scan.refresh.unchanged", {
           agent: agentName,
@@ -1284,7 +828,7 @@ export class LiveScanStore {
       fullScanSessions = attachMissingProjectIdentities(nextSessions);
       nextSessions = fullScanSessions;
       scanDuration = performance.now() - scanStartedAt;
-      state.lastRefreshAt = Date.now();
+      this.refreshes.setLastRefreshAt(agentName, Date.now());
     }
 
     nextSessions = attachMissingProjectIdentities(nextSessions);
@@ -1334,7 +878,7 @@ export class LiveScanStore {
         : null;
     if (persistentJob) {
       persistentJobKind = persistentJob.kind;
-      const persist = this.enqueueSearchIndexJobs("scan.refresh", [persistentJob]);
+      const persist = this.searchIndexJobs.enqueue("scan.refresh", [persistentJob]);
       if (!isInitialized && persistentJob.kind === "full") {
         await persist;
       } else {
@@ -1358,7 +902,7 @@ export class LiveScanStore {
       this.emit(event);
     }
     const totalDurationMs = performance.now() - startedAt;
-    state.lastRefreshDurationMs = totalDurationMs;
+    this.refreshes.setLastRefreshDuration(agentName, totalDurationMs);
     appLogger.info("scan.refresh.done", {
       agent: agentName,
       duration_ms: Math.round(totalDurationMs),

@@ -866,10 +866,10 @@ describe("LiveScanStore", () => {
     const backfill = (store as any).runBackfill("codex");
     await vi.waitFor(() => expect(scanAgentInWorker).toHaveBeenCalledTimes(1));
 
-    (store as any).getRefreshState("codex").pendingPathCount += 1;
+    (store as any).refreshes.recordChangedPaths("codex");
     (store as any).scheduleRefresh("codex", 0);
     await vi.advanceTimersByTimeAsync(0);
-    (store as any).getRefreshState("codex").pendingPathCount += 2;
+    (store as any).refreshes.recordChangedPaths("codex", 2);
     (store as any).scheduleRefresh("codex", 0);
     (store as any).scheduleRefresh("codex", 0);
     await vi.advanceTimersByTimeAsync(0);
@@ -1236,7 +1236,7 @@ describe("LiveScanStore", () => {
 
     const store = new LiveScanStore(false);
     await store.initialize();
-    (store as any).getRefreshState("codex").pendingPathCount = 101;
+    (store as any).refreshes.recordChangedPaths("codex", 101);
     await (store as any).runRefresh("codex");
 
     expect(workerThreads.workers.at(-1)?.workerData.jobs[0]).toEqual(
@@ -1619,7 +1619,7 @@ describe("LiveScanStore", () => {
 
     // Simulate a preceding scan that took 5s: the next refresh should be
     // delayed to ~4x that cost, well beyond the 200ms debounce floor.
-    (store as any).getRefreshState("codex").lastRefreshDurationMs = 5_000;
+    (store as any).refreshes.setLastRefreshDuration("codex", 5_000);
     (store as any).scheduleRefresh("codex");
 
     await vi.advanceTimersByTimeAsync(19_999);
@@ -1651,7 +1651,7 @@ describe("LiveScanStore", () => {
     const store = new LiveScanStore(false);
     await store.initialize();
 
-    (store as any).getRefreshState("codex").lastRefreshDurationMs = 5_000;
+    (store as any).refreshes.setLastRefreshDuration("codex", 5_000);
 
     // Writes every 3s never leave a 20s quiet gap. A plain debounce (reset on
     // every call) would push the deadline out forever; throttling on the
@@ -1819,8 +1819,8 @@ describe("LiveScanStore", () => {
       meta: {},
     };
 
-    const current = (store as any).enqueueSearchIndexJobs("scan.refresh", [job]);
-    const pending = (store as any).enqueueSearchIndexJobs("scan.refresh", [job]);
+    const current = (store as any).searchIndexJobs.enqueue("scan.refresh", [job]);
+    const pending = (store as any).searchIndexJobs.enqueue("scan.refresh", [job]);
     const outcomes = Promise.allSettled([current, pending]);
     expect(workerThreads.workers.filter((worker) => worker.workerData.jobs)).toHaveLength(1);
 
@@ -1831,8 +1831,9 @@ describe("LiveScanStore", () => {
       expect.objectContaining({ status: "rejected", reason: expect.any(Error) }),
       expect.objectContaining({ status: "rejected", reason: expect.any(Error) }),
     ]);
-    expect((store as any).pendingSearchIndexJobs.batchCount).toBe(0);
-    expect((store as any).searchIndexWorker).toBeNull();
+    expect((store as any).searchIndexJobs.snapshot()).toEqual(
+      expect.objectContaining({ activeBatchId: undefined, pendingBatches: 0 }),
+    );
   });
 
   it("coalesces pending search-index changes to the latest session state", async () => {
@@ -1842,7 +1843,7 @@ describe("LiveScanStore", () => {
     const store = new LiveScanStore(false, {}, {}, { deferInitialRefresh: true });
     await store.initialize();
     workerThreads.deferSearchIndexWorkers = true;
-    const active = (store as any).enqueueSearchIndexJobs("scan.refresh", [
+    const active = (store as any).searchIndexJobs.enqueue("scan.refresh", [
       {
         kind: "full",
         context: "scan.refresh",
@@ -1852,7 +1853,7 @@ describe("LiveScanStore", () => {
       },
     ]);
     const pending = [1, 2, 3].map((version) =>
-      (store as any).enqueueSearchIndexJobs("scan.refresh", [
+      (store as any).searchIndexJobs.enqueue("scan.refresh", [
         {
           kind: "changes",
           context: "scan.refresh",
@@ -1909,7 +1910,7 @@ describe("LiveScanStore", () => {
       sessions: [],
       meta: {},
     };
-    const batch = (store as any).enqueueSearchIndexJobs("scan.refresh", [job]);
+    const batch = (store as any).searchIndexJobs.enqueue("scan.refresh", [job]);
     const outcome = batch.catch((error: Error) => error);
     const worker = workerThreads.workers.at(-1)!;
 
@@ -1917,7 +1918,7 @@ describe("LiveScanStore", () => {
 
     expect(worker.terminate).toHaveBeenCalledTimes(1);
     expect(await outcome).toBeInstanceOf(Error);
-    await expect((store as any).enqueueSearchIndexJobs("scan.refresh", [job])).rejects.toThrow(
+    await expect((store as any).searchIndexJobs.enqueue("scan.refresh", [job])).rejects.toThrow(
       "Live scan store shut down",
     );
   });
@@ -1936,7 +1937,7 @@ describe("LiveScanStore", () => {
       sessions: [],
       meta: {},
     };
-    const batch = (store as any).enqueueSearchIndexJobs("scan.refresh", [job]);
+    const batch = (store as any).searchIndexJobs.enqueue("scan.refresh", [job]);
     const outcome = Promise.allSettled([batch]);
     const worker = workerThreads.workers.at(-1)!;
 
@@ -1964,8 +1965,8 @@ describe("LiveScanStore", () => {
       sessions: [],
       meta: {},
     };
-    await (store as any).enqueueSearchIndexJobs("scan.refresh", [job]);
-    await (store as any).enqueueSearchIndexJobs("scan.refresh", [job]);
+    await (store as any).searchIndexJobs.enqueue("scan.refresh", [job]);
+    await (store as any).searchIndexJobs.enqueue("scan.refresh", [job]);
 
     const searchIndexWorkers = workerThreads.workers.filter((worker) => worker.workerData.jobs);
     expect(searchIndexWorkers).toHaveLength(2);
