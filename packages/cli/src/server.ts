@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -10,6 +11,14 @@ import type { ScanResultSource } from "./api/handlers.js";
 import { createApiRoutes, type ApiRouteOptions } from "./api/routes.js";
 import { LiveScanStore } from "./live-scan.js";
 import { appLogger } from "./logging.js";
+import {
+  createRemoteAccessToken,
+  isLoopbackHostname,
+  REMOTE_ACCESS_QUERY_PARAM,
+  remoteAccessAuth,
+} from "./remote-access.js";
+
+const MAX_API_REQUEST_BYTES = 1024 * 1024;
 
 export interface CreateServerOptions {
   defaultSessionFrom?: number;
@@ -17,6 +26,8 @@ export interface CreateServerOptions {
   defaultSessionDays?: number;
   portFallbackAttempts?: number;
   hostname?: string;
+  remoteAccess?: boolean;
+  remoteAccessToken?: string;
 }
 
 function findWebDistPath(): string | null {
@@ -86,6 +97,17 @@ export async function createServer(
   options: CreateServerOptions = {},
 ): Promise<{ url: string; shutdown: () => Promise<void> }> {
   const app = new Hono();
+  const hostname = options.hostname ?? "127.0.0.1";
+  const isLoopback = isLoopbackHostname(hostname);
+  const remoteAccessToken = !isLoopback
+    ? (options.remoteAccessToken ?? (options.remoteAccess ? createRemoteAccessToken() : null))
+    : null;
+
+  if (!isLoopback && !remoteAccessToken) {
+    throw new Error(
+      `Refusing to expose CodeSesh on ${hostname} without authentication. Add --remote-access to continue.`,
+    );
+  }
 
   app.use("*", async (c, next) => {
     const startedAt = performance.now();
@@ -108,6 +130,17 @@ export async function createServer(
       });
     }
   });
+
+  if (remoteAccessToken) {
+    app.use("/api/*", remoteAccessAuth(remoteAccessToken));
+  }
+  app.use(
+    "/api/*",
+    bodyLimit({
+      maxSize: MAX_API_REQUEST_BYTES,
+      onError: (c) => c.json({ error: "Request body too large" }, 413),
+    }),
+  );
 
   // API routes
   const routeOptions: ApiRouteOptions = {
@@ -133,7 +166,6 @@ export async function createServer(
   }
 
   const attempts = Math.max(1, options.portFallbackAttempts ?? 1);
-  const hostname = options.hostname ?? "127.0.0.1";
   let server: ServerType | null = null;
   let actualPort = port;
 
@@ -167,15 +199,22 @@ export async function createServer(
     }
   }
 
-  const isLoopback = hostname === "127.0.0.1" || hostname === "localhost";
-  const url = isLoopback ? `http://localhost:${actualPort}` : `http://${hostname}:${actualPort}`;
-  appLogger.info("server.listen", { port: actualPort, requested_port: port, hostname, url });
+  const baseUrl = isLoopback
+    ? `http://localhost:${actualPort}`
+    : `http://${hostname}:${actualPort}`;
+  const url = remoteAccessToken
+    ? `${baseUrl}/?${REMOTE_ACCESS_QUERY_PARAM}=${encodeURIComponent(remoteAccessToken)}`
+    : baseUrl;
+  appLogger.info("server.listen", {
+    port: actualPort,
+    requested_port: port,
+    hostname,
+    remote_access: Boolean(remoteAccessToken),
+  });
 
   if (!isLoopback) {
-    appLogger.warn("server.listen.exposed", { hostname, port: actualPort });
-    console.warn(
-      `\n⚠ 服务监听 ${hostname}，局域网内其他设备可读取你的全部 AI 会话记录（无鉴权）。\n`,
-    );
+    appLogger.warn("server.listen.remote_access", { hostname, port: actualPort });
+    console.warn(`\n⚠ 远程访问已启用。任何持有启动 URL 的人都可以读取你的 AI 会话记录。\n`);
   }
 
   return {

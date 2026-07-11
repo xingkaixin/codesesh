@@ -80,6 +80,8 @@ npx codesesh --trace
 | Flag        | Alias | Default | Description                                                 |
 | ----------- | ----- | ------- | ----------------------------------------------------------- |
 | `--port`    | `-p`  | `4521`  | HTTP server starting port; falls back to the next available port if busy |
+| `--host`    | —     | `127.0.0.1` | HTTP server bind address; non-loopback values require `--remote-access` |
+| `--remote-access` | — | `false` | Enable token-protected access on a non-loopback host                  |
 | `--days`    | `-d`  | `7`     | Only include sessions active in the last N days (`0` = all time) |
 | `--cwd`     | —     | —       | Filter to sessions from a project directory                 |
 | `--agent`   | `-a`  | all     | Filter to specific agent(s), comma-separated                |
@@ -92,6 +94,10 @@ npx codesesh --trace
 | `--cache`   | —     | `true`  | Use cached scan results when available                      |
 | `--clear-cache` | — | `false` | Clear scan cache before starting                            |
 | `-v`        | —     | —       | Print version number                                        |
+
+When remote access is enabled, CodeSesh prints a startup URL containing a fresh access token.
+Anyone with that URL can read the indexed AI session history, so treat it as a password and do not
+share or persist it.
 
 ## Requirements
 

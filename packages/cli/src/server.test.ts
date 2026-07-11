@@ -93,18 +93,77 @@ describe("createServer", () => {
     await app.shutdown();
   });
 
-  it("binds to the provided hostname and reflects it in the url", async () => {
+  it("refuses a non-loopback hostname without remote access", async () => {
+    await expect(createServer(0, createStore(), { hostname: "0.0.0.0" })).rejects.toThrow(
+      "Add --remote-access",
+    );
+  });
+
+  it("protects remote API requests with the generated access token", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     try {
-      const app = await createServer(0, createStore(), { hostname: "0.0.0.0" });
+      const app = await createServer(0, createStore(), {
+        hostname: "0.0.0.0",
+        remoteAccess: true,
+        remoteAccessToken: "test-access-token",
+      });
+      const startupUrl = new URL(app.url);
+      const requestOrigin = `http://127.0.0.1:${startupUrl.port}`;
 
       expect(serveOptionsLog.at(-1)?.hostname).toBe("0.0.0.0");
-      expect(app.url).toMatch(/^http:\/\/0\.0\.0\.0:\d+$/);
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("0.0.0.0"));
+      expect(startupUrl.searchParams.get("access_token")).toBe("test-access-token");
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("远程访问已启用"));
+
+      expect((await fetch(`${requestOrigin}/api/agents`)).status).toBe(401);
+      expect(
+        (
+          await fetch(`${requestOrigin}/api/agents`, {
+            headers: { Authorization: "Bearer test-access-token" },
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (await fetch(`${requestOrigin}/api/agents?access_token=test-access-token`)).status,
+      ).toBe(200);
+      expect(
+        (
+          await fetch(`${requestOrigin}/api/logs?access_token=test-access-token`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ event: "test" }),
+          })
+        ).status,
+      ).toBe(401);
 
       await app.shutdown();
     } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("rejects oversized authenticated request bodies", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const app = await createServer(0, createStore(), {
+      hostname: "0.0.0.0",
+      remoteAccessToken: "test-access-token",
+    });
+    const startupUrl = new URL(app.url);
+    const requestOrigin = `http://127.0.0.1:${startupUrl.port}`;
+
+    try {
+      const response = await fetch(`${requestOrigin}/api/logs`, {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer test-access-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ event: "test", data: "x".repeat(1024 * 1024) }),
+      });
+
+      expect(response.status).toBe(413);
+    } finally {
+      await app.shutdown();
       warnSpy.mockRestore();
     }
   });

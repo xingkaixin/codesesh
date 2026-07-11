@@ -163,6 +163,7 @@ npx codesesh -j
 |------|-------|---------|-------------|
 | `--port` | `-p` | `4521` | HTTP server starting port; falls back to the next available port if busy |
 | `--host` | — | `127.0.0.1` | HTTP server bind address; default is local-only, set explicitly (e.g. `0.0.0.0`) to expose on the network |
+| `--remote-access` | — | `false` | Enable token-protected access for a non-loopback `--host`; anyone with the startup URL can read session data |
 | `--days` | `-d` | `7` | Only include sessions active in the last N days (`0` = all time) |
 | `--cwd` | — | — | Filter to sessions from a project directory (`.` = current dir) |
 | `--agent` | `-a` | all | Filter to specific agent(s), comma-separated |
@@ -176,6 +177,10 @@ npx codesesh -j
 | `--clear-cache` | — | `false` | Clear scan cache before starting |
 | `-v` | — | — | Print version number |
 | `-h` / `--help` | — | — | Show help |
+
+Non-loopback binding is rejected unless `--remote-access` is also present. CodeSesh generates a
+new access token for every process and includes it in the printed startup URL. Treat that URL as a
+password: do not publish it or place it in shared shell history.
 
 ---
 
