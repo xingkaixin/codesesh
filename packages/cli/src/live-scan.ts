@@ -185,6 +185,7 @@ export class LiveScanStore {
   private pendingEvent: SessionsUpdatedEvent | null = null;
   private pendingEventTimer: NodeJS.Timeout | null = null;
   private backgroundRefreshTimer: NodeJS.Timeout | null = null;
+  private scanRefreshWorkers = new Set<Worker>();
   private searchIndexWorker: Worker | null = null;
   private activeSearchIndexBatch: SearchIndexJobBatch | null = null;
   private nextSearchIndexBatchId = 1;
@@ -360,6 +361,15 @@ export class LiveScanStore {
 
   private async performShutdown(): Promise<void> {
     this.shuttingDown = true;
+    const activeOperations = {
+      agent_operations: this.agentOperationTails.size,
+      refreshes: [...this.refreshStates.values()].filter((state) => state.inFlight).length,
+      backfill_running: this.backfillRunning || undefined,
+      scan_workers: this.scanRefreshWorkers.size,
+    };
+    if (activeOperations.agent_operations > 0 || activeOperations.scan_workers > 0) {
+      appLogger.warn("scan.shutdown.active_operations", activeOperations);
+    }
     appLogger.info("search_index.shutdown.started", {
       active_batch_id: this.activeSearchIndexBatch?.id,
       pending_batches: this.pendingSearchIndexJobs.batchCount,
@@ -380,6 +390,7 @@ export class LiveScanStore {
       clearTimeout(this.backgroundRefreshTimer);
       this.backgroundRefreshTimer = null;
     }
+    this.backfillQueue.length = 0;
     const shutdownError = new Error("Live scan store shut down");
     const worker = this.searchIndexWorker;
     const activeBatch = this.activeSearchIndexBatch;
@@ -388,6 +399,9 @@ export class LiveScanStore {
     if (activeBatch) this.settleSearchIndexBatch(activeBatch, shutdownError);
     this.pendingSearchIndexJobs.rejectAll(shutdownError);
     if (worker) await worker.terminate();
+    const scanWorkers = [...this.scanRefreshWorkers];
+    await Promise.allSettled(scanWorkers.map((scanWorker) => scanWorker.terminate()));
+    await Promise.allSettled(this.agentOperationTails.values());
     this.pendingEvent = null;
 
     if (this.watcher) {
@@ -401,6 +415,7 @@ export class LiveScanStore {
   }
 
   private emit(event: SessionsUpdatedEvent): void {
+    if (this.shuttingDown) return;
     if (this.pendingEvent || event.newSessions > 0) {
       this.queueEvent(event);
       return;
@@ -423,6 +438,7 @@ export class LiveScanStore {
   }
 
   private updateScanStatus(next: Omit<ScanStatusEvent, "type">): void {
+    if (this.shuttingDown) return;
     this.scanStatus = next;
     this.emitScanStatus();
   }
@@ -624,6 +640,7 @@ export class LiveScanStore {
   ): Promise<AgentOperationResult> {
     const previous = this.agentOperationTails.get(agentName) ?? Promise.resolve();
     const run = previous.then(async () => {
+      if (this.shuttingDown) return "skipped";
       const lifecycle = this.beginAgentOperation(agentName, kind);
       try {
         const result = await operation();
@@ -662,6 +679,7 @@ export class LiveScanStore {
   }
 
   private enqueueBackfill(agentName: string): void {
+    if (this.shuttingDown) return;
     if (
       this.backfillQueue.includes(agentName) ||
       this.scanStatus.backfill.currentAgent === agentName
@@ -674,7 +692,7 @@ export class LiveScanStore {
   }
 
   private pumpBackfillQueue(): void {
-    if (this.backfillRunning) return;
+    if (this.shuttingDown || this.backfillRunning) return;
     const agentName = this.backfillQueue.shift();
     if (!agentName) return;
 
@@ -683,6 +701,7 @@ export class LiveScanStore {
 
     void this.runBackfill(agentName).finally(() => {
       this.backfillRunning = false;
+      if (this.shuttingDown) return;
       this.updateBackfillStatus({
         currentAgent: undefined,
         completedAgents: [...new Set([...this.scanStatus.backfill.completedAgents, agentName])],
@@ -827,12 +846,14 @@ export class LiveScanStore {
         },
       });
       worker.unref();
+      this.scanRefreshWorkers.add(worker);
 
       let settled = false;
-      const finish = (callback: () => void) => {
+      const finish = (callback: () => void, terminate = true) => {
         if (settled) return;
         settled = true;
-        void worker.terminate();
+        this.scanRefreshWorkers.delete(worker);
+        if (terminate) void worker.terminate();
         callback();
       };
 
@@ -862,8 +883,9 @@ export class LiveScanStore {
             agent: agent.name,
             code,
           });
-          finish(() =>
-            reject(new Error(`Scan refresh worker exited before completing (code ${code})`)),
+          finish(
+            () => reject(new Error(`Scan refresh worker exited before completing (code ${code})`)),
+            false,
           );
         }
       });
@@ -1074,6 +1096,7 @@ export class LiveScanStore {
    * backoff elapses — push the deadline out forever and starve the refresh.
    */
   private scheduleRefresh(agentName: string, delayMs = REFRESH_DEBOUNCE_MS): void {
+    if (this.shuttingDown) return;
     const state = this.getRefreshState(agentName);
     const adaptiveDelayMs = Math.min(
       state.lastRefreshDurationMs * ADAPTIVE_REFRESH_DELAY_MULTIPLIER,
@@ -1123,7 +1146,7 @@ export class LiveScanStore {
     } finally {
       state.inFlight = false;
 
-      if (state.pendingRerun) {
+      if (state.pendingRerun && !this.shuttingDown) {
         state.pendingRerun = false;
         this.scheduleRefresh(agentName, PENDING_REFRESH_DELAY_MS);
       }
