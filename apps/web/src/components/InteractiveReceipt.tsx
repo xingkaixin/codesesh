@@ -1,5 +1,10 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
 import type { SessionData } from "../lib/api";
+import {
+  isReceiptSettled,
+  nextReceiptIdleFrame,
+  shouldSimulateReceiptFrame,
+} from "../lib/interactive-receipt-frame-policy";
 import { SMART_TAG_LABELS } from "./SmartTagChips";
 import type { SessionDetailToc } from "./session-detail/toc";
 
@@ -557,10 +562,12 @@ export function InteractiveReceipt({
     let lastMetrics: SheetMetrics | null = null;
     let stableFrames = 0;
     let idleFrames = 0;
+    let lastSimulationTime = 0;
     let isVisible = false;
     let anchorVisible = true;
     let running = false;
     const desktopMedia = window.matchMedia(minWidthQuery);
+    const reducedMotionMedia = window.matchMedia("(prefers-reduced-motion: reduce)");
 
     const shouldRun = () =>
       desktopMedia.matches && document.visibilityState === "visible" && anchorVisible;
@@ -582,7 +589,7 @@ export function InteractiveReceipt({
       if (isVisible === visible) return;
       isVisible = visible;
       canvas.style.visibility = visible ? "visible" : "hidden";
-      hitSurface.style.visibility = visible ? "visible" : "hidden";
+      hitSurface.style.visibility = visible && !reducedMotionMedia.matches ? "visible" : "hidden";
     };
 
     const stopLoop = () => {
@@ -609,6 +616,7 @@ export function InteractiveReceipt({
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       stableFrames = 0;
       idleFrames = 0;
+      lastSimulationTime = 0;
       setVisible(false);
       resetSheet(getSheetMetrics());
       if (shouldRun()) startLoop();
@@ -633,7 +641,7 @@ export function InteractiveReceipt({
     };
 
     const onPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0) return;
+      if (event.button !== 0 || reducedMotionMedia.matches) return;
       const point = getPoint(event);
       const target = findGrabTarget(sheet.particles, point.x, point.y);
       if (target == null) return;
@@ -787,6 +795,11 @@ export function InteractiveReceipt({
         stopLoop();
         return;
       }
+      if (!shouldSimulateReceiptFrame(time, lastSimulationTime)) {
+        animationFrame = window.requestAnimationFrame(tick);
+        return;
+      }
+      lastSimulationTime = time;
 
       const metrics = getSheetMetrics();
       const changed = metricsChanged(lastMetrics, metrics);
@@ -800,12 +813,15 @@ export function InteractiveReceipt({
       }
 
       setTopRowPins(sheet.particles, metrics);
-      integrate(time);
-      constrain();
+      if (!reducedMotionMedia.matches) {
+        integrate(time);
+        constrain();
+      }
       draw();
-      idleFrames = pointer.id == null ? idleFrames + 1 : 0;
-      if (stableFrames >= 2) setVisible(true);
-      if (stableFrames >= 2 && idleFrames >= 90) {
+      idleFrames = nextReceiptIdleFrame(pointer.id != null, idleFrames);
+      const isReducedMotion = reducedMotionMedia.matches;
+      if (isReducedMotion || stableFrames >= 2) setVisible(true);
+      if (isReducedMotion || isReceiptSettled(stableFrames, idleFrames)) {
         running = false;
         animationFrame = 0;
         return;
@@ -823,6 +839,7 @@ export function InteractiveReceipt({
     });
     intersectionObserver.observe(anchor);
     desktopMedia.addEventListener("change", syncLoopState);
+    reducedMotionMedia.addEventListener("change", syncLoopState);
     document.addEventListener("visibilitychange", syncLoopState);
     window.addEventListener("resize", syncLoopState);
     hitSurface.addEventListener("pointerdown", onPointerDown);
@@ -836,6 +853,7 @@ export function InteractiveReceipt({
       observer.disconnect();
       intersectionObserver.disconnect();
       desktopMedia.removeEventListener("change", syncLoopState);
+      reducedMotionMedia.removeEventListener("change", syncLoopState);
       document.removeEventListener("visibilitychange", syncLoopState);
       window.removeEventListener("resize", syncLoopState);
       hitSurface.removeEventListener("pointerdown", onPointerDown);
