@@ -34,6 +34,7 @@ describe("useSessionSearch", () => {
   it("starts idle with empty results", () => {
     const { result } = renderHook(() => useSessionSearch(emptyIndexes));
     expect(result.current.searchMode).toBe(false);
+    expect(result.current.searchState).toEqual({ status: "idle" });
     expect(result.current.searchResults).toEqual([]);
   });
 
@@ -54,6 +55,31 @@ describe("useSessionSearch", () => {
 
     await waitFor(() => expect(result.current.searchResults).toEqual(serverResults));
     expect(api.fetchSearchResults).toHaveBeenCalledWith("hello", expect.any(Object));
+  });
+
+  it("exposes a failed search state that can be retried", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(api.fetchSearchResults).mockRejectedValueOnce(new Error("Search unavailable"));
+    const { result } = renderHook(() => useSessionSearch(emptyIndexes));
+    act(() => result.current.setDraftSearchQuery("hello"));
+    act(() => result.current.submitSearch());
+
+    await waitFor(() =>
+      expect(api.logClientEvent).toHaveBeenCalledWith(
+        "search.error",
+        expect.objectContaining({ error: "Search unavailable" }),
+      ),
+    );
+    expect(result.current.searchState).toEqual({
+      status: "failed",
+      error: "Search unavailable",
+    });
+
+    vi.mocked(api.fetchSearchResults).mockResolvedValueOnce({ results: serverResults });
+    await act(async () => result.current.retrySearch());
+    await waitFor(() =>
+      expect(result.current.searchState).toEqual({ status: "loaded", results: serverResults }),
+    );
   });
 
   it("sends both project identity fields to server search", async () => {

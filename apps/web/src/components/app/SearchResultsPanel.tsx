@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import type { AgentInfo, SearchResult } from "../../lib/api";
 import { SmartTagChips } from "../SmartTagChips";
 import { SearchFilterBar } from "./SearchFilterBar";
-import type { SearchFilterState, SearchProjectOption } from "./types";
+import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
 
 const SEARCH_MATCH_LABELS: Record<SearchResult["matchType"], string> = {
   recent: "Recent",
@@ -27,29 +27,30 @@ function toSafeSnippetHtml(snippet: string): string {
 
 export function SearchResultsPanel({
   query,
-  loading,
-  results,
+  state,
   agentNameMap,
   agents,
   projects,
   filters,
   onChangeFilters,
   onOpenResult,
+  onRetry,
   selectedIndex,
   registerResultRef,
 }: {
   query: string;
-  loading: boolean;
-  results: SearchResult[];
+  state: SearchLoadState;
   agentNameMap: Map<string, string>;
   agents: AgentInfo[];
   projects: SearchProjectOption[];
   filters: SearchFilterState;
   onChangeFilters: Dispatch<SetStateAction<SearchFilterState>>;
   onOpenResult: () => void;
+  onRetry: () => void;
   selectedIndex: number;
   registerResultRef: (key: string, node: HTMLAnchorElement | null) => void;
 }) {
+  const results = state.status === "loaded" ? state.results : [];
   const filterBar = (
     <SearchFilterBar
       agents={agents}
@@ -59,15 +60,18 @@ export function SearchResultsPanel({
     />
   );
 
-  if (loading) {
+  if (state.status === "loading") {
     return (
       <div className="flex flex-col gap-3">
         {filterBar}
+        <p className="sr-only" aria-live="polite">
+          Searching…
+        </p>
         <div className="grid gap-3">
           {Array.from({ length: 4 }).map((_, index) => (
             <div
               key={index}
-              className="animate-pulse rounded-sm border border-[var(--console-border)] bg-white/80 p-4"
+              className="animate-pulse rounded-sm border border-[var(--console-border)] bg-white/80 p-4 motion-reduce:animate-none"
             >
               <div className="h-3 w-32 rounded bg-[var(--console-surface-muted)]" />
               <div className="mt-3 h-4 w-2/3 rounded bg-[var(--console-surface-muted)]" />
@@ -75,6 +79,32 @@ export function SearchResultsPanel({
               <div className="mt-1 h-3 w-5/6 rounded bg-[var(--console-surface-muted)]" />
             </div>
           ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === "failed") {
+    return (
+      <div className="flex flex-col gap-3">
+        {filterBar}
+        <div
+          className="rounded-sm border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-6"
+          aria-live="polite"
+        >
+          <h2 className="console-mono text-sm font-semibold text-[var(--console-error)]">
+            Search Failed
+          </h2>
+          <p className="console-mono mt-2 break-words text-xs text-[var(--console-error)]">
+            {state.error}. Check the server connection, then try again.
+          </p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="console-mono mt-4 rounded-sm border border-[var(--console-error-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--console-error)] transition-colors hover:bg-[var(--console-error-bg)] focus-visible:ring-2 focus-visible:ring-[var(--console-error)] focus-visible:ring-offset-2 focus-visible:outline-none"
+          >
+            Retry Search
+          </button>
         </div>
       </div>
     );
@@ -114,7 +144,7 @@ export function SearchResultsPanel({
             to={`/${agentKey}/${result.session.id}`}
             state={{ searchQuery: query }}
             onClick={onOpenResult}
-            className={`rounded-sm border bg-white/85 p-4 transition-colors hover:border-[var(--console-border-strong)] hover:bg-white ${
+            className={`rounded-sm border bg-white/85 p-4 transition-colors hover:border-[var(--console-border-strong)] hover:bg-white focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none ${
               index === selectedIndex
                 ? "border-[var(--console-border-strong)]"
                 : "border-[var(--console-border)]"

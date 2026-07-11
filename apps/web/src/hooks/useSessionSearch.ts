@@ -6,7 +6,7 @@ import {
   logClientEvent,
 } from "../lib/api";
 import type { SessionIndexes } from "../lib/session-indexes";
-import type { SearchFilterState } from "../components/app/types";
+import type { SearchFilterState, SearchLoadState } from "../components/app/types";
 import { COST_RANGE_OPTIONS } from "../components/app/SearchFilterBar";
 import {
   buildLocalRecentResults,
@@ -26,8 +26,8 @@ export function useSessionSearch(sessionIndexes: SessionIndexes) {
   const [activeSearchQuery, setActiveSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState(false);
   const [searchFilters, setSearchFilters] = useState<SearchFilterState>({});
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchState, setSearchState] = useState<SearchLoadState>({ status: "idle" });
+  const [retryVersion, setRetryVersion] = useState(0);
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchResultRefs = useRef(new Map<string, HTMLAnchorElement>());
@@ -48,28 +48,31 @@ export function useSessionSearch(sessionIndexes: SessionIndexes) {
     () => buildLocalRecentResults(sessionIndexes, searchFilters, costMin),
     [sessionIndexes, searchFilters, costMin],
   );
+  const searchResults = useMemo(
+    () => (searchState.status === "loaded" ? searchState.results : []),
+    [searchState],
+  );
+  const searchLoading = searchState.status === "loading";
 
   useEffect(() => {
     if (!searchMode) {
-      setSearchResults([]);
-      setSearchLoading(false);
+      setSearchState({ status: "idle" });
       return;
     }
     if (!usesServerSearch) {
-      setSearchResults(recentSearchResults);
-      setSearchLoading(false);
+      setSearchState({ status: "loaded", results: recentSearchResults });
       return;
     }
 
     let cancelled = false;
-    setSearchLoading(true);
+    setSearchState({ status: "loading" });
     const startedAt = performance.now();
     logClientEvent("search.start", { query_length: activeSearchQuery.length });
 
     void fetchSearchResults(activeSearchQuery, searchRequestOptions)
       .then((data) => {
         if (cancelled) return;
-        setSearchResults(data.results);
+        setSearchState({ status: "loaded", results: data.results });
         logClientEvent("search.done", {
           duration_ms: Math.round(performance.now() - startedAt),
           results: data.results.length,
@@ -82,17 +85,23 @@ export function useSessionSearch(sessionIndexes: SessionIndexes) {
           duration_ms: Math.round(performance.now() - startedAt),
           error: err instanceof Error ? err.message : String(err),
         });
-        setSearchResults([]);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setSearchLoading(false);
+        setSearchState({
+          status: "failed",
+          error: err instanceof Error ? err.message : "Search request failed",
+        });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [activeSearchQuery, searchMode, recentSearchResults, searchRequestOptions, usesServerSearch]);
+  }, [
+    activeSearchQuery,
+    recentSearchResults,
+    retryVersion,
+    searchMode,
+    searchRequestOptions,
+    usesServerSearch,
+  ]);
 
   useEffect(() => {
     if (!searchMode) return;
@@ -129,13 +138,21 @@ export function useSessionSearch(sessionIndexes: SessionIndexes) {
     setActiveSearchQuery("");
   }, []);
 
+  const retrySearch = useCallback(() => {
+    setRetryVersion((version) => version + 1);
+  }, []);
+
   const refresh = useCallback(async () => {
     if (!(searchMode && usesServerSearch)) return;
     try {
       const data = await fetchSearchResults(activeSearchQuery, searchRequestOptions);
-      setSearchResults(data.results);
+      setSearchState({ status: "loaded", results: data.results });
     } catch (err) {
       console.error("Failed to refresh search results:", err);
+      setSearchState({
+        status: "failed",
+        error: err instanceof Error ? err.message : "Search request failed",
+      });
     }
   }, [searchMode, usesServerSearch, activeSearchQuery, searchRequestOptions]);
 
@@ -144,6 +161,7 @@ export function useSessionSearch(sessionIndexes: SessionIndexes) {
     activeSearchQuery,
     searchMode,
     searchFilters,
+    searchState,
     searchResults,
     searchLoading,
     usesServerSearch,
@@ -156,6 +174,7 @@ export function useSessionSearch(sessionIndexes: SessionIndexes) {
     openSearch,
     submitSearch,
     closeSearch,
+    retrySearch,
     refresh,
   };
 }
