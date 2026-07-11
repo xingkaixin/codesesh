@@ -130,31 +130,9 @@ function ProjectNavList({
   );
 }
 
-export function AppSidebar({
-  sidebarCollapsed,
-  browseBy,
-  onChangeBrowseBy,
-  isScanActive,
-  viewState,
-  agents,
-  activeAgentKey,
-  scanStatus,
-  projects,
-  selectedProjectNavigationId,
-  onSelectProject,
-  loading,
-  bookmarkedSessions,
-  onToggleBookmark,
-  sidebarSessions,
-  selectedSidebarSessionId,
-  bookmarkedSidebarSessionIds,
-  onSelectFlatSidebarSession,
-  onToggleSidebarSessionBookmark,
-  onSelectTreeSidebarSession,
-}: {
+export interface AppSidebarViewModel {
   sidebarCollapsed: boolean;
   browseBy: BrowseBy;
-  onChangeBrowseBy: (value: BrowseBy) => void;
   isScanActive: boolean;
   viewState: ViewState;
   agents: AgentInfo[];
@@ -162,16 +140,50 @@ export function AppSidebar({
   scanStatus: ScanStatusEvent | null;
   projects: ProjectGroup[];
   selectedProjectNavigationId: string | null;
-  onSelectProject: (identity: ReturnType<typeof getProjectGroupIdentity>) => void;
   loading: boolean;
   bookmarkedSessions: BookmarkedSessionSnapshot[];
-  onToggleBookmark: (session: BookmarkedSessionSnapshot) => void;
   sidebarSessions: SessionHead[];
   selectedSidebarSessionId: string | null;
   bookmarkedSidebarSessionIds: Set<string>;
+}
+
+export interface AppSidebarActions {
+  onChangeBrowseBy: (value: BrowseBy) => void;
+  onSelectProject: (identity: ReturnType<typeof getProjectGroupIdentity>) => void;
+  onToggleBookmark: (session: BookmarkedSessionSnapshot) => void;
   onSelectFlatSidebarSession: (session: SessionHead) => void;
   onToggleSidebarSessionBookmark: (session: SessionHead) => void;
   onSelectTreeSidebarSession: (sessionId: string) => void;
+}
+
+export function AppSidebar({
+  model: {
+    sidebarCollapsed,
+    browseBy,
+    isScanActive,
+    viewState,
+    agents,
+    activeAgentKey,
+    scanStatus,
+    projects,
+    selectedProjectNavigationId,
+    loading,
+    bookmarkedSessions,
+    sidebarSessions,
+    selectedSidebarSessionId,
+    bookmarkedSidebarSessionIds,
+  },
+  actions: {
+    onChangeBrowseBy,
+    onSelectProject,
+    onToggleBookmark,
+    onSelectFlatSidebarSession,
+    onToggleSidebarSessionBookmark,
+    onSelectTreeSidebarSession,
+  },
+}: {
+  model: AppSidebarViewModel;
+  actions: AppSidebarActions;
 }) {
   return (
     <aside
