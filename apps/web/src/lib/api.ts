@@ -47,6 +47,50 @@ import type {
   SmartTag,
 } from "@codesesh/core/contract";
 
+const REMOTE_ACCESS_QUERY_PARAM = "access_token";
+const REMOTE_ACCESS_STORAGE_KEY = "codesesh:remote-access-token";
+let remoteAccessToken: string | null = null;
+
+export function initializeRemoteAccess(): void {
+  if (typeof window === "undefined") return;
+
+  const url = new URL(window.location.href);
+  const urlToken = url.searchParams.get(REMOTE_ACCESS_QUERY_PARAM);
+  if (urlToken) {
+    remoteAccessToken = urlToken;
+    try {
+      window.sessionStorage.setItem(REMOTE_ACCESS_STORAGE_KEY, urlToken);
+    } catch {}
+    url.searchParams.delete(REMOTE_ACCESS_QUERY_PARAM);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+    return;
+  }
+
+  try {
+    remoteAccessToken = window.sessionStorage.getItem(REMOTE_ACCESS_STORAGE_KEY);
+  } catch {
+    remoteAccessToken = null;
+  }
+}
+
+function withRemoteAccess(init: RequestInit = {}): RequestInit {
+  if (!remoteAccessToken) return init;
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${remoteAccessToken}`);
+  return { ...init, headers };
+}
+
+function remoteAccessUrl(path: string): string {
+  if (!remoteAccessToken) return path;
+  const url = new URL(path, window.location.origin);
+  url.searchParams.set(REMOTE_ACCESS_QUERY_PARAM, remoteAccessToken);
+  return `${url.pathname}${url.search}`;
+}
+
 export interface SearchRequestOptions {
   agent?: string;
   projectKind?: ProjectIdentityKind;
@@ -59,7 +103,7 @@ export interface SearchRequestOptions {
 }
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init);
+  const res = await fetch(path, withRemoteAccess(init));
   if (!res.ok) {
     const method = init?.method ?? "GET";
     throw new Error(`${method} ${path} failed: ${res.status} ${res.statusText}`);
@@ -175,18 +219,21 @@ export function logClientEvent(event: string, data: Record<string, unknown> = {}
   const body = JSON.stringify({ event, data });
 
   try {
-    if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+    if (!remoteAccessToken && typeof navigator !== "undefined" && navigator.sendBeacon) {
       const blob = new Blob([body], { type: "application/json" });
       if (navigator.sendBeacon("/api/logs", blob)) return;
     }
   } catch {}
 
-  void fetch("/api/logs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body,
-    keepalive: true,
-  }).catch(() => {});
+  void fetch(
+    "/api/logs",
+    withRemoteAccess({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: true,
+    }),
+  ).catch(() => {});
 }
 
 const INITIAL_RETRY_MS = 1_000;
@@ -211,7 +258,7 @@ export function subscribeSessionUpdates(
   let currentSource: EventSource | undefined;
 
   const connect = () => {
-    const source = new EventSource("/api/events");
+    const source = new EventSource(remoteAccessUrl("/api/events"));
     currentSource = source;
 
     source.addEventListener("sessions-updated", (event) => {

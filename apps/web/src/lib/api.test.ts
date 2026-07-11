@@ -5,8 +5,52 @@ import {
   fetchSearchResults,
   fetchSessionData,
   fetchSessions,
+  initializeRemoteAccess,
   subscribeSessionUpdates,
 } from "./api";
+
+describe("remote access", () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    window.history.replaceState(null, "", "/");
+    initializeRemoteAccess();
+  });
+
+  afterEach(() => {
+    window.sessionStorage.clear();
+    window.history.replaceState(null, "", "/");
+    initializeRemoteAccess();
+    vi.unstubAllGlobals();
+  });
+
+  it("stores the startup token, removes it from the URL, and authorizes fetch", async () => {
+    window.history.replaceState(null, "", "/?access_token=remote-secret");
+    initializeRemoteAccess();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(SAMPLE_DASHBOARD_DATA),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchDashboard();
+
+    expect(window.location.search).toBe("");
+    expect(window.sessionStorage.getItem("codesesh:remote-access-token")).toBe("remote-secret");
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer remote-secret");
+  });
+
+  it("adds the startup token to the EventSource URL", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    window.history.replaceState(null, "", "/?access_token=remote-secret");
+    initializeRemoteAccess();
+
+    const unsubscribe = subscribeSessionUpdates(() => {});
+
+    expect(FakeEventSource.instances.at(-1)?.url).toBe("/api/events?access_token=remote-secret");
+    unsubscribe();
+  });
+});
 
 describe("fetchDashboard", () => {
   afterEach(() => {
