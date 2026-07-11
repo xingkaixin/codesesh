@@ -125,6 +125,7 @@ export default function App() {
     activeSearchQuery,
     searchMode,
     searchFilters,
+    searchState,
     searchResults,
     searchLoading,
     usesServerSearch,
@@ -137,6 +138,7 @@ export default function App() {
     openSearch,
     submitSearch,
     closeSearch,
+    retrySearch,
     refresh: refreshSearch,
   } = useSessionSearch(sessionIndexes);
   const isSearchMode = searchMode;
@@ -372,6 +374,10 @@ export default function App() {
 
     return [...byKey.values()].toSorted((a, b) => b.count - a.count).slice(0, 8);
   }, [projectOptions, searchFilters.project, searchLoading, searchResults, usesServerSearch]);
+  const searchSubtitle =
+    searchState.status === "failed"
+      ? `Search failed for "${activeSearchQuery}"`
+      : formatSearchSubtitle(activeSearchQuery, searchLoading, searchResults.length);
 
   // Header
   let headerTitle = "CodeSesh";
@@ -379,7 +385,7 @@ export default function App() {
   if (viewState.mode === "root") {
     headerTitle = isSearchMode ? "Search" : "Dashboard";
     headerSubtitle = isSearchMode
-      ? formatSearchSubtitle(activeSearchQuery, searchLoading, searchResults.length)
+      ? searchSubtitle
       : dashboard
         ? `${dashboard.totals.sessions.toLocaleString("en-US")} total sessions across ${dashboard.perAgent.length} agents`
         : "Aggregated view across all agents";
@@ -425,7 +431,7 @@ export default function App() {
   }
   if (isSearchMode) {
     headerTitle = "Search";
-    headerSubtitle = formatSearchSubtitle(activeSearchQuery, searchLoading, searchResults.length);
+    headerSubtitle = searchSubtitle;
   }
 
   const breadcrumbItems = useMemo<BreadcrumbItem[]>(() => {
@@ -532,14 +538,14 @@ export default function App() {
       >
         <SearchResultsPanel
           query={activeSearchQuery}
-          loading={searchLoading}
-          results={searchResults}
+          state={searchState}
           agentNameMap={agentNameMap}
           agents={agents}
           projects={searchProjectOptions}
           filters={searchFilters}
           onChangeFilters={setSearchFilters}
           onOpenResult={closeSearch}
+          onRetry={retrySearch}
           selectedIndex={selectedSearchIndex}
           registerResultRef={(key, node) => {
             if (node) searchResultRefs.current.set(key, node);
@@ -731,18 +737,22 @@ export default function App() {
               submitSearch();
             }}
           >
-            <label className="flex min-w-0 flex-1 items-center rounded-sm border border-[var(--console-border)] bg-white px-2 py-1">
+            <label className="flex min-w-0 flex-1 items-center rounded-sm border border-[var(--console-border)] bg-white px-2 py-1 focus-within:border-[var(--console-border-strong)] focus-within:ring-2 focus-within:ring-[var(--console-accent)] focus-within:ring-offset-2">
+              <span className="sr-only">Search Sessions</span>
               <input
                 ref={searchInputRef}
+                type="search"
+                name="session-search"
+                autoComplete="off"
                 value={draftSearchQuery}
                 onChange={(event) => setDraftSearchQuery(event.target.value)}
-                placeholder="Search sessions  /"
+                placeholder="Search sessions…  /"
                 className="console-mono w-full min-w-0 bg-transparent text-xs text-[var(--console-text)] outline-none placeholder:text-[var(--console-muted)]"
               />
             </label>
             <button
               type="submit"
-              className="console-mono rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-3 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-white"
+              className="console-mono rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-3 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               Search
             </button>

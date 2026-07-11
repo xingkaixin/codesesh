@@ -43,7 +43,7 @@ test("covers dashboard, detail, search, projects, and pin flows", async ({ page 
     })
     .toBe(true);
 
-  await page.getByPlaceholder("Search sessions  /").fill("needle");
+  await page.getByRole("searchbox", { name: "Search Sessions" }).fill("needle");
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Search" })).toBeVisible();
 
