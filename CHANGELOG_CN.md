@@ -1,5 +1,76 @@
 # Changelog
 
+## [0.13.0] - 2026-07-12
+
+本版本为长会话增加时间线导航，提升扫描与搜索的可靠性，并强化远程访问安全性和构建校验。
+
+### 新功能
+
+- 新增固定在会话详情顶部的消息时间线，提供 Canvas 绘制的 minimap、视口跟踪以及点击或拖拽导航，方便浏览长会话。 (#101)
+- 新增带认证的远程会话访问，安全地将会话服务到本机之外。 (#114)
+
+### 问题修复
+
+- 项目身份同时包含项目类型和项目键，隔离原始键冲突的项目；项目筛选 API 现在必须同时提供两个字段。 (#102)
+- 按 Agent 串行执行扫描任务，原子停止搜索 worker，正确收敛提前退出的 worker，清理取消的 SSE 流，并在关闭时停止活动扫描。 (#103, #104, #115, #116, #117)
+- 路由变化或刷新后不再提交过期的会话详情响应，并让搜索失败可以恢复。 (#105, #119)
+- 为 Dashboard 图表补充键盘访问支持，并处理产品站点的剪贴板失败场景。 (#121, #122)
+- 解析 Codex 超过 400 MB 的会话时改为流式读取 JSONL，避免 worker 因内存不足退出。 (#101)
+- 优化展示页动效和文案。 (#130)
+
+### 性能
+
+- 批量更新增量搜索索引状态，合并待处理索引任务，文件专属搜索跳过冗余会话查询，并限制 receipt 模拟工作量。 (#107, #108, #112, #129)
+
+### 构建
+
+- 并行安装 TypeScript 7 与 TypeScript 6，并改用 TypeScript 6 生成 Core 声明文件。 (#100)
+- 升级依赖和 pnpm 11.11.0，将 Dialog 实现从 Radix UI 迁移到 Base UI，并让 CLI 构建与发布执行类型检查。 (#111, #113)
+- 发布后的 CLI 现在要求 Node.js 22 或更高版本。 (#118)
+
+### 重构
+
+- 为 Core、CLI 和 Web 增加浏览器安全的共享 HTTP contract，并集中管理会话搜索语义与会话索引。 (#109, #110, #124)
+- 统一详情抽屉行为，移除虚拟列表轮询，明确实时扫描生命周期归属，按路由模块组合 Web 应用，并按职责拆分搜索缓存模块。 (#120, #123, #125, #126, #127)
+
+### 测试
+
+- 修正按包配置的 Vitest 环境，建立网站交互测试覆盖，并在 CI 中为高风险覆盖范围设置门禁。 (#106, #122, #128)
+
+### Changelog Detail
+
+- #130 fix(ui): polish showcase motion and copy @xingkaixin
+- #129 perf(web): cap receipt simulation work @xingkaixin
+- #128 test(ci): gate high-risk coverage scopes @xingkaixin
+- #127 refactor(core): split search cache modules @xingkaixin
+- #126 refactor(web): compose app from route modules @xingkaixin
+- #125 refactor(cli): deepen live scan lifecycles @xingkaixin
+- #124 refactor(core): centralize session indexing @xingkaixin
+- #123 refactor(web): remove virtual list polling @xingkaixin
+- #122 test(e2e): establish website interaction baseline @xingkaixin
+- #121 fix(web): add keyboard access to charts @xingkaixin
+- #120 refactor(web): unify detail drawer behavior @xingkaixin
+- #119 fix(web): make search failures recoverable @xingkaixin
+- #118 chore(cli)!: require Node.js 22 @xingkaixin
+- #117 fix(cli): stop active scans on shutdown @xingkaixin
+- #116 fix(cli): clean up cancelled SSE streams @xingkaixin
+- #115 fix(cli): settle early scan worker exits @xingkaixin
+- #114 fix: secure remote access @xingkaixin
+- #113 chore(deps): upgrade packages and migrate to base-ui @xingkaixin
+- #112 perf(search): skip redundant sessions query for file-only search @xingkaixin
+- #111 chore: add type-check gate to cli package @xingkaixin
+- #110 refactor: deep session search module @xingkaixin
+- #109 refactor: browser-safe HTTP contract module @xingkaixin
+- #108 perf(search): coalesce pending index jobs @xingkaixin
+- #107 perf(search): batch incremental index state @xingkaixin
+- #106 fix(test): honor project Vitest environments @xingkaixin
+- #105 fix(web): cancel stale session detail requests @xingkaixin
+- #104 fix(live-scan): stop search workers atomically @xingkaixin
+- #103 fix(live-scan): serialize agent scan operations @xingkaixin
+- #102 fix(projects)!: use composite project identities @xingkaixin
+- #101 feat(web): session message timeline with minimap navigation @xingkaixin
+- #100 chore: dual-install TypeScript 7 and 6 @xingkaixin
+
 ## [0.12.0] - 2026-07-03
 
 本版本重点强化扫描刷新性能、本地服务安全性和 Web 实时更新稳定性，同时继续拆分 Web UI 模块，提升可维护性。
