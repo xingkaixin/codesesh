@@ -1,5 +1,76 @@
 # Changelog
 
+## [0.13.0] - 2026-07-12
+
+This release adds timeline navigation for long sessions, improves scan and search reliability, and strengthens remote access and build validation.
+
+### Features
+
+- Added a sticky session message timeline with a canvas minimap, viewport tracking, and click-or-drag navigation for long session details. (#101)
+- Added authenticated remote session access so sessions can be securely served beyond the local machine. (#114)
+
+### Bug Fixes
+
+- Isolated projects with colliding raw keys by including project kind and key in project identities and filters. Project-filter API queries must now provide both fields. (#102)
+- Serialized per-agent scan work, stopped search workers atomically, settled early worker exits, cleaned up cancelled SSE streams, and stopped active scans during shutdown. (#103, #104, #115, #116, #117)
+- Prevented stale session-detail responses from committing after route changes or refreshes, and made search failures recoverable. (#105, #119)
+- Added keyboard access to dashboard charts and handled clipboard failures on the product site. (#121, #122)
+- Streamed large Codex JSONL files during parsing to avoid worker out-of-memory failures on sessions exceeding 400 MB. (#101)
+- Polished showcase motion and copy. (#130)
+
+### Performance
+
+- Batched incremental search-index state updates, coalesced pending index jobs, skipped redundant session queries for file-only searches, and bounded receipt simulation work. (#107, #108, #112, #129)
+
+### Build
+
+- Added parallel TypeScript 7 and TypeScript 6 toolchains, and moved Core declaration generation to TypeScript 6. (#100)
+- Upgraded dependencies and pnpm to 11.11.0, migrated the dialog implementation from Radix UI to Base UI, and enabled CLI type-checking during build and release. (#111, #113)
+- The published CLI now requires Node.js 22 or newer. (#118)
+
+### Refactor
+
+- Added a browser-safe shared HTTP contract for Core, CLI, and Web, and centralized session search semantics and session indexing. (#109, #110, #124)
+- Unified detail drawer behavior, removed virtual-list polling, deepened live-scan lifecycle ownership, composed the Web app from route modules, and split search cache modules by concern. (#120, #123, #125, #126, #127)
+
+### Tests
+
+- Fixed package-specific Vitest environments, established website interaction coverage, and gated high-risk coverage scopes in CI. (#106, #122, #128)
+
+### Changelog Detail
+
+- #130 fix(ui): polish showcase motion and copy @xingkaixin
+- #129 perf(web): cap receipt simulation work @xingkaixin
+- #128 test(ci): gate high-risk coverage scopes @xingkaixin
+- #127 refactor(core): split search cache modules @xingkaixin
+- #126 refactor(web): compose app from route modules @xingkaixin
+- #125 refactor(cli): deepen live scan lifecycles @xingkaixin
+- #124 refactor(core): centralize session indexing @xingkaixin
+- #123 refactor(web): remove virtual list polling @xingkaixin
+- #122 test(e2e): establish website interaction baseline @xingkaixin
+- #121 fix(web): add keyboard access to charts @xingkaixin
+- #120 refactor(web): unify detail drawer behavior @xingkaixin
+- #119 fix(web): make search failures recoverable @xingkaixin
+- #118 chore(cli)!: require Node.js 22 @xingkaixin
+- #117 fix(cli): stop active scans on shutdown @xingkaixin
+- #116 fix(cli): clean up cancelled SSE streams @xingkaixin
+- #115 fix(cli): settle early scan worker exits @xingkaixin
+- #114 fix: secure remote access @xingkaixin
+- #113 chore(deps): upgrade packages and migrate to base-ui @xingkaixin
+- #112 perf(search): skip redundant sessions query for file-only search @xingkaixin
+- #111 chore: add type-check gate to cli package @xingkaixin
+- #110 refactor: deep session search module @xingkaixin
+- #109 refactor: browser-safe HTTP contract module @xingkaixin
+- #108 perf(search): coalesce pending index jobs @xingkaixin
+- #107 perf(search): batch incremental index state @xingkaixin
+- #106 fix(test): honor project Vitest environments @xingkaixin
+- #105 fix(web): cancel stale session detail requests @xingkaixin
+- #104 fix(live-scan): stop search workers atomically @xingkaixin
+- #103 fix(live-scan): serialize agent scan operations @xingkaixin
+- #102 fix(projects)!: use composite project identities @xingkaixin
+- #101 feat(web): session message timeline with minimap navigation @xingkaixin
+- #100 chore: dual-install TypeScript 7 and 6 @xingkaixin
+
 ## [0.12.0] - 2026-07-03
 
 This release hardens scan refresh performance, local server safety, and live Web updates, while continuing the Web UI module split for maintainability.
