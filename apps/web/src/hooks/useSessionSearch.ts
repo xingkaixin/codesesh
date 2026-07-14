@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  type AppConfig,
   type SearchRequestOptions,
   type SearchResult,
   fetchSearchResults,
@@ -21,7 +22,10 @@ import {
  * live-update subscription; the global keydown handler stays in App and
  * drives selection via the returned state + setters.
  */
-export function useSessionSearch(sessionIndexes: SessionIndexes) {
+export function useSessionSearch(
+  sessionIndexes: SessionIndexes,
+  timeWindow: AppConfig["window"] | null = null,
+) {
   const [draftSearchQuery, setDraftSearchQuery] = useState("");
   const [activeSearchQuery, setActiveSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState(false);
@@ -38,8 +42,12 @@ export function useSessionSearch(sessionIndexes: SessionIndexes) {
   );
 
   const searchRequestOptions = useMemo<SearchRequestOptions>(
-    () => buildSearchRequestOptions(searchFilters, costMin),
-    [searchFilters, costMin],
+    () => ({
+      ...buildSearchRequestOptions(searchFilters, costMin),
+      from: timeWindow?.from,
+      to: timeWindow?.to,
+    }),
+    [searchFilters, costMin, timeWindow],
   );
 
   const usesServerSearch = computeUsesServerSearch(activeSearchQuery, searchFilters);

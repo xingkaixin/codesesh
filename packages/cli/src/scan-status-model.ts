@@ -13,7 +13,7 @@ export class ScanStatusModel {
     agentStatuses: {},
     totalAgents: 0,
     updatedAt: Date.now(),
-    backfill: { active: false, pendingAgents: [], completedAgents: [] },
+    backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
   };
 
   snapshot(): ScanStatusEvent {
@@ -33,6 +33,7 @@ export class ScanStatusModel {
         ...this.status.backfill,
         pendingAgents: [...this.status.backfill.pendingAgents],
         completedAgents: [...this.status.backfill.completedAgents],
+        failedAgents: [...this.status.backfill.failedAgents],
       },
     };
   }

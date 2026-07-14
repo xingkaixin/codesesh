@@ -26,13 +26,13 @@ describe("useDashboard", () => {
   });
 
   it("fetches once appConfig is set", async () => {
-    const { result } = renderHook(() => useDashboard(appConfig));
+    const { result } = renderHook(() => useDashboard(appConfig.window));
     await waitFor(() => expect(result.current.dashboard).toEqual(data));
     expect(api.fetchDashboard).toHaveBeenCalledWith(appConfig.window);
   });
 
   it("refresh re-fetches the dashboard", async () => {
-    const { result } = renderHook(() => useDashboard(appConfig));
+    const { result } = renderHook(() => useDashboard(appConfig.window));
     await waitFor(() => expect(result.current.dashboard).toEqual(data));
 
     const next = { totals: { sessions: 9 }, perAgent: [] } as unknown as DashboardData;

@@ -68,6 +68,18 @@ describe("fetchDashboard", () => {
 
     expect(result).toEqual(SAMPLE_DASHBOARD_DATA);
   });
+
+  it("uses days=0 without expanding all-time into thousands of daily buckets", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(SAMPLE_DASHBOARD_DATA),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchDashboard({ from: 0, days: 0 });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/dashboard?days=0");
+  });
 });
 
 describe("fetchSessionData", () => {

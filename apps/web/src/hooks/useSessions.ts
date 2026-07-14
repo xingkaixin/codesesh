@@ -1,6 +1,5 @@
 import { useCallback, useState } from "react";
 import { type AppConfig, type SessionHead, fetchSessions } from "../lib/api";
-import { applyLiveSessionUpdate, type LiveSessionsUpdate } from "../lib/live-update";
 
 /**
  * Owns the session list. Exposes refresh(window) for a full reload and
@@ -16,9 +15,5 @@ export function useSessions() {
     return result.sessions;
   }, []);
 
-  const applyLiveEvent = useCallback((event: LiveSessionsUpdate) => {
-    setSessions((current) => applyLiveSessionUpdate(current, event) ?? current);
-  }, []);
-
-  return { sessions, refresh, applyLiveEvent };
+  return { sessions, refresh };
 }

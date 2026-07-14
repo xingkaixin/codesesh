@@ -230,6 +230,20 @@ describe("handleGetAgents", () => {
     const claudecode = response.find((a: { name: string }) => a.name === "claudecode");
     expect(claudecode.count).toBe(1);
   });
+
+  it("lets request dates override the default time window", () => {
+    const recent = makeSession("recent", { time_updated: 5000 });
+    const old = makeSession("old", { time_updated: 1000 });
+    const c = makeMockContext({ query: { from: new Date(0).toISOString() } });
+
+    handleGetAgents(
+      c,
+      makeScanSource({ sessions: [recent, old], byAgent: { claudecode: [recent, old] } }),
+      { from: 3000 },
+    );
+
+    expect(c.json.mock.calls[0]![0][0].count).toBe(2);
+  });
 });
 
 describe("handleGetConfig", () => {
@@ -512,6 +526,20 @@ describe("handleGetFileActivity", () => {
 });
 
 describe("handleGetProjects", () => {
+  it("lets request dates override the default time window", () => {
+    const old = makeSession("old", {
+      time_updated: 1000,
+      project_identity: { kind: "path", key: "/old", displayName: "old" },
+    });
+    const c = makeMockContext({ query: { from: new Date(0).toISOString() } });
+
+    handleGetProjects(c, makeScanSource({ sessions: [old], byAgent: { claudecode: [old] } }), {
+      from: 3000,
+    });
+
+    expect(c.json.mock.calls[0]![0].projects[0].displayName).toBe("old");
+  });
+
   it("returns project groups sorted by recent activity", () => {
     const sessions = [
       makeSession("a", {

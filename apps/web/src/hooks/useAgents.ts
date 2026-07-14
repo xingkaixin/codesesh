@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { type AgentInfo, fetchAgents } from "../lib/api";
+import { type AgentInfo, type AppConfig, fetchAgents } from "../lib/api";
 
 /**
  * Owns the agent list and its lookup derivations. Refresh is driven by
@@ -14,8 +14,8 @@ export function useAgents() {
     [agents],
   );
 
-  const refresh = useCallback(async () => {
-    const list = await fetchAgents();
+  const refresh = useCallback(async (window?: AppConfig["window"]) => {
+    const list = await fetchAgents(window);
     setAgents(list);
     return list;
   }, []);

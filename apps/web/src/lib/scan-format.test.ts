@@ -5,7 +5,6 @@ import {
   formatScanStatusLabel,
   formatSearchSubtitle,
   formatWindowLabel,
-  getAgentDisplayCount,
 } from "./scan-format";
 import type { ScanStatusEvent } from "./api";
 
@@ -53,16 +52,25 @@ describe("formatScanStatusLabel", () => {
       } as unknown as ScanStatusEvent),
     ).toBe("Preparing local session index");
   });
+
+  it("shows full-history backfill progress after the main scan finishes", () => {
+    expect(
+      formatScanStatusLabel({
+        active: false,
+        backfill: {
+          active: true,
+          currentAgent: "codex",
+          pendingAgents: ["claudecode"],
+          completedAgents: [],
+          failedAgents: [],
+        },
+      } as unknown as ScanStatusEvent),
+    ).toBe("Indexing full history · codex · 1 queued");
+  });
 });
 
 describe("formatAgentScanProgress", () => {
   it("returns null for complete or missing agent", () => {
     expect(formatAgentScanProgress(null, "codex")).toBeNull();
-  });
-});
-
-describe("getAgentDisplayCount", () => {
-  it("returns fallback when agent status missing", () => {
-    expect(getAgentDisplayCount(null, "codex", 5)).toBe(5);
   });
 });

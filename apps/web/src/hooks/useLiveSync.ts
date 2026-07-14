@@ -4,12 +4,11 @@ import type { LiveSessionsUpdate } from "../lib/live-update";
 import type { ViewState } from "../lib/view-state";
 
 interface LiveSyncDeps {
-  appConfig: AppConfig | null;
+  timeWindow: AppConfig["window"] | null;
   viewState: ViewState;
-  applySessionsLiveEvent: (event: LiveSessionsUpdate) => void;
-  refreshAgents: () => Promise<unknown>;
+  refreshAgents: (window: AppConfig["window"]) => Promise<unknown>;
   refreshSessions: (window: AppConfig["window"]) => Promise<unknown>;
-  refreshProjects: () => Promise<unknown>;
+  refreshProjects: (window: AppConfig["window"]) => Promise<unknown>;
   refreshDashboard: () => Promise<void>;
   refreshProjectDashboard: () => Promise<void>;
   refreshSessionDetail: () => Promise<void>;
@@ -27,9 +26,8 @@ export function useLiveSync(deps: LiveSyncDeps) {
   const [liveNotice, setLiveNotice] = useState<string | null>(null);
   const [connectionNotice, setConnectionNotice] = useState<string | null>(null);
   const {
-    appConfig,
+    timeWindow,
     viewState,
-    applySessionsLiveEvent,
     refreshAgents,
     refreshSessions,
     refreshProjects,
@@ -42,15 +40,10 @@ export function useLiveSync(deps: LiveSyncDeps) {
 
   const syncLiveUpdate = useEffectEvent(async (event: LiveSessionsUpdate) => {
     try {
-      const canApplySessionUpdate = Boolean(event.changedSessionHeads && event.removedSessionRefs);
-      if (canApplySessionUpdate) {
-        applySessionsLiveEvent(event);
-      }
-
       await Promise.all([
-        refreshAgents(),
-        canApplySessionUpdate || !appConfig ? Promise.resolve() : refreshSessions(appConfig.window),
-        refreshProjects(),
+        timeWindow ? refreshAgents(timeWindow) : Promise.resolve(),
+        timeWindow ? refreshSessions(timeWindow) : Promise.resolve(),
+        timeWindow ? refreshProjects(timeWindow) : Promise.resolve(),
       ]);
 
       await refreshDashboard();

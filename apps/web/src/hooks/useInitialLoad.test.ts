@@ -22,6 +22,7 @@ describe("useInitialLoad", () => {
         refreshAgents: vi.fn().mockResolvedValue([]),
         refreshSessions,
         refreshProjects: vi.fn().mockResolvedValue([]),
+        resolveWindow: (window) => window,
       }),
     );
 
@@ -39,6 +40,7 @@ describe("useInitialLoad", () => {
         refreshAgents: vi.fn().mockRejectedValue(new Error("boom")),
         refreshSessions: vi.fn().mockResolvedValue([]),
         refreshProjects: vi.fn().mockResolvedValue([]),
+        resolveWindow: (window) => window,
       }),
     );
 

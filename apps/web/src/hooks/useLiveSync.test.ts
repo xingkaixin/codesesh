@@ -30,9 +30,8 @@ const rootView = { mode: "root", activeAgentKey: null, activeSessionSlug: null }
 
 function makeDeps() {
   return {
-    appConfig,
+    timeWindow: appConfig.window,
     viewState: rootView,
-    applySessionsLiveEvent: vi.fn(),
     refreshAgents: vi.fn().mockResolvedValue(undefined),
     refreshSessions: vi.fn().mockResolvedValue(undefined),
     refreshProjects: vi.fn().mockResolvedValue(undefined),

@@ -21,13 +21,15 @@ afterEach(() => {
 
 describe("useProjectDashboard", () => {
   it("stays idle without an active project", () => {
-    const { result } = renderHook(() => useProjectDashboard(appConfig, null, null, null));
+    const { result } = renderHook(() => useProjectDashboard(appConfig.window, null, null, null));
     expect(result.current.projectDashboard).toBeNull();
     expect(api.fetchDashboard).not.toHaveBeenCalled();
   });
 
   it("fetches for the active project", async () => {
-    const { result } = renderHook(() => useProjectDashboard(appConfig, kind, "pk", "path:pk"));
+    const { result } = renderHook(() =>
+      useProjectDashboard(appConfig.window, kind, "pk", "path:pk"),
+    );
     await waitFor(() => expect(result.current.projectDashboard).toEqual(data));
     expect(api.fetchDashboard).toHaveBeenCalledWith(appConfig.window, {
       projectKind: "path",
@@ -38,7 +40,7 @@ describe("useProjectDashboard", () => {
 
   it("resets the agent filter when the project changes", async () => {
     const { result, rerender } = renderHook(
-      ({ idKey }) => useProjectDashboard(appConfig, kind, "pk", idKey),
+      ({ idKey }) => useProjectDashboard(appConfig.window, kind, "pk", idKey),
       { initialProps: { idKey: "path:pk" } },
     );
     act(() => result.current.setSelectedProjectAgent("cc"));

@@ -56,6 +56,7 @@ describe("ScanStatusModel", () => {
       currentAgent: "codex",
       pendingAgents: ["claude"],
       completedAgents: [],
+      failedAgents: [],
     });
   });
 });

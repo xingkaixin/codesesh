@@ -18,7 +18,7 @@ const sample: ScanStatusEvent = {
   agentStatuses: {},
   totalAgents: 1,
   updatedAt: 123,
-  backfill: { active: false, pendingAgents: [], completedAgents: [] },
+  backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
 };
 
 afterEach(() => {

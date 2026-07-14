@@ -3,7 +3,6 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import {
   createRegisteredAgents,
-  filterSessions,
   getAgentLastFullSyncAt,
   isAgentCacheInitialized,
   loadCachedSessions,
@@ -174,7 +173,6 @@ export class LiveScanStore {
     });
     const initialResult = await scanSessions({
       ...this.scanOptions,
-      ...(deferInitialRefresh ? this.startupScanOptions : {}),
       useCache: this.scanOptions.useCache ?? true,
       smartRefresh: false,
       cacheOnly: deferInitialRefresh,
@@ -244,11 +242,6 @@ export class LiveScanStore {
       }
       if (agentNames.length === 0) {
         this.finishScanBatch();
-      }
-      for (const agent of this.agents) {
-        if (this.needsBackfill(agent)) {
-          this.enqueueBackfill(agent.name);
-        }
       }
     }, 0);
   }
@@ -382,14 +375,11 @@ export class LiveScanStore {
   }
 
   /**
-   * Only FileSystemSessionSource agents pay the O(history) enumeration cost this
-   * guards against: database agents already do a cheap single-file mtime check.
    * With no startup window configured, the regular refresh path already walks
    * full history, so backfill would be redundant.
    */
   private needsBackfill(agent: BaseAgent): boolean {
     if (this.startupScanOptions.from == null && this.startupScanOptions.to == null) return false;
-    if (!(agent instanceof FileSystemSessionSource)) return false;
     if (!agent.isAvailable()) return false;
     const lastSyncAt = getAgentLastFullSyncAt(agent.name);
     return lastSyncAt == null || Date.now() - lastSyncAt > BACKFILL_INTERVAL_MS;
@@ -409,22 +399,22 @@ export class LiveScanStore {
     if (!work) return;
     this.updateBackfillStatus(work.status);
 
-    void this.runBackfill(work.agentName).finally(() => {
+    void this.runBackfill(work.agentName).then((result) => {
       if (this.shuttingDown) return;
-      this.updateBackfillStatus(this.backfills.complete(work.agentName));
+      this.updateBackfillStatus(this.backfills.complete(work.agentName, result === "committed"));
       this.pumpBackfillQueue();
     });
   }
 
   /** Unbounded per-source sync to reconcile the full session history, not just the display window. */
-  private async runBackfill(agentName: string): Promise<void> {
-    await this.refreshes.serialize(agentName, "backfill", () => this.performBackfill(agentName));
+  private runBackfill(agentName: string): Promise<AgentOperationResult> {
+    return this.refreshes.serialize(agentName, "backfill", () => this.performBackfill(agentName));
   }
 
   private async performBackfill(agentName: string): Promise<AgentOperationResult> {
     const startedAt = performance.now();
     const agent = this.agents.find((item) => item.name === agentName);
-    if (!agent || !(agent instanceof FileSystemSessionSource) || !agent.isAvailable()) {
+    if (!agent || !agent.isAvailable()) {
       return "skipped";
     }
 
@@ -441,19 +431,21 @@ export class LiveScanStore {
         baseline,
         null,
         {},
-        { sourceSync: true, meta },
+        {
+          sourceSync: agent instanceof FileSystemSessionSource,
+          meta,
+        },
       );
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const fullSessions = attachMissingProjectIdentities(result.sessions);
-      const filtered = this.applyFilters(fullSessions);
       const diff = buildRefreshDiff(
         agentName,
         this.byAgent[agentName] ?? [],
-        filtered,
+        fullSessions,
         result.changedIds ?? [],
       );
 
-      this.byAgent[agentName] = sortSessions(filtered);
+      this.byAgent[agentName] = sortSessions(fullSessions);
       this.rebuildSessions();
 
       await this.searchIndexJobs.enqueue("scan.backfill", [
@@ -651,10 +643,6 @@ export class LiveScanStore {
     return new Set(this.scanOptions.agents.map((agent) => agent.toLowerCase()));
   }
 
-  private applyFilters(sessions: SessionHead[]): SessionHead[] {
-    return filterSessions(sessions, { ...this.scanOptions, ...this.startupScanOptions });
-  }
-
   private async refreshInitialIndex(): Promise<void> {
     const startedAt = performance.now();
     const context = "scan.initial.background";
@@ -695,6 +683,8 @@ export class LiveScanStore {
         return "failed";
       } finally {
         this.finishAgentScan(agentName);
+        const agent = this.agents.find((item) => item.name === agentName);
+        if (agent && this.needsBackfill(agent)) this.enqueueBackfill(agentName);
       }
     });
   }
@@ -725,7 +715,6 @@ export class LiveScanStore {
     let availabilityDuration = 0;
     let checkDuration = 0;
     let scanDuration = 0;
-    let filterDuration = 0;
     let diffDuration = 0;
     let persistDuration = 0;
     let searchIndexDuration = 0;
@@ -833,9 +822,6 @@ export class LiveScanStore {
 
     nextSessions = attachMissingProjectIdentities(nextSessions);
 
-    const filterStartedAt = performance.now();
-    nextSessions = this.applyFilters(nextSessions);
-    filterDuration = performance.now() - filterStartedAt;
     const diffStartedAt = performance.now();
     const diff = buildRefreshDiff(
       agentName,
@@ -914,7 +900,6 @@ export class LiveScanStore {
       availability_ms: Math.round(availabilityDuration),
       check_ms: Math.round(checkDuration),
       scan_ms: Math.round(scanDuration),
-      filter_ms: Math.round(filterDuration),
       diff_ms: Math.round(diffDuration),
       persist_ms: Math.round(persistDuration),
       search_index_ms: Math.round(searchIndexDuration),

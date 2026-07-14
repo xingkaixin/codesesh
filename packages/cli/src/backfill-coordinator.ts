@@ -9,6 +9,7 @@ export class BackfillCoordinator {
   private queue: string[] = [];
   private currentAgent: string | undefined;
   private completedAgents: string[] = [];
+  private failedAgents: string[] = [];
 
   get isRunning(): boolean {
     return this.currentAgent != null;
@@ -29,9 +30,14 @@ export class BackfillCoordinator {
     return { agentName, status: this.snapshot() };
   }
 
-  complete(agentName: string): BackfillStatus {
+  complete(agentName: string, succeeded = true): BackfillStatus {
     if (this.currentAgent === agentName) this.currentAgent = undefined;
-    if (!this.completedAgents.includes(agentName)) this.completedAgents.push(agentName);
+    if (succeeded) {
+      if (!this.completedAgents.includes(agentName)) this.completedAgents.push(agentName);
+      this.failedAgents = this.failedAgents.filter((agent) => agent !== agentName);
+    } else if (!this.failedAgents.includes(agentName)) {
+      this.failedAgents.push(agentName);
+    }
     return this.snapshot();
   }
 
@@ -46,6 +52,7 @@ export class BackfillCoordinator {
       pendingAgents: [...this.queue],
       currentAgent: this.currentAgent,
       completedAgents: [...this.completedAgents],
+      failedAgents: [...this.failedAgents],
     };
   }
 }

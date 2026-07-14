@@ -8,7 +8,7 @@ import type {
 import { ModelConfig } from "../../config";
 import { getSessionBookmarkKey } from "../../lib/bookmarks";
 import { getSessionDisplayTitle } from "../../lib/session-title";
-import { formatAgentScanProgress, getAgentDisplayCount } from "../../lib/scan-format";
+import { formatAgentScanProgress } from "../../lib/scan-format";
 import { getProjectGroupIdentity, getProjectIdentityKey, getProjectPath } from "../../lib/projects";
 import type { ViewState } from "../../lib/view-state";
 import { RenderProfiler } from "../RenderProfiler";
@@ -52,7 +52,7 @@ function AgentNavList({
             )}
             <span className="console-mono line-clamp-1 flex-1 text-xs">{agent.displayName}</span>
             <span className="console-mono text-[11px] text-[var(--console-muted)]">
-              {agentProgress ?? getAgentDisplayCount(scanStatus, agent.name, agent.count)}
+              {agentProgress ?? agent.count}
             </span>
           </>
         );
