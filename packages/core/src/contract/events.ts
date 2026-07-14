@@ -33,6 +33,7 @@ export interface BackfillStatus {
   pendingAgents: string[];
   currentAgent?: string;
   completedAgents: string[];
+  failedAgents: string[];
 }
 
 export interface ScanStatusEvent {

@@ -35,6 +35,7 @@ const core = vi.hoisted(() => ({
   createRegisteredAgents: vi.fn(),
   filterSessions: vi.fn((sessions: SessionHead[], _options: ScanOptions) => sessions),
   getCursorDataPath: vi.fn(() => "/tmp/cursor"),
+  getAgentLastFullSyncAt: vi.fn(),
   resolveProviderRoots: vi.fn(
     (): ProviderRoots => ({
       claudeRoot: "/tmp/claude",
@@ -48,6 +49,7 @@ const core = vi.hoisted(() => ({
   isAgentCacheInitialized: vi.fn(),
   loadCachedSessions: vi.fn(),
   markAgentCacheInitialized: vi.fn(),
+  markAgentFullSyncCompleted: vi.fn(),
   scanSessions: vi.fn(),
   saveCachedSessions: vi.fn(),
   saveCachedSessionChanges: vi.fn(),
@@ -256,9 +258,11 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     createRegisteredAgents: core.createRegisteredAgents,
     filterSessions: core.filterSessions,
     getCursorDataPath: core.getCursorDataPath,
+    getAgentLastFullSyncAt: core.getAgentLastFullSyncAt,
     isAgentCacheInitialized: core.isAgentCacheInitialized,
     loadCachedSessions: core.loadCachedSessions,
     markAgentCacheInitialized: core.markAgentCacheInitialized,
+    markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
     resolveProviderRoots: core.resolveProviderRoots,
     scanSessions: core.scanSessions,
     saveCachedSessions: core.saveCachedSessions,
@@ -420,6 +424,7 @@ describe("LiveScanStore", () => {
       ) => registerMockWatcher(path, options, listener),
     );
     core.getCursorDataPath.mockReturnValue("/tmp/cursor");
+    core.getAgentLastFullSyncAt.mockReturnValue(Date.now());
     core.isAgentCacheInitialized.mockReturnValue(true);
     core.loadCachedSessions.mockReturnValue(null);
     core.markAgentCacheInitialized.mockReset();
@@ -629,7 +634,7 @@ describe("LiveScanStore", () => {
     expect(workerThreads.workers).toHaveLength(0);
   });
 
-  it("builds a full cache before applying the startup time window when no cache is available", async () => {
+  it("publishes the startup window before backfilling a database agent", async () => {
     vi.useFakeTimers();
     const old = makeSession("old", { time_updated: 1000 });
     const recent = makeSession("recent", { time_updated: 5000 });
@@ -644,6 +649,8 @@ describe("LiveScanStore", () => {
     });
 
     core.createRegisteredAgents.mockReturnValue([codex]);
+    core.isAgentCacheInitialized.mockReturnValue(false);
+    core.getAgentLastFullSyncAt.mockReturnValue(null);
     core.scanSessions.mockResolvedValueOnce({
       sessions: [],
       byAgent: {},
@@ -665,28 +672,32 @@ describe("LiveScanStore", () => {
     await vi.advanceTimersByTimeAsync(250);
 
     expect(core.loadCachedSessions).toHaveBeenCalledWith("codex");
-    expect(codex.scan).toHaveBeenCalledWith(
+    expect(codex.scan).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
+        from: 3000,
         onProgress: expect.any(Function),
       }),
     );
-    expect((codex.scan as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).not.toHaveProperty("from");
-    expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent"]);
-    expect(workerThreads.workers.find((worker) => worker.workerData.jobs)?.workerData.jobs).toEqual(
-      [
-        expect.objectContaining({
-          kind: "full",
-          context: "scan.refresh",
-          agentName: "codex",
-          sessions: [
-            { ...old, project_identity: projectIdentity },
-            { ...recent, project_identity: projectIdentity },
-          ],
-          saveCache: true,
-        }),
-      ],
+    expect((codex.scan as ReturnType<typeof vi.fn>).mock.calls[1]?.[0]?.from).toBeUndefined();
+    await vi.waitFor(() =>
+      expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent", "old"]),
     );
-    expect(workerThreads.workers).toHaveLength(2);
+    const backfillJob = workerThreads.workers.filter((worker) => worker.workerData.jobs).at(-1)
+      ?.workerData.jobs;
+    expect(backfillJob).toEqual([
+      expect.objectContaining({
+        kind: "full",
+        context: "scan.backfill",
+        agentName: "codex",
+        sessions: [
+          { ...old, project_identity: projectIdentity },
+          { ...recent, project_identity: projectIdentity },
+        ],
+        saveCache: true,
+      }),
+    ]);
+    expect(workerThreads.workers).toHaveLength(4);
   });
 
   it("serializes refresh behind an in-flight backfill for the same agent", async () => {
@@ -967,7 +978,7 @@ describe("LiveScanStore", () => {
 
     expect(codex.checkForChanges).toHaveBeenCalledWith(1000, [old, recent]);
     expect(codex.incrementalScan).toHaveBeenCalledWith([old, recent], ["old"]);
-    expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent"]);
+    expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent", "old"]);
     expect(events).toEqual([]);
     expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
       {

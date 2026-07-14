@@ -52,7 +52,12 @@ export const SAMPLE_SCAN_STATUS_EVENT = {
   startedAt: 1_700_000_000_000,
   updatedAt: 1_700_000_010_000,
   completedAt: 1_700_000_010_000,
-  backfill: { active: false, pendingAgents: [], completedAgents: ["claudecode"] },
+  backfill: {
+    active: false,
+    pendingAgents: [],
+    completedAgents: ["claudecode"],
+    failedAgents: [],
+  },
 } satisfies ScanStatusEvent;
 
 export const SAMPLE_SESSIONS_UPDATED_EVENT = {

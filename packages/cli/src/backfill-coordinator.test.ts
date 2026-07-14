@@ -38,6 +38,17 @@ describe("BackfillCoordinator", () => {
       pendingAgents: [],
       currentAgent: undefined,
       completedAgents: [],
+      failedAgents: [],
     });
+  });
+
+  it("reports failed work separately from completed coverage", () => {
+    const coordinator = new BackfillCoordinator();
+    coordinator.enqueue("cursor");
+    coordinator.take();
+
+    expect(coordinator.complete("cursor", false)).toEqual(
+      expect.objectContaining({ completedAgents: [], failedAgents: ["cursor"] }),
+    );
   });
 });

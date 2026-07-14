@@ -418,7 +418,8 @@ export function handleGetAgents(
   defaults: SessionListDefaults = {},
 ) {
   const scanResult = scanSource.getSnapshot();
-  const { from, to } = defaults;
+  const from = parseDateParam(c.req.query("from"), defaults.from);
+  const to = parseDateParam(c.req.query("to"), defaults.to);
   const counts = Object.fromEntries(
     Object.entries(scanResult.byAgent).map(([agentName, sessions]) => [
       agentName,
@@ -435,7 +436,8 @@ export function handleGetProjects(
   defaults: SessionListDefaults = {},
 ) {
   const scanResult = scanSource.getSnapshot();
-  const { from, to } = defaults;
+  const from = parseDateParam(c.req.query("from"), defaults.from);
+  const to = parseDateParam(c.req.query("to"), defaults.to);
   const sessions = filterSessionsByActivityWindow(scanResult.sessions, from, to);
   return c.json({
     projects: attachProjectMetrics(listCachedProjectGroups(sessions), sessions),
