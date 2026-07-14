@@ -9,9 +9,10 @@ import {
 
 interface InitialLoadDeps {
   refreshAppConfig: () => Promise<AppConfig>;
-  refreshAgents: () => Promise<AgentInfo[]>;
+  refreshAgents: (window: AppConfig["window"]) => Promise<AgentInfo[]>;
   refreshSessions: (window: AppConfig["window"]) => Promise<SessionHead[]>;
-  refreshProjects: () => Promise<ProjectGroup[]>;
+  refreshProjects: (window: AppConfig["window"]) => Promise<ProjectGroup[]>;
+  resolveWindow: (fallback: AppConfig["window"]) => AppConfig["window"];
 }
 
 /**
@@ -24,6 +25,7 @@ export function useInitialLoad({
   refreshAgents,
   refreshSessions,
   refreshProjects,
+  resolveWindow,
 }: InitialLoadDeps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,10 +37,11 @@ export function useInitialLoad({
     (async () => {
       try {
         const config = await refreshAppConfig();
+        const window = resolveWindow(config.window);
         const [agentList, sessionList, projectList] = await Promise.all([
-          refreshAgents(),
-          refreshSessions(config.window),
-          refreshProjects(),
+          refreshAgents(window),
+          refreshSessions(window),
+          refreshProjects(window),
         ]);
         logClientEvent("app.load.done", {
           duration_ms: Math.round(performance.now() - startedAt),
@@ -58,7 +61,7 @@ export function useInitialLoad({
       }
     })();
     return () => ac.abort();
-  }, [refreshAppConfig, refreshAgents, refreshSessions, refreshProjects]);
+  }, [refreshAppConfig, refreshAgents, refreshSessions, refreshProjects, resolveWindow]);
 
   return { loading, error };
 }

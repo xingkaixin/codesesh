@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { type ProjectGroup, fetchProjects } from "../lib/api";
+import { type AppConfig, type ProjectGroup, fetchProjects } from "../lib/api";
 
 /**
  * Owns the project list. Refresh tolerates failures (keeps the UI usable) and
@@ -8,9 +8,9 @@ import { type ProjectGroup, fetchProjects } from "../lib/api";
 export function useProjects() {
   const [projects, setProjects] = useState<ProjectGroup[]>([]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (window?: AppConfig["window"]) => {
     try {
-      const result = await fetchProjects();
+      const result = await fetchProjects(window);
       setProjects(result.projects);
       return result.projects;
     } catch (err) {

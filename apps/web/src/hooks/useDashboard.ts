@@ -5,13 +5,13 @@ import { type AppConfig, type DashboardData, fetchDashboard } from "../lib/api";
  * Owns the top-level dashboard: fetches once the app window is known and
  * exposes refresh() for the live-update subscription.
  */
-export function useDashboard(appConfig: AppConfig | null) {
+export function useDashboard(window: AppConfig["window"] | null) {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
 
   useEffect(() => {
-    if (!appConfig) return;
+    if (!window) return;
     let cancelled = false;
-    void fetchDashboard(appConfig.window)
+    void fetchDashboard(window)
       .then((data) => {
         if (!cancelled) setDashboard(data);
       })
@@ -21,16 +21,16 @@ export function useDashboard(appConfig: AppConfig | null) {
     return () => {
       cancelled = true;
     };
-  }, [appConfig]);
+  }, [window]);
 
   const refresh = useCallback(async () => {
     try {
-      const data = await fetchDashboard(appConfig?.window);
+      const data = await fetchDashboard(window ?? undefined);
       setDashboard(data);
     } catch (err) {
       console.error("Failed to refresh dashboard:", err);
     }
-  }, [appConfig]);
+  }, [window]);
 
   return { dashboard, refresh };
 }

@@ -15,7 +15,7 @@ export function formatIsoDate(ts: number): string {
 export function formatWindowLabel(config: AppConfig | null): string | null {
   if (!config) return null;
   const { from, to, days } = config.window;
-  if (from == null) return "All time";
+  if (days === 0 || from == null) return "All time";
   const fromStr = formatIsoDate(from);
   const toStr = formatIsoDate(to ?? Date.now());
   if (days) return `Last ${days}d · ${fromStr} → ${toStr}`;
@@ -28,7 +28,18 @@ export function formatSearchSubtitle(query: string, loading: boolean, count: num
 }
 
 export function formatScanStatusLabel(status: ScanStatusEvent | null): string | null {
-  if (!status?.active) return null;
+  if (!status) return null;
+  if (status.backfill?.active) {
+    const current = status.backfill.currentAgent;
+    const pending = status.backfill.pendingAgents.length;
+    return current
+      ? `Indexing full history · ${current}${pending > 0 ? ` · ${pending} queued` : ""}`
+      : "Indexing full history";
+  }
+  if (status.backfill?.failedAgents.length) {
+    return `History indexing failed · ${status.backfill.failedAgents.join(", ")}`;
+  }
+  if (!status.active) return null;
 
   const completed = status.completedAgents.length;
   const total = status.totalAgents;
@@ -46,7 +57,7 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
       : "";
 
   if (status.phase === "initializing") {
-    return `First-run setup: indexing all local sessions${agentProgress}. Your selected time window appears after this finishes.`;
+    return `First-run setup: indexing recent sessions${agentProgress}. Full history continues in the background.`;
   }
   if (status.phase === "indexing") return "Preparing local session index";
 

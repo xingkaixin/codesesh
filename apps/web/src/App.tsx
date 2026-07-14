@@ -8,6 +8,7 @@ import { deleteSessionAlias, logClientEvent, upsertSessionAlias } from "./lib/ap
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { CopyResumeButton } from "./components/CopyResumeButton";
 import { SessionAliasDialog, type SessionAliasTarget } from "./components/SessionAliasDialog";
+import { TimeWindowControl } from "./components/TimeWindowControl";
 import { RenderProfiler } from "./components/RenderProfiler";
 import { parseViewState } from "./lib/view-state";
 import { useScanStatus } from "./hooks/useScanStatus";
@@ -23,12 +24,13 @@ import { useProjects } from "./hooks/useProjects";
 import { useInitialLoad } from "./hooks/useInitialLoad";
 import { useLiveSync } from "./hooks/useLiveSync";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { useTimeWindow } from "./hooks/useTimeWindow";
 import { buildRouteHeaderModel } from "./lib/build-route-header-model";
 import { AppSidebar } from "./components/app/AppSidebar";
 import { ShortcutHelpDialog } from "./components/app/ShortcutHelpDialog";
 import { AppRouteContent } from "./components/app/AppRouteContent";
 import type { BrowseBy } from "./components/app/types";
-import { formatScanStatusLabel, formatSearchSubtitle, formatWindowLabel } from "./lib/scan-format";
+import { formatScanStatusLabel, formatSearchSubtitle } from "./lib/scan-format";
 import {
   getProjectGroupIdentity,
   getProjectIdentityKey,
@@ -48,18 +50,17 @@ const SHORTCUT_HINT_STORAGE_KEY = "codesesh.shortcuts-hint-dismissed";
 export default function App() {
   const navigate = useNavigate();
   const { appConfig, refresh: refreshAppConfig } = useAppConfig();
+  const timeWindowController = useTimeWindow(appConfig?.window);
+  const { timeWindow } = timeWindowController;
   const { agents, validAgentKeys, agentNameMap, refresh: refreshAgents } = useAgents();
-  const {
-    sessions,
-    refresh: refreshSessions,
-    applyLiveEvent: applySessionsLiveEvent,
-  } = useSessions();
+  const { sessions, refresh: refreshSessions } = useSessions();
   const { projects, refresh: refreshProjects } = useProjects();
   const { loading, error } = useInitialLoad({
     refreshAppConfig,
     refreshAgents,
     refreshSessions,
     refreshProjects,
+    resolveWindow: timeWindowController.resolve,
   });
 
   const [browseBy, setBrowseBy] = useState<BrowseBy>("agents");
@@ -107,7 +108,7 @@ export default function App() {
   }, [viewState]);
   const sessionIndexes = useMemo(() => buildSessionIndexes(sessions, agents), [sessions, agents]);
 
-  const search = useSessionSearch(sessionIndexes);
+  const search = useSessionSearch(sessionIndexes, timeWindow);
   const {
     draftSearchQuery,
     activeSearchQuery,
@@ -152,9 +153,9 @@ export default function App() {
     ? getProjectIdentityKey(activeProjectIdentity)
     : null;
 
-  const { dashboard, refresh: refreshDashboard } = useDashboard(appConfig);
+  const { dashboard, refresh: refreshDashboard } = useDashboard(timeWindow);
   const projectController = useProjectDashboard(
-    appConfig,
+    timeWindow,
     activeProjectKind,
     activeProjectKey,
     activeProjectIdentityKey,
@@ -258,9 +259,8 @@ export default function App() {
   const isScanActive = scanStatus?.active === true;
 
   const { liveNotice } = useLiveSync({
-    appConfig,
+    timeWindow,
     viewState,
-    applySessionsLiveEvent,
     refreshAgents,
     refreshSessions,
     refreshProjects,
@@ -273,7 +273,7 @@ export default function App() {
 
   const refreshAliasViews = useCallback(async () => {
     await Promise.all([
-      appConfig ? refreshSessions(appConfig.window) : Promise.resolve(),
+      timeWindow ? refreshSessions(timeWindow) : Promise.resolve(),
       refreshDashboard(),
       refreshProjectDashboard(),
       refreshSessionDetail(),
@@ -281,7 +281,7 @@ export default function App() {
       bookmarks.refresh(),
     ]);
   }, [
-    appConfig,
+    timeWindow,
     bookmarks,
     refreshDashboard,
     refreshProjectDashboard,
@@ -501,13 +501,15 @@ export default function App() {
             >
               ?<span className="hidden sm:inline"> Shortcuts</span>
             </button>
-            {formatWindowLabel(appConfig) ? (
-              <span
-                className="console-mono hidden rounded-sm border border-[var(--console-border)] bg-white px-2 py-1 text-xs text-[var(--console-text)] md:inline-flex"
-                title="Time window applied to agent counts, dashboard, and session list"
-              >
-                {formatWindowLabel(appConfig)}
-              </span>
+            {timeWindow && timeWindowController.preset ? (
+              <TimeWindowControl
+                window={timeWindow}
+                preset={timeWindowController.preset}
+                customFrom={timeWindowController.customFrom}
+                customTo={timeWindowController.customTo}
+                onSelectPreset={timeWindowController.selectPreset}
+                onSelectCustom={timeWindowController.selectCustom}
+              />
             ) : null}
             <span className="console-mono hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-muted)] sm:inline-flex">
               v{__APP_VERSION__}

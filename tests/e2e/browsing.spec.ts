@@ -105,6 +105,32 @@ test("covers dashboard, detail, search, projects, and pin flows", async ({ page 
   expect(consoleErrors).toEqual([]);
 });
 
+test("persists the selected time range across navigation", async ({ page }) => {
+  await page.goto("/claudecode/e2e-dashboard?range=14d");
+
+  const range = page.getByRole("combobox", { name: "Session time range" });
+  await expect(range).toHaveValue("14d");
+
+  await page
+    .getByRole("navigation", { name: "Breadcrumb" })
+    .getByRole("link", { name: "Dashboard" })
+    .click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("range")).toBe("14d");
+  await page.reload();
+  await expect(range).toHaveValue("14d");
+
+  await range.selectOption("custom");
+  const dialog = page.getByRole("dialog", { name: "Custom time range" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("From").fill("2026-04-01");
+  await dialog.getByLabel("To").fill("2026-04-30");
+  await dialog.getByRole("button", { name: "Apply range" }).click();
+
+  await expect.poll(() => new URL(page.url()).searchParams.get("range")).toBe("custom");
+  await expect.poll(() => new URL(page.url()).searchParams.get("from")).toBe("2026-04-01");
+  await expect.poll(() => new URL(page.url()).searchParams.get("to")).toBe("2026-04-30");
+});
+
 test("keeps detail drawers modal and restores focus", async ({ page }) => {
   await page.goto("/claudecode/e2e-dashboard");
   await expect(page.getByTestId("session-detail")).toBeVisible();

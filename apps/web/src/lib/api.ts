@@ -100,6 +100,8 @@ export interface SearchRequestOptions {
   fileKind?: FileActivityKind;
   costMin?: number;
   costMax?: number;
+  from?: number;
+  to?: number;
 }
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -119,12 +121,23 @@ export async function fetchScanStatus(): Promise<ScanStatusEvent> {
   return fetchJson("/api/status");
 }
 
-export async function fetchAgents(): Promise<AgentInfo[]> {
-  return fetchJson("/api/agents");
+function appendTimeWindow(params: URLSearchParams, window?: AppConfig["window"]): void {
+  if (window?.from != null) params.set("from", new Date(window.from).toISOString());
+  if (window?.to != null) params.set("to", new Date(window.to).toISOString());
 }
 
-export async function fetchProjects(): Promise<{ projects: ApiProjectGroup[] }> {
-  return fetchJson("/api/projects");
+export async function fetchAgents(window?: AppConfig["window"]): Promise<AgentInfo[]> {
+  const params = new URLSearchParams();
+  appendTimeWindow(params, window);
+  return fetchJson(`/api/agents?${params}`);
+}
+
+export async function fetchProjects(
+  window?: AppConfig["window"],
+): Promise<{ projects: ApiProjectGroup[] }> {
+  const params = new URLSearchParams();
+  appendTimeWindow(params, window);
+  return fetchJson(`/api/projects?${params}`);
 }
 
 export async function fetchSessions(
@@ -140,8 +153,7 @@ export async function fetchSessions(
   if (options.agent) params.set("agent", options.agent);
   if (options.projectKind) params.set("projectKind", options.projectKind);
   if (options.projectKey) params.set("projectKey", options.projectKey);
-  if (options.from != null) params.set("from", new Date(options.from).toISOString());
-  if (options.to != null) params.set("to", new Date(options.to).toISOString());
+  appendTimeWindow(params, options);
   return fetchJson(`/api/sessions?${params}`);
 }
 
@@ -158,9 +170,8 @@ export async function fetchDashboard(
   filters: { projectKind?: ProjectIdentityKind; projectKey?: string; agent?: string } = {},
 ): Promise<DashboardData> {
   const params = new URLSearchParams();
-  if (window?.from != null) params.set("from", new Date(window.from).toISOString());
-  if (window?.to != null) params.set("to", new Date(window.to).toISOString());
-  if (window?.days != null && window.days > 0) params.set("days", String(window.days));
+  if (window?.days !== 0) appendTimeWindow(params, window);
+  if (window?.days != null) params.set("days", String(window.days));
   if (filters.projectKind) params.set("projectKind", filters.projectKind);
   if (filters.projectKey) params.set("projectKey", filters.projectKey);
   if (filters.agent) params.set("agent", filters.agent);
@@ -182,6 +193,7 @@ export async function fetchSearchResults(
   if (options.fileKind) params.set("fileActivity", options.fileKind);
   if (options.costMin != null) params.set("costMin", String(options.costMin));
   if (options.costMax != null) params.set("costMax", String(options.costMax));
+  appendTimeWindow(params, options);
   return fetchJson(`/api/search?${params}`);
 }
 

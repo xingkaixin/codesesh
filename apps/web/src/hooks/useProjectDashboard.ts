@@ -12,7 +12,7 @@ import {
  * exposes refresh() for the live-update subscription.
  */
 export function useProjectDashboard(
-  appConfig: AppConfig | null,
+  window: AppConfig["window"] | null,
   activeProjectKind: ProjectIdentityKind | null,
   activeProjectKey: string | null,
   activeProjectIdentityKey: string | null,
@@ -27,7 +27,7 @@ export function useProjectDashboard(
   }, [activeProjectIdentityKey]);
 
   useEffect(() => {
-    if (!activeProjectKey || !appConfig) {
+    if (!activeProjectKey || !window) {
       setProjectDashboard(null);
       setProjectDashboardError(null);
       setProjectDashboardLoading(false);
@@ -38,7 +38,7 @@ export function useProjectDashboard(
     setProjectDashboardLoading(true);
     setProjectDashboardError(null);
 
-    void fetchDashboard(appConfig.window, {
+    void fetchDashboard(window, {
       projectKind: activeProjectKind ?? undefined,
       projectKey: activeProjectKey,
       agent: selectedProjectAgent,
@@ -61,12 +61,12 @@ export function useProjectDashboard(
     return () => {
       cancelled = true;
     };
-  }, [activeProjectKind, activeProjectKey, appConfig, selectedProjectAgent]);
+  }, [activeProjectKind, activeProjectKey, selectedProjectAgent, window]);
 
   const refresh = useCallback(async () => {
-    if (!activeProjectKey || !appConfig) return;
+    if (!activeProjectKey || !window) return;
     try {
-      const data = await fetchDashboard(appConfig.window, {
+      const data = await fetchDashboard(window, {
         projectKind: activeProjectKind ?? undefined,
         projectKey: activeProjectKey,
         agent: selectedProjectAgent,
@@ -75,7 +75,7 @@ export function useProjectDashboard(
     } catch (err) {
       console.error("Failed to refresh project dashboard:", err);
     }
-  }, [activeProjectKind, activeProjectKey, appConfig, selectedProjectAgent]);
+  }, [activeProjectKind, activeProjectKey, selectedProjectAgent, window]);
 
   return {
     projectDashboard,
