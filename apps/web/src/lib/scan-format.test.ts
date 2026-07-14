@@ -5,7 +5,6 @@ import {
   formatScanStatusLabel,
   formatSearchSubtitle,
   formatWindowLabel,
-  getAgentDisplayCount,
 } from "./scan-format";
 import type { ScanStatusEvent } from "./api";
 
@@ -73,11 +72,5 @@ describe("formatScanStatusLabel", () => {
 describe("formatAgentScanProgress", () => {
   it("returns null for complete or missing agent", () => {
     expect(formatAgentScanProgress(null, "codex")).toBeNull();
-  });
-});
-
-describe("getAgentDisplayCount", () => {
-  it("returns fallback when agent status missing", () => {
-    expect(getAgentDisplayCount(null, "codex", 5)).toBe(5);
   });
 });

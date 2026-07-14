@@ -80,14 +80,3 @@ export function formatAgentScanProgress(
   }
   return agentStatus.status === "scanning" ? "Scanning" : "Pending";
 }
-
-export function getAgentDisplayCount(
-  status: ScanStatusEvent | null,
-  agentName: string,
-  fallback: number,
-): number {
-  const agentStatus = status?.agentStatuses[agentName];
-  return agentStatus?.status === "complete" && agentStatus.sessions != null
-    ? agentStatus.sessions
-    : fallback;
-}
