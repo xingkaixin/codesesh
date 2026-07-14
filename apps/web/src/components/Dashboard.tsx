@@ -16,6 +16,7 @@ import type {
 import { getSessionBookmarkKey } from "../lib/bookmarks";
 import { formatCostSource, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getProjectPath } from "../lib/projects";
+import { getSessionDisplayTitle } from "../lib/session-title";
 import { BookmarkButton } from "./BookmarkButton";
 import { SmartTagChips } from "./SmartTagChips";
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "./ui/chart";
@@ -620,7 +621,7 @@ function BookmarkedSessions({
                   ) : null}
                   <div className="min-w-0 flex-1">
                     <p className="line-clamp-1 text-sm text-[var(--console-text)]">
-                      {session.title}
+                      {getSessionDisplayTitle(session)}
                     </p>
                     <p className="console-mono mt-0.5 line-clamp-1 text-[11px] text-[var(--console-muted)]">
                       /{session.fullPath} · {formatRelativeTime(updated)}
@@ -683,7 +684,7 @@ function RecentSessions({
                       />
                     ) : null}
                     <p className="line-clamp-1 flex-1 text-sm text-[var(--console-text)]">
-                      {session.title}
+                      {getSessionDisplayTitle(session)}
                     </p>
                     <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
                       {formatRelativeTime(updated)}
@@ -748,7 +749,7 @@ function RecentFileActivity({ activity }: { activity: FileActivityResult[] }) {
                 </div>
                 <p className="console-mono mt-1 line-clamp-1 text-[11px] text-[var(--console-muted)]">
                   {item.session.project_identity?.displayName ?? item.session.directory} ·{" "}
-                  {item.session.title} · {item.count} events
+                  {getSessionDisplayTitle(item.session)} · {item.count} events
                 </p>
               </Link>
             </li>

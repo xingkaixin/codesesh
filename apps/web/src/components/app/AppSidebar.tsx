@@ -7,11 +7,12 @@ import type {
 } from "../../lib/api";
 import { ModelConfig } from "../../config";
 import { getSessionBookmarkKey } from "../../lib/bookmarks";
+import { getSessionDisplayTitle } from "../../lib/session-title";
 import { formatAgentScanProgress, getAgentDisplayCount } from "../../lib/scan-format";
 import { getProjectGroupIdentity, getProjectIdentityKey, getProjectPath } from "../../lib/projects";
 import type { ViewState } from "../../lib/view-state";
-import { BookmarkButton } from "../BookmarkButton";
 import { RenderProfiler } from "../RenderProfiler";
+import { SessionActionsMenu } from "../SessionActionsMenu";
 import { SessionTreeSidebar } from "../SessionTreeSidebar";
 import { Link } from "react-router-dom";
 import { BrowseByToggle } from "./BrowseByToggle";
@@ -153,6 +154,8 @@ export interface AppSidebarActions {
   onToggleBookmark: (session: BookmarkedSessionSnapshot) => void;
   onSelectFlatSidebarSession: (session: SessionHead) => void;
   onToggleSidebarSessionBookmark: (session: SessionHead) => void;
+  onRenameSession: (session: SessionHead) => void;
+  onRenameBookmarkedSession: (session: BookmarkedSessionSnapshot) => void;
   onSelectTreeSidebarSession: (sessionId: string) => void;
 }
 
@@ -179,6 +182,8 @@ export function AppSidebar({
     onToggleBookmark,
     onSelectFlatSidebarSession,
     onToggleSidebarSessionBookmark,
+    onRenameSession,
+    onRenameBookmarkedSession,
     onSelectTreeSidebarSession,
   },
 }: {
@@ -297,14 +302,18 @@ export function AppSidebar({
                         ) : null}
                         <div className="min-w-0 flex-1">
                           <span className="console-mono line-clamp-1 block text-xs">
-                            {session.title}
+                            {getSessionDisplayTitle(session)}
                           </span>
                           <span className="console-mono mt-0.5 line-clamp-1 block text-[10px] text-[var(--console-muted)]">
                             {agent?.name ?? session.agentKey}
                           </span>
                         </div>
                       </Link>
-                      <BookmarkButton active onToggle={() => onToggleBookmark(session)} />
+                      <SessionActionsMenu
+                        bookmarked
+                        onRename={() => onRenameBookmarkedSession(session)}
+                        onToggleBookmark={() => onToggleBookmark(session)}
+                      />
                     </div>
                   </li>
                 );
@@ -342,6 +351,7 @@ export function AppSidebar({
               bookmarkedSessionIds={bookmarkedSidebarSessionIds}
               onSelectSession={onSelectFlatSidebarSession}
               onToggleBookmark={onToggleSidebarSessionBookmark}
+              onRenameSession={onRenameSession}
             />
           ) : (
             <RenderProfiler id="SessionTreeSidebar" detail={{ sessions: sidebarSessions.length }}>
@@ -352,6 +362,7 @@ export function AppSidebar({
                 onSelectSession={onSelectTreeSidebarSession}
                 bookmarkedSessionIds={bookmarkedSidebarSessionIds}
                 onToggleBookmark={onToggleSidebarSessionBookmark}
+                onRenameSession={onRenameSession}
               />
             </RenderProfiler>
           )}

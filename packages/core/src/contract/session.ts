@@ -125,6 +125,7 @@ export interface SessionHead {
   id: string;
   slug: string;
   title: string;
+  display_title?: string;
   directory: string;
   project_identity?: ProjectIdentity;
   time_created: number;
@@ -139,6 +140,7 @@ export interface SessionHead {
 export interface SessionData {
   id: string;
   title: string;
+  display_title?: string;
   slug?: string | null;
   directory: string;
   project_identity?: ProjectIdentity;

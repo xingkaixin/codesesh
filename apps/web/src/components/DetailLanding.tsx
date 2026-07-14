@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ModelConfig } from "../config";
 import type { SessionHead } from "../lib/api";
 import { formatCostSource, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
+import { getSessionDisplayTitle } from "../lib/session-title";
 import { BookmarkButton } from "./BookmarkButton";
 import { SmartTagChips } from "./SmartTagChips";
 
@@ -176,7 +177,9 @@ function RecentSessions({
             <li key={session.id}>
               <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
                 <Link to={`/${session.fullPath}`} className="min-w-0 flex-1">
-                  <p className="line-clamp-1 text-sm text-[var(--console-text)]">{session.title}</p>
+                  <p className="line-clamp-1 text-sm text-[var(--console-text)]">
+                    {getSessionDisplayTitle(session)}
+                  </p>
                   <p className="console-mono mt-0.5 text-[11px] text-[var(--console-muted)]">
                     /{session.fullPath} ·{" "}
                     {formatRelativeTime(session.time_updated || session.time_created)}

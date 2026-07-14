@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import { Link } from "react-router-dom";
 import type { AgentInfo, SearchResult } from "../../lib/api";
+import { getSessionDisplayTitle } from "../../lib/session-title";
 import { SmartTagChips } from "../SmartTagChips";
 import { SearchFilterBar } from "./SearchFilterBar";
 import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
@@ -162,13 +163,13 @@ export function SearchResultsPanel({
               </span>
             </div>
             <h2 className="console-mono mt-3 text-sm font-semibold text-[var(--console-text)]">
-              {result.session.title}
+              {getSessionDisplayTitle(result.session)}
             </h2>
             <SmartTagChips tags={result.session.smart_tags} className="mt-2" />
             <p
               className="console-mono mt-2 text-xs leading-6 text-[var(--console-muted)] [&_mark]:bg-[var(--console-accent)] [&_mark]:px-0.5 [&_mark]:text-white"
               dangerouslySetInnerHTML={{
-                __html: toSafeSnippetHtml(result.snippet || result.session.title),
+                __html: toSafeSnippetHtml(result.snippet || getSessionDisplayTitle(result.session)),
               }}
             />
           </Link>

@@ -15,6 +15,7 @@ import type {
 } from "@codesesh/core/contract";
 import {
   BookmarkStorageUnavailableError,
+  StateStorageUnavailableError,
   createProjectScopeMatcher,
   deleteBookmark,
   getAgentInfoMap,
@@ -30,6 +31,10 @@ import {
   listSessionFileActivity,
   listCachedProjectGroups,
   listBookmarks,
+  listSessionAliases,
+  mergeSearchQueryOptions,
+  deleteSessionAlias,
+  upsertSessionAlias,
   realFs,
   upsertBookmark,
   matchesProjectScope as sessionMatchesProjectScope,
@@ -42,6 +47,7 @@ import {
   type DashboardData,
   type DashboardScope,
   type FileActivityKind,
+  type FileActivityResult,
   type ProjectIdentityRef,
   type SearchOptions,
 } from "@codesesh/core";
@@ -65,6 +71,97 @@ export interface SessionListDefaults {
 interface ClientLogPayload {
   event?: unknown;
   data?: unknown;
+}
+
+interface SessionAliasPayload {
+  alias?: unknown;
+}
+
+type SessionAliasMap = Map<string, string>;
+
+function getSessionAliasKey(agentKey: string, sessionId: string): string {
+  return `${agentKey.toLowerCase()}\0${sessionId}`;
+}
+
+function getSessionAgentKey(session: Pick<SessionHead, "slug">): string {
+  return session.slug.split("/")[0]?.toLowerCase() ?? "";
+}
+
+function loadSessionAliasMap(): SessionAliasMap {
+  try {
+    return new Map(
+      listSessionAliases().map((alias) => [
+        getSessionAliasKey(alias.agentKey, alias.sessionId),
+        alias.alias,
+      ]),
+    );
+  } catch (error) {
+    if (!(error instanceof StateStorageUnavailableError)) {
+      appLogger.warn("api.session_aliases.load_failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return new Map();
+  }
+}
+
+function isStateStorageUnavailable(error: unknown): boolean {
+  return error instanceof StateStorageUnavailableError;
+}
+
+function withDisplayTitle<T extends { id: string; title: string; display_title?: string }>(
+  session: T,
+  agentKey: string,
+  aliases: SessionAliasMap,
+): T {
+  const alias = aliases.get(getSessionAliasKey(agentKey, session.id));
+  return alias ? { ...session, display_title: alias } : session;
+}
+
+function withBookmarkDisplayTitle(
+  bookmark: BookmarkRecord,
+  aliases: SessionAliasMap,
+): BookmarkRecord {
+  const alias = aliases.get(getSessionAliasKey(bookmark.agentKey, bookmark.sessionId));
+  return alias ? { ...bookmark, display_title: alias } : bookmark;
+}
+
+function withFileActivityDisplayTitle(
+  activity: FileActivityResult,
+  aliases: SessionAliasMap,
+): FileActivityResult {
+  return {
+    ...activity,
+    session: withDisplayTitle(activity.session, activity.agent_name, aliases),
+  };
+}
+
+function findAliasSearchResults(
+  query: string,
+  options: SearchOptions,
+  scanResult: ScanResult,
+  aliases: SessionAliasMap,
+) {
+  const search = mergeSearchQueryOptions(query, options);
+  const needle = search.text.trim().toLowerCase();
+  if (!needle || aliases.size === 0) return [];
+
+  return executeSessionSearch(
+    "",
+    { ...search.options, limit: Math.max(scanResult.sessions.length, 1) },
+    scanResult,
+  ).flatMap((result) => {
+    const alias = aliases.get(getSessionAliasKey(result.agentName, result.session.id));
+    if (!alias || !alias.toLowerCase().includes(needle)) return [];
+    return [
+      {
+        agentName: result.agentName,
+        session: withDisplayTitle(result.session, result.agentName, aliases),
+        snippet: `Alias · ${result.session.directory}`,
+        matchType: "title" as const,
+      },
+    ];
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -387,11 +484,18 @@ export function handleGetSessions(
     sessions = sessions.filter((s) => s.smart_tags?.includes(tag as SmartTag));
   }
 
+  const aliases = loadSessionAliasMap();
   if (q) {
-    sessions = sessions.filter((s) => s.title.toLowerCase().includes(q));
+    sessions = sessions.filter((session) => {
+      const alias = aliases.get(getSessionAliasKey(getSessionAgentKey(session), session.id));
+      return session.title.toLowerCase().includes(q) || alias?.toLowerCase().includes(q);
+    });
   }
-
-  return c.json({ sessions });
+  return c.json({
+    sessions: sessions.map((session) =>
+      withDisplayTitle(session, getSessionAgentKey(session), aliases),
+    ),
+  });
 }
 
 export function handleSearchSessions(
@@ -409,8 +513,17 @@ export function handleSearchSessions(
     return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
   }
   const searchOptions = parseSearchOptions(c, defaults, projectIdentity);
-  const results = executeSessionSearch(query, searchOptions, scanResult);
-  return c.json({ results });
+  const aliases = loadSessionAliasMap();
+  const results = executeSessionSearch(query, searchOptions, scanResult).map((result) => ({
+    ...result,
+    session: withDisplayTitle(result.session, result.agentName, aliases),
+  }));
+  const aliasResults = findAliasSearchResults(query, searchOptions, scanResult, aliases);
+  const deduped = new Map<string, (typeof results)[number]>();
+  for (const result of [...aliasResults, ...results]) {
+    deduped.set(`${result.agentName}\0${result.session.id}`, result);
+  }
+  return c.json({ results: [...deduped.values()].slice(0, searchOptions.limit ?? 50) });
 }
 
 function parseFileActivityKind(value: string | undefined): FileActivityKind | undefined {
@@ -447,6 +560,7 @@ export function handleGetFileActivity(c: Context, defaults: SessionListDefaults 
     return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
   }
 
+  const aliases = loadSessionAliasMap();
   return c.json({
     activity: listFileActivity({
       agent: optionalQueryValue(c.req.query("agent")),
@@ -460,7 +574,7 @@ export function handleGetFileActivity(c: Context, defaults: SessionListDefaults 
       from: parseDateParam(c.req.query("from"), defaults.from),
       to: parseDateParam(c.req.query("to"), defaults.to),
       limit,
-    }),
+    }).map((activity) => withFileActivityDisplayTitle(activity, aliases)),
   });
 }
 
@@ -523,8 +637,9 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
       tag_duration_ms: Math.round(tagDuration),
       duration_ms: Math.round(performance.now() - startedAt),
     });
+    const aliases = loadSessionAliasMap();
     return c.json({
-      ...data,
+      ...withDisplayTitle(data, agentName, aliases),
       project_identity: projectIdentity,
       smart_tags: smartTags,
       smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
@@ -560,7 +675,11 @@ export async function handlePostClientLog(c: Context) {
 
 export function handleGetBookmarks(c: Context) {
   try {
-    return c.json({ bookmarks: listBookmarks(), storageAvailable: true });
+    const aliases = loadSessionAliasMap();
+    return c.json({
+      bookmarks: listBookmarks().map((bookmark) => withBookmarkDisplayTitle(bookmark, aliases)),
+      storageAvailable: true,
+    });
   } catch (error) {
     if (error instanceof BookmarkStorageUnavailableError) {
       return c.json({ bookmarks: [], storageAvailable: false });
@@ -622,6 +741,45 @@ export function handleDeleteBookmark(c: Context) {
   } catch (error) {
     if (error instanceof BookmarkStorageUnavailableError) {
       return c.json({ error: "Bookmark storage is unavailable" }, 503);
+    }
+    throw error;
+  }
+}
+
+export async function handlePutSessionAlias(c: Context) {
+  const agentKey = c.req.param("agent");
+  const sessionId = c.req.param("id");
+  const payload = (await c.req.json().catch(() => null)) as SessionAliasPayload | null;
+  if (!agentKey || !sessionId || typeof payload?.alias !== "string") {
+    return c.json({ error: "Invalid session alias payload" }, 400);
+  }
+
+  try {
+    return c.json({ alias: upsertSessionAlias(agentKey, sessionId, payload.alias) });
+  } catch (error) {
+    if (error instanceof TypeError) {
+      return c.json({ error: "Session alias must be non-empty and at most 160 characters" }, 400);
+    }
+    if (isStateStorageUnavailable(error)) {
+      return c.json({ error: "Session alias storage is unavailable" }, 503);
+    }
+    throw error;
+  }
+}
+
+export function handleDeleteSessionAlias(c: Context) {
+  const agentKey = c.req.param("agent");
+  const sessionId = c.req.param("id");
+  if (!agentKey || !sessionId) {
+    return c.json({ error: "Missing session alias identifier" }, 400);
+  }
+
+  try {
+    deleteSessionAlias(agentKey, sessionId);
+    return c.json({ ok: true });
+  } catch (error) {
+    if (isStateStorageUnavailable(error)) {
+      return c.json({ error: "Session alias storage is unavailable" }, 503);
     }
     throw error;
   }
@@ -713,5 +871,14 @@ export function handleGetDashboard(
     window: { from, to, days },
   };
 
-  return c.json(data);
+  const aliases = loadSessionAliasMap();
+  return c.json({
+    ...data,
+    recentSessions: data.recentSessions.map((session) =>
+      withDisplayTitle(session, session.agentName, aliases),
+    ),
+    recentFileActivities: data.recentFileActivities.map((activity) =>
+      withFileActivityDisplayTitle(activity, aliases),
+    ),
+  });
 }

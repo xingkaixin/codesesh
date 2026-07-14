@@ -24,6 +24,15 @@ import {
 export function useBookmarks(sessions: SessionHead[]) {
   const [bookmarks, setBookmarks] = useState<BookmarkedSessionSnapshot[]>([]);
 
+  const refresh = useCallback(async () => {
+    try {
+      const data = await fetchBookmarks();
+      setBookmarks(data.bookmarks);
+    } catch (err) {
+      console.error("Failed to load bookmarks:", err);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void fetchBookmarks()
@@ -161,5 +170,6 @@ export function useBookmarks(sessions: SessionHead[]) {
     isSessionBookmarked,
     toggleBookmark,
     toggleSessionBookmark,
+    refresh,
   };
 }

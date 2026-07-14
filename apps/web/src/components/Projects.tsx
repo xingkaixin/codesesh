@@ -3,6 +3,7 @@ import { ModelConfig } from "../config";
 import type { DashboardData, ProjectAgentStat, ProjectGroup, SessionHead } from "../lib/api";
 import { formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getProjectPath } from "../lib/projects";
+import { getSessionDisplayTitle } from "../lib/session-title";
 import { Dashboard } from "./Dashboard";
 import type { LandingSession } from "./DetailLanding";
 
@@ -228,7 +229,7 @@ function TopCostSessions({ sessions }: { sessions: LandingSession[] }) {
                     <img src={agent.icon} alt={agent.name} className="size-3.5 object-contain" />
                   ) : null}
                   <span className="line-clamp-1 flex-1 text-sm text-[var(--console-text)]">
-                    {session.title}
+                    {getSessionDisplayTitle(session)}
                   </span>
                   <span className="console-mono text-[11px] text-[var(--console-muted)]">
                     {formatMoney(session.stats.total_cost)}

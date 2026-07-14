@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { AgentInfo, DashboardData, ProjectGroup, SessionData } from "../lib/api";
 import { formatRelativeTime } from "../lib/format";
 import { getProjectPath, type ProjectRouteIdentity } from "../lib/projects";
+import { getSessionDisplayTitle } from "./session-title";
 import type { ViewState } from "../lib/view-state";
 import { SmartTagChips } from "../components/SmartTagChips";
 import type { BrowseBy } from "../components/app/types";
@@ -81,7 +82,7 @@ function routeTitleAndSubtitle(input: RouteHeaderInput): {
     if (input.session) {
       const updated = input.session.time_updated ?? input.session.time_created;
       return {
-        title: input.session.title || "Conversation",
+        title: getSessionDisplayTitle(input.session) || "Conversation",
         subtitle: (
           <>
             <span>ID: #{input.session.id.slice(0, 8)}</span>
@@ -140,7 +141,11 @@ function routeBreadcrumbs(input: RouteHeaderInput): BreadcrumbItem[] {
         label: input.selectedProject?.displayName ?? input.selectedProjectIdentity.key,
         to: getProjectPath(input.selectedProjectIdentity),
       },
-      { label: input.session?.title || viewState.activeSessionSlug || "Conversation" },
+      {
+        label: input.session
+          ? getSessionDisplayTitle(input.session)
+          : viewState.activeSessionSlug || "Conversation",
+      },
     ];
   }
   if (viewState.mode === "missingAgent") {
@@ -160,7 +165,11 @@ function routeBreadcrumbs(input: RouteHeaderInput): BreadcrumbItem[] {
     return [
       dashboard,
       agent,
-      { label: input.session?.title || viewState.activeSessionSlug || "Conversation" },
+      {
+        label: input.session
+          ? getSessionDisplayTitle(input.session)
+          : viewState.activeSessionSlug || "Conversation",
+      },
     ];
   }
   return [dashboard, { label: "Invalid Route" }];
