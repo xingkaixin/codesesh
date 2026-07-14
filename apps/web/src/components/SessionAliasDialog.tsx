@@ -30,7 +30,7 @@ export function SessionAliasDialog({
 
   const saveAlias = async () => {
     const nextAlias = alias.trim();
-    if (!nextAlias) {
+    if (!nextAlias || nextAlias === target?.title.trim()) {
       await removeAlias();
       return;
     }

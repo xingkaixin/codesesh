@@ -2,11 +2,18 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 
 const coreMocks = vi.hoisted(() => ({
   loadCachedSessionData: vi.fn(),
+  listFileActivity: vi.fn((): FileActivityResult[] => []),
   listSessionFileActivity: vi.fn(() => []),
   listSessionAliases: vi.fn<
     () => Array<{ agentKey: string; sessionId: string; alias: string; updated_at: number }>
   >(() => []),
-  executeSessionSearch: vi.fn((): Array<{ agentName: string; session: SessionHead }> => []),
+  executeSessionSearch: vi.fn(
+    (
+      _query: string,
+      _options?: unknown,
+      _scanResult?: unknown,
+    ): Array<{ agentName: string; session: SessionHead }> => [],
+  ),
 }));
 
 vi.mock("@codesesh/core", async (importOriginal) => {
@@ -14,6 +21,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
   return {
     ...actual,
     loadCachedSessionData: coreMocks.loadCachedSessionData,
+    listFileActivity: coreMocks.listFileActivity,
     listSessionFileActivity: coreMocks.listSessionFileActivity,
     listSessionAliases: coreMocks.listSessionAliases,
     executeSessionSearch: coreMocks.executeSessionSearch,
@@ -24,6 +32,7 @@ import {
   handleGetAgents,
   handleGetConfig,
   handleGetDashboard,
+  handleGetFileActivity,
   handleGetProjects,
   handleGetSessions,
   handleGetSessionData,
@@ -32,6 +41,7 @@ import {
 } from "../handlers.js";
 import type {
   ChangeCheckResult,
+  FileActivityResult,
   ScanResult,
   SessionCacheMeta,
   SessionHead,
@@ -157,6 +167,8 @@ function toLocalDateKey(ts: number): string {
 
 afterEach(() => {
   coreMocks.loadCachedSessionData.mockReset();
+  coreMocks.listFileActivity.mockReset();
+  coreMocks.listFileActivity.mockReturnValue([]);
   coreMocks.listSessionFileActivity.mockReset();
   coreMocks.listSessionFileActivity.mockReturnValue([]);
   coreMocks.listSessionAliases.mockReset();
@@ -429,6 +441,74 @@ describe("handleSearchSessions", () => {
     );
     expect(coreMocks.executeSessionSearch).not.toHaveBeenCalled();
   });
+
+  it("matches aliases while preserving query qualifiers", () => {
+    const aliased = makeSession("s1", { slug: "claudecode/s1" });
+    coreMocks.listSessionAliases.mockReturnValue([
+      { agentKey: "claudecode", sessionId: "s1", alias: "Custom cache title", updated_at: 1 },
+    ]);
+    coreMocks.executeSessionSearch.mockImplementation((query) =>
+      query ? [] : [{ agentName: "claudecode", session: aliased }],
+    );
+    const c = makeMockContext({ query: { q: "agent:claudecode custom cache" } });
+
+    handleSearchSessions(c, makeScanSource());
+
+    expect(coreMocks.executeSessionSearch).toHaveBeenCalledWith(
+      "",
+      expect.objectContaining({ agent: "claudecode", limit: 2 }),
+      expect.anything(),
+    );
+    expect(c.json.mock.calls[0]![0].results[0].session.display_title).toBe("Custom cache title");
+  });
+
+  it("does not cap alias search candidates at one thousand sessions", () => {
+    const sessions = Array.from({ length: 1001 }, (_, index) =>
+      makeSession(`s${index}`, { slug: `claudecode/s${index}` }),
+    );
+    coreMocks.listSessionAliases.mockReturnValue([
+      { agentKey: "claudecode", sessionId: "s1000", alias: "Old alias", updated_at: 1 },
+    ]);
+    coreMocks.executeSessionSearch.mockImplementation((query) =>
+      query ? [] : [{ agentName: "claudecode", session: sessions[1000]! }],
+    );
+    const c = makeMockContext({ query: { q: "old alias" } });
+
+    handleSearchSessions(c, makeScanSource({ sessions, byAgent: { claudecode: sessions } }));
+
+    expect(coreMocks.executeSessionSearch).toHaveBeenCalledWith(
+      "",
+      expect.objectContaining({ limit: 1001 }),
+      expect.anything(),
+    );
+    expect(c.json.mock.calls[0]![0].results[0].session.id).toBe("s1000");
+  });
+});
+
+describe("handleGetFileActivity", () => {
+  it("projects aliases onto nested sessions", () => {
+    const session = makeSession("s1", { slug: "claudecode/s1" });
+    coreMocks.listSessionAliases.mockReturnValue([
+      { agentKey: "claudecode", sessionId: "s1", alias: "Activity alias", updated_at: 1 },
+    ]);
+    coreMocks.listFileActivity.mockReturnValue([
+      {
+        agent_name: "claudecode",
+        session_id: "s1",
+        project_identity_key: "path:/tmp",
+        path: "src/index.ts",
+        kind: "edit",
+        count: 1,
+        latest_time: 1,
+        session,
+      },
+    ]);
+    const c = makeMockContext();
+
+    handleGetFileActivity(c);
+
+    expect(c.json.mock.calls[0]![0].activity[0].session.display_title).toBe("Activity alias");
+  });
 });
 
 describe("handleGetProjects", () => {
@@ -496,6 +576,32 @@ describe("handleGetProjects", () => {
 });
 
 describe("handleGetDashboard", () => {
+  it("projects aliases onto recent file activity sessions", () => {
+    const session = makeSession("s1", { slug: "claudecode/s1" });
+    coreMocks.listSessionAliases.mockReturnValue([
+      { agentKey: "claudecode", sessionId: "s1", alias: "Activity alias", updated_at: 1 },
+    ]);
+    coreMocks.listFileActivity.mockReturnValue([
+      {
+        agent_name: "claudecode",
+        session_id: "s1",
+        project_identity_key: "path:/tmp",
+        path: "src/index.ts",
+        kind: "edit",
+        count: 1,
+        latest_time: 1,
+        session,
+      },
+    ]);
+    const c = makeMockContext();
+
+    handleGetDashboard(c, makeScanSource());
+
+    expect(c.json.mock.calls[0]![0].recentFileActivities[0].session.display_title).toBe(
+      "Activity alias",
+    );
+  });
+
   it("aggregates totals across all sessions", () => {
     const c = makeMockContext();
     const sessions = [

@@ -27,7 +27,16 @@ test("covers dashboard, detail, search, projects, and pin flows", async ({ page 
     .first()
     .click();
   await expect(page.getByRole("heading", { level: 1, name: "Claude Code" })).toBeVisible();
-  await expect(page.getByRole("treeitem", { name: /codesesh-e2e/ })).toBeVisible();
+  const projectTreeItem = page.getByRole("treeitem", { name: /codesesh-e2e/ });
+  await expect(projectTreeItem).toBeVisible();
+  await projectTreeItem.click();
+
+  const treeSession = page.getByRole("treeitem", { name: /Core browsing smoke session/ });
+  await treeSession.focus();
+  await treeSession.press("Shift+F10");
+  await expect(page.getByRole("menuitem", { name: "Rename" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(treeSession).toBeFocused();
 
   await page.getByText("Core browsing smoke session").first().click();
   await expect(page).toHaveURL(/\/claudecode\/e2e-dashboard$/);
@@ -63,6 +72,7 @@ test("covers dashboard, detail, search, projects, and pin flows", async ({ page 
 
   await page.goto("/");
   const recentSession = page
+    .getByTestId("dashboard")
     .locator("li")
     .filter({ hasText: "Core browsing smoke session" })
     .first();

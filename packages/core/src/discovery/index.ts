@@ -30,6 +30,7 @@ export {
   listCachedProjectGroups,
   listFileActivity,
   listSessionFileActivity,
+  mergeSearchQueryOptions,
   parseSearchQuery,
   searchFileActivitySessions,
   searchSessions,

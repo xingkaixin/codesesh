@@ -15,6 +15,7 @@ import type {
 } from "@codesesh/core/contract";
 import {
   BookmarkStorageUnavailableError,
+  StateStorageUnavailableError,
   createProjectScopeMatcher,
   deleteBookmark,
   getAgentInfoMap,
@@ -31,6 +32,7 @@ import {
   listCachedProjectGroups,
   listBookmarks,
   listSessionAliases,
+  mergeSearchQueryOptions,
   deleteSessionAlias,
   upsertSessionAlias,
   realFs,
@@ -45,6 +47,7 @@ import {
   type DashboardData,
   type DashboardScope,
   type FileActivityKind,
+  type FileActivityResult,
   type ProjectIdentityRef,
   type SearchOptions,
 } from "@codesesh/core";
@@ -92,13 +95,18 @@ function loadSessionAliasMap(): SessionAliasMap {
         alias.alias,
       ]),
     );
-  } catch {
+  } catch (error) {
+    if (!(error instanceof StateStorageUnavailableError)) {
+      appLogger.warn("api.session_aliases.load_failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     return new Map();
   }
 }
 
 function isStateStorageUnavailable(error: unknown): boolean {
-  return error instanceof Error && error.message === "SQLite state database is unavailable";
+  return error instanceof StateStorageUnavailableError;
 }
 
 function withDisplayTitle<T extends { id: string; title: string; display_title?: string }>(
@@ -118,16 +126,31 @@ function withBookmarkDisplayTitle(
   return alias ? { ...bookmark, display_title: alias } : bookmark;
 }
 
+function withFileActivityDisplayTitle(
+  activity: FileActivityResult,
+  aliases: SessionAliasMap,
+): FileActivityResult {
+  return {
+    ...activity,
+    session: withDisplayTitle(activity.session, activity.agent_name, aliases),
+  };
+}
+
 function findAliasSearchResults(
   query: string,
   options: SearchOptions,
   scanResult: ScanResult,
   aliases: SessionAliasMap,
 ) {
-  const needle = query.trim().toLowerCase();
-  if (!needle || needle.includes(":")) return [];
+  const search = mergeSearchQueryOptions(query, options);
+  const needle = search.text.trim().toLowerCase();
+  if (!needle || aliases.size === 0) return [];
 
-  return executeSessionSearch("", { ...options, limit: 1_000 }, scanResult).flatMap((result) => {
+  return executeSessionSearch(
+    "",
+    { ...search.options, limit: Math.max(scanResult.sessions.length, 1) },
+    scanResult,
+  ).flatMap((result) => {
     const alias = aliases.get(getSessionAliasKey(result.agentName, result.session.id));
     if (!alias || !alias.toLowerCase().includes(needle)) return [];
     return [
@@ -537,6 +560,7 @@ export function handleGetFileActivity(c: Context, defaults: SessionListDefaults 
     return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
   }
 
+  const aliases = loadSessionAliasMap();
   return c.json({
     activity: listFileActivity({
       agent: optionalQueryValue(c.req.query("agent")),
@@ -550,7 +574,7 @@ export function handleGetFileActivity(c: Context, defaults: SessionListDefaults 
       from: parseDateParam(c.req.query("from"), defaults.from),
       to: parseDateParam(c.req.query("to"), defaults.to),
       limit,
-    }),
+    }).map((activity) => withFileActivityDisplayTitle(activity, aliases)),
   });
 }
 
@@ -852,6 +876,9 @@ export function handleGetDashboard(
     ...data,
     recentSessions: data.recentSessions.map((session) =>
       withDisplayTitle(session, session.agentName, aliases),
+    ),
+    recentFileActivities: data.recentFileActivities.map((activity) =>
+      withFileActivityDisplayTitle(activity, aliases),
     ),
   });
 }

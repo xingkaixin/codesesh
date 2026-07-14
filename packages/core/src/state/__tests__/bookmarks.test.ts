@@ -159,4 +159,17 @@ describe("bookmarks state storage", () => {
     expect(listBookmarks()[0]?.sessionId).toBe("s1");
     expect(getUserVersion(getStatePath())).toBe(2);
   });
+
+  it("does not downgrade a state database created by a newer version", () => {
+    upsertBookmark(makeBookmark());
+    const db = new Database(getStatePath());
+    try {
+      db.exec("PRAGMA user_version = 3");
+    } finally {
+      db.close();
+    }
+
+    expect(listBookmarks()[0]?.sessionId).toBe("s1");
+    expect(getUserVersion(getStatePath())).toBe(3);
+  });
 });

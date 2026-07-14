@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
 } from "react";
 import type { SessionHead } from "../lib/api";
@@ -262,6 +263,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     session: SessionHead;
     top: number;
     right: number;
+    trigger: HTMLElement;
   } | null>(null);
   const modelData = useMemo(
     () =>
@@ -337,7 +339,10 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
       if (!optionsMenuRef.current?.contains(event.target as Node)) setOptions(null);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOptions(null);
+      if (event.key === "Escape") {
+        options.trigger.focus();
+        setOptions(null);
+      }
     };
     const closeOnFocusOutside = (event: FocusEvent) => {
       if (!optionsMenuRef.current?.contains(event.target as Node)) setOptions(null);
@@ -376,11 +381,42 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
       ? sessionByPathRef.current.get(item.getAttribute("data-item-path") ?? "")
       : null;
 
-    if (!decoration || !session) return;
+    if (!decoration || !item || !session) return;
     event.preventDefault();
     event.stopPropagation();
     const rect = decoration.getBoundingClientRect();
-    setOptions({ session, top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setOptions({
+      session,
+      top: rect.bottom + 4,
+      right: window.innerWidth - rect.right,
+      trigger: item,
+    });
+  }
+
+  function handleTreeKeyDownCapture(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+
+    const path = event.nativeEvent.composedPath();
+    const item = path.find(
+      (target): target is HTMLElement =>
+        target instanceof HTMLElement && target.getAttribute("data-type") === "item",
+    );
+    const session = item
+      ? sessionByPathRef.current.get(item.getAttribute("data-item-path") ?? "")
+      : null;
+    if (!item || !session) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    const anchor =
+      item.querySelector<HTMLElement>("[data-item-section='decoration'] > span") ?? item;
+    const rect = anchor.getBoundingClientRect();
+    setOptions({
+      session,
+      top: rect.bottom + 4,
+      right: window.innerWidth - rect.right,
+      trigger: item,
+    });
   }
 
   useEffect(() => {
@@ -405,6 +441,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
       className="session-tree h-[min(560px,calc(100vh-410px))] min-h-56 overflow-hidden"
       style={treeHostStyle}
       onClickCapture={handleTreeClickCapture}
+      onKeyDownCapture={handleTreeKeyDownCapture}
     >
       <FileTree model={model} style={{ height: "100%" }} aria-label="Sessions" />
       {options ? (

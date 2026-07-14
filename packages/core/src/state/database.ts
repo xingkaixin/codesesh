@@ -144,7 +144,9 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
     ],
   });
 
-  setStateSchemaVersion(db);
+  if (currentVersion <= STATE_SCHEMA_VERSION) {
+    setStateSchemaVersion(db);
+  }
 }
 
 export function withStateDb<T>(fn: (db: SQLiteDatabase) => T): T {

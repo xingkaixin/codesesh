@@ -27,6 +27,7 @@ export {
 } from "./cache/sessions.js";
 
 export {
+  mergeSearchQueryOptions,
   parseSearchQuery,
   searchSessions,
   syncSessionSearchIndex,
