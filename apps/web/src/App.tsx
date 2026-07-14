@@ -3,10 +3,11 @@ declare const __APP_VERSION__: string;
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import type { SessionHead } from "./lib/api";
-import { logClientEvent } from "./lib/api";
+import type { BookmarkedSessionSnapshot, SessionHead } from "./lib/api";
+import { deleteSessionAlias, logClientEvent, upsertSessionAlias } from "./lib/api";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { CopyResumeButton } from "./components/CopyResumeButton";
+import { SessionAliasDialog, type SessionAliasTarget } from "./components/SessionAliasDialog";
 import { RenderProfiler } from "./components/RenderProfiler";
 import { parseViewState } from "./lib/view-state";
 import { useScanStatus } from "./hooks/useScanStatus";
@@ -69,6 +70,7 @@ export default function App() {
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [shortcutHintDismissed, setShortcutHintDismissed] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [aliasTarget, setAliasTarget] = useState<SessionAliasTarget | null>(null);
 
   const location = useLocation();
   const viewState = useMemo(
@@ -225,6 +227,24 @@ export default function App() {
     [toggleSessionBookmark],
   );
 
+  const handleRenameSession = useCallback((sessionItem: SessionHead) => {
+    setAliasTarget({
+      agentKey: getSessionAgentKey(sessionItem),
+      sessionId: sessionItem.id,
+      title: sessionItem.title,
+      displayTitle: sessionItem.display_title,
+    });
+  }, []);
+
+  const handleRenameBookmarkedSession = useCallback((session: BookmarkedSessionSnapshot) => {
+    setAliasTarget({
+      agentKey: session.agentKey,
+      sessionId: session.sessionId,
+      title: session.title,
+      displayTitle: session.display_title,
+    });
+  }, []);
+
   const handleSelectTreeSidebarSession = useCallback(
     (sessionId: string) => {
       setSelectedSidebarSessionId(sessionId);
@@ -250,6 +270,40 @@ export default function App() {
     refreshSearch,
     setScanStatus,
   });
+
+  const refreshAliasViews = useCallback(async () => {
+    await Promise.all([
+      appConfig ? refreshSessions(appConfig.window) : Promise.resolve(),
+      refreshDashboard(),
+      refreshProjectDashboard(),
+      refreshSessionDetail(),
+      refreshSearch(),
+      bookmarks.refresh(),
+    ]);
+  }, [
+    appConfig,
+    bookmarks,
+    refreshDashboard,
+    refreshProjectDashboard,
+    refreshSearch,
+    refreshSessionDetail,
+    refreshSessions,
+  ]);
+
+  const saveSessionAlias = useCallback(
+    async (alias: string) => {
+      if (!aliasTarget) return;
+      await upsertSessionAlias(aliasTarget.agentKey, aliasTarget.sessionId, alias);
+      await refreshAliasViews();
+    },
+    [aliasTarget, refreshAliasViews],
+  );
+
+  const removeSessionAlias = useCallback(async () => {
+    if (!aliasTarget) return;
+    await deleteSessionAlias(aliasTarget.agentKey, aliasTarget.sessionId);
+    await refreshAliasViews();
+  }, [aliasTarget, refreshAliasViews]);
 
   useEffect(() => {
     try {
@@ -486,6 +540,8 @@ export default function App() {
             onToggleBookmark: toggleBookmark,
             onSelectFlatSidebarSession: handleSelectFlatSidebarSession,
             onToggleSidebarSessionBookmark: handleToggleSidebarSessionBookmark,
+            onRenameSession: handleRenameSession,
+            onRenameBookmarkedSession: handleRenameBookmarkedSession,
             onSelectTreeSidebarSession: handleSelectTreeSidebarSession,
           }}
         />
@@ -592,6 +648,12 @@ export default function App() {
         </main>
       </div>
       <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
+      <SessionAliasDialog
+        target={aliasTarget}
+        onClose={() => setAliasTarget(null)}
+        onSave={saveSessionAlias}
+        onRemove={removeSessionAlias}
+      />
     </div>
   );
 }

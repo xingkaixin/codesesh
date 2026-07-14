@@ -1,7 +1,16 @@
 import type { FileTreeSortEntry } from "@pierre/trees";
 import { FileTree, useFileTree } from "@pierre/trees/react";
-import { memo, useEffect, useMemo, useRef, type CSSProperties, type MouseEvent } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+} from "react";
 import type { SessionHead } from "../lib/api";
+import { getSessionDisplayTitle } from "../lib/session-title";
 import { isRenderProfilerEnabled, recordRenderProfileEntry } from "./RenderProfiler";
 
 interface SessionTreeSidebarProps {
@@ -11,6 +20,7 @@ interface SessionTreeSidebarProps {
   onSelectSession: (sessionId: string) => void;
   bookmarkedSessionIds: Set<string>;
   onToggleBookmark: (session: SessionHead) => void;
+  onRenameSession: (session: SessionHead) => void;
 }
 
 interface SessionTreeModel {
@@ -44,7 +54,7 @@ const SESSION_TREE_CSS = `
 
   [data-type='item'][data-item-type='file'] > [data-item-section='decoration'] {
     flex: 0 0 auto;
-    padding-inline: 8px 6px;
+    padding-inline: 6px 2px;
   }
 
   [data-type='item'][data-item-type='file'] > [data-item-section='decoration'] > span {
@@ -182,14 +192,16 @@ function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel {
     groupCountByPath.set(groupPath, `${group.sessions.length}`);
     groupCountByPath.set(bareGroupPath, `${group.sessions.length}`);
     for (const session of group.sessions) {
-      titleCounts.set(session.title, (titleCounts.get(session.title) ?? 0) + 1);
+      const title = getSessionDisplayTitle(session);
+      titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1);
     }
 
     for (const session of group.sessions) {
-      const needsDisambiguation = (titleCounts.get(session.title) ?? 0) > 1;
+      const title = getSessionDisplayTitle(session);
+      const needsDisambiguation = (titleCounts.get(title) ?? 0) > 1;
       const leaf = needsDisambiguation
-        ? `${sanitizeSegment(session.title)} #${session.id.slice(0, 8)}`
-        : sanitizeSegment(session.title);
+        ? `${sanitizeSegment(title)} #${session.id.slice(0, 8)}`
+        : sanitizeSegment(title);
       let path = `${groupPath}${leaf}`;
       let suffix = 2;
       while (usedPaths.has(path)) {
@@ -244,7 +256,13 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   onSelectSession,
   bookmarkedSessionIds,
   onToggleBookmark,
+  onRenameSession,
 }: SessionTreeSidebarProps) {
+  const [options, setOptions] = useState<{
+    session: SessionHead;
+    top: number;
+    right: number;
+  } | null>(null);
   const modelData = useMemo(
     () =>
       measureSessionTreeWork("SessionTreeSidebar:buildTreeModel", () =>
@@ -257,8 +275,10 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   const groupCountByPathRef = useRef(modelData.groupCountByPath);
   const sessionByPathRef = useRef(modelData.sessionByPath);
   const bookmarkedSessionIdsRef = useRef(bookmarkedSessionIds);
+  const optionsMenuRef = useRef<HTMLDivElement>(null);
   const onSelectSessionRef = useRef(onSelectSession);
   const onToggleBookmarkRef = useRef(onToggleBookmark);
+  const onRenameSessionRef = useRef(onRenameSession);
   const treeHostStyle: TreeHostStyle = {
     "--trees-bg-override": "transparent",
     "--trees-border-color-override": "var(--console-border)",
@@ -268,7 +288,8 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
       '"JetBrains Mono", "IBM Plex Mono", "SFMono-Regular", Menlo, Monaco, Consolas, monospace',
     "--trees-font-size-override": "12px",
     "--trees-item-margin-x-override": "0px",
-    "--trees-item-padding-x-override": "8px",
+    "--trees-item-padding-x-override": "4px",
+    "--trees-padding-inline-override": "4px",
     "--trees-selected-bg-override": "var(--console-surface-muted)",
   };
   const { model } = useFileTree({
@@ -285,8 +306,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     renderRowDecoration({ item }) {
       const session = sessionByPathRef.current.get(item.path);
       if (session) {
-        const active = bookmarkedSessionIdsRef.current.has(session.id);
-        return { text: active ? "★" : "☆", title: active ? "Remove bookmark" : "Add bookmark" };
+        return { text: "⋯", title: "Session options" };
       }
       return groupCountByPathRef.current.get(item.path)
         ? { text: groupCountByPathRef.current.get(item.path)!, title: "Sessions" }
@@ -308,12 +328,38 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
 
   useEffect(() => {
     bookmarkedSessionIdsRef.current = bookmarkedSessionIds;
-    model.resetPaths(modelData.paths);
-  }, [bookmarkedSessionIds, model, modelData.paths]);
+  }, [bookmarkedSessionIds]);
+
+  useEffect(() => {
+    if (!options) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!optionsMenuRef.current?.contains(event.target as Node)) setOptions(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOptions(null);
+    };
+    const closeOnFocusOutside = (event: FocusEvent) => {
+      if (!optionsMenuRef.current?.contains(event.target as Node)) setOptions(null);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("focusin", closeOnFocusOutside);
+    optionsMenuRef.current?.querySelector<HTMLButtonElement>("[role='menuitem']")?.focus();
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("focusin", closeOnFocusOutside);
+    };
+  }, [options]);
 
   useEffect(() => {
     onToggleBookmarkRef.current = onToggleBookmark;
   }, [onToggleBookmark]);
+
+  useEffect(() => {
+    onRenameSessionRef.current = onRenameSession;
+  }, [onRenameSession]);
 
   function handleTreeClickCapture(event: MouseEvent<HTMLDivElement>) {
     const path = event.nativeEvent.composedPath();
@@ -333,7 +379,8 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     if (!decoration || !session) return;
     event.preventDefault();
     event.stopPropagation();
-    onToggleBookmarkRef.current(session);
+    const rect = decoration.getBoundingClientRect();
+    setOptions({ session, top: rect.bottom + 4, right: window.innerWidth - rect.right });
   }
 
   useEffect(() => {
@@ -360,6 +407,42 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
       onClickCapture={handleTreeClickCapture}
     >
       <FileTree model={model} style={{ height: "100%" }} aria-label="Sessions" />
+      {options ? (
+        <div
+          ref={optionsMenuRef}
+          role="menu"
+          style={{ position: "fixed", top: options.top, right: options.right }}
+          className="z-40 w-36 rounded-sm border border-[var(--console-border-strong)] bg-white p-1 shadow-lg"
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setOptions(null);
+          }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onRenameSessionRef.current(options.session);
+              setOptions(null);
+            }}
+            className="block w-full rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] active:scale-[0.97] focus-visible:bg-[var(--console-surface-muted)] focus-visible:outline-none"
+          >
+            Rename
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onToggleBookmarkRef.current(options.session);
+              setOptions(null);
+            }}
+            className="block w-full rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] active:scale-[0.97] focus-visible:bg-[var(--console-surface-muted)] focus-visible:outline-none"
+          >
+            {bookmarkedSessionIdsRef.current.has(options.session.id)
+              ? "Remove bookmark"
+              : "Add bookmark"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 });

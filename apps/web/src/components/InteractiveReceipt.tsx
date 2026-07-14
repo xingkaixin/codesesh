@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
 import type { SessionData } from "../lib/api";
+import { getSessionDisplayTitle } from "../lib/session-title";
 import {
   isReceiptSettled,
   nextReceiptIdleFrame,
@@ -148,7 +149,7 @@ function createReceiptPayload(session: SessionData, toc: SessionDetailToc): Rece
   const agent = session.slug?.split("/")[0] || "codesesh";
   return {
     id: session.id,
-    title: session.title || "Untitled session",
+    title: getSessionDisplayTitle(session) || "Untitled session",
     agent,
     updatedAt: session.time_updated ?? session.time_created,
     tags: session.smart_tags,

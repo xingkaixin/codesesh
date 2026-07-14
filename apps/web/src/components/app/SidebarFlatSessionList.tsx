@@ -2,7 +2,8 @@ import type { SessionHead } from "../../lib/api";
 import { ModelConfig } from "../../config";
 import { getSessionAgentKey } from "../../lib/session-indexes";
 import { formatRelativeTime } from "../../lib/format";
-import { BookmarkButton } from "../BookmarkButton";
+import { getSessionDisplayTitle } from "../../lib/session-title";
+import { SessionActionsMenu } from "../SessionActionsMenu";
 
 export function SidebarFlatSessionList({
   sessions,
@@ -11,6 +12,7 @@ export function SidebarFlatSessionList({
   bookmarkedSessionIds,
   onSelectSession,
   onToggleBookmark,
+  onRenameSession,
 }: {
   sessions: SessionHead[];
   activeSessionId: string | null;
@@ -18,6 +20,7 @@ export function SidebarFlatSessionList({
   bookmarkedSessionIds: Set<string>;
   onSelectSession: (session: SessionHead) => void;
   onToggleBookmark: (session: SessionHead) => void;
+  onRenameSession: (session: SessionHead) => void;
 }) {
   return (
     <div className="console-scrollbar h-[min(560px,calc(100vh-410px))] min-h-56 overflow-y-auto">
@@ -50,16 +53,17 @@ export function SidebarFlatSessionList({
                       />
                     ) : null}
                     <span className="console-mono line-clamp-1 text-xs text-[var(--console-text)]">
-                      {sessionItem.title}
+                      {getSessionDisplayTitle(sessionItem)}
                     </span>
                   </span>
                   <span className="console-mono mt-0.5 block truncate text-[10px] text-[var(--console-muted)]">
                     {formatRelativeTime(sessionItem.time_updated ?? sessionItem.time_created)}
                   </span>
                 </button>
-                <BookmarkButton
-                  active={bookmarkedSessionIds.has(sessionItem.id)}
-                  onToggle={() => onToggleBookmark(sessionItem)}
+                <SessionActionsMenu
+                  bookmarked={bookmarkedSessionIds.has(sessionItem.id)}
+                  onRename={() => onRenameSession(sessionItem)}
+                  onToggleBookmark={() => onToggleBookmark(sessionItem)}
                 />
               </div>
             </li>

@@ -215,6 +215,30 @@ export async function deleteBookmark(agentKey: string, sessionId: string): Promi
   });
 }
 
+export async function upsertSessionAlias(
+  agentKey: string,
+  sessionId: string,
+  alias: string,
+): Promise<void> {
+  await fetchJson(
+    `/api/session-aliases/${encodeURIComponent(agentKey)}/${encodeURIComponent(sessionId)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ alias }),
+    },
+  );
+}
+
+export async function deleteSessionAlias(agentKey: string, sessionId: string): Promise<void> {
+  await fetchJson(
+    `/api/session-aliases/${encodeURIComponent(agentKey)}/${encodeURIComponent(sessionId)}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
 export function logClientEvent(event: string, data: Record<string, unknown> = {}): void {
   const body = JSON.stringify({ event, data });
 
