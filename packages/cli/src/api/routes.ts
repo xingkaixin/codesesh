@@ -8,12 +8,14 @@ import {
   handleGetProjects,
   handleGetScanStatus,
   handleDeleteBookmark,
+  handleDeleteSessionAlias,
   handleImportBookmarks,
   handlePostClientLog,
   handleSearchSessions,
   handleGetSessions,
   handleGetSessionData,
   handlePutBookmark,
+  handlePutSessionAlias,
   type ScanResultSource,
   type SessionListDefaults,
 } from "./handlers.js";
@@ -113,6 +115,8 @@ export function createApiRoutes(
   api.put("/bookmarks", (c) => handlePutBookmark(c));
   api.post("/bookmarks/import", (c) => handleImportBookmarks(c));
   api.delete("/bookmarks/:agent/:id", (c) => handleDeleteBookmark(c));
+  api.put("/session-aliases/:agent/:id", (c) => handlePutSessionAlias(c));
+  api.delete("/session-aliases/:agent/:id", (c) => handleDeleteSessionAlias(c));
   api.post("/logs", (c) => handlePostClientLog(c));
   if (store) {
     api.get("/events", (c) => createSseResponse(store, c.req.raw.signal));

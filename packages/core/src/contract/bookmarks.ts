@@ -5,6 +5,7 @@ export interface BookmarkRecord {
   sessionId: string;
   fullPath: string;
   title: string;
+  display_title?: string;
   directory: string;
   time_created: number;
   time_updated?: number;

@@ -83,7 +83,7 @@ describe("bookmarks state storage", () => {
         bookmarked_at: now,
       },
     ]);
-    expect(getUserVersion(getStatePath())).toBe(1);
+    expect(getUserVersion(getStatePath())).toBe(2);
   });
 
   it("preserves bookmarked_at when refreshing a snapshot", () => {
@@ -126,7 +126,7 @@ describe("bookmarks state storage", () => {
 
     upsertBookmark(makeBookmark());
 
-    expect(getUserVersion(join(stateDir, "state.db"))).toBe(1);
+    expect(getUserVersion(join(stateDir, "state.db"))).toBe(2);
   });
 
   it("uses memory state storage when configured", () => {
@@ -157,6 +157,6 @@ describe("bookmarks state storage", () => {
     }
 
     expect(listBookmarks()[0]?.sessionId).toBe("s1");
-    expect(getUserVersion(getStatePath())).toBe(1);
+    expect(getUserVersion(getStatePath())).toBe(2);
   });
 });

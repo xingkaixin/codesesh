@@ -3,6 +3,9 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 const coreMocks = vi.hoisted(() => ({
   loadCachedSessionData: vi.fn(),
   listSessionFileActivity: vi.fn(() => []),
+  listSessionAliases: vi.fn<
+    () => Array<{ agentKey: string; sessionId: string; alias: string; updated_at: number }>
+  >(() => []),
   executeSessionSearch: vi.fn((): Array<{ agentName: string; session: SessionHead }> => []),
 }));
 
@@ -12,6 +15,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     ...actual,
     loadCachedSessionData: coreMocks.loadCachedSessionData,
     listSessionFileActivity: coreMocks.listSessionFileActivity,
+    listSessionAliases: coreMocks.listSessionAliases,
     executeSessionSearch: coreMocks.executeSessionSearch,
   };
 });
@@ -155,6 +159,8 @@ afterEach(() => {
   coreMocks.loadCachedSessionData.mockReset();
   coreMocks.listSessionFileActivity.mockReset();
   coreMocks.listSessionFileActivity.mockReturnValue([]);
+  coreMocks.listSessionAliases.mockReset();
+  coreMocks.listSessionAliases.mockReturnValue([]);
   coreMocks.executeSessionSearch.mockReset();
   coreMocks.executeSessionSearch.mockReturnValue([]);
   vi.useRealTimers();
@@ -252,6 +258,26 @@ describe("handleGetSessions", () => {
     const response = c.json.mock.calls[0]![0];
     expect(response.sessions).toHaveLength(1);
     expect(response.sessions[0].id).toBe("s1");
+  });
+
+  it("projects a persisted alias without changing the source title", () => {
+    coreMocks.listSessionAliases.mockReturnValue([
+      {
+        agentKey: "claudecode",
+        sessionId: "s1",
+        alias: "Fix session cache refresh",
+        updated_at: Date.now(),
+      },
+    ]);
+    const c = makeMockContext();
+
+    handleGetSessions(c, makeScanSource());
+
+    const session = c.json.mock.calls[0]![0].sessions[0];
+    expect(session).toMatchObject({
+      title: "Session s1",
+      display_title: "Fix session cache refresh",
+    });
   });
 
   it("filters by cwd using project scope match", () => {
