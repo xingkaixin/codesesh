@@ -38,8 +38,11 @@ export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
   const effectiveParams = useMemo(() => new URLSearchParams(effectiveSearch), [effectiveSearch]);
 
   useEffect(() => {
+    if (effectiveSearch !== search) {
+      setSearchParams(effectiveParams, { replace: true });
+      return;
+    }
     previousPath.current = location.pathname;
-    if (effectiveSearch !== search) setSearchParams(effectiveParams, { replace: true });
   }, [effectiveParams, effectiveSearch, location.pathname, search, setSearchParams]);
 
   const resolved = useMemo(

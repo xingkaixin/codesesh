@@ -131,6 +131,16 @@ test("persists the selected time range across navigation", async ({ page }) => {
   await expect.poll(() => new URL(page.url()).searchParams.get("to")).toBe("2026-04-30");
 });
 
+test("keeps the time range when opening a session", async ({ page }) => {
+  await page.goto("/claudecode?range=custom&from=2026-04-01&to=2026-04-30");
+  await expect(page.getByRole("combobox", { name: "Session time range" })).toHaveValue("custom");
+
+  await page.getByText("Core browsing smoke session").first().click();
+
+  await expect(page.getByRole("combobox", { name: "Session time range" })).toHaveValue("custom");
+  await expect.poll(() => new URL(page.url()).searchParams.get("range")).toBe("custom");
+});
+
 test("keeps detail drawers modal and restores focus", async ({ page }) => {
   await page.goto("/claudecode/e2e-dashboard");
   await expect(page.getByTestId("session-detail")).toBeVisible();
