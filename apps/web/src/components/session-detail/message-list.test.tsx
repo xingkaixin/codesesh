@@ -1,7 +1,7 @@
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FilteredSessionMessage } from "./toc";
-import { MessageList, VIRTUALIZED_MESSAGE_THRESHOLD } from "./message-list";
+import { MessageList, type MessageListHandle, VIRTUALIZED_MESSAGE_THRESHOLD } from "./message-list";
 
 vi.mock("./message-rendering", () => ({
   MessageItem: ({ messageIndex }: { messageIndex: number }) => (
@@ -51,6 +51,24 @@ function createMessages(): FilteredSessionMessage[] {
 }
 
 describe("MessageList virtualization", () => {
+  it("renders short lists directly and clears a stale virtual API", async () => {
+    const apiRef: { current: MessageListHandle | null } = {
+      current: { scrollToIndex: vi.fn() },
+    };
+    const view = render(
+      <MessageList
+        messages={createMessages().slice(0, 2)}
+        toolAnchorIds={new Map()}
+        sessionAgentKey="claudecode"
+        baseDirectory="/tmp/project"
+        apiRef={apiRef}
+      />,
+    );
+
+    expect(view.container.querySelectorAll("[data-message-index]")).toHaveLength(2);
+    await waitFor(() => expect(apiRef.current).toBeNull());
+  });
+
   it("does not poll layout while idle", () => {
     const setInterval = vi.spyOn(window, "setInterval");
 
@@ -65,6 +83,85 @@ describe("MessageList virtualization", () => {
     );
 
     expect(setInterval).not.toHaveBeenCalled();
+  });
+
+  it("scrolls the window to an offscreen message through the virtual API", async () => {
+    vi.stubGlobal("innerHeight", 0);
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+    const apiRef: { current: MessageListHandle | null } = { current: null };
+    const view = render(
+      <MessageList
+        messages={createMessages()}
+        toolAnchorIds={new Map()}
+        sessionAgentKey="claudecode"
+        baseDirectory="/tmp/project"
+        apiRef={apiRef}
+      />,
+    );
+    await waitFor(() => expect(apiRef.current).not.toBeNull());
+
+    act(() => apiRef.current?.scrollToIndex(VIRTUALIZED_MESSAGE_THRESHOLD));
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: expect.any(Number), behavior: "auto" });
+    expect(view.container.querySelector('[data-message-index="80"]')).not.toBeNull();
+
+    act(() => apiRef.current?.scrollToIndex(10_000));
+    expect(scrollTo).toHaveBeenCalledOnce();
+
+    view.unmount();
+    expect(apiRef.current).toBeNull();
+  });
+
+  it("scrolls a containing element through the virtual API", async () => {
+    const scrollContainer = document.createElement("div");
+    scrollContainer.style.overflowY = "auto";
+    document.body.append(scrollContainer);
+    Object.defineProperty(scrollContainer, "clientHeight", {
+      configurable: true,
+      value: 300,
+    });
+    const scrollTo = vi.fn();
+    scrollContainer.scrollTo = scrollTo;
+    const apiRef: { current: MessageListHandle | null } = { current: null };
+    render(
+      <MessageList
+        messages={createMessages()}
+        toolAnchorIds={new Map()}
+        sessionAgentKey="claudecode"
+        baseDirectory="/tmp/project"
+        apiRef={apiRef}
+      />,
+      { container: scrollContainer },
+    );
+    await waitFor(() => expect(apiRef.current).not.toBeNull());
+
+    act(() => apiRef.current?.scrollToIndex(10));
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: expect.any(Number), behavior: "auto" });
+    scrollContainer.remove();
+  });
+
+  it("coalesces viewport events and cancels pending work on unmount", () => {
+    const requestAnimationFrame = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(42);
+    const cancelAnimationFrame = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation(() => undefined);
+    const view = render(
+      <MessageList
+        messages={createMessages()}
+        toolAnchorIds={new Map()}
+        sessionAgentKey="claudecode"
+        baseDirectory="/tmp/project"
+        apiRef={{ current: null }}
+      />,
+    );
+
+    fireEvent.resize(window);
+    fireEvent.resize(window);
+    view.unmount();
+
+    expect(requestAnimationFrame).toHaveBeenCalledOnce();
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(42);
   });
 
   it("updates visible rows when the scroll container resizes", async () => {
@@ -126,5 +223,8 @@ describe("MessageList virtualization", () => {
     ResizeObserverMock.instances.forEach((observer) => observer.trigger(row));
 
     await waitFor(() => expect(Number.parseInt(list.style.height, 10)).toBe(initialHeight + 320));
+
+    ResizeObserverMock.instances.forEach((observer) => observer.trigger(row));
+    expect(Number.parseInt(list.style.height, 10)).toBe(initialHeight + 320);
   });
 });

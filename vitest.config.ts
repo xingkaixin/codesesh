@@ -22,17 +22,21 @@ export default defineConfig({
       exclude: ["**/node_modules/**", "**/dist/**", "packages/core/src/utils/sqlite.ts"],
       reporter: ["text", "html"],
       thresholds: {
+        statements: 88,
+        branches: 80,
+        functions: 88,
+        lines: 91,
         [COVERAGE_THRESHOLD_SCOPE]: {
-          lines: 75,
+          lines: 90,
         },
         [CLI_RUNTIME_SCOPE]: {
-          lines: 78,
+          lines: 91,
         },
         [WEB_HOOKS_SCOPE]: {
-          lines: 63,
+          lines: 95,
         },
         [WEB_INTERACTIONS_SCOPE]: {
-          lines: 76,
+          lines: 87,
         },
       },
     },
