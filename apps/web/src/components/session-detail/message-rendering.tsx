@@ -507,7 +507,9 @@ function ToolItem({
         <span
           className={`console-mono inline-flex items-center gap-1 rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusMeta.className}`}
         >
-          <StatusIcon className={`size-3 ${state.status === "running" ? "animate-spin" : ""}`} />
+          <StatusIcon
+            className={`size-3 ${state.status === "running" ? "animate-spin motion-reduce:animate-none" : ""}`}
+          />
           {statusMeta.label}
         </span>
       </div>

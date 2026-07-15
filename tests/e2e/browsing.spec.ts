@@ -122,6 +122,14 @@ test("persists the selected time range across navigation", async ({ page }) => {
   await range.selectOption("custom");
   const dialog = page.getByRole("dialog", { name: "Custom time range" });
   await expect(dialog).toBeVisible();
+  await expect
+    .poll(() =>
+      dialog.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return `${style.transitionProperty}|${style.transitionDuration}|${style.scale}`;
+      }),
+    )
+    .toBe("opacity, scale|0.2s, 0.2s|1");
   await dialog.getByLabel("From").fill("2026-04-01");
   await dialog.getByLabel("To").fill("2026-04-30");
   await dialog.getByRole("button", { name: "Apply range" }).click();
@@ -149,6 +157,14 @@ test("keeps detail drawers modal and restores focus", async ({ page }) => {
   await receiptTrigger.click();
   const receiptDialog = page.getByRole("dialog", { name: "Session Receipt" });
   await expect(receiptDialog).toBeVisible();
+  await expect
+    .poll(() =>
+      receiptDialog.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return `${style.transitionProperty}|${style.transitionDuration}`;
+      }),
+    )
+    .toBe("opacity, transform|0.2s, 0.26s");
   await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).overflow)).toBe("hidden");
   await expect(page.getByRole("button", { name: "Close session receipt" })).toBeFocused();
   await page.keyboard.press("Tab");
@@ -182,6 +198,17 @@ test("renders a static receipt for reduced motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/claudecode/e2e-dashboard");
   await page.getByRole("button", { name: "Open session receipt" }).click();
+
+  const receiptDialog = page.getByRole("dialog", { name: "Session Receipt" });
+  await expect(receiptDialog).toBeVisible();
+  await expect
+    .poll(() =>
+      receiptDialog.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return `${style.transitionProperty}|${style.transitionDuration}|${style.transform}`;
+      }),
+    )
+    .toBe("opacity|0.15s|none");
 
   const receiptCanvas = page.locator('canvas[aria-hidden="true"].fixed');
   const receiptHitSurface = page.locator(

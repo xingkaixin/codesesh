@@ -28,6 +28,10 @@ import {
   SessionDetailAuxOverlay,
 } from "./session-detail/session-detail-aux";
 import { SessionMessageTimeline } from "./session-detail/session-message-timeline";
+import {
+  resolveReducedMotionScrollBehavior,
+  type SessionAnchorScrollBehavior,
+} from "./session-detail/scroll-behavior";
 import { buildSessionTimelineEntries } from "./session-detail/timeline";
 
 // ---------------------------------------------------------------------------
@@ -50,11 +54,15 @@ function scrollToSessionAnchor({
   isCurrent,
 }: {
   anchorId: string;
-  behavior: ScrollBehavior;
+  behavior: SessionAnchorScrollBehavior;
   prepareAnchor?: () => void;
   isCurrent: () => boolean;
 }) {
   if (typeof document === "undefined") return;
+  const scrollBehavior = resolveReducedMotionScrollBehavior(
+    behavior,
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
   let element = document.getElementById(anchorId);
   if (!element && prepareAnchor) {
     prepareAnchor();
@@ -63,7 +71,7 @@ function scrollToSessionAnchor({
       if (!isCurrent()) return;
       element = document.getElementById(anchorId);
       if (element) {
-        element.scrollIntoView({ behavior, block: "center" });
+        element.scrollIntoView({ behavior: scrollBehavior, block: "center" });
         return;
       }
       attempts += 1;
@@ -73,7 +81,7 @@ function scrollToSessionAnchor({
     return;
   }
   if (!element) return;
-  element.scrollIntoView({ behavior, block: "center" });
+  element.scrollIntoView({ behavior: scrollBehavior, block: "center" });
 }
 
 function measureSessionDetailWork<T>(id: string, compute: () => T): T {
@@ -171,7 +179,7 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
     [filteredMessages, toolAnchorIds],
   );
   const handleJumpToMessageAnchor = useCallback(
-    (anchorId: string, messageIndex: number | undefined, behavior: ScrollBehavior = "smooth") => {
+    (anchorId: string, messageIndex: number | undefined, behavior: SessionAnchorScrollBehavior) => {
       const requestId = scrollRequestRef.current + 1;
       scrollRequestRef.current = requestId;
       const listIndex = messageIndex == null ? undefined : anchorListIndexes.get(messageIndex);
@@ -186,8 +194,8 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
     [anchorListIndexes],
   );
   const handleJumpToAnchor = useCallback(
-    (anchorId: string) => {
-      handleJumpToMessageAnchor(anchorId, anchorMessageIndexes.get(anchorId));
+    (anchorId: string, behavior: SessionAnchorScrollBehavior) => {
+      handleJumpToMessageAnchor(anchorId, anchorMessageIndexes.get(anchorId), behavior);
     },
     [anchorMessageIndexes, handleJumpToMessageAnchor],
   );
@@ -210,7 +218,7 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
   return (
     <div
       data-testid="session-detail"
-      className="mx-auto w-full max-w-[1440px] space-y-8 px-2 md:px-4 animate-in fade-in slide-in-from-bottom-2 duration-300"
+      className="mx-auto w-full max-w-[1440px] space-y-8 px-2 md:px-4"
     >
       <SessionSummarySection
         summary={typeof session.summary_files === "string" ? session.summary_files : undefined}
@@ -233,9 +241,9 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
               return toggleTocFilter(current, filterId, toc);
             })
           }
-          onJumpToAnchor={(anchorId) => {
+          onJumpToAnchor={(anchorId, behavior) => {
             setOpenAuxPanel(null);
-            handleJumpToAnchor(anchorId);
+            handleJumpToAnchor(anchorId, behavior);
           }}
         />
         <SessionToc

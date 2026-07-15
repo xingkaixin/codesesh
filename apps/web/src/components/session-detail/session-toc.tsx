@@ -3,6 +3,7 @@ import { Check, Funnel, Minus } from "lucide-react";
 import type { SessionDetailToc, TocFilterId } from "./toc";
 import type { FileChangeSummary } from "./file-change";
 import { FileChangeTracker } from "./file-change-tracker";
+import type { SessionAnchorScrollHandler } from "./scroll-behavior";
 
 const TOC_META: Array<{ id: TocFilterId; label: string }> = [
   { id: "user", label: "User" },
@@ -118,7 +119,7 @@ export function SessionToc({
   baseDirectory: string;
   selectedFilters: Set<string>;
   onToggle: (filterId: string) => void;
-  onJumpToAnchor: (anchorId: string) => void;
+  onJumpToAnchor: SessionAnchorScrollHandler;
 }) {
   return (
     <aside className="console-scrollbar hidden min-[1025px]:sticky min-[1025px]:top-4 min-[1025px]:block min-[1025px]:max-h-[calc(100dvh-14rem)] min-[1025px]:overflow-y-auto min-[1025px]:overscroll-contain">

@@ -27,18 +27,25 @@ export function SessionDetailSkeleton() {
             <div className="flex gap-4">
               <div className="shrink-0 pt-1">
                 <div className="flex size-8 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)]">
-                  <div className="size-3.5 rounded-sm bg-[var(--console-border-strong)] animate-pulse" />
+                  <div className="size-3.5 rounded-sm bg-[var(--console-border-strong)] animate-pulse motion-reduce:animate-none" />
                 </div>
               </div>
               <div className="min-w-0 flex-1 space-y-3">
                 <div className="flex items-center gap-3">
-                  <SkeletonBlock className={`${item.roleWidth} h-3 animate-pulse`} />
-                  <SkeletonBlock className={`${item.timeWidth} h-2.5 animate-pulse`} />
+                  <SkeletonBlock
+                    className={`${item.roleWidth} h-3 animate-pulse motion-reduce:animate-none`}
+                  />
+                  <SkeletonBlock
+                    className={`${item.timeWidth} h-2.5 animate-pulse motion-reduce:animate-none`}
+                  />
                 </div>
                 <div className="rounded-sm border border-[var(--console-border)] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
                   <div className="space-y-2">
                     {item.bodyWidths.map((w) => (
-                      <SkeletonBlock key={`${item.id}-${w}`} className={`${w} h-3 animate-pulse`} />
+                      <SkeletonBlock
+                        key={`${item.id}-${w}`}
+                        className={`${w} h-3 animate-pulse motion-reduce:animate-none`}
+                      />
                     ))}
                   </div>
                 </div>
@@ -47,7 +54,7 @@ export function SessionDetailSkeleton() {
           </article>
         ))}
       </div>
-      <div className="min-h-24 flex-1 rounded-sm border border-[var(--console-border)] bg-white/60 animate-pulse" />
+      <div className="min-h-24 flex-1 rounded-sm border border-[var(--console-border)] bg-white/60 animate-pulse motion-reduce:animate-none" />
     </div>
   );
 }

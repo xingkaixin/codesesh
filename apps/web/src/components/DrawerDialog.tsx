@@ -31,9 +31,9 @@ export function DrawerDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className={`fixed inset-0 ${styles.backdrop}`} />
+        <Dialog.Backdrop className={`motion-backdrop fixed inset-0 ${styles.backdrop}`} />
         <Dialog.Popup
-          className={`fixed bottom-0 right-0 top-0 overscroll-contain border-l border-[var(--console-border)] bg-[var(--console-bg)] shadow-[-12px_0_32px_rgba(15,23,42,0.18)] outline-none ${styles.popup}`}
+          className={`motion-drawer fixed bottom-0 right-0 top-0 overscroll-contain border-l border-[var(--console-border)] bg-[var(--console-bg)] shadow-[-12px_0_32px_rgba(15,23,42,0.18)] outline-none ${styles.popup}`}
         >
           <div className="mb-3 flex items-center justify-between gap-3">
             <Dialog.Title className="console-mono text-xs font-semibold uppercase tracking-[0.16em] text-[var(--console-text)]">

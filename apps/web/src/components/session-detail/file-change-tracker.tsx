@@ -11,6 +11,11 @@ import {
 } from "lucide-react";
 import type { FileChangeKind, FileChangeSummary, FileChangeSummaryItem } from "./file-change";
 import { formatTrackedPath } from "./path-extract";
+import {
+  getActivationScrollBehavior,
+  type SessionAnchorScrollBehavior,
+  type SessionAnchorScrollHandler,
+} from "./scroll-behavior";
 
 export function getFileTrackerItemCount(summary: FileChangeSummary) {
   return summary.read.length + summary.edit.length + summary.write.length + summary.delete.length;
@@ -23,7 +28,7 @@ export function FileChangeTracker({
 }: {
   summary: FileChangeSummary;
   baseDirectory: string;
-  onJumpToAnchor: (anchorId: string) => void;
+  onJumpToAnchor: SessionAnchorScrollHandler;
 }) {
   const sections = [
     { key: "read" as const, label: "Read", Icon: FileSearch, items: summary.read },
@@ -74,7 +79,7 @@ function FileTrackerSection({
   Icon: typeof LoaderCircle;
   items: FileChangeSummaryItem[];
   baseDirectory: string;
-  onJumpToAnchor: (anchorId: string) => void;
+  onJumpToAnchor: SessionAnchorScrollHandler;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -121,18 +126,18 @@ function FileTrackerItem({
 }: {
   item: FileChangeSummaryItem;
   baseDirectory: string;
-  onJumpToAnchor: (anchorId: string) => void;
+  onJumpToAnchor: SessionAnchorScrollHandler;
 }) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  function jumpToIndex(nextIndex: number) {
+  function jumpToIndex(nextIndex: number, behavior: SessionAnchorScrollBehavior) {
     const total = item.anchors.length;
     if (total === 0) return;
     const normalizedIndex = ((nextIndex % total) + total) % total;
     setCurrentIndex(normalizedIndex);
     const anchor = item.anchors[normalizedIndex];
     if (anchor) {
-      onJumpToAnchor(anchor.anchorId);
+      onJumpToAnchor(anchor.anchorId, behavior);
     }
   }
 
@@ -141,7 +146,7 @@ function FileTrackerItem({
       <button
         type="button"
         title={item.path}
-        onClick={() => jumpToIndex(currentIndex)}
+        onClick={(event) => jumpToIndex(currentIndex, getActivationScrollBehavior(event.detail))}
         className="min-w-0 flex-1 text-left"
       >
         <span className="console-mono block break-all text-xs text-[var(--console-text)]">
@@ -153,7 +158,9 @@ function FileTrackerItem({
           <button
             type="button"
             aria-label={`Previous ${item.path}`}
-            onClick={() => jumpToIndex(currentIndex - 1)}
+            onClick={(event) =>
+              jumpToIndex(currentIndex - 1, getActivationScrollBehavior(event.detail))
+            }
             className="rounded-sm border border-[var(--console-border)] p-1 text-[var(--console-muted)] transition-colors hover:bg-white"
           >
             <ChevronUp className="size-3" />
@@ -164,7 +171,9 @@ function FileTrackerItem({
           <button
             type="button"
             aria-label={`Next ${item.path}`}
-            onClick={() => jumpToIndex(currentIndex + 1)}
+            onClick={(event) =>
+              jumpToIndex(currentIndex + 1, getActivationScrollBehavior(event.detail))
+            }
             className="rounded-sm border border-[var(--console-border)] p-1 text-[var(--console-muted)] transition-colors hover:bg-white"
           >
             <ChevronDown className="size-3" />
@@ -174,7 +183,7 @@ function FileTrackerItem({
         <button
           type="button"
           title="Jump to tool call"
-          onClick={() => jumpToIndex(0)}
+          onClick={(event) => jumpToIndex(0, getActivationScrollBehavior(event.detail))}
           className="console-mono shrink-0 text-[10px] text-[var(--console-muted)]"
         >
           {item.count}

@@ -77,8 +77,8 @@ export function TimeWindowControl({
 
       <Dialog.Root open={customOpen} onOpenChange={setCustomOpen}>
         <Dialog.Portal>
-          <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/35" />
-          <Dialog.Popup className="fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-sm border border-[var(--console-border-strong)] bg-white p-5 shadow-2xl outline-none">
+          <Dialog.Backdrop className="motion-backdrop fixed inset-0 z-50 bg-black/35" />
+          <Dialog.Popup className="motion-modal fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-sm border border-[var(--console-border-strong)] bg-white p-5 shadow-2xl outline-none">
             <Dialog.Title className="console-mono text-sm font-semibold text-[var(--console-text)]">
               Custom time range
             </Dialog.Title>

@@ -52,7 +52,7 @@ describe("SessionMessageTimeline", () => {
 
     fireEvent.pointerDown(target, { button: 0, clientX: 250, pointerId: 1 });
     fireEvent.pointerUp(target, { button: 0, clientX: 250, pointerId: 1 });
-    fireEvent.click(target, { clientX: 250 });
+    fireEvent.click(target, { clientX: 250, detail: 1 });
 
     expect(onNavigate).toHaveBeenCalledOnce();
     expect(onNavigate).toHaveBeenCalledWith(entries[2], "smooth");
@@ -61,9 +61,18 @@ describe("SessionMessageTimeline", () => {
   it("maps clicks between blocks to the timeline position", () => {
     const { onNavigate, track } = renderTimeline();
 
-    fireEvent.click(track, { clientX: 250 });
+    fireEvent.click(track, { clientX: 250, detail: 1 });
 
     expect(onNavigate).toHaveBeenCalledWith(entries[2], "smooth");
+  });
+
+  it("uses immediate scrolling for keyboard activation", () => {
+    const { getAllByRole, onNavigate } = renderTimeline();
+    const target = getAllByRole("button")[1]!;
+
+    fireEvent.click(target, { detail: 0 });
+
+    expect(onNavigate).toHaveBeenCalledWith(entries[1], "auto");
   });
 
   it("captures the pointer only after drag intent is clear", () => {
