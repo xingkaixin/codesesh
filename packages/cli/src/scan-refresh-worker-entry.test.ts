@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => {
     attachMissingProjectIdentities: vi.fn((sessions: SessionHead[]) => sessions),
     createRegisteredAgents: vi.fn(),
     ensureSessionTagsSync: vi.fn((_agent: BaseAgent, sessions: SessionHead[]) => ({ sessions })),
-    matchesScanWindow: vi.fn(() => true),
+    matchesScanWindow: vi.fn((_mtimeMs: number) => true),
     FileSystemSessionSource,
   };
 });
