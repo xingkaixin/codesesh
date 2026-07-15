@@ -30,12 +30,34 @@ interface RouteHeaderInput {
 }
 
 export function buildRouteHeaderModel(input: RouteHeaderInput): {
+  contextLabel: string;
   title: string;
   subtitle: ReactNode;
   breadcrumbs: BreadcrumbItem[];
 } {
   const titleAndSubtitle = routeTitleAndSubtitle(input);
-  return { ...titleAndSubtitle, breadcrumbs: routeBreadcrumbs(input) };
+  return {
+    contextLabel: routeContextLabel(input),
+    ...titleAndSubtitle,
+    breadcrumbs: routeBreadcrumbs(input),
+  };
+}
+
+function routeContextLabel(input: RouteHeaderInput): string {
+  if (input.isSearchMode) return "Search";
+
+  switch (input.viewState.mode) {
+    case "session":
+      return "Session";
+    case "root":
+      return "Dashboard";
+    case "projects":
+      return "Projects";
+    case "project":
+      return "Project";
+    default:
+      return "Landing";
+  }
 }
 
 function routeTitleAndSubtitle(input: RouteHeaderInput): {
