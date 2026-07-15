@@ -10,6 +10,14 @@ const appConfig = { window: { from: 1, to: 2 } } as unknown as AppConfig;
 const data = { totals: { sessions: 3 }, perAgent: [] } as unknown as DashboardData;
 const kind = "path" as ProjectIdentityKind;
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   vi.mocked(api.fetchDashboard).mockResolvedValue(data);
 });
@@ -48,5 +56,88 @@ describe("useProjectDashboard", () => {
 
     rerender({ idKey: "path:pk2" });
     await waitFor(() => expect(result.current.selectedProjectAgent).toBeUndefined());
+  });
+
+  it("exposes load failures and clears the loading state", async () => {
+    const error = new Error("offline");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(api.fetchDashboard).mockRejectedValueOnce(error);
+
+    const { result } = renderHook(() =>
+      useProjectDashboard(appConfig.window, kind, "pk", "path:pk"),
+    );
+
+    await waitFor(() =>
+      expect(result.current.projectDashboardError).toBe("Failed to load project dashboard"),
+    );
+    expect(result.current.projectDashboard).toBeNull();
+    expect(result.current.projectDashboardLoading).toBe(false);
+    expect(console.error).toHaveBeenCalledWith("Failed to load project dashboard:", error);
+  });
+
+  it("keeps the latest project response when an earlier request finishes late", async () => {
+    const first = deferred<DashboardData>();
+    const secondData = { totals: { sessions: 4 }, perAgent: [] } as unknown as DashboardData;
+    vi.mocked(api.fetchDashboard)
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(secondData);
+    const { result, rerender } = renderHook(
+      ({ projectKey }) =>
+        useProjectDashboard(appConfig.window, kind, projectKey, `path:${projectKey}`),
+      { initialProps: { projectKey: "first" } },
+    );
+
+    rerender({ projectKey: "second" });
+    await waitFor(() => expect(result.current.projectDashboard).toBe(secondData));
+    first.resolve(data);
+    await first.promise;
+
+    expect(result.current.projectDashboard).toBe(secondData);
+    expect(result.current.projectDashboardLoading).toBe(false);
+  });
+
+  it("refetches when the selected agent changes", async () => {
+    const { result } = renderHook(() =>
+      useProjectDashboard(appConfig.window, null, "pk", "path:pk"),
+    );
+    await waitFor(() => expect(result.current.projectDashboard).toEqual(data));
+    vi.mocked(api.fetchDashboard).mockClear();
+
+    act(() => result.current.setSelectedProjectAgent("codex"));
+
+    await waitFor(() =>
+      expect(api.fetchDashboard).toHaveBeenCalledWith(appConfig.window, {
+        projectKind: undefined,
+        projectKey: "pk",
+        agent: "codex",
+      }),
+    );
+  });
+
+  it("refreshes the active dashboard and reports refresh failures", async () => {
+    const error = new Error("refresh failed");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const refreshed = { totals: { sessions: 9 }, perAgent: [] } as unknown as DashboardData;
+    const { result } = renderHook(() =>
+      useProjectDashboard(appConfig.window, kind, "pk", "path:pk"),
+    );
+    await waitFor(() => expect(result.current.projectDashboard).toEqual(data));
+
+    vi.mocked(api.fetchDashboard).mockResolvedValueOnce(refreshed);
+    await act(() => result.current.refresh());
+    expect(result.current.projectDashboard).toBe(refreshed);
+
+    vi.mocked(api.fetchDashboard).mockRejectedValueOnce(error);
+    await act(() => result.current.refresh());
+    expect(console.error).toHaveBeenCalledWith("Failed to refresh project dashboard:", error);
+  });
+
+  it("does not refresh without both a project and a window", async () => {
+    const { result } = renderHook(() => useProjectDashboard(null, kind, "pk", "path:pk"));
+    vi.mocked(api.fetchDashboard).mockClear();
+
+    await act(() => result.current.refresh());
+
+    expect(api.fetchDashboard).not.toHaveBeenCalled();
   });
 });
