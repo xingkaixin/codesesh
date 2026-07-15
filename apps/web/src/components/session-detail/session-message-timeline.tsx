@@ -16,13 +16,13 @@ import {
   type SessionTimelineEntry,
   type SessionTimelineEntryKind,
 } from "./timeline";
+import { getActivationScrollBehavior, type SessionAnchorScrollBehavior } from "./scroll-behavior";
 
-type TimelineScrollBehavior = "auto" | "smooth";
 type ScrollParent = HTMLElement | Window;
 
 interface SessionMessageTimelineProps {
   entries: SessionTimelineEntry[];
-  onNavigate: (entry: SessionTimelineEntry, behavior: TimelineScrollBehavior) => void;
+  onNavigate: (entry: SessionTimelineEntry, behavior: SessionAnchorScrollBehavior) => void;
 }
 
 interface TimelineTooltip {
@@ -362,7 +362,7 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
   }, []);
 
   const navigateFromPointer = useCallback(
-    (clientX: number, behavior: TimelineScrollBehavior) => {
+    (clientX: number, behavior: SessionAnchorScrollBehavior) => {
       const track = trackRef.current;
       if (!track) return;
       const rect = track.getBoundingClientRect();
@@ -435,6 +435,7 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
               }}
               onClick={(event) => {
                 if (suppressClickRef.current) return;
+                const behavior = getActivationScrollBehavior(event.detail);
 
                 const indexValue = (event.target as HTMLElement).closest<HTMLButtonElement>(
                   "[data-timeline-index]",
@@ -443,10 +444,10 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
                 const entry =
                   index == null || !Number.isInteger(index) ? undefined : entries[index];
                 if (entry) {
-                  onNavigate(entry, "smooth");
+                  onNavigate(entry, behavior);
                   return;
                 }
-                navigateFromPointer(event.clientX, "smooth");
+                navigateFromPointer(event.clientX, behavior);
               }}
             >
               {entries.map((entry, index) => {

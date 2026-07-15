@@ -7,6 +7,7 @@ import { DrawerDialog } from "../DrawerDialog";
 import type { SessionDetailToc } from "./toc";
 import type { FileChangeSummary } from "./file-change";
 import { FileChangeTracker, getFileTrackerItemCount } from "./file-change-tracker";
+import type { SessionAnchorScrollHandler } from "./scroll-behavior";
 import { SessionTocFilterPanel } from "./session-toc";
 
 export function DeferredInteractiveReceipt({
@@ -126,7 +127,7 @@ export function SessionDetailAuxOverlay({
   selectedFilters: Set<string>;
   onClose: () => void;
   onToggle: (filterId: string) => void;
-  onJumpToAnchor: (anchorId: string) => void;
+  onJumpToAnchor: SessionAnchorScrollHandler;
 }) {
   useEffect(() => {
     if (!openPanel) return;
