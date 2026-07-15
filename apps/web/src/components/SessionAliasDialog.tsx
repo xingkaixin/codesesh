@@ -63,8 +63,8 @@ export function SessionAliasDialog({
   return (
     <Dialog.Root open={target !== null} onOpenChange={(open) => (!open ? onClose() : undefined)}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/35" />
-        <Dialog.Popup className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-sm border border-[var(--console-border-strong)] bg-white p-5 shadow-2xl outline-none">
+        <Dialog.Backdrop className="motion-backdrop fixed inset-0 z-50 bg-black/35" />
+        <Dialog.Popup className="motion-modal fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-sm border border-[var(--console-border-strong)] bg-white p-5 shadow-2xl outline-none">
           <Dialog.Title className="console-mono text-sm font-semibold text-[var(--console-text)]">
             Rename session
           </Dialog.Title>

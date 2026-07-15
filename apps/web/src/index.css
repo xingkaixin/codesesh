@@ -135,6 +135,8 @@
     --timeline-user: #a85f82;
     --timeline-agent: #5e86aa;
     --timeline-tool: #a3a3a3;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
     --tt-in-dur: 150ms;
     --tt-out-dur: 50ms;
     --tt-scale: 0.98;
@@ -199,19 +201,70 @@
   }
 
   .shortcut-overlay[data-open] {
-    animation: shortcut-overlay-in 200ms cubic-bezier(0.23, 1, 0.32, 1);
+    animation: shortcut-overlay-in 200ms var(--ease-out);
   }
 
   .shortcut-overlay[data-closed] {
-    animation: shortcut-overlay-out 150ms cubic-bezier(0.23, 1, 0.32, 1);
+    animation: shortcut-overlay-out 150ms var(--ease-out);
   }
 
   .shortcut-content[data-open] {
-    animation: shortcut-content-in 200ms cubic-bezier(0.23, 1, 0.32, 1);
+    animation: shortcut-content-in 200ms var(--ease-out);
   }
 
   .shortcut-content[data-closed] {
-    animation: shortcut-content-out 150ms cubic-bezier(0.23, 1, 0.32, 1);
+    animation: shortcut-content-out 150ms var(--ease-out);
+  }
+
+  .motion-backdrop {
+    opacity: 1;
+    transition: opacity 200ms var(--ease-out);
+  }
+
+  .motion-backdrop[data-starting-style] {
+    opacity: 0;
+  }
+
+  .motion-backdrop[data-ending-style] {
+    opacity: 0;
+    transition-duration: 150ms;
+  }
+
+  .motion-modal {
+    opacity: 1;
+    scale: 1;
+    transform-origin: center;
+    transition:
+      opacity 200ms var(--ease-out),
+      scale 200ms var(--ease-out);
+  }
+
+  .motion-modal[data-starting-style],
+  .motion-modal[data-ending-style] {
+    opacity: 0;
+    scale: 0.96;
+  }
+
+  .motion-modal[data-ending-style] {
+    transition-duration: 150ms;
+  }
+
+  .motion-drawer {
+    opacity: 1;
+    transform: translateX(0);
+    transition:
+      opacity 200ms var(--ease-out),
+      transform 260ms var(--ease-drawer);
+  }
+
+  .motion-drawer[data-starting-style],
+  .motion-drawer[data-ending-style] {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+
+  .motion-drawer[data-ending-style] {
+    transition-duration: 180ms;
   }
 
   .t-tt-wrap {
@@ -317,6 +370,24 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .motion-backdrop,
+  .motion-modal,
+  .motion-drawer {
+    transition: opacity 150ms var(--ease-out);
+  }
+
+  .motion-modal,
+  .motion-modal[data-starting-style],
+  .motion-modal[data-ending-style] {
+    scale: 1;
+  }
+
+  .motion-drawer,
+  .motion-drawer[data-starting-style],
+  .motion-drawer[data-ending-style] {
+    transform: none;
+  }
+
   .shortcut-content[data-open] {
     animation-name: shortcut-overlay-in;
   }

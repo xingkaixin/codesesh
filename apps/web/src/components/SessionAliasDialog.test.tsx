@@ -23,6 +23,8 @@ describe("SessionAliasDialog", () => {
     expect((screen.getByRole("textbox", { name: "Session title" }) as HTMLInputElement).value).toBe(
       "Current custom title",
     );
+    expect(document.querySelector(".motion-backdrop")).not.toBeNull();
+    expect(screen.getByRole("dialog").className).toContain("motion-modal");
     expect(screen.queryByText(/Original title/)).toBeNull();
   });
 
