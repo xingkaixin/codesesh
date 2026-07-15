@@ -113,6 +113,21 @@ describe("useBookmarks", () => {
     expect(result.current.bookmarkedSessions[0]?.sessionId).toBe("new");
   });
 
+  it("falls back to creation time when sorting bookmarks without update times", async () => {
+    const old = { ...snap("old"), time_created: 10, time_updated: undefined };
+    const recent = { ...snap("recent"), time_created: 20, time_updated: undefined };
+    vi.mocked(api.fetchBookmarks).mockResolvedValue({ bookmarks: [old] });
+    const { result } = renderHook(() => useBookmarks([]));
+    await waitFor(() => expect(result.current.bookmarkedSessions).toHaveLength(1));
+
+    act(() => result.current.toggleBookmark(recent));
+
+    expect(result.current.bookmarkedSessions.map((bookmark) => bookmark.sessionId)).toEqual([
+      "recent",
+      "old",
+    ]);
+  });
+
   it("refreshes bookmarks and reports load failures", async () => {
     const error = new Error("offline");
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -183,6 +198,31 @@ describe("useBookmarks", () => {
     );
   });
 
+  it("does not report snapshot sync failures after unmount", async () => {
+    const request = deferred<{ bookmarks: BookmarkedSessionSnapshot[] }>();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(api.fetchBookmarks).mockResolvedValue({ bookmarks: [snap("s1")] });
+    vi.mocked(api.importBookmarks).mockReturnValueOnce(request.promise);
+    vi.mocked(bookmarkUtils.mergeBookmarksWithSessions).mockImplementation((previous, sessions) =>
+      previous.length > 0 && sessions.length > 0 ? [snap("s1", 2)] : previous,
+    );
+    const { result, rerender, unmount } = renderHook(({ sessions }) => useBookmarks(sessions), {
+      initialProps: { sessions: [] as SessionHead[] },
+    });
+    await waitFor(() => expect(result.current.bookmarkedSessions).toHaveLength(1));
+    rerender({ sessions: [session("s1")] });
+    await waitFor(() => expect(api.importBookmarks).toHaveBeenCalledOnce());
+
+    unmount();
+    request.reject(new Error("late failure"));
+    await request.promise.catch(() => undefined);
+
+    expect(consoleError).not.toHaveBeenCalledWith(
+      "Failed to sync bookmark snapshots:",
+      expect.anything(),
+    );
+  });
+
   it("migrates legacy bookmarks once", async () => {
     const legacy = snap("legacy");
     vi.mocked(bookmarkUtils.loadLegacyBookmarks).mockReturnValue([legacy]);
@@ -194,6 +234,21 @@ describe("useBookmarks", () => {
       expect.not.objectContaining({ bookmarked_at: expect.anything() }),
     ]);
     expect(bookmarkUtils.clearLegacyBookmarks).toHaveBeenCalledOnce();
+  });
+
+  it("does not apply a completed legacy migration after unmount", async () => {
+    const legacy = snap("legacy");
+    const request = deferred<{ bookmarks: BookmarkedSessionSnapshot[] }>();
+    vi.mocked(bookmarkUtils.loadLegacyBookmarks).mockReturnValue([legacy]);
+    vi.mocked(api.importBookmarks).mockReturnValueOnce(request.promise);
+    const { unmount } = renderHook(() => useBookmarks([]));
+    await waitFor(() => expect(api.importBookmarks).toHaveBeenCalledOnce());
+
+    unmount();
+    request.resolve({ bookmarks: [legacy] });
+    await request.promise;
+
+    expect(bookmarkUtils.clearLegacyBookmarks).not.toHaveBeenCalled();
   });
 
   it("reports legacy migration failures", async () => {
@@ -208,6 +263,24 @@ describe("useBookmarks", () => {
       expect(consoleError).toHaveBeenCalledWith("Failed to migrate legacy bookmarks:", error),
     );
     expect(bookmarkUtils.clearLegacyBookmarks).not.toHaveBeenCalled();
+  });
+
+  it("does not report legacy migration failures after unmount", async () => {
+    const request = deferred<{ bookmarks: BookmarkedSessionSnapshot[] }>();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(bookmarkUtils.loadLegacyBookmarks).mockReturnValue([snap("legacy")]);
+    vi.mocked(api.importBookmarks).mockReturnValueOnce(request.promise);
+    const { unmount } = renderHook(() => useBookmarks([]));
+    await waitFor(() => expect(api.importBookmarks).toHaveBeenCalledOnce());
+
+    unmount();
+    request.reject(new Error("late migration failure"));
+    await request.promise.catch(() => undefined);
+
+    expect(consoleError).not.toHaveBeenCalledWith(
+      "Failed to migrate legacy bookmarks:",
+      expect.anything(),
+    );
   });
 
   it("rolls back an optimistic toggle when persistence fails", async () => {
