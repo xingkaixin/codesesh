@@ -1,5 +1,23 @@
 import { expect, test } from "playwright/test";
 
+test("keeps project navigation aligned with the overview route", async ({ page }) => {
+  await page.goto("/projects");
+  await expect(page.getByRole("heading", { level: 1, name: "Projects" })).toBeVisible();
+  const projectNavigation = page
+    .locator("aside")
+    .getByRole("link", { name: /codesesh-e2e/ })
+    .first();
+  await projectNavigation.click();
+  await expect(page.getByRole("heading", { level: 1, name: "codesesh-e2e" })).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "Breadcrumb" })
+    .getByRole("link", { name: "Projects" })
+    .click();
+  await expect(page).toHaveURL(/\/projects$/);
+  await expect(page.getByText("Select a project")).toBeVisible();
+  await expect(projectNavigation).not.toHaveClass(/bg-white/);
+});
+
 test("covers dashboard, detail, search, projects, and pin flows", async ({ page }) => {
   const consoleErrors: string[] = [];
   page.on("console", (message) => {
@@ -59,7 +77,9 @@ test("covers dashboard, detail, search, projects, and pin flows", async ({ page 
 
   await page.getByRole("searchbox", { name: "Search Sessions" }).fill("needle");
   await page.getByRole("button", { name: "Search" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Search" })).toBeVisible();
+  const searchHeading = page.getByRole("heading", { level: 1, name: "Search" });
+  await expect(searchHeading).toBeVisible();
+  await expect(searchHeading.locator("..").locator("span")).toHaveText("Search");
 
   const searchResult = page
     .getByRole("link")

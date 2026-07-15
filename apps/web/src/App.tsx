@@ -175,10 +175,13 @@ export default function App() {
   const openedSessionProjectIdentity =
     openedSessionData?.project_identity ?? openedSessionHead?.project_identity ?? null;
   const selectedProjectNavigationIdentity =
-    browseBy === "projects"
-      ? (activeProjectIdentity ??
-        (viewState.mode === "session" ? openedSessionProjectIdentity : selectedProjectIdentity))
-      : null;
+    browseBy !== "projects"
+      ? null
+      : viewState.mode === "project"
+        ? activeProjectIdentity
+        : viewState.mode === "session"
+          ? openedSessionProjectIdentity
+          : null;
   const selectedProjectNavigationId = selectedProjectNavigationIdentity
     ? getProjectIdentityKey(selectedProjectNavigationIdentity)
     : null;
@@ -573,15 +576,7 @@ export default function App() {
               </nav>
               <div className="flex items-center gap-2">
                 <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] font-bold uppercase text-[var(--console-muted)]">
-                  {viewState.mode === "session"
-                    ? "Session"
-                    : viewState.mode === "root"
-                      ? "Dashboard"
-                      : viewState.mode === "projects"
-                        ? "Projects"
-                        : viewState.mode === "project"
-                          ? "Project"
-                          : "Landing"}
+                  {routeHeader.contextLabel}
                 </span>
                 <h1 className="console-mono text-xl font-semibold tracking-tight text-[var(--console-text)]">
                   {routeHeader.title}
