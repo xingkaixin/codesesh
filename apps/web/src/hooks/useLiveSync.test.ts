@@ -3,6 +3,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { AppConfig, SessionsUpdatedEvent } from "../lib/api";
 import type { ViewState } from "../lib/view-state";
 import * as api from "../lib/api";
+import { resolveTimeWindow as resolveWindowFromParams } from "../lib/time-window";
 import { useLiveSync } from "./useLiveSync";
 
 let sessionsCb: ((event: SessionsUpdatedEvent) => void) | undefined;
@@ -30,7 +31,7 @@ const rootView = { mode: "root", activeAgentKey: null, activeSessionSlug: null }
 
 function makeDeps() {
   return {
-    timeWindow: appConfig.window,
+    resolveTimeWindow: vi.fn(() => appConfig.window),
     viewState: rootView,
     refreshAgents: vi.fn().mockResolvedValue(undefined),
     refreshSessions: vi.fn().mockResolvedValue(undefined),
@@ -45,6 +46,7 @@ function makeDeps() {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.clearAllMocks();
   sessionsCb = undefined;
   reconnectCb = undefined;
@@ -52,6 +54,28 @@ afterEach(() => {
 });
 
 describe("useLiveSync", () => {
+  it("resolves the rolling preset when an update arrives after midnight", async () => {
+    vi.useFakeTimers();
+    const openedAt = new Date(2026, 6, 15, 12).getTime();
+    vi.setSystemTime(openedAt);
+    const params = new URLSearchParams("range=7d");
+    const fallback = { days: 7 };
+    const deps = makeDeps();
+    deps.resolveTimeWindow = vi.fn(() => resolveWindowFromParams(params, fallback).window);
+    renderHook(() => useLiveSync(deps));
+
+    const refreshedAt = new Date(2026, 6, 16, 12).getTime();
+    vi.setSystemTime(refreshedAt);
+    await act(async () => {
+      sessionsCb?.({ newSessions: 1 } as SessionsUpdatedEvent);
+      await Promise.resolve();
+    });
+
+    expect(deps.refreshSessions).toHaveBeenCalledWith(
+      resolveWindowFromParams(params, fallback, refreshedAt).window,
+    );
+  });
+
   it("subscribes on mount", () => {
     renderHook(() => useLiveSync(makeDeps()));
     expect(api.subscribeSessionUpdates).toHaveBeenCalledOnce();
@@ -67,6 +91,7 @@ describe("useLiveSync", () => {
     });
 
     expect(deps.refreshAgents).toHaveBeenCalled();
+    expect(deps.resolveTimeWindow).toHaveBeenCalled();
     expect(deps.refreshDashboard).toHaveBeenCalled();
     expect(deps.refreshSearch).toHaveBeenCalled();
   });

@@ -4,7 +4,7 @@ import type { LiveSessionsUpdate } from "../lib/live-update";
 import type { ViewState } from "../lib/view-state";
 
 interface LiveSyncDeps {
-  timeWindow: AppConfig["window"] | null;
+  resolveTimeWindow: () => AppConfig["window"] | null;
   viewState: ViewState;
   refreshAgents: (window: AppConfig["window"]) => Promise<unknown>;
   refreshSessions: (window: AppConfig["window"]) => Promise<unknown>;
@@ -26,7 +26,7 @@ export function useLiveSync(deps: LiveSyncDeps) {
   const [liveNotice, setLiveNotice] = useState<string | null>(null);
   const [connectionNotice, setConnectionNotice] = useState<string | null>(null);
   const {
-    timeWindow,
+    resolveTimeWindow,
     viewState,
     refreshAgents,
     refreshSessions,
@@ -40,6 +40,7 @@ export function useLiveSync(deps: LiveSyncDeps) {
 
   const syncLiveUpdate = useEffectEvent(async (event: LiveSessionsUpdate) => {
     try {
+      const timeWindow = resolveTimeWindow();
       await Promise.all([
         timeWindow ? refreshAgents(timeWindow) : Promise.resolve(),
         timeWindow ? refreshSessions(timeWindow) : Promise.resolve(),
