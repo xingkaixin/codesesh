@@ -1,13 +1,13 @@
 # CodeSesh
 
-**用途**：发现、聚合、可视化本地 AI 编码 Agent（Claude Code、Cursor、Kimi、Codex、Pi、OpenCode）的历史会话，通过 Web UI 统一浏览。
+**用途**：发现、聚合、可视化本地 AI 编码 Agent（Claude Code、Cursor、Kimi、Codex、Pi、OpenCode、ZCode）的历史会话，通过 Web UI 统一浏览。
 
 ## 技术栈
 
-- **Monorepo**：pnpm 11.5.1 + Turbo
+- **Monorepo**：pnpm（版本以 `package.json` 的 `packageManager` 字段为准）+ Turbo
 - **语言**：TypeScript 7（`tsc` 原生）+ TypeScript 6（`typescript` API / `tsc6`，供 tsup d.ts、Astro 等），tsup 打包
 - **Server**：Hono（HTTP API）+ Citty（CLI 解析）
-- **Web**：React 19 + React Router + Tailwind CSS 4 + Radix UI
+- **Web**：React 19 + React Router + Tailwind CSS 4 + Base UI
 - **Lint**：oxlint
 - **Format**：oxfmt
 - **Test**：vitest + @vitest/coverage-v8
