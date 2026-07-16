@@ -17,13 +17,15 @@ describe("useAppConfig", () => {
   it("starts null and fetches + returns config on refresh", async () => {
     vi.mocked(api.fetchConfig).mockResolvedValue(config);
     const { result } = renderHook(() => useAppConfig());
+    const controller = new AbortController();
     expect(result.current.appConfig).toBeNull();
 
     let returned: AppConfig | undefined;
     await act(async () => {
-      returned = await result.current.refresh();
+      returned = await result.current.refresh({ signal: controller.signal });
     });
     expect(result.current.appConfig).toEqual(config);
     expect(returned).toEqual(config);
+    expect(api.fetchConfig).toHaveBeenCalledWith({ signal: controller.signal });
   });
 });

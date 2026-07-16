@@ -8,6 +8,17 @@ import {
   type TimeWindowPreset,
 } from "../lib/time-window";
 
+const TIME_WINDOW_PARAM_KEYS = ["range", "from", "to"] as const;
+
+function selectedTimeWindowSearch(params: URLSearchParams): string {
+  const selectedParams = new URLSearchParams();
+  for (const key of TIME_WINDOW_PARAM_KEYS) {
+    const value = params.get(key);
+    if (value != null) selectedParams.set(key, value);
+  }
+  return selectedParams.toString();
+}
+
 export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -16,12 +27,7 @@ export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
   const previousPath = useRef(location.pathname);
   const rememberedRange = useRef<string | null>(null);
   if (hasRange) {
-    const rangeParams = new URLSearchParams();
-    for (const key of ["range", "from", "to"]) {
-      const value = searchParams.get(key);
-      if (value != null) rangeParams.set(key, value);
-    }
-    rememberedRange.current = rangeParams.toString();
+    rememberedRange.current = selectedTimeWindowSearch(searchParams);
   }
   const pathChanged = previousPath.current !== location.pathname;
   const effectiveSearch = useMemo(() => {
@@ -36,6 +42,11 @@ export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
     return next.toString();
   }, [hasRange, pathChanged, search]);
   const effectiveParams = useMemo(() => new URLSearchParams(effectiveSearch), [effectiveSearch]);
+  const selectedWindowSearch = selectedTimeWindowSearch(effectiveParams);
+  const selectedWindowParams = useMemo(
+    () => new URLSearchParams(selectedWindowSearch),
+    [selectedWindowSearch],
+  );
 
   useEffect(() => {
     if (effectiveSearch !== search) {
@@ -46,12 +57,12 @@ export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
   }, [effectiveParams, effectiveSearch, location.pathname, search, setSearchParams]);
 
   const resolved = useMemo(
-    () => (defaultWindow ? resolveTimeWindow(effectiveParams, defaultWindow) : null),
-    [defaultWindow, effectiveParams],
+    () => (defaultWindow ? resolveTimeWindow(selectedWindowParams, defaultWindow) : null),
+    [defaultWindow, selectedWindowParams],
   );
   const resolve = useCallback(
-    (fallback: TimeWindow) => resolveTimeWindow(effectiveParams, fallback).window,
-    [effectiveParams],
+    (fallback: TimeWindow) => resolveTimeWindow(selectedWindowParams, fallback).window,
+    [selectedWindowParams],
   );
   const selectPreset = useCallback(
     (preset: TimeWindowPreset) =>

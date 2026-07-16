@@ -104,6 +104,10 @@ export interface SearchRequestOptions {
   to?: number;
 }
 
+export interface FetchOptions {
+  signal?: AbortSignal;
+}
+
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, withRemoteAccess(init));
   if (!res.ok) {
@@ -113,8 +117,8 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function fetchConfig(): Promise<AppConfig> {
-  return fetchJson("/api/config");
+export async function fetchConfig(options?: FetchOptions): Promise<AppConfig> {
+  return fetchJson("/api/config", options);
 }
 
 export async function fetchScanStatus(): Promise<ScanStatusEvent> {
@@ -126,18 +130,22 @@ function appendTimeWindow(params: URLSearchParams, window?: AppConfig["window"])
   if (window?.to != null) params.set("to", new Date(window.to).toISOString());
 }
 
-export async function fetchAgents(window?: AppConfig["window"]): Promise<AgentInfo[]> {
+export async function fetchAgents(
+  window?: AppConfig["window"],
+  options?: FetchOptions,
+): Promise<AgentInfo[]> {
   const params = new URLSearchParams();
   appendTimeWindow(params, window);
-  return fetchJson(`/api/agents?${params}`);
+  return fetchJson(`/api/agents?${params}`, options);
 }
 
 export async function fetchProjects(
   window?: AppConfig["window"],
+  options?: FetchOptions,
 ): Promise<{ projects: ApiProjectGroup[] }> {
   const params = new URLSearchParams();
   appendTimeWindow(params, window);
-  return fetchJson(`/api/projects?${params}`);
+  return fetchJson(`/api/projects?${params}`, options);
 }
 
 export async function fetchSessions(
@@ -148,21 +156,22 @@ export async function fetchSessions(
     from?: number;
     to?: number;
   } = {},
+  fetchOptions?: FetchOptions,
 ): Promise<{ sessions: SessionHead[] }> {
   const params = new URLSearchParams();
   if (options.agent) params.set("agent", options.agent);
   if (options.projectKind) params.set("projectKind", options.projectKind);
   if (options.projectKey) params.set("projectKey", options.projectKey);
   appendTimeWindow(params, options);
-  return fetchJson(`/api/sessions?${params}`);
+  return fetchJson(`/api/sessions?${params}`, fetchOptions);
 }
 
 export async function fetchSessionData(
   agent: string,
   sessionId: string,
-  options: { signal?: AbortSignal } = {},
+  options?: FetchOptions,
 ): Promise<SessionData> {
-  return fetchJson(`/api/sessions/${agent}/${sessionId}`, { signal: options.signal });
+  return fetchJson(`/api/sessions/${agent}/${sessionId}`, options);
 }
 
 export async function fetchDashboard(

@@ -1,13 +1,40 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SAMPLE_DASHBOARD_DATA } from "@codesesh/core/contract";
 import {
+  fetchAgents,
+  fetchConfig,
   fetchDashboard,
+  fetchProjects,
   fetchSearchResults,
   fetchSessionData,
   fetchSessions,
   initializeRemoteAccess,
   subscribeSessionUpdates,
 } from "./api";
+
+describe("abortable list requests", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ["config", (signal: AbortSignal) => fetchConfig({ signal })],
+    ["agents", (signal: AbortSignal) => fetchAgents(undefined, { signal })],
+    ["projects", (signal: AbortSignal) => fetchProjects(undefined, { signal })],
+    ["sessions", (signal: AbortSignal) => fetchSessions({}, { signal })],
+  ])("forwards the abort signal for %s", async (_name, request) => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({}),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+
+    await request(controller.signal);
+
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual({ signal: controller.signal });
+  });
+});
 
 describe("remote access", () => {
   beforeEach(() => {

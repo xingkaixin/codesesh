@@ -5,16 +5,26 @@ import { useTimeWindow } from "./useTimeWindow";
 
 afterEach(cleanup);
 
-function TimeWindowHarness({ observedPresets }: { observedPresets: Array<string | null> }) {
+type ResolveWindow = ReturnType<typeof useTimeWindow>["resolve"];
+
+function TimeWindowHarness({
+  observedPresets,
+  observedResolvers,
+}: {
+  observedPresets: Array<string | null>;
+  observedResolvers?: ResolveWindow[];
+}) {
   const location = useLocation();
   const controller = useTimeWindow({ days: 7 });
   observedPresets.push(controller.preset);
+  observedResolvers?.push(controller.resolve);
 
   return (
     <>
       <span data-testid="preset">{controller.preset}</span>
       <span data-testid="search">{location.search}</span>
       <Link to="/session">Open session</Link>
+      <Link to="/?range=14d&view=timeline">Change view</Link>
       <button type="button" onClick={() => controller.selectPreset("30d")}>
         Select 30 days
       </button>
@@ -55,5 +65,19 @@ describe("useTimeWindow", () => {
     expect(screen.getByTestId("search").textContent).toBe(
       "?range=custom&from=2026-04-01&to=2026-04-30",
     );
+  });
+
+  it("keeps the resolver stable when unrelated URL parameters change", () => {
+    const observedResolvers: ResolveWindow[] = [];
+    render(
+      <MemoryRouter initialEntries={["/?range=14d"]}>
+        <TimeWindowHarness observedPresets={[]} observedResolvers={observedResolvers} />
+      </MemoryRouter>,
+    );
+    const initialResolver = observedResolvers.at(-1);
+
+    fireEvent.click(screen.getByRole("link", { name: "Change view" }));
+
+    expect(observedResolvers.at(-1)).toBe(initialResolver);
   });
 });
