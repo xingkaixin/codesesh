@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import {
   resolveTimeWindow,
@@ -19,6 +19,19 @@ function selectedTimeWindowSearch(params: URLSearchParams): string {
   return selectedParams.toString();
 }
 
+function nextLocalMidnight(now = Date.now()): number {
+  const date = new Date(now);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime();
+}
+
+function currentLocalDayEnd(nextRefreshAt: number, now = Date.now()): number {
+  return (nextRefreshAt > now ? nextRefreshAt : nextLocalMidnight(now)) - 1;
+}
+
+function isRollingPreset(preset: TimeWindowPreset | null): boolean {
+  return preset !== null && preset !== "all" && preset !== "custom";
+}
+
 export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -26,6 +39,7 @@ export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
   const hasRange = searchParams.has("range");
   const previousPath = useRef(location.pathname);
   const rememberedRange = useRef<string | null>(null);
+  const [nextPresetRefreshAt, setNextPresetRefreshAt] = useState(nextLocalMidnight);
   if (hasRange) {
     rememberedRange.current = selectedTimeWindowSearch(searchParams);
   }
@@ -57,13 +71,35 @@ export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
   }, [effectiveParams, effectiveSearch, location.pathname, search, setSearchParams]);
 
   const resolved = useMemo(
-    () => (defaultWindow ? resolveTimeWindow(selectedWindowParams, defaultWindow) : null),
-    [defaultWindow, selectedWindowParams],
+    () =>
+      defaultWindow
+        ? resolveTimeWindow(
+            selectedWindowParams,
+            defaultWindow,
+            currentLocalDayEnd(nextPresetRefreshAt),
+          )
+        : null,
+    [defaultWindow, nextPresetRefreshAt, selectedWindowParams],
   );
   const resolve = useCallback(
     (fallback: TimeWindow) => resolveTimeWindow(selectedWindowParams, fallback).window,
     [selectedWindowParams],
   );
+  const resolveCurrent = useCallback(
+    () => (defaultWindow ? resolve(defaultWindow) : null),
+    [defaultWindow, resolve],
+  );
+
+  useEffect(() => {
+    if (!isRollingPreset(resolved?.preset ?? null)) return;
+
+    const delay = Math.max(0, nextPresetRefreshAt - Date.now());
+    const timer = window.setTimeout(() => {
+      setNextPresetRefreshAt(nextLocalMidnight());
+    }, delay);
+
+    return () => window.clearTimeout(timer);
+  }, [nextPresetRefreshAt, resolved?.preset]);
   const selectPreset = useCallback(
     (preset: TimeWindowPreset) =>
       setSearchParams(writeTimeWindowPreset(new URLSearchParams(search), preset)),
@@ -81,6 +117,7 @@ export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
     customFrom: resolved?.customFrom,
     customTo: resolved?.customTo,
     resolve,
+    resolveCurrent,
     selectPreset,
     selectCustom,
   };

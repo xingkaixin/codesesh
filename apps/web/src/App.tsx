@@ -262,7 +262,7 @@ export default function App() {
   const isScanActive = scanStatus?.active === true;
 
   const { liveNotice } = useLiveSync({
-    timeWindow,
+    resolveTimeWindow: timeWindowController.resolveCurrent,
     viewState,
     refreshAgents,
     refreshSessions,

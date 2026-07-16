@@ -1,9 +1,12 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, useLocation } from "react-router-dom";
 import { useTimeWindow } from "./useTimeWindow";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 type ResolveWindow = ReturnType<typeof useTimeWindow>["resolve"];
 
@@ -23,6 +26,8 @@ function TimeWindowHarness({
     <>
       <span data-testid="preset">{controller.preset}</span>
       <span data-testid="search">{location.search}</span>
+      <span data-testid="from">{controller.timeWindow?.from}</span>
+      <span data-testid="to">{controller.timeWindow?.to}</span>
       <Link to="/session">Open session</Link>
       <Link to="/?range=14d&view=timeline">Change view</Link>
       <button type="button" onClick={() => controller.selectPreset("30d")}>
@@ -79,5 +84,38 @@ describe("useTimeWindow", () => {
     fireEvent.click(screen.getByRole("link", { name: "Change view" }));
 
     expect(observedResolvers.at(-1)).toBe(initialResolver);
+  });
+
+  it("refreshes a rolling preset at local midnight", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 15, 23, 59, 59, 900));
+    render(
+      <MemoryRouter initialEntries={["/?range=7d"]}>
+        <TimeWindowHarness observedPresets={[]} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId("to").textContent).toBe(String(new Date(2026, 6, 16).getTime() - 1));
+
+    act(() => vi.advanceTimersByTime(100));
+
+    expect(screen.getByTestId("to").textContent).toBe(String(new Date(2026, 6, 17).getTime() - 1));
+  });
+
+  it("keeps a custom range fixed across local midnight", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 15, 23, 59, 59, 900));
+    render(
+      <MemoryRouter initialEntries={["/?range=custom&from=2026-07-01&to=2026-07-15"]}>
+        <TimeWindowHarness observedPresets={[]} />
+      </MemoryRouter>,
+    );
+    const initialFrom = screen.getByTestId("from").textContent;
+    const initialTo = screen.getByTestId("to").textContent;
+
+    act(() => vi.advanceTimersByTime(48 * 60 * 60 * 1000));
+
+    expect(screen.getByTestId("from").textContent).toBe(initialFrom);
+    expect(screen.getByTestId("to").textContent).toBe(initialTo);
   });
 });
