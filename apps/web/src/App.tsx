@@ -21,7 +21,7 @@ import { useAppConfig } from "./hooks/useAppConfig";
 import { useAgents } from "./hooks/useAgents";
 import { useSessions } from "./hooks/useSessions";
 import { useProjects } from "./hooks/useProjects";
-import { useInitialLoad } from "./hooks/useInitialLoad";
+import { useWindowedDataLoad } from "./hooks/useWindowedDataLoad";
 import { useLiveSync } from "./hooks/useLiveSync";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useTimeWindow } from "./hooks/useTimeWindow";
@@ -55,12 +55,12 @@ export default function App() {
   const { agents, validAgentKeys, agentNameMap, refresh: refreshAgents } = useAgents();
   const { sessions, refresh: refreshSessions } = useSessions();
   const { projects, refresh: refreshProjects } = useProjects();
-  const { loading, error } = useInitialLoad({
+  const { loading, error } = useWindowedDataLoad({
     refreshAppConfig,
     refreshAgents,
     refreshSessions,
     refreshProjects,
-    resolveWindow: timeWindowController.resolve,
+    resolveSelectedWindow: timeWindowController.resolve,
   });
 
   const [browseBy, setBrowseBy] = useState<BrowseBy>("agents");

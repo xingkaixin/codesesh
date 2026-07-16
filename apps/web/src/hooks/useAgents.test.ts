@@ -19,12 +19,14 @@ describe("useAgents", () => {
   it("refresh populates agents and lookup derivations", async () => {
     vi.mocked(api.fetchAgents).mockResolvedValue(agents);
     const { result } = renderHook(() => useAgents());
+    const controller = new AbortController();
 
     await act(async () => {
-      await result.current.refresh();
+      await result.current.refresh(undefined, { signal: controller.signal });
     });
     expect(result.current.agents).toEqual(agents);
     expect(result.current.validAgentKeys.has("claudecode")).toBe(true);
     expect(result.current.agentNameMap.get("claudecode")).toBe("Claude Code");
+    expect(api.fetchAgents).toHaveBeenCalledWith(undefined, { signal: controller.signal });
   });
 });

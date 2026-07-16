@@ -18,11 +18,15 @@ describe("useSessions", () => {
   it("refresh(window) loads the session list", async () => {
     vi.mocked(api.fetchSessions).mockResolvedValue({ sessions });
     const { result } = renderHook(() => useSessions());
+    const controller = new AbortController();
 
     await act(async () => {
-      await result.current.refresh(window);
+      await result.current.refresh(window, { signal: controller.signal });
     });
     expect(result.current.sessions).toEqual(sessions);
-    expect(api.fetchSessions).toHaveBeenCalledWith({ from: "a", to: "b" });
+    expect(api.fetchSessions).toHaveBeenCalledWith(
+      { from: "a", to: "b" },
+      { signal: controller.signal },
+    );
   });
 });

@@ -2,31 +2,31 @@ import { useEffect, useState } from "react";
 import {
   type AgentInfo,
   type AppConfig,
+  type FetchOptions,
   type ProjectGroup,
   type SessionHead,
   logClientEvent,
 } from "../lib/api";
 
-interface InitialLoadDeps {
-  refreshAppConfig: () => Promise<AppConfig>;
-  refreshAgents: (window: AppConfig["window"]) => Promise<AgentInfo[]>;
-  refreshSessions: (window: AppConfig["window"]) => Promise<SessionHead[]>;
-  refreshProjects: (window: AppConfig["window"]) => Promise<ProjectGroup[]>;
-  resolveWindow: (fallback: AppConfig["window"]) => AppConfig["window"];
+interface WindowedDataLoadDeps {
+  refreshAppConfig: (options?: FetchOptions) => Promise<AppConfig>;
+  refreshAgents: (window: AppConfig["window"], options?: FetchOptions) => Promise<AgentInfo[]>;
+  refreshSessions: (window: AppConfig["window"], options?: FetchOptions) => Promise<SessionHead[]>;
+  refreshProjects: (window: AppConfig["window"], options?: FetchOptions) => Promise<ProjectGroup[]>;
+  resolveSelectedWindow: (fallback: AppConfig["window"]) => AppConfig["window"];
 }
 
 /**
- * Orchestrates the one-time startup load: config first (for the shared window),
- * then the base data in parallel, holding the single loading/error gate for the
- * whole app.
+ * Loads config before the window-filtered collections and cancels the previous
+ * load when the selected time window changes.
  */
-export function useInitialLoad({
+export function useWindowedDataLoad({
   refreshAppConfig,
   refreshAgents,
   refreshSessions,
   refreshProjects,
-  resolveWindow,
-}: InitialLoadDeps) {
+  resolveSelectedWindow,
+}: WindowedDataLoadDeps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,12 +36,13 @@ export function useInitialLoad({
     logClientEvent("app.load.start", { path: window.location.pathname });
     (async () => {
       try {
-        const config = await refreshAppConfig();
-        const window = resolveWindow(config.window);
+        const fetchOptions = { signal: ac.signal };
+        const config = await refreshAppConfig(fetchOptions);
+        const selectedWindow = resolveSelectedWindow(config.window);
         const [agentList, sessionList, projectList] = await Promise.all([
-          refreshAgents(window),
-          refreshSessions(window),
-          refreshProjects(window),
+          refreshAgents(selectedWindow, fetchOptions),
+          refreshSessions(selectedWindow, fetchOptions),
+          refreshProjects(selectedWindow, fetchOptions),
         ]);
         logClientEvent("app.load.done", {
           duration_ms: Math.round(performance.now() - startedAt),
@@ -50,6 +51,7 @@ export function useInitialLoad({
           projects: projectList.length,
         });
       } catch (err) {
+        if (ac.signal.aborted) return;
         console.error("Failed to load data:", err);
         logClientEvent("app.load.error", {
           duration_ms: Math.round(performance.now() - startedAt),
@@ -57,11 +59,11 @@ export function useInitialLoad({
         });
         setError("Failed to load data. Is the CLI server running?");
       } finally {
-        setLoading(false);
+        if (!ac.signal.aborted) setLoading(false);
       }
     })();
     return () => ac.abort();
-  }, [refreshAppConfig, refreshAgents, refreshSessions, refreshProjects, resolveWindow]);
+  }, [refreshAppConfig, refreshAgents, refreshSessions, refreshProjects, resolveSelectedWindow]);
 
   return { loading, error };
 }

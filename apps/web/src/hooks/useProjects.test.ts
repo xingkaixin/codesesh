@@ -17,11 +17,13 @@ describe("useProjects", () => {
   it("refresh loads the project list", async () => {
     vi.mocked(api.fetchProjects).mockResolvedValue({ projects });
     const { result } = renderHook(() => useProjects());
+    const controller = new AbortController();
 
     await act(async () => {
-      await result.current.refresh();
+      await result.current.refresh(undefined, { signal: controller.signal });
     });
     expect(result.current.projects).toEqual(projects);
+    expect(api.fetchProjects).toHaveBeenCalledWith(undefined, { signal: controller.signal });
   });
 
   it("refresh tolerates a fetch failure and returns empty", async () => {
@@ -36,5 +38,25 @@ describe("useProjects", () => {
     expect(returned).toEqual([]);
     expect(result.current.projects).toEqual([]);
     errorSpy.mockRestore();
+  });
+
+  it("propagates aborted refreshes without clearing projects", async () => {
+    vi.mocked(api.fetchProjects)
+      .mockResolvedValueOnce({ projects })
+      .mockRejectedValueOnce(new DOMException("Aborted", "AbortError"));
+    const { result } = renderHook(() => useProjects());
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    await act(async () => {
+      await expect(
+        result.current.refresh(undefined, { signal: controller.signal }),
+      ).rejects.toMatchObject({ name: "AbortError" });
+    });
+    expect(result.current.projects).toEqual(projects);
   });
 });
