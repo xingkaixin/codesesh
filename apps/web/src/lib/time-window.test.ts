@@ -36,7 +36,7 @@ describe("time window URL state", () => {
   });
 
   it("falls back when a custom range is invalid", () => {
-    const fallback = { from: 10, to: 20, days: 7 };
+    const fallback = { from: 10, to: 20, days: 3 };
     expect(
       resolveTimeWindow(
         new URLSearchParams("range=custom&from=2026-07-20&to=2026-07-05"),
@@ -44,6 +44,26 @@ describe("time window URL state", () => {
         now,
       ).window,
     ).toBe(fallback);
+  });
+
+  it("re-resolves a preset fallback at the current local day", () => {
+    const result = resolveTimeWindow(new URLSearchParams(), { from: 10, to: 20, days: 7 }, now);
+
+    expect(result).toEqual({
+      preset: "7d",
+      window: {
+        from: new Date(2026, 6, 8).getTime(),
+        to: new Date(2026, 6, 15).getTime() - 1,
+        days: 7,
+      },
+    });
+  });
+
+  it("removes the fixed upper bound from an all-time fallback", () => {
+    expect(resolveTimeWindow(new URLSearchParams(), { to: 20, days: 0 }, now).window).toEqual({
+      from: 0,
+      days: 0,
+    });
   });
 
   it("preserves unrelated URL parameters", () => {

@@ -87,7 +87,9 @@ export function resolveTimeWindow(
     }
   }
   const fallbackPreset = presetFromDefault(fallback);
-  if (fallbackPreset !== "custom") return { preset: fallbackPreset, window: fallback };
+  if (fallbackPreset !== "custom") {
+    return { preset: fallbackPreset, window: presetWindow(fallbackPreset, now) };
+  }
   return {
     preset: fallbackPreset,
     window: fallback,
