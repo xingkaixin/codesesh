@@ -58,4 +58,19 @@ describe("useWindowedDataLoad", () => {
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(2));
     expect(reload).toHaveBeenLastCalledWith(nextWindow);
   });
+
+  it("records current reload failures", async () => {
+    const error = new Error("reload failed");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const reload = vi.fn().mockRejectedValue(error);
+    renderHook(() => useWindowedDataLoad({ window, reload }));
+
+    await waitFor(() =>
+      expect(api.logClientEvent).toHaveBeenCalledWith("app.load.error", {
+        duration_ms: expect.any(Number),
+        error: "reload failed",
+      }),
+    );
+    expect(console.error).toHaveBeenCalledWith("Failed to load data:", error);
+  });
 });

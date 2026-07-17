@@ -86,4 +86,17 @@ describe("useDashboard", () => {
     expect(result.current.dashboard).toBe(latest);
     expect(result.current.loading).toBe(false);
   });
+
+  it("surfaces dashboard load failures", async () => {
+    const error = new Error("dashboard unavailable");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(api.fetchDashboard).mockRejectedValueOnce(error);
+    const { result } = renderHook(() => useDashboard(window));
+
+    await waitFor(() => expect(result.current.error).toBe("Failed to load dashboard"));
+
+    expect(result.current.dashboard).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(console.error).toHaveBeenCalledWith("Failed to load dashboard:", error);
+  });
 });

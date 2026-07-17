@@ -60,6 +60,30 @@ describe("useSessionStore", () => {
     expect(api.fetchSessions).not.toHaveBeenCalled();
   });
 
+  it("surfaces config failures", async () => {
+    const error = new Error("config unavailable");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(api.fetchConfig).mockRejectedValueOnce(error);
+    const { result } = renderHook(() => useSessionStore());
+
+    await waitFor(() => expect(result.current.error).toContain("Failed to load data"));
+
+    expect(result.current.loading).toBe(false);
+    expect(console.error).toHaveBeenCalledWith("Failed to load config:", error);
+  });
+
+  it("ignores live events until a window has loaded", async () => {
+    const { result } = await renderStore();
+    let snapshot: Awaited<ReturnType<typeof result.current.applyLiveEvent>> | undefined;
+
+    await act(async () => {
+      snapshot = await result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT);
+    });
+
+    expect(snapshot).toBeNull();
+    expect(api.fetchAgents).not.toHaveBeenCalled();
+  });
+
   it("commits all window data as one snapshot", async () => {
     const { result } = await renderStore();
 
@@ -167,5 +191,36 @@ describe("useSessionStore", () => {
     expect(result.current.projects).toEqual([]);
     expect(result.current.error).toBeNull();
     expect(console.error).toHaveBeenCalledWith("Failed to load projects:", error);
+  });
+
+  it("surfaces full reload failures without replacing the snapshot", async () => {
+    const error = new Error("agents unavailable");
+    vi.mocked(api.fetchAgents).mockRejectedValueOnce(error);
+    const { result } = await renderStore();
+
+    await act(async () => {
+      await expect(result.current.reload(config.window)).rejects.toBe(error);
+    });
+
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toContain("Failed to load data");
+    expect(result.current.sessions).toEqual([]);
+  });
+
+  it("surfaces live refresh failures without replacing the snapshot", async () => {
+    const error = new Error("dashboard unavailable");
+    const { result } = await renderStore();
+    await act(() => result.current.reload(config.window));
+    vi.mocked(api.fetchDashboard).mockRejectedValueOnce(error);
+
+    await act(async () => {
+      await expect(result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT)).rejects.toBe(
+        error,
+      );
+    });
+
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toContain("Failed to load data");
+    expect(result.current.version).toBe(1);
   });
 });
