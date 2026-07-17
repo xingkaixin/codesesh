@@ -9,7 +9,6 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ScanResultSource } from "./api/handlers.js";
 import { createApiRoutes, type ApiRouteOptions } from "./api/routes.js";
-import { LiveScanStore } from "./live-scan.js";
 import { appLogger } from "./logging.js";
 import {
   createRemoteAccessToken,
@@ -17,6 +16,7 @@ import {
   REMOTE_ACCESS_QUERY_PARAM,
   remoteAccessAuth,
 } from "./remote-access.js";
+import type { ScanEventSource } from "./scan-source.js";
 
 const MAX_API_REQUEST_BYTES = 1024 * 1024;
 
@@ -90,10 +90,7 @@ function getListeningPort(server: ServerType, fallback: number): number {
 
 export async function createServer(
   port: number,
-  store: ScanResultSource &
-    Partial<
-      Pick<LiveScanStore, "getScanStatus" | "subscribe" | "subscribeScanStatus" | "shutdown">
-    >,
+  store: ScanResultSource & ScanEventSource & { shutdown(): Promise<void> },
   options: CreateServerOptions = {},
 ): Promise<{ url: string; shutdown: () => Promise<void> }> {
   const app = new Hono();
@@ -148,14 +145,7 @@ export async function createServer(
     defaultSessionTo: options.defaultSessionTo,
     defaultSessionDays: options.defaultSessionDays,
   };
-  app.route(
-    "/api",
-    createApiRoutes(
-      store,
-      "subscribe" in store ? (store as LiveScanStore) : undefined,
-      routeOptions,
-    ),
-  );
+  app.route("/api", createApiRoutes(store, store, routeOptions));
 
   // Serve static files from web dist (if available)
   const webDistPath = findWebDistPath();
@@ -185,9 +175,7 @@ export async function createServer(
         continue;
       }
 
-      if (store.shutdown) {
-        await store.shutdown();
-      }
+      await store.shutdown();
 
       if (isAddressInUse(error) && attempts > 1) {
         throw new Error(
@@ -228,9 +216,7 @@ export async function createServer(
         }
         server.close(() => resolve());
       });
-      if (store.shutdown) {
-        await store.shutdown();
-      }
+      await store.shutdown();
     },
   };
 }

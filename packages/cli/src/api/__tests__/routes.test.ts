@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
+import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/core/contract";
 import { createApiRoutes } from "../routes.js";
 import type { ScanResult } from "@codesesh/core";
 import type { ScanResultSource } from "../handlers.js";
+import type { ScanEventSource } from "../../scan-source.js";
 
 describe("createApiRoutes", () => {
   it("returns a Hono instance with route handlers", () => {
@@ -24,9 +26,8 @@ describe("createApiRoutes", () => {
     const unsubscribeScanStatus = vi.fn();
     let emitSession: ((event: { type: string }) => void) | undefined;
     let emitScanStatus: ((event: { type: string }) => void) | undefined;
-    const store = {
-      getSnapshot: () => ({ sessions: [], byAgent: {}, agents: [] }),
-      getScanStatus: () => ({ type: "scan-status", active: false, phase: "idle", agents: {} }),
+    const eventSource: ScanEventSource = {
+      getScanStatus: () => SAMPLE_SCAN_STATUS_EVENT,
       subscribe: vi.fn((listener: (event: { type: string }) => void) => {
         emitSession = listener;
         return unsubscribeSessions;
@@ -36,7 +37,10 @@ describe("createApiRoutes", () => {
         return unsubscribeScanStatus;
       }),
     };
-    const app = createApiRoutes(store as never, store as never);
+    const app = createApiRoutes(
+      { getSnapshot: () => ({ sessions: [], byAgent: {}, agents: [] }) },
+      eventSource,
+    );
     const requestController = new AbortController();
 
     const response = await app.request(
@@ -54,13 +58,15 @@ describe("createApiRoutes", () => {
   it("cleans up SSE subscriptions once when abort happens first", async () => {
     const unsubscribeSessions = vi.fn();
     const unsubscribeScanStatus = vi.fn();
-    const store = {
-      getSnapshot: () => ({ sessions: [], byAgent: {}, agents: [] }),
-      getScanStatus: () => ({ type: "scan-status", active: false, phase: "idle", agents: {} }),
+    const eventSource: ScanEventSource = {
+      getScanStatus: () => SAMPLE_SCAN_STATUS_EVENT,
       subscribe: vi.fn(() => unsubscribeSessions),
       subscribeScanStatus: vi.fn(() => unsubscribeScanStatus),
     };
-    const app = createApiRoutes(store as never, store as never);
+    const app = createApiRoutes(
+      { getSnapshot: () => ({ sessions: [], byAgent: {}, agents: [] }) },
+      eventSource,
+    );
     const requestController = new AbortController();
     const response = await app.request(
       new Request("http://localhost/events", { signal: requestController.signal }),

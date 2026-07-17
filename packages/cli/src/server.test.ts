@@ -1,5 +1,6 @@
 import { createServer as createNodeServer, type Server as NodeServer } from "node:net";
 import { describe, expect, it, vi } from "vitest";
+import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/core/contract";
 import { createServer } from "./server.js";
 
 const serveOptionsLog = vi.hoisted(() => [] as { hostname?: string; port?: number }[]);
@@ -21,6 +22,9 @@ vi.mock("@hono/node-server", async (importOriginal) => {
 function createStore() {
   return {
     getSnapshot: () => ({ sessions: [], byAgent: {}, agents: [] }),
+    getScanStatus: () => SAMPLE_SCAN_STATUS_EVENT,
+    subscribe: () => () => {},
+    subscribeScanStatus: () => () => {},
     shutdown: vi.fn(),
   };
 }
