@@ -212,7 +212,10 @@ const main = defineCommand({
     const startupScanOptions =
       targetSession || jsonOnly ? {} : { from: listDefaultFrom, to: listDefaultTo };
 
-    const store = new LiveScanStore(!jsonOnly, scanOptions, startupScanOptions, {
+    const store = new LiveScanStore({
+      watchEnabled: !jsonOnly,
+      scanOptions,
+      startupScanOptions,
       deferInitialRefresh: !jsonOnly,
     });
     await store.initialize();
