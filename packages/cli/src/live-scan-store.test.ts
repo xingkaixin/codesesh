@@ -277,7 +277,40 @@ vi.mock("node:worker_threads", () => ({
 }));
 
 import { LiveScanStore, resolveAgentWatchTargets, type SessionsUpdatedEvent } from "./live-scan.js";
+import { AgentSyncEngine } from "./agent-sync-engine.js";
 import { appLogger } from "./logging.js";
+import { ThreadWorkerRunner, type WorkerResult, type WorkerRunner } from "./worker-runner.js";
+
+function makeWorkerRunner() {
+  return {
+    activeCount: 0,
+    run: vi.fn<WorkerRunner["run"]>(),
+    shutdown: vi.fn<WorkerRunner["shutdown"]>(async () => undefined),
+  } satisfies WorkerRunner;
+}
+
+function syncEngineOf(store: LiveScanStore): AgentSyncEngine {
+  return (store as unknown as { syncEngine: AgentSyncEngine }).syncEngine;
+}
+
+function runBackfill(store: LiveScanStore, agentName: string) {
+  const engine = syncEngineOf(store) as unknown as {
+    serialize: (
+      agentName: string,
+      kind: "backfill",
+      operation: () => Promise<unknown>,
+    ) => Promise<unknown>;
+    performBackfill: (agentName: string) => Promise<unknown>;
+  };
+  return engine.serialize(agentName, "backfill", () => engine.performBackfill(agentName));
+}
+
+function setRefreshDuration(store: LiveScanStore, agentName: string, durationMs: number): void {
+  const engine = syncEngineOf(store) as unknown as {
+    state: (agentName: string) => { lastRefreshDurationMs: number };
+  };
+  engine.state(agentName).lastRefreshDurationMs = durationMs;
+}
 
 let restoreRuntime: (() => void) | null = null;
 
@@ -459,7 +492,10 @@ describe("LiveScanStore", () => {
       agents: [codex],
     });
 
-    const store = new LiveScanStore(false, { agents: ["codex", "kimi"] });
+    const store = new LiveScanStore({
+      watchEnabled: false,
+      scanOptions: { agents: ["codex", "kimi"] },
+    });
     await store.initialize();
 
     const snapshot = store.getSnapshot();
@@ -508,7 +544,7 @@ describe("LiveScanStore", () => {
       cacheTimestamps: { codex: 500 },
     });
 
-    const store = new LiveScanStore(false, {}, {}, { deferInitialRefresh: true });
+    const store = new LiveScanStore({ watchEnabled: false, deferInitialRefresh: true });
     const events: unknown[] = [];
     const statusEvents: unknown[] = [];
     store.subscribe((event) => events.push(event));
@@ -614,7 +650,11 @@ describe("LiveScanStore", () => {
           ),
     );
 
-    const store = new LiveScanStore(false, {}, { from: 3000 }, { deferInitialRefresh: true });
+    const store = new LiveScanStore({
+      watchEnabled: false,
+      startupScanOptions: { from: 3000 },
+      deferInitialRefresh: true,
+    });
     await store.initialize();
 
     store.startBackgroundRefresh();
@@ -664,7 +704,11 @@ describe("LiveScanStore", () => {
           ),
     );
 
-    const store = new LiveScanStore(false, {}, { from: 3000 }, { deferInitialRefresh: true });
+    const store = new LiveScanStore({
+      watchEnabled: false,
+      startupScanOptions: { from: 3000 },
+      deferInitialRefresh: true,
+    });
     await store.initialize();
 
     store.startBackgroundRefresh();
@@ -705,7 +749,7 @@ describe("LiveScanStore", () => {
     const stale = makeSession("session", { title: "stale backfill", time_updated: 2000 });
     const fresh = makeSession("session", { title: "fresh refresh", time_updated: 3000 });
     const codex = makeFileSystemAgent("codex");
-    let releaseBackfill: ((result: unknown) => void) | undefined;
+    let releaseBackfill: ((result: WorkerResult) => void) | undefined;
 
     core.createRegisteredAgents.mockReturnValue([codex]);
     core.scanSessions.mockResolvedValue({
@@ -720,11 +764,8 @@ describe("LiveScanStore", () => {
       timestamp: 1000,
     });
 
-    const store = new LiveScanStore(false);
-    await store.initialize();
-    const logInfo = vi.spyOn(appLogger, "info").mockImplementation(() => undefined);
-    const scanAgentInWorker = vi
-      .spyOn(store as any, "scanAgentInWorker")
+    const workerRunner = makeWorkerRunner();
+    workerRunner.run
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
@@ -732,13 +773,16 @@ describe("LiveScanStore", () => {
           }),
       )
       .mockResolvedValueOnce({ sessions: [fresh], meta: {}, changedIds: [fresh.id] });
+    const store = new LiveScanStore({ watchEnabled: false, workerRunner });
+    await store.initialize();
+    const logInfo = vi.spyOn(appLogger, "info").mockImplementation(() => undefined);
 
-    const backfill = (store as any).runBackfill("codex");
-    await vi.waitFor(() => expect(scanAgentInWorker).toHaveBeenCalledTimes(1));
+    const backfill = runBackfill(store, "codex");
+    await vi.waitFor(() => expect(workerRunner.run).toHaveBeenCalledTimes(1));
 
-    const refresh = (store as any).refreshAgent("codex");
+    const refresh = syncEngineOf(store).refresh("codex");
     await Promise.resolve();
-    expect(scanAgentInWorker).toHaveBeenCalledTimes(1);
+    expect(workerRunner.run).toHaveBeenCalledTimes(1);
 
     releaseBackfill!({ sessions: [stale], meta: {}, changedIds: [stale.id] });
     await backfill;
@@ -776,14 +820,15 @@ describe("LiveScanStore", () => {
       timestamp: 1000,
     });
 
-    const store = new LiveScanStore(false);
-    await store.initialize();
-    vi.spyOn(store as any, "scanAgentInWorker")
+    const workerRunner = makeWorkerRunner();
+    workerRunner.run
       .mockRejectedValueOnce(new Error("backfill failed"))
       .mockResolvedValueOnce({ sessions: [fresh], meta: {}, changedIds: [fresh.id] });
+    const store = new LiveScanStore({ watchEnabled: false, workerRunner });
+    await store.initialize();
 
-    const backfill = (store as any).runBackfill("codex");
-    const refresh = (store as any).refreshAgent("codex");
+    const backfill = runBackfill(store, "codex");
+    const refresh = syncEngineOf(store).refresh("codex");
     await Promise.all([backfill, refresh]);
 
     expect(consoleError).toHaveBeenCalledWith("[codex] Backfill failed:", expect.any(Error));
@@ -810,7 +855,7 @@ describe("LiveScanStore", () => {
       })),
       incrementalScan: vi.fn(() => [kimiFresh]),
     });
-    let releaseBackfill: ((result: unknown) => void) | undefined;
+    let releaseBackfill: ((result: WorkerResult) => void) | undefined;
 
     core.createRegisteredAgents.mockReturnValue([codex, kimi]);
     core.scanSessions.mockResolvedValue({
@@ -820,19 +865,20 @@ describe("LiveScanStore", () => {
     });
     core.loadCachedSessions.mockReturnValue(null);
 
-    const store = new LiveScanStore(false);
-    await store.initialize();
-    const scanAgentInWorker = vi.spyOn(store as any, "scanAgentInWorker").mockImplementationOnce(
+    const workerRunner = makeWorkerRunner();
+    workerRunner.run.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           releaseBackfill = resolve;
         }),
     );
+    const store = new LiveScanStore({ watchEnabled: false, workerRunner });
+    await store.initialize();
 
-    const backfill = (store as any).runBackfill("codex");
-    await vi.waitFor(() => expect(scanAgentInWorker).toHaveBeenCalledTimes(1));
+    const backfill = runBackfill(store, "codex");
+    await vi.waitFor(() => expect(workerRunner.run).toHaveBeenCalledTimes(1));
 
-    await (store as any).refreshAgent("kimi");
+    await syncEngineOf(store).refresh("kimi");
     expect(store.getSnapshot().byAgent.kimi![0]?.title).toBe("kimi fresh");
 
     releaseBackfill!({ sessions: [codexInitial], meta: {}, changedIds: [] });
@@ -846,7 +892,7 @@ describe("LiveScanStore", () => {
     const refreshed = makeSession("session", { title: "refreshed", time_updated: 3000 });
     const rerun = makeSession("session", { title: "rerun", time_updated: 4000 });
     const codex = makeFileSystemAgent("codex");
-    let releaseBackfill: ((result: unknown) => void) | undefined;
+    let releaseBackfill: ((result: WorkerResult) => void) | undefined;
 
     core.createRegisteredAgents.mockReturnValue([codex]);
     core.scanSessions.mockResolvedValue({
@@ -861,10 +907,8 @@ describe("LiveScanStore", () => {
       timestamp: 1000,
     });
 
-    const store = new LiveScanStore(false);
-    await store.initialize();
-    const scanAgentInWorker = vi
-      .spyOn(store as any, "scanAgentInWorker")
+    const workerRunner = makeWorkerRunner();
+    workerRunner.run
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
@@ -873,36 +917,41 @@ describe("LiveScanStore", () => {
       )
       .mockResolvedValueOnce({ sessions: [refreshed], meta: {}, changedIds: [refreshed.id] })
       .mockResolvedValueOnce({ sessions: [rerun], meta: {}, changedIds: [rerun.id] });
+    const store = new LiveScanStore({ watchEnabled: false, workerRunner });
+    await store.initialize();
 
-    const backfill = (store as any).runBackfill("codex");
-    await vi.waitFor(() => expect(scanAgentInWorker).toHaveBeenCalledTimes(1));
+    const backfill = runBackfill(store, "codex");
+    await vi.waitFor(() => expect(workerRunner.run).toHaveBeenCalledTimes(1));
 
-    (store as any).refreshes.recordChangedPaths("codex");
-    (store as any).scheduleRefresh("codex", 0);
-    await vi.advanceTimersByTimeAsync(0);
-    (store as any).refreshes.recordChangedPaths("codex", 2);
-    (store as any).scheduleRefresh("codex", 0);
-    (store as any).scheduleRefresh("codex", 0);
-    await vi.advanceTimersByTimeAsync(0);
+    const refresh = syncEngineOf(store).refresh("codex");
+    await Promise.resolve();
+    await syncEngineOf(store).refresh("codex");
+    await syncEngineOf(store).refresh("codex");
 
-    expect(scanAgentInWorker).toHaveBeenCalledTimes(1);
+    expect(workerRunner.run).toHaveBeenCalledTimes(1);
     releaseBackfill!({ sessions: [backfilled], meta: {}, changedIds: [backfilled.id] });
     await backfill;
-    await vi.waitFor(() => expect(scanAgentInWorker).toHaveBeenCalledTimes(2));
+    await refresh;
+    await vi.waitFor(() => expect(workerRunner.run).toHaveBeenCalledTimes(2));
 
     await vi.advanceTimersByTimeAsync(100);
-    await vi.waitFor(() => expect(scanAgentInWorker).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(workerRunner.run).toHaveBeenCalledTimes(3));
     expect(store.getSnapshot().sessions[0]?.title).toBe("rerun");
   });
 
   it("rejects a scan worker that exits successfully before sending done", async () => {
     workerThreads.deferScanRefreshWorkers = true;
-    const store = new LiveScanStore(false);
     const agent = makeFileSystemAgent("codex");
     const warn = vi.spyOn(appLogger, "warn").mockImplementation(() => undefined);
     core.createRegisteredAgents.mockReturnValue([agent]);
+    const runner = new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
 
-    const refresh = (store as any).scanAgentInWorker(agent, [], null, {});
+    const refresh = runner.run(agent.name, {
+      previousSessions: [],
+      changedIds: null,
+      scanOptions: {},
+      meta: {},
+    });
     const worker = workerThreads.workers.at(-1)!;
     worker.emitExit(0);
 
@@ -913,7 +962,14 @@ describe("LiveScanStore", () => {
     });
 
     workerThreads.deferScanRefreshWorkers = false;
-    await expect((store as any).scanAgentInWorker(agent, [], null, {})).resolves.toEqual({
+    await expect(
+      runner.run(agent.name, {
+        previousSessions: [],
+        changedIds: null,
+        scanOptions: {},
+        meta: {},
+      }),
+    ).resolves.toEqual({
       sessions: [],
       meta: {},
       changedIds: undefined,
@@ -967,7 +1023,11 @@ describe("LiveScanStore", () => {
           ),
     );
 
-    const store = new LiveScanStore(false, {}, { from: 3000 }, { deferInitialRefresh: true });
+    const store = new LiveScanStore({
+      watchEnabled: false,
+      startupScanOptions: { from: 3000 },
+      deferInitialRefresh: true,
+    });
     const events: unknown[] = [];
     store.subscribe((event) => events.push(event));
     await store.initialize();
@@ -1036,11 +1096,11 @@ describe("LiveScanStore", () => {
       timestamp: 1000,
     });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     const events: unknown[] = [];
     store.subscribe((event) => events.push(event));
     await store.initialize();
-    await (store as any).runRefresh("codex");
+    await syncEngineOf(store).refresh("codex");
     await vi.advanceTimersByTimeAsync(250);
 
     expect(codex.checkForChanges).not.toHaveBeenCalled();
@@ -1135,9 +1195,9 @@ describe("LiveScanStore", () => {
       timestamp: 1000,
     });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
-    await (store as any).runRefresh("codex");
+    await syncEngineOf(store).refresh("codex");
 
     expect(scanSessionSource).not.toHaveBeenCalled();
     expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
@@ -1179,11 +1239,11 @@ describe("LiveScanStore", () => {
       agents: [codex],
     });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     const events: unknown[] = [];
     store.subscribe((event) => events.push(event));
     await store.initialize();
-    await (store as any).runRefresh("codex");
+    await syncEngineOf(store).refresh("codex");
     await vi.advanceTimersByTimeAsync(250);
 
     expect(codex.checkForChanges).toHaveBeenCalledWith(expect.any(Number), [previous]);
@@ -1245,10 +1305,10 @@ describe("LiveScanStore", () => {
       agents: [codex],
     });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
-    (store as any).refreshes.recordChangedPaths("codex", 101);
-    await (store as any).runRefresh("codex");
+    syncEngineOf(store).handleAgentsChanged(Array.from({ length: 101 }, () => "codex"));
+    await syncEngineOf(store).refresh("codex");
 
     expect(workerThreads.workers.at(-1)?.workerData.jobs[0]).toEqual(
       expect.objectContaining({
@@ -1277,11 +1337,11 @@ describe("LiveScanStore", () => {
       agents: [codex],
     });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     const events: unknown[] = [];
     store.subscribe((event) => events.push(event));
     await store.initialize();
-    await (store as any).runRefresh("codex");
+    await syncEngineOf(store).refresh("codex");
 
     expect(events).toEqual([
       expect.objectContaining({
@@ -1309,12 +1369,12 @@ describe("LiveScanStore", () => {
       agents: [codex],
     });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     const events: unknown[] = [];
     store.subscribe((event) => events.push(event));
     await store.initialize();
     const workerCount = workerThreads.workers.length;
-    await (store as any).runRefresh("codex");
+    await syncEngineOf(store).refresh("codex");
 
     expect(core.saveCachedSessions).not.toHaveBeenCalled();
     expect(workerThreads.workers).toHaveLength(workerCount);
@@ -1360,7 +1420,7 @@ describe("LiveScanStore", () => {
       agents: [codex],
     });
 
-    const store = new LiveScanStore(true, { agents: ["codex"] });
+    const store = new LiveScanStore({ watchEnabled: true, scanOptions: { agents: ["codex"] } });
     const events: SessionsUpdatedEvent[] = [];
     store.subscribe((event) => events.push(event));
 
@@ -1433,7 +1493,7 @@ describe("LiveScanStore", () => {
       agents: [codex],
     });
 
-    const store = new LiveScanStore(true, { agents: ["codex"] });
+    const store = new LiveScanStore({ watchEnabled: true, scanOptions: { agents: ["codex"] } });
     await store.initialize();
 
     expect(fsWatch.watchers.some((watcher) => watcher.options.recursive)).toBe(false);
@@ -1489,7 +1549,7 @@ describe("LiveScanStore", () => {
       agents: [codex],
     });
 
-    const store = new LiveScanStore(true, { agents: ["codex"] });
+    const store = new LiveScanStore({ watchEnabled: true, scanOptions: { agents: ["codex"] } });
     await store.initialize();
 
     fsWatch.watchers[0]!.listener("change", join("sessions", "new.jsonl"));
@@ -1540,12 +1600,12 @@ describe("LiveScanStore", () => {
       agents: [codex, kimi],
     });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     const events: SessionsUpdatedEvent[] = [];
     store.subscribe((event) => events.push(event));
     await store.initialize();
-    await (store as any).runRefresh("codex");
-    await (store as any).runRefresh("kimi");
+    await syncEngineOf(store).refresh("codex");
+    await syncEngineOf(store).refresh("kimi");
 
     expect(events).toEqual([]);
     await vi.advanceTimersByTimeAsync(250);
@@ -1585,17 +1645,17 @@ describe("LiveScanStore", () => {
       agents: [codex],
     });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
 
     // Three schedule calls arrive within the debounce window; scheduleRefresh
     // throttles (keeps the earliest deadline) rather than debouncing, so the
     // later calls are no-ops and the run fires 200ms after the first call.
-    (store as any).scheduleRefresh("codex");
+    syncEngineOf(store).handleAgentsChanged(["codex"]);
     await vi.advanceTimersByTimeAsync(50);
-    (store as any).scheduleRefresh("codex");
+    syncEngineOf(store).handleAgentsChanged(["codex"]);
     await vi.advanceTimersByTimeAsync(50);
-    (store as any).scheduleRefresh("codex");
+    syncEngineOf(store).handleAgentsChanged(["codex"]);
     await vi.advanceTimersByTimeAsync(99);
     expect(codex.checkForChanges).not.toHaveBeenCalled();
 
@@ -1625,13 +1685,13 @@ describe("LiveScanStore", () => {
       agents: [codex],
     });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
 
     // Simulate a preceding scan that took 5s: the next refresh should be
     // delayed to ~4x that cost, well beyond the 200ms debounce floor.
-    (store as any).refreshes.setLastRefreshDuration("codex", 5_000);
-    (store as any).scheduleRefresh("codex");
+    setRefreshDuration(store, "codex", 5_000);
+    syncEngineOf(store).handleAgentsChanged(["codex"]);
 
     await vi.advanceTimersByTimeAsync(19_999);
     expect(codex.checkForChanges).not.toHaveBeenCalled();
@@ -1659,16 +1719,16 @@ describe("LiveScanStore", () => {
       agents: [codex],
     });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
 
-    (store as any).refreshes.setLastRefreshDuration("codex", 5_000);
+    setRefreshDuration(store, "codex", 5_000);
 
     // Writes every 3s never leave a 20s quiet gap. A plain debounce (reset on
     // every call) would push the deadline out forever; throttling on the
     // earliest deadline guarantees a refresh still fires around the 20s mark.
     for (let elapsed = 0; elapsed < 21_000; elapsed += 3_000) {
-      (store as any).scheduleRefresh("codex");
+      syncEngineOf(store).handleAgentsChanged(["codex"]);
       await vi.advanceTimersByTimeAsync(3_000);
     }
 
@@ -1691,10 +1751,10 @@ describe("LiveScanStore", () => {
       agents: [codex],
     });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
 
-    (store as any).scheduleRefresh("codex", 30_000);
+    syncEngineOf(store).handleAgentsChanged(["codex"]);
     await vi.advanceTimersByTimeAsync(200);
     expect(codex.scan).not.toHaveBeenCalled();
 
@@ -1727,16 +1787,16 @@ describe("LiveScanStore", () => {
       agents: [codex],
     });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
 
-    const firstRefresh = (store as any).refreshAgent("codex");
+    const firstRefresh = syncEngineOf(store).refresh("codex");
     await Promise.resolve();
     expect(checkForChanges).toHaveBeenCalledTimes(1);
 
     // A second refresh request arrives while the first is still in flight;
     // it must be deferred rather than run concurrently.
-    const secondRefresh = (store as any).refreshAgent("codex");
+    const secondRefresh = syncEngineOf(store).refresh("codex");
     await Promise.resolve();
     expect(checkForChanges).toHaveBeenCalledTimes(1);
 
@@ -1766,10 +1826,10 @@ describe("LiveScanStore", () => {
       agents: [codex],
     });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
 
-    (store as any).scheduleRefresh("codex");
+    syncEngineOf(store).handleAgentsChanged(["codex"]);
     await store.shutdown();
 
     await vi.advanceTimersByTimeAsync(10_000);
@@ -1791,11 +1851,11 @@ describe("LiveScanStore", () => {
       agents: [codex],
     });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
     const listener = vi.fn();
     store.subscribe(listener);
-    const refresh = (store as any).refreshAgent("codex");
+    const refresh = syncEngineOf(store).refresh("codex");
     await vi.waitFor(() =>
       expect(workerThreads.workers.some((worker) => worker.workerData.agentName)).toBe(true),
     );
@@ -1819,7 +1879,7 @@ describe("LiveScanStore", () => {
     core.createRegisteredAgents.mockReturnValue([]);
     core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
     workerThreads.deferSearchIndexWorkers = true;
     const job = {
@@ -1830,8 +1890,8 @@ describe("LiveScanStore", () => {
       meta: {},
     };
 
-    const current = (store as any).searchIndexJobs.enqueue("scan.refresh", [job]);
-    const pending = (store as any).searchIndexJobs.enqueue("scan.refresh", [job]);
+    const current = (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [job]);
+    const pending = (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [job]);
     const outcomes = Promise.allSettled([current, pending]);
     expect(workerThreads.workers.filter((worker) => worker.workerData.jobs)).toHaveLength(1);
 
@@ -1842,7 +1902,7 @@ describe("LiveScanStore", () => {
       expect.objectContaining({ status: "rejected", reason: expect.any(Error) }),
       expect.objectContaining({ status: "rejected", reason: expect.any(Error) }),
     ]);
-    expect((store as any).searchIndexJobs.snapshot()).toEqual(
+    expect((syncEngineOf(store) as any).searchIndexJobs.snapshot()).toEqual(
       expect.objectContaining({ activeBatchId: undefined, pendingBatches: 0 }),
     );
   });
@@ -1851,10 +1911,10 @@ describe("LiveScanStore", () => {
     core.createRegisteredAgents.mockReturnValue([]);
     core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
 
-    const store = new LiveScanStore(false, {}, {}, { deferInitialRefresh: true });
+    const store = new LiveScanStore({ watchEnabled: false, deferInitialRefresh: true });
     await store.initialize();
     workerThreads.deferSearchIndexWorkers = true;
-    const active = (store as any).searchIndexJobs.enqueue("scan.refresh", [
+    const active = (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [
       {
         kind: "full",
         context: "scan.refresh",
@@ -1864,7 +1924,7 @@ describe("LiveScanStore", () => {
       },
     ]);
     const pending = [1, 2, 3].map((version) =>
-      (store as any).searchIndexJobs.enqueue("scan.refresh", [
+      (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [
         {
           kind: "changes",
           context: "scan.refresh",
@@ -1911,7 +1971,7 @@ describe("LiveScanStore", () => {
     core.createRegisteredAgents.mockReturnValue([]);
     core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
     workerThreads.deferSearchIndexWorkers = true;
     const job = {
@@ -1921,7 +1981,7 @@ describe("LiveScanStore", () => {
       sessions: [],
       meta: {},
     };
-    const batch = (store as any).searchIndexJobs.enqueue("scan.refresh", [job]);
+    const batch = (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [job]);
     const outcome = batch.catch((error: Error) => error);
     const worker = workerThreads.workers.at(-1)!;
 
@@ -1929,16 +1989,16 @@ describe("LiveScanStore", () => {
 
     expect(worker.terminate).toHaveBeenCalledTimes(1);
     expect(await outcome).toBeInstanceOf(Error);
-    await expect((store as any).searchIndexJobs.enqueue("scan.refresh", [job])).rejects.toThrow(
-      "Live scan store shut down",
-    );
+    await expect(
+      (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [job]),
+    ).rejects.toThrow("Live scan store shut down");
   });
 
   it("settles a worker error once when shutdown follows", async () => {
     core.createRegisteredAgents.mockReturnValue([]);
     core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
     workerThreads.deferSearchIndexWorkers = true;
     const job = {
@@ -1948,7 +2008,7 @@ describe("LiveScanStore", () => {
       sessions: [],
       meta: {},
     };
-    const batch = (store as any).searchIndexJobs.enqueue("scan.refresh", [job]);
+    const batch = (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [job]);
     const outcome = Promise.allSettled([batch]);
     const worker = workerThreads.workers.at(-1)!;
 
@@ -1966,7 +2026,7 @@ describe("LiveScanStore", () => {
     core.createRegisteredAgents.mockReturnValue([]);
     core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
 
-    const store = new LiveScanStore(false);
+    const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
 
     const job = {
@@ -1976,8 +2036,8 @@ describe("LiveScanStore", () => {
       sessions: [],
       meta: {},
     };
-    await (store as any).searchIndexJobs.enqueue("scan.refresh", [job]);
-    await (store as any).searchIndexJobs.enqueue("scan.refresh", [job]);
+    await (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [job]);
+    await (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [job]);
 
     const searchIndexWorkers = workerThreads.workers.filter((worker) => worker.workerData.jobs);
     expect(searchIndexWorkers).toHaveLength(2);
