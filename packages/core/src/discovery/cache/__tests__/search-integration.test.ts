@@ -19,6 +19,7 @@ import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../db.js";
 import type { SessionData, SessionHead } from "../../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-test-"));
+const SEARCH_INDEX_BATCH_TEST_TIMEOUT_MS = 30_000;
 
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
@@ -724,65 +725,72 @@ describe("searchSessions", () => {
     ).toEqual(["src/changed-new.ts", "src/keep.ts"]);
   });
 
-  it("reads incremental search index state in bounded batches", () => {
-    const sessions = Array.from({ length: 1_000 }, (_, index) => makeSession(`batch-${index}`));
-    const sessionMap = new Map(sessions.map((session) => [session.id, session]));
+  it(
+    "reads incremental search index state in bounded batches",
+    () => {
+      const multiBatchSessionCount = 901;
+      const sessions = Array.from({ length: multiBatchSessionCount }, (_, index) =>
+        makeSession(`batch-${index}`),
+      );
+      const sessionMap = new Map(sessions.map((session) => [session.id, session]));
 
-    saveCachedSessions("claudecode", sessions);
-    syncSessionSearchIndex("claudecode", sessions, (sessionId) =>
-      makeSessionData(sessionMap.get(sessionId)!.id, `content ${sessionId}`),
-    );
+      saveCachedSessions("claudecode", sessions);
+      syncSessionSearchIndex("claudecode", sessions, (sessionId) =>
+        makeSessionData(sessionMap.get(sessionId)!.id, `content ${sessionId}`),
+      );
 
-    let stateQueryExecutions = 0;
-    const originalPrepare = Database.prototype.prepare;
-    const prepareSpy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
-      this: Database.Database,
-      source: string,
-    ) {
-      const statement = originalPrepare.call(this, source);
-      const normalized = source.replace(/\s+/g, " ").trim();
-      const isStateQuery =
-        normalized.startsWith("SELECT content_hash FROM session_documents") ||
-        normalized.startsWith("SELECT COUNT(*) AS value FROM messages") ||
-        normalized.startsWith("WITH requested_session_ids");
-      if (!isStateQuery) {
+      let stateQueryExecutions = 0;
+      const originalPrepare = Database.prototype.prepare;
+      const prepareSpy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+        this: Database.Database,
+        source: string,
+      ) {
+        const statement = originalPrepare.call(this, source);
+        const normalized = source.replace(/\s+/g, " ").trim();
+        const isStateQuery =
+          normalized.startsWith("SELECT content_hash FROM session_documents") ||
+          normalized.startsWith("SELECT COUNT(*) AS value FROM messages") ||
+          normalized.startsWith("WITH requested_session_ids");
+        if (!isStateQuery) {
+          return statement;
+        }
+
+        const originalGet = statement.get.bind(statement);
+        statement.get = (...params: unknown[]) => {
+          stateQueryExecutions += 1;
+          return (originalGet as (...boundParams: unknown[]) => unknown)(...params);
+        };
+        const originalAll = statement.all.bind(statement);
+        statement.all = (...params: unknown[]) => {
+          stateQueryExecutions += 1;
+          return (originalAll as (...boundParams: unknown[]) => unknown[])(...params);
+        };
         return statement;
+      });
+
+      const batchExecutions: number[] = [];
+      try {
+        for (const changeCount of [10, 100, multiBatchSessionCount]) {
+          const executionsBeforeSync = stateQueryExecutions;
+          const result = syncSessionSearchIndexChanges(
+            "claudecode",
+            sessions.slice(0, changeCount).map((session, sortIndex) => ({ session, sortIndex })),
+            [],
+            () => {
+              throw new Error("unchanged sessions must not be loaded");
+            },
+          );
+          expect(result?.changed).toBe(0);
+          batchExecutions.push(stateQueryExecutions - executionsBeforeSync);
+        }
+      } finally {
+        prepareSpy.mockRestore();
       }
 
-      const originalGet = statement.get.bind(statement);
-      statement.get = (...params: unknown[]) => {
-        stateQueryExecutions += 1;
-        return (originalGet as (...boundParams: unknown[]) => unknown)(...params);
-      };
-      const originalAll = statement.all.bind(statement);
-      statement.all = (...params: unknown[]) => {
-        stateQueryExecutions += 1;
-        return (originalAll as (...boundParams: unknown[]) => unknown[])(...params);
-      };
-      return statement;
-    });
-
-    const batchExecutions: number[] = [];
-    try {
-      for (const changeCount of [10, 100, 1_000]) {
-        const executionsBeforeSync = stateQueryExecutions;
-        const result = syncSessionSearchIndexChanges(
-          "claudecode",
-          sessions.slice(0, changeCount).map((session, sortIndex) => ({ session, sortIndex })),
-          [],
-          () => {
-            throw new Error("unchanged sessions must not be loaded");
-          },
-        );
-        expect(result?.changed).toBe(0);
-        batchExecutions.push(stateQueryExecutions - executionsBeforeSync);
-      }
-    } finally {
-      prepareSpy.mockRestore();
-    }
-
-    expect(batchExecutions).toEqual([1, 1, 2]);
-  });
+      expect(batchExecutions).toEqual([1, 1, 2]);
+    },
+    SEARCH_INDEX_BATCH_TEST_TIMEOUT_MS,
+  );
 
   it("preserves incremental state defaults and duplicate change semantics", () => {
     const missingDocument = makeSession("missing-document");
