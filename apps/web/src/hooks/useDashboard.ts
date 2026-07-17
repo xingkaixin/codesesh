@@ -1,36 +1,75 @@
 import { useCallback, useEffect, useState } from "react";
-import { type AppConfig, type DashboardData, fetchDashboard } from "../lib/api";
+import {
+  type AppConfig,
+  type DashboardData,
+  type ProjectIdentityKind,
+  fetchDashboard,
+} from "../lib/api";
 
-/**
- * Owns the top-level dashboard: fetches once the app window is known and
- * exposes refresh() for the live-update subscription.
- */
-export function useDashboard(window: AppConfig["window"] | null) {
+export interface DashboardFilters {
+  projectKind?: ProjectIdentityKind;
+  projectKey?: string;
+  identityKey?: string;
+}
+
+export function useDashboard(window: AppConfig["window"] | null, filters?: DashboardFilters) {
+  const projectKind = filters?.projectKind;
+  const projectKey = filters?.projectKey;
+  const identityKey = filters?.identityKey;
+  const isFiltered = filters !== undefined;
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!window) return;
-    let cancelled = false;
-    void fetchDashboard(window)
-      .then((data) => {
-        if (!cancelled) setDashboard(data);
-      })
-      .catch((err) => {
-        console.error("Failed to load dashboard:", err);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [window]);
+    if (identityKey) setSelectedAgent(undefined);
+  }, [identityKey]);
 
-  const refresh = useCallback(async () => {
-    try {
-      const data = await fetchDashboard(window ?? undefined);
-      setDashboard(data);
-    } catch (err) {
-      console.error("Failed to refresh dashboard:", err);
+  const load = useCallback(async () => {
+    if (!window || (isFiltered && !projectKey)) return null;
+    return fetchDashboard(window, {
+      projectKind,
+      projectKey,
+      agent: selectedAgent,
+    });
+  }, [isFiltered, projectKey, projectKind, selectedAgent, window]);
+
+  useEffect(() => {
+    if (!window || (isFiltered && !projectKey)) {
+      setDashboard(null);
+      setError(null);
+      setLoading(false);
+      return;
     }
-  }, [window]);
 
-  return { dashboard, refresh };
+    let current = true;
+    setLoading(true);
+    setError(null);
+    void load()
+      .then((data) => {
+        if (current) setDashboard(data);
+      })
+      .catch((loadError) => {
+        if (!current) return;
+        console.error("Failed to load dashboard:", loadError);
+        setDashboard(null);
+        setError("Failed to load dashboard");
+      })
+      .finally(() => {
+        if (current) setLoading(false);
+      });
+
+    return () => {
+      current = false;
+    };
+  }, [isFiltered, load, projectKey, window]);
+
+  return {
+    dashboard,
+    loading,
+    error,
+    selectedAgent,
+    setSelectedAgent,
+  };
 }

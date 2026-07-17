@@ -1,14 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import type { AppConfig, SessionsUpdatedEvent } from "../lib/api";
-import type { ViewState } from "../lib/view-state";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { SessionsUpdatedEvent } from "../lib/api";
 import * as api from "../lib/api";
-import { resolveTimeWindow as resolveWindowFromParams } from "../lib/time-window";
 import { useLiveSync } from "./useLiveSync";
 
-let sessionsCb: ((event: SessionsUpdatedEvent) => void) | undefined;
-let reconnectCb: (() => void) | undefined;
-let disconnectCb: (() => void) | undefined;
+let sessionsCallback: ((event: SessionsUpdatedEvent) => void) | undefined;
+let reconnectCallback: (() => void) | undefined;
+let disconnectCallback: (() => void) | undefined;
 
 vi.mock("../lib/api", () => ({
   subscribeSessionUpdates: vi.fn(
@@ -18,28 +16,17 @@ vi.mock("../lib/api", () => ({
       onReconnect?: () => void,
       onDisconnect?: () => void,
     ) => {
-      sessionsCb = onSessions;
-      reconnectCb = onReconnect;
-      disconnectCb = onDisconnect;
+      sessionsCallback = onSessions;
+      reconnectCallback = onReconnect;
+      disconnectCallback = onDisconnect;
       return () => {};
     },
   ),
 }));
 
-const appConfig = { window: { from: "a", to: "b" } } as unknown as AppConfig;
-const rootView = { mode: "root", activeAgentKey: null, activeSessionSlug: null } as ViewState;
-
 function makeDeps() {
   return {
-    resolveTimeWindow: vi.fn(() => appConfig.window),
-    viewState: rootView,
-    refreshAgents: vi.fn().mockResolvedValue(undefined),
-    refreshSessions: vi.fn().mockResolvedValue(undefined),
-    refreshProjects: vi.fn().mockResolvedValue(undefined),
-    refreshDashboard: vi.fn().mockResolvedValue(undefined),
-    refreshProjectDashboard: vi.fn().mockResolvedValue(undefined),
-    refreshSessionDetail: vi.fn().mockResolvedValue(undefined),
-    refreshSearch: vi.fn().mockResolvedValue(undefined),
+    applyLiveEvent: vi.fn().mockResolvedValue({}),
     setScanStatus: vi.fn(),
   };
 }
@@ -48,60 +35,35 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.clearAllMocks();
-  sessionsCb = undefined;
-  reconnectCb = undefined;
-  disconnectCb = undefined;
+  sessionsCallback = undefined;
+  reconnectCallback = undefined;
+  disconnectCallback = undefined;
 });
 
 describe("useLiveSync", () => {
-  it("resolves the rolling preset when an update arrives after midnight", async () => {
-    vi.useFakeTimers();
-    const openedAt = new Date(2026, 6, 15, 12).getTime();
-    vi.setSystemTime(openedAt);
-    const params = new URLSearchParams("range=7d");
-    const fallback = { days: 7 };
-    const deps = makeDeps();
-    deps.resolveTimeWindow = vi.fn(() => resolveWindowFromParams(params, fallback).window);
-    renderHook(() => useLiveSync(deps));
-
-    const refreshedAt = new Date(2026, 6, 16, 12).getTime();
-    vi.setSystemTime(refreshedAt);
-    await act(async () => {
-      sessionsCb?.({ newSessions: 1 } as SessionsUpdatedEvent);
-      await Promise.resolve();
-    });
-
-    expect(deps.refreshSessions).toHaveBeenCalledWith(
-      resolveWindowFromParams(params, fallback, refreshedAt).window,
-    );
-  });
-
   it("subscribes on mount", () => {
     renderHook(() => useLiveSync(makeDeps()));
     expect(api.subscribeSessionUpdates).toHaveBeenCalledOnce();
   });
 
-  it("fans out refreshes on a session event", async () => {
+  it("forwards session events to the store", async () => {
     const deps = makeDeps();
     renderHook(() => useLiveSync(deps));
+    const event = { newSessions: 0 } as SessionsUpdatedEvent;
 
     await act(async () => {
-      sessionsCb?.({ newSessions: 0 } as SessionsUpdatedEvent);
+      sessionsCallback?.(event);
       await Promise.resolve();
     });
 
-    expect(deps.refreshAgents).toHaveBeenCalled();
-    expect(deps.resolveTimeWindow).toHaveBeenCalled();
-    expect(deps.refreshDashboard).toHaveBeenCalled();
-    expect(deps.refreshSearch).toHaveBeenCalled();
+    expect(deps.applyLiveEvent).toHaveBeenCalledWith(event);
   });
 
-  it("surfaces liveNotice when new sessions arrive", async () => {
-    const deps = makeDeps();
-    const { result } = renderHook(() => useLiveSync(deps));
+  it("surfaces a notice when new sessions arrive", async () => {
+    const { result } = renderHook(() => useLiveSync(makeDeps()));
 
     await act(async () => {
-      sessionsCb?.({ newSessions: 3 } as SessionsUpdatedEvent);
+      sessionsCallback?.({ newSessions: 3 } as SessionsUpdatedEvent);
       await Promise.resolve();
     });
 
@@ -109,50 +71,24 @@ describe("useLiveSync", () => {
   });
 
   it("shows a persistent connection notice on disconnect", () => {
-    const deps = makeDeps();
-    const { result } = renderHook(() => useLiveSync(deps));
-
-    act(() => {
-      disconnectCb?.();
-    });
-
+    const { result } = renderHook(() => useLiveSync(makeDeps()));
+    act(() => disconnectCallback?.());
     expect(result.current.liveNotice).toBe("实时更新已断开，重连中…");
   });
 
-  it("clears the connection notice and refreshes everything on reconnect", async () => {
+  it("clears the notice and asks the store for a full reload on reconnect", async () => {
     const deps = makeDeps();
     const { result } = renderHook(() => useLiveSync(deps));
-
-    act(() => {
-      disconnectCb?.();
-    });
-    expect(result.current.liveNotice).toBe("实时更新已断开，重连中…");
+    act(() => disconnectCallback?.());
 
     await act(async () => {
-      reconnectCb?.();
+      reconnectCallback?.();
       await Promise.resolve();
     });
 
     expect(result.current.liveNotice).toBeNull();
-    expect(deps.refreshAgents).toHaveBeenCalled();
-    expect(deps.refreshDashboard).toHaveBeenCalled();
-    expect(deps.refreshSearch).toHaveBeenCalled();
-  });
-
-  it("connection notice takes priority over a transient liveNotice", async () => {
-    const deps = makeDeps();
-    const { result } = renderHook(() => useLiveSync(deps));
-
-    await act(async () => {
-      sessionsCb?.({ newSessions: 2 } as SessionsUpdatedEvent);
-      await Promise.resolve();
-    });
-    await waitFor(() => expect(result.current.liveNotice).toContain("2"));
-
-    act(() => {
-      disconnectCb?.();
-    });
-
-    expect(result.current.liveNotice).toBe("实时更新已断开，重连中…");
+    expect(deps.applyLiveEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "sessions-updated" }),
+    );
   });
 });
