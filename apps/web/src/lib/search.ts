@@ -1,7 +1,15 @@
 import { type SearchRequestOptions, type SearchResult } from "./api";
 import { type SessionIndexes, getSessionAgentKey } from "./session-indexes";
 import { getProjectIdentityKey } from "./projects";
-import type { SearchFilterState } from "../components/app/types";
+import type { SearchFilterState, SearchProjectOption } from "../components/app/types";
+
+interface SearchProjectOptionsInput {
+  usesServerSearch: boolean;
+  isLoading: boolean;
+  results: SearchResult[];
+  selectedProject: SearchFilterState["project"];
+  recentProjectOptions: SearchProjectOption[];
+}
 
 export function buildSearchRequestOptions(
   filters: SearchFilterState,
@@ -62,4 +70,44 @@ export function buildLocalRecentResults(
   }
 
   return results;
+}
+
+export function buildSearchProjectOptions({
+  usesServerSearch,
+  isLoading,
+  results,
+  selectedProject,
+  recentProjectOptions,
+}: SearchProjectOptionsInput): SearchProjectOption[] {
+  if (!usesServerSearch) return recentProjectOptions;
+
+  const optionsByKey = new Map<string, SearchProjectOption>();
+  const sourceResults = isLoading ? [] : results;
+  for (const result of sourceResults) {
+    const identity = result.session.project_identity;
+    if (!identity?.key) continue;
+    const key = getProjectIdentityKey(identity);
+    const current = optionsByKey.get(key);
+    if (current) {
+      current.count += 1;
+      continue;
+    }
+    optionsByKey.set(key, {
+      key,
+      identityKind: identity.kind,
+      identityKey: identity.key,
+      label: identity.displayName || result.session.directory,
+      count: 1,
+      showCount: false,
+    });
+  }
+
+  const selectedKey = selectedProject ? getProjectIdentityKey(selectedProject) : undefined;
+  const selectedOption = selectedKey
+    ? recentProjectOptions.find((project) => project.key === selectedKey)
+    : undefined;
+  if (selectedKey && selectedOption && !optionsByKey.has(selectedKey)) {
+    optionsByKey.set(selectedKey, { ...selectedOption, count: 0, showCount: false });
+  }
+  return [...optionsByKey.values()].toSorted((left, right) => right.count - left.count).slice(0, 8);
 }

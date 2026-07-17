@@ -16,6 +16,7 @@ import { useSessionDetail } from "./hooks/useSessionDetail";
 import { useSessionSearch } from "./hooks/useSessionSearch";
 import { useBookmarks } from "./hooks/useBookmarks";
 import { useDashboard } from "./hooks/useDashboard";
+import { useSidebarModel } from "./hooks/useSidebarModel";
 import { useSessionStore } from "./hooks/useSessionStore";
 import { useWindowedDataLoad } from "./hooks/useWindowedDataLoad";
 import { useLiveSync } from "./hooks/useLiveSync";
@@ -27,19 +28,8 @@ import { ShortcutHelpDialog } from "./components/app/ShortcutHelpDialog";
 import { AppRouteContent } from "./components/app/AppRouteContent";
 import type { BrowseBy } from "./components/app/types";
 import { formatScanStatusLabel, formatSearchSubtitle } from "./lib/scan-format";
-import {
-  getProjectGroupIdentity,
-  getProjectIdentityKey,
-  getProjectPath,
-  type ProjectRouteIdentity,
-} from "./lib/projects";
-import {
-  buildSessionIndexes,
-  buildSidebarSessionLookup,
-  getProjectAgentKey,
-  getSessionAgentKey,
-  getSessionRouteKey,
-} from "./lib/session-indexes";
+import { getProjectIdentityKey, getProjectPath, type ProjectRouteIdentity } from "./lib/projects";
+import { buildSessionIndexes, getSessionAgentKey } from "./lib/session-indexes";
 
 const SHORTCUT_HINT_STORAGE_KEY = "codesesh.shortcuts-hint-dismissed";
 
@@ -67,7 +57,6 @@ export default function App() {
     reload,
   });
 
-  const [browseBy, setBrowseBy] = useState<BrowseBy>("agents");
   const [selectedProjectIdentity, setSelectedProjectIdentity] =
     useState<ProjectRouteIdentity | null>(null);
   const { scanStatus, setScanStatus } = useScanStatus();
@@ -96,19 +85,11 @@ export default function App() {
   }, [location.pathname, viewState.mode, viewState.activeAgentKey, viewState.activeSessionSlug]);
 
   useEffect(() => {
-    if (viewState.mode === "projects" || viewState.mode === "project") {
-      setBrowseBy("projects");
-      if (viewState.mode === "project") {
-        setSelectedProjectIdentity({
-          kind: viewState.activeProjectKind,
-          key: viewState.activeProjectKey,
-        });
-      }
-      return;
-    }
-    if (viewState.mode === "agent" || viewState.mode === "missingAgent") {
-      setBrowseBy("agents");
-    }
+    if (viewState.mode !== "project") return;
+    setSelectedProjectIdentity({
+      kind: viewState.activeProjectKind,
+      key: viewState.activeProjectKey,
+    });
   }, [viewState]);
   const sessionIndexes = useMemo(() => buildSessionIndexes(sessions, agents), [sessions, agents]);
 
@@ -142,84 +123,45 @@ export default function App() {
   const { bookmarkedSessions, isSessionBookmarked, toggleBookmark, toggleSessionBookmark } =
     bookmarks;
 
-  const activeAgentKey = viewState.activeAgentKey;
   const activeProjectKind = viewState.mode === "project" ? viewState.activeProjectKind : null;
   const activeProjectKey = viewState.mode === "project" ? viewState.activeProjectKey : null;
-  const activeProjectIdentity = useMemo<ProjectRouteIdentity | null>(
-    () =>
-      activeProjectKind && activeProjectKey
-        ? { kind: activeProjectKind, key: activeProjectKey }
-        : null,
-    [activeProjectKind, activeProjectKey],
-  );
-  const activeProjectIdentityKey = activeProjectIdentity
-    ? getProjectIdentityKey(activeProjectIdentity)
-    : null;
 
   const projectDashboardFilters = useMemo(
     () => ({
       projectKind: activeProjectKind ?? undefined,
       projectKey: activeProjectKey ?? undefined,
-      identityKey: activeProjectIdentityKey ?? undefined,
+      identityKey:
+        activeProjectKind && activeProjectKey
+          ? getProjectIdentityKey({ kind: activeProjectKind, key: activeProjectKey })
+          : undefined,
     }),
-    [activeProjectIdentityKey, activeProjectKey, activeProjectKind],
+    [activeProjectKey, activeProjectKind],
   );
   const projectController = useDashboard(loadedWindow, projectDashboardFilters);
-  const selectedProjectAgent = projectController.selectedAgent;
-
-  const openedSessionHead = useMemo(() => {
-    if (viewState.mode !== "session") return null;
-    return (
-      sessionIndexes.byRouteKey.get(
-        getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionSlug),
-      ) ?? null
-    );
-  }, [sessionIndexes, viewState]);
-  const openedSessionData =
-    viewState.mode === "session" && session?.id === viewState.activeSessionSlug ? session : null;
-  const openedSessionProjectIdentity =
-    openedSessionData?.project_identity ?? openedSessionHead?.project_identity ?? null;
-  const selectedProjectNavigationIdentity =
-    browseBy !== "projects"
-      ? null
-      : viewState.mode === "project"
-        ? activeProjectIdentity
-        : viewState.mode === "session"
-          ? openedSessionProjectIdentity
-          : null;
-  const selectedProjectNavigationId = selectedProjectNavigationIdentity
-    ? getProjectIdentityKey(selectedProjectNavigationIdentity)
-    : null;
-  const agentSidebarSessions = useMemo(
-    () => (activeAgentKey ? (sessionIndexes.byAgent.get(activeAgentKey) ?? []) : []),
-    [activeAgentKey, sessionIndexes],
-  );
-  const projectSidebarSessions = useMemo(() => {
-    if (!selectedProjectNavigationId) return [];
-    if (selectedProjectAgent) {
-      return (
-        sessionIndexes.byProjectAgentKey.get(
-          getProjectAgentKey(selectedProjectNavigationId, selectedProjectAgent),
-        ) ?? []
-      );
-    }
-    return sessionIndexes.byProjectIdentityKey.get(selectedProjectNavigationId) ?? [];
-  }, [selectedProjectAgent, selectedProjectNavigationId, sessionIndexes]);
-  const sidebarSessions = browseBy === "projects" ? projectSidebarSessions : agentSidebarSessions;
-  const sidebarSessionLookup = useMemo(
-    () => buildSidebarSessionLookup(sidebarSessions),
-    [sidebarSessions],
-  );
-  const bookmarkedSidebarSessionIds = useMemo(() => {
-    if (sidebarSessions.length === 0) return new Set<string>();
-    return new Set(
-      sidebarSessions
-        .filter((sessionItem) =>
-          isSessionBookmarked(getSessionAgentKey(sessionItem), sessionItem.id),
-        )
-        .map((sessionItem) => sessionItem.id),
-    );
-  }, [isSessionBookmarked, sidebarSessions]);
+  const sidebar = useSidebarModel({
+    viewState,
+    sessionIndexes,
+    session,
+    agents,
+    projects,
+    selectedProjectAgent: projectController.selectedAgent,
+    isSessionBookmarked,
+  });
+  const {
+    browseBy,
+    selectBrowseBy,
+    activeAgentKey,
+    activeAgent,
+    activeProject,
+    activeProjectSessions,
+    openedSessionProjectIdentity,
+    selectedProjectNavigation,
+    sidebarSessions,
+    sidebarSessionLookup,
+    bookmarkedSidebarSessionIds,
+  } = sidebar;
+  const selectedProjectNavigationIdentity = selectedProjectNavigation?.identity ?? null;
+  const selectedProjectNavigationId = selectedProjectNavigation?.identityKey ?? null;
 
   const handleSelectFlatSidebarSession = useCallback(
     (sessionItem: SessionHead) => {
@@ -328,27 +270,6 @@ export default function App() {
     setSelectedSidebarSessionId(null);
   }, [isSearchMode, viewState.mode, viewState.activeSessionSlug, sidebarSessions]);
 
-  const activeAgent = useMemo(
-    () => agents.find((agent) => agent.name.toLowerCase() === activeAgentKey) ?? null,
-    [activeAgentKey, agents],
-  );
-  const activeProject = useMemo(
-    () =>
-      projects.find(
-        (project) =>
-          activeProjectIdentityKey === getProjectIdentityKey(getProjectGroupIdentity(project)),
-      ) ?? null,
-    [activeProjectIdentityKey, projects],
-  );
-  const selectedProjectNavigation = useMemo(
-    () =>
-      projects.find(
-        (project) =>
-          selectedProjectNavigationId === getProjectIdentityKey(getProjectGroupIdentity(project)),
-      ) ?? null,
-    [projects, selectedProjectNavigationId],
-  );
-
   const searchSubtitle =
     searchState.status === "failed"
       ? `Search failed for "${activeSearchQuery}"`
@@ -362,13 +283,13 @@ export default function App() {
     dashboard,
     projects,
     sessionCount: sessions.length,
-    activeProject,
+    activeProject: activeProject?.project ?? null,
     activeAgent,
     sidebarSessionCount: sidebarSessions.length,
     session,
     sessionError,
     selectedProjectIdentity: selectedProjectNavigationIdentity,
-    selectedProject: selectedProjectNavigation,
+    selectedProject: selectedProjectNavigation?.project ?? null,
   });
 
   const content = (
@@ -380,12 +301,41 @@ export default function App() {
       agents={agents}
       agentNameMap={agentNameMap}
       projects={projects}
-      sessionIndexes={sessionIndexes}
+      landingSessions={sessionIndexes.landingSessions}
+      sessionsByAgent={sessionIndexes.byLandingAgent}
+      activeProject={activeProject?.project ?? null}
+      activeProjectSessions={activeProjectSessions}
       dashboard={dashboard}
-      sessionDetail={sessionDetail}
-      projectController={projectController}
-      search={search}
-      bookmarks={bookmarks}
+      sessionDetail={{
+        session: sessionDetail.session,
+        loading: sessionDetail.sessionLoading,
+        error: sessionDetail.sessionError,
+      }}
+      projectDashboard={{
+        dashboard: projectController.dashboard,
+        loading: projectController.loading,
+        error: projectController.error,
+        selectedAgent: projectController.selectedAgent,
+        onChangeAgent: projectController.setSelectedAgent,
+      }}
+      search={{
+        active: search.searchMode,
+        query: search.activeSearchQuery,
+        state: search.searchState,
+        projectOptions: search.projectOptions,
+        filters: search.searchFilters,
+        onChangeFilters: search.setSearchFilters,
+        onClose: search.closeSearch,
+        onRetry: search.retrySearch,
+        selectedIndex: search.selectedSearchIndex,
+        registerResultRef: search.registerResultRef,
+      }}
+      bookmarks={{
+        sessions: bookmarks.bookmarkedSessions,
+        isBookmarked: bookmarks.isSessionBookmarked,
+        toggleBookmark: bookmarks.toggleBookmark,
+        toggleSessionBookmark: bookmarks.toggleSessionBookmark,
+      }}
     />
   );
 
@@ -400,7 +350,7 @@ export default function App() {
 
   function changeBrowseBy(next: BrowseBy) {
     if (next === "projects" && isScanActive) return;
-    setBrowseBy(next);
+    selectBrowseBy(next);
     setSelectedSidebarSessionId(null);
     if (next === "projects") {
       const project =
