@@ -2,6 +2,7 @@
  * Structured message storage: row ↔ domain mapping, prepared-statement
  * binders, and message-text builders shared by sessions/search/file-activity.
  */
+import type { SessionCacheMeta } from "../../agents/base.js";
 import type {
   Message,
   MessagePart,
@@ -13,7 +14,7 @@ import type {
 } from "../../types/index.js";
 import { computeIdentity, realFs } from "../../projects/index.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
-import type { SessionCacheMeta, SQLiteStatement } from "./db.js";
+import type { SQLiteStatement } from "./db.js";
 
 export interface SessionRow extends DatabaseRow {
   agent_name?: string;

@@ -7,9 +7,10 @@ export {
   hasCacheStorage,
   getCachePath,
   setFtsIntegrityCheckedPath,
-  type SessionCacheMeta,
   type SessionHeadChange,
 } from "./cache/db.js";
+
+export type { SessionCacheMeta } from "../agents/base.js";
 
 export {
   CACHE_INITIALIZATION_VERSION,
