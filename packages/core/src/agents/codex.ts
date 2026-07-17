@@ -17,17 +17,14 @@ import {
   skippedSession,
 } from "./base.js";
 import type { ParseSessionResult } from "./base.js";
-import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
+import type { SessionHead, SessionData, MessagePart } from "../types/index.js";
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
 import { parseJsonlLines, readJsonlFile, readJsonlFileLines } from "../utils/jsonl.js";
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
-import {
-  cleanInternalText,
-  cleanParsedMessages,
-  isInternalEventType,
-} from "../utils/session-normalization.js";
-import { perf } from "../utils/perf.js";
+import { cleanInternalText, isInternalEventType } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
+import { perf } from "../utils/perf.js";
+import { TranscriptBuilder } from "./transcript-builder.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -317,7 +314,6 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
 
     const scanMarker = perf.start("codex:scan");
 
-    // Pre-load session index for titles
     const indexMarker = perf.start("loadSessionIndex");
     this.loadSessionIndex();
     perf.end(indexMarker);
@@ -362,9 +358,9 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     }));
   }
 
-  scanSessionSource(sourcePath: string): SessionHead | null {
+  scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null {
     this.loadSessionIndex();
-    const head = getParsedSession(this.parseSessionHeadResult(sourcePath));
+    const head = getParsedSession(this.parseSessionHeadResult(sourcePath, options));
     if (head) {
       this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, sourcePath));
     }
@@ -376,17 +372,13 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     if (!meta) throw new Error(`Session not found: ${sessionId}`);
     if (!existsSync(meta.sourcePath)) throw new Error(`Session file missing: ${meta.sourcePath}`);
 
-    const messages: Message[] = [];
-    const pendingToolCalls = new Map<string, [number, number]>();
+    const transcript = new TranscriptBuilder();
 
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
     let totalCacheReadTokens = 0;
     let totalCost = 0;
 
-    // Assistant message grouping state
-    let currentAssistantIndex: number | null = null;
-    let latestAssistantTextIndex: number | null = null;
     let pendingPlan: MessagePart | null = null;
     let activeModel: string | null = meta.model;
 
@@ -405,25 +397,7 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
           activeModel = extractModelName(payload["model"]) ?? activeModel;
         }
 
-        const result = this.convertRecord(
-          record,
-          messages,
-          pendingToolCalls,
-          meta.id,
-          currentAssistantIndex,
-          latestAssistantTextIndex,
-          pendingPlan,
-        );
-        currentAssistantIndex = result.currentAssistantIndex;
-        latestAssistantTextIndex = result.latestAssistantTextIndex;
-        pendingPlan = result.pendingPlan;
-
-        if (currentAssistantIndex !== null && activeModel) {
-          const message = messages[currentAssistantIndex];
-          if (message?.role === "assistant" && !message.model) {
-            message.model = activeModel;
-          }
-        }
+        pendingPlan = this.convertRecord(record, transcript, pendingPlan, activeModel);
 
         // Process Codex token_count events
         if (recordType === "event_msg") {
@@ -469,25 +443,19 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
                 totalOutputTokens += outputTokens + reasoningTokens;
                 totalCacheReadTokens += totalCacheRead;
 
-                // Bind to the most recent assistant message without tokens
-                for (let i = messages.length - 1; i >= 0; i--) {
-                  const msg = messages[i]!;
-                  if (msg.role === "assistant" && !msg.tokens) {
-                    msg.tokens = {
-                      input: totalInput,
-                      output: outputTokens,
-                      reasoning: reasoningTokens || undefined,
-                      cache_read: totalCacheRead || undefined,
-                    };
-                    const cost = estimateTokenCost(msg.model ?? activeModel, msg.tokens);
-                    if (cost !== null) {
-                      msg.cost = cost;
-                      msg.cost_source = "estimated";
-                      totalCost += cost;
-                    }
-                    break;
-                  }
-                }
+                const tokens = {
+                  input: totalInput,
+                  output: outputTokens,
+                  reasoning: reasoningTokens || undefined,
+                  cache_read: totalCacheRead || undefined,
+                };
+                const cost = estimateTokenCost(activeModel, tokens);
+                transcript.attachUsageToLatestAssistant(tokens, {
+                  model: activeModel,
+                  cost: cost ?? undefined,
+                  costSource: cost === null ? undefined : "estimated",
+                });
+                totalCost += cost ?? 0;
               }
             }
           }
@@ -497,11 +465,15 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       }
     }
 
-    // Finalize pending plan if any
-    if (pendingPlan && currentAssistantIndex !== null) {
-      messages[currentAssistantIndex]!.parts.push(pendingPlan);
-    }
-    const cleanedMessages = cleanParsedMessages(messages);
+    if (pendingPlan) transcript.appendToCurrentAssistant(pendingPlan);
+    const result = transcript.finish({
+      message_count: 0,
+      total_input_tokens: totalInputTokens,
+      total_output_tokens: totalOutputTokens,
+      total_cache_read_tokens: totalCacheReadTokens || undefined,
+      total_cost: totalCost,
+      cost_source: totalCost > 0 ? "estimated" : undefined,
+    });
 
     return {
       id: meta.id,
@@ -510,15 +482,8 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       directory: meta.directory,
       time_created: meta.createdAt,
       time_updated: meta.updatedAt,
-      stats: {
-        message_count: cleanedMessages.length,
-        total_input_tokens: totalInputTokens,
-        total_output_tokens: totalOutputTokens,
-        total_cache_read_tokens: totalCacheReadTokens || undefined,
-        total_cost: totalCost,
-        cost_source: totalCost > 0 ? "estimated" : undefined,
-      },
-      messages: cleanedMessages,
+      stats: result.stats,
+      messages: result.messages,
     };
   }
 
@@ -907,36 +872,22 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
 
   private convertRecord(
     data: Record<string, unknown>,
-    messages: Message[],
-    pendingToolCalls: Map<string, [number, number]>,
-    sessionId: string,
-    currentAssistantIndex: number | null,
-    latestAssistantTextIndex: number | null,
+    transcript: TranscriptBuilder,
     pendingPlan: MessagePart | null,
-  ): {
-    currentAssistantIndex: number | null;
-    latestAssistantTextIndex: number | null;
-    pendingPlan: MessagePart | null;
-  } {
+    activeModel: string | null,
+  ): MessagePart | null {
     const recordType = String(data["type"] ?? "");
-    if (isInternalEventType(recordType)) {
-      return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
-    }
+    if (isInternalEventType(recordType)) return pendingPlan;
 
-    // Skip non-response records
     if (recordType === "session_meta" || recordType === "event_msg") {
-      return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
+      return pendingPlan;
     }
 
-    if (recordType !== "response_item") {
-      return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
-    }
+    if (recordType !== "response_item") return pendingPlan;
 
     const payload = (data["payload"] ?? {}) as Record<string, unknown>;
     const payloadType = String(payload["type"] ?? "");
-    if (isInternalEventType(payloadType)) {
-      return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
-    }
+    if (isInternalEventType(payloadType)) return pendingPlan;
     const timestampMs = parseTimestampMs(data) || parseTimestampMs(payload);
 
     switch (payloadType) {
@@ -945,81 +896,54 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
         if (role === "assistant") {
           return this.convertAssistantMessage(
             payload,
-            messages,
+            transcript,
             timestampMs,
-            currentAssistantIndex,
-            latestAssistantTextIndex,
             pendingPlan,
+            activeModel,
           );
         }
         if (role === "user") {
-          return this.convertUserMessage(
-            payload,
-            messages,
-            timestampMs,
-            currentAssistantIndex,
-            latestAssistantTextIndex,
-            pendingPlan,
-          );
+          return this.convertUserMessage(payload, transcript, timestampMs, pendingPlan);
         }
         break;
       }
 
       case "reasoning":
-        return this.convertReasoning(payload, messages, timestampMs, currentAssistantIndex);
+        this.convertReasoning(payload, transcript, timestampMs, activeModel);
+        return null;
 
       case "function_call":
-        return this.convertFunctionCall(
-          payload,
-          messages,
-          pendingToolCalls,
-          timestampMs,
-          currentAssistantIndex,
-          latestAssistantTextIndex,
-        );
+        this.convertFunctionCall(payload, transcript, timestampMs, activeModel);
+        return null;
 
       case "function_call_output":
-        this.convertFunctionCallOutput(payload, messages, pendingToolCalls, timestampMs);
-        return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
+        this.convertToolCallOutput(payload, transcript, timestampMs);
+        return pendingPlan;
 
       case "custom_tool_call":
-        return this.convertCustomToolCall(
-          payload,
-          messages,
-          pendingToolCalls,
-          timestampMs,
-          currentAssistantIndex,
-          latestAssistantTextIndex,
-        );
+        this.convertCustomToolCall(payload, transcript, timestampMs, activeModel);
+        return null;
 
       case "custom_tool_call_output":
-        this.convertCustomToolCallOutput(payload, messages, pendingToolCalls, timestampMs);
-        return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
+        this.convertToolCallOutput(payload, transcript, timestampMs);
+        return pendingPlan;
     }
 
-    return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
+    return pendingPlan;
   }
 
   // ---- Assistant message ----
 
   private convertAssistantMessage(
     payload: Record<string, unknown>,
-    messages: Message[],
+    transcript: TranscriptBuilder,
     timestampMs: number,
-    currentAssistantIndex: number | null,
-    latestAssistantTextIndex: number | null,
     pendingPlan: MessagePart | null,
-  ): {
-    currentAssistantIndex: number | null;
-    latestAssistantTextIndex: number | null;
-    pendingPlan: MessagePart | null;
-  } {
+    activeModel: string | null,
+  ): MessagePart | null {
     const content = payload["content"];
-    if (!Array.isArray(content)) {
-      return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
-    }
+    if (!Array.isArray(content)) return pendingPlan;
 
-    // Extract output_text items
     const textParts: string[] = [];
     for (const item of content) {
       if (typeof item !== "object" || item === null) continue;
@@ -1030,13 +954,10 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       }
     }
 
-    if (textParts.length === 0) {
-      return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
-    }
+    if (textParts.length === 0) return pendingPlan;
 
     const fullText = textParts.join("\n");
 
-    // Check for proposed plan
     const planMatch = fullText.match(PROPOSED_PLAN_PATTERN);
     if (planMatch) {
       const planText = planMatch[1]!.trim();
@@ -1049,54 +970,27 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       pendingPlan = planPart;
     }
 
-    // Build text part (strip the proposed plan tags)
     const displayText = cleanInternalText(fullText.replace(PROPOSED_PLAN_PATTERN, ""));
-    if (!displayText) {
-      return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
-    }
+    if (!displayText) return pendingPlan;
 
     const textPart: MessagePart = { type: "text", text: displayText, time_created: timestampMs };
-
-    // Append to current assistant or create new one
-    if (currentAssistantIndex !== null) {
-      const message = messages[currentAssistantIndex]!;
-      const hasTool = message.parts.some((p) => p.type === "tool");
-      if (!hasTool) {
-        message.parts.push(textPart);
-        latestAssistantTextIndex = currentAssistantIndex;
-        return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
-      }
-    }
-
-    messages.push(
-      this.buildMessage({
-        messageId: "",
-        role: "assistant",
-        timestampMs,
-        parts: [textPart],
-        agent: "codex",
-      }),
-    );
-    currentAssistantIndex = messages.length - 1;
-    latestAssistantTextIndex = currentAssistantIndex;
-
-    return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
+    transcript.appendAssistantPart(textPart, {
+      id: "",
+      timestampMs,
+      agent: "codex",
+      model: activeModel,
+    });
+    return pendingPlan;
   }
 
   // ---- User message ----
 
   private convertUserMessage(
     payload: Record<string, unknown>,
-    messages: Message[],
+    transcript: TranscriptBuilder,
     timestampMs: number,
-    currentAssistantIndex: number | null,
-    latestAssistantTextIndex: number | null,
     pendingPlan: MessagePart | null,
-  ): {
-    currentAssistantIndex: number | null;
-    latestAssistantTextIndex: number | null;
-    pendingPlan: MessagePart | null;
-  } {
+  ): MessagePart | null {
     const content = payload["content"];
     const text = Array.isArray(content)
       ? content
@@ -1109,39 +1003,21 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       : String(content ?? "");
 
     const visibleText = cleanInternalText(text);
-    if (!visibleText) {
-      return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
-    }
+    if (!visibleText) return pendingPlan;
 
-    // Skip injected developer/system context messages
-    if (isDeveloperLikeUserMessage(visibleText)) {
-      return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
-    }
+    if (isDeveloperLikeUserMessage(visibleText)) return pendingPlan;
 
-    // Check for plan approval
     if (visibleText.trimStart().startsWith(PLAN_APPROVAL_PREFIX)) {
-      // Finalize pending plan by attaching it to current assistant
-      if (pendingPlan && currentAssistantIndex !== null) {
-        messages[currentAssistantIndex]!.parts.push(pendingPlan);
-      }
-      pendingPlan = null;
-
-      // The approval message itself is a user message
-      messages.push(
-        this.buildMessage({
-          messageId: "",
-          role: "user",
-          timestampMs,
-          parts: [{ type: "text", text: visibleText, time_created: timestampMs }],
-        }),
-      );
-
-      currentAssistantIndex = null;
-      latestAssistantTextIndex = null;
-      return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
+      if (pendingPlan) transcript.appendToCurrentAssistant(pendingPlan);
+      transcript.appendMessage({
+        id: "",
+        role: "user",
+        timestampMs,
+        parts: [{ type: "text", text: visibleText, time_created: timestampMs }],
+      });
+      return null;
     }
 
-    // Check for subagent notification
     const subagentMatch = visibleText.match(SUBAGENT_NOTIFICATION_PATTERN);
     if (subagentMatch) {
       try {
@@ -1150,64 +1026,47 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
         const nickname = String(notifPayload["nickname"] ?? "");
         const completedText = String(notifPayload["completed"] ?? "");
 
-        // Convert user message with subagent notification to assistant message
         const textPart: MessagePart = {
           type: "text",
           text: completedText || `Subagent ${nickname} completed`,
           time_created: timestampMs,
         };
 
-        messages.push(
-          this.buildMessage({
-            messageId: "",
-            role: "assistant",
-            timestampMs,
-            parts: [textPart],
-            agent: "codex",
-            subagent_id: agentId || undefined,
-            nickname: nickname || undefined,
-          }),
-        );
-
-        currentAssistantIndex = null;
-        latestAssistantTextIndex = null;
-        return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
+        transcript.appendMessage({
+          id: "",
+          role: "assistant",
+          timestampMs,
+          parts: [textPart],
+          agent: "codex",
+          subagentId: agentId || undefined,
+          nickname: nickname || undefined,
+        });
+        transcript.beginTurn();
+        return pendingPlan;
       } catch {
-        // Not valid JSON, treat as normal user message
+        // Treat malformed notification payloads as normal user messages.
       }
     }
 
-    // Normal user message
-    messages.push(
-      this.buildMessage({
-        messageId: "",
-        role: "user",
-        timestampMs,
-        parts: [{ type: "text", text: visibleText, time_created: timestampMs }],
-      }),
-    );
-
-    currentAssistantIndex = null;
-    latestAssistantTextIndex = null;
-    return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan };
+    transcript.appendMessage({
+      id: "",
+      role: "user",
+      timestampMs,
+      parts: [{ type: "text", text: visibleText, time_created: timestampMs }],
+    });
+    return pendingPlan;
   }
 
   // ---- Reasoning ----
 
   private convertReasoning(
     payload: Record<string, unknown>,
-    messages: Message[],
+    transcript: TranscriptBuilder,
     timestampMs: number,
-    currentAssistantIndex: number | null,
-  ): {
-    currentAssistantIndex: number | null;
-    latestAssistantTextIndex: number | null;
-    pendingPlan: MessagePart | null;
-  } {
+    activeModel: string | null,
+  ): void {
     const summary = payload["summary"];
-    if (!Array.isArray(summary)) {
-      return { currentAssistantIndex, latestAssistantTextIndex: null, pendingPlan: null };
-    }
+    if (!Array.isArray(summary)) return;
 
     const texts: string[] = [];
     for (const item of summary) {
@@ -1220,59 +1079,33 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       }
     }
 
-    if (texts.length === 0) {
-      return { currentAssistantIndex, latestAssistantTextIndex: null, pendingPlan: null };
-    }
+    if (texts.length === 0) return;
 
     const reasoningText = texts.join("\n");
     const part: MessagePart = { type: "reasoning", text: reasoningText, time_created: timestampMs };
-
-    if (currentAssistantIndex !== null) {
-      const message = messages[currentAssistantIndex]!;
-      const hasText = message.parts.some((p) => p.type === "text");
-      const hasTool = message.parts.some((p) => p.type === "tool");
-      if (!hasText && !hasTool) {
-        message.parts.push(part);
-        return { currentAssistantIndex, latestAssistantTextIndex: null, pendingPlan: null };
-      }
-    }
-
-    messages.push(
-      this.buildMessage({
-        messageId: "",
-        role: "assistant",
+    transcript.appendAssistantPart(
+      part,
+      {
+        id: "",
         timestampMs,
-        parts: [part],
         agent: "codex",
-      }),
+        model: activeModel,
+      },
+      { resetLatestText: true },
     );
-
-    return {
-      currentAssistantIndex: messages.length - 1,
-      latestAssistantTextIndex: null,
-      pendingPlan: null,
-    };
   }
 
   // ---- Function call ----
 
   private convertFunctionCall(
     payload: Record<string, unknown>,
-    messages: Message[],
-    pendingToolCalls: Map<string, [number, number]>,
+    transcript: TranscriptBuilder,
     timestampMs: number,
-    currentAssistantIndex: number | null,
-    latestAssistantTextIndex: number | null,
-  ): {
-    currentAssistantIndex: number | null;
-    latestAssistantTextIndex: number | null;
-    pendingPlan: MessagePart | null;
-  } {
+    activeModel: string | null,
+  ): void {
     const callId = String(payload["call_id"] ?? "").trim();
     const name = String(payload["name"] ?? "").trim();
-    if (!name) {
-      return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan: null };
-    }
+    if (!name) return;
 
     const toolIdentity = resolveToolIdentity(name, payload["namespace"]);
     const arguments_ = normalizeToolArguments(payload["arguments"]);
@@ -1290,69 +1123,30 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       time_created: timestampMs,
     };
 
-    // Attach to latest assistant text message
-    const targetIndex = latestAssistantTextIndex ?? currentAssistantIndex;
-    if (targetIndex !== null) {
-      const message = messages[targetIndex]!;
-      const partIndex = message.parts.length;
-      message.parts.push(toolPart);
-      message.mode = "tool";
-      if (callId) {
-        pendingToolCalls.set(callId, [targetIndex, partIndex]);
-      }
-      return {
-        currentAssistantIndex: targetIndex,
-        latestAssistantTextIndex: targetIndex,
-        pendingPlan: null,
-      };
-    }
-
-    // Fallback: create new assistant message for tool
-    messages.push(
-      this.buildMessage({
-        messageId: "",
-        role: "assistant",
-        timestampMs,
-        parts: [toolPart],
-        agent: "codex",
-        mode: "tool",
-      }),
+    transcript.appendToolCall(
+      toolPart,
+      { id: "", timestampMs, agent: "codex", model: activeModel },
+      { markModeAsTool: true },
     );
-    const newIndex = messages.length - 1;
-    if (callId) {
-      pendingToolCalls.set(callId, [newIndex, 0]);
-    }
-
-    return { currentAssistantIndex: newIndex, latestAssistantTextIndex: null, pendingPlan: null };
   }
 
   // ---- Function call output ----
 
-  private convertFunctionCallOutput(
+  private convertToolCallOutput(
     payload: Record<string, unknown>,
-    messages: Message[],
-    pendingToolCalls: Map<string, [number, number]>,
+    transcript: TranscriptBuilder,
     timestampMs: number,
   ): void {
     const callId = String(payload["call_id"] ?? "").trim();
     if (!callId) return;
-
-    const location = pendingToolCalls.get(callId);
-    if (!location) return;
 
     const outputText = cleanInternalText(String(payload["output"] ?? ""));
     const outputParts: MessagePart[] = outputText
       ? [{ type: "text", text: outputText, time_created: timestampMs }]
       : [];
 
-    const [msgIndex, partIndex] = location;
-    const state =
-      messages[msgIndex]!.parts[partIndex]!.state ??
-      (messages[msgIndex]!.parts[partIndex]!.state = {});
-
     if (outputParts.length > 0) {
-      state.output = [...outputParts];
-      state.status = "completed";
+      transcript.resolveToolCall(callId, { output: outputParts, status: "completed" });
     }
   }
 
@@ -1360,21 +1154,13 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
 
   private convertCustomToolCall(
     payload: Record<string, unknown>,
-    messages: Message[],
-    pendingToolCalls: Map<string, [number, number]>,
+    transcript: TranscriptBuilder,
     timestampMs: number,
-    currentAssistantIndex: number | null,
-    latestAssistantTextIndex: number | null,
-  ): {
-    currentAssistantIndex: number | null;
-    latestAssistantTextIndex: number | null;
-    pendingPlan: MessagePart | null;
-  } {
+    activeModel: string | null,
+  ): void {
     const callId = String(payload["call_id"] ?? "").trim();
     const name = String(payload["name"] ?? "").trim();
-    if (!name) {
-      return { currentAssistantIndex, latestAssistantTextIndex, pendingPlan: null };
-    }
+    if (!name) return;
 
     const toolIdentity = resolveToolIdentity(name, payload["namespace"]);
     const rawInput = payload["input"];
@@ -1393,101 +1179,10 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       time_created: timestampMs,
     };
 
-    // Attach to latest assistant text message
-    const targetIndex = latestAssistantTextIndex ?? currentAssistantIndex;
-    if (targetIndex !== null) {
-      const message = messages[targetIndex]!;
-      const partIndex = message.parts.length;
-      message.parts.push(toolPart);
-      message.mode = "tool";
-      if (callId) {
-        pendingToolCalls.set(callId, [targetIndex, partIndex]);
-      }
-      return {
-        currentAssistantIndex: targetIndex,
-        latestAssistantTextIndex: targetIndex,
-        pendingPlan: null,
-      };
-    }
-
-    // Fallback: create new assistant message
-    messages.push(
-      this.buildMessage({
-        messageId: "",
-        role: "assistant",
-        timestampMs,
-        parts: [toolPart],
-        agent: "codex",
-        mode: "tool",
-      }),
+    transcript.appendToolCall(
+      toolPart,
+      { id: "", timestampMs, agent: "codex", model: activeModel },
+      { markModeAsTool: true },
     );
-    const newIndex = messages.length - 1;
-    if (callId) {
-      pendingToolCalls.set(callId, [newIndex, 0]);
-    }
-
-    return { currentAssistantIndex: newIndex, latestAssistantTextIndex: null, pendingPlan: null };
-  }
-
-  // ---- Custom tool call output ----
-
-  private convertCustomToolCallOutput(
-    payload: Record<string, unknown>,
-    messages: Message[],
-    pendingToolCalls: Map<string, [number, number]>,
-    timestampMs: number,
-  ): void {
-    const callId = String(payload["call_id"] ?? "").trim();
-    if (!callId) return;
-
-    const location = pendingToolCalls.get(callId);
-    if (!location) return;
-
-    const outputText = cleanInternalText(String(payload["output"] ?? ""));
-    const outputParts: MessagePart[] = outputText
-      ? [{ type: "text", text: outputText, time_created: timestampMs }]
-      : [];
-
-    const [msgIndex, partIndex] = location;
-    const state =
-      messages[msgIndex]!.parts[partIndex]!.state ??
-      (messages[msgIndex]!.parts[partIndex]!.state = {});
-
-    if (outputParts.length > 0) {
-      state.output = [...outputParts];
-      state.status = "completed";
-    }
-  }
-
-  // ---- Message builder ----
-
-  private buildMessage(opts: {
-    messageId: string;
-    role: string;
-    timestampMs: number;
-    parts: MessagePart[];
-    agent?: string;
-    mode?: string;
-    model?: string | null;
-    provider?: string | null;
-    tokens?: Record<string, unknown>;
-    cost?: number;
-    subagent_id?: string;
-    nickname?: string;
-  }): Message {
-    return {
-      id: opts.messageId,
-      role: opts.role as Message["role"],
-      agent: opts.agent ?? null,
-      time_created: opts.timestampMs,
-      mode: opts.mode ?? null,
-      model: opts.model ?? null,
-      provider: opts.provider ?? null,
-      tokens: opts.tokens ? (opts.tokens as Message["tokens"]) : undefined,
-      cost: opts.cost ?? 0,
-      parts: opts.parts,
-      subagent_id: opts.subagent_id,
-      nickname: opts.nickname,
-    };
   }
 }

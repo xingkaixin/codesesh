@@ -14,14 +14,15 @@ import type {
   SessionCacheMeta,
   SessionSourceRef,
 } from "./base.js";
-import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
+import type { SessionHead, SessionData, MessagePart } from "../types/index.js";
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
 import { parseJsonlLines } from "../utils/jsonl.js";
 import { normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { isInternalEventType } from "../utils/parse-cleanup.js";
-import { cleanInternalText, cleanParsedMessages } from "../utils/session-normalization.js";
-import { perf } from "../utils/perf.js";
+import { cleanInternalText } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
+import { perf } from "../utils/perf.js";
+import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
 const KIMI_TOOL_TITLE_MAP: Record<string, string> = {
   ReadFile: "read",
@@ -383,8 +384,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     if (!meta.contextFile) throw new Error("context.jsonl is missing");
 
     const content = readFileSync(meta.contextFile, "utf-8");
-    const messages: Message[] = [];
-    const pendingToolCalls = new Map<string, [number, number]>();
+    const builder = new TranscriptBuilder();
     const ignoredToolCallIds = new Set<string>();
 
     let seq = 0;
@@ -398,31 +398,25 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
         if (role === "user") {
           const text = cleanInternalText(kimiContentText(record.content));
           if (text) {
-            messages.push(
-              this.buildMessage({
-                messageId: `context-${seq}`,
-                role: "user",
-                timestampMs: fallbackTs,
-                parts: [{ type: "text", text, time_created: fallbackTs }],
-              }),
-            );
+            builder.appendMessage({
+              id: `context-${seq}`,
+              role: "user",
+              timestampMs: fallbackTs,
+              parts: [{ type: "text", text, time_created: fallbackTs }],
+            });
           }
           continue;
         }
 
         if (role === "assistant") {
-          const { message, toolIndexes } = this.buildContextAssistantMessage(
+          const message = this.buildContextAssistantMessage(
             record,
             seq,
             ignoredToolCallIds,
             fallbackTs,
           );
           if (!message) continue;
-          const msgIndex = messages.length;
-          messages.push(message);
-          for (const [callId, partIndex] of toolIndexes) {
-            pendingToolCalls.set(callId, [msgIndex, partIndex]);
-          }
+          builder.appendMessage(message);
           continue;
         }
 
@@ -430,18 +424,16 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
           const callId = String(record.tool_call_id ?? "").trim();
           if (callId && ignoredToolCallIds.has(callId)) continue;
           const outputParts = normalizeToolOutputParts(record.content, fallbackTs);
-          if (callId && this.backfillToolOutput(messages, pendingToolCalls, callId, outputParts)) {
+          if (callId && this.backfillToolOutput(builder, callId, outputParts)) {
             continue;
           }
           if (outputParts.length > 0) {
-            messages.push(
-              this.buildMessage({
-                messageId: `context-${seq}`,
-                role: "tool",
-                timestampMs: fallbackTs,
-                parts: outputParts,
-              }),
-            );
+            builder.appendMessage({
+              id: `context-${seq}`,
+              role: "tool",
+              timestampMs: fallbackTs,
+              parts: outputParts,
+            });
           }
         }
       } catch {
@@ -450,7 +442,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     }
 
     const stats = this.extractStats(meta.sourcePath);
-    return this.buildSessionData(meta, messages, stats);
+    return this.buildSessionData(meta, builder, stats);
   }
 
   private getSessionDataFromWire(meta: SessionMeta): SessionData {
@@ -458,12 +450,10 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     if (!existsSync(wirePath)) throw new Error("wire.jsonl is missing");
 
     const content = readFileSync(wirePath, "utf-8");
-    const messages: Message[] = [];
-    const pendingToolCalls = new Map<string, [number, number]>();
+    const builder = new TranscriptBuilder();
     const ignoredToolCallIds = new Set<string>();
     const openToolArgumentBuffer = new Map<string, string>();
 
-    let currentAssistantIndex: number | null = null;
     let openToolCallId: string | null = null;
     let seq = 0;
 
@@ -483,19 +473,13 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
           const inputTokens = Number(usage["input_tokens"] ?? 0);
           const outputTokens = Number(usage["output_tokens"] ?? 0);
           if (inputTokens || outputTokens) {
-            for (let i = messages.length - 1; i >= 0; i--) {
-              const msg = messages[i]!;
-              if (msg.role === "assistant" && !msg.tokens) {
-                msg.tokens = { input: inputTokens, output: outputTokens };
-                msg.model ??= this.defaultModel;
-                const cost = estimateTokenCost(msg.model, msg.tokens);
-                if (cost !== null) {
-                  msg.cost = cost;
-                  msg.cost_source = "estimated";
-                }
-                break;
-              }
-            }
+            const tokens = { input: inputTokens, output: outputTokens };
+            const cost = estimateTokenCost(this.defaultModel, tokens);
+            builder.attachUsageToLatestAssistant(tokens, {
+              model: this.defaultModel,
+              cost: cost ?? undefined,
+              costSource: cost === null ? undefined : "estimated",
+            });
           }
         }
 
@@ -504,38 +488,38 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
           if (Array.isArray(userInput) && userInput.length > 0) {
             const text = cleanInternalText(kimiContentText(userInput));
             if (text) {
-              messages.push(
-                this.buildMessage({
-                  messageId: `wire-${seq}`,
-                  role: "user",
-                  timestampMs,
-                  parts: [{ type: "text", text, time_created: timestampMs }],
-                }),
-              );
+              builder.appendMessage({
+                id: `wire-${seq}`,
+                role: "user",
+                timestampMs,
+                parts: [{ type: "text", text, time_created: timestampMs }],
+              });
             }
           }
-          currentAssistantIndex = null;
+          builder.beginTurn();
           openToolCallId = null;
           continue;
         }
 
         if (msgType === "ContentPart") {
-          currentAssistantIndex = this.getOrCreateWireAssistant(
-            messages,
-            currentAssistantIndex,
-            `wire-${seq}`,
-          );
-          const assistant = messages[currentAssistantIndex]!;
           const partType = String(payload.type ?? "");
           if (partType === "think") {
             const text = cleanInternalText(String(payload.think ?? ""));
             if (text) {
-              assistant.parts.push({ type: "reasoning", text, time_created: timestampMs });
+              builder.appendAssistantPart(
+                { type: "reasoning", text, time_created: timestampMs },
+                { id: `wire-${seq}`, timestampMs: 0, agent: "kimi" },
+                { grouping: "current" },
+              );
             }
           } else if (partType === "text") {
             const text = cleanInternalText(String(payload.text ?? ""));
             if (text) {
-              assistant.parts.push({ type: "text", text, time_created: timestampMs });
+              builder.appendAssistantPart(
+                { type: "text", text, time_created: timestampMs },
+                { id: `wire-${seq}`, timestampMs: 0, agent: "kimi" },
+                { grouping: "current" },
+              );
             }
           }
           continue;
@@ -554,13 +538,6 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
 
           if (!function_ || !callId || !toolName) continue;
 
-          currentAssistantIndex = this.getOrCreateWireAssistant(
-            messages,
-            currentAssistantIndex,
-            `wire-${seq}`,
-          );
-          const assistant = messages[currentAssistantIndex]!;
-
           const rawArgs = function_.arguments;
           const normalizedArgs = normalizeToolArguments(rawArgs);
           const buffer =
@@ -575,10 +552,11 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
             time_created: timestampMs,
           };
 
-          const partIndex = assistant.parts.length;
-          assistant.parts.push(toolPart);
-          assistant.mode = "tool";
-          pendingToolCalls.set(callId, [currentAssistantIndex, partIndex]);
+          builder.appendToolCall(
+            toolPart,
+            { id: `wire-${seq}`, timestampMs: 0, agent: "kimi" },
+            { markModeAsTool: true, target: "current" },
+          );
           openToolCallId = callId;
 
           if (buffer !== null) {
@@ -594,8 +572,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
             argumentsPart,
             openToolCallId,
             openToolArgumentBuffer,
-            messages,
-            pendingToolCalls,
+            builder,
           );
           continue;
         }
@@ -604,18 +581,16 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
           const callId = String(payload.tool_call_id ?? "").trim();
           if (callId && ignoredToolCallIds.has(callId)) continue;
           const outputParts = normalizeWireToolOutputParts(payload.return_value, timestampMs);
-          if (callId && this.backfillToolOutput(messages, pendingToolCalls, callId, outputParts)) {
+          if (callId && this.backfillToolOutput(builder, callId, outputParts)) {
             continue;
           }
           if (outputParts.length > 0) {
-            messages.push(
-              this.buildMessage({
-                messageId: `wire-${seq}`,
-                role: "tool",
-                timestampMs,
-                parts: outputParts,
-              }),
-            );
+            builder.appendMessage({
+              id: `wire-${seq}`,
+              role: "tool",
+              timestampMs,
+              parts: outputParts,
+            });
           }
           continue;
         }
@@ -626,10 +601,8 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       }
     }
 
-    // Filter out messages with empty parts
-    const filteredMessages = messages.filter((m) => m.parts.length > 0);
     const stats = this.extractStats(meta.sourcePath);
-    return this.buildSessionData(meta, filteredMessages, stats);
+    return this.buildSessionData(meta, builder, stats);
   }
 
   // --- Helpers ---
@@ -650,40 +623,13 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     ]);
   }
 
-  private buildMessage(opts: {
-    messageId: string;
-    role: string;
-    timestampMs: number;
-    parts: MessagePart[];
-    agent?: string;
-    mode?: string;
-    model?: string | null;
-    provider?: string | null;
-    tokens?: Record<string, unknown>;
-    cost?: number;
-  }): Message {
-    return {
-      id: opts.messageId,
-      role: opts.role as Message["role"],
-      agent: opts.agent ?? null,
-      time_created: opts.timestampMs,
-      mode: opts.mode ?? null,
-      model: opts.model ?? null,
-      provider: opts.provider ?? null,
-      tokens: opts.tokens ? (opts.tokens as Message["tokens"]) : undefined,
-      cost: opts.cost ?? 0,
-      parts: opts.parts,
-    };
-  }
-
   private buildContextAssistantMessage(
     record: Record<string, unknown>,
     seq: number,
     ignoredToolCallIds: Set<string>,
     fallbackTs: number,
-  ): { message: Message; toolIndexes: Map<string, number> } {
+  ): TranscriptMessageInput | null {
     const parts: MessagePart[] = [];
-    const toolIndexes = new Map<string, number>();
 
     const content = record.content;
     if (Array.isArray(content)) {
@@ -728,96 +674,59 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
           state: { arguments: normalizeToolArguments(function_.arguments), output: null },
           time_created: fallbackTs,
         };
-        toolIndexes.set(callId, parts.length);
         parts.push(part);
       }
     }
 
     if (parts.length === 0) {
-      return {
-        message: this.buildMessage({
-          messageId: `context-${seq}`,
-          role: "assistant",
-          timestampMs: fallbackTs,
-          parts: [],
-        }),
-        toolIndexes,
-      };
+      return null;
     }
 
     const allTools = parts.every((p) => p.type === "tool");
-    const message = this.buildMessage({
-      messageId: `context-${seq}`,
+    return {
+      id: `context-${seq}`,
       role: "assistant",
       timestampMs: fallbackTs,
       parts,
       agent: "kimi",
       mode: allTools ? "tool" : undefined,
-    });
-
-    return { message, toolIndexes };
-  }
-
-  private getOrCreateWireAssistant(
-    messages: Message[],
-    currentIndex: number | null,
-    messageId: string,
-  ): number {
-    if (currentIndex !== null) return currentIndex;
-    messages.push(
-      this.buildMessage({
-        messageId,
-        role: "assistant",
-        timestampMs: 0,
-        parts: [],
-        agent: "kimi",
-      }),
-    );
-    return messages.length - 1;
+    };
   }
 
   private appendWireToolCallPart(
     argumentsPart: string,
     openCallId: string | null,
     buffer: Map<string, string>,
-    messages: Message[],
-    pendingToolCalls: Map<string, [number, number]>,
+    builder: TranscriptBuilder,
   ): void {
-    if (!openCallId || !pendingToolCalls.has(openCallId)) return;
+    if (!openCallId) return;
 
     const existing = buffer.get(openCallId) ?? "";
     const combined = existing + argumentsPart;
 
     try {
       const parsed = JSON.parse(combined) as unknown;
-      const location = pendingToolCalls.get(openCallId);
-      if (!location) return;
-      const msgPart = messages[location[0]]?.parts[location[1]];
-      if (msgPart?.state) {
-        msgPart.state.arguments = parsed;
+      if (
+        builder.updateToolCall(openCallId, (part) => {
+          const state = part.state ?? (part.state = {});
+          state.arguments = parsed;
+        })
+      ) {
+        buffer.delete(openCallId);
       }
-      buffer.delete(openCallId);
     } catch {
       buffer.set(openCallId, combined);
     }
   }
 
   private backfillToolOutput(
-    messages: Message[],
-    pendingToolCalls: Map<string, [number, number]>,
+    builder: TranscriptBuilder,
     callId: string,
     outputParts: MessagePart[],
   ): boolean {
     if (!outputParts.length || !callId) return false;
 
-    const location = pendingToolCalls.get(callId);
-    if (!location) return false;
-
-    const part = messages[location[0]]?.parts[location[1]];
-    if (!part) return false;
-    if (!part.state) part.state = {};
-    part.state.output = [...outputParts];
-    return true;
+    return builder.resolveToolCall(callId, { output: [...outputParts] });
   }
 
   private extractStats(sessionDir: string): SessionData["stats"] {
@@ -890,16 +799,10 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
 
   private buildSessionData(
     meta: SessionMeta,
-    messages: Message[],
+    builder: TranscriptBuilder,
     stats: SessionData["stats"],
   ): SessionData {
-    const cleanedMessages = cleanParsedMessages(messages);
-    stats.message_count = cleanedMessages.length;
-    const totalCost = cleanedMessages.reduce((sum, message) => sum + (message.cost ?? 0), 0);
-    if (totalCost > 0) {
-      stats.total_cost = Number(totalCost.toFixed(8));
-      stats.cost_source = "estimated";
-    }
+    const transcript = builder.finish(stats);
     return {
       id: meta.id,
       title: meta.title,
@@ -907,8 +810,8 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       directory: meta.cwd,
       time_created: meta.createdAt,
       time_updated: meta.createdAt,
-      stats,
-      messages: cleanedMessages,
+      stats: transcript.stats,
+      messages: transcript.messages,
     };
   }
 }
