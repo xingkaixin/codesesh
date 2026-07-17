@@ -23,7 +23,6 @@ import { parseJsonlLines, readJsonlFile, readJsonlFileLines } from "../utils/jso
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { cleanInternalText, isInternalEventType } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
-import { perf } from "../utils/perf.js";
 import { TranscriptBuilder } from "./transcript-builder.js";
 
 // ---------------------------------------------------------------------------
@@ -307,45 +306,6 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     } catch {
       return false;
     }
-  }
-
-  scan(options?: AgentScanOptions): SessionHead[] {
-    if (!this.basePath) return [];
-
-    const scanMarker = perf.start("codex:scan");
-
-    const indexMarker = perf.start("loadSessionIndex");
-    this.loadSessionIndex();
-    perf.end(indexMarker);
-
-    const heads: SessionHead[] = [];
-
-    const listMarker = perf.start("listRolloutFiles");
-    const files = this.listRolloutFiles(options);
-    perf.end(listMarker);
-    options?.onProgress?.({ total: files.length, processed: 0, sessions: 0 });
-
-    let processed = 0;
-    for (const file of files) {
-      try {
-        const parseMarker = perf.start(`parseSessionHead:${basename(file)}`);
-        const head = getParsedSession(this.parseSessionHeadResult(file, options));
-        perf.end(parseMarker);
-
-        if (head) {
-          heads.push(head);
-          this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, file));
-        }
-      } catch {
-        // skip malformed files
-      } finally {
-        processed += 1;
-        options?.onProgress?.({ total: files.length, processed, sessions: heads.length });
-      }
-    }
-
-    perf.end(scanMarker);
-    return heads;
   }
 
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {

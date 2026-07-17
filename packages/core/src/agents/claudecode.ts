@@ -16,7 +16,6 @@ import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils
 import { isInternalEventType } from "../utils/parse-cleanup.js";
 import { cleanInternalText } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
-import { perf } from "../utils/perf.js";
 import type { AgentScanOptions, SessionCacheMeta, SessionSourceRef } from "./base.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
@@ -109,56 +108,6 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
       // ignore
     }
     return false;
-  }
-
-  scan(options?: AgentScanOptions): SessionHead[] {
-    if (!this.basePath) return [];
-
-    const scanMarker = perf.start("claudecode:scan");
-    const heads: SessionHead[] = [];
-
-    const listMarker = perf.start("listProjectDirs");
-    const projectDirs = this.listProjectDirs();
-    perf.end(listMarker);
-
-    const filesByProject = projectDirs.map((projectDir) => {
-      const fileMarker = perf.start(`listJsonlFiles:${basename(projectDir)}`);
-      const files = this.listJsonlFiles(projectDir).filter((file) => {
-        try {
-          return matchesScanWindow(statSync(file).mtimeMs, options);
-        } catch {
-          return false;
-        }
-      });
-      perf.end(fileMarker);
-      return { projectDir, files };
-    });
-    const totalFiles = filesByProject.reduce((total, item) => total + item.files.length, 0);
-    options?.onProgress?.({ total: totalFiles, processed: 0, sessions: 0 });
-
-    let processed = 0;
-    for (const { projectDir, files } of filesByProject) {
-      for (const file of files) {
-        try {
-          const parseMarker = perf.start(`parseSessionHead:${basename(file)}`);
-          const head = getParsedSession(this.parseSessionHeadResult(file, projectDir));
-          perf.end(parseMarker);
-
-          if (head) {
-            heads.push(head);
-            this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, file, projectDir));
-          }
-        } catch {
-          // skip malformed files
-        } finally {
-          processed += 1;
-          options?.onProgress?.({ total: totalFiles, processed, sessions: heads.length });
-        }
-      }
-    }
-
-    perf.end(scanMarker);
-    return heads;
   }
 
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {

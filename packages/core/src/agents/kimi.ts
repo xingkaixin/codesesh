@@ -21,7 +21,6 @@ import { normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback
 import { isInternalEventType } from "../utils/parse-cleanup.js";
 import { cleanInternalText } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
-import { perf } from "../utils/perf.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
 const KIMI_TOOL_TITLE_MAP: Record<string, string> = {
@@ -284,58 +283,6 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     } catch {
       return skippedSession("malformed metadata");
     }
-  }
-
-  scan(options?: AgentScanOptions): SessionHead[] {
-    if (!this.basePath) return [];
-
-    const scanMarker = perf.start("kimi:scan");
-
-    const listMarker = perf.start("listSessionDirs");
-    const sessionDirs = this.listSessionDirs();
-    perf.end(listMarker);
-
-    const metas: SessionMeta[] = [];
-    for (const dir of sessionDirs) {
-      try {
-        const parseMarker = perf.start(`parseSessionDir:${basename(dir)}`);
-        const meta = getParsedSession(this.parseSessionDirResult(dir));
-        perf.end(parseMarker);
-        if (meta && matchesScanWindow(meta.createdAt, options)) {
-          metas.push(meta);
-        }
-      } catch {
-        // skip
-      }
-    }
-    options?.onProgress?.({ total: metas.length, processed: 0, sessions: 0 });
-
-    const heads: SessionHead[] = [];
-    let processed = 0;
-    for (const meta of metas) {
-      try {
-        meta.sourceFingerprint = this.sourceFingerprint(meta);
-        this.sessionMetaMap.set(meta.id, meta);
-        const stats = this.extractStats(meta.sourcePath);
-        heads.push({
-          id: meta.id,
-          slug: `kimi/${meta.id}`,
-          title: meta.title,
-          directory: meta.cwd,
-          time_created: meta.createdAt,
-          time_updated: meta.createdAt,
-          stats,
-        });
-      } catch {
-        // skip
-      } finally {
-        processed += 1;
-        options?.onProgress?.({ total: metas.length, processed, sessions: heads.length });
-      }
-    }
-
-    perf.end(scanMarker);
-    return heads;
   }
 
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {

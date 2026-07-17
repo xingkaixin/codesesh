@@ -20,6 +20,7 @@ interface FakeSource {
 class FakeFileSystemSource extends FileSystemSessionSource {
   readonly name = "fake";
   readonly displayName = "Fake";
+  lastScanOptions: AgentScanOptions | undefined;
 
   constructor(private sources: FakeSource[] = []) {
     super();
@@ -31,10 +32,6 @@ class FakeFileSystemSource extends FileSystemSessionSource {
 
   isAvailable(): boolean {
     return true;
-  }
-
-  scan(): SessionHead[] {
-    return this.sources.map((s) => s.head).filter((h): h is SessionHead => h !== null);
   }
 
   getSessionData(_sessionId: string): SessionData {
@@ -49,7 +46,8 @@ class FakeFileSystemSource extends FileSystemSessionSource {
     }));
   }
 
-  scanSessionSource(sourcePath: string): SessionHead | null {
+  scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null {
+    this.lastScanOptions = options;
     const found = this.sources.find((s) => s.sourcePath === sourcePath);
     if (!found || !found.head) return null;
     this.sessionMetaMap.set(found.sessionId, {
@@ -92,6 +90,32 @@ describe("BaseAgent", () => {
   it("getUri returns correct format", () => {
     const agent = new FakeFileSystemSource();
     expect(agent.getUri("abc123")).toBe("fake://abc123");
+  });
+});
+
+describe("FileSystemSessionSource.scan", () => {
+  it("scans listed sources and reports progress while skipping invalid entries", () => {
+    const agent = new FakeFileSystemSource([
+      source("a"),
+      source("invalid", "fp-1", { head: null }),
+      source("b"),
+    ]);
+    const progress: Array<{ total?: number; processed?: number; sessions?: number }> = [];
+
+    const options = {
+      fast: true,
+      onProgress: (update: (typeof progress)[number]) => progress.push(update),
+    };
+    const sessions = agent.scan(options);
+
+    expect(sessions.map((session) => session.id)).toEqual(["a", "b"]);
+    expect(agent.lastScanOptions).toBe(options);
+    expect(progress).toEqual([
+      { total: 3, processed: 0, sessions: 0 },
+      { total: 3, processed: 1, sessions: 1 },
+      { total: 3, processed: 2, sessions: 1 },
+      { total: 3, processed: 3, sessions: 2 },
+    ]);
   });
 });
 

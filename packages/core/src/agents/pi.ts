@@ -19,7 +19,6 @@ import { parseJsonlLines } from "../utils/jsonl.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import { cleanInternalText } from "../utils/session-normalization.js";
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
-import { perf } from "../utils/perf.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
 const HEAD_INDEX_VERSION = "pi-head-v1";
@@ -135,34 +134,6 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     this.basePath = this.findBasePath();
     if (!this.basePath) return false;
     return this.listSessionFiles().length > 0;
-  }
-
-  scan(options?: AgentScanOptions): SessionHead[] {
-    if (!this.basePath) return [];
-
-    const scanMarker = perf.start("pi:scan");
-    const files = this.listSessionFiles(options);
-    options?.onProgress?.({ total: files.length, processed: 0, sessions: 0 });
-
-    const heads: SessionHead[] = [];
-    let processed = 0;
-    for (const file of files) {
-      try {
-        const head = getParsedSession(this.parseSessionHeadResult(file));
-        if (head) {
-          heads.push(head);
-          this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, file));
-        }
-      } catch {
-        // skip malformed files
-      } finally {
-        processed += 1;
-        options?.onProgress?.({ total: files.length, processed, sessions: heads.length });
-      }
-    }
-
-    perf.end(scanMarker);
-    return heads;
   }
 
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {
