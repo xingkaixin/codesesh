@@ -18,9 +18,8 @@ import {
 /**
  * Owns the session-search domain: query/filters state, the local-vs-server
  * result engine, keyboard-selection state, and result-scroll behaviour.
- * Exposes semantic actions (open/submit/close) and refresh() for the
- * live-update subscription; the global keydown handler stays in App and
- * drives selection via the returned state + setters.
+ * Exposes semantic actions (open/submit/close); the global keydown handler
+ * stays in App and drives selection via the returned state + setters.
  */
 export function useSessionSearch(
   sessionIndexes: SessionIndexes,

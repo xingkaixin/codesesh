@@ -1,13 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import type { AppConfig, DashboardData } from "../lib/api";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AppConfig, DashboardData, ProjectIdentityKind } from "../lib/api";
 import * as api from "../lib/api";
 import { useDashboard } from "./useDashboard";
 
 vi.mock("../lib/api", () => ({ fetchDashboard: vi.fn() }));
 
-const appConfig = { window: { from: 1, to: 2 } } as unknown as AppConfig;
-const data = { totals: { sessions: 5 }, perAgent: [] } as unknown as DashboardData;
+const window = { from: 1, to: 2 } as AppConfig["window"];
+const data = { totals: { sessions: 3 }, perAgent: [] } as unknown as DashboardData;
+const projectKind = "path" as ProjectIdentityKind;
 
 beforeEach(() => {
   vi.mocked(api.fetchDashboard).mockResolvedValue(data);
@@ -19,27 +20,70 @@ afterEach(() => {
 });
 
 describe("useDashboard", () => {
-  it("does not fetch until appConfig is available", () => {
+  it("stays idle without a window", () => {
     const { result } = renderHook(() => useDashboard(null));
     expect(result.current.dashboard).toBeNull();
     expect(api.fetchDashboard).not.toHaveBeenCalled();
   });
 
-  it("fetches once appConfig is set", async () => {
-    const { result } = renderHook(() => useDashboard(appConfig.window));
+  it("loads an unfiltered dashboard", async () => {
+    const { result } = renderHook(() => useDashboard(window));
     await waitFor(() => expect(result.current.dashboard).toEqual(data));
-    expect(api.fetchDashboard).toHaveBeenCalledWith(appConfig.window);
+    expect(api.fetchDashboard).toHaveBeenCalledWith(window, {
+      projectKind: undefined,
+      projectKey: undefined,
+      agent: undefined,
+    });
   });
 
-  it("refresh re-fetches the dashboard", async () => {
-    const { result } = renderHook(() => useDashboard(appConfig.window));
+  it("loads a project dashboard and refetches for its selected agent", async () => {
+    const filters = { projectKind, projectKey: "pk", identityKey: "path:pk" };
+    const { result } = renderHook(() => useDashboard(window, filters));
     await waitFor(() => expect(result.current.dashboard).toEqual(data));
 
-    const next = { totals: { sessions: 9 }, perAgent: [] } as unknown as DashboardData;
-    vi.mocked(api.fetchDashboard).mockResolvedValue(next);
-    await act(async () => {
-      await result.current.refresh();
+    act(() => result.current.setSelectedAgent("codex"));
+
+    await waitFor(() =>
+      expect(api.fetchDashboard).toHaveBeenLastCalledWith(window, {
+        projectKind: "path",
+        projectKey: "pk",
+        agent: "codex",
+      }),
+    );
+  });
+
+  it("resets the selected agent when the project changes", async () => {
+    const { result, rerender } = renderHook(
+      ({ identityKey }) => useDashboard(window, { projectKind, projectKey: "pk", identityKey }),
+      { initialProps: { identityKey: "path:pk" } },
+    );
+    act(() => result.current.setSelectedAgent("codex"));
+    expect(result.current.selectedAgent).toBe("codex");
+
+    rerender({ identityKey: "path:other" });
+
+    await waitFor(() => expect(result.current.selectedAgent).toBeUndefined());
+  });
+
+  it("ignores an earlier response after the dashboard scope changes", async () => {
+    let resolveFirst!: (value: DashboardData) => void;
+    const first = new Promise<DashboardData>((resolve) => {
+      resolveFirst = resolve;
     });
-    expect(result.current.dashboard).toEqual(next);
+    const latest = { totals: { sessions: 9 }, perAgent: [] } as unknown as DashboardData;
+    vi.mocked(api.fetchDashboard).mockReturnValueOnce(first).mockResolvedValueOnce(latest);
+    const { result, rerender } = renderHook(
+      ({ projectKey }) =>
+        useDashboard(window, { projectKind, projectKey, identityKey: `path:${projectKey}` }),
+      { initialProps: { projectKey: "first" } },
+    );
+
+    rerender({ projectKey: "second" });
+    await waitFor(() => expect(result.current.dashboard).toBe(latest));
+    resolveFirst(data);
+    await first;
+
+    expect(result.current.dashboard).toBe(latest);
+    expect(result.current.loading).toBe(false);
   });
 });

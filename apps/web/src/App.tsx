@@ -1,6 +1,6 @@
 declare const __APP_VERSION__: string;
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { BookmarkedSessionSnapshot, SessionHead } from "./lib/api";
@@ -16,11 +16,7 @@ import { useSessionDetail } from "./hooks/useSessionDetail";
 import { useSessionSearch } from "./hooks/useSessionSearch";
 import { useBookmarks } from "./hooks/useBookmarks";
 import { useDashboard } from "./hooks/useDashboard";
-import { useProjectDashboard } from "./hooks/useProjectDashboard";
-import { useAppConfig } from "./hooks/useAppConfig";
-import { useAgents } from "./hooks/useAgents";
-import { useSessions } from "./hooks/useSessions";
-import { useProjects } from "./hooks/useProjects";
+import { useSessionStore } from "./hooks/useSessionStore";
 import { useWindowedDataLoad } from "./hooks/useWindowedDataLoad";
 import { useLiveSync } from "./hooks/useLiveSync";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
@@ -49,18 +45,26 @@ const SHORTCUT_HINT_STORAGE_KEY = "codesesh.shortcuts-hint-dismissed";
 
 export default function App() {
   const navigate = useNavigate();
-  const { appConfig, refresh: refreshAppConfig } = useAppConfig();
-  const timeWindowController = useTimeWindow(appConfig?.window);
+  const sessionStore = useSessionStore();
+  const timeWindowController = useTimeWindow(sessionStore.config?.window);
   const { timeWindow } = timeWindowController;
-  const { agents, validAgentKeys, agentNameMap, refresh: refreshAgents } = useAgents();
-  const { sessions, refresh: refreshSessions } = useSessions();
-  const { projects, refresh: refreshProjects } = useProjects();
-  const { loading, error } = useWindowedDataLoad({
-    refreshAppConfig,
-    refreshAgents,
-    refreshSessions,
-    refreshProjects,
-    resolveSelectedWindow: timeWindowController.resolve,
+  const {
+    agents,
+    sessions,
+    projects,
+    dashboard,
+    window: loadedWindow,
+    validAgentKeys,
+    agentNameMap,
+    loading,
+    error,
+    version: storeVersion,
+    reload,
+    applyLiveEvent,
+  } = sessionStore;
+  useWindowedDataLoad({
+    window: timeWindow,
+    reload,
   });
 
   const [browseBy, setBrowseBy] = useState<BrowseBy>("agents");
@@ -108,7 +112,7 @@ export default function App() {
   }, [viewState]);
   const sessionIndexes = useMemo(() => buildSessionIndexes(sessions, agents), [sessions, agents]);
 
-  const search = useSessionSearch(sessionIndexes, timeWindow);
+  const search = useSessionSearch(sessionIndexes, loadedWindow);
   const {
     draftSearchQuery,
     activeSearchQuery,
@@ -123,7 +127,6 @@ export default function App() {
     openSearch,
     submitSearch,
     closeSearch,
-    refresh: refreshSearch,
   } = search;
   const isSearchMode = searchMode;
   const detailHighlightQuery = isSearchMode
@@ -153,14 +156,16 @@ export default function App() {
     ? getProjectIdentityKey(activeProjectIdentity)
     : null;
 
-  const { dashboard, refresh: refreshDashboard } = useDashboard(timeWindow);
-  const projectController = useProjectDashboard(
-    timeWindow,
-    activeProjectKind,
-    activeProjectKey,
-    activeProjectIdentityKey,
+  const projectDashboardFilters = useMemo(
+    () => ({
+      projectKind: activeProjectKind ?? undefined,
+      projectKey: activeProjectKey ?? undefined,
+      identityKey: activeProjectIdentityKey ?? undefined,
+    }),
+    [activeProjectIdentityKey, activeProjectKey, activeProjectKind],
   );
-  const { selectedProjectAgent, refresh: refreshProjectDashboard } = projectController;
+  const projectController = useDashboard(loadedWindow, projectDashboardFilters);
+  const selectedProjectAgent = projectController.selectedAgent;
 
   const openedSessionHead = useMemo(() => {
     if (viewState.mode !== "session") return null;
@@ -262,36 +267,27 @@ export default function App() {
   const isScanActive = scanStatus?.active === true;
 
   const { liveNotice } = useLiveSync({
-    resolveTimeWindow: timeWindowController.resolveCurrent,
-    viewState,
-    refreshAgents,
-    refreshSessions,
-    refreshProjects,
-    refreshDashboard,
-    refreshProjectDashboard,
-    refreshSessionDetail,
-    refreshSearch,
+    applyLiveEvent,
     setScanStatus,
   });
 
+  const previousStoreVersion = useRef(0);
+  const refreshOpenSession = useEffectEvent(() => {
+    void refreshSessionDetail();
+  });
+  useEffect(() => {
+    if (storeVersion === 0) return;
+    if (previousStoreVersion.current === 0) {
+      previousStoreVersion.current = storeVersion;
+      return;
+    }
+    previousStoreVersion.current = storeVersion;
+    refreshOpenSession();
+  }, [storeVersion]);
+
   const refreshAliasViews = useCallback(async () => {
-    await Promise.all([
-      timeWindow ? refreshSessions(timeWindow) : Promise.resolve(),
-      refreshDashboard(),
-      refreshProjectDashboard(),
-      refreshSessionDetail(),
-      refreshSearch(),
-      bookmarks.refresh(),
-    ]);
-  }, [
-    timeWindow,
-    bookmarks,
-    refreshDashboard,
-    refreshProjectDashboard,
-    refreshSearch,
-    refreshSessionDetail,
-    refreshSessions,
-  ]);
+    await Promise.all([timeWindow ? reload(timeWindow) : undefined, bookmarks.refresh()]);
+  }, [bookmarks, reload, timeWindow]);
 
   const saveSessionAlias = useCallback(
     async (alias: string) => {

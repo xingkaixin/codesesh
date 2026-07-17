@@ -16,8 +16,8 @@ function getSessionKey(viewState: ViewState): string {
 
 /**
  * Owns session-detail state: loads the session for the current "session" route
- * (with a loading flag) and exposes refresh() for the live-update subscription
- * to silently re-fetch the open session without flashing the loading state.
+ * (with a loading flag) and exposes refresh() so data snapshot changes can
+ * silently re-fetch the open session without flashing the loading state.
  */
 export function useSessionDetail(viewState: ViewState) {
   const [session, setSession] = useState<SessionData | null>(null);

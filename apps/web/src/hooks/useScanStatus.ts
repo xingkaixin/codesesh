@@ -3,7 +3,7 @@ import { type ScanStatusEvent, fetchScanStatus } from "../lib/api";
 
 /**
  * Owns scan-status state: fetches the initial snapshot on mount and exposes
- * setScanStatus so the live-update subscription can push SSE events in.
+ * setScanStatus so the live subscription can push SSE events in.
  */
 export function useScanStatus() {
   const [scanStatus, setScanStatusState] = useState<ScanStatusEvent | null>(null);

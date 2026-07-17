@@ -1,69 +1,40 @@
-import { useEffect, useState } from "react";
-import {
-  type AgentInfo,
-  type AppConfig,
-  type FetchOptions,
-  type ProjectGroup,
-  type SessionHead,
-  logClientEvent,
-} from "../lib/api";
+import { useEffect } from "react";
+import { type AppConfig, logClientEvent } from "../lib/api";
+import type { SessionStoreSnapshot } from "./useSessionStore";
 
 interface WindowedDataLoadDeps {
-  refreshAppConfig: (options?: FetchOptions) => Promise<AppConfig>;
-  refreshAgents: (window: AppConfig["window"], options?: FetchOptions) => Promise<AgentInfo[]>;
-  refreshSessions: (window: AppConfig["window"], options?: FetchOptions) => Promise<SessionHead[]>;
-  refreshProjects: (window: AppConfig["window"], options?: FetchOptions) => Promise<ProjectGroup[]>;
-  resolveSelectedWindow: (fallback: AppConfig["window"]) => AppConfig["window"];
+  window: AppConfig["window"] | null;
+  reload: (window: AppConfig["window"]) => Promise<SessionStoreSnapshot | null>;
 }
 
-/**
- * Loads config before the window-filtered collections and cancels the previous
- * load when the selected time window changes.
- */
-export function useWindowedDataLoad({
-  refreshAppConfig,
-  refreshAgents,
-  refreshSessions,
-  refreshProjects,
-  resolveSelectedWindow,
-}: WindowedDataLoadDeps) {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
+export function useWindowedDataLoad({ window, reload }: WindowedDataLoadDeps) {
   useEffect(() => {
-    const ac = new AbortController();
+    if (!window) return;
+    let current = true;
     const startedAt = performance.now();
-    logClientEvent("app.load.start", { path: window.location.pathname });
-    (async () => {
-      try {
-        const fetchOptions = { signal: ac.signal };
-        const config = await refreshAppConfig(fetchOptions);
-        const selectedWindow = resolveSelectedWindow(config.window);
-        const [agentList, sessionList, projectList] = await Promise.all([
-          refreshAgents(selectedWindow, fetchOptions),
-          refreshSessions(selectedWindow, fetchOptions),
-          refreshProjects(selectedWindow, fetchOptions),
-        ]);
+    logClientEvent("app.load.start", { path: globalThis.window.location.pathname });
+
+    void reload(window)
+      .then((snapshot) => {
+        if (!current || !snapshot) return;
         logClientEvent("app.load.done", {
           duration_ms: Math.round(performance.now() - startedAt),
-          agents: agentList.length,
-          sessions: sessionList.length,
-          projects: projectList.length,
+          agents: snapshot.agents.length,
+          sessions: snapshot.sessions.length,
+          projects: snapshot.projects.length,
         });
-      } catch (err) {
-        if (ac.signal.aborted) return;
-        console.error("Failed to load data:", err);
+      })
+      .catch((error) => {
+        if (!current) return;
+        console.error("Failed to load data:", error);
         logClientEvent("app.load.error", {
           duration_ms: Math.round(performance.now() - startedAt),
-          error: err instanceof Error ? err.message : String(err),
+          error: error instanceof Error ? error.message : String(error),
         });
-        setError("Failed to load data. Is the CLI server running?");
-      } finally {
-        if (!ac.signal.aborted) setLoading(false);
-      }
-    })();
-    return () => ac.abort();
-  }, [refreshAppConfig, refreshAgents, refreshSessions, refreshProjects, resolveSelectedWindow]);
+      });
 
-  return { loading, error };
+    return () => {
+      current = false;
+    };
+  }, [reload, window]);
 }

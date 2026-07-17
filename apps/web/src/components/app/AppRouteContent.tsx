@@ -7,7 +7,6 @@ import { SessionDetail } from "../SessionDetail";
 import { SessionDetailSkeleton } from "../SessionDetailSkeleton";
 import type { useBookmarks } from "../../hooks/useBookmarks";
 import type { useDashboard } from "../../hooks/useDashboard";
-import type { useProjectDashboard } from "../../hooks/useProjectDashboard";
 import type { useSessionDetail } from "../../hooks/useSessionDetail";
 import type { useSessionSearch } from "../../hooks/useSessionSearch";
 import type { AgentInfo, ProjectGroup } from "../../lib/api";
@@ -28,7 +27,7 @@ interface AppRouteContentProps {
   sessionIndexes: SessionIndexes;
   dashboard: ReturnType<typeof useDashboard>["dashboard"];
   sessionDetail: ReturnType<typeof useSessionDetail>;
-  projectController: ReturnType<typeof useProjectDashboard>;
+  projectController: ReturnType<typeof useDashboard>;
   search: ReturnType<typeof useSessionSearch>;
   bookmarks: ReturnType<typeof useBookmarks>;
 }
@@ -149,12 +148,12 @@ export function AppRouteContent({
       <ProjectDashboardView
         project={activeProject}
         projectKey={viewState.activeProjectKey}
-        dashboard={projectController.projectDashboard}
-        loading={projectController.projectDashboardLoading}
-        error={projectController.projectDashboardError}
+        dashboard={projectController.dashboard}
+        loading={projectController.loading}
+        error={projectController.error}
         sessions={activeProjectSessions}
-        activeAgent={projectController.selectedProjectAgent}
-        onChangeAgent={projectController.setSelectedProjectAgent}
+        activeAgent={projectController.selectedAgent}
+        onChangeAgent={projectController.setSelectedAgent}
         isBookmarked={bookmarks.isSessionBookmarked}
         onToggleSessionBookmark={bookmarks.toggleSessionBookmark}
       />
