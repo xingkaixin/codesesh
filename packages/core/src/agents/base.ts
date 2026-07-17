@@ -127,7 +127,30 @@ export abstract class FileSystemSessionSource<
   abstract listSessionSources(options?: AgentScanOptions): SessionSourceRef[];
 
   /** 解析单个源并写入 metaMap，返回会话 head（解析失败/不可见返回 null）。 */
-  abstract scanSessionSource(sourcePath: string): SessionHead | null;
+  abstract scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null;
+
+  scan(options?: AgentScanOptions): SessionHead[] {
+    const sources = this.listSessionSources(options);
+    const sessions: SessionHead[] = [];
+    options?.onProgress?.({ total: sources.length, processed: 0, sessions: 0 });
+
+    for (const [index, source] of sources.entries()) {
+      try {
+        const session = this.scanSessionSource(source.sourcePath, options);
+        if (session) sessions.push(session);
+      } catch {
+        continue;
+      } finally {
+        options?.onProgress?.({
+          total: sources.length,
+          processed: index + 1,
+          sessions: sessions.length,
+        });
+      }
+    }
+
+    return sessions;
+  }
 
   getSessionMetaMap(): Map<string, SessionCacheMeta> {
     return this.sessionMetaMap as Map<string, SessionCacheMeta>;

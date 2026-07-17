@@ -16,10 +16,10 @@ import type {
 import type { Message, MessagePart, SessionData, SessionHead } from "../types/index.js";
 import { firstExisting, resolveProviderRoots } from "../discovery/paths.js";
 import { parseJsonlLines } from "../utils/jsonl.js";
-import { perf } from "../utils/perf.js";
 import { estimateTokenCost } from "../utils/cost.js";
-import { cleanInternalText, cleanParsedMessages } from "../utils/session-normalization.js";
+import { cleanInternalText } from "../utils/session-normalization.js";
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
+import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
 const HEAD_INDEX_VERSION = "pi-head-v1";
 const PARSER_VERSION = "pi-parser-v1";
@@ -83,32 +83,6 @@ function normalizeTextParts(content: unknown, timestampMs: number): MessagePart[
   return text ? [{ type: "text", text, time_created: timestampMs }] : [];
 }
 
-function buildMessage(params: {
-  id: string;
-  role: Message["role"];
-  timestampMs: number;
-  parts: MessagePart[];
-  agent?: string;
-  provider?: string | null;
-  model?: string | null;
-  tokens?: Message["tokens"];
-  cost?: number;
-  costSource?: Message["cost_source"];
-}): Message {
-  return {
-    id: params.id,
-    role: params.role,
-    agent: params.agent,
-    time_created: params.timestampMs,
-    provider: params.provider,
-    model: params.model,
-    tokens: params.tokens,
-    cost: params.cost,
-    cost_source: params.costSource,
-    parts: params.parts,
-  };
-}
-
 function getEntryTimestamp(entry: Record<string, unknown>): number {
   return parseTimestampMs(entry["timestamp"]);
 }
@@ -162,34 +136,6 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     return this.listSessionFiles().length > 0;
   }
 
-  scan(options?: AgentScanOptions): SessionHead[] {
-    if (!this.basePath) return [];
-
-    const scanMarker = perf.start("pi:scan");
-    const files = this.listSessionFiles(options);
-    options?.onProgress?.({ total: files.length, processed: 0, sessions: 0 });
-
-    const heads: SessionHead[] = [];
-    let processed = 0;
-    for (const file of files) {
-      try {
-        const head = getParsedSession(this.parseSessionHeadResult(file));
-        if (head) {
-          heads.push(head);
-          this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, file));
-        }
-      } catch {
-        // skip malformed files
-      } finally {
-        processed += 1;
-        options?.onProgress?.({ total: files.length, processed, sessions: heads.length });
-      }
-    }
-
-    perf.end(scanMarker);
-    return heads;
-  }
-
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {
     if (!this.basePath) return [];
     return this.listSessionFiles(options).map((file) => ({
@@ -214,7 +160,6 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
 
     const parsed = this.parsePiFile(meta.sourcePath);
     const state = this.convertEntries(parsed.pathEntries);
-    const cleanedMessages = cleanParsedMessages(state.messages);
 
     return {
       id: meta.id,
@@ -224,7 +169,7 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
       time_created: meta.createdAt,
       time_updated: meta.updatedAt,
       stats: {
-        message_count: cleanedMessages.length,
+        message_count: state.messages.length,
         total_input_tokens: state.totalInputTokens,
         total_output_tokens: state.totalOutputTokens,
         total_cache_read_tokens: state.totalCacheReadTokens || undefined,
@@ -232,7 +177,7 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
         total_cost: state.totalCost,
         cost_source: state.totalCost > 0 ? "recorded" : undefined,
       },
-      messages: cleanedMessages,
+      messages: state.messages,
     };
   }
 
@@ -373,14 +318,8 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     totalCost: number;
     modelUsage: Record<string, number>;
   } {
-    const messages: Message[] = [];
-    const pendingToolCalls = new Map<string, [number, number]>();
+    const builder = new TranscriptBuilder({ messageDefaults: "sparse" });
     const modelUsage: Record<string, number> = {};
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-    let totalCacheReadTokens = 0;
-    let totalCacheCreateTokens = 0;
-    let totalCost = 0;
 
     for (const entry of entries) {
       const timestampMs = getEntryTimestamp(entry);
@@ -389,21 +328,9 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
       if (type === "message") {
         const message = entry["message"];
         if (!isObject(message)) continue;
-        const result = this.convertAgentMessage(
-          entry,
-          message,
-          timestampMs,
-          pendingToolCalls,
-          messages.length,
-          messages,
-        );
+        const result = this.convertAgentMessage(entry, message, timestampMs, builder);
         if (!result) continue;
-        if (result.message) messages.push(result.message);
-        totalInputTokens += result.inputTokens;
-        totalOutputTokens += result.outputTokens;
-        totalCacheReadTokens += result.cacheReadTokens;
-        totalCacheCreateTokens += result.cacheCreateTokens;
-        totalCost += result.cost;
+        if (result.message) builder.appendMessage(result.message);
         if (result.model && result.totalTokens > 0) {
           modelUsage[result.model] = (modelUsage[result.model] ?? 0) + result.totalTokens;
         }
@@ -411,16 +338,18 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
       }
 
       const summary = this.convertSummaryEntry(entry, timestampMs);
-      if (summary) messages.push(summary);
+      if (summary) builder.appendMessage(summary);
     }
 
+    const result = builder.finish();
+
     return {
-      messages,
-      totalInputTokens,
-      totalOutputTokens,
-      totalCacheReadTokens,
-      totalCacheCreateTokens,
-      totalCost,
+      messages: result.messages,
+      totalInputTokens: result.stats.total_input_tokens,
+      totalOutputTokens: result.stats.total_output_tokens,
+      totalCacheReadTokens: result.stats.total_cache_read_tokens ?? 0,
+      totalCacheCreateTokens: result.stats.total_cache_create_tokens ?? 0,
+      totalCost: result.stats.total_cost,
       modelUsage,
     };
   }
@@ -429,17 +358,10 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     entry: Record<string, unknown>,
     message: Record<string, unknown>,
     timestampMs: number,
-    pendingToolCalls: Map<string, [number, number]>,
-    nextMessageIndex: number,
-    messages: Message[],
+    builder: TranscriptBuilder,
   ): {
-    message?: Message;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheCreateTokens: number;
+    message?: TranscriptMessageInput;
     totalTokens: number;
-    cost: number;
     model: string | null;
   } | null {
     const id = String(entry["id"] ?? "");
@@ -448,22 +370,17 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     if (role === "user") {
       const parts = normalizeTextParts(message["content"], timestampMs);
       if (parts.length === 0) return null;
-      return this.emptyUsageResult(buildMessage({ id, role: "user", timestampMs, parts }));
+      return this.emptyUsageResult({ id, role: "user", timestampMs, parts });
     }
 
     if (role === "assistant") {
-      const parts = this.normalizeAssistantParts(
-        message["content"],
-        timestampMs,
-        pendingToolCalls,
-        nextMessageIndex,
-      );
+      const parts = this.normalizeAssistantParts(message["content"], timestampMs);
       if (parts.length === 0) return null;
       const usage = this.normalizeUsage(message["usage"]);
       const model = typeof message["model"] === "string" ? message["model"].trim() : null;
       const cost = usage.cost ?? estimateTokenCost(model, usage.tokens) ?? 0;
       return {
-        message: buildMessage({
+        message: {
           id,
           role: "assistant",
           agent: "pi",
@@ -474,19 +391,14 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
           tokens: usage.tokens,
           cost: cost || undefined,
           costSource: cost > 0 ? "recorded" : undefined,
-        }),
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        cacheReadTokens: usage.cacheReadTokens,
-        cacheCreateTokens: usage.cacheCreateTokens,
+        },
         totalTokens: usage.totalTokens,
-        cost,
         model,
       };
     }
 
     if (role === "toolResult") {
-      this.attachToolResult(message, timestampMs, pendingToolCalls, messages);
+      this.attachToolResult(message, timestampMs, builder);
       return this.emptyUsageResult();
     }
 
@@ -497,32 +409,25 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     if (role === "custom" && message["display"] === true) {
       const parts = normalizeTextParts(message["content"], timestampMs);
       if (parts.length === 0) return null;
-      return this.emptyUsageResult(buildMessage({ id, role: "user", timestampMs, parts }));
+      return this.emptyUsageResult({ id, role: "user", timestampMs, parts });
     }
 
     if (role === "branchSummary" || role === "compactionSummary") {
       const summary = String(message["summary"] ?? "").trim();
       if (!summary) return null;
-      return this.emptyUsageResult(
-        buildMessage({
-          id,
-          role: "assistant",
-          agent: "pi",
-          timestampMs,
-          parts: [{ type: "text", text: summary, time_created: timestampMs }],
-        }),
-      );
+      return this.emptyUsageResult({
+        id,
+        role: "assistant",
+        agent: "pi",
+        timestampMs,
+        parts: [{ type: "text", text: summary, time_created: timestampMs }],
+      });
     }
 
     return null;
   }
 
-  private normalizeAssistantParts(
-    content: unknown,
-    timestampMs: number,
-    pendingToolCalls: Map<string, [number, number]>,
-    messageIndex: number,
-  ): MessagePart[] {
+  private normalizeAssistantParts(content: unknown, timestampMs: number): MessagePart[] {
     if (!Array.isArray(content)) return [];
 
     const parts: MessagePart[] = [];
@@ -557,7 +462,6 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
           },
         };
         parts.push(toolPart);
-        if (callId) pendingToolCalls.set(callId, [messageIndex, parts.length - 1]);
       }
     }
 
@@ -567,32 +471,28 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
   private attachToolResult(
     message: Record<string, unknown>,
     timestampMs: number,
-    pendingToolCalls: Map<string, [number, number]>,
-    messages: Message[],
+    builder: TranscriptBuilder,
   ): void {
     const callId = String(message["toolCallId"] ?? "").trim();
     const output = normalizeTextParts(message["content"], timestampMs);
-    const location = callId ? pendingToolCalls.get(callId) : undefined;
-    if (!location) return;
-
-    const [messageIndex, partIndex] = location;
-    const target = messages[messageIndex]?.parts[partIndex];
-    if (!target?.state) return;
-    target.state.output = output;
-    target.state.status = message["isError"] === true ? "error" : "completed";
-    target.state.metadata = message["details"];
-    pendingToolCalls.delete(callId);
+    if (!callId) return;
+    builder.resolveToolCall(callId, {
+      output,
+      status: message["isError"] === true ? "error" : "completed",
+      metadata: message["details"],
+      consume: true,
+    });
   }
 
   private convertBashExecution(
     id: string,
     message: Record<string, unknown>,
     timestampMs: number,
-  ): Message {
+  ): TranscriptMessageInput {
     const command = String(message["command"] ?? "");
     const output = String(message["output"] ?? "");
     const isError = Number(message["exitCode"] ?? 0) !== 0 || message["cancelled"] === true;
-    return buildMessage({
+    return {
       id,
       role: "tool",
       timestampMs,
@@ -615,10 +515,13 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
           },
         },
       ],
-    });
+    };
   }
 
-  private convertSummaryEntry(entry: Record<string, unknown>, timestampMs: number): Message | null {
+  private convertSummaryEntry(
+    entry: Record<string, unknown>,
+    timestampMs: number,
+  ): TranscriptMessageInput | null {
     const type = entry["type"];
     if (type !== "compaction" && type !== "branch_summary" && type !== "custom_message") {
       return null;
@@ -631,13 +534,13 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     const text = cleanInternalText(rawText);
     if (!text) return null;
 
-    return buildMessage({
+    return {
       id: String(entry["id"] ?? ""),
       role: type === "custom_message" ? "user" : "assistant",
       agent: type === "custom_message" ? undefined : "pi",
       timestampMs,
       parts: [{ type: "text", text, time_created: timestampMs }],
-    });
+    };
   }
 
   private normalizeUsage(raw: unknown): {
@@ -675,24 +578,14 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     };
   }
 
-  private emptyUsageResult(message?: Message): {
-    message?: Message;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheCreateTokens: number;
+  private emptyUsageResult(message?: TranscriptMessageInput): {
+    message?: TranscriptMessageInput;
     totalTokens: number;
-    cost: number;
     model: string | null;
   } {
     return {
       message,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheCreateTokens: 0,
       totalTokens: 0,
-      cost: 0,
       model: null,
     };
   }
