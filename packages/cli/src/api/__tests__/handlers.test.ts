@@ -187,7 +187,7 @@ describe("handleGetAgents", () => {
     expect(Array.isArray(response)).toBe(true);
   });
 
-  it("omits agents with no sessions in the current window", () => {
+  it("keeps the registered catalog while zeroing counts outside the current window", () => {
     const c = makeMockContext();
     const now = Date.now();
     const old = makeSession("old", {
@@ -209,7 +209,17 @@ describe("handleGetAgents", () => {
       { from: now - 7 * 86400000 },
     );
     const response = c.json.mock.calls[0]![0];
-    expect(response.map((agent: { name: string }) => agent.name)).toEqual(["claudecode"]);
+    expect(response.map((agent: { name: string }) => agent.name)).toEqual([
+      "claudecode",
+      "opencode",
+      "zcode",
+      "kimi",
+      "codex",
+      "pi",
+      "cursor",
+    ]);
+    expect(response.find((agent: { name: string }) => agent.name === "claudecode")?.count).toBe(1);
+    expect(response.find((agent: { name: string }) => agent.name === "codex")?.count).toBe(0);
   });
 
   it("applies default time window to agent counts", () => {

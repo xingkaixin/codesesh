@@ -13,6 +13,7 @@ import {
   fetchProjects,
   fetchSessions,
 } from "../lib/api";
+import { createAgentCatalog } from "../lib/agents";
 
 export type LiveSessionsUpdate = Omit<
   SessionsUpdatedEvent,
@@ -221,15 +222,19 @@ export function useSessionStore() {
     [beginRequest, commitSnapshot, failRequest, loadProjects, reload],
   );
 
+  const agentCatalog = useMemo(() => createAgentCatalog(state.agents), [state.agents]);
   const validAgentKeys = useMemo(
-    () => new Set(state.agents.map((agent) => agent.name.toLowerCase())),
-    [state.agents],
-  );
-  const agentNameMap = useMemo(
-    () =>
-      new Map(state.agents.map((agent) => [agent.name.toLowerCase(), agent.displayName] as const)),
-    [state.agents],
+    () => new Set(agentCatalog.active.map((agent) => agent.name.toLowerCase())),
+    [agentCatalog.active],
   );
 
-  return { ...state, validAgentKeys, agentNameMap, reload, applyLiveEvent };
+  return {
+    ...state,
+    activeAgents: agentCatalog.active,
+    agentCatalog,
+    validAgentKeys,
+    agentNameMap: agentCatalog.displayNameByKey,
+    reload,
+    applyLiveEvent,
+  };
 }

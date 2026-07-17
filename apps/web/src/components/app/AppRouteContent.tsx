@@ -13,6 +13,7 @@ import type {
   SessionData,
   SessionHead,
 } from "../../lib/api";
+import type { AgentCatalog } from "../../lib/agents";
 import type { ViewState } from "../../lib/view-state";
 import { SearchResultsPanel } from "./SearchResultsPanel";
 import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
@@ -57,7 +58,8 @@ interface AppRouteContentProps {
   viewState: ViewState;
   detailHighlightQuery: string;
   agents: AgentInfo[];
-  agentNameMap: Map<string, string>;
+  agentCatalog: AgentCatalog;
+  agentNameMap: ReadonlyMap<string, string>;
   projects: ProjectGroup[];
   landingSessions: LandingSession[];
   sessionsByAgent: Map<string, LandingSession[]>;
@@ -76,6 +78,7 @@ export function AppRouteContent({
   viewState,
   detailHighlightQuery,
   agents,
+  agentCatalog,
   agentNameMap,
   projects,
   landingSessions,
@@ -90,14 +93,12 @@ export function AppRouteContent({
 }: AppRouteContentProps) {
   const landingAgentItems = useMemo<LandingAgentItem[]>(
     () =>
-      agents
-        .filter((agent) => agent.count > 0)
-        .map((agent) => ({
-          key: agent.name.toLowerCase(),
-          name: agent.displayName,
-          icon: agent.icon,
-          count: agent.count,
-        })),
+      agents.map((agent) => ({
+        key: agent.name.toLowerCase(),
+        name: agent.displayName,
+        icon: agent.icon,
+        count: agent.count,
+      })),
     [agents],
   );
   if (loading) return <SessionDetailSkeleton />;
@@ -139,6 +140,7 @@ export function AppRouteContent({
       >
         <Dashboard
           data={dashboard}
+          agentCatalog={agentCatalog}
           projects={projects}
           bookmarkedSessions={bookmarks.sessions}
           isBookmarked={bookmarks.isBookmarked}
@@ -154,6 +156,7 @@ export function AppRouteContent({
     ) : (
       <DetailLanding
         type="global"
+        agentCatalog={agentCatalog}
         sessions={landingSessions}
         agentItems={landingAgentItems}
         isBookmarked={bookmarks.isBookmarked}
@@ -161,11 +164,14 @@ export function AppRouteContent({
       />
     );
   }
-  if (viewState.mode === "projects") return <ProjectsOverview projects={projects} />;
+  if (viewState.mode === "projects") {
+    return <ProjectsOverview projects={projects} agentCatalog={agentCatalog} />;
+  }
   if (viewState.mode === "project") {
     return (
       <ProjectDashboardView
         project={activeProject}
+        agentCatalog={agentCatalog}
         projectKey={viewState.activeProjectKey}
         dashboard={projectDashboard.dashboard}
         loading={projectDashboard.loading}
@@ -182,6 +188,7 @@ export function AppRouteContent({
     return (
       <DetailLanding
         type="agent"
+        agentCatalog={agentCatalog}
         sessions={sessionsByAgent.get(viewState.activeAgentKey) ?? []}
         agentItems={landingAgentItems}
         activeAgentKey={viewState.activeAgentKey}
@@ -196,6 +203,7 @@ export function AppRouteContent({
       return (
         <DetailLanding
           type="missing-session"
+          agentCatalog={agentCatalog}
           sessions={sessionsByAgent.get(viewState.activeAgentKey) ?? []}
           agentItems={landingAgentItems}
           activeAgentKey={viewState.activeAgentKey}
@@ -213,7 +221,11 @@ export function AppRouteContent({
           session: sessionDetail.session.id,
         }}
       >
-        <SessionDetail session={sessionDetail.session} highlightQuery={detailHighlightQuery} />
+        <SessionDetail
+          session={sessionDetail.session}
+          agentCatalog={agentCatalog}
+          highlightQuery={detailHighlightQuery}
+        />
       </RenderProfiler>
     );
   }
@@ -221,6 +233,7 @@ export function AppRouteContent({
     return (
       <DetailLanding
         type="missing-agent"
+        agentCatalog={agentCatalog}
         sessions={landingSessions}
         agentItems={landingAgentItems}
         attemptedAgentKey={viewState.attemptedKey}

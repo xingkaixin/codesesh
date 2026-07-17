@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
-import { ModelConfig } from "../config";
 import type { DashboardData, ProjectAgentStat, ProjectGroup, SessionHead } from "../lib/api";
+import { findAgent, type AgentCatalog } from "../lib/agents";
 import { formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getProjectPath } from "../lib/projects";
 import { getSessionDisplayTitle } from "../lib/session-title";
@@ -32,22 +32,32 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
   );
 }
 
-function AgentPills({ agents }: { agents: ProjectAgentStat[] }) {
+function AgentPills({
+  agents,
+  agentCatalog,
+}: {
+  agents: ProjectAgentStat[];
+  agentCatalog: AgentCatalog;
+}) {
   if (agents.length === 0) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {agents.slice(0, 4).map((agent) => {
-        const config = ModelConfig.agents[agent.name];
+        const agentInfo = findAgent(agentCatalog, agent.name);
         return (
           <span
             key={agent.name}
             className="console-mono inline-flex items-center gap-1 rounded-sm border border-[var(--console-border)] bg-white px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]"
           >
-            {config?.icon ? (
-              <img src={config.icon} alt={config.name} className="size-3 object-contain" />
+            {agentInfo?.icon ? (
+              <img
+                src={agentInfo.icon}
+                alt={agentInfo.displayName}
+                className="size-3 object-contain"
+              />
             ) : null}
-            {config?.name ?? agent.name} · {agent.sessions}
+            {agentInfo?.displayName ?? agent.name} · {agent.sessions}
           </span>
         );
       })}
@@ -55,7 +65,13 @@ function AgentPills({ agents }: { agents: ProjectAgentStat[] }) {
   );
 }
 
-function ProjectListItem({ project }: { project: ProjectGroup }) {
+function ProjectListItem({
+  project,
+  agentCatalog,
+}: {
+  project: ProjectGroup;
+  agentCatalog: AgentCatalog;
+}) {
   return (
     <li>
       <Link
@@ -79,7 +95,7 @@ function ProjectListItem({ project }: { project: ProjectGroup }) {
           </div>
         </div>
         <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <AgentPills agents={project.agentStats} />
+          <AgentPills agents={project.agentStats} agentCatalog={agentCatalog} />
           <span className="console-mono text-[10px] uppercase text-[var(--console-muted)]">
             {project.identityKind}
           </span>
@@ -89,7 +105,13 @@ function ProjectListItem({ project }: { project: ProjectGroup }) {
   );
 }
 
-export function ProjectsOverview({ projects }: { projects: ProjectGroup[] }) {
+export function ProjectsOverview({
+  projects,
+  agentCatalog,
+}: {
+  projects: ProjectGroup[];
+  agentCatalog: AgentCatalog;
+}) {
   const totalSessions = projects.reduce((sum, project) => sum + project.sessionCount, 0);
   const totalTokens = projects.reduce((sum, project) => sum + project.tokens, 0);
   const totalCost = projects.reduce((sum, project) => sum + project.cost, 0);
@@ -121,6 +143,7 @@ export function ProjectsOverview({ projects }: { projects: ProjectGroup[] }) {
           <ProjectListItem
             key={`${project.identityKind}:${project.identityKey}`}
             project={project}
+            agentCatalog={agentCatalog}
           />
         ))}
       </ul>
@@ -130,10 +153,12 @@ export function ProjectsOverview({ projects }: { projects: ProjectGroup[] }) {
 
 function ProjectAgentFilter({
   agents,
+  agentCatalog,
   activeAgent,
   onChange,
 }: {
   agents: ProjectAgentStat[];
+  agentCatalog: AgentCatalog;
   activeAgent?: string;
   onChange: (agent?: string) => void;
 }) {
@@ -155,7 +180,7 @@ function ProjectAgentFilter({
           All Agents
         </button>
         {agents.map((agent) => {
-          const config = ModelConfig.agents[agent.name];
+          const agentInfo = findAgent(agentCatalog, agent.name);
           const active = activeAgent === agent.name;
           return (
             <button
@@ -168,10 +193,14 @@ function ProjectAgentFilter({
                   : "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-muted)] hover:bg-white"
               }`}
             >
-              {config?.icon ? (
-                <img src={config.icon} alt={config.name} className="size-3 object-contain" />
+              {agentInfo?.icon ? (
+                <img
+                  src={agentInfo.icon}
+                  alt={agentInfo.displayName}
+                  className="size-3 object-contain"
+                />
               ) : null}
-              {config?.name ?? agent.name} · {agent.sessions}
+              {agentInfo?.displayName ?? agent.name} · {agent.sessions}
             </button>
           );
         })}
@@ -180,7 +209,13 @@ function ProjectAgentFilter({
   );
 }
 
-function ProjectHeader({ project }: { project: ProjectGroup }) {
+function ProjectHeader({
+  project,
+  agentCatalog,
+}: {
+  project: ProjectGroup;
+  agentCatalog: AgentCatalog;
+}) {
   return (
     <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -192,13 +227,19 @@ function ProjectHeader({ project }: { project: ProjectGroup }) {
             {project.identityKind}: {project.identityKey}
           </p>
         </div>
-        <AgentPills agents={project.agentStats} />
+        <AgentPills agents={project.agentStats} agentCatalog={agentCatalog} />
       </div>
     </div>
   );
 }
 
-function TopCostSessions({ sessions }: { sessions: LandingSession[] }) {
+function TopCostSessions({
+  sessions,
+  agentCatalog,
+}: {
+  sessions: LandingSession[];
+  agentCatalog: AgentCatalog;
+}) {
   if (sessions.length === 0) return null;
 
   const topSessions = sessions
@@ -217,7 +258,7 @@ function TopCostSessions({ sessions }: { sessions: LandingSession[] }) {
       </div>
       <ul className="space-y-2">
         {topSessions.map((session) => {
-          const agent = ModelConfig.agents[session.agentKey];
+          const agent = findAgent(agentCatalog, session.agentKey);
           return (
             <li key={session.fullPath}>
               <Link
@@ -226,7 +267,11 @@ function TopCostSessions({ sessions }: { sessions: LandingSession[] }) {
               >
                 <div className="flex items-center gap-2">
                   {agent?.icon ? (
-                    <img src={agent.icon} alt={agent.name} className="size-3.5 object-contain" />
+                    <img
+                      src={agent.icon}
+                      alt={agent.displayName}
+                      className="size-3.5 object-contain"
+                    />
                   ) : null}
                   <span className="line-clamp-1 flex-1 text-sm text-[var(--console-text)]">
                     {getSessionDisplayTitle(session)}
@@ -249,6 +294,7 @@ function TopCostSessions({ sessions }: { sessions: LandingSession[] }) {
 
 export function ProjectDashboardView({
   project,
+  agentCatalog,
   projectKey,
   dashboard,
   loading,
@@ -260,6 +306,7 @@ export function ProjectDashboardView({
   onToggleSessionBookmark,
 }: {
   project: ProjectGroup | null;
+  agentCatalog: AgentCatalog;
   projectKey: string;
   dashboard: DashboardData | null;
   loading: boolean;
@@ -295,9 +342,10 @@ export function ProjectDashboardView({
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
-      <ProjectHeader project={project} />
+      <ProjectHeader project={project} agentCatalog={agentCatalog} />
       <ProjectAgentFilter
         agents={project.agentStats}
+        agentCatalog={agentCatalog}
         activeAgent={activeAgent}
         onChange={onChangeAgent}
       />
@@ -313,6 +361,7 @@ export function ProjectDashboardView({
       ) : dashboard ? (
         <Dashboard
           data={dashboard}
+          agentCatalog={agentCatalog}
           projects={[]}
           bookmarkedSessions={[]}
           isBookmarked={isBookmarked}
@@ -324,7 +373,7 @@ export function ProjectDashboardView({
         />
       ) : null}
 
-      <TopCostSessions sessions={scopedSessions} />
+      <TopCostSessions sessions={scopedSessions} agentCatalog={agentCatalog} />
     </div>
   );
 }

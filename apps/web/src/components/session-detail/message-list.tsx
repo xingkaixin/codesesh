@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { MessagePart } from "../../lib/api";
+import type { AgentInfo, MessagePart } from "../../lib/api";
 import { formatTokens } from "../../lib/format";
 import type { FilteredSessionMessage } from "./toc";
 import { MessageItem } from "./message-rendering";
@@ -25,6 +25,7 @@ interface MessageListProps {
   messages: FilteredSessionMessage[];
   toolAnchorIds: Map<MessagePart, string>;
   sessionAgentKey: string;
+  agent?: AgentInfo;
   baseDirectory: string;
   highlightQuery?: string;
   apiRef: { current: MessageListHandle | null };
@@ -137,6 +138,7 @@ export function MessageList({
   messages,
   toolAnchorIds,
   sessionAgentKey,
+  agent,
   baseDirectory,
   highlightQuery,
   apiRef,
@@ -153,6 +155,7 @@ export function MessageList({
         messages={messages}
         toolAnchorIds={toolAnchorIds}
         sessionAgentKey={sessionAgentKey}
+        agent={agent}
         baseDirectory={baseDirectory}
         highlightQuery={highlightQuery}
         apiRef={apiRef}
@@ -171,6 +174,7 @@ export function MessageList({
           toolAnchorIds={toolAnchorIds}
           formatTokens={formatTokens}
           sessionAgentKey={sessionAgentKey}
+          agent={agent}
           baseDirectory={baseDirectory}
           highlightQuery={highlightQuery}
         />
@@ -183,6 +187,7 @@ function VirtualizedMessageList({
   messages,
   toolAnchorIds,
   sessionAgentKey,
+  agent,
   baseDirectory,
   highlightQuery,
   apiRef,
@@ -404,6 +409,7 @@ function VirtualizedMessageList({
               toolAnchorIds={toolAnchorIds}
               formatTokens={formatTokens}
               sessionAgentKey={sessionAgentKey}
+              agent={agent}
               baseDirectory={baseDirectory}
               highlightQuery={highlightQuery}
             />

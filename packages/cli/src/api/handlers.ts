@@ -413,8 +413,7 @@ export function handleGetAgents(
       filterSessionsByActivityWindow(sessions, from, to).length,
     ]),
   );
-  const info = getAgentInfoMap(counts).filter((agent) => agent.count > 0);
-  return c.json(info);
+  return c.json(getAgentInfoMap(counts));
 }
 
 export function handleGetProjects(

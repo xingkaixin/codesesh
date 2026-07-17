@@ -8,7 +8,17 @@ import type {
   ProjectGroup,
   SessionHead,
 } from "../lib/api";
+import { createAgentCatalog } from "../lib/agents";
 import { Dashboard } from "./Dashboard";
+
+const agentCatalog = createAgentCatalog([
+  {
+    name: "codex",
+    displayName: "Codex",
+    icon: "/icon/agent/codex.svg",
+    count: 2,
+  },
+]);
 
 afterEach(cleanup);
 
@@ -93,6 +103,7 @@ describe("Dashboard charts", () => {
       <MemoryRouter>
         <Dashboard
           data={dashboardData}
+          agentCatalog={agentCatalog}
           bookmarkedSessions={[]}
           isBookmarked={() => false}
           onToggleBookmark={vi.fn()}
@@ -135,6 +146,7 @@ describe("Dashboard charts", () => {
             recentFileActivities: [],
             window: { to: Date.now() },
           }}
+          agentCatalog={agentCatalog}
           bookmarkedSessions={[]}
           isBookmarked={() => false}
           onToggleBookmark={vi.fn()}
@@ -212,6 +224,7 @@ describe("Dashboard charts", () => {
       <MemoryRouter>
         <Dashboard
           data={data}
+          agentCatalog={agentCatalog}
           projects={[project]}
           bookmarkedSessions={[bookmarkedSession]}
           isBookmarked={() => true}

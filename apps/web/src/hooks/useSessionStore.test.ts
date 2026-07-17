@@ -20,6 +20,7 @@ vi.mock("../lib/api", () => ({
 const config = { window: { from: 1, to: 2, days: 7 } } as AppConfig;
 const agents = [
   { name: "ClaudeCode", displayName: "Claude Code", count: 1 },
+  { name: "Codex", displayName: "Codex", count: 0 },
 ] as unknown as AgentInfo[];
 const projects = [{ identityKind: "path", identityKey: "p1" }] as unknown as ProjectGroup[];
 
@@ -94,7 +95,10 @@ describe("useSessionStore", () => {
     expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]);
     expect(result.current.projects).toEqual(projects);
     expect(result.current.dashboard).toEqual(SAMPLE_DASHBOARD_DATA);
+    expect(result.current.activeAgents).toEqual([agents[0]]);
+    expect(result.current.agentCatalog.byKey.get("codex")).toBe(agents[1]);
     expect(result.current.validAgentKeys.has("claudecode")).toBe(true);
+    expect(result.current.validAgentKeys.has("codex")).toBe(false);
     expect(result.current.agentNameMap.get("claudecode")).toBe("Claude Code");
     expect(result.current.version).toBe(1);
   });

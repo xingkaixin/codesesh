@@ -5,7 +5,7 @@ import type {
   ScanStatusEvent,
   SessionHead,
 } from "../../lib/api";
-import { ModelConfig } from "../../config";
+import { findAgent, type AgentCatalog } from "../../lib/agents";
 import { getSessionBookmarkKey } from "../../lib/bookmarks";
 import { getSessionDisplayTitle } from "../../lib/session-title";
 import { formatAgentScanProgress } from "../../lib/scan-format";
@@ -35,7 +35,6 @@ function AgentNavList({
       {agents.map((agent) => {
         const key = agent.name.toLowerCase();
         const isSelected = key === activeAgentKey;
-        const config = ModelConfig.agents[key];
         const agentProgress = formatAgentScanProgress(scanStatus, agent.name);
         const disabled = isScanActive && agentProgress !== null;
         const className = `ml-4 flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
@@ -47,8 +46,8 @@ function AgentNavList({
         }`;
         const content = (
           <>
-            {config?.icon && (
-              <img src={config.icon} alt={agent.displayName} className="size-3.5 object-contain" />
+            {agent.icon && (
+              <img src={agent.icon} alt={agent.displayName} className="size-3.5 object-contain" />
             )}
             <span className="console-mono line-clamp-1 flex-1 text-xs">{agent.displayName}</span>
             <span className="console-mono text-[11px] text-[var(--console-muted)]">
@@ -137,6 +136,7 @@ export interface AppSidebarViewModel {
   isScanActive: boolean;
   viewState: ViewState;
   agents: AgentInfo[];
+  agentCatalog: AgentCatalog;
   activeAgentKey: string | null;
   scanStatus: ScanStatusEvent | null;
   projects: ProjectGroup[];
@@ -166,6 +166,7 @@ export function AppSidebar({
     isScanActive,
     viewState,
     agents,
+    agentCatalog,
     activeAgentKey,
     scanStatus,
     projects,
@@ -279,7 +280,7 @@ export function AppSidebar({
                   viewState.mode === "session" &&
                   viewState.activeAgentKey === session.agentKey &&
                   viewState.activeSessionSlug === session.sessionId;
-                const agent = ModelConfig.agents[session.agentKey];
+                const agent = findAgent(agentCatalog, session.agentKey);
                 return (
                   <li key={getSessionBookmarkKey(session.agentKey, session.sessionId)}>
                     <div
@@ -296,7 +297,7 @@ export function AppSidebar({
                         {agent?.icon ? (
                           <img
                             src={agent.icon}
-                            alt={agent.name}
+                            alt={agent.displayName}
                             className="mt-0.5 size-3.5 shrink-0 object-contain"
                           />
                         ) : null}
@@ -305,7 +306,7 @@ export function AppSidebar({
                             {getSessionDisplayTitle(session)}
                           </span>
                           <span className="console-mono mt-0.5 line-clamp-1 block text-[10px] text-[var(--console-muted)]">
-                            {agent?.name ?? session.agentKey}
+                            {agent?.displayName ?? session.agentKey}
                           </span>
                         </div>
                       </Link>
@@ -346,6 +347,7 @@ export function AppSidebar({
           ) : browseBy === "projects" ? (
             <SidebarFlatSessionList
               sessions={sidebarSessions}
+              agentCatalog={agentCatalog}
               activeSessionId={viewState.mode === "session" ? viewState.activeSessionSlug : null}
               selectedSessionId={selectedSidebarSessionId}
               bookmarkedSessionIds={bookmarkedSidebarSessionIds}
