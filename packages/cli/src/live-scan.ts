@@ -643,25 +643,6 @@ export class LiveScanStore {
     return new Set(this.scanOptions.agents.map((agent) => agent.toLowerCase()));
   }
 
-  private async refreshInitialIndex(): Promise<void> {
-    const startedAt = performance.now();
-    const context = "scan.initial.background";
-
-    try {
-      await this.searchIndexJobs.enqueue(context, this.buildFullSearchIndexJobs(context));
-      appLogger.info(`${context}.complete`, {
-        duration_ms: Math.round(performance.now() - startedAt),
-        sessions: this.sessions.length,
-      });
-    } catch (error) {
-      if (this.shuttingDown) {
-        return;
-      }
-      appLogger.error(`${context}.error`, { error });
-      console.error("[search] Background index sync failed:", error);
-    }
-  }
-
   /**
    * Throttles rather than debounces: a pending timer only gets replaced by a
    * request with an earlier deadline. Plain debounce (reset on every call)
