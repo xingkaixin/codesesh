@@ -19,7 +19,7 @@ import {
   type ScanResultSource,
   type SessionListDefaults,
 } from "./handlers.js";
-import type { LiveScanStore } from "../live-scan.js";
+import type { ScanEventSource } from "../scan-source.js";
 
 export interface ApiRouteOptions {
   defaultSessionFrom?: number;
@@ -27,7 +27,7 @@ export interface ApiRouteOptions {
   defaultSessionDays?: number;
 }
 
-function createSseResponse(store: LiveScanStore, signal: AbortSignal): Response {
+function createSseResponse(eventSource: ScanEventSource, signal: AbortSignal): Response {
   const encoder = new TextEncoder();
   let cancelStream = () => {};
 
@@ -42,12 +42,12 @@ function createSseResponse(store: LiveScanStore, signal: AbortSignal): Response 
         };
 
         write("connected", { timestamp: Date.now() });
-        write("scan-status", store.getScanStatus());
+        write("scan-status", eventSource.getScanStatus());
 
-        const unsubscribeSessions = store.subscribe((event) => {
+        const unsubscribeSessions = eventSource.subscribe((event) => {
           write(event.type, event);
         });
-        const unsubscribeScanStatus = store.subscribeScanStatus((event) => {
+        const unsubscribeScanStatus = eventSource.subscribeScanStatus((event) => {
           write(event.type, event);
         });
 
@@ -90,7 +90,7 @@ function createSseResponse(store: LiveScanStore, signal: AbortSignal): Response 
 
 export function createApiRoutes(
   scanSource: ScanResultSource,
-  store?: LiveScanStore,
+  eventSource?: ScanEventSource,
   options: ApiRouteOptions = {},
 ): Hono {
   const api = new Hono();
@@ -101,8 +101,8 @@ export function createApiRoutes(
   };
 
   api.get("/config", (c) => handleGetConfig(c, listDefaults));
-  if (store) {
-    api.get("/status", (c) => handleGetScanStatus(c, store));
+  if (eventSource) {
+    api.get("/status", (c) => handleGetScanStatus(c, eventSource));
   }
   api.get("/agents", (c) => handleGetAgents(c, scanSource, listDefaults));
   api.get("/projects", (c) => handleGetProjects(c, scanSource, listDefaults));
@@ -118,8 +118,8 @@ export function createApiRoutes(
   api.put("/session-aliases/:agent/:id", (c) => handlePutSessionAlias(c));
   api.delete("/session-aliases/:agent/:id", (c) => handleDeleteSessionAlias(c));
   api.post("/logs", (c) => handlePostClientLog(c));
-  if (store) {
-    api.get("/events", (c) => createSseResponse(store, c.req.raw.signal));
+  if (eventSource) {
+    api.get("/events", (c) => createSseResponse(eventSource, c.req.raw.signal));
   }
 
   return api;

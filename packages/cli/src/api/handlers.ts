@@ -43,7 +43,6 @@ import {
   getSessionAgentName,
   getSessionActivityTime,
   getTotalTokens,
-  startOfLocalDay,
   type DashboardData,
   type DashboardScope,
   type FileActivityKind,
@@ -52,6 +51,7 @@ import {
   type SearchOptions,
 } from "@codesesh/core";
 import { appLogger } from "../logging.js";
+import { resolveTimeWindow, type TimeWindow } from "../time-window-resolution.js";
 
 export interface ScanResultSource {
   getSnapshot(): ScanResult;
@@ -61,12 +61,7 @@ export interface ScanStatusSource {
   getScanStatus(): ScanStatusEvent;
 }
 
-export interface SessionListDefaults {
-  from?: number;
-  to?: number;
-  /** When --days was used, original value — kept for UI "last N days" label */
-  days?: number;
-}
+export type SessionListDefaults = TimeWindow;
 
 interface ClientLogPayload {
   event?: unknown;
@@ -779,43 +774,6 @@ export function handleDeleteSessionAlias(c: Context) {
   }
 }
 
-function resolveDashboardWindow(
-  defaults: SessionListDefaults,
-  queryDays: string | undefined,
-  queryFrom: string | undefined,
-  queryTo: string | undefined,
-): { from?: number; to: number; days?: number } {
-  const now = Date.now();
-
-  const toTs = parseDateParam(queryTo, defaults.to) ?? now;
-
-  // Resolve days (preferred): query, defaults.days, or derive from defaults.from
-  const hasQueryDays = queryDays != null && queryDays.trim() !== "";
-  const parsedDays = hasQueryDays ? parseInt(queryDays, 10) : NaN;
-  let days: number | undefined =
-    Number.isFinite(parsedDays) && parsedDays > 0 ? parsedDays : defaults.days;
-
-  const fromFromQuery = parseDateParam(queryFrom, undefined);
-  let fromTs: number;
-  if (fromFromQuery != null) {
-    fromTs = fromFromQuery;
-    days ??= Math.max(1, Math.ceil((toTs - fromTs) / 86400000));
-  } else if (parsedDays === 0 || (!hasQueryDays && defaults.days === 0)) {
-    days = 0;
-    return { to: toTs, days };
-  } else if (defaults.from != null) {
-    fromTs = defaults.from;
-    days ??= Math.max(1, Math.ceil((toTs - fromTs) / 86400000));
-  } else if (days && days > 0) {
-    fromTs = startOfLocalDay(toTs) - (days - 1) * 86400000;
-  } else {
-    days = 30;
-    fromTs = startOfLocalDay(toTs) - (days - 1) * 86400000;
-  }
-
-  return { from: fromTs, to: toTs, days };
-}
-
 export function handleGetDashboard(
   c: Context,
   scanSource: ScanResultSource,
@@ -829,12 +787,15 @@ export function handleGetDashboard(
   if (projectIdentity === null) {
     return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
   }
-  const { from, to, days } = resolveDashboardWindow(
+  const { from, to, days } = resolveTimeWindow({
+    mode: "dashboard",
+    query: {
+      days: c.req.query("days"),
+      from: c.req.query("from"),
+      to: c.req.query("to"),
+    },
     defaults,
-    c.req.query("days"),
-    c.req.query("from"),
-    c.req.query("to"),
-  );
+  });
   const scope: DashboardScope = {
     agent: optionalQueryValue(c.req.query("agent"))?.toLowerCase(),
     projectKind: projectIdentity?.kind,

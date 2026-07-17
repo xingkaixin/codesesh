@@ -3,7 +3,7 @@ import { SAMPLE_SCAN_STATUS_EVENT, SAMPLE_SESSION_HEAD } from "@codesesh/core/co
 import type { ScanResult } from "@codesesh/core";
 import { createApiRoutes } from "../routes.js";
 import type { ScanResultSource } from "../handlers.js";
-import type { LiveScanStore } from "../../live-scan.js";
+import type { ScanEventSource } from "../../scan-source.js";
 
 function makeScanSource(): ScanResultSource {
   return {
@@ -16,23 +16,23 @@ function makeScanSource(): ScanResultSource {
   };
 }
 
-function makeStoreStub(): LiveScanStore {
+function makeEventSource(): ScanEventSource {
   return {
     getScanStatus: () => SAMPLE_SCAN_STATUS_EVENT,
     subscribe: () => () => {},
     subscribeScanStatus: () => () => {},
-  } as unknown as LiveScanStore;
+  };
 }
 
 describe("cli routes stay wire-compatible with @codesesh/core/contract", () => {
   it("GET /status returns the ScanStatusEvent fixture as-is", async () => {
-    const app = createApiRoutes(makeScanSource(), makeStoreStub());
+    const app = createApiRoutes(makeScanSource(), makeEventSource());
     const res = await app.request("/status");
     expect(await res.json()).toEqual(SAMPLE_SCAN_STATUS_EVENT);
   });
 
   it("SSE /events opens with the ScanStatusEvent fixture from the store", async () => {
-    const app = createApiRoutes(makeScanSource(), makeStoreStub());
+    const app = createApiRoutes(makeScanSource(), makeEventSource());
     const controller = new AbortController();
     const res = await app.request("/events", { signal: controller.signal });
     const reader = res.body!.getReader();
