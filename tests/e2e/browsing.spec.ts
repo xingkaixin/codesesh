@@ -185,7 +185,34 @@ test("keeps detail drawers modal and restores focus", async ({ page }) => {
       }),
     )
     .toBe("opacity, transform|0.2s, 0.26s");
-  await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).overflow)).toBe("hidden");
+  const receiptCanvas = receiptDialog.locator('canvas[aria-hidden="true"]');
+  await expect(receiptCanvas).toBeVisible();
+  await expect
+    .poll(() =>
+      receiptCanvas.evaluate((element) => {
+        const canvas = element as HTMLCanvasElement;
+        const dialog = canvas.closest('[role="dialog"]');
+        const context = canvas.getContext("2d");
+        const bounds = canvas.getBoundingClientRect();
+        if (!dialog || !context || bounds.width === 0 || bounds.height === 0) return false;
+
+        const dialogBounds = dialog.getBoundingClientRect();
+        const sampleY = Math.min(
+          canvas.height - 1,
+          Math.round((64 / bounds.height) * canvas.height),
+        );
+        const alpha = context.getImageData(Math.floor(canvas.width / 2), sampleY, 1, 1).data[3];
+        return (
+          bounds.left >= dialogBounds.left - 0.5 &&
+          bounds.right <= dialogBounds.right + 0.5 &&
+          Boolean(alpha)
+        );
+      }),
+    )
+    .toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.body).overflow))
+    .toBe("hidden");
   await expect(page.getByRole("button", { name: "Close session receipt" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect
@@ -194,7 +221,9 @@ test("keeps detail drawers modal and restores focus", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(receiptDialog).toBeHidden();
   await expect(receiptTrigger).toBeFocused();
-  await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).overflow)).not.toBe("hidden");
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.body).overflow))
+    .not.toBe("hidden");
 
   await page.setViewportSize({ width: 390, height: 844 });
   const tocTrigger = page.getByRole("button", { name: /^TOC/ });
@@ -203,7 +232,9 @@ test("keeps detail drawers modal and restores focus", async ({ page }) => {
   await expect(tocDialog).toBeVisible();
   await expect(page.getByRole("button", { name: "Close session toc" })).toBeFocused();
   await page.keyboard.press("Tab");
-  await expect.poll(() => tocDialog.evaluate((dialog) => dialog.contains(document.activeElement))).toBe(true);
+  await expect
+    .poll(() => tocDialog.evaluate((dialog) => dialog.contains(document.activeElement)))
+    .toBe(true);
   await page.keyboard.press("Escape");
   await expect(tocDialog).toBeHidden();
   await expect(tocTrigger).toBeFocused();
@@ -212,6 +243,63 @@ test("keeps detail drawers modal and restores focus", async ({ page }) => {
   await expect(tocDialog).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 800 });
   await expect(tocDialog).toBeHidden();
+});
+
+test("returns a dragged receipt to its resting position", async ({ page }) => {
+  await page.goto("/claudecode/e2e-dashboard");
+  await page.getByRole("button", { name: "Open session receipt" }).click();
+
+  const receiptDialog = page.getByRole("dialog", { name: "Session Receipt" });
+  const receiptCanvas = receiptDialog.locator('canvas[aria-hidden="true"]');
+  const receiptHitSurface = page.locator(
+    '[aria-label="Interactive thermal receipt with Verlet paper simulation"]',
+  );
+  await expect(receiptCanvas).toBeVisible();
+  await expect(receiptHitSurface).toBeVisible();
+
+  const readCanvasHash = () =>
+    receiptCanvas.evaluate((element) => {
+      const canvas = element as HTMLCanvasElement;
+      const context = canvas.getContext("2d");
+      if (!context) return 0;
+
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let hash = 2166136261;
+      for (let index = 0; index < pixels.length; index += 4) {
+        hash = Math.imul(hash ^ (pixels[index] ?? 0), 16777619);
+        hash = Math.imul(hash ^ (pixels[index + 3] ?? 0), 16777619);
+      }
+      return hash >>> 0;
+    });
+
+  let previousHash: number | undefined;
+  await expect
+    .poll(
+      async () => {
+        const currentHash = await readCanvasHash();
+        const stopped = currentHash === previousHash;
+        previousHash = currentHash;
+        return stopped;
+      },
+      { timeout: 7_000, intervals: [100] },
+    )
+    .toBe(true);
+  const restingHash = await readCanvasHash();
+  const hitBounds = await receiptHitSurface.boundingBox();
+  expect(hitBounds).not.toBeNull();
+  if (!hitBounds) return;
+
+  const startX = hitBounds.x + hitBounds.width / 2;
+  const startY = hitBounds.y + hitBounds.height * 0.75;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 90, startY + 20, { steps: 4 });
+  await page.mouse.up();
+
+  expect(await readCanvasHash()).not.toBe(restingHash);
+  await expect.poll(readCanvasHash, { timeout: 7_000, intervals: [100] }).toBe(restingHash);
+  await page.waitForTimeout(200);
+  expect(await readCanvasHash()).toBe(restingHash);
 });
 
 test("renders a static receipt for reduced motion", async ({ page }) => {
@@ -230,7 +318,7 @@ test("renders a static receipt for reduced motion", async ({ page }) => {
     )
     .toBe("opacity|0.15s|none");
 
-  const receiptCanvas = page.locator('canvas[aria-hidden="true"].fixed');
+  const receiptCanvas = receiptDialog.locator('canvas[aria-hidden="true"]');
   const receiptHitSurface = page.locator(
     '[aria-label="Interactive thermal receipt with Verlet paper simulation"]',
   );
