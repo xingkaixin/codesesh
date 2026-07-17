@@ -173,7 +173,7 @@ vi.mock("../../agents/index.js", () => ({
   BaseAgent: class {},
 }));
 
-import { scanSessions, scanSessionsAsync } from "../scanner.js";
+import { finalizeAgentScan, scanSessions, scanSessionsAsync } from "../scanner.js";
 import { createRegisteredAgents } from "../../agents/index.js";
 import { loadCachedSessions, saveCachedSessionChanges, saveCachedSessions } from "../cache.js";
 
@@ -226,6 +226,123 @@ function createTestAgent(overrides: {
   }
   return agent as BaseAgent;
 }
+
+describe("finalizeAgentScan", () => {
+  it("finalizes cache-only sessions without classifying or writing", async () => {
+    const sessions = [
+      makeSession("old", { time_created: 100 }),
+      makeSession("current", { time_created: 300 }),
+    ];
+    const agent = createTestAgent({ name: "test", available: true, sessions });
+    agent.getSessionData = vi.fn();
+    const onProgress = vi.fn();
+
+    const result = await finalizeAgentScan(agent, sessions, {
+      finalization: {
+        kind: "cache-only",
+        cached: { sessions, meta: {}, timestamp: 123 },
+      },
+      options: { from: 200, includeSmartTags: true },
+      timing: { total: 0 },
+      agentStart: performance.now(),
+      onProgress,
+    });
+
+    expect(result.heads.map((session) => session.id)).toEqual(["current"]);
+    expect(result.heads[0]?.project_identity).toBeDefined();
+    expect(result.cacheTimestamp).toBe(123);
+    expect(agent.getSessionData).not.toHaveBeenCalled();
+    expect(mockedSaveCachedSessionChanges).not.toHaveBeenCalled();
+    expect(onProgress).toHaveBeenCalledWith({
+      agent: "test",
+      phase: "complete",
+      newCount: 2,
+    });
+  });
+
+  it("persists an incremental diff and marks the result refreshed", async () => {
+    const cachedSessions = [makeSession("old")];
+    const updatedSessions = [makeSession("new")];
+    const agent = createTestAgent({ name: "test", available: true, sessions: updatedSessions });
+
+    const result = await finalizeAgentScan(agent, updatedSessions, {
+      finalization: {
+        kind: "incremental",
+        cached: { sessions: cachedSessions, meta: {}, timestamp: 123 },
+        changedIds: ["new"],
+        cacheTimestamp: 456,
+      },
+      options: { includeSmartTags: false },
+      timing: { total: 0 },
+      agentStart: performance.now(),
+    });
+
+    expect(result.refreshed).toBe(true);
+    expect(result.cacheTimestamp).toBe(456);
+    expect(mockedSaveCachedSessionChanges).toHaveBeenCalledWith(
+      "test",
+      [
+        {
+          session: expect.objectContaining({ id: "new", project_identity: expect.any(Object) }),
+          sortIndex: 0,
+        },
+      ],
+      ["old"],
+      {},
+    );
+  });
+
+  it("does not rewrite an unchanged cache when tag maintenance is disabled", async () => {
+    const sessions = [makeSession("cached")];
+    const agent = createTestAgent({ name: "test", available: true, sessions });
+
+    const result = await finalizeAgentScan(agent, sessions, {
+      finalization: {
+        kind: "unchanged",
+        cached: { sessions, meta: {}, timestamp: 123 },
+      },
+      options: { includeSmartTags: false },
+      timing: { total: 0 },
+      agentStart: performance.now(),
+    });
+
+    expect(result.refreshed).toBeUndefined();
+    expect(result.cacheTimestamp).toBe(123);
+    expect(mockedSaveCachedSessionChanges).not.toHaveBeenCalled();
+  });
+
+  it("persists tag maintenance for an otherwise unchanged cache", async () => {
+    const sessions = [makeSession("cached")];
+    const agent = createTestAgent({ name: "test", available: true, sessions });
+
+    const result = await finalizeAgentScan(agent, sessions, {
+      finalization: {
+        kind: "unchanged",
+        cached: { sessions, meta: {}, timestamp: 123 },
+      },
+      options: {},
+      timing: { total: 0 },
+      agentStart: performance.now(),
+    });
+
+    expect(result.heads[0]).toMatchObject({
+      id: "cached",
+      smart_tags: [],
+      smart_tags_source_updated_at: 1000,
+    });
+    expect(mockedSaveCachedSessionChanges).toHaveBeenCalledWith(
+      "test",
+      [
+        {
+          session: expect.objectContaining({ id: "cached", smart_tags: [] }),
+          sortIndex: 0,
+        },
+      ],
+      [],
+      {},
+    );
+  });
+});
 
 describe("scanSessions", () => {
   it("returns empty result when no agents registered", async () => {
