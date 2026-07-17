@@ -1,21 +1,9 @@
-import type { Message, MessagePart, ParseSessionResult } from "../types/index.js";
+import type { Message, MessagePart } from "../types/index.js";
 import {
   cleanDisplayText,
   isInternalEventType as isRawInternalEventType,
 } from "./parse-cleanup.js";
 import { normalizeTitleText } from "./title-fallback.js";
-
-export function parsed<T>(data: T): ParseSessionResult<T> {
-  return { status: "parsed", data };
-}
-
-export function skipped<T = never>(reason?: string): ParseSessionResult<T> {
-  return reason ? { status: "skipped", reason } : { status: "skipped" };
-}
-
-export function filtered<T = never>(reason?: string): ParseSessionResult<T> {
-  return reason ? { status: "filtered", reason } : { status: "filtered" };
-}
 
 export function isInternalEventType(value: unknown): boolean {
   return isRawInternalEventType(value);

@@ -1,20 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-  cleanParsedMessages,
-  filtered,
-  firstUserMessageTitle,
-  parsed,
-  skipped,
-} from "../session-normalization.js";
+import { cleanParsedMessages, firstUserMessageTitle } from "../session-normalization.js";
 import type { Message } from "../../types/index.js";
 
 describe("session normalization", () => {
-  it("constructs each parse outcome without empty optional fields", () => {
-    expect(parsed("data")).toEqual({ status: "parsed", data: "data" });
-    expect(skipped()).toEqual({ status: "skipped" });
-    expect(filtered("hidden")).toEqual({ status: "filtered", reason: "hidden" });
-  });
-
   it("removes internal-only parts and deeply cleans tool payloads", () => {
     const messages: Message[] = [
       {

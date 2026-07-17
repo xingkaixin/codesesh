@@ -2,6 +2,7 @@
  * Cache persistence: load / save / clear / info / initialization tracking.
  */
 import { existsSync, rmSync, unlinkSync } from "node:fs";
+import type { SessionCacheMeta } from "../../agents/base.js";
 import type { SessionData, SessionHead } from "../../types/index.js";
 import { computeIdentity, realFs } from "../../projects/index.js";
 import { tableExists } from "../../utils/sqlite.js";
@@ -12,7 +13,6 @@ import {
   setFtsIntegrityCheckedPath,
   setSchemaEnsuredPath,
   type ScalarRow,
-  type SessionCacheMeta,
   type SessionHeadChange,
 } from "./db.js";
 import { withCacheDb, withCacheDbReadOnly } from "./schema.js";

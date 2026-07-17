@@ -12,12 +12,6 @@ const CACHE_FILENAME = "codesesh.db";
 const LEGACY_CACHE_FILENAME = "scan-cache.json";
 export const SEARCH_INDEX_BULK_SYNC_THRESHOLD = 100;
 
-export interface SessionCacheMeta {
-  id: string;
-  sourcePath: string;
-  [key: string]: unknown;
-}
-
 export interface SessionHeadChange {
   session: SessionHead;
   sortIndex: number;
