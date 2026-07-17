@@ -5,6 +5,7 @@ import { printScanResults } from "./output.js";
 import { VERSION } from "./version.js";
 import { appLogger } from "./logging.js";
 import { isLoopbackHostname } from "./remote-access.js";
+import { resolveTimeWindow } from "./time-window-resolution.js";
 import {
   DEFAULT_PORT,
   DEFAULT_PORT_FALLBACK_ATTEMPTS,
@@ -18,14 +19,6 @@ import {
   type ScanOptions,
   perf,
 } from "@codesesh/core";
-
-function parseDateToTimestamp(dateStr: string): number {
-  const date = new Date(dateStr);
-  if (Number.isNaN(date.getTime())) {
-    throw new Error(`Invalid date: ${dateStr}`);
-  }
-  return date.getTime();
-}
 
 function parseSessionUri(uri: string): { agent: string; sessionId: string } | null {
   const match = uri.match(/^([a-z]+):\/\/(.+)$/i);
@@ -183,22 +176,16 @@ const main = defineCommand({
       cwdFilter = process.cwd();
     }
 
-    // Resolve app-level default window (shared across /api/agents, /sessions, /dashboard).
-    // Priority: --from (absolute) over --days (relative).
-    let listDefaultFrom: number | undefined;
-    let listDefaultDays: number | undefined;
-    if (args.from) {
-      listDefaultFrom = parseDateToTimestamp(args.from as string);
-    } else {
-      const days = parseInt(args.days as string, 10);
-      if (!Number.isNaN(days) && days > 0) {
-        listDefaultFrom = Date.now() - days * 24 * 60 * 60 * 1000;
-        listDefaultDays = days;
-      } else if (days === 0) {
-        listDefaultDays = 0;
-      }
-    }
-    const listDefaultTo = args.to ? parseDateToTimestamp(args.to as string) : undefined;
+    const {
+      from: listDefaultFrom,
+      to: listDefaultTo,
+      days: listDefaultDays,
+    } = resolveTimeWindow({
+      mode: "cli",
+      from: args.from as string | undefined,
+      to: args.to as string | undefined,
+      days: args.days as string | undefined,
+    });
 
     const scanOptions: ScanOptions = {
       agents: targetSession
