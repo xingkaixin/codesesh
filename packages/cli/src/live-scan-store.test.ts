@@ -278,19 +278,14 @@ vi.mock("node:worker_threads", () => ({
 
 import { LiveScanStore, resolveAgentWatchTargets, type SessionsUpdatedEvent } from "./live-scan.js";
 import { appLogger } from "./logging.js";
-import { ThreadWorkerRunner, type WorkerRunner } from "./worker-runner.js";
+import { ThreadWorkerRunner, type WorkerResult, type WorkerRunner } from "./worker-runner.js";
 
-type FakeWorkerRunner = WorkerRunner & {
-  run: ReturnType<typeof vi.fn>;
-  shutdown: ReturnType<typeof vi.fn>;
-};
-
-function makeWorkerRunner(): FakeWorkerRunner {
+function makeWorkerRunner() {
   return {
     activeCount: 0,
-    run: vi.fn(),
-    shutdown: vi.fn(async () => undefined),
-  };
+    run: vi.fn<WorkerRunner["run"]>(),
+    shutdown: vi.fn<WorkerRunner["shutdown"]>(async () => undefined),
+  } satisfies WorkerRunner;
 }
 
 let restoreRuntime: (() => void) | null = null;
@@ -719,7 +714,7 @@ describe("LiveScanStore", () => {
     const stale = makeSession("session", { title: "stale backfill", time_updated: 2000 });
     const fresh = makeSession("session", { title: "fresh refresh", time_updated: 3000 });
     const codex = makeFileSystemAgent("codex");
-    let releaseBackfill: ((result: unknown) => void) | undefined;
+    let releaseBackfill: ((result: WorkerResult) => void) | undefined;
 
     core.createRegisteredAgents.mockReturnValue([codex]);
     core.scanSessions.mockResolvedValue({
@@ -825,7 +820,7 @@ describe("LiveScanStore", () => {
       })),
       incrementalScan: vi.fn(() => [kimiFresh]),
     });
-    let releaseBackfill: ((result: unknown) => void) | undefined;
+    let releaseBackfill: ((result: WorkerResult) => void) | undefined;
 
     core.createRegisteredAgents.mockReturnValue([codex, kimi]);
     core.scanSessions.mockResolvedValue({
@@ -862,7 +857,7 @@ describe("LiveScanStore", () => {
     const refreshed = makeSession("session", { title: "refreshed", time_updated: 3000 });
     const rerun = makeSession("session", { title: "rerun", time_updated: 4000 });
     const codex = makeFileSystemAgent("codex");
-    let releaseBackfill: ((result: unknown) => void) | undefined;
+    let releaseBackfill: ((result: WorkerResult) => void) | undefined;
 
     core.createRegisteredAgents.mockReturnValue([codex]);
     core.scanSessions.mockResolvedValue({

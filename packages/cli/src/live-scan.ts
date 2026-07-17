@@ -49,6 +49,19 @@ interface SessionRefreshDiff {
   removedSessionIds: string[];
 }
 
+type CachedSessions = NonNullable<ReturnType<typeof loadCachedSessions>>;
+
+interface RefreshStrategyResult {
+  status: "continue" | "unchanged";
+  nextSessions: SessionHead[];
+  fullScanSessions: SessionHead[] | null;
+  preciseChangedIds: string[] | null;
+  usedIncrementalScan: boolean;
+  persistenceDiff: Pick<SessionRefreshDiff, "changedSessions" | "removedSessionIds"> | null;
+  checkDuration: number;
+  scanDuration: number;
+}
+
 interface LiveScanStoreOptions {
   deferInitialRefresh?: boolean;
   workerRunner?: WorkerRunner;
@@ -630,15 +643,7 @@ export class LiveScanStore {
       restoreAgentCacheMeta(agent, cached.meta);
     }
     const isInitialized = isAgentCacheInitialized(agentName);
-    let nextSessions = previousSessions;
-    let fullScanSessions: SessionHead[] | null = null;
-    let preciseChangedIds: string[] | null = null;
-    let usedIncrementalScan = false;
-    let persistenceDiff: Pick<SessionRefreshDiff, "changedSessions" | "removedSessionIds"> | null =
-      null;
-    let availabilityDuration = 0;
-    let checkDuration = 0;
-    let scanDuration = 0;
+    let strategyResult: RefreshStrategyResult;
     let diffDuration = 0;
     let persistDuration = 0;
     let searchIndexDuration = 0;
@@ -646,109 +651,43 @@ export class LiveScanStore {
 
     const availabilityStartedAt = performance.now();
     const isAvailable = agent.isAvailable();
-    availabilityDuration = performance.now() - availabilityStartedAt;
+    const availabilityDuration = performance.now() - availabilityStartedAt;
 
     if (!isAvailable) {
-      nextSessions = [];
-      this.refreshes.setLastRefreshAt(agentName, Date.now());
+      strategyResult = this.refreshUnavailableAgent(agentName);
     } else if (!isInitialized) {
-      // First-ever scan is bounded to the display window so startup stays fast;
-      // needsBackfill() picks up the rest of history in the background.
-      this.setScanPhase("initializing");
-      const scanStartedAt = performance.now();
-      const result = await this.runWorker(agent, previousSessions, null, this.startupScanOptions);
-      nextSessions = result.sessions;
-      agent.setSessionMetaMap?.(new Map(Object.entries(result.meta)));
-      fullScanSessions = attachMissingProjectIdentities(nextSessions);
-      nextSessions = fullScanSessions;
-      scanDuration = performance.now() - scanStartedAt;
-      this.refreshes.setLastRefreshAt(agentName, Date.now());
+      strategyResult = await this.initializeAgent(agent, previousSessions);
     } else if (cached && agent instanceof FileSystemSessionSource) {
-      // File-system agents refresh via precise per-source fingerprint sync,
-      // bounded to the display window; the background backfill pass
-      // periodically reconciles sessions outside it. Database agents lack
-      // per-file fingerprints and fall through to the checkForChanges branch below.
-      const scanStartedAt = performance.now();
-      const result = await this.runWorker(agent, cached.sessions, null, this.startupScanOptions, {
-        sourceSync: true,
-        meta: cached.meta,
-      });
-      nextSessions = result.sessions;
-      agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
-      preciseChangedIds = result.changedIds ?? [];
-      usedIncrementalScan = true;
-      persistenceDiff = buildRefreshDiff(
-        agentName,
-        cached.sessions,
-        attachMissingProjectIdentities(nextSessions),
-        preciseChangedIds,
-      );
-      scanDuration = performance.now() - scanStartedAt;
-      this.refreshes.setLastRefreshAt(agentName, Date.now());
-      if (preciseChangedIds.length === 0) {
-        appLogger.debug("scan.refresh.unchanged", {
-          agent: agentName,
-          duration_ms: Math.round(performance.now() - startedAt),
-        });
-      }
+      strategyResult = await this.syncAgentSources(agent, cached, startedAt);
     } else if (refreshBaseline.length > 0) {
-      const checkStartedAt = performance.now();
-      const checkResult = await Promise.resolve(
-        agent.checkForChanges(cacheTimestamp, refreshBaseline),
-      );
-      checkDuration = performance.now() - checkStartedAt;
-
-      this.refreshes.setLastRefreshAt(agentName, checkResult.timestamp);
-      if (!checkResult.hasChanges) {
-        appLogger.debug("scan.refresh.unchanged", {
-          agent: agentName,
-          duration_ms: Math.round(performance.now() - startedAt),
-        });
-        return "unchanged";
-      }
-
-      preciseChangedIds = checkResult.changedIds ?? null;
-      usedIncrementalScan = Array.isArray(checkResult.changedIds);
-      const scanStartedAt = performance.now();
-      nextSessions = await Promise.resolve(
-        agent.incrementalScan(refreshBaseline, checkResult.changedIds ?? []),
-      );
-      const nextBaseline = attachMissingProjectIdentities(nextSessions);
-      persistenceDiff = buildRefreshDiff(
-        agentName,
+      strategyResult = await this.refreshChangedAgent(
+        agent,
         refreshBaseline,
-        nextBaseline,
-        preciseChangedIds ?? [],
+        cacheTimestamp,
+        startedAt,
       );
-      nextSessions = nextBaseline;
-      scanDuration = performance.now() - scanStartedAt;
     } else {
-      const scanStartedAt = performance.now();
-      const result = await this.runWorker(agent, previousSessions, null, {});
-      nextSessions = result.sessions;
-      agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
-      fullScanSessions = attachMissingProjectIdentities(nextSessions);
-      nextSessions = fullScanSessions;
-      scanDuration = performance.now() - scanStartedAt;
-      this.refreshes.setLastRefreshAt(agentName, Date.now());
+      strategyResult = await this.scanAgentFully(agent, previousSessions);
     }
+    if (strategyResult.status === "unchanged") return "unchanged";
 
-    nextSessions = attachMissingProjectIdentities(nextSessions);
+    const nextSessions = attachMissingProjectIdentities(strategyResult.nextSessions);
 
     const diffStartedAt = performance.now();
     const diff = buildRefreshDiff(
       agentName,
       previousSessions,
       nextSessions,
-      preciseChangedIds ?? [],
+      strategyResult.preciseChangedIds ?? [],
     );
     diffDuration = performance.now() - diffStartedAt;
     const searchIndexOptions =
       pendingPathCount >= SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD ? { isBulk: true } : undefined;
-    const canPersistIncrementally = usedIncrementalScan;
-    const persistentChanges = persistenceDiff?.changedSessions ?? diff.changedSessions;
+    const canPersistIncrementally = strategyResult.usedIncrementalScan;
+    const persistentChanges =
+      strategyResult.persistenceDiff?.changedSessions ?? diff.changedSessions;
     const persistentRemovedSessionIds =
-      persistenceDiff?.removedSessionIds ?? diff.removedSessionIds;
+      strategyResult.persistenceDiff?.removedSessionIds ?? diff.removedSessionIds;
     const changedSessionIds = canPersistIncrementally
       ? new Set(persistentChanges.map(({ session }) => session.id))
       : undefined;
@@ -764,12 +703,12 @@ export class LiveScanStore {
           meta: cacheMeta,
           ...(searchIndexOptions ? { searchIndexOptions } : {}),
         }
-      : fullScanSessions
+      : strategyResult.fullScanSessions
         ? {
             kind: "full",
             context: "scan.refresh",
             agentName,
-            sessions: fullScanSessions,
+            sessions: strategyResult.fullScanSessions,
             meta: buildAgentCacheMeta(agent),
             saveCache: true,
             ...(searchIndexOptions ? { searchIndexOptions } : {}),
@@ -811,8 +750,8 @@ export class LiveScanStore {
       removed_sessions: event?.removedSessions ?? 0,
       pending_paths: pendingPathCount,
       availability_ms: Math.round(availabilityDuration),
-      check_ms: Math.round(checkDuration),
-      scan_ms: Math.round(scanDuration),
+      check_ms: Math.round(strategyResult.checkDuration),
+      scan_ms: Math.round(strategyResult.scanDuration),
       diff_ms: Math.round(diffDuration),
       persist_ms: Math.round(persistDuration),
       search_index_ms: Math.round(searchIndexDuration),
@@ -820,5 +759,125 @@ export class LiveScanStore {
       persistent_index_skipped: !persistentJob || undefined,
     });
     return "committed";
+  }
+
+  private refreshUnavailableAgent(agentName: string): RefreshStrategyResult {
+    this.refreshes.setLastRefreshAt(agentName, Date.now());
+    return this.refreshStrategyResult([]);
+  }
+
+  private async initializeAgent(
+    agent: BaseAgent,
+    previousSessions: SessionHead[],
+  ): Promise<RefreshStrategyResult> {
+    this.setScanPhase("initializing");
+    const scanStartedAt = performance.now();
+    const result = await this.runWorker(agent, previousSessions, null, this.startupScanOptions);
+    agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
+    const sessions = attachMissingProjectIdentities(result.sessions);
+    this.refreshes.setLastRefreshAt(agent.name, Date.now());
+    return this.refreshStrategyResult(sessions, {
+      fullScanSessions: sessions,
+      scanDuration: performance.now() - scanStartedAt,
+    });
+  }
+
+  private async syncAgentSources(
+    agent: FileSystemSessionSource,
+    cached: CachedSessions,
+    refreshStartedAt: number,
+  ): Promise<RefreshStrategyResult> {
+    const scanStartedAt = performance.now();
+    const result = await this.runWorker(agent, cached.sessions, null, this.startupScanOptions, {
+      sourceSync: true,
+      meta: cached.meta,
+    });
+    agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
+    const sessions = attachMissingProjectIdentities(result.sessions);
+    const preciseChangedIds = result.changedIds ?? [];
+    const persistenceDiff = buildRefreshDiff(
+      agent.name,
+      cached.sessions,
+      sessions,
+      preciseChangedIds,
+    );
+    this.refreshes.setLastRefreshAt(agent.name, Date.now());
+    if (preciseChangedIds.length === 0) {
+      this.logUnchangedRefresh(agent.name, refreshStartedAt);
+    }
+    return this.refreshStrategyResult(sessions, {
+      preciseChangedIds,
+      usedIncrementalScan: true,
+      persistenceDiff,
+      scanDuration: performance.now() - scanStartedAt,
+    });
+  }
+
+  private async refreshChangedAgent(
+    agent: BaseAgent,
+    baseline: SessionHead[],
+    cacheTimestamp: number,
+    refreshStartedAt: number,
+  ): Promise<RefreshStrategyResult> {
+    const checkStartedAt = performance.now();
+    const checkResult = await Promise.resolve(agent.checkForChanges(cacheTimestamp, baseline));
+    const checkDuration = performance.now() - checkStartedAt;
+    this.refreshes.setLastRefreshAt(agent.name, checkResult.timestamp);
+    if (!checkResult.hasChanges) {
+      this.logUnchangedRefresh(agent.name, refreshStartedAt);
+      return this.refreshStrategyResult(baseline, { status: "unchanged", checkDuration });
+    }
+
+    const preciseChangedIds = checkResult.changedIds ?? null;
+    const scanStartedAt = performance.now();
+    const sessions = attachMissingProjectIdentities(
+      await Promise.resolve(agent.incrementalScan(baseline, checkResult.changedIds ?? [])),
+    );
+    return this.refreshStrategyResult(sessions, {
+      preciseChangedIds,
+      usedIncrementalScan: Array.isArray(checkResult.changedIds),
+      persistenceDiff: buildRefreshDiff(agent.name, baseline, sessions, preciseChangedIds ?? []),
+      checkDuration,
+      scanDuration: performance.now() - scanStartedAt,
+    });
+  }
+
+  private async scanAgentFully(
+    agent: BaseAgent,
+    previousSessions: SessionHead[],
+  ): Promise<RefreshStrategyResult> {
+    const scanStartedAt = performance.now();
+    const result = await this.runWorker(agent, previousSessions, null, {});
+    agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
+    const sessions = attachMissingProjectIdentities(result.sessions);
+    this.refreshes.setLastRefreshAt(agent.name, Date.now());
+    return this.refreshStrategyResult(sessions, {
+      fullScanSessions: sessions,
+      scanDuration: performance.now() - scanStartedAt,
+    });
+  }
+
+  private refreshStrategyResult(
+    nextSessions: SessionHead[],
+    overrides: Partial<Omit<RefreshStrategyResult, "nextSessions">> = {},
+  ): RefreshStrategyResult {
+    return {
+      status: "continue",
+      nextSessions,
+      fullScanSessions: null,
+      preciseChangedIds: null,
+      usedIncrementalScan: false,
+      persistenceDiff: null,
+      checkDuration: 0,
+      scanDuration: 0,
+      ...overrides,
+    };
+  }
+
+  private logUnchangedRefresh(agentName: string, startedAt: number): void {
+    appLogger.debug("scan.refresh.unchanged", {
+      agent: agentName,
+      duration_ms: Math.round(performance.now() - startedAt),
+    });
   }
 }
