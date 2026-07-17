@@ -11,6 +11,7 @@ import {
   markAgentFullSyncCompleted,
   saveCachedSessionChanges,
   saveCachedSessions,
+  type CachedResult,
 } from "./cache.js";
 import {
   attachMissingProjectIdentities,
@@ -95,6 +96,24 @@ interface AgentScanResult {
   refreshed?: boolean;
   timing?: AgentScanTiming;
   cacheTimestamp?: number;
+}
+
+type AgentScanFinalization =
+  | { kind: "cache-only"; cached: CachedResult }
+  | { kind: "unchanged"; cached: CachedResult }
+  | {
+      kind: "incremental";
+      cached: CachedResult;
+      changedIds: string[];
+      cacheTimestamp: number;
+    };
+
+interface FinalizeAgentScanContext {
+  finalization: AgentScanFinalization;
+  options: ScanOptions;
+  timing: AgentScanTiming;
+  agentStart: number;
+  onProgress?: (progress: ScanProgress) => void;
 }
 
 interface SmartTagWorkerResult {
@@ -233,6 +252,61 @@ async function ensureSessionTags(
   }
 }
 
+export async function finalizeAgentScan(
+  agent: BaseAgent,
+  sessions: SessionHead[],
+  context: FinalizeAgentScanContext,
+): Promise<AgentScanResult> {
+  const { finalization, options, timing, agentStart, onProgress } = context;
+  const isIncremental = finalization.kind === "incremental";
+
+  if (!isIncremental) {
+    onProgress?.({ agent: agent.name, phase: "complete", newCount: sessions.length });
+  }
+
+  const identityStart = performance.now();
+  const sessionsWithIdentity = attachMissingProjectIdentities(sessions);
+  timing.identity = performance.now() - identityStart;
+
+  let tagged = { sessions: sessionsWithIdentity, changed: false };
+  if (finalization.kind !== "cache-only") {
+    const tagsStart = performance.now();
+    tagged =
+      options.includeSmartTags === false
+        ? tagged
+        : await ensureSessionTags(agent, sessionsWithIdentity, options.smartTagWorkerUrl);
+    timing.tags = performance.now() - tagsStart;
+  }
+
+  if (options.writeCache !== false) {
+    if (finalization.kind === "incremental") {
+      saveCachedSessionDiff(
+        agent,
+        finalization.cached.sessions,
+        tagged.sessions,
+        finalization.changedIds,
+      );
+    } else if (finalization.kind === "unchanged" && tagged.changed) {
+      saveCachedSessionDiff(agent, finalization.cached.sessions, tagged.sessions);
+    }
+  }
+
+  if (isIncremental) {
+    onProgress?.({ agent: agent.name, phase: "complete", newCount: tagged.sessions.length });
+  }
+
+  const heads = filterSessions(tagged.sessions, options);
+  timing.total = performance.now() - agentStart;
+  return {
+    agent,
+    heads,
+    fromCache: true,
+    ...(isIncremental ? { refreshed: true } : {}),
+    timing,
+    cacheTimestamp: isIncremental ? finalization.cacheTimestamp : finalization.cached.timestamp,
+  };
+}
+
 /**
  * 智能扫描单个 Agent
  * 1. 优先使用缓存立即返回
@@ -268,20 +342,13 @@ async function scanAgentSmart(
           phase: "cache",
           cachedCount: cached.sessions.length,
         });
-        onProgress?.({ agent: agent.name, phase: "complete", newCount: cached.sessions.length });
-        const t3 = performance.now();
-        const cachedWithIdentity = attachMissingProjectIdentities(cached.sessions);
-        timing.identity = performance.now() - t3;
-
-        const filtered = filterSessions(cachedWithIdentity, options);
-        timing.total = performance.now() - agentStart;
-        return {
-          agent,
-          heads: filtered,
-          fromCache: true,
+        return finalizeAgentScan(agent, cached.sessions, {
+          finalization: { kind: "cache-only", cached },
+          options,
           timing,
-          cacheTimestamp: cached.timestamp,
-        };
+          agentStart,
+          onProgress,
+        });
       }
 
       const isAvail = agent.isAvailable();
@@ -317,70 +384,27 @@ async function scanAgentSmart(
         );
         timing.scan = performance.now() - t2;
 
-        const t3 = performance.now();
-        const sessionsWithIdentity = attachMissingProjectIdentities(updatedSessions);
-        timing.identity = performance.now() - t3;
-
-        const t4 = performance.now();
-        const tagged =
-          options.includeSmartTags === false
-            ? { sessions: sessionsWithIdentity, changed: false }
-            : await ensureSessionTags(agent, sessionsWithIdentity, options.smartTagWorkerUrl);
-        timing.tags = performance.now() - t4;
-
-        if (options.writeCache !== false) {
-          saveCachedSessionDiff(
-            agent,
-            cached.sessions,
-            tagged.sessions,
-            checkResult.changedIds ?? [],
-          );
-        }
-
-        onProgress?.({
-          agent: agent.name,
-          phase: "complete",
-          newCount: tagged.sessions.length,
-        });
-
-        const filtered = filterSessions(tagged.sessions, options);
-        timing.total = performance.now() - agentStart;
-        return {
-          agent,
-          heads: filtered,
-          fromCache: true,
-          refreshed: true,
+        return finalizeAgentScan(agent, updatedSessions, {
+          finalization: {
+            kind: "incremental",
+            cached,
+            changedIds: checkResult.changedIds ?? [],
+            cacheTimestamp: checkResult.timestamp,
+          },
+          options,
           timing,
-          cacheTimestamp: checkResult.timestamp,
-        };
+          agentStart,
+          onProgress,
+        });
       }
 
-      onProgress?.({ agent: agent.name, phase: "complete", newCount: cached.sessions.length });
-
-      const t3 = performance.now();
-      const cachedWithIdentity = attachMissingProjectIdentities(cached.sessions);
-      timing.identity = performance.now() - t3;
-
-      const t4 = performance.now();
-      const tagged =
-        options.includeSmartTags === false
-          ? { sessions: cachedWithIdentity, changed: false }
-          : await ensureSessionTags(agent, cachedWithIdentity, options.smartTagWorkerUrl);
-      timing.tags = performance.now() - t4;
-
-      if (tagged.changed && options.writeCache !== false) {
-        saveCachedSessionDiff(agent, cached.sessions, tagged.sessions);
-      }
-
-      const filtered = filterSessions(tagged.sessions, options);
-      timing.total = performance.now() - agentStart;
-      return {
-        agent,
-        heads: filtered,
-        fromCache: true,
+      return finalizeAgentScan(agent, cached.sessions, {
+        finalization: { kind: "unchanged", cached },
+        options,
         timing,
-        cacheTimestamp: cached.timestamp,
-      };
+        agentStart,
+        onProgress,
+      });
     }
   }
 
