@@ -2,8 +2,6 @@ import type { BaseAgent } from "./base.js";
 import type { AgentInfo } from "../types/index.js";
 
 export interface AgentRegistration {
-  name: string;
-  displayName: string;
   create: () => BaseAgent;
   icon: string;
 }
@@ -23,14 +21,17 @@ export function getRegisteredAgents(): readonly AgentRegistration[] {
 }
 
 export function getAgentInfoMap(sessionsByAgent: Record<string, number>): AgentInfo[] {
-  return registrations.map((r) => ({
-    name: r.name,
-    displayName: r.displayName,
-    icon: r.icon,
-    count: sessionsByAgent[r.name] ?? 0,
-  }));
+  return registrations.map((registration) => {
+    const agent = registration.create();
+    return {
+      name: agent.name,
+      displayName: agent.displayName,
+      icon: registration.icon,
+      count: sessionsByAgent[agent.name] ?? 0,
+    };
+  });
 }
 
 export function getAgentByName(name: string): AgentRegistration | undefined {
-  return registrations.find((r) => r.name === name);
+  return registrations.find((registration) => registration.create().name === name);
 }
