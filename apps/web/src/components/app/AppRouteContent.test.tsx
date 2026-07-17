@@ -2,6 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProjectGroup } from "../../lib/api";
+import { createAgentCatalog } from "../../lib/agents";
 import { AppRouteContent } from "./AppRouteContent";
 
 const project = {
@@ -28,6 +29,7 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
     },
     detailHighlightQuery: "",
     agents: [],
+    agentCatalog: createAgentCatalog([]),
     agentNameMap: new Map(),
     projects: [project],
     landingSessions: [],

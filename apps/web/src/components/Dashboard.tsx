@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Pie, PieChart } from "recharts";
-import { ModelConfig } from "../config";
 import type {
   BookmarkedSessionSnapshot,
   DashboardData,
@@ -13,6 +12,7 @@ import type {
   DashboardRecentSession,
   ProjectGroup,
 } from "../lib/api";
+import { findAgent, type AgentCatalog } from "../lib/agents";
 import { getSessionBookmarkKey } from "../lib/bookmarks";
 import { formatCostSource, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getProjectPath } from "../lib/projects";
@@ -23,6 +23,7 @@ import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } f
 
 interface DashboardProps {
   data: DashboardData;
+  agentCatalog: AgentCatalog;
   projects?: ProjectGroup[];
   bookmarkedSessions: BookmarkedSessionSnapshot[];
   isBookmarked: (agentKey: string, sessionId: string) => boolean;
@@ -520,7 +521,13 @@ function AgentDistribution({ perAgent }: { perAgent: DashboardAgentStat[] }) {
   );
 }
 
-function TopProjects({ projects }: { projects: ProjectGroup[] }) {
+function TopProjects({
+  projects,
+  agentCatalog,
+}: {
+  projects: ProjectGroup[];
+  agentCatalog: AgentCatalog;
+}) {
   if (projects.length === 0) return null;
 
   return (
@@ -555,20 +562,20 @@ function TopProjects({ projects }: { projects: ProjectGroup[] }) {
                 </div>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                   {topAgents.map((agent) => {
-                    const config = ModelConfig.agents[agent.name];
+                    const agentInfo = findAgent(agentCatalog, agent.name);
                     return (
                       <span
                         key={agent.name}
                         className="console-mono inline-flex items-center gap-1 rounded-sm border border-[var(--console-border)] bg-white px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]"
                       >
-                        {config?.icon ? (
+                        {agentInfo?.icon ? (
                           <img
-                            src={config.icon}
-                            alt={config.name}
+                            src={agentInfo.icon}
+                            alt={agentInfo.displayName}
                             className="size-3 object-contain"
                           />
                         ) : null}
-                        {config?.name ?? agent.name} · {agent.sessions}
+                        {agentInfo?.displayName ?? agent.name} · {agent.sessions}
                       </span>
                     );
                   })}
@@ -587,9 +594,11 @@ function TopProjects({ projects }: { projects: ProjectGroup[] }) {
 
 function BookmarkedSessions({
   sessions,
+  agentCatalog,
   onToggleBookmark,
 }: {
   sessions: BookmarkedSessionSnapshot[];
+  agentCatalog: AgentCatalog;
   onToggleBookmark: (session: BookmarkedSessionSnapshot) => void;
 }) {
   if (sessions.length === 0) return null;
@@ -606,16 +615,16 @@ function BookmarkedSessions({
       </div>
       <ul className="space-y-2">
         {sessions.map((session) => {
-          const agentConfig = ModelConfig.agents[session.agentKey];
+          const agent = findAgent(agentCatalog, session.agentKey);
           const updated = session.time_updated ?? session.time_created;
           return (
             <li key={getSessionBookmarkKey(session.agentKey, session.sessionId)}>
               <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
                 <Link to={`/${session.fullPath}`} className="flex min-w-0 flex-1 items-start gap-2">
-                  {agentConfig?.icon ? (
+                  {agent?.icon ? (
                     <img
-                      src={agentConfig.icon}
-                      alt={agentConfig.name}
+                      src={agent.icon}
+                      alt={agent.displayName}
                       className="mt-0.5 size-3.5 shrink-0 object-contain"
                     />
                   ) : null}
@@ -640,10 +649,12 @@ function BookmarkedSessions({
 
 function RecentSessions({
   sessions,
+  agentCatalog,
   isBookmarked,
   onToggleBookmark,
 }: {
   sessions: DashboardRecentSession[];
+  agentCatalog: AgentCatalog;
   isBookmarked: (agentKey: string, sessionId: string) => boolean;
   onToggleBookmark: (session: DashboardRecentSession, agentKey: string) => void;
 }) {
@@ -668,7 +679,7 @@ function RecentSessions({
       <ul className="space-y-2">
         {sessions.map((session) => {
           const agentKey = session.agentName.toLowerCase();
-          const agentConfig = ModelConfig.agents[agentKey];
+          const agent = findAgent(agentCatalog, agentKey);
           const updated = session.time_updated ?? session.time_created;
           const bookmarked = isBookmarked(agentKey, session.id);
           return (
@@ -676,10 +687,10 @@ function RecentSessions({
               <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
                 <Link to={`/${session.slug}`} className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    {agentConfig?.icon ? (
+                    {agent?.icon ? (
                       <img
-                        src={agentConfig.icon}
-                        alt={agentConfig.name}
+                        src={agent.icon}
+                        alt={agent.displayName}
                         className="size-3.5 shrink-0 object-contain"
                       />
                     ) : null}
@@ -762,6 +773,7 @@ function RecentFileActivity({ activity }: { activity: FileActivityResult[] }) {
 
 export function Dashboard({
   data,
+  agentCatalog,
   projects = [],
   bookmarkedSessions,
   isBookmarked,
@@ -807,10 +819,11 @@ export function Dashboard({
         <AgentDistribution perAgent={perAgent} />
       </div>
 
-      <TopProjects projects={projects} />
+      <TopProjects projects={projects} agentCatalog={agentCatalog} />
 
       <RecentSessions
         sessions={recentSessions}
+        agentCatalog={agentCatalog}
         isBookmarked={isBookmarked}
         onToggleBookmark={onToggleBookmark}
       />
@@ -819,6 +832,7 @@ export function Dashboard({
 
       <BookmarkedSessions
         sessions={bookmarkedSessions}
+        agentCatalog={agentCatalog}
         onToggleBookmark={(session) => onToggleBookmark(session)}
       />
     </div>

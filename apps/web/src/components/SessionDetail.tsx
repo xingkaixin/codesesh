@@ -1,8 +1,9 @@
 /* eslint-disable react/no-array-index-key */
 import { ChevronDown, ChevronUp, FileText } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ModelConfig } from "../config";
+import { findAgent, type AgentCatalog } from "../lib/agents";
 import type { SessionData } from "../lib/api";
+import { getSessionAgentKey } from "../lib/session-indexes";
 import { MarkdownContent } from "./MarkdownContent";
 import {
   isRenderProfilerEnabled,
@@ -40,6 +41,7 @@ import { buildSessionTimelineEntries } from "./session-detail/timeline";
 
 interface SessionDetailProps {
   session: SessionData;
+  agentCatalog: AgentCatalog;
   highlightQuery?: string;
 }
 
@@ -106,10 +108,9 @@ function measureSessionDetailWork<T>(id: string, compute: () => T): T {
 // SessionDetail (main export)
 // ---------------------------------------------------------------------------
 
-export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
-  const sessionSlug = session.slug || "";
-  const sessionAgentKey =
-    sessionSlug.split("/")[0] || ModelConfig.getDefaultAgentKey() || "claudecode";
+export function SessionDetail({ session, agentCatalog, highlightQuery }: SessionDetailProps) {
+  const sessionAgentKey = getSessionAgentKey({ slug: session.slug ?? "" });
+  const sessionAgent = findAgent(agentCatalog, sessionAgentKey);
   const normalizedMessages = useMemo(
     () =>
       measureSessionDetailWork("SessionDetail:normalizeMessages", () =>
@@ -279,6 +280,7 @@ export function SessionDetail({ session, highlightQuery }: SessionDetailProps) {
                   messages={filteredMessages}
                   toolAnchorIds={toolAnchorIds}
                   sessionAgentKey={sessionAgentKey}
+                  agent={sessionAgent}
                   baseDirectory={session.directory}
                   highlightQuery={highlightQuery}
                   apiRef={virtualListRef}

@@ -11,8 +11,7 @@ import {
   UserRound,
   XCircle,
 } from "lucide-react";
-import type { Message, MessagePart } from "../../lib/api";
-import { ModelConfig } from "../../config";
+import type { AgentInfo, Message, MessagePart } from "../../lib/api";
 import { formatMessageTime } from "../../lib/format";
 import { MarkdownContent } from "../MarkdownContent";
 import { ToolOutputRenderer } from "../tool-output/ToolOutputRenderer";
@@ -93,6 +92,7 @@ export function MessageItem({
   toolAnchorIds,
   formatTokens: fmtTokens,
   sessionAgentKey,
+  agent,
   baseDirectory,
   highlightQuery,
 }: {
@@ -102,6 +102,7 @@ export function MessageItem({
   toolAnchorIds: Map<MessagePart, string>;
   formatTokens: (n: number) => string;
   sessionAgentKey: string;
+  agent?: AgentInfo;
   baseDirectory: string;
   highlightQuery?: string;
 }) {
@@ -109,9 +110,8 @@ export function MessageItem({
   const isAbortMessage = isCodexTurnAbortedMessage(msg, sessionAgentKey);
 
   const getAgentAvatar = () => {
-    const agentKey = sessionAgentKey.toLowerCase();
-    const agentName = ModelConfig.getAgentName(agentKey);
-    const agentIcon = ModelConfig.agents[agentKey]?.icon;
+    const agentName = agent?.displayName ?? sessionAgentKey;
+    const agentIcon = agent?.icon;
     return (
       <>
         {agentIcon ? (

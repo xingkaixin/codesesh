@@ -1,5 +1,5 @@
 import type { SessionHead } from "../../lib/api";
-import { ModelConfig } from "../../config";
+import { findAgent, type AgentCatalog } from "../../lib/agents";
 import { getSessionAgentKey } from "../../lib/session-indexes";
 import { formatRelativeTime } from "../../lib/format";
 import { getSessionDisplayTitle } from "../../lib/session-title";
@@ -7,6 +7,7 @@ import { SessionActionsMenu } from "../SessionActionsMenu";
 
 export function SidebarFlatSessionList({
   sessions,
+  agentCatalog,
   activeSessionId,
   selectedSessionId,
   bookmarkedSessionIds,
@@ -15,6 +16,7 @@ export function SidebarFlatSessionList({
   onRenameSession,
 }: {
   sessions: SessionHead[];
+  agentCatalog: AgentCatalog;
   activeSessionId: string | null;
   selectedSessionId: string | null;
   bookmarkedSessionIds: Set<string>;
@@ -27,7 +29,7 @@ export function SidebarFlatSessionList({
       <ul className="space-y-1">
         {sessions.map((sessionItem) => {
           const agentKey = getSessionAgentKey(sessionItem);
-          const agentConfig = ModelConfig.agents[agentKey];
+          const agent = findAgent(agentCatalog, agentKey);
           const active = activeSessionId === sessionItem.id;
           const selected = selectedSessionId === sessionItem.id;
           return (
@@ -45,10 +47,10 @@ export function SidebarFlatSessionList({
                   className="min-w-0 flex-1 text-left"
                 >
                   <span className="flex min-w-0 items-center gap-1.5">
-                    {agentConfig?.icon ? (
+                    {agent?.icon ? (
                       <img
-                        src={agentConfig.icon}
-                        alt={agentConfig.name}
+                        src={agent.icon}
+                        alt={agent.displayName}
                         className="size-3.5 shrink-0 object-contain"
                       />
                     ) : null}

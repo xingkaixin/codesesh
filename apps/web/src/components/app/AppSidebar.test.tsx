@@ -2,6 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { AgentInfo, ScanStatusEvent } from "../../lib/api";
+import { createAgentCatalog } from "../../lib/agents";
 import { AppSidebar, type AppSidebarActions } from "./AppSidebar";
 
 afterEach(cleanup);
@@ -36,6 +37,7 @@ describe("AppSidebar agent counts", () => {
             isScanActive: false,
             viewState: { mode: "root", activeAgentKey: null, activeSessionSlug: null },
             agents,
+            agentCatalog: createAgentCatalog(agents),
             activeAgentKey: null,
             scanStatus,
             projects: [],

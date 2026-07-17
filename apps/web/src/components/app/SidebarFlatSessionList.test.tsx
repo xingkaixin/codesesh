@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionHead } from "../../lib/api";
+import { createAgentCatalog } from "../../lib/agents";
 import { SidebarFlatSessionList } from "./SidebarFlatSessionList";
 
 afterEach(cleanup);
@@ -28,6 +29,7 @@ describe("SidebarFlatSessionList", () => {
     render(
       <SidebarFlatSessionList
         sessions={[session]}
+        agentCatalog={createAgentCatalog([])}
         activeSessionId={null}
         selectedSessionId={null}
         bookmarkedSessionIds={new Set()}

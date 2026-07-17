@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ModelConfig } from "../config";
+import { findAgent, type AgentCatalog } from "../lib/agents";
 import type { SessionHead } from "../lib/api";
 import { formatCostSource, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getSessionDisplayTitle } from "../lib/session-title";
@@ -21,6 +21,7 @@ export interface LandingAgentItem {
 
 interface DetailLandingProps {
   type: "global" | "agent" | "missing-agent" | "missing-session";
+  agentCatalog: AgentCatalog;
   sessions: LandingSession[];
   agentItems: LandingAgentItem[];
   activeAgentKey?: string;
@@ -198,6 +199,7 @@ function RecentSessions({
 
 export function DetailLanding({
   type,
+  agentCatalog,
   sessions,
   agentItems,
   activeAgentKey,
@@ -248,9 +250,8 @@ export function DetailLanding({
   }
 
   if (type === "missing-session") {
-    const safeAgentKey = activeAgentKey || ModelConfig.getDefaultAgentKey() || "claudecode";
-    const agent = ModelConfig.agents[safeAgentKey];
-    const displayName = agent?.name || safeAgentKey;
+    const agent = activeAgentKey ? findAgent(agentCatalog, activeAgentKey) : undefined;
+    const displayName = agent?.displayName ?? activeAgentKey ?? "Unknown Agent";
     const agentIcon = agent?.icon;
     const sessionSlug = attemptedSessionSlug || "unknown-session";
 
@@ -340,8 +341,8 @@ export function DetailLanding({
   }
 
   // type === "agent"
-  const activeAgent = activeAgentKey ? ModelConfig.agents[activeAgentKey] : null;
-  const displayName = activeAgent ? activeAgent.name : "Unknown Agent";
+  const activeAgent = activeAgentKey ? findAgent(agentCatalog, activeAgentKey) : undefined;
+  const displayName = activeAgent?.displayName ?? "Unknown Agent";
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">

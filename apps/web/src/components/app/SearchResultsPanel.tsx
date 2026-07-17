@@ -41,7 +41,7 @@ export function SearchResultsPanel({
 }: {
   query: string;
   state: SearchLoadState;
-  agentNameMap: Map<string, string>;
+  agentNameMap: ReadonlyMap<string, string>;
   agents: AgentInfo[];
   projects: SearchProjectOption[];
   filters: SearchFilterState;

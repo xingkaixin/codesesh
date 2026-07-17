@@ -39,7 +39,8 @@ export default function App() {
   const timeWindowController = useTimeWindow(sessionStore.config?.window);
   const { timeWindow } = timeWindowController;
   const {
-    agents,
+    activeAgents,
+    agentCatalog,
     sessions,
     projects,
     dashboard,
@@ -91,7 +92,10 @@ export default function App() {
       key: viewState.activeProjectKey,
     });
   }, [viewState]);
-  const sessionIndexes = useMemo(() => buildSessionIndexes(sessions, agents), [sessions, agents]);
+  const sessionIndexes = useMemo(
+    () => buildSessionIndexes(sessions, activeAgents),
+    [sessions, activeAgents],
+  );
 
   const search = useSessionSearch(sessionIndexes, loadedWindow);
   const {
@@ -142,7 +146,7 @@ export default function App() {
     viewState,
     sessionIndexes,
     session,
-    agents,
+    agents: activeAgents,
     projects,
     selectedProjectAgent: projectController.selectedAgent,
     isSessionBookmarked,
@@ -298,7 +302,8 @@ export default function App() {
       error={error}
       viewState={viewState}
       detailHighlightQuery={detailHighlightQuery}
-      agents={agents}
+      agents={activeAgents}
+      agentCatalog={agentCatalog}
       agentNameMap={agentNameMap}
       projects={projects}
       landingSessions={sessionIndexes.landingSessions}
@@ -474,7 +479,8 @@ export default function App() {
             browseBy,
             isScanActive,
             viewState,
-            agents,
+            agents: activeAgents,
+            agentCatalog,
             activeAgentKey,
             scanStatus,
             projects,
