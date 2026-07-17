@@ -1,6 +1,5 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { Worker } from "node:worker_threads";
 import {
   createRegisteredAgents,
   getAgentLastFullSyncAt,
@@ -23,12 +22,12 @@ import {
   type SessionHead,
 } from "@codesesh/core";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
-import type { ScanRefreshWorkerMessage } from "./scan-refresh-worker.js";
 import { SearchIndexJobRunner } from "./search-index-job-runner.js";
 import { ScanStatusModel } from "./scan-status-model.js";
 import { BackfillCoordinator } from "./backfill-coordinator.js";
 import { RefreshCoordinator, type AgentOperationResult } from "./refresh-coordinator.js";
 import { SessionWatcher, resolveAgentWatchTargets } from "./session-watcher.js";
+import { ThreadWorkerRunner, type WorkerRunner } from "./worker-runner.js";
 
 export { resolveAgentWatchTargets };
 import { appLogger, logSearchIndexSync } from "./logging.js";
@@ -52,6 +51,7 @@ interface SessionRefreshDiff {
 
 interface LiveScanStoreOptions {
   deferInitialRefresh?: boolean;
+  workerRunner?: WorkerRunner;
 }
 
 const REFRESH_DEBOUNCE_MS = 200;
@@ -148,7 +148,7 @@ export class LiveScanStore {
   private pendingEvent: SessionsUpdatedEvent | null = null;
   private pendingEventTimer: NodeJS.Timeout | null = null;
   private backgroundRefreshTimer: NodeJS.Timeout | null = null;
-  private scanRefreshWorkers = new Set<Worker>();
+  private workerRunner: WorkerRunner;
   private searchIndexJobs = new SearchIndexJobRunner();
   private shutdownPromise: Promise<void> | null = null;
   private shuttingDown = false;
@@ -158,7 +158,11 @@ export class LiveScanStore {
     private readonly scanOptions: ScanOptions = {},
     private readonly startupScanOptions: Pick<ScanOptions, "from" | "to"> = {},
     private readonly storeOptions: LiveScanStoreOptions = {},
-  ) {}
+  ) {
+    this.workerRunner =
+      storeOptions.workerRunner ??
+      new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
+  }
 
   async initialize(): Promise<void> {
     const startedAt = performance.now();
@@ -283,7 +287,7 @@ export class LiveScanStore {
       agent_operations: this.refreshes.activeOperationCount,
       refreshes: this.refreshes.activeRefreshCount,
       backfill_running: this.backfills.isRunning || undefined,
-      scan_workers: this.scanRefreshWorkers.size,
+      scan_workers: this.workerRunner.activeCount,
     };
     if (activeOperations.agent_operations > 0 || activeOperations.scan_workers > 0) {
       appLogger.warn("scan.shutdown.active_operations", activeOperations);
@@ -303,8 +307,7 @@ export class LiveScanStore {
     }
     this.backfills.clear();
     await this.searchIndexJobs.shutdown();
-    const scanWorkers = [...this.scanRefreshWorkers];
-    await Promise.allSettled(scanWorkers.map((scanWorker) => scanWorker.terminate()));
+    await this.workerRunner.shutdown();
     await this.refreshes.shutdown();
     this.pendingEvent = null;
 
@@ -426,16 +429,14 @@ export class LiveScanStore {
     }
 
     try {
-      const result = await this.scanAgentInWorker(
-        agent,
-        baseline,
-        null,
-        {},
-        {
-          sourceSync: agent instanceof FileSystemSessionSource,
-          meta,
-        },
-      );
+      const result = await this.workerRunner.run(agent.name, {
+        previousSessions: baseline,
+        changedIds: null,
+        scanOptions: {},
+        sourceSync: agent instanceof FileSystemSessionSource,
+        meta,
+        onProgress: (progress) => this.updateAgentScanProgress(agent.name, progress),
+      });
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const fullSessions = attachMissingProjectIdentities(result.sessions);
       const diff = buildRefreshDiff(
@@ -506,78 +507,20 @@ export class LiveScanStore {
     return workerUrl;
   }
 
-  private getScanRefreshWorkerUrl(): URL {
-    return new URL("./scan-refresh-worker.js", import.meta.url);
-  }
-
-  private scanAgentInWorker(
+  private runWorker(
     agent: BaseAgent,
     previousSessions: SessionHead[],
     changedIds: string[] | null,
     scanOptions: Pick<ScanOptions, "from" | "to" | "fast">,
     workerOptions: { sourceSync?: boolean; meta?: Record<string, SessionCacheMeta> } = {},
-  ): Promise<{
-    sessions: SessionHead[];
-    meta: Record<string, SessionCacheMeta>;
-    changedIds?: string[];
-  }> {
-    const workerUrl = this.getScanRefreshWorkerUrl();
-
-    return new Promise((resolve, reject) => {
-      const worker = new Worker(workerUrl, {
-        workerData: {
-          agentName: agent.name,
-          previousSessions,
-          changedIds,
-          sourceSync: workerOptions.sourceSync,
-          scanOptions,
-          meta: workerOptions.meta ?? buildAgentCacheMeta(agent),
-        },
-      });
-      worker.unref();
-      this.scanRefreshWorkers.add(worker);
-
-      let settled = false;
-      const finish = (callback: () => void, terminate = true) => {
-        if (settled) return;
-        settled = true;
-        this.scanRefreshWorkers.delete(worker);
-        if (terminate) void worker.terminate();
-        callback();
-      };
-
-      worker.on("message", (message: ScanRefreshWorkerMessage) => {
-        if (message.type === "progress") {
-          this.updateAgentScanProgress(agent.name, message.progress);
-          return;
-        }
-        if (message.type === "done") {
-          finish(() =>
-            resolve({
-              sessions: message.sessions,
-              meta: message.meta,
-              changedIds: message.changedIds,
-            }),
-          );
-          return;
-        }
-        finish(() => reject(new Error(message.error)));
-      });
-      worker.once("error", (error) => {
-        finish(() => reject(error));
-      });
-      worker.once("exit", (code) => {
-        if (!settled) {
-          appLogger.warn("scan.refresh_worker.exit_before_done", {
-            agent: agent.name,
-            code,
-          });
-          finish(
-            () => reject(new Error(`Scan refresh worker exited before completing (code ${code})`)),
-            false,
-          );
-        }
-      });
+  ) {
+    return this.workerRunner.run(agent.name, {
+      previousSessions,
+      changedIds,
+      scanOptions,
+      sourceSync: workerOptions.sourceSync,
+      meta: workerOptions.meta ?? buildAgentCacheMeta(agent),
+      onProgress: (progress) => this.updateAgentScanProgress(agent.name, progress),
     });
   }
 
@@ -713,12 +656,7 @@ export class LiveScanStore {
       // needsBackfill() picks up the rest of history in the background.
       this.setScanPhase("initializing");
       const scanStartedAt = performance.now();
-      const result = await this.scanAgentInWorker(
-        agent,
-        previousSessions,
-        null,
-        this.startupScanOptions,
-      );
+      const result = await this.runWorker(agent, previousSessions, null, this.startupScanOptions);
       nextSessions = result.sessions;
       agent.setSessionMetaMap?.(new Map(Object.entries(result.meta)));
       fullScanSessions = attachMissingProjectIdentities(nextSessions);
@@ -731,16 +669,10 @@ export class LiveScanStore {
       // periodically reconciles sessions outside it. Database agents lack
       // per-file fingerprints and fall through to the checkForChanges branch below.
       const scanStartedAt = performance.now();
-      const result = await this.scanAgentInWorker(
-        agent,
-        cached.sessions,
-        null,
-        this.startupScanOptions,
-        {
-          sourceSync: true,
-          meta: cached.meta,
-        },
-      );
+      const result = await this.runWorker(agent, cached.sessions, null, this.startupScanOptions, {
+        sourceSync: true,
+        meta: cached.meta,
+      });
       nextSessions = result.sessions;
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       preciseChangedIds = result.changedIds ?? [];
@@ -792,7 +724,7 @@ export class LiveScanStore {
       scanDuration = performance.now() - scanStartedAt;
     } else {
       const scanStartedAt = performance.now();
-      const result = await this.scanAgentInWorker(agent, previousSessions, null, {});
+      const result = await this.runWorker(agent, previousSessions, null, {});
       nextSessions = result.sessions;
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       fullScanSessions = attachMissingProjectIdentities(nextSessions);
