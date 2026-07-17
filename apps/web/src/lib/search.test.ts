@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { SessionHead } from "./api";
+import type { SearchResult, SessionHead } from "./api";
+import type { SearchProjectOption } from "../components/app/types";
 import type { SessionIndexes } from "./session-indexes";
 import { getProjectIdentityKey } from "./projects";
-import { buildLocalRecentResults, usesServerSearch } from "./search";
+import { buildLocalRecentResults, buildSearchProjectOptions, usesServerSearch } from "./search";
 
 describe("usesServerSearch", () => {
   it("stays false with no text and only agent/tag/cost filters", () => {
@@ -140,5 +141,88 @@ describe("buildLocalRecentResults", () => {
     const results = buildLocalRecentResults(indexes, { tag: "bugfix" }, undefined);
 
     expect(results).toHaveLength(50);
+  });
+});
+
+describe("buildSearchProjectOptions", () => {
+  const recentProjectOptions: SearchProjectOption[] = [
+    {
+      key: "git_remote:github.com/acme/app",
+      identityKind: "git_remote",
+      identityKey: "github.com/acme/app",
+      label: "acme/app",
+      count: 12,
+      showCount: true,
+    },
+  ];
+
+  function makeResult(id: string, projectKey: string, displayName: string): SearchResult {
+    return {
+      agentName: "codex",
+      snippet: "match",
+      matchType: "title",
+      session: {
+        id,
+        slug: `codex/${id}`,
+        title: id,
+        directory: `/repo/${id}`,
+        time_created: 0,
+        time_updated: 0,
+        stats: {
+          message_count: 1,
+          total_input_tokens: 0,
+          total_output_tokens: 0,
+          total_cost: 0,
+        },
+        project_identity: {
+          kind: "git_remote",
+          key: projectKey,
+          displayName,
+        },
+      } as SessionHead,
+    };
+  }
+
+  it("reuses recent project options for local search", () => {
+    expect(
+      buildSearchProjectOptions({
+        usesServerSearch: false,
+        isLoading: false,
+        results: [],
+        selectedProject: undefined,
+        recentProjectOptions,
+      }),
+    ).toBe(recentProjectOptions);
+  });
+
+  it("builds and sorts project facets from server results", () => {
+    const options = buildSearchProjectOptions({
+      usesServerSearch: true,
+      isLoading: false,
+      results: [
+        makeResult("other", "github.com/acme/other", "acme/other"),
+        makeResult("app-1", "github.com/acme/app", "acme/app"),
+        makeResult("app-2", "github.com/acme/app", "acme/app"),
+      ],
+      selectedProject: undefined,
+      recentProjectOptions,
+    });
+
+    expect(options.map(({ key, count }) => ({ key, count }))).toEqual([
+      { key: "git_remote:github.com/acme/app", count: 2 },
+      { key: "git_remote:github.com/acme/other", count: 1 },
+    ]);
+  });
+
+  it("retains the selected project while server facets are loading", () => {
+    expect(
+      buildSearchProjectOptions({
+        usesServerSearch: true,
+        isLoading: true,
+        results: [makeResult("app", "github.com/acme/app", "acme/app")],
+        selectedProject: { kind: "git_remote", key: "github.com/acme/app" },
+        recentProjectOptions,
+      }),
+    ).toEqual([{ ...recentProjectOptions[0], count: 0, showCount: false }]);
   });
 });

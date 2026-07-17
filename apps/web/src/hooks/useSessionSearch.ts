@@ -11,6 +11,7 @@ import type { SearchFilterState, SearchLoadState } from "../components/app/types
 import { COST_RANGE_OPTIONS } from "../components/app/SearchFilterBar";
 import {
   buildLocalRecentResults,
+  buildSearchProjectOptions,
   buildSearchRequestOptions,
   usesServerSearch as computeUsesServerSearch,
 } from "../lib/search";
@@ -60,6 +61,23 @@ export function useSessionSearch(
     [searchState],
   );
   const searchLoading = searchState.status === "loading";
+  const projectOptions = useMemo(
+    () =>
+      buildSearchProjectOptions({
+        usesServerSearch,
+        isLoading: searchLoading,
+        results: searchResults,
+        selectedProject: searchFilters.project,
+        recentProjectOptions: sessionIndexes.projectOptions,
+      }),
+    [
+      searchFilters.project,
+      searchLoading,
+      searchResults,
+      sessionIndexes.projectOptions,
+      usesServerSearch,
+    ],
+  );
 
   useEffect(() => {
     if (!searchMode) {
@@ -149,6 +167,11 @@ export function useSessionSearch(
     setRetryVersion((version) => version + 1);
   }, []);
 
+  const registerResultRef = useCallback((key: string, node: HTMLAnchorElement | null) => {
+    if (node) searchResultRefs.current.set(key, node);
+    else searchResultRefs.current.delete(key);
+  }, []);
+
   const refresh = useCallback(async () => {
     if (!(searchMode && usesServerSearch)) return;
     try {
@@ -171,10 +194,11 @@ export function useSessionSearch(
     searchState,
     searchResults,
     searchLoading,
+    projectOptions,
     usesServerSearch,
     selectedSearchIndex,
     searchInputRef,
-    searchResultRefs,
+    registerResultRef,
     setDraftSearchQuery,
     setSearchFilters,
     setSelectedSearchIndex,

@@ -1,20 +1,55 @@
-import { useMemo } from "react";
+import { useMemo, type Dispatch, type SetStateAction } from "react";
 import { Dashboard } from "../Dashboard";
-import { DetailLanding, type LandingAgentItem } from "../DetailLanding";
+import { DetailLanding, type LandingAgentItem, type LandingSession } from "../DetailLanding";
 import { ProjectDashboardView, ProjectsOverview } from "../Projects";
 import { RenderProfiler } from "../RenderProfiler";
 import { SessionDetail } from "../SessionDetail";
 import { SessionDetailSkeleton } from "../SessionDetailSkeleton";
-import type { useBookmarks } from "../../hooks/useBookmarks";
-import type { useDashboard } from "../../hooks/useDashboard";
-import type { useSessionDetail } from "../../hooks/useSessionDetail";
-import type { useSessionSearch } from "../../hooks/useSessionSearch";
-import type { AgentInfo, ProjectGroup } from "../../lib/api";
-import { getProjectGroupIdentity, getProjectIdentityKey } from "../../lib/projects";
-import type { SessionIndexes } from "../../lib/session-indexes";
+import type {
+  AgentInfo,
+  BookmarkedSessionSnapshot,
+  DashboardData,
+  ProjectGroup,
+  SessionData,
+  SessionHead,
+} from "../../lib/api";
 import type { ViewState } from "../../lib/view-state";
-import type { SearchProjectOption } from "./types";
 import { SearchResultsPanel } from "./SearchResultsPanel";
+import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
+
+interface SessionDetailModel {
+  session: SessionData | null;
+  loading: boolean;
+  error: string | null;
+}
+
+interface ProjectDashboardModel {
+  dashboard: DashboardData | null;
+  loading: boolean;
+  error: string | null;
+  selectedAgent?: string;
+  onChangeAgent: (agent?: string) => void;
+}
+
+interface SearchContentModel {
+  active: boolean;
+  query: string;
+  state: SearchLoadState;
+  projectOptions: SearchProjectOption[];
+  filters: SearchFilterState;
+  onChangeFilters: Dispatch<SetStateAction<SearchFilterState>>;
+  onClose: () => void;
+  onRetry: () => void;
+  selectedIndex: number;
+  registerResultRef: (key: string, node: HTMLAnchorElement | null) => void;
+}
+
+interface BookmarkContentModel {
+  sessions: BookmarkedSessionSnapshot[];
+  isBookmarked: (agentKey: string, sessionId: string) => boolean;
+  toggleBookmark: (session: BookmarkedSessionSnapshot) => void;
+  toggleSessionBookmark: (session: SessionHead, agentKey: string) => void;
+}
 
 interface AppRouteContentProps {
   loading: boolean;
@@ -24,12 +59,15 @@ interface AppRouteContentProps {
   agents: AgentInfo[];
   agentNameMap: Map<string, string>;
   projects: ProjectGroup[];
-  sessionIndexes: SessionIndexes;
-  dashboard: ReturnType<typeof useDashboard>["dashboard"];
-  sessionDetail: ReturnType<typeof useSessionDetail>;
-  projectController: ReturnType<typeof useDashboard>;
-  search: ReturnType<typeof useSessionSearch>;
-  bookmarks: ReturnType<typeof useBookmarks>;
+  landingSessions: LandingSession[];
+  sessionsByAgent: Map<string, LandingSession[]>;
+  activeProject: ProjectGroup | null;
+  activeProjectSessions: LandingSession[];
+  dashboard: DashboardData | null;
+  sessionDetail: SessionDetailModel;
+  projectDashboard: ProjectDashboardModel;
+  search: SearchContentModel;
+  bookmarks: BookmarkContentModel;
 }
 
 export function AppRouteContent({
@@ -40,10 +78,13 @@ export function AppRouteContent({
   agents,
   agentNameMap,
   projects,
-  sessionIndexes,
+  landingSessions,
+  sessionsByAgent,
+  activeProject,
+  activeProjectSessions,
   dashboard,
   sessionDetail,
-  projectController,
+  projectDashboard,
   search,
   bookmarks,
 }: AppRouteContentProps) {
@@ -59,48 +100,26 @@ export function AppRouteContent({
         })),
     [agents],
   );
-  const activeProjectIdentityKey =
-    viewState.mode === "project"
-      ? getProjectIdentityKey({
-          kind: viewState.activeProjectKind,
-          key: viewState.activeProjectKey,
-        })
-      : null;
-  const activeProject = useMemo(
-    () =>
-      projects.find(
-        (project) =>
-          activeProjectIdentityKey === getProjectIdentityKey(getProjectGroupIdentity(project)),
-      ) ?? null,
-    [activeProjectIdentityKey, projects],
-  );
-  const activeProjectSessions = activeProjectIdentityKey
-    ? (sessionIndexes.byLandingProjectIdentityKey.get(activeProjectIdentityKey) ?? [])
-    : [];
-  const searchProjectOptions = buildSearchProjectOptions(search, sessionIndexes.projectOptions);
-
   if (loading) return <SessionDetailSkeleton />;
-  if (search.searchMode) {
+  if (search.active) {
+    const resultCount = search.state.status === "loaded" ? search.state.results.length : 0;
     return (
       <RenderProfiler
         id="SearchResultsPanel"
-        detail={{ results: search.searchResults.length, loading: search.searchLoading }}
+        detail={{ results: resultCount, loading: search.state.status === "loading" }}
       >
         <SearchResultsPanel
-          query={search.activeSearchQuery}
-          state={search.searchState}
+          query={search.query}
+          state={search.state}
           agentNameMap={agentNameMap}
           agents={agents}
-          projects={searchProjectOptions}
-          filters={search.searchFilters}
-          onChangeFilters={search.setSearchFilters}
-          onOpenResult={search.closeSearch}
-          onRetry={search.retrySearch}
-          selectedIndex={search.selectedSearchIndex}
-          registerResultRef={(key, node) => {
-            if (node) search.searchResultRefs.current.set(key, node);
-            else search.searchResultRefs.current.delete(key);
-          }}
+          projects={search.projectOptions}
+          filters={search.filters}
+          onChangeFilters={search.onChangeFilters}
+          onOpenResult={search.onClose}
+          onRetry={search.onRetry}
+          selectedIndex={search.selectedIndex}
+          registerResultRef={search.registerResultRef}
         />
       </RenderProfiler>
     );
@@ -121,8 +140,8 @@ export function AppRouteContent({
         <Dashboard
           data={dashboard}
           projects={projects}
-          bookmarkedSessions={bookmarks.bookmarkedSessions}
-          isBookmarked={bookmarks.isSessionBookmarked}
+          bookmarkedSessions={bookmarks.sessions}
+          isBookmarked={bookmarks.isBookmarked}
           onToggleBookmark={(session, agentKey) => {
             if ("agentName" in session) {
               bookmarks.toggleSessionBookmark(session, agentKey ?? session.agentName.toLowerCase());
@@ -135,9 +154,9 @@ export function AppRouteContent({
     ) : (
       <DetailLanding
         type="global"
-        sessions={sessionIndexes.landingSessions}
+        sessions={landingSessions}
         agentItems={landingAgentItems}
-        isBookmarked={bookmarks.isSessionBookmarked}
+        isBookmarked={bookmarks.isBookmarked}
         onToggleBookmark={(session) => bookmarks.toggleSessionBookmark(session, session.agentKey)}
       />
     );
@@ -148,13 +167,13 @@ export function AppRouteContent({
       <ProjectDashboardView
         project={activeProject}
         projectKey={viewState.activeProjectKey}
-        dashboard={projectController.dashboard}
-        loading={projectController.loading}
-        error={projectController.error}
+        dashboard={projectDashboard.dashboard}
+        loading={projectDashboard.loading}
+        error={projectDashboard.error}
         sessions={activeProjectSessions}
-        activeAgent={projectController.selectedAgent}
-        onChangeAgent={projectController.setSelectedAgent}
-        isBookmarked={bookmarks.isSessionBookmarked}
+        activeAgent={projectDashboard.selectedAgent}
+        onChangeAgent={projectDashboard.onChangeAgent}
+        isBookmarked={bookmarks.isBookmarked}
         onToggleSessionBookmark={bookmarks.toggleSessionBookmark}
       />
     );
@@ -163,25 +182,25 @@ export function AppRouteContent({
     return (
       <DetailLanding
         type="agent"
-        sessions={sessionIndexes.byLandingAgent.get(viewState.activeAgentKey) ?? []}
+        sessions={sessionsByAgent.get(viewState.activeAgentKey) ?? []}
         agentItems={landingAgentItems}
         activeAgentKey={viewState.activeAgentKey}
-        isBookmarked={bookmarks.isSessionBookmarked}
+        isBookmarked={bookmarks.isBookmarked}
         onToggleBookmark={(session) => bookmarks.toggleSessionBookmark(session, session.agentKey)}
       />
     );
   }
   if (viewState.mode === "session") {
-    if (sessionDetail.sessionLoading) return <SessionDetailSkeleton />;
-    if (sessionDetail.sessionError || !sessionDetail.session) {
+    if (sessionDetail.loading) return <SessionDetailSkeleton />;
+    if (sessionDetail.error || !sessionDetail.session) {
       return (
         <DetailLanding
           type="missing-session"
-          sessions={sessionIndexes.byLandingAgent.get(viewState.activeAgentKey) ?? []}
+          sessions={sessionsByAgent.get(viewState.activeAgentKey) ?? []}
           agentItems={landingAgentItems}
           activeAgentKey={viewState.activeAgentKey}
           attemptedSessionSlug={viewState.activeSessionSlug}
-          isBookmarked={bookmarks.isSessionBookmarked}
+          isBookmarked={bookmarks.isBookmarked}
           onToggleBookmark={(session) => bookmarks.toggleSessionBookmark(session, session.agentKey)}
         />
       );
@@ -202,52 +221,13 @@ export function AppRouteContent({
     return (
       <DetailLanding
         type="missing-agent"
-        sessions={sessionIndexes.landingSessions}
+        sessions={landingSessions}
         agentItems={landingAgentItems}
         attemptedAgentKey={viewState.attemptedKey}
-        isBookmarked={bookmarks.isSessionBookmarked}
+        isBookmarked={bookmarks.isBookmarked}
         onToggleBookmark={(session) => bookmarks.toggleSessionBookmark(session, session.agentKey)}
       />
     );
   }
   return <div className="text-sm text-[var(--console-muted)]">Invalid route.</div>;
-}
-
-function buildSearchProjectOptions(
-  search: ReturnType<typeof useSessionSearch>,
-  projectOptions: SearchProjectOption[],
-): SearchProjectOption[] {
-  if (!search.usesServerSearch) return projectOptions;
-
-  const byKey = new Map<string, SearchProjectOption>();
-  const sourceResults = search.searchLoading ? [] : search.searchResults;
-  for (const result of sourceResults) {
-    const identity = result.session.project_identity;
-    if (!identity?.key) continue;
-    const key = getProjectIdentityKey(identity);
-    const current = byKey.get(key);
-    if (current) {
-      current.count += 1;
-    } else {
-      byKey.set(key, {
-        key,
-        identityKind: identity.kind,
-        identityKey: identity.key,
-        label: identity.displayName || result.session.directory,
-        count: 1,
-        showCount: false,
-      });
-    }
-  }
-
-  const selectedKey = search.searchFilters.project
-    ? getProjectIdentityKey(search.searchFilters.project)
-    : undefined;
-  const selected = selectedKey
-    ? projectOptions.find((project) => project.key === selectedKey)
-    : undefined;
-  if (selectedKey && selected && !byKey.has(selectedKey)) {
-    byKey.set(selected.key, { ...selected, count: 0, showCount: false });
-  }
-  return [...byKey.values()].toSorted((a, b) => b.count - a.count).slice(0, 8);
 }
