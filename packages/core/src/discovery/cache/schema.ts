@@ -37,10 +37,11 @@ import {
   type SessionRow,
 } from "./messages.js";
 
-export const CACHE_SCHEMA_VERSION = 13;
+export const CACHE_SCHEMA_VERSION = 14;
 export interface IndexedSearchRow extends DatabaseRow {
   session_id?: string;
   content_hash?: string;
+  indexed_message_count?: number;
 }
 
 export interface MessageCountRow extends DatabaseRow {
@@ -376,6 +377,7 @@ export function createSearchTables(db: SQLiteDatabase): void {
       activity_time INTEGER NOT NULL,
       content_text TEXT NOT NULL,
       content_hash TEXT NOT NULL,
+      indexed_message_count INTEGER NOT NULL,
       indexed_at INTEGER NOT NULL,
       UNIQUE(agent_name, session_id)
     );
@@ -409,6 +411,27 @@ export function createSearchTriggers(db: SQLiteDatabase): void {
       INSERT INTO session_documents_fts(rowid, title, content_text)
       VALUES (new.id, new.title, new.content_text);
     END;
+  `);
+}
+
+export function addIndexedMessageCount(db: SQLiteDatabase): void {
+  if (!tableExists(db, "session_documents")) return;
+
+  if (!columnExists(db, "session_documents", "indexed_message_count")) {
+    db.exec(
+      "ALTER TABLE session_documents ADD COLUMN indexed_message_count INTEGER NOT NULL DEFAULT 0",
+    );
+  }
+  if (!tableExists(db, "messages")) return;
+
+  db.exec(`
+    UPDATE session_documents
+    SET indexed_message_count = (
+      SELECT COUNT(*)
+      FROM messages
+      WHERE messages.agent_name = session_documents.agent_name
+        AND messages.session_id = session_documents.session_id
+    )
   `);
 }
 
@@ -534,6 +557,9 @@ export function readLegacyCacheVersion(db: SQLiteDatabase): number {
 }
 
 export function inferCacheSchemaVersion(db: SQLiteDatabase): number {
+  if (columnExists(db, "session_documents", "indexed_message_count")) {
+    return 14;
+  }
   if (tableExists(db, "message_tools")) {
     return 11;
   }
@@ -1051,6 +1077,7 @@ export function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
         },
       },
       { version: 13, migrate: createCacheTables },
+      { version: 14, migrate: addIndexedMessageCount },
     ],
   });
 
