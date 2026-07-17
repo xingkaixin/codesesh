@@ -283,7 +283,7 @@ describe("sqlite migration smoke", () => {
         bookmarked_at: now - 500,
       },
     ]);
-    expect(getUserVersion(getCachePath())).toBe(13);
+    expect(getUserVersion(getCachePath())).toBe(14);
     expect(getUserVersion(getStatePath())).toBe(2);
   }, 30_000);
 });

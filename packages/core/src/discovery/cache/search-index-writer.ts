@@ -50,6 +50,7 @@ export interface SearchIndexSyncResult {
 
 interface SearchIndexState {
   contentHashBySessionId: Map<string, string>;
+  indexedMessageCountBySessionId: Map<string, number>;
   messageCountBySessionId: Map<string, number>;
 }
 
@@ -102,6 +103,9 @@ function searchIndexStateFromRows(
     contentHashBySessionId: new Map(
       indexedRows.map((row) => [String(row.session_id), String(row.content_hash ?? "")]),
     ),
+    indexedMessageCountBySessionId: new Map(
+      indexedRows.map((row) => [String(row.session_id), Number(row.indexed_message_count ?? 0)]),
+    ),
     messageCountBySessionId: new Map(
       messageCountRows.map((row) => [String(row.session_id), Number(row.value ?? 0)]),
     ),
@@ -126,13 +130,17 @@ function readSearchIndexState(
           SELECT
             requested.session_id,
             documents.content_hash,
+            documents.indexed_message_count,
             COUNT(messages.message_index) AS value
           FROM requested_session_ids AS requested
           LEFT JOIN session_documents AS documents
             ON documents.agent_name = ? AND documents.session_id = requested.session_id
           LEFT JOIN messages
             ON messages.agent_name = ? AND messages.session_id = requested.session_id
-          GROUP BY requested.session_id, documents.content_hash
+          GROUP BY
+            requested.session_id,
+            documents.content_hash,
+            documents.indexed_message_count
         `,
       )
       .all(...batch, agentName, agentName) as SearchIndexStateRow[];
@@ -140,6 +148,15 @@ function readSearchIndexState(
   }
 
   return searchIndexStateFromRows(rows, rows);
+}
+
+function searchIndexEntryNeedsUpdate(state: SearchIndexState, session: SessionHead): boolean {
+  const sessionId = session.id;
+  return (
+    state.contentHashBySessionId.get(sessionId) !== sessionContentHash(session) ||
+    state.indexedMessageCountBySessionId.get(sessionId) !==
+      (state.messageCountBySessionId.get(sessionId) ?? 0)
+  );
 }
 
 function loadSearchIndexEntry(
@@ -173,12 +190,23 @@ function loadSearchIndexEntry(
   }
 }
 
+function* loadSearchIndexEntries(
+  agentName: string,
+  changes: Iterable<SessionHeadChange>,
+  loadSessionData: (sessionId: string) => SessionData,
+): Generator<LoadedSearchIndexEntry> {
+  for (const change of changes) {
+    const entry = loadSearchIndexEntry(agentName, change, loadSessionData);
+    if (entry) yield entry;
+  }
+}
+
 function writeSearchIndexRows(
   db: SQLiteDatabase,
   agentName: string,
   removedSessionIds: string[],
-  entries: LoadedSearchIndexEntry[],
-): void {
+  entries: Iterable<LoadedSearchIndexEntry>,
+): number {
   const deleteRow = db.prepare(
     "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
   );
@@ -249,8 +277,9 @@ function writeSearchIndexRows(
       activity_time,
       content_text,
       content_hash,
+      indexed_message_count,
       indexed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(agent_name, session_id) DO UPDATE SET
       slug = excluded.slug,
       title = excluded.title,
@@ -263,6 +292,7 @@ function writeSearchIndexRows(
       activity_time = excluded.activity_time,
       content_text = excluded.content_text,
       content_hash = excluded.content_hash,
+      indexed_message_count = excluded.indexed_message_count,
       indexed_at = excluded.indexed_at
   `);
 
@@ -273,6 +303,7 @@ function writeSearchIndexRows(
     deleteMessages.run(agentName, sessionId, 0);
   }
 
+  let indexed = 0;
   for (const entry of entries) {
     const activityTime = entry.session.time_updated ?? entry.session.time_created;
     upsertSessionRow(upsertIndexedSession, agentName, entry.session, null, entry.sortIndex, null);
@@ -320,9 +351,12 @@ function writeSearchIndexRows(
       activityTime,
       entry.contentText,
       entry.contentHash,
+      entry.messages.length,
       Date.now(),
     );
+    indexed += 1;
   }
+  return indexed;
 }
 
 export function syncSessionSearchIndex(
@@ -336,7 +370,7 @@ export function syncSessionSearchIndex(
     const startedAt = performance.now();
     const existingRows = db
       .prepare(
-        "SELECT session_id, content_hash FROM session_documents WHERE agent_name = ? ORDER BY id",
+        "SELECT session_id, content_hash, indexed_message_count FROM session_documents WHERE agent_name = ? ORDER BY id",
       )
       .all(agentName) as IndexedSearchRow[];
     const sessionSortIndexMap = new Map(sessions.map((session, index) => [session.id, index]));
@@ -351,28 +385,27 @@ export function syncSessionSearchIndex(
     const toDelete = existingRows
       .map((row) => String(row.session_id))
       .filter((sessionId) => !sessionMap.has(sessionId));
-    const toUpsert = sessions.filter(
-      (session) =>
-        searchIndexState.contentHashBySessionId.get(session.id) !== sessionContentHash(session) ||
-        searchIndexState.messageCountBySessionId.get(session.id) !== session.stats.message_count,
+    const toUpsert = sessions.filter((session) =>
+      searchIndexEntryNeedsUpdate(searchIndexState, session),
     );
     const changedCount = toDelete.length + toUpsert.length;
     const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
-
-    const loaded = toUpsert
-      .map((session) =>
-        loadSearchIndexEntry(
-          agentName,
-          { session, sortIndex: sessionSortIndexMap.get(session.id) ?? 0 },
-          loadSessionData,
-        ),
-      )
-      .filter((entry): entry is LoadedSearchIndexEntry => entry !== null);
-
-    const writeRows = () => writeSearchIndexRows(db, agentName, toDelete, loaded);
+    const changes = toUpsert.map((session) => ({
+      session,
+      sortIndex: sessionSortIndexMap.get(session.id) ?? 0,
+    }));
+    let indexed = 0;
+    const writeRows = () => {
+      indexed = writeSearchIndexRows(
+        db,
+        agentName,
+        toDelete,
+        loadSearchIndexEntries(agentName, changes, loadSessionData),
+      );
+    };
 
     let rebuildDurationMs: number | undefined;
-    const needsRebuild = isBulk && (toDelete.length > 0 || loaded.length > 0);
+    const needsRebuild = isBulk && changedCount > 0;
 
     if (needsRebuild) {
       db.transaction(() => {
@@ -396,8 +429,8 @@ export function syncSessionSearchIndex(
       sessions: sessions.length,
       changed: toUpsert.length,
       deleted: toDelete.length,
-      indexed: loaded.length,
-      skipped: toUpsert.length - loaded.length,
+      indexed,
+      skipped: toUpsert.length - indexed,
       durationMs: performance.now() - startedAt,
       rebuildDurationMs,
     };
@@ -432,23 +465,24 @@ export function syncSessionSearchIndexChanges(
       agentName,
       changes.map(({ session }) => session.id),
     );
-    const toUpsert = changes.filter(
-      ({ session }) =>
-        (searchIndexState.contentHashBySessionId.get(session.id) ?? "") !==
-          sessionContentHash(session) ||
-        (searchIndexState.messageCountBySessionId.get(session.id) ?? 0) !==
-          session.stats.message_count,
+    const toUpsert = changes.filter(({ session }) =>
+      searchIndexEntryNeedsUpdate(searchIndexState, session),
     );
     const uniqueRemovedSessionIds = Array.from(new Set(removedSessionIds));
     const changedCount = uniqueRemovedSessionIds.length + toUpsert.length;
     const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
-    const loaded = toUpsert
-      .map((change) => loadSearchIndexEntry(agentName, change, loadSessionData))
-      .filter((entry): entry is LoadedSearchIndexEntry => entry !== null);
-    const writeRows = () => writeSearchIndexRows(db, agentName, uniqueRemovedSessionIds, loaded);
+    let indexed = 0;
+    const writeRows = () => {
+      indexed = writeSearchIndexRows(
+        db,
+        agentName,
+        uniqueRemovedSessionIds,
+        loadSearchIndexEntries(agentName, toUpsert, loadSessionData),
+      );
+    };
 
     let rebuildDurationMs: number | undefined;
-    const needsRebuild = isBulk && (uniqueRemovedSessionIds.length > 0 || loaded.length > 0);
+    const needsRebuild = isBulk && changedCount > 0;
 
     if (needsRebuild) {
       db.transaction(() => {
@@ -472,8 +506,8 @@ export function syncSessionSearchIndexChanges(
       sessions: changes.length,
       changed: toUpsert.length,
       deleted: uniqueRemovedSessionIds.length,
-      indexed: loaded.length,
-      skipped: toUpsert.length - loaded.length,
+      indexed,
+      skipped: toUpsert.length - indexed,
       durationMs: performance.now() - startedAt,
       rebuildDurationMs,
     };

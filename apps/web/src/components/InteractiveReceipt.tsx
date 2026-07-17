@@ -3,7 +3,8 @@ import type { SessionData } from "../lib/api";
 import { getSessionDisplayTitle } from "../lib/session-title";
 import {
   isReceiptSettled,
-  nextReceiptIdleFrame,
+  nextReceiptReleaseFrame,
+  nextReceiptSettledFrame,
   shouldSimulateReceiptFrame,
 } from "../lib/interactive-receipt-frame-policy";
 import { SMART_TAG_LABELS } from "./SmartTagChips";
@@ -520,6 +521,19 @@ function findGrabTarget(particles: Particle[], x: number, y: number) {
   return bestIndex;
 }
 
+function measureSheetMovement(particles: Particle[]) {
+  let maxMovement = 0;
+  for (let i = COLUMNS; i < particles.length; i += 1) {
+    const particle = particles[i];
+    if (!particle) continue;
+    maxMovement = Math.max(
+      maxMovement,
+      Math.hypot(particle.x - particle.oldX, particle.y - particle.oldY),
+    );
+  }
+  return maxMovement;
+}
+
 export function InteractiveReceipt({
   session,
   toc,
@@ -562,27 +576,26 @@ export function InteractiveReceipt({
     let startedAt = performance.now();
     let lastMetrics: SheetMetrics | null = null;
     let stableFrames = 0;
-    let idleFrames = 0;
+    let settledFrames = 0;
+    let releaseFrames = 0;
     let lastSimulationTime = 0;
     let isVisible = false;
-    let anchorVisible = true;
     let running = false;
     const desktopMedia = window.matchMedia(minWidthQuery);
     const reducedMotionMedia = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-    const shouldRun = () =>
-      desktopMedia.matches && document.visibilityState === "visible" && anchorVisible;
+    const shouldRun = () => desktopMedia.matches && document.visibilityState === "visible";
 
     const getSheetMetrics = (): SheetMetrics => {
       const rect = anchor.getBoundingClientRect();
       const anchorWidth = Math.max(280, rect.width || 320);
       const receiptWidth = Math.min(RECEIPT_WIDTH, anchorWidth - 34);
-      const receiptHeight = Math.min(RECEIPT_HEIGHT, Math.max(320, height - rect.top - 42));
+      const receiptHeight = Math.min(RECEIPT_HEIGHT, Math.max(320, height - 42));
       return {
         receiptWidth,
         receiptHeight,
-        startX: rect.left + (rect.width - receiptWidth) / 2,
-        startY: rect.top + 32,
+        startX: (anchorWidth - receiptWidth) / 2,
+        startY: 32,
       };
     };
 
@@ -610,13 +623,15 @@ export function InteractiveReceipt({
 
     const resize = () => {
       const ratio = window.devicePixelRatio || 1;
-      width = Math.max(1, window.innerWidth);
-      height = Math.max(1, window.innerHeight);
+      const rect = anchor.getBoundingClientRect();
+      width = Math.max(1, rect.width);
+      height = Math.max(1, rect.height);
       canvas.width = Math.floor(width * ratio);
       canvas.height = Math.floor(height * ratio);
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       stableFrames = 0;
-      idleFrames = 0;
+      settledFrames = 0;
+      releaseFrames = 0;
       lastSimulationTime = 0;
       setVisible(false);
       resetSheet(getSheetMetrics());
@@ -638,7 +653,8 @@ export function InteractiveReceipt({
     };
 
     const getPoint = (event: PointerEvent) => {
-      return { x: event.clientX, y: event.clientY };
+      const rect = anchor.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
     };
 
     const onPointerDown = (event: PointerEvent) => {
@@ -656,7 +672,8 @@ export function InteractiveReceipt({
       pointer.vx = 0;
       pointer.vy = 0;
       pointer.grabbedIndex = target;
-      idleFrames = 0;
+      settledFrames = 0;
+      releaseFrames = 0;
       startLoop();
     };
 
@@ -819,10 +836,20 @@ export function InteractiveReceipt({
         constrain();
       }
       draw();
-      idleFrames = nextReceiptIdleFrame(pointer.id != null, idleFrames);
+      const isDragging = pointer.id != null;
+      settledFrames = nextReceiptSettledFrame(
+        isDragging,
+        measureSheetMovement(sheet.particles),
+        settledFrames,
+      );
+      releaseFrames = nextReceiptReleaseFrame(isDragging, releaseFrames);
       const isReducedMotion = reducedMotionMedia.matches;
       if (isReducedMotion || stableFrames >= 2) setVisible(true);
-      if (isReducedMotion || isReceiptSettled(stableFrames, idleFrames)) {
+      if (isReducedMotion || isReceiptSettled(stableFrames, settledFrames, releaseFrames)) {
+        if (!isReducedMotion) {
+          resetSheet(metrics, time);
+          draw();
+        }
         running = false;
         animationFrame = 0;
         return;
@@ -834,11 +861,6 @@ export function InteractiveReceipt({
     if (shouldRun()) resize();
     const observer = new ResizeObserver(resize);
     observer.observe(anchor);
-    const intersectionObserver = new IntersectionObserver(([entry]) => {
-      anchorVisible = Boolean(entry?.isIntersecting);
-      syncLoopState();
-    });
-    intersectionObserver.observe(anchor);
     desktopMedia.addEventListener("change", syncLoopState);
     reducedMotionMedia.addEventListener("change", syncLoopState);
     document.addEventListener("visibilitychange", syncLoopState);
@@ -852,7 +874,6 @@ export function InteractiveReceipt({
     return () => {
       stopLoop();
       observer.disconnect();
-      intersectionObserver.disconnect();
       desktopMedia.removeEventListener("change", syncLoopState);
       reducedMotionMedia.removeEventListener("change", syncLoopState);
       document.removeEventListener("visibilitychange", syncLoopState);
@@ -865,15 +886,15 @@ export function InteractiveReceipt({
   }, [minWidthQuery, payload]);
 
   return (
-    <div ref={anchorRef} className="h-[calc(100dvh-5.5rem)] min-h-[420px]">
+    <div ref={anchorRef} className="relative h-[calc(100dvh-5.5rem)] min-h-[420px]">
       <canvas
         ref={canvasRef}
-        className="invisible pointer-events-none fixed inset-0 z-[61] block h-screen w-screen touch-none"
+        className="invisible pointer-events-none absolute inset-0 z-[61] block h-full w-full touch-none"
         aria-hidden="true"
       />
       <div
         ref={hitSurfaceRef}
-        className="invisible fixed left-0 top-0 z-[62] cursor-grab touch-none active:cursor-grabbing"
+        className="invisible absolute left-0 top-0 z-[62] cursor-grab touch-none active:cursor-grabbing"
         aria-label="Interactive thermal receipt with Verlet paper simulation"
       />
     </div>

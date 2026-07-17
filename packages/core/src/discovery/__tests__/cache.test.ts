@@ -232,7 +232,7 @@ describe("withCacheDb schema memo", () => {
   it("runs ensureSchema on the first open but skips it on later opens for the same path", () => {
     withCacheDb(() => undefined);
     expect(getSchemaEnsuredPath()).toBe(getCachePath());
-    expect(getUserVersion(getCachePath())).toBe(13);
+    expect(getUserVersion(getCachePath())).toBe(14);
 
     const db = new Database(getCachePath());
     db.pragma("user_version = 5");
@@ -243,7 +243,7 @@ describe("withCacheDb schema memo", () => {
 
     setSchemaEnsuredPath(null);
     withCacheDb(() => undefined);
-    expect(getUserVersion(getCachePath())).toBe(13);
+    expect(getUserVersion(getCachePath())).toBe(14);
   });
 });
 
@@ -251,7 +251,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(13);
+    expect(getUserVersion(getCachePath())).toBe(14);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -408,7 +408,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(13);
+    expect(getUserVersion(getCachePath())).toBe(14);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
@@ -964,6 +964,90 @@ describe("searchSessions", () => {
     expect(filteredResults).toHaveLength(1);
     expect(filteredResults[0]?.session.id).toBe("bulk-42");
     expect(filteredResults[0]?.snippet).toContain("<mark>needle</mark>");
+  });
+
+  it("writes each full search entry before loading the next one", () => {
+    const sessions = Array.from({ length: 4 }, (_, index) => makeSession(`stream-${index}`));
+    let loadedCount = 0;
+    let firstWriteLoadedCount: number | undefined;
+    const originalPrepare = Database.prototype.prepare;
+    const prepareSpy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+      this: Database.Database,
+      source: string,
+    ) {
+      const statement = originalPrepare.call(this, source);
+      if (!source.includes("INSERT INTO session_documents(")) return statement;
+
+      const originalRun = statement.run.bind(statement);
+      statement.run = (...params: unknown[]) => {
+        firstWriteLoadedCount ??= loadedCount;
+        return (originalRun as (...boundParams: unknown[]) => Database.RunResult)(...params);
+      };
+      return statement;
+    });
+
+    try {
+      const result = syncSessionSearchIndex("claudecode", sessions, (sessionId) => {
+        loadedCount += 1;
+        return makeSessionData(sessionId, `streamed ${sessionId}`);
+      });
+
+      expect(result).toMatchObject({ changed: 4, indexed: 4, skipped: 0 });
+    } finally {
+      prepareSpy.mockRestore();
+    }
+
+    expect(loadedCount).toBe(4);
+    expect(firstWriteLoadedCount).toBe(1);
+  });
+
+  it("validates normalized message counts instead of raw agent counts", () => {
+    const session = {
+      ...makeSession("normalized-count"),
+      stats: { ...makeSession("normalized-count").stats, message_count: 5 },
+    };
+    const loadSession = vi.fn(() => ({
+      ...session,
+      messages: makeSessionData(session.id, "normalized content").messages,
+    }));
+
+    syncSessionSearchIndex("codex", [session], loadSession);
+    loadSession.mockClear();
+
+    const result = syncSessionSearchIndex("codex", [session], loadSession);
+
+    expect(result).toMatchObject({ changed: 0, indexed: 0, skipped: 0 });
+    expect(loadSession).not.toHaveBeenCalled();
+  });
+
+  it("backfills normalized message counts when migrating existing search documents", () => {
+    const session = makeSession("normalized-count-migration");
+    syncSessionSearchIndex("codex", [session], () =>
+      makeSessionData(session.id, "normalized migration content"),
+    );
+
+    const db = new Database(getCachePath());
+    try {
+      db.prepare("UPDATE session_documents SET indexed_message_count = 0").run();
+      db.pragma("user_version = 13");
+      db.prepare("UPDATE cache_meta SET value = '13' WHERE key = 'version'").run();
+    } finally {
+      db.close();
+    }
+    setSchemaEnsuredPath(null);
+
+    searchSessions("normalized migration");
+
+    const migratedDb = new Database(getCachePath(), { readonly: true });
+    try {
+      const row = migratedDb
+        .prepare("SELECT indexed_message_count FROM session_documents")
+        .get() as { indexed_message_count: number };
+      expect(row.indexed_message_count).toBe(1);
+    } finally {
+      migratedDb.close();
+    }
+    expect(getUserVersion(getCachePath())).toBe(14);
   });
 
   it("keeps small incremental updates searchable immediately", () => {
@@ -1576,7 +1660,7 @@ describe("searchSessions", () => {
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(13);
+    expect(getUserVersion(getCachePath())).toBe(14);
   });
 
   it("refreshes cached project identities when migrating to schema version 12", () => {
