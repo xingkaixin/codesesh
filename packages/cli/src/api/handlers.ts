@@ -281,14 +281,6 @@ function parseSearchOptions(
   };
 }
 
-function filterSessionsByWindow(
-  sessions: SessionHead[],
-  from: number | undefined,
-  to: number | undefined,
-): SessionHead[] {
-  return filterSessionsByActivityWindow(sessions, from, to);
-}
-
 function filterSessionsByActivityWindow(
   sessions: SessionHead[],
   from: number | undefined,
@@ -423,7 +415,7 @@ export function handleGetAgents(
   const counts = Object.fromEntries(
     Object.entries(scanResult.byAgent).map(([agentName, sessions]) => [
       agentName,
-      filterSessionsByWindow(sessions, from, to).length,
+      filterSessionsByActivityWindow(sessions, from, to).length,
     ]),
   );
   const info = getAgentInfoMap(counts).filter((agent) => agent.count > 0);
