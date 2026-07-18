@@ -22,6 +22,8 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 **What you get:**
 
 - **Unified Timeline** — Browse sessions across all your AI agents in a single, searchable interface
+- **Flexible Time Ranges** — Switch between rolling presets, all history, or a custom date range without restarting the server
+- **Session Aliases** — Give important sessions memorable local names that carry through search, bookmarks, and activity views
 - **Structured Global Search** — Search titles, messages, tool output, and file paths with filters for agent, project, smart tag, tool, file activity, and cost
 - **Dashboard & Activity Trends** — Track daily activity, agent distribution, recent sessions, latest activity, token usage, model usage, smart tags, and cost at a glance
 - **Project Browse Mode** — Open a dedicated projects view with project-level metrics, sessions, and cross-agent drill-down
@@ -192,11 +194,12 @@ Once CodeSesh is running, here's what you'll find:
 2. **Structured Global Search** — Query titles, messages, tool output, and file paths, then narrow results by agent, project, tag, tool, file activity, or cost.
 3. **Projects** — Browse project-level totals, recent activity, agent mix, scoped dashboards, and sessions for a single repository or project identity.
 4. **Session Tree Sidebar** — Browse sessions grouped by agent or project identity and filter by agent or smart tag.
-5. **Session List** — Browse your sessions sorted by most recent. Each card shows the session title, working directory, message count, and total cost at a glance.
-6. **Smart Tags & Bookmarks** — Spot session intent quickly, pin sessions you want to revisit, and manage them from the dashboard or session views.
-7. **Session Detail** — Click any session to open a full replay with a receipt-style summary, user messages, assistant responses, tool invocations, reasoning steps, model labels, tracked file activity, and agent resume command copy.
-8. **Keyboard Shortcuts** — Use the shortcuts panel to navigate sessions, open global search, focus search, and move between grouped content faster.
-9. **Live Updates** — New or changed local sessions are reflected automatically while the server is running.
+5. **Time Range Control** — Filter the entire Web UI with rolling presets, all history, or a custom date range.
+6. **Session List** — Browse your sessions sorted by most recent. Each card shows the session title, working directory, message count, and total cost at a glance.
+7. **Session Aliases, Smart Tags & Bookmarks** — Rename sessions locally, spot their intent quickly, and pin the ones you want to revisit.
+8. **Session Detail** — Click any session to open a full replay with a receipt-style summary, user messages, assistant responses, tool invocations, reasoning steps, model labels, tracked file activity, and agent resume command copy.
+9. **Keyboard Shortcuts** — Use the shortcuts panel to navigate sessions, open global search, focus search, and move between grouped content faster.
+10. **Live Updates** — New or changed local sessions are reflected automatically while the server is running.
 
 ---
 

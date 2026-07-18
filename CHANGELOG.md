@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.14.0] - 2026-07-18
+
+This release adds persistent session aliases and interactive time-range filtering, while improving navigation, motion, search backfill memory use, and internal module boundaries.
+
+### Features
+
+- Added persistent local session aliases that appear across session lists, bookmarks, activity views, details, and search results. (#132)
+- Added Web time-range presets and custom date ranges, with complete-history backfill and range-aware dashboards, projects, agents, sessions, search, and live updates. (#133)
+- Refined navigation and transient surface motion with reduced-motion support. (#135)
+
+### Bug Fixes
+
+- Aligned route-derived navigation and search context state, cancelled stale time-window loads, and kept rolling preset windows current. (#136, #137, #138)
+- Restored keyboard focus after closing session action menus. (#139)
+- Restored dragged receipt motion and streamed search-index backfill to avoid loading the full history into memory. (#141)
+
+### Documentation
+
+- Corrected architecture and tooling documentation drift. (#140)
+
+### Refactor
+
+- Unified file-agent transcript assembly and scan finalization, then consolidated shared cache metadata, agent registry metadata, and session normalization truth sources. (#143, #144, #145)
+- Centralized CLI agent synchronization, scan interfaces, and time-window resolution. (#146, #147)
+- Consolidated Web session refresh state, extracted app-shell models, and centralized agent identity metadata across Core, CLI, and Web. (#148, #149, #150)
+
+### Tests
+
+- Expanded unit coverage and quality gates across Core, CLI, and Web, including per-module test seams for cache, pricing, state, and utilities. (#134, #142)
+
+### Changelog Detail
+
+- #150 refactor: centralize agent identity metadata @xingkaixin
+- #149 refactor(web): extract app shell models @xingkaixin
+- #148 refactor(web): consolidate session data refresh @xingkaixin
+- #147 refactor(cli): centralize scan interfaces and time windows @xingkaixin
+- #146 refactor(cli): centralize agent sync lifecycle @xingkaixin
+- #145 refactor: consolidate core and CLI truth sources @xingkaixin
+- #144 refactor(core): centralize scan finalization @xingkaixin
+- #143 refactor(core): unify file agent transcript assembly @xingkaixin
+- #142 test(core): add per-module test seams @xingkaixin
+- #141 fix: restore receipt motion and stream search backfill @xingkaixin
+- #140 docs: correct architecture and tooling drift @xingkaixin
+- #139 fix(web): restore session menu keyboard focus @xingkaixin
+- #138 fix(web): keep rolling time windows current @xingkaixin
+- #137 fix(web): cancel stale window data loads @xingkaixin
+- #136 fix(web): align route-derived navigation state @xingkaixin
+- #135 feat(web): refine navigation and transient motion @xingkaixin
+- #134 test: improve unit test coverage @xingkaixin
+- #133 feat: add session time range filtering @xingkaixin
+- #132 feat: add local session aliases @xingkaixin
+
 ## [0.13.0] - 2026-07-12
 
 This release adds timeline navigation for long sessions, improves scan and search reliability, and strengthens remote access and build validation.
