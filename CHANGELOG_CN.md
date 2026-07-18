@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.14.0] - 2026-07-18
+
+本版本新增持久化会话别名和交互式时间范围筛选，同时提升导航、动效和搜索回填的可靠性与内存效率，并进一步收敛内部模块边界。
+
+### 新功能
+
+- 新增持久化本地会话别名，并在会话列表、收藏、活动视图、详情和搜索结果中统一展示。 (#132)
+- 新增 Web 时间范围预设和自定义日期范围，配合完整历史回填，让 Dashboard、项目、Agent、会话、搜索和实时更新统一遵循所选范围。 (#133)
+- 优化导航和临时浮层动效，并支持 reduced motion 偏好。 (#135)
+
+### 问题修复
+
+- 对齐路由派生的导航与搜索上下文状态，取消过期的时间窗口请求，并让滚动时间预设始终保持最新。 (#136, #137, #138)
+- 恢复关闭会话操作菜单后的键盘焦点。 (#139)
+- 恢复拖拽 receipt 的动效，并以流式方式回填搜索索引，避免将完整历史一次性载入内存。 (#141)
+
+### 文档
+
+- 修正架构与工具链文档偏差。 (#140)
+
+### 重构
+
+- 统一文件型 Agent 的 transcript 组装与扫描收尾，并集中缓存元数据、Agent 注册表元数据和会话归一化的事实来源。 (#143, #144, #145)
+- 集中 CLI Agent 同步生命周期、扫描接口和时间窗口解析。 (#146, #147)
+- 合并 Web 会话刷新状态，提取应用外壳模型，并在 Core、CLI 和 Web 之间集中 Agent 身份元数据。 (#148, #149, #150)
+
+### 测试
+
+- 扩展 Core、CLI 和 Web 的单元测试覆盖与质量门禁，并为缓存、定价、状态和工具模块增加独立测试 seam。 (#134, #142)
+
+### Changelog Detail
+
+- #150 refactor: centralize agent identity metadata @xingkaixin
+- #149 refactor(web): extract app shell models @xingkaixin
+- #148 refactor(web): consolidate session data refresh @xingkaixin
+- #147 refactor(cli): centralize scan interfaces and time windows @xingkaixin
+- #146 refactor(cli): centralize agent sync lifecycle @xingkaixin
+- #145 refactor: consolidate core and CLI truth sources @xingkaixin
+- #144 refactor(core): centralize scan finalization @xingkaixin
+- #143 refactor(core): unify file agent transcript assembly @xingkaixin
+- #142 test(core): add per-module test seams @xingkaixin
+- #141 fix: restore receipt motion and stream search backfill @xingkaixin
+- #140 docs: correct architecture and tooling drift @xingkaixin
+- #139 fix(web): restore session menu keyboard focus @xingkaixin
+- #138 fix(web): keep rolling time windows current @xingkaixin
+- #137 fix(web): cancel stale window data loads @xingkaixin
+- #136 fix(web): align route-derived navigation state @xingkaixin
+- #135 feat(web): refine navigation and transient motion @xingkaixin
+- #134 test: improve unit test coverage @xingkaixin
+- #133 feat: add session time range filtering @xingkaixin
+- #132 feat: add local session aliases @xingkaixin
+
 ## [0.13.0] - 2026-07-12
 
 本版本为长会话增加时间线导航，提升扫描与搜索的可靠性，并强化远程访问安全性和构建校验。
