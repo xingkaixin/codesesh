@@ -707,11 +707,17 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
       const parts: MessagePart[] = [];
       for (const item of content) {
         if (typeof item === "object" && item !== null) {
-          const text = String(
-            (item as Record<string, unknown>)["text"] ??
-              (item as Record<string, unknown>)["content"] ??
-              "",
-          );
+          const itemRecord = item as Record<string, unknown>;
+          const source = itemRecord["source"] as Record<string, unknown> | undefined;
+          if (itemRecord["type"] === "image" && source) {
+            const data = typeof source["data"] === "string" ? source["data"] : "";
+            const mimeType = typeof source["media_type"] === "string" ? source["media_type"] : "";
+            if (data && mimeType.startsWith("image/")) {
+              parts.push({ type: "image", data, mime_type: mimeType, time_created: timestampMs });
+            }
+            continue;
+          }
+          const text = String(itemRecord["text"] ?? itemRecord["content"] ?? "");
           const cleaned = cleanInternalText(text);
           if (cleaned) parts.push(this.buildTextPart(cleaned, timestampMs));
         } else if (typeof item === "string") {

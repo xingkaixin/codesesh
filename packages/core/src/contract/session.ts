@@ -89,8 +89,11 @@ export interface ToolPartState {
 }
 
 export interface MessagePart {
-  type: "text" | "tool" | "reasoning" | "plan";
+  type: "text" | "tool" | "reasoning" | "plan" | "image";
   text?: unknown;
+  data?: string;
+  mime_type?: string;
+  url?: string;
   tool?: string;
   title?: string;
   nickname?: string;
