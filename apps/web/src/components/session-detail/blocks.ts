@@ -48,6 +48,7 @@ function isVisiblePart(part: MessagePart) {
 
 export function buildMessageBlocks(parts: MessagePart[]): MessageBlock[] {
   return parts.reduce<MessageBlock[]>((blocks, part) => {
+    if (part.type === "image") return blocks;
     if (!isVisiblePart(part)) return blocks;
 
     const prev = blocks.at(-1);

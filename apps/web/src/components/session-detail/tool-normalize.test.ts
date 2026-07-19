@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MessagePart } from "../../lib/api";
 import {
+  buildSemanticOutputContent,
   cleanToolTitle,
   extractCommand,
   extractToolTextSegments,
@@ -130,6 +131,42 @@ describe("formatToolOutput / getOutputOrErrorText", () => {
 
     const emptyState = { ...state, outputValue: null, errorValue: null };
     expect(getOutputOrErrorText(emptyState)).toBe("No output captured.");
+  });
+});
+
+describe("buildSemanticOutputContent", () => {
+  it("preserves image blocks alongside text", () => {
+    expect(
+      buildSemanticOutputContent([
+        { type: "image", mime_type: "image/png", data: "iVBORw0KGgo=" },
+        { type: "text", text: "Browser screenshot" },
+      ]),
+    ).toEqual({
+      kind: "media",
+      items: [
+        {
+          src: "data:image/png;base64,iVBORw0KGgo=",
+          alt: "Tool output image 1",
+        },
+      ],
+      text: "Browser screenshot",
+    });
+  });
+
+  it("turns JSON objects into property rows", () => {
+    expect(buildSemanticOutputContent('{"status":"complete","count":3}')).toEqual({
+      kind: "property-list",
+      items: [
+        { label: "status", value: "complete" },
+        { label: "count", value: 3 },
+      ],
+    });
+  });
+
+  it("does not load remote image URLs from historical output", () => {
+    expect(
+      buildSemanticOutputContent([{ type: "image", url: "https://tracker.example/tool.png" }]),
+    ).toBeNull();
   });
 });
 
