@@ -477,6 +477,79 @@ export function buildCodexRequestUserInputDisplay(
   };
 }
 
+export function buildCodexUpdatePlanDisplay(inputValue: unknown) {
+  const input = toRecord(inputValue);
+  const explanation = toPlainText(input.explanation);
+  const steps = Array.isArray(input.plan) ? input.plan : [];
+
+  const counts = new Map<string, number>();
+  const lines = steps.map((entry) => {
+    const item = toRecord(entry);
+    const status = toPlainText(item.status) || "pending";
+    const step = toPlainText(item.step) || toPlainText(item.content);
+    counts.set(status, (counts.get(status) ?? 0) + 1);
+    const marker = status === "completed" ? "x" : status === "in_progress" ? "~" : " ";
+    return `- [${marker}] ${step || "(empty step)"}`;
+  });
+
+  const details: ToolDetailItem[] = [...counts.entries()].map(([status, count]) => ({
+    label: status,
+    value: String(count),
+  }));
+
+  return {
+    secondaryText:
+      explanation ||
+      [...counts.entries()].map(([status, count]) => `${count} ${status}`).join(" · ") ||
+      undefined,
+    details,
+    text: lines.join("\n") || explanation || "No plan captured.",
+  };
+}
+
+function summarizeWebRunItems(items: unknown[], field: string) {
+  return items
+    .map((item) => toPlainText(toRecord(item)[field]))
+    .filter(Boolean)
+    .join(" · ");
+}
+
+export function buildCodexWebRunDisplay(inputValue: unknown) {
+  const input = toRecord(inputValue);
+
+  if (Array.isArray(input.search_query)) {
+    return {
+      title: "web search",
+      secondaryText: summarizeWebRunItems(input.search_query, "q") || undefined,
+    };
+  }
+  if (Array.isArray(input.open)) {
+    return {
+      title: "web open",
+      secondaryText: summarizeWebRunItems(input.open, "ref_id") || undefined,
+    };
+  }
+
+  const action = Object.keys(input)[0] || "run";
+  return { title: `web ${action}`, secondaryText: undefined };
+}
+
+export function buildCodexViewImageDisplay(
+  inputValue: unknown,
+  formatPathForDisplay: (path: string) => string,
+) {
+  const input = toRecord(inputValue);
+  const path = toPlainText(input.path);
+  const detail = toPlainText(input.detail);
+  const displayPath = path ? formatPathForDisplay(path) : "";
+
+  const details: ToolDetailItem[] = [];
+  appendDetail(details, "Image", displayPath);
+  appendDetail(details, "Detail", detail);
+
+  return { secondaryText: displayPath || undefined, details };
+}
+
 export function extractCodexToolText(value: unknown) {
   return joinToolText(value);
 }

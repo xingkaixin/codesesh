@@ -179,6 +179,75 @@ describe("getToolDisplayStrategy", () => {
       text: "No output captured.",
     });
   });
+
+  it("renders Codex update_plan as a checklist", () => {
+    const tool = part({
+      tool: "update_plan",
+      title: "Tool: update_plan",
+      state: {
+        status: "completed",
+        arguments: {
+          explanation: "halfway",
+          plan: [
+            { step: "Define seam", status: "completed" },
+            { step: "Wire backend", status: "in_progress" },
+            { step: "Update UI", status: "pending" },
+          ],
+        },
+        output: [{ type: "text", text: "ok" }],
+      },
+    });
+    const strategy = getToolDisplayStrategy("codex", tool, normalizeToolState(tool));
+
+    expect(strategy.title).toBe("update plan");
+    expect(strategy.secondaryText).toBe("halfway");
+    expect(strategy.details).toEqual([
+      { label: "completed", value: "1" },
+      { label: "in_progress", value: "1" },
+      { label: "pending", value: "1" },
+    ]);
+    expect(strategy.outputContent).toMatchObject({
+      kind: "plain",
+      language: "markdown",
+      text: "- [x] Define seam\n- [~] Wire backend\n- [ ] Update UI",
+    });
+  });
+
+  it("renders Codex web__run search queries", () => {
+    const tool = part({
+      tool: "web__run",
+      title: "Tool: web__run",
+      state: {
+        status: "completed",
+        arguments: { search_query: [{ q: "MLX audio" }, { q: "diarization" }] },
+        output: "results...",
+      },
+    });
+    const strategy = getToolDisplayStrategy("codex", tool, normalizeToolState(tool));
+
+    expect(strategy.title).toBe("web search");
+    expect(strategy.secondaryText).toBe("MLX audio · diarization");
+  });
+
+  it("renders Codex view_image with a relative path", () => {
+    const tool = part({
+      tool: "view_image",
+      title: "Tool: view_image",
+      state: {
+        status: "completed",
+        arguments: { path: "/repo/shot.jpeg", detail: "original" },
+        output: "",
+      },
+    });
+    const strategy = getToolDisplayStrategy("codex", tool, normalizeToolState(tool), "/repo");
+
+    expect(strategy.title).toBe("view image");
+    expect(strategy.secondaryText).toBe("shot.jpeg");
+    expect(strategy.details).toEqual([
+      { label: "Image", value: "shot.jpeg" },
+      { label: "Detail", value: "original" },
+    ]);
+  });
 });
 
 describe("getAssistantDisplayLabel", () => {
