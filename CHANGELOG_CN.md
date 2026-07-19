@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.15.0] - 2026-07-20
+
+本版本让会话中的工具调用更易读：将 Codex code-mode 的 exec 调用解码还原为原生工具展示，工具以语义化方式可视化呈现，时间轴还会按活动类型为工具着色。
+
+### 新功能
+
+- 将 Codex code-mode 的 `exec` 工具调用解码还原为原生工具展示（bash、patch、write_stdin、node_repl、subagent、MCP），为 `update_plan`、`web__run` 和 `view_image` 新增专用渲染，把多调用 exec 程序拆分为有序的工具片段，并通过轻量的 pending-reindex 迁移在升级时刷新已缓存的过期 Codex 详情。 (#152)
+- 新增语义化工具可视化与 Claude 消息的语义化渲染，同时保留 Claude 工具图片与 task 工具。 (#153)
+- 时间轴工具按活动分类着色。 (#154)
+
+### Changelog Detail
+
+- #154 feat: color timeline tools by activity @xingkaixin
+- #153 feat: add semantic tool visualizations @xingkaixin
+- #152 feat(codex): decode code-mode exec into native tool displays @xingkaixin
+
 ## [0.14.0] - 2026-07-18
 
 本版本新增持久化会话别名和交互式时间范围筛选，同时提升导航、动效和搜索回填的可靠性与内存效率，并进一步收敛内部模块边界。
