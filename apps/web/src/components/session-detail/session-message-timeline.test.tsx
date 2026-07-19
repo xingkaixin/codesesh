@@ -20,10 +20,10 @@ const entries: SessionTimelineEntry[] = [
   },
   {
     id: "tool-1",
-    kind: "tool",
+    kind: "tool-read",
     anchorId: "tool-1",
     messageIndex: 2,
-    tooltip: "Tool · Read",
+    tooltip: "Read · Read",
   },
 ];
 
@@ -46,6 +46,37 @@ function renderTimeline(timelineEntries = entries) {
 }
 
 describe("SessionMessageTimeline", () => {
+  it("uses distinct colors for read, write, and execute tools", () => {
+    const toolEntries: SessionTimelineEntry[] = [
+      { ...entries[2]!, id: "read", anchorId: "read", kind: "tool-read", tooltip: "Read · Read" },
+      {
+        ...entries[2]!,
+        id: "write",
+        anchorId: "write",
+        kind: "tool-write",
+        tooltip: "Write · Edit",
+      },
+      {
+        ...entries[2]!,
+        id: "execute",
+        anchorId: "execute",
+        kind: "tool-execute",
+        tooltip: "Execute · Bash",
+      },
+    ];
+    const { getByRole } = renderTimeline(toolEntries);
+
+    expect(getByRole("button", { name: "Go to Read · Read" }).className).toContain(
+      "--timeline-tool-read",
+    );
+    expect(getByRole("button", { name: "Go to Write · Edit" }).className).toContain(
+      "--timeline-tool-write",
+    );
+    expect(getByRole("button", { name: "Go to Execute · Bash" }).className).toContain(
+      "--timeline-tool-execute",
+    );
+  });
+
   it("keeps a color block clickable after a pointer press", () => {
     const { getAllByRole, onNavigate } = renderTimeline();
     const target = getAllByRole("button")[2]!;
