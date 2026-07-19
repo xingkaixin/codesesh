@@ -881,3 +881,207 @@ describe("CodexAgent cache refresh", () => {
     });
   });
 });
+
+describe("CodexAgent code-mode exec decoding", () => {
+  afterEach(() => {
+    for (const dir of tempDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    tempDirs = [];
+  });
+
+  function writeCodeModeSession(records: Record<string, unknown>[]): {
+    agent: any;
+    sessionId: string;
+  } {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-codemode-"));
+    tempDirs.push(tempDir);
+    const sessionId = "019dcode-0000-7000-8000-000000000000";
+    const sessionFile = join(tempDir, `rollout-2026-07-19T10-00-00-${sessionId}.jsonl`);
+
+    const lines = [
+      JSON.stringify({
+        timestamp: "2026-07-19T10:00:00Z",
+        type: "session_meta",
+        payload: { cwd: "/tmp/project", cli_version: "0.144.0-alpha.4" },
+      }),
+      ...records.map((record) => JSON.stringify({ timestamp: "2026-07-19T10:00:01Z", ...record })),
+      "",
+    ];
+    writeFileSync(sessionFile, lines.join("\n"));
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.scan();
+    return { agent, sessionId };
+  }
+
+  function firstToolPart(agent: any, sessionId: string): MessagePart | undefined {
+    const data = agent.getSessionData(sessionId);
+    for (const message of data.messages) {
+      const part = message.parts.find((candidate: MessagePart) => candidate.type === "tool");
+      if (part) return part;
+    }
+    return undefined;
+  }
+
+  it("decodes exec_command into a bash tool with stripped output", () => {
+    const { agent, sessionId } = writeCodeModeSession([
+      {
+        type: "response_item",
+        payload: {
+          type: "custom_tool_call",
+          call_id: "call-1",
+          name: "exec",
+          input:
+            'const r = await tools.exec_command({cmd:"ls",workdir:"/tmp/project"}); text(r.output)',
+        },
+      },
+      {
+        type: "response_item",
+        payload: {
+          type: "custom_tool_call_output",
+          call_id: "call-1",
+          output: [
+            { type: "input_text", text: "Script completed\nWall time 0.1 seconds\nOutput:\n" },
+            { type: "input_text", text: "package.json" },
+          ],
+        },
+      },
+    ]);
+
+    expect(firstToolPart(agent, sessionId)).toMatchObject({
+      type: "tool",
+      tool: "bash",
+      state: {
+        arguments: { cmd: "ls", workdir: "/tmp/project" },
+        output: [{ type: "text", text: "package.json" }],
+        status: "completed",
+      },
+    });
+  });
+
+  it("decodes apply_patch into a patch tool with parsed blocks", () => {
+    const { agent, sessionId } = writeCodeModeSession([
+      {
+        type: "response_item",
+        payload: {
+          type: "custom_tool_call",
+          call_id: "call-2",
+          name: "exec",
+          input:
+            'const patch = "*** Begin Patch\\n*** Add File: a.txt\\n+hello\\n*** End Patch";\nconst r = await tools.apply_patch({patch}); text(r.output)',
+        },
+      },
+      {
+        type: "response_item",
+        payload: {
+          type: "custom_tool_call_output",
+          call_id: "call-2",
+          output: [
+            { type: "input_text", text: "Script completed\nWall time 0.0 seconds\nOutput:\n" },
+            { type: "input_text", text: "Success" },
+          ],
+        },
+      },
+    ]);
+
+    expect(firstToolPart(agent, sessionId)).toMatchObject({
+      type: "tool",
+      tool: "patch",
+      state: {
+        arguments: [{ type: "write_file", path: "a.txt", content: "+hello" }],
+        output: [{ type: "text", text: "Success" }],
+        status: "completed",
+      },
+    });
+  });
+
+  it("decodes a namespaced node_repl js call", () => {
+    const { agent, sessionId } = writeCodeModeSession([
+      {
+        type: "response_item",
+        payload: {
+          type: "custom_tool_call",
+          call_id: "call-3",
+          name: "exec",
+          input:
+            'const r = await tools.mcp__node_repl__js({title:"Check state",code:"1+1"}); text(r)',
+        },
+      },
+    ]);
+
+    expect(firstToolPart(agent, sessionId)).toMatchObject({
+      type: "tool",
+      tool: "js",
+      title: "Tool: js",
+      state: {
+        arguments: { title: "Check state", code: "1+1" },
+        metadata: { name: "js", namespace: "mcp__node_repl__" },
+      },
+    });
+  });
+
+  it("decodes write_stdin", () => {
+    const { agent, sessionId } = writeCodeModeSession([
+      {
+        type: "response_item",
+        payload: {
+          type: "custom_tool_call",
+          call_id: "call-4",
+          name: "exec",
+          input:
+            'const r = await tools.write_stdin({session_id:68920,chars:"yes"}); text(r.output)',
+        },
+      },
+    ]);
+
+    expect(firstToolPart(agent, sessionId)).toMatchObject({
+      type: "tool",
+      tool: "write_stdin",
+      state: { arguments: { session_id: 68920, chars: "yes" } },
+    });
+  });
+
+  it("splits a multi-call program into ordered tool parts", () => {
+    const { agent, sessionId } = writeCodeModeSession([
+      {
+        type: "response_item",
+        payload: {
+          type: "custom_tool_call",
+          call_id: "call-5",
+          name: "exec",
+          input:
+            'let r = await tools.exec_command({cmd:"ls"}); text(r.output); const patch = "*** Begin Patch\\n*** Add File: a.txt\\n+hi\\n*** End Patch"; await tools.apply_patch({patch})',
+        },
+      },
+      {
+        type: "response_item",
+        payload: {
+          type: "custom_tool_call_output",
+          call_id: "call-5",
+          output: [
+            { type: "input_text", text: "Script completed\nWall time 0.1 seconds\nOutput:\n" },
+            { type: "input_text", text: "a.txt" },
+          ],
+        },
+      },
+    ]);
+
+    const data = agent.getSessionData(sessionId);
+    const toolParts = data.messages
+      .flatMap((message: Message) => message.parts)
+      .filter((partValue: MessagePart) => partValue.type === "tool");
+
+    expect(toolParts.map((partValue: MessagePart) => partValue.tool)).toEqual(["bash", "patch"]);
+    // The combined output routes to the output-bearing bash part, not the patch.
+    expect(toolParts[0]).toMatchObject({
+      tool: "bash",
+      state: { output: [{ type: "text", text: "a.txt" }], status: "completed" },
+    });
+    expect(toolParts[1]).toMatchObject({
+      tool: "patch",
+      state: { arguments: [{ type: "write_file", path: "a.txt", content: "+hi" }], output: null },
+    });
+  });
+});

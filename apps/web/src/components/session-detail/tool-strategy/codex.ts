@@ -9,6 +9,9 @@ import { detectLanguageByFilePath } from "../../tool-output/language";
 import {
   buildCodexExecCommandDisplay,
   buildCodexRequestUserInputDisplay,
+  buildCodexUpdatePlanDisplay,
+  buildCodexViewImageDisplay,
+  buildCodexWebRunDisplay,
   buildCodexWriteStdinDisplay,
 } from "../codex-tool";
 import {
@@ -29,7 +32,15 @@ import {
 } from "../tool-normalize";
 import { parseJsonText } from "../utils";
 import { buildDefaultToolStrategy, buildSkillToolStrategy } from "./shared";
-import { Bot, CircleHelp, FilePenLine, SquareTerminal } from "lucide-react";
+import {
+  Bot,
+  CircleHelp,
+  FilePenLine,
+  FileSearch,
+  Image as ImageIcon,
+  ListTodo,
+  SquareTerminal,
+} from "lucide-react";
 
 export function extractCodexNodeReplTextOutput(outputText: string) {
   const marker = "Output:\n";
@@ -188,6 +199,55 @@ export function buildCodexToolStrategy(
         detectLanguageByFilePath,
         formatPathForDisplay,
       ),
+    };
+  }
+
+  if (toolKey === "update_plan") {
+    const display = buildCodexUpdatePlanDisplay(state.inputValue);
+    return {
+      ...defaultStrategy,
+      Icon: ListTodo,
+      title: "update plan",
+      secondaryText: display.secondaryText,
+      details: display.details,
+      showInputPreview: false,
+      outputContent: { kind: "plain", text: display.text, language: "markdown", isCode: false },
+    };
+  }
+
+  if (toolKey === "web__run") {
+    const display = buildCodexWebRunDisplay(state.inputValue);
+    return {
+      ...defaultStrategy,
+      Icon: FileSearch,
+      title: display.title,
+      secondaryText: display.secondaryText,
+      details: [],
+      showInputPreview: false,
+      outputContent: {
+        kind: "plain",
+        text: getOutputOrErrorText(state),
+        language: "markdown",
+        isCode: false,
+      },
+    };
+  }
+
+  if (toolKey === "view_image") {
+    const display = buildCodexViewImageDisplay(state.inputValue, formatPathForDisplay);
+    return {
+      ...defaultStrategy,
+      Icon: ImageIcon,
+      title: "view image",
+      secondaryText: display.secondaryText,
+      details: display.details,
+      showInputPreview: false,
+      outputContent: {
+        kind: "plain",
+        text: getOutputOrErrorText(state),
+        language: "text",
+        isCode: false,
+      },
     };
   }
 

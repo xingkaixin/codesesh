@@ -242,9 +242,20 @@ export function loadCachedSessionData(agentName: string, sessionId: string): Ses
       return null;
     }
 
-    const messageRows = db
-      .prepare(
-        `
+    // A pending_reindex marker means the cached detail predates a parser change
+    // (e.g. the code-mode exec decode migration). Report no cached messages so
+    // the API re-parses it fresh rather than serving the stale cache; the search
+    // index drops the marker as it repopulates the session.
+    const pendingReindex =
+      db
+        .prepare("SELECT 1 FROM pending_reindex WHERE agent_name = ? AND session_id = ?")
+        .get(agentName, sessionId) != null;
+
+    const messageRows = pendingReindex
+      ? []
+      : (db
+          .prepare(
+            `
           SELECT
             message_id,
             role,
@@ -264,8 +275,8 @@ export function loadCachedSessionData(agentName: string, sessionId: string): Ses
           WHERE agent_name = ? AND session_id = ?
           ORDER BY message_index
         `,
-      )
-      .all(agentName, sessionId) as CachedMessageRow[];
+          )
+          .all(agentName, sessionId) as CachedMessageRow[]);
 
     const head = sessionFromRow(row);
     const fileActivityRows = db

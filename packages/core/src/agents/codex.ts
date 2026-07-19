@@ -24,6 +24,14 @@ import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils
 import { cleanInternalText, isInternalEventType } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import { TranscriptBuilder } from "./transcript-builder.js";
+import {
+  type ExecInnerCall,
+  decodeExecCalls,
+  getExecPatchText,
+  pickExecOutputTarget,
+  splitExecToolName,
+  stripExecOutputEnvelope,
+} from "./codex-exec-decode.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -34,7 +42,7 @@ const PLAN_APPROVAL_PREFIX = "PLEASE IMPLEMENT THIS PLAN";
 const SUBAGENT_NOTIFICATION_PATTERN =
   /<subagent_notification>\s*([\s\S]*?)\s*<\/subagent_notification>/;
 const HEAD_INDEX_VERSION = "codex-head-v1";
-const PARSER_VERSION = "codex-parser-v3";
+const PARSER_VERSION = "codex-parser-v4";
 
 const DEVELOPER_LIKE_USER_MARKERS = [
   "agents.md instructions for",
@@ -143,6 +151,27 @@ function normalizeCustomToolArguments(toolName: string, input: unknown): unknown
     return parseApplyPatchInput(input);
   }
   return input;
+}
+
+/**
+ * Flatten tool-call output to text. Classic outputs are strings; code-mode
+ * outputs are arrays of `{ type: "input_text", text }` segments.
+ */
+function flattenOutputText(output: unknown): string {
+  if (typeof output === "string") return output;
+  if (Array.isArray(output)) {
+    return output
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object") {
+          const text = (item as Record<string, unknown>)["text"];
+          if (typeof text === "string") return text;
+        }
+        return "";
+      })
+      .join("");
+  }
+  return "";
 }
 
 // ---------------------------------------------------------------------------
@@ -1100,7 +1129,9 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     const callId = String(payload["call_id"] ?? "").trim();
     if (!callId) return;
 
-    const outputText = cleanInternalText(String(payload["output"] ?? ""));
+    const outputText = cleanInternalText(
+      stripExecOutputEnvelope(flattenOutputText(payload["output"])),
+    );
     const outputParts: MessagePart[] = outputText
       ? [{ type: "text", text: outputText, time_created: timestampMs }]
       : [];
@@ -1122,6 +1153,17 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     const name = String(payload["name"] ?? "").trim();
     if (!name) return;
 
+    // Code-mode exec: the JS program wraps native tool calls. Decode each
+    // inner call back to its classic tool part so existing displays apply.
+    // Programs with no recognizable call fall through to the raw exec part.
+    if (name === "exec") {
+      const decoded = decodeExecCalls(payload["input"]);
+      if (decoded.length > 0) {
+        this.appendDecodedExecCalls(decoded, callId, transcript, timestampMs, activeModel);
+        return;
+      }
+    }
+
     const toolIdentity = resolveToolIdentity(name, payload["namespace"]);
     const rawInput = payload["input"];
     const normalizedInput = normalizeCustomToolArguments(name, rawInput);
@@ -1133,6 +1175,57 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       title: `Tool: ${toolIdentity.tool}`,
       state: {
         arguments: normalizedInput,
+        output: null,
+        metadata: toolIdentity.metadata,
+      },
+      time_created: timestampMs,
+    };
+
+    transcript.appendToolCall(
+      toolPart,
+      { id: "", timestampMs, agent: "codex", model: activeModel },
+      { markModeAsTool: true },
+    );
+  }
+
+  // ---- Decoded code-mode exec calls ----
+
+  private appendDecodedExecCalls(
+    calls: ExecInnerCall[],
+    callId: string,
+    transcript: TranscriptBuilder,
+    timestampMs: number,
+    activeModel: string | null,
+  ): void {
+    // Only one output record follows, keyed by the exec call id; route it to
+    // the output-bearing part and give the rest unique ids so they still
+    // register and render, just without a resolved output.
+    const outputIndex = pickExecOutputTarget(calls);
+    calls.forEach((call, index) => {
+      const partCallId = index === outputIndex ? callId : `${callId}#${index}`;
+      this.appendDecodedExecCall(call, partCallId, transcript, timestampMs, activeModel);
+    });
+  }
+
+  private appendDecodedExecCall(
+    call: ExecInnerCall,
+    callId: string,
+    transcript: TranscriptBuilder,
+    timestampMs: number,
+    activeModel: string | null,
+  ): void {
+    const { name, namespace } = splitExecToolName(call.name);
+    const toolIdentity = resolveToolIdentity(name, namespace);
+    const arguments_ =
+      name === "apply_patch" ? parseApplyPatchInput(getExecPatchText(call.args)) : call.args;
+
+    const toolPart: MessagePart = {
+      type: "tool",
+      tool: toolIdentity.tool,
+      callID: callId,
+      title: `Tool: ${toolIdentity.tool}`,
+      state: {
+        arguments: arguments_,
         output: null,
         metadata: toolIdentity.metadata,
       },
