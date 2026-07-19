@@ -52,6 +52,14 @@ interface SearchIndexState {
   contentHashBySessionId: Map<string, string>;
   indexedMessageCountBySessionId: Map<string, number>;
   messageCountBySessionId: Map<string, number>;
+  pendingReindexSessionIds: Set<string>;
+}
+
+function readPendingReindexIds(db: SQLiteDatabase, agentName: string): Set<string> {
+  const rows = db
+    .prepare("SELECT session_id FROM pending_reindex WHERE agent_name = ?")
+    .all(agentName) as Array<{ session_id?: string }>;
+  return new Set(rows.map((row) => String(row.session_id)));
 }
 
 type SearchIndexStateRow = IndexedSearchRow & MessageCountRow;
@@ -98,6 +106,7 @@ function sessionContentHash(session: SessionHead): string {
 function searchIndexStateFromRows(
   indexedRows: IndexedSearchRow[],
   messageCountRows: MessageCountRow[],
+  pendingReindexSessionIds: Set<string> = new Set(),
 ): SearchIndexState {
   return {
     contentHashBySessionId: new Map(
@@ -109,6 +118,7 @@ function searchIndexStateFromRows(
     messageCountBySessionId: new Map(
       messageCountRows.map((row) => [String(row.session_id), Number(row.value ?? 0)]),
     ),
+    pendingReindexSessionIds,
   };
 }
 
@@ -147,12 +157,13 @@ function readSearchIndexState(
     rows.push(...batchRows);
   }
 
-  return searchIndexStateFromRows(rows, rows);
+  return searchIndexStateFromRows(rows, rows, readPendingReindexIds(db, agentName));
 }
 
 function searchIndexEntryNeedsUpdate(state: SearchIndexState, session: SessionHead): boolean {
   const sessionId = session.id;
   return (
+    state.pendingReindexSessionIds.has(sessionId) ||
     state.contentHashBySessionId.get(sessionId) !== sessionContentHash(session) ||
     state.indexedMessageCountBySessionId.get(sessionId) !==
       (state.messageCountBySessionId.get(sessionId) ?? 0)
@@ -296,11 +307,16 @@ function writeSearchIndexRows(
       indexed_at = excluded.indexed_at
   `);
 
+  const clearPendingReindex = db.prepare(
+    "DELETE FROM pending_reindex WHERE agent_name = ? AND session_id = ?",
+  );
+
   for (const sessionId of new Set(removedSessionIds)) {
     deleteRow.run(agentName, sessionId);
     deleteFileActivity.run(agentName, sessionId);
     deleteMessageTools.run(agentName, sessionId, 0);
     deleteMessages.run(agentName, sessionId, 0);
+    clearPendingReindex.run(agentName, sessionId);
   }
 
   let indexed = 0;
@@ -309,6 +325,7 @@ function writeSearchIndexRows(
     upsertSessionRow(upsertIndexedSession, agentName, entry.session, null, entry.sortIndex, null);
     deleteFileActivity.run(agentName, entry.session.id);
     deleteMessageTools.run(agentName, entry.session.id, 0);
+    clearPendingReindex.run(agentName, entry.session.id);
     writeFileActivityRows(insertFileActivity, entry.fileActivity);
     for (const message of entry.messages) {
       upsertMessage.run(
@@ -379,7 +396,11 @@ export function syncSessionSearchIndex(
         "SELECT session_id, COUNT(*) AS value FROM messages WHERE agent_name = ? GROUP BY session_id",
       )
       .all(agentName) as MessageCountRow[];
-    const searchIndexState = searchIndexStateFromRows(existingRows, messageCountRows);
+    const searchIndexState = searchIndexStateFromRows(
+      existingRows,
+      messageCountRows,
+      readPendingReindexIds(db, agentName),
+    );
     const sessionMap = new Map(sessions.map((session) => [session.id, session]));
 
     const toDelete = existingRows

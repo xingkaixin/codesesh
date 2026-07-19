@@ -16,6 +16,8 @@ import {
   syncSessionSearchIndexChanges,
 } from "../../cache.js";
 import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../db.js";
+import { migrateCodexExecDecode } from "../schema.js";
+import type { SQLiteDatabase } from "../../../utils/sqlite.js";
 import type { SessionData, SessionHead } from "../../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-test-"));
@@ -118,6 +120,76 @@ afterEach(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
   setFtsIntegrityCheckedPath(null);
   setSchemaEnsuredPath(null);
+});
+
+describe("session detail re-indexing", () => {
+  function toolSessionData(id: string, tool: string): SessionData {
+    const session = makeSession(id);
+    return {
+      ...session,
+      messages: [
+        {
+          id: `${id}-m1`,
+          role: "assistant",
+          time_created: now,
+          parts: [{ type: "tool", tool, callID: "c1", state: {} }],
+        },
+      ],
+    };
+  }
+
+  it("refreshes cached detail when the content hash goes stale", () => {
+    const session = makeSession("codex-1");
+    saveCachedSessions("codex", [session], {});
+    syncSessionSearchIndex("codex", [session], (id) => toolSessionData(id, "exec"));
+
+    expect(loadCachedSessionData("codex", "codex-1")?.messages[0]?.parts[0]).toMatchObject({
+      tool: "exec",
+    });
+
+    // The upgrade migration clears cached content hashes; simulate a stale one.
+    const db = new Database(getCachePath());
+    db.prepare(
+      "UPDATE session_documents SET content_hash = 'stale' WHERE agent_name = 'codex'",
+    ).run();
+    db.close();
+
+    syncSessionSearchIndex("codex", [session], (id) => toolSessionData(id, "bash"));
+
+    expect(loadCachedSessionData("codex", "codex-1")?.messages[0]?.parts[0]).toMatchObject({
+      tool: "bash",
+    });
+  });
+
+  it("marks Codex details pending once on the exec-decode migration", () => {
+    saveCachedSessions("codex", [makeSession("codex-1")], {});
+    saveCachedSessions("claudecode", [makeSession("cc-1")], {});
+    syncSessionSearchIndex("codex", [makeSession("codex-1")], (id) => toolSessionData(id, "exec"));
+    syncSessionSearchIndex("claudecode", [makeSession("cc-1")], (id) =>
+      makeSessionData(id, "keep me"),
+    );
+    expect(loadCachedSessionData("codex", "codex-1")?.messages).toHaveLength(1);
+
+    // Simulate a pre-migration cache (flag not yet set) and run the migration.
+    const raw = new Database(getCachePath());
+    raw.prepare("DELETE FROM cache_meta WHERE key = 'codex_exec_decode_migrated_v3'").run();
+    migrateCodexExecDecode(raw as unknown as SQLiteDatabase);
+    raw.close();
+
+    // Codex details read as pending (no messages) so the API re-parses them;
+    // other agents are untouched. No bulk deletion happens.
+    expect(loadCachedSessionData("codex", "codex-1")?.messages).toHaveLength(0);
+    expect(loadCachedSessionData("claudecode", "cc-1")?.messages).toHaveLength(1);
+
+    // Idempotent: re-parsed rows survive a second run because the flag is set.
+    syncSessionSearchIndex("codex", [makeSession("codex-1")], (id) => toolSessionData(id, "bash"));
+    const raw2 = new Database(getCachePath());
+    migrateCodexExecDecode(raw2 as unknown as SQLiteDatabase);
+    raw2.close();
+    expect(loadCachedSessionData("codex", "codex-1")?.messages[0]?.parts[0]).toMatchObject({
+      tool: "bash",
+    });
+  });
 });
 
 describe("searchSessions", () => {
