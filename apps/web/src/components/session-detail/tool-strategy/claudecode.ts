@@ -15,6 +15,7 @@ import {
   type ToolDisplayStrategy,
   getOutputOrErrorText,
   getToolTitle,
+  parseInputCandidate,
   toRecord,
   toStringValue,
 } from "../tool-normalize";
@@ -99,6 +100,19 @@ function displayValue(value: unknown) {
   if (typeof value === "string") return value.trim();
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return "";
+}
+
+function buildSendMessageOutput(input: Record<string, unknown>, state: NormalizedToolState) {
+  const resultText = getOutputOrErrorText(state);
+  const result = toRecord(parseInputCandidate(resultText));
+  const delivery = toStringValue(result.message) || resultText;
+  const items = [
+    { label: "Recipient", value: toStringValue(input.recipient) || toStringValue(input.to) },
+    { label: "Summary", value: toStringValue(input.summary) },
+    { label: "Message", value: toStringValue(input.message) || toStringValue(input.content) },
+    { label: "Delivery", value: delivery },
+  ];
+  return items.filter((item) => item.value && item.value !== "No output captured.");
 }
 
 export function buildClaudeToolStrategy(
@@ -342,14 +356,19 @@ export function buildClaudeToolStrategy(
   }
 
   if (toolKey === "sendmessage") {
+    const recipient = toStringValue(input.recipient) || toStringValue(input.to);
     return {
       ...defaultStrategy,
       Icon: MessageSquareMore,
       title: "send message",
-      secondaryText: toStringValue(input.summary) || toStringValue(input.recipient) || undefined,
+      secondaryText: recipient || undefined,
       details: [],
       showInputPreview: false,
-      contentLabel: "Delivery",
+      contentLabel: "Message details",
+      outputContent: {
+        kind: "property-list",
+        items: buildSendMessageOutput(input, state),
+      },
     };
   }
 

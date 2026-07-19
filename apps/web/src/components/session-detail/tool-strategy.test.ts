@@ -322,6 +322,45 @@ describe("getToolDisplayStrategy", () => {
     });
   });
 
+  it("renders Claude messages without raw JSON", () => {
+    const tool = part({
+      tool: "SendMessage",
+      state: {
+        status: "completed",
+        input: {
+          to: "main",
+          recipient: "main",
+          summary: "Renderer findings",
+          message: "The expanded tool card still shows JSON.",
+          content: "The expanded tool card still shows JSON.",
+        },
+        output: [
+          {
+            type: "text",
+            text: '{"success":true,"message":"Message queued for the main conversation."}',
+          },
+        ],
+      },
+    });
+    const strategy = getToolDisplayStrategy("claudecode", tool, normalizeToolState(tool));
+
+    expect(strategy).toMatchObject({
+      title: "send message",
+      secondaryText: "main",
+      showInputPreview: false,
+      contentLabel: "Message details",
+    });
+    expect(strategy.outputContent).toEqual({
+      kind: "property-list",
+      items: [
+        { label: "Recipient", value: "main" },
+        { label: "Summary", value: "Renderer findings" },
+        { label: "Message", value: "The expanded tool card still shows JSON." },
+        { label: "Delivery", value: "Message queued for the main conversation." },
+      ],
+    });
+  });
+
   it("renders Codex collaboration messages semantically", () => {
     const tool = part({
       tool: "collaboration.send_message",
