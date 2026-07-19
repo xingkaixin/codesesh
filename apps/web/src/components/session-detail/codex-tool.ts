@@ -1,4 +1,4 @@
-import type { ToolOutputContent, ToolOutputLanguage } from "../tool-output/types";
+import type { TaskListItem, ToolOutputContent, ToolOutputLanguage } from "../tool-output/types";
 
 export interface ToolDetailItem {
   label: string;
@@ -483,13 +483,17 @@ export function buildCodexUpdatePlanDisplay(inputValue: unknown) {
   const steps = Array.isArray(input.plan) ? input.plan : [];
 
   const counts = new Map<string, number>();
-  const lines = steps.map((entry) => {
+  const items = steps.map((entry) => {
     const item = toRecord(entry);
     const status = toPlainText(item.status) || "pending";
     const step = toPlainText(item.step) || toPlainText(item.content);
     counts.set(status, (counts.get(status) ?? 0) + 1);
-    const marker = status === "completed" ? "x" : status === "in_progress" ? "~" : " ";
-    return `- [${marker}] ${step || "(empty step)"}`;
+    return {
+      label: step || "(empty step)",
+      status: (status === "completed" || status === "in_progress" || status === "error"
+        ? status
+        : "pending") as TaskListItem["status"],
+    };
   });
 
   const details: ToolDetailItem[] = [...counts.entries()].map(([status, count]) => ({
@@ -503,7 +507,7 @@ export function buildCodexUpdatePlanDisplay(inputValue: unknown) {
       [...counts.entries()].map(([status, count]) => `${count} ${status}`).join(" · ") ||
       undefined,
     details,
-    text: lines.join("\n") || explanation || "No plan captured.",
+    items,
   };
 }
 

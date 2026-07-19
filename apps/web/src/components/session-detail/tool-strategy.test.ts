@@ -206,10 +206,13 @@ describe("getToolDisplayStrategy", () => {
       { label: "in_progress", value: "1" },
       { label: "pending", value: "1" },
     ]);
-    expect(strategy.outputContent).toMatchObject({
-      kind: "plain",
-      language: "markdown",
-      text: "- [x] Define seam\n- [~] Wire backend\n- [ ] Update UI",
+    expect(strategy.outputContent).toEqual({
+      kind: "task-list",
+      items: [
+        { label: "Define seam", status: "completed" },
+        { label: "Wire backend", status: "in_progress" },
+        { label: "Update UI", status: "pending" },
+      ],
     });
   });
 
@@ -247,6 +250,142 @@ describe("getToolDisplayStrategy", () => {
       { label: "Image", value: "shot.jpeg" },
       { label: "Detail", value: "original" },
     ]);
+  });
+
+  it("renders Claude tasks as status rows", () => {
+    const tool = part({
+      tool: "TodoWrite",
+      state: {
+        status: "completed",
+        input: {
+          todos: [
+            { content: "Inspect formats", status: "completed" },
+            { content: "Polish renderer", status: "in_progress", activeForm: "Rendering" },
+          ],
+        },
+      },
+    });
+    const strategy = getToolDisplayStrategy("claudecode", tool, normalizeToolState(tool));
+
+    expect(strategy).toMatchObject({
+      title: "tasks",
+      secondaryText: "1 completed · 1 in_progress",
+      showInputPreview: false,
+      contentLabel: "Task state",
+    });
+    expect(strategy.outputContent).toEqual({
+      kind: "task-list",
+      items: [
+        { label: "Inspect formats", status: "completed", detail: undefined },
+        { label: "Polish renderer", status: "in_progress", detail: "Rendering" },
+      ],
+    });
+  });
+
+  it("renders Claude browser actions without raw input JSON", () => {
+    const tool = part({
+      tool: "mcp__claude-in-chrome__navigate",
+      state: {
+        status: "completed",
+        input: { tabId: 42, url: "http://localhost:4173/session" },
+        output: "Navigated",
+      },
+    });
+    const strategy = getToolDisplayStrategy("claudecode", tool, normalizeToolState(tool));
+
+    expect(strategy).toMatchObject({
+      title: "browser · navigate",
+      secondaryText: "http://localhost:4173/session",
+      details: [{ label: "Tab", value: "42" }],
+      showInputPreview: false,
+      contentLabel: "Browser result",
+    });
+  });
+
+  it("renders Claude structured submissions as fields", () => {
+    const tool = part({
+      tool: "StructuredOutput",
+      state: {
+        status: "completed",
+        input: { verdict: "pass", findings: [{ severity: "low", title: "Spacing" }] },
+        output: "Structured output submitted",
+      },
+    });
+    const strategy = getToolDisplayStrategy("claudecode", tool, normalizeToolState(tool));
+
+    expect(strategy.outputContent).toEqual({
+      kind: "property-list",
+      items: [
+        { label: "verdict", value: "pass" },
+        { label: "findings", value: [{ severity: "low", title: "Spacing" }] },
+      ],
+    });
+  });
+
+  it("renders Claude messages without raw JSON", () => {
+    const tool = part({
+      tool: "SendMessage",
+      state: {
+        status: "completed",
+        input: {
+          to: "main",
+          recipient: "main",
+          summary: "Renderer findings",
+          message: "The expanded tool card still shows JSON.",
+          content: "The expanded tool card still shows JSON.",
+        },
+        output: [
+          {
+            type: "text",
+            text: '{"success":true,"message":"Message queued for the main conversation."}',
+          },
+        ],
+      },
+    });
+    const strategy = getToolDisplayStrategy("claudecode", tool, normalizeToolState(tool));
+
+    expect(strategy).toMatchObject({
+      title: "send message",
+      secondaryText: "main",
+      showInputPreview: false,
+      contentLabel: "Message details",
+    });
+    expect(strategy.outputContent).toEqual({
+      kind: "property-list",
+      items: [
+        { label: "Recipient", value: "main" },
+        { label: "Summary", value: "Renderer findings" },
+        { label: "Message", value: "The expanded tool card still shows JSON." },
+        { label: "Delivery", value: "Message queued for the main conversation." },
+      ],
+    });
+  });
+
+  it("renders Codex collaboration messages semantically", () => {
+    const tool = part({
+      tool: "collaboration.send_message",
+      title: "Tool: collaboration.send_message",
+      state: {
+        status: "completed",
+        arguments: { target: "reviewer", message: "Please check the tool renderer." },
+        output: "Delivered",
+      },
+    });
+    const strategy = getToolDisplayStrategy("codex", tool, normalizeToolState(tool));
+
+    expect(strategy).toMatchObject({
+      title: "message agent",
+      secondaryText: "reviewer",
+      showInputPreview: false,
+      contentLabel: "Message",
+    });
+    expect(strategy.outputContent).toEqual({
+      kind: "property-list",
+      items: [
+        { label: "Recipient", value: "reviewer" },
+        { label: "Message", value: "Please check the tool renderer." },
+      ],
+    });
   });
 });
 

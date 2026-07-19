@@ -459,17 +459,20 @@ function ToolItem({
     <div id={anchorId} data-session-timeline-anchor={anchorId} className="scroll-mt-20 space-y-2">
       <div className="flex flex-wrap items-start gap-2">
         <div
-          className={`w-full md:w-[560px] rounded-sm border border-[var(--console-border-strong)] bg-white px-3 py-2 text-left shadow-[2px_2px_0_0_rgba(15,23,42,0.05)] ${
+          className={`w-full max-w-[720px] rounded-sm border border-[var(--console-border-strong)] bg-white px-3 py-2.5 text-left shadow-[2px_2px_0_0_rgba(15,23,42,0.05)] ${
             strategy.expandable ? "transition-colors hover:bg-[var(--console-surface-muted)]" : ""
           }`}
         >
           {strategy.expandable ? (
             <button
               type="button"
-              className="flex w-full items-start gap-2 text-left"
+              className="flex w-full items-center gap-2.5 text-left active:scale-[0.995] motion-reduce:transform-none"
               onClick={() => setExpanded(!expanded)}
+              aria-expanded={expanded}
             >
-              <ToolIcon className="mt-0.5 size-3.5 shrink-0 text-[var(--console-accent)]" />
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)]">
+                <ToolIcon className="size-3.5 text-[var(--console-accent)]" />
+              </span>
               <span className="min-w-0 flex-1">
                 <span className="console-mono block text-xs font-semibold text-[var(--console-text)]">
                   {strategy.title}
@@ -479,6 +482,14 @@ function ToolItem({
                     {renderHighlightedText(strategy.secondaryText, highlightQuery)}
                   </span>
                 ) : null}
+              </span>
+              <span
+                className={`console-mono inline-flex shrink-0 items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${statusMeta.className}`}
+              >
+                <StatusIcon
+                  className={`size-2.5 ${state.status === "running" ? "animate-spin motion-reduce:animate-none" : ""}`}
+                />
+                {statusMeta.label}
               </span>
               <span className="mt-0.5 shrink-0 text-[var(--console-muted)]">
                 {expanded ? (
@@ -489,8 +500,10 @@ function ToolItem({
               </span>
             </button>
           ) : (
-            <div className="flex items-start gap-2">
-              <ToolIcon className="mt-0.5 size-3.5 shrink-0 text-[var(--console-accent)]" />
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)]">
+                <ToolIcon className="size-3.5 text-[var(--console-accent)]" />
+              </span>
               <span className="min-w-0 flex-1">
                 <span className="console-mono block text-xs font-semibold text-[var(--console-text)]">
                   {strategy.title}
@@ -501,23 +514,23 @@ function ToolItem({
                   </span>
                 ) : null}
               </span>
+              <span
+                className={`console-mono inline-flex shrink-0 items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${statusMeta.className}`}
+              >
+                <StatusIcon className="size-2.5" />
+                {statusMeta.label}
+              </span>
             </div>
           )}
         </div>
-        <span
-          className={`console-mono inline-flex items-center gap-1 rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusMeta.className}`}
-        >
-          <StatusIcon
-            className={`size-3 ${state.status === "running" ? "animate-spin motion-reduce:animate-none" : ""}`}
-          />
-          {statusMeta.label}
-        </span>
       </div>
 
       {strategy.expandable && expanded ? (
         <div className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
           <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5">
-            <span className="console-mono text-xs text-[var(--console-muted)]">Output</span>
+            <span className="console-mono text-xs text-[var(--console-muted)]">
+              {strategy.contentLabel ?? "Output"}
+            </span>
           </div>
           <div className="space-y-3 p-3">
             {strategy.details.length > 0 ? (
@@ -531,7 +544,7 @@ function ToolItem({
                       <span className="console-mono shrink-0 text-[11px] font-semibold uppercase tracking-wide text-[var(--console-muted)] md:w-24">
                         {detail.label}
                       </span>
-                      <span className="console-mono whitespace-pre-wrap break-all text-xs leading-relaxed text-[var(--console-text)]">
+                      <span className="console-mono whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-text)]">
                         {renderHighlightedText(detail.value, highlightQuery)}
                       </span>
                     </div>
@@ -546,7 +559,7 @@ function ToolItem({
               <span className="console-mono text-[11px] text-[var(--console-muted)]">
                 Input Preview
               </span>
-              <pre className="console-mono mt-1 max-h-[200px] overflow-x-auto whitespace-pre-wrap break-all text-xs leading-relaxed text-[var(--console-muted)]">
+              <pre className="console-mono mt-1 max-h-[200px] overflow-x-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-muted)]">
                 {renderHighlightedText(inputPreviewText, highlightQuery)}
               </pre>
             </div>

@@ -53,8 +53,44 @@ export interface QuestionListToolOutputContent {
   questions: QuestionListItem[];
 }
 
+export interface TaskListItem {
+  label: string;
+  status: "pending" | "in_progress" | "completed" | "error";
+  detail?: string;
+}
+
+export interface TaskListToolOutputContent {
+  kind: "task-list";
+  items: TaskListItem[];
+}
+
+export interface MediaItem {
+  src: string;
+  alt: string;
+  caption?: string;
+}
+
+export interface MediaToolOutputContent {
+  kind: "media";
+  items: MediaItem[];
+  text?: string;
+}
+
+export interface PropertyItem {
+  label: string;
+  value: unknown;
+}
+
+export interface PropertyListToolOutputContent {
+  kind: "property-list";
+  items: PropertyItem[];
+}
+
 export type ToolOutputContent =
   | PlainToolOutputContent
   | StructuredDiffToolOutputContent
   | FileSectionsToolOutputContent
-  | QuestionListToolOutputContent;
+  | QuestionListToolOutputContent
+  | TaskListToolOutputContent
+  | MediaToolOutputContent
+  | PropertyListToolOutputContent;

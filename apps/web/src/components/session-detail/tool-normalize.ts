@@ -37,7 +37,49 @@ export interface ToolDisplayStrategy {
   details: ToolDetailItem[];
   expandable: boolean;
   showInputPreview: boolean;
+  contentLabel?: string;
   outputContent: ToolOutputContent;
+}
+
+function toSafeImageSource(part: Record<string, unknown>) {
+  const mimeType = toPlainText(part.mime_type);
+  const data = toPlainText(part.data);
+  if (mimeType.startsWith("image/") && data) return `data:${mimeType};base64,${data}`;
+
+  const url = toPlainText(part.url);
+  if (/^data:image\//i.test(url)) return url;
+  return "";
+}
+
+export function extractToolMedia(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index) => {
+    const record = toRecord(item);
+    if (record.type !== "image") return [];
+    const src = toSafeImageSource(record);
+    if (!src) return [];
+    return [{ src, alt: `Tool output image ${index + 1}` }];
+  });
+}
+
+export function buildSemanticOutputContent(value: unknown): ToolOutputContent | null {
+  const media = extractToolMedia(value);
+  if (media.length > 0) {
+    const text = joinToolText(value, false);
+    return { kind: "media", items: media, text: text || undefined };
+  }
+
+  const parsed =
+    typeof value === "string" && value.trim() ? parseInputCandidate(value.trim()) : value;
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const items = Object.entries(parsed as Record<string, unknown>).map(([label, itemValue]) => ({
+      label,
+      value: itemValue,
+    }));
+    return items.length > 0 ? { kind: "property-list", items } : null;
+  }
+
+  return null;
 }
 
 export function toDisplayText(value: unknown) {

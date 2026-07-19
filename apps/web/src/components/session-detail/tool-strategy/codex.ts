@@ -23,6 +23,7 @@ import { getDisplayPath, getDisplayTextWithRelativePaths } from "../path-extract
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  buildSemanticOutputContent,
   compactText,
   getOutputOrErrorText,
   getToolTitle,
@@ -34,13 +35,31 @@ import { parseJsonText } from "../utils";
 import { buildDefaultToolStrategy, buildSkillToolStrategy } from "./shared";
 import {
   Bot,
+  Clock3,
   CircleHelp,
   FilePenLine,
   FileSearch,
   Image as ImageIcon,
   ListTodo,
+  MessageSquareMore,
+  Plug,
   SquareTerminal,
+  Target,
+  Users,
 } from "lucide-react";
+
+function humanizeToolName(value: string) {
+  return value.replace(/^_+/, "").replaceAll("_", " ");
+}
+
+function firstSummaryValue(input: Record<string, unknown>) {
+  const keys = ["title", "summary", "query", "q", "url", "objective", "target", "threadId"];
+  for (const key of keys) {
+    const value = compactText(input[key]);
+    if (value) return value.length > 120 ? `${value.slice(0, 120)}…` : value;
+  }
+  return "";
+}
 
 export function extractCodexNodeReplTextOutput(outputText: string) {
   const marker = "Output:\n";
@@ -211,7 +230,8 @@ export function buildCodexToolStrategy(
       secondaryText: display.secondaryText,
       details: display.details,
       showInputPreview: false,
-      outputContent: { kind: "plain", text: display.text, language: "markdown", isCode: false },
+      contentLabel: "Plan",
+      outputContent: { kind: "task-list", items: display.items },
     };
   }
 
@@ -267,6 +287,102 @@ export function buildCodexToolStrategy(
         language: "markdown",
         isCode: false,
       },
+    };
+  }
+
+  if (toolKey === "collaboration.send_message" || toolKey === "collaboration.followup_task") {
+    const input = toRecord(state.inputValue);
+    const target = toPlainText(input.target);
+    const message = toPlainText(input.message);
+    return {
+      ...defaultStrategy,
+      Icon: MessageSquareMore,
+      title: toolKey.endsWith("followup_task") ? "follow up with agent" : "message agent",
+      secondaryText: target || undefined,
+      details: [],
+      showInputPreview: false,
+      contentLabel: "Message",
+      outputContent: {
+        kind: "property-list",
+        items: [
+          target ? { label: "Recipient", value: target } : null,
+          message ? { label: "Message", value: message } : null,
+        ].filter((item): item is { label: string; value: string } => item != null),
+      },
+    };
+  }
+
+  if (toolKey === "collaboration.wait_agent" || toolKey === "wait") {
+    const input = toRecord(state.inputValue);
+    const timeout = input.timeout_ms;
+    return {
+      ...defaultStrategy,
+      Icon: Clock3,
+      title: "wait for agents",
+      secondaryText:
+        typeof timeout === "number" ? `${Math.round(timeout / 1000)}s timeout` : undefined,
+      details: [],
+      showInputPreview: false,
+      contentLabel: "Agent updates",
+    };
+  }
+
+  if (toolKey === "collaboration.list_agents") {
+    return {
+      ...defaultStrategy,
+      Icon: Users,
+      title: "list agents",
+      secondaryText: undefined,
+      details: [],
+      showInputPreview: false,
+      contentLabel: "Agent tree",
+    };
+  }
+
+  if (toolKey === "collaboration.interrupt_agent") {
+    const target = toPlainText(toRecord(state.inputValue).target);
+    return {
+      ...defaultStrategy,
+      Icon: Users,
+      title: "interrupt agent",
+      secondaryText: target || undefined,
+      details: [],
+      showInputPreview: false,
+      contentLabel: "Result",
+    };
+  }
+
+  if (toolKey === "create_goal" || toolKey === "get_goal" || toolKey === "update_goal") {
+    const input = toRecord(state.inputValue);
+    return {
+      ...defaultStrategy,
+      Icon: Target,
+      title: humanizeToolName(toolKey),
+      secondaryText: toPlainText(input.objective) || toPlainText(input.status) || undefined,
+      details: [],
+      showInputPreview: false,
+      contentLabel: "Goal state",
+    };
+  }
+
+  if (namespace.startsWith("mcp__") || toolKey.includes("._")) {
+    const input = toRecord(state.inputValue);
+    const [provider, operation = "tool"] = toolKey.split(".", 2);
+    const semanticInput = Object.entries(input).map(([label, value]) => ({ label, value }));
+    const semanticOutput = buildSemanticOutputContent(state.outputValue);
+    return {
+      ...defaultStrategy,
+      Icon: Plug,
+      title: `${humanizeToolName(provider ?? "integration")} · ${humanizeToolName(operation)}`,
+      secondaryText: firstSummaryValue(input) || undefined,
+      details: [],
+      showInputPreview: false,
+      contentLabel: semanticOutput ? "Result" : "Request",
+      outputContent:
+        semanticOutput ??
+        (semanticInput.length > 0
+          ? { kind: "property-list", items: semanticInput }
+          : defaultStrategy.outputContent),
     };
   }
 

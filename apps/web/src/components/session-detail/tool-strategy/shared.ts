@@ -10,6 +10,7 @@ import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
   type ToolStatus,
+  buildSemanticOutputContent,
   formatToolOutput,
   getOutputOrErrorText,
   getToolTitle,
@@ -69,6 +70,8 @@ export function buildDefaultToolStrategy(
   const previewText =
     compactPreview.length > 72 ? `${compactPreview.slice(0, 72)}...` : compactPreview;
 
+  const semanticOutput = buildSemanticOutputContent(state.outputValue);
+
   return {
     Icon: SquareTerminal,
     title: getToolTitle(tool),
@@ -76,12 +79,14 @@ export function buildDefaultToolStrategy(
     details: [],
     expandable: true,
     showInputPreview: true,
-    outputContent: {
-      kind: "plain",
-      text: getOutputOrErrorText(state),
-      language: "text",
-      isCode: false,
-    },
+    outputContent:
+      semanticOutput ??
+      ({
+        kind: "plain",
+        text: getOutputOrErrorText(state),
+        language: "text",
+        isCode: false,
+      } as const),
   };
 }
 

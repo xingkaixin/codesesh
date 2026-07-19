@@ -166,7 +166,17 @@ describe("ClaudeCodeAgent cache refresh", () => {
           message: {
             role: "user",
             content: [
-              { type: "tool_result", tool_use_id: "tool-1", content: [{ text: "package output" }] },
+              {
+                type: "tool_result",
+                tool_use_id: "tool-1",
+                content: [
+                  { text: "package output" },
+                  {
+                    type: "image",
+                    source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" },
+                  },
+                ],
+              },
               { type: "text", text: "Continue" },
             ],
           },
@@ -229,7 +239,10 @@ describe("ClaudeCodeAgent cache refresh", () => {
       callID: "tool-1",
       state: {
         input: { file_path: "package.json" },
-        output: [{ type: "text", text: "package output" }],
+        output: [
+          { type: "text", text: "package output" },
+          { type: "image", data: "iVBORw0KGgo=", mime_type: "image/png" },
+        ],
         status: "success",
         meta: { commandName: "read" },
       },
@@ -238,7 +251,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
       assistant?.parts.some(
         (part: MessagePart) => part.type === "tool" && part.tool === "TodoWrite",
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(data.messages[2]?.parts).toMatchObject([{ type: "text", text: "Continue" }]);
     expect(data.messages[3]).toMatchObject({
       role: "tool",
