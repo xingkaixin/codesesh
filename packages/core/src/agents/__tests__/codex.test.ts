@@ -1043,7 +1043,7 @@ describe("CodexAgent code-mode exec decoding", () => {
     });
   });
 
-  it("falls back to a raw exec tool for multi-call programs", () => {
+  it("splits a multi-call program into ordered tool parts", () => {
     const { agent, sessionId } = writeCodeModeSession([
       {
         type: "response_item",
@@ -1052,11 +1052,36 @@ describe("CodexAgent code-mode exec decoding", () => {
           call_id: "call-5",
           name: "exec",
           input:
-            'await tools.exec_command({cmd:"ls"}); const patch = "*** Begin Patch\\n*** End Patch"; await tools.apply_patch({patch})',
+            'let r = await tools.exec_command({cmd:"ls"}); text(r.output); const patch = "*** Begin Patch\\n*** Add File: a.txt\\n+hi\\n*** End Patch"; await tools.apply_patch({patch})',
+        },
+      },
+      {
+        type: "response_item",
+        payload: {
+          type: "custom_tool_call_output",
+          call_id: "call-5",
+          output: [
+            { type: "input_text", text: "Script completed\nWall time 0.1 seconds\nOutput:\n" },
+            { type: "input_text", text: "a.txt" },
+          ],
         },
       },
     ]);
 
-    expect(firstToolPart(agent, sessionId)).toMatchObject({ type: "tool", tool: "exec" });
+    const data = agent.getSessionData(sessionId);
+    const toolParts = data.messages
+      .flatMap((message: Message) => message.parts)
+      .filter((partValue: MessagePart) => partValue.type === "tool");
+
+    expect(toolParts.map((partValue: MessagePart) => partValue.tool)).toEqual(["bash", "patch"]);
+    // The combined output routes to the output-bearing bash part, not the patch.
+    expect(toolParts[0]).toMatchObject({
+      tool: "bash",
+      state: { output: [{ type: "text", text: "a.txt" }], status: "completed" },
+    });
+    expect(toolParts[1]).toMatchObject({
+      tool: "patch",
+      state: { arguments: [{ type: "write_file", path: "a.txt", content: "+hi" }], output: null },
+    });
   });
 });

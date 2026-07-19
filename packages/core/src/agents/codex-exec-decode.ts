@@ -42,6 +42,19 @@ export function splitExecToolName(name: string): { name: string; namespace?: str
   return { name };
 }
 
+/**
+ * Pick which decoded call receives the exec program's combined output. Patch
+ * and plan calls do not emit stdout, so prefer the last output-bearing call;
+ * otherwise fall back to the last call.
+ */
+export function pickExecOutputTarget(calls: ExecInnerCall[]): number {
+  for (let index = calls.length - 1; index >= 0; index -= 1) {
+    const { name } = splitExecToolName(calls[index]!.name);
+    if (name !== "apply_patch" && name !== "update_plan") return index;
+  }
+  return calls.length - 1;
+}
+
 /** Extract the patch text from an `apply_patch` argument (`{patch}` or a string). */
 export function getExecPatchText(args: unknown): string {
   if (typeof args === "string") return args;

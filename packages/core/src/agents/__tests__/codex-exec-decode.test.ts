@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   decodeExecCalls,
   getExecPatchText,
+  pickExecOutputTarget,
   splitExecToolName,
   stripExecOutputEnvelope,
 } from "../codex-exec-decode.js";
@@ -81,6 +82,19 @@ describe("splitExecToolName", () => {
   it("leaves plain tool names untouched", () => {
     expect(splitExecToolName("exec_command")).toEqual({ name: "exec_command" });
     expect(splitExecToolName("apply_patch")).toEqual({ name: "apply_patch" });
+  });
+});
+
+describe("pickExecOutputTarget", () => {
+  const call = (name: string) => ({ name, args: {} });
+
+  it("prefers the last output-bearing call over patch/plan", () => {
+    expect(pickExecOutputTarget([call("exec_command"), call("apply_patch")])).toBe(0);
+    expect(pickExecOutputTarget([call("update_plan"), call("exec_command")])).toBe(1);
+  });
+
+  it("falls back to the last call when all are patch/plan", () => {
+    expect(pickExecOutputTarget([call("apply_patch"), call("update_plan")])).toBe(1);
   });
 });
 

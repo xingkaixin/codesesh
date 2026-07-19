@@ -28,6 +28,7 @@ import {
   type ExecInnerCall,
   decodeExecCalls,
   getExecPatchText,
+  pickExecOutputTarget,
   splitExecToolName,
   stripExecOutputEnvelope,
 } from "./codex-exec-decode.js";
@@ -1152,13 +1153,13 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     const name = String(payload["name"] ?? "").trim();
     if (!name) return;
 
-    // Code-mode exec: the JS program wraps a native tool call. Decode a
-    // single inner call back to its classic tool part so existing displays
-    // apply. Multi-call programs fall through to the raw exec representation.
+    // Code-mode exec: the JS program wraps native tool calls. Decode each
+    // inner call back to its classic tool part so existing displays apply.
+    // Programs with no recognizable call fall through to the raw exec part.
     if (name === "exec") {
       const decoded = decodeExecCalls(payload["input"]);
-      if (decoded.length === 1) {
-        this.appendDecodedExecCall(decoded[0]!, callId, transcript, timestampMs, activeModel);
+      if (decoded.length > 0) {
+        this.appendDecodedExecCalls(decoded, callId, transcript, timestampMs, activeModel);
         return;
       }
     }
@@ -1187,7 +1188,24 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     );
   }
 
-  // ---- Decoded code-mode exec call ----
+  // ---- Decoded code-mode exec calls ----
+
+  private appendDecodedExecCalls(
+    calls: ExecInnerCall[],
+    callId: string,
+    transcript: TranscriptBuilder,
+    timestampMs: number,
+    activeModel: string | null,
+  ): void {
+    // Only one output record follows, keyed by the exec call id; route it to
+    // the output-bearing part and give the rest unique ids so they still
+    // register and render, just without a resolved output.
+    const outputIndex = pickExecOutputTarget(calls);
+    calls.forEach((call, index) => {
+      const partCallId = index === outputIndex ? callId : `${callId}#${index}`;
+      this.appendDecodedExecCall(call, partCallId, transcript, timestampMs, activeModel);
+    });
+  }
 
   private appendDecodedExecCall(
     call: ExecInnerCall,
