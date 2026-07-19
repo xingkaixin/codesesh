@@ -251,7 +251,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
       assistant?.parts.some(
         (part: MessagePart) => part.type === "tool" && part.tool === "TodoWrite",
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(data.messages[2]?.parts).toMatchObject([{ type: "text", text: "Continue" }]);
     expect(data.messages[3]).toMatchObject({
       role: "tool",

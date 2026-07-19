@@ -151,18 +151,11 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
 
     const content = readFileSync(meta.sourcePath, "utf-8");
     const builder = new TranscriptBuilder();
-    const ignoredToolCallIds = new Set<string>();
     const assistantUuidToToolCalls = new Map<string, string[]>();
     const countedUsageKeys = new Set<string>();
     for (const record of parseJsonlLines(content)) {
       try {
-        this.convertRecord(
-          record,
-          builder,
-          ignoredToolCallIds,
-          assistantUuidToToolCalls,
-          countedUsageKeys,
-        );
+        this.convertRecord(record, builder, assistantUuidToToolCalls, countedUsageKeys);
       } catch {
         // skip malformed records
       }
@@ -446,7 +439,6 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
   private convertRecord(
     data: Record<string, unknown>,
     builder: TranscriptBuilder,
-    ignoredToolCallIds: Set<string>,
     assistantUuidToToolCalls: Map<string, string[]>,
     countedUsageKeys: Set<string>,
   ): void {
@@ -456,15 +448,9 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     if (isInternalEventType(msgType)) return;
 
     if (msgType === "assistant") {
-      this.convertAssistantRecord(
-        data,
-        builder,
-        ignoredToolCallIds,
-        assistantUuidToToolCalls,
-        countedUsageKeys,
-      );
+      this.convertAssistantRecord(data, builder, assistantUuidToToolCalls, countedUsageKeys);
     } else if (msgType === "user") {
-      this.convertUserRecord(data, builder, ignoredToolCallIds, assistantUuidToToolCalls);
+      this.convertUserRecord(data, builder, assistantUuidToToolCalls);
     } else if (msgType === "tool_result") {
       this.convertToolResultRecord(data, builder);
     }
@@ -473,7 +459,6 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
   private convertAssistantRecord(
     data: Record<string, unknown>,
     builder: TranscriptBuilder,
-    ignoredToolCallIds: Set<string>,
     assistantUuidToToolCalls: Map<string, string[]>,
     countedUsageKeys: Set<string>,
   ): void {
@@ -521,13 +506,7 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
 
         if (partType !== "tool_use") continue;
 
-        const toolName = String(part["name"] ?? "").trim();
         const toolCallId = String(part["id"] ?? "").trim();
-
-        if (toolName && toolCallId && this.shouldIgnoreTool(toolName)) {
-          ignoredToolCallIds.add(toolCallId);
-          continue;
-        }
 
         const toolPart = this.buildToolPart(part, timestampMs);
         const message = builder.appendToolCall(
@@ -550,7 +529,6 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
   private convertUserRecord(
     data: Record<string, unknown>,
     builder: TranscriptBuilder,
-    ignoredToolCallIds: Set<string>,
     assistantUuidToToolCalls: Map<string, string[]>,
   ): void {
     const msg = (data["message"] ?? {}) as Record<string, unknown>;
@@ -583,7 +561,6 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
       if (ci["type"] !== "tool_result") continue;
 
       const toolCallId = this.resolveToolCallId(data, ci, assistantUuidToToolCalls);
-      if (toolCallId && ignoredToolCallIds.has(toolCallId)) continue;
 
       const outputParts = this.normalizeClaudeToolOutput(ci["content"], timestampMs);
       if (this.backfillToolOutput(builder, toolCallId, outputParts, toolStateUpdates)) {
@@ -805,11 +782,5 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
       timestampMs: opts.timestampMs,
       parts: opts.outputParts,
     };
-  }
-
-  // --- Utilities ---
-
-  private shouldIgnoreTool(toolName: string): boolean {
-    return toolName === "TodoWrite";
   }
 }
