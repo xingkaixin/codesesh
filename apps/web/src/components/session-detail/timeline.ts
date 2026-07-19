@@ -1,12 +1,19 @@
 import type { MessagePart } from "../../lib/api";
 import { extractMessageText } from "./blocks";
+import { classifyToolKind } from "./file-change";
 import { normalizeToolLabel } from "./tool-normalize";
 import type { FilteredSessionMessage } from "./toc";
 
 const TIMELINE_SUMMARY_LENGTH = 48;
 const TIMELINE_SCROLL_EDGE_TOLERANCE = 1;
 
-export type SessionTimelineEntryKind = "user" | "agent" | "tool";
+export type SessionTimelineEntryKind =
+  | "user"
+  | "agent"
+  | "tool-read"
+  | "tool-write"
+  | "tool-execute";
+export type ToolTimelineEntryKind = Extract<SessionTimelineEntryKind, `tool-${string}`>;
 
 export interface SessionTimelineEntry {
   id: string;
@@ -52,6 +59,19 @@ function summarizeParts(parts: MessagePart[]) {
   );
 }
 
+export function classifyTimelineToolKind(part: MessagePart): ToolTimelineEntryKind {
+  const fileKind = classifyToolKind(part);
+  if (fileKind === "read") return "tool-read";
+  if (fileKind) return "tool-write";
+  return "tool-execute";
+}
+
+const TOOL_KIND_LABEL = {
+  "tool-read": "Read",
+  "tool-write": "Write",
+  "tool-execute": "Execute",
+} as const;
+
 export function buildSessionTimelineEntries(
   messages: FilteredSessionMessage[],
   toolAnchorIds: Map<MessagePart, string>,
@@ -77,12 +97,13 @@ export function buildSessionTimelineEntries(
         block.parts.forEach((part) => {
           const anchorId = toolAnchorIds.get(part);
           if (!anchorId) return;
+          const kind = classifyTimelineToolKind(part);
           entries.push({
             id: anchorId,
-            kind: "tool",
+            kind,
             anchorId,
             messageIndex,
-            tooltip: `Tool · ${normalizeToolLabel(part)}`,
+            tooltip: `${TOOL_KIND_LABEL[kind]} · ${normalizeToolLabel(part)}`,
           });
         });
         return;

@@ -35,27 +35,39 @@ export interface FileChangeSummary {
   delete: FileChangeSummaryItem[];
 }
 
+const FILE_READ_TOOLS = new Set([
+  "read",
+  "read_file",
+  "read_file_v2",
+  "read_text_file",
+  "readfile",
+  "view_image",
+]);
+const FILE_EDIT_TOOLS = new Set([
+  "apply_patch",
+  "edit",
+  "edit_file",
+  "edit_file_v2",
+  "editfile",
+  "multiedit",
+  "notebookedit",
+  "patch",
+  "search_replace",
+  "str_replace",
+]);
+const FILE_WRITE_TOOLS = new Set(["create_file", "write", "write_file", "writefile"]);
+const FILE_DELETE_TOOLS = new Set(["delete", "delete_file"]);
+
 export function buildToolAnchorId(messageIndex: number, toolIndex: number) {
   return `tool-${messageIndex}-${toolIndex}`;
 }
 
 export function classifyToolKind(part: MessagePart): FileChangeKind | null {
   const toolName = normalizeToolName(part);
-  if (toolName === "read") return "read";
-  if (
-    toolName === "edit" ||
-    toolName === "multiedit" ||
-    toolName === "apply_patch" ||
-    toolName === "notebookedit"
-  ) {
-    return "edit";
-  }
-  if (toolName === "write" || toolName === "create_file" || toolName === "write_file") {
-    return "write";
-  }
-  if (toolName === "delete" || toolName === "delete_file") {
-    return "delete";
-  }
+  if (FILE_READ_TOOLS.has(toolName)) return "read";
+  if (FILE_EDIT_TOOLS.has(toolName)) return "edit";
+  if (FILE_WRITE_TOOLS.has(toolName)) return "write";
+  if (FILE_DELETE_TOOLS.has(toolName)) return "delete";
   return null;
 }
 

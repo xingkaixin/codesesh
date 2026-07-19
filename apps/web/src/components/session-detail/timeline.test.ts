@@ -5,6 +5,7 @@ import {
   buildBlockTimelineAnchorId,
   buildMessageTimelineAnchorId,
   buildSessionTimelineEntries,
+  classifyTimelineToolKind,
   findActiveTimelineIndex,
   findTimelineEdgeIndex,
   findTimelineIndexAtPointer,
@@ -42,7 +43,13 @@ describe("session timeline", () => {
 
     const entries = buildSessionTimelineEntries(messages, toolAnchorIds);
 
-    expect(entries.map((entry) => entry.kind)).toEqual(["user", "agent", "tool", "tool", "agent"]);
+    expect(entries.map((entry) => entry.kind)).toEqual([
+      "user",
+      "agent",
+      "tool-read",
+      "tool-write",
+      "agent",
+    ]);
     expect(entries.map((entry) => entry.anchorId)).toEqual([
       buildMessageTimelineAnchorId(4),
       buildBlockTimelineAnchorId(7, 0),
@@ -53,10 +60,20 @@ describe("session timeline", () => {
     expect(entries.map((entry) => entry.tooltip)).toEqual([
       "User · Open this file",
       "Agent · Checking it",
-      "Tool · Read",
-      "Tool · Write",
+      "Read · Read",
+      "Write · Write",
       "Agent · Done",
     ]);
+  });
+
+  it("classifies explicit file reads and writes before defaulting to execute", () => {
+    expect(classifyTimelineToolKind({ type: "tool", tool: "read_file_v2" })).toBe("tool-read");
+    expect(classifyTimelineToolKind({ type: "tool", tool: "view_image" })).toBe("tool-read");
+    expect(classifyTimelineToolKind({ type: "tool", tool: "EditFile" })).toBe("tool-write");
+    expect(classifyTimelineToolKind({ type: "tool", tool: "apply_patch" })).toBe("tool-write");
+    expect(classifyTimelineToolKind({ type: "tool", tool: "delete_file" })).toBe("tool-write");
+    expect(classifyTimelineToolKind({ type: "tool", tool: "update_plan" })).toBe("tool-execute");
+    expect(classifyTimelineToolKind({ type: "tool", tool: "image_gen" })).toBe("tool-execute");
   });
 
   it("compacts and limits message summaries", () => {
