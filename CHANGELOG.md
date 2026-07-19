@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.15.0] - 2026-07-20
+
+This release makes session tool calls easier to read: Codex code-mode exec calls are decoded back into native tool displays, tools render with semantic visualizations, and the timeline colors tools by activity.
+
+### Features
+
+- Decoded Codex code-mode `exec` tool calls back into native tool displays (bash, patch, write_stdin, node_repl, subagent, MCP), added dedicated renderers for `update_plan`, `web__run`, and `view_image`, split multi-call exec programs into ordered tool parts, and refreshed stale cached Codex details on upgrade via a lightweight pending-reindex migration. (#152)
+- Added semantic tool visualizations and semantic rendering of Claude messages, while preserving Claude tool images and task tools. (#153)
+- Colored the session timeline tools by activity classification. (#154)
+
+### Changelog Detail
+
+- #154 feat: color timeline tools by activity @xingkaixin
+- #153 feat: add semantic tool visualizations @xingkaixin
+- #152 feat(codex): decode code-mode exec into native tool displays @xingkaixin
+
 ## [0.14.0] - 2026-07-18
 
 This release adds persistent session aliases and interactive time-range filtering, while improving navigation, motion, search backfill memory use, and internal module boundaries.
