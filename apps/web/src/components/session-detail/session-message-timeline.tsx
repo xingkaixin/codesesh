@@ -41,13 +41,17 @@ const TIMELINE_TOOLTIP_VIEWPORT_PADDING = 8;
 const KIND_CLASS: Record<SessionTimelineEntryKind, string> = {
   user: "bg-[var(--timeline-user)]",
   agent: "bg-[var(--timeline-agent)]",
-  tool: "bg-[var(--timeline-tool)]",
+  "tool-read": "bg-[var(--timeline-tool-read)]",
+  "tool-write": "bg-[var(--timeline-tool-write)]",
+  "tool-execute": "bg-[var(--timeline-tool-execute)]",
 };
 
 const KIND_FALLBACK_COLOR: Record<SessionTimelineEntryKind, string> = {
   user: "#a85f82",
   agent: "#5e86aa",
-  tool: "#a3a3a3",
+  "tool-read": "#478b7d",
+  "tool-write": "#bd7336",
+  "tool-execute": "#786ca3",
 };
 
 interface MinimapWindow {
@@ -265,7 +269,15 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
       const colors: Record<SessionTimelineEntryKind, string> = {
         user: styles.getPropertyValue("--timeline-user").trim() || KIND_FALLBACK_COLOR.user,
         agent: styles.getPropertyValue("--timeline-agent").trim() || KIND_FALLBACK_COLOR.agent,
-        tool: styles.getPropertyValue("--timeline-tool").trim() || KIND_FALLBACK_COLOR.tool,
+        "tool-read":
+          styles.getPropertyValue("--timeline-tool-read").trim() ||
+          KIND_FALLBACK_COLOR["tool-read"],
+        "tool-write":
+          styles.getPropertyValue("--timeline-tool-write").trim() ||
+          KIND_FALLBACK_COLOR["tool-write"],
+        "tool-execute":
+          styles.getPropertyValue("--timeline-tool-execute").trim() ||
+          KIND_FALLBACK_COLOR["tool-execute"],
       };
       entries.forEach((entry, index) => {
         const x0 = (index / entries.length) * width;

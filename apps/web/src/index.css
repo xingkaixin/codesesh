@@ -134,7 +134,9 @@
     --console-error-border: #fecaca;
     --timeline-user: #a85f82;
     --timeline-agent: #5e86aa;
-    --timeline-tool: #a3a3a3;
+    --timeline-tool-read: #478b7d;
+    --timeline-tool-write: #bd7336;
+    --timeline-tool-execute: #786ca3;
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
     --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
     --tt-in-dur: 150ms;
