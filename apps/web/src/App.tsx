@@ -2,7 +2,7 @@ declare const __APP_VERSION__: string;
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useMatches, useNavigate } from "react-router-dom";
 import type { BookmarkedSessionSnapshot, SessionHead } from "./lib/api";
 import { logClientEvent } from "./lib/api";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -10,7 +10,7 @@ import { CopyResumeButton } from "./components/CopyResumeButton";
 import { SessionAliasDialog, type SessionAliasTarget } from "./components/SessionAliasDialog";
 import { TimeWindowControl } from "./components/TimeWindowControl";
 import { RenderProfiler } from "./components/RenderProfiler";
-import { parseViewState } from "./lib/view-state";
+import { viewStateFromRouteMatches } from "./lib/view-state";
 import { useScanStatus } from "./hooks/useScanStatus";
 import { useSessionDetail } from "./hooks/useSessionDetail";
 import { useSessionSearch } from "./hooks/useSessionSearch";
@@ -68,9 +68,10 @@ export default function App() {
   const [aliasTarget, setAliasTarget] = useState<SessionAliasTarget | null>(null);
 
   const location = useLocation();
+  const routeMatches = useMatches();
   const viewState = useMemo(
-    () => parseViewState(location.pathname, validAgentKeys),
-    [location.pathname, validAgentKeys],
+    () => viewStateFromRouteMatches(routeMatches, validAgentKeys),
+    [routeMatches, validAgentKeys],
   );
 
   const sessionDetail = useSessionDetail(viewState);
