@@ -82,6 +82,14 @@
     --console-error: #b91c1c;
     --console-error-bg: #fee2e2;
     --console-error-border: #fecaca;
+
+    --timeline-user: #a85f82;
+    --timeline-agent: #5e86aa;
+    --timeline-tool-read: #478b7d;
+    --timeline-tool-write: #bd7336;
+    --timeline-tool-execute: #786ca3;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   }
 
   * {
@@ -90,6 +98,10 @@
 
   body {
     @apply bg-background text-foreground;
+  }
+
+  body:has(dialog[open]) {
+    overflow: hidden;
   }
 }
 
@@ -121,32 +133,40 @@
     overflow-wrap: normal;
   }
 
-  .animate-caret-blink {
-    animation: caret-blink 1s step-end infinite;
-  }
-
-  .animate-terminal-line {
-    animation: terminal-line-in 180ms ease-out both;
-  }
-
-  .animate-status-ping {
-    animation: status-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
-  }
-
-  .product-showcase-pressable {
+  .pressable {
     touch-action: manipulation;
-    transition-property: transform, color, border-color;
-    transition-duration: 150ms;
-    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    transition: transform 160ms var(--ease-out);
   }
 
-  .product-showcase-pressable:active {
+  .pressable:active {
     transform: scale(0.97);
   }
 
   .product-showcase-expand {
     opacity: 1;
-    transition-property: opacity, transform, color, border-color;
+    transition:
+      opacity 160ms var(--ease-out),
+      transform 160ms var(--ease-out);
+  }
+
+  .copy-icon-stack > span {
+    grid-area: 1 / 1;
+    opacity: 0;
+    transform: scale(0.9);
+    transition:
+      opacity 150ms var(--ease-out),
+      transform 150ms var(--ease-out);
+  }
+
+  .copy-icon-stack > span[data-active="true"] {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .tl-row {
+    transform-origin: left center;
+    animation: tl-grow 260ms var(--ease-out) both;
+    animation-delay: calc(var(--tl-i, 0) * 60ms);
   }
 }
 
@@ -167,54 +187,125 @@
   .product-showcase-expand:active {
     transform: scale(0.97);
   }
-}
 
-@keyframes caret-blink {
-  0%,
-  49% {
-    opacity: 1;
+  .card-lift {
+    transition: transform 200ms var(--ease-out);
   }
 
-  50%,
-  100% {
+  .card-lift:hover {
+    transform: translateY(-2px);
+  }
+}
+
+.scene-dialog {
+  opacity: 0;
+  transform: scale(0.98);
+  transition:
+    opacity 150ms var(--ease-out),
+    transform 150ms var(--ease-out),
+    display 150ms allow-discrete,
+    overlay 150ms allow-discrete;
+}
+
+.scene-dialog[open] {
+  opacity: 1;
+  transform: scale(1);
+  transition-duration: 200ms;
+}
+
+@starting-style {
+  .scene-dialog[open] {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+.scene-dialog::backdrop {
+  opacity: 0;
+  transition:
+    opacity 150ms var(--ease-out),
+    display 150ms allow-discrete,
+    overlay 150ms allow-discrete;
+}
+
+.scene-dialog[open]::backdrop {
+  opacity: 1;
+  transition-duration: 200ms;
+}
+
+@starting-style {
+  .scene-dialog[open]::backdrop {
     opacity: 0;
   }
 }
 
-@keyframes terminal-line-in {
+.scene-dialog[data-instant][open],
+.scene-dialog[data-instant][open]::backdrop {
+  transition: none;
+}
+
+@keyframes tl-grow {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: scaleX(0);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: scaleX(1);
   }
 }
 
-@keyframes status-ping {
-  75%,
-  100% {
+@keyframes tl-fade {
+  from {
     opacity: 0;
-    transform: scale(2.4);
+  }
+
+  to {
+    opacity: 1;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-caret-blink,
-  .animate-terminal-line,
-  .animate-status-ping {
-    animation: none;
+  .tl-row {
+    animation-name: tl-fade;
+    animation-delay: 0ms;
   }
 
-  .product-showcase-pressable,
-  .product-showcase-pressable:hover,
-  .product-showcase-pressable:active,
-  .product-showcase-expand,
-  .product-showcase-expand:hover,
-  .product-showcase-expand:active {
+  .pressable,
+  .pressable:active {
     transform: none;
-    transition-property: opacity, color, border-color;
+    transition: none;
+  }
+
+  .product-showcase-card .product-showcase-expand,
+  .product-showcase-card .product-showcase-expand:hover,
+  .product-showcase-card .product-showcase-expand:active {
+    transform: none;
+    transition: opacity 160ms var(--ease-out);
+  }
+
+  .copy-icon-stack > span {
+    transform: none;
+    transition: opacity 150ms var(--ease-out);
+  }
+
+  .card-lift,
+  .card-lift:hover {
+    transform: none;
+    transition: none;
+  }
+
+  .scene-dialog {
+    transform: none;
+    transition:
+      opacity 150ms var(--ease-out),
+      display 150ms allow-discrete,
+      overlay 150ms allow-discrete;
+  }
+
+  .scene-dialog[open] {
+    transform: none;
+    transition-duration: 150ms;
   }
 }

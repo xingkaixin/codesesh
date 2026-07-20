@@ -20,12 +20,13 @@ const t = copy[locale].header;
         href="https://github.com/xingkaixin/codesesh"
         target="_blank"
         rel="noopener noreferrer"
-        class="console-mono text-xs text-[var(--console-muted)] transition-colors hover:text-[var(--console-text)]"
+        class="console-mono py-2 -my-2 text-xs text-[var(--console-muted)] transition-colors hover:text-[var(--console-text)]"
       >
         {t.github}
       </a>
       <div
         class="flex items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-0.5"
+        role="group"
         aria-label={t.languageLabel}
       >
         {
@@ -33,7 +34,7 @@ const t = copy[locale].header;
             <a
               href={localeRoutes[item]}
               class:list={[
-                "console-mono rounded-[3px] px-2 py-1 text-[10px] font-semibold transition-colors",
+                "console-mono rounded-[3px] px-2 py-1.5 text-[10px] font-semibold transition-colors",
                 locale === item
                   ? "bg-white text-[var(--console-text)] shadow-sm"
                   : "text-[var(--console-muted)] hover:text-[var(--console-text)]",

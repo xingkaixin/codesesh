@@ -109,7 +109,7 @@ export const agents = [
 export const copy = {
   zh: {
     meta: {
-      title: "CodeSesh — 可复用的 AI 编码工程记忆",
+      title: "CodeSesh：可复用的 AI 编码工程记忆",
       description:
         "CodeSesh 把 Claude Code、Cursor、Kimi、Codex、Pi、OpenCode 和 ZCode 的本地 AI 编码历史，沉淀成按项目组织、可结构化检索、可复盘的工程记忆。",
     },
@@ -118,7 +118,7 @@ export const copy = {
       languageLabel: "语言",
     },
     hero: {
-      title: ["把 AI 编码历史，", "变成可复用的", "工程记忆。"],
+      title: ["把 AI 编码历史，", "变成可复用的工程记忆。"],
       latest: "最新版",
       body: "CodeSesh 自动发现 Claude Code、Cursor、Kimi、Codex、Pi、OpenCode 和 ZCode 的本地会话，把问题、推理、尝试、文件活动和结果沉淀成按项目组织、可结构化检索、可复盘的工程记忆。",
       commandTitle: "从本地开始积累",
@@ -164,7 +164,7 @@ export const copy = {
     features: {
       label: "Features",
       title: ["围绕长期积累", "设计产品结构"],
-      body: "CodeSesh 的核心工作是发现、组织、找回和复盘。功能说明按这四个阶段展开，让页面信息更接近真实使用路径。",
+      body: "CodeSesh 围绕真实的 AI 协作循环设计：发现、组织、找回、复盘。",
       groups: [
         {
           title: "发现",
@@ -273,8 +273,8 @@ export const copy = {
     },
     faq: {
       label: "FAQ",
-      title: ["AI 引用友好的", "产品答案"],
-      body: "这些答案帮助搜索引擎和 AI 系统直接理解 CodeSesh 的定位、安装方式、数据边界和支持范围。",
+      title: "常见问题",
+      body: "关于 CodeSesh 的定位、支持范围、安装方式和数据边界的简短回答。",
       items: [
         {
           question: "CodeSesh 是什么？",
@@ -301,7 +301,7 @@ export const copy = {
   },
   en: {
     meta: {
-      title: "CodeSesh — Reusable Engineering Memory for AI Coding",
+      title: "CodeSesh: Reusable Engineering Memory for AI Coding",
       description:
         "CodeSesh turns local AI coding history from Claude Code, Cursor, Kimi, Codex, Pi, OpenCode, and ZCode into project-aware, structurally searchable, replayable engineering memory.",
     },
@@ -476,8 +476,8 @@ export const copy = {
     },
     faq: {
       label: "FAQ",
-      title: "AI-readable product answers",
-      body: "These answers make CodeSesh easier for search engines and AI systems to extract, cite, and describe accurately.",
+      title: "Frequently asked questions",
+      body: "Short answers about what CodeSesh is, what it supports, and where your data stays.",
       items: [
         {
           question: "What is CodeSesh?",

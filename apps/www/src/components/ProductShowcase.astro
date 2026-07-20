@@ -14,55 +14,87 @@ const scenes = copy[locale].scenes;
 
 <section class="border-y border-[var(--console-border)] bg-white px-6 py-24">
   <div class="mx-auto max-w-6xl">
-    <div class="grid gap-8 md:grid-cols-[0.78fr_1.22fr] md:items-end">
-      <div>
-        <p class="console-mono text-xs font-bold uppercase tracking-[0.16em] text-[var(--console-muted)]">
-          {t.label}
-        </p>
-        <h2 class="landing-heading mt-4 max-w-xl text-3xl font-semibold leading-tight tracking-tight text-[var(--console-accent-strong)] md:text-4xl">
-          <HeadingText value={t.title} />
-        </h2>
-      </div>
-      <p class="max-w-2xl text-base leading-8 text-[var(--console-muted)]">{t.body}</p>
-    </div>
+    <p class="console-mono text-xs font-semibold uppercase tracking-[0.14em] text-[var(--console-muted)]">
+      {t.label}
+    </p>
+    <h2 class="landing-heading mt-4 max-w-2xl text-3xl font-semibold leading-tight tracking-tight text-[var(--console-accent-strong)] md:text-4xl">
+      <HeadingText value={t.title} />
+    </h2>
+    <p class="mt-4 max-w-2xl text-base leading-7 text-[var(--console-muted)]">{t.body}</p>
 
-    <div class="mt-14 grid gap-6 lg:grid-cols-2">
-      {
-        scenes.map((scene, index) => (
-          <article class="product-showcase-card group relative overflow-hidden rounded-md border border-[var(--console-border)] bg-white text-left shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
+    {
+      scenes[0] && (
+        <div class="mt-12">
+          <article class="product-showcase-card card-lift group relative overflow-hidden rounded-sm border border-[var(--console-border)] bg-white text-left">
             <div class="border-b border-[var(--console-border)] bg-white px-6 py-5">
-              <p class="console-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--console-muted)]">
-                {scene.title}
-              </p>
-              <p class="mt-2 max-w-xl text-sm leading-6 text-[var(--console-text)]">
-                {scene.description}
-              </p>
+              <h3 class="text-sm font-semibold text-[var(--console-text)]">{scenes[0].title}</h3>
+              <p class="mt-1.5 text-sm leading-6 text-[var(--console-muted)]">{scenes[0].description}</p>
             </div>
 
             <div class="bg-[var(--console-surface-muted)] p-4">
-              <div class="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[#f8f8f8]">
+              <div class="overflow-hidden rounded-[2px] border border-[var(--console-border)] bg-[#f8f8f8]">
                 <img
-                  src={scene.image}
-                  alt={scene.description}
+                  src={scenes[0].image}
+                  alt={scenes[0].description}
                   width="1586"
                   height="992"
                   class="aspect-[1586/992] h-auto w-full object-cover object-top"
-                  loading="lazy"
+                  loading="eager"
+                  fetchpriority="high"
                 />
               </div>
             </div>
 
             <button
               type="button"
-              data-scene-open={String(index)}
-              class="product-showcase-expand product-showcase-pressable absolute right-6 bottom-6 inline-flex items-center gap-2 rounded-sm border border-white/70 bg-white/92 px-3 py-2 text-xs font-medium text-[var(--console-text)] shadow-lg"
-              aria-label={`${t.expand} ${scene.title}`}
+              data-scene-open="0"
+              class="product-showcase-expand pressable absolute right-5 bottom-5 inline-flex items-center gap-2 rounded-[2px] border border-[var(--console-border)] bg-white/92 px-3 py-2 text-xs font-medium text-[var(--console-text)] shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
+              aria-label={`${t.expand} ${scenes[0].title}`}
             >
               <Icon name="expand" class="size-3.5" />
               {t.expand}
             </button>
           </article>
-        ))
+        </div>
+      )
+    }
+
+    <div class="mt-6 grid gap-6 md:grid-cols-3">
+      {
+        scenes.slice(1).map((scene, i) => {
+          const index = i + 1;
+          return (
+            <article class="product-showcase-card card-lift group relative overflow-hidden rounded-sm border border-[var(--console-border)] bg-white text-left">
+              <div class="border-b border-[var(--console-border)] bg-white px-6 py-5">
+                <h3 class="text-sm font-semibold text-[var(--console-text)]">{scene.title}</h3>
+                <p class="mt-1.5 text-sm leading-6 text-[var(--console-muted)]">{scene.description}</p>
+              </div>
+
+              <div class="bg-[var(--console-surface-muted)] p-4">
+                <div class="overflow-hidden rounded-[2px] border border-[var(--console-border)] bg-[#f8f8f8]">
+                  <img
+                    src={scene.image}
+                    alt={scene.description}
+                    width="1586"
+                    height="992"
+                    class="aspect-[1586/992] h-auto w-full object-cover object-top"
+                    loading="lazy"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                data-scene-open={String(index)}
+                class="product-showcase-expand pressable absolute right-5 bottom-5 inline-flex items-center gap-2 rounded-[2px] border border-[var(--console-border)] bg-white/92 px-3 py-2 text-xs font-medium text-[var(--console-text)] shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
+                aria-label={`${t.expand} ${scene.title}`}
+              >
+                <Icon name="expand" class="size-3.5" />
+                {t.expand}
+              </button>
+            </article>
+          );
+        })
       }
     </div>
   </div>
@@ -74,14 +106,14 @@ const scenes = copy[locale].scenes;
       id={`scene-dialog-${locale}-${index}`}
       data-scene-dialog
       data-scene-index={String(index)}
-      class="m-0 h-screen max-h-none w-screen max-w-none bg-transparent p-0 backdrop:bg-black/55 backdrop:backdrop-blur-sm"
-      aria-label={`${scene.title} preview`}
+      class="scene-dialog m-0 h-dvh max-h-none w-screen max-w-none bg-transparent p-0 backdrop:bg-black/55 backdrop:backdrop-blur-sm"
+      aria-label={scene.title}
     >
-      <div class="flex min-h-screen items-center justify-center p-4" data-scene-backdrop>
-        <div class="relative flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-md border border-white/20 bg-[#f7f7f7] shadow-[0_40px_120px_rgba(15,23,42,0.45)]">
+      <div class="flex min-h-dvh items-center justify-center p-4" data-scene-backdrop>
+        <div class="relative flex max-h-[92dvh] w-full max-w-7xl flex-col overflow-hidden rounded-sm border border-white/20 bg-[#f7f7f7] shadow-[0_24px_64px_rgba(0,0,0,0.24)]">
           <div class="flex items-start justify-between gap-4 border-b border-[var(--console-border)] bg-white px-5 py-4">
             <div>
-              <p class="console-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--console-muted)]">
+              <p class="text-sm font-semibold text-[var(--console-text)]">
                 {scene.title}
               </p>
               <p class="mt-2 max-w-2xl text-sm leading-6 text-[var(--console-text)]">
@@ -91,7 +123,7 @@ const scenes = copy[locale].scenes;
             <button
               type="button"
               data-scene-close
-              class="product-showcase-pressable rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--console-text)] hover:bg-white"
+              class="pressable rounded-[2px] border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--console-text)] hover:bg-white"
             >
               {t.close}
             </button>
@@ -101,32 +133,37 @@ const scenes = copy[locale].scenes;
             <button
               type="button"
               data-scene-prev
-              class="product-showcase-pressable inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-white px-3 py-2 text-xs font-medium text-[var(--console-text)] hover:bg-[var(--console-surface-muted)]"
+              class="pressable inline-flex items-center gap-2 rounded-[2px] border border-[var(--console-border)] bg-white px-3 py-2 text-xs font-medium text-[var(--console-text)] hover:bg-[var(--console-surface-muted)]"
             >
               <Icon name="chevron-left" class="size-4" />
               {t.previous}
             </button>
-            <p class="console-mono text-[11px] uppercase tracking-[0.16em] text-[var(--console-muted)]">
+            <p class="text-xs text-[var(--console-muted)]">
               {t.closeHint}
             </p>
             <button
               type="button"
               data-scene-next
-              class="product-showcase-pressable inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-white px-3 py-2 text-xs font-medium text-[var(--console-text)] hover:bg-[var(--console-surface-muted)]"
+              class="pressable inline-flex items-center gap-2 rounded-[2px] border border-[var(--console-border)] bg-white px-3 py-2 text-xs font-medium text-[var(--console-text)] hover:bg-[var(--console-surface-muted)]"
             >
               {t.next}
               <Icon name="chevron-right" class="size-4" />
             </button>
           </div>
 
-          <div class="overflow-auto bg-[var(--console-surface-muted)] p-4">
-            <div class="mx-auto min-w-[56rem] overflow-hidden rounded-sm border border-[var(--console-border)] bg-white shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
+          <div
+            class="overflow-auto bg-[var(--console-surface-muted)] p-4 [overscroll-behavior:contain]"
+            tabindex="0"
+            aria-label={scene.title}
+          >
+            <div class="mx-auto min-w-[56rem] overflow-hidden rounded-[2px] border border-[var(--console-border)] bg-white">
               <img
                 src={scene.image}
                 alt={scene.title}
                 width="1586"
                 height="992"
                 class="h-auto w-full object-cover object-top"
+                loading="lazy"
               />
             </div>
           </div>
@@ -139,14 +176,25 @@ const scenes = copy[locale].scenes;
 <script>
   const dialogs = Array.from(document.querySelectorAll<HTMLDialogElement>("[data-scene-dialog]"));
 
-  function openScene(index: number) {
+  function openScene(index: number, instant = false) {
     const dialog = dialogs[index];
     if (!dialog) return;
 
     dialogs.forEach((item) => {
       if (item !== dialog && item.open) item.close();
     });
-    dialog.showModal();
+
+    if (instant) {
+      // Suppress the enter transition when navigating between scenes so the
+      // backdrop doesn't flash transparent->opaque on rapid prev/next clicks.
+      dialog.setAttribute("data-instant", "");
+      dialog.showModal();
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => dialog.removeAttribute("data-instant"));
+      });
+    } else {
+      dialog.showModal();
+    }
   }
 
   document.querySelectorAll<HTMLButtonElement>("[data-scene-open]").forEach((button) => {
@@ -163,11 +211,11 @@ const scenes = copy[locale].scenes;
     });
     dialog.querySelector("[data-scene-prev]")?.addEventListener("click", () => {
       dialog.close();
-      openScene((index - 1 + dialogs.length) % dialogs.length);
+      openScene((index - 1 + dialogs.length) % dialogs.length, true);
     });
     dialog.querySelector("[data-scene-next]")?.addEventListener("click", () => {
       dialog.close();
-      openScene((index + 1) % dialogs.length);
+      openScene((index + 1) % dialogs.length, true);
     });
   });
 </script>
