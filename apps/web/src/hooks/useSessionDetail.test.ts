@@ -3,6 +3,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { SessionData } from "../lib/api";
 import type { ViewState } from "../lib/view-state";
 import * as api from "../lib/api";
+import { createQueryWrapper } from "../test/query-wrapper";
 import { useSessionDetail } from "./useSessionDetail";
 
 vi.mock("../lib/api", () => ({
@@ -28,6 +29,14 @@ function deferred<T>() {
   return { promise, reject, resolve };
 }
 
+function renderSessionDetail(view: ViewState = sessionView) {
+  const { Wrapper } = createQueryWrapper();
+  return renderHook(({ currentView }) => useSessionDetail(currentView), {
+    initialProps: { currentView: view },
+    wrapper: Wrapper,
+  });
+}
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -36,7 +45,7 @@ afterEach(() => {
 describe("useSessionDetail", () => {
   it("loads the session for a session route", async () => {
     vi.mocked(api.fetchSessionData).mockResolvedValue(sample);
-    const { result } = renderHook(() => useSessionDetail(sessionView));
+    const { result } = renderSessionDetail();
 
     await waitFor(() => expect(result.current.session).toEqual(sample));
     expect(result.current.sessionError).toBeNull();
@@ -49,7 +58,7 @@ describe("useSessionDetail", () => {
 
   it("sets an error when the fetch fails", async () => {
     vi.mocked(api.fetchSessionData).mockRejectedValue(new Error("nope"));
-    const { result } = renderHook(() => useSessionDetail(sessionView));
+    const { result } = renderSessionDetail();
 
     await waitFor(() => expect(result.current.sessionError).toBe("Session not found"));
     expect(result.current.session).toBeNull();
@@ -57,7 +66,7 @@ describe("useSessionDetail", () => {
 
   it("does not fetch for a non-session route", () => {
     const rootView: ViewState = { mode: "root", activeAgentKey: null, activeSessionSlug: null };
-    const { result } = renderHook(() => useSessionDetail(rootView));
+    const { result } = renderSessionDetail(rootView);
 
     expect(result.current.session).toBeNull();
     expect(api.fetchSessionData).not.toHaveBeenCalled();
@@ -65,7 +74,7 @@ describe("useSessionDetail", () => {
 
   it("refresh re-fetches the open session", async () => {
     vi.mocked(api.fetchSessionData).mockResolvedValue(sample);
-    const { result } = renderHook(() => useSessionDetail(sessionView));
+    const { result } = renderSessionDetail();
     await waitFor(() => expect(result.current.session).toEqual(sample));
 
     const updated = { id: "abc", messages: [1] } as unknown as SessionData;
@@ -73,7 +82,7 @@ describe("useSessionDetail", () => {
     await act(async () => {
       await result.current.refresh();
     });
-    expect(result.current.session).toEqual(updated);
+    await waitFor(() => expect(result.current.session).toEqual(updated));
   });
 
   it("keeps the current route when an older request resolves last", async () => {
@@ -90,12 +99,10 @@ describe("useSessionDetail", () => {
     vi.mocked(api.fetchSessionData).mockImplementation((_agent, sessionId) =>
       sessionId === viewA.activeSessionSlug ? requestA.promise : requestB.promise,
     );
-    const { result, rerender } = renderHook(({ view }) => useSessionDetail(view), {
-      initialProps: { view: viewA as ViewState },
-    });
+    const { result, rerender } = renderSessionDetail(viewA);
     await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(1));
 
-    rerender({ view: viewB });
+    rerender({ currentView: viewB });
     await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(2));
     await act(async () => requestB.resolve(sessionB));
     await waitFor(() => expect(result.current.session).toEqual(sessionB));
@@ -113,7 +120,6 @@ describe("useSessionDetail", () => {
         "session.open.cancel:claudecode/claudecode/abc",
         "session.open.start:codex/def",
         "session.open.done:codex/def",
-        "session.open.stale:claudecode/claudecode/abc",
       ],
     });
   });
@@ -135,12 +141,10 @@ describe("useSessionDetail", () => {
         });
       });
     });
-    const { result, rerender } = renderHook(({ view }) => useSessionDetail(view), {
-      initialProps: { view: sessionView as ViewState },
-    });
+    const { result, rerender } = renderSessionDetail();
     await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(1));
 
-    rerender({ view: viewB });
+    rerender({ currentView: viewB });
     await waitFor(() => expect(result.current.session).toEqual(sessionB));
 
     expect(result.current.sessionError).toBeNull();
@@ -162,12 +166,10 @@ describe("useSessionDetail", () => {
     vi.mocked(api.fetchSessionData).mockImplementation((_agent, sessionId) =>
       sessionId === sessionView.activeSessionSlug ? requestA.promise : requestB.promise,
     );
-    const { result, rerender } = renderHook(({ view }) => useSessionDetail(view), {
-      initialProps: { view: sessionView as ViewState },
-    });
+    const { result, rerender } = renderSessionDetail();
     await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(1));
 
-    rerender({ view: viewB });
+    rerender({ currentView: viewB });
     await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(2));
     await act(async () => requestA.reject(new Error("stale failure")));
 
@@ -181,7 +183,7 @@ describe("useSessionDetail", () => {
   it("aborts without committing state after unmount", async () => {
     const request = deferred<SessionData>();
     vi.mocked(api.fetchSessionData).mockReturnValue(request.promise);
-    const { unmount } = renderHook(() => useSessionDetail(sessionView));
+    const { unmount } = renderSessionDetail();
     await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(1));
     const signal = vi.mocked(api.fetchSessionData).mock.calls[0]?.[2]?.signal;
 
@@ -212,9 +214,7 @@ describe("useSessionDetail", () => {
       .mockResolvedValueOnce(sample)
       .mockReturnValueOnce(refreshRequest.promise)
       .mockResolvedValueOnce(sessionB);
-    const { result, rerender } = renderHook(({ view }) => useSessionDetail(view), {
-      initialProps: { view: sessionView as ViewState },
-    });
+    const { result, rerender } = renderSessionDetail();
     await waitFor(() => expect(result.current.session).toEqual(sample));
 
     let refreshPromise!: Promise<void>;
@@ -222,7 +222,7 @@ describe("useSessionDetail", () => {
       refreshPromise = result.current.refresh();
     });
     await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(2));
-    rerender({ view: viewB });
+    rerender({ currentView: viewB });
     await waitFor(() => expect(result.current.session).toEqual(sessionB));
     await act(async () => refreshRequest.resolve(refreshedA));
     await refreshPromise;

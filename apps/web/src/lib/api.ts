@@ -177,6 +177,7 @@ export async function fetchSessionData(
 export async function fetchDashboard(
   window?: AppConfig["window"],
   filters: { projectKind?: ProjectIdentityKind; projectKey?: string; agent?: string } = {},
+  options?: FetchOptions,
 ): Promise<DashboardData> {
   const params = new URLSearchParams();
   if (window?.days !== 0) appendTimeWindow(params, window);
@@ -185,12 +186,13 @@ export async function fetchDashboard(
   if (filters.projectKey) params.set("projectKey", filters.projectKey);
   if (filters.agent) params.set("agent", filters.agent);
   const suffix = params.toString();
-  return fetchJson(suffix ? `/api/dashboard?${suffix}` : "/api/dashboard");
+  return fetchJson(suffix ? `/api/dashboard?${suffix}` : "/api/dashboard", options);
 }
 
 export async function fetchSearchResults(
   query: string,
   options: SearchRequestOptions = {},
+  fetchOptions?: FetchOptions,
 ): Promise<{ results: SearchResult[] }> {
   const params = new URLSearchParams();
   params.set("q", query);
@@ -203,11 +205,13 @@ export async function fetchSearchResults(
   if (options.costMin != null) params.set("costMin", String(options.costMin));
   if (options.costMax != null) params.set("costMax", String(options.costMax));
   appendTimeWindow(params, options);
-  return fetchJson(`/api/search?${params}`);
+  return fetchJson(`/api/search?${params}`, fetchOptions);
 }
 
-export async function fetchBookmarks(): Promise<{ bookmarks: BookmarkedSessionSnapshot[] }> {
-  return fetchJson("/api/bookmarks");
+export async function fetchBookmarks(
+  options?: FetchOptions,
+): Promise<{ bookmarks: BookmarkedSessionSnapshot[] }> {
+  return fetchJson("/api/bookmarks", options);
 }
 
 export async function upsertBookmark(
