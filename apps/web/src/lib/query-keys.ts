@@ -13,6 +13,7 @@ function normalizeWindow(window: TimeWindow) {
 export const queryKeys = {
   bookmarks: ["bookmarks"] as const,
   config: ["config"] as const,
+  dashboards: ["dashboard"] as const,
   dashboard: (
     window: TimeWindow,
     filters: {
@@ -22,6 +23,8 @@ export const queryKeys = {
     },
   ) => ["dashboard", normalizeWindow(window), filters] as const,
   search: (query: string, options: SearchRequestOptions) => ["search", query, options] as const,
+  searches: ["search"] as const,
+  sessionDetails: ["session-detail"] as const,
   sessionDetail: (agent: string, sessionSlug: string) =>
     ["session-detail", agent, sessionSlug] as const,
   sessionSnapshots: ["session-snapshot"] as const,

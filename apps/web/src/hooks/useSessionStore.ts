@@ -141,7 +141,9 @@ export function useSessionStore() {
           exact: true,
           refetchType: "none",
         });
-        return queryClient.fetchQuery(sessionSnapshotOptions(requestedWindow));
+        const refreshed = await queryClient.fetchQuery(sessionSnapshotOptions(requestedWindow));
+        await queryClient.invalidateQueries({ queryKey: queryKeys.sessionDetails });
+        return refreshed;
       }
 
       queryClient.setQueryData<SessionStoreSnapshot>(snapshotKey, {
@@ -153,11 +155,12 @@ export function useSessionStore() {
         ),
       });
       const aggregates = await queryClient.fetchQuery(snapshotAggregatesOptions(requestedWindow));
-      return (
+      const updated =
         queryClient.setQueryData<SessionStoreSnapshot>(snapshotKey, (latest) =>
           latest ? { ...latest, ...aggregates } : latest,
-        ) ?? null
-      );
+        ) ?? null;
+      await queryClient.invalidateQueries({ queryKey: queryKeys.sessionDetails });
+      return updated;
     },
     [queryClient, requestedWindow],
   );
