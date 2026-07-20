@@ -18,6 +18,21 @@ test("keeps project navigation aligned with the overview route", async ({ page }
   await expect(projectNavigation).not.toHaveClass(/bg-white/);
 });
 
+test("persists app shell preferences across reloads", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
+  await page.getByRole("button", { name: "Dismiss keyboard shortcuts hint" }).click();
+
+  await page.reload();
+
+  await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Dismiss keyboard shortcuts hint" })).toHaveCount(
+    0,
+  );
+});
+
 test("covers dashboard, detail, search, projects, and pin flows", async ({ page }) => {
   const consoleErrors: string[] = [];
   page.on("console", (message) => {
