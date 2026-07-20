@@ -3,6 +3,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { SearchResult } from "../lib/api";
 import type { SessionIndexes } from "../lib/session-indexes";
 import * as api from "../lib/api";
+import { createQueryWrapper } from "../test/query-wrapper";
 import { useSessionSearch } from "./useSessionSearch";
 
 vi.mock("../lib/api", () => ({
@@ -30,16 +31,21 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+function renderSearch(indexes: SessionIndexes = emptyIndexes) {
+  const { Wrapper } = createQueryWrapper();
+  return renderHook(() => useSessionSearch(indexes), { wrapper: Wrapper });
+}
+
 describe("useSessionSearch", () => {
   it("starts idle with empty results", () => {
-    const { result } = renderHook(() => useSessionSearch(emptyIndexes));
+    const { result } = renderSearch();
     expect(result.current.searchMode).toBe(false);
     expect(result.current.searchState).toEqual({ status: "idle" });
     expect(result.current.searchResults).toEqual([]);
   });
 
   it("submitSearch activates the trimmed draft query", () => {
-    const { result } = renderHook(() => useSessionSearch(emptyIndexes));
+    const { result } = renderSearch();
     act(() => result.current.setDraftSearchQuery("  hello  "));
     act(() => result.current.submitSearch());
 
@@ -49,18 +55,20 @@ describe("useSessionSearch", () => {
 
   it("runs a server search for an active query", async () => {
     vi.mocked(api.fetchSearchResults).mockResolvedValue({ results: serverResults });
-    const { result } = renderHook(() => useSessionSearch(emptyIndexes));
+    const { result } = renderSearch();
     act(() => result.current.setDraftSearchQuery("hello"));
     act(() => result.current.submitSearch());
 
     await waitFor(() => expect(result.current.searchResults).toEqual(serverResults));
-    expect(api.fetchSearchResults).toHaveBeenCalledWith("hello", expect.any(Object));
+    expect(api.fetchSearchResults).toHaveBeenCalledWith("hello", expect.any(Object), {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("exposes a failed search state that can be retried", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.mocked(api.fetchSearchResults).mockRejectedValueOnce(new Error("Search unavailable"));
-    const { result } = renderHook(() => useSessionSearch(emptyIndexes));
+    const { result } = renderSearch();
     act(() => result.current.setDraftSearchQuery("hello"));
     act(() => result.current.submitSearch());
 
@@ -95,7 +103,7 @@ describe("useSessionSearch", () => {
         },
       ],
     } as SessionIndexes;
-    const { result } = renderHook(() => useSessionSearch(indexes));
+    const { result } = renderSearch(indexes);
     act(() =>
       result.current.setSearchFilters({
         project: { kind: "git_remote", key: "github.com/acme/app" },
@@ -111,12 +119,13 @@ describe("useSessionSearch", () => {
           projectKind: "git_remote",
           projectKey: "github.com/acme/app",
         }),
+        { signal: expect.any(AbortSignal) },
       ),
     );
   });
 
   it("closeSearch exits and clears the active query", () => {
-    const { result } = renderHook(() => useSessionSearch(emptyIndexes));
+    const { result } = renderSearch();
     act(() => result.current.setDraftSearchQuery("hello"));
     act(() => result.current.submitSearch());
     act(() => result.current.closeSearch());
@@ -127,7 +136,7 @@ describe("useSessionSearch", () => {
 
   it("refresh re-fetches server results while searching", async () => {
     vi.mocked(api.fetchSearchResults).mockResolvedValue({ results: serverResults });
-    const { result } = renderHook(() => useSessionSearch(emptyIndexes));
+    const { result } = renderSearch();
     act(() => result.current.setDraftSearchQuery("hello"));
     act(() => result.current.submitSearch());
     await waitFor(() => expect(result.current.searchResults).toEqual(serverResults));
@@ -140,6 +149,6 @@ describe("useSessionSearch", () => {
       await result.current.refresh();
     });
 
-    expect(result.current.searchResults).toEqual(next);
+    await waitFor(() => expect(result.current.searchResults).toEqual(next));
   });
 });

@@ -1,10 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
-import {
-  type AppConfig,
-  type DashboardData,
-  type ProjectIdentityKind,
-  fetchDashboard,
-} from "../lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { type AppConfig, type ProjectIdentityKind, fetchDashboard } from "../lib/api";
+import { queryKeys } from "../lib/query-keys";
 
 export interface DashboardFilters {
   projectKind?: ProjectIdentityKind;
@@ -17,58 +14,35 @@ export function useDashboard(window: AppConfig["window"] | null, filters?: Dashb
   const projectKey = filters?.projectKey;
   const identityKey = filters?.identityKey;
   const isFiltered = filters !== undefined;
-  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | undefined>(undefined);
+  const isEnabled = window !== null && (!isFiltered || projectKey !== undefined);
 
   useEffect(() => {
     if (identityKey) setSelectedAgent(undefined);
   }, [identityKey]);
 
-  const load = useCallback(async () => {
-    if (!window || (isFiltered && !projectKey)) return null;
-    return fetchDashboard(window, {
-      projectKind,
-      projectKey,
-      agent: selectedAgent,
-    });
-  }, [isFiltered, projectKey, projectKind, selectedAgent, window]);
-
-  useEffect(() => {
-    if (!window || (isFiltered && !projectKey)) {
-      setDashboard(null);
-      setError(null);
-      setLoading(false);
-      return;
-    }
-
-    let current = true;
-    setLoading(true);
-    setError(null);
-    void load()
-      .then((data) => {
-        if (current) setDashboard(data);
-      })
-      .catch((loadError) => {
-        if (!current) return;
-        console.error("Failed to load dashboard:", loadError);
-        setDashboard(null);
-        setError("Failed to load dashboard");
-      })
-      .finally(() => {
-        if (current) setLoading(false);
-      });
-
-    return () => {
-      current = false;
-    };
-  }, [isFiltered, load, projectKey, window]);
+  const query = useQuery({
+    queryKey: queryKeys.dashboard(window ?? {}, { projectKind, projectKey, agent: selectedAgent }),
+    enabled: isEnabled,
+    queryFn: async ({ signal }) => {
+      if (!window) throw new Error("Dashboard window is required");
+      try {
+        return await fetchDashboard(
+          window,
+          { projectKind, projectKey, agent: selectedAgent },
+          { signal },
+        );
+      } catch (error) {
+        if (!signal.aborted) console.error("Failed to load dashboard:", error);
+        throw error;
+      }
+    },
+  });
 
   return {
-    dashboard,
-    loading,
-    error,
+    dashboard: isEnabled ? (query.data ?? null) : null,
+    loading: isEnabled && query.isPending,
+    error: isEnabled && query.isError ? "Failed to load dashboard" : null,
     selectedAgent,
     setSelectedAgent,
   };

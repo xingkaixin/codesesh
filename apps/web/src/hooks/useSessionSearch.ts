@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type AppConfig,
@@ -15,6 +16,9 @@ import {
   buildSearchRequestOptions,
   usesServerSearch as computeUsesServerSearch,
 } from "../lib/search";
+import { queryKeys } from "../lib/query-keys";
+
+const EMPTY_SEARCH_RESULTS: SearchResult[] = [];
 
 /**
  * Owns the session-search domain: query/filters state, the local-vs-server
@@ -30,8 +34,6 @@ export function useSessionSearch(
   const [activeSearchQuery, setActiveSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState(false);
   const [searchFilters, setSearchFilters] = useState<SearchFilterState>({});
-  const [searchState, setSearchState] = useState<SearchLoadState>({ status: "idle" });
-  const [retryVersion, setRetryVersion] = useState(0);
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchResultRefs = useRef(new Map<string, HTMLAnchorElement>());
@@ -56,8 +58,48 @@ export function useSessionSearch(
     () => buildLocalRecentResults(sessionIndexes, searchFilters, costMin),
     [sessionIndexes, searchFilters, costMin],
   );
+  const serverSearchQuery = useQuery({
+    queryKey: queryKeys.search(activeSearchQuery, searchRequestOptions),
+    enabled: searchMode && usesServerSearch,
+    queryFn: async ({ signal }) => {
+      const startedAt = performance.now();
+      logClientEvent("search.start", { query_length: activeSearchQuery.length });
+      try {
+        const data = await fetchSearchResults(activeSearchQuery, searchRequestOptions, { signal });
+        logClientEvent("search.done", {
+          duration_ms: Math.round(performance.now() - startedAt),
+          results: data.results.length,
+        });
+        return data.results;
+      } catch (error) {
+        if (!signal.aborted) {
+          console.error("Failed to load search results:", error);
+          logClientEvent("search.error", {
+            duration_ms: Math.round(performance.now() - startedAt),
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+        throw error;
+      }
+    },
+  });
+  const searchState = useMemo<SearchLoadState>(() => {
+    if (!searchMode) return { status: "idle" };
+    if (!usesServerSearch) return { status: "loaded", results: recentSearchResults };
+    if (serverSearchQuery.isPending) return { status: "loading" };
+    if (serverSearchQuery.isError) {
+      return {
+        status: "failed",
+        error:
+          serverSearchQuery.error instanceof Error
+            ? serverSearchQuery.error.message
+            : "Search request failed",
+      };
+    }
+    return { status: "loaded", results: serverSearchQuery.data };
+  }, [recentSearchResults, searchMode, serverSearchQuery, usesServerSearch]);
   const searchResults = useMemo(
-    () => (searchState.status === "loaded" ? searchState.results : []),
+    () => (searchState.status === "loaded" ? searchState.results : EMPTY_SEARCH_RESULTS),
     [searchState],
   );
   const searchLoading = searchState.status === "loading";
@@ -78,55 +120,6 @@ export function useSessionSearch(
       usesServerSearch,
     ],
   );
-
-  useEffect(() => {
-    if (!searchMode) {
-      setSearchState({ status: "idle" });
-      return;
-    }
-    if (!usesServerSearch) {
-      setSearchState({ status: "loaded", results: recentSearchResults });
-      return;
-    }
-
-    let cancelled = false;
-    setSearchState({ status: "loading" });
-    const startedAt = performance.now();
-    logClientEvent("search.start", { query_length: activeSearchQuery.length });
-
-    void fetchSearchResults(activeSearchQuery, searchRequestOptions)
-      .then((data) => {
-        if (cancelled) return;
-        setSearchState({ status: "loaded", results: data.results });
-        logClientEvent("search.done", {
-          duration_ms: Math.round(performance.now() - startedAt),
-          results: data.results.length,
-        });
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.error("Failed to load search results:", err);
-        logClientEvent("search.error", {
-          duration_ms: Math.round(performance.now() - startedAt),
-          error: err instanceof Error ? err.message : String(err),
-        });
-        setSearchState({
-          status: "failed",
-          error: err instanceof Error ? err.message : "Search request failed",
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    activeSearchQuery,
-    recentSearchResults,
-    retryVersion,
-    searchMode,
-    searchRequestOptions,
-    usesServerSearch,
-  ]);
 
   useEffect(() => {
     if (!searchMode) return;
@@ -164,8 +157,8 @@ export function useSessionSearch(
   }, []);
 
   const retrySearch = useCallback(() => {
-    setRetryVersion((version) => version + 1);
-  }, []);
+    void serverSearchQuery.refetch();
+  }, [serverSearchQuery]);
 
   const registerResultRef = useCallback((key: string, node: HTMLAnchorElement | null) => {
     if (node) searchResultRefs.current.set(key, node);
@@ -174,17 +167,8 @@ export function useSessionSearch(
 
   const refresh = useCallback(async () => {
     if (!(searchMode && usesServerSearch)) return;
-    try {
-      const data = await fetchSearchResults(activeSearchQuery, searchRequestOptions);
-      setSearchState({ status: "loaded", results: data.results });
-    } catch (err) {
-      console.error("Failed to refresh search results:", err);
-      setSearchState({
-        status: "failed",
-        error: err instanceof Error ? err.message : "Search request failed",
-      });
-    }
-  }, [searchMode, usesServerSearch, activeSearchQuery, searchRequestOptions]);
+    await serverSearchQuery.refetch();
+  }, [searchMode, serverSearchQuery, usesServerSearch]);
 
   return {
     draftSearchQuery,

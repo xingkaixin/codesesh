@@ -1,10 +1,10 @@
 declare const __APP_VERSION__: string;
 
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { BookmarkedSessionSnapshot, SessionHead } from "./lib/api";
-import { deleteSessionAlias, logClientEvent, upsertSessionAlias } from "./lib/api";
+import { logClientEvent } from "./lib/api";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { CopyResumeButton } from "./components/CopyResumeButton";
 import { SessionAliasDialog, type SessionAliasTarget } from "./components/SessionAliasDialog";
@@ -18,6 +18,7 @@ import { useBookmarks } from "./hooks/useBookmarks";
 import { useDashboard } from "./hooks/useDashboard";
 import { useSidebarModel } from "./hooks/useSidebarModel";
 import { useSessionStore } from "./hooks/useSessionStore";
+import { useSessionAliasMutations } from "./hooks/useSessionAliasMutations";
 import { useWindowedDataLoad } from "./hooks/useWindowedDataLoad";
 import { useLiveSync } from "./hooks/useLiveSync";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
@@ -49,7 +50,6 @@ export default function App() {
     agentNameMap,
     loading,
     error,
-    version: storeVersion,
     reload,
     applyLiveEvent,
   } = sessionStore;
@@ -74,7 +74,7 @@ export default function App() {
   );
 
   const sessionDetail = useSessionDetail(viewState);
-  const { session, sessionError, refresh: refreshSessionDetail } = sessionDetail;
+  const { session, sessionError } = sessionDetail;
 
   useEffect(() => {
     logClientEvent("route.change", {
@@ -124,8 +124,13 @@ export default function App() {
       : "";
 
   const bookmarks = useBookmarks(sessions);
-  const { bookmarkedSessions, isSessionBookmarked, toggleBookmark, toggleSessionBookmark } =
-    bookmarks;
+  const {
+    bookmarkedSessions,
+    isSessionBookmarked,
+    toggleBookmark,
+    toggleSessionBookmark,
+    refresh: refreshBookmarks,
+  } = bookmarks;
 
   const activeProjectKind = viewState.mode === "project" ? viewState.activeProjectKind : null;
   const activeProjectKey = viewState.mode === "project" ? viewState.activeProjectKey : null;
@@ -217,38 +222,23 @@ export default function App() {
     setScanStatus,
   });
 
-  const previousStoreVersion = useRef(0);
-  const refreshOpenSession = useEffectEvent(() => {
-    void refreshSessionDetail();
-  });
-  useEffect(() => {
-    if (storeVersion === 0) return;
-    if (previousStoreVersion.current === 0) {
-      previousStoreVersion.current = storeVersion;
-      return;
-    }
-    previousStoreVersion.current = storeVersion;
-    refreshOpenSession();
-  }, [storeVersion]);
-
   const refreshAliasViews = useCallback(async () => {
-    await Promise.all([timeWindow ? reload(timeWindow) : undefined, bookmarks.refresh()]);
-  }, [bookmarks, reload, timeWindow]);
+    await Promise.all([timeWindow ? reload(timeWindow) : undefined, refreshBookmarks()]);
+  }, [refreshBookmarks, reload, timeWindow]);
+  const { saveAlias, removeAlias } = useSessionAliasMutations(refreshAliasViews);
 
   const saveSessionAlias = useCallback(
     async (alias: string) => {
       if (!aliasTarget) return;
-      await upsertSessionAlias(aliasTarget.agentKey, aliasTarget.sessionId, alias);
-      await refreshAliasViews();
+      await saveAlias(aliasTarget, alias);
     },
-    [aliasTarget, refreshAliasViews],
+    [aliasTarget, saveAlias],
   );
 
   const removeSessionAlias = useCallback(async () => {
     if (!aliasTarget) return;
-    await deleteSessionAlias(aliasTarget.agentKey, aliasTarget.sessionId);
-    await refreshAliasViews();
-  }, [aliasTarget, refreshAliasViews]);
+    await removeAlias(aliasTarget);
+  }, [aliasTarget, removeAlias]);
 
   useEffect(() => {
     try {
