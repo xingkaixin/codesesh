@@ -1,6 +1,6 @@
 import { APP_ROUTE_IDS } from "./app-routes";
 import type { ProjectIdentityKind } from "./api";
-import { decodeProjectRouteKey, isProjectIdentityKind } from "./projects";
+import { isProjectIdentityKind } from "./projects";
 
 export type ViewState =
   | { mode: "root"; activeAgentKey: null; activeSessionSlug: null }
@@ -75,75 +75,6 @@ export function viewStateFromRouteMatches(
     const sessionSlug = match.params.sessionSlug;
     if (!sessionSlug) return invalidRoute;
     return { mode: "session", activeAgentKey: agentKey, activeSessionSlug: sessionSlug };
-  }
-  return invalidRoute;
-}
-
-export function parseViewState(pathname: string, validAgentKeys: Set<string>): ViewState {
-  const trimmed = pathname.replace(/^\/+|\/+$/g, "");
-  const segments = trimmed
-    ? trimmed
-        .split("/")
-        .map((segment) => segment.trim())
-        .filter(Boolean)
-    : [];
-
-  if (segments.length === 0) {
-    return { mode: "root", activeAgentKey: null, activeSessionSlug: null };
-  }
-  if (segments[0]?.toLowerCase() === "projects") {
-    if (segments.length === 1) {
-      return { mode: "projects", activeAgentKey: null, activeSessionSlug: null };
-    }
-    if (segments.length === 3) {
-      try {
-        const kind = decodeURIComponent(segments[1]!);
-        if (!isProjectIdentityKind(kind)) return invalidRoute;
-        return {
-          mode: "project",
-          activeAgentKey: null,
-          activeSessionSlug: null,
-          activeProjectKind: kind,
-          activeProjectKey: decodeProjectRouteKey(segments[2]!),
-        };
-      } catch {
-        return invalidRoute;
-      }
-    }
-    return invalidRoute;
-  }
-  if (segments.length === 1) {
-    const key = segments[0]!.toLowerCase();
-    if (validAgentKeys.has(key)) {
-      return { mode: "agent", activeAgentKey: key, activeSessionSlug: null };
-    }
-    return {
-      mode: "missingAgent",
-      activeAgentKey: null,
-      activeSessionSlug: null,
-      attemptedKey: key,
-    };
-  }
-  if (segments.length === 2) {
-    const key = segments[0]!.toLowerCase();
-    const slug = segments[1]!;
-    if (validAgentKeys.has(key) && slug) {
-      return { mode: "session", activeAgentKey: key, activeSessionSlug: slug };
-    }
-    if (validAgentKeys.has(key)) {
-      return {
-        mode: "missingSession",
-        activeAgentKey: key,
-        activeSessionSlug: slug,
-        attemptedSessionSlug: slug,
-      };
-    }
-    return {
-      mode: "missingAgent",
-      activeAgentKey: null,
-      activeSessionSlug: null,
-      attemptedKey: key,
-    };
   }
   return invalidRoute;
 }
