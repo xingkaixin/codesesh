@@ -23,6 +23,7 @@ import { useWindowedDataLoad } from "./hooks/useWindowedDataLoad";
 import { useLiveSync } from "./hooks/useLiveSync";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useTimeWindow } from "./hooks/useTimeWindow";
+import { useUiPreferences } from "./hooks/useUiPreferences";
 import { buildRouteHeaderModel } from "./lib/build-route-header-model";
 import { AppSidebar } from "./components/app/AppSidebar";
 import { ShortcutHelpDialog } from "./components/app/ShortcutHelpDialog";
@@ -31,8 +32,6 @@ import type { BrowseBy } from "./components/app/types";
 import { formatScanStatusLabel, formatSearchSubtitle } from "./lib/scan-format";
 import { getProjectIdentityKey, getProjectPath, type ProjectRouteIdentity } from "./lib/projects";
 import { buildSessionIndexes, getSessionAgentKey } from "./lib/session-indexes";
-
-const SHORTCUT_HINT_STORAGE_KEY = "codesesh.shortcuts-hint-dismissed";
 
 export default function App() {
   const navigate = useNavigate();
@@ -63,8 +62,8 @@ export default function App() {
   const { scanStatus, setScanStatus } = useScanStatus();
   const [selectedSidebarSessionId, setSelectedSidebarSessionId] = useState<string | null>(null);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
-  const [shortcutHintDismissed, setShortcutHintDismissed] = useState(true);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const { shortcutHintDismissed, sidebarCollapsed, dismissShortcutHint, setSidebarCollapsed } =
+    useUiPreferences();
   const [aliasTarget, setAliasTarget] = useState<SessionAliasTarget | null>(null);
 
   const location = useLocation();
@@ -242,14 +241,6 @@ export default function App() {
   }, [aliasTarget, removeAlias]);
 
   useEffect(() => {
-    try {
-      setShortcutHintDismissed(window.localStorage.getItem(SHORTCUT_HINT_STORAGE_KEY) === "1");
-    } catch {
-      setShortcutHintDismissed(true);
-    }
-  }, []);
-
-  useEffect(() => {
     if (isSearchMode) return;
 
     if (viewState.mode === "session") {
@@ -335,15 +326,6 @@ export default function App() {
     />
   );
 
-  function dismissShortcutHint() {
-    setShortcutHintDismissed(true);
-    try {
-      window.localStorage.setItem(SHORTCUT_HINT_STORAGE_KEY, "1");
-    } catch {
-      // Ignore storage failures and keep the UI usable.
-    }
-  }
-
   function changeBrowseBy(next: BrowseBy) {
     if (next === "projects" && isScanActive) return;
     selectBrowseBy(next);
@@ -391,7 +373,7 @@ export default function App() {
               aria-expanded={!sidebarCollapsed}
               aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               className="hidden rounded-sm border border-[var(--console-border)] bg-white p-1.5 text-[var(--console-muted)] transition-colors hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] lg:inline-flex"
             >
               {sidebarCollapsed ? (
