@@ -5,6 +5,11 @@ import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { CursorAgent } from "../cursor.js";
 import type { MessagePart } from "../../types/index.js";
+import {
+  getCoreDiagnostics,
+  setCoreDiagnostics,
+  type CoreDiagnostics,
+} from "../../utils/diagnostics.js";
 
 let tempDirs: string[] = [];
 
@@ -103,5 +108,84 @@ describe("CursorAgent parsing", () => {
     const data = agent.getSessionData("composer-1");
 
     expect(data.title).toBe("Untitled Session");
+  });
+
+  it("falls back to zero tokens and reports a mismatch when tokenCount is wrong-typed", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-cursor-test-"));
+    tempDirs.push(tempDir);
+    const dbPath = createCursorDb(tempDir);
+
+    insertKv(dbPath, "bubbleId:composer-1:assistant", {
+      type: 2,
+      text: "Assistant reply",
+      createdAt: 1_000,
+      // upstream format drift: tokenCount fields arrive as strings instead of numbers
+      tokenCount: { inputTokens: "100", outputTokens: "50" },
+    });
+
+    const calls: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
+    setCoreDiagnostics(sink);
+
+    try {
+      const agent = new CursorAgent() as any;
+      agent.dbPath = dbPath;
+      agent.composerCache.set("composer-1", {
+        id: "composer-1",
+        createdAt: 1_000,
+        updatedAt: 1_000,
+      });
+
+      const data = agent.getSessionData("composer-1");
+
+      expect(data.messages[0]?.tokens).toEqual({ input: 0, output: 0 });
+      expect(calls).toContainEqual({
+        event: "agent.field_shape_mismatch",
+        detail: { agentName: "cursor", field: "bubble.tokenCount.inputTokens" },
+      });
+      expect(calls).toContainEqual({
+        event: "agent.field_shape_mismatch",
+        detail: { agentName: "cursor", field: "bubble.tokenCount.outputTokens" },
+      });
+    } finally {
+      setCoreDiagnostics(null);
+    }
+  });
+
+  it("skips a subagent chat message with a wrong-typed role and reports a mismatch", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-cursor-test-"));
+    tempDirs.push(tempDir);
+    const dbPath = createCursorDb(tempDir);
+
+    // upstream format drift: role arrives as a number instead of "user"/"assistant"
+    insertKv(dbPath, "bubble:sub-1", {
+      chatMessages: [{ role: 42, text: "should be skipped" }],
+    });
+
+    const calls: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
+    setCoreDiagnostics(sink);
+
+    try {
+      const agent = new CursorAgent() as any;
+      agent.dbPath = dbPath;
+      agent.composerCache.set("composer-1", {
+        id: "composer-1",
+        createdAt: 1_000,
+        updatedAt: 1_000,
+        subagentInfos: [{ id: "sub-1", title: "Subagent" }],
+      });
+
+      const data = agent.getSessionData("composer-1");
+
+      expect(data.messages.some((m: { id: string }) => m.id === "cursor-sub-sub-1")).toBe(false);
+      expect(calls).toContainEqual({
+        event: "agent.field_shape_mismatch",
+        detail: { agentName: "cursor", field: "chatMessage.role" },
+      });
+    } finally {
+      setCoreDiagnostics(null);
+      expect(getCoreDiagnostics()).toBeNull();
+    }
   });
 });

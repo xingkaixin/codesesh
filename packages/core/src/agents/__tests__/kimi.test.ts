@@ -1,9 +1,10 @@
-import { mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { KimiAgent } from "../kimi.js";
 import type { SessionHead } from "../../types/index.js";
+import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
 const PROJECT_HASH = "project-hash";
 const PROJECT_DIR = "/tmp/kimi-project";
@@ -62,6 +63,7 @@ afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
   }
   tempDirs = [];
+  setCoreDiagnostics(null);
 });
 
 describe("KimiAgent cache refresh", () => {
@@ -263,5 +265,69 @@ describe("KimiAgent cache refresh", () => {
     expect(data.messages[1]?.parts).toEqual([
       expect.objectContaining({ type: "text", text: "Visible answer" }),
     ]);
+  });
+
+  it("falls back to zero tokens and reports drift when wire usage fields are non-numeric", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-test-"));
+    tempDirs.push(basePath);
+    const sessionDir = createSessionDir(basePath, "usage-drift", "Usage drift", 1_000);
+    writeFileSync(
+      join(sessionDir, "wire.jsonl"),
+      JSON.stringify({
+        timestamp: 1,
+        message: {
+          type: "ContentPart",
+          payload: { type: "text", text: "hi" },
+          usage: { input_tokens: "5", output_tokens: "3" },
+        },
+      }) + "\n",
+    );
+
+    const calls: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
+    setCoreDiagnostics(sink);
+
+    const agent = createAgent(basePath);
+    const [head] = agent.scan();
+
+    expect(head?.stats.total_input_tokens).toBe(0);
+    expect(head?.stats.total_output_tokens).toBe(0);
+    expect(calls).toContainEqual({
+      event: "agent.field_shape_mismatch",
+      detail: { agentName: "kimi", field: "usage.input_tokens" },
+    });
+    expect(calls).toContainEqual({
+      event: "agent.field_shape_mismatch",
+      detail: { agentName: "kimi", field: "usage.output_tokens" },
+    });
+  });
+
+  it("falls back to file mtime and reports drift when state.json wire_mtime is not a number", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-test-"));
+    tempDirs.push(basePath);
+    const sessionDir = join(basePath, PROJECT_HASH, "mtime-drift");
+    mkdirSync(sessionDir, { recursive: true });
+    const statePath = join(sessionDir, "state.json");
+    writeFileSync(
+      statePath,
+      JSON.stringify({ custom_title: "Mtime drift", wire_mtime: "not-a-number" }),
+    );
+    writeFileSync(
+      join(sessionDir, "context.jsonl"),
+      JSON.stringify({ role: "user", content: "Mtime drift" }) + "\n",
+    );
+
+    const calls: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
+    setCoreDiagnostics(sink);
+
+    const agent = createAgent(basePath);
+    const [head] = agent.scan();
+
+    expect(head?.time_created).toBe(statSync(statePath).mtimeMs);
+    expect(calls).toContainEqual({
+      event: "agent.field_shape_mismatch",
+      detail: { agentName: "kimi", field: "session.wire_mtime" },
+    });
   });
 });

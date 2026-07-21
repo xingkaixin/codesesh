@@ -20,6 +20,7 @@ import {
 } from "../utils/session-normalization.js";
 import { perf } from "../utils/perf.js";
 import { estimateTokenCost } from "../utils/cost.js";
+import { asArray, asNumber, asRecord, asString, reportFieldMismatch } from "../utils/narrow.js";
 
 // ---------------------------------------------------------------------------
 // Cursor data model interfaces
@@ -107,6 +108,152 @@ interface ActionEntry {
 }
 
 // ---------------------------------------------------------------------------
+// Safe parsing of external rows — cursorDiskKV values and workspace.json are
+// untrusted (cross Cursor-version drift), so their fields are narrowed
+// individually instead of blindly cast. A field that's absent behaves like
+// today's optional-field fallback (?? 0 / skip); a field that's present but
+// wrong-typed additionally reports once via diagnostics.
+// ---------------------------------------------------------------------------
+
+function narrowString(field: string, value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  const str = asString(value);
+  if (str === undefined) reportFieldMismatch("cursor", field);
+  return str;
+}
+
+function narrowNumber(field: string, value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  const num = asNumber(value);
+  if (num === undefined) reportFieldMismatch("cursor", field);
+  return num;
+}
+
+function parseJsonRecord(json: string): Record<string, unknown> | undefined {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    return undefined;
+  }
+  return asRecord(raw);
+}
+
+function parseSubagentInfos(value: unknown): SubagentInfo[] | undefined {
+  const arr = asArray(value);
+  if (arr === undefined) return undefined;
+  const infos: SubagentInfo[] = [];
+  for (const item of arr) {
+    const record = asRecord(item);
+    if (!record) continue;
+    infos.push({
+      id: narrowString("subagentInfo.id", record.id),
+      composerId: narrowString("subagentInfo.composerId", record.composerId),
+      title: narrowString("subagentInfo.title", record.title),
+      nickname: narrowString("subagentInfo.nickname", record.nickname),
+    });
+  }
+  return infos;
+}
+
+function parseChatMessages(value: unknown): ChatMessage[] | undefined {
+  const arr = asArray(value);
+  if (arr === undefined) return undefined;
+  const messages: ChatMessage[] = [];
+  for (const item of arr) {
+    const record = asRecord(item);
+    if (!record) continue;
+    const role = narrowString("chatMessage.role", record.role);
+    if (role === undefined) continue;
+    messages.push({ ...record, role, text: narrowString("chatMessage.text", record.text) });
+  }
+  return messages;
+}
+
+/** Parse a `composerData:*` row value into a field-validated ComposerData. */
+function parseComposerRow(value: string): ComposerData | null {
+  const record = parseJsonRecord(value);
+  if (!record) return null;
+
+  const modelConfig = asRecord(record.modelConfig);
+
+  return {
+    id: narrowString("composer.id", record.id),
+    composerId: narrowString("composer.composerId", record.composerId),
+    text: narrowString("composer.text", record.text),
+    name: narrowString("composer.name", record.name),
+    title: narrowString("composer.title", record.title),
+    createdAt: narrowNumber("composer.createdAt", record.createdAt),
+    updatedAt: narrowNumber("composer.updatedAt", record.updatedAt),
+    lastSendTime: narrowNumber("composer.lastSendTime", record.lastSendTime),
+    lastUpdatedAt: narrowNumber("composer.lastUpdatedAt", record.lastUpdatedAt),
+    model: narrowString("composer.model", record.model),
+    modelConfig: modelConfig
+      ? { modelName: narrowString("composer.modelConfig.modelName", modelConfig.modelName) }
+      : undefined,
+    inputTokenCount: narrowNumber("composer.inputTokenCount", record.inputTokenCount),
+    outputTokenCount: narrowNumber("composer.outputTokenCount", record.outputTokenCount),
+    subagentInfos: parseSubagentInfos(record.subagentInfos),
+    chatMessages: parseChatMessages(record.chatMessages),
+  };
+}
+
+/** Parse a `bubbleId:*` / `bubble:*` row value into a field-validated BubbleData. */
+function parseBubbleRow(value: string): BubbleData | null {
+  const record = parseJsonRecord(value);
+  if (!record) return null;
+
+  const timingInfo = asRecord(record.timingInfo);
+  const tokenCount = asRecord(record.tokenCount);
+  const modelInfo = asRecord(record.modelInfo);
+  const toolFormerData = asRecord(record.toolFormerData);
+
+  return {
+    ...record,
+    id: narrowString("bubble.id", record.id),
+    composerId: narrowString("bubble.composerId", record.composerId),
+    chatMessages: parseChatMessages(record.chatMessages),
+    type: narrowNumber("bubble.type", record.type),
+    text: narrowString("bubble.text", record.text),
+    requestId: narrowString("bubble.requestId", record.requestId),
+    createdAt: narrowNumber("bubble.createdAt", record.createdAt),
+    timestamp: narrowNumber("bubble.timestamp", record.timestamp),
+    timingInfo: timingInfo
+      ? {
+          clientRpcSendTime: narrowNumber(
+            "bubble.timingInfo.clientRpcSendTime",
+            timingInfo.clientRpcSendTime,
+          ),
+          clientSettleTime: narrowNumber(
+            "bubble.timingInfo.clientSettleTime",
+            timingInfo.clientSettleTime,
+          ),
+          clientEndTime: narrowNumber("bubble.timingInfo.clientEndTime", timingInfo.clientEndTime),
+        }
+      : undefined,
+    tokenCount: tokenCount
+      ? {
+          inputTokens: narrowNumber("bubble.tokenCount.inputTokens", tokenCount.inputTokens),
+          outputTokens: narrowNumber("bubble.tokenCount.outputTokens", tokenCount.outputTokens),
+        }
+      : undefined,
+    modelInfo: modelInfo
+      ? { modelName: narrowString("bubble.modelInfo.modelName", modelInfo.modelName) }
+      : undefined,
+    toolFormerData: toolFormerData
+      ? {
+          name: narrowString("bubble.toolFormerData.name", toolFormerData.name),
+          toolCallId: narrowString("bubble.toolFormerData.toolCallId", toolFormerData.toolCallId),
+          status: narrowString("bubble.toolFormerData.status", toolFormerData.status),
+          params: toolFormerData.params,
+          result: toolFormerData.result,
+          additionalData: asRecord(toolFormerData.additionalData),
+        }
+      : undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -135,9 +282,8 @@ function normalizeToolOutputParts(output: unknown, timestampMs: number): Message
     const parts: MessagePart[] = [];
     for (const item of output) {
       if (typeof item === "object" && item !== null) {
-        const text = String(
-          (item as Record<string, unknown>).text ?? (item as Record<string, unknown>).content ?? "",
-        );
+        const record = asRecord(item);
+        const text = String(record?.text ?? record?.content ?? "");
         const cleaned = cleanInternalText(text);
         if (cleaned) parts.push({ type: "text", text: cleaned, time_created: timestampMs });
       } else if (typeof item === "string") {
@@ -192,9 +338,9 @@ function buildToolState(action: ActionEntry): MessagePart["state"] {
   // Derive status from output shape if not set
   if (!state.status) {
     if (typeof action.output === "object" && action.output !== null) {
-      const out = action.output as Record<string, unknown>;
-      if (out.success === true) state.status = "completed";
-      else if (out.success === false) state.status = "error";
+      const out = asRecord(action.output);
+      if (out?.success === true) state.status = "completed";
+      else if (out?.success === false) state.status = "error";
       else state.status = "completed";
     } else if (action.output != null) {
       state.status = "completed";
@@ -314,11 +460,11 @@ export class CursorAgent extends DatabaseSessionSource {
       // Parse workspace.json to get the project folder path
       let workspacePath: string;
       try {
-        const data = JSON.parse(readFileSync(wsJsonPath, "utf-8")) as {
-          folder?: string;
-          workspace?: string;
-        };
-        const uri = data.folder ?? data.workspace ?? "";
+        const data = asRecord(JSON.parse(readFileSync(wsJsonPath, "utf-8")));
+        const uri =
+          narrowString("workspaceJson.folder", data?.folder) ??
+          narrowString("workspaceJson.workspace", data?.workspace) ??
+          "";
         if (!uri) continue;
         workspacePath = normalize(decodeURIComponent(uri.replace(/^file:\/\//, "")));
       } catch {
@@ -338,25 +484,15 @@ export class CursorAgent extends DatabaseSessionSource {
           .get() as { value: string } | undefined;
         if (!row?.value) continue;
 
-        const parsed = JSON.parse(row.value) as unknown;
-        let composers: Array<{ composerId?: string; id?: string }>;
+        const parsed: unknown = JSON.parse(row.value);
+        const composers = asArray(asRecord(parsed)?.allComposers) ?? asArray(parsed) ?? [];
 
-        if (
-          parsed !== null &&
-          typeof parsed === "object" &&
-          "allComposers" in (parsed as Record<string, unknown>) &&
-          Array.isArray((parsed as Record<string, unknown>)["allComposers"])
-        ) {
-          composers = (parsed as { allComposers: Array<{ composerId?: string; id?: string }> })
-            .allComposers;
-        } else if (Array.isArray(parsed)) {
-          composers = parsed as Array<{ composerId?: string; id?: string }>;
-        } else {
-          continue;
-        }
-
-        for (const c of composers) {
-          const id = c.composerId ?? c.id;
+        for (const item of composers) {
+          const composer = asRecord(item);
+          if (!composer) continue;
+          const id =
+            narrowString("workspaceComposer.composerId", composer.composerId) ??
+            narrowString("workspaceComposer.id", composer.id);
           if (id) map.set(id, workspacePath);
         }
       } catch {
@@ -401,8 +537,8 @@ export class CursorAgent extends DatabaseSessionSource {
 
       for (const row of rows) {
         try {
-          const composer = JSON.parse(row.value) as ComposerData;
-          if (!composer.id && !composer.composerId) continue;
+          const composer = parseComposerRow(row.value);
+          if (!composer || (!composer.id && !composer.composerId)) continue;
 
           const composerId = composer.id || composer.composerId || "";
           const createdAt = composer.createdAt ?? 0;
@@ -659,8 +795,8 @@ export class CursorAgent extends DatabaseSessionSource {
 
       for (const row of rows) {
         try {
-          const bubble = JSON.parse(row.value) as BubbleData;
-          if (bubble.requestId && typeof bubble.requestId === "string" && bubble.requestId.trim()) {
+          const bubble = parseBubbleRow(row.value);
+          if (bubble?.requestId?.trim()) {
             return bubble.requestId.trim();
           }
         } catch {
@@ -682,8 +818,8 @@ export class CursorAgent extends DatabaseSessionSource {
 
       for (const row of rows) {
         try {
-          const bubble = JSON.parse(row.value) as BubbleData;
-          if (bubble.requestId === requestId) {
+          const bubble = parseBubbleRow(row.value);
+          if (bubble?.requestId === requestId) {
             // Extract composerId from key (bubbleId:{composerId}:{bubbleId})
             const keyParts = row.key.split(":");
             if (keyParts.length >= 2 && keyParts[1]) {
@@ -717,9 +853,9 @@ export class CursorAgent extends DatabaseSessionSource {
       let count = 0;
       for (const row of rows) {
         try {
-          const bubble = JSON.parse(row.value) as BubbleData;
+          const bubble = parseBubbleRow(row.value);
           // type 1 = user, type 2 = assistant
-          if (bubble.type === 1 || bubble.type === 2) {
+          if (bubble?.type === 1 || bubble?.type === 2) {
             count++;
           }
         } catch {
@@ -751,8 +887,8 @@ export class CursorAgent extends DatabaseSessionSource {
 
       for (const row of rows) {
         try {
-          const bubble = JSON.parse(row.value) as BubbleData;
-          if (isInternalBubble(bubble)) continue;
+          const bubble = parseBubbleRow(row.value);
+          if (!bubble || isInternalBubble(bubble)) continue;
           const bubbleId = row.key.split(":").pop() || String(messageIndex);
 
           // Determine role: type 2 = assistant, otherwise user
@@ -876,10 +1012,7 @@ export class CursorAgent extends DatabaseSessionSource {
 
     // Handle plan tool specially
     if (toolName === "create_plan") {
-      const planText =
-        typeof state.input === "object" && state.input !== null
-          ? (state.input as Record<string, unknown>).plan
-          : undefined;
+      const planText = asRecord(state.input)?.plan;
       return {
         type: "plan",
         title: "Plan",
@@ -907,11 +1040,7 @@ export class CursorAgent extends DatabaseSessionSource {
 
     if (!row) return null;
 
-    try {
-      return JSON.parse(row.value) as ComposerData;
-    } catch {
-      return null;
-    }
+    return parseComposerRow(row.value);
   }
 
   private loadBubble(db: SQLiteDatabase, sessionId: string): BubbleData | null {
@@ -921,11 +1050,7 @@ export class CursorAgent extends DatabaseSessionSource {
 
     if (!row) return null;
 
-    try {
-      return JSON.parse(row.value) as BubbleData;
-    } catch {
-      return null;
-    }
+    return parseBubbleRow(row.value);
   }
 
   private appendSubagentMessages(
@@ -957,7 +1082,7 @@ export class CursorAgent extends DatabaseSessionSource {
         if (role === "assistant" && Array.isArray(chatMsg.actions)) {
           for (const action of chatMsg.actions) {
             if (isInternalEventType(action.type) || isInternalEventType(action.tool)) continue;
-            const part = convertActionToPart(action as ActionEntry, timestampMs);
+            const part = convertActionToPart(action, timestampMs);
             if (part) parts.push(part);
           }
         }

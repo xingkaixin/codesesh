@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClaudeCodeAgent } from "../claudecode.js";
 import type { Message, MessagePart, SessionHead } from "../../types/index.js";
+import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
 // Spies on statSync while delegating to the real implementation, so the
 // single-stat regression test can count per-file calls during a live scan.
@@ -37,6 +38,7 @@ afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
   }
   tempDirs = [];
+  setCoreDiagnostics(null);
 });
 
 describe("ClaudeCodeAgent cache refresh", () => {
@@ -451,5 +453,104 @@ describe("ClaudeCodeAgent cache refresh", () => {
     expect(data.messages[1]?.parts).toEqual([
       expect.objectContaining({ type: "text", text: "Visible answer" }),
     ]);
+  });
+
+  it("falls back to zero and reports a mismatch when a usage field has the wrong type", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-usage-drift-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    const sessionId = "usage-drift";
+    const sessionFile = join(projectDir, `${sessionId}.jsonl`);
+
+    mkdirSync(projectDir, { recursive: true });
+    writeFileSync(
+      sessionFile,
+      [
+        JSON.stringify({
+          type: "user",
+          uuid: "user-1",
+          timestamp: "2026-04-20T10:00:00Z",
+          cwd: "/tmp/project",
+          message: { role: "user", content: "Inspect the repository" },
+        }),
+        JSON.stringify({
+          type: "assistant",
+          uuid: "assistant-1",
+          timestamp: "2026-04-20T10:00:01Z",
+          message: {
+            role: "assistant",
+            model: "claude-sonnet-4-5-20250929",
+            usage: {
+              // Drifted upstream shape: input_tokens sent as a string.
+              input_tokens: "100",
+              cache_read_input_tokens: 10,
+              cache_creation_input_tokens: 5,
+              output_tokens: 20,
+            },
+            content: [{ type: "text", text: "Reading package metadata" }],
+          },
+        }),
+        "",
+      ].join("\n"),
+    );
+
+    const calls: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
+    setCoreDiagnostics(sink);
+
+    const agent = new ClaudeCodeAgent() as any;
+    agent.basePath = basePath;
+
+    const [head] = agent.scan();
+
+    // input_tokens falls back to 0 (still counting cache_read + cache_create); other fields unaffected.
+    expect(head?.stats).toMatchObject({
+      total_input_tokens: 15,
+      total_output_tokens: 20,
+      total_cache_read_tokens: 10,
+      total_cache_create_tokens: 5,
+    });
+    expect(calls).toContainEqual({
+      event: "agent.field_shape_mismatch",
+      detail: { agentName: "claudecode", field: "message.usage.input_tokens" },
+    });
+  });
+
+  it("skips message extraction and reports a mismatch when the message field is not an object", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-message-drift-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    const sessionId = "message-drift";
+    const sessionFile = join(projectDir, `${sessionId}.jsonl`);
+
+    mkdirSync(projectDir, { recursive: true });
+    writeFileSync(
+      sessionFile,
+      [
+        JSON.stringify({
+          type: "user",
+          uuid: "user-1",
+          timestamp: "2026-04-20T10:00:00Z",
+          cwd: "/tmp/project",
+          // Drifted upstream shape: message sent as a plain string, not an object.
+          message: "not-an-object",
+        }),
+        "",
+      ].join("\n"),
+    );
+
+    const calls: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
+    setCoreDiagnostics(sink);
+
+    const agent = new ClaudeCodeAgent() as any;
+    agent.basePath = basePath;
+
+    // No visible messages were extracted, so the session is filtered out entirely.
+    expect(agent.scan()).toEqual([]);
+    expect(calls).toContainEqual({
+      event: "agent.field_shape_mismatch",
+      detail: { agentName: "claudecode", field: "message" },
+    });
   });
 });

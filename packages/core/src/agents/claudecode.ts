@@ -16,6 +16,7 @@ import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils
 import { isInternalEventType } from "../utils/parse-cleanup.js";
 import { cleanInternalText } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
+import { asArray, asNumber, asRecord, asString, reportFieldMismatch } from "../utils/narrow.js";
 import type { AgentScanOptions, SessionCacheMeta, SessionSourceRef } from "./base.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
@@ -45,27 +46,46 @@ interface SessionMeta extends SessionCacheMeta {
 }
 
 function parseTimestampMs(data: Record<string, unknown>): number {
-  const raw = String(data["timestamp"] ?? "").trim();
-  if (!raw) return 0;
+  const raw = data["timestamp"];
+  const value = asString(raw);
+  if (value === undefined) {
+    if (raw !== undefined && raw !== null) reportFieldMismatch("claudecode", "timestamp");
+    return 0;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return 0;
   try {
-    return new Date(raw.includes("Z") ? raw : raw + "Z").getTime();
+    return new Date(trimmed.includes("Z") ? trimmed : trimmed + "Z").getTime();
   } catch {
     return 0;
   }
 }
 
-function numericUsage(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+/** Reads a numeric usage field; a present-but-wrong-typed field is a schema drift signal. */
+function readUsageNumber(usage: Record<string, unknown>, field: string): number {
+  const raw = usage[field];
+  if (raw === undefined) return 0;
+  const value = asNumber(raw);
+  if (value === undefined) {
+    reportFieldMismatch("claudecode", `message.usage.${field}`);
+    return 0;
+  }
+  return value;
 }
 
 function extractClaudeUsage(
   data: Record<string, unknown>,
   msg: Record<string, unknown>,
 ): ClaudeUsage | null {
-  const usage = msg["usage"];
-  if (!usage || typeof usage !== "object") return null;
+  const rawUsage = msg["usage"];
+  if (rawUsage === undefined || rawUsage === null) return null;
 
-  const u = usage as Record<string, unknown>;
+  const usage = asRecord(rawUsage);
+  if (!usage) {
+    reportFieldMismatch("claudecode", "message.usage");
+    return null;
+  }
+
   const requestId = typeof data["requestId"] === "string" ? data["requestId"].trim() : "";
   const uuid = typeof data["uuid"] === "string" ? data["uuid"].trim() : "";
   const key = requestId || uuid;
@@ -73,10 +93,10 @@ function extractClaudeUsage(
 
   return {
     key,
-    input: numericUsage(u["input_tokens"]),
-    output: numericUsage(u["output_tokens"]),
-    cacheRead: numericUsage(u["cache_read_input_tokens"]),
-    cacheCreate: numericUsage(u["cache_creation_input_tokens"]),
+    input: readUsageNumber(usage, "input_tokens"),
+    output: readUsageNumber(usage, "output_tokens"),
+    cacheRead: readUsageNumber(usage, "cache_read_input_tokens"),
+    cacheCreate: readUsageNumber(usage, "cache_creation_input_tokens"),
   };
 }
 
@@ -331,26 +351,30 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
           cwd = data["cwd"];
         }
 
-        const msg = data["message"];
-        if (msg && typeof msg === "object") {
-          const role = (msg as Record<string, unknown>)["role"];
-          if (typeof role === "string" && role.trim()) {
+        const msg = asRecord(data["message"]);
+        if (!msg && data["message"] !== undefined && data["message"] !== null) {
+          reportFieldMismatch("claudecode", "message");
+        }
+        if (msg) {
+          const role = asString(msg["role"]);
+          if (msg["role"] !== undefined && role === undefined) {
+            reportFieldMismatch("claudecode", "message.role");
+          }
+          if (role?.trim()) {
             messageCount++;
           }
           if (!model) {
-            const m = (msg as Record<string, unknown>)["model"];
-            if (typeof m === "string" && m.trim()) model = m.trim();
+            const m = asString(msg["model"]);
+            if (m?.trim()) model = m.trim();
           }
           // Title fallback mirrors the removed extractTitle(): first non-empty
           // visible user text within the first 20 lines.
           if (messageTitle === null && lineIndex < 20 && role === "user") {
-            const candidate = this.extractUserMessageTitle(
-              (msg as Record<string, unknown>)["content"],
-            );
+            const candidate = this.extractUserMessageTitle(msg["content"]);
             if (candidate) messageTitle = candidate;
           }
           if (role === "assistant") {
-            const usage = extractClaudeUsage(data, msg as Record<string, unknown>);
+            const usage = extractClaudeUsage(data, msg);
             if (usage && !countedUsageKeys.has(usage.key)) {
               countedUsageKeys.add(usage.key);
               const inputTokens = usage.input;
@@ -363,8 +387,8 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
               totalCacheReadTokens += cacheRead;
               totalCacheCreateTokens += cacheCreate;
 
-              const m = (msg as Record<string, unknown>)["model"];
-              if (typeof m === "string" && m.trim()) {
+              const m = asString(msg["model"]);
+              if (m?.trim()) {
                 const name = m.trim();
                 const msgTotal = inputTokens + cacheRead + cacheCreate + outputTokens;
                 modelUsageMap[name] = (modelUsageMap[name] ?? 0) + msgTotal;
@@ -422,8 +446,11 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     }
     if (Array.isArray(content)) {
       const texts = content
-        .filter((item) => typeof item === "object" && item !== null && "text" in item)
-        .map((item) => String((item as Record<string, unknown>)["text"] ?? ""))
+        .filter((item): item is Record<string, unknown> => {
+          const record = asRecord(item);
+          return record !== undefined && "text" in record;
+        })
+        .map((item) => String(item["text"] ?? ""))
         .join(" ");
       const title = normalizeTitleText(texts);
       return title || null;
@@ -459,62 +486,60 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     assistantUuidToToolCalls: Map<string, string[]>,
     countedUsageKeys: Set<string>,
   ): void {
-    const msg = (data["message"] ?? {}) as Record<string, unknown>;
+    const msg = asRecord(data["message"]) ?? {};
     const timestampMs = parseTimestampMs(data);
-    const rawContent = (msg["content"] ?? []) as unknown[];
+    const rawContent = asArray(msg["content"]) ?? [];
     const uuid = String(data["uuid"] ?? "");
 
     const toolCallIds: string[] = [];
-    if (Array.isArray(rawContent)) {
-      for (const item of rawContent) {
-        if (!item || typeof item !== "object") continue;
-        const part = item as Record<string, unknown>;
-        const partType = String(part["type"] ?? "");
+    for (const item of rawContent) {
+      const part = asRecord(item);
+      if (!part) continue;
+      const partType = String(part["type"] ?? "");
 
-        if (partType === "thinking") {
-          const text = cleanInternalText(String(part["thinking"] ?? ""));
-          if (text) {
-            const message = builder.appendAssistantPart(
-              this.buildReasoningPart(text, timestampMs),
-              { id: uuid, timestampMs, agent: "claude" },
-              { deduplicateTail: true },
-            );
-            this.applyAssistantMetadata(message, data, msg, countedUsageKeys);
-          }
-          continue;
+      if (partType === "thinking") {
+        const text = cleanInternalText(String(part["thinking"] ?? ""));
+        if (text) {
+          const message = builder.appendAssistantPart(
+            this.buildReasoningPart(text, timestampMs),
+            { id: uuid, timestampMs, agent: "claude" },
+            { deduplicateTail: true },
+          );
+          this.applyAssistantMetadata(message, data, msg, countedUsageKeys);
         }
+        continue;
+      }
 
-        if (partType === "text") {
-          const text = cleanInternalText(String(part["text"] ?? ""));
-          if (text) {
-            const message = builder.appendAssistantPart(
-              this.buildTextPart(text, timestampMs),
-              {
-                id: uuid,
-                timestampMs,
-                agent: "claude",
-              },
-              { deduplicateTail: true },
-            );
-            this.applyAssistantMetadata(message, data, msg, countedUsageKeys);
-          }
-          continue;
+      if (partType === "text") {
+        const text = cleanInternalText(String(part["text"] ?? ""));
+        if (text) {
+          const message = builder.appendAssistantPart(
+            this.buildTextPart(text, timestampMs),
+            {
+              id: uuid,
+              timestampMs,
+              agent: "claude",
+            },
+            { deduplicateTail: true },
+          );
+          this.applyAssistantMetadata(message, data, msg, countedUsageKeys);
         }
+        continue;
+      }
 
-        if (partType !== "tool_use") continue;
+      if (partType !== "tool_use") continue;
 
-        const toolCallId = String(part["id"] ?? "").trim();
+      const toolCallId = String(part["id"] ?? "").trim();
 
-        const toolPart = this.buildToolPart(part, timestampMs);
-        const message = builder.appendToolCall(
-          toolPart,
-          { id: uuid, timestampMs, agent: "claude" },
-          { modeOnCreate: "tool" },
-        );
-        this.applyAssistantMetadata(message, data, msg, countedUsageKeys);
-        if (toolCallId) {
-          toolCallIds.push(toolCallId);
-        }
+      const toolPart = this.buildToolPart(part, timestampMs);
+      const message = builder.appendToolCall(
+        toolPart,
+        { id: uuid, timestampMs, agent: "claude" },
+        { modeOnCreate: "tool" },
+      );
+      this.applyAssistantMetadata(message, data, msg, countedUsageKeys);
+      if (toolCallId) {
+        toolCallIds.push(toolCallId);
       }
     }
 
@@ -528,7 +553,7 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     builder: TranscriptBuilder,
     assistantUuidToToolCalls: Map<string, string[]>,
   ): void {
-    const msg = (data["message"] ?? {}) as Record<string, unknown>;
+    const msg = asRecord(data["message"]) ?? {};
     const timestampMs = parseTimestampMs(data);
     const content = msg["content"] ?? "";
     const uuid = String(data["uuid"] ?? "");
@@ -553,9 +578,8 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     const toolStateUpdates = this.extractToolStateUpdates(data["toolUseResult"]);
 
     for (const item of content) {
-      if (!item || typeof item !== "object") continue;
-      const ci = item as Record<string, unknown>;
-      if (ci["type"] !== "tool_result") continue;
+      const ci = asRecord(item);
+      if (!ci || ci["type"] !== "tool_result") continue;
 
       const toolCallId = this.resolveToolCallId(data, ci, assistantUuidToToolCalls);
 
@@ -582,7 +606,7 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
 
   private convertToolResultRecord(data: Record<string, unknown>, builder: TranscriptBuilder): void {
     const timestampMs = parseTimestampMs(data);
-    const msg = (data["message"] ?? {}) as Record<string, unknown>;
+    const msg = asRecord(data["message"]) ?? {};
     const outputParts = this.normalizeClaudeToolOutput(msg["content"], timestampMs);
     const uuid = String(data["uuid"] ?? "");
 
@@ -657,8 +681,8 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
 
     const parts: MessagePart[] = [];
     for (const item of content) {
-      if (typeof item === "object" && item !== null) {
-        const ci = item as Record<string, unknown>;
+      const ci = asRecord(item);
+      if (ci) {
         if (ci["type"] === "tool_result") continue;
         const text = cleanInternalText(String(ci["text"] ?? ""));
         if (text) parts.push(this.buildTextPart(text, timestampMs));
@@ -680,12 +704,13 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     if (Array.isArray(content)) {
       const parts: MessagePart[] = [];
       for (const item of content) {
-        if (typeof item === "object" && item !== null) {
-          const itemRecord = item as Record<string, unknown>;
-          const source = itemRecord["source"] as Record<string, unknown> | undefined;
-          if (itemRecord["type"] === "image" && source) {
-            const data = typeof source["data"] === "string" ? source["data"] : "";
-            const mimeType = typeof source["media_type"] === "string" ? source["media_type"] : "";
+        const itemRecord = asRecord(item);
+        if (itemRecord) {
+          const rawSource = itemRecord["source"];
+          if (itemRecord["type"] === "image" && rawSource) {
+            const source = asRecord(rawSource);
+            const data = asString(source?.["data"]) ?? "";
+            const mimeType = asString(source?.["media_type"]) ?? "";
             if (data && mimeType.startsWith("image/")) {
               parts.push({ type: "image", data, mime_type: mimeType, time_created: timestampMs });
             }
@@ -746,9 +771,9 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
   }
 
   private extractToolStateUpdates(toolUseResult: unknown): Record<string, unknown> {
-    if (!toolUseResult || typeof toolUseResult !== "object") return {};
+    const result = asRecord(toolUseResult);
+    if (!result) return {};
 
-    const result = toolUseResult as Record<string, unknown>;
     const updates: Record<string, unknown> = {};
 
     const success = result["success"];

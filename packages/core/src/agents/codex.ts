@@ -24,6 +24,7 @@ import { parseJsonlLines, readJsonlFile, readJsonlFileLines } from "../utils/jso
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { cleanInternalText, isInternalEventType } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
+import { asRecord, asString, reportFieldMismatch } from "../utils/narrow.js";
 import { TranscriptBuilder } from "./transcript-builder.js";
 import {
   type ExecInnerCall,
@@ -107,6 +108,37 @@ function extractCachedInputTokens(usage: Record<string, unknown> | undefined): n
   return Number(usage["cached_input_tokens"] ?? usage["cache_read_input_tokens"] ?? 0);
 }
 
+/**
+ * Narrows to a record, reporting a field-shape mismatch only when the value
+ * is present but not an object — absent (undefined/null) is a normal, not a
+ * drifted, shape and stays silent.
+ */
+function narrowRecordField(value: unknown, field: string): Record<string, unknown> | undefined {
+  if (value === undefined || value === null) return undefined;
+  const record = asRecord(value);
+  if (!record) reportFieldMismatch("codex", field);
+  return record;
+}
+
+function extractPayload(data: Record<string, unknown>): Record<string, unknown> {
+  return narrowRecordField(data["payload"], "payload") ?? {};
+}
+
+function extractTokenUsage(payload: Record<string, unknown>): {
+  totalUsage: Record<string, unknown> | undefined;
+  lastUsage: Record<string, unknown> | undefined;
+} {
+  const info = narrowRecordField(payload["info"], "token_count.info");
+  return {
+    totalUsage: info
+      ? narrowRecordField(info["total_token_usage"], "token_count.total_token_usage")
+      : undefined,
+    lastUsage: info
+      ? narrowRecordField(info["last_token_usage"], "token_count.last_token_usage")
+      : undefined,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Tool helpers
 // ---------------------------------------------------------------------------
@@ -164,11 +196,8 @@ function flattenOutputText(output: unknown): string {
     return output
       .map((item) => {
         if (typeof item === "string") return item;
-        if (item && typeof item === "object") {
-          const text = (item as Record<string, unknown>)["text"];
-          if (typeof text === "string") return text;
-        }
-        return "";
+        const record = asRecord(item);
+        return record ? (asString(record["text"]) ?? "") : "";
       })
       .join("");
   }
@@ -383,7 +412,7 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       try {
         const recordType = String(record["type"] ?? "");
         if (recordType === "turn_context") {
-          const payload = (record["payload"] ?? {}) as Record<string, unknown>;
+          const payload = extractPayload(record);
           activeModel = extractModelName(payload["model"]) ?? activeModel;
         }
 
@@ -391,10 +420,9 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
 
         // Process Codex token_count events
         if (recordType === "event_msg") {
-          const payload = (record["payload"] ?? {}) as Record<string, unknown>;
+          const payload = extractPayload(record);
           if (String(payload["type"] ?? "") === "token_count") {
-            const info = payload["info"] as Record<string, unknown> | undefined;
-            const totalUsage = info?.["total_token_usage"] as Record<string, unknown> | undefined;
+            const { totalUsage, lastUsage } = extractTokenUsage(payload);
             const cumulativeTotal = Number(totalUsage?.["total_tokens"] ?? 0);
 
             if (cumulativeTotal > 0 && cumulativeTotal === prevCumulativeTotal) {
@@ -402,7 +430,6 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
             } else {
               prevCumulativeTotal = cumulativeTotal;
 
-              const lastUsage = info?.["last_token_usage"] as Record<string, unknown> | undefined;
               let inputTokens = 0;
               let outputTokens = 0;
               let reasoningTokens = 0;
@@ -658,7 +685,7 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
         } catch {
           return skippedSession("malformed first record");
         }
-        firstPayload = (firstRecord["payload"] ?? {}) as Record<string, unknown>;
+        firstPayload = extractPayload(firstRecord);
         createdAt =
           parseTimestampMs(firstRecord) ||
           parseTimestampMs(firstPayload) ||
@@ -669,13 +696,11 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       try {
         const data = JSON.parse(line);
         const recordType = String(data["type"] ?? "");
-        const payload = (data["payload"] ?? {}) as Record<string, unknown>;
+        const payload = extractPayload(data);
         const payloadType = String(payload["type"] ?? "");
         if (isInternalEventType(recordType) || isInternalEventType(payloadType)) continue;
         hasNonInternalRecord = true;
-        const recordTs =
-          parseTimestampMs(data) ||
-          parseTimestampMs((data["payload"] ?? {}) as Record<string, unknown>);
+        const recordTs = parseTimestampMs(data) || parseTimestampMs(payload);
         if (recordTs > updatedAt) updatedAt = recordTs;
 
         // Title fallback mirrors the removed extractTitleFromLines(): first
@@ -701,7 +726,7 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
             messageCount++;
           }
           // Extract model from response_item
-          const info = p["info"] as Record<string, unknown> | undefined;
+          const info = narrowRecordField(p["info"], "response_item.info");
           const m = info?.["model"] ?? p["model"];
           if (typeof m === "string" && m.trim()) {
             activeModel = m.trim();
@@ -710,16 +735,13 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
         }
 
         if (recordType === "event_msg") {
-          const p = (data["payload"] ?? {}) as Record<string, unknown>;
-          if (String(p["type"] ?? "") === "token_count") {
-            const info = p["info"] as Record<string, unknown> | undefined;
-            const totalUsage = info?.["total_token_usage"] as Record<string, unknown> | undefined;
+          if (String(payload["type"] ?? "") === "token_count") {
+            const { totalUsage, lastUsage } = extractTokenUsage(payload);
             const cumulativeTotal = Number(totalUsage?.["total_tokens"] ?? 0);
 
             if (cumulativeTotal > 0 && cumulativeTotal !== scanPrevCumulativeTotal) {
               scanPrevCumulativeTotal = cumulativeTotal;
 
-              const lastUsage = info?.["last_token_usage"] as Record<string, unknown> | undefined;
               let inputTokens = 0;
               let outputTokens = 0;
               let reasoningTokens = 0;
@@ -811,7 +833,7 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       return skippedSession("malformed first record");
     }
 
-    const payload = (firstRecord["payload"] ?? {}) as Record<string, unknown>;
+    const payload = extractPayload(firstRecord);
     const stat = statSync(filePath);
     const createdAt = parseTimestampMs(firstRecord) || parseTimestampMs(payload) || stat.mtimeMs;
     const indexTitle = this.getTitleForSession(sessionId);
@@ -858,7 +880,7 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     const recordType = String(data["type"] ?? "");
     if (recordType !== "response_item" || isInternalEventType(recordType)) return null;
 
-    const payload = (data["payload"] ?? {}) as Record<string, unknown>;
+    const payload = extractPayload(data);
     const pType = String(payload["type"] ?? "");
     if (pType !== "message" || isInternalEventType(pType)) return null;
     if (String(payload["role"] ?? "") !== "user") return null;
@@ -867,8 +889,10 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     let text: string | null = null;
     if (Array.isArray(content)) {
       text = content
-        .filter((item) => typeof item === "object" && item !== null && "text" in item)
-        .map((item) => String((item as Record<string, unknown>)["text"] ?? ""))
+        .map((item) => {
+          const record = asRecord(item);
+          return record ? String(record["text"] ?? "") : "";
+        })
         .join(" ");
     } else if (typeof content === "string") {
       text = content;
@@ -894,7 +918,7 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
 
     if (recordType !== "response_item") return pendingPlan;
 
-    const payload = (data["payload"] ?? {}) as Record<string, unknown>;
+    const payload = extractPayload(data);
     const payloadType = String(payload["type"] ?? "");
     if (isInternalEventType(payloadType)) return pendingPlan;
     const timestampMs = parseTimestampMs(data) || parseTimestampMs(payload);
@@ -955,8 +979,8 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
 
     const textParts: string[] = [];
     for (const item of content) {
-      if (typeof item !== "object" || item === null) continue;
-      const ci = item as Record<string, unknown>;
+      const ci = asRecord(item);
+      if (!ci) continue;
       if (String(ci["type"] ?? "") === "output_text") {
         const text = String(ci["text"] ?? "");
         if (text.trim()) textParts.push(text);
@@ -1003,11 +1027,11 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     const content = payload["content"];
     const text = Array.isArray(content)
       ? content
-          .map((c) =>
-            typeof c === "object" && c !== null
-              ? String((c as Record<string, unknown>)["text"] ?? "")
-              : String(c ?? ""),
-          )
+          .map((c) => {
+            if (Array.isArray(c)) return "";
+            const record = asRecord(c);
+            return record ? String(record["text"] ?? "") : String(c ?? "");
+          })
           .join(" ")
       : String(content ?? "");
 
@@ -1029,8 +1053,16 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
 
     const subagentMatch = visibleText.match(SUBAGENT_NOTIFICATION_PATTERN);
     if (subagentMatch) {
+      // Malformed or non-object notification payloads fall through and are
+      // treated as normal user messages below.
+      let notifPayload: Record<string, unknown> | undefined;
       try {
-        const notifPayload = JSON.parse(subagentMatch[1]!) as Record<string, unknown>;
+        notifPayload = asRecord(JSON.parse(subagentMatch[1]!));
+      } catch {
+        notifPayload = undefined;
+      }
+
+      if (notifPayload) {
         const agentId = String(notifPayload["agent_id"] ?? "");
         const nickname = String(notifPayload["nickname"] ?? "");
         const completedText = String(notifPayload["completed"] ?? "");
@@ -1052,8 +1084,6 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
         });
         transcript.beginTurn();
         return pendingPlan;
-      } catch {
-        // Treat malformed notification payloads as normal user messages.
       }
     }
 
@@ -1079,12 +1109,11 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
 
     const texts: string[] = [];
     for (const item of summary) {
-      if (typeof item === "object" && item !== null) {
-        const ci = item as Record<string, unknown>;
-        if (String(ci["type"] ?? "") === "summary_text") {
-          const text = String(ci["text"] ?? "");
-          if (text.trim()) texts.push(text);
-        }
+      const ci = asRecord(item);
+      if (!ci) continue;
+      if (String(ci["type"] ?? "") === "summary_text") {
+        const text = String(ci["text"] ?? "");
+        if (text.trim()) texts.push(text);
       }
     }
 
