@@ -1,3 +1,4 @@
+import { Menu } from "@base-ui/react/menu";
 import type { FileTreeSortEntry } from "@pierre/trees";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import {
@@ -259,12 +260,10 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   onToggleBookmark,
   onRenameSession,
 }: SessionTreeSidebarProps) {
-  const [options, setOptions] = useState<{
-    session: SessionHead;
-    top: number;
-    right: number;
-    trigger: HTMLElement;
-  } | null>(null);
+  const [menuSession, setMenuSession] = useState<SessionHead | null>(null);
+  const menuAnchorRef = useRef<HTMLElement | null>(null);
+  const menuTriggerRef = useRef<HTMLElement | null>(null);
+  const menuProxyTriggerRef = useRef<HTMLButtonElement>(null);
   const modelData = useMemo(
     () =>
       measureSessionTreeWork("SessionTreeSidebar:buildTreeModel", () =>
@@ -277,7 +276,6 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   const groupCountByPathRef = useRef(modelData.groupCountByPath);
   const sessionByPathRef = useRef(modelData.sessionByPath);
   const bookmarkedSessionIdsRef = useRef(bookmarkedSessionIds);
-  const optionsMenuRef = useRef<HTMLDivElement>(null);
   const onSelectSessionRef = useRef(onSelectSession);
   const onToggleBookmarkRef = useRef(onToggleBookmark);
   const onRenameSessionRef = useRef(onRenameSession);
@@ -333,38 +331,25 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   }, [bookmarkedSessionIds]);
 
   useEffect(() => {
-    if (!options) return;
-
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!optionsMenuRef.current?.contains(event.target as Node)) setOptions(null);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        options.trigger.focus();
-        setOptions(null);
-      }
-    };
-    const closeOnFocusOutside = (event: FocusEvent) => {
-      if (!optionsMenuRef.current?.contains(event.target as Node)) setOptions(null);
-    };
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    document.addEventListener("keydown", closeOnEscape);
-    document.addEventListener("focusin", closeOnFocusOutside);
-    optionsMenuRef.current?.querySelector<HTMLButtonElement>("[role='menuitem']")?.focus();
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer);
-      document.removeEventListener("keydown", closeOnEscape);
-      document.removeEventListener("focusin", closeOnFocusOutside);
-    };
-  }, [options]);
-
-  useEffect(() => {
     onToggleBookmarkRef.current = onToggleBookmark;
   }, [onToggleBookmark]);
 
   useEffect(() => {
     onRenameSessionRef.current = onRenameSession;
   }, [onRenameSession]);
+
+  function openSessionMenu(session: SessionHead, anchor: HTMLElement, trigger: HTMLElement) {
+    menuAnchorRef.current = anchor;
+    menuTriggerRef.current = trigger;
+    setMenuSession(session);
+    // The tree row is the visual/focus trigger, but Base UI's roving-focus and
+    // open-interaction tracking are wired to its own <Menu.Trigger>. Dispatching
+    // ArrowDown at the hidden proxy trigger opens the menu through that wiring so
+    // the first item is focused, matching native menu keyboard behavior.
+    menuProxyTriggerRef.current?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }),
+    );
+  }
 
   function handleTreeClickCapture(event: MouseEvent<HTMLDivElement>) {
     const path = event.nativeEvent.composedPath();
@@ -384,13 +369,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     if (!decoration || !item || !session) return;
     event.preventDefault();
     event.stopPropagation();
-    const rect = decoration.getBoundingClientRect();
-    setOptions({
-      session,
-      top: rect.bottom + 4,
-      right: window.innerWidth - rect.right,
-      trigger: item,
-    });
+    openSessionMenu(session, decoration, item);
   }
 
   function handleTreeKeyDownCapture(event: ReactKeyboardEvent<HTMLDivElement>) {
@@ -410,13 +389,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     event.stopPropagation();
     const anchor =
       item.querySelector<HTMLElement>("[data-item-section='decoration'] > span") ?? item;
-    const rect = anchor.getBoundingClientRect();
-    setOptions({
-      session,
-      top: rect.bottom + 4,
-      right: window.innerWidth - rect.right,
-      trigger: item,
-    });
+    openSessionMenu(session, anchor, item);
   }
 
   useEffect(() => {
@@ -444,42 +417,47 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
       onKeyDownCapture={handleTreeKeyDownCapture}
     >
       <FileTree model={model} style={{ height: "100%" }} aria-label="Sessions" />
-      {options ? (
-        <div
-          ref={optionsMenuRef}
-          role="menu"
-          style={{ position: "fixed", top: options.top, right: options.right }}
-          className="z-40 w-36 rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] p-1 shadow-lg"
-          onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) setOptions(null);
-          }}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              onRenameSessionRef.current(options.session);
-              setOptions(null);
-            }}
-            className="block w-full rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] active:scale-[0.97] focus-visible:bg-[var(--console-surface-muted)] focus-visible:outline-none"
+      <Menu.Root modal={false}>
+        <Menu.Trigger
+          ref={menuProxyTriggerRef}
+          tabIndex={-1}
+          aria-hidden="true"
+          className="pointer-events-none absolute size-0 opacity-0"
+        />
+        <Menu.Portal>
+          <Menu.Positioner
+            anchor={menuAnchorRef}
+            side="bottom"
+            align="end"
+            sideOffset={4}
+            className="z-40"
           >
-            Rename
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              onToggleBookmarkRef.current(options.session);
-              setOptions(null);
-            }}
-            className="block w-full rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] active:scale-[0.97] focus-visible:bg-[var(--console-surface-muted)] focus-visible:outline-none"
-          >
-            {bookmarkedSessionIdsRef.current.has(options.session.id)
-              ? "Remove bookmark"
-              : "Add bookmark"}
-          </button>
-        </div>
-      ) : null}
+            <Menu.Popup
+              finalFocus={menuTriggerRef}
+              className="motion-menu w-36 rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] p-1 shadow-lg focus-visible:outline-none"
+            >
+              {menuSession ? (
+                <>
+                  <Menu.Item
+                    onClick={() => onRenameSessionRef.current(menuSession)}
+                    className="motion-hover motion-press block w-full rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] data-[highlighted]:bg-[var(--console-surface-muted)] focus-visible:outline-none"
+                  >
+                    Rename
+                  </Menu.Item>
+                  <Menu.Item
+                    onClick={() => onToggleBookmarkRef.current(menuSession)}
+                    className="motion-hover motion-press block w-full rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] data-[highlighted]:bg-[var(--console-surface-muted)] focus-visible:outline-none"
+                  >
+                    {bookmarkedSessionIdsRef.current.has(menuSession.id)
+                      ? "Remove bookmark"
+                      : "Add bookmark"}
+                  </Menu.Item>
+                </>
+              ) : null}
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.Root>
     </div>
   );
 });
