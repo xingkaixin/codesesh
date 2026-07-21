@@ -52,7 +52,7 @@ function SessionRow({
   const agent = findAgent(agentCatalog, agentKey);
   return (
     <div
-      className={`flex items-start gap-1 rounded-sm border px-2 py-1.5 transition-colors ${
+      className={`flex items-start gap-1 rounded-sm border px-2 py-1.5 motion-hover ${
         active || selected
           ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
           : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"

@@ -374,7 +374,7 @@ export default function App() {
               aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1.5 text-[var(--console-muted)] transition-colors hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] lg:inline-flex"
+              className="hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1.5 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] lg:inline-flex"
             >
               {sidebarCollapsed ? (
                 <PanelLeftOpen className="size-4" />
@@ -411,7 +411,7 @@ export default function App() {
             </label>
             <button
               type="submit"
-              className="console-mono rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-3 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="console-mono rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-3 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               Search
             </button>
@@ -423,7 +423,7 @@ export default function App() {
                 setShortcutHelpOpen(true);
                 dismissShortcutHint();
               }}
-              className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-[var(--console-surface-muted)]"
+              className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)]"
               title="Show keyboard shortcuts"
             >
               ?<span className="hidden sm:inline"> Shortcuts</span>
@@ -486,10 +486,7 @@ export default function App() {
                 {routeHeader.breadcrumbs.map((item, index) => (
                   <span key={`${item.label}-${index}`} className="flex items-center gap-1">
                     {item.to ? (
-                      <Link
-                        to={item.to}
-                        className="transition-colors hover:text-[var(--console-text)]"
-                      >
+                      <Link to={item.to} className="motion-hover hover:text-[var(--console-text)]">
                         {item.label}
                       </Link>
                     ) : (
@@ -520,7 +517,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={dismissShortcutHint}
-                      className="text-[var(--console-muted)] transition-colors hover:text-[var(--console-text)]"
+                      className="text-[var(--console-muted)] motion-hover hover:text-[var(--console-text)]"
                       aria-label="Dismiss keyboard shortcuts hint"
                     >
                       ×

@@ -9,6 +9,7 @@ import {
   NotebookPen,
   XCircle,
 } from "lucide-react";
+import { Collapsible } from "../ui/Collapsible";
 import type { FileChangeKind, FileChangeSummary, FileChangeSummaryItem } from "./file-change";
 import { formatTrackedPath } from "./path-extract";
 import {
@@ -88,7 +89,7 @@ function FileTrackerSection({
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[var(--console-surface-muted)]"
+        className="motion-hover flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-[var(--console-surface-muted)]"
       >
         <Icon className="size-3.5 shrink-0 text-[var(--console-accent)]" />
         <span className="console-mono min-w-0 flex-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--console-muted)]">
@@ -97,24 +98,25 @@ function FileTrackerSection({
         <span className="console-mono shrink-0 text-[10px] text-[var(--console-muted)]">
           {items.length}
         </span>
-        {expanded ? (
-          <ChevronUp className="size-3.5 shrink-0 text-[var(--console-muted)]" />
-        ) : (
-          <ChevronDown className="size-3.5 shrink-0 text-[var(--console-muted)]" />
-        )}
+        <ChevronDown
+          className="motion-chevron size-3.5 shrink-0 text-[var(--console-muted)]"
+          data-open={expanded || undefined}
+        />
       </button>
-      {expanded ? (
-        <div className="space-y-1 border-t border-[var(--console-border)] p-2">
-          {items.map((item) => (
-            <FileTrackerItem
-              key={`${item.path}:${item.latestAnchorId || item.latestTime}`}
-              item={item}
-              baseDirectory={baseDirectory}
-              onJumpToAnchor={onJumpToAnchor}
-            />
-          ))}
-        </div>
-      ) : null}
+      <Collapsible open={expanded}>
+        {() => (
+          <div className="space-y-1 border-t border-[var(--console-border)] p-2">
+            {items.map((item) => (
+              <FileTrackerItem
+                key={`${item.path}:${item.latestAnchorId || item.latestTime}`}
+                item={item}
+                baseDirectory={baseDirectory}
+                onJumpToAnchor={onJumpToAnchor}
+              />
+            ))}
+          </div>
+        )}
+      </Collapsible>
     </div>
   );
 }
@@ -142,7 +144,7 @@ function FileTrackerItem({
   }
 
   return (
-    <div className="flex items-start gap-2 rounded-sm px-2 py-2 transition-colors hover:bg-[var(--console-surface-muted)]">
+    <div className="flex items-start gap-2 rounded-sm px-2 py-2 motion-hover hover:bg-[var(--console-surface-muted)]">
       <button
         type="button"
         title={item.path}
@@ -161,7 +163,7 @@ function FileTrackerItem({
             onClick={(event) =>
               jumpToIndex(currentIndex - 1, getActivationScrollBehavior(event.detail))
             }
-            className="rounded-sm border border-[var(--console-border)] p-1 text-[var(--console-muted)] transition-colors hover:bg-[var(--console-surface)]"
+            className="rounded-sm border border-[var(--console-border)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface)]"
           >
             <ChevronUp className="size-3" />
           </button>
@@ -174,7 +176,7 @@ function FileTrackerItem({
             onClick={(event) =>
               jumpToIndex(currentIndex + 1, getActivationScrollBehavior(event.detail))
             }
-            className="rounded-sm border border-[var(--console-border)] p-1 text-[var(--console-muted)] transition-colors hover:bg-[var(--console-surface)]"
+            className="rounded-sm border border-[var(--console-border)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface)]"
           >
             <ChevronDown className="size-3" />
           </button>

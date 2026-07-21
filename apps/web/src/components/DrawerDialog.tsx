@@ -41,7 +41,7 @@ export function DrawerDialog({
             </Dialog.Title>
             <Dialog.Close
               aria-label={`Close ${title.toLowerCase()}`}
-              className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-2 text-[var(--console-muted)] transition-colors hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="motion-hover motion-press rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-2 text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               <X className="size-4" aria-hidden="true" />
             </Dialog.Close>

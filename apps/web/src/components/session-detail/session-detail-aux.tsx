@@ -56,7 +56,7 @@ export function DeferredInteractiveReceipt({
         aria-expanded={open}
         aria-label="Open session receipt"
         onClick={() => setOpen(true)}
-        className="console-mono fixed right-0 top-1/2 z-40 hidden h-32 w-10 -translate-y-1/2 items-center justify-center rounded-l-sm border border-r-0 border-[var(--console-border)] bg-[var(--console-surface)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--console-text)] shadow-[-2px_4px_14px_rgba(15,23,42,0.14)] transition-colors hover:bg-[var(--console-surface-muted)] min-[1025px]:flex"
+        className="console-mono fixed right-0 top-1/2 z-40 hidden h-32 w-10 -translate-y-1/2 items-center justify-center rounded-l-sm border border-r-0 border-[var(--console-border)] bg-[var(--console-surface)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--console-text)] shadow-[-2px_4px_14px_rgba(15,23,42,0.14)] motion-hover hover:bg-[var(--console-surface-muted)] min-[1025px]:flex"
       >
         <span className="[writing-mode:vertical-rl]">Receipt</span>
       </button>
@@ -89,7 +89,7 @@ export function SessionDetailAuxControls({
       <button
         type="button"
         onClick={() => onOpen("toc")}
-        className="console-mono inline-flex h-9 items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--console-text)] shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:bg-[var(--console-surface-muted)]"
+        className="console-mono inline-flex h-9 items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--console-text)] shadow-[0_1px_2px_rgba(15,23,42,0.04)] motion-hover hover:bg-[var(--console-surface-muted)]"
       >
         <Funnel className="size-3.5 text-[var(--console-accent)]" />
         TOC
@@ -99,7 +99,7 @@ export function SessionDetailAuxControls({
         <button
           type="button"
           onClick={() => onOpen("files")}
-          className="console-mono inline-flex h-9 items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--console-text)] shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:bg-[var(--console-surface-muted)]"
+          className="console-mono inline-flex h-9 items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--console-text)] shadow-[0_1px_2px_rgba(15,23,42,0.04)] motion-hover hover:bg-[var(--console-surface-muted)]"
         >
           <FileText className="size-3.5 text-[var(--console-accent)]" />
           Files

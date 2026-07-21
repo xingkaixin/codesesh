@@ -169,7 +169,7 @@ export function SearchFilterBar({
           <button
             type="button"
             onClick={() => onChangeFilters({})}
-            className="console-mono ml-auto rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[10px] text-[var(--console-muted)] transition-colors hover:bg-[var(--console-surface)]"
+            className="console-mono ml-auto rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[10px] text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface)]"
           >
             Clear
           </button>

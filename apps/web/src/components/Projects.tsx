@@ -76,7 +76,7 @@ function ProjectListItem({
     <li>
       <Link
         to={getProjectPath({ kind: project.identityKind, key: project.identityKey })}
-        className="block rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]/85 p-4 transition-colors hover:border-[var(--console-border-strong)] hover:bg-[var(--console-surface)]"
+        className="block rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]/85 p-4 motion-hover hover:border-[var(--console-border-strong)] hover:bg-[var(--console-surface)]"
       >
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0">
@@ -171,7 +171,7 @@ function ProjectAgentFilter({
         <button
           type="button"
           onClick={() => onChange(undefined)}
-          className={`console-mono rounded-sm border px-2 py-1 text-[10px] transition-colors ${
+          className={`console-mono rounded-sm border px-2 py-1 text-[10px] motion-hover ${
             activeAgent
               ? "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-muted)] hover:bg-[var(--console-surface)]"
               : "border-[var(--console-border-strong)] bg-[var(--console-accent)] text-white"
@@ -187,7 +187,7 @@ function ProjectAgentFilter({
               key={agent.name}
               type="button"
               onClick={() => onChange(active ? undefined : agent.name)}
-              className={`console-mono inline-flex items-center gap-1 rounded-sm border px-2 py-1 text-[10px] transition-colors ${
+              className={`console-mono inline-flex items-center gap-1 rounded-sm border px-2 py-1 text-[10px] motion-hover ${
                 active
                   ? "border-[var(--console-border-strong)] bg-[var(--console-accent)] text-white"
                   : "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-muted)] hover:bg-[var(--console-surface)]"
@@ -263,7 +263,7 @@ function TopCostSessions({
             <li key={session.fullPath}>
               <Link
                 to={`/${session.fullPath}`}
-                className="block rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+                className="block rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
               >
                 <div className="flex items-center gap-2">
                   {agent?.icon ? (
@@ -328,7 +328,7 @@ export function ProjectDashboardView({
         </p>
         <Link
           to="/projects"
-          className="console-mono mt-4 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-[var(--console-surface)]"
+          className="console-mono mt-4 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)]"
         >
           Back to Projects
         </Link>
