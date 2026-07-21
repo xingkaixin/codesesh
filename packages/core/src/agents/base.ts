@@ -53,6 +53,8 @@ export interface ChangeCheckResult {
   changedIds?: string[];
   /** 检测时间戳 */
   timestamp: number;
+  /** 检测过程中已枚举的会话源（可选），供 incrementalScan 复用以避免二次枚举 */
+  refs?: SessionSourceRef[];
 }
 
 export interface SessionSourceRef {
@@ -94,6 +96,7 @@ export abstract class BaseAgent {
   abstract incrementalScan(
     cachedSessions: SessionHead[],
     changedIds: string[],
+    refs?: SessionSourceRef[],
   ): Promise<SessionHead[]> | SessionHead[];
 
   /** Get session metadata for caching. */
@@ -192,19 +195,25 @@ export abstract class FileSystemSessionSource<
       hasChanges: changedIdList.length > 0,
       changedIds: changedIdList,
       timestamp: Date.now(),
+      refs: currentRefs,
     };
   }
 
   /**
    * 增量扫描：对变更/新增源调用 scanSessionSource 重解析，
    * 删除已消失的源，合并回 cachedSessions。
+   * refs 未传时回退为自行枚举，供独立调用方（如测试）沿用旧行为。
    */
-  incrementalScan(cachedSessions: SessionHead[], changedIds: string[]): SessionHead[] {
+  incrementalScan(
+    cachedSessions: SessionHead[],
+    changedIds: string[],
+    refs?: SessionSourceRef[],
+  ): SessionHead[] {
     const sessionMap = new Map(cachedSessions.map((session) => [session.id, session]));
     const changedSet = new Set(changedIds);
     const currentIds = new Set<string>();
 
-    for (const ref of this.listSessionSources()) {
+    for (const ref of refs ?? this.listSessionSources()) {
       currentIds.add(ref.sessionId);
       if (!changedSet.has(ref.sessionId)) continue;
       const head = this.scanSessionSource(ref.sourcePath);

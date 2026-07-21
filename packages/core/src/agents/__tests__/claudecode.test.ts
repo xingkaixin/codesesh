@@ -1,9 +1,16 @@
-import { mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClaudeCodeAgent } from "../claudecode.js";
 import type { Message, MessagePart, SessionHead } from "../../types/index.js";
+
+// Spies on statSync while delegating to the real implementation, so the
+// single-stat regression test can count per-file calls during a live scan.
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return { ...actual, statSync: vi.fn(actual.statSync) };
+});
 
 let tempDirs: string[] = [];
 
@@ -105,6 +112,30 @@ describe("ClaudeCodeAgent cache refresh", () => {
 
     const windowed = agent.listSessionSources({ from: Date.now() - 24 * 60 * 60 * 1000 });
     expect(windowed.map((ref: { sessionId: string }) => ref.sessionId)).toEqual(["new-session"]);
+  });
+
+  it("stats each session file at most once per listSessionSources call", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-stat-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    mkdirSync(projectDir, { recursive: true });
+
+    const files = ["session-a.jsonl", "session-b.jsonl", "session-c.jsonl"].map((name) =>
+      join(projectDir, name),
+    );
+    for (const file of files) writeFileSync(file, "");
+
+    const agent = new ClaudeCodeAgent() as any;
+    agent.basePath = basePath;
+
+    const statSpy = vi.mocked(statSync);
+    statSpy.mockClear();
+    agent.listSessionSources();
+
+    for (const file of files) {
+      const callsForFile = statSpy.mock.calls.filter((call) => call[0] === file);
+      expect(callsForFile.length).toBe(1);
+    }
   });
 
   it("parses indexed sessions with assistant tools and tool results", () => {

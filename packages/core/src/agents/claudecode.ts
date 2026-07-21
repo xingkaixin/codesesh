@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, type Stats } from "node:fs";
 import { join, basename, dirname } from "node:path";
 import {
   FileSystemSessionSource,
@@ -114,17 +114,20 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     if (!this.basePath) return [];
     const refs: SessionSourceRef[] = [];
     for (const projectDir of this.listProjectDirs()) {
+      const indexPath = this.getSessionsIndexPath(projectDir);
       for (const file of this.listJsonlFiles(projectDir)) {
+        let stat: Stats;
         try {
-          if (!matchesScanWindow(statSync(file).mtimeMs, options)) continue;
+          stat = statSync(file);
         } catch {
           continue;
         }
+        if (!matchesScanWindow(stat.mtimeMs, options)) continue;
         const sessionId = basename(file, ".jsonl");
         refs.push({
           sessionId,
           sourcePath: file,
-          fingerprint: this.sourceFingerprint(file, projectDir),
+          fingerprint: this.sourceFingerprint(stat, indexPath),
         });
       }
     }
@@ -201,12 +204,13 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
 
   private buildSessionMeta(head: SessionHead, file: string, projectDir: string): SessionMeta {
     const indexPath = this.getSessionsIndexPath(projectDir);
+    const stat = statSync(file);
     return {
       id: head.id,
       title: head.title,
       sourcePath: file,
-      sourceFingerprint: this.sourceFingerprint(file, projectDir),
-      sourceMtimeMs: statSync(file).mtimeMs,
+      sourceFingerprint: this.sourceFingerprint(stat, indexPath),
+      sourceMtimeMs: stat.mtimeMs,
       indexPath: existsSync(indexPath) ? indexPath : null,
       indexMtimeMs: this.getFileMtimeMs(indexPath),
       headIndexVersion: HEAD_INDEX_VERSION,
@@ -218,9 +222,8 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     };
   }
 
-  private sourceFingerprint(file: string, projectDir: string): string {
-    const stat = statSync(file);
-    const indexPath = this.getSessionsIndexPath(projectDir);
+  /** Fingerprint depends on an already-fetched stat to avoid re-statting the same file. */
+  private sourceFingerprint(stat: { mtimeMs: number; size: number }, indexPath: string): string {
     return JSON.stringify([
       HEAD_INDEX_VERSION,
       stat.mtimeMs,
@@ -315,8 +318,9 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     let totalCost = 0;
     const modelUsageMap: Record<string, number> = {};
     const countedUsageKeys = new Set<string>();
+    let messageTitle: string | null = null;
 
-    for (const line of lines) {
+    for (const [lineIndex, line] of lines.entries()) {
       try {
         const data = JSON.parse(line);
         if (isInternalEventType(data["type"])) continue;
@@ -336,6 +340,14 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
           if (!model) {
             const m = (msg as Record<string, unknown>)["model"];
             if (typeof m === "string" && m.trim()) model = m.trim();
+          }
+          // Title fallback mirrors the removed extractTitle(): first non-empty
+          // visible user text within the first 20 lines.
+          if (messageTitle === null && lineIndex < 20 && role === "user") {
+            const candidate = this.extractUserMessageTitle(
+              (msg as Record<string, unknown>)["content"],
+            );
+            if (candidate) messageTitle = candidate;
           }
           if (role === "assistant") {
             const usage = extractClaudeUsage(data, msg as Record<string, unknown>);
@@ -373,9 +385,6 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     }
 
     const directory = cwd ?? projectDir;
-
-    // Extract first user message as fallback title
-    const messageTitle = this.extractTitle(lines);
     const directoryTitle = basenameTitle(directory) || basenameTitle(projectDir);
 
     const title = resolveSessionTitle(explicitTitle, messageTitle, directoryTitle);
@@ -403,33 +412,21 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     });
   }
 
-  private extractTitle(lines: string[]): string | null {
-    for (const line of lines.slice(0, 20)) {
-      try {
-        const data = JSON.parse(line);
-        if (isInternalEventType(data["type"])) continue;
-        const msg = data["message"];
-        if (!msg || typeof msg !== "object") continue;
-        if ((msg as Record<string, unknown>)["role"] !== "user") continue;
+  /** Mirrors the title-candidate extraction previously done in a second JSON.parse pass. */
+  private extractUserMessageTitle(content: unknown): string | null {
+    if (!content) return null;
 
-        const content = (msg as Record<string, unknown>)["content"];
-        if (!content) continue;
-
-        if (typeof content === "string") {
-          const title = normalizeTitleText(content);
-          if (title) return title;
-        }
-        if (Array.isArray(content)) {
-          const texts = content
-            .filter((item) => typeof item === "object" && item !== null && "text" in item)
-            .map((item) => String((item as Record<string, unknown>)["text"] ?? ""))
-            .join(" ");
-          const title = normalizeTitleText(texts);
-          if (title) return title;
-        }
-      } catch {
-        // skip
-      }
+    if (typeof content === "string") {
+      const title = normalizeTitleText(content);
+      return title || null;
+    }
+    if (Array.isArray(content)) {
+      const texts = content
+        .filter((item) => typeof item === "object" && item !== null && "text" in item)
+        .map((item) => String((item as Record<string, unknown>)["text"] ?? ""))
+        .join(" ");
+      const title = normalizeTitleText(texts);
+      return title || null;
     }
     return null;
   }

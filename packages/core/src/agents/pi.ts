@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, type Stats } from "node:fs";
 import { basename, join } from "node:path";
 import {
   FileSystemSessionSource,
@@ -138,10 +138,10 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
 
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {
     if (!this.basePath) return [];
-    return this.listSessionFiles(options).map((file) => ({
+    return this.walkJsonlFiles(this.basePath, options).map(({ file, stat }) => ({
       sessionId: extractSessionIdFromFilename(file),
       sourcePath: file,
-      fingerprint: this.sourceFingerprint(file),
+      fingerprint: this.sourceFingerprint(stat),
     }));
   }
 
@@ -183,11 +183,12 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
 
   private listSessionFiles(options?: AgentScanOptions): string[] {
     if (!this.basePath) return [];
-    return this.walkJsonlFiles(this.basePath, options);
+    return this.walkJsonlFiles(this.basePath, options).map(({ file }) => file);
   }
 
-  private walkJsonlFiles(dir: string, options?: AgentScanOptions): string[] {
-    const files: string[] = [];
+  /** Stats each file once during the walk; caller reuses it for both the scan window check and the fingerprint. */
+  private walkJsonlFiles(dir: string, options?: AgentScanOptions): { file: string; stat: Stats }[] {
+    const files: { file: string; stat: Stats }[] = [];
     try {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const fullPath = join(dir, entry.name);
@@ -196,8 +197,14 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
           continue;
         }
         if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-        if (!matchesScanWindow(statSync(fullPath).mtimeMs, options)) continue;
-        files.push(fullPath);
+        let stat: Stats;
+        try {
+          stat = statSync(fullPath);
+        } catch {
+          continue;
+        }
+        if (!matchesScanWindow(stat.mtimeMs, options)) continue;
+        files.push({ file: fullPath, stat });
       }
     } catch {
       // skip inaccessible dirs
@@ -206,12 +213,13 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
   }
 
   private buildSessionMeta(head: SessionHead, file: string): SessionMeta {
+    const stat = statSync(file);
     return {
       id: head.id,
       title: head.title,
       sourcePath: file,
-      sourceFingerprint: this.sourceFingerprint(file),
-      sourceMtimeMs: statSync(file).mtimeMs,
+      sourceFingerprint: this.sourceFingerprint(stat),
+      sourceMtimeMs: stat.mtimeMs,
       headIndexVersion: HEAD_INDEX_VERSION,
       parserVersion: PARSER_VERSION,
       directory: head.directory,
@@ -221,8 +229,8 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     };
   }
 
-  private sourceFingerprint(file: string): string {
-    const stat = statSync(file);
+  /** Fingerprint depends on an already-fetched stat to avoid re-statting the same file. */
+  private sourceFingerprint(stat: { mtimeMs: number; size: number }): string {
     return JSON.stringify([HEAD_INDEX_VERSION, PARSER_VERSION, stat.mtimeMs, stat.size]);
   }
 

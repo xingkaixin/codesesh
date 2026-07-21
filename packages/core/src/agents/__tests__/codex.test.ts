@@ -5,6 +5,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexAgent } from "../codex.js";
 import type { Message, MessagePart, SessionHead } from "../../types/index.js";
 
+// Spies on statSync while delegating to the real implementation, so the
+// single-stat regression test can count per-file calls during a live scan.
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return { ...actual, statSync: vi.fn(actual.statSync) };
+});
+
 let tempDirs: string[] = [];
 
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
@@ -64,7 +71,10 @@ describe("CodexAgent cache refresh", () => {
         },
       ],
     ]);
-    agent.listRolloutFiles = () => [oldA, newC];
+    agent.listRolloutFiles = () => [
+      { file: oldA, stat: statSync(oldA) },
+      { file: newC, stat: statSync(newC) },
+    ];
 
     const result = agent.checkForChanges(Date.now(), [
       makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa"),
@@ -159,6 +169,36 @@ describe("CodexAgent cache refresh", () => {
     expect(windowed.map((ref: { sourcePath: string }) => ref.sourcePath)).toEqual([newFile]);
   });
 
+  it("stats each rollout file at most once per listSessionSources call", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+
+    const sessionIds = [
+      "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
+      "019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb",
+      "019dcccc-cccc-7ccc-cccc-cccccccccccc",
+    ];
+    const files = sessionIds.map((id) => join(tempDir, `rollout-2026-04-20T10-00-00-${id}.jsonl`));
+    for (const file of files) {
+      writeFileSync(
+        file,
+        '{"type":"session_meta","payload":{"timestamp":"2026-04-20T10:00:00Z"}}\n',
+      );
+    }
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+
+    const statSpy = vi.mocked(statSync);
+    statSpy.mockClear();
+    agent.listSessionSources();
+
+    for (const file of files) {
+      const callsForFile = statSpy.mock.calls.filter((call) => call[0] === file);
+      expect(callsForFile.length).toBe(1);
+    }
+  });
+
   it("uses per-session Codex titles in source fingerprints", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
     tempDirs.push(tempDir);
@@ -230,7 +270,7 @@ describe("CodexAgent cache refresh", () => {
         },
       ],
     ]);
-    agent.listRolloutFiles = () => [sessionFile];
+    agent.listRolloutFiles = () => [{ file: sessionFile, stat: statSync(sessionFile) }];
 
     const result = agent.checkForChanges(Date.now(), [
       makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa"),

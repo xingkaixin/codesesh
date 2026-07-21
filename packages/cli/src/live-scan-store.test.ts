@@ -1037,7 +1037,7 @@ describe("LiveScanStore", () => {
     await vi.advanceTimersByTimeAsync(250);
 
     expect(codex.checkForChanges).toHaveBeenCalledWith(1000, [old, recent]);
-    expect(codex.incrementalScan).toHaveBeenCalledWith([old, recent], ["old"]);
+    expect(codex.incrementalScan).toHaveBeenCalledWith([old, recent], ["old"], undefined);
     expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent", "old"]);
     expect(events).toEqual([]);
     expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
@@ -1247,10 +1247,11 @@ describe("LiveScanStore", () => {
     await vi.advanceTimersByTimeAsync(250);
 
     expect(codex.checkForChanges).toHaveBeenCalledWith(expect.any(Number), [previous]);
-    expect(codex.incrementalScan).toHaveBeenCalledWith(previous ? [previous] : [], [
-      "session",
-      "added",
-    ]);
+    expect(codex.incrementalScan).toHaveBeenCalledWith(
+      previous ? [previous] : [],
+      ["session", "added"],
+      undefined,
+    );
     expect(core.saveCachedSessions).not.toHaveBeenCalled();
     expect(core.saveCachedSessionChanges).not.toHaveBeenCalled();
     expect(core.syncSessionSearchIndex).not.toHaveBeenCalled();

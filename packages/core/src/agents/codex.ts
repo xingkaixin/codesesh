@@ -6,6 +6,7 @@ import {
   readSync,
   readdirSync,
   statSync,
+  type Stats,
 } from "node:fs";
 import { join, basename } from "node:path";
 import {
@@ -340,10 +341,10 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {
     if (!this.basePath) return [];
     this.loadSessionIndex();
-    return this.listRolloutFiles(options).map((file) => ({
+    return this.listRolloutFiles(options).map(({ file, stat }) => ({
       sessionId: extractSessionId(file),
       sourcePath: file,
-      fingerprint: this.sourceFingerprint(file),
+      fingerprint: this.sourceFingerprint(file, stat),
     }));
   }
 
@@ -478,7 +479,7 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
 
   // ---- File listing ----
 
-  private listRolloutFiles(options?: AgentScanOptions): string[] {
+  private listRolloutFiles(options?: AgentScanOptions): { file: string; stat: Stats }[] {
     if (!this.basePath) return [];
     try {
       return this.walkDirForRolloutFiles(this.basePath, options);
@@ -487,22 +488,26 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     }
   }
 
-  private walkDirForRolloutFiles(dir: string, options?: AgentScanOptions): string[] {
-    const files: string[] = [];
+  /** Stats each rollout file once during the walk; caller reuses it for the scan window check and the fingerprint. */
+  private walkDirForRolloutFiles(
+    dir: string,
+    options?: AgentScanOptions,
+  ): { file: string; stat: Stats }[] {
+    const files: { file: string; stat: Stats }[] = [];
     try {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const fullPath = join(dir, entry.name);
         if (entry.isDirectory()) {
           files.push(...this.walkDirForRolloutFiles(fullPath, options));
         } else if (entry.name.endsWith(".jsonl") && entry.name.startsWith("rollout-")) {
-          if (options?.from != null || options?.to != null) {
-            try {
-              if (!matchesScanWindow(statSync(fullPath).mtimeMs, options)) continue;
-            } catch {
-              continue;
-            }
+          let stat: Stats;
+          try {
+            stat = statSync(fullPath);
+          } catch {
+            continue;
           }
-          files.push(fullPath);
+          if (!matchesScanWindow(stat.mtimeMs, options)) continue;
+          files.push({ file: fullPath, stat });
         }
       }
     } catch {
@@ -513,12 +518,13 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
 
   private buildSessionMeta(head: SessionHead, file: string): SessionMeta {
     const indexPath = this.getSessionIndexPath();
+    const stat = statSync(file);
     return {
       id: head.id,
       title: head.title,
       sourcePath: file,
-      sourceFingerprint: this.sourceFingerprint(file),
-      sourceMtimeMs: statSync(file).mtimeMs,
+      sourceFingerprint: this.sourceFingerprint(file, stat),
+      sourceMtimeMs: stat.mtimeMs,
       indexPath: existsSync(indexPath) ? indexPath : null,
       indexMtimeMs: this.getFileMtimeMs(indexPath),
       headIndexVersion: HEAD_INDEX_VERSION,
@@ -531,8 +537,8 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     };
   }
 
-  private sourceFingerprint(file: string): string {
-    const stat = statSync(file);
+  /** Fingerprint depends on an already-fetched stat to avoid re-statting the same file. */
+  private sourceFingerprint(file: string, stat: { mtimeMs: number; size: number }): string {
     const sessionId = extractSessionId(file);
     return JSON.stringify([
       HEAD_INDEX_VERSION,
@@ -619,10 +625,10 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     let firstPayload: Record<string, unknown> = {};
     let createdAt = 0;
     let lineCount = 0;
-    const titleLines: string[] = [];
+    let messageTitle: string | null = null;
 
-    // Single streaming pass: read the first record, buffer title candidates,
-    // count messages, extract models, and pre-accumulate tokens.
+    // Single streaming pass: read the first record, extract the title
+    // candidate, count messages, extract models, and pre-accumulate tokens.
     let updatedAt = 0;
     let messageCount = 0;
     let model: string | null = null;
@@ -659,7 +665,6 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
           statSync(filePath).mtimeMs;
         updatedAt = createdAt;
       }
-      if (titleLines.length < 20) titleLines.push(line);
 
       try {
         const data = JSON.parse(line);
@@ -672,6 +677,13 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
           parseTimestampMs(data) ||
           parseTimestampMs((data["payload"] ?? {}) as Record<string, unknown>);
         if (recordTs > updatedAt) updatedAt = recordTs;
+
+        // Title fallback mirrors the removed extractTitleFromLines(): first
+        // visible user message within the first 20 lines.
+        if (messageTitle === null && lineCount <= 20) {
+          const candidate = this.extractCodexRecordTitle(data);
+          if (candidate) messageTitle = candidate;
+        }
 
         if (recordType === "session_meta" || recordType === "turn_context") {
           const nextModel = extractModelName(payload["model"]);
@@ -759,7 +771,6 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     if (!hasNonInternalRecord) return filteredSession("internal events only");
 
     const indexTitle = this.getTitleForSession(sessionId);
-    const messageTitle = this.extractTitleFromLines(titleLines);
     const directory = firstPayload["cwd"] ? String(firstPayload["cwd"]) : "";
     const title = resolveSessionTitle(indexTitle, messageTitle, basenameTitle(directory || null));
 
@@ -825,36 +836,45 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     });
   }
 
+  /** Fast path only: parses each of the first 20 lines to find a title (no full stats pass available). */
   private extractTitleFromLines(lines: string[]): string | null {
     for (const line of lines.slice(0, 20)) {
       try {
-        const data = JSON.parse(line);
-        const recordType = String(data["type"] ?? "");
-        if (recordType !== "response_item" || isInternalEventType(recordType)) continue;
-
-        const payload = (data["payload"] ?? {}) as Record<string, unknown>;
-        const pType = String(payload["type"] ?? "");
-        if (pType !== "message" || isInternalEventType(pType)) continue;
-        if (String(payload["role"] ?? "") !== "user") continue;
-
-        const content = payload["content"];
-        let text: string | null = null;
-        if (Array.isArray(content)) {
-          text = content
-            .filter((item) => typeof item === "object" && item !== null && "text" in item)
-            .map((item) => String((item as Record<string, unknown>)["text"] ?? ""))
-            .join(" ");
-        } else if (typeof content === "string") {
-          text = content;
-        }
-        if (!text || isDeveloperLikeUserMessage(text)) continue;
-        const title = normalizeTitleText(text);
+        const title = this.extractCodexRecordTitle(JSON.parse(line));
         if (title) return title;
       } catch {
         // skip
       }
     }
     return null;
+  }
+
+  /**
+   * Title candidate from a single already-parsed record, if it's a visible
+   * user message. Shared by the main streaming pass (which parses every line
+   * once) and the fast path's extractTitleFromLines().
+   */
+  private extractCodexRecordTitle(data: Record<string, unknown>): string | null {
+    const recordType = String(data["type"] ?? "");
+    if (recordType !== "response_item" || isInternalEventType(recordType)) return null;
+
+    const payload = (data["payload"] ?? {}) as Record<string, unknown>;
+    const pType = String(payload["type"] ?? "");
+    if (pType !== "message" || isInternalEventType(pType)) return null;
+    if (String(payload["role"] ?? "") !== "user") return null;
+
+    const content = payload["content"];
+    let text: string | null = null;
+    if (Array.isArray(content)) {
+      text = content
+        .filter((item) => typeof item === "object" && item !== null && "text" in item)
+        .map((item) => String((item as Record<string, unknown>)["text"] ?? ""))
+        .join(" ");
+    } else if (typeof content === "string") {
+      text = content;
+    }
+    if (!text || isDeveloperLikeUserMessage(text)) return null;
+    return normalizeTitleText(text) || null;
   }
 
   // ---- Record conversion ----

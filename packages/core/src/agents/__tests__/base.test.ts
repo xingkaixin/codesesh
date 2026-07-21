@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DatabaseSessionSource, FileSystemSessionSource } from "../base.js";
 import type { AgentScanOptions, SessionCacheMeta, SessionSourceRef } from "../base.js";
 import type { SessionData, SessionHead } from "../../types/index.js";
@@ -212,6 +212,15 @@ describe("FileSystemSessionSource.checkForChanges", () => {
     expect(result.hasChanges).toBe(true);
     expect(result.changedIds).toEqual(["a"]);
   });
+
+  it("returns refs matching the listSessionSources enumeration", () => {
+    const agent = new FakeFileSystemSource([source("a"), source("b")]);
+    agent.scanSessionSource("/tmp/a.jsonl");
+    agent.scanSessionSource("/tmp/b.jsonl");
+
+    const result = agent.checkForChanges(Date.now(), [makeSession("a"), makeSession("b")]);
+    expect(result.refs).toEqual(agent.listSessionSources());
+  });
 });
 
 describe("FileSystemSessionSource.incrementalScan", () => {
@@ -237,6 +246,24 @@ describe("FileSystemSessionSource.incrementalScan", () => {
     const updated = agent.incrementalScan([makeSession("a"), makeSession("b")], ["b"]);
     expect(updated.map((s) => s.id)).toEqual(["a"]);
     expect(agent.getSessionMetaMap().has("b")).toBe(false);
+  });
+
+  it("skips listSessionSources when refs are passed explicitly, matching the fallback result", () => {
+    const agent = new FakeFileSystemSource([
+      source("a", "fp-1", { head: makeSession("a") }),
+      source("b", "fp-1", { head: null }),
+    ]);
+    const cached = [makeSession("a"), makeSession("b")];
+    const changedIds = ["a", "b"];
+    const refs = agent.listSessionSources();
+
+    const fallback = agent.incrementalScan(cached, changedIds);
+
+    const listSpy = vi.spyOn(agent, "listSessionSources");
+    const withRefs = agent.incrementalScan(cached, changedIds, refs);
+
+    expect(listSpy).toHaveBeenCalledTimes(0);
+    expect(withRefs.map((s) => s.id).sort()).toEqual(fallback.map((s) => s.id).sort());
   });
 });
 
