@@ -116,7 +116,7 @@ export function TimeWindowControl({
                   onSelectCustom(from, to);
                   setCustomOpen(false);
                 }}
-                className="rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-text)] px-3 py-1.5 text-xs text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-text)] px-3 py-1.5 text-xs text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 dark:text-[var(--console-bg)]"
               >
                 Apply range
               </button>

@@ -1,8 +1,13 @@
 import { useCallback, useRef, useState } from "react";
 
+export type Theme = "light" | "dark" | "system";
+
+const THEMES: readonly Theme[] = ["light", "dark", "system"];
+
 export interface UiPreferences {
   shortcutHintDismissed: boolean;
   sidebarCollapsed: boolean;
+  theme: Theme;
 }
 
 interface StoredUiPreferences {
@@ -18,7 +23,12 @@ export const LEGACY_SHORTCUT_HINT_STORAGE_KEY = "codesesh.shortcuts-hint-dismiss
 const DEFAULT_UI_PREFERENCES: UiPreferences = {
   shortcutHintDismissed: false,
   sidebarCollapsed: false,
+  theme: "system",
 };
+
+function isTheme(value: unknown): value is Theme {
+  return typeof value === "string" && THEMES.includes(value as Theme);
+}
 
 function getBrowserStorage(): UiPreferencesStorage | null {
   if (typeof window === "undefined") return null;
@@ -38,11 +48,14 @@ export function parseUiPreferences(raw: string | null): UiPreferences | null {
   try {
     const envelope: unknown = JSON.parse(raw);
     if (!isRecord(envelope) || envelope.version !== 1 || !isRecord(envelope.state)) return null;
-    const { shortcutHintDismissed, sidebarCollapsed } = envelope.state;
+    const { shortcutHintDismissed, sidebarCollapsed, theme } = envelope.state;
     if (typeof shortcutHintDismissed !== "boolean" || typeof sidebarCollapsed !== "boolean") {
       return null;
     }
-    return { shortcutHintDismissed, sidebarCollapsed };
+    // theme predates CS-89: absent in preferences persisted before this field
+    // existed, so treat it as "system" rather than invalidating the envelope.
+    if (theme !== undefined && !isTheme(theme)) return null;
+    return { shortcutHintDismissed, sidebarCollapsed, theme: isTheme(theme) ? theme : "system" };
   } catch {
     return null;
   }
@@ -74,6 +87,7 @@ function persistUiPreferences(
     state: {
       shortcutHintDismissed: preferences.shortcutHintDismissed,
       sidebarCollapsed: preferences.sidebarCollapsed,
+      theme: preferences.theme,
     },
   };
   try {
@@ -105,9 +119,17 @@ export function useUiPreferences() {
     [updatePreferences],
   );
 
+  const setTheme = useCallback(
+    (theme: Theme) => {
+      updatePreferences({ ...preferencesRef.current, theme });
+    },
+    [updatePreferences],
+  );
+
   return {
     ...preferences,
     dismissShortcutHint,
     setSidebarCollapsed,
+    setTheme,
   };
 }

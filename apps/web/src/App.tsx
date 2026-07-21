@@ -24,9 +24,11 @@ import { useLiveSync } from "./hooks/useLiveSync";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useTimeWindow } from "./hooks/useTimeWindow";
 import { useUiPreferences } from "./hooks/useUiPreferences";
+import { useTheme } from "./hooks/useTheme";
 import { buildRouteHeaderModel } from "./lib/build-route-header-model";
 import { AppSidebar } from "./components/app/AppSidebar";
 import { ShortcutHelpDialog } from "./components/app/ShortcutHelpDialog";
+import { ThemeToggle } from "./components/app/ThemeToggle";
 import { AppRouteContent } from "./components/app/AppRouteContent";
 import type { BrowseBy } from "./components/app/types";
 import { formatScanStatusLabel, formatSearchSubtitle } from "./lib/scan-format";
@@ -62,8 +64,15 @@ export default function App() {
   const { scanStatus, setScanStatus } = useScanStatus();
   const [selectedSidebarSessionId, setSelectedSidebarSessionId] = useState<string | null>(null);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
-  const { shortcutHintDismissed, sidebarCollapsed, dismissShortcutHint, setSidebarCollapsed } =
-    useUiPreferences();
+  const {
+    shortcutHintDismissed,
+    sidebarCollapsed,
+    theme,
+    dismissShortcutHint,
+    setSidebarCollapsed,
+    setTheme,
+  } = useUiPreferences();
+  useTheme(theme);
   const [aliasTarget, setAliasTarget] = useState<SessionAliasTarget | null>(null);
 
   const location = useLocation();
@@ -445,6 +454,7 @@ export default function App() {
             </button>
           </form>
           <div className="flex items-center justify-end gap-2">
+            <ThemeToggle theme={theme} onChange={setTheme} />
             <button
               type="button"
               onClick={() => {
