@@ -5,6 +5,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { createRequire } from "node:module";
+import { getCoreDiagnostics } from "./diagnostics.js";
 
 interface SQLiteStatement {
   all(...params: unknown[]): DatabaseRow[];
@@ -26,6 +27,7 @@ type SQLiteDatabaseConstructor = (
 ) => SQLiteDatabase & SQLitePragmaCapable;
 
 let DatabaseConstructor: SQLiteDatabaseConstructor | null = null;
+let loadErrorMessage: string | null = null;
 
 try {
   const require = createRequire(import.meta.url);
@@ -34,8 +36,20 @@ try {
   DatabaseConstructor = (
     typeof mod === "function" ? mod : (mod as { default?: unknown }).default
   ) as SQLiteDatabaseConstructor;
-} catch {
-  // better-sqlite3 not installed — adapters that need SQLite will gracefully skip
+} catch (error) {
+  // better-sqlite3 not installed — adapters that need SQLite will gracefully skip.
+  // This module body evaluates before a host has a chance to call
+  // setCoreDiagnostics, so reporting here would always be dropped — defer the
+  // warn to reportUnavailableOnce(), called from the first actual open attempt.
+  loadErrorMessage = error instanceof Error ? error.message : String(error);
+}
+
+let unavailableReported = false;
+
+function reportUnavailableOnce(): void {
+  if (unavailableReported) return;
+  unavailableReported = true;
+  getCoreDiagnostics()?.warn("sqlite.unavailable", { message: loadErrorMessage });
 }
 
 export interface DatabaseRow {
@@ -195,17 +209,28 @@ export function runSchemaMigrations(
  * Returns null if better-sqlite3 is unavailable or the file can't be opened.
  */
 export function openDbReadOnly(dbPath: string): SQLiteDatabase | null {
-  if (!DatabaseConstructor) return null;
+  if (!DatabaseConstructor) {
+    reportUnavailableOnce();
+    return null;
+  }
   try {
     const db = DatabaseConstructor(dbPath, { readonly: true });
     return db;
-  } catch {
+  } catch (error) {
+    getCoreDiagnostics()?.warn("sqlite.open_failed", {
+      dbPath,
+      readonly: true,
+      message: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
 
 export function openDb(dbPath: string): SQLiteDatabase | null {
-  if (!DatabaseConstructor) return null;
+  if (!DatabaseConstructor) {
+    reportUnavailableOnce();
+    return null;
+  }
   try {
     mkdirSync(dirname(dbPath), { recursive: true });
     const db = DatabaseConstructor(dbPath);
@@ -217,7 +242,12 @@ export function openDb(dbPath: string): SQLiteDatabase | null {
       // The database remains usable when SQLite rejects connection-level tuning.
     }
     return db;
-  } catch {
+  } catch (error) {
+    getCoreDiagnostics()?.warn("sqlite.open_failed", {
+      dbPath,
+      readonly: false,
+      message: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }

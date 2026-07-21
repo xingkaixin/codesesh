@@ -5,12 +5,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { DatabaseSessionSource, FileSystemSessionSource } from "../base.js";
 import type { AgentScanOptions, SessionCacheMeta, SessionSourceRef } from "../base.js";
 import type { SessionData, SessionHead } from "../../types/index.js";
+import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
 interface FakeSource {
   sessionId: string;
   sourcePath: string;
   fingerprint: string;
   head: SessionHead | null;
+  throws?: boolean;
 }
 
 /**
@@ -49,6 +51,7 @@ class FakeFileSystemSource extends FileSystemSessionSource {
   scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null {
     this.lastScanOptions = options;
     const found = this.sources.find((s) => s.sourcePath === sourcePath);
+    if (found?.throws) throw new Error("parse failed");
     if (!found || !found.head) return null;
     this.sessionMetaMap.set(found.sessionId, {
       id: found.sessionId,
@@ -116,6 +119,31 @@ describe("FileSystemSessionSource.scan", () => {
       { total: 3, processed: 2, sessions: 1 },
       { total: 3, processed: 3, sessions: 2 },
     ]);
+  });
+
+  it("reports agent.session_parse_failed via diagnostics when a source throws", () => {
+    const agent = new FakeFileSystemSource([
+      source("a"),
+      source("broken", "fp-1", { throws: true }),
+    ]);
+    const events: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    const diagnostics: CoreDiagnostics = {
+      warn: (event, detail) => events.push({ event, detail }),
+    };
+    setCoreDiagnostics(diagnostics);
+
+    try {
+      const sessions = agent.scan();
+      expect(sessions.map((session) => session.id)).toEqual(["a"]);
+      expect(events).toEqual([
+        {
+          event: "agent.session_parse_failed",
+          detail: { agentName: "fake", sourcePath: "/tmp/broken.jsonl", message: "parse failed" },
+        },
+      ]);
+    } finally {
+      setCoreDiagnostics(null);
+    }
   });
 });
 

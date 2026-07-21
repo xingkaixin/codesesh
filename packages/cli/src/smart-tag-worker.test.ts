@@ -19,6 +19,8 @@ vi.mock("@codesesh/core", () => ({
   createRegisteredAgents: mocks.createRegisteredAgents,
   classifySessionTags: mocks.classifySessionTags,
   getSmartTagSourceTimestamp: mocks.getSmartTagSourceTimestamp,
+  // diagnostics-bridge.js (imported by the worker for its side effect) needs this export.
+  setCoreDiagnostics: vi.fn(),
 }));
 
 async function runWorker() {

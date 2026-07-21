@@ -1,3 +1,4 @@
+import "./diagnostics-bridge.js";
 import { defineCommand, runMain } from "citty";
 import { createServer, getServerStartupErrorMessage } from "./server.js";
 import { LiveScanStore } from "./live-scan.js";
