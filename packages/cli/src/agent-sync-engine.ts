@@ -516,7 +516,9 @@ export class AgentSyncEngine {
     const preciseChangedIds = checkResult.changedIds ?? null;
     const scanStartedAt = performance.now();
     const sessions = attachMissingProjectIdentities(
-      await Promise.resolve(agent.incrementalScan(baseline, checkResult.changedIds ?? [])),
+      await Promise.resolve(
+        agent.incrementalScan(baseline, checkResult.changedIds ?? [], checkResult.refs),
+      ),
     );
     return this.refreshStrategyResult(sessions, {
       preciseChangedIds,
