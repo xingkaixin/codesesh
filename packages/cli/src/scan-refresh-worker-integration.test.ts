@@ -28,6 +28,8 @@ vi.mock("@codesesh/core", () => ({
   ensureSessionTagsSync: mocks.ensureSessionTagsSync,
   FileSystemSessionSource: mocks.FileSystemSessionSource,
   matchesScanWindow: mocks.matchesScanWindow,
+  // diagnostics-bridge.js (imported by the worker for its side effect) needs this export.
+  setCoreDiagnostics: vi.fn(),
 }));
 
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {

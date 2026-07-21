@@ -1,3 +1,4 @@
+import "./diagnostics-bridge.js";
 import { parentPort, workerData } from "node:worker_threads";
 import {
   createRegisteredAgents,

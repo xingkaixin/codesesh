@@ -29,6 +29,8 @@ vi.mock("@codesesh/core", () => ({
   setFtsIntegrityCheckedPath: mocks.setFtsIntegrityCheckedPath,
   syncSessionSearchIndex: mocks.syncSessionSearchIndex,
   syncSessionSearchIndexChanges: mocks.syncSessionSearchIndexChanges,
+  // diagnostics-bridge.js (imported by the worker for its side effect) needs this export.
+  setCoreDiagnostics: vi.fn(),
 }));
 
 function makeAgent() {
