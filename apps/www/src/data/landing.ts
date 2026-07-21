@@ -102,7 +102,7 @@ export const localeRoutes = {
 } satisfies Record<Locale, string>;
 
 export const agents = [
-  { name: "Claude Code", icon: "/icon/agent/claudecode.svg" },
+  { name: "Claude Code", icon: "/icon/agent/claudecode.svg", iconColored: true },
   { name: "Cursor", icon: "/icon/agent/cursor.svg" },
   { name: "Kimi", icon: "/icon/agent/kimi.svg" },
   { name: "Codex", icon: "/icon/agent/codex.svg" },
