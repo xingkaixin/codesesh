@@ -21,7 +21,14 @@ import { normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback
 import { isInternalEventType } from "../utils/parse-cleanup.js";
 import { cleanInternalText } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
-import { asArray, asNumber, asRecord, asString, reportFieldMismatch } from "../utils/narrow.js";
+import {
+  asArray,
+  asNumber,
+  asRecord,
+  asString,
+  narrowField,
+  reportFieldMismatch,
+} from "../utils/narrow.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
 const KIMI_TOOL_TITLE_MAP: Record<string, string> = {
@@ -52,38 +59,17 @@ interface SessionMeta extends SessionCacheMeta {
 
 /** Reads state/metadata `wire_mtime`; reports drift when the field is present but not a number. */
 function readWireMtime(record: Record<string, unknown>): number | null {
-  const raw = record.wire_mtime;
-  if (raw === undefined || raw === null) return null;
-  const value = asNumber(raw);
-  if (value === undefined) {
-    reportFieldMismatch("kimi", "session.wire_mtime");
-    return null;
-  }
-  return value;
+  return narrowField("kimi", "session.wire_mtime", record.wire_mtime, asNumber) ?? null;
 }
 
 /** Reads a wire record's `timestamp`; reports drift when the field is present but not a number. */
 function readWireTimestamp(record: Record<string, unknown>): number {
-  const raw = record.timestamp;
-  if (raw === undefined || raw === null) return 0;
-  const value = asNumber(raw);
-  if (value === undefined) {
-    reportFieldMismatch("kimi", "wire.timestamp");
-    return 0;
-  }
-  return value;
+  return narrowField("kimi", "wire.timestamp", record.timestamp, asNumber) ?? 0;
 }
 
 /** Reads a token count from a usage record; reports drift when the field is present but not a number. */
 function extractTokenField(usage: Record<string, unknown>, field: string): number {
-  const raw = usage[field];
-  if (raw === undefined || raw === null) return 0;
-  const value = asNumber(raw);
-  if (value === undefined) {
-    reportFieldMismatch("kimi", `usage.${field}`);
-    return 0;
-  }
-  return value;
+  return narrowField("kimi", `usage.${field}`, usage[field], asNumber) ?? 0;
 }
 
 function normalizeToolArguments(raw: unknown): unknown {

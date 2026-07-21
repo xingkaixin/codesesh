@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PiAgent } from "../pi.js";
 import type { MessagePart } from "../../types/index.js";
+import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
 // Spies on statSync while delegating to the real implementation, so the
 // single-stat regression test can count per-file calls during a live scan.
@@ -17,11 +18,19 @@ let tempDirs: string[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+  setCoreDiagnostics(null);
   for (const dir of tempDirs) {
     rmSync(dir, { recursive: true, force: true });
   }
   tempDirs = [];
 });
+
+function captureDiagnostics(): Array<{ event: string; detail?: Record<string, unknown> }> {
+  const calls: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+  const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
+  setCoreDiagnostics(sink);
+  return calls;
+}
 
 describe("PiAgent", () => {
   it("parses only the current branch path", () => {
@@ -315,6 +324,120 @@ describe("PiAgent", () => {
         input: { path: "package.json" },
         output: [{ type: "text", text: "package output" }],
       },
+    });
+  });
+
+  it("drops a message with a non-string role and reports the drift", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-pi-test-"));
+    tempDirs.push(tempDir);
+    const piHome = join(tempDir, ".pi");
+    const sessionsDir = join(piHome, "agent", "sessions", "--tmp-project--");
+    const sessionId = "019dcccc-cccc-7ccc-cccc-cccccccccccc";
+    const sessionFile = join(sessionsDir, `2026-04-20T10-00-00_${sessionId}.jsonl`);
+    mkdirSync(sessionsDir, { recursive: true });
+    vi.stubEnv("PI_HOME", piHome);
+
+    writeFileSync(
+      sessionFile,
+      [
+        {
+          type: "session",
+          version: 3,
+          id: sessionId,
+          timestamp: "2026-04-20T10:00:00.000Z",
+          cwd: "/tmp/project",
+        },
+        {
+          type: "message",
+          id: "a1",
+          parentId: null,
+          timestamp: "2026-04-20T10:00:01.000Z",
+          message: { role: "user", content: "Inspect package metadata" },
+        },
+        {
+          type: "message",
+          id: "b1",
+          parentId: "a1",
+          timestamp: "2026-04-20T10:00:02.000Z",
+          message: { role: 42, content: "Malformed role should be dropped" },
+        },
+      ]
+        .map((item) => JSON.stringify(item))
+        .join("\n"),
+    );
+
+    const calls = captureDiagnostics();
+    const agent = new PiAgent();
+    expect(agent.isAvailable()).toBe(true);
+
+    agent.scan();
+    const data = agent.getSessionData(sessionId);
+
+    expect(data.messages).toHaveLength(1);
+    expect(data.messages[0]?.parts[0]).toMatchObject({ text: "Inspect package metadata" });
+    expect(calls).toContainEqual({
+      event: "agent.field_shape_mismatch",
+      detail: { agentName: "pi", field: "message.role" },
+    });
+  });
+
+  it("falls back to zeroed usage fields and reports drift when usage.input isn't a number", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-pi-test-"));
+    tempDirs.push(tempDir);
+    const piHome = join(tempDir, ".pi");
+    const sessionsDir = join(piHome, "agent", "sessions", "--tmp-project--");
+    const sessionId = "019dcccc-cccc-7ccc-cccc-dddddddddddd";
+    const sessionFile = join(sessionsDir, `2026-04-20T10-00-00_${sessionId}.jsonl`);
+    mkdirSync(sessionsDir, { recursive: true });
+    vi.stubEnv("PI_HOME", piHome);
+
+    writeFileSync(
+      sessionFile,
+      [
+        {
+          type: "session",
+          version: 3,
+          id: sessionId,
+          timestamp: "2026-04-20T10:00:00.000Z",
+          cwd: "/tmp/project",
+        },
+        {
+          type: "message",
+          id: "a1",
+          parentId: null,
+          timestamp: "2026-04-20T10:00:01.000Z",
+          message: { role: "user", content: "Summarize the repo" },
+        },
+        {
+          type: "message",
+          id: "b1",
+          parentId: "a1",
+          timestamp: "2026-04-20T10:00:02.000Z",
+          message: {
+            role: "assistant",
+            model: "claude-sonnet-4-5",
+            usage: { input: "many", output: 20 },
+            content: [{ type: "text", text: "Here you go." }],
+          },
+        },
+      ]
+        .map((item) => JSON.stringify(item))
+        .join("\n"),
+    );
+
+    const calls = captureDiagnostics();
+    const agent = new PiAgent();
+    expect(agent.isAvailable()).toBe(true);
+
+    agent.scan();
+    const data = agent.getSessionData(sessionId);
+
+    expect(data.messages[1]?.tokens).toMatchObject({ input: 0, output: 20 });
+    expect(data.stats.total_input_tokens).toBe(0);
+    expect(data.stats.total_output_tokens).toBe(20);
+    expect(calls).toContainEqual({
+      event: "agent.field_shape_mismatch",
+      detail: { agentName: "pi", field: "message.usage.input" },
     });
   });
 });

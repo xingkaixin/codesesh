@@ -24,7 +24,7 @@ import { parseJsonlLines, readJsonlFile, readJsonlFileLines } from "../utils/jso
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { cleanInternalText, isInternalEventType } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
-import { asRecord, asString, reportFieldMismatch } from "../utils/narrow.js";
+import { asRecord, asString, narrowField } from "../utils/narrow.js";
 import { TranscriptBuilder } from "./transcript-builder.js";
 import {
   type ExecInnerCall,
@@ -108,16 +108,8 @@ function extractCachedInputTokens(usage: Record<string, unknown> | undefined): n
   return Number(usage["cached_input_tokens"] ?? usage["cache_read_input_tokens"] ?? 0);
 }
 
-/**
- * Narrows to a record, reporting a field-shape mismatch only when the value
- * is present but not an object — absent (undefined/null) is a normal, not a
- * drifted, shape and stays silent.
- */
 function narrowRecordField(value: unknown, field: string): Record<string, unknown> | undefined {
-  if (value === undefined || value === null) return undefined;
-  const record = asRecord(value);
-  if (!record) reportFieldMismatch("codex", field);
-  return record;
+  return narrowField("codex", field, value, asRecord);
 }
 
 function extractPayload(data: Record<string, unknown>): Record<string, unknown> {

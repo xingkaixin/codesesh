@@ -20,7 +20,14 @@ import {
 } from "../utils/session-normalization.js";
 import { perf } from "../utils/perf.js";
 import { estimateTokenCost } from "../utils/cost.js";
-import { asArray, asNumber, asRecord, asString, reportFieldMismatch } from "../utils/narrow.js";
+import {
+  asArray,
+  asNumber,
+  asRecord,
+  asString,
+  narrowField,
+  safeParseJsonRecord,
+} from "../utils/narrow.js";
 
 // ---------------------------------------------------------------------------
 // Cursor data model interfaces
@@ -116,27 +123,11 @@ interface ActionEntry {
 // ---------------------------------------------------------------------------
 
 function narrowString(field: string, value: unknown): string | undefined {
-  if (value === undefined) return undefined;
-  const str = asString(value);
-  if (str === undefined) reportFieldMismatch("cursor", field);
-  return str;
+  return narrowField("cursor", field, value, asString);
 }
 
 function narrowNumber(field: string, value: unknown): number | undefined {
-  if (value === undefined) return undefined;
-  const num = asNumber(value);
-  if (num === undefined) reportFieldMismatch("cursor", field);
-  return num;
-}
-
-function parseJsonRecord(json: string): Record<string, unknown> | undefined {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(json);
-  } catch {
-    return undefined;
-  }
-  return asRecord(raw);
+  return narrowField("cursor", field, value, asNumber);
 }
 
 function parseSubagentInfos(value: unknown): SubagentInfo[] | undefined {
@@ -172,7 +163,7 @@ function parseChatMessages(value: unknown): ChatMessage[] | undefined {
 
 /** Parse a `composerData:*` row value into a field-validated ComposerData. */
 function parseComposerRow(value: string): ComposerData | null {
-  const record = parseJsonRecord(value);
+  const record = safeParseJsonRecord(value);
   if (!record) return null;
 
   const modelConfig = asRecord(record.modelConfig);
@@ -200,7 +191,7 @@ function parseComposerRow(value: string): ComposerData | null {
 
 /** Parse a `bubbleId:*` / `bubble:*` row value into a field-validated BubbleData. */
 function parseBubbleRow(value: string): BubbleData | null {
-  const record = parseJsonRecord(value);
+  const record = safeParseJsonRecord(value);
   if (!record) return null;
 
   const timingInfo = asRecord(record.timingInfo);

@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { asArray, asNumber, asRecord, asString, reportFieldMismatch } from "../narrow.js";
+import {
+  asArray,
+  asNumber,
+  asRecord,
+  asString,
+  narrowField,
+  reportFieldMismatch,
+  safeParseJsonRecord,
+} from "../narrow.js";
 import { getCoreDiagnostics, setCoreDiagnostics, type CoreDiagnostics } from "../diagnostics.js";
 
 afterEach(() => {
@@ -106,5 +114,55 @@ describe("reportFieldMismatch", () => {
   it("is a no-op when no diagnostics sink is injected", () => {
     expect(getCoreDiagnostics()).toBeNull();
     expect(() => reportFieldMismatch("pi", "unset-sink-field")).not.toThrow();
+  });
+});
+
+describe("narrowField", () => {
+  it("returns the narrowed value on success", () => {
+    expect(narrowField("test-agent", "field.string", "hello", asString)).toBe("hello");
+    expect(narrowField("test-agent", "field.number", 42, asNumber)).toBe(42);
+  });
+
+  it("returns undefined silently for undefined and null (null-as-absent)", () => {
+    const calls: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
+    setCoreDiagnostics(sink);
+
+    expect(narrowField("test-agent", "field.absent", undefined, asString)).toBeUndefined();
+    expect(narrowField("test-agent", "field.null", null, asString)).toBeUndefined();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("reports once when the field is present but narrowing fails", () => {
+    const calls: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
+    setCoreDiagnostics(sink);
+
+    expect(narrowField("test-agent", "field.mismatch", 123, asString)).toBeUndefined();
+    expect(narrowField("test-agent", "field.mismatch", 123, asString)).toBeUndefined();
+
+    expect(calls).toEqual([
+      {
+        event: "agent.field_shape_mismatch",
+        detail: { agentName: "test-agent", field: "field.mismatch" },
+      },
+    ]);
+  });
+});
+
+describe("safeParseJsonRecord", () => {
+  it("parses valid JSON objects", () => {
+    expect(safeParseJsonRecord('{"a":1}')).toEqual({ a: 1 });
+  });
+
+  it("returns undefined for malformed JSON without throwing", () => {
+    expect(() => safeParseJsonRecord("{not json")).not.toThrow();
+    expect(safeParseJsonRecord("{not json")).toBeUndefined();
+  });
+
+  it("returns undefined for valid JSON that isn't an object (array, null, primitive)", () => {
+    expect(safeParseJsonRecord("[1,2]")).toBeUndefined();
+    expect(safeParseJsonRecord("null")).toBeUndefined();
+    expect(safeParseJsonRecord('"text"')).toBeUndefined();
   });
 });
