@@ -4,6 +4,7 @@ import { findAgent, type AgentCatalog } from "../lib/agents";
 import { formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getProjectPath } from "../lib/projects";
 import { getSessionDisplayTitle } from "../lib/session-title";
+import { AgentIcon } from "./AgentIcon";
 import { Dashboard } from "./Dashboard";
 import type { LandingSession } from "./DetailLanding";
 
@@ -51,8 +52,9 @@ function AgentPills({
             className="console-mono inline-flex items-center gap-1 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]"
           >
             {agentInfo?.icon ? (
-              <img
-                src={agentInfo.icon}
+              <AgentIcon
+                icon={agentInfo.icon}
+                iconColored={agentInfo.iconColored}
                 alt={agentInfo.displayName}
                 className="size-3 object-contain"
               />
@@ -194,8 +196,9 @@ function ProjectAgentFilter({
               }`}
             >
               {agentInfo?.icon ? (
-                <img
-                  src={agentInfo.icon}
+                <AgentIcon
+                  icon={agentInfo.icon}
+                  iconColored={agentInfo.iconColored}
                   alt={agentInfo.displayName}
                   className="size-3 object-contain"
                 />
@@ -267,8 +270,9 @@ function TopCostSessions({
               >
                 <div className="flex items-center gap-2">
                   {agent?.icon ? (
-                    <img
-                      src={agent.icon}
+                    <AgentIcon
+                      icon={agent.icon}
+                      iconColored={agent.iconColored}
                       alt={agent.displayName}
                       className="size-3.5 object-contain"
                     />

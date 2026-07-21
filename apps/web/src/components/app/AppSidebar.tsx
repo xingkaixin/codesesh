@@ -11,6 +11,7 @@ import { getSessionDisplayTitle } from "../../lib/session-title";
 import { formatAgentScanProgress } from "../../lib/scan-format";
 import { getProjectGroupIdentity, getProjectIdentityKey, getProjectPath } from "../../lib/projects";
 import type { ViewState } from "../../lib/view-state";
+import { AgentIcon } from "../AgentIcon";
 import { RenderProfiler } from "../RenderProfiler";
 import { SessionActionsMenu } from "../SessionActionsMenu";
 import { SessionTreeSidebar } from "../SessionTreeSidebar";
@@ -47,7 +48,12 @@ function AgentNavList({
         const content = (
           <>
             {agent.icon && (
-              <img src={agent.icon} alt={agent.displayName} className="size-3.5 object-contain" />
+              <AgentIcon
+                icon={agent.icon}
+                iconColored={agent.iconColored}
+                alt={agent.displayName}
+                className="size-3.5 object-contain"
+              />
             )}
             <span className="console-mono line-clamp-1 flex-1 text-xs">{agent.displayName}</span>
             <span className="console-mono text-[11px] text-[var(--console-muted)]">
@@ -295,8 +301,9 @@ export function AppSidebar({
                         className="flex min-w-0 flex-1 items-start gap-2"
                       >
                         {agent?.icon ? (
-                          <img
-                            src={agent.icon}
+                          <AgentIcon
+                            icon={agent.icon}
+                            iconColored={agent.iconColored}
                             alt={agent.displayName}
                             className="mt-0.5 size-3.5 shrink-0 object-contain"
                           />

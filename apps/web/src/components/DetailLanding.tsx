@@ -3,6 +3,7 @@ import { findAgent, type AgentCatalog } from "../lib/agents";
 import type { SessionHead } from "../lib/api";
 import { formatCostSource, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getSessionDisplayTitle } from "../lib/session-title";
+import { AgentIcon } from "./AgentIcon";
 import { BookmarkButton } from "./BookmarkButton";
 import { SmartTagChips } from "./SmartTagChips";
 
@@ -16,6 +17,7 @@ export interface LandingAgentItem {
   key: string;
   name: string;
   icon?: string;
+  iconColored?: boolean;
   count: number;
 }
 
@@ -66,6 +68,7 @@ function MissingStateHero({
   description,
   aside,
   iconSrc,
+  iconColored,
   iconAlt,
 }: {
   code: string;
@@ -73,6 +76,7 @@ function MissingStateHero({
   description: string;
   aside: string;
   iconSrc?: string;
+  iconColored?: boolean;
   iconAlt?: string;
 }) {
   return (
@@ -84,8 +88,9 @@ function MissingStateHero({
           </span>
           <div className="mt-4 flex items-start gap-3">
             {iconSrc ? (
-              <img
-                src={iconSrc}
+              <AgentIcon
+                icon={iconSrc}
+                iconColored={iconColored}
                 alt={iconAlt || ""}
                 className="mt-1 size-8 shrink-0 object-contain"
               />
@@ -128,7 +133,12 @@ function RecommendedAgents({ agentItems }: { agentItems: LandingAgentItem[] }) {
               className="flex min-h-11 items-center gap-2 rounded-sm border border-transparent px-3 py-2 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-accent)]"
             >
               {agent.icon ? (
-                <img src={agent.icon} alt={agent.name} className="size-4 object-contain" />
+                <AgentIcon
+                  icon={agent.icon}
+                  iconColored={agent.iconColored}
+                  alt={agent.name}
+                  className="size-4 object-contain"
+                />
               ) : null}
               <span className="console-mono flex-1 text-xs text-[var(--console-text)]">
                 {agent.name}
@@ -263,6 +273,7 @@ export function DetailLanding({
           description={`${displayName} is available, but the session you're looking for does not exist in the current index. The slug may be incorrect, or the record may never have been part of this dataset.`}
           aside="We checked the current path, but nothing matched. The session list on the left is still available."
           iconSrc={agentIcon}
+          iconColored={agent?.iconColored}
           iconAlt={displayName}
         />
 
@@ -273,7 +284,12 @@ export function DetailLanding({
             </p>
             <div className="mt-2 flex items-center gap-2">
               {agentIcon ? (
-                <img src={agentIcon} alt={displayName} className="size-4 shrink-0 object-contain" />
+                <AgentIcon
+                  icon={agentIcon}
+                  iconColored={agent?.iconColored}
+                  alt={displayName}
+                  className="size-4 shrink-0 object-contain"
+                />
               ) : null}
               <p className="console-mono break-all text-sm leading-6 text-[var(--console-text)]">
                 {displayName}
@@ -317,7 +333,12 @@ export function DetailLanding({
                   className="flex items-center gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
                 >
                   {agent.icon ? (
-                    <img src={agent.icon} alt={agent.name} className="size-4 object-contain" />
+                    <AgentIcon
+                      icon={agent.icon}
+                      iconColored={agent.iconColored}
+                      alt={agent.name}
+                      className="size-4 object-contain"
+                    />
                   ) : null}
                   <span className="console-mono flex-1 text-xs text-[var(--console-text)]">
                     {agent.name}
@@ -348,8 +369,13 @@ export function DetailLanding({
     <div className="mx-auto max-w-4xl space-y-4">
       <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
         <div className="flex items-center gap-3">
-          {activeAgent ? (
-            <img src={activeAgent.icon} alt={displayName} className="size-6 object-contain" />
+          {activeAgent?.icon ? (
+            <AgentIcon
+              icon={activeAgent.icon}
+              iconColored={activeAgent.iconColored}
+              alt={displayName}
+              className="size-6 object-contain"
+            />
           ) : null}
           <div>
             <h3 className="console-mono text-sm font-semibold text-[var(--console-text)]">

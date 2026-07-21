@@ -97,6 +97,7 @@ export function AppRouteContent({
         key: agent.name.toLowerCase(),
         name: agent.displayName,
         icon: agent.icon,
+        iconColored: agent.iconColored,
         count: agent.count,
       })),
     [agents],

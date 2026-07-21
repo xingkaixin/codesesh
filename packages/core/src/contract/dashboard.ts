@@ -5,6 +5,7 @@ export interface DashboardAgentStat {
   name: string;
   displayName: string;
   icon: string;
+  iconColored?: boolean;
   sessions: number;
   messages: number;
   tokens: number;

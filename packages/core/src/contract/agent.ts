@@ -3,4 +3,5 @@ export interface AgentInfo {
   displayName: string;
   count: number;
   icon?: string;
+  iconColored?: boolean;
 }

@@ -1,5 +1,8 @@
-import { useEffect, useState } from "react";
+import { createContext, useEffect, useState } from "react";
 import type { Theme } from "./useUiPreferences";
+
+/** Effective light/dark theme, for components whose colors can't be expressed in CSS (e.g. inline highlighter styles). */
+export const ResolvedThemeContext = createContext<"light" | "dark">("light");
 
 const DARK_MEDIA_QUERY = "(prefers-color-scheme: dark)";
 

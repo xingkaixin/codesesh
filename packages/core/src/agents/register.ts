@@ -9,6 +9,7 @@ import { ZCodeAgent } from "./zcode.js";
 
 registerAgent({
   icon: "/icon/agent/claudecode.svg",
+  iconColored: true,
   create: () => new ClaudeCodeAgent(),
 });
 

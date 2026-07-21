@@ -187,7 +187,7 @@ export function SessionTocFilterPanel({
                   checked={selectedFilters.has(tool.id)}
                   onChange={() => onToggle(tool.id)}
                 />
-                <span className="console-mono min-w-0 flex-1 break-all text-xs leading-relaxed text-[var(--console-muted)]">
+                <span className="console-mono min-w-0 flex-1 break-all text-xs leading-relaxed text-[var(--console-text)]">
                   {tool.label}
                 </span>
                 <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">

@@ -17,6 +17,7 @@ import { getSessionBookmarkKey } from "../lib/bookmarks";
 import { formatCostSource, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getProjectPath } from "../lib/projects";
 import { getSessionDisplayTitle } from "../lib/session-title";
+import { AgentIcon } from "./AgentIcon";
 import { BookmarkButton } from "./BookmarkButton";
 import { SmartTagChips } from "./SmartTagChips";
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "./ui/chart";
@@ -492,8 +493,9 @@ function AgentDistribution({ perAgent }: { perAgent: DashboardAgentStat[] }) {
               >
                 <div className="flex items-center gap-2">
                   {agent.icon ? (
-                    <img
-                      src={agent.icon}
+                    <AgentIcon
+                      icon={agent.icon}
+                      iconColored={agent.iconColored}
                       alt={agent.displayName}
                       className="size-4 object-contain"
                     />
@@ -569,8 +571,9 @@ function TopProjects({
                         className="console-mono inline-flex items-center gap-1 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]"
                       >
                         {agentInfo?.icon ? (
-                          <img
-                            src={agentInfo.icon}
+                          <AgentIcon
+                            icon={agentInfo.icon}
+                            iconColored={agentInfo.iconColored}
                             alt={agentInfo.displayName}
                             className="size-3 object-contain"
                           />
@@ -622,8 +625,9 @@ function BookmarkedSessions({
               <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
                 <Link to={`/${session.fullPath}`} className="flex min-w-0 flex-1 items-start gap-2">
                   {agent?.icon ? (
-                    <img
-                      src={agent.icon}
+                    <AgentIcon
+                      icon={agent.icon}
+                      iconColored={agent.iconColored}
                       alt={agent.displayName}
                       className="mt-0.5 size-3.5 shrink-0 object-contain"
                     />
@@ -688,8 +692,9 @@ function RecentSessions({
                 <Link to={`/${session.slug}`} className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     {agent?.icon ? (
-                      <img
-                        src={agent.icon}
+                      <AgentIcon
+                        icon={agent.icon}
+                        iconColored={agent.iconColored}
                         alt={agent.displayName}
                         className="size-3.5 shrink-0 object-contain"
                       />

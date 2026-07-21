@@ -9,6 +9,7 @@ describe("agent registry", () => {
         name: "claudecode",
         displayName: "Claude Code",
         icon: "/icon/agent/claudecode.svg",
+        iconColored: true,
         count: 2,
       },
       {

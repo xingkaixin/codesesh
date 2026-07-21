@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { AgentInfo, Message, MessagePart } from "../../lib/api";
 import { formatMessageTime } from "../../lib/format";
+import { AgentIcon } from "../AgentIcon";
 import { MarkdownContent } from "../MarkdownContent";
 import { ToolOutputRenderer } from "../tool-output/ToolOutputRenderer";
 import { Collapsible } from "../ui/Collapsible";
@@ -115,7 +116,12 @@ export function MessageItem({
     return (
       <>
         {agentIcon ? (
-          <img src={agentIcon} alt={agentName} className="size-4 rounded-sm object-cover" />
+          <AgentIcon
+            icon={agentIcon}
+            iconColored={agent?.iconColored}
+            alt={agentName}
+            className="size-4 rounded-sm object-cover"
+          />
         ) : (
           <Bot className="size-4 text-[var(--console-muted)]" />
         )}
