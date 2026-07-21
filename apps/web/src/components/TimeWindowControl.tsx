@@ -50,7 +50,7 @@ export function TimeWindowControl({
               if (next === "custom") openCustom();
               else onSelectPreset(next);
             }}
-            className="console-mono w-24 appearance-none rounded-sm border border-[var(--console-border)] bg-white py-1 pr-6 pl-2 text-xs text-[var(--console-text)] outline-none hover:border-[var(--console-border-strong)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 sm:w-auto sm:max-w-44 sm:pr-7"
+            className="console-mono w-24 appearance-none rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] py-1 pr-6 pl-2 text-xs text-[var(--console-text)] outline-none hover:border-[var(--console-border-strong)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 sm:w-auto sm:max-w-44 sm:pr-7"
           >
             {PRESETS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -68,7 +68,7 @@ export function TimeWindowControl({
             type="button"
             onClick={openCustom}
             aria-label="Edit custom time range"
-            className="console-mono rounded-sm border border-[var(--console-border)] bg-white px-1.5 py-1 text-xs text-[var(--console-muted)] hover:border-[var(--console-border-strong)] hover:text-[var(--console-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2"
+            className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-1 text-xs text-[var(--console-muted)] hover:border-[var(--console-border-strong)] hover:text-[var(--console-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2"
           >
             Edit
           </button>
@@ -78,7 +78,7 @@ export function TimeWindowControl({
       <Dialog.Root open={customOpen} onOpenChange={setCustomOpen}>
         <Dialog.Portal>
           <Dialog.Backdrop className="motion-backdrop fixed inset-0 z-50 bg-black/35" />
-          <Dialog.Popup className="motion-modal fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-sm border border-[var(--console-border-strong)] bg-white p-5 shadow-2xl outline-none">
+          <Dialog.Popup className="motion-modal fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] p-5 shadow-2xl outline-none">
             <Dialog.Title className="console-mono text-sm font-semibold text-[var(--console-text)]">
               Custom time range
             </Dialog.Title>
@@ -91,7 +91,7 @@ export function TimeWindowControl({
                   value={from}
                   max={to || undefined}
                   onChange={(event) => setFrom(event.target.value)}
-                  className="mt-1.5 w-full rounded-sm border border-[var(--console-border)] bg-white px-2 py-2 text-xs normal-case tracking-normal text-[var(--console-text)] outline-none focus:border-[var(--console-accent)] focus:ring-2 focus:ring-[var(--console-accent)]/25"
+                  className="mt-1.5 w-full rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-2 text-xs normal-case tracking-normal text-[var(--console-text)] outline-none focus:border-[var(--console-accent)] focus:ring-2 focus:ring-[var(--console-accent)]/25"
                 />
               </label>
               <label className="console-mono text-[11px] uppercase tracking-wide text-[var(--console-muted)]">
@@ -101,7 +101,7 @@ export function TimeWindowControl({
                   value={to}
                   min={from || undefined}
                   onChange={(event) => setTo(event.target.value)}
-                  className="mt-1.5 w-full rounded-sm border border-[var(--console-border)] bg-white px-2 py-2 text-xs normal-case tracking-normal text-[var(--console-text)] outline-none focus:border-[var(--console-accent)] focus:ring-2 focus:ring-[var(--console-accent)]/25"
+                  className="mt-1.5 w-full rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-2 text-xs normal-case tracking-normal text-[var(--console-text)] outline-none focus:border-[var(--console-accent)] focus:ring-2 focus:ring-[var(--console-accent)]/25"
                 />
               </label>
             </div>

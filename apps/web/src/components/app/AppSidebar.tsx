@@ -41,7 +41,7 @@ function AgentNavList({
           disabled
             ? "cursor-not-allowed border-transparent text-[var(--console-muted)] opacity-50"
             : isSelected
-              ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
+              ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
               : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
         }`;
         const content = (
@@ -112,7 +112,7 @@ function ProjectNavList({
               onClick={() => onSelectProject(projectIdentity)}
               className={`ml-4 flex min-w-0 items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
                 isSelected
-                  ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
+                  ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
                   : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
               }`}
             >
@@ -226,7 +226,7 @@ export function AppSidebar({
                 className={`flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
                   (browseBy === "agents" && viewState.mode === "root") ||
                   (browseBy === "projects" && viewState.mode === "projects")
-                    ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
+                    ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
                     : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
                 }`}
               >
@@ -286,7 +286,7 @@ export function AppSidebar({
                     <div
                       className={`flex items-start gap-2 rounded-sm border px-2 py-1.5 transition-colors ${
                         isActive
-                          ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
+                          ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
                           : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
                       }`}
                     >

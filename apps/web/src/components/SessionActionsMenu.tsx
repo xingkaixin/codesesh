@@ -27,7 +27,7 @@ export function SessionActionsMenu({
         <Menu.Positioner side="bottom" align="end" sideOffset={4} className="z-30">
           <Menu.Popup
             finalFocus={triggerRef}
-            className="w-36 rounded-sm border border-[var(--console-border-strong)] bg-white p-1 shadow-lg focus-visible:outline-none"
+            className="w-36 rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] p-1 shadow-lg focus-visible:outline-none"
           >
             <Menu.Item
               onClick={onRename}

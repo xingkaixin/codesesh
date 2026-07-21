@@ -22,7 +22,7 @@ function getSessionTotalTokens(session: SessionHead): number {
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <p className="console-mono text-[11px] uppercase tracking-wider text-[var(--console-muted)]">
         {label}
       </p>
@@ -48,7 +48,7 @@ function AgentPills({
         return (
           <span
             key={agent.name}
-            className="console-mono inline-flex items-center gap-1 rounded-sm border border-[var(--console-border)] bg-white px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]"
+            className="console-mono inline-flex items-center gap-1 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]"
           >
             {agentInfo?.icon ? (
               <img
@@ -76,7 +76,7 @@ function ProjectListItem({
     <li>
       <Link
         to={getProjectPath({ kind: project.identityKind, key: project.identityKey })}
-        className="block rounded-sm border border-[var(--console-border)] bg-white/85 p-4 transition-colors hover:border-[var(--console-border-strong)] hover:bg-white"
+        className="block rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]/85 p-4 transition-colors hover:border-[var(--console-border-strong)] hover:bg-[var(--console-surface)]"
       >
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0">
@@ -119,7 +119,7 @@ export function ProjectsOverview({
 
   if (projects.length === 0) {
     return (
-      <div className="mx-auto max-w-5xl rounded-sm border border-[var(--console-border)] bg-white p-6 text-sm text-[var(--console-muted)]">
+      <div className="mx-auto max-w-5xl rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]">
         No projects found
       </div>
     );
@@ -163,7 +163,7 @@ function ProjectAgentFilter({
   onChange: (agent?: string) => void;
 }) {
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-3">
+    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
           Agent
@@ -173,7 +173,7 @@ function ProjectAgentFilter({
           onClick={() => onChange(undefined)}
           className={`console-mono rounded-sm border px-2 py-1 text-[10px] transition-colors ${
             activeAgent
-              ? "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-muted)] hover:bg-white"
+              ? "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-muted)] hover:bg-[var(--console-surface)]"
               : "border-[var(--console-border-strong)] bg-[var(--console-accent)] text-white"
           }`}
         >
@@ -190,7 +190,7 @@ function ProjectAgentFilter({
               className={`console-mono inline-flex items-center gap-1 rounded-sm border px-2 py-1 text-[10px] transition-colors ${
                 active
                   ? "border-[var(--console-border-strong)] bg-[var(--console-accent)] text-white"
-                  : "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-muted)] hover:bg-white"
+                  : "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-muted)] hover:bg-[var(--console-surface)]"
               }`}
             >
               {agentInfo?.icon ? (
@@ -217,7 +217,7 @@ function ProjectHeader({
   agentCatalog: AgentCatalog;
 }) {
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           <h2 className="console-mono text-base font-semibold text-[var(--console-text)]">
@@ -247,7 +247,7 @@ function TopCostSessions({
     .slice(0, 5);
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
           Top Cost
@@ -319,7 +319,7 @@ export function ProjectDashboardView({
 }) {
   if (!project) {
     return (
-      <div className="mx-auto max-w-4xl rounded-sm border border-[var(--console-border)] bg-white p-6">
+      <div className="mx-auto max-w-4xl rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-6">
         <h2 className="console-mono text-sm font-semibold text-[var(--console-text)]">
           Project Not Found
         </h2>
@@ -328,7 +328,7 @@ export function ProjectDashboardView({
         </p>
         <Link
           to="/projects"
-          className="console-mono mt-4 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-white"
+          className="console-mono mt-4 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-[var(--console-surface)]"
         >
           Back to Projects
         </Link>
@@ -351,7 +351,7 @@ export function ProjectDashboardView({
       />
 
       {loading ? (
-        <div className="rounded-sm border border-[var(--console-border)] bg-white p-6 text-sm text-[var(--console-muted)]">
+        <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]">
           Loading project dashboard
         </div>
       ) : error ? (

@@ -22,7 +22,7 @@ export function StructuredDiffOutput({ blocks }: StructuredDiffOutputProps) {
         return (
           <div
             key={getBlockKey(block)}
-            className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[#fafafa]"
+            className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)]"
           >
             <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5">
               <span className="console-mono text-[11px] font-semibold text-[var(--console-muted)]">

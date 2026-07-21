@@ -37,7 +37,7 @@ function getSessionTotalTokens(stats: SessionHead["stats"]) {
 
 function LandingCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <p className="console-mono text-[11px] uppercase tracking-wider text-[var(--console-muted)]">
         {label}
       </p>
@@ -76,7 +76,7 @@ function MissingStateHero({
   iconAlt?: string;
 }) {
   return (
-    <div className="rounded-sm border border-[var(--console-border-strong)] bg-white p-5 md:p-6">
+    <div className="rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] p-5 md:p-6">
       <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
         <div className="max-w-2xl">
           <span className="console-mono inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--console-muted)]">
@@ -111,7 +111,7 @@ function MissingStateHero({
 
 function RecommendedAgents({ agentItems }: { agentItems: LandingAgentItem[] }) {
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
           Known Agents
@@ -155,14 +155,14 @@ function RecentSessions({
 }) {
   if (sessions.length === 0) {
     return (
-      <div className="rounded-sm border border-[var(--console-border)] bg-white p-4 text-sm text-[var(--console-muted)]">
+      <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4 text-sm text-[var(--console-muted)]">
         No sessions yet
       </div>
     );
   }
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
           Recent Sessions
@@ -305,7 +305,7 @@ export function DetailLanding({
           />
         </div>
 
-        <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+        <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
           <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
             Agents
           </h3>
@@ -346,7 +346,7 @@ export function DetailLanding({
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
-      <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+      <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
         <div className="flex items-center gap-3">
           {activeAgent ? (
             <img src={activeAgent.icon} alt={displayName} className="size-6 object-contain" />

@@ -22,7 +22,7 @@ function PropertyValue({ value, depth = 0 }: { value: unknown; depth?: number })
         {value.map((item, index) => (
           <span
             key={index}
-            className="rounded-sm border border-[var(--console-border)] bg-white px-1.5 py-0.5"
+            className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-0.5"
           >
             <PropertyValue value={item} depth={depth + 1} />
           </span>
@@ -52,7 +52,7 @@ function PropertyValue({ value, depth = 0 }: { value: unknown; depth?: number })
 
 export function PropertyListOutput({ items }: { items: PropertyItem[] }) {
   return (
-    <dl className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[#fafafa]">
+    <dl className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)]">
       {items.map((item) => (
         <div
           key={item.label}

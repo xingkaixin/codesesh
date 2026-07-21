@@ -209,7 +209,7 @@ export function SessionDetail({ session, agentCatalog, highlightQuery }: Session
     return (
       <div
         data-testid="session-detail"
-        className="mx-auto max-w-4xl rounded-sm border border-[var(--console-border)] bg-white p-6 text-sm text-[var(--console-muted)]"
+        className="mx-auto max-w-4xl rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]"
       >
         当前会话暂无可展示的消息内容。
       </div>
@@ -288,7 +288,7 @@ export function SessionDetail({ session, agentCatalog, highlightQuery }: Session
               </RenderProfiler>
             </>
           ) : (
-            <div className="rounded-sm border border-[var(--console-border)] bg-white p-6 text-sm text-[var(--console-muted)]">
+            <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]">
               当前筛选条件下暂无可展示的消息内容。
             </div>
           )}
@@ -318,7 +318,7 @@ export function SessionSummarySection({
   if (!content) return null;
 
   return (
-    <section className="rounded-sm border border-[var(--console-border)] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+    <section className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <button
         type="button"
         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"

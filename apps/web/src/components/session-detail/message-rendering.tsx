@@ -204,7 +204,7 @@ export function MessageItem({
                   key={index}
                   id={timelineAnchorId}
                   data-session-timeline-anchor={timelineAnchorId}
-                  className="scroll-mt-20 rounded-sm border border-[var(--console-border)] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+                  className="scroll-mt-20 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
                 >
                   <div className="console-markdown text-sm leading-relaxed text-[var(--console-text)]">
                     {block.parts.map((part, partIndex) => (
@@ -254,7 +254,7 @@ function AbortToolItem() {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-start gap-2">
-        <div className="w-full rounded-sm border border-[var(--console-border-strong)] bg-white px-3 py-2 text-left shadow-[2px_2px_0_0_rgba(15,23,42,0.05)] md:w-[560px]">
+        <div className="w-full rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-2 text-left shadow-[2px_2px_0_0_rgba(15,23,42,0.05)] md:w-[560px]">
           <div className="flex items-start gap-2">
             <MessageCircleX className="mt-0.5 size-3.5 shrink-0 text-[var(--console-accent)]" />
             <span className="min-w-0 flex-1">
@@ -373,7 +373,7 @@ function PlanItem({ part, highlightQuery }: { part: MessagePart; highlightQuery?
     <div className="space-y-2">
       <div className="flex flex-wrap items-start gap-2">
         <div
-          className={`w-full md:w-[560px] rounded-sm border border-[var(--console-border-strong)] bg-white px-3 py-2 text-left shadow-[2px_2px_0_0_rgba(15,23,42,0.05)] ${
+          className={`w-full md:w-[560px] rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-2 text-left shadow-[2px_2px_0_0_rgba(15,23,42,0.05)] ${
             display.expandable ? "transition-colors hover:bg-[var(--console-surface-muted)]" : ""
           }`}
         >
@@ -417,7 +417,7 @@ function PlanItem({ part, highlightQuery }: { part: MessagePart; highlightQuery?
       </div>
 
       {display.expandable && expanded ? (
-        <div className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <div className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
           <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5">
             <span className="console-mono text-xs text-[var(--console-muted)]">
               {display.contentLabel}
@@ -459,7 +459,7 @@ function ToolItem({
     <div id={anchorId} data-session-timeline-anchor={anchorId} className="scroll-mt-20 space-y-2">
       <div className="flex flex-wrap items-start gap-2">
         <div
-          className={`w-full max-w-[720px] rounded-sm border border-[var(--console-border-strong)] bg-white px-3 py-2.5 text-left shadow-[2px_2px_0_0_rgba(15,23,42,0.05)] ${
+          className={`w-full max-w-[720px] rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-2.5 text-left shadow-[2px_2px_0_0_rgba(15,23,42,0.05)] ${
             strategy.expandable ? "transition-colors hover:bg-[var(--console-surface-muted)]" : ""
           }`}
         >
@@ -526,7 +526,7 @@ function ToolItem({
       </div>
 
       {strategy.expandable && expanded ? (
-        <div className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <div className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
           <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5">
             <span className="console-mono text-xs text-[var(--console-muted)]">
               {strategy.contentLabel ?? "Output"}
@@ -534,7 +534,7 @@ function ToolItem({
           </div>
           <div className="space-y-3 p-3">
             {strategy.details.length > 0 ? (
-              <div className="rounded-sm border border-[var(--console-border)] bg-[#fafafa] px-3 py-2">
+              <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)] px-3 py-2">
                 <div className="space-y-2">
                   {strategy.details.map((detail) => (
                     <div
@@ -555,7 +555,7 @@ function ToolItem({
             <ToolOutputRenderer outputContent={strategy.outputContent} />
           </div>
           {strategy.showInputPreview ? (
-            <div className="border-t border-[var(--console-border)] bg-[#fafafa] px-3 py-2">
+            <div className="border-t border-[var(--console-border)] bg-[var(--console-surface-sunken)] px-3 py-2">
               <span className="console-mono text-[11px] text-[var(--console-muted)]">
                 Input Preview
               </span>

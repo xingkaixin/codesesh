@@ -57,7 +57,7 @@ export function SearchFilterBar({
   };
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white/85 p-3">
+    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]/85 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
           Scope
@@ -169,7 +169,7 @@ export function SearchFilterBar({
           <button
             type="button"
             onClick={() => onChangeFilters({})}
-            className="console-mono ml-auto rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[10px] text-[var(--console-muted)] transition-colors hover:bg-white"
+            className="console-mono ml-auto rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[10px] text-[var(--console-muted)] transition-colors hover:bg-[var(--console-surface)]"
           >
             Clear
           </button>

@@ -72,7 +72,7 @@ export function SearchResultsPanel({
           {Array.from({ length: 4 }).map((_, index) => (
             <div
               key={index}
-              className="animate-pulse rounded-sm border border-[var(--console-border)] bg-white/80 p-4 motion-reduce:animate-none"
+              className="animate-pulse rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]/80 p-4 motion-reduce:animate-none"
             >
               <div className="h-3 w-32 rounded bg-[var(--console-surface-muted)]" />
               <div className="mt-3 h-4 w-2/3 rounded bg-[var(--console-surface-muted)]" />
@@ -102,7 +102,7 @@ export function SearchResultsPanel({
           <button
             type="button"
             onClick={onRetry}
-            className="console-mono mt-4 rounded-sm border border-[var(--console-error-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--console-error)] transition-colors hover:bg-[var(--console-error-bg)] focus-visible:ring-2 focus-visible:ring-[var(--console-error)] focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="console-mono mt-4 rounded-sm border border-[var(--console-error-border)] bg-[var(--console-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--console-error)] transition-colors hover:bg-[var(--console-error-bg)] focus-visible:ring-2 focus-visible:ring-[var(--console-error)] focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             Retry Search
           </button>
@@ -115,7 +115,7 @@ export function SearchResultsPanel({
     return (
       <div className="flex flex-col gap-3">
         {filterBar}
-        <div className="rounded-sm border border-[var(--console-border)] bg-white/80 p-6">
+        <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]/80 p-6">
           <h2 className="console-mono text-sm font-semibold text-[var(--console-text)]">
             {query ? "No matches" : "No recent sessions"}
           </h2>
@@ -145,7 +145,7 @@ export function SearchResultsPanel({
             to={`/${agentKey}/${result.session.id}`}
             state={{ searchQuery: query }}
             onClick={onOpenResult}
-            className={`rounded-sm border bg-white/85 p-4 transition-colors hover:border-[var(--console-border-strong)] hover:bg-white focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none ${
+            className={`rounded-sm border bg-[var(--console-surface)]/85 p-4 transition-colors hover:border-[var(--console-border-strong)] hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none ${
               index === selectedIndex
                 ? "border-[var(--console-border-strong)]"
                 : "border-[var(--console-border)]"
@@ -155,7 +155,7 @@ export function SearchResultsPanel({
               <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--console-muted)]">
                 {agentLabel}
               </span>
-              <span className="console-mono rounded-sm border border-[var(--console-border)] bg-white px-1.5 py-0.5 text-[10px] uppercase text-[var(--console-muted)]">
+              <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--console-muted)]">
                 {SEARCH_MATCH_LABELS[result.matchType]}
               </span>
               <span className="console-mono text-[11px] text-[var(--console-muted)]">
