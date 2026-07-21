@@ -1,9 +1,16 @@
-import { mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PiAgent } from "../pi.js";
 import type { MessagePart } from "../../types/index.js";
+
+// Spies on statSync while delegating to the real implementation, so the
+// single-stat regression test can count per-file calls during a live scan.
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return { ...actual, statSync: vi.fn(actual.statSync) };
+});
 
 let tempDirs: string[] = [];
 
@@ -162,6 +169,32 @@ describe("PiAgent", () => {
 
     const windowed = agent.listSessionSources({ from: Date.now() - 24 * 60 * 60 * 1000 });
     expect(windowed.map((ref) => ref.sourcePath)).toEqual([newFile]);
+  });
+
+  it("stats each session file at most once per listSessionSources call", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-pi-test-"));
+    tempDirs.push(tempDir);
+    const piHome = join(tempDir, ".pi");
+    const sessionsDir = join(piHome, "agent", "sessions", "--tmp-project--");
+    mkdirSync(sessionsDir, { recursive: true });
+    vi.stubEnv("PI_HOME", piHome);
+
+    const files = ["a", "b", "c"].map((name) =>
+      join(sessionsDir, `2026-04-20T10-00-00_${name}.jsonl`),
+    );
+    for (const file of files) writeFileSync(file, "");
+
+    const agent = new PiAgent();
+    agent.isAvailable();
+
+    const statSpy = vi.mocked(statSync);
+    statSpy.mockClear();
+    agent.listSessionSources();
+
+    for (const file of files) {
+      const callsForFile = statSpy.mock.calls.filter((call) => call[0] === file);
+      expect(callsForFile.length).toBe(1);
+    }
   });
 
   it("uses session names and parses assistant tools on the selected leaf", () => {
