@@ -1,1 +1,5 @@
-export { executeSessionSearch, type SessionSearchSnapshot } from "./session-search.js";
+export {
+  executeSessionSearch,
+  matchesSessionSearchFilters,
+  type SessionSearchSnapshot,
+} from "./session-search.js";

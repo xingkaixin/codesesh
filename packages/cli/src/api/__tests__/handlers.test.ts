@@ -466,46 +466,123 @@ describe("handleSearchSessions", () => {
     expect(coreMocks.executeSessionSearch).not.toHaveBeenCalled();
   });
 
-  it("matches aliases while preserving query qualifiers", () => {
-    const aliased = makeSession("s1", { slug: "claudecode/s1" });
+  it("matches aliases while preserving an agent: qualifier embedded in q, calling the search module only once", () => {
+    const cursorSession = makeSession("c1", { slug: "cursor/c1" });
     coreMocks.listSessionAliases.mockReturnValue([
       { agentKey: "claudecode", sessionId: "s1", alias: "Custom cache title", updated_at: 1 },
+      { agentKey: "cursor", sessionId: "c1", alias: "Custom cache from cursor", updated_at: 1 },
     ]);
-    coreMocks.executeSessionSearch.mockImplementation((query) =>
-      query ? [] : [{ agentName: "claudecode", session: aliased }],
-    );
+    coreMocks.executeSessionSearch.mockReturnValue([]);
     const c = makeMockContext({ query: { q: "agent:claudecode custom cache" } });
 
-    handleSearchSessions(c, makeScanSource());
+    handleSearchSessions(
+      c,
+      makeScanSource({
+        sessions: [makeSession("s1", { slug: "claudecode/s1" }), cursorSession],
+        byAgent: {
+          claudecode: [makeSession("s1", { slug: "claudecode/s1" })],
+          cursor: [cursorSession],
+        },
+      }),
+    );
 
+    expect(coreMocks.executeSessionSearch).toHaveBeenCalledTimes(1);
     expect(coreMocks.executeSessionSearch).toHaveBeenCalledWith(
-      "",
-      expect.objectContaining({ agent: "claudecode", limit: 2 }),
+      "agent:claudecode custom cache",
+      expect.anything(),
       expect.anything(),
     );
-    expect(c.json.mock.calls[0]![0].results[0].session.display_title).toBe("Custom cache title");
+    const results = c.json.mock.calls[0]![0].results;
+    expect(results).toHaveLength(1);
+    expect(results[0].session.display_title).toBe("Custom cache title");
+    expect(results[0].matchType).toBe("title");
   });
 
-  it("does not cap alias search candidates at one thousand sessions", () => {
+  it("finds alias matches by scanning the alias map, not the full session list", () => {
     const sessions = Array.from({ length: 1001 }, (_, index) =>
       makeSession(`s${index}`, { slug: `claudecode/s${index}` }),
     );
     coreMocks.listSessionAliases.mockReturnValue([
       { agentKey: "claudecode", sessionId: "s1000", alias: "Old alias", updated_at: 1 },
     ]);
-    coreMocks.executeSessionSearch.mockImplementation((query) =>
-      query ? [] : [{ agentName: "claudecode", session: sessions[1000]! }],
-    );
+    coreMocks.executeSessionSearch.mockReturnValue([]);
     const c = makeMockContext({ query: { q: "old alias" } });
 
     handleSearchSessions(c, makeScanSource({ sessions, byAgent: { claudecode: sessions } }));
 
+    // Only one search call regardless of how many sessions exist -- alias
+    // matching no longer re-runs executeSessionSearch with limit = session count.
+    expect(coreMocks.executeSessionSearch).toHaveBeenCalledTimes(1);
     expect(coreMocks.executeSessionSearch).toHaveBeenCalledWith(
-      "",
-      expect.objectContaining({ limit: 1001 }),
+      "old alias",
+      expect.objectContaining({ limit: 50 }),
       expect.anything(),
     );
     expect(c.json.mock.calls[0]![0].results[0].session.id).toBe("s1000");
+  });
+
+  it("excludes alias hits outside the requested time window", () => {
+    const now = Date.now();
+    const oldSession = makeSession("s1", {
+      slug: "claudecode/s1",
+      time_created: now - 30 * 86400000,
+      time_updated: now - 30 * 86400000,
+    });
+    coreMocks.listSessionAliases.mockReturnValue([
+      { agentKey: "claudecode", sessionId: "s1", alias: "Custom cache title", updated_at: 1 },
+    ]);
+    coreMocks.executeSessionSearch.mockReturnValue([]);
+    const c = makeMockContext({
+      query: {
+        q: "custom cache",
+        from: new Date(now - 86400000).toISOString(),
+        to: new Date(now).toISOString(),
+      },
+    });
+
+    handleSearchSessions(
+      c,
+      makeScanSource({ sessions: [oldSession], byAgent: { claudecode: [oldSession] } }),
+    );
+
+    expect(c.json.mock.calls[0]![0].results).toHaveLength(0);
+  });
+
+  it("excludes alias hits from an agent other than the requested agent filter", () => {
+    coreMocks.listSessionAliases.mockReturnValue([
+      { agentKey: "claudecode", sessionId: "s1", alias: "Custom cache title", updated_at: 1 },
+    ]);
+    coreMocks.executeSessionSearch.mockReturnValue([]);
+    const c = makeMockContext({ query: { q: "custom cache", agent: "cursor" } });
+
+    handleSearchSessions(c, makeScanSource());
+
+    expect(c.json.mock.calls[0]![0].results).toHaveLength(0);
+  });
+
+  it("excludes alias hits outside the requested project identity", () => {
+    const session = makeSession("s1", {
+      slug: "claudecode/s1",
+      project_identity: { kind: "git_remote", key: "github.com/acme/app", displayName: "app" },
+    });
+    coreMocks.listSessionAliases.mockReturnValue([
+      { agentKey: "claudecode", sessionId: "s1", alias: "Custom cache title", updated_at: 1 },
+    ]);
+    coreMocks.executeSessionSearch.mockReturnValue([]);
+    const c = makeMockContext({
+      query: {
+        q: "custom cache",
+        projectKind: "git_remote",
+        projectKey: "github.com/other/app",
+      },
+    });
+
+    handleSearchSessions(
+      c,
+      makeScanSource({ sessions: [session], byAgent: { claudecode: [session] } }),
+    );
+
+    expect(c.json.mock.calls[0]![0].results).toHaveLength(0);
   });
 });
 

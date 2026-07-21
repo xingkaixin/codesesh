@@ -12,6 +12,7 @@ import type {
   ApiProjectGroup,
   AppConfig,
   ScanStatusEvent,
+  SearchResult,
 } from "@codesesh/core/contract";
 import {
   BookmarkStorageUnavailableError,
@@ -32,6 +33,7 @@ import {
   listCachedProjectGroups,
   listBookmarks,
   listSessionAliases,
+  matchesSessionSearchFilters,
   mergeSearchQueryOptions,
   deleteSessionAlias,
   upsertSessionAlias,
@@ -131,6 +133,16 @@ function withFileActivityDisplayTitle(
   };
 }
 
+function findSessionByAliasKey(scanResult: ScanResult, aliasKey: string): SessionHead | undefined {
+  const separatorIndex = aliasKey.indexOf("\0");
+  const agentName = aliasKey.slice(0, separatorIndex);
+  const sessionId = aliasKey.slice(separatorIndex + 1);
+  return scanResult.byAgent[agentName]?.find((session) => session.id === sessionId);
+}
+
+// Alias hits still have to satisfy the same time-window/project/agent
+// filters as the main search (matchesSessionSearchFilters), otherwise an
+// aliased session could appear in results outside its search scope.
 function findAliasSearchResults(
   query: string,
   options: SearchOptions,
@@ -141,22 +153,24 @@ function findAliasSearchResults(
   const needle = search.text.trim().toLowerCase();
   if (!needle || aliases.size === 0) return [];
 
-  return executeSessionSearch(
-    "",
-    { ...search.options, limit: Math.max(scanResult.sessions.length, 1) },
-    scanResult,
-  ).flatMap((result) => {
-    const alias = aliases.get(getSessionAliasKey(result.agentName, result.session.id));
-    if (!alias || !alias.toLowerCase().includes(needle)) return [];
-    return [
-      {
-        agentName: result.agentName,
-        session: withDisplayTitle(result.session, result.agentName, aliases),
-        snippet: `Alias · ${result.session.directory}`,
-        matchType: "title" as const,
-      },
-    ];
-  });
+  const projectScope = search.options.cwd ? createProjectScopeMatcher(search.options.cwd) : null;
+  const results: SearchResult[] = [];
+  for (const [aliasKey, alias] of aliases) {
+    if (!alias.toLowerCase().includes(needle)) continue;
+    const session = findSessionByAliasKey(scanResult, aliasKey);
+    if (!session) continue;
+    const agentName = aliasKey.slice(0, aliasKey.indexOf("\0"));
+    if (!matchesSessionSearchFilters(agentName, session, search.options, projectScope)) continue;
+    results.push({
+      agentName,
+      session: withDisplayTitle(session, agentName, aliases),
+      snippet: `Alias · ${session.directory}`,
+      matchType: "title",
+    });
+  }
+  return results.sort(
+    (a, b) => getSessionActivityTime(b.session) - getSessionActivityTime(a.session),
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

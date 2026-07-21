@@ -48,20 +48,6 @@ function needsIndexedSearch(textQuery: string, options: SearchOptions): boolean 
   return Boolean(textQuery || options.file || options.fileKind || options.tools?.length);
 }
 
-function filterSessionsByActivityWindow(
-  sessions: SessionHead[],
-  from: number | undefined,
-  to: number | undefined,
-): SessionHead[] {
-  if (from == null && to == null) return sessions;
-  return sessions.filter((session) => {
-    const activity = getSessionActivityTime(session);
-    if (from != null && activity < from) return false;
-    if (to != null && activity > to) return false;
-    return true;
-  });
-}
-
 function matchesRecentSearchFilters(
   session: SessionHead,
   options: SearchOptions,
@@ -99,6 +85,22 @@ function matchesRecentSearchFilters(
   return true;
 }
 
+// Single source of truth for "does this session belong in a search result",
+// shared by the recent-sessions path here and by alias matching in the CLI
+// API layer (which looks up individual sessions instead of scanning a list).
+export function matchesSessionSearchFilters(
+  agentName: string,
+  session: SessionHead,
+  options: SearchOptions,
+  projectScope: ProjectScopeMatcher | null = null,
+): boolean {
+  if (options.agent && agentName !== options.agent) return false;
+  const activity = getSessionActivityTime(session);
+  if (options.from != null && activity < options.from) return false;
+  if (options.to != null && activity > options.to) return false;
+  return matchesRecentSearchFilters(session, options, projectScope);
+}
+
 function searchRecentSessions(
   snapshot: SessionSearchSnapshot,
   options: SearchOptions,
@@ -110,8 +112,8 @@ function searchRecentSessions(
 
   return entries
     .flatMap(([agentName, sessions]) =>
-      filterSessionsByActivityWindow(sessions, options.from, options.to)
-        .filter((session) => matchesRecentSearchFilters(session, options, projectScope))
+      sessions
+        .filter((session) => matchesSessionSearchFilters(agentName, session, options, projectScope))
         .map((session) => ({ agentName, session })),
     )
     .sort(
