@@ -1,12 +1,16 @@
-import { homedir } from "node:os";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  clearIdentityCache,
   computeIdentity,
   getProjectIdentityKey,
   matchesProjectIdentity,
   normalizeGitRemote,
   type IdentityFs,
 } from "./identity.js";
+import { realFs } from "./fs.js";
 
 vi.mock("node:os", async () => {
   const actual = await vi.importActual<typeof import("node:os")>("node:os");
@@ -190,5 +194,61 @@ describe("computeIdentity", () => {
       key: "github.com/acme/real-project",
       displayName: "real-project",
     });
+  });
+});
+
+// The module-level cache only activates for fs === realFs (see identity.ts);
+// custom IdentityFs fakes above always bypass it, so these tests use a real
+// temp directory to exercise the cached path without polluting other tests.
+describe("computeIdentity caching (realFs)", () => {
+  let repoDir: string;
+
+  beforeEach(() => {
+    repoDir = mkdtempSync(join(tmpdir(), "codesesh-identity-cache-"));
+    // An empty .git dir makes findGitRoot succeed so computeIdentity spawns
+    // git; the spawns themselves fail fast since it isn't a real repository.
+    mkdirSync(join(repoDir, ".git"));
+    clearIdentityCache();
+  });
+
+  afterEach(() => {
+    rmSync(repoDir, { recursive: true, force: true });
+    clearIdentityCache();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("spawns git only once for repeated resolution of the same directory", () => {
+    const spawnSpy = vi.spyOn(realFs, "spawn");
+
+    computeIdentity(repoDir, realFs);
+    const spawnsAfterFirstCall = spawnSpy.mock.calls.length;
+    expect(spawnsAfterFirstCall).toBeGreaterThan(0);
+
+    computeIdentity(repoDir, realFs);
+    expect(spawnSpy).toHaveBeenCalledTimes(spawnsAfterFirstCall);
+  });
+
+  it("re-spawns after clearIdentityCache", () => {
+    const spawnSpy = vi.spyOn(realFs, "spawn");
+
+    computeIdentity(repoDir, realFs);
+    const spawnsAfterFirstCall = spawnSpy.mock.calls.length;
+
+    clearIdentityCache();
+    computeIdentity(repoDir, realFs);
+    expect(spawnSpy).toHaveBeenCalledTimes(spawnsAfterFirstCall * 2);
+  });
+
+  it("re-spawns once the TTL has elapsed", () => {
+    vi.useFakeTimers();
+    const spawnSpy = vi.spyOn(realFs, "spawn");
+
+    computeIdentity(repoDir, realFs);
+    const spawnsAfterFirstCall = spawnSpy.mock.calls.length;
+
+    vi.advanceTimersByTime(10 * 60 * 1000);
+    computeIdentity(repoDir, realFs);
+    expect(spawnSpy).toHaveBeenCalledTimes(spawnsAfterFirstCall * 2);
   });
 });
