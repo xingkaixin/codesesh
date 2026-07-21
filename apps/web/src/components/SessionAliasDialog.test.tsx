@@ -68,4 +68,30 @@ describe("SessionAliasDialog", () => {
     await waitFor(() => expect(onRemove).toHaveBeenCalledOnce());
     expect(onSave).not.toHaveBeenCalled();
   });
+
+  it("associates a save error with the title input for screen readers", async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error("Title already in use"));
+    render(
+      <SessionAliasDialog
+        target={{ agentKey: "codex", sessionId: "session-1", title: "Source title" }}
+        onClose={vi.fn()}
+        onSave={onSave}
+        onRemove={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    const input = screen.getByRole("textbox", { name: "Session title" });
+    expect(input.getAttribute("aria-invalid")).toBeNull();
+    expect(input.getAttribute("aria-describedby")).toBeNull();
+
+    fireEvent.change(input, { target: { value: "New title" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save title" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+
+    const errorMessage = await screen.findByText("Title already in use");
+    expect(errorMessage.id).toBe("session-alias-error");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.getAttribute("aria-describedby")).toBe("session-alias-error");
+  });
 });
