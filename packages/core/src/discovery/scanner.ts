@@ -380,7 +380,7 @@ async function scanAgentSmart(
 
         const t2 = performance.now();
         const updatedSessions = await Promise.resolve(
-          agent.incrementalScan(cached.sessions, checkResult.changedIds || []),
+          agent.incrementalScan(cached.sessions, checkResult.changedIds || [], checkResult.refs),
         );
         timing.scan = performance.now() - t2;
 
