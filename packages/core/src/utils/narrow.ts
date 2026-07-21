@@ -23,6 +23,21 @@ export function asArray(value: unknown): unknown[] | undefined {
   return Array.isArray(value) ? value : undefined;
 }
 
+/**
+ * Parses JSON text to a plain object; undefined on parse failure or a
+ * non-object shape (e.g. array, string, null). Callers that need drift
+ * reporting compose this with `narrowField`.
+ */
+export function safeParseJsonRecord(json: string): Record<string, unknown> | undefined {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    return undefined;
+  }
+  return asRecord(raw);
+}
+
 const reportedFieldMismatches = new Set<string>();
 
 /**
@@ -35,4 +50,22 @@ export function reportFieldMismatch(agentName: string, field: string): void {
   if (reportedFieldMismatches.has(key)) return;
   reportedFieldMismatches.add(key);
   getCoreDiagnostics()?.warn("agent.field_shape_mismatch", { agentName, field });
+}
+
+/**
+ * Narrows a field's value with `narrow`, reporting once via
+ * `reportFieldMismatch` when the field is present but narrowing fails.
+ * `undefined`/`null` mean the field is absent (null-as-absent) and return
+ * undefined silently — that's a normal shape, not drift.
+ */
+export function narrowField<T>(
+  agent: string,
+  field: string,
+  value: unknown,
+  narrow: (v: unknown) => T | undefined,
+): T | undefined {
+  if (value === undefined || value === null) return undefined;
+  const result = narrow(value);
+  if (result === undefined) reportFieldMismatch(agent, field);
+  return result;
 }

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { ZCodeAgent } from "../zcode.js";
+import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
 let tempDirs: string[] = [];
 
@@ -47,6 +48,7 @@ afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
   }
   tempDirs = [];
+  setCoreDiagnostics(null);
 });
 
 describe("ZCodeAgent parsing", () => {
@@ -152,6 +154,46 @@ describe("ZCodeAgent parsing", () => {
       tool: "Bash",
       callID: "call_1",
       state: { status: "completed", output: "ok" },
+    });
+  });
+
+  it("falls back to null and reports drift under the zcode agent name when modelID isn't a string", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-zcode-test-"));
+    tempDirs.push(tempDir);
+    const dbPath = createZCodeDb(tempDir);
+    const db = new Database(dbPath);
+
+    db.prepare(
+      "INSERT INTO session (id, title, time_created, time_updated, directory, path, version, summary_files) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run("sess_drift", "", 1_000, 2_000, "/tmp/project", "/tmp/project", "0.14.8", 0);
+    db.prepare(
+      "INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)",
+    ).run("msg_user", "sess_drift", 1_000, 1_000, JSON.stringify({ role: "user", modelID: 12345 }));
+    db.prepare(
+      "INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(
+      "part_user",
+      "msg_user",
+      "sess_drift",
+      1_000,
+      1_000,
+      JSON.stringify({ type: "text", text: "hello" }),
+    );
+    db.close();
+
+    const calls: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
+    setCoreDiagnostics(sink);
+
+    const agent = new ZCodeAgent() as any;
+    agent.dbPath = dbPath;
+
+    const data = agent.getSessionData("sess_drift");
+
+    expect(data.messages[0]).toMatchObject({ role: "user", model: null });
+    expect(calls).toContainEqual({
+      event: "agent.field_shape_mismatch",
+      detail: { agentName: "zcode", field: "message.modelID" },
     });
   });
 });

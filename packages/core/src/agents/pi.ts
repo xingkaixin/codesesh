@@ -17,6 +17,7 @@ import type { Message, MessagePart, SessionData, SessionHead } from "../types/in
 import { firstExisting, resolveProviderRoots } from "../discovery/paths.js";
 import { parseJsonlLines } from "../utils/jsonl.js";
 import { estimateTokenCost } from "../utils/cost.js";
+import { asNumber, asRecord, asString, narrowField } from "../utils/narrow.js";
 import { cleanInternalText } from "../utils/session-normalization.js";
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
@@ -54,6 +55,26 @@ function parseTimestampMs(value: unknown): number {
   return Number.isNaN(ts) ? 0 : ts;
 }
 
+function narrowPiField<T>(
+  field: string,
+  value: unknown,
+  narrow: (v: unknown) => T | undefined,
+): T | undefined {
+  return narrowField("pi", field, value, narrow);
+}
+
+/**
+ * Reports drift only when the timestamp is present but neither a number nor
+ * a string (e.g. an object) — actual date parsing (and its silent-0
+ * fallback for unparseable text) is unchanged, via `parseTimestampMs`.
+ */
+function narrowTimestampMs(field: string, value: unknown): number {
+  const shaped = narrowPiField(field, value, (v) =>
+    typeof v === "number" || typeof v === "string" ? v : undefined,
+  );
+  return shaped === undefined ? 0 : parseTimestampMs(shaped);
+}
+
 function extractSessionIdFromFilename(filePath: string): string {
   const stem = basename(filePath, ".jsonl");
   const underscore = stem.indexOf("_");
@@ -84,7 +105,7 @@ function normalizeTextParts(content: unknown, timestampMs: number): MessagePart[
 }
 
 function getEntryTimestamp(entry: Record<string, unknown>): number {
-  return parseTimestampMs(entry["timestamp"]);
+  return narrowTimestampMs("entry.timestamp", entry["timestamp"]);
 }
 
 function chooseLeafEntry(entries: Record<string, unknown>[]): Record<string, unknown> | null {
@@ -277,7 +298,7 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
 
     const stat = statSync(filePath);
     const directory = String(header["cwd"] ?? "").trim() || basename(filePath, ".jsonl");
-    const createdAt = parseTimestampMs(header["timestamp"]) || stat.mtimeMs;
+    const createdAt = narrowTimestampMs("session.timestamp", header["timestamp"]) || stat.mtimeMs;
     const updatedAt = pathEntries.reduce(
       (max, entry) => Math.max(max, getEntryTimestamp(entry)),
       createdAt,
@@ -334,8 +355,8 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
       const type = String(entry["type"] ?? "");
 
       if (type === "message") {
-        const message = entry["message"];
-        if (!isObject(message)) continue;
+        const message = narrowPiField("entry.message", entry["message"], asRecord);
+        if (!message) continue;
         const result = this.convertAgentMessage(entry, message, timestampMs, builder);
         if (!result) continue;
         if (result.message) builder.appendMessage(result.message);
@@ -372,8 +393,8 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     totalTokens: number;
     model: string | null;
   } | null {
-    const id = String(entry["id"] ?? "");
-    const role = String(message["role"] ?? "");
+    const id = narrowPiField("message.id", entry["id"], asString) ?? "";
+    const role = narrowPiField("message.role", message["role"], asString) ?? "";
 
     if (role === "user") {
       const parts = normalizeTextParts(message["content"], timestampMs);
@@ -543,7 +564,7 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     if (!text) return null;
 
     return {
-      id: String(entry["id"] ?? ""),
+      id: narrowPiField("summary.id", entry["id"], asString) ?? "",
       role: type === "custom_message" ? "user" : "assistant",
       agent: type === "custom_message" ? undefined : "pi",
       timestampMs,
@@ -560,14 +581,16 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     cost: number | null;
     tokens: Message["tokens"];
   } {
-    const usage = isObject(raw) ? raw : {};
-    const inputTokens = Number(usage["input"] ?? 0);
-    const outputTokens = Number(usage["output"] ?? 0);
-    const cacheReadTokens = Number(usage["cacheRead"] ?? 0);
-    const cacheCreateTokens = Number(usage["cacheWrite"] ?? 0);
-    const totalTokens = Number(
-      usage["totalTokens"] ?? inputTokens + outputTokens + cacheReadTokens + cacheCreateTokens,
-    );
+    const usage = narrowPiField("message.usage", raw, asRecord) ?? {};
+    const inputTokens = narrowPiField("message.usage.input", usage["input"], asNumber) ?? 0;
+    const outputTokens = narrowPiField("message.usage.output", usage["output"], asNumber) ?? 0;
+    const cacheReadTokens =
+      narrowPiField("message.usage.cacheRead", usage["cacheRead"], asNumber) ?? 0;
+    const cacheCreateTokens =
+      narrowPiField("message.usage.cacheWrite", usage["cacheWrite"], asNumber) ?? 0;
+    const totalTokens =
+      narrowPiField("message.usage.totalTokens", usage["totalTokens"], asNumber) ??
+      inputTokens + outputTokens + cacheReadTokens + cacheCreateTokens;
     const cost = isObject(usage["cost"]) ? Number(usage["cost"]["total"] ?? 0) : null;
 
     return {

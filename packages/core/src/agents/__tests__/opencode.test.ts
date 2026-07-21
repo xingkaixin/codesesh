@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { OpenCodeAgent } from "../opencode.js";
+import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
 let tempDirs: string[] = [];
 
@@ -43,6 +44,7 @@ afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
   }
   tempDirs = [];
+  setCoreDiagnostics(null);
 });
 
 describe("OpenCodeAgent parsing", () => {
@@ -155,5 +157,52 @@ describe("OpenCodeAgent parsing", () => {
         output: "Visible output",
       },
     });
+  });
+
+  it("falls back on a malformed role/tokens shape and reports drift under the opencode agent name", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-opencode-test-"));
+    tempDirs.push(tempDir);
+    const dbPath = createOpenCodeDb(tempDir);
+    const db = new Database(dbPath);
+
+    db.prepare(
+      "INSERT INTO session (id, title, time_created, time_updated, directory) VALUES (?, ?, ?, ?, ?)",
+    ).run("session-drift", "", 1_000, 2_000, "/tmp/project");
+    db.prepare("INSERT INTO message (id, session_id, data, time_created) VALUES (?, ?, ?, ?)").run(
+      "m1",
+      "session-drift",
+      JSON.stringify({ role: "narrator", tokens: "not-an-object" }),
+      1_000,
+    );
+    db.prepare("INSERT INTO part (id, message_id, data, time_created) VALUES (?, ?, ?, ?)").run(
+      "p1",
+      "m1",
+      JSON.stringify({ type: "text", text: "hello" }),
+      1_000,
+    );
+    db.close();
+
+    const calls: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
+    setCoreDiagnostics(sink);
+
+    const agent = new OpenCodeAgent() as any;
+    agent.dbPath = dbPath;
+
+    const data = agent.getSessionData("session-drift");
+
+    expect(data.messages[0]).toMatchObject({ role: "assistant", tokens: undefined });
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        {
+          event: "agent.field_shape_mismatch",
+          detail: { agentName: "opencode", field: "message.role" },
+        },
+        {
+          event: "agent.field_shape_mismatch",
+          detail: { agentName: "opencode", field: "message.tokens" },
+        },
+      ]),
+    );
   });
 });

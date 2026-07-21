@@ -11,7 +11,7 @@ import { openDbReadOnly, type SQLiteDatabase } from "../utils/sqlite.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import { resolveSessionTitle } from "../utils/title-fallback.js";
 import { isInternalEventType } from "../utils/parse-cleanup.js";
-import { asRecord, asString, reportFieldMismatch } from "../utils/narrow.js";
+import { asRecord, asString, narrowField, reportFieldMismatch } from "../utils/narrow.js";
 import {
   cleanInternalText,
   cleanParsedMessages,
@@ -52,29 +52,23 @@ function parseJsonRecord(raw: unknown, agentName: string, field: string): Record
   return {};
 }
 
-function parseMessageRole(value: unknown, agentName: string): Message["role"] {
+function narrowMessageRole(value: unknown): Message["role"] | undefined {
   const role = asString(value);
-  if (role !== undefined && (MESSAGE_ROLES as Set<string>).has(role)) {
-    return role as Message["role"];
-  }
-  if (value !== undefined && value !== null) reportFieldMismatch(agentName, "message.role");
-  return "assistant";
+  return role !== undefined && (MESSAGE_ROLES as Set<string>).has(role)
+    ? (role as Message["role"])
+    : undefined;
+}
+
+function parseMessageRole(value: unknown, agentName: string): Message["role"] {
+  return narrowField(agentName, "message.role", value, narrowMessageRole) ?? "assistant";
 }
 
 function parseTokens(value: unknown, agentName: string): Record<string, unknown> | undefined {
-  const tokens = asRecord(value);
-  if (tokens === undefined && value !== undefined) reportFieldMismatch(agentName, "message.tokens");
-  return tokens;
+  return narrowField(agentName, "message.tokens", value, asRecord);
 }
 
 function parseModel(value: unknown, agentName: string): string | null {
-  if (value === null || value === undefined) return null;
-  const model = asString(value);
-  if (model === undefined) {
-    reportFieldMismatch(agentName, "message.modelID");
-    return null;
-  }
-  return model;
+  return narrowField(agentName, "message.modelID", value, asString) ?? null;
 }
 
 export class OpenCodeSqliteAgent extends DatabaseSessionSource {
