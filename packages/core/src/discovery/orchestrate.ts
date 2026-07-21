@@ -9,28 +9,15 @@
  */
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import { sortSessionsByActivity } from "../contract/session-index.js";
-import type { ProjectIdentity, SessionHead } from "../types/index.js";
+import type { SessionHead } from "../types/index.js";
 import type { SessionHeadChange } from "./cache.js";
 import { computeIdentity, realFs } from "../projects/index.js";
 
-function createIdentityResolver() {
-  const cache = new Map<string, ProjectIdentity>();
-  return (directory: string | null | undefined) => {
-    const key = directory || "";
-    const cached = cache.get(key);
-    if (cached) return cached;
-    const identity = computeIdentity(directory, realFs);
-    cache.set(key, identity);
-    return identity;
-  };
-}
-
 /** Attach a project identity to sessions that don't already have one. */
 export function attachMissingProjectIdentities(sessions: SessionHead[]): SessionHead[] {
-  const resolveIdentity = createIdentityResolver();
   return sessions.map((session) => {
     if (session.project_identity) return session;
-    return { ...session, project_identity: resolveIdentity(session.directory) };
+    return { ...session, project_identity: computeIdentity(session.directory, realFs) };
   });
 }
 

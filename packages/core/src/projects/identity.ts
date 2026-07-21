@@ -2,6 +2,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ProjectIdentity, ProjectIdentityKind, ProjectIdentityRef } from "../types/index.js";
 import { fallbackDisplayName } from "./display-name.js";
+import { realFs } from "./fs.js";
 
 export interface IdentityFs {
   exists(path: string): boolean;
@@ -61,7 +62,38 @@ export function normalizeGitRemote(url: string): string | null {
   return value.toLowerCase();
 }
 
+// Process-lifetime identity cache, keyed by directory. Only used for the real
+// filesystem (fs === realFs); tests inject fake IdentityFs implementations and
+// must bypass the cache to stay isolated from each other. git remotes change
+// rarely, so a coarse TTL is enough — no file-watch invalidation needed.
+const IDENTITY_CACHE_TTL_MS = 10 * 60 * 1000;
+
+interface IdentityCacheEntry {
+  identity: ProjectIdentity;
+  resolvedAt: number;
+}
+
+const identityCache = new Map<string, IdentityCacheEntry>();
+
+/** Clears the process-lifetime identity cache. For tests and explicit invalidation. */
+export function clearIdentityCache(): void {
+  identityCache.clear();
+}
+
 export function computeIdentity(cwd: string | null | undefined, fs: IdentityFs): ProjectIdentity {
+  if (fs !== realFs) return resolveIdentity(cwd, fs);
+
+  const key = cwd ?? "";
+  const cached = identityCache.get(key);
+  if (cached && Date.now() - cached.resolvedAt < IDENTITY_CACHE_TTL_MS) {
+    return cached.identity;
+  }
+  const identity = resolveIdentity(cwd, fs);
+  identityCache.set(key, { identity, resolvedAt: Date.now() });
+  return identity;
+}
+
+function resolveIdentity(cwd: string | null | undefined, fs: IdentityFs): ProjectIdentity {
   if (!cwd) return loose();
 
   const pathOps = getPathOps(cwd);

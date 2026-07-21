@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionCacheMeta } from "../../agents/base.js";
 import { BaseAgent } from "../../agents/base.js";
 import type { SessionHead } from "../../types/index.js";
+import { clearIdentityCache } from "../../projects/index.js";
 import {
   attachMissingProjectIdentities,
   buildAgentCacheMeta,
@@ -9,6 +10,13 @@ import {
   sessionSignature,
   sortSessions,
 } from "../orchestrate.js";
+
+// attachMissingProjectIdentities resolves through the process-lifetime
+// identity cache (identity.ts); clear it so directories reused across tests
+// don't leak cached results between cases.
+beforeEach(() => {
+  clearIdentityCache();
+});
 
 function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
   const timeCreated = overrides?.time_created ?? 1000;
