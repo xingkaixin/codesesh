@@ -47,6 +47,11 @@ interface LandingCopy {
   header: {
     github: string;
     languageLabel: string;
+    themeLabel: string;
+    themeLight: string;
+    themeDark: string;
+    themeSystem: string;
+    themeSwitchTo: string;
   };
   hero: {
     title: HeadingCopy;
@@ -116,6 +121,11 @@ export const copy = {
     header: {
       github: "GitHub",
       languageLabel: "语言",
+      themeLabel: "主题",
+      themeLight: "浅色",
+      themeDark: "深色",
+      themeSystem: "跟随系统",
+      themeSwitchTo: "，点击切换到{next}",
     },
     hero: {
       title: ["把 AI 编码历史，", "变成可复用的工程记忆。"],
@@ -308,6 +318,11 @@ export const copy = {
     header: {
       github: "GitHub",
       languageLabel: "Language",
+      themeLabel: "Theme",
+      themeLight: "Light",
+      themeDark: "Dark",
+      themeSystem: "System",
+      themeSwitchTo: ". Switch to {next}.",
     },
     hero: {
       title: ["Turn AI coding history", "into reusable engineering memory."],

@@ -12,7 +12,7 @@ const t = copy[locale].tour;
 const scenes = copy[locale].scenes;
 ---
 
-<section class="border-y border-[var(--console-border)] bg-white px-6 py-24">
+<section class="border-y border-[var(--console-border)] bg-[var(--console-surface)] px-6 py-24">
   <div class="mx-auto max-w-6xl">
     <p class="console-mono text-xs font-semibold uppercase tracking-[0.14em] text-[var(--console-muted)]">
       {t.label}
@@ -25,14 +25,14 @@ const scenes = copy[locale].scenes;
     {
       scenes[0] && (
         <div class="mt-12">
-          <article class="product-showcase-card card-lift group relative overflow-hidden rounded-sm border border-[var(--console-border)] bg-white text-left">
-            <div class="border-b border-[var(--console-border)] bg-white px-6 py-5">
+          <article class="product-showcase-card card-lift group relative overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] text-left">
+            <div class="border-b border-[var(--console-border)] bg-[var(--console-surface)] px-6 py-5">
               <h3 class="text-sm font-semibold text-[var(--console-text)]">{scenes[0].title}</h3>
               <p class="mt-1.5 text-sm leading-6 text-[var(--console-muted)]">{scenes[0].description}</p>
             </div>
 
             <div class="bg-[var(--console-surface-muted)] p-4">
-              <div class="overflow-hidden rounded-[2px] border border-[var(--console-border)] bg-[#f8f8f8]">
+              <div class="overflow-hidden rounded-[2px] border border-[var(--console-border)] bg-[#f8f8f8] dark:border-[var(--console-border-strong)]">
                 <img
                   src={scenes[0].image}
                   alt={scenes[0].description}
@@ -48,7 +48,7 @@ const scenes = copy[locale].scenes;
             <button
               type="button"
               data-scene-open="0"
-              class="product-showcase-expand pressable absolute right-5 bottom-5 inline-flex items-center gap-2 rounded-[2px] border border-[var(--console-border)] bg-white/92 px-3 py-2 text-xs font-medium text-[var(--console-text)] shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
+              class="product-showcase-expand pressable absolute right-5 bottom-5 inline-flex items-center gap-2 rounded-[2px] border border-[var(--console-border)] bg-[var(--console-surface)]/92 px-3 py-2 text-xs font-medium text-[var(--console-text)] shadow-[0_1px_2px_rgba(0,0,0,0.08)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-accent)]"
               aria-label={`${t.expand} ${scenes[0].title}`}
             >
               <Icon name="expand" class="size-3.5" />
@@ -64,14 +64,14 @@ const scenes = copy[locale].scenes;
         scenes.slice(1).map((scene, i) => {
           const index = i + 1;
           return (
-            <article class="product-showcase-card card-lift group relative overflow-hidden rounded-sm border border-[var(--console-border)] bg-white text-left">
-              <div class="border-b border-[var(--console-border)] bg-white px-6 py-5">
+            <article class="product-showcase-card card-lift group relative overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] text-left">
+              <div class="border-b border-[var(--console-border)] bg-[var(--console-surface)] px-6 py-5">
                 <h3 class="text-sm font-semibold text-[var(--console-text)]">{scene.title}</h3>
                 <p class="mt-1.5 text-sm leading-6 text-[var(--console-muted)]">{scene.description}</p>
               </div>
 
               <div class="bg-[var(--console-surface-muted)] p-4">
-                <div class="overflow-hidden rounded-[2px] border border-[var(--console-border)] bg-[#f8f8f8]">
+                <div class="overflow-hidden rounded-[2px] border border-[var(--console-border)] bg-[#f8f8f8] dark:border-[var(--console-border-strong)]">
                   <img
                     src={scene.image}
                     alt={scene.description}
@@ -86,7 +86,7 @@ const scenes = copy[locale].scenes;
               <button
                 type="button"
                 data-scene-open={String(index)}
-                class="product-showcase-expand pressable absolute right-5 bottom-5 inline-flex items-center gap-2 rounded-[2px] border border-[var(--console-border)] bg-white/92 px-3 py-2 text-xs font-medium text-[var(--console-text)] shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
+                class="product-showcase-expand pressable absolute right-5 bottom-5 inline-flex items-center gap-2 rounded-[2px] border border-[var(--console-border)] bg-[var(--console-surface)]/92 px-3 py-2 text-xs font-medium text-[var(--console-text)] shadow-[0_1px_2px_rgba(0,0,0,0.08)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-accent)]"
                 aria-label={`${t.expand} ${scene.title}`}
               >
                 <Icon name="expand" class="size-3.5" />
@@ -110,8 +110,8 @@ const scenes = copy[locale].scenes;
       aria-label={`${scene.title} preview`}
     >
       <div class="flex min-h-dvh items-center justify-center p-4" data-scene-backdrop>
-        <div class="relative flex max-h-[92dvh] w-full max-w-7xl flex-col overflow-hidden rounded-sm border border-white/20 bg-[#f7f7f7] shadow-[0_24px_64px_rgba(0,0,0,0.24)]">
-          <div class="flex items-start justify-between gap-4 border-b border-[var(--console-border)] bg-white px-5 py-4">
+        <div class="relative flex max-h-[92dvh] w-full max-w-7xl flex-col overflow-hidden rounded-sm border border-white/20 bg-[var(--console-bg)] shadow-[0_24px_64px_rgba(0,0,0,0.24)]">
+          <div class="flex items-start justify-between gap-4 border-b border-[var(--console-border)] bg-[var(--console-surface)] px-5 py-4">
             <div>
               <p class="text-sm font-semibold text-[var(--console-text)]">
                 {scene.title}
@@ -123,17 +123,17 @@ const scenes = copy[locale].scenes;
             <button
               type="button"
               data-scene-close
-              class="pressable rounded-[2px] border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--console-text)] hover:bg-white"
+              class="pressable rounded-[2px] border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--console-text)] hover:bg-[var(--console-surface)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-accent)]"
             >
               {t.close}
             </button>
           </div>
 
-          <div class="flex items-center justify-between gap-3 border-b border-[var(--console-border)] bg-[rgba(255,255,255,0.82)] px-4 py-3">
+          <div class="flex items-center justify-between gap-3 border-b border-[var(--console-border)] bg-[var(--console-surface)]/82 px-4 py-3">
             <button
               type="button"
               data-scene-prev
-              class="pressable inline-flex items-center gap-2 rounded-[2px] border border-[var(--console-border)] bg-white px-3 py-2 text-xs font-medium text-[var(--console-text)] hover:bg-[var(--console-surface-muted)]"
+              class="pressable inline-flex items-center gap-2 rounded-[2px] border border-[var(--console-border)] bg-[var(--console-surface)] px-3 py-2 text-xs font-medium text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-accent)]"
             >
               <Icon name="chevron-left" class="size-4" />
               {t.previous}
@@ -144,7 +144,7 @@ const scenes = copy[locale].scenes;
             <button
               type="button"
               data-scene-next
-              class="pressable inline-flex items-center gap-2 rounded-[2px] border border-[var(--console-border)] bg-white px-3 py-2 text-xs font-medium text-[var(--console-text)] hover:bg-[var(--console-surface-muted)]"
+              class="pressable inline-flex items-center gap-2 rounded-[2px] border border-[var(--console-border)] bg-[var(--console-surface)] px-3 py-2 text-xs font-medium text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-accent)]"
             >
               {t.next}
               <Icon name="chevron-right" class="size-4" />
@@ -156,7 +156,7 @@ const scenes = copy[locale].scenes;
             tabindex="0"
             aria-label={scene.title}
           >
-            <div class="mx-auto min-w-[56rem] overflow-hidden rounded-[2px] border border-[var(--console-border)] bg-white">
+            <div class="mx-auto min-w-[56rem] overflow-hidden rounded-[2px] border border-[var(--console-border)] bg-white dark:border-[var(--console-border-strong)]">
               <img
                 src={scene.image}
                 alt={scene.title}

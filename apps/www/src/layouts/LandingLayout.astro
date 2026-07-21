@@ -84,6 +84,103 @@ const jsonLd = {
 <html lang={language}>
   <head>
     <meta charset="UTF-8" />
+    <script is:inline>
+      // Applies the persisted theme before first paint to avoid a light->dark
+      // flash. Key ("www-theme") is independent from apps/web's
+      // "codesesh.ui-preferences" since the two apps ship separately.
+      // Exposes window.__wwwTheme so Header.astro's toggle can read/update the
+      // same state without re-deriving the light/dark computation.
+      (function () {
+        var KEY = "www-theme";
+        var MEDIA = "(prefers-color-scheme: dark)";
+
+        function getStored() {
+          try {
+            var value = window.localStorage.getItem(KEY);
+            return value === "light" || value === "dark" || value === "system" ? value : "system";
+          } catch (e) {
+            return "system";
+          }
+        }
+
+        function systemPrefersDark() {
+          return typeof window.matchMedia === "function" && window.matchMedia(MEDIA).matches;
+        }
+
+        function apply(theme) {
+          var isDark = theme === "dark" || (theme === "system" && systemPrefersDark());
+          document.documentElement.classList.toggle("dark", isDark);
+        }
+
+        var initialTheme = getStored();
+        apply(initialTheme);
+
+        if (typeof window.matchMedia === "function") {
+          window.matchMedia(MEDIA).addEventListener("change", function () {
+            if (getStored() === "system") apply("system");
+          });
+        }
+
+        window.__wwwTheme = {
+          get: getStored,
+          set: function (next) {
+            try {
+              window.localStorage.setItem(KEY, next);
+            } catch (e) {
+              // ignore write failures (private mode, storage disabled, etc.)
+            }
+            apply(next);
+          },
+        };
+      })();
+    </script>
+    <noscript>
+      <style>
+        /* No-JS fallback: follow the OS preference via a plain media query
+           (the `.dark` class-based `dark:` variant never activates without
+           the script above). Covers the two spots that aren't already driven
+           by the --console-* custom properties. */
+        @media (prefers-color-scheme: dark) {
+          :root {
+            --console-bg: #19191c;
+            --console-sidebar-bg: #1d1d20;
+            --console-surface: #242428;
+            --console-surface-muted: #202023;
+            --console-border: #2e2e32;
+            --console-border-strong: #3d3d42;
+            --console-text: #f2f2f0;
+            --console-muted: #a3a3a8;
+            --console-accent: #ececec;
+            --console-accent-strong: #ffffff;
+            --timeline-user: #c98aa8;
+            --timeline-agent: #82aed4;
+            --timeline-tool-read: #6bb3a0;
+            --timeline-tool-write: #d99a5c;
+            --timeline-tool-execute: #a89bc9;
+          }
+
+          [data-copy-command] {
+            color: var(--console-bg);
+          }
+
+          [data-copy-command]:hover {
+            background: var(--console-muted);
+          }
+
+          .bg-grid {
+            background-image:
+              linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+              linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+          }
+        }
+
+        /* The toggle only works via the inline script above; without JS it's
+           inert, so hide it rather than ship a dead control. */
+        [data-theme-toggle] {
+          display: none;
+        }
+      </style>
+    </noscript>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={t.meta.description} />
     <meta
