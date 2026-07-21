@@ -236,6 +236,7 @@
   .console-mono {
     font-family:
       "JetBrains Mono", "IBM Plex Mono", "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
   }
 
   .bg-grid {
