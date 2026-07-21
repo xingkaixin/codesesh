@@ -29,6 +29,29 @@ function createStore() {
   };
 }
 
+function createLargeSessionsStore() {
+  const sessions = Array.from({ length: 200 }, (_, index) => ({
+    id: `session-${index}`,
+    slug: `codex/session-${index}`,
+    title: `Session with a reasonably descriptive title ${index}`,
+    directory: "/repo/some/nested/project/directory",
+    time_created: index,
+    stats: {
+      message_count: 1,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_cost: 0,
+    },
+  }));
+  return {
+    getSnapshot: () => ({ sessions, byAgent: { codex: sessions }, agents: [] }),
+    getScanStatus: () => SAMPLE_SCAN_STATUS_EVENT,
+    subscribe: () => () => {},
+    subscribeScanStatus: () => () => {},
+    shutdown: vi.fn(),
+  };
+}
+
 async function listen(server: NodeServer, port: number): Promise<number> {
   return new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -169,6 +192,26 @@ describe("createServer", () => {
     } finally {
       await app.shutdown();
       warnSpy.mockRestore();
+    }
+  });
+
+  it("compresses large JSON API responses but leaves the SSE stream untouched", async () => {
+    const app = await createServer(0, createLargeSessionsStore());
+
+    try {
+      const sessionsResponse = await fetch(`${app.url}/api/sessions`, {
+        headers: { "Accept-Encoding": "gzip" },
+      });
+      expect(sessionsResponse.headers.get("Content-Encoding")).toBe("gzip");
+
+      const eventsResponse = await fetch(`${app.url}/api/events`, {
+        headers: { "Accept-Encoding": "gzip" },
+      });
+      expect(eventsResponse.headers.get("Content-Encoding")).toBeNull();
+      expect(eventsResponse.headers.get("Content-Type")).toContain("text/event-stream");
+      await eventsResponse.body?.cancel();
+    } finally {
+      await app.shutdown();
     }
   });
 
