@@ -15,6 +15,7 @@ import {
   type SessionHeadChange,
   type SessionHead,
 } from "@codesesh/core";
+import { appLogger } from "./logging.js";
 
 export type SearchIndexWorkerMessage =
   | {
@@ -105,8 +106,18 @@ for (const job of jobs) {
       (sessionId) => agent.getSessionData(sessionId),
       job.searchIndexOptions,
     );
-    if (job.saveCache && result?.skipped === 0) {
+    // Head cache init is decoupled from search-index completeness (CS-73): a
+    // session that fails to load must not permanently block markAgentCacheInitialized,
+    // or every future refresh would fall back to a full initializeAgent scan.
+    // The skip is still surfaced as a warning so it stays visible.
+    if (job.saveCache && result) {
       markAgentCacheInitialized(job.agentName);
+      if (result.skipped > 0) {
+        appLogger.warn("search_index.sync_incomplete", {
+          agent: job.agentName,
+          skipped: result.skipped,
+        });
+      }
     }
   }
   parentPort?.postMessage({

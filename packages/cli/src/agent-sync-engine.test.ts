@@ -12,7 +12,7 @@ const core = vi.hoisted(() => ({
 }));
 
 const searchIndex = vi.hoisted(() => ({
-  enqueue: vi.fn(async () => undefined),
+  enqueue: vi.fn<(...args: unknown[]) => Promise<undefined>>(async () => undefined),
   shutdown: vi.fn(async () => undefined),
   snapshot: vi.fn(() => ({ activeBatchId: undefined, pendingBatches: 0 })),
 }));
@@ -105,6 +105,7 @@ afterEach(() => {
   core.getAgentLastFullSyncAt.mockReturnValue(Date.now());
   core.isAgentCacheInitialized.mockReturnValue(true);
   core.loadCachedSessions.mockReturnValue(null);
+  searchIndex.enqueue.mockImplementation(async () => undefined);
 });
 
 describe("AgentSyncEngine", () => {
@@ -290,5 +291,55 @@ describe("AgentSyncEngine", () => {
         event: expect.objectContaining({ updatedSessions: 1 }),
       }),
     );
+  });
+
+  it("CS-73 regression: a windowed startup scan with one unindexed session still switches to the incremental refresh path", async () => {
+    // Mirrors the fixed search-index-worker.ts:108 (`job.saveCache && result`,
+    // no more `skipped === 0` gate): the head cache is marked initialized as
+    // soon as it's saved, even if `getSessionData` couldn't load "broken" and
+    // syncSessionSearchIndex reports skipped > 0 for it. Before the fix, that
+    // skip permanently blocked markAgentCacheInitialized, so isInitialized
+    // stayed false and every later refresh re-ran the full initializeAgent
+    // scan instead of the incremental checkForChanges path.
+    let cacheInitialized = false;
+    core.isAgentCacheInitialized.mockImplementation(() => cacheInitialized);
+    searchIndex.enqueue.mockImplementation(async (...args: unknown[]) => {
+      const jobs = args[1] as Array<{ kind: string; saveCache?: boolean }>;
+      for (const job of jobs) {
+        if (job.kind === "full" && job.saveCache) cacheInitialized = true;
+      }
+      return undefined;
+    });
+
+    const checkForChanges = vi.fn(() => ({ hasChanges: false, timestamp: Date.now() }));
+    const agent = makeAgent({ checkForChanges });
+    const scanResult = [makeSession("broken")];
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async () => ({ sessions: scanResult, meta: {} })),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const state: ScanResult = { agents: [agent], byAgent: { codex: [] }, sessions: [] };
+    const engine = new AgentSyncEngine({
+      snapshot: () => state,
+      workerRunner,
+      startupScanOptions: { from: 1, to: 2 },
+    });
+    engine.subscribeSessionsChanged((change) => {
+      state.byAgent[change.agentName] = change.sessions;
+      state.sessions = Object.values(state.byAgent).flat();
+    });
+    engine.initialize();
+
+    await engine.refresh("codex");
+    expect(cacheInitialized).toBe(true);
+    expect(workerRunner.run).toHaveBeenCalledTimes(1);
+
+    await engine.refresh("codex");
+
+    // The second refresh takes the incremental path (checkForChanges), not
+    // another windowed initializeAgent full scan.
+    expect(checkForChanges).toHaveBeenCalledTimes(1);
+    expect(workerRunner.run).toHaveBeenCalledTimes(1);
   });
 });

@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   setFtsIntegrityCheckedPath: vi.fn(),
   syncSessionSearchIndex: vi.fn(),
   syncSessionSearchIndexChanges: vi.fn(),
+  appLoggerWarn: vi.fn(),
 }));
 
 vi.mock("node:worker_threads", () => ({
@@ -31,6 +32,10 @@ vi.mock("@codesesh/core", () => ({
   syncSessionSearchIndexChanges: mocks.syncSessionSearchIndexChanges,
   // diagnostics-bridge.js (imported by the worker for its side effect) needs this export.
   setCoreDiagnostics: vi.fn(),
+}));
+
+vi.mock("./logging.js", () => ({
+  appLogger: { warn: mocks.appLoggerWarn },
 }));
 
 function makeAgent() {
@@ -122,6 +127,42 @@ describe("search index worker", () => {
       { force: true },
     );
     expect(mocks.markAgentCacheInitialized).toHaveBeenCalledWith("codex");
+    expect(mocks.appLoggerWarn).not.toHaveBeenCalled();
+  });
+
+  it("CS-73 regression: still marks the agent initialized when a session couldn't be indexed, but warns", async () => {
+    const agent = makeAgent();
+    const sessions = [{ id: "s1" }, { id: "broken" }];
+    const meta = { s1: { id: "s1" } };
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    // One session (e.g. its data failed to load) is left unindexed.
+    mocks.syncSessionSearchIndex.mockReturnValue({ indexed: 1, skipped: 1 });
+    mocks.workerData = {
+      context: "refresh",
+      agentNames: [],
+      sessionsByAgent: {},
+      metaByAgent: {},
+      jobs: [
+        {
+          kind: "full",
+          context: "codex-full",
+          agentName: "codex",
+          sessions,
+          meta,
+          saveCache: true,
+        },
+      ],
+    };
+
+    await runWorker();
+
+    // Head cache init must not be blocked by an incomplete search index —
+    // otherwise every later refresh falls back to a full initializeAgent scan.
+    expect(mocks.markAgentCacheInitialized).toHaveBeenCalledWith("codex");
+    expect(mocks.appLoggerWarn).toHaveBeenCalledWith("search_index.sync_incomplete", {
+      agent: "codex",
+      skipped: 1,
+    });
   });
 
   it("applies incremental index changes and reports processed sessions", async () => {

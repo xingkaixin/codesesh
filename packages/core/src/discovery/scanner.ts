@@ -469,11 +469,14 @@ async function scanAgentFull(
     // 收集元数据
     const meta = buildAgentCacheMeta(agent);
 
-    // 保存到缓存
-    if (options.writeCache !== false && options.from == null && options.to == null) {
-      saveCachedSessions(agent.name, tagged.sessions, meta);
+    if (options.writeCache !== false) {
+      // 全量（无时间窗）扫描才落盘完整会话列表并记录一次全量同步，用于 backfill 节流判断
+      if (options.from == null && options.to == null) {
+        saveCachedSessions(agent.name, tagged.sessions, meta);
+        markAgentFullSyncCompleted(agent.name);
+      }
+      // head 缓存是否建立与搜索索引是否完整是两回事，带时间窗的扫描同样应当标记
       markAgentCacheInitialized(agent.name);
-      markAgentFullSyncCompleted(agent.name);
     }
 
     onProgress?.({ agent: agent.name, phase: "complete", newCount: tagged.sessions.length });
