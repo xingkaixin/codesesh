@@ -1329,6 +1329,14 @@ describe("searchSessions", () => {
     }
     setSchemaEnsuredPath(null);
 
+    // loadCachedSessions opens the writable connection, so it's what actually
+    // runs the pending migration; listCachedProjectGroups now reads through
+    // the read-only connection and must not trigger migrations itself.
+    expect(loadCachedSessions("codex")?.sessions[0]?.project_identity).toEqual({
+      kind: "synthetic",
+      key: "codex:scratch",
+      displayName: "Chats",
+    });
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "synthetic",
@@ -1339,11 +1347,6 @@ describe("searchSessions", () => {
         lastActivity: now,
       },
     ]);
-    expect(loadCachedSessions("codex")?.sessions[0]?.project_identity).toEqual({
-      kind: "synthetic",
-      key: "codex:scratch",
-      displayName: "Chats",
-    });
   });
 
   it("combines full text with structured filters", () => {

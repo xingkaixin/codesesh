@@ -238,6 +238,7 @@ export function openDb(dbPath: string): SQLiteDatabase | null {
       db.pragma("journal_mode = WAL");
       db.pragma("synchronous = NORMAL");
       db.pragma("foreign_keys = ON");
+      db.pragma("busy_timeout = 5000");
     } catch {
       // The database remains usable when SQLite rejects connection-level tuning.
     }

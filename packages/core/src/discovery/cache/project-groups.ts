@@ -4,9 +4,9 @@
  */
 import type { ProjectGroup, ProjectIdentityKind, SessionHead } from "../../types/index.js";
 import { buildProjectGroups } from "../../projects/index.js";
-import type { DatabaseRow } from "../../utils/sqlite.js";
+import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import { hasCacheStorage } from "./db.js";
-import { withCacheDb } from "./schema.js";
+import { withCacheDb, withCacheDbReadOnly } from "./schema.js";
 
 export interface ProjectGroupRow extends DatabaseRow {
   identity_kind?: ProjectIdentityKind;
@@ -26,8 +26,8 @@ export function listCachedProjectGroups(sessions?: SessionHead[]): ProjectGroup[
     return [];
   }
 
-  const groups = withCacheDb((db) => {
-    const rows = db
+  const queryRows = (db: SQLiteDatabase) =>
+    db
       .prepare(
         `
           SELECT identity_kind, identity_key, display_name, sources_csv, session_count, last_activity
@@ -40,18 +40,20 @@ export function listCachedProjectGroups(sessions?: SessionHead[]): ProjectGroup[
       )
       .all() as ProjectGroupRow[];
 
-    return rows.map((row) => ({
-      identityKind: row.identity_kind ?? "path",
-      identityKey: String(row.identity_key ?? ""),
-      displayName: String(row.display_name ?? ""),
-      sources: String(row.sources_csv ?? "")
-        .split(",")
-        .filter(Boolean)
-        .sort(),
-      sessionCount: Number(row.session_count ?? 0),
-      lastActivity: row.last_activity == null ? null : Number(row.last_activity),
-    }));
-  });
+  let rows = withCacheDbReadOnly(queryRows);
+  if (rows == null) {
+    rows = withCacheDb(queryRows);
+  }
 
-  return groups ?? [];
+  return (rows ?? []).map((row) => ({
+    identityKind: row.identity_kind ?? "path",
+    identityKey: String(row.identity_key ?? ""),
+    displayName: String(row.display_name ?? ""),
+    sources: String(row.sources_csv ?? "")
+      .split(",")
+      .filter(Boolean)
+      .sort(),
+    sessionCount: Number(row.session_count ?? 0),
+    lastActivity: row.last_activity == null ? null : Number(row.last_activity),
+  }));
 }
