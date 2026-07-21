@@ -10,12 +10,12 @@ export function QuestionListOutput({ questions }: QuestionListOutputProps) {
       {questions.map((question) => (
         <div
           key={`${question.header ?? "question"}:${question.question}`}
-          className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[#fafafa]"
+          className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)]"
         >
           <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-2">
             <div className="flex flex-wrap items-center gap-2">
               {question.header ? (
-                <span className="console-mono rounded-sm border border-[var(--console-border)] bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--console-muted)]">
+                <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--console-muted)]">
                   {question.header}
                 </span>
               ) : null}
@@ -42,7 +42,7 @@ export function QuestionListOutput({ questions }: QuestionListOutputProps) {
                   className={`rounded-sm border px-3 py-2 ${
                     isSelected
                       ? "border-[var(--console-success-border)] bg-[var(--console-success-bg)]"
-                      : "border-[var(--console-border)] bg-white"
+                      : "border-[var(--console-border)] bg-[var(--console-surface)]"
                   }`}
                 >
                   <div className="flex flex-wrap items-center gap-2">
@@ -59,7 +59,7 @@ export function QuestionListOutput({ questions }: QuestionListOutputProps) {
                       </span>
                     ) : null}
                     {isSelected ? (
-                      <span className="console-mono rounded-sm border border-[var(--console-success-border)] bg-white px-1.5 py-0.5 text-[10px] text-[var(--console-success)]">
+                      <span className="console-mono rounded-sm border border-[var(--console-success-border)] bg-[var(--console-surface)] px-1.5 py-0.5 text-[10px] text-[var(--console-success)]">
                         Selected
                       </span>
                     ) : null}

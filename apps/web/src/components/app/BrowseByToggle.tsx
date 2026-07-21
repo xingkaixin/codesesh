@@ -31,7 +31,7 @@ export function BrowseByToggle({
               disabled
                 ? "cursor-not-allowed border-transparent text-[var(--console-muted)] opacity-45"
                 : active
-                  ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
+                  ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
                   : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
             }`}
             title={

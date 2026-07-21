@@ -39,7 +39,7 @@ export function SessionDetailSkeleton() {
                     className={`${item.timeWidth} h-2.5 animate-pulse motion-reduce:animate-none`}
                   />
                 </div>
-                <div className="rounded-sm border border-[var(--console-border)] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+                <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
                   <div className="space-y-2">
                     {item.bodyWidths.map((w) => (
                       <SkeletonBlock
@@ -54,7 +54,7 @@ export function SessionDetailSkeleton() {
           </article>
         ))}
       </div>
-      <div className="min-h-24 flex-1 rounded-sm border border-[var(--console-border)] bg-white/60 animate-pulse motion-reduce:animate-none" />
+      <div className="min-h-24 flex-1 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]/60 animate-pulse motion-reduce:animate-none" />
     </div>
   );
 }

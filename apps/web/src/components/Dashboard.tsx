@@ -41,7 +41,7 @@ function formatCompact(value: number): string {
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <p className="console-mono text-[11px] uppercase tracking-wider text-[var(--console-muted)]">
         {label}
       </p>
@@ -76,7 +76,7 @@ function DailyActivityChart({ buckets }: { buckets: DashboardDailyBucket[] }) {
   return (
     <section
       aria-labelledby="daily-activity-title"
-      className="rounded-sm border border-[var(--console-border)] bg-white p-4"
+      className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4"
     >
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
@@ -196,7 +196,7 @@ function DailyTokenChart({ buckets }: { buckets: DailyTokenBucket[] }) {
   return (
     <section
       aria-labelledby="daily-token-activity-title"
-      className="rounded-sm border border-[var(--console-border)] bg-white p-4"
+      className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4"
     >
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
@@ -359,7 +359,7 @@ function ModelDistribution({ entries }: { entries: ModelDistributionEntry[] }) {
 
   if (visibleEntries.length === 0 || totalTokens === 0) {
     return (
-      <div className="rounded-sm border border-[var(--console-border)] bg-white p-4 text-sm text-[var(--console-muted)]">
+      <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4 text-sm text-[var(--console-muted)]">
         No model data yet
       </div>
     );
@@ -383,7 +383,7 @@ function ModelDistribution({ entries }: { entries: ModelDistributionEntry[] }) {
   return (
     <section
       aria-labelledby="model-distribution-title"
-      className="rounded-sm border border-[var(--console-border)] bg-white p-4"
+      className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4"
     >
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3
@@ -464,14 +464,14 @@ function AgentDistribution({ perAgent }: { perAgent: DashboardAgentStat[] }) {
 
   if (total === 0 || perAgent.length === 0) {
     return (
-      <div className="rounded-sm border border-[var(--console-border)] bg-white p-4 text-sm text-[var(--console-muted)]">
+      <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4 text-sm text-[var(--console-muted)]">
         No agent data yet
       </div>
     );
   }
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
           Agent Distribution
@@ -531,7 +531,7 @@ function TopProjects({
   if (projects.length === 0) return null;
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
           Projects
@@ -566,7 +566,7 @@ function TopProjects({
                     return (
                       <span
                         key={agent.name}
-                        className="console-mono inline-flex items-center gap-1 rounded-sm border border-[var(--console-border)] bg-white px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]"
+                        className="console-mono inline-flex items-center gap-1 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]"
                       >
                         {agentInfo?.icon ? (
                           <img
@@ -604,7 +604,7 @@ function BookmarkedSessions({
   if (sessions.length === 0) return null;
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
           Bookmarked Sessions
@@ -660,14 +660,14 @@ function RecentSessions({
 }) {
   if (sessions.length === 0) {
     return (
-      <div className="rounded-sm border border-[var(--console-border)] bg-white p-4 text-sm text-[var(--console-muted)]">
+      <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4 text-sm text-[var(--console-muted)]">
         No sessions yet
       </div>
     );
   }
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
           Recent Activity
@@ -722,14 +722,14 @@ function RecentSessions({
 function RecentFileActivity({ activity }: { activity: FileActivityResult[] }) {
   if (activity.length === 0) {
     return (
-      <div className="rounded-sm border border-[var(--console-border)] bg-white p-4 text-sm text-[var(--console-muted)]">
+      <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4 text-sm text-[var(--console-muted)]">
         No file activity yet
       </div>
     );
   }
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white p-4">
+    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
           Recently Touched Files

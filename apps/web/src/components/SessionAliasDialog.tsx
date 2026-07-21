@@ -64,7 +64,7 @@ export function SessionAliasDialog({
     <Dialog.Root open={target !== null} onOpenChange={(open) => (!open ? onClose() : undefined)}>
       <Dialog.Portal>
         <Dialog.Backdrop className="motion-backdrop fixed inset-0 z-50 bg-black/35" />
-        <Dialog.Popup className="motion-modal fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-sm border border-[var(--console-border-strong)] bg-white p-5 shadow-2xl outline-none">
+        <Dialog.Popup className="motion-modal fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] p-5 shadow-2xl outline-none">
           <Dialog.Title className="console-mono text-sm font-semibold text-[var(--console-text)]">
             Rename session
           </Dialog.Title>
@@ -80,7 +80,7 @@ export function SessionAliasDialog({
               onKeyDown={(event) => {
                 if (event.key === "Enter") void saveAlias();
               }}
-              className="mt-1.5 w-full rounded-sm border border-[var(--console-border)] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[var(--console-text)] outline-none focus:border-[var(--console-accent)] focus:ring-2 focus:ring-[var(--console-accent)]/25"
+              className="mt-1.5 w-full rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 py-2 text-sm normal-case tracking-normal text-[var(--console-text)] outline-none focus:border-[var(--console-accent)] focus:ring-2 focus:ring-[var(--console-accent)]/25"
             />
           </label>
           {error ? (

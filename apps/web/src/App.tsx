@@ -365,7 +365,7 @@ export default function App() {
 
   return (
     <div className="console-ui flex h-screen flex-col overflow-hidden bg-[var(--console-bg)] text-[var(--console-text)]">
-      <header className="shrink-0 border-b border-[var(--console-border)] bg-white/85 backdrop-blur-sm">
+      <header className="shrink-0 border-b border-[var(--console-border)] bg-[var(--console-surface)]/85 backdrop-blur-sm">
         <div className="grid min-h-14 grid-cols-[auto_1fr] items-center gap-3 px-4 py-2 sm:grid-cols-[auto_1fr_auto] sm:py-0">
           <div className="flex items-center gap-2">
             <button
@@ -374,7 +374,7 @@ export default function App() {
               aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="hidden rounded-sm border border-[var(--console-border)] bg-white p-1.5 text-[var(--console-muted)] transition-colors hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] lg:inline-flex"
+              className="hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1.5 text-[var(--console-muted)] transition-colors hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] lg:inline-flex"
             >
               {sidebarCollapsed ? (
                 <PanelLeftOpen className="size-4" />
@@ -396,7 +396,7 @@ export default function App() {
               submitSearch();
             }}
           >
-            <label className="flex min-w-0 flex-1 items-center rounded-sm border border-[var(--console-border)] bg-white px-2 py-1 focus-within:border-[var(--console-border-strong)] focus-within:ring-2 focus-within:ring-[var(--console-accent)] focus-within:ring-offset-2">
+            <label className="flex min-w-0 flex-1 items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 focus-within:border-[var(--console-border-strong)] focus-within:ring-2 focus-within:ring-[var(--console-accent)] focus-within:ring-offset-2">
               <span className="sr-only">Search Sessions</span>
               <input
                 ref={searchInputRef}
@@ -411,7 +411,7 @@ export default function App() {
             </label>
             <button
               type="submit"
-              className="console-mono rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-3 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="console-mono rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-3 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               Search
             </button>
@@ -423,7 +423,7 @@ export default function App() {
                 setShortcutHelpOpen(true);
                 dismissShortcutHint();
               }}
-              className="console-mono rounded-sm border border-[var(--console-border)] bg-white px-2 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-[var(--console-surface-muted)]"
+              className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-[var(--console-surface-muted)]"
               title="Show keyboard shortcuts"
             >
               ?<span className="hidden sm:inline"> Shortcuts</span>
@@ -477,7 +477,7 @@ export default function App() {
         />
 
         <main className="flex min-w-0 flex-1 flex-col">
-          <section className="shrink-0 border-b border-[var(--console-border)] bg-white/70 px-4 py-4 backdrop-blur-sm md:px-8">
+          <section className="shrink-0 border-b border-[var(--console-border)] bg-[var(--console-surface)]/70 px-4 py-4 backdrop-blur-sm md:px-8">
             <div>
               <nav
                 aria-label="Breadcrumb"
@@ -514,7 +514,7 @@ export default function App() {
                 {!shortcutHintDismissed ? (
                   <div className="console-mono inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
                     <span>Keyboard navigation available</span>
-                    <span className="rounded-sm border border-[var(--console-border)] bg-white px-1">
+                    <span className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1">
                       ?
                     </span>
                     <button

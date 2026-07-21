@@ -22,7 +22,7 @@ function renderSectionContent(section: FileSectionItem) {
   }
 
   return (
-    <div className="max-h-[420px] overflow-auto bg-[#fafafa]">
+    <div className="max-h-[420px] overflow-auto bg-[var(--console-surface-sunken)]">
       <CodeHighlighter language={section.language} text={outputText} />
     </div>
   );
@@ -34,11 +34,11 @@ export function FileSectionsOutput({ sections }: FileSectionsOutputProps) {
       {sections.map((section) => (
         <div
           key={`${section.operation}:${section.label}:${section.language}`}
-          className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[#fafafa]"
+          className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)]"
         >
           <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5">
             <div className="flex items-center gap-2">
-              <span className="console-mono rounded-sm border border-[var(--console-border)] bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--console-muted)]">
+              <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--console-muted)]">
                 {section.operation}
               </span>
               <span className="console-mono text-[11px] font-semibold text-[var(--console-muted)]">

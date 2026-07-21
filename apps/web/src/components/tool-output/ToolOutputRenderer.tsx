@@ -41,7 +41,7 @@ export function ToolOutputRenderer({ outputContent }: ToolOutputRendererProps) {
 
   if (!outputContent.isCode || outputContent.language === "text") {
     return (
-      <pre className="console-mono max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-sm border border-[var(--console-border)] bg-[#fafafa] p-3 text-xs leading-relaxed text-[var(--console-text)]">
+      <pre className="console-mono max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)] p-3 text-xs leading-relaxed text-[var(--console-text)]">
         {outputText}
       </pre>
     );
@@ -52,7 +52,7 @@ export function ToolOutputRenderer({ outputContent }: ToolOutputRendererProps) {
   }
 
   return (
-    <div className="max-h-[420px] overflow-auto rounded-sm border border-[var(--console-border)] bg-[#fafafa]">
+    <div className="max-h-[420px] overflow-auto rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)]">
       <CodeHighlighter language={outputContent.language} text={outputText} />
     </div>
   );

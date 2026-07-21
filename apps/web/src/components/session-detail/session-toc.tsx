@@ -93,7 +93,7 @@ function TocCheckbox({
         className={`flex size-3.5 items-center justify-center rounded border ${
           checked || indeterminate
             ? "border-[var(--console-accent-strong)] bg-[var(--console-accent-strong)] text-white"
-            : "border-[var(--console-border-strong)] bg-white text-transparent"
+            : "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-transparent"
         }`}
       >
         {indeterminate ? (
@@ -150,7 +150,7 @@ export function SessionTocFilterPanel({
   const someToolsSelected = selectedToolCount > 0 && selectedToolCount < toolIds.length;
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <div className="flex items-center gap-2 border-b border-[var(--console-border)] px-4 py-3">
         <Funnel className="size-3.5 text-[var(--console-accent)]" />
         <span className="console-mono text-xs font-semibold uppercase tracking-[0.16em] text-[var(--console-text)]">

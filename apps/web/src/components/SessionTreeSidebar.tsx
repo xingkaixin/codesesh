@@ -449,7 +449,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
           ref={optionsMenuRef}
           role="menu"
           style={{ position: "fixed", top: options.top, right: options.right }}
-          className="z-40 w-36 rounded-sm border border-[var(--console-border-strong)] bg-white p-1 shadow-lg"
+          className="z-40 w-36 rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] p-1 shadow-lg"
           onBlur={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget)) setOptions(null);
           }}

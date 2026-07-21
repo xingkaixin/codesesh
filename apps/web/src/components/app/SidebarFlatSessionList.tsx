@@ -54,7 +54,7 @@ function SessionRow({
     <div
       className={`flex items-start gap-1 rounded-sm border px-2 py-1.5 transition-colors ${
         active || selected
-          ? "border-[var(--console-border-strong)] bg-white text-[var(--console-text)]"
+          ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
           : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
       }`}
     >

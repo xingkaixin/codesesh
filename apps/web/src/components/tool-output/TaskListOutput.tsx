@@ -14,7 +14,7 @@ const STATUS_META = {
 
 export function TaskListOutput({ items }: { items: TaskListItem[] }) {
   return (
-    <ol className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-white">
+    <ol className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]">
       {items.map((item, index) => {
         const meta = STATUS_META[item.status];
         return (

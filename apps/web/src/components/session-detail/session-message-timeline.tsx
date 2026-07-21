@@ -454,7 +454,7 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
     <div className="sticky top-0 z-20 -mx-2 bg-[var(--console-bg)] px-2 py-3">
       <div
         ref={rootRef}
-        className="session-message-timeline relative rounded-sm border border-[var(--console-border)] bg-white px-3 py-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]"
+        className="session-message-timeline relative rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 py-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]"
       >
         <div className="relative">
           <div

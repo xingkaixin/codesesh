@@ -113,7 +113,9 @@
 
     --console-bg: #f7f7f7;
     --console-sidebar-bg: #fbfbfb;
+    --console-surface: #ffffff;
     --console-surface-muted: #f5f5f5;
+    --console-surface-sunken: #fafafa;
     --console-border: #e5e5e5;
     --console-border-strong: #d4d4d4;
     --console-text: #1a1a1a;
@@ -137,6 +139,42 @@
     --timeline-tool-read: #478b7d;
     --timeline-tool-write: #bd7336;
     --timeline-tool-execute: #786ca3;
+    --tag-bugfix-text: #b42318;
+    --tag-bugfix-border: #fecdca;
+    --tag-bugfix-background: #fef3f2;
+    --tag-bugfix-bar: #f04438;
+    --tag-refactoring-text: #6941c6;
+    --tag-refactoring-border: #d9d6fe;
+    --tag-refactoring-background: #f4f3ff;
+    --tag-refactoring-bar: #7a5af8;
+    --tag-feature-dev-text: #175cd3;
+    --tag-feature-dev-border: #b2ddff;
+    --tag-feature-dev-background: #eff8ff;
+    --tag-feature-dev-bar: #2e90fa;
+    --tag-testing-text: #027a48;
+    --tag-testing-border: #abefc6;
+    --tag-testing-background: #ecfdf3;
+    --tag-testing-bar: #12b76a;
+    --tag-docs-text: #b54708;
+    --tag-docs-border: #fedf89;
+    --tag-docs-background: #fffaeb;
+    --tag-docs-bar: #f79009;
+    --tag-git-ops-text: #3538cd;
+    --tag-git-ops-border: #c7d7fe;
+    --tag-git-ops-background: #eef4ff;
+    --tag-git-ops-bar: #444ce7;
+    --tag-build-deploy-text: #c4320a;
+    --tag-build-deploy-border: #f9dbaf;
+    --tag-build-deploy-background: #fef6ee;
+    --tag-build-deploy-bar: #ef6820;
+    --tag-exploration-text: #0e7090;
+    --tag-exploration-border: #a5f0fc;
+    --tag-exploration-background: #ecfdff;
+    --tag-exploration-bar: #06aed4;
+    --tag-planning-text: #c11574;
+    --tag-planning-border: #fcceee;
+    --tag-planning-background: #fdf2fa;
+    --tag-planning-bar: #ee46bc;
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
     --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
     --tt-in-dur: 150ms;
@@ -149,6 +187,9 @@
     --tt-fg: #2f2f2f;
   }
 
+  /* Dark mode is not implemented: this block only overrides the shadcn base
+     tokens below and does not cover --console-* / --timeline-* / --tag-*,
+     which the product UI actually renders with. */
   .dark {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 98%;

@@ -25,7 +25,7 @@ export function ShortcutHelpDialog({ open, onClose }: { open: boolean; onClose: 
     <Dialog.Root open={open} onOpenChange={(next) => (!next ? onClose() : undefined)}>
       <Dialog.Portal>
         <Dialog.Backdrop className="shortcut-overlay fixed inset-0 z-50 bg-black/35" />
-        <Dialog.Popup className="shortcut-content fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl origin-center -translate-x-1/2 -translate-y-1/2 rounded-sm border border-[var(--console-border-strong)] bg-white p-5 shadow-2xl outline-none">
+        <Dialog.Popup className="shortcut-content fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl origin-center -translate-x-1/2 -translate-y-1/2 rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] p-5 shadow-2xl outline-none">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="console-mono text-[11px] uppercase tracking-[0.16em] text-[var(--console-muted)]">
@@ -35,7 +35,7 @@ export function ShortcutHelpDialog({ open, onClose }: { open: boolean; onClose: 
                 Navigate without leaving the keyboard
               </Dialog.Title>
             </div>
-            <Dialog.Close className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-white">
+            <Dialog.Close className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-[var(--console-surface)]">
               Esc
             </Dialog.Close>
           </div>

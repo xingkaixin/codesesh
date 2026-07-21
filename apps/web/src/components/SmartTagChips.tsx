@@ -13,65 +13,22 @@ export const SMART_TAG_LABELS: Record<SmartTag, string> = {
   planning: "planning",
 };
 
+// SmartTag values double as the --tag-{tone}-* CSS variable names in
+// index.css, which owns the actual color values.
 export const SMART_TAG_TONES: Record<
   SmartTag,
   { text: string; border: string; background: string; bar: string }
-> = {
-  bugfix: {
-    text: "#B42318",
-    border: "#FECDCA",
-    background: "#FEF3F2",
-    bar: "#F04438",
-  },
-  refactoring: {
-    text: "#6941C6",
-    border: "#D9D6FE",
-    background: "#F4F3FF",
-    bar: "#7A5AF8",
-  },
-  "feature-dev": {
-    text: "#175CD3",
-    border: "#B2DDFF",
-    background: "#EFF8FF",
-    bar: "#2E90FA",
-  },
-  testing: {
-    text: "#027A48",
-    border: "#ABEFC6",
-    background: "#ECFDF3",
-    bar: "#12B76A",
-  },
-  docs: {
-    text: "#B54708",
-    border: "#FEDF89",
-    background: "#FFFAEB",
-    bar: "#F79009",
-  },
-  "git-ops": {
-    text: "#3538CD",
-    border: "#C7D7FE",
-    background: "#EEF4FF",
-    bar: "#444CE7",
-  },
-  "build-deploy": {
-    text: "#C4320A",
-    border: "#F9DBAF",
-    background: "#FEF6EE",
-    bar: "#EF6820",
-  },
-  exploration: {
-    text: "#0E7090",
-    border: "#A5F0FC",
-    background: "#ECFDFF",
-    bar: "#06AED4",
-  },
-  planning: {
-    text: "#C11574",
-    border: "#FCCEEE",
-    background: "#FDF2FA",
-    bar: "#EE46BC",
-  },
-};
+> = Object.fromEntries(
+  (Object.keys(SMART_TAG_LABELS) as SmartTag[]).map((tag) => [
+    tag,
+    {
+      text: `var(--tag-${tag}-text)`,
+      border: `var(--tag-${tag}-border)`,
+      background: `var(--tag-${tag}-background)`,
+      bar: `var(--tag-${tag}-bar)`,
+    },
+  ]),
+) as Record<SmartTag, { text: string; border: string; background: string; bar: string }>;
 
 export function getSmartTagTone(tag: SmartTag) {
   return SMART_TAG_TONES[tag];
