@@ -21,6 +21,7 @@ describe("useUiPreferences", () => {
     const { result } = renderHook(() => useUiPreferences());
     expect(result.current.shortcutHintDismissed).toBe(false);
     expect(result.current.sidebarCollapsed).toBe(false);
+    expect(result.current.theme).toBe("system");
   });
 
   it("hydrates valid preferences synchronously", () => {
@@ -28,13 +29,27 @@ describe("useUiPreferences", () => {
       UI_PREFERENCES_STORAGE_KEY,
       JSON.stringify({
         version: 1,
-        state: { shortcutHintDismissed: true, sidebarCollapsed: true },
+        state: { shortcutHintDismissed: true, sidebarCollapsed: true, theme: "dark" },
       }),
     );
 
     const { result } = renderHook(() => useUiPreferences());
     expect(result.current.shortcutHintDismissed).toBe(true);
     expect(result.current.sidebarCollapsed).toBe(true);
+    expect(result.current.theme).toBe("dark");
+  });
+
+  it("defaults theme to system for preferences persisted before CS-89", () => {
+    window.localStorage.setItem(
+      UI_PREFERENCES_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        state: { shortcutHintDismissed: true, sidebarCollapsed: false },
+      }),
+    );
+
+    const { result } = renderHook(() => useUiPreferences());
+    expect(result.current.theme).toBe("system");
   });
 
   it("persists semantic actions across hook instances", () => {
@@ -42,12 +57,14 @@ describe("useUiPreferences", () => {
     act(() => {
       first.result.current.dismissShortcutHint();
       first.result.current.setSidebarCollapsed(true);
+      first.result.current.setTheme("dark");
     });
     first.unmount();
 
     const second = renderHook(() => useUiPreferences());
     expect(second.result.current.shortcutHintDismissed).toBe(true);
     expect(second.result.current.sidebarCollapsed).toBe(true);
+    expect(second.result.current.theme).toBe("dark");
   });
 
   it("imports the legacy shortcut preference", () => {
@@ -62,6 +79,10 @@ describe("useUiPreferences", () => {
     JSON.stringify({
       version: 1,
       state: { shortcutHintDismissed: "yes", sidebarCollapsed: false },
+    }),
+    JSON.stringify({
+      version: 1,
+      state: { shortcutHintDismissed: true, sidebarCollapsed: false, theme: "blue" },
     }),
   ])("falls back for invalid stored data", (raw) => {
     window.localStorage.setItem(UI_PREFERENCES_STORAGE_KEY, raw);
@@ -94,7 +115,7 @@ describe("useUiPreferences", () => {
 
     expect(JSON.parse(window.localStorage.getItem(UI_PREFERENCES_STORAGE_KEY)!)).toEqual({
       version: 1,
-      state: { shortcutHintDismissed: true, sidebarCollapsed: false },
+      state: { shortcutHintDismissed: true, sidebarCollapsed: false, theme: "system" },
     });
   });
 });
@@ -108,10 +129,11 @@ describe("parseUiPreferences", () => {
           state: {
             shortcutHintDismissed: true,
             sidebarCollapsed: false,
+            theme: "light",
             transientSelection: "session-1",
           },
         }),
       ),
-    ).toEqual({ shortcutHintDismissed: true, sidebarCollapsed: false });
+    ).toEqual({ shortcutHintDismissed: true, sidebarCollapsed: false, theme: "light" });
   });
 });

@@ -350,10 +350,21 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
     };
 
     draw();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(draw);
-    observer.observe(canvas);
-    return () => observer.disconnect();
+    // The palette read above is resolved once per draw; toggling .dark on
+    // <html> changes the resolved --timeline-* values without resizing the
+    // canvas, so redraw must also be triggered by that class flip.
+    const themeObserver = new MutationObserver(draw);
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    if (typeof ResizeObserver === "undefined") return () => themeObserver.disconnect();
+    const resizeObserver = new ResizeObserver(draw);
+    resizeObserver.observe(canvas);
+    return () => {
+      themeObserver.disconnect();
+      resizeObserver.disconnect();
+    };
   }, [entries, minimapVisible]);
 
   const scrollToMinimapRatio = useCallback((ratio: number, grabOffset: number) => {
@@ -550,7 +561,7 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
             <button
               type="button"
               aria-label="Scroll timeline left"
-              className="absolute inset-y-0 left-0 z-10 flex w-8 items-center justify-start bg-[linear-gradient(to_right,#fff_55%,transparent)] pl-0.5 text-[var(--console-muted)] hover:text-[var(--console-text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--console-text)]"
+              className="absolute inset-y-0 left-0 z-10 flex w-8 items-center justify-start bg-[linear-gradient(to_right,var(--console-surface)_55%,transparent)] pl-0.5 text-[var(--console-muted)] hover:text-[var(--console-text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--console-text)]"
               onClick={() => scrollTimeline(-1)}
             >
               <ChevronLeft size={14} aria-hidden="true" />
@@ -560,7 +571,7 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
             <button
               type="button"
               aria-label="Scroll timeline right"
-              className="absolute inset-y-0 right-0 z-10 flex w-8 items-center justify-end bg-[linear-gradient(to_left,#fff_55%,transparent)] pr-0.5 text-[var(--console-muted)] hover:text-[var(--console-text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--console-text)]"
+              className="absolute inset-y-0 right-0 z-10 flex w-8 items-center justify-end bg-[linear-gradient(to_left,var(--console-surface)_55%,transparent)] pr-0.5 text-[var(--console-muted)] hover:text-[var(--console-text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--console-text)]"
               onClick={() => scrollTimeline(1)}
             >
               <ChevronRight size={14} aria-hidden="true" />

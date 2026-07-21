@@ -9,8 +9,12 @@ function getBlockKey(block: DiffBlock) {
 }
 
 function getStructuredDiffLineClassName(type: DiffLineItem["type"]) {
-  if (type === "add") return "text-[#15803d] bg-[#f0fdf4]";
-  if (type === "remove") return "text-[#b91c1c] bg-[#fef2f2]";
+  if (type === "add") {
+    return "text-[#15803d] bg-[#f0fdf4] dark:text-[var(--console-success)] dark:bg-[var(--console-success-bg)]";
+  }
+  if (type === "remove") {
+    return "text-[#b91c1c] bg-[#fef2f2] dark:text-[var(--console-error)] dark:bg-[var(--console-error-bg)]";
+  }
   return "text-[var(--console-text)]";
 }
 

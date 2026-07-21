@@ -92,7 +92,7 @@ function TocCheckbox({
         aria-hidden="true"
         className={`flex size-3.5 items-center justify-center rounded border ${
           checked || indeterminate
-            ? "border-[var(--console-accent-strong)] bg-[var(--console-accent-strong)] text-white"
+            ? "border-[var(--console-accent-strong)] bg-[var(--console-accent-strong)] text-white dark:text-[var(--console-bg)]"
             : "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-transparent"
         }`}
       >

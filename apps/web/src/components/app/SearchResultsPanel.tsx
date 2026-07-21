@@ -167,7 +167,7 @@ export function SearchResultsPanel({
             </h2>
             <SmartTagChips tags={result.session.smart_tags} className="mt-2" />
             <p
-              className="console-mono mt-2 text-xs leading-6 text-[var(--console-muted)] [&_mark]:bg-[var(--console-accent)] [&_mark]:px-0.5 [&_mark]:text-white"
+              className="console-mono mt-2 text-xs leading-6 text-[var(--console-muted)] [&_mark]:bg-[var(--console-accent)] [&_mark]:px-0.5 [&_mark]:text-white dark:[&_mark]:text-[var(--console-bg)]"
               dangerouslySetInnerHTML={{
                 __html: toSafeSnippetHtml(result.snippet || getSessionDisplayTitle(result.session)),
               }}

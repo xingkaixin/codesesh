@@ -9,14 +9,49 @@
     />
     <link rel="icon" type="image/svg+xml" href="/logo.svg?v=3" />
     <title>CodeSesh</title>
+    <script>
+      // Sets .dark before first paint, reading the same localStorage key and
+      // envelope shape as useUiPreferences (apps/web/src/hooks/useUiPreferences.ts)
+      // so the pre-hydration skeleton below never flashes the wrong theme.
+      (function () {
+        var theme = "system";
+        try {
+          var raw = window.localStorage.getItem("codesesh.ui-preferences");
+          if (raw) {
+            var envelope = JSON.parse(raw);
+            var stored = envelope && envelope.version === 1 && envelope.state && envelope.state.theme;
+            if (stored === "light" || stored === "dark" || stored === "system") theme = stored;
+          }
+        } catch (e) {
+          theme = "system";
+        }
+        var isDark =
+          theme === "dark" ||
+          (theme === "system" &&
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (isDark) document.documentElement.classList.add("dark");
+      })();
+    </script>
     <style>
       :root {
         --console-bg: #f7f7f7;
         --console-sidebar-bg: #fbfbfb;
+        --console-surface: #ffffff;
         --console-surface-muted: #f5f5f5;
         --console-border: #e5e5e5;
         --console-text: #1a1a1a;
         --console-muted: #666666;
+      }
+
+      .dark {
+        --console-bg: #19191c;
+        --console-sidebar-bg: #1d1d20;
+        --console-surface: #242428;
+        --console-surface-muted: #202023;
+        --console-border: #2e2e32;
+        --console-text: #f2f2f0;
+        --console-muted: #a3a3a8;
       }
 
       body {
@@ -48,6 +83,10 @@
         padding: 0 16px;
       }
 
+      .dark .app-header {
+        background: rgba(36, 36, 40, 0.85);
+      }
+
       .app-brand,
       .app-search,
       .app-pill,
@@ -75,6 +114,10 @@
         max-width: 560px;
         border: 1px solid var(--console-border);
         background: white;
+      }
+
+      .dark .app-search {
+        background: var(--console-surface);
       }
 
       .app-pill {
@@ -114,6 +157,10 @@
         padding: 18px 32px;
       }
 
+      .dark .app-titlebar {
+        background: rgba(36, 36, 40, 0.7);
+      }
+
       .app-title {
         height: 24px;
         width: 220px;
@@ -132,6 +179,10 @@
         border: 1px solid var(--console-border);
         background: rgba(255, 255, 255, 0.8);
         padding: 16px;
+      }
+
+      .dark .app-card {
+        background: rgba(36, 36, 40, 0.8);
       }
 
       .app-line {

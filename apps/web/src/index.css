@@ -189,9 +189,6 @@
     --tt-fg: #2f2f2f;
   }
 
-  /* Dark mode is not implemented: this block only overrides the shadcn base
-     tokens below and does not cover --console-* / --timeline-* / --tag-*,
-     which the product UI actually renders with. */
   .dark {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 98%;
@@ -212,6 +209,73 @@
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
     --ring: 0 0% 83.1%;
+
+    --console-bg: #19191c;
+    --console-sidebar-bg: #1d1d20;
+    --console-surface: #242428;
+    --console-surface-muted: #202023;
+    --console-surface-sunken: #1c1c1f;
+    --console-border: #2e2e32;
+    --console-border-strong: #3d3d42;
+    --console-text: #f2f2f0;
+    --console-muted: #a3a3a8;
+    --console-accent: #ececec;
+    --console-accent-strong: #ffffff;
+    --console-thread: #313135;
+    --console-thinking-bg: #202024;
+    --console-thinking-border: #2c2c30;
+    --console-success: #4ade80;
+    --console-success-bg: #122016;
+    --console-success-border: #20492c;
+    --console-warning: #fbbf24;
+    --console-warning-bg: #241a05;
+    --console-warning-border: #5c3d0a;
+    --console-error: #f87171;
+    --console-error-bg: #241010;
+    --console-error-border: #5c1e1e;
+    --timeline-user: #c98aa8;
+    --timeline-agent: #82aed4;
+    --timeline-tool-read: #6bb3a0;
+    --timeline-tool-write: #d99a5c;
+    --timeline-tool-execute: #a89bc9;
+    --tag-bugfix-text: #f592a0;
+    --tag-bugfix-border: #5c2530;
+    --tag-bugfix-background: #241014;
+    --tag-bugfix-bar: #fb7185;
+    --tag-refactoring-text: #b6a4f7;
+    --tag-refactoring-border: #3a2f63;
+    --tag-refactoring-background: #180f2b;
+    --tag-refactoring-bar: #9b87f0;
+    --tag-feature-dev-text: #8ec1fb;
+    --tag-feature-dev-border: #1f3a5c;
+    --tag-feature-dev-background: #0e1e30;
+    --tag-feature-dev-bar: #5b9df0;
+    --tag-testing-text: #6fdba3;
+    --tag-testing-border: #1c4a30;
+    --tag-testing-background: #0c2318;
+    --tag-testing-bar: #3fbe80;
+    --tag-docs-text: #f6b768;
+    --tag-docs-border: #5c3d10;
+    --tag-docs-background: #2a1a06;
+    --tag-docs-bar: #f0a13f;
+    --tag-git-ops-text: #a9b3f8;
+    --tag-git-ops-border: #332f66;
+    --tag-git-ops-background: #171531;
+    --tag-git-ops-bar: #818cf8;
+    --tag-build-deploy-text: #f6a06a;
+    --tag-build-deploy-border: #5c3416;
+    --tag-build-deploy-background: #2a1708;
+    --tag-build-deploy-bar: #f0813f;
+    --tag-exploration-text: #6fd4e8;
+    --tag-exploration-border: #1c4650;
+    --tag-exploration-background: #0c2126;
+    --tag-exploration-bar: #3fb8d4;
+    --tag-planning-text: #f593cf;
+    --tag-planning-border: #5c2246;
+    --tag-planning-background: #240f1e;
+    --tag-planning-bar: #ef6bc0;
+    --tt-bg: #242428;
+    --tt-fg: #f2f2f0;
   }
 
   * {
@@ -492,10 +556,32 @@
   .session-timeline-segment[aria-current="location"] {
     z-index: 1;
     opacity: 1;
+    /* The inner ring cuts out down to the timeline card's own background
+       (--console-surface), so it must track the surface token rather than
+       a fixed white to keep the cutout illusion in dark mode. */
     box-shadow:
-      0 0 0 2px #ffffff,
+      0 0 0 2px var(--console-surface),
       0 0 0 3px var(--console-text);
   }
+}
+
+/* Tailwind v4's ring-offset utilities fall back to a global #fff inside
+   @layer base; override it here (unlayered, so it wins the cascade) rather
+   than touching every focus-visible:ring-offset-2 call site. */
+.dark,
+.dark * {
+  --tw-ring-offset-color: var(--console-bg);
+}
+
+.dark .bg-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+}
+
+.dark .session-timeline-minimap-window {
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 0 9999px rgba(12, 12, 14, 0.72);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -593,6 +679,18 @@
   scrollbar-color: #d1d5db transparent;
 }
 
+.dark .console-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--console-border-strong);
+}
+
+.dark .console-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--console-muted);
+}
+
+.dark .console-scrollbar {
+  scrollbar-color: var(--console-border-strong) transparent;
+}
+
 .console-markdown > * + * {
   margin-top: 0.75rem;
 }
@@ -683,6 +781,10 @@
   text-decoration: underline;
 }
 
+.dark .console-markdown a {
+  color: var(--tag-git-ops-text);
+}
+
 .console-markdown-link {
   color: inherit;
   cursor: text;
@@ -701,6 +803,11 @@
   white-space: pre-wrap;
 }
 
+.dark .console-markdown code {
+  background: var(--console-surface-muted);
+  border-color: var(--console-border);
+}
+
 .console-markdown pre {
   margin: 0;
   max-width: 100%;
@@ -709,6 +816,11 @@
   border-radius: 0.125rem;
   overflow-x: auto;
   padding: 0.75rem;
+}
+
+.dark .console-markdown pre {
+  background: var(--console-surface-sunken);
+  border-color: var(--console-border);
 }
 
 .console-markdown pre code {

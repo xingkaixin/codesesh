@@ -111,7 +111,7 @@ export function SessionAliasDialog({
                 type="button"
                 disabled={saving}
                 onClick={() => void saveAlias()}
-                className="rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-text)] px-3 py-1.5 text-xs text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-text)] px-3 py-1.5 text-xs text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 dark:text-[var(--console-bg)]"
               >
                 {saving ? "Saving…" : "Save title"}
               </button>
