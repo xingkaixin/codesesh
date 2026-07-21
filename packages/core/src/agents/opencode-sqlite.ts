@@ -11,6 +11,7 @@ import { openDbReadOnly, type SQLiteDatabase } from "../utils/sqlite.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import { resolveSessionTitle } from "../utils/title-fallback.js";
 import { isInternalEventType } from "../utils/parse-cleanup.js";
+import { asRecord, asString, reportFieldMismatch } from "../utils/narrow.js";
 import {
   cleanInternalText,
   cleanParsedMessages,
@@ -39,6 +40,41 @@ interface OpenCodeSqliteAgentConfig {
   name: string;
   displayName: string;
   findDbPath: () => string | null;
+}
+
+const MESSAGE_ROLES = new Set<Message["role"]>(["user", "assistant", "tool"]);
+
+/** Parses a SQLite `data` JSON column; non-object payloads fall back to `{}` (reported as drift). */
+function parseJsonRecord(raw: unknown, agentName: string, field: string): Record<string, unknown> {
+  const parsed = asRecord(JSON.parse(String(raw ?? "{}")));
+  if (parsed) return parsed;
+  reportFieldMismatch(agentName, field);
+  return {};
+}
+
+function parseMessageRole(value: unknown, agentName: string): Message["role"] {
+  const role = asString(value);
+  if (role !== undefined && (MESSAGE_ROLES as Set<string>).has(role)) {
+    return role as Message["role"];
+  }
+  if (value !== undefined && value !== null) reportFieldMismatch(agentName, "message.role");
+  return "assistant";
+}
+
+function parseTokens(value: unknown, agentName: string): Record<string, unknown> | undefined {
+  const tokens = asRecord(value);
+  if (tokens === undefined && value !== undefined) reportFieldMismatch(agentName, "message.tokens");
+  return tokens;
+}
+
+function parseModel(value: unknown, agentName: string): string | null {
+  if (value === null || value === undefined) return null;
+  const model = asString(value);
+  if (model === undefined) {
+    reportFieldMismatch(agentName, "message.modelID");
+    return null;
+  }
+  return model;
 }
 
 export class OpenCodeSqliteAgent extends DatabaseSessionSource {
@@ -208,7 +244,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
   private parsePartRow(
     partRow: Pick<OpenCodePartRow, "data" | "time_created">,
   ): MessagePart | null {
-    const partData = JSON.parse(String(partRow.data ?? "{}")) as Record<string, unknown>;
+    const partData = parseJsonRecord(partRow.data, this.name, "part.data");
     const partType = String(partData.type ?? "");
     if (isInternalEventType(partType)) return null;
 
@@ -228,7 +264,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
         tool: String(partData.tool ?? ""),
         callID: String(partData.callID ?? ""),
         title: cleanInternalText(String(partData.title ?? "")),
-        state: (partData.state ?? {}) as MessagePart["state"],
+        state: asRecord(partData.state) ?? {},
         time_created: Number(partRow.time_created ?? 0),
       };
     }
@@ -272,7 +308,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
     for (const row of messageRows) {
       const sessionId = String(row.session_id ?? "");
       if (!sessionId) continue;
-      const msgData = JSON.parse(String(row.data ?? "{}")) as Record<string, unknown>;
+      const msgData = parseJsonRecord(row.data, this.name, "message.data");
       if (isInternalEventType(msgData.type)) continue;
       const parts = partsByMessage.get(String(row.id ?? "")) ?? [];
       if (parts.length === 0) continue;
@@ -292,10 +328,10 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
       }
 
       const cost = Number(msgData.cost ?? 0);
-      const tokens = msgData.tokens as Record<string, unknown> | undefined;
+      const tokens = parseTokens(msgData.tokens, this.name);
       const inputTokens = Number(tokens?.input ?? 0);
       const outputTokens = Number(tokens?.output ?? 0);
-      const model = (msgData.modelID as string | null) ?? null;
+      const model = parseModel(msgData.modelID, this.name);
       const estimatedCost =
         cost > 0 ? null : estimateTokenCost(model, { input: inputTokens, output: outputTokens });
 
@@ -368,14 +404,14 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
         .all(sessionId) as Record<string, unknown>[];
 
       for (const msgRow of msgRows) {
-        const msgData = JSON.parse(String(msgRow.data ?? "{}")) as Record<string, unknown>;
+        const msgData = parseJsonRecord(msgRow.data, this.name, "message.data");
         if (isInternalEventType(msgData.type)) continue;
 
         const cost = Number(msgData.cost ?? 0);
-        const tokens = msgData.tokens as Record<string, unknown> | undefined;
+        const tokens = parseTokens(msgData.tokens, this.name);
         const inputTokens = Number(tokens?.input ?? 0);
         const outputTokens = Number(tokens?.output ?? 0);
-        const model = (msgData.modelID as string | null) ?? null;
+        const model = parseModel(msgData.modelID, this.name);
         const estimatedCost =
           cost > 0 ? null : estimateTokenCost(model, { input: inputTokens, output: outputTokens });
         const resolvedCost = cost || estimatedCost || 0;
@@ -385,11 +421,11 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
 
         messages.push({
           id: String(msgRow.id ?? ""),
-          role: String(msgData.role ?? "assistant") as Message["role"],
-          agent: (msgData.agent as string | null) ?? null,
-          mode: (msgData.mode as string | null) ?? null,
+          role: parseMessageRole(msgData.role, this.name),
+          agent: asString(msgData.agent) ?? null,
+          mode: asString(msgData.mode) ?? null,
           model,
-          provider: (msgData.providerID as string | null) ?? null,
+          provider: asString(msgData.providerID) ?? null,
           time_created: Number(msgRow.time_created ?? 0),
           tokens: tokens ? { input: inputTokens, output: outputTokens } : undefined,
           cost: resolvedCost,
@@ -416,7 +452,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
         title,
         slug,
         directory,
-        version: (sessionRow.version as string | null) ?? undefined,
+        version: asString(sessionRow.version) ?? undefined,
         time_created: timeCreated,
         time_updated: timeUpdated,
         summary_files: sessionRow.summary_files ?? undefined,

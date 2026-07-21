@@ -21,6 +21,7 @@ import { normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback
 import { isInternalEventType } from "../utils/parse-cleanup.js";
 import { cleanInternalText } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
+import { asArray, asNumber, asRecord, asString, reportFieldMismatch } from "../utils/narrow.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
 const KIMI_TOOL_TITLE_MAP: Record<string, string> = {
@@ -49,9 +50,40 @@ interface SessionMeta extends SessionCacheMeta {
   metaFile: string;
 }
 
-interface KimiWorkDir {
-  path: string;
-  last_session_id: string | null;
+/** Reads state/metadata `wire_mtime`; reports drift when the field is present but not a number. */
+function readWireMtime(record: Record<string, unknown>): number | null {
+  const raw = record.wire_mtime;
+  if (raw === undefined || raw === null) return null;
+  const value = asNumber(raw);
+  if (value === undefined) {
+    reportFieldMismatch("kimi", "session.wire_mtime");
+    return null;
+  }
+  return value;
+}
+
+/** Reads a wire record's `timestamp`; reports drift when the field is present but not a number. */
+function readWireTimestamp(record: Record<string, unknown>): number {
+  const raw = record.timestamp;
+  if (raw === undefined || raw === null) return 0;
+  const value = asNumber(raw);
+  if (value === undefined) {
+    reportFieldMismatch("kimi", "wire.timestamp");
+    return 0;
+  }
+  return value;
+}
+
+/** Reads a token count from a usage record; reports drift when the field is present but not a number. */
+function extractTokenField(usage: Record<string, unknown>, field: string): number {
+  const raw = usage[field];
+  if (raw === undefined || raw === null) return 0;
+  const value = asNumber(raw);
+  if (value === undefined) {
+    reportFieldMismatch("kimi", `usage.${field}`);
+    return 0;
+  }
+  return value;
 }
 
 function normalizeToolArguments(raw: unknown): unknown {
@@ -73,8 +105,9 @@ function normalizeToolOutputParts(content: unknown, timestampMs: number): Messag
   if (Array.isArray(content)) {
     const parts: MessagePart[] = [];
     for (const item of content) {
-      if (typeof item === "object" && item !== null && "text" in item) {
-        const text = String((item as Record<string, unknown>).text ?? "");
+      const record = asRecord(item);
+      if (record && "text" in record) {
+        const text = String(record.text ?? "");
         const cleaned = cleanInternalText(text);
         if (cleaned) parts.push({ type: "text", text: cleaned, time_created: timestampMs });
       } else if (typeof item === "string") {
@@ -110,10 +143,8 @@ function kimiContentText(content: unknown): string {
   return content
     .map((item) => {
       if (typeof item === "string") return item;
-      if (typeof item === "object" && item !== null) {
-        const record = item as Record<string, unknown>;
-        return String(record.text ?? record.content ?? "");
-      }
+      const record = asRecord(item);
+      if (record) return String(record.text ?? record.content ?? "");
       return "";
     })
     .join(" ");
@@ -132,9 +163,9 @@ function extractFirstUserTitle(contextFile: string | null, wireFile: string | nu
   if (wireFile && existsSync(wireFile)) {
     const content = readFileSync(wireFile, "utf-8");
     for (const record of parseJsonlLines(content)) {
-      const message = (record.message ?? {}) as Record<string, unknown>;
+      const message = asRecord(record.message) ?? {};
       if (message.type !== "TurnBegin") continue;
-      const payload = (message.payload ?? {}) as Record<string, unknown>;
+      const payload = asRecord(message.payload) ?? {};
       const userInput = payload.user_input;
       if (!Array.isArray(userInput)) continue;
       const title = normalizeTitleText(kimiContentText(userInput));
@@ -169,12 +200,12 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     }
     if (!existsSync(configPath)) return;
     try {
-      const raw = JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
-      const workDirs = raw?.work_dirs;
-      if (!Array.isArray(workDirs)) return;
+      const raw = asRecord(JSON.parse(readFileSync(configPath, "utf-8")));
+      const workDirs = asArray(raw?.work_dirs);
+      if (!workDirs) return;
       for (const wd of workDirs) {
-        const path = (wd as KimiWorkDir).path;
-        if (typeof path !== "string") continue;
+        const path = asString(asRecord(wd)?.path);
+        if (!path) continue;
         const hash = createHash("md5").update(path).digest("hex");
         this.projectMap.set(hash, path);
       }
@@ -248,14 +279,14 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       let metaFile = "";
 
       if (existsSync(statePath)) {
-        const state = JSON.parse(readFileSync(statePath, "utf-8")) as Record<string, unknown>;
+        const state = asRecord(JSON.parse(readFileSync(statePath, "utf-8"))) ?? {};
         title = String(state.custom_title ?? "");
-        wireMtime = typeof state.wire_mtime === "number" ? state.wire_mtime : null;
+        wireMtime = readWireMtime(state);
         metaFile = statePath;
       } else if (existsSync(metaPath)) {
-        const meta = JSON.parse(readFileSync(metaPath, "utf-8")) as Record<string, unknown>;
+        const meta = asRecord(JSON.parse(readFileSync(metaPath, "utf-8"))) ?? {};
         title = String(meta.title ?? "");
-        wireMtime = typeof meta.wire_mtime === "number" ? meta.wire_mtime : null;
+        wireMtime = readWireMtime(meta);
         metaFile = metaPath;
       }
 
@@ -407,18 +438,17 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     for (const record of parseJsonlLines(content)) {
       seq++;
       try {
-        const message = (record.message ?? {}) as Record<string, unknown>;
-        const msgType = String(message.type ?? "");
+        const message = asRecord(record.message) ?? {};
+        const msgType = asString(message.type) ?? "";
         if (isInternalEventType(msgType)) continue;
-        const payload = (message.payload ?? {}) as Record<string, unknown>;
-        const timestamp = Number(record.timestamp ?? 0);
-        const timestampMs = Number.isFinite(timestamp) ? Math.floor(timestamp * 1000) : 0;
+        const payload = asRecord(message.payload) ?? {};
+        const timestampMs = Math.floor(readWireTimestamp(record) * 1000);
 
         // Bind usage to the most recent assistant message without tokens
-        const usage = message["usage"] as Record<string, unknown> | undefined;
-        if (usage && typeof usage === "object") {
-          const inputTokens = Number(usage["input_tokens"] ?? 0);
-          const outputTokens = Number(usage["output_tokens"] ?? 0);
+        const usage = asRecord(message["usage"]);
+        if (usage) {
+          const inputTokens = extractTokenField(usage, "input_tokens");
+          const outputTokens = extractTokenField(usage, "output_tokens");
           if (inputTokens || outputTokens) {
             const tokens = { input: inputTokens, output: outputTokens };
             const cost = estimateTokenCost(this.defaultModel, tokens);
@@ -473,7 +503,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
         }
 
         if (msgType === "ToolCall") {
-          const function_ = payload.function as Record<string, unknown> | undefined;
+          const function_ = asRecord(payload.function);
           const toolName = String(function_?.name ?? "").trim();
           const callId = String(payload.id ?? "").trim();
 
@@ -581,8 +611,8 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     const content = record.content;
     if (Array.isArray(content)) {
       for (const item of content) {
-        if (typeof item !== "object" || item === null) continue;
-        const ci = item as Record<string, unknown>;
+        const ci = asRecord(item);
+        if (!ci) continue;
         const partType = String(ci.type ?? "");
 
         if (partType === "think") {
@@ -595,16 +625,15 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       }
     }
 
-    const toolCalls = record.tool_calls;
-    if (Array.isArray(toolCalls)) {
+    const toolCalls = asArray(record.tool_calls);
+    if (toolCalls) {
       for (const tc of toolCalls) {
-        if (typeof tc !== "object" || tc === null) continue;
-        const tcRecord = tc as Record<string, unknown>;
-        const function_ = tcRecord.function as Record<string, unknown> | undefined;
+        const tcRecord = asRecord(tc);
+        const function_ = asRecord(tcRecord?.function);
 
         if (!function_) continue;
         const toolName = String(function_.name ?? "").trim();
-        const callId = String(tcRecord.id ?? "").trim();
+        const callId = String(tcRecord?.id ?? "").trim();
 
         if (toolName && callId && KIMI_IGNORED_TOOLS.has(toolName)) {
           ignoredToolCallIds.add(callId);
@@ -652,7 +681,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     const combined = existing + argumentsPart;
 
     try {
-      const parsed = JSON.parse(combined) as unknown;
+      const parsed: unknown = JSON.parse(combined);
       if (
         builder.updateToolCall(openCallId, (part) => {
           const state = part.state ?? (part.state = {});
@@ -693,13 +722,11 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       const content = readFileSync(wirePath, "utf-8");
       for (const line of content.split("\n").filter((l) => l.trim())) {
         try {
-          const data = JSON.parse(line) as Record<string, unknown>;
-          const tokenUsage = (data.message as Record<string, unknown>)?.usage as
-            | Record<string, unknown>
-            | undefined;
+          const data = asRecord(JSON.parse(line));
+          const tokenUsage = asRecord(asRecord(data?.message)?.usage);
           if (!tokenUsage) continue;
-          const inputTokens = Number(tokenUsage.input_tokens ?? 0);
-          const outputTokens = Number(tokenUsage.output_tokens ?? 0);
+          const inputTokens = extractTokenField(tokenUsage, "input_tokens");
+          const outputTokens = extractTokenField(tokenUsage, "output_tokens");
           stats.total_input_tokens += inputTokens;
           stats.total_output_tokens += outputTokens;
           const cost = estimateTokenCost(this.defaultModel, {
@@ -724,10 +751,14 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       const rawContent = readFileSync(rawPath, "utf-8");
       for (const line of rawContent.split("\n").filter((l) => l.trim())) {
         try {
-          const data = JSON.parse(line) as Record<string, unknown>;
-          if (data.role === "_usage" && typeof data.token_count === "number") {
-            stats.total_tokens = data.token_count;
+          const data = asRecord(JSON.parse(line));
+          if (data?.role !== "_usage") continue;
+          const tokenCount = asNumber(data.token_count);
+          if (tokenCount === undefined) {
+            reportFieldMismatch("kimi", "usage.token_count");
+            continue;
           }
+          stats.total_tokens = tokenCount;
         } catch {
           // skip
         }

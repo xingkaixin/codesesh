@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexAgent } from "../codex.js";
 import type { Message, MessagePart, SessionHead } from "../../types/index.js";
+import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
 // Spies on statSync while delegating to the real implementation, so the
 // single-stat regression test can count per-file calls during a live scan.
@@ -1122,6 +1123,89 @@ describe("CodexAgent code-mode exec decoding", () => {
     expect(toolParts[1]).toMatchObject({
       tool: "patch",
       state: { arguments: [{ type: "write_file", path: "a.txt", content: "+hi" }], output: null },
+    });
+  });
+});
+
+describe("CodexAgent field shape mismatches", () => {
+  let diagnosticsCalls: Array<{ event: string; detail?: Record<string, unknown> }>;
+
+  afterEach(() => {
+    setCoreDiagnostics(null);
+    for (const dir of tempDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    tempDirs = [];
+  });
+
+  function captureDiagnostics(): void {
+    diagnosticsCalls = [];
+    const sink: CoreDiagnostics = {
+      warn: (event, detail) => diagnosticsCalls.push({ event, detail }),
+    };
+    setCoreDiagnostics(sink);
+  }
+
+  it("falls back to zeroed tokens and reports a mismatch when token_count.info drifts", () => {
+    captureDiagnostics();
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const sessionFile = join(
+      tempDir,
+      "rollout-2026-04-20T10-00-00-019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa.jsonl",
+    );
+
+    writeFileSync(
+      sessionFile,
+      [
+        '{"timestamp":"2026-04-20T10:00:00Z","type":"session_meta","payload":{"cwd":"/tmp/project","model":"gpt-5.5"}}',
+        // "info" has drifted from an object to a string upstream.
+        '{"timestamp":"2026-04-20T10:01:00Z","type":"event_msg","payload":{"type":"token_count","info":"unexpected-string"}}',
+        "",
+      ].join("\n"),
+    );
+
+    const agent = new CodexAgent() as any;
+    agent.sessionIndexCache = new Map();
+
+    const head = agent.parseSessionHead(sessionFile);
+
+    expect(head?.stats.total_input_tokens).toBe(0);
+    expect(head?.stats.total_output_tokens).toBe(0);
+    expect(head?.model_usage).toBeUndefined();
+    expect(diagnosticsCalls).toContainEqual({
+      event: "agent.field_shape_mismatch",
+      detail: { agentName: "codex", field: "token_count.info" },
+    });
+  });
+
+  it("skips a response_item and reports a mismatch when payload drifts to a non-object", () => {
+    captureDiagnostics();
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const sessionId = "019daaaa-aaaa-7aaa-aaaa-bbbbbbbbbbbb";
+    const sessionFile = join(tempDir, `rollout-2026-04-20T10-00-00-${sessionId}.jsonl`);
+
+    writeFileSync(
+      sessionFile,
+      [
+        '{"timestamp":"2026-04-20T10:00:00Z","type":"session_meta","payload":{"cwd":"/tmp/project"}}',
+        // "payload" has drifted from an object to a bare string upstream.
+        '{"timestamp":"2026-04-20T10:01:00Z","type":"response_item","payload":"unexpected-string"}',
+        "",
+      ].join("\n"),
+    );
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.scan();
+
+    const data = agent.getSessionData(sessionId);
+
+    expect(data.messages).toEqual([]);
+    expect(diagnosticsCalls).toContainEqual({
+      event: "agent.field_shape_mismatch",
+      detail: { agentName: "codex", field: "payload" },
     });
   });
 });

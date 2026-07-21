@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { OpenCodeSqliteAgent } from "../opencode-sqlite.js";
+import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
 const tempDirs: string[] = [];
 
@@ -60,10 +61,59 @@ function createDatabase(): string {
   return dbPath;
 }
 
+function createDatabaseWithMessageData(messageData: string): string {
+  const tempDir = mkdtempSync(join(tmpdir(), "codesesh-opencode-sqlite-test-"));
+  tempDirs.push(tempDir);
+  const dbPath = join(tempDir, "agent.db");
+  const db = new Database(dbPath);
+  db.exec(`
+    CREATE TABLE session (
+      id TEXT PRIMARY KEY,
+      title TEXT,
+      time_created INTEGER,
+      time_updated INTEGER,
+      slug TEXT,
+      directory TEXT,
+      version TEXT,
+      summary_files TEXT
+    );
+    CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      data TEXT,
+      time_created INTEGER
+    );
+    CREATE TABLE part (
+      id TEXT PRIMARY KEY,
+      message_id TEXT,
+      data TEXT,
+      time_created INTEGER
+    );
+  `);
+  db.prepare(
+    "INSERT INTO session (id, title, time_created, time_updated, directory) VALUES (?, ?, ?, ?, ?)",
+  ).run("s1", "", 1_000, 2_000, "/workspace/project");
+  db.prepare("INSERT INTO message (id, session_id, data, time_created) VALUES (?, ?, ?, ?)").run(
+    "m1",
+    "s1",
+    messageData,
+    1_100,
+  );
+  db.prepare("INSERT INTO part (id, message_id, data, time_created) VALUES (?, ?, ?, ?)").run(
+    "p1",
+    "m1",
+    JSON.stringify({ type: "text", text: "Implement cache tests" }),
+    1_100,
+  );
+  db.close();
+  return dbPath;
+}
+
 afterEach(() => {
   for (const tempDir of tempDirs.splice(0)) {
     rmSync(tempDir, { recursive: true, force: true });
   }
+  setCoreDiagnostics(null);
 });
 
 describe("OpenCodeSqliteAgent", () => {
@@ -102,5 +152,61 @@ describe("OpenCodeSqliteAgent", () => {
         },
       ],
     });
+  });
+
+  it("falls back to an empty message record and reports drift when message data isn't a JSON object", () => {
+    const dbPath = createDatabaseWithMessageData("null");
+    const calls: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
+    setCoreDiagnostics(sink);
+
+    const agent = new OpenCodeSqliteAgent({
+      name: "test-agent-data-drift",
+      displayName: "Test Agent",
+      findDbPath: () => dbPath,
+    });
+
+    expect(agent.getSessionData("s1")).toMatchObject({
+      messages: [{ role: "assistant", model: null, tokens: undefined, cost: 0 }],
+    });
+    expect(calls).toContainEqual({
+      event: "agent.field_shape_mismatch",
+      detail: { agentName: "test-agent-data-drift", field: "message.data" },
+    });
+  });
+
+  it("falls back on per-field type drift (role/model/tokens) and reports each mismatch once", () => {
+    const dbPath = createDatabaseWithMessageData(
+      JSON.stringify({ role: "system", modelID: 42, tokens: "not-an-object" }),
+    );
+    const calls: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
+    setCoreDiagnostics(sink);
+
+    const agent = new OpenCodeSqliteAgent({
+      name: "test-agent-field-drift",
+      displayName: "Test Agent",
+      findDbPath: () => dbPath,
+    });
+
+    expect(agent.getSessionData("s1")).toMatchObject({
+      messages: [{ role: "assistant", model: null, tokens: undefined }],
+    });
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        {
+          event: "agent.field_shape_mismatch",
+          detail: { agentName: "test-agent-field-drift", field: "message.role" },
+        },
+        {
+          event: "agent.field_shape_mismatch",
+          detail: { agentName: "test-agent-field-drift", field: "message.modelID" },
+        },
+        {
+          event: "agent.field_shape_mismatch",
+          detail: { agentName: "test-agent-field-drift", field: "message.tokens" },
+        },
+      ]),
+    );
   });
 });
