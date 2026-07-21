@@ -1,5 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import type { SessionHead, SessionData, ParseSessionResult } from "../types/index.js";
+import { getCoreDiagnostics } from "../utils/diagnostics.js";
 
 export type { ParseSessionResult };
 
@@ -138,7 +139,12 @@ export abstract class FileSystemSessionSource<
       try {
         const session = this.scanSessionSource(source.sourcePath, options);
         if (session) sessions.push(session);
-      } catch {
+      } catch (error) {
+        getCoreDiagnostics()?.warn("agent.session_parse_failed", {
+          agentName: this.name,
+          sourcePath: source.sourcePath,
+          message: error instanceof Error ? error.message : String(error),
+        });
         continue;
       } finally {
         options?.onProgress?.({

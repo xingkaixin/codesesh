@@ -5,6 +5,7 @@
 import type { ProjectIdentityKind, SessionHead } from "../../types/index.js";
 import { computeIdentity, realFs } from "../../projects/index.js";
 import { extractSessionFileActivity } from "../../utils/file-activity.js";
+import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import {
   columnExists,
   getUserVersion,
@@ -97,7 +98,10 @@ export function withCacheDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
       setSchemaEnsuredPath(cachePath);
     }
     return fn(db);
-  } catch {
+  } catch (error) {
+    getCoreDiagnostics()?.warn("cache.write_failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
     return null;
   } finally {
     db.close();

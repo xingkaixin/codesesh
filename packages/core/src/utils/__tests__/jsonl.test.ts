@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseJsonlLines, readJsonlFile, readJsonlFileLines } from "../jsonl.js";
+import { setCoreDiagnostics, type CoreDiagnostics } from "../diagnostics.js";
 
 function collect<T>(gen: Generator<T>): T[] {
   return Array.from(gen);
@@ -22,7 +23,17 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
+  setCoreDiagnostics(null);
 });
+
+function collectDiagnostics(): Array<{ event: string; detail?: Record<string, unknown> }> {
+  const events: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+  const diagnostics: CoreDiagnostics = {
+    warn: (event, detail) => events.push({ event, detail }),
+  };
+  setCoreDiagnostics(diagnostics);
+  return events;
+}
 
 describe("parseJsonlLines", () => {
   it("returns empty for empty string", () => {
@@ -48,6 +59,22 @@ describe("parseJsonlLines", () => {
     const input = '{"valid":true}\nnot json\n{"also":true}';
     const result = collect(parseJsonlLines(input));
     expect(result).toEqual([{ valid: true }, { also: true }]);
+  });
+
+  it("reports skipped lines via diagnostics", () => {
+    const events = collectDiagnostics();
+    const input = '{"valid":true}\nnot json\n{"also":true}';
+    collect(parseJsonlLines(input));
+
+    expect(events).toEqual([
+      { event: "agent.jsonl_lines_skipped", detail: { skipped: 1, total: 3 } },
+    ]);
+  });
+
+  it("does not report diagnostics when every line parses", () => {
+    const events = collectDiagnostics();
+    collect(parseJsonlLines('{"a":1}\n{"b":2}'));
+    expect(events).toEqual([]);
   });
 
   it("skips empty lines between valid lines", () => {
@@ -103,5 +130,15 @@ describe("readJsonlFile", () => {
 
   it("throws when file does not exist", () => {
     expect(() => collect(readJsonlFile("/missing.jsonl"))).toThrow();
+  });
+
+  it("reports skipped lines via diagnostics", () => {
+    const events = collectDiagnostics();
+    const filePath = writeTempFile('{"valid":true}\nnot json\n{"also":true}');
+    collect(readJsonlFile(filePath));
+
+    expect(events).toEqual([
+      { event: "agent.jsonl_lines_skipped", detail: { skipped: 1, total: 3, filePath } },
+    ]);
   });
 });
