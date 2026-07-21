@@ -450,8 +450,16 @@
   }
 
   .session-timeline-minimap {
-    overflow: hidden;
     border-radius: 2px;
+  }
+
+  /* Transparent hit-area extension: 10px visual track -> >=24px pointer target,
+     without affecting layout flow (position: absolute) or the focus ring (drawn on the
+     real element, not this pseudo box). */
+  .session-timeline-minimap::before {
+    content: "";
+    position: absolute;
+    inset: -7px 0;
   }
 
   .session-timeline-minimap canvas {
@@ -467,12 +475,21 @@
   }
 
   .session-timeline-segment {
+    position: relative;
     opacity: 0.58;
     transition: opacity 100ms ease;
   }
 
+  /* Transparent hit-area extension: 20px (h-5) visual segment -> 24px pointer target.
+     Vertical only -- horizontal stays column-width so adjacent segments stay mutually
+     exclusive (WCAG 2.5.8 spacing exception). */
+  .session-timeline-segment::before {
+    content: "";
+    position: absolute;
+    inset: -2px 0;
+  }
+
   .session-timeline-segment[aria-current="location"] {
-    position: relative;
     z-index: 1;
     opacity: 1;
     box-shadow:

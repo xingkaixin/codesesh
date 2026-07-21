@@ -611,19 +611,21 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
               minimapDragRef.current = null;
             }}
           >
-            <canvas
-              ref={minimapCanvasRef}
-              aria-hidden="true"
-              className="absolute inset-0 h-full w-full"
-            />
-            <div
-              data-testid="session-timeline-minimap-window"
-              className="session-timeline-minimap-window absolute inset-y-0"
-              style={{
-                left: `${minimapWindow.start * 100}%`,
-                width: `${minimapWindow.size * 100}%`,
-              }}
-            />
+            <div className="relative h-full w-full overflow-hidden rounded-[2px]">
+              <canvas
+                ref={minimapCanvasRef}
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full"
+              />
+              <div
+                data-testid="session-timeline-minimap-window"
+                className="session-timeline-minimap-window absolute inset-y-0"
+                style={{
+                  left: `${minimapWindow.start * 100}%`,
+                  width: `${minimapWindow.size * 100}%`,
+                }}
+              />
+            </div>
           </div>
         )}
         {tooltip &&
