@@ -4,6 +4,7 @@ import { findAgent, type AgentCatalog } from "../../lib/agents";
 import { getSessionAgentKey } from "../../lib/session-indexes";
 import { formatRelativeTime } from "../../lib/format";
 import { getSessionDisplayTitle } from "../../lib/session-title";
+import { AgentIcon } from "../AgentIcon";
 import { SessionActionsMenu } from "../SessionActionsMenu";
 
 // Rows render a single-line, truncated title/timestamp with a fixed-size icon, so
@@ -65,8 +66,9 @@ function SessionRow({
       >
         <span className="flex min-w-0 items-center gap-1.5">
           {agent?.icon ? (
-            <img
-              src={agent.icon}
+            <AgentIcon
+              icon={agent.icon}
+              iconColored={agent.iconColored}
               alt={agent.displayName}
               className="size-3.5 shrink-0 object-contain"
             />
