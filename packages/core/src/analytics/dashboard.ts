@@ -215,6 +215,7 @@ export function buildDashboard(
         name,
         displayName: info?.displayName ?? name,
         icon: info?.icon ?? "",
+        iconColored: info?.iconColored,
         sessions: metrics.sessions,
         messages: metrics.messages,
         tokens: metrics.tokens,

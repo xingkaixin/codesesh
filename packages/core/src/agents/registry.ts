@@ -4,6 +4,8 @@ import type { AgentInfo } from "../types/index.js";
 export interface AgentRegistration {
   create: () => BaseAgent;
   icon: string;
+  /** Icon uses brand colors that work on both themes; render it as-is instead of tinting with currentColor. */
+  iconColored?: boolean;
 }
 
 let registrations: AgentRegistration[] = [];
@@ -27,6 +29,7 @@ export function getAgentInfoMap(sessionsByAgent: Record<string, number>): AgentI
       name: agent.name,
       displayName: agent.displayName,
       icon: registration.icon,
+      iconColored: registration.iconColored,
       count: sessionsByAgent[agent.name] ?? 0,
     };
   });
