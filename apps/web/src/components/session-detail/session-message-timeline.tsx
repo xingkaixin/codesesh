@@ -184,6 +184,26 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
     const detail = root.closest<HTMLElement>('[data-testid="session-detail"]');
     const scrollParent = findScrollParent(root);
     let frame = 0;
+
+    // jsdom (test env) has no IntersectionObserver; fall back to the pre-CS-80 full-scan
+    // path so existing tests keep exercising real layout without a polyfill.
+    const anchorSelector = "[data-session-timeline-anchor]";
+    const readAnchorPosition = (anchor: HTMLElement) => {
+      const anchorId = anchor.dataset.sessionTimelineAnchor;
+      const index = anchorId ? entryIndexes.get(anchorId) : undefined;
+      return index == null ? null : { index, top: anchor.getBoundingClientRect().top };
+    };
+    const scanAllAnchors = () =>
+      Array.from(detail?.querySelectorAll<HTMLElement>(anchorSelector) ?? []).flatMap(
+        (anchor) => readAnchorPosition(anchor) ?? [],
+      );
+
+    // Only intersecting anchors are re-measured per frame; IO keeps this set updated
+    // so scroll frames read O(visible) rects instead of O(total anchors).
+    const visibleAnchors = new Map<string, HTMLElement>();
+    const scanVisibleAnchors = () =>
+      Array.from(visibleAnchors.values()).flatMap((anchor) => readAnchorPosition(anchor) ?? []);
+
     const updateActiveEntry = () => {
       const viewport = getScrollViewport(scrollParent);
       const edgeIndex = findTimelineEdgeIndex(
@@ -192,13 +212,7 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
         viewport.scrollHeight,
         entries.length,
       );
-      const positions = Array.from(
-        detail?.querySelectorAll<HTMLElement>("[data-session-timeline-anchor]") ?? [],
-      ).flatMap((anchor) => {
-        const anchorId = anchor.dataset.sessionTimelineAnchor;
-        const index = anchorId ? entryIndexes.get(anchorId) : undefined;
-        return index == null ? [] : [{ index, top: anchor.getBoundingClientRect().top }];
-      });
+      const positions = intersectionObserver ? scanVisibleAnchors() : scanAllAnchors();
       const nextIndex = edgeIndex ?? findActiveTimelineIndex(positions, viewport.center);
       if (nextIndex != null) {
         setActiveIndex((current) => (current === nextIndex ? current : nextIndex));
@@ -212,6 +226,39 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
       });
     };
 
+    const intersectionObserver =
+      typeof IntersectionObserver === "undefined"
+        ? null
+        : new IntersectionObserver(
+            (ioEntries) => {
+              for (const entry of ioEntries) {
+                const anchor = entry.target as HTMLElement;
+                const anchorId = anchor.dataset.sessionTimelineAnchor;
+                if (!anchorId) continue;
+                if (entry.isIntersecting) visibleAnchors.set(anchorId, anchor);
+                else visibleAnchors.delete(anchorId);
+              }
+              scheduleUpdate();
+            },
+            { root: isWindowScrollParent(scrollParent) ? null : scrollParent, threshold: 0 },
+          );
+
+    const observeAnchor = (anchor: HTMLElement) => intersectionObserver?.observe(anchor);
+    const unobserveAnchor = (anchor: HTMLElement) => {
+      intersectionObserver?.unobserve(anchor);
+      const anchorId = anchor.dataset.sessionTimelineAnchor;
+      if (anchorId) visibleAnchors.delete(anchorId);
+    };
+    const forEachAnchorIn = (node: Node, visit: (anchor: HTMLElement) => void) => {
+      if (!(node instanceof HTMLElement)) return;
+      if (node.matches(anchorSelector)) visit(node);
+      node.querySelectorAll<HTMLElement>(anchorSelector).forEach(visit);
+    };
+
+    if (intersectionObserver && detail) {
+      detail.querySelectorAll<HTMLElement>(anchorSelector).forEach(observeAnchor);
+    }
+
     scheduleUpdate();
     scrollParent.addEventListener("scroll", scheduleUpdate, { passive: true });
     window.addEventListener("resize", scheduleUpdate);
@@ -220,12 +267,27 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
       typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate);
     if (detail) resizeObserver?.observe(detail);
 
+    // Converged to registration bookkeeping only: mutations register/unregister IO targets
+    // for added/removed anchors instead of forcing a full-scan recompute on every DOM change.
     const mutationObserver =
-      typeof MutationObserver === "undefined" ? null : new MutationObserver(scheduleUpdate);
+      typeof MutationObserver === "undefined"
+        ? null
+        : new MutationObserver((records) => {
+            if (!intersectionObserver) {
+              scheduleUpdate();
+              return;
+            }
+            for (const record of records) {
+              record.addedNodes.forEach((node) => forEachAnchorIn(node, observeAnchor));
+              record.removedNodes.forEach((node) => forEachAnchorIn(node, unobserveAnchor));
+            }
+            scheduleUpdate();
+          });
     if (detail) mutationObserver?.observe(detail, { childList: true, subtree: true });
 
     return () => {
       if (frame) cancelAnimationFrame(frame);
+      intersectionObserver?.disconnect();
       resizeObserver?.disconnect();
       mutationObserver?.disconnect();
       scrollParent.removeEventListener("scroll", scheduleUpdate);

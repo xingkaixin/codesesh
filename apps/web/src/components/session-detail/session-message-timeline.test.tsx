@@ -1,7 +1,38 @@
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionMessageTimeline } from "./session-message-timeline";
 import type { SessionTimelineEntry } from "./timeline";
+
+// Mirrors the ResizeObserverMock pattern used in message-list.test.tsx: a controllable
+// stand-in so tests can drive which anchors are "visible" without a real layout engine.
+class IntersectionObserverMock {
+  static instances: IntersectionObserverMock[] = [];
+
+  readonly targets = new Set<Element>();
+
+  constructor(private readonly callback: IntersectionObserverCallback) {
+    IntersectionObserverMock.instances.push(this);
+  }
+
+  observe(target: Element) {
+    this.targets.add(target);
+  }
+
+  unobserve(target: Element) {
+    this.targets.delete(target);
+  }
+
+  disconnect() {
+    this.targets.clear();
+  }
+
+  trigger(changes: Array<{ target: Element; isIntersecting: boolean }>) {
+    this.callback(
+      changes as unknown as IntersectionObserverEntry[],
+      this as unknown as IntersectionObserver,
+    );
+  }
+}
 
 const entries: SessionTimelineEntry[] = [
   {
@@ -27,7 +58,10 @@ const entries: SessionTimelineEntry[] = [
   },
 ];
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 function renderTimeline(timelineEntries = entries) {
   const onNavigate = vi.fn();
@@ -249,5 +283,71 @@ describe("SessionMessageTimeline", () => {
     fireEvent.scroll(timeline);
 
     expect(getByRole("tooltip").textContent).toBe("Agent · Second");
+  });
+
+  it("derives the active entry from the IntersectionObserver-tracked visible set", async () => {
+    IntersectionObserverMock.instances = [];
+    vi.stubGlobal("IntersectionObserver", IntersectionObserverMock);
+    // Mid-scroll geometry: away from both edges so findTimelineEdgeIndex returns null
+    // and the visible-set-driven activeIndex logic under test actually runs.
+    vi.stubGlobal("innerHeight", 400);
+    vi.stubGlobal("scrollY", 300);
+    Object.defineProperty(document.documentElement, "scrollHeight", {
+      configurable: true,
+      value: 1_000,
+    });
+
+    const detail = document.createElement("div");
+    detail.setAttribute("data-testid", "session-detail");
+    document.body.appendChild(detail);
+
+    const anchorElements = new Map(
+      entries.map((entry) => {
+        const anchor = document.createElement("div");
+        anchor.dataset.sessionTimelineAnchor = entry.anchorId;
+        detail.appendChild(anchor);
+        return [entry.anchorId, anchor] as const;
+      }),
+    );
+
+    render(<SessionMessageTimeline entries={entries} onNavigate={vi.fn()} />, {
+      container: detail,
+    });
+
+    const observer = IntersectionObserverMock.instances[0]!;
+    const agentAnchor = anchorElements.get("agent-1")!;
+    const toolAnchor = anchorElements.get("tool-1")!;
+    agentAnchor.getBoundingClientRect = () => ({ top: 100 }) as DOMRect;
+    toolAnchor.getBoundingClientRect = () => ({ top: 300 }) as DOMRect;
+
+    // Viewport center is 200: only agent-1 (top 100) and tool-1 (top 300) are visible,
+    // and agent-1 is the closest one at-or-above center.
+    act(() => {
+      observer.trigger([
+        { target: agentAnchor, isIntersecting: true },
+        { target: toolAnchor, isIntersecting: true },
+      ]);
+    });
+    await waitFor(() =>
+      expect(document.querySelector('[aria-current="location"]')?.getAttribute("aria-label")).toBe(
+        "Go to Agent · Second",
+      ),
+    );
+
+    // agent-1 scrolls out of view; tool-1 (top 50, now above center) becomes active.
+    toolAnchor.getBoundingClientRect = () => ({ top: 50 }) as DOMRect;
+    act(() => {
+      observer.trigger([
+        { target: agentAnchor, isIntersecting: false },
+        { target: toolAnchor, isIntersecting: true },
+      ]);
+    });
+    await waitFor(() =>
+      expect(document.querySelector('[aria-current="location"]')?.getAttribute("aria-label")).toBe(
+        "Go to Read · Read",
+      ),
+    );
+
+    detail.remove();
   });
 });
