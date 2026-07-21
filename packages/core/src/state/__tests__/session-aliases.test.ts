@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { deleteSessionAlias, listSessionAliases, upsertSessionAlias } from "../session-aliases.js";
+import { setStateSchemaEnsuredPath } from "../database.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-aliases-test-"));
 
@@ -17,12 +18,14 @@ vi.mock("node:os", async (importOriginal) => {
 
 beforeEach(() => {
   rmSync(join(testHomeDir, ".local"), { recursive: true, force: true });
+  setStateSchemaEnsuredPath(null);
   vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+  setStateSchemaEnsuredPath(null);
   rmSync(join(testHomeDir, ".local"), { recursive: true, force: true });
 });
 

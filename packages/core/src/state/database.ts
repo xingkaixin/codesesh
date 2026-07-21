@@ -15,6 +15,19 @@ const STATE_DB_FILENAME = "state.db";
 const STATE_SCHEMA_VERSION = 2;
 const MEMORY_STATE_STORE = "memory";
 
+// One-shot per-process ensureSchema guard, mirroring the cache side's
+// schemaEnsuredPath (discovery/cache/db.ts). Keyed by dbPath so tests can
+// switch state directories; exported so tests can reset it between runs.
+let stateSchemaEnsuredPath: string | null = null;
+
+export function getStateSchemaEnsuredPath(): string | null {
+  return stateSchemaEnsuredPath;
+}
+
+export function setStateSchemaEnsuredPath(path: string | null): void {
+  stateSchemaEnsuredPath = path;
+}
+
 export class StateStorageUnavailableError extends Error {
   constructor() {
     super("SQLite state database is unavailable");
@@ -144,7 +157,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
     ],
   });
 
-  if (currentVersion <= STATE_SCHEMA_VERSION) {
+  if (currentVersion < STATE_SCHEMA_VERSION) {
     setStateSchemaVersion(db);
   }
 }
@@ -155,7 +168,10 @@ export function withStateDb<T>(fn: (db: SQLiteDatabase) => T): T {
   if (!db) throw new StateStorageUnavailableError();
 
   try {
-    ensureSchema(db, statePath);
+    if (getStateSchemaEnsuredPath() !== statePath) {
+      ensureSchema(db, statePath);
+      setStateSchemaEnsuredPath(statePath);
+    }
     return fn(db);
   } finally {
     db.close();

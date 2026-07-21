@@ -29,6 +29,31 @@ describe("sqlite migration helpers", () => {
   });
 });
 
+describe("openDb pragmas", () => {
+  const tempDirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of tempDirs.splice(0)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("sets a busy_timeout so lock contention waits instead of failing immediately", () => {
+    const dir = mkdtempSync(join(tmpdir(), "codesesh-sqlite-busy-timeout-test-"));
+    tempDirs.push(dir);
+    const dbPath = join(dir, "state.db");
+
+    const db = openDb(dbPath);
+    expect(db).not.toBeNull();
+    try {
+      const pragmaCapable = db as unknown as { pragma(sql: string): unknown };
+      expect(pragmaCapable.pragma("busy_timeout")).toEqual([{ timeout: 5000 }]);
+    } finally {
+      db?.close();
+    }
+  });
+});
+
 describe("sqlite open failures", () => {
   const tempDirs: string[] = [];
 

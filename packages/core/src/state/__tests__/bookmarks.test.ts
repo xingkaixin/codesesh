@@ -10,6 +10,7 @@ import {
   upsertBookmark,
   type BookmarkRecord,
 } from "../bookmarks.js";
+import { setStateSchemaEnsuredPath } from "../database.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-bookmarks-test-"));
 
@@ -64,12 +65,14 @@ function makeBookmark(
 
 beforeEach(() => {
   rmSync(getStateDir(), { recursive: true, force: true });
+  setStateSchemaEnsuredPath(null);
   dateNowSpy.mockReturnValue(now);
 });
 
 afterEach(() => {
   rmSync(join(testHomeDir, "custom-state"), { recursive: true, force: true });
   vi.unstubAllEnvs();
+  setStateSchemaEnsuredPath(null);
   rmSync(getStateDir(), { recursive: true, force: true });
 });
 
@@ -156,6 +159,9 @@ describe("bookmarks state storage", () => {
       db.close();
     }
 
+    // Force ensureSchema to re-run against the externally rewritten file,
+    // as a fresh process would on its first open.
+    setStateSchemaEnsuredPath(null);
     expect(listBookmarks()[0]?.sessionId).toBe("s1");
     expect(getUserVersion(getStatePath())).toBe(2);
   });
@@ -169,6 +175,7 @@ describe("bookmarks state storage", () => {
       db.close();
     }
 
+    setStateSchemaEnsuredPath(null);
     expect(listBookmarks()[0]?.sessionId).toBe("s1");
     expect(getUserVersion(getStatePath())).toBe(3);
   });
