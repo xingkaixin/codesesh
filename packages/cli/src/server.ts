@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { compress } from "hono/compress";
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -138,6 +139,9 @@ export async function createServer(
       onError: (c) => c.json({ error: "Request body too large" }, 413),
     }),
   );
+  // Hono's default filter already excludes text/event-stream, so this does not
+  // interfere with the /api/events SSE stream.
+  app.use("/api/*", compress());
 
   // API routes
   const routeOptions: ApiRouteOptions = {

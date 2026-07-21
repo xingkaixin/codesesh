@@ -144,7 +144,7 @@ function compareTreeOrder(
   return left.path.localeCompare(right.path);
 }
 
-function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel {
+export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel {
   const sortOrderByPath = new Map<string, number>();
   const pathBySessionId = new Map<string, string>();
   const groupPathBySessionId = new Map<string, string>();
@@ -153,24 +153,24 @@ function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel {
   const sessionByPath = new Map<string, SessionHead>();
   const usedPaths = new Set<string>();
   const paths: string[] = [];
-  const groups = new Map<string, { label: string; sessions: SessionHead[] }>();
+  const groups = new Map<string, { label: string; sessions: SessionHead[]; maxTime: number }>();
 
   for (const session of sessions) {
     const { key, label } = getProjectGroup(session);
+    const time = getSessionTime(session);
     const group = groups.get(key);
     if (group) {
       group.sessions.push(session);
+      if (time > group.maxTime) group.maxTime = time;
     } else {
-      groups.set(key, { label, sessions: [session] });
+      groups.set(key, { label, sessions: [session], maxTime: time });
     }
   }
 
   const sortedGroups = [...groups.entries()].sort(([, a], [, b]) => {
     if (a.label === "(unknown)") return 1;
     if (b.label === "(unknown)") return -1;
-    const aTime = Math.max(...a.sessions.map(getSessionTime));
-    const bTime = Math.max(...b.sessions.map(getSessionTime));
-    return bTime - aTime;
+    return b.maxTime - a.maxTime;
   });
 
   let order = 0;
