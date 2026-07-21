@@ -43,6 +43,11 @@ declare module "react-syntax-highlighter/dist/esm/styles/prism/one-light" {
   export default oneLight;
 }
 
+declare module "react-syntax-highlighter/dist/esm/styles/prism/one-dark" {
+  const oneDark: Record<string, unknown>;
+  export default oneDark;
+}
+
 declare module "react-syntax-highlighter/dist/esm/languages/prism/*" {
   const language: unknown;
   export default language;
