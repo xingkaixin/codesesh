@@ -53,6 +53,18 @@ interface AgentRefreshState {
   lastRefreshAt: number;
   lastRefreshDurationMs: number;
   pendingPathCount: number;
+  /**
+   * id → sessionSignature, carried across refreshes so unchanged sessions skip
+   * re-stringifying. Only ever passed into the runRefresh event-path diff
+   * (previousSessions → nextSessions), whose lineage is the in-memory result of
+   * the prior event diff. The strategy-path diffs (DB cached.sessions baseline)
+   * must NOT share this cache: that baseline can lag an in-flight persist job,
+   * and a cache hit there would both mask the self-heal recheck after a failed
+   * persist and, if reused this same cycle, make the event-path diff miss a
+   * signature-only change (e.g. smart-tag reclassification) whose new signature
+   * was already written back by the strategy-path diff.
+   */
+  signatureCache: Map<string, string>;
 }
 
 interface AgentOperationLifecycle {
@@ -92,13 +104,16 @@ function buildRefreshDiff(
   previousSessions: SessionHead[],
   nextSessions: SessionHead[],
   candidateChangedIds: string[] = [],
+  signatureCache?: Map<string, string>,
 ): SessionRefreshDiff {
   const { changes, removedSessionIds, counts } = computeSessionDiff(
     previousSessions,
     nextSessions,
     candidateChangedIds,
     sessionSignature,
+    signatureCache,
   );
+  for (const removedId of removedSessionIds) signatureCache?.delete(removedId);
   if (counts.new === 0 && counts.updated === 0 && counts.removed === 0) {
     return { event: null, changedSessions: changes, removedSessionIds };
   }
@@ -379,6 +394,7 @@ export class AgentSyncEngine {
       previousSessions,
       nextSessions,
       strategyResult.preciseChangedIds ?? [],
+      state.signatureCache,
     );
     const diffDuration = performance.now() - diffStartedAt;
     const searchIndexOptions =
@@ -719,6 +735,7 @@ export class AgentSyncEngine {
       lastRefreshAt: 0,
       lastRefreshDurationMs: 0,
       pendingPathCount: 0,
+      signatureCache: new Map(),
     };
     this.refreshStates.set(agentName, state);
     return state;

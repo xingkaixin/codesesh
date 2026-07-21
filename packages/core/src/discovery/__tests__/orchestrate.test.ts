@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SessionCacheMeta } from "../../agents/base.js";
 import { BaseAgent } from "../../agents/base.js";
 import type { SessionHead } from "../../types/index.js";
@@ -192,5 +192,49 @@ describe("computeSessionDiff", () => {
     expect(computeSessionDiff(cached, updated).counts.updated).toBe(0);
     // Custom signature that includes slug detects the change.
     expect(computeSessionDiff(cached, updated, [], (s) => s.slug).counts.updated).toBe(1);
+  });
+
+  describe("signatureCache", () => {
+    it("skips recomputing the cached-side signature on a warm cache", () => {
+      const session = makeSession("a");
+      const signatureCache = new Map<string, string>();
+      const signature = vi.fn((s: SessionHead) => sessionSignature(s));
+
+      computeSessionDiff([session], [session], [], signature, signatureCache);
+      expect(signature).toHaveBeenCalledTimes(2); // cached-side miss + updated-side
+
+      signature.mockClear();
+      computeSessionDiff([session], [session], [], signature, signatureCache);
+      expect(signature).toHaveBeenCalledTimes(1); // cached-side hit, only updated-side computed
+    });
+
+    it("backfills the cache with the updated session's signature", () => {
+      const cachedVersion = makeSession("a", { title: "old" });
+      const updatedVersion = makeSession("a", { title: "new" });
+      const signatureCache = new Map<string, string>();
+
+      computeSessionDiff([cachedVersion], [updatedVersion], [], sessionSignature, signatureCache);
+
+      expect(signatureCache.get("a")).toBe(sessionSignature(updatedVersion));
+    });
+
+    it("backfills new sessions too", () => {
+      const signatureCache = new Map<string, string>();
+      const session = makeSession("a");
+
+      computeSessionDiff([], [session], [], sessionSignature, signatureCache);
+
+      expect(signatureCache.get("a")).toBe(sessionSignature(session));
+    });
+
+    it("still detects a real change even when the cache holds a stale entry", () => {
+      const signatureCache = new Map<string, string>([["a", "stale-signature"]]);
+      const cached = [makeSession("a", { title: "old" })];
+      const updated = [makeSession("a", { title: "new" })];
+
+      const diff = computeSessionDiff(cached, updated, [], sessionSignature, signatureCache);
+
+      expect(diff.counts.updated).toBe(1);
+    });
   });
 });

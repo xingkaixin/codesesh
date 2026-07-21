@@ -90,12 +90,24 @@ export interface SessionDiffResult {
  * as "changed" if it is new, if its id is in `changedIds`, or if its signature
  * differs from the cached copy. The algorithm is pure — event assembly and
  * no-op short-circuiting stay with the caller.
+ *
+ * `signatureCache` is an optional id→signature memo the caller owns across
+ * calls (e.g. across refresh cycles). On the cached side it's consulted before
+ * falling back to `signature(cached)`; every updated session's signature is
+ * written back into it, so the next call's cached-side lookups for unchanged
+ * sessions can skip recomputation entirely. Mutating this caller-supplied map
+ * is the only side effect — there's no module-level state. Callers must only
+ * pass a cache whose lineage matches `cachedSessions`: if `cachedSessions` can
+ * be a baseline the cache was never populated from (e.g. a DB snapshot instead
+ * of the previous call's `updatedSessions`), a stale or mismatched hit will
+ * silently suppress a real change.
  */
 export function computeSessionDiff(
   cachedSessions: SessionHead[],
   updatedSessions: SessionHead[],
   changedIds: string[] = [],
   signature: (session: SessionHead) => string = sessionSignature,
+  signatureCache?: Map<string, string>,
 ): SessionDiffResult {
   const cachedMap = new Map(cachedSessions.map((session) => [session.id, session]));
   const updatedIds = new Set(updatedSessions.map((session) => session.id));
@@ -110,10 +122,13 @@ export function computeSessionDiff(
     if (!cached) {
       newCount += 1;
       changes.push({ session, sortIndex });
+      signatureCache?.set(session.id, signature(session));
       return;
     }
-    const hasSignatureChange = signature(cached) !== signature(session);
-    if (changedIdSet.has(session.id) || hasSignatureChange) {
+    const cachedSignature = signatureCache?.get(cached.id) ?? signature(cached);
+    const updatedSignature = signature(session);
+    signatureCache?.set(session.id, updatedSignature);
+    if (changedIdSet.has(session.id) || cachedSignature !== updatedSignature) {
       updatedCount += 1;
       changes.push({ session, sortIndex });
     }

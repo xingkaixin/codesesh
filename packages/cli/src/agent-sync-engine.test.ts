@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { BaseAgent, ScanResult, SessionHead } from "@codesesh/core";
+import { FileSystemSessionSource } from "@codesesh/core";
+import type { BaseAgent, loadCachedSessions, ScanResult, SessionHead } from "@codesesh/core";
 import type { WorkerRunner } from "./worker-runner.js";
 
 const core = vi.hoisted(() => ({
   getAgentLastFullSyncAt: vi.fn(() => Date.now()),
   isAgentCacheInitialized: vi.fn(() => true),
-  loadCachedSessions: vi.fn(() => null),
+  loadCachedSessions: vi.fn((): ReturnType<typeof loadCachedSessions> => null),
   markAgentFullSyncCompleted: vi.fn(),
+  sessionSignature: vi.fn(),
 }));
 
 const searchIndex = vi.hoisted(() => ({
@@ -15,13 +17,19 @@ const searchIndex = vi.hoisted(() => ({
   snapshot: vi.fn(() => ({ activeBatchId: undefined, pendingBatches: 0 })),
 }));
 
-vi.mock("@codesesh/core", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@codesesh/core")>()),
-  getAgentLastFullSyncAt: core.getAgentLastFullSyncAt,
-  isAgentCacheInitialized: core.isAgentCacheInitialized,
-  loadCachedSessions: core.loadCachedSessions,
-  markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
-}));
+vi.mock("@codesesh/core", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@codesesh/core")>();
+  // Spy that still delegates to the real implementation, so diff behavior is unchanged.
+  core.sessionSignature.mockImplementation(original.sessionSignature);
+  return {
+    ...original,
+    getAgentLastFullSyncAt: core.getAgentLastFullSyncAt,
+    isAgentCacheInitialized: core.isAgentCacheInitialized,
+    loadCachedSessions: core.loadCachedSessions,
+    markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
+    sessionSignature: core.sessionSignature,
+  };
+});
 
 vi.mock("./search-index-job-runner.js", () => ({
   SearchIndexJobRunner: class {
@@ -177,5 +185,110 @@ describe("AgentSyncEngine", () => {
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(checkForChanges).not.toHaveBeenCalled();
+  });
+
+  it("reuses cached session signatures across refreshes for an unchanged session", async () => {
+    const session = makeSession("steady", "same-title");
+    const agent = makeAgent({
+      checkForChanges: () => ({ hasChanges: true, timestamp: Date.now() }),
+      incrementalScan: () => [session],
+    });
+    const { engine } = makeEngine(agent, [session]);
+
+    await engine.refresh("codex");
+    const firstRoundCalls = core.sessionSignature.mock.calls.length;
+    expect(firstRoundCalls).toBeGreaterThan(0);
+
+    core.sessionSignature.mockClear();
+    await engine.refresh("codex");
+    const secondRoundCalls = core.sessionSignature.mock.calls.length;
+
+    // The cached-side signature is served from the per-agent cache on the second
+    // round, so fewer sessionSignature calls are needed than on the cold-cache round.
+    expect(secondRoundCalls).toBeLessThan(firstRoundCalls);
+  });
+
+  it("clears cached session signatures when a session is removed", async () => {
+    const session = makeSession("gone");
+    const agent = makeAgent({
+      checkForChanges: () => ({ hasChanges: true, timestamp: Date.now() }),
+      incrementalScan: () => [],
+    });
+    const { engine } = makeEngine(agent, [session]);
+
+    await engine.refresh("codex");
+
+    const signatureCache = (
+      engine as unknown as { state: (name: string) => { signatureCache: Map<string, string> } }
+    ).state("codex").signatureCache;
+    expect(signatureCache.has("gone")).toBe(false);
+  });
+
+  it("still emits a changed event for a signature-only update reported via the DB-baseline (sync) path", async () => {
+    // Regression test for a bug where the strategy-path diff (DB `cached.sessions`
+    // baseline) and the event-path diff (in-memory `previousSessions` baseline)
+    // shared one signature cache within a single refresh. The strategy-path diff
+    // ran first and wrote the *new* signature into the cache; the event-path diff
+    // then read that new signature back for the cached side too, so a change with
+    // no reported changedIds (e.g. smart-tag reclassification) looked like no
+    // change at all and the UI event was dropped. Only the event path may use the
+    // cache now — this asserts the event still fires in that scenario.
+    class FakeSyncAgent extends FileSystemSessionSource {
+      readonly name = "codex";
+      readonly displayName = "Codex";
+      isAvailable(): boolean {
+        return true;
+      }
+      listSessionSources() {
+        return [];
+      }
+      scanSessionSource() {
+        return null;
+      }
+      getSessionData() {
+        return { messages: [] } as never;
+      }
+    }
+
+    const oldSession = { ...makeSession("sess1"), smart_tags_source_updated_at: 1 };
+    const newSession = { ...makeSession("sess1"), smart_tags_source_updated_at: 2 };
+    const agent = new FakeSyncAgent();
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      // The sync worker reports no changedIds even though the session content
+      // changed — mirrors an out-of-band reclassification the file-fingerprint
+      // check can't see.
+      run: vi.fn(async () => ({ sessions: [newSession], meta: {}, changedIds: [] })),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const state: ScanResult = {
+      agents: [agent],
+      byAgent: { codex: [oldSession] },
+      sessions: [oldSession],
+    };
+    const engine = new AgentSyncEngine({ snapshot: () => state, workerRunner });
+    engine.subscribeSessionsChanged((change) => {
+      state.byAgent[change.agentName] = change.sessions;
+      state.sessions = Object.values(state.byAgent).flat();
+    });
+    engine.initialize();
+
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [oldSession],
+      meta: {},
+      timestamp: Date.now(),
+    });
+
+    const sessionChanges = vi.fn();
+    engine.subscribeSessionsChanged(sessionChanges);
+
+    await engine.refresh("codex");
+
+    expect(sessionChanges).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentName: "codex",
+        event: expect.objectContaining({ updatedSessions: 1 }),
+      }),
+    );
   });
 });
