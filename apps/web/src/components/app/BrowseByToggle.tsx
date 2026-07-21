@@ -27,7 +27,7 @@ export function BrowseByToggle({
             aria-checked={active}
             disabled={disabled}
             onClick={() => onChange(option.value)}
-            className={`console-mono flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left text-xs transition-colors ${
+            className={`console-mono flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left text-xs motion-hover ${
               disabled
                 ? "cursor-not-allowed border-transparent text-[var(--console-muted)] opacity-45"
                 : active

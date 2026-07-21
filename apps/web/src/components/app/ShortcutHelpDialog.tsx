@@ -35,7 +35,7 @@ export function ShortcutHelpDialog({ open, onClose }: { open: boolean; onClose: 
                 Navigate without leaving the keyboard
               </Dialog.Title>
             </div>
-            <Dialog.Close className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] transition-colors hover:bg-[var(--console-surface)]">
+            <Dialog.Close className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)]">
               Esc
             </Dialog.Close>
           </div>

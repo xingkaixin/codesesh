@@ -68,7 +68,7 @@ export function TimeWindowControl({
             type="button"
             onClick={openCustom}
             aria-label="Edit custom time range"
-            className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-1 text-xs text-[var(--console-muted)] hover:border-[var(--console-border-strong)] hover:text-[var(--console-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2"
+            className="console-mono motion-hover motion-press rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-1 text-xs text-[var(--console-muted)] hover:border-[var(--console-border-strong)] hover:text-[var(--console-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2"
           >
             Edit
           </button>

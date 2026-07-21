@@ -161,7 +161,7 @@ export function SessionTocFilterPanel({
         {TOC_META.filter(({ id }) => toc.counts[id] > 0).map(({ id, label }) => (
           <label
             key={id}
-            className="flex cursor-pointer items-start gap-3 rounded-sm px-2 py-2 transition-colors hover:bg-[var(--console-surface-muted)]"
+            className="flex cursor-pointer items-start gap-3 rounded-sm px-2 py-2 motion-hover hover:bg-[var(--console-surface-muted)]"
           >
             <TocCheckbox
               checked={id === "tools_all" ? allToolsSelected : selectedFilters.has(id)}
@@ -181,7 +181,7 @@ export function SessionTocFilterPanel({
             {toc.tools.map((tool) => (
               <label
                 key={tool.id}
-                className="flex cursor-pointer items-start gap-3 rounded-sm px-2 py-2 transition-colors hover:bg-[var(--console-surface-muted)]"
+                className="flex cursor-pointer items-start gap-3 rounded-sm px-2 py-2 motion-hover hover:bg-[var(--console-surface-muted)]"
               >
                 <TocCheckbox
                   checked={selectedFilters.has(tool.id)}

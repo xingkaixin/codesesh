@@ -125,7 +125,7 @@ function RecommendedAgents({ agentItems }: { agentItems: LandingAgentItem[] }) {
           <li key={agent.key}>
             <Link
               to={`/${agent.key}`}
-              className="flex min-h-11 items-center gap-2 rounded-sm border border-transparent px-3 py-2 transition-colors duration-200 hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-accent)]"
+              className="flex min-h-11 items-center gap-2 rounded-sm border border-transparent px-3 py-2 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-accent)]"
             >
               {agent.icon ? (
                 <img src={agent.icon} alt={agent.name} className="size-4 object-contain" />
@@ -176,7 +176,7 @@ function RecentSessions({
           const bookmarked = isBookmarked(session.agentKey, session.id);
           return (
             <li key={session.id}>
-              <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
+              <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
                 <Link to={`/${session.fullPath}`} className="min-w-0 flex-1">
                   <p className="line-clamp-1 text-sm text-[var(--console-text)]">
                     {getSessionDisplayTitle(session)}
@@ -314,7 +314,7 @@ export function DetailLanding({
               <li key={agent.key}>
                 <Link
                   to={`/${agent.key}`}
-                  className="flex items-center gap-2 rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+                  className="flex items-center gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
                 >
                   {agent.icon ? (
                     <img src={agent.icon} alt={agent.name} className="size-4 object-contain" />

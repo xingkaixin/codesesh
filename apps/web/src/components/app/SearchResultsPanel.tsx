@@ -102,7 +102,7 @@ export function SearchResultsPanel({
           <button
             type="button"
             onClick={onRetry}
-            className="console-mono mt-4 rounded-sm border border-[var(--console-error-border)] bg-[var(--console-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--console-error)] transition-colors hover:bg-[var(--console-error-bg)] focus-visible:ring-2 focus-visible:ring-[var(--console-error)] focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="console-mono motion-hover motion-press mt-4 rounded-sm border border-[var(--console-error-border)] bg-[var(--console-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--console-error)] hover:bg-[var(--console-error-bg)] focus-visible:ring-2 focus-visible:ring-[var(--console-error)] focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             Retry Search
           </button>
@@ -145,7 +145,7 @@ export function SearchResultsPanel({
             to={`/${agentKey}/${result.session.id}`}
             state={{ searchQuery: query }}
             onClick={onOpenResult}
-            className={`rounded-sm border bg-[var(--console-surface)]/85 p-4 transition-colors hover:border-[var(--console-border-strong)] hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none ${
+            className={`rounded-sm border bg-[var(--console-surface)]/85 p-4 motion-hover hover:border-[var(--console-border-strong)] hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none ${
               index === selectedIndex
                 ? "border-[var(--console-border-strong)]"
                 : "border-[var(--console-border)]"

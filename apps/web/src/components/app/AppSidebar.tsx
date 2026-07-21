@@ -37,7 +37,7 @@ function AgentNavList({
         const isSelected = key === activeAgentKey;
         const agentProgress = formatAgentScanProgress(scanStatus, agent.name);
         const disabled = isScanActive && agentProgress !== null;
-        const className = `ml-4 flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
+        const className = `ml-4 flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left motion-hover ${
           disabled
             ? "cursor-not-allowed border-transparent text-[var(--console-muted)] opacity-50"
             : isSelected
@@ -110,7 +110,7 @@ function ProjectNavList({
             <Link
               to={getProjectPath(projectIdentity)}
               onClick={() => onSelectProject(projectIdentity)}
-              className={`ml-4 flex min-w-0 items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
+              className={`ml-4 flex min-w-0 items-center gap-2 rounded-sm border px-3 py-1.5 text-left motion-hover ${
                 isSelected
                   ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
                   : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
@@ -223,7 +223,7 @@ export function AppSidebar({
             <li>
               <Link
                 to={browseBy === "projects" ? "/projects" : "/"}
-                className={`flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left transition-colors ${
+                className={`flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left motion-hover ${
                   (browseBy === "agents" && viewState.mode === "root") ||
                   (browseBy === "projects" && viewState.mode === "projects")
                     ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
@@ -284,7 +284,7 @@ export function AppSidebar({
                 return (
                   <li key={getSessionBookmarkKey(session.agentKey, session.sessionId)}>
                     <div
-                      className={`flex items-start gap-2 rounded-sm border px-2 py-1.5 transition-colors ${
+                      className={`flex items-start gap-2 rounded-sm border px-2 py-1.5 motion-hover ${
                         isActive
                           ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
                           : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"

@@ -4,7 +4,6 @@ import {
   CalendarRange,
   CheckCircle2,
   ChevronDown,
-  ChevronUp,
   Lightbulb,
   LoaderCircle,
   MessageCircleX,
@@ -15,6 +14,7 @@ import type { AgentInfo, Message, MessagePart } from "../../lib/api";
 import { formatMessageTime } from "../../lib/format";
 import { MarkdownContent } from "../MarkdownContent";
 import { ToolOutputRenderer } from "../tool-output/ToolOutputRenderer";
+import { Collapsible } from "../ui/Collapsible";
 import { extractMessageText, type MessageBlock } from "./blocks";
 import { isCodexTurnAbortedMessage } from "./codex-abort";
 import { buildCodexPlanDisplay } from "./codex-plan";
@@ -299,16 +299,18 @@ function ReasoningSection({
           Thinking
         </span>
         <span className="text-[var(--console-muted)]">
-          {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          <ChevronDown className="motion-chevron w-4 h-4" data-open={expanded || undefined} />
         </span>
       </div>
-      {expanded && (
-        <div className="border-t border-dashed border-[var(--console-thinking-border)] px-4 py-3">
-          <div className="console-mono whitespace-pre-wrap text-xs leading-relaxed text-[var(--console-muted)]">
-            {renderHighlightedText(fullText, highlightQuery)}
+      <Collapsible open={expanded}>
+        {() => (
+          <div className="border-t border-dashed border-[var(--console-thinking-border)] px-4 py-3">
+            <div className="console-mono whitespace-pre-wrap text-xs leading-relaxed text-[var(--console-muted)]">
+              {renderHighlightedText(fullText, highlightQuery)}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </Collapsible>
     </div>
   );
 }
@@ -370,11 +372,11 @@ function PlanItem({ part, highlightQuery }: { part: MessagePart; highlightQuery?
   const StatusIcon = statusMeta.icon;
 
   return (
-    <div className="space-y-2">
+    <div>
       <div className="flex flex-wrap items-start gap-2">
         <div
           className={`w-full md:w-[560px] rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-2 text-left shadow-[2px_2px_0_0_rgba(15,23,42,0.05)] ${
-            display.expandable ? "transition-colors hover:bg-[var(--console-surface-muted)]" : ""
+            display.expandable ? "motion-hover hover:bg-[var(--console-surface-muted)]" : ""
           }`}
         >
           {display.expandable ? (
@@ -390,11 +392,10 @@ function PlanItem({ part, highlightQuery }: { part: MessagePart; highlightQuery?
                 </span>
               </span>
               <span className="mt-0.5 shrink-0 text-[var(--console-muted)]">
-                {expanded ? (
-                  <ChevronUp className="size-3.5" />
-                ) : (
-                  <ChevronDown className="size-3.5" />
-                )}
+                <ChevronDown
+                  className="motion-chevron size-3.5"
+                  data-open={expanded || undefined}
+                />
               </span>
             </button>
           ) : (
@@ -416,20 +417,22 @@ function PlanItem({ part, highlightQuery }: { part: MessagePart; highlightQuery?
         </span>
       </div>
 
-      {display.expandable && expanded ? (
-        <div className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-          <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5">
-            <span className="console-mono text-xs text-[var(--console-muted)]">
-              {display.contentLabel}
-            </span>
-          </div>
-          <div className="p-4">
-            <div className="console-markdown text-sm leading-relaxed text-[var(--console-text)]">
-              <MessageMarkdown text={display.contentMarkdown} highlightQuery={highlightQuery} />
+      <Collapsible open={display.expandable && expanded}>
+        {() => (
+          <div className="mt-2 overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+            <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5">
+              <span className="console-mono text-xs text-[var(--console-muted)]">
+                {display.contentLabel}
+              </span>
+            </div>
+            <div className="p-4">
+              <div className="console-markdown text-sm leading-relaxed text-[var(--console-text)]">
+                <MessageMarkdown text={display.contentMarkdown} highlightQuery={highlightQuery} />
+              </div>
             </div>
           </div>
-        </div>
-      ) : null}
+        )}
+      </Collapsible>
     </div>
   );
 }
@@ -456,11 +459,11 @@ function ToolItem({
   const ToolIcon = strategy.Icon;
 
   return (
-    <div id={anchorId} data-session-timeline-anchor={anchorId} className="scroll-mt-20 space-y-2">
+    <div id={anchorId} data-session-timeline-anchor={anchorId} className="scroll-mt-20">
       <div className="flex flex-wrap items-start gap-2">
         <div
           className={`w-full max-w-[720px] rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-2.5 text-left shadow-[2px_2px_0_0_rgba(15,23,42,0.05)] ${
-            strategy.expandable ? "transition-colors hover:bg-[var(--console-surface-muted)]" : ""
+            strategy.expandable ? "motion-hover hover:bg-[var(--console-surface-muted)]" : ""
           }`}
         >
           {strategy.expandable ? (
@@ -492,11 +495,10 @@ function ToolItem({
                 {statusMeta.label}
               </span>
               <span className="mt-0.5 shrink-0 text-[var(--console-muted)]">
-                {expanded ? (
-                  <ChevronUp className="size-3.5" />
-                ) : (
-                  <ChevronDown className="size-3.5" />
-                )}
+                <ChevronDown
+                  className="motion-chevron size-3.5"
+                  data-open={expanded || undefined}
+                />
               </span>
             </button>
           ) : (
@@ -525,47 +527,49 @@ function ToolItem({
         </div>
       </div>
 
-      {strategy.expandable && expanded ? (
-        <div className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-          <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5">
-            <span className="console-mono text-xs text-[var(--console-muted)]">
-              {strategy.contentLabel ?? "Output"}
-            </span>
-          </div>
-          <div className="space-y-3 p-3">
-            {strategy.details.length > 0 ? (
-              <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)] px-3 py-2">
-                <div className="space-y-2">
-                  {strategy.details.map((detail) => (
-                    <div
-                      key={`${detail.label}:${detail.value}`}
-                      className="flex flex-col gap-1 md:flex-row md:items-start md:gap-3"
-                    >
-                      <span className="console-mono shrink-0 text-[11px] font-semibold uppercase tracking-wide text-[var(--console-muted)] md:w-24">
-                        {detail.label}
-                      </span>
-                      <span className="console-mono whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-text)]">
-                        {renderHighlightedText(detail.value, highlightQuery)}
-                      </span>
-                    </div>
-                  ))}
+      <Collapsible open={strategy.expandable && expanded}>
+        {() => (
+          <div className="mt-2 overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+            <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5">
+              <span className="console-mono text-xs text-[var(--console-muted)]">
+                {strategy.contentLabel ?? "Output"}
+              </span>
+            </div>
+            <div className="space-y-3 p-3">
+              {strategy.details.length > 0 ? (
+                <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)] px-3 py-2">
+                  <div className="space-y-2">
+                    {strategy.details.map((detail) => (
+                      <div
+                        key={`${detail.label}:${detail.value}`}
+                        className="flex flex-col gap-1 md:flex-row md:items-start md:gap-3"
+                      >
+                        <span className="console-mono shrink-0 text-[11px] font-semibold uppercase tracking-wide text-[var(--console-muted)] md:w-24">
+                          {detail.label}
+                        </span>
+                        <span className="console-mono whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-text)]">
+                          {renderHighlightedText(detail.value, highlightQuery)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              ) : null}
+              <ToolOutputRenderer outputContent={strategy.outputContent} />
+            </div>
+            {strategy.showInputPreview ? (
+              <div className="border-t border-[var(--console-border)] bg-[var(--console-surface-sunken)] px-3 py-2">
+                <span className="console-mono text-[11px] text-[var(--console-muted)]">
+                  Input Preview
+                </span>
+                <pre className="console-mono mt-1 max-h-[200px] overflow-x-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-muted)]">
+                  {renderHighlightedText(inputPreviewText, highlightQuery)}
+                </pre>
               </div>
             ) : null}
-            <ToolOutputRenderer outputContent={strategy.outputContent} />
           </div>
-          {strategy.showInputPreview ? (
-            <div className="border-t border-[var(--console-border)] bg-[var(--console-surface-sunken)] px-3 py-2">
-              <span className="console-mono text-[11px] text-[var(--console-muted)]">
-                Input Preview
-              </span>
-              <pre className="console-mono mt-1 max-h-[200px] overflow-x-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-muted)]">
-                {renderHighlightedText(inputPreviewText, highlightQuery)}
-              </pre>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+        )}
+      </Collapsible>
     </div>
   );
 }

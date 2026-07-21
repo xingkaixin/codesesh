@@ -488,7 +488,7 @@ function AgentDistribution({ perAgent }: { perAgent: DashboardAgentStat[] }) {
             <li key={agent.name}>
               <Link
                 to={`/${agent.name.toLowerCase()}`}
-                className="block rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+                className="block rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
               >
                 <div className="flex items-center gap-2">
                   {agent.icon ? (
@@ -538,7 +538,7 @@ function TopProjects({
         </h3>
         <Link
           to="/projects"
-          className="console-mono text-[11px] text-[var(--console-muted)] transition-colors hover:text-[var(--console-text)]"
+          className="console-mono text-[11px] text-[var(--console-muted)] motion-hover hover:text-[var(--console-text)]"
         >
           View all
         </Link>
@@ -550,7 +550,7 @@ function TopProjects({
             <li key={`${project.identityKind}:${project.identityKey}`}>
               <Link
                 to={getProjectPath({ kind: project.identityKind, key: project.identityKey })}
-                className="block rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+                className="block rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
               >
                 <div className="flex items-center gap-2">
                   <span className="console-mono min-w-0 flex-1 truncate text-xs text-[var(--console-text)]">
@@ -619,7 +619,7 @@ function BookmarkedSessions({
           const updated = session.time_updated ?? session.time_created;
           return (
             <li key={getSessionBookmarkKey(session.agentKey, session.sessionId)}>
-              <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
+              <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
                 <Link to={`/${session.fullPath}`} className="flex min-w-0 flex-1 items-start gap-2">
                   {agent?.icon ? (
                     <img
@@ -684,7 +684,7 @@ function RecentSessions({
           const bookmarked = isBookmarked(agentKey, session.id);
           return (
             <li key={session.id}>
-              <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
+              <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
                 <Link to={`/${session.slug}`} className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     {agent?.icon ? (
@@ -745,7 +745,7 @@ function RecentFileActivity({ activity }: { activity: FileActivityResult[] }) {
             <li key={`${item.agent_name}/${item.session_id}/${item.kind}/${item.path}`}>
               <Link
                 to={`/${item.session.slug}`}
-                className="block rounded-sm border border-transparent px-2 py-1.5 transition-colors hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+                className="block rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
               >
                 <div className="flex items-center gap-2">
                   <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--console-muted)]">

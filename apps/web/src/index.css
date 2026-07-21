@@ -177,6 +177,8 @@
     --tag-planning-bar: #ee46bc;
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
     --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+    --dur-fast: 120ms;
+    --dur-base: 180ms;
     --tt-in-dur: 150ms;
     --tt-out-dur: 50ms;
     --tt-scale: 0.98;
@@ -310,6 +312,78 @@
     transition-duration: 180ms;
   }
 
+  .motion-menu {
+    opacity: 1;
+    scale: 1;
+    transform-origin: var(--transform-origin);
+    transition:
+      opacity var(--dur-fast) var(--ease-out),
+      scale var(--dur-fast) var(--ease-out);
+  }
+
+  .motion-menu[data-starting-style],
+  .motion-menu[data-ending-style] {
+    opacity: 0;
+    scale: 0.96;
+  }
+
+  .motion-hover {
+    transition:
+      color var(--dur-fast) var(--ease-out),
+      background-color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out);
+  }
+
+  .motion-press {
+    transition: transform var(--dur-fast) var(--ease-out);
+  }
+
+  .motion-press:active {
+    transform: scale(0.97);
+  }
+
+  /* Both use the `transition` shorthand at equal specificity, so combining
+     them on one element needs an explicit merged rule; otherwise source
+     order lets .motion-press silently drop .motion-hover's color/bg/border
+     transitions. */
+  .motion-hover.motion-press {
+    transition:
+      color var(--dur-fast) var(--ease-out),
+      background-color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out),
+      transform var(--dur-fast) var(--ease-out);
+  }
+
+  /* Grid-rows 0fr -> 1fr trick: animates to the content's intrinsic height
+     without measuring it in JS. Requires the row content to stay mounted
+     for the duration of the transition (see Collapsible.tsx). */
+  .motion-collapsible {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition:
+      grid-template-rows var(--dur-base) var(--ease-out),
+      opacity var(--dur-base) var(--ease-out);
+  }
+
+  .motion-collapsible[data-open] {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+
+  .motion-collapsible-inner {
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .motion-chevron {
+    transition: transform var(--dur-fast) var(--ease-out);
+  }
+
+  .motion-chevron[data-open] {
+    transform: rotate(180deg);
+  }
+
   .t-tt-wrap {
     position: relative;
     display: inline-block;
@@ -415,7 +489,8 @@
 @media (prefers-reduced-motion: reduce) {
   .motion-backdrop,
   .motion-modal,
-  .motion-drawer {
+  .motion-drawer,
+  .motion-menu {
     transition: opacity 150ms var(--ease-out);
   }
 
@@ -429,6 +504,35 @@
   .motion-drawer[data-starting-style],
   .motion-drawer[data-ending-style] {
     transform: none;
+  }
+
+  .motion-menu,
+  .motion-menu[data-starting-style],
+  .motion-menu[data-ending-style] {
+    scale: 1;
+  }
+
+  .motion-collapsible {
+    transition: none;
+  }
+
+  .motion-chevron {
+    transition: none;
+  }
+
+  .motion-press {
+    transition: none;
+  }
+
+  .motion-press:active {
+    transform: none;
+  }
+
+  .motion-hover.motion-press {
+    transition:
+      color var(--dur-fast) var(--ease-out),
+      background-color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out);
   }
 
   .shortcut-content[data-open] {
