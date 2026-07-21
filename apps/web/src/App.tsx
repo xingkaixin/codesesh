@@ -387,6 +387,12 @@ export default function App() {
 
   return (
     <div className="console-ui flex h-screen flex-col overflow-hidden bg-[var(--console-bg)] text-[var(--console-text)]">
+      <a
+        href="#main"
+        className="console-mono sr-only rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-1.5 text-xs text-[var(--console-text)] focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none"
+      >
+        Skip to content
+      </a>
       <header className="shrink-0 border-b border-[var(--console-border)] bg-[var(--console-surface)]/85 backdrop-blur-sm">
         <div className="grid min-h-14 grid-cols-[auto_1fr] items-center gap-3 px-4 py-2 sm:grid-cols-[auto_1fr_auto] sm:py-0">
           <div className="flex items-center gap-2">
@@ -498,7 +504,7 @@ export default function App() {
           }}
         />
 
-        <main className="flex min-w-0 flex-1 flex-col">
+        <main id="main" tabIndex={-1} className="flex min-w-0 flex-1 flex-col outline-none">
           <section className="shrink-0 border-b border-[var(--console-border)] bg-[var(--console-surface)]/70 px-4 py-4 backdrop-blur-sm md:px-8">
             <div>
               <nav

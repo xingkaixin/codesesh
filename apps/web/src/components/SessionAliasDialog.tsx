@@ -80,11 +80,17 @@ export function SessionAliasDialog({
               onKeyDown={(event) => {
                 if (event.key === "Enter") void saveAlias();
               }}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "session-alias-error" : undefined}
               className="mt-1.5 w-full rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 py-2 text-sm normal-case tracking-normal text-[var(--console-text)] outline-none focus:border-[var(--console-accent)] focus:ring-2 focus:ring-[var(--console-accent)]/25"
             />
           </label>
           {error ? (
-            <p aria-live="polite" className="mt-2 text-xs text-[var(--console-error)]">
+            <p
+              id="session-alias-error"
+              aria-live="polite"
+              className="mt-2 text-xs text-[var(--console-error)]"
+            >
               {error}
             </p>
           ) : null}

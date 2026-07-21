@@ -80,12 +80,12 @@ function DailyActivityChart({ buckets }: { buckets: DashboardDailyBucket[] }) {
     >
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <h3
+          <h2
             id="daily-activity-title"
             className="console-mono text-xs font-bold uppercase text-[var(--console-text)]"
           >
             Daily Activity
-          </h3>
+          </h2>
           <p className="console-mono mt-1 text-[11px] text-[var(--console-muted)]">
             Session activity · last {buckets.length} days
           </p>
@@ -200,12 +200,12 @@ function DailyTokenChart({ buckets }: { buckets: DailyTokenBucket[] }) {
     >
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <h3
+          <h2
             id="daily-token-activity-title"
             className="console-mono text-xs font-bold uppercase text-[var(--console-text)]"
           >
             Daily Token Activity
-          </h3>
+          </h2>
           <p className="console-mono mt-1 text-[11px] text-[var(--console-muted)]">
             Token breakdown · last {buckets.length} days
           </p>
@@ -386,12 +386,12 @@ function ModelDistribution({ entries }: { entries: ModelDistributionEntry[] }) {
       className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4"
     >
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3
+        <h2
           id="model-distribution-title"
           className="console-mono text-xs font-bold uppercase text-[var(--console-text)]"
         >
           Model Distribution
-        </h3>
+        </h2>
         <span className="console-mono text-[11px] text-[var(--console-muted)]">
           {visibleEntries.length} models
         </span>
@@ -473,9 +473,9 @@ function AgentDistribution({ perAgent }: { perAgent: DashboardAgentStat[] }) {
   return (
     <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
+        <h2 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
           Agent Distribution
-        </h3>
+        </h2>
         <span className="console-mono text-[11px] text-[var(--console-muted)]">
           {perAgent.length} agents
         </span>
@@ -533,9 +533,9 @@ function TopProjects({
   return (
     <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
+        <h2 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
           Projects
-        </h3>
+        </h2>
         <Link
           to="/projects"
           className="console-mono text-[11px] text-[var(--console-muted)] motion-hover hover:text-[var(--console-text)]"
@@ -606,9 +606,9 @@ function BookmarkedSessions({
   return (
     <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
+        <h2 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
           Bookmarked Sessions
-        </h3>
+        </h2>
         <span className="console-mono text-[11px] text-[var(--console-muted)]">
           {sessions.length} items
         </span>
@@ -669,9 +669,9 @@ function RecentSessions({
   return (
     <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
+        <h2 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
           Recent Activity
-        </h3>
+        </h2>
         <span className="console-mono text-[11px] text-[var(--console-muted)]">
           {sessions.length} items
         </span>
@@ -731,9 +731,9 @@ function RecentFileActivity({ activity }: { activity: FileActivityResult[] }) {
   return (
     <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
+        <h2 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
           Recently Touched Files
-        </h3>
+        </h2>
         <span className="console-mono text-[11px] text-[var(--console-muted)]">
           {activity.length} files
         </span>
