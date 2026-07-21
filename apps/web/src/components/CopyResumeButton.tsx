@@ -88,6 +88,9 @@ export function CopyResumeButton({
         <Copy className="size-3" strokeWidth={1.8} />
       )}
       <span>{copied ? "Copied" : "Copy resume"}</span>
+      <span className="sr-only" aria-live="polite">
+        {copied ? "Resume command copied" : ""}
+      </span>
     </button>
   );
 }

@@ -214,7 +214,29 @@ export default function App() {
     [navigate, sidebarSessionLookup],
   );
 
+  // 可见标签每次渲染直接计算，保证 processed/total 计数实时更新。
   const scanStatusLabel = formatScanStatusLabel(scanStatus);
+
+  // 播报文本节流：processed/total 逐条 tick 高频变化，仅当 phase/当前 agent/完成数
+  // 等里程碑信息变化时才重算，避免 aria-live 区域被逐条计数刷屏。
+  const scanStatusMilestoneKey = scanStatus
+    ? [
+        scanStatus.phase,
+        scanStatus.scanningAgents[0] ?? "",
+        scanStatus.completedAgents.length,
+        scanStatus.totalAgents,
+        scanStatus.backfill.active,
+        scanStatus.backfill.currentAgent ?? "",
+        scanStatus.backfill.pendingAgents.length,
+        scanStatus.backfill.failedAgents.length,
+      ].join("|")
+    : null;
+  const [announcedScanKey, setAnnouncedScanKey] = useState(scanStatusMilestoneKey);
+  const [announcedScanLabel, setAnnouncedScanLabel] = useState(scanStatusLabel);
+  if (scanStatusMilestoneKey !== announcedScanKey) {
+    setAnnouncedScanKey(scanStatusMilestoneKey);
+    setAnnouncedScanLabel(scanStatusLabel);
+  }
   const isScanActive = scanStatus?.active === true;
 
   const { liveNotice } = useLiveSync({
@@ -537,16 +559,23 @@ export default function App() {
                   />
                 ) : null}
               </div>
-              {liveNotice ? (
-                <p className="console-mono mt-2 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
-                  {liveNotice}
-                </p>
-              ) : null}
-              {scanStatusLabel && viewState.mode === "root" ? (
-                <p className="console-mono mt-2 inline-flex max-w-4xl rounded-sm border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-2 py-1 text-[11px] leading-relaxed text-[var(--console-warning)]">
-                  {scanStatusLabel}
-                </p>
-              ) : null}
+              <div aria-live="polite">
+                {liveNotice ? (
+                  <p className="console-mono mt-2 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
+                    {liveNotice}
+                  </p>
+                ) : null}
+              </div>
+              <div>
+                {scanStatusLabel && viewState.mode === "root" ? (
+                  <p className="console-mono mt-2 inline-flex max-w-4xl rounded-sm border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-2 py-1 text-[11px] leading-relaxed text-[var(--console-warning)]">
+                    {scanStatusLabel}
+                  </p>
+                ) : null}
+              </div>
+              <div className="sr-only" aria-live="polite" aria-atomic="true">
+                {viewState.mode === "root" ? announcedScanLabel : null}
+              </div>
             </div>
           </section>
 
