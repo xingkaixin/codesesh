@@ -1,23 +1,29 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { defineConfig, devices } from "playwright/test";
 
+const FIXTURE_PROJECT_DIR_TOKEN = "__E2E_PROJECT_DIR__";
 const port = Number(process.env.CODESESH_E2E_PORT ?? 4387);
 const wwwPort = Number(process.env.CODESESH_WWW_E2E_PORT ?? 4388);
 const e2eHome = mkdtempSync(join(tmpdir(), "codesesh-e2e-home-"));
-const fixtureRoot = resolve("tests/e2e/fixtures");
+const fixtureTemplateRoot = resolve("tests/e2e/fixtures");
+const fixtureRoot = join(e2eHome, "fixtures");
 
-// Rewrite the fixture session's cwd to an isolated temp dir so computeIdentity
-// resolves deterministically regardless of stray manifests (e.g. /tmp/package.json).
+cpSync(fixtureTemplateRoot, fixtureRoot, { recursive: true });
+process.once("exit", () => rmSync(e2eHome, { recursive: true, force: true }));
+
 const e2eProjectDir = join(e2eHome, "codesesh-e2e");
 mkdirSync(e2eProjectDir, { recursive: true });
-const fixtureSessionPath = resolve(fixtureRoot, "claude/projects/codesesh-e2e/e2e-dashboard.jsonl");
-const fixtureSessionContent = readFileSync(fixtureSessionPath, "utf8").replaceAll(
-  "__E2E_PROJECT_DIR__",
-  e2eProjectDir,
+const fixtureSessionPath = join(fixtureRoot, "claude/projects/codesesh-e2e/e2e-dashboard.jsonl");
+const fixtureSessionTemplate = readFileSync(fixtureSessionPath, "utf8");
+if (!fixtureSessionTemplate.includes(FIXTURE_PROJECT_DIR_TOKEN)) {
+  throw new Error(`E2E fixture is missing ${FIXTURE_PROJECT_DIR_TOKEN}`);
+}
+writeFileSync(
+  fixtureSessionPath,
+  fixtureSessionTemplate.replaceAll(FIXTURE_PROJECT_DIR_TOKEN, e2eProjectDir),
 );
-writeFileSync(fixtureSessionPath, fixtureSessionContent);
 
 export default defineConfig({
   testDir: "./tests/e2e",
