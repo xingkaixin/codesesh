@@ -14,6 +14,7 @@ const chineseUrl = new URL(localeRoutes.zh, siteUrl).toString();
 const language = locale === "zh" ? "zh-CN" : "en";
 const ogLocale = locale === "zh" ? "zh_CN" : "en_US";
 const ogLocaleAlternate = locale === "zh" ? "en_US" : "zh_CN";
+const analyticsEnabled = import.meta.env.PROD;
 const featureList = t.features.groups.flatMap((group) => group.items.map((item) => item.title));
 const jsonLd = {
   "@context": "https://schema.org",
@@ -220,12 +221,16 @@ const jsonLd = {
 
     <title>{t.meta.title}</title>
     <script is:inline type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
-    <script
-      is:inline
-      defer
-      src="https://static.cloudflareinsights.com/beacon.min.js"
-      data-cf-beacon='{"token": "c341768d21d44e19b5efbc18d4eb57c6"}'
-    ></script>
+    {
+      analyticsEnabled && (
+        <script
+          is:inline
+          defer
+          src="https://static.cloudflareinsights.com/beacon.min.js"
+          data-cf-beacon='{"token": "c341768d21d44e19b5efbc18d4eb57c6"}'
+        />
+      )
+    }
   </head>
   <body>
     <slot />

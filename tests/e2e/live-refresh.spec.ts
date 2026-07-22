@@ -1,5 +1,5 @@
 import { appendFile } from "node:fs/promises";
-import { expect, test } from "playwright/test";
+import { expect, test } from "./test-fixtures.js";
 
 test("refreshes an open session when its source file changes", async ({ page }, testInfo) => {
   const fixtureSessionPath = testInfo.project.metadata.fixtureSessionPath;
