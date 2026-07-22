@@ -233,8 +233,10 @@ pnpm --filter @codesesh/www deploy:cf
 ```
 
 `test:coverage` runs the Core and CLI suites in Node and the Web suite in
-`happy-dom`. The 75% line threshold applies to the configured Core
-discovery/utils/base modules and CLI API modules, not every monorepo source file.
+`happy-dom`. Coverage includes all production TypeScript in Core, CLI, and Web.
+Package-level baselines prevent coverage regressions, while stricter targeted
+thresholds protect the scanning, API, live runtime, hook, and interaction paths.
+The Astro landing page is covered by Playwright rather than Vitest.
 
 ### Performance Benchmark
 
