@@ -1,4 +1,10 @@
-import { expect, test } from "playwright/test";
+import { expect, monitorBrowserErrors, test } from "./test-fixtures.js";
+
+test("keeps production analytics out of development", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.locator('script[src*="cloudflareinsights.com"]')).toHaveCount(0);
+});
 
 test("copies the install command with the clipboard API", async ({ page }) => {
   await page.addInitScript(() => {
@@ -16,8 +22,6 @@ test("copies the install command with the clipboard API", async ({ page }) => {
 });
 
 test("reports copy failure without an unhandled rejection", async ({ page }) => {
-  const pageErrors: Error[] = [];
-  page.on("pageerror", (error) => pageErrors.push(error));
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -37,7 +41,6 @@ test("reports copy failure without an unhandled rejection", async ({ page }) => 
   await expect(page.locator("[data-copy-status]")).toHaveText(
     "Copy failed. Copy the command manually.",
   );
-  expect(pageErrors).toEqual([]);
 });
 
 test("falls back when the clipboard API rejects", async ({ page }) => {
@@ -93,13 +96,17 @@ test("keeps showcase actions visible on touch", async ({ browser }, testInfo) =>
     viewport: { width: 390, height: 844 },
   });
   const page = await context.newPage();
+  const browserErrors = monitorBrowserErrors(page);
   await page.goto("/");
 
   const expand = page.getByRole("button", { name: "Expand Engineering Memory Overview" });
   await expect(expand).toHaveCSS("opacity", "1");
   await expand.tap();
-  await expect(page.getByRole("dialog", { name: "Engineering Memory Overview preview" })).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: "Engineering Memory Overview preview" }),
+  ).toBeVisible();
   await context.close();
+  expect(browserErrors, "unexpected browser errors").toEqual([]);
 });
 
 test("removes showcase transforms for reduced motion", async ({ page }) => {

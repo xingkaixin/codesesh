@@ -1,4 +1,4 @@
-import { expect, test } from "playwright/test";
+import { expect, test } from "./test-fixtures.js";
 
 test("keeps project navigation aligned with the overview route", async ({ page }) => {
   await page.goto("/projects");
@@ -33,17 +33,7 @@ test("persists app shell preferences across reloads", async ({ page }) => {
   );
 });
 
-test("covers dashboard, detail, search, projects, and pin flows", async ({ page }) => {
-  const consoleErrors: string[] = [];
-  page.on("console", (message) => {
-    if (message.type() === "error") {
-      consoleErrors.push(message.text());
-    }
-  });
-
-  const resetBookmark = await page.request.delete("/api/bookmarks/claudecode/e2e-dashboard");
-  expect(resetBookmark.ok()).toBe(true);
-
+test("browses the dashboard and project tree with a keyboard", async ({ page }) => {
   await page.goto("/");
   const dashboard = page.getByTestId("dashboard");
   await expect(dashboard).toBeVisible();
@@ -70,6 +60,10 @@ test("covers dashboard, detail, search, projects, and pin flows", async ({ page 
   await expect(page.getByRole("menuitem", { name: "Rename" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(treeSession).toBeFocused();
+});
+
+test("opens a session detail from the dashboard", async ({ page }) => {
+  await page.goto("/");
 
   await page.getByText("Core browsing smoke session").first().click();
   await expect(page).toHaveURL(/\/claudecode\/e2e-dashboard$/);
@@ -77,7 +71,9 @@ test("covers dashboard, detail, search, projects, and pin flows", async ({ page 
     page.getByRole("heading", { level: 1, name: "Core browsing smoke session" }),
   ).toBeVisible();
   await expect(page.getByText("Dashboard path is ready")).toBeVisible();
+});
 
+test("searches indexed messages and opens a result", async ({ page }) => {
   await expect
     .poll(async () => {
       const response = await page.request.get("/api/search?q=needle");
@@ -90,6 +86,7 @@ test("covers dashboard, detail, search, projects, and pin flows", async ({ page 
     })
     .toBe(true);
 
+  await page.goto("/");
   await page.getByRole("searchbox", { name: "Search Sessions" }).fill("needle");
   await page.getByRole("button", { name: "Search" }).click();
   const searchHeading = page.getByRole("heading", { level: 1, name: "Search" });
@@ -104,6 +101,11 @@ test("covers dashboard, detail, search, projects, and pin flows", async ({ page 
   await searchResult.click();
   await expect(page).toHaveURL(/\/claudecode\/e2e-dashboard$/);
   await expect(page.getByText("needle search target")).toBeVisible();
+});
+
+test("bookmarks a recent session", async ({ page }) => {
+  const resetBookmark = await page.request.delete("/api/bookmarks/claudecode/e2e-dashboard");
+  expect(resetBookmark.ok()).toBe(true);
 
   await page.goto("/");
   const recentSession = page
@@ -136,8 +138,6 @@ test("covers dashboard, detail, search, projects, and pin flows", async ({ page 
   await expect(page.locator("section").filter({ hasText: "BOOKMARKS" })).toContainText(
     "Core browsing smoke session",
   );
-
-  expect(consoleErrors).toEqual([]);
 });
 
 test("persists the selected time range across navigation", async ({ page }) => {

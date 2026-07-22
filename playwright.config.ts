@@ -39,7 +39,9 @@ export default defineConfig({
     timeout: 10_000,
   },
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [["github"], ["list"]] : [["list"]],
+  reporter: process.env.CI
+    ? [["github"], ["list"], ["html", { outputFolder: "playwright-report", open: "never" }]]
+    : [["list"]],
   use: {
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
