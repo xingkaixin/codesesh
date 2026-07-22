@@ -26,10 +26,10 @@ export default defineConfig({
       ],
       reporter: ["text", "html"],
       thresholds: {
-        statements: 69,
-        branches: 58,
-        functions: 72,
-        lines: 71,
+        statements: 70,
+        branches: 59,
+        functions: 73,
+        lines: 72,
         [CORE_SOURCE_SCOPE]: {
           statements: 79,
           branches: 66,
@@ -43,10 +43,10 @@ export default defineConfig({
           lines: 87,
         },
         [WEB_SOURCE_SCOPE]: {
-          statements: 54,
-          branches: 43,
-          functions: 56,
-          lines: 55,
+          statements: 55,
+          branches: 45,
+          functions: 58,
+          lines: 56,
         },
         [CORE_CRITICAL_SCOPE]: {
           lines: 90,
