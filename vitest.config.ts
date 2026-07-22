@@ -1,6 +1,9 @@
 import { defineConfig } from "vitest/config";
 
-const COVERAGE_THRESHOLD_SCOPE =
+const CORE_SOURCE_SCOPE = "packages/core/src/**/*.ts";
+const CLI_SOURCE_SCOPE = "packages/cli/src/**/*.ts";
+const WEB_SOURCE_SCOPE = "apps/web/src/**/*.{ts,tsx}";
+const CORE_CRITICAL_SCOPE =
   "{packages/core/src/utils/**,packages/core/src/discovery/**,packages/core/src/agents/base.ts,packages/cli/src/api/**}";
 const CLI_RUNTIME_SCOPE =
   "{packages/cli/src/live-scan.ts,packages/cli/src/session-watcher.ts,packages/cli/src/*-coordinator.ts,packages/cli/src/*-worker.ts,packages/cli/src/pending-search-index-jobs.ts,packages/cli/src/scan-status-model.ts}";
@@ -13,20 +16,39 @@ export default defineConfig({
     projects: ["packages/core", "packages/cli", "apps/web"],
     coverage: {
       provider: "v8",
-      include: [
-        COVERAGE_THRESHOLD_SCOPE,
-        CLI_RUNTIME_SCOPE,
-        WEB_HOOKS_SCOPE,
-        WEB_INTERACTIONS_SCOPE,
+      include: [CORE_SOURCE_SCOPE, CLI_SOURCE_SCOPE, WEB_SOURCE_SCOPE],
+      exclude: [
+        "**/node_modules/**",
+        "**/dist/**",
+        "**/*.test.{ts,tsx}",
+        "**/__tests__/**",
+        "**/*.d.ts",
       ],
-      exclude: ["**/node_modules/**", "**/dist/**", "packages/core/src/utils/sqlite.ts"],
       reporter: ["text", "html"],
       thresholds: {
-        statements: 88,
-        branches: 80,
-        functions: 88,
-        lines: 91,
-        [COVERAGE_THRESHOLD_SCOPE]: {
+        statements: 69,
+        branches: 58,
+        functions: 72,
+        lines: 71,
+        [CORE_SOURCE_SCOPE]: {
+          statements: 79,
+          branches: 66,
+          functions: 89,
+          lines: 82,
+        },
+        [CLI_SOURCE_SCOPE]: {
+          statements: 85,
+          branches: 82,
+          functions: 85,
+          lines: 87,
+        },
+        [WEB_SOURCE_SCOPE]: {
+          statements: 54,
+          branches: 43,
+          functions: 56,
+          lines: 55,
+        },
+        [CORE_CRITICAL_SCOPE]: {
           lines: 90,
         },
         [CLI_RUNTIME_SCOPE]: {

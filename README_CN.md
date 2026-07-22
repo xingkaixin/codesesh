@@ -233,8 +233,9 @@ pnpm --filter @codesesh/www deploy:cf
 ```
 
 `test:coverage` 会在 Node 环境运行 Core、CLI 测试，在 `happy-dom` 环境运行 Web 测试。
-75% 行覆盖率门槛只应用于配置中指定的 Core discovery/utils/base 模块与 CLI API 模块，
-不代表 monorepo 全部源码的覆盖率。
+覆盖率统计包括 Core、CLI、Web 的全部生产 TypeScript。各包的基线门槛用于防止覆盖率回退，
+扫描、API、实时运行时、Hook 和交互路径继续使用更严格的定向门槛。
+Astro 落地页由 Playwright 覆盖，不计入 Vitest 覆盖率。
 
 ### 性能 Benchmark
 
