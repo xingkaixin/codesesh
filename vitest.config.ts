@@ -7,6 +7,7 @@ const CORE_CRITICAL_SCOPE =
   "{packages/core/src/utils/**,packages/core/src/discovery/**,packages/core/src/agents/base.ts,packages/cli/src/api/**}";
 const CLI_RUNTIME_SCOPE =
   "{packages/cli/src/live-scan.ts,packages/cli/src/session-watcher.ts,packages/cli/src/*-coordinator.ts,packages/cli/src/*-worker.ts,packages/cli/src/pending-search-index-jobs.ts,packages/cli/src/scan-status-model.ts}";
+const CLI_RUNTIME_PLAN_SCOPE = "packages/cli/src/runtime-plan.ts";
 const WEB_HOOKS_SCOPE = "apps/web/src/hooks/**";
 const WEB_INTERACTIONS_SCOPE =
   "{apps/web/src/components/Dashboard.tsx,apps/web/src/components/app/SearchResultsPanel.tsx,apps/web/src/components/session-detail/message-list.tsx,apps/web/src/components/session-detail/session-message-timeline.tsx}";
@@ -28,7 +29,7 @@ export default defineConfig({
       thresholds: {
         statements: 70,
         branches: 59,
-        functions: 73,
+        functions: 74,
         lines: 72,
         [CORE_SOURCE_SCOPE]: {
           statements: 79,
@@ -53,6 +54,12 @@ export default defineConfig({
         },
         [CLI_RUNTIME_SCOPE]: {
           lines: 91,
+        },
+        [CLI_RUNTIME_PLAN_SCOPE]: {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
         },
         [WEB_HOOKS_SCOPE]: {
           lines: 95,
