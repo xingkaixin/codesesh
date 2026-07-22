@@ -13,6 +13,10 @@ const fixtureTemplateRoot = resolve("tests/e2e/fixtures");
 const fixtureRoot = join(e2eHome, "fixtures");
 const e2eProjectDir = join(e2eHome, "codesesh-e2e");
 const fixtureSessionPath = join(fixtureRoot, "claude/projects/codesesh-e2e/e2e-dashboard.jsonl");
+const codexFixtureSessionPath = join(
+  fixtureRoot,
+  "codex/sessions/2026/04/20/rollout-2026-04-20T10-05-00-019daaaa-bbbb-7bbb-8bbb-bbbbbbbbbbbb.jsonl",
+);
 
 if (!inheritedE2eHome) {
   process.env[E2E_HOME_ENV] = e2eHome;
@@ -20,14 +24,16 @@ if (!inheritedE2eHome) {
   process.once("exit", () => rmSync(e2eHome, { recursive: true, force: true }));
 
   mkdirSync(e2eProjectDir, { recursive: true });
-  const fixtureSessionTemplate = readFileSync(fixtureSessionPath, "utf8");
-  if (!fixtureSessionTemplate.includes(FIXTURE_PROJECT_DIR_TOKEN)) {
-    throw new Error(`E2E fixture is missing ${FIXTURE_PROJECT_DIR_TOKEN}`);
+  for (const tokenizedFixturePath of [fixtureSessionPath, codexFixtureSessionPath]) {
+    const fixtureSessionTemplate = readFileSync(tokenizedFixturePath, "utf8");
+    if (!fixtureSessionTemplate.includes(FIXTURE_PROJECT_DIR_TOKEN)) {
+      throw new Error(`E2E fixture is missing ${FIXTURE_PROJECT_DIR_TOKEN}`);
+    }
+    writeFileSync(
+      tokenizedFixturePath,
+      fixtureSessionTemplate.replaceAll(FIXTURE_PROJECT_DIR_TOKEN, e2eProjectDir),
+    );
   }
-  writeFileSync(
-    fixtureSessionPath,
-    fixtureSessionTemplate.replaceAll(FIXTURE_PROJECT_DIR_TOKEN, e2eProjectDir),
-  );
 }
 
 export default defineConfig({
@@ -48,7 +54,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `pnpm build && node packages/cli/dist/index.js --port ${port} --agent claudecode --days 0 --noOpen --cache false`,
+      command: `pnpm build && node packages/cli/dist/index.js --port ${port} --agent claudecode,codex --days 0 --noOpen --cache false`,
       url: `http://127.0.0.1:${port}/api/config`,
       reuseExistingServer: false,
       timeout: 60_000,
@@ -62,7 +68,7 @@ export default defineConfig({
         CODESESH_STATE_STORE: "memory",
         CODESESH_STATE_DIR: join(e2eHome, "state"),
         CLAUDE_CONFIG_DIR: join(fixtureRoot, "claude"),
-        CODEX_HOME: join(e2eHome, ".codex"),
+        CODEX_HOME: join(fixtureRoot, "codex"),
         KIMI_SHARE_DIR: join(e2eHome, ".kimi"),
         CURSOR_DATA_PATH: join(e2eHome, "cursor"),
       },
@@ -77,7 +83,7 @@ export default defineConfig({
   projects: [
     {
       name: "web-chromium",
-      testMatch: ["browsing.spec.ts", "live-refresh.spec.ts"],
+      testMatch: ["aggregation.spec.ts", "browsing.spec.ts", "live-refresh.spec.ts"],
       metadata: { fixtureSessionPath },
       use: { ...devices["Desktop Chrome"], baseURL: `http://127.0.0.1:${port}` },
     },
