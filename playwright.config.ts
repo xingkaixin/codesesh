@@ -4,26 +4,31 @@ import { join, resolve } from "node:path";
 import { defineConfig, devices } from "playwright/test";
 
 const FIXTURE_PROJECT_DIR_TOKEN = "__E2E_PROJECT_DIR__";
+const E2E_HOME_ENV = "CODESESH_PLAYWRIGHT_HOME";
 const port = Number(process.env.CODESESH_E2E_PORT ?? 4387);
 const wwwPort = Number(process.env.CODESESH_WWW_E2E_PORT ?? 4388);
-const e2eHome = mkdtempSync(join(tmpdir(), "codesesh-e2e-home-"));
+const inheritedE2eHome = process.env[E2E_HOME_ENV];
+const e2eHome = inheritedE2eHome ?? mkdtempSync(join(tmpdir(), "codesesh-e2e-home-"));
 const fixtureTemplateRoot = resolve("tests/e2e/fixtures");
 const fixtureRoot = join(e2eHome, "fixtures");
-
-cpSync(fixtureTemplateRoot, fixtureRoot, { recursive: true });
-process.once("exit", () => rmSync(e2eHome, { recursive: true, force: true }));
-
 const e2eProjectDir = join(e2eHome, "codesesh-e2e");
-mkdirSync(e2eProjectDir, { recursive: true });
 const fixtureSessionPath = join(fixtureRoot, "claude/projects/codesesh-e2e/e2e-dashboard.jsonl");
-const fixtureSessionTemplate = readFileSync(fixtureSessionPath, "utf8");
-if (!fixtureSessionTemplate.includes(FIXTURE_PROJECT_DIR_TOKEN)) {
-  throw new Error(`E2E fixture is missing ${FIXTURE_PROJECT_DIR_TOKEN}`);
+
+if (!inheritedE2eHome) {
+  process.env[E2E_HOME_ENV] = e2eHome;
+  cpSync(fixtureTemplateRoot, fixtureRoot, { recursive: true });
+  process.once("exit", () => rmSync(e2eHome, { recursive: true, force: true }));
+
+  mkdirSync(e2eProjectDir, { recursive: true });
+  const fixtureSessionTemplate = readFileSync(fixtureSessionPath, "utf8");
+  if (!fixtureSessionTemplate.includes(FIXTURE_PROJECT_DIR_TOKEN)) {
+    throw new Error(`E2E fixture is missing ${FIXTURE_PROJECT_DIR_TOKEN}`);
+  }
+  writeFileSync(
+    fixtureSessionPath,
+    fixtureSessionTemplate.replaceAll(FIXTURE_PROJECT_DIR_TOKEN, e2eProjectDir),
+  );
 }
-writeFileSync(
-  fixtureSessionPath,
-  fixtureSessionTemplate.replaceAll(FIXTURE_PROJECT_DIR_TOKEN, e2eProjectDir),
-);
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -70,7 +75,8 @@ export default defineConfig({
   projects: [
     {
       name: "web-chromium",
-      testMatch: "browsing.spec.ts",
+      testMatch: ["browsing.spec.ts", "live-refresh.spec.ts"],
+      metadata: { fixtureSessionPath },
       use: { ...devices["Desktop Chrome"], baseURL: `http://127.0.0.1:${port}` },
     },
     {

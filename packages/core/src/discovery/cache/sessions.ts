@@ -37,6 +37,20 @@ export interface CachedResult {
   timestamp: number;
 }
 
+export interface CachedSessionDataEntry {
+  data: SessionData;
+  meta: SessionCacheMeta | null;
+}
+
+function parseCachedSessionMeta(value: string | null | undefined): SessionCacheMeta | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as SessionCacheMeta;
+  } catch {
+    return null;
+  }
+}
+
 export function deleteLegacyCacheFile(): void {
   const legacyPath = getLegacyCachePath();
   if (!existsSync(legacyPath)) {
@@ -199,7 +213,10 @@ export function markAgentFullSyncCompleted(agentName: string): void {
   });
 }
 
-export function loadCachedSessionData(agentName: string, sessionId: string): SessionData | null {
+export function loadCachedSessionDataEntry(
+  agentName: string,
+  sessionId: string,
+): CachedSessionDataEntry | null {
   if (!hasCacheStorage()) {
     return null;
   }
@@ -292,11 +309,18 @@ export function loadCachedSessionData(agentName: string, sessionId: string): Ses
       .all(agentName, sessionId) as FileActivityRow[];
 
     return {
-      ...head,
-      messages: messageRows.map((messageRow) => messageFromCachedRow(messageRow)),
-      file_activity: fileActivityRows.map((activityRow) => fileActivityFromRow(activityRow)),
+      data: {
+        ...head,
+        messages: messageRows.map((messageRow) => messageFromCachedRow(messageRow)),
+        file_activity: fileActivityRows.map((activityRow) => fileActivityFromRow(activityRow)),
+      },
+      meta: parseCachedSessionMeta(row.meta_json),
     };
   });
+}
+
+export function loadCachedSessionData(agentName: string, sessionId: string): SessionData | null {
+  return loadCachedSessionDataEntry(agentName, sessionId)?.data ?? null;
 }
 
 export function saveCachedSessions(

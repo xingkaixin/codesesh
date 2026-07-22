@@ -17,6 +17,7 @@ export {
 export {
   loadCachedSessions,
   loadCachedSessionData,
+  loadCachedSessionDataEntry,
   isAgentCacheInitialized,
   markAgentCacheInitialized,
   getAgentLastFullSyncAt,
@@ -47,6 +48,7 @@ export type {
   SearchOptions,
   SearchQueryFilters,
   SessionHeadChange,
+  CachedSessionDataEntry,
 } from "./cache.js";
 export { perf } from "../utils/index.js";
 export type { PerfMarker } from "../utils/index.js";

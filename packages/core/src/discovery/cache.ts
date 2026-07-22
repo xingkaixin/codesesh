@@ -19,12 +19,14 @@ export {
   getCacheInfo,
   isAgentCacheInitialized,
   loadCachedSessionData,
+  loadCachedSessionDataEntry,
   loadCachedSessions,
   markAgentCacheInitialized,
   markAgentFullSyncCompleted,
   saveCachedSessionChanges,
   saveCachedSessions,
   type CachedResult,
+  type CachedSessionDataEntry,
 } from "./cache/sessions.js";
 
 export {

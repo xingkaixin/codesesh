@@ -1,26 +1,36 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 
-const coreMocks = vi.hoisted(() => ({
-  loadCachedSessionData: vi.fn(),
-  listFileActivity: vi.fn((): FileActivityResult[] => []),
-  listSessionFileActivity: vi.fn(() => []),
-  listSessionAliases: vi.fn<
-    () => Array<{ agentKey: string; sessionId: string; alias: string; updated_at: number }>
-  >(() => []),
-  executeSessionSearch: vi.fn(
-    (
-      _query: string,
-      _options?: unknown,
-      _scanResult?: unknown,
-    ): Array<{ agentName: string; session: SessionHead }> => [],
-  ),
-}));
+const coreMocks = vi.hoisted(() => {
+  const loadCachedSessionData = vi.fn();
+  return {
+    loadCachedSessionData,
+    loadCachedSessionDataEntry: vi.fn(
+      (agentName: string, sessionId: string): CachedSessionDataEntry | null => {
+        const data = loadCachedSessionData(agentName, sessionId) as SessionData | null;
+        return data ? { data, meta: null } : null;
+      },
+    ),
+    listFileActivity: vi.fn((): FileActivityResult[] => []),
+    listSessionFileActivity: vi.fn(() => []),
+    listSessionAliases: vi.fn<
+      () => Array<{ agentKey: string; sessionId: string; alias: string; updated_at: number }>
+    >(() => []),
+    executeSessionSearch: vi.fn(
+      (
+        _query: string,
+        _options?: unknown,
+        _scanResult?: unknown,
+      ): Array<{ agentName: string; session: SessionHead }> => [],
+    ),
+  };
+});
 
 vi.mock("@codesesh/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core")>();
   return {
     ...actual,
     loadCachedSessionData: coreMocks.loadCachedSessionData,
+    loadCachedSessionDataEntry: coreMocks.loadCachedSessionDataEntry,
     listFileActivity: coreMocks.listFileActivity,
     listSessionFileActivity: coreMocks.listSessionFileActivity,
     listSessionAliases: coreMocks.listSessionAliases,
@@ -40,6 +50,7 @@ import {
   type ScanResultSource,
 } from "../handlers.js";
 import type {
+  CachedSessionDataEntry,
   ChangeCheckResult,
   FileActivityResult,
   ScanResult,
@@ -167,6 +178,13 @@ function toLocalDateKey(ts: number): string {
 
 afterEach(() => {
   coreMocks.loadCachedSessionData.mockReset();
+  coreMocks.loadCachedSessionDataEntry.mockReset();
+  coreMocks.loadCachedSessionDataEntry.mockImplementation(
+    (agentName: string, sessionId: string): CachedSessionDataEntry | null => {
+      const data = coreMocks.loadCachedSessionData(agentName, sessionId) as SessionData | null;
+      return data ? { data, meta: null } : null;
+    },
+  );
   coreMocks.listFileActivity.mockReset();
   coreMocks.listFileActivity.mockReturnValue([]);
   coreMocks.listSessionFileActivity.mockReset();
@@ -1194,6 +1212,77 @@ describe("handleGetSessionData", () => {
     expect(response.title).toBe("Source Session");
     expect(response.messages).toHaveLength(1);
     expect(coreMocks.listSessionFileActivity).not.toHaveBeenCalled();
+  });
+
+  it("bypasses cached detail when the source fingerprint changes", async () => {
+    coreMocks.loadCachedSessionDataEntry.mockReturnValue({
+      data: {
+        id: "s1",
+        slug: "claudecode/s1",
+        title: "Cached Session",
+        directory: "/home/user/project",
+        time_created: 1000,
+        time_updated: 1000,
+        messages: [
+          {
+            id: "stale",
+            role: "assistant",
+            time_created: 1000,
+            parts: [{ type: "text", text: "stale detail" }],
+          },
+        ],
+        stats: {
+          message_count: 1,
+          total_input_tokens: 0,
+          total_output_tokens: 0,
+          total_cost: 0,
+        },
+      },
+      meta: { id: "s1", sourcePath: "/session.jsonl", sourceFingerprint: "old" },
+    });
+
+    class AgentWithChangedSource extends MockAgent {
+      override getSessionMetaMap(): Map<string, SessionCacheMeta> {
+        return new Map([
+          ["s1", { id: "s1", sourcePath: "/session.jsonl", sourceFingerprint: "current" }],
+        ]);
+      }
+
+      override getSessionData(_sessionId: string): SessionData {
+        return {
+          ...super.getSessionData(_sessionId),
+          messages: [
+            {
+              id: "fresh",
+              role: "assistant",
+              time_created: 1000,
+              parts: [{ type: "text", text: "fresh detail" }],
+            },
+          ],
+          stats: {
+            message_count: 1,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            total_cost: 0,
+          },
+        };
+      }
+    }
+
+    const sessions = [makeSession("s1", { slug: "claudecode/s1" })];
+    const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
+
+    await handleGetSessionData(
+      c,
+      makeScanSource({
+        sessions,
+        byAgent: { claudecode: sessions },
+        agents: [new AgentWithChangedSource()],
+      }),
+    );
+
+    const response = c.json.mock.calls[0]![0];
+    expect(response.messages[0].parts[0].text).toBe("fresh detail");
   });
 
   it("returns 500 when SQLite cache loading throws", async () => {
