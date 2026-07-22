@@ -6,40 +6,19 @@ import { printScanResults } from "./output.js";
 import { VERSION } from "./version.js";
 import { appLogger } from "./logging.js";
 import { isLoopbackHostname } from "./remote-access.js";
-import { resolveTimeWindow } from "./time-window-resolution.js";
+import {
+  buildCliRuntimePlan,
+  parseSessionUri,
+  redactStartupUrl,
+  resolveStartupUrl,
+} from "./runtime-plan.js";
 import {
   DEFAULT_PORT,
   DEFAULT_PORT_FALLBACK_ATTEMPTS,
   hasExplicitPortArg,
   parsePort,
 } from "./ports.js";
-import {
-  createRegisteredAgents,
-  getAgentInfoMap,
-  refreshPricingCache,
-  type ScanOptions,
-  perf,
-} from "@codesesh/core";
-
-function parseSessionUri(uri: string): { agent: string; sessionId: string } | null {
-  const match = uri.match(/^([a-z]+):\/\/(.+)$/i);
-  if (!match) return null;
-  return { agent: match[1]!, sessionId: match[2]! };
-}
-
-function appendStartupPath(startupUrl: string, path: string): string {
-  const url = new URL(startupUrl);
-  url.pathname = path;
-  return url.toString();
-}
-
-function redactStartupUrl(startupUrl: string): string {
-  const url = new URL(startupUrl);
-  for (const key of url.searchParams.keys()) {
-    url.searchParams.set(key, "[redacted]");
-  }
-  return url.toString();
-}
+import { createRegisteredAgents, getAgentInfoMap, refreshPricingCache, perf } from "@codesesh/core";
 
 const main = defineCommand({
   meta: {
@@ -171,34 +150,20 @@ const main = defineCommand({
       }
     }
 
-    // Resolve cwd filter: '.' => process.cwd()
-    let cwdFilter = args.cwd as string | undefined;
-    if (cwdFilter === ".") {
-      cwdFilter = process.cwd();
-    }
-
-    const {
-      from: listDefaultFrom,
-      to: listDefaultTo,
-      days: listDefaultDays,
-    } = resolveTimeWindow({
-      mode: "cli",
-      from: args.from as string | undefined,
-      to: args.to as string | undefined,
-      days: args.days as string | undefined,
-    });
-
-    const scanOptions: ScanOptions = {
-      agents: targetSession
-        ? [targetSession.agent]
-        : args.agent
-          ? (args.agent as string).split(",").map((a) => a.trim())
-          : undefined,
-      cwd: cwdFilter,
-      useCache: useCache,
-    };
-    const startupScanOptions =
-      targetSession || jsonOnly ? {} : { from: listDefaultFrom, to: listDefaultTo };
+    const { listWindow, scanOptions, startupScanOptions } = buildCliRuntimePlan(
+      {
+        agent: args.agent as string | undefined,
+        cwd: args.cwd as string | undefined,
+        from: args.from as string | undefined,
+        to: args.to as string | undefined,
+        days: args.days as string | undefined,
+        jsonOnly,
+        targetSession,
+        useCache,
+      },
+      { currentWorkingDirectory: process.cwd() },
+    );
+    const { from: listDefaultFrom, to: listDefaultTo, days: listDefaultDays } = listWindow;
 
     const store = new LiveScanStore({
       watchEnabled: !jsonOnly,
@@ -299,9 +264,7 @@ const main = defineCommand({
 
     if (!noOpen) {
       const open = (await import("open")).default;
-      const targetUrl = targetSession
-        ? appendStartupPath(url, `/${targetSession.agent.toLowerCase()}/${targetSession.sessionId}`)
-        : url;
+      const targetUrl = resolveStartupUrl(url, targetSession);
       appLogger.info("browser.open", { url: redactStartupUrl(targetUrl) });
       await open(targetUrl);
     }
