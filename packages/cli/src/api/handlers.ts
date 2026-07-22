@@ -3,6 +3,7 @@ import type {
   BookmarkRecord,
   ProjectGroup,
   ScanResult,
+  SessionCacheMeta,
   SessionData,
   SessionHead,
   SmartTag,
@@ -27,7 +28,7 @@ import {
   getSmartTagSourceTimestamp,
   importBookmarks,
   isProjectIdentityKind,
-  loadCachedSessionData,
+  loadCachedSessionDataEntry,
   listFileActivity,
   listSessionFileActivity,
   listCachedProjectGroups,
@@ -68,6 +69,15 @@ export type SessionListDefaults = TimeWindow;
 interface ClientLogPayload {
   event?: unknown;
   data?: unknown;
+}
+
+function cacheMatchesCurrentSource(
+  cachedMeta: SessionCacheMeta | null,
+  currentMeta: SessionCacheMeta | undefined,
+) {
+  const currentFingerprint = currentMeta?.sourceFingerprint;
+  if (typeof currentFingerprint !== "string") return true;
+  return cachedMeta?.sourceFingerprint === currentFingerprint;
 }
 
 interface SessionAliasPayload {
@@ -603,10 +613,14 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
   try {
     const head = scanResult.byAgent[agentName]?.find((item) => item.id === sessionId);
     const loadStartedAt = performance.now();
-    const cachedData = loadCachedSessionData(agentName, sessionId);
+    const cachedEntry = loadCachedSessionDataEntry(agentName, sessionId);
+    const cachedData = cachedEntry?.data ?? null;
     const cachedMessageCount = cachedData?.stats.message_count ?? 0;
+    const currentMeta = head ? agent.getSessionMetaMap().get(sessionId) : undefined;
     const cacheHasExpectedMessages =
-      cachedData !== null && (cachedData.messages.length > 0 || cachedMessageCount === 0);
+      cachedData !== null &&
+      cacheMatchesCurrentSource(cachedEntry?.meta ?? null, currentMeta) &&
+      (cachedData.messages.length > 0 || cachedMessageCount === 0);
     const data: SessionData | null = cacheHasExpectedMessages
       ? cachedData
       : head
