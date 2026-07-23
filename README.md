@@ -24,6 +24,7 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 - **Unified Timeline** — Browse sessions across all your AI agents in a single, searchable interface
 - **Flexible Time Ranges** — Switch between rolling presets, all history, or a custom date range without restarting the server
 - **Session Aliases** — Give important sessions memorable local names that carry through search, bookmarks, and activity views
+- **Persistent Themes** — Choose light, dark, or system appearance and keep your UI preferences across sessions
 - **Structured Global Search** — Search titles, messages, tool output, and file paths with filters for agent, project, smart tag, tool, file activity, and cost
 - **Dashboard & Activity Trends** — Track daily activity, agent distribution, recent sessions, latest activity, token usage, model usage, smart tags, and cost at a glance
 - **Project Browse Mode** — Open a dedicated projects view with project-level metrics, sessions, and cross-agent drill-down
