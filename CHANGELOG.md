@@ -1,5 +1,80 @@
 # Changelog
 
+## [0.16.0] - 2026-07-23
+
+This release adds persistent light, dark, and system themes across the Web app and product site, improves live-session correctness and large-history performance, and strengthens diagnostics, accessibility, and production quality gates.
+
+### Features
+
+- Added light, dark, and system theme controls to the Web app and product site, including persisted preferences, theme-aware agent icons, syntax highlighting, and tool output colors. (#178, #179, #180)
+- Persisted versioned app-shell preferences across sessions. (#159)
+- Added a Core diagnostics channel and CLI logger bridge so previously silent adapter, cache, JSONL, and SQLite failures are observable. (#160)
+- Redesigned the product landing page with clearer sections, improved layout, and stronger accessibility semantics.
+- Unified Web interaction motion through shared tokens and transitions. (#170)
+
+### Bug Fixes
+
+- Refresh changed session details during live scans so already-open sessions no longer remain stale. (#184)
+- Decoupled head-cache initialization from search-index completeness and stopped rewriting the state schema on every database open. (#161, #165)
+- Rebuilt the sidebar session action menu on Base UI and improved scan-status and copy-feedback announcements. (#172, #173)
+- Restored the product showcase dialog label and isolated mutable end-to-end fixtures. (#157, #181)
+
+### Performance
+
+- Removed redundant enumeration, filesystem stat, and parsing work from the scan hot path; cached event-path signatures and project identities; and matched aliases without rerunning full search. (#162, #163, #164, #166)
+- Virtualized large flat session lists, corrected grouped-session sorting, compressed API responses, and tracked timeline anchors with `IntersectionObserver`. (#167, #168)
+- Optimized the product site to achieve perfect Lighthouse scores and isolated production analytics from local and preview builds. (#188)
+
+### Accessibility
+
+- Improved form error associations, skip-link and heading structure, timeline target sizes, number readability, and sidebar interaction semantics. (#171, #174, #175)
+
+### Refactor
+
+- Validated external adapter data at parse boundaries and unified field narrowing with drift reporting. (#176, #177)
+- Consolidated Web surface colors into theme tokens, replaced pathname parsing with declarative route matches, and unified remote state with TanStack Query. (#156, #158, #169)
+
+### Tests
+
+- Expanded runtime-plan, semantic tool output, live-refresh, and cross-agent aggregation coverage; improved end-to-end failure diagnostics; and extended coverage gates to all production source. (#182, #183, #185, #186, #187)
+
+### Changelog Detail
+
+- #188 perf(www): achieve perfect Lighthouse scores @xingkaixin
+- #187 test(e2e): cover cross-agent aggregation @xingkaixin
+- #186 test(e2e): improve failure diagnostics @xingkaixin
+- #185 test(cli): cover runtime plan @xingkaixin
+- #184 fix(live): refresh changed session details @xingkaixin
+- #183 test(web): cover semantic tool outputs @xingkaixin
+- #182 test(coverage): gate all production source @xingkaixin
+- #181 fix(e2e): isolate mutable fixtures @xingkaixin
+- #180 fix: adapt agent icons and tool output colors to dark mode @xingkaixin
+- #179 feat(www): add dark mode to landing page @xingkaixin
+- #178 feat(web): add dark mode with theme toggle @xingkaixin
+- #177 refactor(core): unify field narrowing via narrowField @xingkaixin
+- #176 refactor: validate external data at adapter parse boundaries @xingkaixin
+- #175 chore(web): widen timeline hit targets to 24px @xingkaixin
+- #174 chore(web): fix form error wiring, skip link, heading levels @xingkaixin
+- #173 fix(web): rebuild sidebar session menu on Base UI Menu @xingkaixin
+- #172 fix(web): announce scan status and copy feedback politely @xingkaixin
+- #171 chore(web): enable tabular figures in console mono @xingkaixin
+- #170 feat(web): unify motion tokens and interaction transitions @xingkaixin
+- #169 refactor(web): consolidate surface colors into tokens @xingkaixin
+- #168 perf(web): track timeline anchors with IntersectionObserver @xingkaixin
+- #167 perf: sidebar scalability — list virtualization, sort fix, API compression @xingkaixin
+- #166 perf(core): cache project identity per process with TTL @xingkaixin
+- #165 fix: decouple head cache init from search index completeness @xingkaixin
+- #164 perf(cli): match aliases directly instead of full re-search @xingkaixin
+- #163 perf: cache event-path session signatures per agent @xingkaixin
+- #162 perf: eliminate redundant enumeration, stat and parse in scan hot path @xingkaixin
+- #161 fix(core): stop rewriting state schema on every db open @xingkaixin
+- #160 feat: add core diagnostics channel for silent failures @xingkaixin
+- #159 feat(web): persist app shell UI preferences @xingkaixin
+- #158 refactor(web): replace pathname parsing with route matches @xingkaixin
+- #157 fix(www): restore showcase dialog label @xingkaixin
+- #156 refactor(web): unify remote state with TanStack Query @xingkaixin
+- feat(www): redesign landing page sections with improved layout and a11y @xingkaixin
+
 ## [0.15.0] - 2026-07-20
 
 This release makes session tool calls easier to read: Codex code-mode exec calls are decoded back into native tool displays, tools render with semantic visualizations, and the timeline colors tools by activity.

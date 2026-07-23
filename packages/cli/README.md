@@ -21,6 +21,7 @@ Your browser will open at `http://localhost:4521` with all your sessions ready t
 - **Unified Timeline** — Browse sessions across all your AI agents in a single, searchable interface
 - **Flexible Time Ranges** — Switch between rolling presets, all history, or a custom date range without restarting the server
 - **Session Aliases** — Give important sessions memorable local names that carry through search, bookmarks, and activity views
+- **Persistent Themes** — Choose light, dark, or system appearance and keep your UI preferences across sessions
 - **Structured Global Search** — Search titles, messages, tool output, and file paths with filters for agent, project, smart tag, tool, file activity, and cost
 - **Dashboard & Activity Trends** — See totals, daily activity, agent distribution, model usage, token trends, smart tags, bookmarks, and recent sessions
 - **Project Browse Mode** — Open a dedicated projects view with project-level metrics, sessions, and cross-agent drill-down

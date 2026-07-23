@@ -1,5 +1,80 @@
 # Changelog
 
+## [0.16.0] - 2026-07-23
+
+本版本为 Web 应用与产品站新增可持久化的浅色、深色和跟随系统主题，提升实时会话正确性与大规模历史数据性能，并强化诊断能力、无障碍体验和生产质量门禁。
+
+### 新功能
+
+- 为 Web 应用与产品站新增浅色、深色和跟随系统主题控制，包括偏好持久化、适配主题的 Agent 图标、代码高亮和工具输出颜色。 (#178, #179, #180)
+- 持久化带版本管理的应用外壳 UI 偏好。 (#159)
+- 新增 Core 诊断通道和 CLI 日志桥接，让此前静默的适配器、缓存、JSONL 与 SQLite 故障可观测。 (#160)
+- 重新设计产品落地页，优化信息区块、布局与无障碍语义。
+- 通过共享 token 和 transition 统一 Web 交互动效。 (#170)
+
+### 问题修复
+
+- 实时扫描时刷新已变化的会话详情，避免当前打开的会话继续显示过期内容。 (#184)
+- 将 head cache 初始化与搜索索引完整性解耦，并避免每次打开数据库都重写状态 schema。 (#161, #165)
+- 基于 Base UI 重建侧栏会话操作菜单，并改进扫描状态与复制反馈的辅助技术播报。 (#172, #173)
+- 恢复产品展示弹窗标签，并隔离端到端测试中的可变 fixture。 (#157, #181)
+
+### 性能
+
+- 消除扫描热路径中的重复枚举、文件 stat 与解析，缓存事件路径签名和项目身份，并直接匹配别名以避免重新执行完整搜索。 (#162, #163, #164, #166)
+- 虚拟化大型扁平会话列表，修正分组会话排序，压缩 API 响应，并使用 `IntersectionObserver` 跟踪时间轴锚点。 (#167, #168)
+- 优化产品站以获得满分 Lighthouse 指标，并将生产分析脚本与本地、预览构建隔离。 (#188)
+
+### 无障碍
+
+- 改进表单错误关联、跳转链接与标题层级、时间轴点击目标尺寸、数字可读性和侧栏交互语义。 (#171, #174, #175)
+
+### 重构
+
+- 在适配器解析边界校验外部数据，并通过漂移报告统一字段收窄。 (#176, #177)
+- 将 Web surface 色彩集中为主题 token，以声明式路由匹配替代 pathname 解析，并使用 TanStack Query 统一远程状态。 (#156, #158, #169)
+
+### 测试
+
+- 扩展运行计划、语义化工具输出、实时刷新和跨 Agent 聚合覆盖，改进端到端失败诊断，并将覆盖率门禁扩展到全部生产源码。 (#182, #183, #185, #186, #187)
+
+### Changelog Detail
+
+- #188 perf(www): achieve perfect Lighthouse scores @xingkaixin
+- #187 test(e2e): cover cross-agent aggregation @xingkaixin
+- #186 test(e2e): improve failure diagnostics @xingkaixin
+- #185 test(cli): cover runtime plan @xingkaixin
+- #184 fix(live): refresh changed session details @xingkaixin
+- #183 test(web): cover semantic tool outputs @xingkaixin
+- #182 test(coverage): gate all production source @xingkaixin
+- #181 fix(e2e): isolate mutable fixtures @xingkaixin
+- #180 fix: adapt agent icons and tool output colors to dark mode @xingkaixin
+- #179 feat(www): add dark mode to landing page @xingkaixin
+- #178 feat(web): add dark mode with theme toggle @xingkaixin
+- #177 refactor(core): unify field narrowing via narrowField @xingkaixin
+- #176 refactor: validate external data at adapter parse boundaries @xingkaixin
+- #175 chore(web): widen timeline hit targets to 24px @xingkaixin
+- #174 chore(web): fix form error wiring, skip link, heading levels @xingkaixin
+- #173 fix(web): rebuild sidebar session menu on Base UI Menu @xingkaixin
+- #172 fix(web): announce scan status and copy feedback politely @xingkaixin
+- #171 chore(web): enable tabular figures in console mono @xingkaixin
+- #170 feat(web): unify motion tokens and interaction transitions @xingkaixin
+- #169 refactor(web): consolidate surface colors into tokens @xingkaixin
+- #168 perf(web): track timeline anchors with IntersectionObserver @xingkaixin
+- #167 perf: sidebar scalability — list virtualization, sort fix, API compression @xingkaixin
+- #166 perf(core): cache project identity per process with TTL @xingkaixin
+- #165 fix: decouple head cache init from search index completeness @xingkaixin
+- #164 perf(cli): match aliases directly instead of full re-search @xingkaixin
+- #163 perf: cache event-path session signatures per agent @xingkaixin
+- #162 perf: eliminate redundant enumeration, stat and parse in scan hot path @xingkaixin
+- #161 fix(core): stop rewriting state schema on every db open @xingkaixin
+- #160 feat: add core diagnostics channel for silent failures @xingkaixin
+- #159 feat(web): persist app shell UI preferences @xingkaixin
+- #158 refactor(web): replace pathname parsing with route matches @xingkaixin
+- #157 fix(www): restore showcase dialog label @xingkaixin
+- #156 refactor(web): unify remote state with TanStack Query @xingkaixin
+- feat(www): redesign landing page sections with improved layout and a11y @xingkaixin
+
 ## [0.15.0] - 2026-07-20
 
 本版本让会话中的工具调用更易读：将 Codex code-mode 的 exec 调用解码还原为原生工具展示，工具以语义化方式可视化呈现，时间轴还会按活动类型为工具着色。
