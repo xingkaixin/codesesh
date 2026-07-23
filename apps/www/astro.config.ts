@@ -5,6 +5,9 @@ export default defineConfig({
   output: "static",
   site: "https://codesesh.xingkaixin.me",
   trailingSlash: "always",
+  build: {
+    inlineStylesheets: "always",
+  },
   vite: {
     plugins: [tailwindcss()],
   },
