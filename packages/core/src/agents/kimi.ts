@@ -63,6 +63,12 @@ interface SessionSource {
 
 interface SessionMeta extends SessionCacheMeta, SessionSource {
   title: string;
+  /**
+   * Mirrors createdAt, which is what listSessionSources window-filters on.
+   * diffSessionSources compares this against the scan window to tell "outside
+   * the window" apart from "deleted on disk"; the two must be the same quantity.
+   */
+  sourceMtimeMs: number;
 }
 
 /** Reads state/metadata `wire_mtime`; reports drift when the field is present but not a number. */
@@ -318,7 +324,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       normalizeTitleText(source.explicitTitle) ??
       resolveSessionTitle(null, extractFirstUserTitle(source.contextFile, source.wireFile), null);
 
-    return parsedSession({ ...source, title });
+    return parsedSession({ ...source, title, sourceMtimeMs: source.createdAt });
   }
 
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {

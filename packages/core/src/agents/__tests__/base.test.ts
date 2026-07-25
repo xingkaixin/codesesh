@@ -212,8 +212,10 @@ describe("diffSessionSources", () => {
     const unwindowed = diffSessionSources([], cached, entries);
 
     // `old` was never enumerated this pass, so its absence proves nothing.
-    // `undated` has no recorded mtime, so the window cannot exonerate it.
-    expect(windowed.removedIds).toEqual(["recent", "undated"]);
+    // `undated` records no mtime, so we cannot tell either — removing it would
+    // destroy a cached session on a guess, keeping it costs one stale entry.
+    expect(windowed.removedIds).toEqual(["recent"]);
+    // With no window every session was enumerated, so absence does mean deleted.
     expect(unwindowed.removedIds).toEqual(["recent", "old", "undated"]);
   });
 });

@@ -94,13 +94,17 @@ function fingerprintMatches(ref: SessionSourceRef, cached: SessionCacheMeta | un
 }
 
 /**
- * A cached session whose recorded mtime falls outside the current scan window was
- * never enumerated this pass, so its absence from the refs doesn't mean it was
- * deleted on disk.
+ * Decides whether a cached session was in scope for this enumeration pass, which
+ * is what makes its absence from the refs mean "deleted on disk" rather than
+ * "outside the window".
  *
- * A session with no recorded mtime is treated as enumerated, i.e. removable.
- * That is load-bearing for agents whose meta omits `sourceMtimeMs` (kimi) — see
- * CS-100 for whether that default should be inverted.
+ * `sourceMtimeMs` must hold the same quantity the agent's `listSessionSources`
+ * window-filters on, or the two disagree and sessions are dropped or kept wrongly.
+ *
+ * When it is missing we cannot tell, and the two wrong answers are not
+ * symmetric: wrongly removing destroys cached sessions and their messages, while
+ * wrongly keeping leaves a stale entry that the next unwindowed pass clears. So
+ * an unknown mtime means "not enumerated" — keep it.
  */
 function wasEnumeratedThisPass(
   cached: SessionCacheMeta | undefined,
@@ -108,7 +112,7 @@ function wasEnumeratedThisPass(
 ): boolean {
   if (options?.from == null && options?.to == null) return true;
   const mtimeMs = cached?.sourceMtimeMs;
-  return typeof mtimeMs !== "number" || matchesScanWindow(mtimeMs, options);
+  return typeof mtimeMs === "number" && matchesScanWindow(mtimeMs, options);
 }
 
 /**
