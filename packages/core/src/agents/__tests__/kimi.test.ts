@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { KimiAgent } from "../kimi.js";
+import { diffSessionSources } from "../base.js";
 import type { SessionHead } from "../../types/index.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
@@ -136,6 +137,44 @@ describe("KimiAgent cache refresh", () => {
 
     const windowed = agent.listSessionSources({ from: Date.now() - 24 * 60 * 60 * 1000 });
     expect(windowed.map((ref) => ref.sessionId)).toEqual(["new-session"]);
+  });
+
+  it("records sourceMtimeMs as the value listSessionSources filters on", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-test-"));
+    tempDirs.push(basePath);
+    createSessionDir(basePath, "windowed", "Windowed", 5_000);
+
+    const agent = createAgent(basePath);
+    const [head] = agent.scan();
+    const meta = agent.getSessionMetaMap().get("windowed");
+
+    // diffSessionSources compares this against the scan window to tell
+    // "outside the window" apart from "deleted on disk", so it has to match
+    // the createdAt that listSessionSources filters on.
+    expect(meta?.sourceMtimeMs).toBe(head?.time_created);
+  });
+
+  it("keeps out-of-window sessions out of the change set during a windowed refresh", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-test-"));
+    tempDirs.push(basePath);
+    const recent = Date.now();
+    const old = recent - 30 * 24 * 60 * 60 * 1000;
+    createSessionDir(basePath, "recent-session", "Recent", recent);
+    createSessionDir(basePath, "old-session", "Old", old);
+
+    const agent = createAgent(basePath);
+    const cached = agent.scan();
+    expect(cached.map((session) => session.id).sort()).toEqual(["old-session", "recent-session"]);
+
+    const window = { from: recent - 7 * 24 * 60 * 60 * 1000 };
+    const refs = agent.listSessionSources(window);
+    expect(refs.map((ref) => ref.sessionId)).toEqual(["recent-session"]);
+
+    const diff = diffSessionSources(refs, cached, agent.getSessionMetaMap(), window);
+
+    // old-session was simply never enumerated; removing it would delete the
+    // session and its messages from the cache.
+    expect(diff.removedIds).toEqual([]);
   });
 
   it("parses context messages with tool calls and backfilled output", () => {
