@@ -1,0 +1,159 @@
+import { describe, expect, it } from "vitest";
+import { attachProjectMetrics } from "../projects.js";
+import type { ProjectGroup, SessionHead } from "../../types/index.js";
+
+function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
+  return {
+    id,
+    slug: `claudecode/${id}`,
+    title: id,
+    directory: "/home/user/project",
+    time_created: 1_000_000_000_000,
+    time_updated: 1_000_000_000_000,
+    stats: {
+      message_count: 1,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_cost: 0,
+    },
+    project_identity: { kind: "git_remote", key: "repo-a", displayName: "Repo A" },
+    ...overrides,
+  };
+}
+
+function makeGroup(identityKey: string, overrides?: Partial<ProjectGroup>): ProjectGroup {
+  return {
+    identityKind: "git_remote",
+    identityKey,
+    displayName: identityKey,
+    sources: ["claudecode"],
+    sessionCount: 0,
+    lastActivity: null,
+    ...overrides,
+  };
+}
+
+describe("attachProjectMetrics", () => {
+  it("sums messages, tokens and cost per project", () => {
+    const [project] = attachProjectMetrics(
+      [makeGroup("repo-a")],
+      [
+        makeSession("a", {
+          stats: {
+            message_count: 3,
+            total_input_tokens: 100,
+            total_output_tokens: 20,
+            total_cost: 0.5,
+          },
+        }),
+        makeSession("b", {
+          stats: {
+            message_count: 2,
+            total_input_tokens: 10,
+            total_output_tokens: 5,
+            total_cost: 0.25,
+          },
+        }),
+      ],
+    );
+
+    expect(project).toMatchObject({ messages: 5, tokens: 135, cost: 0.75 });
+  });
+
+  it("prefers an explicit total_tokens over the input/output sum", () => {
+    const [project] = attachProjectMetrics(
+      [makeGroup("repo-a")],
+      [
+        makeSession("a", {
+          stats: {
+            message_count: 1,
+            total_input_tokens: 100,
+            total_output_tokens: 20,
+            total_tokens: 999,
+            total_cost: 0,
+          },
+        }),
+      ],
+    );
+
+    expect(project?.tokens).toBe(999);
+  });
+
+  it("marks the project cost estimated when any session's cost is estimated", () => {
+    const recorded = makeSession("a", {
+      stats: {
+        message_count: 1,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 1,
+        cost_source: "recorded",
+      },
+    });
+    const estimated = makeSession("b", {
+      stats: {
+        message_count: 1,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 1,
+        cost_source: "estimated",
+      },
+    });
+
+    expect(attachProjectMetrics([makeGroup("repo-a")], [recorded])[0]?.cost_source).toBe(
+      "recorded",
+    );
+    expect(attachProjectMetrics([makeGroup("repo-a")], [recorded, estimated])[0]?.cost_source).toBe(
+      "estimated",
+    );
+  });
+
+  it("leaves cost_source undefined when a project has no cost", () => {
+    const [project] = attachProjectMetrics([makeGroup("repo-a")], [makeSession("a")]);
+    expect(project?.cost_source).toBeUndefined();
+  });
+
+  it("groups per agent and orders them by session count", () => {
+    const [project] = attachProjectMetrics(
+      [makeGroup("repo-a")],
+      [
+        makeSession("a", { slug: "codex/a" }),
+        makeSession("b", { slug: "claudecode/b" }),
+        makeSession("c", { slug: "claudecode/c" }),
+      ],
+    );
+
+    expect(project?.agentStats.map((stat) => [stat.name, stat.sessions])).toEqual([
+      ["claudecode", 2],
+      ["codex", 1],
+    ]);
+  });
+
+  it("zeroes projects with no matching sessions and ignores sessions with no identity", () => {
+    const projects = attachProjectMetrics(
+      [makeGroup("repo-a"), makeGroup("repo-b")],
+      [makeSession("orphan", { project_identity: undefined })],
+    );
+
+    expect(projects.map((project) => project.messages)).toEqual([0, 0]);
+    expect(projects.every((project) => project.agentStats.length === 0)).toBe(true);
+  });
+
+  it("keys metrics on kind and key together", () => {
+    const projects = attachProjectMetrics(
+      [makeGroup("shared"), makeGroup("shared", { identityKind: "path" })],
+      [
+        makeSession("a", {
+          project_identity: { kind: "git_remote", key: "shared", displayName: "Shared" },
+        }),
+        makeSession("b", {
+          project_identity: { kind: "path", key: "shared", displayName: "Shared" },
+        }),
+        makeSession("c", {
+          project_identity: { kind: "path", key: "shared", displayName: "Shared" },
+        }),
+      ],
+    );
+
+    expect(projects.map((project) => project.messages)).toEqual([1, 2]);
+  });
+});

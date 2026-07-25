@@ -9,4 +9,5 @@ export * from "./state/index.js";
 export * from "./utils/index.js";
 export * from "./pricing/index.js";
 export * from "./analytics/dashboard.js";
+export * from "./analytics/projects.js";
 export * from "./search/index.js";
