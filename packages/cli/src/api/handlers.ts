@@ -1,23 +1,17 @@
 import type { Context } from "hono";
 import type {
   BookmarkRecord,
-  ProjectGroup,
   ScanResult,
   SessionCacheMeta,
   SessionData,
   SessionHead,
   SmartTag,
 } from "@codesesh/core";
-import type {
-  ApiProjectAgentStat,
-  ApiProjectGroup,
-  AppConfig,
-  ScanStatusEvent,
-  SearchResult,
-} from "@codesesh/core/contract";
+import type { AppConfig, ScanStatusEvent } from "@codesesh/core/contract";
 import {
   BookmarkStorageUnavailableError,
   StateStorageUnavailableError,
+  attachProjectMetrics,
   createProjectScopeMatcher,
   deleteBookmark,
   getAgentInfoMap,
@@ -27,15 +21,11 @@ import {
   extractSessionFileActivity,
   getSmartTagSourceTimestamp,
   importBookmarks,
-  isProjectIdentityKind,
   loadCachedSessionDataEntry,
   listFileActivity,
   listSessionFileActivity,
   listCachedProjectGroups,
   listBookmarks,
-  listSessionAliases,
-  matchesSessionSearchFilters,
-  mergeSearchQueryOptions,
   deleteSessionAlias,
   upsertSessionAlias,
   realFs,
@@ -43,18 +33,29 @@ import {
   matchesProjectScope as sessionMatchesProjectScope,
   matchesProjectIdentity,
   buildDashboard,
-  getSessionAgentName,
-  getSessionActivityTime,
-  getTotalTokens,
   type DashboardData,
   type DashboardScope,
-  type FileActivityKind,
-  type FileActivityResult,
-  type ProjectIdentityRef,
-  type SearchOptions,
 } from "@codesesh/core";
 import { appLogger } from "../logging.js";
-import { resolveTimeWindow, type TimeWindow } from "../time-window-resolution.js";
+import { resolveTimeWindow } from "../time-window-resolution.js";
+import {
+  filterSessionsByActivityWindow,
+  parseDateParam,
+  parseFileActivityKind,
+  parseProjectIdentityFilter,
+  parseSearchOptions,
+  optionalQueryValue,
+  type SessionListDefaults,
+} from "./query-params.js";
+import {
+  decorateBookmark,
+  decorateFileActivity,
+  findAliasSearchResults,
+  getSessionAgentKey,
+  loadAliasView,
+} from "./session-aliases-view.js";
+
+export type { SessionListDefaults };
 
 export interface ScanResultSource {
   getSnapshot(): ScanResult;
@@ -63,8 +64,6 @@ export interface ScanResultSource {
 export interface ScanStatusSource {
   getScanStatus(): ScanStatusEvent;
 }
-
-export type SessionListDefaults = TimeWindow;
 
 interface ClientLogPayload {
   event?: unknown;
@@ -82,105 +81,6 @@ function cacheMatchesCurrentSource(
 
 interface SessionAliasPayload {
   alias?: unknown;
-}
-
-type SessionAliasMap = Map<string, string>;
-
-function getSessionAliasKey(agentKey: string, sessionId: string): string {
-  return `${agentKey.toLowerCase()}\0${sessionId}`;
-}
-
-function getSessionAgentKey(session: Pick<SessionHead, "slug">): string {
-  return session.slug.split("/")[0]?.toLowerCase() ?? "";
-}
-
-function loadSessionAliasMap(): SessionAliasMap {
-  try {
-    return new Map(
-      listSessionAliases().map((alias) => [
-        getSessionAliasKey(alias.agentKey, alias.sessionId),
-        alias.alias,
-      ]),
-    );
-  } catch (error) {
-    if (!(error instanceof StateStorageUnavailableError)) {
-      appLogger.warn("api.session_aliases.load_failed", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    return new Map();
-  }
-}
-
-function isStateStorageUnavailable(error: unknown): boolean {
-  return error instanceof StateStorageUnavailableError;
-}
-
-function withDisplayTitle<T extends { id: string; title: string; display_title?: string }>(
-  session: T,
-  agentKey: string,
-  aliases: SessionAliasMap,
-): T {
-  const alias = aliases.get(getSessionAliasKey(agentKey, session.id));
-  return alias ? { ...session, display_title: alias } : session;
-}
-
-function withBookmarkDisplayTitle(
-  bookmark: BookmarkRecord,
-  aliases: SessionAliasMap,
-): BookmarkRecord {
-  const alias = aliases.get(getSessionAliasKey(bookmark.agentKey, bookmark.sessionId));
-  return alias ? { ...bookmark, display_title: alias } : bookmark;
-}
-
-function withFileActivityDisplayTitle(
-  activity: FileActivityResult,
-  aliases: SessionAliasMap,
-): FileActivityResult {
-  return {
-    ...activity,
-    session: withDisplayTitle(activity.session, activity.agent_name, aliases),
-  };
-}
-
-function findSessionByAliasKey(scanResult: ScanResult, aliasKey: string): SessionHead | undefined {
-  const separatorIndex = aliasKey.indexOf("\0");
-  const agentName = aliasKey.slice(0, separatorIndex);
-  const sessionId = aliasKey.slice(separatorIndex + 1);
-  return scanResult.byAgent[agentName]?.find((session) => session.id === sessionId);
-}
-
-// Alias hits still have to satisfy the same time-window/project/agent
-// filters as the main search (matchesSessionSearchFilters), otherwise an
-// aliased session could appear in results outside its search scope.
-function findAliasSearchResults(
-  query: string,
-  options: SearchOptions,
-  scanResult: ScanResult,
-  aliases: SessionAliasMap,
-) {
-  const search = mergeSearchQueryOptions(query, options);
-  const needle = search.text.trim().toLowerCase();
-  if (!needle || aliases.size === 0) return [];
-
-  const projectScope = search.options.cwd ? createProjectScopeMatcher(search.options.cwd) : null;
-  const results: SearchResult[] = [];
-  for (const [aliasKey, alias] of aliases) {
-    if (!alias.toLowerCase().includes(needle)) continue;
-    const session = findSessionByAliasKey(scanResult, aliasKey);
-    if (!session) continue;
-    const agentName = aliasKey.slice(0, aliasKey.indexOf("\0"));
-    if (!matchesSessionSearchFilters(agentName, session, search.options, projectScope)) continue;
-    results.push({
-      agentName,
-      session: withDisplayTitle(session, agentName, aliases),
-      snippet: `Alias · ${session.directory}`,
-      matchType: "title",
-    });
-  }
-  return results.sort(
-    (a, b) => getSessionActivityTime(b.session) - getSessionActivityTime(a.session),
-  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -225,95 +125,6 @@ function parseBookmarkPayload(value: unknown): Omit<BookmarkRecord, "bookmarked_
   };
 }
 
-function parseDateParam(
-  value: string | undefined,
-  fallback: number | undefined,
-): number | undefined {
-  if (value == null) return fallback;
-  const ts = new Date(value).getTime();
-  return Number.isNaN(ts) ? fallback : ts;
-}
-
-function parseNumberParam(value: string | undefined): number | undefined {
-  if (value == null || !value.trim()) return undefined;
-  const number = Number(value);
-  return Number.isFinite(number) ? number : undefined;
-}
-
-function searchParams(c: Context): URLSearchParams {
-  return new URL(c.req.url ?? "http://localhost/", "http://localhost/").searchParams;
-}
-
-function queryValues(params: URLSearchParams, ...names: string[]): string[] {
-  return names.flatMap((name) =>
-    params
-      .getAll(name)
-      .flatMap((value) => value.split(","))
-      .map((value) => value.trim())
-      .filter(Boolean),
-  );
-}
-
-function parseSmartTags(values: string[]): SmartTag[] | undefined {
-  const tags = values
-    .map((value) => value.toLowerCase())
-    .filter((value): value is SmartTag =>
-      [
-        "bugfix",
-        "refactoring",
-        "feature-dev",
-        "testing",
-        "docs",
-        "git-ops",
-        "build-deploy",
-        "exploration",
-        "planning",
-      ].includes(value),
-    );
-  return tags.length > 0 ? [...new Set(tags)] : undefined;
-}
-
-function parseSearchOptions(
-  c: Context,
-  defaults: SessionListDefaults,
-  projectIdentity?: ProjectIdentityRef,
-): SearchOptions {
-  const params = searchParams(c);
-  const limitValue = parseNumberParam(params.get("limit") ?? undefined);
-  return {
-    agent: optionalQueryValue(params.get("agent") ?? undefined),
-    project: optionalQueryValue(params.get("project") ?? undefined),
-    projectKind: projectIdentity?.kind,
-    projectKey: projectIdentity?.key,
-    cwd: optionalQueryValue(params.get("cwd") ?? undefined),
-    tags: parseSmartTags(queryValues(params, "tag", "tags", "signal")),
-    tools: queryValues(params, "tool", "tools").map((tool) => tool.toLowerCase()),
-    file: optionalQueryValue(params.get("file") ?? params.get("path") ?? undefined),
-    fileKind: parseFileActivityKind(
-      optionalQueryValue(params.get("fileKind") ?? params.get("fileActivity") ?? undefined),
-    ),
-    costMin: parseNumberParam(params.get("costMin") ?? undefined),
-    costMax: parseNumberParam(params.get("costMax") ?? undefined),
-    from: parseDateParam(params.get("from") ?? undefined, defaults.from),
-    to: parseDateParam(params.get("to") ?? undefined, defaults.to),
-    limit: limitValue && limitValue > 0 ? Math.min(limitValue, 100) : 50,
-  };
-}
-
-function filterSessionsByActivityWindow(
-  sessions: SessionHead[],
-  from: number | undefined,
-  to: number | undefined,
-): SessionHead[] {
-  if (from == null && to == null) return sessions;
-  return sessions.filter((session) => {
-    const activity = getSessionActivityTime(session);
-    if (from != null && activity < from) return false;
-    if (to != null && activity > to) return false;
-    return true;
-  });
-}
-
 function sanitizeClientLogData(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) return {};
 
@@ -328,84 +139,6 @@ function sanitizeClientLogData(value: unknown): Record<string, unknown> {
         return [key, String(item).slice(0, 300)];
       }),
   );
-}
-
-function getProjectGroupKey(identityKind: string, identityKey: string): string {
-  return `${identityKind}:${identityKey}`;
-}
-
-function attachProjectMetrics(
-  projects: ProjectGroup[],
-  sessions: SessionHead[],
-): ApiProjectGroup[] {
-  const metrics = new Map<
-    string,
-    {
-      messages: number;
-      tokens: number;
-      cost: number;
-      hasEstimatedCost: boolean;
-      agentStats: Map<string, ApiProjectAgentStat>;
-    }
-  >();
-
-  for (const session of sessions) {
-    const identity = session.project_identity;
-    if (!identity) continue;
-    const key = getProjectGroupKey(identity.kind, identity.key);
-    let current = metrics.get(key);
-    if (!current) {
-      current = {
-        messages: 0,
-        tokens: 0,
-        cost: 0,
-        hasEstimatedCost: false,
-        agentStats: new Map(),
-      };
-      metrics.set(key, current);
-    }
-
-    const tokens = getTotalTokens(session.stats);
-    const cost = session.stats.total_cost ?? 0;
-    current.messages += session.stats.message_count;
-    current.tokens += tokens;
-    current.cost += cost;
-    if (session.stats.cost_source === "estimated") current.hasEstimatedCost = true;
-
-    const agentName = getSessionAgentName(session);
-    const agent = current.agentStats.get(agentName);
-    if (agent) {
-      agent.sessions += 1;
-      agent.messages += session.stats.message_count;
-      agent.tokens += tokens;
-      agent.cost += cost;
-    } else {
-      current.agentStats.set(agentName, {
-        name: agentName,
-        sessions: 1,
-        messages: session.stats.message_count,
-        tokens,
-        cost,
-      });
-    }
-  }
-
-  return projects.map((project) => {
-    const metric = metrics.get(getProjectGroupKey(project.identityKind, project.identityKey));
-    return {
-      ...project,
-      messages: metric?.messages ?? 0,
-      tokens: metric?.tokens ?? 0,
-      cost: metric?.cost ?? 0,
-      cost_source:
-        metric && metric.cost > 0
-          ? metric.hasEstimatedCost
-            ? "estimated"
-            : "recorded"
-          : undefined,
-      agentStats: [...(metric?.agentStats.values() ?? [])].sort((a, b) => b.sessions - a.sessions),
-    };
-  });
 }
 
 export function handleGetConfig(c: Context, defaults: SessionListDefaults) {
@@ -496,17 +229,15 @@ export function handleGetSessions(
     sessions = sessions.filter((s) => s.smart_tags?.includes(tag as SmartTag));
   }
 
-  const aliases = loadSessionAliasMap();
+  const aliases = loadAliasView();
   if (q) {
     sessions = sessions.filter((session) => {
-      const alias = aliases.get(getSessionAliasKey(getSessionAgentKey(session), session.id));
+      const alias = aliases.get(getSessionAgentKey(session), session.id);
       return session.title.toLowerCase().includes(q) || alias?.toLowerCase().includes(q);
     });
   }
   return c.json({
-    sessions: sessions.map((session) =>
-      withDisplayTitle(session, getSessionAgentKey(session), aliases),
-    ),
+    sessions: sessions.map((session) => aliases.decorate(session, getSessionAgentKey(session))),
   });
 }
 
@@ -525,10 +256,10 @@ export function handleSearchSessions(
     return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
   }
   const searchOptions = parseSearchOptions(c, defaults, projectIdentity);
-  const aliases = loadSessionAliasMap();
+  const aliases = loadAliasView();
   const results = executeSessionSearch(query, searchOptions, scanResult).map((result) => ({
     ...result,
-    session: withDisplayTitle(result.session, result.agentName, aliases),
+    session: aliases.decorate(result.session, result.agentName),
   }));
   const aliasResults = findAliasSearchResults(query, searchOptions, scanResult, aliases);
   const deduped = new Map<string, (typeof results)[number]>();
@@ -536,29 +267,6 @@ export function handleSearchSessions(
     deduped.set(`${result.agentName}\0${result.session.id}`, result);
   }
   return c.json({ results: [...deduped.values()].slice(0, searchOptions.limit ?? 50) });
-}
-
-function parseFileActivityKind(value: string | undefined): FileActivityKind | undefined {
-  if (value === "read" || value === "edit" || value === "write" || value === "delete") {
-    return value;
-  }
-  return undefined;
-}
-
-function optionalQueryValue(value: string | undefined): string | undefined {
-  const normalized = value?.trim();
-  return normalized ? normalized : undefined;
-}
-
-function parseProjectIdentityFilter(
-  kindValue: string | undefined,
-  keyValue: string | undefined,
-): ProjectIdentityRef | null | undefined {
-  const kind = optionalQueryValue(kindValue);
-  const key = optionalQueryValue(keyValue);
-  if (!kind && !key) return undefined;
-  if (!kind || !key || !isProjectIdentityKind(kind)) return null;
-  return { kind, key };
 }
 
 export function handleGetFileActivity(c: Context, defaults: SessionListDefaults = {}) {
@@ -572,7 +280,7 @@ export function handleGetFileActivity(c: Context, defaults: SessionListDefaults 
     return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
   }
 
-  const aliases = loadSessionAliasMap();
+  const aliases = loadAliasView();
   return c.json({
     activity: listFileActivity({
       agent: optionalQueryValue(c.req.query("agent")),
@@ -586,7 +294,7 @@ export function handleGetFileActivity(c: Context, defaults: SessionListDefaults 
       from: parseDateParam(c.req.query("from"), defaults.from),
       to: parseDateParam(c.req.query("to"), defaults.to),
       limit,
-    }).map((activity) => withFileActivityDisplayTitle(activity, aliases)),
+    }).map((activity) => decorateFileActivity(activity, aliases)),
   });
 }
 
@@ -653,9 +361,9 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
       tag_duration_ms: Math.round(tagDuration),
       duration_ms: Math.round(performance.now() - startedAt),
     });
-    const aliases = loadSessionAliasMap();
+    const aliases = loadAliasView();
     return c.json({
-      ...withDisplayTitle(data, agentName, aliases),
+      ...aliases.decorate(data, agentName),
       project_identity: projectIdentity,
       smart_tags: smartTags,
       smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
@@ -691,9 +399,9 @@ export async function handlePostClientLog(c: Context) {
 
 export function handleGetBookmarks(c: Context) {
   try {
-    const aliases = loadSessionAliasMap();
+    const aliases = loadAliasView();
     return c.json({
-      bookmarks: listBookmarks().map((bookmark) => withBookmarkDisplayTitle(bookmark, aliases)),
+      bookmarks: listBookmarks().map((bookmark) => decorateBookmark(bookmark, aliases)),
       storageAvailable: true,
     });
   } catch (error) {
@@ -776,7 +484,7 @@ export async function handlePutSessionAlias(c: Context) {
     if (error instanceof TypeError) {
       return c.json({ error: "Session alias must be non-empty and at most 160 characters" }, 400);
     }
-    if (isStateStorageUnavailable(error)) {
+    if (error instanceof StateStorageUnavailableError) {
       return c.json({ error: "Session alias storage is unavailable" }, 503);
     }
     throw error;
@@ -794,7 +502,7 @@ export function handleDeleteSessionAlias(c: Context) {
     deleteSessionAlias(agentKey, sessionId);
     return c.json({ ok: true });
   } catch (error) {
-    if (isStateStorageUnavailable(error)) {
+    if (error instanceof StateStorageUnavailableError) {
       return c.json({ error: "Session alias storage is unavailable" }, 503);
     }
     throw error;
@@ -853,14 +561,14 @@ export function handleGetDashboard(
     window: { from, to, days },
   };
 
-  const aliases = loadSessionAliasMap();
+  const aliases = loadAliasView();
   return c.json({
     ...data,
     recentSessions: data.recentSessions.map((session) =>
-      withDisplayTitle(session, session.agentName, aliases),
+      aliases.decorate(session, session.agentName),
     ),
     recentFileActivities: data.recentFileActivities.map((activity) =>
-      withFileActivityDisplayTitle(activity, aliases),
+      decorateFileActivity(activity, aliases),
     ),
   });
 }
