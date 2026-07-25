@@ -54,6 +54,7 @@ import {
   handlePutSessionAlias,
   type ScanResultSource,
 } from "../handlers.js";
+import { invalidateAliasView } from "../session-aliases-view.js";
 
 interface ContextOptions {
   body?: unknown;
@@ -115,6 +116,9 @@ const scanSource: ScanResultSource = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // The alias read model is cached for the process lifetime; each test needs a
+  // clean slate or it inherits the previous test's listSessionAliases stub.
+  invalidateAliasView();
   coreMocks.listBookmarks.mockReturnValue([]);
   coreMocks.listFileActivity.mockReturnValue([]);
   coreMocks.listSessionAliases.mockReturnValue([]);
@@ -198,12 +202,15 @@ describe("bookmark handlers", () => {
 
   it("tolerates unavailable alias storage and logs unexpected alias failures", () => {
     coreMocks.listBookmarks.mockReturnValue([storedBookmark]);
+    // Each failure mode is a separate load: the alias read model caches its
+    // result, so the view has to be invalidated between scenarios.
     coreMocks.listSessionAliases.mockImplementationOnce(() => {
       throw new StateStorageUnavailableError();
     });
     handleGetBookmarks(makeContext() as never);
     expect(loggerMocks.warn).not.toHaveBeenCalled();
 
+    invalidateAliasView();
     coreMocks.listSessionAliases.mockImplementationOnce(() => {
       throw new Error("corrupt aliases");
     });
@@ -212,6 +219,7 @@ describe("bookmark handlers", () => {
       error: "corrupt aliases",
     });
 
+    invalidateAliasView();
     coreMocks.listSessionAliases.mockImplementationOnce(() => {
       throw "invalid aliases";
     });
@@ -576,5 +584,74 @@ describe("query boundary handlers", () => {
       to: Date.now(),
       days: 0,
     });
+  });
+});
+
+describe("session alias caching", () => {
+  const aliasRecord = { agentKey: "codex", sessionId: "s1", alias: "Renamed", updated_at: 1 };
+
+  it("queries alias storage once across repeated reads", () => {
+    coreMocks.listSessionAliases.mockReturnValue([aliasRecord]);
+
+    handleGetSessions(makeContext() as never, scanSource);
+    handleGetSessions(makeContext() as never, scanSource);
+    handleGetBookmarks(makeContext() as never);
+
+    expect(coreMocks.listSessionAliases).toHaveBeenCalledTimes(1);
+  });
+
+  it("picks up a stored alias on the next read", async () => {
+    coreMocks.listSessionAliases.mockReturnValue([]);
+    handleGetSessions(makeContext() as never, scanSource);
+
+    coreMocks.upsertSessionAlias.mockReturnValue(aliasRecord);
+    coreMocks.listSessionAliases.mockReturnValue([aliasRecord]);
+    await handlePutSessionAlias(
+      makeContext({ body: { alias: "Renamed" }, param: { agent: "codex", id: "s1" } }) as never,
+    );
+
+    coreMocks.listBookmarks.mockReturnValue([storedBookmark]);
+    const after = makeContext();
+    handleGetBookmarks(after as never);
+
+    expect(getResponsePayload<{ bookmarks: BookmarkRecord[] }>(after).bookmarks[0]).toMatchObject({
+      display_title: "Renamed",
+    });
+  });
+
+  it("drops a removed alias on the next read", () => {
+    coreMocks.listSessionAliases.mockReturnValue([aliasRecord]);
+    coreMocks.listBookmarks.mockReturnValue([storedBookmark]);
+    handleGetBookmarks(makeContext() as never);
+
+    coreMocks.listSessionAliases.mockReturnValue([]);
+    handleDeleteSessionAlias(makeContext({ param: { agent: "codex", id: "s1" } }) as never);
+
+    const after = makeContext();
+    handleGetBookmarks(after as never);
+
+    expect(
+      getResponsePayload<{ bookmarks: BookmarkRecord[] }>(after).bookmarks[0]?.display_title,
+    ).toBeUndefined();
+  });
+
+  it("caches an unavailable store but retries it after invalidation", () => {
+    coreMocks.listSessionAliases.mockImplementation(() => {
+      throw new StateStorageUnavailableError();
+    });
+
+    handleGetSessions(makeContext() as never, scanSource);
+    handleGetSessions(makeContext() as never, scanSource);
+    expect(coreMocks.listSessionAliases).toHaveBeenCalledTimes(1);
+
+    invalidateAliasView();
+    coreMocks.listSessionAliases.mockReturnValue([aliasRecord]);
+    coreMocks.listBookmarks.mockReturnValue([storedBookmark]);
+    const recovered = makeContext();
+    handleGetBookmarks(recovered as never);
+
+    expect(
+      getResponsePayload<{ bookmarks: BookmarkRecord[] }>(recovered).bookmarks[0],
+    ).toMatchObject({ display_title: "Renamed" });
   });
 });

@@ -52,6 +52,7 @@ import {
   decorateFileActivity,
   findAliasSearchResults,
   getSessionAgentKey,
+  invalidateAliasView,
   loadAliasView,
 } from "./session-aliases-view.js";
 
@@ -479,7 +480,9 @@ export async function handlePutSessionAlias(c: Context) {
   }
 
   try {
-    return c.json({ alias: upsertSessionAlias(agentKey, sessionId, payload.alias) });
+    const alias = upsertSessionAlias(agentKey, sessionId, payload.alias);
+    invalidateAliasView();
+    return c.json({ alias });
   } catch (error) {
     if (error instanceof TypeError) {
       return c.json({ error: "Session alias must be non-empty and at most 160 characters" }, 400);
@@ -500,6 +503,7 @@ export function handleDeleteSessionAlias(c: Context) {
 
   try {
     deleteSessionAlias(agentKey, sessionId);
+    invalidateAliasView();
     return c.json({ ok: true });
   } catch (error) {
     if (error instanceof StateStorageUnavailableError) {
