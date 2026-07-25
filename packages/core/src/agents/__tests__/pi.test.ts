@@ -25,6 +25,28 @@ afterEach(() => {
   tempDirs = [];
 });
 
+const TS = "2026-04-20T10:00:00.000Z";
+
+/** Writes a one-session PI_HOME fixture and returns an agent bound to it. */
+function writePiSession(
+  sessionId: string,
+  records: Record<string, unknown>[],
+): { agent: PiAgent; sessionFile: string; sessionId: string } {
+  const tempDir = mkdtempSync(join(tmpdir(), "codesesh-pi-test-"));
+  tempDirs.push(tempDir);
+  const piHome = join(tempDir, ".pi");
+  const sessionsDir = join(piHome, "agent", "sessions", "--tmp-project--");
+  mkdirSync(sessionsDir, { recursive: true });
+  vi.stubEnv("PI_HOME", piHome);
+
+  const sessionFile = join(sessionsDir, `2026-04-20T10-00-00_${sessionId}.jsonl`);
+  writeFileSync(sessionFile, records.map((record) => JSON.stringify(record)).join("\n"));
+
+  const agent = new PiAgent();
+  agent.isAvailable();
+  return { agent, sessionFile, sessionId };
+}
+
 function captureDiagnostics(): Array<{ event: string; detail?: Record<string, unknown> }> {
   const calls: Array<{ event: string; detail?: Record<string, unknown> }> = [];
   const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
@@ -439,5 +461,76 @@ describe("PiAgent", () => {
       event: "agent.field_shape_mismatch",
       detail: { agentName: "pi", field: "message.usage.input" },
     });
+  });
+
+  it("takes the first session record as the header when several are present", () => {
+    const { agent, sessionId } = writePiSession("019deeee-eeee-7eee-eeee-eeeeeeeeeeee", [
+      { type: "session", version: 3, id: "first", timestamp: TS, cwd: "/tmp/first" },
+      { type: "session", version: 3, id: "second", timestamp: TS, cwd: "/tmp/second" },
+      {
+        type: "message",
+        id: "a1",
+        parentId: null,
+        timestamp: TS,
+        message: { role: "user", content: "Hello" },
+      },
+    ]);
+
+    const [head] = agent.scan();
+
+    expect(head?.id).toBe("first");
+    expect(head?.directory).toBe("/tmp/first");
+    expect(sessionId).toBeTruthy();
+  });
+
+  it("skips files that are empty or missing a session header", () => {
+    const empty = writePiSession("019deeee-eeee-7eee-eeee-ffffffffffff", []);
+    expect(empty.agent.scan()).toEqual([]);
+
+    const headerless = writePiSession("019deeee-eeee-7eee-eeee-000000000000", [
+      {
+        type: "message",
+        id: "a1",
+        parentId: null,
+        timestamp: TS,
+        message: { role: "user", content: "Orphan" },
+      },
+    ]);
+    expect(headerless.agent.scan()).toEqual([]);
+  });
+
+  it("reassembles records that straddle a read-chunk boundary", () => {
+    // readJsonlFileLines decodes in 1 MiB chunks. Sweep the padding so both a
+    // line break and a multi-byte character land on either side of the seam.
+    const CHUNK_BYTES = 1024 * 1024;
+    const MARKER = "结束标记";
+
+    for (const delta of [-1, 0, 1]) {
+      const sessionId = `019deeee-eeee-7eee-eeee-11111111000${delta + 1}`;
+      const prefix = JSON.stringify({
+        type: "session",
+        version: 3,
+        id: sessionId,
+        timestamp: TS,
+        cwd: "/tmp/project",
+      }).length;
+      const padding = "x".repeat(Math.max(0, CHUNK_BYTES + delta - prefix - 120));
+      const { agent } = writePiSession(sessionId, [
+        { type: "session", version: 3, id: sessionId, timestamp: TS, cwd: "/tmp/project" },
+        {
+          type: "message",
+          id: "a1",
+          parentId: null,
+          timestamp: TS,
+          message: { role: "user", content: `${padding}${MARKER}` },
+        },
+      ]);
+
+      agent.scan();
+      const text = String(agent.getSessionData(sessionId).messages[0]?.parts[0]?.text ?? "");
+
+      expect(text).toHaveLength(padding.length + MARKER.length);
+      expect(text.endsWith(MARKER)).toBe(true);
+    }
   });
 });
