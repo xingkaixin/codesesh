@@ -1,5 +1,5 @@
 /* eslint-disable react/no-array-index-key */
-import { ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import type { SessionData } from "../lib/api";

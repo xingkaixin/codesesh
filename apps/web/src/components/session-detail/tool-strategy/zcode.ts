@@ -32,7 +32,7 @@ import {
   ListTodo,
   SquareTerminal,
   Wrench,
-} from "lucide-react";
+} from "../../ui/icons";
 
 function stripRecommendedMarker(value: string) {
   return value.replace(/\s*[(（](?:Recommended|推荐)[)）]\s*$/i, "").trim();

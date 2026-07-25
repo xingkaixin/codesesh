@@ -21,7 +21,7 @@ import {
   toStringValue,
 } from "../tool-normalize";
 import { getDisplayTextWithRelativePaths } from "../path-extract";
-import { SquareTerminal, Wrench } from "lucide-react";
+import { SquareTerminal, Wrench } from "../../ui/icons";
 
 export type { NormalizedToolState, ToolDisplayStrategy, ToolStatus };
 

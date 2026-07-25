@@ -5,7 +5,7 @@
  * toPlainText, toStringValue, parseJsonText, normalizeEscapedNewlines) live
  * in ./utils and are re-exported here for convenience.
  */
-import type { LoaderCircle } from "lucide-react";
+import type { LoaderCircle } from "../ui/icons";
 import type { Message, MessagePart } from "../../lib/api";
 import type { ToolOutputContent } from "../tool-output/types";
 import type { ToolDetailItem } from "./codex-tool";

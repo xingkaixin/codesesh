@@ -1,7 +1,7 @@
 declare const __APP_VERSION__: string;
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen } from "./components/ui/icons";
 import { Link, useLocation, useMatches, useNavigate } from "react-router-dom";
 import type { BookmarkedSessionSnapshot, SessionHead } from "./lib/api";
 import { logClientEvent } from "./lib/api";

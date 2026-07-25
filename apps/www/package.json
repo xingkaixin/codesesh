@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",
+    "@hugeicons/core-free-icons": "^4.2.3",
     "@tailwindcss/vite": "^4.3.0",
     "@types/node": "^25.9.1",
     "tailwindcss": "^4.3.0",

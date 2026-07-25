@@ -8,7 +8,7 @@ import {
   LoaderCircle,
   NotebookPen,
   XCircle,
-} from "lucide-react";
+} from "../ui/icons";
 import { Collapsible } from "../ui/Collapsible";
 import type { FileChangeKind, FileChangeSummary, FileChangeSummaryItem } from "./file-change";
 import { formatTrackedPath } from "./path-extract";

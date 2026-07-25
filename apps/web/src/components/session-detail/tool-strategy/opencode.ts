@@ -24,7 +24,7 @@ import {
   extractReadContent,
   extractWriteContent,
 } from "./shared";
-import { BookOpenText, FilePenLine, FileSearch, NotebookPen, SquareTerminal } from "lucide-react";
+import { BookOpenText, FilePenLine, FileSearch, NotebookPen, SquareTerminal } from "../../ui/icons";
 
 export function buildOpencodeToolStrategy(
   tool: MessagePart,

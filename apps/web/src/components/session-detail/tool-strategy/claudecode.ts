@@ -34,7 +34,7 @@ import {
   Search,
   SquareTerminal,
   Wrench,
-} from "lucide-react";
+} from "../../ui/icons";
 
 function summarizeTasks(items: unknown[]) {
   const counts = new Map<string, number>();

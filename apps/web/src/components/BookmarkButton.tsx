@@ -1,4 +1,4 @@
-import { Star } from "lucide-react";
+import { Star } from "./ui/icons";
 
 interface BookmarkButtonProps {
   active: boolean;

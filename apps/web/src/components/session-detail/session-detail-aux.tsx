@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FileText, Funnel } from "lucide-react";
+import { FileText, Funnel } from "../ui/icons";
 import type { SessionData } from "../../lib/api";
 import { InteractiveReceipt } from "../InteractiveReceipt";
 import { RenderProfiler } from "../RenderProfiler";

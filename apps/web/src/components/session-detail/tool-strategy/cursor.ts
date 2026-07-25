@@ -23,7 +23,7 @@ import {
 } from "../tool-normalize";
 import { parseJsonText } from "../utils";
 import { buildDefaultToolStrategy } from "./shared";
-import { BookOpenText, FilePenLine, FileSearch, SquareTerminal } from "lucide-react";
+import { BookOpenText, FilePenLine, FileSearch, SquareTerminal } from "../../ui/icons";
 
 export function getCursorOutputRecord(rawOutput: unknown) {
   if (rawOutput && typeof rawOutput === "object" && !Array.isArray(rawOutput)) {

@@ -9,7 +9,7 @@ import {
   MessageCircleX,
   UserRound,
   XCircle,
-} from "lucide-react";
+} from "../ui/icons";
 import type { AgentInfo, Message, MessagePart } from "../../lib/api";
 import { formatMessageTime } from "../../lib/format";
 import { AgentIcon } from "../AgentIcon";
@@ -479,9 +479,7 @@ function ToolItem({
               onClick={() => setExpanded(!expanded)}
               aria-expanded={expanded}
             >
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)]">
-                <ToolIcon className="size-3.5 text-[var(--console-accent)]" />
-              </span>
+              <ToolIcon className="size-4 shrink-0 text-[var(--console-accent)]" />
               <span className="min-w-0 flex-1">
                 <span className="console-mono block text-xs font-semibold text-[var(--console-text)]">
                   {strategy.title}
@@ -509,9 +507,7 @@ function ToolItem({
             </button>
           ) : (
             <div className="flex items-center gap-2.5">
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)]">
-                <ToolIcon className="size-3.5 text-[var(--console-accent)]" />
-              </span>
+              <ToolIcon className="size-4 shrink-0 text-[var(--console-accent)]" />
               <span className="min-w-0 flex-1">
                 <span className="console-mono block text-xs font-semibold text-[var(--console-text)]">
                   {strategy.title}

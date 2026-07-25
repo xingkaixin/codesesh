@@ -1,4 +1,4 @@
-import { Check, Copy } from "lucide-react";
+import { Check, Copy } from "./ui/icons";
 import { useEffect, useState } from "react";
 import { buildResumeCommand } from "../lib/build-resume-command";
 
