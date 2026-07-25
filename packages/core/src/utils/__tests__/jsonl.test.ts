@@ -113,6 +113,34 @@ describe("readJsonlFileLines", () => {
     const filePath = writeTempFile("");
     expect(collect(readJsonlFileLines(filePath))).toEqual([]);
   });
+
+  it("yields a record that spans many chunks intact", () => {
+    const long = "x".repeat(1000);
+    const filePath = writeTempFile(`{"a":1}\n${long}\n{"b":2}`);
+    expect(collect(readJsonlFileLines(filePath, 8))).toEqual(['{"a":1}', long, '{"b":2}']);
+  });
+
+  it("yields a chunk-spanning record as the tail when the file has no trailing newline", () => {
+    const long = "y".repeat(500);
+    const filePath = writeTempFile(`{"a":1}\n${long}`);
+    expect(collect(readJsonlFileLines(filePath, 8))).toEqual(['{"a":1}', long]);
+  });
+
+  it("assembles long records in linear time rather than per-chunk copies", () => {
+    // One record spanning 2000 chunks. Buffering the partial record in a string
+    // makes every chunk re-flatten it, which measures ~300ms on this fixture and
+    // scales quadratically; buffering in an array and joining once measures
+    // single-digit milliseconds. The bound sits well clear of both.
+    const long = "z".repeat(2_000_000);
+    const filePath = writeTempFile(`${long}\n{"tail":1}`);
+
+    const startedAt = performance.now();
+    const result = collect(readJsonlFileLines(filePath, 1000));
+    const elapsed = performance.now() - startedAt;
+
+    expect(result).toEqual([long, '{"tail":1}']);
+    expect(elapsed).toBeLessThan(250);
+  });
 });
 
 describe("readJsonlFile", () => {

@@ -40,18 +40,30 @@ export function* readJsonlFileLines(
     const buffer = Buffer.alloc(chunkBytes);
     // StringDecoder buffers multi-byte UTF-8 sequences split across chunks.
     const decoder = new StringDecoder("utf8");
-    let remainder = "";
+    // Chunks of the record currently being assembled, joined once when its line
+    // break arrives. Concatenating onto a string instead would re-copy the whole
+    // partial record on every chunk — quadratic on the multi-megabyte single-line
+    // records agent logs routinely contain.
+    let pending: string[] = [];
     let bytesRead = readSync(fd, buffer, 0, chunkBytes, -1);
     while (bytesRead > 0) {
-      const lines = (remainder + decoder.write(buffer.subarray(0, bytesRead))).split("\n");
-      remainder = lines.pop()!;
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed) yield trimmed;
+      const decoded = decoder.write(buffer.subarray(0, bytesRead));
+      const lastBreak = decoded.lastIndexOf("\n");
+      if (lastBreak === -1) {
+        if (decoded) pending.push(decoded);
+      } else {
+        pending.push(decoded.slice(0, lastBreak));
+        const complete = pending.join("");
+        pending = [decoded.slice(lastBreak + 1)];
+        for (const line of complete.split("\n")) {
+          const trimmed = line.trim();
+          if (trimmed) yield trimmed;
+        }
       }
       bytesRead = readSync(fd, buffer, 0, chunkBytes, -1);
     }
-    const tail = (remainder + decoder.end()).trim();
+    pending.push(decoder.end());
+    const tail = pending.join("").trim();
     if (tail) yield tail;
   } finally {
     closeSync(fd);
