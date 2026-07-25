@@ -1,5 +1,6 @@
 export { BaseAgent, FileSystemSessionSource, DatabaseSessionSource } from "./base.js";
 export {
+  diffSessionSources,
   filteredSession,
   getParsedSession,
   matchesScanWindow,
@@ -9,8 +10,10 @@ export {
 export type {
   AgentScanOptions,
   AgentScanProgress,
+  CachedMetaLookup,
   ChangeCheckResult,
   SessionCacheMeta,
+  SessionSourceDiff,
   SessionSourceRef,
 } from "./base.js";
 export type { ParseSessionResult } from "../types/index.js";

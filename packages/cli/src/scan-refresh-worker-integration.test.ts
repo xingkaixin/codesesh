@@ -10,7 +10,6 @@ const mocks = vi.hoisted(() => {
     attachMissingProjectIdentities: vi.fn((sessions: SessionHead[]) => sessions),
     createRegisteredAgents: vi.fn(),
     ensureSessionTagsSync: vi.fn((_agent: BaseAgent, sessions: SessionHead[]) => ({ sessions })),
-    matchesScanWindow: vi.fn((_mtimeMs: number) => true),
     FileSystemSessionSource,
   };
 });
@@ -22,15 +21,20 @@ vi.mock("node:worker_threads", () => ({
   },
 }));
 
-vi.mock("@codesesh/core", () => ({
-  attachMissingProjectIdentities: mocks.attachMissingProjectIdentities,
-  createRegisteredAgents: mocks.createRegisteredAgents,
-  ensureSessionTagsSync: mocks.ensureSessionTagsSync,
-  FileSystemSessionSource: mocks.FileSystemSessionSource,
-  matchesScanWindow: mocks.matchesScanWindow,
-  // diagnostics-bridge.js (imported by the worker for its side effect) needs this export.
-  setCoreDiagnostics: vi.fn(),
-}));
+vi.mock("@codesesh/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core")>();
+  return {
+    attachMissingProjectIdentities: mocks.attachMissingProjectIdentities,
+    createRegisteredAgents: mocks.createRegisteredAgents,
+    ensureSessionTagsSync: mocks.ensureSessionTagsSync,
+    FileSystemSessionSource: mocks.FileSystemSessionSource,
+    // The change decision is shared with FileSystemSessionSource.checkForChanges;
+    // stubbing it would stop this suite from covering the wiring it exists to test.
+    diffSessionSources: actual.diffSessionSources,
+    // diagnostics-bridge.js (imported by the worker for its side effect) needs this export.
+    setCoreDiagnostics: vi.fn(),
+  };
+});
 
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {
@@ -85,7 +89,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.attachMissingProjectIdentities.mockImplementation((sessions) => sessions);
   mocks.ensureSessionTagsSync.mockImplementation((_agent, sessions) => ({ sessions }));
-  mocks.matchesScanWindow.mockReturnValue(true);
   setWorkerData();
 });
 
@@ -162,7 +165,7 @@ describe("scan refresh worker entry", () => {
     const changed = makeSession("changed", { title: "old" });
     const removed = makeSession("removed");
     const outsideWindow = makeSession("outside");
-    const compatible = makeSession("compatible", { title: "same title" });
+    const moved = makeSession("moved");
     const updated = makeSession("changed", { title: "new" });
     const refs: SessionSourceRef[] = [
       {
@@ -176,9 +179,9 @@ describe("scan refresh worker entry", () => {
         fingerprint: "different",
       },
       {
-        sessionId: "compatible",
-        sourcePath: "/compatible",
-        fingerprint: JSON.stringify(["v2", 1, 42, null, "same title"]),
+        sessionId: "moved",
+        sourcePath: "/moved-to",
+        fingerprint: "same",
       },
       {
         sessionId: "missing",
@@ -194,20 +197,58 @@ describe("scan refresh worker entry", () => {
       scanSessionSource,
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
-    mocks.matchesScanWindow.mockImplementation((mtimeMs) => mtimeMs !== 5);
     setWorkerData({
       sourceSync: true,
-      previousSessions: [unchanged, changed, removed, outsideWindow, compatible],
-      scanOptions: { from: 1, fast: true },
+      previousSessions: [unchanged, changed, removed, outsideWindow, moved],
+      // from: 5 puts `outside` (mtime 0) before the window and `removed`
+      // (mtime 10) inside it, so only the latter counts as deleted on disk.
+      scanOptions: { from: 5, fast: true },
       meta: {
         unchanged: { id: "unchanged", sourcePath: "/unchanged", sourceFingerprint: "same" },
         changed: { id: "changed", sourcePath: "/changed", sourceFingerprint: "old" },
         removed: { id: "removed", sourcePath: "/removed", sourceMtimeMs: 10 },
-        outside: { id: "outside", sourcePath: "/outside", sourceMtimeMs: 5 },
-        compatible: {
-          id: "compatible",
-          sourcePath: "/compatible",
-          sourceFingerprint: "legacy",
+        outside: { id: "outside", sourcePath: "/outside", sourceMtimeMs: 0 },
+        // Same fingerprint, different path — a relocated file still needs re-parsing.
+        moved: { id: "moved", sourcePath: "/moved-from", sourceFingerprint: "same" },
+      },
+    });
+
+    await runWorker();
+
+    expect(scanSessionSource).toHaveBeenCalledTimes(3);
+    expect(scanSessionSource).toHaveBeenCalledWith("/changed");
+    expect(scanSessionSource).toHaveBeenCalledWith("/moved-to");
+    expect(scanSessionSource).toHaveBeenCalledWith("/missing");
+    expect(mocks.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: "done",
+        sessions: [unchanged, updated, outsideWindow],
+        changedIds: ["changed", "moved", "missing", "removed"],
+      }),
+    );
+  });
+
+  it("re-parses a cached session whose fingerprint format changed", async () => {
+    const cached = makeSession("legacy");
+    const reparsed = makeSession("legacy", { title: "reparsed" });
+    const scanSessionSource = vi.fn(() => reparsed);
+    const agent = makeAgent({
+      listSessionSources: vi.fn(() => [
+        { sessionId: "legacy", sourcePath: "/legacy", fingerprint: '["v2",2,42,7,null]' },
+      ]),
+      scanSessionSource,
+    });
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    setWorkerData({
+      sourceSync: true,
+      previousSessions: [cached],
+      meta: {
+        // Written by an older parser version: same file, but the head it produced
+        // is no longer what the current parser would produce.
+        legacy: {
+          id: "legacy",
+          sourcePath: "/legacy",
+          sourceFingerprint: '["v2",1,42,7,null]',
           sourceMtimeMs: 42,
         },
       },
@@ -215,15 +256,9 @@ describe("scan refresh worker entry", () => {
 
     await runWorker();
 
-    expect(scanSessionSource).toHaveBeenCalledTimes(2);
-    expect(scanSessionSource).toHaveBeenCalledWith("/changed");
-    expect(scanSessionSource).toHaveBeenCalledWith("/missing");
+    expect(scanSessionSource).toHaveBeenCalledWith("/legacy");
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        type: "done",
-        sessions: [unchanged, updated, outsideWindow, compatible],
-        changedIds: ["changed", "missing", "removed"],
-      }),
+      expect.objectContaining({ type: "done", sessions: [reparsed], changedIds: ["legacy"] }),
     );
   });
 });

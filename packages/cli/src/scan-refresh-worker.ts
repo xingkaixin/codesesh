@@ -3,15 +3,14 @@ import { parentPort, workerData } from "node:worker_threads";
 import {
   attachMissingProjectIdentities,
   createRegisteredAgents,
+  diffSessionSources,
   ensureSessionTagsSync,
   FileSystemSessionSource,
-  matchesScanWindow,
   type AgentScanProgress,
   type BaseAgent,
   type ScanOptions,
   type SessionCacheMeta,
   type SessionHead,
-  type SessionSourceRef,
 } from "@codesesh/core";
 
 export type ScanRefreshWorkerMessage =
@@ -52,65 +51,11 @@ function serializeMeta(agent: {
   return meta;
 }
 
-function sourceFingerprintFromMeta(meta: SessionCacheMeta | undefined): string | null {
-  return typeof meta?.sourceFingerprint === "string" ? meta.sourceFingerprint : null;
-}
-
-function parseSourceFingerprint(fingerprint: string): unknown[] | null {
-  try {
-    const parsed = JSON.parse(fingerprint);
-    return Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * Compare a live source fingerprint against the cached meta. A direct string
- * match is the fast path; the fallback tolerates older cache entries written by
- * a different fingerprint format as long as the underlying mtime (array slot 2)
- * is unchanged, so a fingerprint-format bump does not force a full rescan.
- */
-function sourceFingerprintMatches(
-  source: SessionSourceRef,
-  cachedSession: SessionHead,
-  cached: SessionCacheMeta | undefined,
-): boolean {
-  if (sourceFingerprintFromMeta(cached) === source.fingerprint) return true;
-
-  const current = parseSourceFingerprint(source.fingerprint);
-  if (!current || current.length < 5) return false;
-
-  return (
-    typeof cached?.sourceMtimeMs === "number" &&
-    cached.sourceMtimeMs === current[2] &&
-    (current[4] == null || cachedSession.title === current[4])
-  );
-}
-
-function sourcePathFromMeta(meta: SessionCacheMeta | undefined): string | null {
-  return typeof meta?.sourcePath === "string" ? meta.sourcePath : null;
-}
-
-/**
- * A cached session outside the current scan window was never enumerated this
- * pass, so its absence from sourceRefs doesn't mean it was deleted on disk —
- * treat it as still present. Sessions with no recorded mtime predate this
- * field; keep them too rather than risk a false-positive removal.
- */
-function wasEnumeratedThisPass(
-  cached: SessionCacheMeta | undefined,
-  windowOptions: Pick<ScanOptions, "from" | "to"> | undefined,
-): boolean {
-  if (windowOptions?.from == null && windowOptions?.to == null) return true;
-  const mtimeMs = cached?.sourceMtimeMs;
-  return typeof mtimeMs !== "number" || matchesScanWindow(mtimeMs, windowOptions);
-}
-
-/**
- * Source-level incremental sync, mirroring FileSystemSessionSource.incrementalScan.
- * Kept standalone because the worker cannot share the agent's live metaMap with
- * the main thread — it receives cached meta via workerData instead.
+ * Source-level incremental sync. The change decision itself lives in
+ * diffSessionSources so this path and FileSystemSessionSource.checkForChanges
+ * cannot drift; only the re-parse and merge are local, because the worker holds
+ * cached meta received over workerData rather than the agent's live metaMap.
  */
 function syncAgentSources(
   agent: FileSystemSessionSource,
@@ -120,34 +65,31 @@ function syncAgentSources(
 ): { sessions: SessionHead[]; changedIds: string[] } {
   const sessionMap = new Map(cachedSessions.map((session) => [session.id, session]));
   const sourceRefs = agent.listSessionSources(windowOptions);
-  const currentIds = new Set(sourceRefs.map((source) => source.sessionId));
-  const changedIds = new Set<string>();
+  const sourceById = new Map(sourceRefs.map((source) => [source.sessionId, source]));
+  const { changedIds, removedIds } = diffSessionSources(
+    sourceRefs,
+    cachedSessions,
+    cachedMeta,
+    windowOptions,
+  );
 
-  for (const source of sourceRefs) {
-    const cachedSession = sessionMap.get(source.sessionId);
-    const cached = cachedMeta[source.sessionId];
-    const sameSource = sourcePathFromMeta(cached) === source.sourcePath;
-    const sameFingerprint =
-      cachedSession && sourceFingerprintMatches(source, cachedSession, cached);
-    if (cachedSession && sameSource && sameFingerprint) continue;
-
+  for (const sessionId of changedIds) {
+    const source = sourceById.get(sessionId);
+    if (!source) continue;
     const next = agent.scanSessionSource(source.sourcePath);
-    changedIds.add(source.sessionId);
     if (next) {
       sessionMap.set(next.id, next);
     } else {
-      sessionMap.delete(source.sessionId);
+      sessionMap.delete(sessionId);
     }
   }
 
-  for (const session of cachedSessions) {
-    if (currentIds.has(session.id)) continue;
-    if (!wasEnumeratedThisPass(cachedMeta[session.id], windowOptions)) continue;
-    sessionMap.delete(session.id);
-    changedIds.add(session.id);
-  }
+  for (const sessionId of removedIds) sessionMap.delete(sessionId);
 
-  return { sessions: [...sessionMap.values()], changedIds: [...changedIds] };
+  return {
+    sessions: [...sessionMap.values()],
+    changedIds: [...new Set([...changedIds, ...removedIds])],
+  };
 }
 
 /**
