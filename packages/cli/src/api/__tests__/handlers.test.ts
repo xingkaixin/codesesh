@@ -49,6 +49,7 @@ import {
   handleSearchSessions,
   type ScanResultSource,
 } from "../handlers.js";
+import { invalidateAliasView } from "../session-aliases-view.js";
 import type {
   CachedSessionDataEntry,
   ChangeCheckResult,
@@ -191,6 +192,9 @@ afterEach(() => {
   coreMocks.listSessionFileActivity.mockReturnValue([]);
   coreMocks.listSessionAliases.mockReset();
   coreMocks.listSessionAliases.mockReturnValue([]);
+  // The alias read model caches for the process lifetime; tests stub
+  // listSessionAliases per case and need a fresh load each time.
+  invalidateAliasView();
   coreMocks.executeSessionSearch.mockReset();
   coreMocks.executeSessionSearch.mockReturnValue([]);
   vi.useRealTimers();

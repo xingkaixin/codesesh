@@ -56,7 +56,7 @@ function loadAliasMap(): Map<string, string> {
   }
 }
 
-export function loadAliasView(): AliasView {
+function buildAliasView(): AliasView {
   const aliases = loadAliasMap();
   return {
     size: aliases.size,
@@ -67,6 +67,23 @@ export function loadAliasView(): AliasView {
     },
     entries: () => aliases.entries(),
   };
+}
+
+/**
+ * Aliases change only through this process's own PUT/DELETE handlers, so the
+ * read model is built once and reused until one of them invalidates it. Six read
+ * handlers call this per request; without the cache each one re-queries the whole
+ * table. A storage failure is cached too — it does not heal between requests, and
+ * invalidateAliasView() is what lets a recovered store be retried.
+ */
+let cachedView: AliasView | null = null;
+
+export function loadAliasView(): AliasView {
+  return (cachedView ??= buildAliasView());
+}
+
+export function invalidateAliasView(): void {
+  cachedView = null;
 }
 
 export function decorateBookmark(bookmark: BookmarkRecord, aliases: AliasView): BookmarkRecord {
