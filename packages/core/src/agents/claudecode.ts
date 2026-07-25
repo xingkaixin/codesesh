@@ -11,7 +11,7 @@ import {
 import type { ParseSessionResult } from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
-import { parseJsonlLines } from "../utils/jsonl.js";
+import { readJsonlFile, readJsonlFileLines } from "../utils/jsonl.js";
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { isInternalEventType } from "../utils/parse-cleanup.js";
 import { cleanInternalText } from "../utils/session-normalization.js";
@@ -172,11 +172,10 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
       throw new Error(`Session file missing: ${meta.sourcePath}`);
     }
 
-    const content = readFileSync(meta.sourcePath, "utf-8");
     const builder = new TranscriptBuilder();
     const assistantUuidToToolCalls = new Map<string, string[]>();
     const countedUsageKeys = new Set<string>();
-    for (const record of parseJsonlLines(content)) {
+    for (const record of readJsonlFile(meta.sourcePath)) {
       try {
         this.convertRecord(record, builder, assistantUuidToToolCalls, countedUsageKeys);
       } catch {
@@ -297,29 +296,11 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     return map;
   }
 
-  private parseSessionHead(filePath: string, projectDir: string): SessionHead | null {
-    return getParsedSession(this.parseSessionHeadResult(filePath, projectDir));
-  }
-
   private parseSessionHeadResult(
     filePath: string,
     projectDir: string,
   ): ParseSessionResult<SessionHead> {
-    const content = readFileSync(filePath, "utf-8");
-    const lines = content.split("\n").filter((l) => l.trim());
-
-    if (lines.length === 0) return skippedSession("empty file");
-
     const sessionId = basename(filePath, ".jsonl");
-
-    let firstRecord: Record<string, unknown>;
-    try {
-      firstRecord = JSON.parse(lines[0]!);
-    } catch {
-      return skippedSession("malformed first record");
-    }
-
-    const createdAt = parseTimestampMs(firstRecord) || statSync(filePath).mtimeMs;
 
     // Try to get title from sessions-index.json
     const index = this.loadSessionsIndex(projectDir);
@@ -327,7 +308,9 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     const explicitTitle = indexEntry?.summary ? String(indexEntry.summary) : null;
 
     // Extract lightweight metadata; cwd lives in user-type records, not the first line
-    let updatedAt = createdAt;
+    let createdAt = 0;
+    let updatedAt = 0;
+    let lineIndex = 0;
     let messageCount = 0;
     let model: string | null = null;
     let cwd: string | null = null;
@@ -340,9 +323,26 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     const countedUsageKeys = new Set<string>();
     let messageTitle: string | null = null;
 
-    for (const [lineIndex, line] of lines.entries()) {
+    for (const line of readJsonlFileLines(filePath)) {
+      let data: Record<string, unknown>;
       try {
-        const data = JSON.parse(line);
+        data = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        // A malformed opening record means the file is not a session we can read;
+        // later ones are individually skippable.
+        if (lineIndex === 0) return skippedSession("malformed first record");
+        lineIndex += 1;
+        continue;
+      }
+
+      if (lineIndex === 0) {
+        createdAt = parseTimestampMs(data) || statSync(filePath).mtimeMs;
+        updatedAt = createdAt;
+      }
+      const recordIndex = lineIndex;
+      lineIndex += 1;
+
+      try {
         if (isInternalEventType(data["type"])) continue;
         const ts = parseTimestampMs(data);
         if (ts > updatedAt) updatedAt = ts;
@@ -369,7 +369,7 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
           }
           // Title fallback mirrors the removed extractTitle(): first non-empty
           // visible user text within the first 20 lines.
-          if (messageTitle === null && lineIndex < 20 && role === "user") {
+          if (messageTitle === null && recordIndex < 20 && role === "user") {
             const candidate = this.extractUserMessageTitle(msg["content"]);
             if (candidate) messageTitle = candidate;
           }
@@ -407,6 +407,8 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
         // skip
       }
     }
+
+    if (lineIndex === 0) return skippedSession("empty file");
 
     const directory = cwd ?? projectDir;
     const directoryTitle = basenameTitle(directory) || basenameTitle(projectDir);

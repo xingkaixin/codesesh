@@ -554,3 +554,88 @@ describe("ClaudeCodeAgent cache refresh", () => {
     });
   });
 });
+
+describe("ClaudeCodeAgent head parsing", () => {
+  function writeSession(lines: string[]): { agent: ClaudeCodeAgent; sessionFile: string } {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-head-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    mkdirSync(projectDir, { recursive: true });
+    const sessionFile = join(projectDir, "session-1.jsonl");
+    writeFileSync(sessionFile, lines.join("\n"));
+
+    const agent = new ClaudeCodeAgent() as never as { basePath: string };
+    agent.basePath = basePath;
+    return { agent: agent as never as ClaudeCodeAgent, sessionFile };
+  }
+
+  function userLine(text: string, timestamp = "2026-04-20T10:00:00Z"): string {
+    return JSON.stringify({
+      type: "user",
+      timestamp,
+      cwd: "/tmp/project",
+      message: { role: "user", content: text },
+    });
+  }
+
+  it("skips an empty file", () => {
+    expect(writeSession([]).agent.scan()).toEqual([]);
+    expect(writeSession(["", "   ", ""]).agent.scan()).toEqual([]);
+  });
+
+  it("skips a file whose first record is malformed", () => {
+    expect(writeSession(["not json", userLine("Visible")]).agent.scan()).toEqual([]);
+  });
+
+  it("skips a malformed record after the first without dropping the session", () => {
+    const [head] = writeSession([userLine("First"), "not json", userLine("Third")]).agent.scan();
+
+    expect(head?.title).toBe("First");
+    expect(head?.stats.message_count).toBe(2);
+  });
+
+  it("falls back to the file mtime when the first record has no timestamp", () => {
+    const { agent, sessionFile } = writeSession([
+      JSON.stringify({
+        type: "user",
+        cwd: "/tmp/project",
+        message: { role: "user", content: "A" },
+      }),
+    ]);
+
+    const [head] = agent.scan();
+
+    expect(head?.time_created).toBe(statSync(sessionFile).mtimeMs);
+  });
+
+  it("only considers the first 20 records for the fallback title", () => {
+    // Malformed records still advance the window, matching the pre-streaming
+    // behaviour where the index came from the raw non-blank line list.
+    const filler = Array.from({ length: 19 }, () =>
+      JSON.stringify({
+        type: "assistant",
+        timestamp: "2026-04-20T10:00:00Z",
+        cwd: "/tmp/project",
+        message: { role: "assistant", content: [{ type: "text", text: "filler" }] },
+      }),
+    );
+
+    const inWindow = writeSession([...filler, userLine("Twentieth record")]).agent.scan();
+    expect(inWindow[0]?.title).toBe("Twentieth record");
+
+    const outOfWindow = writeSession([
+      ...filler,
+      filler[0]!,
+      userLine("Twenty-first record"),
+    ]).agent.scan();
+    expect(outOfWindow[0]?.title).toBe("project");
+  });
+
+  it("reads records that straddle a read-chunk boundary", () => {
+    const marker = "结束标记";
+    const padding = "x".repeat(1024 * 1024);
+    const [head] = writeSession([userLine(`${padding}${marker}`)]).agent.scan();
+
+    expect(head?.title).toBe(`${padding}${marker}`.slice(0, 100));
+  });
+});
