@@ -5,6 +5,8 @@ import {
   createSessionIndex,
   getProjectAgentKey,
   getSessionRouteKey,
+  mergeSortedSessions,
+  sortSessionsByActivity,
   updateSessionIndex,
 } from "../session-index.js";
 
@@ -123,6 +125,56 @@ describe("canonical session index", () => {
       expect([...index.byProjectIdentityKey.entries()]).toEqual([
         ...rebuilt.byProjectIdentityKey.entries(),
       ]);
+    }
+  });
+});
+
+describe("mergeSortedSessions", () => {
+  /** Deterministic PRNG so a failure is reproducible from the printed seed. */
+  function makeRandom(seed: number): () => number {
+    let state = seed >>> 0;
+    return () => {
+      state = (state * 1664525 + 1013904223) >>> 0;
+      return state / 0x100000000;
+    };
+  }
+
+  function makeShards(random: () => number, shardCount: number): SessionHead[][] {
+    return Array.from({ length: shardCount }, (_unused, shardIndex) => {
+      const size = Math.floor(random() * 6);
+      const shard = Array.from({ length: size }, (_item, index) =>
+        // A small activity range guarantees plenty of cross-shard ties.
+        createSession(`s${shardIndex}-${index}`, Math.floor(random() * 4)),
+      );
+      return sortSessionsByActivity(shard);
+    });
+  }
+
+  it("returns an empty array when every shard is empty", () => {
+    expect(mergeSortedSessions([])).toEqual([]);
+    expect(mergeSortedSessions([[], []])).toEqual([]);
+  });
+
+  it("copies a lone shard rather than returning it", () => {
+    const shard = [createSession("a", 2), createSession("b", 1)];
+    const merged = mergeSortedSessions([shard]);
+
+    expect(merged).toEqual(shard);
+    expect(merged).not.toBe(shard);
+  });
+
+  it("matches sortSessionsByActivity element for element, ties included", () => {
+    for (let seed = 1; seed <= 200; seed += 1) {
+      const shards = makeShards(makeRandom(seed), 2 + (seed % 6));
+      const merged = mergeSortedSessions(shards);
+      const sorted = sortSessionsByActivity(shards.flat());
+
+      // Reference equality, so a tie resolved to a different shard fails here.
+      expect({ seed, ids: merged.map((session) => session.id) }).toEqual({
+        seed,
+        ids: sorted.map((session) => session.id),
+      });
+      expect(merged.every((session, index) => session === sorted[index])).toBe(true);
     }
   });
 });

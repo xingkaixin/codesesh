@@ -14,6 +14,7 @@ export {
   sessionSignature,
   sortSessions,
 } from "./orchestrate.js";
+export { mergeSortedSessions } from "../contract/session-index.js";
 export {
   loadCachedSessions,
   loadCachedSessionData,

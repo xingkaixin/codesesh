@@ -32,6 +32,42 @@ export function sortSessionsByActivity(sessions: SessionHead[]): SessionHead[] {
   return [...sessions];
 }
 
+/**
+ * Merges shards that are each already sorted by activity, newest first.
+ *
+ * Callers must uphold that precondition — this does not re-sort. Ties resolve to
+ * the earlier shard, which is what a stable `Array.sort` over the concatenation
+ * would produce, so the result is element-for-element identical to
+ * `sortSessionsByActivity(shards.flat())` at O(n·k) instead of O(n log n).
+ */
+export function mergeSortedSessions(shards: SessionHead[][]): SessionHead[] {
+  const active = shards.filter((shard) => shard.length > 0);
+  if (active.length === 0) return [];
+  if (active.length === 1) return [...active[0]!];
+
+  const total = active.reduce((sum, shard) => sum + shard.length, 0);
+  const merged: SessionHead[] = [];
+  const cursors = Array.from({ length: active.length }, () => 0);
+
+  for (let position = 0; position < total; position += 1) {
+    let pick = -1;
+    for (let shard = 0; shard < active.length; shard += 1) {
+      const cursor = cursors[shard]!;
+      if (cursor >= active[shard]!.length) continue;
+      if (
+        pick === -1 ||
+        compareSessionActivityDesc(active[shard]![cursor]!, active[pick]![cursors[pick]!]!) < 0
+      ) {
+        pick = shard;
+      }
+    }
+    merged.push(active[pick]![cursors[pick]!]!);
+    cursors[pick]! += 1;
+  }
+
+  return merged;
+}
+
 export function getSessionAgentKey(session: Pick<SessionHead, "slug">): string {
   return session.slug.split("/")[0]?.toLowerCase() || "unknown";
 }

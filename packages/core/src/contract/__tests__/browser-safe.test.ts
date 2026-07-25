@@ -34,6 +34,7 @@ describe("contract browser-safety", () => {
         "getProjectIdentityKey",
         "getSessionAgentKey",
         "getSessionRouteKey",
+        "mergeSortedSessions",
         "sortSessionsByActivity",
         "updateSessionIndex",
       ].sort(),

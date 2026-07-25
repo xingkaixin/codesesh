@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   createRegisteredAgents,
+  mergeSortedSessions,
   scanSessions,
   sortSessions,
   type BaseAgent,
@@ -229,8 +230,12 @@ export class LiveScanStore {
     }, NEW_SESSION_EVENT_WINDOW_MS);
   }
 
+  /**
+   * Every byAgent shard is kept sorted by its two writers (applySessionsChanged
+   * and applyScanResult), so combining them is a merge, not a sort.
+   */
   private rebuildSessions(): void {
-    this.sessions = sortSessions(Object.values(this.byAgent).flat());
+    this.sessions = mergeSortedSessions(Object.values(this.byAgent));
   }
 
   private getSmartTagWorkerUrl(): URL | null {
