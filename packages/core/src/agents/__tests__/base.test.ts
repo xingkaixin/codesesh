@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DatabaseSessionSource, FileSystemSessionSource } from "../base.js";
+import { DatabaseSessionSource, diffSessionSources, FileSystemSessionSource } from "../base.js";
 import type { AgentScanOptions, SessionCacheMeta, SessionSourceRef } from "../base.js";
 import type { SessionData, SessionHead } from "../../types/index.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
@@ -144,6 +144,77 @@ describe("FileSystemSessionSource.scan", () => {
     } finally {
       setCoreDiagnostics(null);
     }
+  });
+});
+
+describe("diffSessionSources", () => {
+  function ref(
+    id: string,
+    fingerprint = "fp-1",
+    sourcePath = `/tmp/${id}.jsonl`,
+  ): SessionSourceRef {
+    return { sessionId: id, sourcePath, fingerprint };
+  }
+
+  function meta(id: string, overrides: Partial<SessionCacheMeta> = {}): SessionCacheMeta {
+    return { id, sourcePath: `/tmp/${id}.jsonl`, sourceFingerprint: "fp-1", ...overrides };
+  }
+
+  it("reads cached meta from a Map and from a plain object identically", () => {
+    const refs = [ref("a"), ref("b", "fp-2")];
+    const cached = [makeSession("a"), makeSession("b")];
+    const entries = { a: meta("a"), b: meta("b") };
+
+    const fromObject = diffSessionSources(refs, cached, entries);
+    const fromMap = diffSessionSources(refs, cached, new Map(Object.entries(entries)));
+
+    expect(fromObject).toEqual({ changedIds: ["b"], removedIds: [] });
+    expect(fromMap).toEqual(fromObject);
+  });
+
+  it("treats a differing fingerprint as changed even when the mtime is unchanged", () => {
+    // Agents put their head-index and parser versions in the fingerprint so a
+    // version bump invalidates cached heads; matching mtimes must not override it.
+    const diff = diffSessionSources(
+      [ref("a", '["head-v1","parser-v2",42,7,null]')],
+      [makeSession("a")],
+      {
+        a: meta("a", { sourceFingerprint: '["head-v1","parser-v1",42,7,null]', sourceMtimeMs: 42 }),
+      },
+    );
+
+    expect(diff).toEqual({ changedIds: ["a"], removedIds: [] });
+  });
+
+  it("treats a ref with no cached session as changed even when its meta matches", () => {
+    const diff = diffSessionSources([ref("a")], [], { a: meta("a") });
+    expect(diff).toEqual({ changedIds: ["a"], removedIds: [] });
+  });
+
+  it("separates removed sessions from changed ones", () => {
+    const diff = diffSessionSources([ref("a")], [makeSession("a"), makeSession("gone")], {
+      a: meta("a"),
+      gone: meta("gone"),
+    });
+
+    expect(diff).toEqual({ changedIds: [], removedIds: ["gone"] });
+  });
+
+  it("keeps sessions whose mtime falls outside the scan window", () => {
+    const cached = [makeSession("recent"), makeSession("old"), makeSession("undated")];
+    const entries = {
+      recent: meta("recent", { sourceMtimeMs: 500 }),
+      old: meta("old", { sourceMtimeMs: 10 }),
+      undated: meta("undated"),
+    };
+
+    const windowed = diffSessionSources([], cached, entries, { from: 100 });
+    const unwindowed = diffSessionSources([], cached, entries);
+
+    // `old` was never enumerated this pass, so its absence proves nothing.
+    // `undated` has no recorded mtime, so the window cannot exonerate it.
+    expect(windowed.removedIds).toEqual(["recent", "undated"]);
+    expect(unwindowed.removedIds).toEqual(["recent", "old", "undated"]);
   });
 });
 

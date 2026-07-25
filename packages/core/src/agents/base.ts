@@ -63,6 +63,92 @@ export interface SessionSourceRef {
   fingerprint: string;
 }
 
+/** What a source enumeration says needs re-parsing and what disappeared. */
+export interface SessionSourceDiff {
+  changedIds: string[];
+  removedIds: string[];
+}
+
+/**
+ * Cached meta reaches this comparison as a live Map on the main thread and as a
+ * plain object over the worker's structured-clone boundary.
+ */
+export type CachedMetaLookup =
+  | ReadonlyMap<string, SessionCacheMeta>
+  | Record<string, SessionCacheMeta>;
+
+function readCachedMeta(meta: CachedMetaLookup, sessionId: string): SessionCacheMeta | undefined {
+  if (meta instanceof Map) return meta.get(sessionId);
+  return (meta as Record<string, SessionCacheMeta>)[sessionId];
+}
+
+/**
+ * Fingerprints compare by exact string equality. Agents encode their head-index
+ * and parser versions into the fingerprint precisely so that bumping either one
+ * invalidates every cached head — a tolerant comparison would defeat that.
+ */
+function fingerprintMatches(ref: SessionSourceRef, cached: SessionCacheMeta | undefined): boolean {
+  return (
+    typeof cached?.sourceFingerprint === "string" && cached.sourceFingerprint === ref.fingerprint
+  );
+}
+
+/**
+ * A cached session whose recorded mtime falls outside the current scan window was
+ * never enumerated this pass, so its absence from the refs doesn't mean it was
+ * deleted on disk.
+ *
+ * A session with no recorded mtime is treated as enumerated, i.e. removable.
+ * That is load-bearing for agents whose meta omits `sourceMtimeMs` (kimi) — see
+ * CS-100 for whether that default should be inverted.
+ */
+function wasEnumeratedThisPass(
+  cached: SessionCacheMeta | undefined,
+  options: AgentScanOptions | undefined,
+): boolean {
+  if (options?.from == null && options?.to == null) return true;
+  const mtimeMs = cached?.sourceMtimeMs;
+  return typeof mtimeMs !== "number" || matchesScanWindow(mtimeMs, options);
+}
+
+/**
+ * Single owner of "which sources changed" for file-backed agents. The main
+ * thread reaches it through FileSystemSessionSource.checkForChanges; the
+ * scan-refresh worker calls it directly, because it holds cached meta received
+ * over workerData rather than a live agent metaMap.
+ */
+export function diffSessionSources(
+  refs: SessionSourceRef[],
+  cachedSessions: SessionHead[],
+  cachedMeta: CachedMetaLookup,
+  options?: AgentScanOptions,
+): SessionSourceDiff {
+  const cachedIds = new Set(cachedSessions.map((session) => session.id));
+  const enumeratedIds = new Set<string>();
+  const changedIds: string[] = [];
+
+  for (const ref of refs) {
+    enumeratedIds.add(ref.sessionId);
+    const meta = readCachedMeta(cachedMeta, ref.sessionId);
+    // A ref with no cached session has to be parsed even when its meta matches:
+    // the caller's session list is what the refresh merges into.
+    const unchanged =
+      cachedIds.has(ref.sessionId) &&
+      meta?.sourcePath === ref.sourcePath &&
+      fingerprintMatches(ref, meta);
+    if (!unchanged) changedIds.push(ref.sessionId);
+  }
+
+  const removedIds: string[] = [];
+  for (const session of cachedSessions) {
+    if (enumeratedIds.has(session.id)) continue;
+    if (!wasEnumeratedThisPass(readCachedMeta(cachedMeta, session.id), options)) continue;
+    removedIds.push(session.id);
+  }
+
+  return { changedIds, removedIds };
+}
+
 export abstract class BaseAgent {
   abstract readonly name: string;
   abstract readonly displayName: string;
@@ -170,30 +256,17 @@ export abstract class FileSystemSessionSource<
   }
 
   /**
-   * 变更检测：枚举当前源 → 与缓存 metaMap 的指纹/路径比对。
+   * 变更检测：枚举当前源 → 交给 diffSessionSources 比对。
    * 新增、变更、删除三类统一产出 changedIds。
    */
   checkForChanges(_sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
     const currentRefs = this.listSessionSources();
-    const currentIds = new Set(currentRefs.map((ref) => ref.sessionId));
-    const changedIds = new Set<string>();
+    const diff = diffSessionSources(currentRefs, cachedSessions, this.sessionMetaMap);
+    const changedIds = [...new Set([...diff.changedIds, ...diff.removedIds])];
 
-    for (const ref of currentRefs) {
-      const meta = this.sessionMetaMap.get(ref.sessionId);
-      const samePath = meta?.sourcePath === ref.sourcePath;
-      const sameFingerprint =
-        typeof meta?.sourceFingerprint === "string" && meta.sourceFingerprint === ref.fingerprint;
-      if (!samePath || !sameFingerprint) changedIds.add(ref.sessionId);
-    }
-
-    for (const session of cachedSessions) {
-      if (!currentIds.has(session.id)) changedIds.add(session.id);
-    }
-
-    const changedIdList = [...changedIds];
     return {
-      hasChanges: changedIdList.length > 0,
-      changedIds: changedIdList,
+      hasChanges: changedIds.length > 0,
+      changedIds,
       timestamp: Date.now(),
       refs: currentRefs,
     };
