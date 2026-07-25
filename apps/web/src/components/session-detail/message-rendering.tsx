@@ -9,7 +9,7 @@ import {
   MessageCircleX,
   UserRound,
   XCircle,
-} from "lucide-react";
+} from "../ui/icons";
 import type { AgentInfo, Message, MessagePart } from "../../lib/api";
 import { formatMessageTime } from "../../lib/format";
 import { AgentIcon } from "../AgentIcon";

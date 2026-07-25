@@ -1,4 +1,4 @@
-import { Check, Circle, CircleDashed, X } from "lucide-react";
+import { Check, Circle, CircleDashed, X } from "../ui/icons";
 import type { TaskListItem } from "./types";
 
 const STATUS_META = {

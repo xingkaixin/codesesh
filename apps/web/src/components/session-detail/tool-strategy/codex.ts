@@ -46,7 +46,7 @@ import {
   SquareTerminal,
   Target,
   Users,
-} from "lucide-react";
+} from "../../ui/icons";
 
 function humanizeToolName(value: string) {
   return value.replace(/^_+/, "").replaceAll("_", " ");

@@ -1,5 +1,5 @@
 import { Menu } from "@base-ui/react/menu";
-import { MoreHorizontal, Pencil, Star } from "lucide-react";
+import { MoreHorizontal, Pencil, Star } from "./ui/icons";
 import { useRef } from "react";
 
 export function SessionActionsMenu({

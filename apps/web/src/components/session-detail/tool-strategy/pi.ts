@@ -29,7 +29,7 @@ import {
   Image as ImageIcon,
   ListTodo,
   SquareTerminal,
-} from "lucide-react";
+} from "../../ui/icons";
 
 export function getPiTodoTaskFromDetails(state: NormalizedToolState) {
   const input = toRecord(state.inputValue);

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
-import { Check, Funnel, Minus } from "lucide-react";
+import { Check, Funnel, Minus } from "../ui/icons";
 import type { SessionDetailToc, TocFilterId } from "./toc";
 import type { FileChangeSummary } from "./file-change";
 import { FileChangeTracker } from "./file-change-tracker";
