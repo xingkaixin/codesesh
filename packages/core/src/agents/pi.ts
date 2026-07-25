@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync, type Stats } from "node:fs";
+import { existsSync, readdirSync, statSync, type Stats } from "node:fs";
 import { basename, join } from "node:path";
 import {
   FileSystemSessionSource,
@@ -15,7 +15,7 @@ import type {
 } from "./base.js";
 import type { Message, MessagePart, SessionData, SessionHead } from "../types/index.js";
 import { firstExisting, resolveProviderRoots } from "../discovery/paths.js";
-import { parseJsonlLines } from "../utils/jsonl.js";
+import { readJsonlFile } from "../utils/jsonl.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import { asNumber, asRecord, asString, narrowField } from "../utils/narrow.js";
 import { cleanInternalText } from "../utils/session-normalization.js";
@@ -283,13 +283,24 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
   }
 
   private parsePiFile(filePath: string): ParsedPiFile {
-    const records = Array.from(parseJsonlLines(readFileSync(filePath, "utf-8")));
-    if (records.length === 0) throw new Error("empty file");
+    // Single streaming pass: the file is never held as a string, and header
+    // selection happens inline instead of scanning a materialized record array.
+    let header: Record<string, unknown> | null = null;
+    let recordCount = 0;
+    const entries: Record<string, unknown>[] = [];
 
-    const header = records.find((record) => record["type"] === "session");
+    for (const record of readJsonlFile(filePath)) {
+      recordCount += 1;
+      if (record["type"] === "session") {
+        header ??= record;
+        continue;
+      }
+      entries.push(record);
+    }
+
+    if (recordCount === 0) throw new Error("empty file");
     if (!header) throw new Error("missing session header");
 
-    const entries = records.filter((record) => record["type"] !== "session");
     const pathEntries = buildCurrentPathEntries(entries);
     if (pathEntries.length === 0) throw new Error("empty session tree");
 
