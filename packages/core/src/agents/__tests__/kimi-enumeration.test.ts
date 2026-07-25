@@ -1,15 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-// readFileSync is wrapped (call-through) so the suite can assert *which* files the
-// enumeration path touches. Everything else stays real — the fixtures are real dirs.
+// Both file-read entry points are wrapped (call-through) so the suite can assert
+// *which* files a code path opens: readFileSync for whole-file loads, openSync for
+// the streaming reader. Everything else stays real — the fixtures are real dirs.
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
-  return { ...actual, readFileSync: vi.fn(actual.readFileSync) };
+  return {
+    ...actual,
+    readFileSync: vi.fn(actual.readFileSync),
+    openSync: vi.fn(actual.openSync),
+  };
 });
 
 import {
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   rmSync,
   statSync,
@@ -24,6 +30,7 @@ const PROJECT_HASH = "project-hash";
 const PROJECT_DIR = "/tmp/kimi-project";
 
 const mockedReadFileSync = vi.mocked(readFileSync);
+const mockedOpenSync = vi.mocked(openSync);
 
 let tempDirs: string[] = [];
 
@@ -51,17 +58,28 @@ function createSessionDir(basePath: string, id: string, customTitle: string): st
   return sessionDir;
 }
 
-function readPathsSince(callIndexFrom: number): string[] {
-  return mockedReadFileSync.mock.calls
-    .slice(callIndexFrom)
+/** Every `.jsonl` path opened for reading since the counters were snapshotted. */
+function transcriptReadsSince(marks: { read: number; open: number }): string[] {
+  return [
+    ...mockedReadFileSync.mock.calls.slice(marks.read),
+    ...mockedOpenSync.mock.calls.slice(marks.open),
+  ]
     .map(([path]) => String(path))
     .filter((path) => path.endsWith(".jsonl"));
+}
+
+function markReads(): { read: number; open: number } {
+  return {
+    read: mockedReadFileSync.mock.calls.length,
+    open: mockedOpenSync.mock.calls.length,
+  };
 }
 
 afterEach(() => {
   for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
   tempDirs = [];
   mockedReadFileSync.mockClear();
+  mockedOpenSync.mockClear();
 });
 
 describe("KimiAgent source enumeration", () => {
@@ -72,11 +90,11 @@ describe("KimiAgent source enumeration", () => {
     createSessionDir(basePath, "session-b", "Session B");
 
     const agent = createAgent(basePath);
-    const before = mockedReadFileSync.mock.calls.length;
+    const marks = markReads();
     const refs = agent.listSessionSources();
 
     expect(refs.map((ref) => ref.sessionId).sort()).toEqual(["session-a", "session-b"]);
-    expect(readPathsSince(before)).toEqual([]);
+    expect(transcriptReadsSince(marks)).toEqual([]);
   });
 
   it("skips the transcript title fallback when state.json carries a title", () => {
@@ -86,11 +104,11 @@ describe("KimiAgent source enumeration", () => {
 
     const agent = createAgent(basePath);
     const sourcePath = join(basePath, PROJECT_HASH, "titled");
-    const before = mockedReadFileSync.mock.calls.length;
+    const marks = markReads();
     const head = agent.scanSessionSource(sourcePath);
 
     expect(head?.title).toBe("Explicit title");
-    expect(readPathsSince(before)).not.toContain(join(sourcePath, "context.jsonl"));
+    expect(transcriptReadsSince(marks)).not.toContain(join(sourcePath, "context.jsonl"));
   });
 
   it("still falls back to the first user message when no explicit title exists", () => {
@@ -125,5 +143,69 @@ describe("KimiAgent source enumeration", () => {
 
     expect(statSync(contextPath).mtimeMs).toBe(pinned.getTime());
     expect(agent.listSessionSources()[0]?.fingerprint).toBe(before);
+  });
+});
+
+describe("KimiAgent stats extraction", () => {
+  function createWireOnlySession(basePath: string, id: string, title: string): string {
+    const sessionDir = join(basePath, PROJECT_HASH, id);
+    mkdirSync(sessionDir, { recursive: true });
+    writeFileSync(
+      join(sessionDir, "state.json"),
+      JSON.stringify({ custom_title: title, wire_mtime: 1_000 }),
+    );
+    writeFileSync(
+      join(sessionDir, "wire.jsonl"),
+      [
+        JSON.stringify({
+          timestamp: 1,
+          message: {
+            type: "ContentPart",
+            payload: { type: "text", text: "hi" },
+            usage: { input_tokens: 12, output_tokens: 5 },
+          },
+        }),
+        JSON.stringify({ role: "_usage", token_count: 999 }),
+        "",
+      ].join("\n"),
+    );
+    return sessionDir;
+  }
+
+  it("walks wire.jsonl once when there is no context.jsonl", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-stats-"));
+    tempDirs.push(basePath);
+    const sourcePath = createWireOnlySession(basePath, "wire-only", "Wire only");
+
+    const agent = createAgent(basePath);
+    const marks = markReads();
+    const head = agent.scanSessionSource(sourcePath);
+
+    expect(head?.stats).toMatchObject({
+      total_input_tokens: 12,
+      total_output_tokens: 5,
+      total_tokens: 999,
+    });
+    expect(transcriptReadsSince(marks)).toEqual([join(sourcePath, "wire.jsonl")]);
+  });
+
+  it("reads the usage total from context.jsonl when it exists", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-stats-"));
+    tempDirs.push(basePath);
+    const sourcePath = createWireOnlySession(basePath, "with-context", "With context");
+    writeFileSync(
+      join(sourcePath, "context.jsonl"),
+      JSON.stringify({ role: "_usage", token_count: 42 }) + "\n",
+    );
+
+    const agent = createAgent(basePath);
+    const head = agent.scanSessionSource(sourcePath);
+
+    // context.jsonl wins over the _usage record sitting in wire.jsonl.
+    expect(head?.stats).toMatchObject({
+      total_input_tokens: 12,
+      total_output_tokens: 5,
+      total_tokens: 42,
+    });
   });
 });

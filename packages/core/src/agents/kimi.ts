@@ -16,7 +16,7 @@ import type {
 } from "./base.js";
 import type { SessionHead, SessionData, MessagePart } from "../types/index.js";
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
-import { parseJsonlLines } from "../utils/jsonl.js";
+import { readJsonlFile } from "../utils/jsonl.js";
 import { normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { isInternalEventType } from "../utils/parse-cleanup.js";
 import { cleanInternalText } from "../utils/session-normalization.js";
@@ -146,8 +146,7 @@ function kimiContentText(content: unknown): string {
 
 function extractFirstUserTitle(contextFile: string | null, wireFile: string | null): string | null {
   if (contextFile && existsSync(contextFile)) {
-    const content = readFileSync(contextFile, "utf-8");
-    for (const record of parseJsonlLines(content)) {
+    for (const record of readJsonlFile(contextFile)) {
       if (record.role !== "user") continue;
       const title = normalizeTitleText(kimiContentText(record.content));
       if (title) return title;
@@ -155,8 +154,7 @@ function extractFirstUserTitle(contextFile: string | null, wireFile: string | nu
   }
 
   if (wireFile && existsSync(wireFile)) {
-    const content = readFileSync(wireFile, "utf-8");
-    for (const record of parseJsonlLines(content)) {
+    for (const record of readJsonlFile(wireFile)) {
       const message = asRecord(record.message) ?? {};
       if (message.type !== "TurnBegin") continue;
       const payload = asRecord(message.payload) ?? {};
@@ -368,13 +366,12 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
   private getSessionDataFromContext(meta: SessionMeta): SessionData {
     if (!meta.contextFile) throw new Error("context.jsonl is missing");
 
-    const content = readFileSync(meta.contextFile, "utf-8");
     const builder = new TranscriptBuilder();
     const ignoredToolCallIds = new Set<string>();
 
     let seq = 0;
     const fallbackTs = meta.createdAt;
-    for (const record of parseJsonlLines(content)) {
+    for (const record of readJsonlFile(meta.contextFile)) {
       seq++;
       try {
         const role = String(record.role ?? "");
@@ -434,7 +431,6 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     const wirePath = meta.wireFile ?? join(meta.sourcePath, "wire.jsonl");
     if (!existsSync(wirePath)) throw new Error("wire.jsonl is missing");
 
-    const content = readFileSync(wirePath, "utf-8");
     const builder = new TranscriptBuilder();
     const ignoredToolCallIds = new Set<string>();
     const openToolArgumentBuffer = new Map<string, string>();
@@ -442,7 +438,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     let openToolCallId: string | null = null;
     let seq = 0;
 
-    for (const record of parseJsonlLines(content)) {
+    for (const record of readJsonlFile(wirePath)) {
       seq++;
       try {
         const message = asRecord(record.message) ?? {};
@@ -712,6 +708,17 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     return builder.resolveToolCall(callId, { output: [...outputParts] });
   }
 
+  /** Applies a `_usage` record's running total; other records are ignored. */
+  private applyUsageTotal(record: Record<string, unknown>, stats: SessionData["stats"]): void {
+    if (record.role !== "_usage") return;
+    const tokenCount = asNumber(record.token_count);
+    if (tokenCount === undefined) {
+      reportFieldMismatch("kimi", "usage.token_count");
+      return;
+    }
+    stats.total_tokens = tokenCount;
+  }
+
   private extractStats(sessionDir: string): SessionData["stats"] {
     let totalCost = 0;
     const stats: SessionData["stats"] = {
@@ -725,13 +732,16 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     const wirePath = join(sessionDir, "wire.jsonl");
     if (!existsSync(wirePath)) return stats;
 
+    // The `_usage` running total is read from context.jsonl when it exists.
+    // Otherwise it lives in wire.jsonl — the same file this pass already walks,
+    // so fold it in here rather than reading wire.jsonl a second time.
+    const contextPath = join(sessionDir, "context.jsonl");
+    const hasContext = existsSync(contextPath);
+
     try {
-      const content = readFileSync(wirePath, "utf-8");
-      for (const line of content.split("\n").filter((l) => l.trim())) {
-        try {
-          const data = asRecord(JSON.parse(line));
-          const tokenUsage = asRecord(asRecord(data?.message)?.usage);
-          if (!tokenUsage) continue;
+      for (const record of readJsonlFile(wirePath)) {
+        const tokenUsage = asRecord(asRecord(record.message)?.usage);
+        if (tokenUsage) {
           const inputTokens = extractTokenField(tokenUsage, "input_tokens");
           const outputTokens = extractTokenField(tokenUsage, "output_tokens");
           stats.total_input_tokens += inputTokens;
@@ -741,37 +751,19 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
             output: outputTokens,
           });
           if (cost !== null) totalCost += cost;
-        } catch {
-          // skip
         }
+        if (!hasContext) this.applyUsageTotal(record, stats);
       }
     } catch {
-      // skip
+      // skip unreadable wire logs
     }
 
-    // Extract total tokens from context or wire
-    const contextPath = join(sessionDir, "context.jsonl");
-    const rawPath = existsSync(contextPath) ? contextPath : wirePath;
-    if (!existsSync(rawPath)) return stats;
-
-    try {
-      const rawContent = readFileSync(rawPath, "utf-8");
-      for (const line of rawContent.split("\n").filter((l) => l.trim())) {
-        try {
-          const data = asRecord(JSON.parse(line));
-          if (data?.role !== "_usage") continue;
-          const tokenCount = asNumber(data.token_count);
-          if (tokenCount === undefined) {
-            reportFieldMismatch("kimi", "usage.token_count");
-            continue;
-          }
-          stats.total_tokens = tokenCount;
-        } catch {
-          // skip
-        }
+    if (hasContext) {
+      try {
+        for (const record of readJsonlFile(contextPath)) this.applyUsageTotal(record, stats);
+      } catch {
+        // skip unreadable context logs
       }
-    } catch {
-      // skip
     }
 
     stats.total_cost = Number(totalCost.toFixed(8));
