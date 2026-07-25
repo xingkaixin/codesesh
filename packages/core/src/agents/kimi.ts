@@ -46,15 +46,23 @@ function mapToolTitle(toolName: string): string {
   return KIMI_TOOL_TITLE_MAP[toolName] ?? toolName;
 }
 
-interface SessionMeta extends SessionCacheMeta {
+/**
+ * 会话源的轻量视图：只需要目录遍历 + 小 JSON 文件（state/metadata）即可得出，
+ * 不触碰 transcript。枚举路径（listSessionSources）每次刷新都会跑，只用这一层。
+ */
+interface SessionSource {
   id: string;
-  title: string;
   sourcePath: string;
   cwd: string;
   contextFile: string | null;
   wireFile: string | null;
   createdAt: number;
   metaFile: string;
+  explicitTitle: string;
+}
+
+interface SessionMeta extends SessionCacheMeta, SessionSource {
+  title: string;
 }
 
 /** Reads state/metadata `wire_mtime`; reports drift when the field is present but not a number. */
@@ -241,45 +249,42 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     return dirs;
   }
 
-  /** Parse session directory, preferring state.json over metadata.json */
-  private parseSessionDir(sessionDir: string): SessionMeta | null {
-    return getParsedSession(this.parseSessionDirResult(sessionDir));
-  }
-
-  private parseSessionDirResult(sessionDir: string): ParseSessionResult<SessionMeta> {
+  /**
+   * 解析会话源，优先 state.json 而非 metadata.json。
+   * 只读小 JSON 文件与 statSync，不触碰 transcript——枚举路径依赖这一点。
+   */
+  private resolveSessionSourceResult(sessionDir: string): ParseSessionResult<SessionSource> {
     try {
       const sessionId = basename(sessionDir);
       const projectHash = basename(dirname(sessionDir));
       const contextFile = join(sessionDir, "context.jsonl");
       const wireFile = join(sessionDir, "wire.jsonl");
 
-      if (!existsSync(contextFile) && !existsSync(wireFile)) {
+      const existingContextFile = existsSync(contextFile) ? contextFile : null;
+      const existingWireFile = existsSync(wireFile) ? wireFile : null;
+      if (!existingContextFile && !existingWireFile) {
         return skippedSession("missing transcript");
       }
 
       const statePath = join(sessionDir, "state.json");
       const metaPath = join(sessionDir, "metadata.json");
 
-      let title = "";
+      let explicitTitle = "";
       let wireMtime: number | null = null;
       let metaFile = "";
 
       if (existsSync(statePath)) {
         const state = asRecord(JSON.parse(readFileSync(statePath, "utf-8"))) ?? {};
-        title = String(state.custom_title ?? "");
+        explicitTitle = String(state.custom_title ?? "");
         wireMtime = readWireMtime(state);
         metaFile = statePath;
       } else if (existsSync(metaPath)) {
         const meta = asRecord(JSON.parse(readFileSync(metaPath, "utf-8"))) ?? {};
-        title = String(meta.title ?? "");
+        explicitTitle = String(meta.title ?? "");
         wireMtime = readWireMtime(meta);
         metaFile = metaPath;
       }
 
-      const cwd = this.projectMap.get(projectHash) || "";
-      const existingContextFile = existsSync(contextFile) ? contextFile : null;
-      const existingWireFile = existsSync(wireFile) ? wireFile : null;
-      const messageTitle = extractFirstUserTitle(existingContextFile, existingWireFile);
       const createdAt =
         wireMtime !== null
           ? wireMtime * 1000
@@ -289,29 +294,45 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
 
       return parsedSession({
         id: sessionId,
-        title: resolveSessionTitle(title, messageTitle, null),
         sourcePath: sessionDir,
-        cwd,
+        cwd: this.projectMap.get(projectHash) || "",
         contextFile: existingContextFile,
         wireFile: existingWireFile,
         createdAt,
         metaFile,
+        explicitTitle,
       });
     } catch {
       return skippedSession("malformed metadata");
     }
   }
 
+  /**
+   * 在会话源之上补齐 title。仅当 state/metadata 里没有可用标题时才回退去读
+   * transcript 找首条用户消息，所以标题解析的成本只在真正需要重解析时付出。
+   */
+  private parseSessionDirResult(sessionDir: string): ParseSessionResult<SessionMeta> {
+    const result = this.resolveSessionSourceResult(sessionDir);
+    if (result.status !== "parsed") return result;
+
+    const source = result.data;
+    const title =
+      normalizeTitleText(source.explicitTitle) ??
+      resolveSessionTitle(null, extractFirstUserTitle(source.contextFile, source.wireFile), null);
+
+    return parsedSession({ ...source, title });
+  }
+
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {
     if (!this.basePath) return [];
     const refs: SessionSourceRef[] = [];
     for (const dir of this.listSessionDirs()) {
-      const meta = getParsedSession(this.parseSessionDirResult(dir));
-      if (!meta || !matchesScanWindow(meta.createdAt, options)) continue;
+      const source = getParsedSession(this.resolveSessionSourceResult(dir));
+      if (!source || !matchesScanWindow(source.createdAt, options)) continue;
       refs.push({
-        sessionId: meta.id,
-        sourcePath: meta.sourcePath,
-        fingerprint: this.sourceFingerprint(meta),
+        sessionId: source.id,
+        sourcePath: source.sourcePath,
+        fingerprint: this.sourceFingerprint(source),
       });
     }
     return refs;
@@ -570,7 +591,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
 
   // --- Helpers ---
 
-  private sourceFingerprint(meta: SessionMeta): string {
+  private sourceFingerprint(meta: Pick<SessionSource, "metaFile" | "contextFile" | "wireFile">) {
     const fileMtime = (path: string | null) => {
       if (!path) return null;
       try {
