@@ -1,4 +1,4 @@
-import type { BaseAgent, SessionHead, SessionSourceRef } from "@codesesh/core";
+import type { BaseAgent, SessionCacheMeta, SessionHead, SessionSourceRef } from "@codesesh/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
@@ -28,6 +28,9 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     createRegisteredAgents: mocks.createRegisteredAgents,
     ensureSessionTagsSync: mocks.ensureSessionTagsSync,
     FileSystemSessionSource: mocks.FileSystemSessionSource,
+    buildAgentCacheMeta: actual.buildAgentCacheMeta,
+    computeSessionDiff: actual.computeSessionDiff,
+    sessionSignature: actual.sessionSignature,
     // The change decision is shared with FileSystemSessionSource.checkForChanges;
     // stubbing it would stop this suite from covering the wiring it exists to test.
     diffSessionSources: actual.diffSessionSources,
@@ -55,6 +58,7 @@ function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionH
 }
 
 function makeAgent(overrides: Record<string, unknown> = {}) {
+  let sessionMetaMap = new Map<string, SessionCacheMeta>();
   return Object.assign(new mocks.FileSystemSessionSource(), {
     name: "codex",
     isAvailable: vi.fn(() => true),
@@ -63,8 +67,10 @@ function makeAgent(overrides: Record<string, unknown> = {}) {
     listSessionSources: vi.fn(() => []),
     scanSessionSource: vi.fn(() => null),
     getSessionData: vi.fn(),
-    getSessionMetaMap: vi.fn(() => new Map()),
-    setSessionMetaMap: vi.fn(),
+    getSessionMetaMap: vi.fn(() => sessionMetaMap),
+    setSessionMetaMap: vi.fn((next: Map<string, SessionCacheMeta>) => {
+      sessionMetaMap = new Map(next);
+    }),
     ...overrides,
   });
 }
@@ -113,7 +119,13 @@ describe("scan refresh worker entry", () => {
 
     expect(agent.setSessionMetaMap).toHaveBeenCalledWith(new Map());
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: "done", sessions: [], meta: {} }),
+      expect.objectContaining({
+        type: "done",
+        changes: [],
+        removedSessionIds: [],
+        meta: {},
+        removedMetaIds: [],
+      }),
     );
   });
 
@@ -141,8 +153,58 @@ describe("scan refresh worker entry", () => {
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({
         type: "done",
-        sessions: [session],
+        changes: [{ session, sortIndex: 0 }],
+        removedSessionIds: [],
         meta: { fresh: { id: "fresh", sourcePath: "/fresh" } },
+        removedMetaIds: [],
+      }),
+    );
+  });
+
+  it("returns a head when only its metadata changes", async () => {
+    const session = makeSession("same");
+    let meta = new Map<string, SessionCacheMeta>();
+    const agent = makeAgent({
+      scan: vi.fn(() => {
+        meta.set("same", {
+          id: "same",
+          sourcePath: "/same",
+          sourceFingerprint: "new",
+        });
+        return [session];
+      }),
+      getSessionMetaMap: vi.fn(() => meta),
+      setSessionMetaMap: vi.fn((next: Map<string, SessionCacheMeta>) => {
+        meta = new Map(next);
+      }),
+    });
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    setWorkerData({
+      previousSessions: [session],
+      meta: {
+        same: {
+          id: "same",
+          sourcePath: "/same",
+          sourceFingerprint: "old",
+        },
+      },
+    });
+
+    await runWorker();
+
+    expect(mocks.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: "done",
+        changes: [{ session, sortIndex: 0 }],
+        removedSessionIds: [],
+        meta: {
+          same: {
+            id: "same",
+            sourcePath: "/same",
+            sourceFingerprint: "new",
+          },
+        },
+        removedMetaIds: [],
       }),
     );
   });
@@ -159,7 +221,48 @@ describe("scan refresh worker entry", () => {
 
     expect(incrementalScan).toHaveBeenCalledWith([previous], ["previous"]);
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: "done", sessions: [updated] }),
+      expect.objectContaining({
+        type: "done",
+        changes: [{ session: updated, sortIndex: 0 }],
+        removedSessionIds: ["previous"],
+        removedMetaIds: [],
+      }),
+    );
+  });
+
+  it("returns an empty delta when source heads and metadata are unchanged", async () => {
+    const session = makeSession("unchanged");
+    const scanSessionSource = vi.fn();
+    const agent = makeAgent({
+      listSessionSources: vi.fn(() => [
+        { sessionId: "unchanged", sourcePath: "/unchanged", fingerprint: "same" },
+      ]),
+      scanSessionSource,
+    });
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    setWorkerData({
+      sourceSync: true,
+      previousSessions: [session],
+      meta: {
+        unchanged: {
+          id: "unchanged",
+          sourcePath: "/unchanged",
+          sourceFingerprint: "same",
+        },
+      },
+    });
+
+    await runWorker();
+
+    expect(scanSessionSource).not.toHaveBeenCalled();
+    expect(mocks.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: "done",
+        changes: [],
+        removedSessionIds: [],
+        meta: {},
+        removedMetaIds: [],
+      }),
     );
   });
 
@@ -225,8 +328,9 @@ describe("scan refresh worker entry", () => {
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({
         type: "done",
-        sessions: [unchanged, updated, outsideWindow],
-        changedIds: ["changed", "moved", "missing", "removed"],
+        changes: [{ session: updated, sortIndex: 1 }],
+        removedSessionIds: ["removed", "moved"],
+        removedMetaIds: ["removed", "moved"],
       }),
     );
   });
@@ -261,7 +365,12 @@ describe("scan refresh worker entry", () => {
 
     expect(scanSessionSource).toHaveBeenCalledWith("/legacy");
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: "done", sessions: [reparsed], changedIds: ["legacy"] }),
+      expect.objectContaining({
+        type: "done",
+        changes: [{ session: reparsed, sortIndex: 0 }],
+        removedSessionIds: [],
+        removedMetaIds: [],
+      }),
     );
   });
 });

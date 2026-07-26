@@ -1,16 +1,21 @@
 import "./diagnostics-bridge.js";
 import { parentPort, workerData } from "node:worker_threads";
+import { isDeepStrictEqual } from "node:util";
 import {
   attachMissingProjectIdentities,
+  buildAgentCacheMeta,
+  computeSessionDiff,
   createRegisteredAgents,
   diffSessionSources,
   ensureSessionTagsSync,
   FileSystemSessionSource,
+  sessionSignature,
   type AgentScanProgress,
   type BaseAgent,
   type ScanOptions,
   type SessionCacheMeta,
   type SessionHead,
+  type SessionHeadChange,
 } from "@codesesh/core";
 
 export type ScanRefreshWorkerMessage =
@@ -22,9 +27,10 @@ export type ScanRefreshWorkerMessage =
   | {
       type: "done";
       requestId: number;
-      sessions: SessionHead[];
+      changes: SessionHeadChange[];
+      removedSessionIds: string[];
       meta: Record<string, SessionCacheMeta>;
-      changedIds?: string[];
+      removedMetaIds: string[];
       durationMs: number;
     }
   | {
@@ -45,15 +51,24 @@ export interface ScanRefreshWorkerRequest {
   meta: Record<string, SessionCacheMeta>;
 }
 
-function serializeMeta(agent: {
-  getSessionMetaMap: () => Map<string, SessionCacheMeta>;
-}): Record<string, SessionCacheMeta> {
-  const metaMap = agent.getSessionMetaMap();
-  const meta: Record<string, SessionCacheMeta> = {};
-  for (const [id, data] of metaMap.entries()) {
-    meta[id] = { id, ...(data as Record<string, unknown>) } as SessionCacheMeta;
+interface CacheMetaDiff {
+  changes: Record<string, SessionCacheMeta>;
+  removedIds: string[];
+}
+
+function computeCacheMetaDiff(
+  previous: Record<string, SessionCacheMeta>,
+  next: Record<string, SessionCacheMeta>,
+): CacheMetaDiff {
+  const changes: Record<string, SessionCacheMeta> = {};
+  const removedIds: string[] = [];
+  for (const [id, meta] of Object.entries(next)) {
+    if (!isDeepStrictEqual(previous[id], meta)) changes[id] = meta;
   }
-  return meta;
+  for (const id of Object.keys(previous)) {
+    if (!Object.hasOwn(next, id)) removedIds.push(id);
+  }
+  return { changes, removedIds };
 }
 
 /**
@@ -162,13 +177,22 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
   }
 
   sessions = finalizeSessions(agent, sessions);
+  const nextMeta = buildAgentCacheMeta(agent, new Set(sessions.map((session) => session.id)));
+  const metaDiff = computeCacheMetaDiff(data.meta, nextMeta);
+  const diff = computeSessionDiff(
+    data.previousSessions,
+    sessions,
+    [...(changedIds ?? []), ...Object.keys(metaDiff.changes), ...metaDiff.removedIds],
+    sessionSignature,
+  );
 
   parentPort?.postMessage({
     type: "done",
     requestId: data.requestId,
-    sessions,
-    meta: serializeMeta(agent),
-    changedIds,
+    changes: diff.changes,
+    removedSessionIds: diff.removedSessionIds,
+    meta: metaDiff.changes,
+    removedMetaIds: metaDiff.removedIds,
     durationMs: performance.now() - startedAt,
   } satisfies ScanRefreshWorkerMessage);
 }

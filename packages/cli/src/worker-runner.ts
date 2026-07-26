@@ -1,5 +1,11 @@
 import { Worker } from "node:worker_threads";
-import type { AgentScanProgress, ScanOptions, SessionCacheMeta, SessionHead } from "@codesesh/core";
+import type {
+  AgentScanProgress,
+  ScanOptions,
+  SessionCacheMeta,
+  SessionHead,
+  SessionHeadChange,
+} from "@codesesh/core";
 import { appLogger } from "./logging.js";
 import type { ScanRefreshWorkerMessage, ScanRefreshWorkerRequest } from "./scan-refresh-worker.js";
 
@@ -27,6 +33,7 @@ export interface WorkerRunner {
 interface PendingRequest {
   resolve: (result: WorkerResult) => void;
   reject: (error: Error) => void;
+  payload: WorkerPayload;
   onProgress?: (progress: AgentScanProgress) => void;
 }
 
@@ -37,6 +44,45 @@ interface WorkerSlot {
 }
 
 const SHUTDOWN_ERROR_MESSAGE = "Scan refresh worker shut down";
+
+function applySessionChanges(
+  previousSessions: SessionHead[],
+  changes: SessionHeadChange[],
+  removedSessionIds: string[],
+): SessionHead[] {
+  const replacedIds = new Set(removedSessionIds);
+  for (const { session } of changes) replacedIds.add(session.id);
+  const retained = previousSessions.filter((session) => !replacedIds.has(session.id));
+  const next: Array<SessionHead | undefined> = Array.from({
+    length: retained.length + changes.length,
+  });
+
+  for (const { session, sortIndex } of changes) {
+    if (sortIndex < 0 || sortIndex >= next.length || next[sortIndex]) {
+      throw new Error(`Invalid scan refresh sort index: ${sortIndex}`);
+    }
+    next[sortIndex] = session;
+  }
+
+  let retainedIndex = 0;
+  for (let index = 0; index < next.length; index += 1) {
+    if (!next[index]) next[index] = retained[retainedIndex++];
+  }
+  if (retainedIndex !== retained.length || next.some((session) => !session)) {
+    throw new Error("Invalid scan refresh delta");
+  }
+  return next as SessionHead[];
+}
+
+function applyMetaChanges(
+  previous: Record<string, SessionCacheMeta>,
+  changed: Record<string, SessionCacheMeta>,
+  replacedSessionIds: Iterable<string>,
+): Record<string, SessionCacheMeta> {
+  const next = { ...previous };
+  for (const id of replacedSessionIds) delete next[id];
+  return Object.assign(next, changed);
+}
 
 export class ThreadWorkerRunner implements WorkerRunner {
   private workers = new Map<string, WorkerSlot>();
@@ -80,6 +126,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
       slot.pending.set(request.requestId, {
         resolve,
         reject,
+        payload,
         onProgress: payload.onProgress,
       });
 
@@ -142,11 +189,22 @@ export class ThreadWorkerRunner implements WorkerRunner {
       pending.reject(new Error(message.error));
       return;
     }
-    pending.resolve({
-      sessions: message.sessions,
-      meta: message.meta,
-      changedIds: message.changedIds,
-    });
+    const changedIds = message.changes.map(({ session }) => session.id);
+    const replacedSessionIds = [...changedIds, ...message.removedSessionIds];
+    const removedMetaIds = [...message.removedSessionIds, ...message.removedMetaIds];
+    try {
+      pending.resolve({
+        sessions: applySessionChanges(
+          pending.payload.previousSessions,
+          message.changes,
+          message.removedSessionIds,
+        ),
+        meta: applyMetaChanges(pending.payload.meta, message.meta, removedMetaIds),
+        changedIds: pending.payload.sourceSync ? replacedSessionIds : undefined,
+      });
+    } catch (error) {
+      pending.reject(error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   private closeWorker(agentName: string, slot: WorkerSlot, error: Error): void {

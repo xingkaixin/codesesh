@@ -135,6 +135,45 @@ const workerThreads = vi.hoisted(() => ({
     };
     const serializeMeta = (agent: any) =>
       Object.fromEntries(agent.getSessionMetaMap?.()?.entries?.() ?? []);
+    const computeDelta = (
+      data: any,
+      sessions: SessionHead[],
+      changedIds: string[] | undefined,
+      meta: Record<string, SessionCacheMeta>,
+    ) => {
+      const previousById = new Map(
+        (data.previousSessions ?? []).map((session: SessionHead) => [session.id, session]),
+      );
+      const updatedIds = new Set(sessions.map((session) => session.id));
+      const nextMeta = Object.fromEntries(
+        Object.entries(meta).filter(([sessionId]) => updatedIds.has(sessionId)),
+      ) as Record<string, SessionCacheMeta>;
+      const changedMeta = Object.fromEntries(
+        Object.entries(nextMeta).filter(
+          ([sessionId, value]) => JSON.stringify(data.meta?.[sessionId]) !== JSON.stringify(value),
+        ),
+      );
+      const removedMetaIds = Object.keys(data.meta ?? {}).filter(
+        (sessionId) => !Object.hasOwn(nextMeta, sessionId),
+      );
+      const changedIdSet = new Set([
+        ...(changedIds ?? []),
+        ...Object.keys(changedMeta),
+        ...removedMetaIds,
+      ]);
+      const changes = sessions.flatMap((session, sortIndex) => {
+        const previous = previousById.get(session.id);
+        return !previous ||
+          changedIdSet.has(session.id) ||
+          JSON.stringify(previous) !== JSON.stringify(session)
+          ? [{ session, sortIndex }]
+          : [];
+      });
+      const removedSessionIds = (data.previousSessions ?? [])
+        .filter((session: SessionHead) => !updatedIds.has(session.id))
+        .map((session: SessionHead) => session.id);
+      return { changes, removedSessionIds, meta: changedMeta, removedMetaIds };
+    };
     const dispatch = (data: any) => {
       queueMicrotask(() => {
         for (const handler of messageHandlers) {
@@ -160,12 +199,11 @@ const workerThreads = vi.hoisted(() => ({
                   });
                 }
               }
+              const delta = computeDelta(data, sessions, changedIds, serializeMeta(agent));
               handler({
                 type: "done",
                 requestId: data.requestId,
-                sessions,
-                meta: serializeMeta(agent),
-                changedIds,
+                ...delta,
                 durationMs: 0,
               });
               continue;
@@ -1002,6 +1040,49 @@ describe("LiveScanStore", () => {
       meta: {},
       changedIds: undefined,
     });
+  });
+
+  it("reconstructs an ordered snapshot from a scan worker delta", async () => {
+    const removed = makeSession("removed");
+    const retained = makeSession("retained");
+    const added = makeSession("added", { time_updated: 2000 });
+    let meta = new Map<string, SessionCacheMeta>();
+    const agent = makeAgent("codex", {
+      scan: vi.fn(() => {
+        meta = new Map([
+          ["added", { id: "added", sourcePath: "/added" }],
+          ["retained", { id: "retained", sourcePath: "/retained" }],
+        ]);
+        return [added, retained];
+      }),
+      getSessionMetaMap: vi.fn(() => meta),
+      setSessionMetaMap: vi.fn((next: Map<string, SessionCacheMeta>) => {
+        meta = new Map(next);
+      }),
+    });
+    core.createRegisteredAgents.mockReturnValue([agent]);
+    const runner = new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
+
+    const result = await runner.run("codex", {
+      previousSessions: [removed, retained],
+      changedIds: null,
+      scanOptions: {},
+      meta: {
+        removed: { id: "removed", sourcePath: "/removed" },
+        retained: { id: "retained", sourcePath: "/retained" },
+      },
+    });
+
+    expect(result).toEqual({
+      sessions: [added, retained],
+      meta: {
+        added: { id: "added", sourcePath: "/added" },
+        retained: { id: "retained", sourcePath: "/retained" },
+      },
+      changedIds: undefined,
+    });
+    expect(runner.activeCount).toBe(0);
+    await runner.shutdown();
   });
 
   it("persists incremental changes outside the startup time window", async () => {
