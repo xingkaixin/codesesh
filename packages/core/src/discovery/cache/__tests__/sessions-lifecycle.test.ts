@@ -201,18 +201,18 @@ describe("withCacheDb schema memo", () => {
   it("runs ensureSchema on the first open but skips it on later opens for the same path", () => {
     withCacheDb(() => undefined);
     expect(getSchemaEnsuredPath()).toBe(getCachePath());
-    expect(getUserVersion(getCachePath())).toBe(14);
+    expect(getUserVersion(getCachePath())).toBe(15);
 
     const db = new Database(getCachePath());
-    db.pragma("user_version = 5");
+    db.pragma("user_version = 14");
     db.close();
 
     withCacheDb(() => undefined);
-    expect(getUserVersion(getCachePath())).toBe(5);
+    expect(getUserVersion(getCachePath())).toBe(14);
 
     setSchemaEnsuredPath(null);
     withCacheDb(() => undefined);
-    expect(getUserVersion(getCachePath())).toBe(14);
+    expect(getUserVersion(getCachePath())).toBe(15);
   });
 });
 
@@ -220,7 +220,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(14);
+    expect(getUserVersion(getCachePath())).toBe(15);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -265,12 +265,43 @@ describe("saveCachedSessions", () => {
     }
   });
 
-  it("restores session heads from structured rows when snapshot json is malformed", () => {
+  it("writes session heads only to the canonical sessions table", () => {
+    saveCachedSessions("claudecode", [makeSession("s1")]);
+    saveCachedSessionChanges(
+      "claudecode",
+      [{ session: { ...makeSession("s1"), title: "Updated" }, sortIndex: 0 }],
+      [],
+    );
+
+    const db = new Database(getCachePath(), { readonly: true });
+    try {
+      const rowCounts = Object.fromEntries(
+        ["sessions", "cached_sessions", "project_sessions"].map((table) => {
+          const row = db.prepare(`SELECT COUNT(*) AS value FROM ${table}`).get() as {
+            value?: number;
+          };
+          return [table, Number(row.value ?? 0)];
+        }),
+      );
+      expect(rowCounts).toEqual({
+        sessions: 1,
+        cached_sessions: 0,
+        project_sessions: 0,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("ignores malformed legacy snapshot rows when restoring structured heads", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
 
     const db = new Database(getCachePath());
     try {
-      db.prepare("UPDATE cached_sessions SET session_json = ? WHERE session_id = ?").run("{", "s1");
+      db.prepare(
+        `INSERT INTO cached_sessions(agent_name, session_id, session_json)
+         VALUES (?, ?, ?)`,
+      ).run("claudecode", "s1", "{");
     } finally {
       db.close();
     }
@@ -377,7 +408,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(14);
+    expect(getUserVersion(getCachePath())).toBe(15);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",

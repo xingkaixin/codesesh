@@ -38,7 +38,7 @@ import {
   type SessionRow,
 } from "./messages.js";
 
-const CACHE_SCHEMA_VERSION = 14;
+const CACHE_SCHEMA_VERSION = 15;
 interface MessageToolBackfillRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
@@ -414,12 +414,7 @@ function createSearchTables(db: SQLiteDatabase): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       agent_name TEXT NOT NULL,
       session_id TEXT NOT NULL,
-      slug TEXT NOT NULL,
       title TEXT NOT NULL,
-      directory TEXT NOT NULL,
-      time_created INTEGER NOT NULL,
-      time_updated INTEGER,
-      activity_time INTEGER NOT NULL,
       content_text TEXT NOT NULL,
       content_hash TEXT NOT NULL,
       indexed_message_count INTEGER NOT NULL,
@@ -488,30 +483,30 @@ function dropSearchTriggers(db: SQLiteDatabase): void {
   `);
 }
 
-function ensureProjectColumns(db: SQLiteDatabase): void {
+const LEGACY_SESSION_DOCUMENT_COLUMNS = [
+  ["slug", "TEXT NOT NULL DEFAULT ''"],
+  ["directory", "TEXT NOT NULL DEFAULT ''"],
+  ["time_created", "INTEGER NOT NULL DEFAULT 0"],
+  ["time_updated", "INTEGER"],
+  ["activity_time", "INTEGER NOT NULL DEFAULT 0"],
+  ["project_identity_kind", "TEXT NOT NULL DEFAULT 'path'"],
+  ["project_identity_key", "TEXT NOT NULL DEFAULT ''"],
+  ["project_display_name", "TEXT NOT NULL DEFAULT ''"],
+] as const;
+
+function ensureLegacySessionDocumentColumns(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents")) {
     return;
   }
 
-  if (!columnExists(db, "session_documents", "project_identity_kind")) {
-    db.exec(
-      "ALTER TABLE session_documents ADD COLUMN project_identity_kind TEXT NOT NULL DEFAULT 'path'",
-    );
-  }
-  if (!columnExists(db, "session_documents", "project_identity_key")) {
-    db.exec(
-      "ALTER TABLE session_documents ADD COLUMN project_identity_key TEXT NOT NULL DEFAULT ''",
-    );
-  }
-  if (!columnExists(db, "session_documents", "project_display_name")) {
-    db.exec(
-      "ALTER TABLE session_documents ADD COLUMN project_display_name TEXT NOT NULL DEFAULT ''",
-    );
+  for (const [name, definition] of LEGACY_SESSION_DOCUMENT_COLUMNS) {
+    if (!columnExists(db, "session_documents", name)) {
+      db.exec(`ALTER TABLE session_documents ADD COLUMN ${name} ${definition}`);
+    }
   }
 }
 
 function createProjectTables(db: SQLiteDatabase): void {
-  ensureProjectColumns(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS project_sessions (
       agent_name TEXT NOT NULL,
@@ -603,7 +598,7 @@ function readLegacyCacheVersion(db: SQLiteDatabase): number {
 
 function inferCacheSchemaVersion(db: SQLiteDatabase): number {
   if (columnExists(db, "session_documents", "indexed_message_count")) {
-    return 14;
+    return columnExists(db, "session_documents", "slug") ? 14 : 15;
   }
   if (tableExists(db, "message_tools")) {
     return 11;
@@ -737,6 +732,7 @@ function backfillSessionDocumentProjects(db: SQLiteDatabase): void {
 }
 
 function migrateProjectIdentity(db: SQLiteDatabase): void {
+  ensureLegacySessionDocumentColumns(db);
   createProjectTables(db);
   backfillProjectSessions(db);
   backfillSessionDocumentProjects(db);
@@ -997,6 +993,45 @@ function invalidateSearchContentHashes(db: SQLiteDatabase): void {
   }
 }
 
+function compactSessionDocuments(db: SQLiteDatabase): void {
+  if (!tableExists(db, "session_documents")) {
+    createSearchTables(db);
+    return;
+  }
+
+  dropSearchTriggers(db);
+  db.exec(`
+    DROP TABLE IF EXISTS session_documents_fts;
+    DROP TABLE IF EXISTS session_documents_legacy_v14;
+    ALTER TABLE session_documents RENAME TO session_documents_legacy_v14;
+  `);
+  createSearchTables(db);
+  db.exec(`
+    INSERT INTO session_documents(
+      id,
+      agent_name,
+      session_id,
+      title,
+      content_text,
+      content_hash,
+      indexed_message_count,
+      indexed_at
+    )
+    SELECT
+      id,
+      agent_name,
+      session_id,
+      title,
+      content_text,
+      content_hash,
+      indexed_message_count,
+      indexed_at
+    FROM session_documents_legacy_v14;
+
+    DROP TABLE session_documents_legacy_v14;
+  `);
+}
+
 const CODEX_EXEC_DECODE_MIGRATION_KEY = "codex_exec_decode_migrated_v3";
 
 /**
@@ -1155,6 +1190,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       },
       { version: 13, migrate: createCacheTables },
       { version: 14, migrate: addIndexedMessageCount },
+      { version: 15, destructive: true, migrate: compactSessionDocuments },
     ],
   });
 

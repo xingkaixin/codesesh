@@ -1,9 +1,4 @@
-import type {
-  ProjectIdentity,
-  SessionData,
-  SessionFileActivity,
-  SessionHead,
-} from "../../types/index.js";
+import type { SessionData, SessionFileActivity, SessionHead } from "../../types/index.js";
 import { computeIdentity, realFs } from "../../projects/index.js";
 import { extractSessionFileActivity } from "../../utils/file-activity.js";
 import type { SQLiteDatabase } from "../../utils/sqlite.js";
@@ -68,7 +63,6 @@ const SEARCH_INDEX_STATE_BATCH_SIZE = 900;
 
 interface LoadedSearchIndexEntry {
   session: SessionHead;
-  identity: ProjectIdentity;
   messages: StructuredMessageRecord[];
   contentText: string;
   contentHash: string;
@@ -184,7 +178,6 @@ function loadSearchIndexEntry(
       computeIdentity(change.session.directory, realFs);
     return {
       session: change.session,
-      identity,
       messages,
       contentText: buildSessionContentFromMessages(data.title ?? change.session.title, messages),
       contentHash: sessionContentHash(change.session),
@@ -277,30 +270,14 @@ function writeSearchIndexRows(
     INSERT INTO session_documents(
       agent_name,
       session_id,
-      slug,
       title,
-      directory,
-      project_identity_kind,
-      project_identity_key,
-      project_display_name,
-      time_created,
-      time_updated,
-      activity_time,
       content_text,
       content_hash,
       indexed_message_count,
       indexed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(agent_name, session_id) DO UPDATE SET
-      slug = excluded.slug,
       title = excluded.title,
-      directory = excluded.directory,
-      project_identity_kind = excluded.project_identity_kind,
-      project_identity_key = excluded.project_identity_key,
-      project_display_name = excluded.project_display_name,
-      time_created = excluded.time_created,
-      time_updated = excluded.time_updated,
-      activity_time = excluded.activity_time,
       content_text = excluded.content_text,
       content_hash = excluded.content_hash,
       indexed_message_count = excluded.indexed_message_count,
@@ -321,7 +298,6 @@ function writeSearchIndexRows(
 
   let indexed = 0;
   for (const entry of entries) {
-    const activityTime = entry.session.time_updated ?? entry.session.time_created;
     upsertSessionRow(upsertIndexedSession, agentName, entry.session, null, entry.sortIndex, null);
     deleteFileActivity.run(agentName, entry.session.id);
     deleteMessageTools.run(agentName, entry.session.id, 0);
@@ -357,15 +333,7 @@ function writeSearchIndexRows(
     upsertRow.run(
       agentName,
       entry.session.id,
-      entry.session.slug,
       entry.session.title,
-      entry.session.directory,
-      entry.identity.kind,
-      entry.identity.key,
-      entry.identity.displayName,
-      entry.session.time_created,
-      entry.session.time_updated ?? null,
-      activityTime,
       entry.contentText,
       entry.contentHash,
       entry.messages.length,

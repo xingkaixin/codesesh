@@ -283,7 +283,22 @@ describe("sqlite migration smoke", () => {
         bookmarked_at: now - 500,
       },
     ]);
-    expect(getUserVersion(getCachePath())).toBe(14);
+    const migratedCache = new Database(getCachePath(), { readonly: true });
+    const documentColumns = (
+      migratedCache.prepare("PRAGMA table_info(session_documents)").all() as Array<{ name: string }>
+    ).map((row) => row.name);
+    migratedCache.close();
+    expect(documentColumns).toEqual([
+      "id",
+      "agent_name",
+      "session_id",
+      "title",
+      "content_text",
+      "content_hash",
+      "indexed_message_count",
+      "indexed_at",
+    ]);
+    expect(getUserVersion(getCachePath())).toBe(15);
     expect(getUserVersion(getStatePath())).toBe(2);
   }, 30_000);
 });
