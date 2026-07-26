@@ -93,7 +93,6 @@ interface RefreshStrategyResult {
   nextSessions: SessionHead[];
   fullScanSessions: SessionHead[] | null;
   preciseChangedIds: string[] | null;
-  usedIncrementalScan: boolean;
   persistenceDiff: Pick<SessionRefreshDiff, "changedSessions" | "removedSessionIds"> | null;
   checkDuration: number;
   scanDuration: number;
@@ -409,15 +408,15 @@ export class AgentSyncEngine {
     const diffDuration = performance.now() - diffStartedAt;
     const searchIndexOptions =
       pendingPathCount >= SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD ? { isBulk: true } : undefined;
-    const persistentChanges =
-      strategyResult.persistenceDiff?.changedSessions ?? diff.changedSessions;
+    const persistenceDiff = strategyResult.persistenceDiff;
+    const persistentChanges = persistenceDiff?.changedSessions ?? diff.changedSessions;
     const persistentRemovedSessionIds =
-      strategyResult.persistenceDiff?.removedSessionIds ?? diff.removedSessionIds;
-    const changedSessionIds = strategyResult.usedIncrementalScan
+      persistenceDiff?.removedSessionIds ?? diff.removedSessionIds;
+    const changedSessionIds = persistenceDiff
       ? new Set(persistentChanges.map(({ session }) => session.id))
       : undefined;
     const persistStartedAt = performance.now();
-    const persistentJob: SearchIndexWorkerJob = strategyResult.usedIncrementalScan
+    const persistentJob: SearchIndexWorkerJob = persistenceDiff
       ? {
           kind: "changes",
           context: "scan.refresh",
@@ -511,7 +510,6 @@ export class AgentSyncEngine {
     if (preciseChangedIds.length === 0) this.logUnchangedRefresh(agent.name, refreshStartedAt);
     return this.refreshStrategyResult(sessions, {
       preciseChangedIds,
-      usedIncrementalScan: true,
       persistenceDiff,
       scanDuration: performance.now() - scanStartedAt,
     });
@@ -533,15 +531,22 @@ export class AgentSyncEngine {
     }
     const preciseChangedIds = checkResult.changedIds ?? null;
     const scanStartedAt = performance.now();
+    if (preciseChangedIds === null) {
+      const result = await this.runWorker(agent, baseline, null, {});
+      agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
+      const sessions = attachMissingProjectIdentities(result.sessions);
+      return this.refreshStrategyResult(sessions, {
+        persistenceDiff: buildRefreshDiff(agent.name, baseline, sessions),
+        checkDuration,
+        scanDuration: performance.now() - scanStartedAt,
+      });
+    }
     const sessions = attachMissingProjectIdentities(
-      await Promise.resolve(
-        agent.incrementalScan(baseline, checkResult.changedIds ?? [], checkResult.refs),
-      ),
+      await Promise.resolve(agent.incrementalScan(baseline, preciseChangedIds, checkResult.refs)),
     );
     return this.refreshStrategyResult(sessions, {
       preciseChangedIds,
-      usedIncrementalScan: Array.isArray(checkResult.changedIds),
-      persistenceDiff: buildRefreshDiff(agent.name, baseline, sessions, preciseChangedIds ?? []),
+      persistenceDiff: buildRefreshDiff(agent.name, baseline, sessions, preciseChangedIds),
       checkDuration,
       scanDuration: performance.now() - scanStartedAt,
     });
@@ -571,7 +576,6 @@ export class AgentSyncEngine {
       nextSessions,
       fullScanSessions: null,
       preciseChangedIds: null,
-      usedIncrementalScan: false,
       persistenceDiff: null,
       checkDuration: 0,
       scanDuration: 0,

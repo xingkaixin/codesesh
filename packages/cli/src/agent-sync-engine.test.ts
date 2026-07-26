@@ -81,7 +81,11 @@ function makeWorkerRunner(): WorkerRunner {
   };
 }
 
-function makeEngine(agent: BaseAgent, sessions: SessionHead[] = []) {
+function makeEngine(
+  agent: BaseAgent,
+  sessions: SessionHead[] = [],
+  workerRunner: WorkerRunner = makeWorkerRunner(),
+) {
   const state: ScanResult = {
     agents: [agent],
     byAgent: { [agent.name]: sessions },
@@ -89,7 +93,7 @@ function makeEngine(agent: BaseAgent, sessions: SessionHead[] = []) {
   };
   const engine = new AgentSyncEngine({
     snapshot: () => state,
-    workerRunner: makeWorkerRunner(),
+    workerRunner,
   });
   engine.subscribeSessionsChanged((change) => {
     state.byAgent[change.agentName] = change.sessions;
@@ -225,24 +229,52 @@ describe("AgentSyncEngine", () => {
     expect(completed).toBe(true);
   });
 
-  it("commits a full search-index job when change detection cannot identify sessions", async () => {
-    const updated = makeSession("session", "after");
+  it("rescans imprecise changes in a worker and persists only the signature diff", async () => {
+    const steady = makeSession("steady");
+    const previous = makeSession("changed", "before");
+    const updated = makeSession("changed", "after");
+    const incrementalScan = vi.fn(() => [updated]);
+    const runWorker = vi.fn(async () => ({
+      sessions: [steady, updated],
+      meta: {
+        steady: { id: "steady", sourcePath: "/database" },
+        changed: { id: "changed", sourcePath: "/database" },
+      },
+    }));
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: runWorker,
+      shutdown: vi.fn(async () => undefined),
+    };
     const { engine } = makeEngine(
       makeAgent({
         checkForChanges: () => ({ hasChanges: true, timestamp: 2 }),
-        incrementalScan: () => [updated],
+        incrementalScan,
       }),
-      [makeSession("session", "before")],
+      [steady, previous],
+      workerRunner,
     );
 
     await engine.refresh("codex");
 
+    expect(incrementalScan).not.toHaveBeenCalled();
+    expect(runWorker).toHaveBeenCalledWith(
+      "codex",
+      expect.objectContaining({
+        previousSessions: [steady, previous],
+        changedIds: null,
+      }),
+    );
     expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
       expect.objectContaining({
-        kind: "full",
+        kind: "changes",
         agentName: "codex",
-        sessions: [expect.objectContaining({ id: "session", title: "after" })],
-        saveCache: true,
+        changes: [
+          expect.objectContaining({
+            session: expect.objectContaining({ id: "changed", title: "after" }),
+          }),
+        ],
+        removedSessionIds: [],
       }),
     ]);
   });
@@ -287,7 +319,11 @@ describe("AgentSyncEngine", () => {
   it("reuses cached session signatures across refreshes for an unchanged session", async () => {
     const session = makeSession("steady", "same-title");
     const agent = makeAgent({
-      checkForChanges: () => ({ hasChanges: true, timestamp: Date.now() }),
+      checkForChanges: () => ({
+        hasChanges: true,
+        changedIds: [session.id],
+        timestamp: Date.now(),
+      }),
       incrementalScan: () => [session],
     });
     const { engine } = makeEngine(agent, [session]);

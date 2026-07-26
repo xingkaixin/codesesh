@@ -1839,7 +1839,9 @@ describe("LiveScanStore", () => {
   it("queues a refresh requested while one is in flight and runs it after completion", async () => {
     vi.useFakeTimers();
     const existing = makeSession("existing");
-    let resolveCheck: ((result: { hasChanges: boolean; timestamp: number }) => void) | null = null;
+    let resolveCheck:
+      | ((result: { hasChanges: boolean; changedIds: string[]; timestamp: number }) => void)
+      | null = null;
     const checkForChanges = vi
       .fn()
       .mockImplementationOnce(
@@ -1874,7 +1876,7 @@ describe("LiveScanStore", () => {
     await Promise.resolve();
     expect(checkForChanges).toHaveBeenCalledTimes(1);
 
-    resolveCheck!({ hasChanges: true, timestamp: 3500 });
+    resolveCheck!({ hasChanges: true, changedIds: [existing.id], timestamp: 3500 });
     await firstRefresh;
     await secondRefresh;
     expect(checkForChanges).toHaveBeenCalledTimes(1);

@@ -49,7 +49,7 @@ export function matchesScanWindow(activityTime: number, options?: AgentScanOptio
 export interface ChangeCheckResult {
   /** 是否有变更 */
   hasChanges: boolean;
-  /** 变更的会话 ID 列表（可选，用于精确更新） */
+  /** 可精确定位时的变更会话 ID；省略表示只能确认数据源发生过变化 */
   changedIds?: string[];
   /** 检测时间戳 */
   timestamp: number;
@@ -357,10 +357,9 @@ export abstract class DatabaseSessionSource extends BaseAgent {
   }
 
   /**
-   * 变更检测：数据库内部变更难以按行定位，简单起见按库文件 mtime 判定。
-   * 库有变更则标记全部缓存会话刷新。
+   * 变更检测：数据库内部变更难以按行定位，按库文件 mtime 判定。
    */
-  checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
+  checkForChanges(sinceTimestamp: number, _cachedSessions: SessionHead[]): ChangeCheckResult {
     const dbPath = this.getDatabasePath();
     if (!dbPath || !existsSync(dbPath)) {
       return { hasChanges: false, timestamp: Date.now() };
@@ -370,7 +369,6 @@ export abstract class DatabaseSessionSource extends BaseAgent {
       const hasChanges = statSync(dbPath).mtimeMs > sinceTimestamp;
       return {
         hasChanges,
-        changedIds: hasChanges ? cachedSessions.map((session) => session.id) : [],
         timestamp: Date.now(),
       };
     } catch {

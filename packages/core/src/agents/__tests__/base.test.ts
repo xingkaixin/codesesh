@@ -393,7 +393,7 @@ describe("DatabaseSessionSource", () => {
     }
   }
 
-  it("flags all sessions as changed when db mtime advances past since", () => {
+  it("reports no changes when db mtime has not advanced", () => {
     const dbPath = makeDb();
     const agent = new FakeDatabaseSource(dbPath);
     const cached = [makeSession("db-1")];
@@ -401,17 +401,17 @@ describe("DatabaseSessionSource", () => {
     // since far in the future → no changes
     const fresh = agent.checkForChanges(Date.now() + 1_000_000, cached);
     expect(fresh.hasChanges).toBe(false);
-    expect(fresh.changedIds).toEqual([]);
+    expect(fresh).not.toHaveProperty("changedIds");
   });
 
-  it("reports changes when db mtime is newer than since", () => {
+  it("reports an imprecise change when db mtime is newer than since", () => {
     const dbPath = makeDb();
     const agent = new FakeDatabaseSource(dbPath);
     const cached = [makeSession("db-1"), makeSession("db-2")];
 
     const stale = agent.checkForChanges(0, cached);
     expect(stale.hasChanges).toBe(true);
-    expect(stale.changedIds).toEqual(["db-1", "db-2"]);
+    expect(stale).not.toHaveProperty("changedIds");
   });
 
   it("reports no changes when database path is missing", () => {
