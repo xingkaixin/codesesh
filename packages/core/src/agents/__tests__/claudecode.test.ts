@@ -126,6 +126,8 @@ describe("ClaudeCodeAgent cache refresh", () => {
       join(projectDir, name),
     );
     for (const file of files) writeFileSync(file, "");
+    const indexFile = join(projectDir, "sessions-index.json");
+    writeFileSync(indexFile, JSON.stringify({ entries: [] }));
 
     const agent = new ClaudeCodeAgent() as any;
     agent.basePath = basePath;
@@ -138,6 +140,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
       const callsForFile = statSpy.mock.calls.filter((call) => call[0] === file);
       expect(callsForFile.length).toBe(1);
     }
+    expect(statSpy.mock.calls.filter((call) => call[0] === indexFile)).toHaveLength(1);
   });
 
   it("parses indexed sessions with assistant tools and tool results", () => {

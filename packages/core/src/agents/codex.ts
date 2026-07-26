@@ -338,7 +338,8 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
 
   private basePath: string | null = null;
   private sessionIndexCache = new Map<string, string>();
-  private sessionIndexMtime: number | null = null;
+  private sessionIndexMtime: number | null | undefined;
+  private sessionIndexPath: string | undefined;
 
   // ---- BaseAgent implementation ----
 
@@ -548,6 +549,7 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
 
   private buildSessionMeta(head: SessionHead, file: string): SessionMeta {
     const indexPath = this.getSessionIndexPath();
+    const indexMtime = this.sessionIndexMtime ?? null;
     const stat = statSync(file);
     return {
       id: head.id,
@@ -555,8 +557,8 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       sourcePath: file,
       sourceFingerprint: this.sourceFingerprint(file, stat),
       sourceMtimeMs: stat.mtimeMs,
-      indexPath: existsSync(indexPath) ? indexPath : null,
-      indexMtimeMs: this.getFileMtimeMs(indexPath),
+      indexPath: indexMtime === null ? null : indexPath,
+      indexMtimeMs: indexMtime,
       headIndexVersion: HEAD_INDEX_VERSION,
       parserVersion: PARSER_VERSION,
       directory: head.directory,
@@ -580,8 +582,8 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
   }
 
   private getSessionIndexPath(): string {
-    const roots = resolveProviderRoots();
-    return join(roots.codexRoot, "session_index.jsonl");
+    this.sessionIndexPath ??= join(resolveProviderRoots().codexRoot, "session_index.jsonl");
+    return this.sessionIndexPath;
   }
 
   private getFileMtimeMs(filePath: string): number | null {
@@ -600,28 +602,33 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
 
     // Invalidate when the index file mtime advances so long-running processes
     // pick up title changes without relying on callers to evict manually.
-    if (this.sessionIndexCache.size > 0 && this.sessionIndexMtime === mtime) return;
+    if (this.sessionIndexMtime !== undefined && this.sessionIndexMtime === mtime) return;
 
-    this.sessionIndexCache.clear();
-    this.sessionIndexMtime = mtime;
-    if (mtime === null) return;
+    if (mtime === null) {
+      this.sessionIndexCache.clear();
+      this.sessionIndexMtime = null;
+      return;
+    }
 
     try {
       const content = readFileSync(indexPath, "utf-8");
+      const cache = new Map<string, string>();
       for (const record of parseJsonlLines(content)) {
         const sid = String(record["id"] ?? "").trim();
         const threadName = String(record["thread_name"] ?? "").trim();
         if (sid && threadName) {
-          this.sessionIndexCache.set(sid, threadName);
+          cache.set(sid, threadName);
         }
       }
+      this.sessionIndexCache = cache;
+      this.sessionIndexMtime = mtime;
     } catch {
-      // ignore
+      this.sessionIndexCache.clear();
+      this.sessionIndexMtime = undefined;
     }
   }
 
   private getTitleForSession(sessionId: string): string | null {
-    this.loadSessionIndex();
     return this.sessionIndexCache.get(sessionId) ?? null;
   }
 

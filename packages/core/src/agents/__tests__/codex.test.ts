@@ -1,4 +1,12 @@
-import { mkdtempSync, mkdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -6,11 +14,15 @@ import { CodexAgent } from "../codex.js";
 import type { Message, MessagePart, SessionHead } from "../../types/index.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
-// Spies on statSync while delegating to the real implementation, so the
-// single-stat regression test can count per-file calls during a live scan.
+// Spies while delegating to the real implementation so regression tests can
+// count filesystem calls during a live scan.
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
-  return { ...actual, statSync: vi.fn(actual.statSync) };
+  return {
+    ...actual,
+    readFileSync: vi.fn(actual.readFileSync),
+    statSync: vi.fn(actual.statSync),
+  };
 });
 
 let tempDirs: string[] = [];
@@ -198,6 +210,49 @@ describe("CodexAgent cache refresh", () => {
       const callsForFile = statSpy.mock.calls.filter((call) => call[0] === file);
       expect(callsForFile.length).toBe(1);
     }
+  });
+
+  it("caches an empty session index and reloads it when the mtime changes", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-empty-index-"));
+    tempDirs.push(tempDir);
+    const codexHome = join(tempDir, ".codex");
+    const sessionsDir = join(codexHome, "sessions");
+    const indexFile = join(codexHome, "session_index.jsonl");
+    mkdirSync(sessionsDir, { recursive: true });
+    vi.stubEnv("CODEX_HOME", codexHome);
+    writeFileSync(indexFile, "");
+
+    for (const id of [
+      "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
+      "019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb",
+      "019dcccc-cccc-7ccc-cccc-cccccccccccc",
+    ]) {
+      writeFileSync(
+        join(sessionsDir, `rollout-2026-04-20T10-00-00-${id}.jsonl`),
+        '{"type":"session_meta","payload":{"timestamp":"2026-04-20T10:00:00Z"}}\n',
+      );
+    }
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = sessionsDir;
+    const readSpy = vi.mocked(readFileSync);
+    const statSpy = vi.mocked(statSync);
+    readSpy.mockClear();
+    statSpy.mockClear();
+
+    const initialFingerprint = agent.listSessionSources()[0]?.fingerprint;
+    expect(agent.listSessionSources()[0]?.fingerprint).toBe(initialFingerprint);
+
+    const later = new Date(Date.now() + 2000);
+    writeFileSync(
+      indexFile,
+      '{"id":"019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa","thread_name":"Indexed title"}\n',
+    );
+    utimesSync(indexFile, later, later);
+    expect(agent.listSessionSources()[0]?.fingerprint).not.toBe(initialFingerprint);
+
+    expect(readSpy.mock.calls.filter((call) => call[0] === indexFile)).toHaveLength(2);
+    expect(statSpy.mock.calls.filter((call) => call[0] === indexFile)).toHaveLength(3);
   });
 
   it("uses per-session Codex titles in source fingerprints", () => {
