@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SessionMessageTimeline } from "./session-message-timeline";
+import { SessionMessageTimeline, VIRTUALIZED_TIMELINE_THRESHOLD } from "./session-message-timeline";
 import type { SessionTimelineEntry } from "./timeline";
 
 // Mirrors the ResizeObserverMock pattern used in message-list.test.tsx: a controllable
@@ -70,6 +70,7 @@ function renderTimeline(timelineEntries = entries) {
   const track = view.getByTestId("session-timeline-track");
   Object.defineProperties(track, {
     getBoundingClientRect: {
+      configurable: true,
       value: () => ({ left: 0, width: 300 }),
     },
     hasPointerCapture: { value: () => false },
@@ -170,12 +171,75 @@ describe("SessionMessageTimeline", () => {
     expect(timeline.className).toContain("overflow-x-auto");
     expect(timeline.className).toContain("overflow-y-hidden");
     expect(track.style.minWidth).toBe("1099px");
-    expect(track.style.gridTemplateColumns).toBe("repeat(100, minmax(10px, 1fr))");
+    expect(track.style.gridTemplateColumns).toBe("");
+    expect(track.querySelectorAll("[data-timeline-index]")).toHaveLength(34);
+    expect((track.firstElementChild as HTMLElement).style.width).toBe("calc(1% - 0.99px)");
 
     fireEvent.click(getByRole("button", { name: "Scroll timeline right" }));
 
     expect(timeline.scrollLeft).toBe(225);
     expect(onNavigate).not.toHaveBeenCalled();
+  });
+
+  it("bounds segment DOM to the horizontal window while preserving full-track pointer mapping", () => {
+    const longEntries = Array.from({ length: VIRTUALIZED_TIMELINE_THRESHOLD * 25 }, (_, index) => ({
+      ...entries[index % entries.length]!,
+      id: `entry-${index}`,
+      anchorId: `entry-${index}`,
+    }));
+    const { onNavigate, timeline, track } = renderTimeline(longEntries);
+    const scrollWidth = 21_999;
+    Object.defineProperties(timeline, {
+      clientWidth: { configurable: true, value: 330 },
+      scrollWidth: { configurable: true, value: scrollWidth },
+      scrollLeft: { configurable: true, value: 11_000, writable: true },
+    });
+    Object.defineProperty(track, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ left: -11_000, width: scrollWidth }),
+    });
+
+    fireEvent.scroll(timeline);
+
+    const segments = track.querySelectorAll<HTMLElement>("[data-timeline-index]");
+    expect(segments).toHaveLength(43);
+    expect(segments.length).toBeLessThan(VIRTUALIZED_TIMELINE_THRESHOLD);
+    expect(segments[0]?.dataset.timelineIndex).toBe("994");
+    expect(segments[42]?.dataset.timelineIndex).toBe("1036");
+    expect(segments[0]?.parentElement?.style.left).toContain("49.7%");
+
+    fireEvent.click(track, { clientX: 100, detail: 1 });
+
+    expect(onNavigate).toHaveBeenCalledWith(longEntries[1_009], "smooth");
+  });
+
+  it("keeps every virtualized entry reachable by keyboard", async () => {
+    const longEntries = Array.from({ length: VIRTUALIZED_TIMELINE_THRESHOLD * 25 }, (_, index) => ({
+      ...entries[index % entries.length]!,
+      id: `entry-${index}`,
+      anchorId: `entry-${index}`,
+    }));
+    const { onNavigate, timeline, track } = renderTimeline(longEntries);
+    Object.defineProperties(timeline, {
+      clientWidth: { configurable: true, value: 330 },
+      scrollWidth: { configurable: true, value: 21_999 },
+      scrollLeft: { configurable: true, value: 0, writable: true },
+    });
+    fireEvent.scroll(timeline);
+    const firstSegment = track.querySelector<HTMLButtonElement>("[data-timeline-index='0']")!;
+
+    firstSegment.focus();
+    fireEvent.keyDown(firstSegment, { key: "End" });
+
+    await waitFor(() => {
+      expect((document.activeElement as HTMLElement).dataset.timelineIndex).toBe("1999");
+    });
+    fireEvent.click(document.activeElement!, { detail: 0 });
+
+    expect(onNavigate).toHaveBeenCalledWith(longEntries[1_999], "auto");
+    expect(track.querySelectorAll("[data-timeline-index]").length).toBeLessThan(
+      VIRTUALIZED_TIMELINE_THRESHOLD,
+    );
   });
 
   it("shows a minimap window mirroring the visible range when the track overflows", () => {
@@ -346,6 +410,57 @@ describe("SessionMessageTimeline", () => {
       expect(document.querySelector('[aria-current="location"]')?.getAttribute("aria-label")).toBe(
         "Go to Read · Read",
       ),
+    );
+
+    detail.remove();
+  });
+
+  it("reveals an active entry outside the virtualized render range", async () => {
+    IntersectionObserverMock.instances = [];
+    vi.stubGlobal("IntersectionObserver", IntersectionObserverMock);
+    vi.stubGlobal("innerHeight", 400);
+    vi.stubGlobal("scrollY", 300);
+    Object.defineProperty(document.documentElement, "scrollHeight", {
+      configurable: true,
+      value: 1_000,
+    });
+    const longEntries = Array.from({ length: VIRTUALIZED_TIMELINE_THRESHOLD * 25 }, (_, index) => ({
+      ...entries[index % entries.length]!,
+      id: `entry-${index}`,
+      anchorId: `entry-${index}`,
+    }));
+    const detail = document.createElement("div");
+    detail.setAttribute("data-testid", "session-detail");
+    const anchor = document.createElement("div");
+    anchor.dataset.sessionTimelineAnchor = "entry-1500";
+    anchor.getBoundingClientRect = () => ({ top: 100 }) as DOMRect;
+    detail.appendChild(anchor);
+    document.body.appendChild(detail);
+
+    const view = render(<SessionMessageTimeline entries={longEntries} onNavigate={vi.fn()} />, {
+      container: detail,
+    });
+    const timeline = view.getByRole("navigation", { name: "Session message timeline" });
+    const track = view.getByTestId("session-timeline-track");
+    Object.defineProperties(timeline, {
+      clientWidth: { configurable: true, value: 330 },
+      scrollWidth: { configurable: true, value: 21_999 },
+      scrollLeft: { configurable: true, value: 0, writable: true },
+    });
+    fireEvent.scroll(timeline);
+
+    act(() => {
+      IntersectionObserverMock.instances[0]!.trigger([{ target: anchor, isIntersecting: true }]);
+    });
+
+    await waitFor(() => {
+      expect(
+        track.querySelector('[data-timeline-index="1500"]')?.getAttribute("aria-current"),
+      ).toBe("location");
+    });
+    expect(timeline.scrollLeft).toBeGreaterThan(0);
+    expect(track.querySelectorAll("[data-timeline-index]").length).toBeLessThan(
+      VIRTUALIZED_TIMELINE_THRESHOLD,
     );
 
     detail.remove();

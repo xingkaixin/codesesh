@@ -1,10 +1,12 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
 } from "react";
 import { createPortal } from "react-dom";
@@ -37,6 +39,8 @@ interface TimelineTooltip {
 const TIMELINE_SEGMENT_MIN_WIDTH = 10;
 const TIMELINE_SCROLL_EDGE_TOLERANCE = 1;
 const TIMELINE_TOOLTIP_VIEWPORT_PADDING = 8;
+export const VIRTUALIZED_TIMELINE_THRESHOLD = 80;
+const VIRTUALIZED_TIMELINE_OVERSCAN = 6;
 
 const KIND_CLASS: Record<SessionTimelineEntryKind, string> = {
   user: "bg-[var(--timeline-user)]",
@@ -58,6 +62,105 @@ interface MinimapWindow {
   start: number;
   size: number;
 }
+
+interface TimelineRenderRange {
+  start: number;
+  end: number;
+}
+
+interface TimelineSegmentProps {
+  entry: SessionTimelineEntry;
+  index: number;
+  isActive: boolean;
+  isTooltipVisible: boolean;
+  virtualized: boolean;
+  entryCount: number;
+  gapWidth: number;
+  onShowTooltip: (
+    entry: SessionTimelineEntry,
+    trigger: HTMLElement,
+    source: TimelineTooltip["source"],
+  ) => void;
+  onHideTooltip: (entryId: string) => void;
+}
+
+function getInitialTimelineRenderRange(entryCount: number): TimelineRenderRange {
+  return {
+    start: 0,
+    end: Math.min(entryCount, VIRTUALIZED_TIMELINE_THRESHOLD),
+  };
+}
+
+function getTimelineRenderRange(
+  entryCount: number,
+  scrollLeft: number,
+  clientWidth: number,
+  scrollWidth: number,
+): TimelineRenderRange {
+  if (entryCount <= VIRTUALIZED_TIMELINE_THRESHOLD) {
+    return { start: 0, end: entryCount };
+  }
+  if (clientWidth <= 0 || scrollWidth <= 0) {
+    return getInitialTimelineRenderRange(entryCount);
+  }
+  if (clientWidth >= scrollWidth) {
+    return { start: 0, end: entryCount };
+  }
+
+  const visibleStart = Math.floor((Math.max(0, scrollLeft) / scrollWidth) * entryCount);
+  const visibleEnd = Math.ceil(
+    (Math.min(scrollWidth, scrollLeft + clientWidth) / scrollWidth) * entryCount,
+  );
+  return {
+    start: Math.max(0, visibleStart - VIRTUALIZED_TIMELINE_OVERSCAN),
+    end: Math.min(entryCount, visibleEnd + VIRTUALIZED_TIMELINE_OVERSCAN),
+  };
+}
+
+function getVirtualizedSegmentStyle(
+  index: number,
+  entryCount: number,
+  gapWidth: number,
+): CSSProperties {
+  const segmentWidth = 100 / entryCount;
+  return {
+    left: `calc(${index * segmentWidth}% + ${(index * gapWidth) / entryCount}px)`,
+    width: `calc(${segmentWidth}% - ${((entryCount - 1) * gapWidth) / entryCount}px)`,
+  };
+}
+
+const TimelineSegment = memo(function TimelineSegment({
+  entry,
+  index,
+  isActive,
+  isTooltipVisible,
+  virtualized,
+  entryCount,
+  gapWidth,
+  onShowTooltip,
+  onHideTooltip,
+}: TimelineSegmentProps) {
+  const tooltipId = `timeline-tooltip-${entry.id}`;
+  return (
+    <span
+      className={`t-tt-wrap session-timeline-item min-w-0 ${virtualized ? "absolute inset-y-0" : ""}`}
+      style={virtualized ? getVirtualizedSegmentStyle(index, entryCount, gapWidth) : undefined}
+    >
+      <button
+        type="button"
+        data-timeline-index={index}
+        aria-current={isActive ? "location" : undefined}
+        aria-describedby={isTooltipVisible ? tooltipId : undefined}
+        aria-label={`Go to ${entry.tooltip}`}
+        className={`t-tt-trigger session-timeline-segment h-full w-full rounded-[3px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-text)] ${KIND_CLASS[entry.kind]}`}
+        onPointerEnter={(event) => onShowTooltip(entry, event.currentTarget, "pointer")}
+        onPointerLeave={() => onHideTooltip(entry.id)}
+        onFocus={(event) => onShowTooltip(entry, event.currentTarget, "focus")}
+        onBlur={() => onHideTooltip(entry.id)}
+      />
+    </span>
+  );
+});
 
 function findScrollParent(node: HTMLElement): ScrollParent {
   let parent = node.parentElement;
@@ -105,8 +208,40 @@ function getTrackLayout(entryCount: number) {
         : { className: "gap-1", width: 4 };
   return {
     gapClassName: gap.className,
+    gapWidth: gap.width,
     minWidth: entryCount * TIMELINE_SEGMENT_MIN_WIDTH + Math.max(0, entryCount - 1) * gap.width,
   };
+}
+
+function scrollTimelineIndexIntoView(
+  viewport: HTMLElement,
+  track: HTMLElement,
+  index: number,
+  entryCount: number,
+  gapWidth: number,
+) {
+  if (entryCount === 0 || viewport.clientWidth <= 0) return;
+  const trackWidth = Math.max(
+    viewport.scrollWidth,
+    track.scrollWidth,
+    track.getBoundingClientRect().width,
+  );
+  if (trackWidth <= 0) return;
+
+  const segmentWidth = Math.max(
+    0,
+    (trackWidth - Math.max(0, entryCount - 1) * gapWidth) / entryCount,
+  );
+  const segmentStart = index * (segmentWidth + gapWidth);
+  const segmentEnd = segmentStart + segmentWidth;
+  const viewportStart = viewport.scrollLeft;
+  const viewportEnd = viewportStart + viewport.clientWidth;
+
+  if (segmentStart < viewportStart) {
+    viewport.scrollLeft = segmentStart;
+  } else if (segmentEnd > viewportEnd) {
+    viewport.scrollLeft = segmentEnd - viewport.clientWidth;
+  }
 }
 
 export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTimelineProps) {
@@ -119,19 +254,46 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
   const suppressClickRef = useRef(false);
   const minimapCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const minimapDragRef = useRef<{ pointerId: number; grabOffset: number } | null>(null);
+  const pendingFocusIndexRef = useRef<number | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [tooltip, setTooltip] = useState<TimelineTooltip | null>(null);
   const [scrollAvailability, setScrollAvailability] = useState({ left: false, right: false });
   const [minimapWindow, setMinimapWindow] = useState<MinimapWindow | null>(null);
+  const [renderRange, setRenderRange] = useState(() =>
+    getInitialTimelineRenderRange(entries.length),
+  );
   const entryIndexes = useMemo(
     () => new Map(entries.map((entry, index) => [entry.anchorId, index])),
     [entries],
   );
   const trackLayout = getTrackLayout(entries.length);
+  const virtualized = entries.length > VIRTUALIZED_TIMELINE_THRESHOLD;
+  const renderStart = virtualized ? Math.min(renderRange.start, entries.length) : 0;
+  const renderEnd = virtualized
+    ? Math.max(renderStart, Math.min(renderRange.end, entries.length))
+    : entries.length;
+  const renderedEntries = useMemo(
+    () =>
+      entries
+        .slice(renderStart, renderEnd)
+        .map((entry, offset) => ({ entry, index: renderStart + offset })),
+    [entries, renderEnd, renderStart],
+  );
 
   const updateScrollAvailability = useCallback(() => {
     const viewport = scrollRef.current;
     if (!viewport) return;
+    const nextRenderRange = getTimelineRenderRange(
+      entries.length,
+      viewport.scrollLeft,
+      viewport.clientWidth,
+      viewport.scrollWidth,
+    );
+    setRenderRange((current) =>
+      current.start === nextRenderRange.start && current.end === nextRenderRange.end
+        ? current
+        : nextRenderRange,
+    );
     const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
     const next = {
       left: viewport.scrollLeft > TIMELINE_SCROLL_EDGE_TOLERANCE,
@@ -151,7 +313,7 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
     setMinimapWindow((current) =>
       current?.start === window.start && current.size === window.size ? current : window,
     );
-  }, []);
+  }, [entries.length]);
 
   useLayoutEffect(() => {
     const element = tooltipRef.current;
@@ -297,19 +459,29 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
 
   useEffect(() => {
     const scrollViewport = scrollRef.current;
-    const segment = trackRef.current?.querySelector<HTMLElement>(
-      `[data-timeline-index="${activeIndex}"]`,
-    );
-    if (!scrollViewport || !segment) return;
+    const track = trackRef.current;
+    if (!scrollViewport || !track) return;
 
-    const viewportRect = scrollViewport.getBoundingClientRect();
-    const segmentRect = segment.getBoundingClientRect();
-    if (segmentRect.left < viewportRect.left) {
-      scrollViewport.scrollLeft -= viewportRect.left - segmentRect.left;
-    } else if (segmentRect.right > viewportRect.right) {
-      scrollViewport.scrollLeft += segmentRect.right - viewportRect.right;
-    }
-  }, [activeIndex]);
+    scrollTimelineIndexIntoView(
+      scrollViewport,
+      track,
+      activeIndex,
+      entries.length,
+      trackLayout.gapWidth,
+    );
+    updateScrollAvailability();
+  }, [activeIndex, entries.length, trackLayout.gapWidth, updateScrollAvailability]);
+
+  useLayoutEffect(() => {
+    const pendingIndex = pendingFocusIndexRef.current;
+    if (pendingIndex == null) return;
+    const segment = trackRef.current?.querySelector<HTMLButtonElement>(
+      `[data-timeline-index="${pendingIndex}"]`,
+    );
+    if (!segment) return;
+    pendingFocusIndexRef.current = null;
+    segment.focus();
+  }, [renderEnd, renderStart]);
 
   const minimapVisible = minimapWindow != null;
 
@@ -461,6 +633,45 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
     [entries, onNavigate],
   );
 
+  const focusTimelineIndex = useCallback(
+    (index: number) => {
+      const viewport = scrollRef.current;
+      const track = trackRef.current;
+      if (!viewport || !track) return;
+      const segment = track.querySelector<HTMLButtonElement>(`[data-timeline-index="${index}"]`);
+      if (segment) {
+        segment.focus();
+        return;
+      }
+
+      pendingFocusIndexRef.current = index;
+      scrollTimelineIndexIntoView(viewport, track, index, entries.length, trackLayout.gapWidth);
+      updateScrollAvailability();
+    },
+    [entries.length, trackLayout.gapWidth, updateScrollAvailability],
+  );
+
+  const handleTimelineKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      const indexValue = (event.target as HTMLElement).closest<HTMLButtonElement>(
+        "[data-timeline-index]",
+      )?.dataset.timelineIndex;
+      const index = indexValue == null ? null : Number(indexValue);
+      if (index == null || !Number.isInteger(index)) return;
+
+      let nextIndex: number | null = null;
+      if (event.key === "ArrowLeft") nextIndex = Math.max(0, index - 1);
+      if (event.key === "ArrowRight") nextIndex = Math.min(entries.length - 1, index + 1);
+      if (event.key === "Home") nextIndex = 0;
+      if (event.key === "End") nextIndex = entries.length - 1;
+      if (nextIndex == null || nextIndex === index) return;
+
+      event.preventDefault();
+      focusTimelineIndex(nextIndex);
+    },
+    [entries.length, focusTimelineIndex],
+  );
+
   return (
     <div className="sticky top-0 z-20 -mx-2 bg-[var(--console-bg)] px-2 py-3">
       <div
@@ -480,11 +691,16 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
             <div
               ref={trackRef}
               data-testid="session-timeline-track"
-              className={`grid h-5 w-full select-none items-stretch ${trackLayout.gapClassName}`}
-              style={{
-                gridTemplateColumns: `repeat(${entries.length}, minmax(${TIMELINE_SEGMENT_MIN_WIDTH}px, 1fr))`,
-                minWidth: `${trackLayout.minWidth}px`,
-              }}
+              className={`${virtualized ? "relative" : `grid items-stretch ${trackLayout.gapClassName}`} h-5 w-full select-none`}
+              style={
+                virtualized
+                  ? { minWidth: `${trackLayout.minWidth}px` }
+                  : {
+                      gridTemplateColumns: `repeat(${entries.length}, minmax(${TIMELINE_SEGMENT_MIN_WIDTH}px, 1fr))`,
+                      minWidth: `${trackLayout.minWidth}px`,
+                    }
+              }
+              onKeyDown={handleTimelineKeyDown}
               onPointerDown={(event) => {
                 if (event.button !== 0) return;
                 dragRef.current = {
@@ -535,26 +751,20 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
                 navigateFromPointer(event.clientX, behavior);
               }}
             >
-              {entries.map((entry, index) => {
-                const tooltipId = `timeline-tooltip-${entry.id}`;
-                const isActive = index === activeIndex;
-                return (
-                  <span key={entry.id} className="t-tt-wrap session-timeline-item min-w-0">
-                    <button
-                      type="button"
-                      data-timeline-index={index}
-                      aria-current={isActive ? "location" : undefined}
-                      aria-describedby={tooltip?.entryId === entry.id ? tooltipId : undefined}
-                      aria-label={`Go to ${entry.tooltip}`}
-                      className={`t-tt-trigger session-timeline-segment h-full w-full rounded-[3px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-text)] ${KIND_CLASS[entry.kind]}`}
-                      onPointerEnter={(event) => showTooltip(entry, event.currentTarget, "pointer")}
-                      onPointerLeave={() => hideTooltip(entry.id)}
-                      onFocus={(event) => showTooltip(entry, event.currentTarget, "focus")}
-                      onBlur={() => hideTooltip(entry.id)}
-                    />
-                  </span>
-                );
-              })}
+              {renderedEntries.map(({ entry, index }) => (
+                <TimelineSegment
+                  key={entry.id}
+                  entry={entry}
+                  index={index}
+                  isActive={index === activeIndex}
+                  isTooltipVisible={tooltip?.entryId === entry.id}
+                  virtualized={virtualized}
+                  entryCount={entries.length}
+                  gapWidth={trackLayout.gapWidth}
+                  onShowTooltip={showTooltip}
+                  onHideTooltip={hideTooltip}
+                />
+              ))}
             </div>
           </div>
           {scrollAvailability.left && (
