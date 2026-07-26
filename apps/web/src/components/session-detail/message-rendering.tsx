@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import {
   Bot,
   CalendarRange,
@@ -86,7 +86,7 @@ function MessageMarkdown({ text, highlightQuery }: { text: string; highlightQuer
   return <MarkdownContent text={text} highlightQuery={highlightQuery} />;
 }
 
-export function MessageItem({
+export const MessageItem = memo(function MessageItem({
   messageIndex,
   msg,
   blocks,
@@ -252,7 +252,7 @@ export function MessageItem({
       </div>
     </article>
   );
-}
+});
 
 function AbortToolItem() {
   return (

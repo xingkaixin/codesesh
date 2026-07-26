@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 
@@ -32,7 +32,10 @@ function buildHighlightPattern(query?: string): RegExp | null {
   return new RegExp(`(${terms.map(escapeRegExp).join("|")})`, "gi");
 }
 
-export function MarkdownContent({ text, highlightQuery }: MarkdownContentProps) {
+export const MarkdownContent = memo(function MarkdownContent({
+  text,
+  highlightQuery,
+}: MarkdownContentProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const highlightPattern = useMemo(() => buildHighlightPattern(highlightQuery), [highlightQuery]);
 
@@ -89,4 +92,4 @@ export function MarkdownContent({ text, highlightQuery }: MarkdownContentProps) 
       <ReactMarkdown components={markdownComponents}>{text}</ReactMarkdown>
     </div>
   );
-}
+});
