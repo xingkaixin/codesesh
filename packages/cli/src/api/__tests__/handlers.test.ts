@@ -4,7 +4,7 @@ const coreMocks = vi.hoisted(() => {
   return {
     attachProjectMetrics: vi.fn(),
     buildDashboard: vi.fn(),
-    materializeSessionDetail: vi.fn(),
+    materializeSessionDetailResponse: vi.fn(),
     listFileActivity: vi.fn((): FileActivityResult[] => []),
     listSessionAliases: vi.fn<
       () => Array<{ agentKey: string; sessionId: string; alias: string; updated_at: number }>
@@ -31,7 +31,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
       coreMocks.buildDashboard(...args);
       return actual.buildDashboard(...args);
     },
-    materializeSessionDetail: coreMocks.materializeSessionDetail,
+    materializeSessionDetailResponse: coreMocks.materializeSessionDetailResponse,
     listFileActivity: coreMocks.listFileActivity,
     listSessionAliases: coreMocks.listSessionAliases,
     executeSessionSearch: coreMocks.executeSessionSearch,
@@ -183,7 +183,7 @@ function toLocalDateKey(ts: number): string {
 afterEach(() => {
   coreMocks.attachProjectMetrics.mockClear();
   coreMocks.buildDashboard.mockClear();
-  coreMocks.materializeSessionDetail.mockReset();
+  coreMocks.materializeSessionDetailResponse.mockReset();
   coreMocks.listFileActivity.mockReset();
   coreMocks.listFileActivity.mockReturnValue([]);
   coreMocks.listSessionAliases.mockReset();
@@ -1181,35 +1181,85 @@ describe("handleGetSessionData", () => {
   };
 
   it("maps materialized session data to JSON", async () => {
-    coreMocks.materializeSessionDetail.mockReturnValue({ status: "found", data: detail });
+    coreMocks.materializeSessionDetailResponse.mockReturnValue({ status: "found", data: detail });
     const scanSource = makeScanSource();
     const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
 
     await handleGetSessionData(c, scanSource);
 
-    expect(coreMocks.materializeSessionDetail).toHaveBeenCalledWith(scanSource.getSnapshot(), {
-      agentName: "claudecode",
-      sessionId: "s1",
-    });
+    expect(coreMocks.materializeSessionDetailResponse).toHaveBeenCalledWith(
+      scanSource.getSnapshot(),
+      {
+        agentName: "claudecode",
+        sessionId: "s1",
+      },
+    );
     expect(c.json).toHaveBeenCalledWith(detail);
+  });
+
+  it("streams cached message JSON lazily while preserving aliases", async () => {
+    const { messages: _messages, ...detailHeader } = detail;
+    let serializedMessages = 0;
+    function* messages() {
+      serializedMessages += 1;
+      yield JSON.stringify({
+        id: "m1",
+        role: "assistant",
+        agent: null,
+        time_created: 1000,
+        time_completed: null,
+        mode: null,
+        model: null,
+        provider: null,
+        parts: [{ type: "text", text: "cached" }],
+      });
+    }
+    coreMocks.listSessionAliases.mockReturnValue([
+      {
+        agentKey: "claudecode",
+        sessionId: "s1",
+        alias: "Local Alias",
+        updated_at: 1000,
+      },
+    ]);
+    coreMocks.materializeSessionDetailResponse.mockReturnValue({
+      status: "found-json",
+      data: detailHeader,
+      messages: messages(),
+      messageCount: 1,
+    });
+    const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
+
+    const response = await handleGetSessionData(c, makeScanSource());
+
+    expect(response).toBeInstanceOf(Response);
+    expect(serializedMessages).toBe(0);
+    expect(c.json).not.toHaveBeenCalled();
+    const payload = await (response as Response).json();
+    expect(payload).toMatchObject({
+      id: "s1",
+      display_title: "Local Alias",
+      messages: [{ id: "m1", parts: [{ type: "text", text: "cached" }] }],
+    });
+    expect(serializedMessages).toBe(1);
   });
 
   it("returns 400 when agent name is missing", async () => {
     const c = makeMockContext({ param: { agent: "", id: "s1" } });
     await handleGetSessionData(c, makeScanSource());
     expect(c.json).toHaveBeenCalledWith({ error: "Missing agent name" }, 400);
-    expect(coreMocks.materializeSessionDetail).not.toHaveBeenCalled();
+    expect(coreMocks.materializeSessionDetailResponse).not.toHaveBeenCalled();
   });
 
   it("returns 400 when session ID is missing", async () => {
     const c = makeMockContext({ param: { agent: "claudecode", id: "" } });
     await handleGetSessionData(c, makeScanSource());
     expect(c.json).toHaveBeenCalledWith({ error: "Missing session ID" }, 400);
-    expect(coreMocks.materializeSessionDetail).not.toHaveBeenCalled();
+    expect(coreMocks.materializeSessionDetailResponse).not.toHaveBeenCalled();
   });
 
   it("maps an unknown agent to 404", async () => {
-    coreMocks.materializeSessionDetail.mockReturnValue({ status: "unknown-agent" });
+    coreMocks.materializeSessionDetailResponse.mockReturnValue({ status: "unknown-agent" });
     const c = makeMockContext({ param: { agent: "unknown", id: "s1" } });
 
     await handleGetSessionData(c, makeScanSource());
@@ -1218,7 +1268,7 @@ describe("handleGetSessionData", () => {
   });
 
   it("maps unavailable detail to 404", async () => {
-    coreMocks.materializeSessionDetail.mockReturnValue({ status: "not-ready" });
+    coreMocks.materializeSessionDetailResponse.mockReturnValue({ status: "not-ready" });
     const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
 
     await handleGetSessionData(c, makeScanSource());
@@ -1227,7 +1277,7 @@ describe("handleGetSessionData", () => {
   });
 
   it("maps materialization errors to 500", async () => {
-    coreMocks.materializeSessionDetail.mockImplementation(() => {
+    coreMocks.materializeSessionDetailResponse.mockImplementation(() => {
       throw new Error("DB not found");
     });
     const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
