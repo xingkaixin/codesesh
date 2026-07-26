@@ -2,6 +2,8 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 
 const coreMocks = vi.hoisted(() => {
   return {
+    attachProjectMetrics: vi.fn(),
+    buildDashboard: vi.fn(),
     materializeSessionDetail: vi.fn(),
     listFileActivity: vi.fn((): FileActivityResult[] => []),
     listSessionAliases: vi.fn<
@@ -21,6 +23,14 @@ vi.mock("@codesesh/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core")>();
   return {
     ...actual,
+    attachProjectMetrics: (...args: Parameters<typeof actual.attachProjectMetrics>) => {
+      coreMocks.attachProjectMetrics(...args);
+      return actual.attachProjectMetrics(...args);
+    },
+    buildDashboard: (...args: Parameters<typeof actual.buildDashboard>) => {
+      coreMocks.buildDashboard(...args);
+      return actual.buildDashboard(...args);
+    },
     materializeSessionDetail: coreMocks.materializeSessionDetail,
     listFileActivity: coreMocks.listFileActivity,
     listSessionAliases: coreMocks.listSessionAliases,
@@ -171,6 +181,8 @@ function toLocalDateKey(ts: number): string {
 // --- Tests ---
 
 afterEach(() => {
+  coreMocks.attachProjectMetrics.mockClear();
+  coreMocks.buildDashboard.mockClear();
   coreMocks.materializeSessionDetail.mockReset();
   coreMocks.listFileActivity.mockReset();
   coreMocks.listFileActivity.mockReturnValue([]);
@@ -260,6 +272,17 @@ describe("handleGetAgents", () => {
 
     expect(c.json.mock.calls[0]![0][0].count).toBe(2);
   });
+
+  it("reuses agent counts for the same snapshot and window", () => {
+    const source = makeScanSource();
+    const first = makeMockContext();
+    const second = makeMockContext();
+
+    handleGetAgents(first, source);
+    handleGetAgents(second, source);
+
+    expect(second.json.mock.calls[0]![0]).toBe(first.json.mock.calls[0]![0]);
+  });
 });
 
 describe("handleGetConfig", () => {
@@ -277,6 +300,20 @@ describe("handleGetSessions", () => {
     handleGetSessions(c, makeScanSource());
     const response = c.json.mock.calls[0]![0];
     expect(response.sessions).toHaveLength(2);
+  });
+
+  it("omits dashboard-only model usage from list responses", () => {
+    const session = makeSession("usage", { model_usage: { "gpt-5.5": 120 } });
+    const source = makeScanSource({
+      sessions: [session],
+      byAgent: { claudecode: [session] },
+    });
+    const c = makeMockContext();
+
+    handleGetSessions(c, source);
+
+    expect(c.json.mock.calls[0]![0].sessions[0]).not.toHaveProperty("model_usage");
+    expect(session.model_usage).toEqual({ "gpt-5.5": 120 });
   });
 
   it("filters by agent", () => {
@@ -619,6 +656,15 @@ describe("handleGetFileActivity", () => {
 });
 
 describe("handleGetProjects", () => {
+  it("reuses project aggregation for the same snapshot and window", () => {
+    const source = makeScanSource();
+
+    handleGetProjects(makeMockContext(), source);
+    handleGetProjects(makeMockContext(), source);
+
+    expect(coreMocks.attachProjectMetrics).toHaveBeenCalledTimes(1);
+  });
+
   it("lets request dates override the default time window", () => {
     const old = makeSession("old", {
       time_updated: 1000,
@@ -697,6 +743,40 @@ describe("handleGetProjects", () => {
 });
 
 describe("handleGetDashboard", () => {
+  it("reuses matching snapshot aggregates and invalidates them with the sessions array", () => {
+    let snapshot = makeScanResult();
+    const source: ScanResultSource = { getSnapshot: () => snapshot };
+    const query = { days: "0", to: "2026-07-26T12:00:00.000Z" };
+
+    handleGetDashboard(makeMockContext({ query }), source);
+    handleGetDashboard(makeMockContext({ query }), source);
+
+    expect(coreMocks.buildDashboard).toHaveBeenCalledTimes(1);
+
+    snapshot = { ...snapshot, sessions: [...snapshot.sessions] };
+    handleGetDashboard(makeMockContext({ query }), source);
+    handleGetDashboard(makeMockContext({ query: { ...query, agent: "codex" } }), source);
+
+    expect(coreMocks.buildDashboard).toHaveBeenCalledTimes(3);
+  });
+
+  it("reuses an implicit current-time window within a day", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 26, 12));
+    const source = makeScanSource();
+
+    handleGetDashboard(makeMockContext(), source);
+    vi.setSystemTime(new Date(2026, 6, 26, 18));
+    handleGetDashboard(makeMockContext(), source);
+
+    expect(coreMocks.buildDashboard).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date(2026, 6, 27, 12));
+    handleGetDashboard(makeMockContext(), source);
+
+    expect(coreMocks.buildDashboard).toHaveBeenCalledTimes(2);
+  });
+
   it("projects aliases onto recent file activity sessions", () => {
     const session = makeSession("s1", { slug: "claudecode/s1" });
     coreMocks.listSessionAliases.mockReturnValue([
