@@ -28,7 +28,7 @@ function getDataHome(): string {
   return join(homedir(), ".local", "share");
 }
 
-export interface ProviderRoots {
+export interface AgentRoots {
   codexRoot: string;
   claudeRoot: string;
   kimiRoot: string;
@@ -37,7 +37,7 @@ export interface ProviderRoots {
   zcodeRoot: string | null;
 }
 
-export function resolveProviderRoots(): ProviderRoots {
+export function resolveAgentRoots(): AgentRoots {
   const home = homedir();
   return {
     codexRoot: envPath("CODEX_HOME") ?? join(home, ".codex"),

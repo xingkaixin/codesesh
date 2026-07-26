@@ -14,8 +14,8 @@ import type {
   SessionCacheMeta,
   SessionSourceRef,
 } from "./base.js";
-import type { SessionHead, SessionData, MessagePart } from "../types/index.js";
-import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
+import type { SessionHead, SessionDetail, MessagePart } from "../types/index.js";
+import { resolveAgentRoots, firstExisting } from "../discovery/paths.js";
 import { readJsonlFile } from "../utils/jsonl.js";
 import { normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { isInternalEventType } from "../utils/parse-cleanup.js";
@@ -183,12 +183,12 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
   private defaultModel: string | null = null;
 
   private findBasePath(): string | null {
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
     return firstExisting(join(roots.kimiRoot, "sessions"), "data/kimi");
   }
 
   getSessionWatchPlan() {
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
     return {
       status: "supported" as const,
       targets: [
@@ -200,7 +200,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
 
   /** Parse kimi.json and build md5(project_path) → cwd mapping */
   private loadKimiConfig(): void {
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
     const configPath = join(roots.kimiRoot, "kimi.json");
     const tomlPath = join(roots.kimiRoot, "config.toml");
     if (existsSync(tomlPath)) {
@@ -370,7 +370,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     };
   }
 
-  getSessionData(sessionId: string): SessionData {
+  getSessionData(sessionId: string): SessionDetail {
     const meta = this.sessionMetaMap.get(sessionId);
     if (!meta) throw new Error(`Session not found: ${sessionId}`);
 
@@ -380,7 +380,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     return this.getSessionDataFromWire(meta);
   }
 
-  private getSessionDataFromContext(meta: SessionMeta): SessionData {
+  private getSessionDataFromContext(meta: SessionMeta): SessionDetail {
     if (!meta.contextFile) throw new Error("context.jsonl is missing");
 
     const builder = new TranscriptBuilder();
@@ -444,7 +444,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     return this.buildSessionData(meta, builder, stats);
   }
 
-  private getSessionDataFromWire(meta: SessionMeta): SessionData {
+  private getSessionDataFromWire(meta: SessionMeta): SessionDetail {
     const wirePath = meta.wireFile ?? join(meta.sourcePath, "wire.jsonl");
     if (!existsSync(wirePath)) throw new Error("wire.jsonl is missing");
 
@@ -729,7 +729,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
   }
 
   /** Applies a `_usage` record's running total; other records are ignored. */
-  private applyUsageTotal(record: Record<string, unknown>, stats: SessionData["stats"]): void {
+  private applyUsageTotal(record: Record<string, unknown>, stats: SessionDetail["stats"]): void {
     if (record.role !== "_usage") return;
     const tokenCount = asNumber(record.token_count);
     if (tokenCount === undefined) {
@@ -739,9 +739,9 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     stats.total_tokens = tokenCount;
   }
 
-  private extractStats(sessionDir: string): SessionData["stats"] {
+  private extractStats(sessionDir: string): SessionDetail["stats"] {
     let totalCost = 0;
-    const stats: SessionData["stats"] = {
+    const stats: SessionDetail["stats"] = {
       total_cost: 0,
       total_input_tokens: 0,
       total_output_tokens: 0,
@@ -797,8 +797,8 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
   private buildSessionData(
     meta: SessionMeta,
     builder: TranscriptBuilder,
-    stats: SessionData["stats"],
-  ): SessionData {
+    stats: SessionDetail["stats"],
+  ): SessionDetail {
     const transcript = builder.finish(stats);
     return {
       reference: { agentName: this.name, sessionId: meta.id },

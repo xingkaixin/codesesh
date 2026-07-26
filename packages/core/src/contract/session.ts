@@ -173,8 +173,8 @@ export interface ReferencedSessionHead {
   session: SessionHead;
 }
 
-/** Full session data for detail view */
-export interface SessionData {
+/** Complete normalized content for replaying a Session */
+export interface SessionDetail {
   reference: SessionReference;
   id: string;
   title: string;

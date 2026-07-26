@@ -1,4 +1,4 @@
-import type { SessionData, SessionFileActivity, SessionHead } from "../../types/index.js";
+import type { SessionDetail, SessionFileActivity, SessionHead } from "../../types/index.js";
 import { computeIdentity, realFs } from "../../projects/index.js";
 import { extractSessionFileActivity } from "../../utils/file-activity.js";
 import type { SQLiteDatabase } from "../../utils/sqlite.js";
@@ -167,7 +167,7 @@ function searchIndexEntryNeedsUpdate(state: SearchIndexState, session: SessionHe
 function loadSearchIndexEntry(
   agentName: string,
   change: SessionHeadChange,
-  loadSessionData: (sessionId: string) => SessionData,
+  loadSessionData: (sessionId: string) => SessionDetail,
 ): LoadedSearchIndexEntry | null {
   try {
     const data = loadSessionData(change.session.id);
@@ -197,7 +197,7 @@ function loadSearchIndexEntry(
 function* loadSearchIndexEntries(
   agentName: string,
   changes: Iterable<SessionHeadChange>,
-  loadSessionData: (sessionId: string) => SessionData,
+  loadSessionData: (sessionId: string) => SessionDetail,
 ): Generator<LoadedSearchIndexEntry> {
   for (const change of changes) {
     const entry = loadSearchIndexEntry(agentName, change, loadSessionData);
@@ -347,7 +347,7 @@ function writeSearchIndexRows(
 export function syncSessionSearchIndex(
   agentName: string,
   sessions: SessionHead[],
-  loadSessionData: (sessionId: string) => SessionData,
+  loadSessionData: (sessionId: string) => SessionDetail,
   options: SearchIndexSyncOptions = {},
 ): SearchIndexSyncResult | null {
   return withSearchIndexDb((db) => {
@@ -413,7 +413,7 @@ export function syncSessionSearchIndexChanges(
   agentName: string,
   changes: SessionHeadChange[],
   removedSessionIds: string[],
-  loadSessionData: (sessionId: string) => SessionData,
+  loadSessionData: (sessionId: string) => SessionDetail,
   options: SearchIndexSyncOptions = {},
 ): SearchIndexSyncResult | null {
   if (changes.length === 0 && removedSessionIds.length === 0) {

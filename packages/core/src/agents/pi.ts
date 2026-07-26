@@ -13,8 +13,8 @@ import type {
   SessionCacheMeta,
   SessionSourceRef,
 } from "./base.js";
-import type { Message, MessagePart, SessionData, SessionHead } from "../types/index.js";
-import { firstExisting, resolveProviderRoots } from "../discovery/paths.js";
+import type { Message, MessagePart, SessionDetail, SessionHead } from "../types/index.js";
+import { firstExisting, resolveAgentRoots } from "../discovery/paths.js";
 import { readJsonlFile } from "../utils/jsonl.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import { asNumber, asRecord, asString, narrowField } from "../utils/narrow.js";
@@ -147,12 +147,12 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
   private basePath: string | null = null;
 
   private findBasePath(): string | null {
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
     return firstExisting(join(roots.piRoot, "agent", "sessions"), "data/pi");
   }
 
   getSessionWatchPlan() {
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
     return {
       status: "supported" as const,
       targets: [
@@ -185,7 +185,7 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     return head;
   }
 
-  getSessionData(sessionId: string): SessionData {
+  getSessionData(sessionId: string): SessionDetail {
     const meta = this.sessionMetaMap.get(sessionId);
     if (!meta) throw new Error(`Session not found: ${sessionId}`);
     if (!existsSync(meta.sourcePath)) throw new Error(`Session file missing: ${meta.sourcePath}`);

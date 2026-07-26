@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { FileText, Funnel } from "../ui/icons";
-import type { SessionData } from "../../lib/api";
+import type { SessionDetail } from "../../lib/api";
 import { InteractiveReceipt } from "../InteractiveReceipt";
 import { RenderProfiler } from "../RenderProfiler";
 import { DrawerDialog } from "../DrawerDialog";
@@ -14,7 +14,7 @@ export function DeferredInteractiveReceipt({
   session,
   toc,
 }: {
-  session: SessionData;
+  session: SessionDetail;
   toc: SessionDetailToc;
 }) {
   const [open, setOpen] = useState(false);

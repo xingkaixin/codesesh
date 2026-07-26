@@ -1,17 +1,17 @@
 import { join } from "node:path";
-import { firstExisting, resolveProviderRoots } from "../discovery/paths.js";
+import { firstExisting, resolveAgentRoots } from "../discovery/paths.js";
 import { isSqliteAvailable } from "../utils/sqlite.js";
 import { OpenCodeSqliteAgent } from "./opencode-sqlite.js";
 
 function findZCodeDbPath(): string | null {
   if (!isSqliteAvailable()) return null;
-  const roots = resolveProviderRoots();
+  const roots = resolveAgentRoots();
   if (!roots.zcodeRoot) return null;
   return firstExisting(join(roots.zcodeRoot, "cli", "db", "db.sqlite"));
 }
 
 function getZCodeSessionWatchPlan() {
-  const roots = resolveProviderRoots();
+  const roots = resolveAgentRoots();
   return {
     status: "supported" as const,
     targets: roots.zcodeRoot

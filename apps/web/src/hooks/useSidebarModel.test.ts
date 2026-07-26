@@ -1,7 +1,7 @@
 import { SAMPLE_SESSION_HEAD } from "@codesesh/core/contract";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AgentInfo, ProjectGroup, SessionHead } from "../lib/api";
+import type { AgentInfo, ApiProjectGroup, SessionHead } from "../lib/api";
 import { buildSessionIndexes, getSessionReferenceKey } from "../lib/session-indexes";
 import type { ViewState } from "../lib/view-state";
 import { useSidebarModel } from "./useSidebarModel";
@@ -28,7 +28,7 @@ const projects = [
     cost: 0,
     agentStats: [],
   },
-] as ProjectGroup[];
+] as ApiProjectGroup[];
 const codexSession = {
   ...SAMPLE_SESSION_HEAD,
   id: "codex-session",
@@ -46,19 +46,19 @@ const sessionIndexes = buildSessionIndexes([codexSession, claudeSession], agents
 const rootView = {
   mode: "root",
   activeAgentKey: null,
-  activeSessionSlug: null,
+  activeSessionId: null,
 } satisfies ViewState;
 const projectView = {
   mode: "project",
   activeAgentKey: null,
-  activeSessionSlug: null,
+  activeSessionId: null,
   activeProjectKind: projectIdentity.kind,
   activeProjectKey: projectIdentity.key,
 } satisfies ViewState;
 const sessionView = {
   mode: "session",
   activeAgentKey: "codex",
-  activeSessionSlug: codexSession.id,
+  activeSessionId: codexSession.id,
 } satisfies ViewState;
 
 afterEach(cleanup);
@@ -92,7 +92,7 @@ describe("useSidebarModel", () => {
     const agentView = {
       mode: "agent",
       activeAgentKey: "codex",
-      activeSessionSlug: null,
+      activeSessionId: null,
     } satisfies ViewState;
     const { result } = renderModel(agentView);
 

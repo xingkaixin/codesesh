@@ -7,19 +7,19 @@ import { SessionDetail } from "../SessionDetail";
 import { SessionDetailSkeleton } from "../SessionDetailSkeleton";
 import type {
   AgentInfo,
-  BookmarkedSessionSnapshot,
+  BookmarkRecord,
   DashboardData,
-  ProjectGroup,
-  SessionData,
+  ApiProjectGroup,
   SessionHead,
 } from "../../lib/api";
+import type * as Api from "../../lib/api";
 import type { AgentCatalog } from "../../lib/agents";
 import type { ViewState } from "../../lib/view-state";
 import { SearchResultsPanel } from "./SearchResultsPanel";
 import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
 
 interface SessionDetailModel {
-  session: SessionData | null;
+  session: Api.SessionDetail | null;
   loading: boolean;
   error: string | null;
 }
@@ -46,9 +46,9 @@ interface SearchContentModel {
 }
 
 interface BookmarkContentModel {
-  sessions: BookmarkedSessionSnapshot[];
+  sessions: BookmarkRecord[];
   isBookmarked: (agentKey: string, sessionId: string) => boolean;
-  toggleBookmark: (session: BookmarkedSessionSnapshot) => void;
+  toggleBookmark: (session: BookmarkRecord) => void;
   toggleSessionBookmark: (session: SessionHead, agentKey: string) => void;
 }
 
@@ -60,10 +60,10 @@ interface AppRouteContentProps {
   agents: AgentInfo[];
   agentCatalog: AgentCatalog;
   agentNameMap: ReadonlyMap<string, string>;
-  projects: ProjectGroup[];
+  projects: ApiProjectGroup[];
   landingSessions: LandingSession[];
   sessionsByAgent: Map<string, LandingSession[]>;
-  activeProject: ProjectGroup | null;
+  activeProject: ApiProjectGroup | null;
   activeProjectSessions: LandingSession[];
   dashboard: DashboardData | null;
   sessionDetail: SessionDetailModel;
@@ -208,7 +208,7 @@ export function AppRouteContent({
           sessions={sessionsByAgent.get(viewState.activeAgentKey) ?? []}
           agentItems={landingAgentItems}
           activeAgentKey={viewState.activeAgentKey}
-          attemptedSessionSlug={viewState.activeSessionSlug}
+          attemptedSessionId={viewState.activeSessionId}
           isBookmarked={bookmarks.isBookmarked}
           onToggleBookmark={(session) => bookmarks.toggleSessionBookmark(session, session.agentKey)}
         />

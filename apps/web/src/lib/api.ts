@@ -20,7 +20,7 @@ export type {
   ToolPart,
   MessagePart,
   Message,
-  SessionData,
+  SessionDetail,
   SessionReference,
   ScanStatusEvent,
   BackfillStatus,
@@ -35,22 +35,22 @@ export type {
   AppConfig,
   SearchResult,
   SessionsUpdatedEvent,
-  ApiProjectGroup as ProjectGroup,
-  ApiProjectAgentStat as ProjectAgentStat,
-  BookmarkRecord as BookmarkedSessionSnapshot,
+  ApiProjectGroup,
+  ApiProjectAgentStat,
+  BookmarkRecord,
 } from "@codesesh/core/contract";
 
 import type {
   AgentInfo,
   ApiProjectGroup,
   AppConfig,
-  BookmarkRecord as BookmarkedSessionSnapshot,
+  BookmarkRecord,
   DashboardData,
   FileActivityKind,
   ProjectIdentityKind,
   ScanStatusEvent,
   SearchResult,
-  SessionData,
+  SessionDetail,
   SessionReference,
   SessionHead,
   SessionsUpdatedEvent,
@@ -180,7 +180,7 @@ export async function fetchSessionData(
   agent: string,
   sessionId: string,
   options?: FetchOptions,
-): Promise<SessionData> {
+): Promise<SessionDetail> {
   return fetchJson(`/api/sessions/${agent}/${sessionId}`, options);
 }
 
@@ -220,13 +220,13 @@ export async function fetchSearchResults(
 
 export async function fetchBookmarks(
   options?: FetchOptions,
-): Promise<{ bookmarks: BookmarkedSessionSnapshot[] }> {
+): Promise<{ bookmarks: BookmarkRecord[] }> {
   return fetchJson("/api/bookmarks", options);
 }
 
 export async function upsertBookmark(
-  bookmark: Omit<BookmarkedSessionSnapshot, "bookmarkedAt">,
-): Promise<{ bookmark: BookmarkedSessionSnapshot }> {
+  bookmark: Omit<BookmarkRecord, "bookmarkedAt">,
+): Promise<{ bookmark: BookmarkRecord }> {
   return fetchJson("/api/bookmarks", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -235,8 +235,8 @@ export async function upsertBookmark(
 }
 
 export async function importBookmarks(
-  bookmarks: Omit<BookmarkedSessionSnapshot, "bookmarkedAt">[],
-): Promise<{ bookmarks: BookmarkedSessionSnapshot[] }> {
+  bookmarks: Omit<BookmarkRecord, "bookmarkedAt">[],
+): Promise<{ bookmarks: BookmarkRecord[] }> {
   return fetchJson("/api/bookmarks/import", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

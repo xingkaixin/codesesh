@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { SessionHead, SessionData } from "../../types/index.js";
+import type { SessionHead, SessionDetail } from "../../types/index.js";
 import { BaseAgent, type SessionCacheMeta, type ChangeCheckResult } from "../../agents/base.js";
 import { filterSessions } from "../scanner.js";
 
@@ -36,8 +36,8 @@ class TestAgent extends BaseAgent {
     return [];
   }
 
-  getSessionData(): SessionData {
-    return {} as SessionData;
+  getSessionData(): SessionDetail {
+    return {} as SessionDetail;
   }
 
   getSessionWatchPlan() {

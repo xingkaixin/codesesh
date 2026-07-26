@@ -6,7 +6,7 @@ import {
   skippedSession,
 } from "./base.js";
 import type { AgentScanOptions, ParseSessionResult, SessionWatchPlan } from "./base.js";
-import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
+import type { SessionHead, SessionDetail, Message, MessagePart } from "../types/index.js";
 import { normalizeMessageParts } from "../contract/message-part.js";
 import { openDbReadOnly, type SQLiteDatabase } from "../utils/sqlite.js";
 import { estimateTokenCost } from "../utils/cost.js";
@@ -344,7 +344,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
     return contexts;
   }
 
-  getSessionData(sessionId: string): SessionData {
+  getSessionData(sessionId: string): SessionDetail {
     // Ensure dbPath is set
     if (!this.dbPath) {
       this.dbPath = this.findDbPath();

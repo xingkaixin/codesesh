@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import type { BookmarkedSessionSnapshot, SessionHead } from "../lib/api";
+import type { BookmarkRecord, SessionHead } from "../lib/api";
 import * as api from "../lib/api";
 import * as bookmarkUtils from "../lib/bookmarks";
 import { createQueryWrapper } from "../test/query-wrapper";
@@ -24,7 +24,7 @@ vi.mock("../lib/bookmarks", async (importOriginal) => {
   };
 });
 
-const snap = (id: string, updated = 1): BookmarkedSessionSnapshot => ({
+const snap = (id: string, updated = 1): BookmarkRecord => ({
   reference: { agentName: "cc", sessionId: id },
   session: {
     id,
@@ -174,7 +174,7 @@ describe("useBookmarks", () => {
   });
 
   it("does not apply the initial response after unmount", async () => {
-    const request = deferred<{ bookmarks: BookmarkedSessionSnapshot[] }>();
+    const request = deferred<{ bookmarks: BookmarkRecord[] }>();
     vi.mocked(api.fetchBookmarks).mockReturnValueOnce(request.promise);
     const { unmount } = renderBookmarks();
 
@@ -225,7 +225,7 @@ describe("useBookmarks", () => {
   });
 
   it("does not report snapshot sync failures after unmount", async () => {
-    const request = deferred<{ bookmarks: BookmarkedSessionSnapshot[] }>();
+    const request = deferred<{ bookmarks: BookmarkRecord[] }>();
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.mocked(api.fetchBookmarks).mockResolvedValue({ bookmarks: [snap("s1")] });
     vi.mocked(api.importBookmarks).mockReturnValueOnce(request.promise);
@@ -266,7 +266,7 @@ describe("useBookmarks", () => {
 
   it("does not apply a completed legacy migration after unmount", async () => {
     const legacy = snap("legacy");
-    const request = deferred<{ bookmarks: BookmarkedSessionSnapshot[] }>();
+    const request = deferred<{ bookmarks: BookmarkRecord[] }>();
     vi.mocked(bookmarkUtils.loadLegacyBookmarks).mockReturnValue([legacy]);
     vi.mocked(api.importBookmarks).mockReturnValueOnce(request.promise);
     const { unmount } = renderBookmarks();
@@ -294,7 +294,7 @@ describe("useBookmarks", () => {
   });
 
   it("does not report legacy migration failures after unmount", async () => {
-    const request = deferred<{ bookmarks: BookmarkedSessionSnapshot[] }>();
+    const request = deferred<{ bookmarks: BookmarkRecord[] }>();
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.mocked(bookmarkUtils.loadLegacyBookmarks).mockReturnValue([snap("legacy")]);
     vi.mocked(api.importBookmarks).mockReturnValueOnce(request.promise);

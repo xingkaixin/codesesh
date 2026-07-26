@@ -19,7 +19,7 @@ vi.mock("node:fs", async (importOriginal) => {
 
 import { homedir, platform } from "node:os";
 import { existsSync } from "node:fs";
-import { resolveProviderRoots, getCursorDataPath, getZCodeDataPath } from "../paths.js";
+import { resolveAgentRoots, getCursorDataPath, getZCodeDataPath } from "../paths.js";
 
 /** Normalize path separators so tests work on both Unix and Windows */
 const expectPath = (actual: string) => expect(actual.replace(/\\/g, "/"));
@@ -44,10 +44,10 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe("resolveProviderRoots", () => {
+describe("resolveAgentRoots", () => {
   it("uses default paths when no env vars are set", () => {
     mockedHomedir.mockReturnValue("/home/user");
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
     expectPath(roots.codexRoot).toBe("/home/user/.codex");
     expectPath(roots.claudeRoot).toBe("/home/user/.claude");
     expectPath(roots.kimiRoot).toBe("/home/user/.kimi");
@@ -58,28 +58,28 @@ describe("resolveProviderRoots", () => {
   it("respects CODEX_HOME override", () => {
     vi.stubEnv("CODEX_HOME", "/custom/codex");
     mockedHomedir.mockReturnValue("/home/user");
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
     expectPath(roots.codexRoot).toBe("/custom/codex");
   });
 
   it("respects CLAUDE_CONFIG_DIR override", () => {
     vi.stubEnv("CLAUDE_CONFIG_DIR", "/custom/claude");
     mockedHomedir.mockReturnValue("/home/user");
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
     expectPath(roots.claudeRoot).toBe("/custom/claude");
   });
 
   it("respects KIMI_SHARE_DIR override", () => {
     vi.stubEnv("KIMI_SHARE_DIR", "/custom/kimi");
     mockedHomedir.mockReturnValue("/home/user");
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
     expectPath(roots.kimiRoot).toBe("/custom/kimi");
   });
 
   it("respects PI_HOME override", () => {
     vi.stubEnv("PI_HOME", "/custom/pi");
     mockedHomedir.mockReturnValue("/home/user");
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
     expectPath(roots.piRoot).toBe("/custom/pi");
   });
 
@@ -87,7 +87,7 @@ describe("resolveProviderRoots", () => {
     mockedHomedir.mockReturnValue("/home/user");
     mockedPlatform.mockReturnValue("linux");
     vi.stubEnv("XDG_DATA_HOME", "/custom/data");
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
     expectPath(roots.opencodeRoot).toBe("/custom/data/opencode");
   });
 });

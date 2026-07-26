@@ -1,12 +1,12 @@
-export { resolveProviderRoots, getCursorDataPath, firstExisting } from "./paths.js";
-export type { ProviderRoots } from "./paths.js";
+export { resolveAgentRoots, getCursorDataPath, firstExisting } from "./paths.js";
+export type { AgentRoots } from "./paths.js";
 export {
   ensureSessionTagsSync,
   filterSessions,
   scanSessions,
   scanSessionsAsync,
 } from "./scanner.js";
-export type { ScanResult, ScanOptions } from "./scanner.js";
+export type { LiveSnapshot, ScanOptions } from "./scanner.js";
 export {
   materializeSessionDetail,
   materializeSessionDetailResponse,

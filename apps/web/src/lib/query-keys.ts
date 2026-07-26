@@ -25,8 +25,8 @@ export const queryKeys = {
   search: (query: string, options: SearchRequestOptions) => ["search", query, options] as const,
   searches: ["search"] as const,
   sessionDetails: ["session-detail"] as const,
-  sessionDetail: (agent: string, sessionSlug: string) =>
-    ["session-detail", agent, sessionSlug] as const,
+  sessionDetail: (agent: string, sessionId: string) =>
+    ["session-detail", agent, sessionId] as const,
   sessionSnapshots: ["session-snapshot"] as const,
   sessionSnapshot: (window: TimeWindow) => ["session-snapshot", normalizeWindow(window)] as const,
   sessionSnapshotAggregateQueries: ["session-snapshot-aggregates"] as const,

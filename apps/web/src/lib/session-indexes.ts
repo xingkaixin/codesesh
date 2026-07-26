@@ -9,8 +9,8 @@ import { getProjectIdentityKey } from "./projects";
 
 export interface IndexedSession extends SessionHead {
   agentKey: string;
-  sessionSlug: string;
-  fullPath: string;
+  sessionId: string;
+  reference: string;
 }
 
 export interface SessionProjectOption {
@@ -72,8 +72,8 @@ export function buildSessionIndexes(sessions: SessionHead[], agents: AgentInfo[]
     const indexedSession: IndexedSession = {
       ...session,
       agentKey,
-      sessionSlug: session.id,
-      fullPath: session.slug,
+      sessionId: session.id,
+      reference: session.slug,
     };
 
     landingSessions.push(indexedSession);

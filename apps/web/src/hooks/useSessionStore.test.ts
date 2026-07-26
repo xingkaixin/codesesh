@@ -5,7 +5,7 @@ import {
 } from "@codesesh/core/contract";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentInfo, AppConfig, ProjectGroup } from "../lib/api";
+import type { AgentInfo, AppConfig, ApiProjectGroup } from "../lib/api";
 import * as api from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
 import { createQueryWrapper } from "../test/query-wrapper";
@@ -24,7 +24,7 @@ const agents = [
   { name: "ClaudeCode", displayName: "Claude Code", count: 1 },
   { name: "Codex", displayName: "Codex", count: 0 },
 ] as unknown as AgentInfo[];
-const projects = [{ identityKind: "path", identityKey: "p1" }] as unknown as ProjectGroup[];
+const projects = [{ identityKind: "path", identityKey: "p1" }] as unknown as ApiProjectGroup[];
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

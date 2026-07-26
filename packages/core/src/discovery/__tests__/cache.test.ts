@@ -10,7 +10,7 @@ import {
   syncSessionSearchIndex,
 } from "../cache.js";
 import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../cache/db.js";
-import type { SessionData, SessionHead } from "../../types/index.js";
+import type { SessionDetail, SessionHead } from "../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-smoke-test-"));
 
@@ -46,7 +46,7 @@ describe("session cache integration", () => {
         total_cost: 0,
       },
     };
-    const data: SessionData = {
+    const data: SessionDetail = {
       ...session,
       reference: { agentName: "codex", sessionId: session.id },
       messages: [

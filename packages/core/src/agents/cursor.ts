@@ -10,7 +10,7 @@ import {
 import type { AgentScanOptions } from "./base.js";
 import type {
   SessionHead,
-  SessionData,
+  SessionDetail,
   Message,
   MessagePart,
   ToolPartState,
@@ -675,7 +675,7 @@ export class CursorAgent extends DatabaseSessionSource {
     }
   }
 
-  getSessionData(sessionId: string): SessionData {
+  getSessionData(sessionId: string): SessionDetail {
     // Ensure dbPath is set
     if (!this.dbPath) {
       this.dbPath = this.findDbPath();

@@ -18,8 +18,8 @@ import {
   skippedSession,
 } from "./base.js";
 import type { ParseSessionResult } from "./base.js";
-import type { SessionHead, SessionData, MessagePart } from "../types/index.js";
-import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
+import type { SessionHead, SessionDetail, MessagePart } from "../types/index.js";
+import { resolveAgentRoots, firstExisting } from "../discovery/paths.js";
 import { parseJsonlLines, readJsonlFile, readJsonlFileLines } from "../utils/jsonl.js";
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { cleanInternalText, isInternalEventType } from "../utils/session-normalization.js";
@@ -344,12 +344,12 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
   // ---- BaseAgent implementation ----
 
   private findBasePath(): string | null {
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
     return firstExisting(join(roots.codexRoot, "sessions"));
   }
 
   getSessionWatchPlan() {
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
     return {
       status: "supported" as const,
       targets: [
@@ -390,7 +390,7 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     return head;
   }
 
-  getSessionData(sessionId: string): SessionData {
+  getSessionData(sessionId: string): SessionDetail {
     const meta = this.sessionMetaMap.get(sessionId);
     if (!meta) throw new Error(`Session not found: ${sessionId}`);
     if (!existsSync(meta.sourcePath)) throw new Error(`Session file missing: ${meta.sourcePath}`);
@@ -583,7 +583,7 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
   }
 
   private getSessionIndexPath(): string {
-    this.sessionIndexPath ??= join(resolveProviderRoots().codexRoot, "session_index.jsonl");
+    this.sessionIndexPath ??= join(resolveAgentRoots().codexRoot, "session_index.jsonl");
     return this.sessionIndexPath;
   }
 

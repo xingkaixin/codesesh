@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import type { SessionData } from "../lib/api";
+import type { SessionDetail } from "../lib/api";
 import type { ViewState } from "../lib/view-state";
 import * as api from "../lib/api";
 import { createQueryWrapper } from "../test/query-wrapper";
@@ -14,10 +14,10 @@ vi.mock("../lib/api", () => ({
 const sessionView: ViewState = {
   mode: "session",
   activeAgentKey: "claudecode",
-  activeSessionSlug: "claudecode/abc",
+  activeSessionId: "claudecode/abc",
 };
 
-const sample = { id: "abc", messages: [] } as unknown as SessionData;
+const sample = { id: "abc", messages: [] } as unknown as SessionDetail;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -65,7 +65,7 @@ describe("useSessionDetail", () => {
   });
 
   it("does not fetch for a non-session route", () => {
-    const rootView: ViewState = { mode: "root", activeAgentKey: null, activeSessionSlug: null };
+    const rootView: ViewState = { mode: "root", activeAgentKey: null, activeSessionId: null };
     const { result } = renderSessionDetail(rootView);
 
     expect(result.current.session).toBeNull();
@@ -77,7 +77,7 @@ describe("useSessionDetail", () => {
     const { result } = renderSessionDetail();
     await waitFor(() => expect(result.current.session).toEqual(sample));
 
-    const updated = { id: "abc", messages: [1] } as unknown as SessionData;
+    const updated = { id: "abc", messages: [1] } as unknown as SessionDetail;
     vi.mocked(api.fetchSessionData).mockResolvedValue(updated);
     await act(async () => {
       await result.current.refresh();
@@ -86,18 +86,18 @@ describe("useSessionDetail", () => {
   });
 
   it("keeps the current route when an older request resolves last", async () => {
-    const requestA = deferred<SessionData>();
-    const requestB = deferred<SessionData>();
+    const requestA = deferred<SessionDetail>();
+    const requestB = deferred<SessionDetail>();
     const viewA = sessionView;
     const viewB: ViewState = {
       mode: "session",
       activeAgentKey: "codex",
-      activeSessionSlug: "def",
+      activeSessionId: "def",
     };
-    const sessionA = { id: "a", messages: [] } as unknown as SessionData;
-    const sessionB = { id: "b", messages: [] } as unknown as SessionData;
+    const sessionA = { id: "a", messages: [] } as unknown as SessionDetail;
+    const sessionB = { id: "b", messages: [] } as unknown as SessionDetail;
     vi.mocked(api.fetchSessionData).mockImplementation((_agent, sessionId) =>
-      sessionId === viewA.activeSessionSlug ? requestA.promise : requestB.promise,
+      sessionId === viewA.activeSessionId ? requestA.promise : requestB.promise,
     );
     const { result, rerender } = renderSessionDetail(viewA);
     await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(1));
@@ -128,9 +128,9 @@ describe("useSessionDetail", () => {
     const viewB: ViewState = {
       mode: "session",
       activeAgentKey: "codex",
-      activeSessionSlug: "def",
+      activeSessionId: "def",
     };
-    const sessionB = { id: "b", messages: [] } as unknown as SessionData;
+    const sessionB = { id: "b", messages: [] } as unknown as SessionDetail;
     vi.mocked(api.fetchSessionData).mockImplementation((agent, _sessionId, options) => {
       if (agent === "codex") return Promise.resolve(sessionB);
       return new Promise((_resolve, reject) => {
@@ -155,16 +155,16 @@ describe("useSessionDetail", () => {
   });
 
   it("does not let a stale failure clear loading for the current request", async () => {
-    const requestA = deferred<SessionData>();
-    const requestB = deferred<SessionData>();
+    const requestA = deferred<SessionDetail>();
+    const requestB = deferred<SessionDetail>();
     const viewB: ViewState = {
       mode: "session",
       activeAgentKey: "codex",
-      activeSessionSlug: "def",
+      activeSessionId: "def",
     };
-    const sessionB = { id: "b", messages: [] } as unknown as SessionData;
+    const sessionB = { id: "b", messages: [] } as unknown as SessionDetail;
     vi.mocked(api.fetchSessionData).mockImplementation((_agent, sessionId) =>
-      sessionId === sessionView.activeSessionSlug ? requestA.promise : requestB.promise,
+      sessionId === sessionView.activeSessionId ? requestA.promise : requestB.promise,
     );
     const { result, rerender } = renderSessionDetail();
     await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(1));
@@ -181,7 +181,7 @@ describe("useSessionDetail", () => {
   });
 
   it("aborts without committing state after unmount", async () => {
-    const request = deferred<SessionData>();
+    const request = deferred<SessionDetail>();
     vi.mocked(api.fetchSessionData).mockReturnValue(request.promise);
     const { unmount } = renderSessionDetail();
     await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(1));
@@ -202,13 +202,13 @@ describe("useSessionDetail", () => {
   });
 
   it("does not let an old refresh overwrite a navigated session", async () => {
-    const refreshRequest = deferred<SessionData>();
-    const refreshedA = { id: "a-refreshed", messages: [] } as unknown as SessionData;
-    const sessionB = { id: "b", messages: [] } as unknown as SessionData;
+    const refreshRequest = deferred<SessionDetail>();
+    const refreshedA = { id: "a-refreshed", messages: [] } as unknown as SessionDetail;
+    const sessionB = { id: "b", messages: [] } as unknown as SessionDetail;
     const viewB: ViewState = {
       mode: "session",
       activeAgentKey: "codex",
-      activeSessionSlug: "def",
+      activeSessionId: "def",
     };
     vi.mocked(api.fetchSessionData)
       .mockResolvedValueOnce(sample)

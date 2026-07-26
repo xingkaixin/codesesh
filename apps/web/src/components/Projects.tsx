@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import type { DashboardData, ProjectAgentStat, ProjectGroup, SessionHead } from "../lib/api";
+import type { DashboardData, ApiProjectAgentStat, ApiProjectGroup, SessionHead } from "../lib/api";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import { formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getProjectPath } from "../lib/projects";
@@ -37,7 +37,7 @@ function AgentPills({
   agents,
   agentCatalog,
 }: {
-  agents: ProjectAgentStat[];
+  agents: ApiProjectAgentStat[];
   agentCatalog: AgentCatalog;
 }) {
   if (agents.length === 0) return null;
@@ -71,7 +71,7 @@ function ProjectListItem({
   project,
   agentCatalog,
 }: {
-  project: ProjectGroup;
+  project: ApiProjectGroup;
   agentCatalog: AgentCatalog;
 }) {
   return (
@@ -111,7 +111,7 @@ export function ProjectsOverview({
   projects,
   agentCatalog,
 }: {
-  projects: ProjectGroup[];
+  projects: ApiProjectGroup[];
   agentCatalog: AgentCatalog;
 }) {
   const totalSessions = projects.reduce((sum, project) => sum + project.sessionCount, 0);
@@ -159,7 +159,7 @@ function ProjectAgentFilter({
   activeAgent,
   onChange,
 }: {
-  agents: ProjectAgentStat[];
+  agents: ApiProjectAgentStat[];
   agentCatalog: AgentCatalog;
   activeAgent?: string;
   onChange: (agent?: string) => void;
@@ -216,7 +216,7 @@ function ProjectHeader({
   project,
   agentCatalog,
 }: {
-  project: ProjectGroup;
+  project: ApiProjectGroup;
   agentCatalog: AgentCatalog;
 }) {
   return (
@@ -263,9 +263,9 @@ function TopCostSessions({
         {topSessions.map((session) => {
           const agent = findAgent(agentCatalog, session.agentKey);
           return (
-            <li key={session.fullPath}>
+            <li key={session.reference}>
               <Link
-                to={`/${session.fullPath}`}
+                to={`/${session.reference}`}
                 className="block rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
               >
                 <div className="flex items-center gap-2">
@@ -285,7 +285,7 @@ function TopCostSessions({
                   </span>
                 </div>
                 <p className="console-mono mt-1 text-[11px] text-[var(--console-muted)]">
-                  /{session.fullPath} · {formatCompact(getSessionTotalTokens(session))} tokens
+                  /{session.reference} · {formatCompact(getSessionTotalTokens(session))} tokens
                 </p>
               </Link>
             </li>
@@ -309,7 +309,7 @@ export function ProjectDashboardView({
   isBookmarked,
   onToggleSessionBookmark,
 }: {
-  project: ProjectGroup | null;
+  project: ApiProjectGroup | null;
   agentCatalog: AgentCatalog;
   projectKey: string;
   dashboard: DashboardData | null;

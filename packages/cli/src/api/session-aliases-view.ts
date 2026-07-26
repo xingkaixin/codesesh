@@ -11,7 +11,7 @@ import {
   mergeSearchQueryOptions,
   StateStorageUnavailableError,
   type FileActivityResult,
-  type ScanResult,
+  type LiveSnapshot,
   type SearchOptions,
 } from "@codesesh/core";
 import { appLogger } from "../logging.js";
@@ -100,7 +100,7 @@ export function decorateFileActivity(
 export function findAliasSearchResults(
   query: string,
   options: SearchOptions,
-  scanResult: ScanResult,
+  scanResult: LiveSnapshot,
   aliases: AliasView,
 ): SearchResult[] {
   const search = mergeSearchQueryOptions(query, options);

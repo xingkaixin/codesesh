@@ -5,7 +5,7 @@ import {
   type AgentInfo,
   type AppConfig,
   type DashboardData,
-  type ProjectGroup,
+  type ApiProjectGroup,
   type SessionHead,
   type SessionsUpdatedEvent,
   fetchAgents,
@@ -22,7 +22,7 @@ export interface SessionStoreSnapshot {
   window: AppConfig["window"];
   agents: AgentInfo[];
   sessions: SessionHead[];
-  projects: ProjectGroup[];
+  projects: ApiProjectGroup[];
   dashboard: DashboardData;
 }
 
@@ -31,14 +31,14 @@ type SnapshotAggregates = Pick<SessionStoreSnapshot, "agents" | "projects" | "da
 const EMPTY_SNAPSHOT = {
   agents: [] satisfies AgentInfo[],
   sessions: [] satisfies SessionHead[],
-  projects: [] satisfies ProjectGroup[],
+  projects: [] satisfies ApiProjectGroup[],
   dashboard: null,
 };
 
 async function loadProjects(
   window: AppConfig["window"],
   signal: AbortSignal,
-): Promise<ProjectGroup[]> {
+): Promise<ApiProjectGroup[]> {
   try {
     return (await fetchProjects(window, { signal })).projects;
   } catch (error) {

@@ -21,7 +21,7 @@ export const appRouteChildren: RouteObject[] = [
   {
     path: ":agentKey",
     id: APP_ROUTE_IDS.agent,
-    children: [{ path: ":sessionSlug", id: APP_ROUTE_IDS.session }],
+    children: [{ path: ":sessionId", id: APP_ROUTE_IDS.session }],
   },
   { path: "*", id: APP_ROUTE_IDS.notFound },
 ];

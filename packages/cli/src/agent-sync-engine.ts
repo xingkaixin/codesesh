@@ -11,7 +11,7 @@ import {
   type AgentScanProgress,
   type BaseAgent,
   type ScanOptions,
-  type ScanResult,
+  type LiveSnapshot,
   type SessionHead,
   type SessionHeadChange,
 } from "@codesesh/core";
@@ -35,7 +35,7 @@ export interface AgentSessionsChanged {
 }
 
 export interface AgentSyncEngineOptions {
-  snapshot: () => ScanResult;
+  snapshot: () => LiveSnapshot;
   startupScanOptions?: Pick<ScanOptions, "from" | "to">;
   workerRunner: WorkerRunner;
 }

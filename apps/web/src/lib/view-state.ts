@@ -3,25 +3,25 @@ import type { ProjectIdentityKind } from "./api";
 import { isProjectIdentityKind } from "./projects";
 
 export type ViewState =
-  | { mode: "root"; activeAgentKey: null; activeSessionSlug: null }
-  | { mode: "projects"; activeAgentKey: null; activeSessionSlug: null }
+  | { mode: "root"; activeAgentKey: null; activeSessionId: null }
+  | { mode: "projects"; activeAgentKey: null; activeSessionId: null }
   | {
       mode: "project";
       activeAgentKey: null;
-      activeSessionSlug: null;
+      activeSessionId: null;
       activeProjectKind: ProjectIdentityKind;
       activeProjectKey: string;
     }
-  | { mode: "agent"; activeAgentKey: string; activeSessionSlug: null }
-  | { mode: "session"; activeAgentKey: string; activeSessionSlug: string }
-  | { mode: "missingAgent"; activeAgentKey: null; activeSessionSlug: null; attemptedKey: string }
+  | { mode: "agent"; activeAgentKey: string; activeSessionId: null }
+  | { mode: "session"; activeAgentKey: string; activeSessionId: string }
+  | { mode: "missingAgent"; activeAgentKey: null; activeSessionId: null; attemptedKey: string }
   | {
       mode: "missingSession";
       activeAgentKey: string;
-      activeSessionSlug: string;
-      attemptedSessionSlug: string;
+      activeSessionId: string;
+      attemptedSessionId: string;
     }
-  | { mode: "invalidRoute"; activeAgentKey: null; activeSessionSlug: null };
+  | { mode: "invalidRoute"; activeAgentKey: null; activeSessionId: null };
 
 export interface ViewRouteMatch {
   id: string;
@@ -31,7 +31,7 @@ export interface ViewRouteMatch {
 const invalidRoute: ViewState = {
   mode: "invalidRoute",
   activeAgentKey: null,
-  activeSessionSlug: null,
+  activeSessionId: null,
 };
 
 export function viewStateFromRouteMatches(
@@ -42,10 +42,10 @@ export function viewStateFromRouteMatches(
   if (!match) return invalidRoute;
 
   if (match.id === APP_ROUTE_IDS.root) {
-    return { mode: "root", activeAgentKey: null, activeSessionSlug: null };
+    return { mode: "root", activeAgentKey: null, activeSessionId: null };
   }
   if (match.id === APP_ROUTE_IDS.projects) {
-    return { mode: "projects", activeAgentKey: null, activeSessionSlug: null };
+    return { mode: "projects", activeAgentKey: null, activeSessionId: null };
   }
   if (match.id === APP_ROUTE_IDS.project) {
     const kind = match.params.projectKind;
@@ -54,7 +54,7 @@ export function viewStateFromRouteMatches(
     return {
       mode: "project",
       activeAgentKey: null,
-      activeSessionSlug: null,
+      activeSessionId: null,
       activeProjectKind: kind,
       activeProjectKey: key,
     };
@@ -65,16 +65,16 @@ export function viewStateFromRouteMatches(
       return {
         mode: "missingAgent",
         activeAgentKey: null,
-        activeSessionSlug: null,
+        activeSessionId: null,
         attemptedKey: agentKey ?? "",
       };
     }
     if (match.id === APP_ROUTE_IDS.agent) {
-      return { mode: "agent", activeAgentKey: agentKey, activeSessionSlug: null };
+      return { mode: "agent", activeAgentKey: agentKey, activeSessionId: null };
     }
-    const sessionSlug = match.params.sessionSlug;
-    if (!sessionSlug) return invalidRoute;
-    return { mode: "session", activeAgentKey: agentKey, activeSessionSlug: sessionSlug };
+    const sessionId = match.params.sessionId;
+    if (!sessionId) return invalidRoute;
+    return { mode: "session", activeAgentKey: agentKey, activeSessionId: sessionId };
   }
   return invalidRoute;
 }

@@ -35,7 +35,7 @@ describe("AppSidebar agent counts", () => {
             sidebarCollapsed: false,
             browseBy: "agents",
             isScanActive: false,
-            viewState: { mode: "root", activeAgentKey: null, activeSessionSlug: null },
+            viewState: { mode: "root", activeAgentKey: null, activeSessionId: null },
             agents,
             agentCatalog: createAgentCatalog(agents),
             activeAgentKey: null,

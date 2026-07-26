@@ -1,7 +1,7 @@
 import type {
   AgentInfo,
-  BookmarkedSessionSnapshot,
-  ProjectGroup,
+  BookmarkRecord,
+  ApiProjectGroup,
   ScanStatusEvent,
   SessionHead,
 } from "../../lib/api";
@@ -103,7 +103,7 @@ function ProjectNavList({
   selectedProjectNavigationId,
   onSelectProject,
 }: {
-  projects: ProjectGroup[];
+  projects: ApiProjectGroup[];
   selectedProjectNavigationId: string | null;
   onSelectProject: (identity: ReturnType<typeof getProjectGroupIdentity>) => void;
 }) {
@@ -146,10 +146,10 @@ export interface AppSidebarViewModel {
   agentCatalog: AgentCatalog;
   activeAgentKey: string | null;
   scanStatus: ScanStatusEvent | null;
-  projects: ProjectGroup[];
+  projects: ApiProjectGroup[];
   selectedProjectNavigationId: string | null;
   loading: boolean;
-  bookmarkedSessions: BookmarkedSessionSnapshot[];
+  bookmarkedSessions: BookmarkRecord[];
   sidebarSessions: SessionHead[];
   selectedSidebarSessionReference: string | null;
   bookmarkedSidebarSessionReferences: Set<string>;
@@ -158,11 +158,11 @@ export interface AppSidebarViewModel {
 export interface AppSidebarActions {
   onChangeBrowseBy: (value: BrowseBy) => void;
   onSelectProject: (identity: ReturnType<typeof getProjectGroupIdentity>) => void;
-  onToggleBookmark: (session: BookmarkedSessionSnapshot) => void;
+  onToggleBookmark: (session: BookmarkRecord) => void;
   onSelectFlatSidebarSession: (session: SessionHead) => void;
   onToggleSidebarSessionBookmark: (session: SessionHead) => void;
   onRenameSession: (session: SessionHead) => void;
-  onRenameBookmarkedSession: (session: BookmarkedSessionSnapshot) => void;
+  onRenameBookmarkedSession: (session: BookmarkRecord) => void;
   onSelectTreeSidebarSession: (session: SessionHead) => void;
 }
 
@@ -200,7 +200,7 @@ export function AppSidebar({
 }) {
   const activeSessionReference =
     viewState.mode === "session"
-      ? getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionSlug)
+      ? getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionId)
       : null;
 
   return (
@@ -292,7 +292,7 @@ export function AppSidebar({
                 const isActive =
                   viewState.mode === "session" &&
                   viewState.activeAgentKey === reference.agentName &&
-                  viewState.activeSessionSlug === reference.sessionId;
+                  viewState.activeSessionId === reference.sessionId;
                 const agent = findAgent(agentCatalog, reference.agentName);
                 return (
                   <li key={getSessionBookmarkKey(reference)}>

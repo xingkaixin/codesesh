@@ -20,7 +20,7 @@ import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import type {
   Message,
   ProjectIdentity,
-  SessionData,
+  SessionDetail,
   SessionHead,
   SmartTag,
 } from "../../types/index.js";
@@ -122,7 +122,7 @@ function makeSessionHead(spec: FixtureSpec): SessionHead {
   };
 }
 
-function makeSessionData(spec: FixtureSpec): SessionData {
+function makeSessionData(spec: FixtureSpec): SessionDetail {
   return {
     ...makeSessionHead(spec),
     reference: { agentName: spec.agent, sessionId: spec.id },

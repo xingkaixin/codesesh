@@ -9,8 +9,8 @@ import { SmartTagChips } from "./SmartTagChips";
 
 export interface LandingSession extends SessionHead {
   agentKey: string;
-  sessionSlug: string;
-  fullPath: string;
+  sessionId: string;
+  reference: string;
 }
 
 export interface LandingAgentItem {
@@ -28,7 +28,7 @@ interface DetailLandingProps {
   agentItems: LandingAgentItem[];
   activeAgentKey?: string;
   attemptedAgentKey?: string;
-  attemptedSessionSlug?: string | null;
+  attemptedSessionId?: string | null;
   isBookmarked: (agentKey: string, sessionId: string) => boolean;
   onToggleBookmark: (session: LandingSession) => void;
 }
@@ -187,12 +187,12 @@ function RecentSessions({
           return (
             <li key={session.id}>
               <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
-                <Link to={`/${session.fullPath}`} className="min-w-0 flex-1">
+                <Link to={`/${session.reference}`} className="min-w-0 flex-1">
                   <p className="line-clamp-1 text-sm text-[var(--console-text)]">
                     {getSessionDisplayTitle(session)}
                   </p>
                   <p className="console-mono mt-0.5 text-[11px] text-[var(--console-muted)]">
-                    /{session.fullPath} ·{" "}
+                    /{session.reference} ·{" "}
                     {formatRelativeTime(session.time_updated || session.time_created)}
                   </p>
                   <SmartTagChips tags={session.smart_tags} className="mt-1.5" />
@@ -214,7 +214,7 @@ export function DetailLanding({
   agentItems,
   activeAgentKey,
   attemptedAgentKey,
-  attemptedSessionSlug,
+  attemptedSessionId,
   isBookmarked,
   onToggleBookmark,
 }: DetailLandingProps) {
@@ -235,7 +235,7 @@ export function DetailLanding({
   const latestUpdatedAt = sortedSessions[0]?.time_updated || sortedSessions[0]?.time_created;
 
   if (type === "missing-agent") {
-    const requestedPath = `/${attemptedAgentKey || "unknown"}${attemptedSessionSlug ? `/${attemptedSessionSlug}` : ""}`;
+    const requestedPath = `/${attemptedAgentKey || "unknown"}${attemptedSessionId ? `/${attemptedSessionId}` : ""}`;
 
     return (
       <div className="mx-auto max-w-4xl space-y-4">
@@ -249,8 +249,8 @@ export function DetailLanding({
         <div className="grid gap-3 md:grid-cols-3">
           <DiagnosticItem label="Requested Agent" value={attemptedAgentKey || "unknown"} />
           <DiagnosticItem label="Requested Path" value={requestedPath} />
-          {attemptedSessionSlug ? (
-            <DiagnosticItem label="Requested Session" value={attemptedSessionSlug} />
+          {attemptedSessionId ? (
+            <DiagnosticItem label="Requested Session" value={attemptedSessionId} />
           ) : null}
         </div>
 
@@ -263,14 +263,14 @@ export function DetailLanding({
     const agent = activeAgentKey ? findAgent(agentCatalog, activeAgentKey) : undefined;
     const displayName = agent?.displayName ?? activeAgentKey ?? "Unknown Agent";
     const agentIcon = agent?.icon;
-    const sessionSlug = attemptedSessionSlug || "unknown-session";
+    const sessionId = attemptedSessionId || "unknown-session";
 
     return (
       <div className="mx-auto max-w-4xl space-y-4">
         <MissingStateHero
           code="404 / SESSION"
           title="This session isn't in the index."
-          description={`${displayName} is available, but the session you're looking for does not exist in the current index. The slug may be incorrect, or the record may never have been part of this dataset.`}
+          description={`${displayName} is available, but the session you're looking for does not exist in the current index. The session ID may be incorrect, or the record may never have been part of this dataset.`}
           aside="We checked the current path, but nothing matched. The session list on the left is still available."
           iconSrc={agentIcon}
           iconColored={agent?.iconColored}
@@ -296,7 +296,7 @@ export function DetailLanding({
               </p>
             </div>
           </div>
-          <DiagnosticItem label="Session" value={sessionSlug} />
+          <DiagnosticItem label="Session" value={sessionId} />
         </div>
 
         <RecentSessions

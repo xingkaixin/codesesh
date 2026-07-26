@@ -39,7 +39,7 @@ import {
   BookmarkStorageUnavailableError,
   StateStorageUnavailableError,
   type BookmarkRecord,
-  type ScanResult,
+  type LiveSnapshot,
 } from "@codesesh/core";
 import {
   handleDeleteBookmark,
@@ -130,7 +130,7 @@ const scanSource: ScanResultSource = {
       sessions: [],
       byAgent: {},
       agents: [],
-    }) as ScanResult,
+    }) as LiveSnapshot,
 };
 
 beforeEach(() => {

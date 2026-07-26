@@ -1,11 +1,11 @@
-import type { ProjectGroup, ProjectIdentityKind } from "./api";
+import type { ApiProjectGroup, ProjectIdentityKind } from "./api";
 
 export interface ProjectRouteIdentity {
   kind: ProjectIdentityKind;
   key: string;
 }
 
-export function getProjectGroupIdentity(project: ProjectGroup): ProjectRouteIdentity {
+export function getProjectGroupIdentity(project: ApiProjectGroup): ProjectRouteIdentity {
   return { kind: project.identityKind, key: project.identityKey };
 }
 

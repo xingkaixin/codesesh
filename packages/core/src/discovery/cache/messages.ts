@@ -7,7 +7,7 @@ import type {
   Message,
   MessagePart,
   ProjectIdentityKind,
-  SessionData,
+  SessionDetail,
   SessionFileActivity,
   SessionHead,
   ToolPart,
@@ -532,7 +532,7 @@ export function buildMessageText(message: Message): string {
   return chunks.join("\n");
 }
 
-export function normalizeMessages(session: SessionData): StructuredMessageRecord[] {
+export function normalizeMessages(session: SessionDetail): StructuredMessageRecord[] {
   return session.messages.map((message, index) => {
     const toolMetadata = message.parts
       .filter((part): part is ToolPart => part.type === "tool")

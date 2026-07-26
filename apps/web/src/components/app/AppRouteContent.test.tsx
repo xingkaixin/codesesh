@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ProjectGroup } from "../../lib/api";
+import type { ApiProjectGroup } from "../../lib/api";
 import { createAgentCatalog } from "../../lib/agents";
 import { AppRouteContent } from "./AppRouteContent";
 
@@ -16,7 +16,7 @@ const project = {
   tokens: 0,
   cost: 0,
   agentStats: [],
-} satisfies ProjectGroup;
+} satisfies ApiProjectGroup;
 
 function makeProps(): Parameters<typeof AppRouteContent>[0] {
   return {
@@ -25,7 +25,7 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
     viewState: {
       mode: "root",
       activeAgentKey: null,
-      activeSessionSlug: null,
+      activeSessionId: null,
     },
     detailHighlightQuery: "",
     agents: [],
@@ -73,7 +73,7 @@ describe("AppRouteContent", () => {
     props.viewState = {
       mode: "project",
       activeAgentKey: null,
-      activeSessionSlug: null,
+      activeSessionId: null,
       activeProjectKind: "git_remote",
       activeProjectKey: project.identityKey,
     };
