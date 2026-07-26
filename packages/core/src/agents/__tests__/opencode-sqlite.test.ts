@@ -123,6 +123,7 @@ describe("OpenCodeSqliteAgent", () => {
       name: "test-agent",
       displayName: "Test Agent",
       findDbPath: () => dbPath,
+      getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
     });
 
     expect(agent.isAvailable()).toBe(true);
@@ -164,6 +165,7 @@ describe("OpenCodeSqliteAgent", () => {
       name: "test-agent-data-drift",
       displayName: "Test Agent",
       findDbPath: () => dbPath,
+      getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
     });
 
     expect(agent.getSessionData("s1")).toMatchObject({
@@ -187,6 +189,7 @@ describe("OpenCodeSqliteAgent", () => {
       name: "test-agent-field-drift",
       displayName: "Test Agent",
       findDbPath: () => dbPath,
+      getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
     });
 
     expect(agent.getSessionData("s1")).toMatchObject({

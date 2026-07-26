@@ -129,6 +129,10 @@ class MockAgent extends BaseAgent {
     };
   }
 
+  getSessionWatchPlan() {
+    return { status: "not-needed" as const, reason: "API test adapter" };
+  }
+
   checkForChanges(): ChangeCheckResult {
     return { hasChanges: false, timestamp: Date.now() };
   }

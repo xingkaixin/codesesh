@@ -40,6 +40,10 @@ class TestAgent extends BaseAgent {
     return {} as SessionData;
   }
 
+  getSessionWatchPlan() {
+    return { status: "not-needed" as const, reason: "scanner test adapter" };
+  }
+
   checkForChanges(): ChangeCheckResult {
     return { hasChanges: false, changedIds: [], timestamp: Date.now() };
   }

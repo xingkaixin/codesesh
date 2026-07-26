@@ -3,22 +3,22 @@
  * (recursive watch availability, non-recursive fallback trees, write-stability
  * polling, debounce) behind a tiny interface.
  *
- * Consumers only need to know: start watching these agent names, stop, and get
+ * Consumers only need to know: start watching these agent sources, stop, and get
  * notified (post write-stability + debounce) which agents' data changed. The
  * recursive-vs-fallback strategy, APFS mtime quirks, and path-stability polling
  * are all internal details.
  */
 import { existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { getCursorDataPath, resolveProviderRoots } from "@codesesh/core";
+import type { SessionWatchPlan } from "@codesesh/core";
 import { appLogger } from "./logging.js";
 
 const WRITE_STABILITY_THRESHOLD_MS = 250;
 const WRITE_STABILITY_POLL_MS = 100;
 
-export interface WatchTarget {
-  path: string;
-  root?: string;
+export interface SessionWatchSource {
+  readonly name: string;
+  getSessionWatchPlan(): SessionWatchPlan;
 }
 
 interface WatchScope {
@@ -119,55 +119,6 @@ function resolveWatchEventPath(watchPath: string, filename: string | Buffer | nu
   return isAbsolute(filenameText) ? filenameText : join(watchPath, filenameText);
 }
 
-export function resolveAgentWatchTargets(agentName: string): WatchTarget[] {
-  const roots = resolveProviderRoots();
-  const cursorDataPath = getCursorDataPath();
-
-  switch (agentName) {
-    case "claudecode":
-      return [
-        { root: roots.claudeRoot, path: join(roots.claudeRoot, "projects") },
-        { path: "data/claudecode" },
-      ];
-    case "codex":
-      return [
-        { path: join(roots.codexRoot, "sessions") },
-        { path: join(roots.codexRoot, "session_index.jsonl") },
-      ];
-    case "pi":
-      return [
-        { root: roots.piRoot, path: join(roots.piRoot, "agent", "sessions") },
-        { root: "data/pi", path: "data/pi" },
-      ];
-    case "cursor":
-      return cursorDataPath
-        ? [
-            {
-              root: cursorDataPath,
-              path: join(cursorDataPath, "globalStorage", "state.vscdb"),
-            },
-            { root: cursorDataPath, path: join(cursorDataPath, "workspaceStorage") },
-          ]
-        : [];
-    case "kimi":
-      return [
-        { root: roots.kimiRoot, path: join(roots.kimiRoot, "sessions") },
-        { path: "data/kimi" },
-      ];
-    case "opencode":
-      return [
-        { root: roots.opencodeRoot, path: join(roots.opencodeRoot, "opencode.db") },
-        { root: "data/opencode", path: "data/opencode/opencode.db" },
-      ];
-    case "zcode":
-      return roots.zcodeRoot
-        ? [{ root: roots.zcodeRoot, path: join(roots.zcodeRoot, "cli", "db", "db.sqlite") }]
-        : [];
-    default:
-      return [];
-  }
-}
-
 export class SessionWatcher {
   private watchers: FSWatcher[] = [];
   private fallbackWatchScopes = new Map<string, WatchScope[]>();
@@ -182,19 +133,26 @@ export class SessionWatcher {
     };
   }
 
-  /** Begin watching the given agent names' data directories. */
-  start(agentNames: string[]): void {
+  /** Begin watching the session sources declared by each agent adapter. */
+  start(agents: SessionWatchSource[]): void {
     const scopesByRoot = new Map<string, WatchScope[]>();
 
-    for (const agentName of agentNames) {
-      const watchTargets = resolveAgentWatchTargets(agentName);
-
-      if (watchTargets.length === 0) {
-        appLogger.debug("watch.skip", { agent: agentName });
+    for (const agent of agents) {
+      const plan = agent.getSessionWatchPlan();
+      if (plan.status !== "supported") {
+        appLogger.debug("watch.skip", {
+          agent: agent.name,
+          status: plan.status,
+          reason: plan.reason,
+        });
+        continue;
+      }
+      if (plan.targets.length === 0) {
+        appLogger.debug("watch.skip", { agent: agent.name, status: plan.status });
         continue;
       }
 
-      for (const target of watchTargets) {
+      for (const target of plan.targets) {
         const watchRootPath = closestWatchablePath(target.root ?? target.path);
         if (!watchRootPath) continue;
 
@@ -208,9 +166,9 @@ export class SessionWatcher {
         const targetPath = toAbsolutePath(target.path);
         const scopes = scopesByRoot.get(rootPath) ?? [];
         if (
-          !scopes.some((scope) => scope.agentName === agentName && scope.targetPath === targetPath)
+          !scopes.some((scope) => scope.agentName === agent.name && scope.targetPath === targetPath)
         ) {
-          scopes.push({ agentName, targetPath });
+          scopes.push({ agentName: agent.name, targetPath });
         }
         scopesByRoot.set(rootPath, scopes);
       }

@@ -9,12 +9,24 @@ function findOpenCodeDbPath(): string | null {
   return firstExisting(join(roots.opencodeRoot, "opencode.db"), "data/opencode/opencode.db");
 }
 
+function getOpenCodeSessionWatchPlan() {
+  const roots = resolveProviderRoots();
+  return {
+    status: "supported" as const,
+    targets: [
+      { root: roots.opencodeRoot, path: join(roots.opencodeRoot, "opencode.db") },
+      { root: "data/opencode", path: "data/opencode/opencode.db" },
+    ],
+  };
+}
+
 export class OpenCodeAgent extends OpenCodeSqliteAgent {
   constructor() {
     super({
       name: "opencode",
       displayName: "OpenCode",
       findDbPath: findOpenCodeDbPath,
+      getSessionWatchPlan: getOpenCodeSessionWatchPlan,
     });
   }
 }

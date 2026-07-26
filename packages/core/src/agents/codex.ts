@@ -347,6 +347,17 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     return firstExisting(join(roots.codexRoot, "sessions"));
   }
 
+  getSessionWatchPlan() {
+    const roots = resolveProviderRoots();
+    return {
+      status: "supported" as const,
+      targets: [
+        { path: join(roots.codexRoot, "sessions") },
+        { path: join(roots.codexRoot, "session_index.jsonl") },
+      ],
+    };
+  }
+
   isAvailable(): boolean {
     this.basePath = this.findBasePath();
     if (!this.basePath) return false;

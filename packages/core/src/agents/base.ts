@@ -63,6 +63,19 @@ export interface SessionSourceRef {
   fingerprint: string;
 }
 
+export interface SessionWatchTarget {
+  /** Session source path whose related changes should trigger a refresh. */
+  path: string;
+  /** Stable ancestor to watch when the source path can be created or replaced. */
+  root?: string;
+}
+
+/** `supported` may have no targets when the provider has no location in the current environment. */
+export type SessionWatchPlan =
+  | { status: "supported"; targets: SessionWatchTarget[] }
+  | { status: "unsupported"; reason: string }
+  | { status: "not-needed"; reason: string };
+
 /** What a source enumeration says needs re-parsing and what disappeared. */
 export interface SessionSourceDiff {
   changedIds: string[];
@@ -165,6 +178,9 @@ export abstract class BaseAgent {
 
   /** Load full session data including all messages. */
   abstract getSessionData(sessionId: string): SessionData;
+
+  /** Describe how changes to this agent's session sources can be observed. */
+  abstract getSessionWatchPlan(): SessionWatchPlan;
 
   /**
    * 检查是否有变更（用于智能刷新）

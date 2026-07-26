@@ -75,6 +75,9 @@ describe("buildAgentCacheMeta", () => {
     getSessionData() {
       return {} as never;
     }
+    getSessionWatchPlan() {
+      return { status: "not-needed" as const, reason: "orchestration test adapter" };
+    }
     checkForChanges() {
       return { hasChanges: false, changedIds: [], timestamp: 0 };
     }

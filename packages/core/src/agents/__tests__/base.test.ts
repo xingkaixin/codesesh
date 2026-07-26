@@ -36,6 +36,10 @@ class FakeFileSystemSource extends FileSystemSessionSource {
     return true;
   }
 
+  getSessionWatchPlan() {
+    return { status: "not-needed" as const, reason: "in-memory test source" };
+  }
+
   getSessionData(_sessionId: string): SessionData {
     return {} as SessionData;
   }
@@ -369,6 +373,10 @@ describe("DatabaseSessionSource", () => {
 
     isAvailable(): boolean {
       return true;
+    }
+
+    getSessionWatchPlan() {
+      return { status: "not-needed" as const, reason: "temporary test database" };
     }
 
     scan(_options?: AgentScanOptions): SessionHead[] {

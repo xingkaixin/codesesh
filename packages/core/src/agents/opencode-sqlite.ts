@@ -5,7 +5,7 @@ import {
   parsedSession,
   skippedSession,
 } from "./base.js";
-import type { AgentScanOptions, ParseSessionResult } from "./base.js";
+import type { AgentScanOptions, ParseSessionResult, SessionWatchPlan } from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
 import { openDbReadOnly, type SQLiteDatabase } from "../utils/sqlite.js";
 import { estimateTokenCost } from "../utils/cost.js";
@@ -40,6 +40,7 @@ interface OpenCodeSqliteAgentConfig {
   name: string;
   displayName: string;
   findDbPath: () => string | null;
+  getSessionWatchPlan: () => SessionWatchPlan;
 }
 
 const MESSAGE_ROLES = new Set<Message["role"]>(["user", "assistant", "tool"]);
@@ -88,6 +89,10 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
       this.dbPath = this.findDbPath();
     }
     return this.dbPath;
+  }
+
+  getSessionWatchPlan(): SessionWatchPlan {
+    return this.config.getSessionWatchPlan();
   }
 
   private findDbPath(): string | null {

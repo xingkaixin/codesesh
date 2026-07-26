@@ -10,12 +10,23 @@ function findZCodeDbPath(): string | null {
   return firstExisting(join(roots.zcodeRoot, "cli", "db", "db.sqlite"));
 }
 
+function getZCodeSessionWatchPlan() {
+  const roots = resolveProviderRoots();
+  return {
+    status: "supported" as const,
+    targets: roots.zcodeRoot
+      ? [{ root: roots.zcodeRoot, path: join(roots.zcodeRoot, "cli", "db", "db.sqlite") }]
+      : [],
+  };
+}
+
 export class ZCodeAgent extends OpenCodeSqliteAgent {
   constructor() {
     super({
       name: "zcode",
       displayName: "ZCode",
       findDbPath: findZCodeDbPath,
+      getSessionWatchPlan: getZCodeSessionWatchPlan,
     });
   }
 }

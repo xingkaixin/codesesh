@@ -2,6 +2,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync, appendFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createRegisteredAgents,
+  registerAgent,
+  type BaseAgent,
+  type SessionWatchPlan,
+} from "@codesesh/core";
 
 const fsWatch = vi.hoisted(() => ({
   watchers: [] as Array<{
@@ -26,11 +32,12 @@ vi.mock("./logging.js", () => ({
   appLogger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import {
-  SessionWatcher,
-  resolveAgentWatchTargets,
-  isRecursiveWatchSupported,
-} from "./session-watcher.js";
+import { SessionWatcher, isRecursiveWatchSupported } from "./session-watcher.js";
+import { appLogger } from "./logging.js";
+
+function source(name: string, plan: SessionWatchPlan) {
+  return { name, getSessionWatchPlan: () => plan };
+}
 
 function registerMockWatcher(
   path: string,
@@ -64,7 +71,6 @@ describe("SessionWatcher", () => {
   it("fires onAgentsChanged after write stability", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "watcher-test-"));
     try {
-      // Lay out a CODEX_HOME so resolveAgentWatchTargets resolves to tempDir/sessions.
       const sessionsDir = join(tempDir, "sessions");
       mkdirSync(sessionsDir, { recursive: true });
       const sessionFile = join(sessionsDir, "session.jsonl");
@@ -74,8 +80,12 @@ describe("SessionWatcher", () => {
       const changed = vi.fn();
       watcher.onAgentsChanged(changed);
 
-      vi.stubEnv("CODEX_HOME", tempDir);
-      watcher.start(["codex"]);
+      watcher.start([
+        source("custom-agent", {
+          status: "supported",
+          targets: [{ path: sessionsDir }],
+        }),
+      ]);
 
       const sessionsWatcher = fsWatch.watchers.find((w) => w.path === sessionsDir);
       expect(sessionsWatcher).toBeDefined();
@@ -92,7 +102,7 @@ describe("SessionWatcher", () => {
 
       await vi.advanceTimersByTimeAsync(1_000);
       expect(changed).toHaveBeenCalledTimes(1);
-      expect(changed.mock.calls[0]![0] instanceof Set).toBe(true);
+      expect(changed).toHaveBeenCalledWith(new Set(["custom-agent"]));
 
       await watcher.dispose();
     } finally {
@@ -114,9 +124,13 @@ describe("SessionWatcher", () => {
   it("dispose closes all watchers and clears state", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "watcher-dispose-"));
     try {
-      vi.stubEnv("CODEX_HOME", tempDir);
       const watcher = new SessionWatcher();
-      watcher.start(["codex"]);
+      watcher.start([
+        source("custom-agent", {
+          status: "supported",
+          targets: [{ path: tempDir }],
+        }),
+      ]);
       expect(fsWatch.watchers.length).toBeGreaterThan(0);
       const closeSpies = fsWatch.watchers.map((w) => w.close);
 
@@ -127,6 +141,141 @@ describe("SessionWatcher", () => {
       }
     } finally {
       vi.unstubAllEnvs();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("distinguishes unsupported and unnecessary watch capabilities", () => {
+    const watcher = new SessionWatcher();
+
+    watcher.start([
+      source("remote-agent", {
+        status: "unsupported",
+        reason: "source does not expose local change notifications",
+      }),
+      source("static-agent", {
+        status: "not-needed",
+        reason: "source is immutable during the process lifetime",
+      }),
+    ]);
+
+    expect(fsWatch.watchers).toEqual([]);
+    expect(appLogger.debug).toHaveBeenCalledWith("watch.skip", {
+      agent: "remote-agent",
+      status: "unsupported",
+      reason: "source does not expose local change notifications",
+    });
+    expect(appLogger.debug).toHaveBeenCalledWith("watch.skip", {
+      agent: "static-agent",
+      status: "not-needed",
+      reason: "source is immutable during the process lifetime",
+    });
+  });
+
+  it("consumes a newly registered adapter without watcher name changes", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "watcher-registered-adapter-"));
+    try {
+      const adapter = source("registered-test-agent", {
+        status: "supported",
+        targets: [{ path: tempDir }],
+      }) as unknown as BaseAgent;
+      registerAgent({
+        icon: "/test-agent.svg",
+        create: () => adapter,
+      });
+      const watcher = new SessionWatcher();
+
+      watcher.start(
+        createRegisteredAgents().filter((agent) => agent.name === "registered-test-agent"),
+      );
+
+      expect(fsWatch.watchers).toEqual([
+        expect.objectContaining({
+          path: tempDir,
+          options: { recursive: true },
+        }),
+      ]);
+      await watcher.dispose();
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("deduplicates targets that share a watch root", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "watcher-shared-root-"));
+    try {
+      const firstDb = join(tempDir, "first.db");
+      const secondDb = join(tempDir, "second.db");
+      writeFileSync(firstDb, "first");
+      writeFileSync(secondDb, "second");
+      const watcher = new SessionWatcher();
+
+      watcher.start([
+        source("database-agent", {
+          status: "supported",
+          targets: [
+            { root: tempDir, path: firstDb },
+            { root: tempDir, path: secondDb },
+            { root: tempDir, path: secondDb },
+          ],
+        }),
+      ]);
+
+      expect(fsWatch.watchers).toHaveLength(1);
+      await watcher.dispose();
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("watches the closest existing parent when a target does not exist yet", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "watcher-missing-target-"));
+    try {
+      const futureSessions = join(tempDir, "future", "sessions");
+      const watcher = new SessionWatcher();
+
+      watcher.start([
+        source("future-agent", {
+          status: "supported",
+          targets: [{ path: futureSessions }],
+        }),
+      ]);
+
+      expect(fsWatch.watchers).toEqual([
+        expect.objectContaining({
+          path: tempDir,
+          options: { recursive: true },
+        }),
+      ]);
+      await watcher.dispose();
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("emits a database agent change after its file is replaced", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "watcher-db-replace-"));
+    try {
+      const dbPath = join(tempDir, "state.vscdb");
+      writeFileSync(dbPath, "before");
+      const watcher = new SessionWatcher();
+      const changed = vi.fn();
+      watcher.onAgentsChanged(changed);
+      watcher.start([
+        source("database-agent", {
+          status: "supported",
+          targets: [{ root: tempDir, path: dbPath }],
+        }),
+      ]);
+
+      writeFileSync(dbPath, "replacement");
+      fsWatch.watchers[0]!.listener("rename", "state.vscdb");
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(changed).toHaveBeenCalledWith(new Set(["database-agent"]));
+      await watcher.dispose();
+    } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
@@ -154,19 +303,5 @@ describe("isRecursiveWatchSupported", () => {
 
   it("does not support unknown platforms", () => {
     expect(isRecursiveWatchSupported("freebsd", "20.0.0")).toBe(false);
-  });
-});
-
-describe("resolveAgentWatchTargets", () => {
-  it("returns empty array for unknown agent", () => {
-    expect(resolveAgentWatchTargets("unknown")).toEqual([]);
-  });
-
-  it("resolves codex targets", () => {
-    vi.stubEnv("CODEX_HOME", "/tmp/codex-home");
-    const targets = resolveAgentWatchTargets("codex");
-    expect(targets).toHaveLength(2);
-    expect(targets[0]!.path).toContain("sessions");
-    vi.unstubAllEnvs();
   });
 });

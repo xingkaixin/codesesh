@@ -151,6 +151,17 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     return firstExisting(join(roots.piRoot, "agent", "sessions"), "data/pi");
   }
 
+  getSessionWatchPlan() {
+    const roots = resolveProviderRoots();
+    return {
+      status: "supported" as const,
+      targets: [
+        { root: roots.piRoot, path: join(roots.piRoot, "agent", "sessions") },
+        { root: "data/pi", path: "data/pi" },
+      ],
+    };
+  }
+
   isAvailable(): boolean {
     this.basePath = this.findBasePath();
     if (!this.basePath) return false;
