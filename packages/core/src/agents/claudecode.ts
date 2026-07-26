@@ -146,6 +146,7 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     const refs: SessionSourceRef[] = [];
     for (const projectDir of this.listProjectDirs()) {
       const indexPath = this.getSessionsIndexPath(projectDir);
+      const indexMtime = this.getFileMtimeMs(indexPath);
       for (const file of this.listJsonlFiles(projectDir)) {
         let stat: Stats;
         try {
@@ -158,7 +159,7 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
         refs.push({
           sessionId,
           sourcePath: file,
-          fingerprint: this.sourceFingerprint(stat, indexPath),
+          fingerprint: this.sourceFingerprint(stat, indexMtime),
         });
       }
     }
@@ -234,15 +235,16 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
 
   private buildSessionMeta(head: SessionHead, file: string, projectDir: string): SessionMeta {
     const indexPath = this.getSessionsIndexPath(projectDir);
+    const indexMtime = this.getFileMtimeMs(indexPath);
     const stat = statSync(file);
     return {
       id: head.id,
       title: head.title,
       sourcePath: file,
-      sourceFingerprint: this.sourceFingerprint(stat, indexPath),
+      sourceFingerprint: this.sourceFingerprint(stat, indexMtime),
       sourceMtimeMs: stat.mtimeMs,
-      indexPath: existsSync(indexPath) ? indexPath : null,
-      indexMtimeMs: this.getFileMtimeMs(indexPath),
+      indexPath: indexMtime === null ? null : indexPath,
+      indexMtimeMs: indexMtime,
       headIndexVersion: HEAD_INDEX_VERSION,
       directory: head.directory,
       model: head.stats.total_tokens ? "unknown" : undefined,
@@ -253,13 +255,11 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
   }
 
   /** Fingerprint depends on an already-fetched stat to avoid re-statting the same file. */
-  private sourceFingerprint(stat: { mtimeMs: number; size: number }, indexPath: string): string {
-    return JSON.stringify([
-      HEAD_INDEX_VERSION,
-      stat.mtimeMs,
-      stat.size,
-      this.getFileMtimeMs(indexPath),
-    ]);
+  private sourceFingerprint(
+    stat: { mtimeMs: number; size: number },
+    indexMtime: number | null,
+  ): string {
+    return JSON.stringify([HEAD_INDEX_VERSION, stat.mtimeMs, stat.size, indexMtime]);
   }
 
   private getSessionsIndexPath(projectDir: string): string {
