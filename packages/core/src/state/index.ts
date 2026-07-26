@@ -11,6 +11,7 @@ export {
   listSessionAliases,
   normalizeSessionAlias,
   SESSION_ALIAS_MAX_LENGTH,
+  SessionAliasValidationError,
   StateStorageUnavailableError,
   upsertSessionAlias,
   type SessionAlias,

@@ -15,7 +15,7 @@ import {
   type SessionReference,
 } from "@codesesh/core/contract";
 import {
-  BookmarkStorageUnavailableError,
+  SessionAliasValidationError,
   StateStorageUnavailableError,
   attachProjectMetrics,
   createProjectScopeMatcher,
@@ -109,6 +109,20 @@ interface ClientLogPayload {
 
 interface SessionAliasPayload {
   alias?: unknown;
+}
+
+function withStorageErrors<TResult, TFallback>(
+  handler: () => TResult,
+  onUnavailable: () => TFallback,
+): TResult | TFallback {
+  try {
+    return handler();
+  } catch (error) {
+    if (error instanceof StateStorageUnavailableError) {
+      return onUnavailable();
+    }
+    throw error;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -520,18 +534,16 @@ export async function handlePostClientLog(c: Context) {
 }
 
 export function handleGetBookmarks(c: Context) {
-  try {
-    const aliases = loadAliasView();
-    return c.json({
-      bookmarks: listBookmarks().map((bookmark) => decorateBookmark(bookmark, aliases)),
-      storageAvailable: true,
-    });
-  } catch (error) {
-    if (error instanceof BookmarkStorageUnavailableError) {
-      return c.json({ bookmarks: [], storageAvailable: false });
-    }
-    throw error;
-  }
+  return withStorageErrors(
+    () => {
+      const aliases = loadAliasView();
+      return c.json({
+        bookmarks: listBookmarks().map((bookmark) => decorateBookmark(bookmark, aliases)),
+        storageAvailable: true,
+      });
+    },
+    () => c.json({ bookmarks: [], storageAvailable: false }),
+  );
 }
 
 export async function handlePutBookmark(c: Context) {
@@ -540,14 +552,10 @@ export async function handlePutBookmark(c: Context) {
     return c.json({ error: "Invalid bookmark payload" }, 400);
   }
 
-  try {
-    return c.json({ bookmark: upsertBookmark(payload), storageAvailable: true });
-  } catch (error) {
-    if (error instanceof BookmarkStorageUnavailableError) {
-      return c.json({ error: "Bookmark storage is unavailable" }, 503);
-    }
-    throw error;
-  }
+  return withStorageErrors(
+    () => c.json({ bookmark: upsertBookmark(payload), storageAvailable: true }),
+    () => c.json({ error: "Bookmark storage is unavailable" }, 503),
+  );
 }
 
 export async function handleImportBookmarks(c: Context) {
@@ -564,14 +572,10 @@ export async function handleImportBookmarks(c: Context) {
     return c.json({ error: "Invalid bookmark payload" }, 400);
   }
 
-  try {
-    return c.json({ bookmarks: importBookmarks(bookmarks), storageAvailable: true });
-  } catch (error) {
-    if (error instanceof BookmarkStorageUnavailableError) {
-      return c.json({ error: "Bookmark storage is unavailable" }, 503);
-    }
-    throw error;
-  }
+  return withStorageErrors(
+    () => c.json({ bookmarks: importBookmarks(bookmarks), storageAvailable: true }),
+    () => c.json({ error: "Bookmark storage is unavailable" }, 503),
+  );
 }
 
 export function handleDeleteBookmark(c: Context) {
@@ -581,35 +585,36 @@ export function handleDeleteBookmark(c: Context) {
     return c.json({ error: "Missing bookmark identifier" }, 400);
   }
 
-  try {
-    deleteBookmark({ agentName: agentKey, sessionId });
-    return c.json({ ok: true, storageAvailable: true });
-  } catch (error) {
-    if (error instanceof BookmarkStorageUnavailableError) {
-      return c.json({ error: "Bookmark storage is unavailable" }, 503);
-    }
-    throw error;
-  }
+  return withStorageErrors(
+    () => {
+      deleteBookmark({ agentName: agentKey, sessionId });
+      return c.json({ ok: true, storageAvailable: true });
+    },
+    () => c.json({ error: "Bookmark storage is unavailable" }, 503),
+  );
 }
 
 export async function handlePutSessionAlias(c: Context) {
   const agentKey = c.req.param("agent");
   const sessionId = c.req.param("id");
   const payload = (await c.req.json().catch(() => null)) as SessionAliasPayload | null;
-  if (!agentKey || !sessionId || typeof payload?.alias !== "string") {
+  const aliasValue = payload?.alias;
+  if (!agentKey || !sessionId || typeof aliasValue !== "string") {
     return c.json({ error: "Invalid session alias payload" }, 400);
   }
 
   try {
-    const alias = upsertSessionAlias({ agentName: agentKey, sessionId }, payload.alias);
-    invalidateAliasView();
-    return c.json({ alias });
+    return withStorageErrors(
+      () => {
+        const alias = upsertSessionAlias({ agentName: agentKey, sessionId }, aliasValue);
+        invalidateAliasView();
+        return c.json({ alias });
+      },
+      () => c.json({ error: "Session alias storage is unavailable" }, 503),
+    );
   } catch (error) {
-    if (error instanceof TypeError) {
+    if (error instanceof SessionAliasValidationError) {
       return c.json({ error: "Session alias must be non-empty and at most 160 characters" }, 400);
-    }
-    if (error instanceof StateStorageUnavailableError) {
-      return c.json({ error: "Session alias storage is unavailable" }, 503);
     }
     throw error;
   }
@@ -622,16 +627,14 @@ export function handleDeleteSessionAlias(c: Context) {
     return c.json({ error: "Missing session alias identifier" }, 400);
   }
 
-  try {
-    deleteSessionAlias({ agentName: agentKey, sessionId });
-    invalidateAliasView();
-    return c.json({ ok: true });
-  } catch (error) {
-    if (error instanceof StateStorageUnavailableError) {
-      return c.json({ error: "Session alias storage is unavailable" }, 503);
-    }
-    throw error;
-  }
+  return withStorageErrors(
+    () => {
+      deleteSessionAlias({ agentName: agentKey, sessionId });
+      invalidateAliasView();
+      return c.json({ ok: true });
+    },
+    () => c.json({ error: "Session alias storage is unavailable" }, 503),
+  );
 }
 
 export function handleGetDashboard(
