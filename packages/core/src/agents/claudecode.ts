@@ -9,7 +9,14 @@ import {
   skippedSession,
 } from "./base.js";
 import type { ParseSessionResult } from "./base.js";
-import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
+import type {
+  SessionHead,
+  SessionData,
+  Message,
+  MessagePart,
+  ToolPart,
+  ToolPartState,
+} from "../types/index.js";
 import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
 import { readJsonlFile, readJsonlFileLines } from "../utils/jsonl.js";
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
@@ -642,7 +649,7 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     return { type: "reasoning", text, time_created: timestampMs };
   }
 
-  private buildToolPart(part: Record<string, unknown>, timestampMs: number): MessagePart {
+  private buildToolPart(part: Record<string, unknown>, timestampMs: number): ToolPart {
     const toolName = String(part["name"] ?? "");
     return {
       type: "tool",
@@ -650,6 +657,7 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
       callID: String(part["id"] ?? ""),
       title: `Tool: ${toolName}`,
       state: {
+        status: "running",
         input: part["input"] ?? {},
         output: null,
       },
@@ -751,20 +759,21 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     builder: TranscriptBuilder,
     callId: string,
     outputParts: MessagePart[],
-    stateUpdates?: Record<string, unknown>,
+    stateUpdates?: Partial<Pick<ToolPartState, "status" | "metadata">>,
   ): boolean {
     if (!callId) return false;
 
     return builder.updateToolCall(callId, (part) => {
-      const state = part.state ?? (part.state = {});
+      const state = part.state;
       if (outputParts.length > 0) {
         const existing = state.output;
         if (Array.isArray(existing)) existing.push(...outputParts);
         else if (existing == null) state.output = [...outputParts];
         else state.output = [existing, ...outputParts];
       }
-      if (stateUpdates) Object.assign(state, stateUpdates);
-      if (outputParts.length > 0 && !state.status) state.status = "completed";
+      if (stateUpdates?.status) state.status = stateUpdates.status;
+      if (stateUpdates?.metadata !== undefined) state.metadata = stateUpdates.metadata;
+      if (outputParts.length > 0 && state.status === "running") state.status = "completed";
     });
   }
 
@@ -784,20 +793,22 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     return "";
   }
 
-  private extractToolStateUpdates(toolUseResult: unknown): Record<string, unknown> {
+  private extractToolStateUpdates(
+    toolUseResult: unknown,
+  ): Partial<Pick<ToolPartState, "status" | "metadata">> {
     const result = asRecord(toolUseResult);
     if (!result) return {};
 
-    const updates: Record<string, unknown> = {};
+    const updates: Partial<Pick<ToolPartState, "status" | "metadata">> = {};
 
     const success = result["success"];
     if (typeof success === "boolean") {
-      updates["status"] = success ? "success" : "error";
+      updates.status = success ? "completed" : "error";
     }
 
     const commandName = result["commandName"];
     if (commandName) {
-      updates["meta"] = { commandName };
+      updates.metadata = { commandName };
     }
 
     return updates;

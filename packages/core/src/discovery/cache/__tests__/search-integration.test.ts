@@ -132,7 +132,7 @@ describe("session detail re-indexing", () => {
           id: `${id}-m1`,
           role: "assistant",
           time_created: now,
-          parts: [{ type: "tool", tool, callID: "c1", state: {} }],
+          parts: [{ type: "tool", tool, callID: "c1", state: { status: "running" } }],
         },
       ],
     };
@@ -678,7 +678,7 @@ describe("searchSessions", () => {
     } finally {
       migratedDb.close();
     }
-    expect(getUserVersion(getCachePath())).toBe(15);
+    expect(getUserVersion(getCachePath())).toBe(16);
   });
 
   it("keeps small incremental updates searchable immediately", () => {
@@ -751,7 +751,13 @@ describe("searchSessions", () => {
           id: `${session.id}-m2`,
           role: "assistant",
           time_created: now + 1,
-          parts: [{ type: "tool", tool: "read", input: { path } }],
+          parts: [
+            {
+              type: "tool",
+              tool: "read",
+              state: { status: "completed", input: { path } },
+            },
+          ],
         },
       ],
     });
@@ -1146,19 +1152,20 @@ describe("searchSessions", () => {
               type: "tool",
               tool: "Read",
               time_created: now,
-              state: { input: { file_path: "src/App.tsx" } },
+              state: { status: "completed", input: { file_path: "src/App.tsx" } },
             },
             {
               type: "tool",
               tool: "write_file",
               time_created: now + 5,
-              state: { input: { path: "src/direct.ts" } },
+              state: { status: "completed", input: { path: "src/direct.ts" } },
             },
             {
               type: "tool",
               tool: "patch",
               time_created: now + 10,
               state: {
+                status: "completed",
                 input: {
                   content: [
                     { type: "edit_file", path: "src/App.tsx" },
@@ -1274,7 +1281,10 @@ describe("searchSessions", () => {
             {
               type: "tool",
               tool: "Read",
-              state: { input: { file_path: "src/migrated/App.tsx" } },
+              state: {
+                status: "completed",
+                input: { file_path: "src/migrated/App.tsx" },
+              },
             },
           ],
         },
@@ -1299,7 +1309,7 @@ describe("searchSessions", () => {
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(15);
+    expect(getUserVersion(getCachePath())).toBe(16);
   });
 
   it("refreshes cached project identities when migrating to schema version 12", () => {
@@ -1398,7 +1408,7 @@ describe("searchSessions", () => {
             {
               type: "tool",
               tool: "apply_patch",
-              state: { input: { path: "src/App.tsx" } },
+              state: { status: "completed", input: { path: "src/App.tsx" } },
             },
           ],
         },

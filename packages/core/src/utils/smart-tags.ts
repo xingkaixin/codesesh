@@ -1,4 +1,4 @@
-import type { MessagePart, SessionData, SmartTag } from "../types/index.js";
+import type { MessagePart, SessionData, SmartTag, ToolPart } from "../types/index.js";
 
 const TAG_ORDER: SmartTag[] = [
   "bugfix",
@@ -51,7 +51,7 @@ export function classifySessionTags(session: Pick<SessionData, "messages">): Sma
       if (part.type === "plan") tags.add("planning");
       if (part.type !== "tool") continue;
 
-      const toolName = `${part.tool ?? ""} ${part.title ?? ""}`;
+      const toolName = `${part.tool} ${part.title ?? ""}`;
       const toolPayload = stringifyToolPayload(part);
 
       if (PLAN_TOOL_RE.test(toolName)) tags.add("planning");
@@ -61,7 +61,7 @@ export function classifySessionTags(session: Pick<SessionData, "messages">): Sma
       if (TESTING_COMMAND_RE.test(toolPayload)) tags.add("testing");
       if (GIT_COMMAND_RE.test(toolPayload)) tags.add("git-ops");
       if (BUILD_DEPLOY_COMMAND_RE.test(toolPayload)) tags.add("build-deploy");
-      if (hasEditedDocPath(part.state?.arguments) || hasEditedDocPath(part.state?.input)) {
+      if (hasEditedDocPath(part.state.input)) {
         tags.add("docs");
       }
     }
@@ -75,19 +75,11 @@ export function classifySessionTags(session: Pick<SessionData, "messages">): Sma
 }
 
 function partText(part: MessagePart): string {
-  return typeof part.text === "string" ? part.text : "";
+  return part.type === "text" || part.type === "reasoning" || part.type === "plan" ? part.text : "";
 }
 
-function stringifyToolPayload(part: MessagePart): string {
-  return [
-    part.tool,
-    part.title,
-    valueToText(part.input),
-    valueToText(part.output),
-    valueToText(part.state),
-  ]
-    .filter(Boolean)
-    .join("\n");
+function stringifyToolPayload(part: ToolPart): string {
+  return [part.tool, part.title, valueToText(part.state)].filter(Boolean).join("\n");
 }
 
 function valueToText(value: unknown): string {

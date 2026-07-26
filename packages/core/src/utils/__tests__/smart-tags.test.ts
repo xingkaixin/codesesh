@@ -43,14 +43,17 @@ describe("classifySessionTags", () => {
           {
             type: "tool",
             tool: "bash",
-            state: { arguments: { cmd: "pnpm test && git commit -m ok && pnpm build" } },
+            state: {
+              status: "completed",
+              input: { cmd: "pnpm test && git commit -m ok && pnpm build" },
+            },
           },
           {
             type: "tool",
             tool: "patch",
-            state: { arguments: [{ path: "README.md" }] },
+            state: { status: "completed", input: [{ path: "README.md" }] },
           },
-          { type: "plan", text: "1. Ship it" },
+          { type: "plan", text: "1. Ship it", approval_status: "success" },
         ],
       },
     ]);
@@ -71,10 +74,10 @@ describe("classifySessionTags", () => {
         role: "assistant",
         time_created: 1,
         parts: [
-          { type: "tool", tool: "Read" },
-          { type: "tool", tool: "Grep" },
-          { type: "tool", tool: "WebSearch" },
-          { type: "tool", tool: "Edit" },
+          { type: "tool", tool: "Read", state: { status: "completed" } },
+          { type: "tool", tool: "Grep", state: { status: "completed" } },
+          { type: "tool", tool: "WebSearch", state: { status: "completed" } },
+          { type: "tool", tool: "Edit", state: { status: "completed" } },
         ],
       },
     ]);

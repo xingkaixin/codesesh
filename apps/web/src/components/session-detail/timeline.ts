@@ -1,5 +1,4 @@
-import type { MessagePart } from "../../lib/api";
-import { extractMessageText } from "./blocks";
+import type { MessagePart, ToolPart } from "../../lib/api";
 import { classifyToolKind } from "./file-change";
 import { normalizeToolLabel } from "./tool-normalize";
 import type { FilteredSessionMessage } from "./toc";
@@ -53,13 +52,15 @@ export function summarizeTimelineText(value: string) {
 function summarizeParts(parts: MessagePart[]) {
   return summarizeTimelineText(
     parts
-      .map((part) => extractMessageText(part.text))
+      .map((part) =>
+        part.type === "text" || part.type === "reasoning" || part.type === "plan" ? part.text : "",
+      )
       .filter(Boolean)
       .join(" "),
   );
 }
 
-export function classifyTimelineToolKind(part: MessagePart): ToolTimelineEntryKind {
+export function classifyTimelineToolKind(part: ToolPart): ToolTimelineEntryKind {
   const fileKind = classifyToolKind(part);
   if (fileKind === "read") return "tool-read";
   if (fileKind) return "tool-write";
@@ -80,7 +81,7 @@ export function buildSessionTimelineEntries(
   for (const { msg, blocks, index: messageIndex } of messages) {
     if (msg.role === "user") {
       const anchorId = buildMessageTimelineAnchorId(messageIndex);
-      const summary = summarizeParts(blocks.flatMap((block) => block.parts));
+      const summary = summarizeParts(blocks.flatMap<MessagePart>((block) => block.parts));
       entries.push({
         id: anchorId,
         kind: "user",

@@ -16,18 +16,18 @@ const messages: Message[] = [
     parts: [
       { type: "reasoning", text: "Checking" },
       { type: "text", text: "I will inspect them." },
-      { type: "plan", text: "Read then update" },
+      { type: "plan", text: "Read then update", approval_status: "success" },
       {
         type: "tool",
         tool: "Read",
         time_created: 21,
-        state: { arguments: { file_path: "src/a.ts" } },
+        state: { status: "completed", input: { file_path: "src/a.ts" } },
       },
       {
         type: "tool",
         tool: "Write",
         time_created: 22,
-        state: { arguments: { file_path: "src/b.ts" } },
+        state: { status: "completed", input: { file_path: "src/b.ts" } },
       },
     ],
   },
@@ -39,7 +39,7 @@ const messages: Message[] = [
       {
         type: "tool",
         tool: "Read",
-        state: { arguments: { file_path: "src/a.ts" } },
+        state: { status: "completed", input: { file_path: "src/a.ts" } },
       },
       { type: "text", text: "Done." },
     ],

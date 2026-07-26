@@ -23,7 +23,11 @@ describe("session detail display model", () => {
       createMessage("visible", "assistant", [
         { type: "text", text: "hello" },
         { type: "text", text: "world" },
-        { type: "tool", tool: "Read", state: { input: { path: "a.ts" } } },
+        {
+          type: "tool",
+          tool: "Read",
+          state: { status: "completed", input: { path: "a.ts" } },
+        },
       ]),
     ];
 
@@ -41,19 +45,19 @@ describe("session detail display model", () => {
       type: "tool",
       tool: "Read",
       title: "tool: Read",
-      state: { input: { path: "a.ts" } },
+      state: { status: "completed", input: { path: "a.ts" } },
     } satisfies MessagePart;
     const writeTool = {
       type: "tool",
       tool: "Write",
-      state: { input: { path: "a.ts" } },
+      state: { status: "completed", input: { path: "a.ts" } },
     } satisfies MessagePart;
     const models = buildModels([
       createMessage("user", "user", [{ type: "text", text: "open file" }]),
       createMessage("assistant", "assistant", [
         { type: "reasoning", text: "thinking" },
         { type: "text", text: "answer" },
-        { type: "plan", text: "plan" },
+        { type: "plan", text: "plan", approval_status: "success" },
         readTool,
         writeTool,
       ]),
@@ -82,12 +86,12 @@ describe("session detail display model", () => {
     const readTool = {
       type: "tool",
       tool: "Read",
-      state: { input: { path: "a.ts" } },
+      state: { status: "completed", input: { path: "a.ts" } },
     } satisfies MessagePart;
     const writeTool = {
       type: "tool",
       tool: "Write",
-      state: { input: { path: "b.ts" } },
+      state: { status: "completed", input: { path: "b.ts" } },
     } satisfies MessagePart;
     const models = buildModels([createMessage("assistant", "assistant", [readTool, writeTool])]);
 
@@ -102,6 +106,7 @@ describe("session detail display model", () => {
       type: "tool",
       tool: ".js",
       title: "Tool: .js",
+      state: { status: "completed" },
     } satisfies MessagePart;
     const models = buildModels([createMessage("assistant", "assistant", [jsTool])]);
 
@@ -117,7 +122,10 @@ describe("session detail display model", () => {
       type: "tool",
       tool: "js",
       title: "Tool: js",
-      state: { metadata: { name: "js", namespace: "mcp__node_repl__" } },
+      state: {
+        status: "completed",
+        metadata: { name: "js", namespace: "mcp__node_repl__" },
+      },
     } satisfies MessagePart;
     const models = buildModels([createMessage("assistant", "assistant", [browserTool])]);
 

@@ -10,10 +10,14 @@ import type {
   SessionData,
   SessionFileActivity,
   SessionHead,
+  ToolPart,
 } from "../../types/index.js";
+import { normalizeMessageParts } from "../../contract/message-part.js";
 import { computeIdentity, realFs } from "../../projects/index.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import type { SQLiteStatement } from "./db.js";
+
+const NORMALIZED_MESSAGE_PARTS_CACHE_VERSION = 16;
 
 export interface SessionRow extends DatabaseRow {
   agent_name?: string;
@@ -58,6 +62,7 @@ export interface MessageBackfillRow extends DatabaseRow {
 }
 
 export interface CachedMessageRow extends MessageBackfillRow {
+  cache_version?: number | string;
   tokens_json?: string | null;
   cost?: number | null;
   cost_source?: SessionHead["stats"]["cost_source"] | null;
@@ -380,15 +385,27 @@ function messageMetadataFromCachedRow(row: CachedMessageRow): Omit<Message, "par
 export function messageFromBackfillRow(row: MessageBackfillRow): Message {
   return {
     ...messageMetadataFromBackfillRow(row),
-    parts: JSON.parse(String(row.parts_json ?? "[]")) as MessagePart[],
+    parts: messagePartsFromJson(row.parts_json),
   };
 }
 
 export function messageFromCachedRow(row: CachedMessageRow): Message {
   return {
     ...messageMetadataFromCachedRow(row),
-    parts: JSON.parse(String(row.parts_json ?? "[]")) as MessagePart[],
+    parts: messagePartsFromJson(row.parts_json),
   };
+}
+
+function messagePartsFromJson(value: unknown): MessagePart[] {
+  try {
+    return normalizeMessageParts(JSON.parse(String(value ?? "[]")));
+  } catch {
+    return [];
+  }
+}
+
+export function normalizeMessagePartsJson(value: unknown): string {
+  return JSON.stringify(messagePartsFromJson(value));
 }
 
 export function messageJsonFromCachedRow(row: CachedMessageRow): string {
@@ -403,7 +420,11 @@ export function messageJsonFromCachedRow(row: CachedMessageRow): string {
   if (row.cost_source) {
     fields.push(`"cost_source":${JSON.stringify(row.cost_source)}`);
   }
-  fields.push(`"parts":${String(row.parts_json ?? "[]")}`);
+  const partsJson =
+    Number(row.cache_version) >= NORMALIZED_MESSAGE_PARTS_CACHE_VERSION
+      ? String(row.parts_json ?? "[]")
+      : normalizeMessagePartsJson(row.parts_json);
+  fields.push(`"parts":${partsJson}`);
   return `${metadataJson.slice(0, -1)},${fields.join(",")}}`;
 }
 
@@ -475,23 +496,17 @@ export function toolNamesFromMessage(message: Message): string[] {
   return [...tools];
 }
 
-export function summarizeToolPart(part: MessagePart): Record<string, unknown> {
-  const state =
-    part.state == null
-      ? undefined
-      : compactRecord({
-          status: part.state.status,
-          error: part.state.error,
-          metadata: part.state.metadata,
-        });
-
+export function summarizeToolPart(part: ToolPart): Record<string, unknown> {
+  const state = compactRecord({
+    status: part.state.status,
+    error: part.state.error,
+    metadata: part.state.metadata,
+  });
   return compactRecord({
     type: part.type,
     tool: part.tool,
     title: part.title,
-    nickname: part.nickname,
     callID: part.callID,
-    approval_status: part.approval_status,
     state,
   });
 }
@@ -505,13 +520,13 @@ export function buildMessageText(message: Message): string {
 
   for (const part of message.parts) {
     appendPlainText(part.type, chunks);
-    appendPlainText(part.title, chunks);
-    appendPlainText(part.nickname, chunks);
-    appendPlainText(part.tool, chunks);
-    appendPlainText(part.text, chunks);
-    appendPlainText(part.input, chunks);
-    appendPlainText(part.output, chunks);
-    appendPlainText(part.state, chunks);
+    if (part.type === "text" || part.type === "reasoning" || part.type === "plan") {
+      appendPlainText(part.text, chunks);
+    } else if (part.type === "tool") {
+      appendPlainText(part.title, chunks);
+      appendPlainText(part.tool, chunks);
+      appendPlainText(part.state, chunks);
+    }
   }
 
   return chunks.join("\n");
@@ -520,7 +535,7 @@ export function buildMessageText(message: Message): string {
 export function normalizeMessages(session: SessionData): StructuredMessageRecord[] {
   return session.messages.map((message, index) => {
     const toolMetadata = message.parts
-      .filter((part) => part.type === "tool")
+      .filter((part): part is ToolPart => part.type === "tool")
       .map((part) => summarizeToolPart(part));
 
     return {

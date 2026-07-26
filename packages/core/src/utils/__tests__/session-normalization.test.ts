@@ -20,7 +20,10 @@ describe("session normalization", () => {
           {
             type: "tool",
             tool: "read",
-            input: { path: "src/a.ts", prompt: "<command-message>hidden</command-message>" },
+            state: {
+              status: "completed",
+              input: { path: "src/a.ts", prompt: "<command-message>hidden</command-message>" },
+            },
           },
         ],
       },
@@ -29,7 +32,9 @@ describe("session normalization", () => {
     const cleaned = cleanParsedMessages(messages);
 
     expect(cleaned).toHaveLength(1);
-    expect(cleaned[0]?.parts[1]?.input).toEqual({ path: "src/a.ts", prompt: "" });
+    expect(cleaned[0]?.parts[1]).toMatchObject({
+      state: { input: { path: "src/a.ts", prompt: "" } },
+    });
     expect(firstUserMessageTitle(cleaned)).toBe("Fix search");
   });
 });

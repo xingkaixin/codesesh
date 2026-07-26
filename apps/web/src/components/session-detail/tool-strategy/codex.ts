@@ -4,7 +4,7 @@
  *
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
-import type { MessagePart } from "../../../lib/api";
+import type { ToolPart } from "../../../lib/api";
 import { detectLanguageByFilePath } from "../../tool-output/language";
 import {
   buildCodexExecCommandDisplay,
@@ -77,32 +77,29 @@ export function extractCodexNodeReplTextOutput(outputText: string) {
   return text || outputText;
 }
 
-function getSubagentToolTitle(part: MessagePart) {
-  const state = toRecord(part.state);
-  const argumentsValue = toRecord(state.arguments);
-  const agentType = compactText(argumentsValue.agent_type);
-  const nickname = compactText((part as { nickname?: unknown }).nickname);
-  const model = compactText(argumentsValue.model);
-  const reasoningEffort = compactText(argumentsValue.reasoning_effort);
+function getSubagentToolTitle(part: ToolPart) {
+  const input = toRecord(part.state.input);
+  const agentType = compactText(input.agent_type);
+  const model = compactText(input.model);
+  const reasoningEffort = compactText(input.reasoning_effort);
   const modelSuffix = [model, reasoningEffort].filter(Boolean).join("-");
-  const left = [agentType, nickname].filter(Boolean).join(" - ");
-  return [left, modelSuffix].filter(Boolean).join(" ");
+  return [agentType, modelSuffix].filter(Boolean).join(" ");
 }
 
-function getSubagentPrompt(part: MessagePart) {
-  const state = toRecord(part.state);
-  const prompt = compactText(state.prompt);
+function getSubagentPrompt(part: ToolPart) {
+  const metadata = toRecord(part.state.metadata);
+  const prompt = compactText(metadata.prompt);
   if (prompt) return prompt;
 
-  const argumentsValue = toRecord(state.arguments);
-  const message = compactText(argumentsValue.message);
+  const input = toRecord(part.state.input);
+  const message = compactText(input.message);
   if (message) return message;
 
   return "";
 }
 
 export function buildCodexToolStrategy(
-  tool: MessagePart,
+  tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
 ): ToolDisplayStrategy {

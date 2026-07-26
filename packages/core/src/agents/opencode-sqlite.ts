@@ -7,13 +7,14 @@ import {
 } from "./base.js";
 import type { AgentScanOptions, ParseSessionResult, SessionWatchPlan } from "./base.js";
 import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
+import { normalizeMessageParts } from "../contract/message-part.js";
 import { openDbReadOnly, type SQLiteDatabase } from "../utils/sqlite.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import { resolveSessionTitle } from "../utils/title-fallback.js";
 import { isInternalEventType } from "../utils/parse-cleanup.js";
 import { asRecord, asString, narrowField, reportFieldMismatch } from "../utils/narrow.js";
 import {
-  cleanInternalText,
+  cleanMessagePart,
   cleanParsedMessages,
   firstUserMessageTitle,
 } from "../utils/session-normalization.js";
@@ -246,29 +247,10 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
     const partData = parseJsonRecord(partRow.data, this.name, "part.data");
     const partType = String(partData.type ?? "");
     if (isInternalEventType(partType)) return null;
-
-    if (partType === "text" || partType === "reasoning") {
-      const text = cleanInternalText(String(partData.text ?? ""));
-      if (!text) return null;
-      return {
-        type: partType as "text" | "reasoning",
-        text,
-        time_created: Number(partRow.time_created ?? 0),
-      };
-    }
-
-    if (partType === "tool") {
-      return {
-        type: "tool",
-        tool: String(partData.tool ?? ""),
-        callID: String(partData.callID ?? ""),
-        title: cleanInternalText(String(partData.title ?? "")),
-        state: asRecord(partData.state) ?? {},
-        time_created: Number(partRow.time_created ?? 0),
-      };
-    }
-
-    return null;
+    const [part] = normalizeMessageParts([
+      { ...partData, time_created: Number(partRow.time_created ?? 0) },
+    ]);
+    return part ? cleanMessagePart(part) : null;
   }
 
   private readMessageParts(db: SQLiteDatabase, messageId: unknown): MessagePart[] {

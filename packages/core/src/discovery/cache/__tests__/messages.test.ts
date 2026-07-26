@@ -35,12 +35,13 @@ describe("cached messages", () => {
     });
   });
 
-  it("serializes owned JSON fields without parsing them", () => {
+  it("streams normalized cache JSON without parsing it", () => {
     const row = {
       message_id: "m1",
       role: "assistant" as const,
       time_created: 10,
       time_completed: 11,
+      cache_version: 16,
       parts_json: JSON.stringify([{ type: "text", text: "done" }]),
       tokens_json: JSON.stringify({ input: 2, output: 3 }),
       cost: 0.4,
@@ -58,11 +59,48 @@ describe("cached messages", () => {
     expect(JSON.parse(json)).toEqual(messageFromCachedRow(row));
   });
 
+  it("normalizes legacy tool payloads at the cache boundary", () => {
+    const row = {
+      message_id: "m1",
+      role: "assistant" as const,
+      time_created: 10,
+      cache_version: 15,
+      parts_json: JSON.stringify([
+        {
+          type: "tool",
+          tool: "Read",
+          input: { path: "src/a.ts" },
+          state: { status: "success", result: "contents", duration_ms: 12 },
+        },
+      ]),
+    };
+
+    const expectedParts = [
+      {
+        type: "tool",
+        tool: "Read",
+        state: {
+          status: "completed",
+          input: { path: "src/a.ts" },
+          output: "contents",
+          metadata: { duration_ms: 12 },
+        },
+      },
+    ];
+
+    expect(messageFromCachedRow(row).parts).toEqual(expectedParts);
+    expect(JSON.parse(messageJsonFromCachedRow(row)).parts).toEqual(expectedParts);
+  });
+
   it("normalizes searchable content and unique tool names", () => {
     const session = makeSessionData("s1");
     session.messages[0]!.parts.push(
-      { type: "tool", tool: " Read ", input: { path: "src/a.ts" } },
-      { type: "tool", tool: "read", output: true },
+      {
+        type: "tool",
+        tool: " Read ",
+        state: { status: "completed", input: { path: "src/a.ts" } },
+      },
+      { type: "tool", tool: "read", state: { status: "completed", output: true } },
     );
 
     const records = normalizeMessages(session);

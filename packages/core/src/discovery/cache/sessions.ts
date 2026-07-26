@@ -288,6 +288,7 @@ export function loadCachedSessionRawEntry(
             cost,
             cost_source,
             parts_json,
+            (SELECT value FROM cache_meta WHERE key = 'version') AS cache_version,
             subagent_id,
             nickname
           FROM messages

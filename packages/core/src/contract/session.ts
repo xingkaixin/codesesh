@@ -77,35 +77,63 @@ export interface MessageTokens {
   cache_create?: number;
 }
 
+export type ToolPartStatus = "running" | "completed" | "error";
+
 export interface ToolPartState {
-  status?: "running" | "completed" | "error";
+  status: ToolPartStatus;
   input?: unknown;
-  arguments?: unknown;
   output?: unknown;
-  result?: unknown;
   error?: unknown;
   metadata?: unknown;
-  prompt?: unknown;
-  [key: string]: unknown;
 }
 
-export interface MessagePart {
-  type: "text" | "tool" | "reasoning" | "plan" | "image";
-  text?: unknown;
-  data?: string;
-  mime_type?: string;
-  url?: string;
-  tool?: string;
-  title?: string;
-  nickname?: string;
-  subagent_id?: string;
-  input?: unknown;
-  output?: unknown;
-  approval_status?: "success" | "fail";
-  callID?: string;
-  state?: ToolPartState;
+interface TimedMessagePart {
   time_created?: number;
 }
+
+export interface TextPart extends TimedMessagePart {
+  type: "text";
+  text: string;
+}
+
+export interface ReasoningPart extends TimedMessagePart {
+  type: "reasoning";
+  text: string;
+}
+
+export interface PlanPart extends TimedMessagePart {
+  type: "plan";
+  text: string;
+  approval_status: "success" | "fail";
+}
+
+interface ImagePartBase extends TimedMessagePart {
+  type: "image";
+  mime_type?: string;
+}
+
+export interface ImageDataPart extends ImagePartBase {
+  data: string;
+  mime_type: string;
+  url?: string;
+}
+
+export interface ImageUrlPart extends ImagePartBase {
+  url: string;
+  data?: string;
+}
+
+export type ImagePart = ImageDataPart | ImageUrlPart;
+
+export interface ToolPart extends TimedMessagePart {
+  type: "tool";
+  tool: string;
+  title?: string;
+  callID?: string;
+  state: ToolPartState;
+}
+
+export type MessagePart = TextPart | ToolPart | ReasoningPart | PlanPart | ImagePart;
 
 export interface Message {
   id: string;

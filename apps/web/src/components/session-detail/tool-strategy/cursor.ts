@@ -3,7 +3,7 @@
  *
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
-import type { MessagePart } from "../../../lib/api";
+import type { ToolPart } from "../../../lib/api";
 import { detectLanguageByFilePath } from "../../tool-output/language";
 import {
   getDisplayPath,
@@ -64,12 +64,12 @@ export function formatCursorSearchOutput(rawOutput: unknown) {
 }
 
 export function buildCursorToolStrategy(
-  tool: MessagePart,
+  tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
 ): ToolDisplayStrategy {
   const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
-  const toolKey = (tool.tool || "").toLowerCase();
+  const toolKey = tool.tool.toLowerCase();
   const input = toRecord(state.inputValue);
   const filePath = getFilePathFromInput(state.inputValue);
   const displayPath = getDisplayPath(filePath, baseDirectory);

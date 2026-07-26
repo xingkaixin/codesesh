@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Message, MessagePart } from "../../lib/api";
+import type { Message, ToolPart } from "../../lib/api";
 import type { FilteredSessionMessage } from "./toc";
 import {
   buildBlockTimelineAnchorId,
@@ -18,8 +18,17 @@ function message(id: string, role: Message["role"]): Message {
 
 describe("session timeline", () => {
   it("builds user, agent, and individual tool entries in display order", () => {
-    const readTool: MessagePart = { type: "tool", tool: "Read" };
-    const writeTool: MessagePart = { type: "tool", title: "Tool: Write" };
+    const readTool: ToolPart = {
+      type: "tool",
+      tool: "Read",
+      state: { status: "completed" },
+    };
+    const writeTool: ToolPart = {
+      type: "tool",
+      tool: "Write",
+      title: "Tool: Write",
+      state: { status: "completed" },
+    };
     const messages: FilteredSessionMessage[] = [
       {
         msg: message("user", "user"),
@@ -63,13 +72,18 @@ describe("session timeline", () => {
   });
 
   it("classifies explicit file reads and writes before defaulting to execute", () => {
-    expect(classifyTimelineToolKind({ type: "tool", tool: "read_file_v2" })).toBe("tool-read");
-    expect(classifyTimelineToolKind({ type: "tool", tool: "view_image" })).toBe("tool-read");
-    expect(classifyTimelineToolKind({ type: "tool", tool: "EditFile" })).toBe("tool-write");
-    expect(classifyTimelineToolKind({ type: "tool", tool: "apply_patch" })).toBe("tool-write");
-    expect(classifyTimelineToolKind({ type: "tool", tool: "delete_file" })).toBe("tool-write");
-    expect(classifyTimelineToolKind({ type: "tool", tool: "update_plan" })).toBe("tool-execute");
-    expect(classifyTimelineToolKind({ type: "tool", tool: "image_gen" })).toBe("tool-execute");
+    const tool = (name: string): ToolPart => ({
+      type: "tool",
+      tool: name,
+      state: { status: "completed" },
+    });
+    expect(classifyTimelineToolKind(tool("read_file_v2"))).toBe("tool-read");
+    expect(classifyTimelineToolKind(tool("view_image"))).toBe("tool-read");
+    expect(classifyTimelineToolKind(tool("EditFile"))).toBe("tool-write");
+    expect(classifyTimelineToolKind(tool("apply_patch"))).toBe("tool-write");
+    expect(classifyTimelineToolKind(tool("delete_file"))).toBe("tool-write");
+    expect(classifyTimelineToolKind(tool("update_plan"))).toBe("tool-execute");
+    expect(classifyTimelineToolKind(tool("image_gen"))).toBe("tool-execute");
   });
 
   it("compacts and limits message summaries", () => {

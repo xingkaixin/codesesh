@@ -545,7 +545,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
             tool: toolName,
             callID: callId,
             title: mapToolTitle(toolName),
-            state: { arguments: normalizedArgs, output: null },
+            state: { status: "running", input: normalizedArgs, output: null },
             time_created: timestampMs,
           };
 
@@ -667,7 +667,11 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
           tool: toolName,
           callID: callId,
           title: mapToolTitle(toolName),
-          state: { arguments: normalizeToolArguments(function_.arguments), output: null },
+          state: {
+            status: "running",
+            input: normalizeToolArguments(function_.arguments),
+            output: null,
+          },
           time_created: fallbackTs,
         };
         parts.push(part);
@@ -704,8 +708,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       const parsed: unknown = JSON.parse(combined);
       if (
         builder.updateToolCall(openCallId, (part) => {
-          const state = part.state ?? (part.state = {});
-          state.arguments = parsed;
+          part.state.input = parsed;
         })
       ) {
         buffer.delete(openCallId);

@@ -1,9 +1,9 @@
 import type {
   FileActivityKind,
   Message,
-  MessagePart,
   SessionFileActivity,
   SessionFileActivityOccurrence,
+  ToolPart,
 } from "../types/index.js";
 
 interface CodexPatchEntry {
@@ -23,15 +23,15 @@ function toStringValue(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
-function normalizeToolLabel(part: MessagePart) {
-  if (typeof part.title === "string" && part.title.trim()) {
+function normalizeToolLabel(part: ToolPart) {
+  if (part.title?.trim()) {
     return part.title.trim().replace(/^tool:\s*/i, "");
   }
-  if (typeof part.tool === "string" && part.tool.trim()) return part.tool.trim();
+  if (part.tool.trim()) return part.tool.trim();
   return "tool";
 }
 
-function normalizeToolName(part: MessagePart) {
+function normalizeToolName(part: ToolPart) {
   return normalizeToolLabel(part).trim().toLowerCase();
 }
 
@@ -108,11 +108,11 @@ function extractPathsFromToolInput(inputValue: unknown) {
   return [...paths];
 }
 
-function getToolInputValue(part: MessagePart) {
-  return part.state?.arguments ?? part.state?.input ?? part.input ?? null;
+function getToolInputValue(part: ToolPart) {
+  return part.state.input ?? null;
 }
 
-function classifyToolKind(part: MessagePart): FileActivityKind | null {
+function classifyToolKind(part: ToolPart): FileActivityKind | null {
   const toolName = normalizeToolName(part);
   if (toolName === "read" || toolName === "readfile" || toolName === "read_file") return "read";
   if (

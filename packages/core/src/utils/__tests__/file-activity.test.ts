@@ -10,9 +10,22 @@ describe("file activity extraction", () => {
         role: "assistant",
         time_created: 10,
         parts: [
-          { type: "tool", tool: "Read", state: { arguments: { file_path: "src/a.ts" } } },
-          { type: "tool", tool: "bash", input: { command: "cat src/ignored.ts" } },
-          { type: "tool", tool: "Write", input: { path: "src/b.ts" }, time_created: 12 },
+          {
+            type: "tool",
+            tool: "Read",
+            state: { status: "completed", input: { file_path: "src/a.ts" } },
+          },
+          {
+            type: "tool",
+            tool: "bash",
+            state: { status: "completed", input: { command: "cat src/ignored.ts" } },
+          },
+          {
+            type: "tool",
+            tool: "Write",
+            state: { status: "completed", input: { path: "src/b.ts" } },
+            time_created: 12,
+          },
         ],
       },
     ];
@@ -47,12 +60,15 @@ describe("file activity extraction", () => {
           {
             type: "tool",
             tool: "apply_patch",
-            input: {
-              content: [
-                { type: "update_file", path: "src/a.ts" },
-                { type: "update_file", path: "src/a.ts" },
-                { type: "delete_file", path: "src/b.ts" },
-              ],
+            state: {
+              status: "completed",
+              input: {
+                content: [
+                  { type: "update_file", path: "src/a.ts" },
+                  { type: "update_file", path: "src/a.ts" },
+                  { type: "delete_file", path: "src/b.ts" },
+                ],
+              },
             },
           },
         ],

@@ -26,32 +26,26 @@ function cleanUnknown(value: unknown): unknown {
 }
 
 export function cleanMessagePart(part: MessagePart): MessagePart | null {
-  const next: MessagePart = { ...part };
+  if (part.type === "text" || part.type === "reasoning" || part.type === "plan") {
+    const text = cleanInternalText(part.text);
+    return text ? { ...part, text } : null;
+  }
+  if (part.type !== "tool") return part;
 
-  if (typeof next.text === "string") {
-    next.text = cleanInternalText(next.text);
-    if (!next.text && (next.type === "text" || next.type === "reasoning" || next.type === "plan")) {
-      return null;
-    }
-  }
-
-  if (typeof next.title === "string") {
-    const title = cleanInternalText(next.title);
-    if (title) next.title = title;
-    else delete next.title;
-  }
-
-  if (next.input !== undefined) {
-    next.input = cleanUnknown(next.input);
-  }
-  if (next.output !== undefined) {
-    next.output = cleanUnknown(next.output);
-  }
-  if (next.state !== undefined) {
-    next.state = cleanUnknown(next.state) as MessagePart["state"];
-  }
-
-  return next;
+  const title = part.title ? cleanInternalText(part.title) : "";
+  const state = {
+    ...part.state,
+    ...(part.state.input !== undefined ? { input: cleanUnknown(part.state.input) } : {}),
+    ...(part.state.output !== undefined ? { output: cleanUnknown(part.state.output) } : {}),
+    ...(part.state.error !== undefined ? { error: cleanUnknown(part.state.error) } : {}),
+    ...(part.state.metadata !== undefined ? { metadata: cleanUnknown(part.state.metadata) } : {}),
+  };
+  const { title: _title, ...withoutTitle } = part;
+  return {
+    ...withoutTitle,
+    ...(title ? { title } : {}),
+    state,
+  };
 }
 
 export function cleanMessageParts(parts: MessagePart[]): MessagePart[] {
@@ -78,7 +72,7 @@ export function firstUserMessageTitle(messages: Message[]): string | null {
   for (const message of messages) {
     if (message.role !== "user") continue;
     for (const part of message.parts) {
-      if (part.type !== "text" || typeof part.text !== "string") continue;
+      if (part.type !== "text") continue;
       const title = normalizeTitleText(cleanInternalText(part.text));
       if (title) return title;
     }

@@ -2,7 +2,7 @@
  * File-path extraction and display-path formatting.
  * Consumed by file-change summary and tool display strategies.
  */
-import type { MessagePart } from "../../lib/api";
+import type { ToolPart } from "../../lib/api";
 import { escapeRegExp, parseJsonText } from "./utils";
 import { toPlainText, toRecord } from "./tool-normalize";
 
@@ -79,8 +79,8 @@ export function extractPathsFromToolInput(inputValue: unknown) {
   return [...paths];
 }
 
-export function getToolInputValue(part: MessagePart) {
-  return part.state?.arguments ?? part.state?.input ?? part.input ?? null;
+export function getToolInputValue(part: ToolPart) {
+  return part.state.input ?? null;
 }
 
 export function getFilePathFromInput(inputValue: unknown) {

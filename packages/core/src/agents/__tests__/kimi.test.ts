@@ -229,7 +229,7 @@ describe("KimiAgent cache refresh", () => {
       tool: "ReadFile",
       title: "read",
       state: {
-        arguments: { path: "package.json" },
+        input: { path: "package.json" },
         output: [{ type: "text", text: '{ "name": "codesesh-monorepo" }' }],
       },
     });

@@ -1,4 +1,5 @@
 export type * from "./session.js";
+export * from "./message-part.js";
 export type * from "./agent.js";
 export type * from "./file-activity.js";
 export type * from "./search.js";

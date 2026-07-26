@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Message, MessagePart } from "../../lib/api";
+import type { Message, ToolPart } from "../../lib/api";
 import {
   getAssistantDisplayLabel,
   getToolDisplayStrategy,
@@ -7,15 +7,21 @@ import {
   normalizeToolState,
 } from "./tool-strategy";
 
-function part(overrides?: Partial<MessagePart>): MessagePart {
-  return { role: "tool", tool: "Read", title: "Read", state: {}, ...overrides } as MessagePart;
+function part(overrides?: Partial<ToolPart>): ToolPart {
+  return {
+    type: "tool",
+    tool: "Read",
+    title: "Read",
+    state: { status: "completed" },
+    ...overrides,
+  };
 }
 
 describe("normalizeToolState", () => {
   it("extracts input/output/error from tool state", () => {
     const state = normalizeToolState(
       part({
-        state: { arguments: { file: "/a.ts" }, status: "completed", output: "content" },
+        state: { input: { file: "/a.ts" }, status: "completed", output: "content" },
       }),
     );
     expect(state.status).toBe("completed");
@@ -25,7 +31,7 @@ describe("normalizeToolState", () => {
 
   it("reads command from input", () => {
     const state = normalizeToolState(
-      part({ state: { arguments: '{"cmd":"ls"}', status: "completed" } }),
+      part({ state: { input: '{"cmd":"ls"}', status: "completed" } }),
     );
     expect(state.command).toBe("ls");
   });
@@ -186,7 +192,7 @@ describe("getToolDisplayStrategy", () => {
       title: "Tool: update_plan",
       state: {
         status: "completed",
-        arguments: {
+        input: {
           explanation: "halfway",
           plan: [
             { step: "Define seam", status: "completed" },
@@ -222,7 +228,7 @@ describe("getToolDisplayStrategy", () => {
       title: "Tool: web__run",
       state: {
         status: "completed",
-        arguments: { search_query: [{ q: "MLX audio" }, { q: "diarization" }] },
+        input: { search_query: [{ q: "MLX audio" }, { q: "diarization" }] },
         output: "results...",
       },
     });
@@ -238,7 +244,7 @@ describe("getToolDisplayStrategy", () => {
       title: "Tool: view_image",
       state: {
         status: "completed",
-        arguments: { path: "/repo/shot.jpeg", detail: "original" },
+        input: { path: "/repo/shot.jpeg", detail: "original" },
         output: "",
       },
     });
@@ -367,7 +373,7 @@ describe("getToolDisplayStrategy", () => {
       title: "Tool: collaboration.send_message",
       state: {
         status: "completed",
-        arguments: { target: "reviewer", message: "Please check the tool renderer." },
+        input: { target: "reviewer", message: "Please check the tool renderer." },
         output: "Delivered",
       },
     });

@@ -3,7 +3,7 @@
  *
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
-import type { MessagePart } from "../../../lib/api";
+import type { ToolPart } from "../../../lib/api";
 import { detectLanguageByFilePath } from "../../tool-output/language";
 import { buildKimiEditDiffBlocks, extractEditDiff } from "../diff";
 import {
@@ -22,12 +22,12 @@ import { buildDefaultToolStrategy, extractReadContent, extractWriteContent } fro
 import { BookOpenText, FilePenLine, FileSearch, NotebookPen, SquareTerminal } from "../../ui/icons";
 
 export function buildKimiToolStrategy(
-  tool: MessagePart,
+  tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
 ): ToolDisplayStrategy {
   const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
-  const toolKey = (tool.tool || "").toLowerCase();
+  const toolKey = tool.tool.toLowerCase();
   const input = toRecord(state.inputValue);
 
   if (toolKey === "glob") {

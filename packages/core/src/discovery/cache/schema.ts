@@ -27,6 +27,7 @@ import {
 } from "./db.js";
 import {
   messageFromBackfillRow,
+  normalizeMessagePartsJson,
   prepareInsertFileActivity,
   prepareInsertMessageTool,
   prepareUpsertSession,
@@ -38,12 +39,17 @@ import {
   type SessionRow,
 } from "./messages.js";
 
-const CACHE_SCHEMA_VERSION = 15;
+const CACHE_SCHEMA_VERSION = 16;
 interface MessageToolBackfillRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
   message_index?: number;
   tool_metadata_json?: string | null;
+}
+
+interface MessagePartsMigrationRow extends DatabaseRow {
+  rowid?: number;
+  parts_json?: string;
 }
 
 interface ProjectBackfillSessionRow extends DatabaseRow {
@@ -1032,6 +1038,19 @@ function compactSessionDocuments(db: SQLiteDatabase): void {
   `);
 }
 
+function normalizeCachedMessageParts(db: SQLiteDatabase): void {
+  if (!tableExists(db, "messages")) return;
+
+  const rows = db
+    .prepare("SELECT rowid, parts_json FROM messages")
+    .all() as MessagePartsMigrationRow[];
+  const update = db.prepare("UPDATE messages SET parts_json = ? WHERE rowid = ?");
+  for (const row of rows) {
+    if (row.rowid == null) continue;
+    update.run(normalizeMessagePartsJson(row.parts_json), row.rowid);
+  }
+}
+
 const CODEX_EXEC_DECODE_MIGRATION_KEY = "codex_exec_decode_migrated_v3";
 
 /**
@@ -1191,6 +1210,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 13, migrate: createCacheTables },
       { version: 14, migrate: addIndexedMessageCount },
       { version: 15, destructive: true, migrate: compactSessionDocuments },
+      { version: 16, migrate: normalizeCachedMessageParts },
     ],
   });
 

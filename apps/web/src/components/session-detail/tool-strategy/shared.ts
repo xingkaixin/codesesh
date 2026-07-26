@@ -5,7 +5,7 @@
  *
  * Pure logic — no React. Consumed by the per-agent builders in this folder.
  */
-import type { MessagePart } from "../../../lib/api";
+import type { ToolPart } from "../../../lib/api";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
@@ -58,7 +58,7 @@ export function extractWriteContent(state: NormalizedToolState) {
 // ---------------------------------------------------------------------------
 
 export function buildDefaultToolStrategy(
-  tool: MessagePart,
+  tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
 ): ToolDisplayStrategy {
@@ -91,7 +91,7 @@ export function buildDefaultToolStrategy(
 }
 
 export function buildSkillToolStrategy(
-  tool: MessagePart,
+  tool: ToolPart,
   state: NormalizedToolState,
   defaultStrategy: ToolDisplayStrategy,
   baseDirectory?: string,

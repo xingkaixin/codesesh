@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { MessagePart } from "../../lib/api";
+import type { ToolPart } from "../../lib/api";
 import {
   buildFileChangeSummary,
   buildFileChangeSummaryFromActivity,
@@ -10,8 +10,14 @@ import {
   type FileChangeSummary,
 } from "./file-change";
 
-function part(overrides?: Partial<MessagePart>): MessagePart {
-  return { role: "tool", tool: "Read", title: "Read", ...overrides } as MessagePart;
+function part(overrides?: Partial<ToolPart>): ToolPart {
+  return {
+    type: "tool",
+    tool: "Read",
+    title: "Read",
+    state: { status: "completed" },
+    ...overrides,
+  };
 }
 
 describe("buildToolAnchorId", () => {
