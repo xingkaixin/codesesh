@@ -1,10 +1,5 @@
 export { firstExisting, readEnvPath, resolveDataHome, resolveHomePath } from "./paths.js";
-export {
-  ensureSessionTagsSync,
-  filterSessions,
-  scanSessions,
-  scanSessionsAsync,
-} from "./scanner.js";
+export { ensureSessionTagsSync, filterSessions, scanSessions } from "./scanner.js";
 export type { LiveSnapshot, ScanOptions } from "./scanner.js";
 export {
   materializeSessionDetail,
@@ -22,40 +17,42 @@ export {
 } from "./orchestrate.js";
 export { mergeSortedSessions } from "../contract/session-index.js";
 export {
-  loadCachedSessions,
+  clearCache,
+  getAgentLastFullSyncAt,
+  getCacheInfo,
+  isAgentCacheInitialized,
   loadCachedSessionData,
   loadCachedSessionDataEntry,
-  isAgentCacheInitialized,
+  loadCachedSessions,
   markAgentCacheInitialized,
-  getAgentLastFullSyncAt,
   markAgentFullSyncCompleted,
-  saveCachedSessions,
   saveCachedSessionChanges,
-  clearCache,
-  getCacheInfo,
-  getCachePath,
-  setFtsIntegrityCheckedPath,
-  listCachedProjectGroups,
+  saveCachedSessions,
+} from "./cache/sessions.js";
+export type { CachedSessionDataEntry } from "./cache/sessions.js";
+export { getCachePath, setFtsIntegrityCheckedPath } from "./cache/db.js";
+export type { SessionHeadChange } from "./cache/db.js";
+export { listCachedProjectGroups } from "./cache/project-groups.js";
+export {
   listFileActivity,
   listSessionFileActivity,
+  searchFileActivitySessions,
+} from "./cache/file-activity.js";
+export type { FileActivityOptions, FileActivityResult } from "./cache/file-activity.js";
+export {
   mergeSearchQueryOptions,
   parseSearchQuery,
-  searchFileActivitySessions,
   searchSessions,
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
-} from "./cache.js";
+} from "./cache/search.js";
 export type {
-  FileActivityOptions,
-  FileActivityResult,
   ParsedSearchQuery,
   SearchIndexSyncOptions,
   SearchIndexSyncResult,
   SearchMatchType,
   SearchOptions,
   SearchQueryFilters,
-  SessionHeadChange,
-  CachedSessionDataEntry,
-} from "./cache.js";
+} from "./cache/search.js";
 export { perf } from "../utils/index.js";
 export type { PerfMarker } from "../utils/index.js";

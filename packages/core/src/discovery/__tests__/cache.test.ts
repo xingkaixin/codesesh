@@ -2,13 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  clearCache,
-  loadCachedSessionData,
-  saveCachedSessions,
-  searchSessions,
-  syncSessionSearchIndex,
-} from "../cache.js";
+import { clearCache, loadCachedSessionData, saveCachedSessions } from "../cache/sessions.js";
+import { searchSessions, syncSessionSearchIndex } from "../cache/search.js";
 import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../cache/db.js";
 import type { SessionDetail, SessionHead } from "../../types/index.js";
 

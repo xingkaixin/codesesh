@@ -3,18 +3,19 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import { listFileActivity, searchFileActivitySessions } from "../file-activity.js";
+import { listCachedProjectGroups } from "../project-groups.js";
 import {
-  listFileActivity,
-  listCachedProjectGroups,
   loadCachedSessionData,
   loadCachedSessions,
-  searchFileActivitySessions,
-  searchSessions,
   saveCachedSessionChanges,
   saveCachedSessions,
+} from "../sessions.js";
+import {
+  searchSessions,
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
-} from "../../cache.js";
+} from "../search.js";
 import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../db.js";
 import { withCacheDb } from "../schema.js";
 import type { SessionDetail, SessionHead } from "../../../types/index.js";

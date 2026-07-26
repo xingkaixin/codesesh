@@ -4,7 +4,9 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listBookmarks, type BookmarkRecord } from "../../state/bookmarks.js";
-import { listCachedProjectGroups, loadCachedSessions, searchSessions } from "../cache.js";
+import { listCachedProjectGroups } from "../cache/project-groups.js";
+import { loadCachedSessions } from "../cache/sessions.js";
+import { searchSessions } from "../cache/search.js";
 import type { SessionHead } from "../../types/index.js";
 
 // Isolated temp directory so computeIdentity resolves to a deterministic

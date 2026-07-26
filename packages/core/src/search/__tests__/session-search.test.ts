@@ -25,7 +25,7 @@ import type {
   SmartTag,
 } from "../../types/index.js";
 import type { SearchOptions } from "../../discovery/cache/search.js";
-import { searchSessions, syncSessionSearchIndex } from "../../discovery/cache.js";
+import { searchSessions, syncSessionSearchIndex } from "../../discovery/cache/search.js";
 import {
   executeSessionSearch,
   filterSessionSearchCandidates,

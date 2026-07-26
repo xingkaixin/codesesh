@@ -51,7 +51,3 @@ export function getAgentInfoMap(sessionsByAgent: Record<string, number>): AgentI
     };
   });
 }
-
-export function getAgentByName(name: string): AgentRegistration | undefined {
-  return registrations.find((registration) => registration.create().name === name);
-}

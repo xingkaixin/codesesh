@@ -8,14 +8,14 @@ import {
   getAgentLastFullSyncAt,
   getCacheInfo,
   isAgentCacheInitialized,
-  listCachedProjectGroups,
   loadCachedSessions,
   markAgentCacheInitialized,
   markAgentFullSyncCompleted,
   saveCachedSessionChanges,
   saveCachedSessions,
-  type SessionCacheMeta,
-} from "../../cache.js";
+} from "../sessions.js";
+import { listCachedProjectGroups } from "../project-groups.js";
+import type { SessionCacheMeta } from "../../../agents/base.js";
 import { withCacheDb, withSearchIndexDb } from "../schema.js";
 import {
   getFtsIntegrityCheckedPath,

@@ -154,7 +154,7 @@ describe("filterSessions", () => {
 // --- scanSessions integration tests ---
 // Mock cache and perf to isolate scanner logic
 
-vi.mock("../cache.js", () => ({
+vi.mock("../cache/sessions.js", () => ({
   loadCachedSessions: vi.fn(() => null),
   markAgentCacheInitialized: vi.fn(),
   markAgentFullSyncCompleted: vi.fn(),
@@ -177,9 +177,13 @@ vi.mock("../../agents/index.js", () => ({
   BaseAgent: class {},
 }));
 
-import { finalizeAgentScan, scanSessions, scanSessionsAsync } from "../scanner.js";
+import { finalizeAgentScan, scanSessions } from "../scanner.js";
 import { createRegisteredAgents } from "../../agents/index.js";
-import { loadCachedSessions, saveCachedSessionChanges, saveCachedSessions } from "../cache.js";
+import {
+  loadCachedSessions,
+  saveCachedSessionChanges,
+  saveCachedSessions,
+} from "../cache/sessions.js";
 
 const mockedCreateRegisteredAgents = vi.mocked(createRegisteredAgents);
 const mockedLoadCachedSessions = vi.mocked(loadCachedSessions);
@@ -631,14 +635,5 @@ describe("scanSessions", () => {
     ]);
     const result = await scanSessions({});
     expect(result).toBeDefined();
-  });
-});
-
-describe("scanSessionsAsync", () => {
-  it("is an alias for scanSessions", async () => {
-    mockedCreateRegisteredAgents.mockReturnValue([]);
-    const result = await scanSessionsAsync({});
-    expect(result).toBeDefined();
-    expect(result.sessions).toEqual([]);
   });
 });
