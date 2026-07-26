@@ -7,6 +7,7 @@
 import type { SessionHead } from "../types/index.js";
 import type { SearchResult } from "../contract/index.js";
 import {
+  filterIndexedSessionReferences,
   mergeSearchQueryOptions,
   searchSessions,
   sessionMatchesSearchCost,
@@ -85,9 +86,8 @@ function matchesRecentSearchFilters(
   return true;
 }
 
-// Single source of truth for "does this session belong in a search result",
-// shared by the recent-sessions path here and by alias matching in the CLI
-// API layer (which looks up individual sessions instead of scanning a list).
+// Evaluates filters answerable from SessionHead. File and tool predicates
+// require the indexed batch seam in filterSessionSearchCandidates.
 export function matchesSessionSearchFilters(
   agentName: string,
   session: SessionHead,
@@ -99,6 +99,36 @@ export function matchesSessionSearchFilters(
   if (options.from != null && activity < options.from) return false;
   if (options.to != null && activity > options.to) return false;
   return matchesRecentSearchFilters(session, options, projectScope);
+}
+
+function sessionReferenceKey(agentName: string, sessionId: string): string {
+  return `${agentName}\u0000${sessionId}`;
+}
+
+export function filterSessionSearchCandidates(
+  candidates: SearchResult[],
+  options: SearchOptions,
+): SearchResult[] {
+  const projectScope = options.cwd ? createProjectScopeMatcher(options.cwd) : null;
+  const headMatches = candidates.filter((candidate) =>
+    matchesSessionSearchFilters(candidate.agentName, candidate.session, options, projectScope),
+  );
+  if (!options.file && !options.fileKind && !options.tools?.length) return headMatches;
+
+  const indexedMatches = filterIndexedSessionReferences(
+    headMatches.map((candidate) => ({
+      agentName: candidate.agentName,
+      sessionId: candidate.session.id,
+    })),
+    {
+      file: options.file,
+      fileKind: options.fileKind,
+      tools: options.tools,
+    },
+  );
+  return headMatches.filter((candidate) =>
+    indexedMatches.has(sessionReferenceKey(candidate.agentName, candidate.session.id)),
+  );
 }
 
 function searchRecentSessions(
@@ -149,7 +179,7 @@ function mergeSearchResultSources(results: SearchResult[], limit: number): Searc
   const merged: SearchResult[] = [];
 
   for (const result of results) {
-    const key = `${result.agentName}/${result.session.id}`;
+    const key = sessionReferenceKey(result.agentName, result.session.id);
     if (seen.has(key)) continue;
     seen.add(key);
     merged.push(result);
@@ -159,26 +189,8 @@ function mergeSearchResultSources(results: SearchResult[], limit: number): Searc
   return merged;
 }
 
-// searchSessions is the only source when: there's text (FTS is the primary
-// source), tools are filtered (its empty-query SQL branch is the sole source
-// for tool-only queries), tags are filtered (listFileActivity has no tag
-// clause), or a from/to window is set (file-activity filters by
-// fa.latest_time, not the session's activity_time, so it can't stand in).
-// Otherwise, once a file path narrowed the results, the file-activity path
-// already covers everything and re-querying sessions is redundant.
-function canSkipSessionsSearch(
-  fileQuery: string,
-  textQuery: string,
-  options: SearchOptions,
-): boolean {
-  return Boolean(
-    fileQuery &&
-    !textQuery &&
-    !options.tools?.length &&
-    !options.tags?.length &&
-    options.from == null &&
-    options.to == null,
-  );
+function canSkipSessionsSearch(fileQuery: string, textQuery: string): boolean {
+  return Boolean(fileQuery && !textQuery);
 }
 
 function searchIndexedSessions(
@@ -189,9 +201,20 @@ function searchIndexedSessions(
 ): SearchResult[] {
   const fileQuery = deriveFileQuery(query, parsed, options);
   const fileResults = fileQuery ? searchFileActivitySessions(fileQuery, options) : [];
-  const sessionResults = canSkipSessionsSearch(fileQuery, textQuery, options)
+  const sessionResults = canSkipSessionsSearch(fileQuery, textQuery)
     ? []
     : searchSessions(query, options);
+  const textMatchReferences =
+    textQuery && options.file
+      ? new Set(
+          sessionResults.map((result) => sessionReferenceKey(result.agentName, result.session.id)),
+        )
+      : null;
+  const matchingFileResults = textMatchReferences
+    ? fileResults.filter((result) =>
+        textMatchReferences.has(sessionReferenceKey(result.agentName, result.session.id)),
+      )
+    : fileResults;
 
-  return mergeSearchResultSources([...fileResults, ...sessionResults], options.limit ?? 50);
+  return mergeSearchResultSources([...matchingFileResults, ...sessionResults], options.limit ?? 50);
 }

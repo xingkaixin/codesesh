@@ -5,10 +5,9 @@
 import type { BookmarkRecord, SessionHead } from "@codesesh/core";
 import type { SearchResult } from "@codesesh/core/contract";
 import {
-  createProjectScopeMatcher,
+  filterSessionSearchCandidates,
   getSessionActivityTime,
   listSessionAliases,
-  matchesSessionSearchFilters,
   mergeSearchQueryOptions,
   StateStorageUnavailableError,
   type FileActivityResult,
@@ -114,7 +113,6 @@ export function findAliasSearchResults(
   const needle = search.text.trim().toLowerCase();
   if (!needle || aliases.size === 0) return [];
 
-  const projectScope = search.options.cwd ? createProjectScopeMatcher(search.options.cwd) : null;
   const sessionsByAgent = new Map<string, Map<string, SessionHead>>();
   const lookupSession = (agentName: string, sessionId: string): SessionHead | undefined => {
     let byId = sessionsByAgent.get(agentName);
@@ -131,7 +129,6 @@ export function findAliasSearchResults(
     const { agentName, sessionId } = splitAliasKey(key);
     const session = lookupSession(agentName, sessionId);
     if (!session) continue;
-    if (!matchesSessionSearchFilters(agentName, session, search.options, projectScope)) continue;
     results.push({
       agentName,
       session: aliases.decorate(session, agentName),
@@ -140,7 +137,7 @@ export function findAliasSearchResults(
     });
   }
 
-  return results.sort(
+  return filterSessionSearchCandidates(results, search.options).sort(
     (a, b) => getSessionActivityTime(b.session) - getSessionActivityTime(a.session),
   );
 }
