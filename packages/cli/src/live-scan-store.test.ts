@@ -1962,19 +1962,18 @@ describe("LiveScanStore", () => {
     });
     vi.spyOn(appLogger, "error").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const store = new LiveScanStore({ watchEnabled: false });
+    const store = new LiveScanStore({ watchEnabled: false, deferInitialRefresh: true });
     await store.initialize();
-    const initialSearchWorkerCount = workerThreads.workers.filter(
-      (worker) => worker.workerData.jobs,
-    ).length;
     workerThreads.deferSearchIndexWorkers = true;
     const listener = vi.fn();
     store.subscribe(listener);
     const current = syncEngineOf(store).refresh("codex");
     await vi.waitFor(() =>
-      expect(workerThreads.workers.filter((worker) => worker.workerData.jobs)).toHaveLength(
-        initialSearchWorkerCount + 1,
-      ),
+      expect(
+        workerThreads.workers.some((worker) =>
+          worker.workerData.jobs?.some((job: { agentName?: string }) => job.agentName === "codex"),
+        ),
+      ).toBe(true),
     );
     const pending = syncEngineOf(store).refresh("kimi");
     await vi.waitFor(() => expect(kimi.incrementalScan).toHaveBeenCalledOnce());
@@ -1982,9 +1981,11 @@ describe("LiveScanStore", () => {
     await store.shutdown();
     await Promise.all([current, pending]);
 
-    expect(workerThreads.workers.filter((worker) => worker.workerData.jobs)).toHaveLength(
-      initialSearchWorkerCount + 1,
-    );
+    expect(
+      workerThreads.workers.some((worker) =>
+        worker.workerData.jobs?.some((job: { agentName?: string }) => job.agentName === "kimi"),
+      ),
+    ).toBe(false);
     expect(store.getSnapshot().sessions.map((session) => session.title)).toEqual([
       "codex before",
       "kimi before",
