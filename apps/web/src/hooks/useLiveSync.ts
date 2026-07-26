@@ -1,17 +1,22 @@
 import { useEffect, useEffectEvent, useState } from "react";
-import { type ScanStatusEvent, subscribeSessionUpdates } from "../lib/api";
-import type { LiveSessionsUpdate, SessionStoreSnapshot } from "./useSessionStore";
+import {
+  type ScanStatusEvent,
+  type SessionsUpdatedEvent,
+  subscribeSessionUpdates,
+} from "../lib/api";
+import type { SessionStoreSnapshot } from "./useSessionStore";
 
 interface LiveSyncDeps {
-  applyLiveEvent: (event: LiveSessionsUpdate) => Promise<SessionStoreSnapshot | null>;
+  applyLiveEvent: (event: SessionsUpdatedEvent) => Promise<SessionStoreSnapshot | null>;
+  resyncLiveState: () => Promise<SessionStoreSnapshot | null>;
   setScanStatus: (event: ScanStatusEvent) => void;
 }
 
-export function useLiveSync({ applyLiveEvent, setScanStatus }: LiveSyncDeps) {
+export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: LiveSyncDeps) {
   const [liveNotice, setLiveNotice] = useState<string | null>(null);
   const [connectionNotice, setConnectionNotice] = useState<string | null>(null);
 
-  const syncLiveUpdate = useEffectEvent(async (event: LiveSessionsUpdate) => {
+  const syncLiveUpdate = useEffectEvent(async (event: SessionsUpdatedEvent) => {
     try {
       const snapshot = await applyLiveEvent(event);
       if (snapshot && event.newSessions > 0) {
@@ -22,17 +27,13 @@ export function useLiveSync({ applyLiveEvent, setScanStatus }: LiveSyncDeps) {
     }
   });
 
-  const handleReconnect = useEffectEvent(() => {
+  const handleReconnect = useEffectEvent(async () => {
     setConnectionNotice(null);
-    void syncLiveUpdate({
-      type: "sessions-updated",
-      changedAgents: [],
-      newSessions: 0,
-      updatedSessions: 0,
-      removedSessions: 0,
-      totalSessions: 0,
-      timestamp: Date.now(),
-    });
+    try {
+      await resyncLiveState();
+    } catch (error) {
+      console.error("Failed to resync live session state:", error);
+    }
   });
 
   useEffect(() => {
@@ -41,7 +42,7 @@ export function useLiveSync({ applyLiveEvent, setScanStatus }: LiveSyncDeps) {
         void syncLiveUpdate(event);
       },
       setScanStatus,
-      handleReconnect,
+      () => void handleReconnect(),
       () => {
         setConnectionNotice("实时更新已断开，重连中…");
       },

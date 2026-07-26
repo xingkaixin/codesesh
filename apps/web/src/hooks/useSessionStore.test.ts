@@ -7,8 +7,9 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentInfo, AppConfig, ProjectGroup } from "../lib/api";
 import * as api from "../lib/api";
+import { queryKeys } from "../lib/query-keys";
 import { createQueryWrapper } from "../test/query-wrapper";
-import { useSessionStore } from "./useSessionStore";
+import { useSessionStore, type SessionStoreSnapshot } from "./useSessionStore";
 
 vi.mock("../lib/api", () => ({
   fetchAgents: vi.fn(),
@@ -47,10 +48,10 @@ afterEach(() => {
 });
 
 async function renderStore() {
-  const { Wrapper } = createQueryWrapper();
+  const { client, Wrapper } = createQueryWrapper();
   const hook = renderHook(() => useSessionStore(), { wrapper: Wrapper });
   await waitFor(() => expect(hook.result.current.config).toEqual(config));
-  return hook;
+  return { ...hook, client };
 }
 
 describe("useSessionStore", () => {
@@ -76,7 +77,7 @@ describe("useSessionStore", () => {
     expect(console.error).toHaveBeenCalledWith("Failed to load config:", error);
   });
 
-  it("ignores live events until a window has loaded", async () => {
+  it("ignores live events until a window has been selected", async () => {
     const { result } = await renderStore();
     let snapshot: Awaited<ReturnType<typeof result.current.applyLiveEvent>> | undefined;
 
@@ -86,6 +87,25 @@ describe("useSessionStore", () => {
 
     expect(snapshot).toBeNull();
     expect(api.fetchAgents).not.toHaveBeenCalled();
+  });
+
+  it("handles a live event that arrives before the first window load completes", async () => {
+    const { result } = await renderStore();
+    let initialLoad!: ReturnType<typeof result.current.reload>;
+    let liveUpdate!: ReturnType<typeof result.current.applyLiveEvent>;
+
+    act(() => {
+      initialLoad = result.current.reload(config.window);
+      liveUpdate = result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT);
+    });
+    let snapshots!: [SessionStoreSnapshot | null, SessionStoreSnapshot | null];
+    await act(async () => {
+      snapshots = await Promise.all([liveUpdate, initialLoad]);
+    });
+    const [liveSnapshot] = snapshots;
+
+    expect(liveSnapshot?.window).toEqual(config.window);
+    await waitFor(() => expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]));
   });
 
   it("commits all window data as one snapshot", async () => {
@@ -129,6 +149,28 @@ describe("useSessionStore", () => {
     expect(result.current.version).toBeGreaterThan(0);
   });
 
+  it("applies live events to the latest window after a rapid switch", async () => {
+    const { result, client } = await renderStore();
+    const firstWindow = { from: 1, to: 2 };
+    const latestWindow = { from: 3, to: 4 };
+    await act(() => result.current.reload(firstWindow));
+    await act(() => result.current.reload(latestWindow));
+    const changedSession = { ...SAMPLE_SESSION_HEAD, display_title: "Latest window" };
+
+    await act(() =>
+      result.current.applyLiveEvent({
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        changedSessionHeads: [{ agentName: "claudecode", session: changedSession }],
+      }),
+    );
+
+    expect(result.current.window).toEqual(latestWindow);
+    await waitFor(() => expect(result.current.sessions).toEqual([changedSession]));
+    expect(
+      client.getQueryData<SessionStoreSnapshot>(queryKeys.sessionSnapshot(firstWindow))?.sessions,
+    ).toEqual([SAMPLE_SESSION_HEAD]);
+  });
+
   it("applies an incremental live session diff without re-fetching sessions", async () => {
     const { result } = await renderStore();
     await act(() => result.current.reload(config.window));
@@ -148,22 +190,36 @@ describe("useSessionStore", () => {
     expect(result.current.version).toBeGreaterThan(0);
   });
 
-  it("falls back to a full reload for reconnect events without a diff", async () => {
+  it("invalidates project dashboards, server searches, and inactive aggregate caches", async () => {
+    const { result, client } = await renderStore();
+    await act(() => result.current.reload(config.window));
+    const projectDashboardKey = queryKeys.dashboard(config.window, {
+      projectKind: "path",
+      projectKey: "p1",
+    });
+    const searchKey = queryKeys.search("needle", {});
+    const inactiveAggregateKey = queryKeys.sessionSnapshotAggregates({ from: 10, to: 20 });
+    client.setQueryData(projectDashboardKey, SAMPLE_DASHBOARD_DATA);
+    client.setQueryData(searchKey, []);
+    client.setQueryData(inactiveAggregateKey, {
+      agents,
+      projects,
+      dashboard: SAMPLE_DASHBOARD_DATA,
+    });
+
+    await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
+
+    expect(client.getQueryState(projectDashboardKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(searchKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(inactiveAggregateKey)?.isInvalidated).toBe(true);
+  });
+
+  it("performs an explicit full reload when live state reconnects", async () => {
     const { result } = await renderStore();
     await act(() => result.current.reload(config.window));
     vi.mocked(api.fetchSessions).mockClear();
 
-    await act(() =>
-      result.current.applyLiveEvent({
-        type: "sessions-updated",
-        changedAgents: [],
-        newSessions: 0,
-        updatedSessions: 0,
-        removedSessions: 0,
-        totalSessions: 0,
-        timestamp: Date.now(),
-      }),
-    );
+    await act(() => result.current.resyncLiveState());
 
     expect(api.fetchSessions).toHaveBeenCalledOnce();
     expect(result.current.version).toBeGreaterThan(0);

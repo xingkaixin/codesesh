@@ -29,6 +29,7 @@ export const queryKeys = {
     ["session-detail", agent, sessionSlug] as const,
   sessionSnapshots: ["session-snapshot"] as const,
   sessionSnapshot: (window: TimeWindow) => ["session-snapshot", normalizeWindow(window)] as const,
+  sessionSnapshotAggregateQueries: ["session-snapshot-aggregates"] as const,
   sessionSnapshotAggregates: (window: TimeWindow) =>
     ["session-snapshot-aggregates", normalizeWindow(window)] as const,
 } as const;
