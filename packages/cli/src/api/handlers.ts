@@ -1,8 +1,8 @@
 import type { Context } from "hono";
 import type {
   BookmarkRecord,
-  ScanResult,
-  SessionData,
+  LiveSnapshot,
+  SessionDetail,
   SessionHead,
   SmartTag,
 } from "@codesesh/core";
@@ -59,7 +59,7 @@ import {
 export type { SessionListDefaults };
 
 export interface ScanResultSource {
-  getSnapshot(): ScanResult;
+  getSnapshot(): LiveSnapshot;
 }
 
 export interface ScanStatusSource {
@@ -236,7 +236,7 @@ function getSessionHeadReference(session: SessionHead): SessionReference {
 }
 
 function createSessionDetailJsonResponse(
-  data: Omit<SessionData, "messages">,
+  data: Omit<SessionDetail, "messages">,
   messages: Iterable<string>,
 ): Response {
   const encoder = new TextEncoder();

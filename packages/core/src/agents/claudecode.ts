@@ -11,13 +11,13 @@ import {
 import type { ParseSessionResult } from "./base.js";
 import type {
   SessionHead,
-  SessionData,
+  SessionDetail,
   Message,
   MessagePart,
   ToolPart,
   ToolPartState,
 } from "../types/index.js";
-import { resolveProviderRoots, firstExisting } from "../discovery/paths.js";
+import { resolveAgentRoots, firstExisting } from "../discovery/paths.js";
 import { readJsonlFile, readJsonlFileLines } from "../utils/jsonl.js";
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { isInternalEventType } from "../utils/parse-cleanup.js";
@@ -117,12 +117,12 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
   private sessionsIndexMtime: Record<string, number | null> = {};
 
   private findBasePath(): string | null {
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
     return firstExisting(join(roots.claudeRoot, "projects"), "data/claudecode");
   }
 
   getSessionWatchPlan() {
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
     return {
       status: "supported" as const,
       targets: [
@@ -182,7 +182,7 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     return head;
   }
 
-  getSessionData(sessionId: string): SessionData {
+  getSessionData(sessionId: string): SessionDetail {
     const meta = this.sessionMetaMap.get(sessionId);
     if (!meta) {
       throw new Error(`Session not found: ${sessionId}`);

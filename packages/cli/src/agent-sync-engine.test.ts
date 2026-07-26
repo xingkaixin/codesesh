@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FileSystemSessionSource } from "@codesesh/core";
-import type { BaseAgent, loadCachedSessions, ScanResult, SessionHead } from "@codesesh/core";
+import type { BaseAgent, loadCachedSessions, LiveSnapshot, SessionHead } from "@codesesh/core";
 import type { WorkerRunner } from "./worker-runner.js";
 
 const core = vi.hoisted(() => ({
@@ -111,7 +111,7 @@ function makeEngine(
   sessions: SessionHead[] = [],
   workerRunner: WorkerRunner = makeWorkerRunner(),
 ) {
-  const state: ScanResult = {
+  const state: LiveSnapshot = {
     agents: [agent],
     byAgent: { [agent.name]: sessions },
     sessions,
@@ -426,7 +426,7 @@ describe("AgentSyncEngine", () => {
       run: vi.fn(async () => ({ sessions: [newSession], meta: {}, changedIds: [] })),
       shutdown: vi.fn(async () => undefined),
     };
-    const state: ScanResult = {
+    const state: LiveSnapshot = {
       agents: [agent],
       byAgent: { codex: [oldSession] },
       sessions: [oldSession],
@@ -483,7 +483,7 @@ describe("AgentSyncEngine", () => {
       run: vi.fn(async () => ({ sessions: scanResult, meta: {} })),
       shutdown: vi.fn(async () => undefined),
     };
-    const state: ScanResult = { agents: [agent], byAgent: { codex: [] }, sessions: [] };
+    const state: LiveSnapshot = { agents: [agent], byAgent: { codex: [] }, sessions: [] };
     const engine = new AgentSyncEngine({
       snapshot: () => state,
       workerRunner,

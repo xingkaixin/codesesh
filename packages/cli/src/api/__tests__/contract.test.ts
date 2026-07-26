@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { SAMPLE_SCAN_STATUS_EVENT, SAMPLE_SESSION_HEAD } from "@codesesh/core/contract";
-import type { ScanResult } from "@codesesh/core";
+import type { LiveSnapshot } from "@codesesh/core";
 import { createApiRoutes } from "../routes.js";
 import type { ScanResultSource } from "../handlers.js";
 import type { ScanEventSource } from "../../scan-source.js";
@@ -12,7 +12,7 @@ function makeScanSource(): ScanResultSource {
         sessions: [SAMPLE_SESSION_HEAD],
         byAgent: { claudecode: [SAMPLE_SESSION_HEAD] },
         agents: [],
-      }) as ScanResult,
+      }) as LiveSnapshot,
   };
 }
 

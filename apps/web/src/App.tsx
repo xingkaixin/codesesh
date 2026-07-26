@@ -3,7 +3,7 @@ declare const __APP_VERSION__: string;
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "./components/ui/icons";
 import { Link, useLocation, useMatches, useNavigate } from "react-router-dom";
-import type { BookmarkedSessionSnapshot, SessionHead } from "./lib/api";
+import type { BookmarkRecord, SessionHead } from "./lib/api";
 import { logClientEvent } from "./lib/api";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { CopyResumeButton } from "./components/CopyResumeButton";
@@ -98,9 +98,9 @@ export default function App() {
       path: location.pathname,
       mode: viewState.mode,
       agent: viewState.activeAgentKey,
-      session: viewState.activeSessionSlug,
+      session: viewState.activeSessionId,
     });
-  }, [location.pathname, viewState.mode, viewState.activeAgentKey, viewState.activeSessionSlug]);
+  }, [location.pathname, viewState.mode, viewState.activeAgentKey, viewState.activeSessionId]);
 
   useEffect(() => {
     if (viewState.mode !== "project") return;
@@ -213,7 +213,7 @@ export default function App() {
     });
   }, []);
 
-  const handleRenameBookmarkedSession = useCallback((bookmark: BookmarkedSessionSnapshot) => {
+  const handleRenameBookmarkedSession = useCallback((bookmark: BookmarkRecord) => {
     setAliasTarget({
       agentKey: bookmark.reference.agentName,
       sessionId: bookmark.reference.sessionId,
@@ -284,7 +284,7 @@ export default function App() {
 
     if (viewState.mode === "session") {
       setSelectedSidebarSessionReference(
-        getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionSlug),
+        getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionId),
       );
       return;
     }
@@ -299,7 +299,7 @@ export default function App() {
     isSearchMode,
     viewState.mode,
     viewState.activeAgentKey,
-    viewState.activeSessionSlug,
+    viewState.activeSessionId,
     sidebarSessions,
   ]);
 

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 import {
-  type BookmarkedSessionSnapshot,
+  type BookmarkRecord,
   type SessionHead,
   deleteBookmark,
   fetchBookmarks,
@@ -14,26 +14,26 @@ import {
   getSessionBookmarkKey,
   loadLegacyBookmarks,
   mergeBookmarksWithSessions,
-  toBookmarkedSessionSnapshot,
+  toBookmarkRecord,
 } from "../lib/bookmarks";
 import { queryKeys } from "../lib/query-keys";
 
 interface ToggleBookmarkVariables {
-  snapshot: BookmarkedSessionSnapshot;
+  snapshot: BookmarkRecord;
   isBookmarked: boolean;
 }
 
-const EMPTY_BOOKMARKS: BookmarkedSessionSnapshot[] = [];
+const EMPTY_BOOKMARKS: BookmarkRecord[] = [];
 
-function withoutBookmarkTimestamp(bookmarks: BookmarkedSessionSnapshot[]) {
+function withoutBookmarkTimestamp(bookmarks: BookmarkRecord[]) {
   return bookmarks.map(({ bookmarkedAt: _bookmarkedAt, ...bookmark }) => bookmark);
 }
 
 function toggledBookmarks(
-  bookmarks: BookmarkedSessionSnapshot[],
-  snapshot: BookmarkedSessionSnapshot,
+  bookmarks: BookmarkRecord[],
+  snapshot: BookmarkRecord,
   isBookmarked: boolean,
-): BookmarkedSessionSnapshot[] {
+): BookmarkRecord[] {
   const key = getSessionBookmarkKey(snapshot.reference);
   if (isBookmarked) {
     return bookmarks.filter((bookmark) => getSessionBookmarkKey(bookmark.reference) !== key);
@@ -45,10 +45,7 @@ function toggledBookmarks(
   });
 }
 
-function sameBookmarks(
-  left: BookmarkedSessionSnapshot[],
-  right: BookmarkedSessionSnapshot[],
-): boolean {
+function sameBookmarks(left: BookmarkRecord[], right: BookmarkRecord[]): boolean {
   return left.length === right.length && left.every((bookmark, index) => bookmark === right[index]);
 }
 
@@ -68,7 +65,7 @@ export function useBookmarks(sessions: SessionHead[]) {
   const bookmarks = bookmarksQuery.data?.bookmarks ?? EMPTY_BOOKMARKS;
 
   const setBookmarks = useCallback(
-    (next: BookmarkedSessionSnapshot[]) => {
+    (next: BookmarkRecord[]) => {
       queryClient.setQueryData(queryKeys.bookmarks, { bookmarks: next });
     },
     [queryClient],
@@ -85,7 +82,7 @@ export function useBookmarks(sessions: SessionHead[]) {
     },
     onMutate: async ({ snapshot, isBookmarked }) => {
       const cancellation = queryClient.cancelQueries({ queryKey: queryKeys.bookmarks });
-      const previous = queryClient.getQueryData<{ bookmarks: BookmarkedSessionSnapshot[] }>(
+      const previous = queryClient.getQueryData<{ bookmarks: BookmarkRecord[] }>(
         queryKeys.bookmarks,
       );
       setBookmarks(toggledBookmarks(previous?.bookmarks ?? [], snapshot, isBookmarked));
@@ -103,12 +100,10 @@ export function useBookmarks(sessions: SessionHead[]) {
   });
 
   const { mutate: syncBookmarks } = useMutation({
-    mutationFn: (bookmarks: Omit<BookmarkedSessionSnapshot, "bookmarkedAt">[]) =>
-      importBookmarks(bookmarks),
+    mutationFn: (bookmarks: Omit<BookmarkRecord, "bookmarkedAt">[]) => importBookmarks(bookmarks),
   });
   const { mutate: migrateBookmarks } = useMutation({
-    mutationFn: (bookmarks: Omit<BookmarkedSessionSnapshot, "bookmarkedAt">[]) =>
-      importBookmarks(bookmarks),
+    mutationFn: (bookmarks: Omit<BookmarkRecord, "bookmarkedAt">[]) => importBookmarks(bookmarks),
   });
 
   useEffect(() => {
@@ -145,7 +140,7 @@ export function useBookmarks(sessions: SessionHead[]) {
   );
 
   const toggleBookmark = useCallback(
-    (snapshot: BookmarkedSessionSnapshot) => {
+    (snapshot: BookmarkRecord) => {
       const key = getSessionBookmarkKey(snapshot.reference);
       mutateBookmark({ snapshot, isBookmarked: bookmarkKeySet.has(key) });
     },
@@ -154,7 +149,7 @@ export function useBookmarks(sessions: SessionHead[]) {
 
   const toggleSessionBookmark = useCallback(
     (session: SessionHead, agentKey: string) => {
-      toggleBookmark(toBookmarkedSessionSnapshot(session, agentKey));
+      toggleBookmark(toBookmarkRecord(session, agentKey));
     },
     [toggleBookmark],
   );

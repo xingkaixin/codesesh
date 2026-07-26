@@ -1,5 +1,5 @@
 import { existsSync, statSync } from "node:fs";
-import type { SessionHead, SessionData, ParseSessionResult } from "../types/index.js";
+import type { SessionHead, SessionDetail, ParseSessionResult } from "../types/index.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
 
 export type { ParseSessionResult };
@@ -177,7 +177,7 @@ export abstract class BaseAgent {
   abstract scan(options?: AgentScanOptions): SessionHead[];
 
   /** Load full session data including all messages. */
-  abstract getSessionData(sessionId: string): SessionData;
+  abstract getSessionData(sessionId: string): SessionDetail;
 
   /** Describe how changes to this agent's session sources can be observed. */
   abstract getSessionWatchPlan(): SessionWatchPlan;

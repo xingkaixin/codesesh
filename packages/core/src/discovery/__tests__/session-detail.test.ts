@@ -8,9 +8,9 @@ import {
   saveCachedSessions,
   syncSessionSearchIndex,
   type ChangeCheckResult,
-  type ScanResult,
+  type LiveSnapshot,
   type SessionCacheMeta,
-  type SessionData,
+  type SessionDetail,
   type SessionHead,
 } from "../../index.js";
 import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../cache/db.js";
@@ -35,7 +35,7 @@ class TestAgent extends BaseAgent {
   reads = 0;
 
   constructor(
-    private readonly detail: SessionData,
+    private readonly detail: SessionDetail,
     private readonly meta: Map<string, SessionCacheMeta>,
   ) {
     super();
@@ -49,7 +49,7 @@ class TestAgent extends BaseAgent {
     return [];
   }
 
-  getSessionData(): SessionData {
+  getSessionData(): SessionDetail {
     this.reads += 1;
     return this.detail;
   }
@@ -92,7 +92,7 @@ function makeHead(overrides: Partial<SessionHead> = {}): SessionHead {
   };
 }
 
-function makeDetail(title = "Source Session"): SessionData {
+function makeDetail(title = "Source Session"): SessionDetail {
   return {
     ...makeHead({ title }),
     reference: { agentName: "test", sessionId: "s1" },
@@ -121,7 +121,7 @@ function makeMeta(fingerprint: string): SessionCacheMeta {
   };
 }
 
-function makeScanResult(agent: TestAgent, head = makeHead()): ScanResult {
+function makeScanResult(agent: TestAgent, head = makeHead()): LiveSnapshot {
   return {
     sessions: [head],
     byAgent: { test: [head] },
@@ -129,7 +129,7 @@ function makeScanResult(agent: TestAgent, head = makeHead()): ScanResult {
   };
 }
 
-function persistDetail(head: SessionHead, detail: SessionData, fingerprint: string): void {
+function persistDetail(head: SessionHead, detail: SessionDetail, fingerprint: string): void {
   saveCachedSessions("test", [head], { [head.id]: makeMeta(fingerprint) });
   syncSessionSearchIndex("test", [head], () => detail);
 }

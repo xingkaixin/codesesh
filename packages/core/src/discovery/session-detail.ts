@@ -1,6 +1,6 @@
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import type { SessionReference } from "../contract/index.js";
-import type { SessionData, SessionHead } from "../types/index.js";
+import type { SessionDetail, SessionHead } from "../types/index.js";
 import { computeIdentity, realFs } from "../projects/index.js";
 import {
   classifySessionTags,
@@ -10,10 +10,10 @@ import {
 import { listSessionFileActivity } from "./cache.js";
 import { loadCachedSessionRawEntry, type CachedSessionRawEntry } from "./cache/sessions.js";
 import { messageFromCachedRow, messageJsonFromCachedRow } from "./cache/messages.js";
-import type { ScanResult } from "./scanner.js";
+import type { LiveSnapshot } from "./scanner.js";
 
 export type SessionDetailResult =
-  | { status: "found"; data: SessionData }
+  | { status: "found"; data: SessionDetail }
   | { status: "unknown-agent" }
   | { status: "not-ready" };
 
@@ -21,7 +21,7 @@ export type SessionDetailResponseResult =
   | SessionDetailResult
   | {
       status: "found-json";
-      data: Omit<SessionData, "messages">;
+      data: Omit<SessionDetail, "messages">;
       messages: Iterable<string>;
       messageCount: number;
     };
@@ -46,7 +46,7 @@ function sessionReferenceKey(agentName: string, sessionId: string): string {
  * The canonical sessions array is replaced atomically with each scan snapshot,
  * so its identity also versions this lazily built lookup.
  */
-function getSessionDetailLookup(scanResult: ScanResult): SessionDetailLookup {
+function getSessionDetailLookup(scanResult: LiveSnapshot): SessionDetailLookup {
   const cached = sessionDetailLookups.get(scanResult.sessions);
   if (cached) return cached;
 
@@ -68,7 +68,7 @@ function getSessionDetailLookup(scanResult: ScanResult): SessionDetailLookup {
 }
 
 function getSessionDetailContext(
-  scanResult: ScanResult,
+  scanResult: LiveSnapshot,
   reference: SessionReference,
 ): SessionDetailContext | null {
   const lookup = getSessionDetailLookup(scanResult);
@@ -103,7 +103,7 @@ function cacheHasCompleteDetail(
 }
 
 function getProjectIdentity(
-  data: Pick<SessionData, "directory" | "project_identity">,
+  data: Pick<SessionDetail, "directory" | "project_identity">,
   head: SessionHead | undefined,
 ) {
   return data.project_identity ?? head?.project_identity ?? computeIdentity(data.directory, realFs);
@@ -162,7 +162,7 @@ function* serializeCachedMessages(entry: CachedSessionRawEntry): IterableIterato
 }
 
 export function materializeSessionDetail(
-  scanResult: ScanResult,
+  scanResult: LiveSnapshot,
   reference: SessionReference,
 ): SessionDetailResult {
   const context = getSessionDetailContext(scanResult, reference);
@@ -171,7 +171,7 @@ export function materializeSessionDetail(
 }
 
 export function materializeSessionDetailResponse(
-  scanResult: ScanResult,
+  scanResult: LiveSnapshot,
   reference: SessionReference,
 ): SessionDetailResponseResult {
   const context = getSessionDetailContext(scanResult, reference);

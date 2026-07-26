@@ -6,10 +6,10 @@ import {
   FileSystemSessionSource,
   type AgentScanOptions,
   type ChangeCheckResult,
-  type ProviderRoots,
+  type AgentRoots,
   type ScanOptions,
   type SessionCacheMeta,
-  type SessionData,
+  type SessionDetail,
   type SessionHead,
   type SessionSourceRef,
 } from "@codesesh/core";
@@ -36,8 +36,8 @@ const core = vi.hoisted(() => ({
   filterSessions: vi.fn((sessions: SessionHead[], _options: ScanOptions) => sessions),
   getCursorDataPath: vi.fn(() => "/tmp/cursor"),
   getAgentLastFullSyncAt: vi.fn(),
-  resolveProviderRoots: vi.fn(
-    (): ProviderRoots => ({
+  resolveAgentRoots: vi.fn(
+    (): AgentRoots => ({
       claudeRoot: "/tmp/claude",
       codexRoot: "/tmp/codex",
       kimiRoot: "/tmp/kimi",
@@ -308,7 +308,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     loadCachedSessions: core.loadCachedSessions,
     markAgentCacheInitialized: core.markAgentCacheInitialized,
     markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
-    resolveProviderRoots: core.resolveProviderRoots,
+    resolveAgentRoots: core.resolveAgentRoots,
     scanSessions: core.scanSessions,
     saveCachedSessions: core.saveCachedSessions,
     saveCachedSessionChanges: core.saveCachedSessionChanges,
@@ -422,7 +422,7 @@ const projectIdentity = {
 };
 
 function watchPlanFor(name: string) {
-  const roots = core.resolveProviderRoots();
+  const roots = core.resolveAgentRoots();
   return {
     status: "supported" as const,
     targets:
@@ -491,7 +491,7 @@ function makeFileSystemAgent(
   Object.defineProperty(agent, "displayName", { value: name, configurable: true });
   agent.isAvailable = vi.fn(() => true);
   agent.scan = vi.fn(() => []);
-  agent.getSessionData = vi.fn(() => ({}) as SessionData);
+  agent.getSessionData = vi.fn(() => ({}) as SessionDetail);
   agent.getSessionWatchPlan = vi.fn(() => watchPlanFor(name));
   agent.listSessionSources = overrides.listSessionSources ?? vi.fn(() => []);
   agent.scanSessionSource = overrides.scanSessionSource ?? vi.fn(() => null);
@@ -523,7 +523,7 @@ describe("LiveScanStore", () => {
     core.isAgentCacheInitialized.mockReturnValue(true);
     core.loadCachedSessions.mockReturnValue(null);
     core.markAgentCacheInitialized.mockReset();
-    core.resolveProviderRoots.mockReturnValue({
+    core.resolveAgentRoots.mockReturnValue({
       claudeRoot: "/tmp/claude",
       codexRoot: "/tmp/codex",
       kimiRoot: "/tmp/kimi",
@@ -1572,7 +1572,7 @@ describe("LiveScanStore", () => {
     const sessionsDir = join(codexRoot, "sessions");
     const sessionFile = join(sessionsDir, "new.jsonl");
     mkdirSync(sessionsDir, { recursive: true });
-    core.resolveProviderRoots.mockReturnValue({
+    core.resolveAgentRoots.mockReturnValue({
       claudeRoot: join(tempDir, "claude"),
       codexRoot,
       kimiRoot: join(tempDir, "kimi"),
@@ -1646,7 +1646,7 @@ describe("LiveScanStore", () => {
     const dayDir = join(sessionsDir, "2026", "05", "10");
     const sessionFile = join(dayDir, "new.jsonl");
     mkdirSync(dayDir, { recursive: true });
-    core.resolveProviderRoots.mockReturnValue({
+    core.resolveAgentRoots.mockReturnValue({
       claudeRoot: join(tempDir, "claude"),
       codexRoot,
       kimiRoot: join(tempDir, "kimi"),
@@ -1697,7 +1697,7 @@ describe("LiveScanStore", () => {
     const sessionFile = join(sessionsDir, "new.jsonl");
     mkdirSync(sessionsDir, { recursive: true });
     writeFileSync(sessionFile, "session");
-    core.resolveProviderRoots.mockReturnValue({
+    core.resolveAgentRoots.mockReturnValue({
       claudeRoot: join(tempDir, "claude"),
       codexRoot,
       kimiRoot: join(tempDir, "kimi"),

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/core/contract";
 import { createApiRoutes } from "../routes.js";
-import type { ScanResult } from "@codesesh/core";
+import type { LiveSnapshot } from "@codesesh/core";
 import type { ScanResultSource } from "../handlers.js";
 import type { ScanEventSource } from "../../scan-source.js";
 
@@ -13,7 +13,7 @@ describe("createApiRoutes", () => {
           sessions: [],
           byAgent: {},
           agents: [],
-        } as unknown as ScanResult;
+        } as unknown as LiveSnapshot;
       },
     };
     const app = createApiRoutes(scanSource);

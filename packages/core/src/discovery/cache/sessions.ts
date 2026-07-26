@@ -3,7 +3,7 @@
  */
 import { existsSync, rmSync, unlinkSync } from "node:fs";
 import type { SessionCacheMeta } from "../../agents/base.js";
-import type { SessionData, SessionHead } from "../../types/index.js";
+import type { SessionDetail, SessionHead } from "../../types/index.js";
 import { tableExists } from "../../utils/sqlite.js";
 import {
   getCachePath,
@@ -34,12 +34,12 @@ export interface CachedResult {
 }
 
 export interface CachedSessionDataEntry {
-  data: SessionData;
+  data: SessionDetail;
   meta: SessionCacheMeta | null;
 }
 
 export interface CachedSessionRawEntry {
-  data: Omit<SessionData, "messages">;
+  data: Omit<SessionDetail, "messages">;
   messageRows: CachedMessageRow[];
   meta: SessionCacheMeta | null;
 }
@@ -338,7 +338,7 @@ export function loadCachedSessionDataEntry(
   };
 }
 
-export function loadCachedSessionData(agentName: string, sessionId: string): SessionData | null {
+export function loadCachedSessionData(agentName: string, sessionId: string): SessionDetail | null {
   return loadCachedSessionDataEntry(agentName, sessionId)?.data ?? null;
 }
 

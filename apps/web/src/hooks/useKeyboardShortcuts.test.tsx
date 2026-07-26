@@ -37,7 +37,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     viewState: {
       mode: "root",
       activeAgentKey: null,
-      activeSessionSlug: null,
+      activeSessionId: null,
     } satisfies ViewState,
     browseBy: "agents" as const,
     navigate: vi.fn() as unknown as NavigateFunction,
@@ -136,7 +136,7 @@ describe("useKeyboardShortcuts", () => {
       viewState: {
         mode: "session",
         activeAgentKey: "codex",
-        activeSessionSlug: "s1",
+        activeSessionId: "s1",
       } satisfies ViewState,
       selectedProjectNavigationIdentity: { kind: "path" as const, key: "/workspace" },
     });
@@ -149,7 +149,7 @@ describe("useKeyboardShortcuts", () => {
       viewState: {
         mode: "session",
         activeAgentKey: "codex",
-        activeSessionSlug: "s1",
+        activeSessionId: "s1",
       } satisfies ViewState,
     });
     renderHook(() => useKeyboardShortcuts(agentDeps));

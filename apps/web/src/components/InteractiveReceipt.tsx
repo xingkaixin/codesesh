@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
-import type { SessionData } from "../lib/api";
+import type { SessionDetail } from "../lib/api";
 import { getSessionDisplayTitle } from "../lib/session-title";
 import {
   isReceiptSettled,
@@ -11,7 +11,7 @@ import { SMART_TAG_LABELS } from "./SmartTagChips";
 import type { SessionDetailToc } from "./session-detail/toc";
 
 interface InteractiveReceiptProps {
-  session: SessionData;
+  session: SessionDetail;
   toc: SessionDetailToc;
   minWidthQuery?: string;
 }
@@ -21,8 +21,8 @@ interface ReceiptPayload {
   title: string;
   agent: string;
   updatedAt: number;
-  tags?: SessionData["smart_tags"];
-  stats: SessionData["stats"];
+  tags?: SessionDetail["smart_tags"];
+  stats: SessionDetail["stats"];
   items: ReceiptLineItem[];
 }
 
@@ -141,12 +141,12 @@ function buildReceiptItems(toc: SessionDetailToc): ReceiptLineItem[] {
   return [...baseItems, ...visibleToolItems].slice(0, maxItems);
 }
 
-function formatReceiptSubtitle(tags?: SessionData["smart_tags"]) {
+function formatReceiptSubtitle(tags?: SessionDetail["smart_tags"]) {
   if (!tags || tags.length === 0) return "SESSION ACTIVITY RECEIPT";
   return tags.map((tag) => SMART_TAG_LABELS[tag]).join(" / ");
 }
 
-function createReceiptPayload(session: SessionData, toc: SessionDetailToc): ReceiptPayload {
+function createReceiptPayload(session: SessionDetail, toc: SessionDetailToc): ReceiptPayload {
   const agent = session.slug?.split("/")[0] || "codesesh";
   return {
     id: session.id,

@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getCursorDataPath, resolveProviderRoots } from "../../discovery/paths.js";
+import { getCursorDataPath, resolveAgentRoots } from "../../discovery/paths.js";
 import "../register.js";
 import { createRegisteredAgents } from "../registry.js";
 
@@ -36,7 +36,7 @@ describe("registered agent session watch plans", () => {
     vi.stubEnv("CURSOR_DATA_PATH", "/tmp/cursor-home");
     vi.stubEnv("XDG_DATA_HOME", "/tmp/data-home");
     const agents = new Map(createRegisteredAgents().map((agent) => [agent.name, agent]));
-    const roots = resolveProviderRoots();
+    const roots = resolveAgentRoots();
 
     expect(agents.get("claudecode")?.getSessionWatchPlan()).toEqual({
       status: "supported",

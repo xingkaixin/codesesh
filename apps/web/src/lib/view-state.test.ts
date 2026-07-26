@@ -21,18 +21,18 @@ describe("viewStateFromRouteMatches", () => {
     expect(viewState("/")).toEqual({
       mode: "root",
       activeAgentKey: null,
-      activeSessionSlug: null,
+      activeSessionId: null,
     });
     expect(viewState("/projects").mode).toBe("projects");
     expect(viewState("/claudecode")).toEqual({
       mode: "agent",
       activeAgentKey: "claudecode",
-      activeSessionSlug: null,
+      activeSessionId: null,
     });
     expect(viewState("/codex/abc-123")).toEqual({
       mode: "session",
       activeAgentKey: "codex",
-      activeSessionSlug: "abc-123",
+      activeSessionId: "abc-123",
     });
   });
 
@@ -46,7 +46,7 @@ describe("viewStateFromRouteMatches", () => {
     expect(viewState(path)).toEqual({
       mode: "project",
       activeAgentKey: null,
-      activeSessionSlug: null,
+      activeSessionId: null,
       activeProjectKind: "git_remote",
       activeProjectKey: "github.com/acme/app",
     });
@@ -56,7 +56,7 @@ describe("viewStateFromRouteMatches", () => {
     expect(viewState("/unknown")).toEqual({
       mode: "missingAgent",
       activeAgentKey: null,
-      activeSessionSlug: null,
+      activeSessionId: null,
       attemptedKey: "unknown",
     });
   });

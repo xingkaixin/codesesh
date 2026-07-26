@@ -2,7 +2,7 @@
 import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findAgent, type AgentCatalog } from "../lib/agents";
-import type { SessionData } from "../lib/api";
+import type { SessionDetail } from "../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
 import {
   isRenderProfilerEnabled,
@@ -32,7 +32,7 @@ import {
 // ---------------------------------------------------------------------------
 
 interface SessionDetailProps {
-  session: SessionData;
+  session: SessionDetail;
   agentCatalog: AgentCatalog;
   highlightQuery?: string;
 }

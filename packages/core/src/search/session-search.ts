@@ -1,6 +1,6 @@
 /**
  * Deep session search: single owner for search-query interpretation
- * (qualifier parsing/merging), source selection between the live ScanResult
+ * (qualifier parsing/merging), source selection between the live LiveSnapshot
  * snapshot ("recent" path) and the SQLite search index (FTS / file-activity
  * paths), and cross-source result merging.
  */

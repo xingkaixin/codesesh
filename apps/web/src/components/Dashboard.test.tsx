@@ -2,10 +2,10 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type {
-  BookmarkedSessionSnapshot,
+  BookmarkRecord,
   DashboardData,
   DashboardRecentSession,
-  ProjectGroup,
+  ApiProjectGroup,
   SessionHead,
 } from "../lib/api";
 import { createAgentCatalog } from "../lib/agents";
@@ -69,7 +69,7 @@ const recentSession: DashboardRecentSession = {
   session: recentSessionHead,
 };
 
-const bookmarkedSession: BookmarkedSessionSnapshot = {
+const bookmarkedSession: BookmarkRecord = {
   reference: { agentName: "codex", sessionId: "saved" },
   session: {
     ...makeSession("saved"),
@@ -85,7 +85,7 @@ const bookmarkedSession: BookmarkedSessionSnapshot = {
   bookmarkedAt: Date.now(),
 };
 
-const project: ProjectGroup = {
+const project: ApiProjectGroup = {
   identityKind: "path",
   identityKey: "/workspace",
   displayName: "CodeSesh",

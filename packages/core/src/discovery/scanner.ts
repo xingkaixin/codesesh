@@ -45,7 +45,7 @@ export interface ScanOptions {
   smartTagWorkerUrl?: URL | string;
 }
 
-export interface ScanResult {
+export interface LiveSnapshot {
   sessions: SessionHead[];
   byAgent: Record<string, SessionHead[]>;
   agents: BaseAgent[];
@@ -496,7 +496,7 @@ async function scanAgentFull(
 export async function scanSessions(
   options: ScanOptions = {},
   onProgress?: (progress: ScanProgress) => void,
-): Promise<ScanResult> {
+): Promise<LiveSnapshot> {
   const scanMarker = perf.start("scanSessions");
   const agents = createRegisteredAgents();
   const byAgent: Record<string, SessionHead[]> = {};
@@ -553,6 +553,6 @@ export async function scanSessions(
 export async function scanSessionsAsync(
   options: ScanOptions = {},
   onProgress?: (progress: ScanProgress) => void,
-): Promise<ScanResult> {
+): Promise<LiveSnapshot> {
   return scanSessions(options, onProgress);
 }

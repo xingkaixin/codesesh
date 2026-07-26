@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { classifySessionTags } from "../smart-tags.js";
-import type { SessionData } from "../../types/index.js";
+import type { SessionDetail } from "../../types/index.js";
 
-function makeSession(messages: SessionData["messages"]): SessionData {
+function makeSession(messages: SessionDetail["messages"]): SessionDetail {
   return {
     reference: { agentName: "test", sessionId: "s1" },
     id: "s1",

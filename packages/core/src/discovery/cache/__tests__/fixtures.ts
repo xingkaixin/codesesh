@@ -1,11 +1,11 @@
-import type { SessionData, SessionHead } from "../../../types/index.js";
+import type { SessionDetail, SessionHead } from "../../../types/index.js";
 
 export const TEST_NOW = 1_700_000_000_000;
 
 export function makeSessionHead(
   id: string,
   overrides: Partial<SessionHead> = {},
-): SessionHead & Pick<SessionData, "reference"> {
+): SessionHead & Pick<SessionDetail, "reference"> {
   return {
     reference: { agentName: "codex", sessionId: id },
     id,
@@ -30,7 +30,7 @@ export function makeSessionHead(
   };
 }
 
-export function makeSessionData(id: string, text = "visible text"): SessionData {
+export function makeSessionData(id: string, text = "visible text"): SessionDetail {
   const head = makeSessionHead(id);
   return {
     ...head,

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Pie, PieChart } from "recharts";
 import type {
-  BookmarkedSessionSnapshot,
+  BookmarkRecord,
   DashboardData,
   DashboardAgentStat,
   DashboardDailyBucket,
@@ -10,7 +10,7 @@ import type {
   FileActivityResult,
   ModelDistributionEntry,
   DashboardRecentSession,
-  ProjectGroup,
+  ApiProjectGroup,
 } from "../lib/api";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import { getSessionBookmarkKey } from "../lib/bookmarks";
@@ -25,10 +25,10 @@ import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } f
 interface DashboardProps {
   data: DashboardData;
   agentCatalog: AgentCatalog;
-  projects?: ProjectGroup[];
-  bookmarkedSessions: BookmarkedSessionSnapshot[];
+  projects?: ApiProjectGroup[];
+  bookmarkedSessions: BookmarkRecord[];
   isBookmarked: (agentKey: string, sessionId: string) => boolean;
-  onToggleBookmark: (session: DashboardRecentSession | BookmarkedSessionSnapshot) => void;
+  onToggleBookmark: (session: DashboardRecentSession | BookmarkRecord) => void;
 }
 
 function formatCompact(value: number): string {
@@ -524,7 +524,7 @@ function TopProjects({
   projects,
   agentCatalog,
 }: {
-  projects: ProjectGroup[];
+  projects: ApiProjectGroup[];
   agentCatalog: AgentCatalog;
 }) {
   if (projects.length === 0) return null;
@@ -597,9 +597,9 @@ function BookmarkedSessions({
   agentCatalog,
   onToggleBookmark,
 }: {
-  sessions: BookmarkedSessionSnapshot[];
+  sessions: BookmarkRecord[];
   agentCatalog: AgentCatalog;
-  onToggleBookmark: (session: BookmarkedSessionSnapshot) => void;
+  onToggleBookmark: (session: BookmarkRecord) => void;
 }) {
   if (sessions.length === 0) return null;
 

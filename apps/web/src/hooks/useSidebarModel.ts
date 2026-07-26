@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AgentInfo, ProjectGroup, SessionData, SessionHead } from "../lib/api";
+import type { AgentInfo, ApiProjectGroup, SessionDetail, SessionHead } from "../lib/api";
 import {
   getProjectGroupIdentity,
   getProjectIdentityKey,
@@ -19,9 +19,9 @@ import type { BrowseBy } from "../components/app/types";
 interface UseSidebarModelOptions {
   viewState: ViewState;
   sessionIndexes: SessionIndexes;
-  session: SessionData | null;
+  session: SessionDetail | null;
   agents: AgentInfo[];
-  projects: ProjectGroup[];
+  projects: ApiProjectGroup[];
   selectedProjectAgent?: string;
   isSessionBookmarked: (agentKey: string, sessionId: string) => boolean;
 }
@@ -29,7 +29,7 @@ interface UseSidebarModelOptions {
 export interface ProjectNavigationModel {
   identity: ProjectRouteIdentity;
   identityKey: string;
-  project: ProjectGroup | null;
+  project: ApiProjectGroup | null;
 }
 
 function browseByForRoute(viewState: ViewState): BrowseBy | null {
@@ -39,7 +39,7 @@ function browseByForRoute(viewState: ViewState): BrowseBy | null {
 }
 
 function findProject(
-  projects: ProjectGroup[],
+  projects: ApiProjectGroup[],
   identityKey: string,
 ): ProjectNavigationModel["project"] {
   return (
@@ -109,11 +109,11 @@ export function useSidebarModel({
     const openedSessionHead =
       viewState.mode === "session"
         ? (sessionIndexes.byRouteKey.get(
-            getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionSlug),
+            getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionId),
           ) ?? null)
         : null;
     const openedSessionData =
-      viewState.mode === "session" && session?.id === viewState.activeSessionSlug ? session : null;
+      viewState.mode === "session" && session?.id === viewState.activeSessionId ? session : null;
     const openedSessionProjectIdentity =
       openedSessionData?.project_identity ?? openedSessionHead?.project_identity ?? null;
     const selectedProjectIdentity =

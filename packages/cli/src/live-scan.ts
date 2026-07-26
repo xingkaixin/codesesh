@@ -7,7 +7,7 @@ import {
   sortSessions,
   type BaseAgent,
   type ScanOptions,
-  type ScanResult,
+  type LiveSnapshot,
   type SessionHead,
   type SessionReference,
 } from "@codesesh/core";
@@ -163,7 +163,7 @@ export class LiveScanStore {
     this.syncEngine.startBackgroundRefresh();
   }
 
-  getSnapshot(): ScanResult {
+  getSnapshot(): LiveSnapshot {
     return { sessions: this.sessions, byAgent: this.byAgent, agents: this.agents };
   }
 
@@ -245,7 +245,7 @@ export class LiveScanStore {
     return workerUrl;
   }
 
-  private applyScanResult(result: ScanResult): void {
+  private applyScanResult(result: LiveSnapshot): void {
     const agentMap = new Map<string, BaseAgent>();
     const allowedAgents = this.getAllowedAgents();
     for (const agent of result.agents) agentMap.set(agent.name, agent);

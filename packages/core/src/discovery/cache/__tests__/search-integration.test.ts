@@ -17,7 +17,7 @@ import {
 } from "../../cache.js";
 import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../db.js";
 import { withCacheDb } from "../schema.js";
-import type { SessionData, SessionHead } from "../../../types/index.js";
+import type { SessionDetail, SessionHead } from "../../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-test-"));
 const SEARCH_INDEX_BATCH_TEST_TIMEOUT_MS = 30_000;
@@ -45,7 +45,7 @@ function getCachePath(): string {
 // resolves to a "path" identity regardless of what manifests exist in /tmp.
 const FIXTURE_DIR = mkdtempSync(join(tmpdir(), "codesesh-identity-"));
 
-function makeSession(id: string): SessionHead & Pick<SessionData, "reference"> {
+function makeSession(id: string): SessionHead & Pick<SessionDetail, "reference"> {
   return {
     reference: { agentName: "agent", sessionId: id },
     id,
@@ -63,7 +63,7 @@ function makeSession(id: string): SessionHead & Pick<SessionData, "reference"> {
   };
 }
 
-function makeSessionData(id: string, text: string): SessionData {
+function makeSessionData(id: string, text: string): SessionDetail {
   const session = makeSession(id);
   return {
     ...session,
@@ -123,7 +123,7 @@ afterEach(() => {
 });
 
 describe("session detail re-indexing", () => {
-  function toolSessionData(id: string, tool: string): SessionData {
+  function toolSessionData(id: string, tool: string): SessionDetail {
     const session = makeSession(id);
     return {
       ...session,
@@ -366,7 +366,7 @@ describe("searchSessions", () => {
       stats: { ...makeSession("or-first").stats, message_count: 2 },
     };
     const sessions = [title, user, assistant, tool, quoted, orFirst];
-    const dataById = new Map<string, SessionData>([
+    const dataById = new Map<string, SessionDetail>([
       [
         "title",
         {
@@ -737,7 +737,7 @@ describe("searchSessions", () => {
     };
     const sessions = [keep, changed, removed];
     const sessionMap = new Map(sessions.map((session) => [session.id, session]));
-    const makeIndexedData = (session: SessionHead, text: string, path: string): SessionData => ({
+    const makeIndexedData = (session: SessionHead, text: string, path: string): SessionDetail => ({
       ...session,
       reference: { agentName: "claudecode", sessionId: session.id },
       messages: [

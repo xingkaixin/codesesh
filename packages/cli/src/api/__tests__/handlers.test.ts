@@ -60,10 +60,10 @@ import { invalidateAliasView } from "../session-aliases-view.js";
 import type {
   ChangeCheckResult,
   FileActivityResult,
-  ScanResult,
+  LiveSnapshot,
   SessionCacheMeta,
   SessionHead,
-  SessionData,
+  SessionDetail,
 } from "@codesesh/core";
 import { BaseAgent } from "@codesesh/core";
 
@@ -125,7 +125,7 @@ class MockAgent extends BaseAgent {
     return [];
   }
 
-  getSessionData(_sessionId: string): SessionData {
+  getSessionData(_sessionId: string): SessionDetail {
     return {
       reference: { agentName: "claudecode", sessionId: "s1" },
       id: "s1",
@@ -163,7 +163,7 @@ class MockAgent extends BaseAgent {
   setSessionMetaMap(): void {}
 }
 
-function makeScanResult(overrides?: Partial<ScanResult>): ScanResult {
+function makeScanResult(overrides?: Partial<LiveSnapshot>): LiveSnapshot {
   const agent = new MockAgent();
   const sessions = [
     makeSession("s1", { slug: "claudecode/s1" }),
@@ -177,7 +177,7 @@ function makeScanResult(overrides?: Partial<ScanResult>): ScanResult {
   };
 }
 
-function makeScanSource(overrides?: Partial<ScanResult>): ScanResultSource {
+function makeScanSource(overrides?: Partial<LiveSnapshot>): ScanResultSource {
   const result = makeScanResult(overrides);
   return {
     getSnapshot() {
@@ -1187,7 +1187,7 @@ describe("handleGetDashboard", () => {
 });
 
 describe("handleGetSessionData", () => {
-  const detail: SessionData = {
+  const detail: SessionDetail = {
     reference: { agentName: "claudecode", sessionId: "s1" },
     id: "s1",
     slug: "claudecode/s1",

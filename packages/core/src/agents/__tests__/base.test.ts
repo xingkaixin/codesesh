@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DatabaseSessionSource, diffSessionSources, FileSystemSessionSource } from "../base.js";
 import type { AgentScanOptions, SessionCacheMeta, SessionSourceRef } from "../base.js";
-import type { SessionData, SessionHead } from "../../types/index.js";
+import type { SessionDetail, SessionHead } from "../../types/index.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
 interface FakeSource {
@@ -40,8 +40,8 @@ class FakeFileSystemSource extends FileSystemSessionSource {
     return { status: "not-needed" as const, reason: "in-memory test source" };
   }
 
-  getSessionData(_sessionId: string): SessionData {
-    return {} as SessionData;
+  getSessionData(_sessionId: string): SessionDetail {
+    return {} as SessionDetail;
   }
 
   listSessionSources(): SessionSourceRef[] {
@@ -384,8 +384,8 @@ describe("DatabaseSessionSource", () => {
       return [makeSession("db-1")];
     }
 
-    getSessionData(_sessionId: string): SessionData {
-      return {} as SessionData;
+    getSessionData(_sessionId: string): SessionDetail {
+      return {} as SessionDetail;
     }
 
     protected getDatabasePath(): string | null {

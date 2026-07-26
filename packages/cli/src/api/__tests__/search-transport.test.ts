@@ -13,7 +13,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
-import type { ScanResult, SessionHead } from "@codesesh/core";
+import type { LiveSnapshot, SessionHead } from "@codesesh/core";
 import type { ScanResultSource } from "../handlers.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-search-transport-"));
@@ -65,7 +65,7 @@ function makeScanSource(): ScanResultSource {
         sessions,
         byAgent: { claudecode: sessions },
         agents: [],
-      }) as ScanResult,
+      }) as LiveSnapshot,
   };
 }
 

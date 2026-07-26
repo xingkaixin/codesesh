@@ -10,19 +10,19 @@ function sessionRoute(viewState: ViewState) {
   if (viewState.mode !== "session") return null;
   return {
     agent: viewState.activeAgentKey,
-    sessionSlug: viewState.activeSessionSlug,
+    sessionId: viewState.activeSessionId,
   };
 }
 
 export function useSessionDetail(viewState: ViewState) {
   const route = sessionRoute(viewState);
   const query = useQuery({
-    queryKey: queryKeys.sessionDetail(route?.agent ?? "", route?.sessionSlug ?? ""),
+    queryKey: queryKeys.sessionDetail(route?.agent ?? "", route?.sessionId ?? ""),
     enabled: route !== null,
     queryFn: async ({ signal }) => {
       if (!route) throw new Error("Session route is required");
       const requestId = nextSessionRequestId++;
-      const requestKey = `${route.agent}/${route.sessionSlug}`;
+      const requestKey = `${route.agent}/${route.sessionId}`;
       const startedAt = performance.now();
       let didLogCancellation = false;
       const logCancellation = () => {
@@ -40,18 +40,18 @@ export function useSessionDetail(viewState: ViewState) {
         request_key: requestKey,
         trigger: "route",
         agent: route.agent,
-        session: route.sessionSlug,
+        session: route.sessionId,
       });
 
       try {
-        const data = await fetchSessionData(route.agent, route.sessionSlug, { signal });
+        const data = await fetchSessionData(route.agent, route.sessionId, { signal });
         if (signal.aborted) throw new DOMException("Aborted", "AbortError");
         logClientEvent("session.open.done", {
           request_id: requestId,
           request_key: requestKey,
           trigger: "route",
           agent: route.agent,
-          session: route.sessionSlug,
+          session: route.sessionId,
           duration_ms: Math.round(performance.now() - startedAt),
           messages: data.messages.length,
         });
@@ -66,7 +66,7 @@ export function useSessionDetail(viewState: ViewState) {
           request_key: requestKey,
           trigger: "route",
           agent: route.agent,
-          session: route.sessionSlug,
+          session: route.sessionId,
           duration_ms: Math.round(performance.now() - startedAt),
           error: error instanceof Error ? error.message : String(error),
         });

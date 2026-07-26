@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { AgentInfo, DashboardData, ProjectGroup, SessionData } from "../lib/api";
+import type { AgentInfo, DashboardData, ApiProjectGroup, SessionDetail } from "../lib/api";
 import { formatRelativeTime } from "../lib/format";
 import { getProjectPath, type ProjectRouteIdentity } from "../lib/projects";
 import { getSessionDisplayTitle } from "./session-title";
@@ -18,15 +18,15 @@ interface RouteHeaderInput {
   isSearchMode: boolean;
   searchSubtitle: string;
   dashboard: DashboardData | null;
-  projects: ProjectGroup[];
+  projects: ApiProjectGroup[];
   sessionCount: number;
-  activeProject: ProjectGroup | null;
+  activeProject: ApiProjectGroup | null;
   activeAgent: AgentInfo | null;
   sidebarSessionCount: number;
-  session: SessionData | null;
+  session: SessionDetail | null;
   sessionError: string | null;
   selectedProjectIdentity: ProjectRouteIdentity | null;
-  selectedProject: ProjectGroup | null;
+  selectedProject: ApiProjectGroup | null;
 }
 
 export function buildRouteHeaderModel(input: RouteHeaderInput): {
@@ -98,13 +98,13 @@ function routeTitleAndSubtitle(input: RouteHeaderInput): {
     if (input.sessionError) {
       return {
         title: "Session Not Found",
-        subtitle: `Requested /${viewState.activeAgentKey}/${viewState.activeSessionSlug}`,
+        subtitle: `Requested /${viewState.activeAgentKey}/${viewState.activeSessionId}`,
       };
     }
     if (input.session) {
       const updated = input.session.time_updated ?? input.session.time_created;
       return {
-        title: getSessionDisplayTitle(input.session) || "Conversation",
+        title: getSessionDisplayTitle(input.session) || "Session",
         subtitle: (
           <>
             <span>ID: #{input.session.id.slice(0, 8)}</span>
@@ -166,7 +166,7 @@ function routeBreadcrumbs(input: RouteHeaderInput): BreadcrumbItem[] {
       {
         label: input.session
           ? getSessionDisplayTitle(input.session)
-          : viewState.activeSessionSlug || "Conversation",
+          : viewState.activeSessionId || "Session",
       },
     ];
   }
@@ -181,7 +181,7 @@ function routeBreadcrumbs(input: RouteHeaderInput): BreadcrumbItem[] {
   };
   if (viewState.mode === "agent") return [dashboard, { label: agentLabel }];
   if (viewState.mode === "missingSession") {
-    return [dashboard, agent, { label: viewState.attemptedSessionSlug }];
+    return [dashboard, agent, { label: viewState.attemptedSessionId }];
   }
   if (viewState.mode === "session") {
     return [
@@ -190,7 +190,7 @@ function routeBreadcrumbs(input: RouteHeaderInput): BreadcrumbItem[] {
       {
         label: input.session
           ? getSessionDisplayTitle(input.session)
-          : viewState.activeSessionSlug || "Conversation",
+          : viewState.activeSessionId || "Session",
       },
     ];
   }

@@ -5,8 +5,8 @@ import {
   getSessionBookmarkKey,
   loadLegacyBookmarks,
   mergeBookmarksWithSessions,
-  sortBookmarkedSessions,
-  toBookmarkedSessionSnapshot,
+  sortBookmarks,
+  toBookmarkRecord,
 } from "./bookmarks";
 
 function createSession(
@@ -45,7 +45,7 @@ describe("bookmarks", () => {
       time_updated: 200,
     });
 
-    expect(toBookmarkedSessionSnapshot(session, "codex")).toEqual({
+    expect(toBookmarkRecord(session, "codex")).toEqual({
       reference: { agentName: "codex", sessionId: "s1" },
       session,
       bookmarkedAt: expect.any(Number),
@@ -53,7 +53,7 @@ describe("bookmarks", () => {
   });
 
   it("refreshes stored snapshots when live sessions change", () => {
-    const bookmark = toBookmarkedSessionSnapshot(
+    const bookmark = toBookmarkRecord(
       createSession({
         id: "s1",
         slug: "codex/s1",
@@ -88,11 +88,11 @@ describe("bookmarks", () => {
   });
 
   it("loads valid legacy bookmarks and drops invalid entries", () => {
-    const older = toBookmarkedSessionSnapshot(
+    const older = toBookmarkRecord(
       createSession({ id: "old", slug: "codex/old", title: "Old", time_updated: 100 }),
       "codex",
     );
-    const newer = toBookmarkedSessionSnapshot(
+    const newer = toBookmarkRecord(
       createSession({ id: "new", slug: "codex/new", title: "New", time_updated: 300 }),
       "codex",
     );
@@ -153,7 +153,7 @@ describe("bookmarks", () => {
   });
 
   it("keeps bookmark arrays unchanged when live sessions add no new data", () => {
-    const bookmark = toBookmarkedSessionSnapshot(
+    const bookmark = toBookmarkRecord(
       createSession({ id: "s1", slug: "codex/s1", title: "Same", time_updated: 100 }),
       "codex",
     );
@@ -174,19 +174,17 @@ describe("bookmarks", () => {
   });
 
   it("sorts bookmarks by updated time with created time fallback", () => {
-    const createdOnly = toBookmarkedSessionSnapshot(
+    const createdOnly = toBookmarkRecord(
       createSession({ id: "created", slug: "codex/created", title: "Created", time_created: 200 }),
       "codex",
     );
-    const updated = toBookmarkedSessionSnapshot(
+    const updated = toBookmarkRecord(
       createSession({ id: "updated", slug: "codex/updated", title: "Updated", time_updated: 300 }),
       "codex",
     );
 
     expect(
-      [createdOnly, updated]
-        .toSorted(sortBookmarkedSessions)
-        .map((item) => item.reference.sessionId),
+      [createdOnly, updated].toSorted(sortBookmarks).map((item) => item.reference.sessionId),
     ).toEqual(["updated", "created"]);
   });
 });

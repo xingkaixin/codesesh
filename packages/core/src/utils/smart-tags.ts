@@ -1,4 +1,4 @@
-import type { MessagePart, SessionData, SmartTag, ToolPart } from "../types/index.js";
+import type { MessagePart, SessionDetail, SmartTag, ToolPart } from "../types/index.js";
 
 const TAG_ORDER: SmartTag[] = [
   "bugfix",
@@ -29,12 +29,12 @@ const EDIT_TOOL_RE = /\b(edit|write|apply_patch|patch|multiedit|notebookedit)\b/
 const PLAN_TOOL_RE = /\b(enterplanmode|taskcreate|update_plan|plan)\b/i;
 
 export function getSmartTagSourceTimestamp(
-  session: Pick<SessionData, "time_created" | "time_updated">,
+  session: Pick<SessionDetail, "time_created" | "time_updated">,
 ): number {
   return session.time_updated ?? session.time_created;
 }
 
-export function classifySessionTags(session: Pick<SessionData, "messages">): SmartTag[] {
+export function classifySessionTags(session: Pick<SessionDetail, "messages">): SmartTag[] {
   const tags = new Set<SmartTag>();
   let readToolCount = 0;
   let editToolCount = 0;

@@ -1,4 +1,4 @@
-import type { BookmarkedSessionSnapshot, SessionHead } from "./api";
+import type { BookmarkRecord, SessionHead } from "./api";
 import {
   formatSessionReference,
   getSessionAgentKey,
@@ -23,7 +23,7 @@ function isStats(value: unknown): value is SessionHead["stats"] {
   );
 }
 
-function parseLegacyBookmark(value: unknown): BookmarkedSessionSnapshot | null {
+function parseLegacyBookmark(value: unknown): BookmarkRecord | null {
   if (!isRecord(value)) return null;
   if (
     typeof value.sessionId === "string" &&
@@ -65,10 +65,7 @@ export function getSessionBookmarkKey(reference: SessionReference): string {
   return JSON.stringify([normalized.agentName, normalized.sessionId]);
 }
 
-export function toBookmarkedSessionSnapshot(
-  session: SessionHead,
-  agentKey: string,
-): BookmarkedSessionSnapshot {
+export function toBookmarkRecord(session: SessionHead, agentKey: string): BookmarkRecord {
   const reference = normalizeSessionReference({
     agentName: agentKey,
     sessionId: session.id,
@@ -84,7 +81,7 @@ export function toBookmarkedSessionSnapshot(
   };
 }
 
-export function loadLegacyBookmarks(): BookmarkedSessionSnapshot[] {
+export function loadLegacyBookmarks(): BookmarkRecord[] {
   if (typeof window === "undefined") return [];
 
   try {
@@ -94,8 +91,8 @@ export function loadLegacyBookmarks(): BookmarkedSessionSnapshot[] {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .map(parseLegacyBookmark)
-      .filter((bookmark): bookmark is BookmarkedSessionSnapshot => bookmark !== null)
-      .toSorted(sortBookmarkedSessions);
+      .filter((bookmark): bookmark is BookmarkRecord => bookmark !== null)
+      .toSorted(sortBookmarks);
   } catch {
     return [];
   }
@@ -106,25 +103,22 @@ export function clearLegacyBookmarks(): void {
   window.localStorage.removeItem(LEGACY_BOOKMARK_STORAGE_KEY);
 }
 
-export function sortBookmarkedSessions(
-  a: BookmarkedSessionSnapshot,
-  b: BookmarkedSessionSnapshot,
-): number {
+export function sortBookmarks(a: BookmarkRecord, b: BookmarkRecord): number {
   const aTime = a.session.time_updated ?? a.session.time_created;
   const bTime = b.session.time_updated ?? b.session.time_created;
   return bTime - aTime;
 }
 
 export function mergeBookmarksWithSessions(
-  bookmarks: BookmarkedSessionSnapshot[],
+  bookmarks: BookmarkRecord[],
   sessions: SessionHead[],
-): BookmarkedSessionSnapshot[] {
+): BookmarkRecord[] {
   if (bookmarks.length === 0 || sessions.length === 0) return bookmarks;
 
   const liveSnapshots = new Map(
     sessions.map((session) => {
       const agentKey = getSessionAgentKey(session);
-      const snapshot = toBookmarkedSessionSnapshot(session, agentKey);
+      const snapshot = toBookmarkRecord(session, agentKey);
       return [getSessionBookmarkKey(snapshot.reference), snapshot] as const;
     }),
   );
@@ -152,5 +146,5 @@ export function mergeBookmarksWithSessions(
     };
   });
 
-  return changed ? next.toSorted(sortBookmarkedSessions) : bookmarks;
+  return changed ? next.toSorted(sortBookmarks) : bookmarks;
 }

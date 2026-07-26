@@ -32,12 +32,12 @@ describe("buildRouteHeaderModel", () => {
     {
       mode: "session",
       activeAgentKey: "claudecode",
-      activeSessionSlug: "session-1",
+      activeSessionId: "session-1",
     } as const,
     {
       mode: "project",
       activeAgentKey: null,
-      activeSessionSlug: null,
+      activeSessionId: null,
       activeProjectKind: "path",
       activeProjectKey: "/tmp/codesesh",
     } as const,
@@ -56,13 +56,13 @@ describe("buildRouteHeaderModel", () => {
   });
 
   it.each([
-    [{ mode: "root", activeAgentKey: null, activeSessionSlug: null } as const, "Dashboard"],
-    [{ mode: "projects", activeAgentKey: null, activeSessionSlug: null } as const, "Projects"],
+    [{ mode: "root", activeAgentKey: null, activeSessionId: null } as const, "Dashboard"],
+    [{ mode: "projects", activeAgentKey: null, activeSessionId: null } as const, "Projects"],
     [
       {
         mode: "project",
         activeAgentKey: null,
-        activeSessionSlug: null,
+        activeSessionId: null,
         activeProjectKind: "path",
         activeProjectKey: "/tmp/codesesh",
       } as const,
@@ -72,11 +72,11 @@ describe("buildRouteHeaderModel", () => {
       {
         mode: "session",
         activeAgentKey: "claudecode",
-        activeSessionSlug: "session-1",
+        activeSessionId: "session-1",
       } as const,
       "Session",
     ],
-    [{ mode: "agent", activeAgentKey: "claudecode", activeSessionSlug: null } as const, "Landing"],
+    [{ mode: "agent", activeAgentKey: "claudecode", activeSessionId: null } as const, "Landing"],
   ])("keeps the existing $1 context for non-search routes", (viewState, expected) => {
     expect(buildRouteHeaderModel(createInput(viewState)).contextLabel).toBe(expected);
   });
