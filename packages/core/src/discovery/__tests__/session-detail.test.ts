@@ -1,18 +1,12 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  BaseAgent,
-  materializeSessionDetail,
-  materializeSessionDetailResponse,
-  saveCachedSessions,
-  syncSessionSearchIndex,
-  type ChangeCheckResult,
-  type LiveSnapshot,
-  type SessionCacheMeta,
-  type SessionDetail,
-  type SessionHead,
-} from "../../index.js";
+import { BaseAgent, type ChangeCheckResult, type SessionCacheMeta } from "../../agents/base.js";
+import type { SessionDetail, SessionHead } from "../../types/index.js";
+import { saveCachedSessions } from "../cache/sessions.js";
+import { syncSessionSearchIndex } from "../cache/search.js";
+import { materializeSessionDetail, materializeSessionDetailResponse } from "../session-detail.js";
+import type { LiveSnapshot } from "../scanner.js";
 import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../cache/db.js";
 
 const { testHomeDir } = vi.hoisted(() => ({

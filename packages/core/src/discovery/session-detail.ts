@@ -7,7 +7,7 @@ import {
   extractSessionFileActivity,
   getSmartTagSourceTimestamp,
 } from "../utils/index.js";
-import { listSessionFileActivity } from "./cache.js";
+import { listSessionFileActivity } from "./cache/file-activity.js";
 import { loadCachedSessionRawEntry, type CachedSessionRawEntry } from "./cache/sessions.js";
 import { messageFromCachedRow, messageJsonFromCachedRow } from "./cache/messages.js";
 import type { LiveSnapshot } from "./scanner.js";

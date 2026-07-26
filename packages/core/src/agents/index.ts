@@ -32,7 +32,6 @@ export {
   createRegisteredAgents,
   getRegisteredAgents,
   getAgentInfoMap,
-  getAgentByName,
   resolveAgentRoots,
 } from "./registry.js";
 export type { AgentRegistration, AgentRoots, AgentToolStrategy } from "./registry.js";

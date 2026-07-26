@@ -12,7 +12,7 @@ import {
   saveCachedSessionChanges,
   saveCachedSessions,
   type CachedResult,
-} from "./cache.js";
+} from "./cache/sessions.js";
 import {
   attachMissingProjectIdentities,
   buildAgentCacheMeta,
@@ -545,14 +545,4 @@ export async function scanSessions(
     timings,
     cacheTimestamps: Object.keys(cacheTimestamps).length > 0 ? cacheTimestamps : undefined,
   };
-}
-
-/**
- * 异步扫描（带增量更新支持）
- */
-export async function scanSessionsAsync(
-  options: ScanOptions = {},
-  onProgress?: (progress: ScanProgress) => void,
-): Promise<LiveSnapshot> {
-  return scanSessions(options, onProgress);
 }

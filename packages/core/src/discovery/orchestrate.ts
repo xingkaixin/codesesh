@@ -10,7 +10,7 @@
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import { sortSessionsByActivity } from "../contract/session-index.js";
 import type { SessionHead } from "../types/index.js";
-import type { SessionHeadChange } from "./cache.js";
+import type { SessionHeadChange } from "./cache/db.js";
 import { computeIdentity, realFs } from "../projects/index.js";
 
 /** Attach a project identity to sessions that don't already have one. */

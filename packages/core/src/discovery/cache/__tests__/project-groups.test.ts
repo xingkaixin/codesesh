@@ -21,7 +21,7 @@ vi.mock("../schema.js", async (importOriginal) => {
 });
 
 import { listCachedProjectGroups } from "../project-groups.js";
-import { saveCachedSessions } from "../../cache.js";
+import { saveCachedSessions } from "../sessions.js";
 import { withCacheDb } from "../schema.js";
 import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../db.js";
 import { makeSessionHead, TEST_NOW } from "./fixtures.js";
