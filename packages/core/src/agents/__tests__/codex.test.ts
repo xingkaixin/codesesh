@@ -212,6 +212,42 @@ describe("CodexAgent cache refresh", () => {
     }
   });
 
+  it("keeps source references and fingerprints byte-for-byte stable", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-fingerprint-"));
+    tempDirs.push(tempDir);
+    const codexHome = join(tempDir, ".codex");
+    const sessionsDir = join(codexHome, "sessions");
+    const sessionId = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+    const sessionFile = join(sessionsDir, `rollout-2026-04-20T10-00-00-${sessionId}.jsonl`);
+    mkdirSync(sessionsDir, { recursive: true });
+    vi.stubEnv("CODEX_HOME", codexHome);
+    writeFileSync(sessionFile, "fixture");
+    writeFileSync(
+      join(codexHome, "session_index.jsonl"),
+      `${JSON.stringify({ id: sessionId, thread_name: "Indexed title" })}\n`,
+    );
+
+    const sessionTime = new Date(1_700_000_000_000);
+    utimesSync(sessionFile, sessionTime, sessionTime);
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = sessionsDir;
+
+    expect(agent.listSessionSources()).toEqual([
+      {
+        sessionId,
+        sourcePath: sessionFile,
+        fingerprint: JSON.stringify([
+          "codex-head-v1",
+          "codex-parser-v4",
+          sessionTime.getTime(),
+          statSync(sessionFile).size,
+          "Indexed title",
+        ]),
+      },
+    ]);
+  });
+
   it("caches an empty session index and reloads it when the mtime changes", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-empty-index-"));
     tempDirs.push(tempDir);

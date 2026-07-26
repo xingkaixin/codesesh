@@ -129,12 +129,20 @@ describe("KimiAgent source enumeration", () => {
 
     // Pin the mtime so the rewrite below can restore it exactly — statSync
     // reports sub-millisecond precision that a Date round-trip would truncate.
+    const statePath = join(sourcePath, "state.json");
     const contextPath = join(sourcePath, "context.jsonl");
+    const stateTime = new Date(1_699_999_999_000);
     const pinned = new Date(1_700_000_000_000);
+    utimesSync(statePath, stateTime, stateTime);
     utimesSync(contextPath, pinned, pinned);
 
     const agent = createAgent(basePath);
-    const before = agent.listSessionSources()[0]?.fingerprint;
+    const [before] = agent.listSessionSources();
+    expect(before).toEqual({
+      sessionId: "fingerprint",
+      sourcePath,
+      fingerprint: JSON.stringify([stateTime.getTime(), pinned.getTime(), null]),
+    });
 
     // Rewriting the transcript body without moving its mtime must not move the
     // fingerprint: enumeration only observes mtimes, never content.
@@ -142,7 +150,7 @@ describe("KimiAgent source enumeration", () => {
     utimesSync(contextPath, pinned, pinned);
 
     expect(statSync(contextPath).mtimeMs).toBe(pinned.getTime());
-    expect(agent.listSessionSources()[0]?.fingerprint).toBe(before);
+    expect(agent.listSessionSources()[0]?.fingerprint).toBe(before?.fingerprint);
   });
 });
 

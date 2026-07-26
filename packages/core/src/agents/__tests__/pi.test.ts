@@ -228,6 +228,37 @@ describe("PiAgent", () => {
     }
   });
 
+  it("keeps source references and fingerprints byte-for-byte stable", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-pi-fingerprint-"));
+    tempDirs.push(tempDir);
+    const piHome = join(tempDir, ".pi");
+    const sessionsDir = join(piHome, "agent", "sessions", "--tmp-project--");
+    const sessionId = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+    const sessionFile = join(sessionsDir, `2026-04-20T10-00-00_${sessionId}.jsonl`);
+    mkdirSync(sessionsDir, { recursive: true });
+    vi.stubEnv("PI_HOME", piHome);
+    writeFileSync(sessionFile, "fixture");
+
+    const sessionTime = new Date(1_700_000_000_000);
+    utimesSync(sessionFile, sessionTime, sessionTime);
+
+    const agent = new PiAgent();
+    agent.isAvailable();
+
+    expect(agent.listSessionSources()).toEqual([
+      {
+        sessionId,
+        sourcePath: sessionFile,
+        fingerprint: JSON.stringify([
+          "pi-head-v1",
+          "pi-parser-v1",
+          sessionTime.getTime(),
+          statSync(sessionFile).size,
+        ]),
+      },
+    ]);
+  });
+
   it("uses session names and parses assistant tools on the selected leaf", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-pi-test-"));
     tempDirs.push(tempDir);

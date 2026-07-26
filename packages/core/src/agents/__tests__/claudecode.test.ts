@@ -143,6 +143,38 @@ describe("ClaudeCodeAgent cache refresh", () => {
     expect(statSpy.mock.calls.filter((call) => call[0] === indexFile)).toHaveLength(1);
   });
 
+  it("keeps source references and fingerprints byte-for-byte stable", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-fingerprint-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    const sessionFile = join(projectDir, "session-1.jsonl");
+    const indexFile = join(projectDir, "sessions-index.json");
+    mkdirSync(projectDir, { recursive: true });
+    writeFileSync(sessionFile, "fixture");
+    writeFileSync(indexFile, JSON.stringify({ entries: [] }));
+
+    const sessionTime = new Date(1_700_000_000_000);
+    const indexTime = new Date(1_700_000_001_000);
+    utimesSync(sessionFile, sessionTime, sessionTime);
+    utimesSync(indexFile, indexTime, indexTime);
+
+    const agent = new ClaudeCodeAgent() as any;
+    agent.basePath = basePath;
+
+    expect(agent.listSessionSources()).toEqual([
+      {
+        sessionId: "session-1",
+        sourcePath: sessionFile,
+        fingerprint: JSON.stringify([
+          "claudecode-head-v2",
+          sessionTime.getTime(),
+          statSync(sessionFile).size,
+          indexTime.getTime(),
+        ]),
+      },
+    ]);
+  });
+
   it("parses indexed sessions with assistant tools and tool results", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-test-"));
     tempDirs.push(basePath);
