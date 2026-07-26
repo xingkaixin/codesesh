@@ -181,6 +181,9 @@ describe("SessionWatcher", () => {
       }) as unknown as BaseAgent;
       registerAgent({
         icon: "/test-agent.svg",
+        resolveDataRoot: () => tempDir,
+        resumeCommandPrefix: null,
+        toolStrategy: "default",
         create: () => adapter,
       });
       const watcher = new SessionWatcher();

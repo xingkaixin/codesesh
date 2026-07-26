@@ -216,9 +216,14 @@ describe("handleGetAgents", () => {
   it("returns agent info list", () => {
     const c = makeMockContext();
     handleGetAgents(c, makeScanSource());
-    expect(c.json).toHaveBeenCalled();
     const response = c.json.mock.calls[0]![0];
     expect(Array.isArray(response)).toBe(true);
+    expect(response.find((agent: { name: string }) => agent.name === "claudecode")).toMatchObject({
+      resumeCommandPrefix: "claude --resume",
+    });
+    expect(response.find((agent: { name: string }) => agent.name === "cursor")).toMatchObject({
+      resumeCommandPrefix: null,
+    });
   });
 
   it("keeps the registered catalog while zeroing counts outside the current window", () => {

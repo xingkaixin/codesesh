@@ -16,7 +16,7 @@ import type {
   ToolPart,
   ToolPartState,
 } from "../types/index.js";
-import { resolveAgentRoots, firstExisting } from "../discovery/paths.js";
+import { firstExisting, resolveHomePath } from "../discovery/paths.js";
 import { readJsonlFile, readJsonlFileLines } from "../utils/jsonl.js";
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { isInternalEventType } from "../utils/parse-cleanup.js";
@@ -32,6 +32,10 @@ import type {
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
 const HEAD_INDEX_VERSION = "claudecode-head-v2";
+
+export function resolveClaudeCodeDataRoot(): string {
+  return resolveHomePath("CLAUDE_CONFIG_DIR", ".claude");
+}
 
 interface ClaudeUsage {
   key: string;
@@ -113,18 +117,14 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
   private sessionsIndexMtime: Record<string, number | null> = {};
 
   private findBasePath(): string | null {
-    const roots = resolveAgentRoots();
-    return firstExisting(join(roots.claudeRoot, "projects"), "data/claudecode");
+    return firstExisting(join(resolveClaudeCodeDataRoot(), "projects"), "data/claudecode");
   }
 
   getSessionWatchPlan() {
-    const roots = resolveAgentRoots();
+    const dataRoot = resolveClaudeCodeDataRoot();
     return {
       status: "supported" as const,
-      targets: [
-        { root: roots.claudeRoot, path: join(roots.claudeRoot, "projects") },
-        { path: "data/claudecode" },
-      ],
+      targets: [{ root: dataRoot, path: join(dataRoot, "projects") }, { path: "data/claudecode" }],
     };
   }
 

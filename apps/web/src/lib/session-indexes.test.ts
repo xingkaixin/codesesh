@@ -9,8 +9,20 @@ import {
 } from "./session-indexes";
 
 const agents: AgentInfo[] = [
-  { name: "codex", displayName: "Codex", count: 3, icon: "/codex.svg" },
-  { name: "claude", displayName: "Claude", count: 1, icon: "/claude.svg" },
+  {
+    name: "codex",
+    displayName: "Codex",
+    count: 3,
+    icon: "/codex.svg",
+    resumeCommandPrefix: "codex resume",
+  },
+  {
+    name: "claude",
+    displayName: "Claude",
+    count: 1,
+    icon: "/claude.svg",
+    resumeCommandPrefix: "claude --resume",
+  },
 ];
 
 function createSession(

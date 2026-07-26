@@ -1,20 +1,23 @@
 import { join } from "node:path";
-import { firstExisting, resolveAgentRoots } from "../discovery/paths.js";
+import { firstExisting, resolveDataHome } from "../discovery/paths.js";
 import { isSqliteAvailable } from "../utils/sqlite.js";
 import { OpenCodeSqliteAgent } from "./opencode-sqlite.js";
 
+export function resolveOpenCodeDataRoot(): string {
+  return join(resolveDataHome(), "opencode");
+}
+
 function findOpenCodeDbPath(): string | null {
   if (!isSqliteAvailable()) return null;
-  const roots = resolveAgentRoots();
-  return firstExisting(join(roots.opencodeRoot, "opencode.db"), "data/opencode/opencode.db");
+  return firstExisting(join(resolveOpenCodeDataRoot(), "opencode.db"), "data/opencode/opencode.db");
 }
 
 function getOpenCodeSessionWatchPlan() {
-  const roots = resolveAgentRoots();
+  const dataRoot = resolveOpenCodeDataRoot();
   return {
     status: "supported" as const,
     targets: [
-      { root: roots.opencodeRoot, path: join(roots.opencodeRoot, "opencode.db") },
+      { root: dataRoot, path: join(dataRoot, "opencode.db") },
       { root: "data/opencode", path: "data/opencode/opencode.db" },
     ],
   };

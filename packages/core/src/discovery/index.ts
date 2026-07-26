@@ -1,5 +1,4 @@
-export { resolveAgentRoots, getCursorDataPath, firstExisting } from "./paths.js";
-export type { AgentRoots } from "./paths.js";
+export { firstExisting, readEnvPath, resolveDataHome, resolveHomePath } from "./paths.js";
 export {
   ensureSessionTagsSync,
   filterSessions,

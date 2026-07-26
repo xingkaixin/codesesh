@@ -9,7 +9,7 @@ import {
 } from "./base.js";
 import type { ParseSessionResult } from "./base.js";
 import type { SessionHead, SessionDetail, MessagePart } from "../types/index.js";
-import { resolveAgentRoots, firstExisting } from "../discovery/paths.js";
+import { firstExisting, resolveHomePath } from "../discovery/paths.js";
 import { parseJsonlLines, readJsonlFile, readJsonlFileLines } from "../utils/jsonl.js";
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { cleanInternalText, isInternalEventType } from "../utils/session-normalization.js";
@@ -35,6 +35,10 @@ const SUBAGENT_NOTIFICATION_PATTERN =
   /<subagent_notification>\s*([\s\S]*?)\s*<\/subagent_notification>/;
 const HEAD_INDEX_VERSION = "codex-head-v1";
 const PARSER_VERSION = "codex-parser-v4";
+
+export function resolveCodexDataRoot(): string {
+  return resolveHomePath("CODEX_HOME", ".codex");
+}
 
 const DEVELOPER_LIKE_USER_MARKERS = [
   "agents.md instructions for",
@@ -331,17 +335,16 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   // ---- BaseAgent implementation ----
 
   private findBasePath(): string | null {
-    const roots = resolveAgentRoots();
-    return firstExisting(join(roots.codexRoot, "sessions"));
+    return firstExisting(join(resolveCodexDataRoot(), "sessions"));
   }
 
   getSessionWatchPlan() {
-    const roots = resolveAgentRoots();
+    const dataRoot = resolveCodexDataRoot();
     return {
       status: "supported" as const,
       targets: [
-        { path: join(roots.codexRoot, "sessions") },
-        { path: join(roots.codexRoot, "session_index.jsonl") },
+        { path: join(dataRoot, "sessions") },
+        { path: join(dataRoot, "session_index.jsonl") },
       ],
     };
   }
@@ -522,7 +525,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   }
 
   private getSessionIndexPath(): string {
-    this.sessionIndexPath ??= join(resolveAgentRoots().codexRoot, "session_index.jsonl");
+    this.sessionIndexPath ??= join(resolveCodexDataRoot(), "session_index.jsonl");
     return this.sessionIndexPath;
   }
 

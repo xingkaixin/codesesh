@@ -18,7 +18,11 @@ describe("CopyResumeButton", () => {
   it("announces and resets the copy confirmation via the live region", async () => {
     vi.useFakeTimers();
     render(
-      <CopyResumeButton agentName="claudecode" sessionId="abc-123" directory="/tmp/project" />,
+      <CopyResumeButton
+        resumeCommandPrefix="claude --resume"
+        sessionId="abc-123"
+        directory="/tmp/project"
+      />,
     );
 
     const button = screen.getByRole("button", { name: /Copy resume command/ });

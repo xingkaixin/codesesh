@@ -5,7 +5,7 @@ import { buildResumeCommand } from "../lib/build-resume-command";
 interface CopyResumeButtonProps {
   /** Session ID, will be shell-quoted into the resume command. */
   sessionId: string;
-  agentName: string;
+  resumeCommandPrefix: string | null;
   /**
    * Session directory — pass `session.directory` from SessionHead.
    *
@@ -48,13 +48,13 @@ async function writeToClipboard(text: string): Promise<boolean> {
 }
 
 export function CopyResumeButton({
-  agentName,
+  resumeCommandPrefix,
   sessionId,
   directory,
   className = "",
 }: CopyResumeButtonProps) {
   const [copied, setCopied] = useState(false);
-  const command = buildResumeCommand({ agentName, sessionId, directory });
+  const command = buildResumeCommand({ resumeCommandPrefix, sessionId, directory });
 
   useEffect(() => {
     if (!copied) return;

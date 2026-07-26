@@ -34,16 +34,16 @@ const fsWatch = vi.hoisted(() => ({
 const core = vi.hoisted(() => ({
   createRegisteredAgents: vi.fn(),
   filterSessions: vi.fn((sessions: SessionHead[], _options: ScanOptions) => sessions),
-  getCursorDataPath: vi.fn(() => "/tmp/cursor"),
   getAgentLastFullSyncAt: vi.fn(),
   resolveAgentRoots: vi.fn(
     (): AgentRoots => ({
-      claudeRoot: "/tmp/claude",
-      codexRoot: "/tmp/codex",
-      kimiRoot: "/tmp/kimi",
-      opencodeRoot: "/tmp/opencode",
-      piRoot: "/tmp/pi",
-      zcodeRoot: "/tmp/zcode",
+      claudecode: "/tmp/claude",
+      codex: "/tmp/codex",
+      cursor: "/tmp/cursor",
+      kimi: "/tmp/kimi",
+      opencode: "/tmp/opencode",
+      pi: "/tmp/pi",
+      zcode: "/tmp/zcode",
     }),
   ),
   isAgentCacheInitialized: vi.fn(),
@@ -302,7 +302,6 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     ...actual,
     createRegisteredAgents: core.createRegisteredAgents,
     filterSessions: core.filterSessions,
-    getCursorDataPath: core.getCursorDataPath,
     getAgentLastFullSyncAt: core.getAgentLastFullSyncAt,
     isAgentCacheInitialized: core.isAgentCacheInitialized,
     loadCachedSessions: core.loadCachedSessions,
@@ -428,8 +427,8 @@ function watchPlanFor(name: string) {
     targets:
       name === "codex"
         ? [
-            { path: join(roots.codexRoot, "sessions") },
-            { path: join(roots.codexRoot, "session_index.jsonl") },
+            { path: join(roots.codex!, "sessions") },
+            { path: join(roots.codex!, "session_index.jsonl") },
           ]
         : [],
   };
@@ -518,18 +517,18 @@ describe("LiveScanStore", () => {
         listener: (eventType: string, filename: string | Buffer | null) => void,
       ) => registerMockWatcher(path, options, listener),
     );
-    core.getCursorDataPath.mockReturnValue("/tmp/cursor");
     core.getAgentLastFullSyncAt.mockReturnValue(Date.now());
     core.isAgentCacheInitialized.mockReturnValue(true);
     core.loadCachedSessions.mockReturnValue(null);
     core.markAgentCacheInitialized.mockReset();
     core.resolveAgentRoots.mockReturnValue({
-      claudeRoot: "/tmp/claude",
-      codexRoot: "/tmp/codex",
-      kimiRoot: "/tmp/kimi",
-      opencodeRoot: "/tmp/opencode",
-      piRoot: "/tmp/pi",
-      zcodeRoot: "/tmp/zcode",
+      claudecode: "/tmp/claude",
+      codex: "/tmp/codex",
+      cursor: "/tmp/cursor",
+      kimi: "/tmp/kimi",
+      opencode: "/tmp/opencode",
+      pi: "/tmp/pi",
+      zcode: "/tmp/zcode",
     });
     core.filterSessions.mockImplementation((sessions: SessionHead[]) => sessions);
   });
@@ -1573,12 +1572,13 @@ describe("LiveScanStore", () => {
     const sessionFile = join(sessionsDir, "new.jsonl");
     mkdirSync(sessionsDir, { recursive: true });
     core.resolveAgentRoots.mockReturnValue({
-      claudeRoot: join(tempDir, "claude"),
-      codexRoot,
-      kimiRoot: join(tempDir, "kimi"),
-      opencodeRoot: join(tempDir, "opencode"),
-      piRoot: join(tempDir, "pi"),
-      zcodeRoot: join(tempDir, "zcode"),
+      claudecode: join(tempDir, "claude"),
+      codex: codexRoot,
+      cursor: join(tempDir, "cursor"),
+      kimi: join(tempDir, "kimi"),
+      opencode: join(tempDir, "opencode"),
+      pi: join(tempDir, "pi"),
+      zcode: join(tempDir, "zcode"),
     });
 
     const existingSession = makeSession("existing");
@@ -1647,12 +1647,13 @@ describe("LiveScanStore", () => {
     const sessionFile = join(dayDir, "new.jsonl");
     mkdirSync(dayDir, { recursive: true });
     core.resolveAgentRoots.mockReturnValue({
-      claudeRoot: join(tempDir, "claude"),
-      codexRoot,
-      kimiRoot: join(tempDir, "kimi"),
-      opencodeRoot: join(tempDir, "opencode"),
-      piRoot: join(tempDir, "pi"),
-      zcodeRoot: join(tempDir, "zcode"),
+      claudecode: join(tempDir, "claude"),
+      codex: codexRoot,
+      cursor: join(tempDir, "cursor"),
+      kimi: join(tempDir, "kimi"),
+      opencode: join(tempDir, "opencode"),
+      pi: join(tempDir, "pi"),
+      zcode: join(tempDir, "zcode"),
     });
 
     const existingSession = makeSession("existing");
@@ -1698,12 +1699,13 @@ describe("LiveScanStore", () => {
     mkdirSync(sessionsDir, { recursive: true });
     writeFileSync(sessionFile, "session");
     core.resolveAgentRoots.mockReturnValue({
-      claudeRoot: join(tempDir, "claude"),
-      codexRoot,
-      kimiRoot: join(tempDir, "kimi"),
-      opencodeRoot: join(tempDir, "opencode"),
-      piRoot: join(tempDir, "pi"),
-      zcodeRoot: join(tempDir, "zcode"),
+      claudecode: join(tempDir, "claude"),
+      codex: codexRoot,
+      cursor: join(tempDir, "cursor"),
+      kimi: join(tempDir, "kimi"),
+      opencode: join(tempDir, "opencode"),
+      pi: join(tempDir, "pi"),
+      zcode: join(tempDir, "zcode"),
     });
 
     const existingSession = makeSession("existing");

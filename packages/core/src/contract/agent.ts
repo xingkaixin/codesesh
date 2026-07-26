@@ -4,4 +4,5 @@ export interface AgentInfo {
   count: number;
   icon?: string;
   iconColored?: boolean;
+  resumeCommandPrefix: string | null;
 }

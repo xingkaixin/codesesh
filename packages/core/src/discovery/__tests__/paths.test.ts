@@ -19,7 +19,8 @@ vi.mock("node:fs", async (importOriginal) => {
 
 import { homedir, platform } from "node:os";
 import { existsSync } from "node:fs";
-import { resolveAgentRoots, getCursorDataPath, getZCodeDataPath } from "../paths.js";
+import "../../agents/register.js";
+import { resolveAgentRoots } from "../../agents/registry.js";
 
 /** Normalize path separators so tests work on both Unix and Windows */
 const expectPath = (actual: string) => expect(actual.replace(/\\/g, "/"));
@@ -48,61 +49,61 @@ describe("resolveAgentRoots", () => {
   it("uses default paths when no env vars are set", () => {
     mockedHomedir.mockReturnValue("/home/user");
     const roots = resolveAgentRoots();
-    expectPath(roots.codexRoot).toBe("/home/user/.codex");
-    expectPath(roots.claudeRoot).toBe("/home/user/.claude");
-    expectPath(roots.kimiRoot).toBe("/home/user/.kimi");
-    expectPath(roots.piRoot).toBe("/home/user/.pi");
-    expectPath(roots.zcodeRoot!).toBe("/home/user/.zcode");
+    expectPath(roots.codex!).toBe("/home/user/.codex");
+    expectPath(roots.claudecode!).toBe("/home/user/.claude");
+    expectPath(roots.kimi!).toBe("/home/user/.kimi");
+    expectPath(roots.pi!).toBe("/home/user/.pi");
+    expectPath(roots.zcode!).toBe("/home/user/.zcode");
   });
 
   it("respects CODEX_HOME override", () => {
     vi.stubEnv("CODEX_HOME", "/custom/codex");
     mockedHomedir.mockReturnValue("/home/user");
     const roots = resolveAgentRoots();
-    expectPath(roots.codexRoot).toBe("/custom/codex");
+    expectPath(roots.codex!).toBe("/custom/codex");
   });
 
   it("respects CLAUDE_CONFIG_DIR override", () => {
     vi.stubEnv("CLAUDE_CONFIG_DIR", "/custom/claude");
     mockedHomedir.mockReturnValue("/home/user");
     const roots = resolveAgentRoots();
-    expectPath(roots.claudeRoot).toBe("/custom/claude");
+    expectPath(roots.claudecode!).toBe("/custom/claude");
   });
 
   it("respects KIMI_SHARE_DIR override", () => {
     vi.stubEnv("KIMI_SHARE_DIR", "/custom/kimi");
     mockedHomedir.mockReturnValue("/home/user");
     const roots = resolveAgentRoots();
-    expectPath(roots.kimiRoot).toBe("/custom/kimi");
+    expectPath(roots.kimi!).toBe("/custom/kimi");
   });
 
   it("respects PI_HOME override", () => {
     vi.stubEnv("PI_HOME", "/custom/pi");
     mockedHomedir.mockReturnValue("/home/user");
     const roots = resolveAgentRoots();
-    expectPath(roots.piRoot).toBe("/custom/pi");
+    expectPath(roots.pi!).toBe("/custom/pi");
   });
 
-  it("computes opencodeRoot from getDataHome", () => {
+  it("computes the OpenCode root from the data home", () => {
     mockedHomedir.mockReturnValue("/home/user");
     mockedPlatform.mockReturnValue("linux");
     vi.stubEnv("XDG_DATA_HOME", "/custom/data");
     const roots = resolveAgentRoots();
-    expectPath(roots.opencodeRoot).toBe("/custom/data/opencode");
+    expectPath(roots.opencode!).toBe("/custom/data/opencode");
   });
 });
 
-describe("getCursorDataPath", () => {
+describe("Cursor data root", () => {
   it("returns CURSOR_DATA_PATH when set", () => {
     vi.stubEnv("CURSOR_DATA_PATH", "/custom/cursor");
-    expect(getCursorDataPath()).toBe("/custom/cursor");
+    expect(resolveAgentRoots().cursor).toBe("/custom/cursor");
   });
 
   it("returns darwin path when it exists", () => {
     mockedPlatform.mockReturnValue("darwin");
     mockedHomedir.mockReturnValue("/home/user");
     mockedExistsSync.mockReturnValue(true);
-    const result = getCursorDataPath();
+    const result = resolveAgentRoots().cursor;
     expectPath(result!).toContain("Cursor");
     expectPath(result!).toContain("User");
   });
@@ -112,32 +113,32 @@ describe("getCursorDataPath", () => {
     mockedHomedir.mockReturnValue("/home/user");
     mockedExistsSync.mockReturnValue(true);
     vi.stubEnv("XDG_CONFIG_HOME", "/home/user/.config");
-    const result = getCursorDataPath();
+    const result = resolveAgentRoots().cursor;
     expectPath(result!).toContain("Cursor");
   });
 
   it("returns null when no path exists", () => {
     mockedPlatform.mockReturnValue("darwin");
     mockedExistsSync.mockReturnValue(false);
-    expect(getCursorDataPath()).toBeNull();
+    expect(resolveAgentRoots().cursor).toBeNull();
   });
 });
 
-describe("getZCodeDataPath", () => {
+describe("ZCode data root", () => {
   it("returns the macOS ZCode root", () => {
     mockedPlatform.mockReturnValue("darwin");
     mockedHomedir.mockReturnValue("/home/user");
-    expectPath(getZCodeDataPath()!).toBe("/home/user/.zcode");
+    expectPath(resolveAgentRoots().zcode!).toBe("/home/user/.zcode");
   });
 
   it("returns the Windows ZCode root", () => {
     mockedPlatform.mockReturnValue("win32");
     mockedHomedir.mockReturnValue("/home/user");
-    expectPath(getZCodeDataPath()!).toBe("/home/user/.zcode");
+    expectPath(resolveAgentRoots().zcode!).toBe("/home/user/.zcode");
   });
 
   it("does not probe a Linux default path", () => {
     mockedPlatform.mockReturnValue("linux");
-    expect(getZCodeDataPath()).toBeNull();
+    expect(resolveAgentRoots().zcode).toBeNull();
   });
 });

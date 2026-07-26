@@ -7,12 +7,14 @@ const agents: AgentInfo[] = [
     name: "claudecode",
     displayName: "Claude Code",
     icon: "/icon/agent/claudecode.svg",
+    resumeCommandPrefix: "claude --resume",
     count: 2,
   },
   {
     name: "codex",
     displayName: "Codex",
     icon: "/icon/agent/codex.svg",
+    resumeCommandPrefix: "codex resume",
     count: 0,
   },
 ];

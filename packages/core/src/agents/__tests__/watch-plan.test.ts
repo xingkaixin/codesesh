@@ -1,8 +1,7 @@
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getCursorDataPath, resolveAgentRoots } from "../../discovery/paths.js";
 import "../register.js";
-import { createRegisteredAgents } from "../registry.js";
+import { createRegisteredAgents, resolveAgentRoots } from "../registry.js";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -41,40 +40,37 @@ describe("registered agent session watch plans", () => {
     expect(agents.get("claudecode")?.getSessionWatchPlan()).toEqual({
       status: "supported",
       targets: [
-        { root: roots.claudeRoot, path: join(roots.claudeRoot, "projects") },
+        { root: roots.claudecode, path: join(roots.claudecode!, "projects") },
         { path: "data/claudecode" },
       ],
     });
     expect(agents.get("codex")?.getSessionWatchPlan()).toEqual({
       status: "supported",
       targets: [
-        { path: join(roots.codexRoot, "sessions") },
-        { path: join(roots.codexRoot, "session_index.jsonl") },
+        { path: join(roots.codex!, "sessions") },
+        { path: join(roots.codex!, "session_index.jsonl") },
       ],
     });
     expect(agents.get("pi")?.getSessionWatchPlan()).toEqual({
       status: "supported",
       targets: [
-        { root: roots.piRoot, path: join(roots.piRoot, "agent", "sessions") },
+        { root: roots.pi, path: join(roots.pi!, "agent", "sessions") },
         { root: "data/pi", path: "data/pi" },
       ],
     });
     expect(agents.get("kimi")?.getSessionWatchPlan()).toEqual({
       status: "supported",
-      targets: [
-        { root: roots.kimiRoot, path: join(roots.kimiRoot, "sessions") },
-        { path: "data/kimi" },
-      ],
+      targets: [{ root: roots.kimi, path: join(roots.kimi!, "sessions") }, { path: "data/kimi" }],
     });
     expect(agents.get("cursor")?.getSessionWatchPlan()).toEqual({
       status: "supported",
       targets: [
         {
-          root: getCursorDataPath(),
+          root: roots.cursor,
           path: join("/tmp/cursor-home", "globalStorage", "state.vscdb"),
         },
         {
-          root: getCursorDataPath(),
+          root: roots.cursor,
           path: join("/tmp/cursor-home", "workspaceStorage"),
         },
       ],
@@ -82,14 +78,14 @@ describe("registered agent session watch plans", () => {
     expect(agents.get("opencode")?.getSessionWatchPlan()).toEqual({
       status: "supported",
       targets: [
-        { root: roots.opencodeRoot, path: join(roots.opencodeRoot, "opencode.db") },
+        { root: roots.opencode, path: join(roots.opencode!, "opencode.db") },
         { root: "data/opencode", path: "data/opencode/opencode.db" },
       ],
     });
     expect(agents.get("zcode")?.getSessionWatchPlan()).toEqual({
       status: "supported",
-      targets: roots.zcodeRoot
-        ? [{ root: roots.zcodeRoot, path: join(roots.zcodeRoot, "cli", "db", "db.sqlite") }]
+      targets: roots.zcode
+        ? [{ root: roots.zcode, path: join(roots.zcode, "cli", "db", "db.sqlite") }]
         : [],
     });
   });

@@ -16,6 +16,7 @@ const agentCatalog = createAgentCatalog([
     name: "codex",
     displayName: "Codex",
     icon: "/icon/agent/codex.svg",
+    resumeCommandPrefix: "codex resume",
     count: 2,
   },
 ]);

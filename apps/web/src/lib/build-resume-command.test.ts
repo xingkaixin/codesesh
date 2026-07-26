@@ -27,33 +27,30 @@ describe("buildResumeCommand", () => {
   it("emits cd && claude --resume when directory is present", () => {
     expect(
       buildResumeCommand({
-        agentName: "claudecode",
+        resumeCommandPrefix: "claude --resume",
         sessionId: "abc-123",
         directory: "/Users/me/project",
       }),
     ).toBe("cd '/Users/me/project' && claude --resume 'abc-123'");
   });
 
-  it.each([
-    ["claudecode", "claude --resume"],
-    ["codex", "codex resume"],
-    ["kimi", "kimi -r"],
-    ["opencode", "opencode -s"],
-    ["pi", "pi --session"],
-  ])("emits the %s resume command", (agentName, prefix) => {
-    expect(
-      buildResumeCommand({
-        agentName,
-        sessionId: "abc-123",
-        directory: "/Users/me/project",
-      }),
-    ).toBe(`cd '/Users/me/project' && ${prefix} 'abc-123'`);
-  });
+  it.each(["claude --resume", "codex resume", "kimi -r", "opencode -s", "pi --session"])(
+    "emits the %s resume command",
+    (resumeCommandPrefix) => {
+      expect(
+        buildResumeCommand({
+          resumeCommandPrefix,
+          sessionId: "abc-123",
+          directory: "/Users/me/project",
+        }),
+      ).toBe(`cd '/Users/me/project' && ${resumeCommandPrefix} 'abc-123'`);
+    },
+  );
 
-  it("does not emit a resume command for cursor", () => {
+  it("does not emit a resume command when the catalog declares no resume capability", () => {
     expect(
       buildResumeCommand({
-        agentName: "cursor",
+        resumeCommandPrefix: null,
         sessionId: "abc-123",
         directory: "/Users/me/project",
       }),
@@ -66,7 +63,7 @@ describe("buildResumeCommand", () => {
     // project_identity.path_root is that worktree sessions need to resume in
     // the worktree, not the root repo — so we must pass the path through as-is.
     const cmd = buildResumeCommand({
-      agentName: "claudecode",
+      resumeCommandPrefix: "claude --resume",
       sessionId: "wt-1",
       directory: "/Users/me/repos/myrepo-worktrees/feature-x",
     });
@@ -75,7 +72,7 @@ describe("buildResumeCommand", () => {
 
   it("shell-quotes adversarial directory containing a single quote", () => {
     const cmd = buildResumeCommand({
-      agentName: "claudecode",
+      resumeCommandPrefix: "claude --resume",
       sessionId: "id-1",
       directory: "/tmp/can't escape",
     });
@@ -85,7 +82,7 @@ describe("buildResumeCommand", () => {
 
   it("shell-quotes adversarial sessionId", () => {
     const cmd = buildResumeCommand({
-      agentName: "claudecode",
+      resumeCommandPrefix: "claude --resume",
       sessionId: "x'; rm -rf /tmp/__bad",
       directory: "/tmp/proj",
     });
@@ -93,24 +90,38 @@ describe("buildResumeCommand", () => {
   });
 
   it("falls back to no-cd command when directory is missing", () => {
-    expect(buildResumeCommand({ agentName: "claudecode", sessionId: "abc" })).toBe(
-      "claude --resume 'abc'",
-    );
-    expect(buildResumeCommand({ agentName: "claudecode", sessionId: "abc", directory: null })).toBe(
+    expect(buildResumeCommand({ resumeCommandPrefix: "claude --resume", sessionId: "abc" })).toBe(
       "claude --resume 'abc'",
     );
     expect(
-      buildResumeCommand({ agentName: "claudecode", sessionId: "abc", directory: undefined }),
+      buildResumeCommand({
+        resumeCommandPrefix: "claude --resume",
+        sessionId: "abc",
+        directory: null,
+      }),
+    ).toBe("claude --resume 'abc'");
+    expect(
+      buildResumeCommand({
+        resumeCommandPrefix: "claude --resume",
+        sessionId: "abc",
+        directory: undefined,
+      }),
     ).toBe("claude --resume 'abc'");
   });
 
   it("falls back to no-cd command with the agent-specific resume syntax", () => {
-    expect(buildResumeCommand({ agentName: "codex", sessionId: "abc" })).toBe("codex resume 'abc'");
-    expect(buildResumeCommand({ agentName: "kimi", sessionId: "abc" })).toBe("kimi -r 'abc'");
-    expect(buildResumeCommand({ agentName: "opencode", sessionId: "abc" })).toBe(
+    expect(buildResumeCommand({ resumeCommandPrefix: "codex resume", sessionId: "abc" })).toBe(
+      "codex resume 'abc'",
+    );
+    expect(buildResumeCommand({ resumeCommandPrefix: "kimi -r", sessionId: "abc" })).toBe(
+      "kimi -r 'abc'",
+    );
+    expect(buildResumeCommand({ resumeCommandPrefix: "opencode -s", sessionId: "abc" })).toBe(
       "opencode -s 'abc'",
     );
-    expect(buildResumeCommand({ agentName: "pi", sessionId: "abc" })).toBe("pi --session 'abc'");
+    expect(buildResumeCommand({ resumeCommandPrefix: "pi --session", sessionId: "abc" })).toBe(
+      "pi --session 'abc'",
+    );
   });
 
   it("falls back to no-cd command when directory is whitespace-only", () => {
@@ -119,10 +130,18 @@ describe("buildResumeCommand", () => {
     // copy-resume button should produce a runnable command regardless of how
     // the upstream metadata happens to be filled in.
     expect(
-      buildResumeCommand({ agentName: "claudecode", sessionId: "abc", directory: "   " }),
+      buildResumeCommand({
+        resumeCommandPrefix: "claude --resume",
+        sessionId: "abc",
+        directory: "   ",
+      }),
     ).toBe("claude --resume 'abc'");
     expect(
-      buildResumeCommand({ agentName: "claudecode", sessionId: "abc", directory: "\t\n" }),
+      buildResumeCommand({
+        resumeCommandPrefix: "claude --resume",
+        sessionId: "abc",
+        directory: "\t\n",
+      }),
     ).toBe("claude --resume 'abc'");
   });
 
@@ -134,14 +153,14 @@ describe("buildResumeCommand", () => {
     // verbatim.
     expect(
       buildResumeCommand({
-        agentName: "claudecode",
+        resumeCommandPrefix: "claude --resume",
         sessionId: "abc",
         directory: " /tmp/proj ",
       }),
     ).toBe("cd ' /tmp/proj ' && claude --resume 'abc'");
     expect(
       buildResumeCommand({
-        agentName: "claudecode",
+        resumeCommandPrefix: "claude --resume",
         sessionId: "abc",
         directory: "\t/var/log/app",
       }),

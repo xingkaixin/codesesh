@@ -1,22 +1,27 @@
+import { homedir, platform } from "node:os";
 import { join } from "node:path";
-import { firstExisting, resolveAgentRoots } from "../discovery/paths.js";
+import { firstExisting } from "../discovery/paths.js";
 import { isSqliteAvailable } from "../utils/sqlite.js";
 import { OpenCodeSqliteAgent } from "./opencode-sqlite.js";
 
+export function resolveZCodeDataRoot(): string | null {
+  const currentPlatform = platform();
+  if (currentPlatform !== "darwin" && currentPlatform !== "win32") return null;
+  return join(homedir(), ".zcode");
+}
+
 function findZCodeDbPath(): string | null {
   if (!isSqliteAvailable()) return null;
-  const roots = resolveAgentRoots();
-  if (!roots.zcodeRoot) return null;
-  return firstExisting(join(roots.zcodeRoot, "cli", "db", "db.sqlite"));
+  const dataRoot = resolveZCodeDataRoot();
+  if (!dataRoot) return null;
+  return firstExisting(join(dataRoot, "cli", "db", "db.sqlite"));
 }
 
 function getZCodeSessionWatchPlan() {
-  const roots = resolveAgentRoots();
+  const dataRoot = resolveZCodeDataRoot();
   return {
     status: "supported" as const,
-    targets: roots.zcodeRoot
-      ? [{ root: roots.zcodeRoot, path: join(roots.zcodeRoot, "cli", "db", "db.sqlite") }]
-      : [],
+    targets: dataRoot ? [{ root: dataRoot, path: join(dataRoot, "cli", "db", "db.sqlite") }] : [],
   };
 }
 
