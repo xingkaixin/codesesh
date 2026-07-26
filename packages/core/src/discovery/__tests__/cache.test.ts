@@ -64,7 +64,7 @@ describe("session cache integration", () => {
 
     expect(searchSessions("needle")).toEqual([
       expect.objectContaining({
-        agentName: "codex",
+        reference: { agentName: "codex", sessionId: "smoke" },
         session: expect.objectContaining({ id: "smoke" }),
       }),
     ]);

@@ -31,36 +31,38 @@ afterEach(() => {
 
 describe("session aliases", () => {
   it("persists aliases by agent and session ID", () => {
-    upsertSessionAlias("codex", "shared", "Investigate cache invalidation");
-    upsertSessionAlias("claudecode", "shared", "Fix checkout regression");
+    upsertSessionAlias(
+      { agentName: "codex", sessionId: "shared" },
+      "Investigate cache invalidation",
+    );
+    upsertSessionAlias({ agentName: "claudecode", sessionId: "shared" }, "Fix checkout regression");
 
     expect(listSessionAliases()).toEqual([
       {
-        agentKey: "codex",
-        sessionId: "shared",
+        reference: { agentName: "codex", sessionId: "shared" },
         alias: "Investigate cache invalidation",
-        updated_at: 1_700_000_000_000,
+        updatedAt: 1_700_000_000_000,
       },
       {
-        agentKey: "claudecode",
-        sessionId: "shared",
+        reference: { agentName: "claudecode", sessionId: "shared" },
         alias: "Fix checkout regression",
-        updated_at: 1_700_000_000_000,
+        updatedAt: 1_700_000_000_000,
       },
     ]);
   });
 
   it("updates and removes aliases", () => {
-    upsertSessionAlias("codex", "s1", "First title");
+    const reference = { agentName: "codex", sessionId: "s1" };
+    upsertSessionAlias(reference, "First title");
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_100);
-    upsertSessionAlias("codex", "s1", "Second title");
+    upsertSessionAlias(reference, "Second title");
 
     expect(listSessionAliases()[0]).toMatchObject({
       alias: "Second title",
-      updated_at: 1_700_000_000_100,
+      updatedAt: 1_700_000_000_100,
     });
 
-    deleteSessionAlias("codex", "s1");
+    deleteSessionAlias(reference);
     expect(listSessionAliases()).toEqual([]);
   });
 });

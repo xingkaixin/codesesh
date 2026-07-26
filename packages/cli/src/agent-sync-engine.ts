@@ -135,7 +135,10 @@ function buildRefreshDiff(
       removedSessions: counts.removed,
       totalSessions: nextSessions.length,
       timestamp: Date.now(),
-      changedSessionHeads: changes.map(({ session }) => ({ agentName, session })),
+      changedSessionHeads: changes.map(({ session }) => ({
+        reference: { agentName, sessionId: session.id },
+        session,
+      })),
       removedSessionRefs: removedSessionIds.map((sessionId) => ({ agentName, sessionId })),
     },
   };

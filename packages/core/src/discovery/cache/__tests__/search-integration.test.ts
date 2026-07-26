@@ -308,7 +308,7 @@ describe("searchSessions", () => {
 
     const results = searchSessions("sqlite");
     expect(results).toHaveLength(1);
-    expect(results[0]?.agentName).toBe("claudecode");
+    expect(results[0]?.reference.agentName).toBe("claudecode");
     expect(results[0]?.session.id).toBe("s1");
     expect(results[0]?.session.stats).toMatchObject({
       message_count: 1,
@@ -1499,7 +1499,7 @@ describe("searchSessions", () => {
 
     const filteredResults = searchSessions("alpha OR beta", { agent: "cursor" });
     expect(filteredResults).toHaveLength(1);
-    expect(filteredResults[0]?.agentName).toBe("cursor");
+    expect(filteredResults[0]?.reference.agentName).toBe("cursor");
   });
 
   it("rebuilds an empty FTS index when content rows exist", () => {

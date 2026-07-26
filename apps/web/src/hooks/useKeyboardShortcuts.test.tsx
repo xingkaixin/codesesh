@@ -26,7 +26,7 @@ function makeSession(id: string): SessionHead {
 
 const sessions = [makeSession("s1"), makeSession("s2"), makeSession("s3")];
 const searchResults: SearchResult[] = sessions.slice(0, 2).map((session) => ({
-  agentName: "Codex",
+  reference: { agentName: "Codex", sessionId: session.id },
   session,
   snippet: session.title,
   matchType: "title",

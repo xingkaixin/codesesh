@@ -369,9 +369,9 @@ export function ProjectDashboardView({
           projects={[]}
           bookmarkedSessions={[]}
           isBookmarked={isBookmarked}
-          onToggleBookmark={(session, agentKey) => {
-            if ("agentName" in session) {
-              onToggleSessionBookmark(session, agentKey ?? session.agentName.toLowerCase());
+          onToggleBookmark={(item) => {
+            if (!("bookmarkedAt" in item)) {
+              onToggleSessionBookmark(item.session, item.reference.agentName);
             }
           }}
         />

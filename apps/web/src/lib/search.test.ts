@@ -98,7 +98,10 @@ describe("buildLocalRecentResults", () => {
 
     expect(results).toEqual([
       {
-        agentName: "claudecode",
+        reference: {
+          agentName: "claudecode",
+          sessionId: sBugfixApp.id,
+        },
         session: sBugfixApp,
         snippet: `Recent session · ${sBugfixApp.directory}`,
         matchType: "recent",
@@ -158,7 +161,7 @@ describe("buildSearchProjectOptions", () => {
 
   function makeResult(id: string, projectKey: string, displayName: string): SearchResult {
     return {
-      agentName: "codex",
+      reference: { agentName: "codex", sessionId: id },
       snippet: "match",
       matchType: "title",
       session: {

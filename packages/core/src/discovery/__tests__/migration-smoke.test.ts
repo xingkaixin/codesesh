@@ -266,21 +266,23 @@ describe("sqlite migration smoke", () => {
     expect(results[0]?.snippet).toContain("<mark>needle</mark>");
     expect(bookmarks).toEqual([
       {
-        agentKey: "claudecode",
-        sessionId: "legacy-smoke",
-        fullPath: "claudecode/legacy-smoke",
-        title: "Legacy smoke session",
-        directory: FIXTURE_DIR,
-        time_created: now - 1_000,
-        time_updated: now,
-        stats: {
-          message_count: 2,
-          total_input_tokens: 10,
-          total_output_tokens: 5,
-          total_cost: 0,
-          total_tokens: 15,
+        reference: { agentName: "claudecode", sessionId: "legacy-smoke" },
+        session: {
+          id: "legacy-smoke",
+          slug: "claudecode/legacy-smoke",
+          title: "Legacy smoke session",
+          directory: FIXTURE_DIR,
+          time_created: now - 1_000,
+          time_updated: now,
+          stats: {
+            message_count: 2,
+            total_input_tokens: 10,
+            total_output_tokens: 5,
+            total_cost: 0,
+            total_tokens: 15,
+          },
         },
-        bookmarked_at: now - 500,
+        bookmarkedAt: now - 500,
       },
     ]);
     const migratedCache = new Database(getCachePath(), { readonly: true });

@@ -7,14 +7,21 @@ const coreMocks = vi.hoisted(() => {
     materializeSessionDetailResponse: vi.fn(),
     listFileActivity: vi.fn((): FileActivityResult[] => []),
     listSessionAliases: vi.fn<
-      () => Array<{ agentKey: string; sessionId: string; alias: string; updated_at: number }>
+      () => Array<{
+        reference: { agentName: string; sessionId: string };
+        alias: string;
+        updatedAt: number;
+      }>
     >(() => []),
     executeSessionSearch: vi.fn(
       (
         _query: string,
         _options?: unknown,
         _scanResult?: unknown,
-      ): Array<{ agentName: string; session: SessionHead }> => [],
+      ): Array<{
+        reference: { agentName: string; sessionId: string };
+        session: SessionHead;
+      }> => [],
     ),
   };
 });
@@ -77,6 +84,14 @@ function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead 
       total_cost: 0,
     },
     ...overrides,
+  };
+}
+
+function makeAlias(agentName: string, sessionId: string, alias: string) {
+  return {
+    reference: { agentName, sessionId },
+    alias,
+    updatedAt: 1,
   };
 }
 
@@ -343,10 +358,9 @@ describe("handleGetSessions", () => {
   it("projects a persisted alias without changing the source title", () => {
     coreMocks.listSessionAliases.mockReturnValue([
       {
-        agentKey: "claudecode",
-        sessionId: "s1",
+        reference: { agentName: "claudecode", sessionId: "s1" },
         alias: "Fix session cache refresh",
-        updated_at: Date.now(),
+        updatedAt: Date.now(),
       },
     ]);
     const c = makeMockContext();
@@ -364,10 +378,9 @@ describe("handleGetSessions", () => {
     const session = makeSession("legacy", { slug: "" });
     coreMocks.listSessionAliases.mockReturnValue([
       {
-        agentKey: "unknown",
-        sessionId: "legacy",
+        reference: { agentName: "unknown", sessionId: "legacy" },
         alias: "Legacy alias",
-        updated_at: 1,
+        updatedAt: 1,
       },
     ]);
     const c = makeMockContext();
@@ -489,7 +502,12 @@ describe("handleGetSessions", () => {
 describe("handleSearchSessions", () => {
   it("maps HTTP query params into a query string, SearchOptions, and the scan snapshot, then returns the module's results", () => {
     const scanSource = makeScanSource();
-    const sentinelResults = [{ agentName: "claudecode", session: makeSession("s1") }];
+    const sentinelResults = [
+      {
+        reference: { agentName: "claudecode", sessionId: "s1" },
+        session: makeSession("s1"),
+      },
+    ];
     coreMocks.executeSessionSearch.mockReturnValue(sentinelResults);
 
     const c = makeMockContext({
@@ -533,8 +551,8 @@ describe("handleSearchSessions", () => {
   it("matches aliases while preserving an agent: qualifier embedded in q, calling the search module only once", () => {
     const cursorSession = makeSession("c1", { slug: "cursor/c1" });
     coreMocks.listSessionAliases.mockReturnValue([
-      { agentKey: "claudecode", sessionId: "s1", alias: "Custom cache title", updated_at: 1 },
-      { agentKey: "cursor", sessionId: "c1", alias: "Custom cache from cursor", updated_at: 1 },
+      makeAlias("claudecode", "s1", "Custom cache title"),
+      makeAlias("cursor", "c1", "Custom cache from cursor"),
     ]);
     coreMocks.executeSessionSearch.mockReturnValue([]);
     const c = makeMockContext({ query: { q: "agent:claudecode custom cache" } });
@@ -566,9 +584,7 @@ describe("handleSearchSessions", () => {
     const sessions = Array.from({ length: 1001 }, (_, index) =>
       makeSession(`s${index}`, { slug: `claudecode/s${index}` }),
     );
-    coreMocks.listSessionAliases.mockReturnValue([
-      { agentKey: "claudecode", sessionId: "s1000", alias: "Old alias", updated_at: 1 },
-    ]);
+    coreMocks.listSessionAliases.mockReturnValue([makeAlias("claudecode", "s1000", "Old alias")]);
     coreMocks.executeSessionSearch.mockReturnValue([]);
     const c = makeMockContext({ query: { q: "old alias" } });
 
@@ -593,7 +609,7 @@ describe("handleSearchSessions", () => {
       time_updated: now - 30 * 86400000,
     });
     coreMocks.listSessionAliases.mockReturnValue([
-      { agentKey: "claudecode", sessionId: "s1", alias: "Custom cache title", updated_at: 1 },
+      makeAlias("claudecode", "s1", "Custom cache title"),
     ]);
     coreMocks.executeSessionSearch.mockReturnValue([]);
     const c = makeMockContext({
@@ -614,7 +630,7 @@ describe("handleSearchSessions", () => {
 
   it("excludes alias hits from an agent other than the requested agent filter", () => {
     coreMocks.listSessionAliases.mockReturnValue([
-      { agentKey: "claudecode", sessionId: "s1", alias: "Custom cache title", updated_at: 1 },
+      makeAlias("claudecode", "s1", "Custom cache title"),
     ]);
     coreMocks.executeSessionSearch.mockReturnValue([]);
     const c = makeMockContext({ query: { q: "custom cache", agent: "cursor" } });
@@ -630,7 +646,7 @@ describe("handleSearchSessions", () => {
       project_identity: { kind: "git_remote", key: "github.com/acme/app", displayName: "app" },
     });
     coreMocks.listSessionAliases.mockReturnValue([
-      { agentKey: "claudecode", sessionId: "s1", alias: "Custom cache title", updated_at: 1 },
+      makeAlias("claudecode", "s1", "Custom cache title"),
     ]);
     coreMocks.executeSessionSearch.mockReturnValue([]);
     const c = makeMockContext({
@@ -653,18 +669,15 @@ describe("handleSearchSessions", () => {
 describe("handleGetFileActivity", () => {
   it("projects aliases onto nested sessions", () => {
     const session = makeSession("s1", { slug: "claudecode/s1" });
-    coreMocks.listSessionAliases.mockReturnValue([
-      { agentKey: "claudecode", sessionId: "s1", alias: "Activity alias", updated_at: 1 },
-    ]);
+    coreMocks.listSessionAliases.mockReturnValue([makeAlias("claudecode", "s1", "Activity alias")]);
     coreMocks.listFileActivity.mockReturnValue([
       {
-        agent_name: "claudecode",
-        session_id: "s1",
-        project_identity_key: "path:/tmp",
+        reference: { agentName: "claudecode", sessionId: "s1" },
+        projectIdentityKey: "path:/tmp",
         path: "src/index.ts",
         kind: "edit",
         count: 1,
-        latest_time: 1,
+        latestTime: 1,
         session,
       },
     ]);
@@ -800,18 +813,15 @@ describe("handleGetDashboard", () => {
 
   it("projects aliases onto recent file activity sessions", () => {
     const session = makeSession("s1", { slug: "claudecode/s1" });
-    coreMocks.listSessionAliases.mockReturnValue([
-      { agentKey: "claudecode", sessionId: "s1", alias: "Activity alias", updated_at: 1 },
-    ]);
+    coreMocks.listSessionAliases.mockReturnValue([makeAlias("claudecode", "s1", "Activity alias")]);
     coreMocks.listFileActivity.mockReturnValue([
       {
-        agent_name: "claudecode",
-        session_id: "s1",
-        project_identity_key: "path:/tmp",
+        reference: { agentName: "claudecode", sessionId: "s1" },
+        projectIdentityKey: "path:/tmp",
         path: "src/index.ts",
         kind: "edit",
         count: 1,
-        latest_time: 1,
+        latestTime: 1,
         session,
       },
     ]);
@@ -931,9 +941,9 @@ describe("handleGetDashboard", () => {
     expect(response.totals.cost).toBeCloseTo(0.2);
     expect(response.perAgent).toHaveLength(1);
     expect(response.perAgent[0]?.name).toBe("codex");
-    expect(response.recentSessions.map((session: SessionHead) => session.id)).toEqual([
-      "app-codex",
-    ]);
+    expect(
+      response.recentSessions.map((item: { session: SessionHead }) => item.session.id),
+    ).toEqual(["app-codex"]);
   });
 
   it("scopes dashboard data by agent and keeps the ten most recent sessions", () => {
@@ -981,9 +991,9 @@ describe("handleGetDashboard", () => {
         tokens: 36,
       },
     ]);
-    expect(response.recentSessions.map((session: SessionHead) => session.id)).toEqual(
-      codexSessions.slice(0, 10).map((session) => session.id),
-    );
+    expect(
+      response.recentSessions.map((item: { session: SessionHead }) => item.session.id),
+    ).toEqual(codexSessions.slice(0, 10).map((session) => session.id));
   });
 
   it("marks dashboard totals as estimated when any session uses estimated cost", () => {
@@ -1040,7 +1050,7 @@ describe("handleGetDashboard", () => {
 
     const response = c.json.mock.calls[0]![0];
     expect(response.totals.sessions).toBe(1);
-    expect(response.recentSessions[0]?.id).toBe("old");
+    expect(response.recentSessions[0]?.session.id).toBe("old");
     expect(response.dailyActivity).toEqual([
       {
         date: "2026-04-20",
@@ -1089,7 +1099,7 @@ describe("handleGetDashboard", () => {
     const response = c.json.mock.calls[0]![0];
 
     expect(response.tagDistribution).toBeUndefined();
-    expect(response.recentSessions[0].smart_tags).toEqual(["bugfix", "testing"]);
+    expect(response.recentSessions[0].session.smart_tags).toEqual(["bugfix", "testing"]);
   });
 
   it("uses activity time instead of creation time for dashboard windowing", () => {
@@ -1127,7 +1137,7 @@ describe("handleGetDashboard", () => {
     const response = c.json.mock.calls[0]![0];
     expect(response.totals.sessions).toBe(2);
     expect(response.totals.latestActivity).toBe(staleCreatedRecentlyUpdated.time_updated);
-    expect(response.recentSessions[0]?.id).toBe("old-active");
+    expect(response.recentSessions[0]?.session.id).toBe("old-active");
 
     const todayKey = toLocalDateKey(now);
     const todayBucket = response.dailyActivity.find(
@@ -1238,10 +1248,9 @@ describe("handleGetSessionData", () => {
     }
     coreMocks.listSessionAliases.mockReturnValue([
       {
-        agentKey: "claudecode",
-        sessionId: "s1",
+        reference: { agentName: "claudecode", sessionId: "s1" },
         alias: "Local Alias",
-        updated_at: 1000,
+        updatedAt: 1000,
       },
     ]);
     coreMocks.materializeSessionDetailResponse.mockReturnValue({

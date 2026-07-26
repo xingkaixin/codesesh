@@ -1,5 +1,5 @@
 import type { FileActivityResult } from "./file-activity.js";
-import type { SessionHead } from "./session.js";
+import type { ReferencedSessionHead } from "./session.js";
 
 export interface DashboardAgentStat {
   name: string;
@@ -31,9 +31,7 @@ export interface ModelDistributionEntry {
   sessions: number;
 }
 
-export interface DashboardRecentSession extends SessionHead {
-  agentName: string;
-}
+export type DashboardRecentSession = ReferencedSessionHead;
 
 export interface DashboardTotals {
   sessions: number;

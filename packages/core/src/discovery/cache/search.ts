@@ -442,7 +442,10 @@ function rowsToSearchResults(
   return rows.map((row) => {
     const match = resolveSearchMatch(row, terms, messageMatches);
     return {
-      agentName: String(row.agent_name),
+      reference: {
+        agentName: String(row.agent_name),
+        sessionId: String(row.session_id),
+      },
       session: sessionHeadFromSearchRow(row),
       snippet: match.snippet,
       matchType: match.matchType,

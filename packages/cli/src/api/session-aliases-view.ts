@@ -2,8 +2,8 @@
  * Session aliases as a read model for the HTTP layer: load the user's local
  * renames once, then decorate outgoing records with `display_title`.
  */
-import type { BookmarkRecord, SessionHead } from "@codesesh/core";
-import type { SearchResult } from "@codesesh/core/contract";
+import type { BookmarkRecord, SessionAlias, SessionHead } from "@codesesh/core";
+import type { SearchResult, SessionReference } from "@codesesh/core/contract";
 import {
   filterSessionSearchCandidates,
   getSessionActivityTime,
@@ -21,26 +21,19 @@ type Titled = { id: string; title: string; display_title?: string };
 
 export interface AliasView {
   readonly size: number;
-  get(agentKey: string, sessionId: string): string | undefined;
+  get(reference: SessionReference): string | undefined;
   /** Returns the record unchanged when no alias applies, so callers can pass through freely. */
-  decorate<T extends Titled>(record: T, agentKey: string): T;
-  entries(): IterableIterator<[string, string]>;
+  decorate<T extends Titled>(record: T, reference: SessionReference): T;
+  entries(): IterableIterator<SessionAlias>;
 }
 
-function aliasKey(agentKey: string, sessionId: string): string {
-  return `${agentKey.toLowerCase()}\0${sessionId}`;
+function aliasKey(reference: SessionReference): string {
+  return `${reference.agentName.toLowerCase()}\0${reference.sessionId}`;
 }
 
-function splitAliasKey(key: string): { agentName: string; sessionId: string } {
-  const separatorIndex = key.indexOf("\0");
-  return { agentName: key.slice(0, separatorIndex), sessionId: key.slice(separatorIndex + 1) };
-}
-
-function loadAliasMap(): Map<string, string> {
+function loadAliasMap(): Map<string, SessionAlias> {
   try {
-    return new Map(
-      listSessionAliases().map((alias) => [aliasKey(alias.agentKey, alias.sessionId), alias.alias]),
-    );
+    return new Map(listSessionAliases().map((alias) => [aliasKey(alias.reference), alias]));
   } catch (error) {
     if (!(error instanceof StateStorageUnavailableError)) {
       appLogger.warn("api.session_aliases.load_failed", {
@@ -55,12 +48,12 @@ function buildAliasView(): AliasView {
   const aliases = loadAliasMap();
   return {
     size: aliases.size,
-    get: (agentKey, sessionId) => aliases.get(aliasKey(agentKey, sessionId)),
-    decorate(record, agentKey) {
-      const alias = aliases.get(aliasKey(agentKey, record.id));
+    get: (reference) => aliases.get(aliasKey(reference))?.alias,
+    decorate(record, reference) {
+      const alias = aliases.get(aliasKey(reference))?.alias;
       return alias ? { ...record, display_title: alias } : record;
     },
-    entries: () => aliases.entries(),
+    entries: () => aliases.values(),
   };
 }
 
@@ -82,15 +75,20 @@ export function invalidateAliasView(): void {
 }
 
 export function decorateBookmark(bookmark: BookmarkRecord, aliases: AliasView): BookmarkRecord {
-  const alias = aliases.get(bookmark.agentKey, bookmark.sessionId);
-  return alias ? { ...bookmark, display_title: alias } : bookmark;
+  return {
+    ...bookmark,
+    session: aliases.decorate(bookmark.session, bookmark.reference),
+  };
 }
 
 export function decorateFileActivity(
   activity: FileActivityResult,
   aliases: AliasView,
 ): FileActivityResult {
-  return { ...activity, session: aliases.decorate(activity.session, activity.agent_name) };
+  return {
+    ...activity,
+    session: aliases.decorate(activity.session, activity.reference),
+  };
 }
 
 /**
@@ -120,14 +118,14 @@ export function findAliasSearchResults(
   };
 
   const results: SearchResult[] = [];
-  for (const [key, alias] of aliases.entries()) {
-    if (!alias.toLowerCase().includes(needle)) continue;
-    const { agentName, sessionId } = splitAliasKey(key);
+  for (const alias of aliases.entries()) {
+    if (!alias.alias.toLowerCase().includes(needle)) continue;
+    const { agentName, sessionId } = alias.reference;
     const session = lookupSession(agentName, sessionId);
     if (!session) continue;
     results.push({
-      agentName,
-      session: aliases.decorate(session, agentName),
+      reference: alias.reference,
+      session: aliases.decorate(session, alias.reference),
       snippet: `Alias · ${session.directory}`,
       matchType: "title",
     });

@@ -126,10 +126,14 @@ test("bookmarks a recent session", async ({ page }) => {
     .poll(async () => {
       const response = await page.request.get("/api/bookmarks");
       const body = (await response.json()) as {
-        bookmarks?: Array<{ agentKey?: string; sessionId?: string }>;
+        bookmarks?: Array<{
+          reference?: { agentName?: string; sessionId?: string };
+        }>;
       };
       return body.bookmarks?.some(
-        (bookmark) => bookmark.agentKey === "claudecode" && bookmark.sessionId === "e2e-dashboard",
+        (bookmark) =>
+          bookmark.reference?.agentName === "claudecode" &&
+          bookmark.reference.sessionId === "e2e-dashboard",
       );
     })
     .toBe(true);

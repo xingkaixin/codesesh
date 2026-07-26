@@ -24,18 +24,24 @@ vi.mock("../lib/bookmarks", async (importOriginal) => {
   };
 });
 
-const snap = (id: string, updated = 1): BookmarkedSessionSnapshot =>
-  ({
-    agentKey: "cc",
-    sessionId: id,
-    fullPath: `cc/${id}`,
+const snap = (id: string, updated = 1): BookmarkedSessionSnapshot => ({
+  reference: { agentName: "cc", sessionId: id },
+  session: {
+    id,
+    slug: `cc/${id}`,
     title: id,
     directory: "/d",
     time_created: 1,
     time_updated: updated,
-    stats: {},
-    bookmarked_at: 0,
-  }) as unknown as BookmarkedSessionSnapshot;
+    stats: {
+      message_count: 0,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_cost: 0,
+    },
+  },
+  bookmarkedAt: 0,
+});
 
 const session = (id: string): SessionHead => ({
   id,
@@ -109,7 +115,12 @@ describe("useBookmarks", () => {
     act(() => result.current.toggleBookmark(snap("s3")));
 
     await waitFor(() => expect(result.current.isSessionBookmarked("cc", "s3")).toBe(false));
-    await waitFor(() => expect(api.deleteBookmark).toHaveBeenCalledWith("cc", "s3"));
+    await waitFor(() =>
+      expect(api.deleteBookmark).toHaveBeenCalledWith({
+        agentName: "cc",
+        sessionId: "s3",
+      }),
+    );
   });
 
   it("bookmarkedSessions is sorted by most-recent activity", async () => {
@@ -119,12 +130,18 @@ describe("useBookmarks", () => {
     const { result } = renderBookmarks();
 
     await waitFor(() => expect(result.current.bookmarkedSessions).toHaveLength(2));
-    expect(result.current.bookmarkedSessions[0]?.sessionId).toBe("new");
+    expect(result.current.bookmarkedSessions[0]?.reference.sessionId).toBe("new");
   });
 
   it("falls back to creation time when sorting bookmarks without update times", async () => {
-    const old = { ...snap("old"), time_created: 10, time_updated: undefined };
-    const recent = { ...snap("recent"), time_created: 20, time_updated: undefined };
+    const old = {
+      ...snap("old"),
+      session: { ...snap("old").session, time_created: 10, time_updated: undefined },
+    };
+    const recent = {
+      ...snap("recent"),
+      session: { ...snap("recent").session, time_created: 20, time_updated: undefined },
+    };
     vi.mocked(api.fetchBookmarks).mockResolvedValue({ bookmarks: [old] });
     const { result } = renderBookmarks();
     await waitFor(() => expect(result.current.bookmarkedSessions).toHaveLength(1));
@@ -132,10 +149,9 @@ describe("useBookmarks", () => {
     act(() => result.current.toggleBookmark(recent));
 
     await waitFor(() =>
-      expect(result.current.bookmarkedSessions.map((bookmark) => bookmark.sessionId)).toEqual([
-        "recent",
-        "old",
-      ]),
+      expect(
+        result.current.bookmarkedSessions.map((bookmark) => bookmark.reference.sessionId),
+      ).toEqual(["recent", "old"]),
     );
   });
 
@@ -185,9 +201,9 @@ describe("useBookmarks", () => {
     await waitFor(() => expect(api.importBookmarks).toHaveBeenCalledOnce());
 
     expect(api.importBookmarks).toHaveBeenCalledWith([
-      expect.not.objectContaining({ bookmarked_at: expect.anything() }),
+      expect.not.objectContaining({ bookmarkedAt: expect.anything() }),
     ]);
-    expect(result.current.bookmarkedSessions[0]?.time_updated).toBe(2);
+    expect(result.current.bookmarkedSessions[0]?.session.time_updated).toBe(2);
   });
 
   it("reports snapshot sync failures while mounted", async () => {
@@ -243,7 +259,7 @@ describe("useBookmarks", () => {
 
     await waitFor(() => expect(result.current.isSessionBookmarked("cc", "legacy")).toBe(true));
     expect(api.importBookmarks).toHaveBeenCalledWith([
-      expect.not.objectContaining({ bookmarked_at: expect.anything() }),
+      expect.not.objectContaining({ bookmarkedAt: expect.anything() }),
     ]);
     expect(bookmarkUtils.clearLegacyBookmarks).toHaveBeenCalledOnce();
   });
@@ -326,7 +342,10 @@ describe("useBookmarks", () => {
 
     await waitFor(() =>
       expect(api.upsertBookmark).toHaveBeenCalledWith(
-        expect.objectContaining({ agentKey: "cc", sessionId: "live", fullPath: "cc/live" }),
+        expect.objectContaining({
+          reference: { agentName: "cc", sessionId: "live" },
+          session: expect.objectContaining({ id: "live", slug: "cc/live" }),
+        }),
       ),
     );
   });

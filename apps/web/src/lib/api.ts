@@ -13,6 +13,7 @@ export type {
   MessagePart,
   Message,
   SessionData,
+  SessionReference,
   ScanStatusEvent,
   BackfillStatus,
   AgentScanStatus,
@@ -42,6 +43,7 @@ import type {
   ScanStatusEvent,
   SearchResult,
   SessionData,
+  SessionReference,
   SessionHead,
   SessionsUpdatedEvent,
   SmartTag,
@@ -215,7 +217,7 @@ export async function fetchBookmarks(
 }
 
 export async function upsertBookmark(
-  bookmark: Omit<BookmarkedSessionSnapshot, "bookmarked_at">,
+  bookmark: Omit<BookmarkedSessionSnapshot, "bookmarkedAt">,
 ): Promise<{ bookmark: BookmarkedSessionSnapshot }> {
   return fetchJson("/api/bookmarks", {
     method: "PUT",
@@ -225,7 +227,7 @@ export async function upsertBookmark(
 }
 
 export async function importBookmarks(
-  bookmarks: Omit<BookmarkedSessionSnapshot, "bookmarked_at">[],
+  bookmarks: Omit<BookmarkedSessionSnapshot, "bookmarkedAt">[],
 ): Promise<{ bookmarks: BookmarkedSessionSnapshot[] }> {
   return fetchJson("/api/bookmarks/import", {
     method: "POST",
@@ -234,10 +236,13 @@ export async function importBookmarks(
   });
 }
 
-export async function deleteBookmark(agentKey: string, sessionId: string): Promise<void> {
-  await fetchJson(`/api/bookmarks/${agentKey}/${sessionId}`, {
-    method: "DELETE",
-  });
+export async function deleteBookmark(reference: SessionReference): Promise<void> {
+  await fetchJson(
+    `/api/bookmarks/${encodeURIComponent(reference.agentName)}/${encodeURIComponent(reference.sessionId)}`,
+    {
+      method: "DELETE",
+    },
+  );
 }
 
 export async function upsertSessionAlias(

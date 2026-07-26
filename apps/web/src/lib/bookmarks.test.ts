@@ -34,7 +34,7 @@ describe("bookmarks", () => {
   });
 
   it("uses agent + session id as bookmark key", () => {
-    expect(getSessionBookmarkKey("codex", "abc")).toBe("codex:abc");
+    expect(getSessionBookmarkKey({ agentName: "codex", sessionId: "abc" })).toBe('["codex","abc"]');
   });
 
   it("builds a snapshot from session head", () => {
@@ -46,15 +46,9 @@ describe("bookmarks", () => {
     });
 
     expect(toBookmarkedSessionSnapshot(session, "codex")).toEqual({
-      sessionId: "s1",
-      agentKey: "codex",
-      fullPath: "codex/s1",
-      title: "Bookmark me",
-      directory: "/tmp/project",
-      time_created: 100,
-      time_updated: 200,
-      stats: session.stats,
-      bookmarked_at: expect.any(Number),
+      reference: { agentName: "codex", sessionId: "s1" },
+      session,
+      bookmarkedAt: expect.any(Number),
     });
   });
 
@@ -88,9 +82,9 @@ describe("bookmarks", () => {
       ],
     );
 
-    expect(merged[0]?.title).toBe("New title");
-    expect(merged[0]?.time_updated).toBe(300);
-    expect(merged[0]?.stats.total_tokens).toBe(21);
+    expect(merged[0]?.session.title).toBe("New title");
+    expect(merged[0]?.session.time_updated).toBe(300);
+    expect(merged[0]?.session.stats.total_tokens).toBe(21);
   });
 
   it("loads valid legacy bookmarks and drops invalid entries", () => {
@@ -102,14 +96,27 @@ describe("bookmarks", () => {
       createSession({ id: "new", slug: "codex/new", title: "New", time_updated: 300 }),
       "codex",
     );
+    const toLegacy = (bookmark: typeof older) => ({
+      agentKey: bookmark.reference.agentName,
+      sessionId: bookmark.reference.sessionId,
+      fullPath: bookmark.session.slug,
+      title: bookmark.session.title,
+      directory: bookmark.session.directory,
+      time_created: bookmark.session.time_created,
+      time_updated: bookmark.session.time_updated,
+      stats: bookmark.session.stats,
+      bookmarked_at: bookmark.bookmarkedAt,
+    });
     const removeItem = vi.fn();
     vi.stubGlobal("window", {
       localStorage: {
         getItem: vi.fn(() =>
           JSON.stringify([
-            older,
-            { ...newer, bookmarked_at: "bad" },
-            newer,
+            toLegacy(older),
+            { ...toLegacy(newer), bookmarked_at: "bad" },
+            toLegacy(newer),
+            { ...toLegacy(newer), agentKey: " " },
+            { ...toLegacy(newer), sessionId: "" },
             { sessionId: "bad", stats: { message_count: "bad" } },
           ]),
         ),
@@ -117,7 +124,10 @@ describe("bookmarks", () => {
       },
     });
 
-    expect(loadLegacyBookmarks().map((bookmark) => bookmark.sessionId)).toEqual(["new", "old"]);
+    expect(loadLegacyBookmarks().map((bookmark) => bookmark.reference.sessionId)).toEqual([
+      "new",
+      "old",
+    ]);
     clearLegacyBookmarks();
     expect(removeItem).toHaveBeenCalledWith("codesesh:bookmarks:v1");
   });
@@ -174,7 +184,9 @@ describe("bookmarks", () => {
     );
 
     expect(
-      [createdOnly, updated].toSorted(sortBookmarkedSessions).map((item) => item.sessionId),
+      [createdOnly, updated]
+        .toSorted(sortBookmarkedSessions)
+        .map((item) => item.reference.sessionId),
     ).toEqual(["updated", "created"]);
   });
 });

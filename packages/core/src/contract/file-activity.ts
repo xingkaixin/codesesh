@@ -1,5 +1,3 @@
-import type { SessionFileActivity, SessionHead } from "./session.js";
+import type { ReferencedSessionHead, SessionFileActivity } from "./session.js";
 
-export interface FileActivityResult extends SessionFileActivity {
-  session: SessionHead;
-}
+export type FileActivityResult = SessionFileActivity & ReferencedSessionHead;

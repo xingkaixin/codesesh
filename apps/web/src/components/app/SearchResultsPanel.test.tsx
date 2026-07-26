@@ -96,7 +96,7 @@ describe("SearchResultsPanel", () => {
   it("renders safe result snippets and opens the selected result", () => {
     const results: SearchResult[] = [
       {
-        agentName: "Codex",
+        reference: { agentName: "Codex", sessionId: "s1" },
         session: makeSession("s1", {
           display_title: "Renamed session",
           smart_tags: ["bugfix"],
@@ -105,7 +105,7 @@ describe("SearchResultsPanel", () => {
         matchType: "title",
       },
       {
-        agentName: "Other",
+        reference: { agentName: "Other", sessionId: "s2" },
         session: makeSession("s2"),
         snippet: "",
         matchType: "file_path",

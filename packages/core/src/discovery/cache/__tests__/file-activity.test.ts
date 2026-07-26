@@ -43,13 +43,12 @@ describe("cached file activity", () => {
         latest_time: 30,
       }),
     ).toEqual({
-      agent_name: "codex",
-      session_id: "s1",
-      project_identity_key: "",
+      reference: { agentName: "codex", sessionId: "s1" },
+      projectIdentityKey: "",
       path: "src/App.tsx",
       kind: "write",
       count: 2,
-      latest_time: 30,
+      latestTime: 30,
     });
     expect(highlightFilePath("src/App.tsx", "app")).toBe("src/<mark>App</mark>.tsx");
   });

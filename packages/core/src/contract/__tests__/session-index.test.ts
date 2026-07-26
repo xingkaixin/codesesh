@@ -99,8 +99,14 @@ describe("canonical session index", () => {
     const sessions = applySessionChanges(
       [old, replaced],
       [
-        { agentName: "codex", session: replacement },
-        { agentName: "claude", session: added },
+        {
+          reference: { agentName: "codex", sessionId: replacement.id },
+          session: replacement,
+        },
+        {
+          reference: { agentName: "claude", sessionId: added.id },
+          session: added,
+        },
       ],
       [{ agentName: "codex", sessionId: "old" }],
     );
@@ -119,8 +125,14 @@ describe("canonical session index", () => {
         slug: `${batch % 2 === 0 ? "codex" : "claude"}/added-${batch}`,
       });
       const changes = [
-        { agentName: "codex", session: createSession(changedId, 500 + batch) },
-        { agentName: getSessionAgentKey(added), session: added },
+        {
+          reference: { agentName: "codex", sessionId: changedId },
+          session: createSession(changedId, 500 + batch),
+        },
+        {
+          reference: { agentName: getSessionAgentKey(added), sessionId: added.id },
+          session: added,
+        },
       ];
       const removals =
         batch % 3 === 0 ? [{ agentName: "codex", sessionId: `session-${batch}` }] : [];

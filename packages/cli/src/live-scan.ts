@@ -9,10 +9,12 @@ import {
   type ScanOptions,
   type ScanResult,
   type SessionHead,
+  type SessionReference,
 } from "@codesesh/core";
 import type {
   AgentScanStatus,
   BackfillStatus,
+  ReferencedSessionHead,
   ScanStatusEvent,
   SessionsUpdatedEvent,
 } from "@codesesh/core/contract";
@@ -40,15 +42,15 @@ function mergeEvents(
   previous: SessionsUpdatedEvent,
   next: SessionsUpdatedEvent,
 ): SessionsUpdatedEvent {
-  const changedSessionHeads = new Map<string, { agentName: string; session: SessionHead }>();
-  const removedSessionRefs = new Map<string, { agentName: string; sessionId: string }>();
+  const changedSessionHeads = new Map<string, ReferencedSessionHead>();
+  const removedSessionRefs = new Map<string, SessionReference>();
   const sessionKey = (agentName: string, sessionId: string) => `${agentName}\0${sessionId}`;
-  const addChanged = (item: { agentName: string; session: SessionHead }) => {
-    const key = sessionKey(item.agentName, item.session.id);
+  const addChanged = (item: ReferencedSessionHead) => {
+    const key = sessionKey(item.reference.agentName, item.reference.sessionId);
     removedSessionRefs.delete(key);
     changedSessionHeads.set(key, item);
   };
-  const addRemoved = (item: { agentName: string; sessionId: string }) => {
+  const addRemoved = (item: SessionReference) => {
     const key = sessionKey(item.agentName, item.sessionId);
     changedSessionHeads.delete(key);
     removedSessionRefs.set(key, item);

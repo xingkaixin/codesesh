@@ -213,12 +213,12 @@ export default function App() {
     });
   }, []);
 
-  const handleRenameBookmarkedSession = useCallback((session: BookmarkedSessionSnapshot) => {
+  const handleRenameBookmarkedSession = useCallback((bookmark: BookmarkedSessionSnapshot) => {
     setAliasTarget({
-      agentKey: session.agentKey,
-      sessionId: session.sessionId,
-      title: session.title,
-      displayTitle: session.display_title,
+      agentKey: bookmark.reference.agentName,
+      sessionId: bookmark.reference.sessionId,
+      title: bookmark.session.title,
+      displayTitle: bookmark.session.display_title,
     });
   }, []);
 

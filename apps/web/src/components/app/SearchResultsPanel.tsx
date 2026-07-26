@@ -134,15 +134,15 @@ export function SearchResultsPanel({
         Navigate j k · Open Enter · Exit Esc
       </div>
       {results.map((result, index) => {
-        const agentKey = result.agentName.toLowerCase();
-        const agentLabel = agentNameMap.get(agentKey) ?? result.agentName;
-        const resultKey = `${result.agentName}/${result.session.id}`;
+        const agentKey = result.reference.agentName.toLowerCase();
+        const agentLabel = agentNameMap.get(agentKey) ?? result.reference.agentName;
+        const resultKey = `${result.reference.agentName}/${result.reference.sessionId}`;
 
         return (
           <Link
             key={resultKey}
             ref={(node) => registerResultRef(resultKey, node)}
-            to={`/${agentKey}/${result.session.id}`}
+            to={`/${agentKey}/${result.reference.sessionId}`}
             state={{ searchQuery: query }}
             onClick={onOpenResult}
             className={`rounded-sm border bg-[var(--console-surface)]/85 p-4 motion-hover hover:border-[var(--console-border-strong)] hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none ${

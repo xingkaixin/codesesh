@@ -263,7 +263,7 @@ describe("buildDashboard", () => {
     const result = buildDashboard(sessions, opts());
     expect(result.recentSessions).toHaveLength(10);
     // Most recent first (activity desc).
-    expect(result.recentSessions[0]!.id).toBe("s14");
+    expect(result.recentSessions[0]!.reference.sessionId).toBe("s14");
   });
 
   it("returns empty aggregates for no sessions", () => {

@@ -61,7 +61,10 @@ export function buildLocalRecentResults(
     if (costMin !== undefined && sessionItem.stats.total_cost < costMin) continue;
 
     results.push({
-      agentName: getSessionAgentKey(sessionItem),
+      reference: {
+        agentName: getSessionAgentKey(sessionItem),
+        sessionId: sessionItem.id,
+      },
       session: sessionItem,
       snippet: `Recent session · ${sessionItem.directory}`,
       matchType: "recent" as const,

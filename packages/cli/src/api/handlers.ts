@@ -6,7 +6,14 @@ import type {
   SessionHead,
   SmartTag,
 } from "@codesesh/core";
-import { getSessionAgentKey, type AppConfig, type ScanStatusEvent } from "@codesesh/core/contract";
+import {
+  formatSessionReference,
+  getSessionAgentKey,
+  normalizeSessionReference,
+  type AppConfig,
+  type ScanStatusEvent,
+  type SessionReference,
+} from "@codesesh/core/contract";
 import {
   BookmarkStorageUnavailableError,
   StateStorageUnavailableError,
@@ -119,12 +126,16 @@ function isSessionStats(value: unknown): value is SessionHead["stats"] {
   );
 }
 
-function parseBookmarkPayload(value: unknown): Omit<BookmarkRecord, "bookmarked_at"> | null {
+type BookmarkInput = Omit<BookmarkRecord, "bookmarkedAt">;
+
+function parseBookmarkSession(
+  value: unknown,
+  reference: SessionReference,
+): BookmarkInput["session"] | null {
   if (!isRecord(value)) return null;
   if (
-    typeof value.agentKey !== "string" ||
-    typeof value.sessionId !== "string" ||
-    typeof value.fullPath !== "string" ||
+    value.id !== reference.sessionId ||
+    typeof value.slug !== "string" ||
     typeof value.title !== "string" ||
     typeof value.directory !== "string" ||
     typeof value.time_created !== "number" ||
@@ -135,15 +146,63 @@ function parseBookmarkPayload(value: unknown): Omit<BookmarkRecord, "bookmarked_
   }
 
   return {
-    agentKey: value.agentKey,
-    sessionId: value.sessionId,
-    fullPath: value.fullPath,
+    id: reference.sessionId,
+    slug: formatSessionReference(reference),
     title: value.title,
     directory: value.directory,
     time_created: value.time_created,
     time_updated: value.time_updated ?? undefined,
     stats: value.stats,
   };
+}
+
+function parseSessionReferencePayload(value: unknown): SessionReference | null {
+  if (
+    !isRecord(value) ||
+    typeof value.agentName !== "string" ||
+    typeof value.sessionId !== "string" ||
+    !value.agentName.trim() ||
+    !value.sessionId
+  ) {
+    return null;
+  }
+  return normalizeSessionReference({
+    agentName: value.agentName.trim().toLowerCase(),
+    sessionId: value.sessionId,
+  });
+}
+
+function parseBookmarkPayload(value: unknown): BookmarkInput | null {
+  if (!isRecord(value)) return null;
+
+  const reference = parseSessionReferencePayload(value.reference);
+  if (reference) {
+    const session = parseBookmarkSession(value.session, reference);
+    return session ? { reference, session } : null;
+  }
+
+  if (
+    typeof value.agentKey !== "string" ||
+    typeof value.sessionId !== "string" ||
+    typeof value.fullPath !== "string" ||
+    !value.agentKey.trim() ||
+    !value.sessionId
+  ) {
+    return null;
+  }
+  const legacyReference = normalizeSessionReference({
+    agentName: value.agentKey.trim().toLowerCase(),
+    sessionId: value.sessionId,
+  });
+  const session = parseBookmarkSession(
+    {
+      ...value,
+      id: value.sessionId,
+      slug: value.fullPath,
+    },
+    legacyReference,
+  );
+  return session ? { reference: legacyReference, session } : null;
 }
 
 function sanitizeClientLogData(value: unknown): Record<string, unknown> {
@@ -167,6 +226,13 @@ function toSessionListItem(session: SessionHead): SessionHead {
   const item = { ...session };
   delete item.model_usage;
   return item;
+}
+
+function getSessionHeadReference(session: SessionHead): SessionReference {
+  return {
+    agentName: getSessionAgentKey(session),
+    sessionId: session.id,
+  };
 }
 
 function createSessionDetailJsonResponse(
@@ -313,13 +379,13 @@ export function handleGetSessions(
   const aliases = loadAliasView();
   if (q) {
     sessions = sessions.filter((session) => {
-      const alias = aliases.get(getSessionAgentKey(session), session.id);
+      const alias = aliases.get(getSessionHeadReference(session));
       return session.title.toLowerCase().includes(q) || alias?.toLowerCase().includes(q);
     });
   }
   return c.json({
     sessions: sessions.map((session) =>
-      toSessionListItem(aliases.decorate(session, getSessionAgentKey(session))),
+      toSessionListItem(aliases.decorate(session, getSessionHeadReference(session))),
     ),
   });
 }
@@ -342,12 +408,12 @@ export function handleSearchSessions(
   const aliases = loadAliasView();
   const results = executeSessionSearch(query, searchOptions, scanResult).map((result) => ({
     ...result,
-    session: aliases.decorate(result.session, result.agentName),
+    session: aliases.decorate(result.session, result.reference),
   }));
   const aliasResults = findAliasSearchResults(query, searchOptions, scanResult, aliases);
   const deduped = new Map<string, (typeof results)[number]>();
   for (const result of [...aliasResults, ...results]) {
-    deduped.set(`${result.agentName}\0${result.session.id}`, result);
+    deduped.set(`${result.reference.agentName}\0${result.reference.sessionId}`, result);
   }
   return c.json({ results: [...deduped.values()].slice(0, searchOptions.limit ?? 50) });
 }
@@ -420,11 +486,11 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
     const aliases = loadAliasView();
     if (result.status === "found-json") {
       return createSessionDetailJsonResponse(
-        aliases.decorate(result.data, agentName),
+        aliases.decorate(result.data, result.data.reference),
         result.messages,
       );
     }
-    return c.json(aliases.decorate(result.data, agentName));
+    return c.json(aliases.decorate(result.data, result.data.reference));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load session";
     appLogger.error("api.session_data.error", {
@@ -516,7 +582,7 @@ export function handleDeleteBookmark(c: Context) {
   }
 
   try {
-    deleteBookmark(agentKey, sessionId);
+    deleteBookmark({ agentName: agentKey, sessionId });
     return c.json({ ok: true, storageAvailable: true });
   } catch (error) {
     if (error instanceof BookmarkStorageUnavailableError) {
@@ -535,7 +601,7 @@ export async function handlePutSessionAlias(c: Context) {
   }
 
   try {
-    const alias = upsertSessionAlias(agentKey, sessionId, payload.alias);
+    const alias = upsertSessionAlias({ agentName: agentKey, sessionId }, payload.alias);
     invalidateAliasView();
     return c.json({ alias });
   } catch (error) {
@@ -557,7 +623,7 @@ export function handleDeleteSessionAlias(c: Context) {
   }
 
   try {
-    deleteSessionAlias(agentKey, sessionId);
+    deleteSessionAlias({ agentName: agentKey, sessionId });
     invalidateAliasView();
     return c.json({ ok: true });
   } catch (error) {
@@ -637,9 +703,10 @@ export function handleGetDashboard(
   const aliases = loadAliasView();
   return c.json({
     ...data,
-    recentSessions: data.recentSessions.map((session) =>
-      aliases.decorate(session, session.agentName),
-    ),
+    recentSessions: data.recentSessions.map((item) => ({
+      ...item,
+      session: aliases.decorate(item.session, item.reference),
+    })),
     recentFileActivities: data.recentFileActivities.map((activity) =>
       decorateFileActivity(activity, aliases),
     ),

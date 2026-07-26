@@ -26,7 +26,7 @@ interface ToggleBookmarkVariables {
 const EMPTY_BOOKMARKS: BookmarkedSessionSnapshot[] = [];
 
 function withoutBookmarkTimestamp(bookmarks: BookmarkedSessionSnapshot[]) {
-  return bookmarks.map(({ bookmarked_at: _bookmarkedAt, ...bookmark }) => bookmark);
+  return bookmarks.map(({ bookmarkedAt: _bookmarkedAt, ...bookmark }) => bookmark);
 }
 
 function toggledBookmarks(
@@ -34,15 +34,13 @@ function toggledBookmarks(
   snapshot: BookmarkedSessionSnapshot,
   isBookmarked: boolean,
 ): BookmarkedSessionSnapshot[] {
-  const key = getSessionBookmarkKey(snapshot.agentKey, snapshot.sessionId);
+  const key = getSessionBookmarkKey(snapshot.reference);
   if (isBookmarked) {
-    return bookmarks.filter(
-      (bookmark) => getSessionBookmarkKey(bookmark.agentKey, bookmark.sessionId) !== key,
-    );
+    return bookmarks.filter((bookmark) => getSessionBookmarkKey(bookmark.reference) !== key);
   }
   return [...bookmarks, snapshot].toSorted((a, b) => {
-    const aTime = a.time_updated ?? a.time_created;
-    const bTime = b.time_updated ?? b.time_created;
+    const aTime = a.session.time_updated ?? a.session.time_created;
+    const bTime = b.session.time_updated ?? b.session.time_created;
     return bTime - aTime;
   });
 }
@@ -79,19 +77,11 @@ export function useBookmarks(sessions: SessionHead[]) {
   const { mutate: mutateBookmark } = useMutation({
     mutationFn: async ({ snapshot, isBookmarked }: ToggleBookmarkVariables) => {
       if (isBookmarked) {
-        await deleteBookmark(snapshot.agentKey, snapshot.sessionId);
+        await deleteBookmark(snapshot.reference);
         return;
       }
-      await upsertBookmark({
-        agentKey: snapshot.agentKey,
-        sessionId: snapshot.sessionId,
-        fullPath: snapshot.fullPath,
-        title: snapshot.title,
-        directory: snapshot.directory,
-        time_created: snapshot.time_created,
-        time_updated: snapshot.time_updated,
-        stats: snapshot.stats,
-      });
+      const { bookmarkedAt: _bookmarkedAt, ...bookmark } = snapshot;
+      await upsertBookmark(bookmark);
     },
     onMutate: async ({ snapshot, isBookmarked }) => {
       const cancellation = queryClient.cancelQueries({ queryKey: queryKeys.bookmarks });
@@ -100,8 +90,8 @@ export function useBookmarks(sessions: SessionHead[]) {
       );
       setBookmarks(toggledBookmarks(previous?.bookmarks ?? [], snapshot, isBookmarked));
       logClientEvent(isBookmarked ? "bookmark.delete" : "bookmark.add", {
-        agent: snapshot.agentKey,
-        session: snapshot.sessionId,
+        agent: snapshot.reference.agentName,
+        session: snapshot.reference.sessionId,
       });
       await cancellation;
       return previous;
@@ -113,11 +103,11 @@ export function useBookmarks(sessions: SessionHead[]) {
   });
 
   const { mutate: syncBookmarks } = useMutation({
-    mutationFn: (bookmarks: Omit<BookmarkedSessionSnapshot, "bookmarked_at">[]) =>
+    mutationFn: (bookmarks: Omit<BookmarkedSessionSnapshot, "bookmarkedAt">[]) =>
       importBookmarks(bookmarks),
   });
   const { mutate: migrateBookmarks } = useMutation({
-    mutationFn: (bookmarks: Omit<BookmarkedSessionSnapshot, "bookmarked_at">[]) =>
+    mutationFn: (bookmarks: Omit<BookmarkedSessionSnapshot, "bookmarkedAt">[]) =>
       importBookmarks(bookmarks),
   });
 
@@ -144,22 +134,19 @@ export function useBookmarks(sessions: SessionHead[]) {
   }, [migrateBookmarks, queryClient, setBookmarks]);
 
   const bookmarkKeySet = useMemo(
-    () =>
-      new Set(
-        bookmarks.map((bookmark) => getSessionBookmarkKey(bookmark.agentKey, bookmark.sessionId)),
-      ),
+    () => new Set(bookmarks.map((bookmark) => getSessionBookmarkKey(bookmark.reference))),
     [bookmarks],
   );
 
   const isSessionBookmarked = useCallback(
     (agentKey: string, sessionId: string): boolean =>
-      bookmarkKeySet.has(getSessionBookmarkKey(agentKey, sessionId)),
+      bookmarkKeySet.has(getSessionBookmarkKey({ agentName: agentKey, sessionId })),
     [bookmarkKeySet],
   );
 
   const toggleBookmark = useCallback(
     (snapshot: BookmarkedSessionSnapshot) => {
-      const key = getSessionBookmarkKey(snapshot.agentKey, snapshot.sessionId);
+      const key = getSessionBookmarkKey(snapshot.reference);
       mutateBookmark({ snapshot, isBookmarked: bookmarkKeySet.has(key) });
     },
     [bookmarkKeySet, mutateBookmark],
@@ -175,7 +162,9 @@ export function useBookmarks(sessions: SessionHead[]) {
   const bookmarkedSessions = useMemo(
     () =>
       bookmarks.toSorted(
-        (a, b) => (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created),
+        (a, b) =>
+          (b.session.time_updated ?? b.session.time_created) -
+          (a.session.time_updated ?? a.session.time_created),
       ),
     [bookmarks],
   );

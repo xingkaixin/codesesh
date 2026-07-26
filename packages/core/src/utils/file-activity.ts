@@ -233,23 +233,22 @@ export function summarizeFileActivity(
     const current = grouped.get(key);
     if (current) {
       current.count += 1;
-      current.latest_time = Math.max(current.latest_time, occurrence.time);
+      current.latestTime = Math.max(current.latestTime, occurrence.time);
       continue;
     }
 
     grouped.set(key, {
-      agent_name: agentName,
-      session_id: sessionId,
-      project_identity_key: projectIdentityKey,
+      reference: { agentName, sessionId },
+      projectIdentityKey,
       path: occurrence.path,
       kind: occurrence.kind,
       count: 1,
-      latest_time: occurrence.time,
+      latestTime: occurrence.time,
     });
   }
 
   return [...grouped.values()].sort((a, b) => {
-    if (b.latest_time !== a.latest_time) return b.latest_time - a.latest_time;
+    if (b.latestTime !== a.latestTime) return b.latestTime - a.latestTime;
     return a.path.localeCompare(b.path);
   });
 }

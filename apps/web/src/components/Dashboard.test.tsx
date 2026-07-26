@@ -58,27 +58,31 @@ function makeSession(id: string): SessionHead {
   };
 }
 
-const recentSession: DashboardRecentSession = {
+const recentSessionHead: SessionHead = {
   ...makeSession("recent"),
   display_title: "Recent work",
-  agentName: "Codex",
   smart_tags: ["testing"],
 };
 
+const recentSession: DashboardRecentSession = {
+  reference: { agentName: "codex", sessionId: "recent" },
+  session: recentSessionHead,
+};
+
 const bookmarkedSession: BookmarkedSessionSnapshot = {
-  agentKey: "codex",
-  sessionId: "saved",
-  fullPath: "codex/saved",
-  title: "Saved work",
-  directory: "/workspace",
-  time_created: Date.now() - 2_000,
-  stats: {
-    message_count: 2,
-    total_input_tokens: 10,
-    total_output_tokens: 20,
-    total_cost: 0,
+  reference: { agentName: "codex", sessionId: "saved" },
+  session: {
+    ...makeSession("saved"),
+    title: "Saved work",
+    time_created: Date.now() - 2_000,
+    stats: {
+      message_count: 2,
+      total_input_tokens: 10,
+      total_output_tokens: 20,
+      total_cost: 0,
+    },
   },
-  bookmarked_at: Date.now(),
+  bookmarkedAt: Date.now(),
 };
 
 const project: ProjectGroup = {
@@ -207,14 +211,13 @@ describe("Dashboard charts", () => {
       recentSessions: [recentSession],
       recentFileActivities: [
         {
-          agent_name: "codex",
-          session_id: "recent",
-          project_identity_key: "path:/workspace",
+          reference: { agentName: "codex", sessionId: "recent" },
+          projectIdentityKey: "path:/workspace",
           path: "src/index.ts",
           kind: "edit",
           count: 3,
-          latest_time: Date.now(),
-          session: recentSession,
+          latestTime: Date.now(),
+          session: recentSessionHead,
         },
       ],
       window: { to: Date.now(), days: 7 },
@@ -267,7 +270,7 @@ describe("Dashboard charts", () => {
     const bookmarkButtons = screen.getAllByRole("button", { name: "Remove bookmark" });
     fireEvent.click(bookmarkButtons[0]!);
     fireEvent.click(bookmarkButtons[1]!);
-    expect(onToggleBookmark).toHaveBeenNthCalledWith(1, recentSession, "codex");
+    expect(onToggleBookmark).toHaveBeenNthCalledWith(1, recentSession);
     expect(onToggleBookmark).toHaveBeenNthCalledWith(2, bookmarkedSession);
   });
 });

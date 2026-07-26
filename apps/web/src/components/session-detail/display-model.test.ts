@@ -48,22 +48,20 @@ const messages: Message[] = [
 
 const fileActivity: SessionFileActivity[] = [
   {
-    agent_name: "claudecode",
-    session_id: "s1",
-    project_identity_key: "project",
+    reference: { agentName: "claudecode", sessionId: "s1" },
+    projectIdentityKey: "project",
     path: "src/a.ts",
     kind: "read",
     count: 2,
-    latest_time: 30,
+    latestTime: 30,
   },
   {
-    agent_name: "claudecode",
-    session_id: "s1",
-    project_identity_key: "project",
+    reference: { agentName: "claudecode", sessionId: "s1" },
+    projectIdentityKey: "project",
     path: "src/b.ts",
     kind: "write",
     count: 1,
-    latest_time: 22,
+    latestTime: 22,
   },
 ];
 

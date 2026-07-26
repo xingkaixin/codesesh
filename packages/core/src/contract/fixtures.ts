@@ -68,7 +68,12 @@ export const SAMPLE_SESSIONS_UPDATED_EVENT = {
   removedSessions: 0,
   totalSessions: 43,
   timestamp: 1_700_000_020_000,
-  changedSessionHeads: [{ agentName: "claudecode", session: SAMPLE_SESSION_HEAD }],
+  changedSessionHeads: [
+    {
+      reference: { agentName: "claudecode", sessionId: SAMPLE_SESSION_HEAD.id },
+      session: SAMPLE_SESSION_HEAD,
+    },
+  ],
   removedSessionRefs: [],
 } satisfies SessionsUpdatedEvent;
 
@@ -96,7 +101,12 @@ export const SAMPLE_DASHBOARD_DATA = {
     { date: "2023-11-14", input: 700, output: 1800, cache_read: 3000, cache_create: 500 },
   ],
   modelDistribution: [{ model: "claude-5-sonnet", tokens: 6000, sessions: 1 }],
-  recentSessions: [{ ...SAMPLE_SESSION_HEAD, agentName: "claudecode" }],
+  recentSessions: [
+    {
+      reference: { agentName: "claudecode", sessionId: SAMPLE_SESSION_HEAD.id },
+      session: SAMPLE_SESSION_HEAD,
+    },
+  ],
   recentFileActivities: [],
   window: { from: 1_699_900_000_000, to: 1_700_003_600_000, days: 1 },
 } satisfies DashboardData;

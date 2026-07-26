@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatSessionReference,
   getSessionAgentKey,
+  normalizeSessionReference,
   parseSessionReference,
 } from "../session-reference.js";
 
@@ -16,6 +17,9 @@ describe("session references", () => {
     expect(formatSessionReference({ ...reference!, agentName: " CoDeX " })).toBe(
       "codex/nested/session",
     );
+    expect(
+      normalizeSessionReference({ agentName: " CoDeX ", sessionId: "nested/session" }),
+    ).toEqual(reference);
   });
 
   it.each(["", "codex", "/session", "codex/"])("rejects malformed value %j", (value) => {
