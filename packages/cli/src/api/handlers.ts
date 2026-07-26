@@ -1,12 +1,5 @@
 import type { Context } from "hono";
-import type {
-  BookmarkRecord,
-  ScanResult,
-  SessionCacheMeta,
-  SessionData,
-  SessionHead,
-  SmartTag,
-} from "@codesesh/core";
+import type { BookmarkRecord, ScanResult, SessionHead, SmartTag } from "@codesesh/core";
 import type { AppConfig, ScanStatusEvent } from "@codesesh/core/contract";
 import {
   BookmarkStorageUnavailableError,
@@ -15,20 +8,14 @@ import {
   createProjectScopeMatcher,
   deleteBookmark,
   getAgentInfoMap,
-  classifySessionTags,
-  computeIdentity,
   executeSessionSearch,
-  extractSessionFileActivity,
-  getSmartTagSourceTimestamp,
   importBookmarks,
-  loadCachedSessionDataEntry,
   listFileActivity,
-  listSessionFileActivity,
   listCachedProjectGroups,
   listBookmarks,
   deleteSessionAlias,
+  materializeSessionDetail,
   upsertSessionAlias,
-  realFs,
   upsertBookmark,
   matchesProjectScope as sessionMatchesProjectScope,
   matchesProjectIdentity,
@@ -69,15 +56,6 @@ export interface ScanStatusSource {
 interface ClientLogPayload {
   event?: unknown;
   data?: unknown;
-}
-
-function cacheMatchesCurrentSource(
-  cachedMeta: SessionCacheMeta | null,
-  currentMeta: SessionCacheMeta | undefined,
-) {
-  const currentFingerprint = currentMeta?.sourceFingerprint;
-  if (typeof currentFingerprint !== "string") return true;
-  return cachedMeta?.sourceFingerprint === currentFingerprint;
 }
 
 interface SessionAliasPayload {
@@ -301,7 +279,6 @@ export function handleGetFileActivity(c: Context, defaults: SessionListDefaults 
 
 export async function handleGetSessionData(c: Context, scanSource: ScanResultSource) {
   const startedAt = performance.now();
-  const scanResult = scanSource.getSnapshot();
   const agentName = c.req.param("agent");
   const sessionId = c.req.param("id");
 
@@ -313,30 +290,12 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
     return c.json({ error: "Missing session ID" }, 400);
   }
 
-  const agent = scanResult.agents.find((a) => a.name === agentName);
-
-  if (!agent) {
-    return c.json({ error: `Unknown agent: ${agentName}` }, 404);
-  }
-
   try {
-    const head = scanResult.byAgent[agentName]?.find((item) => item.id === sessionId);
-    const loadStartedAt = performance.now();
-    const cachedEntry = loadCachedSessionDataEntry(agentName, sessionId);
-    const cachedData = cachedEntry?.data ?? null;
-    const cachedMessageCount = cachedData?.stats.message_count ?? 0;
-    const currentMeta = head ? agent.getSessionMetaMap().get(sessionId) : undefined;
-    const cacheHasExpectedMessages =
-      cachedData !== null &&
-      cacheMatchesCurrentSource(cachedEntry?.meta ?? null, currentMeta) &&
-      (cachedData.messages.length > 0 || cachedMessageCount === 0);
-    const data: SessionData | null = cacheHasExpectedMessages
-      ? cachedData
-      : head
-        ? agent.getSessionData(sessionId)
-        : null;
-    const loadDuration = performance.now() - loadStartedAt;
-    if (!data) {
+    const result = materializeSessionDetail(scanSource.getSnapshot(), { agentName, sessionId });
+    if (result.status === "unknown-agent") {
+      return c.json({ error: `Unknown agent: ${agentName}` }, 404);
+    }
+    if (result.status === "not-ready") {
       appLogger.warn("api.session_data.cache_miss", {
         agent: agentName,
         session_id: sessionId,
@@ -344,32 +303,15 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
       });
       return c.json({ error: "Session cache not ready" }, 404);
     }
-    const tagStartedAt = performance.now();
-    const smartTags = data.smart_tags ?? classifySessionTags(data);
-    const tagDuration = performance.now() - tagStartedAt;
-    const projectIdentity =
-      data.project_identity ?? head?.project_identity ?? computeIdentity(data.directory, realFs);
-    const fileActivity =
-      data.file_activity ??
-      (cacheHasExpectedMessages && cachedData
-        ? listSessionFileActivity(agentName, sessionId)
-        : extractSessionFileActivity(agentName, sessionId, projectIdentity.key, data.messages));
+
     appLogger.info("api.session_data", {
       agent: agentName,
       session_id: sessionId,
-      messages: data.messages.length,
-      load_duration_ms: Math.round(loadDuration),
-      tag_duration_ms: Math.round(tagDuration),
+      messages: result.data.messages.length,
       duration_ms: Math.round(performance.now() - startedAt),
     });
     const aliases = loadAliasView();
-    return c.json({
-      ...aliases.decorate(data, agentName),
-      project_identity: projectIdentity,
-      smart_tags: smartTags,
-      smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
-      file_activity: fileActivity,
-    });
+    return c.json(aliases.decorate(result.data, agentName));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load session";
     appLogger.error("api.session_data.error", {
