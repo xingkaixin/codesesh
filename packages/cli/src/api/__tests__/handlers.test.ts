@@ -302,6 +302,20 @@ describe("handleGetSessions", () => {
     expect(response.sessions).toHaveLength(2);
   });
 
+  it("omits dashboard-only model usage from list responses", () => {
+    const session = makeSession("usage", { model_usage: { "gpt-5.5": 120 } });
+    const source = makeScanSource({
+      sessions: [session],
+      byAgent: { claudecode: [session] },
+    });
+    const c = makeMockContext();
+
+    handleGetSessions(c, source);
+
+    expect(c.json.mock.calls[0]![0].sessions[0]).not.toHaveProperty("model_usage");
+    expect(session.model_usage).toEqual({ "gpt-5.5": 120 });
+  });
+
   it("filters by agent", () => {
     const c = makeMockContext({ query: { agent: "claudecode" } });
     handleGetSessions(c, makeScanSource());

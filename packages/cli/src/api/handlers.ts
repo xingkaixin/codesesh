@@ -157,6 +157,13 @@ function sanitizeClientLogData(value: unknown): Record<string, unknown> {
   );
 }
 
+function toSessionListItem(session: SessionHead): SessionHead {
+  if (!session.model_usage) return session;
+  const item = { ...session };
+  delete item.model_usage;
+  return item;
+}
+
 export function handleGetConfig(c: Context, defaults: SessionListDefaults) {
   const payload: AppConfig = {
     window: {
@@ -269,7 +276,9 @@ export function handleGetSessions(
     });
   }
   return c.json({
-    sessions: sessions.map((session) => aliases.decorate(session, getSessionAgentKey(session))),
+    sessions: sessions.map((session) =>
+      toSessionListItem(aliases.decorate(session, getSessionAgentKey(session))),
+    ),
   });
 }
 
