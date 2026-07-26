@@ -4,7 +4,6 @@
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
 import type { ToolPart } from "../../../lib/api";
-import { detectLanguageByFilePath } from "../../tool-output/language";
 import type { ToolDetailItem } from "../codex-tool";
 import { buildStructuredDiffFromTexts, buildZCodeEditDiffBlocks } from "../diff";
 import {
@@ -21,12 +20,15 @@ import {
   toRecord,
   toStringValue,
 } from "../tool-normalize";
-import { buildDefaultToolStrategy, extractReadContent, extractWriteContent } from "./shared";
+import {
+  buildDefaultToolStrategy,
+  buildFileEditStrategy,
+  buildFileReadStrategy,
+  buildFileWriteStrategy,
+} from "./shared";
 import {
   Bot,
-  BookOpenText,
   CircleHelp,
-  FilePenLine,
   FilePlus2,
   FileSearch,
   ListTodo,
@@ -160,19 +162,7 @@ export function buildZCodeToolStrategy(
   }
 
   if (toolKey === "read") {
-    return {
-      ...defaultStrategy,
-      Icon: BookOpenText,
-      title: "read",
-      secondaryText: displayPath || undefined,
-      showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: extractReadContent(state.outputValue),
-        language: detectLanguageByFilePath(filePath),
-        isCode: true,
-      },
-    };
+    return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath });
   }
 
   if (toolKey === "edit") {
@@ -186,11 +176,9 @@ export function buildZCodeToolStrategy(
     );
     const blocks = diffBlocks.length > 0 ? diffBlocks : fallbackDiffBlocks;
     const display = toRecord(metadata.display);
-    return {
-      ...defaultStrategy,
-      Icon: FilePenLine,
-      title: "edit",
-      secondaryText: displayPath || undefined,
+    return buildFileEditStrategy({
+      defaultStrategy,
+      displayPath,
       details: [
         typeof display.additions === "number"
           ? { label: "Additions", value: String(display.additions) }
@@ -199,28 +187,21 @@ export function buildZCodeToolStrategy(
           ? { label: "Deletions", value: String(display.deletions) }
           : null,
       ].filter((item): item is ToolDetailItem => item != null),
-      showInputPreview: false,
       outputContent:
         blocks.length > 0
           ? { kind: "structured-diff", blocks }
           : { kind: "plain", text: outputText, language: "text", isCode: false },
-    };
+    });
   }
 
   if (toolKey === "write") {
-    return {
-      ...defaultStrategy,
+    return buildFileWriteStrategy({
+      defaultStrategy,
+      state,
+      filePath,
+      displayPath,
       Icon: FilePlus2,
-      title: "write",
-      secondaryText: displayPath || undefined,
-      showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: extractWriteContent(state),
-        language: detectLanguageByFilePath(filePath),
-        isCode: state.status === "completed",
-      },
-    };
+    });
   }
 
   if (toolKey === "glob" || toolKey === "grep") {

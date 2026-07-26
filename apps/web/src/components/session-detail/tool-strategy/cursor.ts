@@ -4,7 +4,6 @@
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
 import type { ToolPart } from "../../../lib/api";
-import { detectLanguageByFilePath } from "../../tool-output/language";
 import {
   getDisplayPath,
   getDisplayTextWithRelativePaths,
@@ -22,8 +21,8 @@ import {
   toStringValue,
 } from "../tool-normalize";
 import { parseJsonText } from "../utils";
-import { buildDefaultToolStrategy } from "./shared";
-import { BookOpenText, FilePenLine, FileSearch, SquareTerminal } from "../../ui/icons";
+import { buildDefaultToolStrategy, buildFileEditStrategy, buildFileReadStrategy } from "./shared";
+import { FileSearch, SquareTerminal } from "../../ui/icons";
 
 export function getCursorOutputRecord(rawOutput: unknown) {
   if (rawOutput && typeof rawOutput === "object" && !Array.isArray(rawOutput)) {
@@ -76,11 +75,12 @@ export function buildCursorToolStrategy(
 
   if (toolKey === "read_file_v2") {
     const content = extractCursorReadContent(state.outputValue);
-    return {
-      ...defaultStrategy,
-      Icon: BookOpenText,
-      title: "read",
-      secondaryText: displayPath || undefined,
+    return buildFileReadStrategy({
+      defaultStrategy,
+      state,
+      filePath,
+      displayPath,
+      text: content,
       details:
         content === "No output captured."
           ? [
@@ -90,31 +90,22 @@ export function buildCursorToolStrategy(
               },
             ]
           : [],
-      showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: content,
-        language: detectLanguageByFilePath(filePath),
-        isCode: content !== "No output captured.",
-      },
-    };
+      isCode: content !== "No output captured.",
+    });
   }
 
   if (toolKey === "edit_file_v2") {
     const diffText = normalizeEscapedNewlines(toStringValue(input.streamingContent));
-    return {
-      ...defaultStrategy,
-      Icon: FilePenLine,
-      title: "edit",
-      secondaryText: displayPath || undefined,
-      showInputPreview: false,
+    return buildFileEditStrategy({
+      defaultStrategy,
+      displayPath,
       outputContent: {
         kind: "plain",
         text: diffText || getOutputOrErrorText(state),
         language: diffText ? "diff" : "text",
         isCode: Boolean(diffText),
       },
-    };
+    });
   }
 
   if (toolKey === "ripgrep_raw_search") {

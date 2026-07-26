@@ -4,7 +4,6 @@
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
 import type { ToolPart } from "../../../lib/api";
-import { detectLanguageByFilePath } from "../../tool-output/language";
 import { buildKimiEditDiffBlocks, extractEditDiff } from "../diff";
 import {
   getDisplayPath,
@@ -18,8 +17,13 @@ import {
   toPlainText,
   toRecord,
 } from "../tool-normalize";
-import { buildDefaultToolStrategy, extractReadContent, extractWriteContent } from "./shared";
-import { BookOpenText, FilePenLine, FileSearch, NotebookPen, SquareTerminal } from "../../ui/icons";
+import {
+  buildDefaultToolStrategy,
+  buildFileEditStrategy,
+  buildFileReadStrategy,
+  buildFileWriteStrategy,
+} from "./shared";
+import { FileSearch, SquareTerminal } from "../../ui/icons";
 
 export function buildKimiToolStrategy(
   tool: ToolPart,
@@ -29,6 +33,8 @@ export function buildKimiToolStrategy(
   const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
   const toolKey = tool.tool.toLowerCase();
   const input = toRecord(state.inputValue);
+  const filePath = getFilePathFromInput(state.inputValue);
+  const displayPath = getDisplayPath(filePath, baseDirectory);
 
   if (toolKey === "glob") {
     const pattern = toPlainText(input.pattern);
@@ -85,56 +91,23 @@ export function buildKimiToolStrategy(
   }
 
   if (toolKey === "readfile") {
-    const filePath = getFilePathFromInput(state.inputValue);
-    const displayPath = getDisplayPath(filePath, baseDirectory);
-    return {
-      ...defaultStrategy,
-      Icon: BookOpenText,
-      title: tool.title || "read",
-      secondaryText: displayPath || undefined,
-      showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: extractReadContent(state.outputValue),
-        language: detectLanguageByFilePath(filePath),
-        isCode: true,
-      },
-    };
+    return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath });
   }
 
   if (toolKey === "strreplacefile") {
-    const filePath = getFilePathFromInput(state.inputValue);
-    const displayPath = getDisplayPath(filePath, baseDirectory);
     const diffBlocks = buildKimiEditDiffBlocks(state, displayPath || filePath);
-    return {
-      ...defaultStrategy,
-      Icon: FilePenLine,
-      title: tool.title || "edit",
-      secondaryText: displayPath || undefined,
-      showInputPreview: false,
+    return buildFileEditStrategy({
+      defaultStrategy,
+      displayPath,
       outputContent:
         diffBlocks.length > 0
           ? { kind: "structured-diff", blocks: diffBlocks }
           : { kind: "plain", text: extractEditDiff(state), language: "diff", isCode: true },
-    };
+    });
   }
 
   if (toolKey === "writefile") {
-    const filePath = getFilePathFromInput(state.inputValue);
-    const displayPath = getDisplayPath(filePath, baseDirectory);
-    return {
-      ...defaultStrategy,
-      Icon: NotebookPen,
-      title: tool.title || "write",
-      secondaryText: displayPath || undefined,
-      showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: extractWriteContent(state),
-        language: detectLanguageByFilePath(filePath),
-        isCode: state.status === "completed",
-      },
-    };
+    return buildFileWriteStrategy({ defaultStrategy, state, filePath, displayPath });
   }
 
   return defaultStrategy;

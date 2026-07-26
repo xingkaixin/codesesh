@@ -4,7 +4,6 @@
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
 import type { ToolPart } from "../../../lib/api";
-import { detectLanguageByFilePath } from "../../tool-output/language";
 import type { ToolDetailItem } from "../codex-tool";
 import { buildPiEditDiffBlocks } from "../diff";
 import {
@@ -20,16 +19,13 @@ import {
   toRecord,
   toStringValue,
 } from "../tool-normalize";
-import { buildDefaultToolStrategy, extractReadContent, extractWriteContent } from "./shared";
 import {
-  Bot,
-  BookOpenText,
-  FilePenLine,
-  FilePlus2,
-  Image as ImageIcon,
-  ListTodo,
-  SquareTerminal,
-} from "../../ui/icons";
+  buildDefaultToolStrategy,
+  buildFileEditStrategy,
+  buildFileReadStrategy,
+  buildFileWriteStrategy,
+} from "./shared";
+import { Bot, FilePlus2, Image as ImageIcon, ListTodo, SquareTerminal } from "../../ui/icons";
 
 export function getPiTodoTaskFromDetails(state: NormalizedToolState) {
   const input = toRecord(state.inputValue);
@@ -108,35 +104,17 @@ export function buildPiToolStrategy(
   }
 
   if (toolKey === "read") {
-    return {
-      ...defaultStrategy,
-      Icon: BookOpenText,
-      title: "read",
-      secondaryText: displayPath || undefined,
-      showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: extractReadContent(state.outputValue),
-        language: detectLanguageByFilePath(filePath),
-        isCode: true,
-      },
-    };
+    return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath });
   }
 
   if (toolKey === "write") {
-    return {
-      ...defaultStrategy,
+    return buildFileWriteStrategy({
+      defaultStrategy,
+      state,
+      filePath,
+      displayPath,
       Icon: FilePlus2,
-      title: "write",
-      secondaryText: displayPath || undefined,
-      showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: extractWriteContent(state),
-        language: detectLanguageByFilePath(filePath),
-        isCode: state.status === "completed",
-      },
-    };
+    });
   }
 
   if (toolKey === "edit") {
@@ -145,18 +123,15 @@ export function buildPiToolStrategy(
       typeof metadata.firstChangedLine === "number"
         ? String(metadata.firstChangedLine)
         : toStringValue(metadata.firstChangedLine);
-    return {
-      ...defaultStrategy,
-      Icon: FilePenLine,
-      title: "edit",
-      secondaryText: displayPath || undefined,
+    return buildFileEditStrategy({
+      defaultStrategy,
+      displayPath,
       details: firstChangedLine ? [{ label: "Line", value: firstChangedLine }] : [],
-      showInputPreview: false,
       outputContent:
         diffBlocks.length > 0
           ? { kind: "structured-diff", blocks: diffBlocks }
           : { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false },
-    };
+    });
   }
 
   if (toolKey === "agent") {

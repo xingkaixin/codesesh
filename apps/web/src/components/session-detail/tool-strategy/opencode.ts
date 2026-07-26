@@ -4,7 +4,6 @@
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
 import type { ToolPart } from "../../../lib/api";
-import { detectLanguageByFilePath } from "../../tool-output/language";
 import { extractEditDiff } from "../diff";
 import {
   getDisplayPath,
@@ -20,11 +19,12 @@ import {
 } from "../tool-normalize";
 import {
   buildDefaultToolStrategy,
+  buildFileEditStrategy,
+  buildFileReadStrategy,
+  buildFileWriteStrategy,
   buildSkillToolStrategy,
-  extractReadContent,
-  extractWriteContent,
 } from "./shared";
-import { BookOpenText, FilePenLine, FileSearch, NotebookPen, SquareTerminal } from "../../ui/icons";
+import { FileSearch, SquareTerminal } from "../../ui/icons";
 
 export function buildOpencodeToolStrategy(
   tool: ToolPart,
@@ -34,6 +34,8 @@ export function buildOpencodeToolStrategy(
   const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
   const toolKey = tool.tool.toLowerCase();
   const input = toRecord(state.inputValue);
+  const filePath = getFilePathFromInput(state.inputValue);
+  const displayPath = getDisplayPath(filePath, baseDirectory);
 
   if (toolKey === "glob") {
     const pattern = toPlainText(input.pattern);
@@ -96,58 +98,24 @@ export function buildOpencodeToolStrategy(
   }
 
   if (toolKey === "read") {
-    const filePath = getFilePathFromInput(state.inputValue);
-    const displayPath = getDisplayPath(filePath, baseDirectory);
-    return {
-      ...defaultStrategy,
-      Icon: BookOpenText,
-      title: tool.tool || "read",
-      secondaryText: displayPath || undefined,
-      showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: extractReadContent(state.outputValue),
-        language: detectLanguageByFilePath(filePath),
-        isCode: true,
-      },
-    };
+    return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath });
   }
 
   if (toolKey === "edit") {
-    const filePath = getFilePathFromInput(state.inputValue);
-    const displayPath = getDisplayPath(filePath, baseDirectory);
-    return {
-      ...defaultStrategy,
-      Icon: FilePenLine,
-      title: tool.tool || "edit",
-      secondaryText: displayPath || undefined,
-      showInputPreview: false,
+    return buildFileEditStrategy({
+      defaultStrategy,
+      displayPath,
       outputContent: {
         kind: "plain",
         text: extractEditDiff(state),
         language: "diff",
         isCode: true,
       },
-    };
+    });
   }
 
   if (toolKey === "write") {
-    const filePath = getFilePathFromInput(state.inputValue);
-    const displayPath = getDisplayPath(filePath, baseDirectory);
-    const isSuccessfulWrite = state.status === "completed";
-    return {
-      ...defaultStrategy,
-      Icon: NotebookPen,
-      title: tool.tool || "write",
-      secondaryText: displayPath || undefined,
-      showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: extractWriteContent(state),
-        language: detectLanguageByFilePath(filePath),
-        isCode: isSuccessfulWrite,
-      },
-    };
+    return buildFileWriteStrategy({ defaultStrategy, state, filePath, displayPath });
   }
 
   if (toolKey === "skill") {
