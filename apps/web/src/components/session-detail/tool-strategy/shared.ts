@@ -1,11 +1,13 @@
 /**
- * Cross-agent tool-strategy infrastructure: the default/skill strategy
- * builders and extractors reused by 2+ agent builders (claudecode, opencode,
- * kimi, pi, zcode).
+ * Cross-agent tool-strategy infrastructure: the default, skill, and file
+ * strategy builders reused by 2+ agent builders.
  *
  * Pure logic — no React. Consumed by the per-agent builders in this folder.
  */
 import type { ToolPart } from "../../../lib/api";
+import { detectLanguageByFilePath } from "../../tool-output/language";
+import type { ToolOutputContent } from "../../tool-output/types";
+import type { ToolDetailItem } from "../codex-tool";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
@@ -21,7 +23,7 @@ import {
   toStringValue,
 } from "../tool-normalize";
 import { getDisplayTextWithRelativePaths } from "../path-extract";
-import { SquareTerminal, Wrench } from "../../ui/icons";
+import { BookOpenText, FilePenLine, NotebookPen, SquareTerminal, Wrench } from "../../ui/icons";
 
 export type { NormalizedToolState, ToolDisplayStrategy, ToolStatus };
 
@@ -51,6 +53,87 @@ export function extractWriteContent(state: NormalizedToolState) {
     if (contentText.trim()) return normalizeEscapedNewlines(contentText);
   }
   return getOutputOrErrorText(state);
+}
+
+interface FileStrategyContext {
+  defaultStrategy: ToolDisplayStrategy;
+  displayPath: string;
+}
+
+interface FileToolStrategyOptions extends FileStrategyContext {
+  outputContent: ToolOutputContent;
+  Icon: ToolDisplayStrategy["Icon"];
+  title: "read" | "write" | "edit";
+  details?: ToolDetailItem[];
+}
+
+interface FileReadStrategyOptions extends FileStrategyContext {
+  state: NormalizedToolState;
+  filePath: string;
+  outputContent?: ToolOutputContent | null;
+  text?: string;
+  isCode?: boolean;
+  details?: ToolDetailItem[];
+}
+
+interface FileWriteStrategyOptions extends FileStrategyContext {
+  state: NormalizedToolState;
+  filePath: string;
+  Icon?: ToolDisplayStrategy["Icon"];
+  isCode?: boolean;
+}
+
+interface FileEditStrategyOptions extends FileStrategyContext {
+  outputContent: ToolOutputContent;
+  details?: ToolDetailItem[];
+}
+
+function buildFileToolStrategy(options: FileToolStrategyOptions): ToolDisplayStrategy {
+  return {
+    ...options.defaultStrategy,
+    Icon: options.Icon,
+    title: options.title,
+    secondaryText: options.displayPath || undefined,
+    details: options.details ?? options.defaultStrategy.details,
+    showInputPreview: false,
+    outputContent: options.outputContent,
+  };
+}
+
+export function buildFileReadStrategy(options: FileReadStrategyOptions): ToolDisplayStrategy {
+  return buildFileToolStrategy({
+    ...options,
+    Icon: BookOpenText,
+    title: "read",
+    outputContent: options.outputContent ?? {
+      kind: "plain",
+      text: options.text ?? extractReadContent(options.state.outputValue),
+      language: detectLanguageByFilePath(options.filePath),
+      isCode: options.isCode ?? true,
+    },
+  });
+}
+
+export function buildFileWriteStrategy(options: FileWriteStrategyOptions): ToolDisplayStrategy {
+  return buildFileToolStrategy({
+    ...options,
+    Icon: options.Icon ?? NotebookPen,
+    title: "write",
+    outputContent: {
+      kind: "plain",
+      text: extractWriteContent(options.state),
+      language: detectLanguageByFilePath(options.filePath),
+      isCode: options.isCode ?? options.state.status === "completed",
+    },
+  });
+}
+
+export function buildFileEditStrategy(options: FileEditStrategyOptions): ToolDisplayStrategy {
+  return buildFileToolStrategy({
+    ...options,
+    Icon: FilePenLine,
+    title: "edit",
+  });
 }
 
 // ---------------------------------------------------------------------------

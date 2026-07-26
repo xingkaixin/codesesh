@@ -17,6 +17,26 @@ function part(overrides?: Partial<ToolPart>): ToolPart {
   };
 }
 
+const FILE_TOOL_CASES = [
+  ["claudecode", "Read", "read"],
+  ["claudecode", "Edit", "edit"],
+  ["claudecode", "Write", "write"],
+  ["opencode", "Read", "read"],
+  ["opencode", "Edit", "edit"],
+  ["opencode", "Write", "write"],
+  ["pi", "Read", "read"],
+  ["pi", "Edit", "edit"],
+  ["pi", "Write", "write"],
+  ["zcode", "Read", "read"],
+  ["zcode", "Edit", "edit"],
+  ["zcode", "Write", "write"],
+  ["kimi", "ReadFile", "read"],
+  ["kimi", "StrReplaceFile", "edit"],
+  ["kimi", "WriteFile", "write"],
+  ["cursor", "read_file_v2", "read"],
+  ["cursor", "edit_file_v2", "edit"],
+] as const;
+
 describe("normalizeToolState", () => {
   it("extracts input/output/error from tool state", () => {
     const state = normalizeToolState(
@@ -50,6 +70,42 @@ describe("getToolDisplayStrategy", () => {
     expect(strategy).toBeDefined();
     expect(strategy.title).toBeTruthy();
   });
+
+  it.each(FILE_TOOL_CASES)(
+    "normalizes %s %s to the canonical %s file strategy",
+    (agentName, toolName, title) => {
+      const tool = part({
+        tool: toolName,
+        title: agentName === "zcode" ? "" : "Agent-specific title",
+        state: {
+          status: "completed",
+          input: {
+            file_path: "/repo/src/example.ts",
+            old_string: "old",
+            new_string: "new",
+            streamingContent: "-old\n+new",
+            content: "new",
+          },
+          output: agentName === "cursor" ? { contents: "const value = 1;" } : "updated",
+        },
+      });
+
+      const strategy = getToolDisplayStrategy(agentName, tool, normalizeToolState(tool), "/repo");
+
+      expect(strategy).toMatchObject({
+        title,
+        secondaryText: "src/example.ts",
+        showInputPreview: false,
+      });
+      if (title !== "edit") {
+        expect(strategy.outputContent).toMatchObject({
+          kind: "plain",
+          language: "typescript",
+          isCode: true,
+        });
+      }
+    },
+  );
 
   it("renders ZCode edit metadata as a structured diff", () => {
     const tool = part({

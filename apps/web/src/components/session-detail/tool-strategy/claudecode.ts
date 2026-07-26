@@ -4,7 +4,6 @@
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
 import type { ToolPart } from "../../../lib/api";
-import { detectLanguageByFilePath } from "../../tool-output/language";
 import type { TaskListItem } from "../../tool-output/types";
 import { buildStructuredDiffFromTexts } from "../diff";
 import { getDisplayPath, getFilePathFromInput } from "../path-extract";
@@ -20,16 +19,18 @@ import {
   toStringValue,
 } from "../tool-normalize";
 import { getDisplayTextWithRelativePaths } from "../path-extract";
-import { buildDefaultToolStrategy, extractReadContent, extractWriteContent } from "./shared";
+import {
+  buildDefaultToolStrategy,
+  buildFileEditStrategy,
+  buildFileReadStrategy,
+  buildFileWriteStrategy,
+} from "./shared";
 import {
   Bot,
-  BookOpenText,
   CircleHelp,
-  FilePenLine,
   FileSearch,
   ListTodo,
   MessageSquareMore,
-  NotebookPen,
   PanelsTopLeft,
   Search,
   SquareTerminal,
@@ -127,55 +128,37 @@ export function buildClaudeToolStrategy(
   const displayPath = getDisplayPath(filePath, baseDirectory);
 
   if (toolKey === "read") {
-    const semanticOutput = buildSemanticOutputContent(state.outputValue);
-    return {
-      ...defaultStrategy,
-      Icon: BookOpenText,
-      title: "read",
-      secondaryText: displayPath || undefined,
-      showInputPreview: false,
-      outputContent:
-        semanticOutput ??
-        ({
-          kind: "plain",
-          text: extractReadContent(state.outputValue),
-          language: detectLanguageByFilePath(filePath),
-          isCode: true,
-        } as const),
-    };
+    return buildFileReadStrategy({
+      defaultStrategy,
+      state,
+      filePath,
+      displayPath,
+      outputContent: buildSemanticOutputContent(state.outputValue),
+    });
   }
 
   if (toolKey === "edit") {
     const oldValue = toStringValue(input.old_string);
     const newValue = toStringValue(input.new_string);
     const diffBlocks = buildStructuredDiffFromTexts(displayPath || filePath, oldValue, newValue);
-    return {
-      ...defaultStrategy,
-      Icon: FilePenLine,
-      title: "edit",
-      secondaryText: displayPath || undefined,
-      showInputPreview: false,
+    return buildFileEditStrategy({
+      defaultStrategy,
+      displayPath,
       outputContent:
         diffBlocks.length > 0
           ? { kind: "structured-diff", blocks: diffBlocks }
           : { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false },
-    };
+    });
   }
 
   if (toolKey === "write") {
-    return {
-      ...defaultStrategy,
-      Icon: NotebookPen,
-      title: "write",
-      secondaryText: displayPath || undefined,
-      showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: extractWriteContent(state),
-        language: detectLanguageByFilePath(filePath),
-        isCode: true,
-      },
-    };
+    return buildFileWriteStrategy({
+      defaultStrategy,
+      state,
+      filePath,
+      displayPath,
+      isCode: true,
+    });
   }
 
   if (toolKey === "bash" || toolKey === "workflow") {

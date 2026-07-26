@@ -4,9 +4,10 @@
  *
  * This is the registry entry point: getToolDisplayStrategy dispatches by
  * agentKey to the builder in the matching ./<agent>.ts file. Common
- * infrastructure lives in ./shared.ts (default/skill strategies, extractors
- * shared by 2+ agents); agent-agnostic normalization (normalizeToolState,
- * normalizeMessagesForDisplay) lives in ../tool-normalize.ts.
+ * infrastructure lives in ./shared.ts (default/skill/file strategies and
+ * extractors shared by 2+ agents); agent-agnostic normalization
+ * (normalizeToolState, normalizeMessagesForDisplay) lives in
+ * ../tool-normalize.ts.
  *
  * Pure logic — no React. Consumed by SessionDetail's ToolItem / MessageItem.
  */
