@@ -1,3 +1,5 @@
+import type { SessionReference } from "./session-reference.js";
+
 export interface SessionStats {
   message_count: number;
   total_input_tokens: number;
@@ -141,6 +143,7 @@ export interface SessionHead {
 
 /** Full session data for detail view */
 export interface SessionData {
+  reference: SessionReference;
   id: string;
   title: string;
   display_title?: string;

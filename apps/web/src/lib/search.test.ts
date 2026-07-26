@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SearchResult, SessionHead } from "./api";
 import type { SearchProjectOption } from "../components/app/types";
-import type { SessionIndexes } from "./session-indexes";
+import { getSessionAgentKey, type SessionIndexes } from "./session-indexes";
 import { getProjectIdentityKey } from "./projects";
 import { buildLocalRecentResults, buildSearchProjectOptions, usesServerSearch } from "./search";
 
@@ -53,7 +53,7 @@ describe("buildLocalRecentResults", () => {
     const byAgent = new Map<string, SessionHead[]>();
     const byProjectIdentityKey = new Map<string, SessionHead[]>();
     for (const session of sessions) {
-      const agentKey = session.slug.split("/")[0]!.toLowerCase();
+      const agentKey = getSessionAgentKey(session);
       byAgent.set(agentKey, [...(byAgent.get(agentKey) ?? []), session]);
       if (session.project_identity) {
         const key = getProjectIdentityKey(session.project_identity);

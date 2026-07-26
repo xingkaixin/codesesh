@@ -45,8 +45,9 @@ function getCachePath(): string {
 // resolves to a "path" identity regardless of what manifests exist in /tmp.
 const FIXTURE_DIR = mkdtempSync(join(tmpdir(), "codesesh-identity-"));
 
-function makeSession(id: string): SessionHead {
+function makeSession(id: string): SessionHead & Pick<SessionData, "reference"> {
   return {
+    reference: { agentName: "agent", sessionId: id },
     id,
     slug: `agent/${id}`,
     title: `Session ${id}`,
@@ -738,6 +739,7 @@ describe("searchSessions", () => {
     const sessionMap = new Map(sessions.map((session) => [session.id, session]));
     const makeIndexedData = (session: SessionHead, text: string, path: string): SessionData => ({
       ...session,
+      reference: { agentName: "claudecode", sessionId: session.id },
       messages: [
         {
           id: `${session.id}-m1`,

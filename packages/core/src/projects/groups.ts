@@ -1,9 +1,6 @@
 import type { ProjectGroup, ProjectIdentity, SessionHead } from "../types/index.js";
+import { getSessionAgentKey } from "../contract/index.js";
 import { getProjectIdentityKey } from "./identity.js";
-
-function getAgentName(session: SessionHead): string {
-  return session.slug.split("/")[0]?.toLowerCase() || "unknown";
-}
 
 export function buildProjectGroups(sessions: SessionHead[]): ProjectGroup[] {
   const groups = new Map<
@@ -18,13 +15,13 @@ export function buildProjectGroups(sessions: SessionHead[]): ProjectGroup[] {
     const groupKey = getProjectIdentityKey(identity);
     const current = groups.get(groupKey);
     if (current) {
-      current.sources.add(getAgentName(session));
+      current.sources.add(getSessionAgentKey(session));
       current.sessionCount += 1;
       current.lastActivity = Math.max(current.lastActivity, activity);
     } else {
       groups.set(groupKey, {
         identity,
-        sources: new Set([getAgentName(session)]),
+        sources: new Set([getSessionAgentKey(session)]),
         sessionCount: 1,
         lastActivity: activity,
       });

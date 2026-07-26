@@ -16,6 +16,7 @@ export type {
   SessionHead,
   SessionData,
 } from "../contract/session.js";
+export type { SessionReference } from "../contract/session-reference.js";
 
 export type ParseSessionResult<T> =
   | { status: "parsed"; data: T }

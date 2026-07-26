@@ -17,7 +17,7 @@ _Avoid_: Transcript file
 _Avoid_: Conversation, chat
 
 **Session Reference**:
-在 CodeSesh 中唯一标识 Session 的复合身份，由 Agent 与该 Agent 内的 Session ID 共同构成；Session ID 本身不全局唯一。
+在 CodeSesh 中唯一标识 Session 的复合身份，由 Agent 与该 Agent 内不透明的 Session ID 共同构成；Session ID 本身不全局唯一，也不应被拆解解释。
 _Avoid_: Bare session ID, session slug
 
 **Session Head**:

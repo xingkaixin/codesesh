@@ -2,8 +2,12 @@ import type { SessionData, SessionHead } from "../../../types/index.js";
 
 export const TEST_NOW = 1_700_000_000_000;
 
-export function makeSessionHead(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
+export function makeSessionHead(
+  id: string,
+  overrides: Partial<SessionHead> = {},
+): SessionHead & Pick<SessionData, "reference"> {
   return {
+    reference: { agentName: "codex", sessionId: id },
     id,
     slug: `codex/${id}`,
     title: `Session ${id}`,

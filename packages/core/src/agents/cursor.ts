@@ -766,6 +766,7 @@ export class CursorAgent extends DatabaseSessionSource {
         "";
 
       return {
+        reference: { agentName: this.name, sessionId: resolvedSessionId },
         id: resolvedSessionId,
         title,
         slug: `cursor/${resolvedSessionId}`,

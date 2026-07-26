@@ -4,6 +4,7 @@ import type { SessionData } from "../../types/index.js";
 
 function makeSession(messages: SessionData["messages"]): SessionData {
   return {
+    reference: { agentName: "test", sessionId: "s1" },
     id: "s1",
     title: "Session",
     directory: "/repo",

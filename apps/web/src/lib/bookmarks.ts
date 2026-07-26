@@ -1,4 +1,5 @@
 import type { BookmarkedSessionSnapshot, SessionHead } from "./api";
+import { getSessionAgentKey } from "@codesesh/core/contract";
 
 const LEGACY_BOOKMARK_STORAGE_KEY = "codesesh:bookmarks:v1";
 
@@ -89,7 +90,7 @@ export function mergeBookmarksWithSessions(
 
   const liveSnapshots = new Map(
     sessions.map((session) => {
-      const agentKey = session.slug.split("/")[0]?.toLowerCase() ?? "unknown";
+      const agentKey = getSessionAgentKey(session);
       const snapshot = toBookmarkedSessionSnapshot(session, agentKey);
       return [getSessionBookmarkKey(snapshot.agentKey, snapshot.sessionId), snapshot] as const;
     }),

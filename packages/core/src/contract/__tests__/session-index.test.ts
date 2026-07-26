@@ -9,6 +9,7 @@ import {
   sortSessionsByActivity,
   updateSessionIndex,
 } from "../session-index.js";
+import { getSessionAgentKey } from "../session-reference.js";
 
 function createSession(
   id: string,
@@ -80,6 +81,15 @@ describe("canonical session index", () => {
     ).toEqual(["remote"]);
   });
 
+  it("places malformed legacy slugs in the explicit unknown agent bucket", () => {
+    const malformed = createSession("malformed", 100, { slug: "" });
+
+    const index = createSessionIndex([malformed]);
+
+    expect(index.byAgent.get("unknown")).toEqual([malformed]);
+    expect(index.byRouteKey.get(getSessionRouteKey("unknown", "malformed"))).toBe(malformed);
+  });
+
   it("applies route-keyed changes and removals with wire-event semantics", () => {
     const old = createSession("old", 100);
     const replaced = createSession("same", 200, { title: "Old title" });
@@ -110,7 +120,7 @@ describe("canonical session index", () => {
       });
       const changes = [
         { agentName: "codex", session: createSession(changedId, 500 + batch) },
-        { agentName: added.slug.split("/")[0]!, session: added },
+        { agentName: getSessionAgentKey(added), session: added },
       ];
       const removals =
         batch % 3 === 0 ? [{ agentName: "codex", sessionId: `session-${batch}` }] : [];

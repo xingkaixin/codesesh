@@ -6,7 +6,7 @@ import type {
   SessionHead,
   SmartTag,
 } from "@codesesh/core";
-import type { AppConfig, ScanStatusEvent } from "@codesesh/core/contract";
+import { getSessionAgentKey, type AppConfig, type ScanStatusEvent } from "@codesesh/core/contract";
 import {
   BookmarkStorageUnavailableError,
   StateStorageUnavailableError,
@@ -45,7 +45,6 @@ import {
   decorateBookmark,
   decorateFileActivity,
   findAliasSearchResults,
-  getSessionAgentKey,
   invalidateAliasView,
   loadAliasView,
 } from "./session-aliases-view.js";

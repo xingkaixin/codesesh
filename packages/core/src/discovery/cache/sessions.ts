@@ -313,6 +313,7 @@ export function loadCachedSessionRawEntry(
     return {
       data: {
         ...head,
+        reference: { agentName, sessionId },
         file_activity: fileActivityRows.map((activityRow) => fileActivityFromRow(activityRow)),
       },
       messageRows,

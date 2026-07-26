@@ -3,7 +3,6 @@ import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import type { SessionData } from "../lib/api";
-import { getSessionAgentKey } from "../lib/session-indexes";
 import { MarkdownContent } from "./MarkdownContent";
 import {
   isRenderProfilerEnabled,
@@ -102,7 +101,7 @@ function measureSessionDetailWork<T>(id: string, compute: () => T): T {
 // ---------------------------------------------------------------------------
 
 export function SessionDetail({ session, agentCatalog, highlightQuery }: SessionDetailProps) {
-  const sessionAgentKey = getSessionAgentKey({ slug: session.slug ?? "" });
+  const sessionAgentKey = session.reference.agentName;
   const sessionAgent = findAgent(agentCatalog, sessionAgentKey);
   const displayModel = useMemo(
     () =>

@@ -36,10 +36,6 @@ function splitAliasKey(key: string): { agentName: string; sessionId: string } {
   return { agentName: key.slice(0, separatorIndex), sessionId: key.slice(separatorIndex + 1) };
 }
 
-export function getSessionAgentKey(session: Pick<SessionHead, "slug">): string {
-  return session.slug.split("/")[0]?.toLowerCase() ?? "";
-}
-
 function loadAliasMap(): Map<string, string> {
   try {
     return new Map(

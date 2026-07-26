@@ -194,6 +194,7 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     const state = this.convertEntries(parsed.pathEntries);
 
     return {
+      reference: { agentName: this.name, sessionId: meta.id },
       id: meta.id,
       title: meta.title,
       slug: `pi/${meta.id}`,

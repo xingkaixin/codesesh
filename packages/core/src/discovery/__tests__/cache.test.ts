@@ -48,6 +48,7 @@ describe("session cache integration", () => {
     };
     const data: SessionData = {
       ...session,
+      reference: { agentName: "codex", sessionId: session.id },
       messages: [
         {
           id: "message",

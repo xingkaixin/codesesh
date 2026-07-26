@@ -17,7 +17,13 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
-import type { Message, ProjectIdentity, SessionHead, SmartTag } from "../../types/index.js";
+import type {
+  Message,
+  ProjectIdentity,
+  SessionData,
+  SessionHead,
+  SmartTag,
+} from "../../types/index.js";
 import type { SearchOptions } from "../../discovery/cache/search.js";
 import { searchSessions, syncSessionSearchIndex } from "../../discovery/cache.js";
 import {
@@ -116,8 +122,12 @@ function makeSessionHead(spec: FixtureSpec): SessionHead {
   };
 }
 
-function makeSessionData(spec: FixtureSpec) {
-  return { ...makeSessionHead(spec), messages: spec.messages };
+function makeSessionData(spec: FixtureSpec): SessionData {
+  return {
+    ...makeSessionHead(spec),
+    reference: { agentName: spec.agent, sessionId: spec.id },
+    messages: spec.messages,
+  };
 }
 
 // --- fixture sessions -------------------------------------------------

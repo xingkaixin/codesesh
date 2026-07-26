@@ -198,6 +198,7 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     const transcript = builder.finish();
 
     return {
+      reference: { agentName: this.name, sessionId: meta.id },
       id: meta.id,
       title: meta.title,
       slug: `claudecode/${meta.id}`,

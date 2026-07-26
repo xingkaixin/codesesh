@@ -16,6 +16,7 @@ import type {
   DashboardTotals,
   ModelDistributionEntry,
 } from "../contract/index.js";
+import { getSessionAgentKey } from "../contract/index.js";
 
 export type {
   DailyTokenBucket,
@@ -62,7 +63,7 @@ export function getTotalTokens(stats: SessionHead["stats"]): number {
 }
 
 export function getSessionAgentName(session: SessionHead): string {
-  return session.slug.split("/")[0]?.toLowerCase() || "unknown";
+  return getSessionAgentKey(session);
 }
 
 export function getSessionActivityTime(session: SessionHead): number {
