@@ -8,6 +8,11 @@ export {
 } from "./scanner.js";
 export type { ScanResult, ScanOptions } from "./scanner.js";
 export {
+  materializeSessionDetail,
+  type SessionDetailResult,
+  type SessionReference,
+} from "./session-detail.js";
+export {
   attachMissingProjectIdentities,
   buildAgentCacheMeta,
   computeSessionDiff,
