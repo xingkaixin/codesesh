@@ -32,6 +32,9 @@ describe("cache schema boundary", () => {
         .all() as Array<{ name: string }>;
       return {
         names: new Set(objects.map((row) => row.name)),
+        documentColumns: (
+          db.prepare("PRAGMA table_info(session_documents)").all() as Array<{ name: string }>
+        ).map((row) => row.name),
         version: Number(
           (db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined)
             ?.user_version ?? 0,
@@ -48,7 +51,17 @@ describe("cache schema boundary", () => {
     ]) {
       expect(state?.names.has(name)).toBe(true);
     }
-    expect(state?.version).toBe(14);
+    expect(state?.documentColumns).toEqual([
+      "id",
+      "agent_name",
+      "session_id",
+      "title",
+      "content_text",
+      "content_hash",
+      "indexed_message_count",
+      "indexed_at",
+    ]);
+    expect(state?.version).toBe(15);
   });
 
   it("exposes capabilities instead of migration steps", () => {

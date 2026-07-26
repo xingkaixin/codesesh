@@ -6,7 +6,6 @@ import type { SessionCacheMeta } from "../../agents/base.js";
 import type {
   Message,
   MessagePart,
-  ProjectIdentity,
   ProjectIdentityKind,
   SessionData,
   SessionFileActivity,
@@ -101,36 +100,6 @@ export function sourcePathFromMetaJson(metaJson: string | null | undefined): str
   if (!metaJson) return null;
   const meta = JSON.parse(metaJson) as SessionCacheMeta;
   return sourcePathFromMeta(meta);
-}
-
-export function prepareUpsertCachedSession(db: SQLiteDatabase): SQLiteStatement {
-  return db.prepare(`
-    INSERT INTO cached_sessions(agent_name, session_id, session_json, meta_json)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(agent_name, session_id) DO UPDATE SET
-      session_json = excluded.session_json,
-      meta_json = excluded.meta_json
-  `);
-}
-
-export function prepareUpsertProjectSession(db: SQLiteDatabase): SQLiteStatement {
-  return db.prepare(`
-    INSERT INTO project_sessions(
-      agent_name,
-      session_id,
-      identity_kind,
-      identity_key,
-      display_name,
-      directory,
-      activity_time
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(agent_name, session_id) DO UPDATE SET
-      identity_kind = excluded.identity_kind,
-      identity_key = excluded.identity_key,
-      display_name = excluded.display_name,
-      directory = excluded.directory,
-      activity_time = excluded.activity_time
-  `);
 }
 
 export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
@@ -321,23 +290,6 @@ export function writeFileActivityRows(
       activity.latest_time,
     );
   }
-}
-
-export function writeProjectSessionRow(
-  statement: SQLiteStatement,
-  agentName: string,
-  session: SessionHead,
-  identity: ProjectIdentity,
-): void {
-  statement.run(
-    agentName,
-    session.id,
-    identity.kind,
-    identity.key,
-    identity.displayName,
-    session.directory,
-    session.time_updated ?? session.time_created,
-  );
 }
 
 export function sessionFromRow(row: SessionRow): SessionHead {

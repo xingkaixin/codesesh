@@ -4,7 +4,6 @@
 import { existsSync, rmSync, unlinkSync } from "node:fs";
 import type { SessionCacheMeta } from "../../agents/base.js";
 import type { SessionData, SessionHead } from "../../types/index.js";
-import { computeIdentity, realFs } from "../../projects/index.js";
 import { tableExists } from "../../utils/sqlite.js";
 import {
   getCachePath,
@@ -18,13 +17,10 @@ import {
 import { withCacheDb, withCacheDbReadOnly } from "./schema.js";
 import {
   messageFromCachedRow,
-  prepareUpsertCachedSession,
-  prepareUpsertProjectSession,
   prepareUpsertSession,
   sessionFromRow,
   sourcePathFromMeta,
   upsertSessionRow,
-  writeProjectSessionRow,
   type CachedMessageRow,
   type SessionRow,
 } from "./messages.js";
@@ -329,8 +325,6 @@ export function saveCachedSessions(
   meta: Record<string, SessionCacheMeta> = {},
 ): void {
   withCacheDb((db) => {
-    const deleteAgent = db.prepare("DELETE FROM agent_cache WHERE agent_name = ?");
-    const deleteLegacySessions = db.prepare("DELETE FROM cached_sessions WHERE agent_name = ?");
     const deleteSession = db.prepare(
       "DELETE FROM sessions WHERE agent_name = ? AND session_id = ?",
     );
@@ -346,18 +340,12 @@ export function saveCachedSessions(
     const deleteFileActivity = db.prepare(
       "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
     );
-    const deleteProjectSession = db.prepare(
-      "DELETE FROM project_sessions WHERE agent_name = ? AND session_id = ?",
-    );
-    const deleteProjectSessions = db.prepare("DELETE FROM project_sessions WHERE agent_name = ?");
     const upsertAgent = db.prepare(`
       INSERT INTO agent_cache(agent_name, timestamp)
       VALUES (?, ?)
       ON CONFLICT(agent_name) DO UPDATE SET timestamp = excluded.timestamp
     `);
-    const upsertCachedSession = prepareUpsertCachedSession(db);
     const upsertSession = prepareUpsertSession(db);
-    const upsertProjectSession = prepareUpsertProjectSession(db);
 
     const write = db.transaction(() => {
       const timestamp = Date.now();
@@ -365,9 +353,6 @@ export function saveCachedSessions(
       const existingSessionIds = db
         .prepare("SELECT session_id FROM sessions WHERE agent_name = ?")
         .all(agentName) as SessionRow[];
-      deleteAgent.run(agentName);
-      deleteLegacySessions.run(agentName);
-      deleteProjectSessions.run(agentName);
       upsertAgent.run(agentName, timestamp);
 
       for (const row of existingSessionIds) {
@@ -377,16 +362,13 @@ export function saveCachedSessions(
           deleteMessageTools.run(agentName, sessionId);
           deleteMessages.run(agentName, sessionId);
           deleteFileActivity.run(agentName, sessionId);
-          deleteProjectSession.run(agentName, sessionId);
           deleteSession.run(agentName, sessionId);
         }
       }
 
       sessions.forEach((session, index) => {
-        const identity = session.project_identity ?? computeIdentity(session.directory, realFs);
         const sessionMeta = meta[session.id];
         const metaJson = sessionMeta ? JSON.stringify(sessionMeta) : null;
-        upsertCachedSession.run(agentName, session.id, JSON.stringify(session), metaJson);
         upsertSessionRow(
           upsertSession,
           agentName,
@@ -395,7 +377,6 @@ export function saveCachedSessions(
           index,
           sourcePathFromMeta(sessionMeta),
         );
-        writeProjectSessionRow(upsertProjectSession, agentName, session, identity);
       });
     });
 
@@ -415,9 +396,6 @@ export function saveCachedSessionChanges(
   }
 
   withCacheDb((db) => {
-    const deleteLegacySession = db.prepare(
-      "DELETE FROM cached_sessions WHERE agent_name = ? AND session_id = ?",
-    );
     const deleteSession = db.prepare(
       "DELETE FROM sessions WHERE agent_name = ? AND session_id = ?",
     );
@@ -433,36 +411,27 @@ export function saveCachedSessionChanges(
     const deleteFileActivity = db.prepare(
       "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
     );
-    const deleteProjectSession = db.prepare(
-      "DELETE FROM project_sessions WHERE agent_name = ? AND session_id = ?",
-    );
     const upsertAgent = db.prepare(`
       INSERT INTO agent_cache(agent_name, timestamp)
       VALUES (?, ?)
       ON CONFLICT(agent_name) DO UPDATE SET timestamp = excluded.timestamp
     `);
-    const upsertCachedSession = prepareUpsertCachedSession(db);
     const upsertSession = prepareUpsertSession(db);
-    const upsertProjectSession = prepareUpsertProjectSession(db);
 
     const write = db.transaction(() => {
       upsertAgent.run(agentName, Date.now());
 
       for (const sessionId of new Set(removedSessionIds)) {
-        deleteLegacySession.run(agentName, sessionId);
         deleteSearchDocument.run(agentName, sessionId);
         deleteMessageTools.run(agentName, sessionId);
         deleteMessages.run(agentName, sessionId);
         deleteFileActivity.run(agentName, sessionId);
-        deleteProjectSession.run(agentName, sessionId);
         deleteSession.run(agentName, sessionId);
       }
 
       for (const { session, sortIndex } of changes) {
-        const identity = session.project_identity ?? computeIdentity(session.directory, realFs);
         const sessionMeta = meta[session.id];
         const metaJson = sessionMeta ? JSON.stringify(sessionMeta) : null;
-        upsertCachedSession.run(agentName, session.id, JSON.stringify(session), metaJson);
         upsertSessionRow(
           upsertSession,
           agentName,
@@ -471,7 +440,6 @@ export function saveCachedSessionChanges(
           sortIndex,
           sourcePathFromMeta(sessionMeta),
         );
-        writeProjectSessionRow(upsertProjectSession, agentName, session, identity);
       }
     });
 
