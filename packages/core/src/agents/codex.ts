@@ -1,19 +1,9 @@
-import {
-  closeSync,
-  existsSync,
-  openSync,
-  readFileSync,
-  readSync,
-  readdirSync,
-  statSync,
-  type Stats,
-} from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { join, basename } from "node:path";
 import {
-  FileSystemSessionSource,
+  SingleFileSessionSource,
   filteredSession,
   getParsedSession,
-  matchesScanWindow,
   parsedSession,
   skippedSession,
 } from "./base.js";
@@ -310,29 +300,26 @@ function extractPatchContent(
 // Session meta
 // ---------------------------------------------------------------------------
 
-import type { AgentScanOptions, SessionCacheMeta, SessionSourceRef } from "./base.js";
+import type {
+  AgentScanOptions,
+  FileSessionMeta,
+  SessionSourceFile,
+  SessionSourceRef,
+} from "./base.js";
 
-interface SessionMeta extends SessionCacheMeta {
-  id: string;
-  title: string;
-  sourcePath: string;
-  sourceMtimeMs: number;
+interface SessionMeta extends FileSessionMeta {
   indexPath: string | null;
   indexMtimeMs: number | null;
   headIndexVersion: string;
   parserVersion: string;
-  directory: string;
   model: string | null;
-  messageCount: number;
-  createdAt: number;
-  updatedAt: number;
 }
 
 // ---------------------------------------------------------------------------
 // CodexAgent
 // ---------------------------------------------------------------------------
 
-export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
+export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   readonly name = "codex";
   readonly displayName = "Codex";
 
@@ -362,13 +349,7 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
   isAvailable(): boolean {
     this.basePath = this.findBasePath();
     if (!this.basePath) return false;
-    try {
-      // Check recursively for rollout jsonl files
-      const files = this.walkDirForRolloutFiles(this.basePath);
-      return files.length > 0;
-    } catch {
-      return false;
-    }
+    return this.listRolloutFiles().length > 0;
   }
 
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {
@@ -379,15 +360,6 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       sourcePath: file,
       fingerprint: this.sourceFingerprint(file, stat),
     }));
-  }
-
-  scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null {
-    this.loadSessionIndex();
-    const head = getParsedSession(this.parseSessionHeadResult(sourcePath, options));
-    if (head) {
-      this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, sourcePath));
-    }
-    return head;
   }
 
   getSessionData(sessionId: string): SessionDetail {
@@ -511,63 +483,30 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
 
   // ---- File listing ----
 
-  private listRolloutFiles(options?: AgentScanOptions): { file: string; stat: Stats }[] {
+  private listRolloutFiles(options?: AgentScanOptions): SessionSourceFile[] {
     if (!this.basePath) return [];
-    try {
-      return this.walkDirForRolloutFiles(this.basePath, options);
-    } catch {
-      return [];
-    }
+    return this.walkFiles(
+      this.basePath,
+      (entry) => entry.name.endsWith(".jsonl") && entry.name.startsWith("rollout-"),
+      { scanWindow: options },
+    );
   }
 
-  /** Stats each rollout file once during the walk; caller reuses it for the scan window check and the fingerprint. */
-  private walkDirForRolloutFiles(
-    dir: string,
-    options?: AgentScanOptions,
-  ): { file: string; stat: Stats }[] {
-    const files: { file: string; stat: Stats }[] = [];
-    try {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const fullPath = join(dir, entry.name);
-        if (entry.isDirectory()) {
-          files.push(...this.walkDirForRolloutFiles(fullPath, options));
-        } else if (entry.name.endsWith(".jsonl") && entry.name.startsWith("rollout-")) {
-          let stat: Stats;
-          try {
-            stat = statSync(fullPath);
-          } catch {
-            continue;
-          }
-          if (!matchesScanWindow(stat.mtimeMs, options)) continue;
-          files.push({ file: fullPath, stat });
-        }
-      }
-    } catch {
-      // skip permission errors
-    }
-    return files;
-  }
-
-  private buildSessionMeta(head: SessionHead, file: string): SessionMeta {
+  protected createFileSessionMeta(head: SessionHead, source: SessionSourceFile): SessionMeta {
     const indexPath = this.getSessionIndexPath();
     const indexMtime = this.sessionIndexMtime ?? null;
-    const stat = statSync(file);
-    return {
-      id: head.id,
-      title: head.title,
-      sourcePath: file,
-      sourceFingerprint: this.sourceFingerprint(file, stat),
-      sourceMtimeMs: stat.mtimeMs,
-      indexPath: indexMtime === null ? null : indexPath,
-      indexMtimeMs: indexMtime,
-      headIndexVersion: HEAD_INDEX_VERSION,
-      parserVersion: PARSER_VERSION,
-      directory: head.directory,
-      model: null,
-      messageCount: head.stats.message_count,
-      createdAt: head.time_created,
-      updatedAt: head.time_updated ?? head.time_created,
-    };
+    return this.buildFileSessionMeta({
+      head,
+      source,
+      fingerprint: this.sourceFingerprint(source.file, source.stat),
+      extras: {
+        indexPath: indexMtime === null ? null : indexPath,
+        indexMtimeMs: indexMtime,
+        headIndexVersion: HEAD_INDEX_VERSION,
+        parserVersion: PARSER_VERSION,
+        model: null,
+      },
+    });
   }
 
   /** Fingerprint depends on an already-fetched stat to avoid re-statting the same file. */
@@ -587,19 +526,11 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     return this.sessionIndexPath;
   }
 
-  private getFileMtimeMs(filePath: string): number | null {
-    try {
-      return statSync(filePath).mtimeMs;
-    } catch {
-      return null;
-    }
-  }
-
   // ---- Session index ----
 
   private loadSessionIndex(): void {
     const indexPath = this.getSessionIndexPath();
-    const mtime = this.getFileMtimeMs(indexPath);
+    const mtime = this.readFileMtimeMs(indexPath);
 
     // Invalidate when the index file mtime advances so long-running processes
     // pick up title changes without relying on callers to evict manually.
@@ -644,6 +575,11 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     } finally {
       closeSync(fd);
     }
+  }
+
+  protected parseFileSessionHead(filePath: string, options?: AgentScanOptions): SessionHead | null {
+    this.loadSessionIndex();
+    return this.parseSessionHead(filePath, options);
   }
 
   private parseSessionHead(filePath: string, options?: AgentScanOptions): SessionHead | null {

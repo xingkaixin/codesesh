@@ -202,7 +202,7 @@ describe("PiAgent", () => {
     expect(windowed.map((ref) => ref.sourcePath)).toEqual([newFile]);
   });
 
-  it("stats each session file at most once per listSessionSources call", () => {
+  it("stats each session file once during a scan", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-pi-test-"));
     tempDirs.push(tempDir);
     const piHome = join(tempDir, ".pi");
@@ -210,22 +210,74 @@ describe("PiAgent", () => {
     mkdirSync(sessionsDir, { recursive: true });
     vi.stubEnv("PI_HOME", piHome);
 
-    const files = ["a", "b", "c"].map((name) =>
-      join(sessionsDir, `2026-04-20T10-00-00_${name}.jsonl`),
-    );
-    for (const file of files) writeFileSync(file, "");
+    const files = ["a", "b", "c"].map((id) => ({
+      id,
+      file: join(sessionsDir, `2026-04-20T10-00-00_${id}.jsonl`),
+    }));
+    for (const { id, file } of files) {
+      writeFileSync(
+        file,
+        [
+          JSON.stringify({
+            type: "session",
+            version: 3,
+            id,
+            timestamp: "2026-04-20T10:00:00.000Z",
+            cwd: "/tmp/project",
+          }),
+          JSON.stringify({
+            type: "message",
+            id: `message-${id}`,
+            parentId: null,
+            timestamp: "2026-04-20T10:00:01.000Z",
+            message: { role: "user", content: `Inspect ${id}` },
+          }),
+        ].join("\n"),
+      );
+    }
 
     const agent = new PiAgent();
     agent.isAvailable();
 
     const statSpy = vi.mocked(statSync);
     statSpy.mockClear();
-    agent.listSessionSources();
+    expect(agent.scan()).toHaveLength(files.length);
 
-    for (const file of files) {
+    for (const { file } of files) {
       const callsForFile = statSpy.mock.calls.filter((call) => call[0] === file);
       expect(callsForFile.length).toBe(1);
     }
+  });
+
+  it("keeps source references and fingerprints byte-for-byte stable", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-pi-fingerprint-"));
+    tempDirs.push(tempDir);
+    const piHome = join(tempDir, ".pi");
+    const sessionsDir = join(piHome, "agent", "sessions", "--tmp-project--");
+    const sessionId = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+    const sessionFile = join(sessionsDir, `2026-04-20T10-00-00_${sessionId}.jsonl`);
+    mkdirSync(sessionsDir, { recursive: true });
+    vi.stubEnv("PI_HOME", piHome);
+    writeFileSync(sessionFile, "fixture");
+
+    const sessionTime = new Date(1_700_000_000_000);
+    utimesSync(sessionFile, sessionTime, sessionTime);
+
+    const agent = new PiAgent();
+    agent.isAvailable();
+
+    expect(agent.listSessionSources()).toEqual([
+      {
+        sessionId,
+        sourcePath: sessionFile,
+        fingerprint: JSON.stringify([
+          "pi-head-v1",
+          "pi-parser-v1",
+          sessionTime.getTime(),
+          statSync(sessionFile).size,
+        ]),
+      },
+    ]);
   });
 
   it("uses session names and parses assistant tools on the selected leaf", () => {

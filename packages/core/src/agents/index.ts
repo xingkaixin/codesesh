@@ -1,4 +1,9 @@
-export { BaseAgent, FileSystemSessionSource, DatabaseSessionSource } from "./base.js";
+export {
+  BaseAgent,
+  DatabaseSessionSource,
+  FileSystemSessionSource,
+  SingleFileSessionSource,
+} from "./base.js";
 export {
   diffSessionSources,
   filteredSession,
@@ -12,7 +17,10 @@ export type {
   AgentScanProgress,
   CachedMetaLookup,
   ChangeCheckResult,
+  FileSessionMeta,
+  FileWalkOptions,
   SessionCacheMeta,
+  SessionSourceFile,
   SessionSourceDiff,
   SessionSourceRef,
   SessionWatchPlan,

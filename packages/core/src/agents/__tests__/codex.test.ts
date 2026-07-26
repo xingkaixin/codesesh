@@ -182,7 +182,7 @@ describe("CodexAgent cache refresh", () => {
     expect(windowed.map((ref: { sourcePath: string }) => ref.sourcePath)).toEqual([newFile]);
   });
 
-  it("stats each rollout file at most once per listSessionSources call", () => {
+  it("stats each rollout file once during a scan", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
     tempDirs.push(tempDir);
 
@@ -191,11 +191,26 @@ describe("CodexAgent cache refresh", () => {
       "019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb",
       "019dcccc-cccc-7ccc-cccc-cccccccccccc",
     ];
-    const files = sessionIds.map((id) => join(tempDir, `rollout-2026-04-20T10-00-00-${id}.jsonl`));
-    for (const file of files) {
+    const files = sessionIds.map((id) => ({
+      id,
+      file: join(tempDir, `rollout-2026-04-20T10-00-00-${id}.jsonl`),
+    }));
+    for (const { id, file } of files) {
       writeFileSync(
         file,
-        '{"type":"session_meta","payload":{"timestamp":"2026-04-20T10:00:00Z"}}\n',
+        [
+          JSON.stringify({
+            timestamp: "2026-04-20T10:00:00Z",
+            type: "session_meta",
+            payload: { id, cwd: "/tmp/project" },
+          }),
+          JSON.stringify({
+            timestamp: "2026-04-20T10:00:01Z",
+            type: "response_item",
+            payload: { type: "message", role: "user", content: `Inspect ${id}` },
+          }),
+          "",
+        ].join("\n"),
       );
     }
 
@@ -204,12 +219,48 @@ describe("CodexAgent cache refresh", () => {
 
     const statSpy = vi.mocked(statSync);
     statSpy.mockClear();
-    agent.listSessionSources();
+    expect(agent.scan()).toHaveLength(files.length);
 
-    for (const file of files) {
+    for (const { file } of files) {
       const callsForFile = statSpy.mock.calls.filter((call) => call[0] === file);
       expect(callsForFile.length).toBe(1);
     }
+  });
+
+  it("keeps source references and fingerprints byte-for-byte stable", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-fingerprint-"));
+    tempDirs.push(tempDir);
+    const codexHome = join(tempDir, ".codex");
+    const sessionsDir = join(codexHome, "sessions");
+    const sessionId = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+    const sessionFile = join(sessionsDir, `rollout-2026-04-20T10-00-00-${sessionId}.jsonl`);
+    mkdirSync(sessionsDir, { recursive: true });
+    vi.stubEnv("CODEX_HOME", codexHome);
+    writeFileSync(sessionFile, "fixture");
+    writeFileSync(
+      join(codexHome, "session_index.jsonl"),
+      `${JSON.stringify({ id: sessionId, thread_name: "Indexed title" })}\n`,
+    );
+
+    const sessionTime = new Date(1_700_000_000_000);
+    utimesSync(sessionFile, sessionTime, sessionTime);
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = sessionsDir;
+
+    expect(agent.listSessionSources()).toEqual([
+      {
+        sessionId,
+        sourcePath: sessionFile,
+        fingerprint: JSON.stringify([
+          "codex-head-v1",
+          "codex-parser-v4",
+          sessionTime.getTime(),
+          statSync(sessionFile).size,
+          "Indexed title",
+        ]),
+      },
+    ]);
   });
 
   it("caches an empty session index and reloads it when the mtime changes", () => {
