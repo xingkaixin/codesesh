@@ -80,6 +80,14 @@ interface SessionRefreshDiff {
   removedSessionIds: string[];
 }
 
+interface SessionPublication {
+  context: "scan.refresh" | "scan.backfill";
+  agentName: string;
+  sessions: SessionHead[];
+  event: SessionsUpdatedEvent | null;
+  indexJob: SearchIndexWorkerJob;
+}
+
 interface RefreshStrategyResult {
   status: "continue" | "unchanged";
   nextSessions: SessionHead[];
@@ -150,6 +158,7 @@ export class AgentSyncEngine {
   private statusChangedListeners = new Set<StatusChangedListener>();
   private scanStatus = new ScanStatusModel();
   private searchIndexJobs = new SearchIndexJobRunner();
+  private nextPublicationId = 1;
   private backgroundRefreshTimer: NodeJS.Timeout | null = null;
   private isShuttingDown = false;
 
@@ -176,10 +185,11 @@ export class AgentSyncEngine {
   }
 
   async syncInitialIndex(): Promise<void> {
-    await this.searchIndexJobs.enqueue(
-      "scan.initial",
-      this.buildFullSearchIndexJobs("scan.initial"),
-    );
+    const jobs = this.buildFullSearchIndexJobs("scan.initial");
+    await this.commitSearchIndex("scan.initial", jobs, {
+      publicationId: this.publicationId("scan.initial"),
+      agents: jobs.map((job) => job.agentName),
+    });
   }
 
   handleAgentsChanged(agentNames: Iterable<string>): void {
@@ -407,7 +417,7 @@ export class AgentSyncEngine {
       ? new Set(persistentChanges.map(({ session }) => session.id))
       : undefined;
     const persistStartedAt = performance.now();
-    const persistentJob: SearchIndexWorkerJob | null = strategyResult.usedIncrementalScan
+    const persistentJob: SearchIndexWorkerJob = strategyResult.usedIncrementalScan
       ? {
           kind: "changes",
           context: "scan.refresh",
@@ -417,31 +427,24 @@ export class AgentSyncEngine {
           meta: buildAgentCacheMeta(agent, changedSessionIds),
           ...(searchIndexOptions ? { searchIndexOptions } : {}),
         }
-      : strategyResult.fullScanSessions
-        ? {
-            kind: "full",
-            context: "scan.refresh",
-            agentName,
-            sessions: strategyResult.fullScanSessions,
-            meta: buildAgentCacheMeta(agent),
-            saveCache: true,
-            ...(searchIndexOptions ? { searchIndexOptions } : {}),
-          }
-        : null;
-    if (persistentJob) {
-      const persist = this.searchIndexJobs.enqueue("scan.refresh", [persistentJob]);
-      if (!isInitialized && persistentJob.kind === "full") {
-        await persist;
-      } else {
-        void persist.catch((error) => {
-          appLogger.error("scan.refresh.persist.error", { agent: agentName, error });
-          console.error(`[${agentName}] Session persistence failed:`, error);
-        });
-      }
-    }
+      : {
+          kind: "full",
+          context: "scan.refresh",
+          agentName,
+          sessions: strategyResult.fullScanSessions ?? nextSessions,
+          meta: buildAgentCacheMeta(agent),
+          saveCache: true,
+          ...(searchIndexOptions ? { searchIndexOptions } : {}),
+        };
+    await this.commitSessionPublication({
+      context: "scan.refresh",
+      agentName,
+      sessions: nextSessions,
+      event: diff.event,
+      indexJob: persistentJob,
+    });
     const persistDuration = performance.now() - persistStartedAt;
     logSearchIndexSync("scan.refresh", null, { pending_paths: pendingPathCount });
-    this.emitSessionsChanged({ agentName, sessions: nextSessions, event: diff.event });
 
     const totalDurationMs = performance.now() - startedAt;
     state.lastRefreshDurationMs = totalDurationMs;
@@ -458,9 +461,8 @@ export class AgentSyncEngine {
       scan_ms: Math.round(strategyResult.scanDuration),
       diff_ms: Math.round(diffDuration),
       persist_ms: Math.round(persistDuration),
-      search_index_ms: 0,
-      persistent_index_worker_job: persistentJob?.kind,
-      persistent_index_skipped: !persistentJob || undefined,
+      search_index_ms: Math.round(persistDuration),
+      persistent_index_worker_job: persistentJob.kind,
     });
     return "committed";
   }
@@ -669,8 +671,12 @@ export class AgentSyncEngine {
         fullSessions,
         result.changedIds ?? [],
       );
-      await this.searchIndexJobs.enqueue("scan.backfill", [
-        {
+      await this.commitSessionPublication({
+        context: "scan.backfill",
+        agentName,
+        sessions: fullSessions,
+        event: diff.event,
+        indexJob: {
           kind: "full",
           context: "scan.backfill",
           agentName,
@@ -678,9 +684,8 @@ export class AgentSyncEngine {
           meta: buildAgentCacheMeta(agent),
           saveCache: true,
         },
-      ]);
+      });
       markAgentFullSyncCompleted(agentName);
-      this.emitSessionsChanged({ agentName, sessions: fullSessions, event: diff.event });
       appLogger.info("scan.backfill.done", {
         agent: agentName,
         duration_ms: Math.round(performance.now() - startedAt),
@@ -799,6 +804,62 @@ export class AgentSyncEngine {
             sessions: snapshot.byAgent[agent.name] ?? [],
             meta: buildAgentCacheMeta(agent),
           };
+    });
+  }
+
+  private publicationId(context: string, agentName?: string): string {
+    const id = this.nextPublicationId++;
+    return agentName ? `${context}:${agentName}:${id}` : `${context}:${id}`;
+  }
+
+  private async commitSearchIndex(
+    context: string,
+    jobs: SearchIndexWorkerJob[],
+    details: { publicationId: string; agent?: string; agents?: string[] },
+  ): Promise<void> {
+    appLogger.info("session.publication.prepared", {
+      publication_id: details.publicationId,
+      context,
+      agent: details.agent,
+      agents: details.agents,
+      jobs: jobs.length,
+    });
+    try {
+      await this.searchIndexJobs.enqueue(context, jobs);
+    } catch (error) {
+      appLogger.error("session.publication.failed", {
+        publication_id: details.publicationId,
+        context,
+        agent: details.agent,
+        stage: "search_index",
+        error,
+      });
+      throw error;
+    }
+    appLogger.info("session.publication.index_committed", {
+      publication_id: details.publicationId,
+      context,
+      agent: details.agent,
+    });
+  }
+
+  private async commitSessionPublication(publication: SessionPublication): Promise<void> {
+    const publicationId = this.publicationId(publication.context, publication.agentName);
+    await this.commitSearchIndex(publication.context, [publication.indexJob], {
+      publicationId,
+      agent: publication.agentName,
+    });
+    this.emitSessionsChanged({
+      agentName: publication.agentName,
+      sessions: publication.sessions,
+      event: publication.event,
+    });
+    appLogger.info("session.publication.published", {
+      publication_id: publicationId,
+      context: publication.context,
+      agent: publication.agentName,
+      sessions: publication.sessions.length,
+      has_event: publication.event != null,
     });
   }
 

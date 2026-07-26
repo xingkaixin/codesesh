@@ -279,6 +279,7 @@ vi.mock("node:worker_threads", () => ({
 import { LiveScanStore, resolveAgentWatchTargets, type SessionsUpdatedEvent } from "./live-scan.js";
 import { AgentSyncEngine } from "./agent-sync-engine.js";
 import { appLogger } from "./logging.js";
+import { SearchIndexJobRunner } from "./search-index-job-runner.js";
 import { ThreadWorkerRunner, type WorkerResult, type WorkerRunner } from "./worker-runner.js";
 
 function makeWorkerRunner() {
@@ -1287,6 +1288,54 @@ describe("LiveScanStore", () => {
     expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["session", "added"]);
   });
 
+  it("keeps the previous snapshot private until the refresh index commits", async () => {
+    const previous = makeSession("session", { title: "old", time_updated: 1000 });
+    const updated = makeSession("session", { title: "new", time_updated: 2000 });
+    const codex = makeAgent("codex", {
+      checkForChanges: vi.fn(() => ({
+        hasChanges: true,
+        changedIds: ["session"],
+        timestamp: 3000,
+      })),
+      incrementalScan: vi.fn(() => [updated]),
+    });
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [previous],
+      byAgent: { codex: [previous] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore({ watchEnabled: false });
+    await store.initialize();
+    workerThreads.deferSearchIndexWorkers = true;
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    const refresh = syncEngineOf(store).refresh("codex");
+    await vi.waitFor(() =>
+      expect(
+        workerThreads.workers.some(
+          (worker) => worker.workerData.jobs?.[0]?.context === "scan.refresh",
+        ),
+      ).toBe(true),
+    );
+    const refreshWorker = workerThreads.workers.find(
+      (worker) => worker.workerData.jobs?.[0]?.context === "scan.refresh",
+    )!;
+
+    expect(store.getSnapshot().sessions[0]?.title).toBe("old");
+    expect(listener).not.toHaveBeenCalled();
+
+    refreshWorker.emitDone();
+    await refresh;
+
+    expect(store.getSnapshot().sessions[0]?.title).toBe("new");
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "sessions-updated", updatedSessions: 1 }),
+    );
+  });
+
   it("marks search index sync as bulk when many paths are pending", async () => {
     const previous = makeSession("session", { title: "old", time_updated: 1000 });
     const updated = makeSession("session", { title: "new", time_updated: 2000 });
@@ -1378,7 +1427,15 @@ describe("LiveScanStore", () => {
     await syncEngineOf(store).refresh("codex");
 
     expect(core.saveCachedSessions).not.toHaveBeenCalled();
-    expect(workerThreads.workers).toHaveLength(workerCount);
+    expect(workerThreads.workers).toHaveLength(workerCount + 1);
+    expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
+      expect.objectContaining({
+        kind: "full",
+        agentName: "codex",
+        sessions: [],
+        saveCache: true,
+      }),
+    ]);
     expect(events).toEqual([
       expect.objectContaining({
         newSessions: 0,
@@ -1877,45 +1934,68 @@ describe("LiveScanStore", () => {
   });
 
   it("does not start a pending search-index batch while shutting down", async () => {
-    core.createRegisteredAgents.mockReturnValue([]);
-    core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
-
+    const codexBefore = makeSession("codex-session", { title: "codex before" });
+    const codexAfter = makeSession("codex-session", { title: "codex after" });
+    const kimiBefore = makeSession("kimi-session", { title: "kimi before" });
+    const kimiAfter = makeSession("kimi-session", { title: "kimi after" });
+    const codex = makeAgent("codex", {
+      checkForChanges: vi.fn(() => ({
+        hasChanges: true,
+        changedIds: [codexAfter.id],
+        timestamp: 3000,
+      })),
+      incrementalScan: vi.fn(() => [codexAfter]),
+    });
+    const kimi = makeAgent("kimi", {
+      checkForChanges: vi.fn(() => ({
+        hasChanges: true,
+        changedIds: [kimiAfter.id],
+        timestamp: 3000,
+      })),
+      incrementalScan: vi.fn(() => [kimiAfter]),
+    });
+    core.createRegisteredAgents.mockReturnValue([codex, kimi]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [codexBefore, kimiBefore],
+      byAgent: { codex: [codexBefore], kimi: [kimiBefore] },
+      agents: [codex, kimi],
+    });
+    vi.spyOn(appLogger, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
     const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
+    const initialSearchWorkerCount = workerThreads.workers.filter(
+      (worker) => worker.workerData.jobs,
+    ).length;
     workerThreads.deferSearchIndexWorkers = true;
-    const job = {
-      kind: "full" as const,
-      context: "scan.refresh",
-      agentName: "codex",
-      sessions: [],
-      meta: {},
-    };
-
-    const current = (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [job]);
-    const pending = (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [job]);
-    const outcomes = Promise.allSettled([current, pending]);
-    expect(workerThreads.workers.filter((worker) => worker.workerData.jobs)).toHaveLength(1);
+    const listener = vi.fn();
+    store.subscribe(listener);
+    const current = syncEngineOf(store).refresh("codex");
+    await vi.waitFor(() =>
+      expect(workerThreads.workers.filter((worker) => worker.workerData.jobs)).toHaveLength(
+        initialSearchWorkerCount + 1,
+      ),
+    );
+    const pending = syncEngineOf(store).refresh("kimi");
+    await vi.waitFor(() => expect(kimi.incrementalScan).toHaveBeenCalledOnce());
 
     await store.shutdown();
+    await Promise.all([current, pending]);
 
-    expect(workerThreads.workers.filter((worker) => worker.workerData.jobs)).toHaveLength(1);
-    expect(await outcomes).toEqual([
-      expect.objectContaining({ status: "rejected", reason: expect.any(Error) }),
-      expect.objectContaining({ status: "rejected", reason: expect.any(Error) }),
-    ]);
-    expect((syncEngineOf(store) as any).searchIndexJobs.snapshot()).toEqual(
-      expect.objectContaining({ activeBatchId: undefined, pendingBatches: 0 }),
+    expect(workerThreads.workers.filter((worker) => worker.workerData.jobs)).toHaveLength(
+      initialSearchWorkerCount + 1,
     );
+    expect(store.getSnapshot().sessions.map((session) => session.title)).toEqual([
+      "codex before",
+      "kimi before",
+    ]);
+    expect(listener).not.toHaveBeenCalled();
   });
 
   it("coalesces pending search-index changes to the latest session state", async () => {
-    core.createRegisteredAgents.mockReturnValue([]);
-    core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
-
-    const store = new LiveScanStore({ watchEnabled: false, deferInitialRefresh: true });
-    await store.initialize();
     workerThreads.deferSearchIndexWorkers = true;
-    const active = (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [
+    const runner = new SearchIndexJobRunner();
+    const active = runner.enqueue("scan.refresh", [
       {
         kind: "full",
         context: "scan.refresh",
@@ -1925,7 +2005,7 @@ describe("LiveScanStore", () => {
       },
     ]);
     const pending = [1, 2, 3].map((version) =>
-      (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [
+      runner.enqueue("scan.refresh", [
         {
           kind: "changes",
           context: "scan.refresh",
@@ -1969,12 +2049,8 @@ describe("LiveScanStore", () => {
   });
 
   it("makes repeated shutdown calls share one worker termination", async () => {
-    core.createRegisteredAgents.mockReturnValue([]);
-    core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
-
-    const store = new LiveScanStore({ watchEnabled: false });
-    await store.initialize();
     workerThreads.deferSearchIndexWorkers = true;
+    const runner = new SearchIndexJobRunner();
     const job = {
       kind: "full" as const,
       context: "scan.refresh",
@@ -1982,26 +2058,22 @@ describe("LiveScanStore", () => {
       sessions: [],
       meta: {},
     };
-    const batch = (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [job]);
+    const batch = runner.enqueue("scan.refresh", [job]);
     const outcome = batch.catch((error: Error) => error);
     const worker = workerThreads.workers.at(-1)!;
 
-    await Promise.all([store.shutdown(), store.shutdown()]);
+    await Promise.all([runner.shutdown(), runner.shutdown()]);
 
     expect(worker.terminate).toHaveBeenCalledTimes(1);
     expect(await outcome).toBeInstanceOf(Error);
-    await expect(
-      (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [job]),
-    ).rejects.toThrow("Live scan store shut down");
+    await expect(runner.enqueue("scan.refresh", [job])).rejects.toThrow(
+      "Live scan store shut down",
+    );
   });
 
   it("settles a worker error once when shutdown follows", async () => {
-    core.createRegisteredAgents.mockReturnValue([]);
-    core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
-
-    const store = new LiveScanStore({ watchEnabled: false });
-    await store.initialize();
     workerThreads.deferSearchIndexWorkers = true;
+    const runner = new SearchIndexJobRunner();
     const job = {
       kind: "full" as const,
       context: "scan.refresh",
@@ -2009,12 +2081,12 @@ describe("LiveScanStore", () => {
       sessions: [],
       meta: {},
     };
-    const batch = (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [job]);
+    const batch = runner.enqueue("scan.refresh", [job]);
     const outcome = Promise.allSettled([batch]);
     const worker = workerThreads.workers.at(-1)!;
 
     worker.emitError(new Error("index failed"));
-    await store.shutdown();
+    await runner.shutdown();
 
     expect(await outcome).toEqual([
       expect.objectContaining({ status: "rejected", reason: new Error("index failed") }),
@@ -2024,12 +2096,7 @@ describe("LiveScanStore", () => {
   });
 
   it("skips the FTS integrity check on search-index batches after the first one completes", async () => {
-    core.createRegisteredAgents.mockReturnValue([]);
-    core.scanSessions.mockResolvedValue({ sessions: [], byAgent: {}, agents: [] });
-
-    const store = new LiveScanStore({ watchEnabled: false });
-    await store.initialize();
-
+    const runner = new SearchIndexJobRunner();
     const job = {
       kind: "full" as const,
       context: "scan.refresh",
@@ -2037,8 +2104,8 @@ describe("LiveScanStore", () => {
       sessions: [],
       meta: {},
     };
-    await (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [job]);
-    await (syncEngineOf(store) as any).searchIndexJobs.enqueue("scan.refresh", [job]);
+    await runner.enqueue("scan.refresh", [job]);
+    await runner.enqueue("scan.refresh", [job]);
 
     const searchIndexWorkers = workerThreads.workers.filter((worker) => worker.workerData.jobs);
     expect(searchIndexWorkers).toHaveLength(2);
