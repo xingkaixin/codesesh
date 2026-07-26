@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BaseAgent,
   materializeSessionDetail,
+  materializeSessionDetailResponse,
   saveCachedSessions,
   syncSessionSearchIndex,
   type ChangeCheckResult,
@@ -217,6 +218,60 @@ describe("materializeSessionDetail", () => {
     expect(source.status).toBe("found");
     if (cached.status !== "found" || source.status !== "found") return;
     expect(source.data.file_activity).toEqual(cached.data.file_activity);
+  });
+
+  it("returns cached messages as lazy JSON without reading the source", () => {
+    const head = makeHead({ smart_tags: [] });
+    const detail = { ...makeDetail("Cached Session"), smart_tags: [] };
+    persistDetail(head, detail, "same");
+    const agent = new TestAgent(makeDetail(), new Map([["s1", makeMeta("same")]]));
+    const scanResult = makeScanResult(agent, head);
+
+    const result = materializeSessionDetailResponse(scanResult, {
+      agentName: "test",
+      sessionId: "s1",
+    });
+    const structured = materializeSessionDetail(scanResult, {
+      agentName: "test",
+      sessionId: "s1",
+    });
+
+    expect(result.status).toBe("found-json");
+    expect(structured.status).toBe("found");
+    if (result.status !== "found-json" || structured.status !== "found") return;
+    expect(result.data.title).toBe("Cached Session");
+    expect(result.messageCount).toBe(1);
+    expect([...result.messages].map((message) => JSON.parse(message))).toEqual(
+      structured.data.messages,
+    );
+    expect(agent.reads).toBe(0);
+  });
+
+  it("indexes heads once per scan snapshot instead of calling Array.find", () => {
+    const heads = Array.from({ length: 100 }, (_, index) =>
+      makeHead({ id: `s${index}`, slug: `test/s${index}` }),
+    );
+    const target = heads.at(-1)!;
+    const agent = new TestAgent({ ...makeDetail(), id: target.id, slug: target.slug }, new Map());
+    const scanResult = {
+      sessions: heads,
+      byAgent: { test: heads },
+      agents: [agent],
+    };
+    const find = vi.spyOn(heads, "find");
+
+    const first = materializeSessionDetail(scanResult, {
+      agentName: "test",
+      sessionId: target.id,
+    });
+    const second = materializeSessionDetail(scanResult, {
+      agentName: "test",
+      sessionId: target.id,
+    });
+
+    expect(first.status).toBe("found");
+    expect(second.status).toBe("found");
+    expect(find).not.toHaveBeenCalled();
   });
 
   it("returns explicit lookup outcomes when no detail can be materialized", () => {
