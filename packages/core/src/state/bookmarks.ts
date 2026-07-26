@@ -1,5 +1,10 @@
 import type { SessionStats } from "../types/index.js";
-import type { BookmarkRecord } from "../contract/index.js";
+import {
+  formatSessionReference,
+  normalizeSessionReference,
+  type BookmarkRecord,
+  type SessionReference,
+} from "../contract/index.js";
 import { StateStorageUnavailableError, useMemoryStateStore, withStateDb } from "./database.js";
 import type { DatabaseRow } from "../utils/sqlite.js";
 
@@ -12,7 +17,6 @@ export type { BookmarkRecord };
 interface BookmarkRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
-  slug?: string;
   title?: string;
   directory?: string;
   time_created?: number;
@@ -21,18 +25,19 @@ interface BookmarkRow extends DatabaseRow {
   bookmarked_at?: number;
 }
 
-function getBookmarkKey(agentKey: string, sessionId: string): string {
-  return JSON.stringify([agentKey, sessionId]);
+function getBookmarkKey(reference: SessionReference): string {
+  const normalized = normalizeSessionReference(reference);
+  return JSON.stringify([normalized.agentName, normalized.sessionId]);
 }
 
 function getActivityTime(bookmark: BookmarkRecord): number {
-  return bookmark.time_updated ?? bookmark.time_created;
+  return bookmark.session.time_updated ?? bookmark.session.time_created;
 }
 
 function sortBookmarks(bookmarks: BookmarkRecord[]): BookmarkRecord[] {
   return bookmarks.sort((a, b) => {
     const activityDelta = getActivityTime(b) - getActivityTime(a);
-    return activityDelta || b.bookmarked_at - a.bookmarked_at;
+    return activityDelta || b.bookmarkedAt - a.bookmarkedAt;
   });
 }
 
@@ -40,27 +45,47 @@ function listMemoryBookmarks(): BookmarkRecord[] {
   return sortBookmarks(Array.from(memoryBookmarks.values()));
 }
 
-function upsertMemoryBookmark(bookmark: Omit<BookmarkRecord, "bookmarked_at">): BookmarkRecord {
-  const key = getBookmarkKey(bookmark.agentKey, bookmark.sessionId);
+function normalizeBookmark(
+  bookmark: Omit<BookmarkRecord, "bookmarkedAt">,
+): Omit<BookmarkRecord, "bookmarkedAt"> {
+  const reference = normalizeSessionReference(bookmark.reference);
+  return {
+    reference,
+    session: {
+      ...bookmark.session,
+      id: reference.sessionId,
+      slug: formatSessionReference(reference),
+    },
+  };
+}
+
+function upsertMemoryBookmark(bookmark: Omit<BookmarkRecord, "bookmarkedAt">): BookmarkRecord {
+  const key = getBookmarkKey(bookmark.reference);
   const saved = {
     ...bookmark,
-    bookmarked_at: memoryBookmarks.get(key)?.bookmarked_at ?? Date.now(),
+    bookmarkedAt: memoryBookmarks.get(key)?.bookmarkedAt ?? Date.now(),
   };
   memoryBookmarks.set(key, saved);
   return saved;
 }
 
 function toBookmarkRecord(row: BookmarkRow): BookmarkRecord {
-  return {
-    agentKey: String(row.agent_name ?? ""),
+  const reference = normalizeSessionReference({
+    agentName: String(row.agent_name ?? ""),
     sessionId: String(row.session_id ?? ""),
-    fullPath: String(row.slug ?? ""),
-    title: String(row.title ?? ""),
-    directory: String(row.directory ?? ""),
-    time_created: Number(row.time_created ?? 0),
-    time_updated: row.time_updated == null ? undefined : Number(row.time_updated),
-    stats: JSON.parse(String(row.stats_json ?? "{}")) as SessionStats,
-    bookmarked_at: Number(row.bookmarked_at ?? 0),
+  });
+  return {
+    reference,
+    session: {
+      id: reference.sessionId,
+      slug: formatSessionReference(reference),
+      title: String(row.title ?? ""),
+      directory: String(row.directory ?? ""),
+      time_created: Number(row.time_created ?? 0),
+      time_updated: row.time_updated == null ? undefined : Number(row.time_updated),
+      stats: JSON.parse(String(row.stats_json ?? "{}")) as SessionStats,
+    },
+    bookmarkedAt: Number(row.bookmarked_at ?? 0),
   };
 }
 
@@ -76,7 +101,6 @@ export function listBookmarks(): BookmarkRecord[] {
           SELECT
             agent_name,
             session_id,
-            slug,
             title,
             directory,
             time_created,
@@ -93,9 +117,10 @@ export function listBookmarks(): BookmarkRecord[] {
   });
 }
 
-export function upsertBookmark(bookmark: Omit<BookmarkRecord, "bookmarked_at">): BookmarkRecord {
+export function upsertBookmark(bookmark: Omit<BookmarkRecord, "bookmarkedAt">): BookmarkRecord {
+  const normalized = normalizeBookmark(bookmark);
   if (useMemoryStateStore()) {
-    return upsertMemoryBookmark(bookmark);
+    return upsertMemoryBookmark(normalized);
   }
 
   return withStateDb((db) => {
@@ -107,7 +132,9 @@ export function upsertBookmark(bookmark: Omit<BookmarkRecord, "bookmarked_at">):
           WHERE agent_name = ? AND session_id = ?
         `,
       )
-      .get(bookmark.agentKey, bookmark.sessionId) as DatabaseRow | undefined;
+      .get(normalized.reference.agentName, normalized.reference.sessionId) as
+      | DatabaseRow
+      | undefined;
     const bookmarkedAt = Number(existing?.bookmarked_at ?? Date.now());
 
     db.prepare(
@@ -132,26 +159,27 @@ export function upsertBookmark(bookmark: Omit<BookmarkRecord, "bookmarked_at">):
           stats_json = excluded.stats_json
       `,
     ).run(
-      bookmark.agentKey,
-      bookmark.sessionId,
-      bookmark.fullPath,
-      bookmark.title,
-      bookmark.directory,
-      bookmark.time_created,
-      bookmark.time_updated ?? null,
-      JSON.stringify(bookmark.stats),
+      normalized.reference.agentName,
+      normalized.reference.sessionId,
+      formatSessionReference(normalized.reference),
+      normalized.session.title,
+      normalized.session.directory,
+      normalized.session.time_created,
+      normalized.session.time_updated ?? null,
+      JSON.stringify(normalized.session.stats),
       bookmarkedAt,
     );
 
-    return { ...bookmark, bookmarked_at: bookmarkedAt };
+    return { ...normalized, bookmarkedAt };
   });
 }
 
 export function importBookmarks(
-  bookmarks: Omit<BookmarkRecord, "bookmarked_at">[],
+  bookmarks: Omit<BookmarkRecord, "bookmarkedAt">[],
 ): BookmarkRecord[] {
+  const normalizedBookmarks = bookmarks.map(normalizeBookmark);
   if (useMemoryStateStore()) {
-    for (const bookmark of bookmarks) {
+    for (const bookmark of normalizedBookmarks) {
       upsertMemoryBookmark(bookmark);
     }
     return listMemoryBookmarks();
@@ -163,7 +191,10 @@ export function importBookmarks(
       .all() as DatabaseRow[];
     const existingTimes = new Map(
       existingRows.map((row) => [
-        `${String(row.agent_name ?? "")}:${String(row.session_id ?? "")}`,
+        getBookmarkKey({
+          agentName: String(row.agent_name ?? ""),
+          sessionId: String(row.session_id ?? ""),
+        }),
         Number(row.bookmarked_at ?? 0),
       ]),
     );
@@ -192,17 +223,17 @@ export function importBookmarks(
     );
 
     const write = db.transaction(() => {
-      for (const bookmark of bookmarks) {
-        const key = `${bookmark.agentKey}:${bookmark.sessionId}`;
+      for (const bookmark of normalizedBookmarks) {
+        const key = getBookmarkKey(bookmark.reference);
         upsert.run(
-          bookmark.agentKey,
-          bookmark.sessionId,
-          bookmark.fullPath,
-          bookmark.title,
-          bookmark.directory,
-          bookmark.time_created,
-          bookmark.time_updated ?? null,
-          JSON.stringify(bookmark.stats),
+          bookmark.reference.agentName,
+          bookmark.reference.sessionId,
+          formatSessionReference(bookmark.reference),
+          bookmark.session.title,
+          bookmark.session.directory,
+          bookmark.session.time_created,
+          bookmark.session.time_updated ?? null,
+          JSON.stringify(bookmark.session.stats),
           existingTimes.get(key) ?? Date.now(),
         );
       }
@@ -215,7 +246,6 @@ export function importBookmarks(
           SELECT
             agent_name,
             session_id,
-            slug,
             title,
             directory,
             time_created,
@@ -231,9 +261,10 @@ export function importBookmarks(
   });
 }
 
-export function deleteBookmark(agentKey: string, sessionId: string): void {
+export function deleteBookmark(reference: SessionReference): void {
+  const normalized = normalizeSessionReference(reference);
   if (useMemoryStateStore()) {
-    memoryBookmarks.delete(getBookmarkKey(agentKey, sessionId));
+    memoryBookmarks.delete(getBookmarkKey(normalized));
     return;
   }
 
@@ -243,6 +274,6 @@ export function deleteBookmark(agentKey: string, sessionId: string): void {
         DELETE FROM bookmarks
         WHERE agent_name = ? AND session_id = ?
       `,
-    ).run(agentKey, sessionId);
+    ).run(normalized.agentName, normalized.sessionId);
   });
 }

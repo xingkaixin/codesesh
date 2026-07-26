@@ -236,7 +236,10 @@ export function buildDashboard(
 
   const recentSessions: DashboardRecentSession[] = recentCandidates.map(({ session }) => {
     const agentKey = getSessionAgentName(session);
-    return { ...session, agentName: agentKey };
+    return {
+      reference: { agentName: agentKey, sessionId: session.id },
+      session,
+    };
   });
 
   return {

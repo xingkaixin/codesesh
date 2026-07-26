@@ -1383,8 +1383,14 @@ describe("LiveScanStore", () => {
         removedSessions: 0,
         totalSessions: 2,
         changedSessionHeads: [
-          { agentName: "codex", session: updatedWithProject },
-          { agentName: "codex", session: addedWithProject },
+          {
+            reference: { agentName: "codex", sessionId: updatedWithProject.id },
+            session: updatedWithProject,
+          },
+          {
+            reference: { agentName: "codex", sessionId: addedWithProject.id },
+            session: addedWithProject,
+          },
         ],
         removedSessionRefs: [],
       }),
@@ -1504,7 +1510,12 @@ describe("LiveScanStore", () => {
         newSessions: 0,
         updatedSessions: 1,
         removedSessions: 0,
-        changedSessionHeads: [{ agentName: "codex", session: previousWithProject }],
+        changedSessionHeads: [
+          {
+            reference: { agentName: "codex", sessionId: previousWithProject.id },
+            session: previousWithProject,
+          },
+        ],
         removedSessionRefs: [],
       }),
     ]);
@@ -1780,8 +1791,14 @@ describe("LiveScanStore", () => {
         removedSessions: 0,
         totalSessions: 4,
         changedSessionHeads: [
-          { agentName: "codex", session: expect.objectContaining({ id: "codex-new" }) },
-          { agentName: "kimi", session: expect.objectContaining({ id: "kimi-new" }) },
+          {
+            reference: { agentName: "codex", sessionId: "codex-new" },
+            session: expect.objectContaining({ id: "codex-new" }),
+          },
+          {
+            reference: { agentName: "kimi", sessionId: "kimi-new" },
+            session: expect.objectContaining({ id: "kimi-new" }),
+          },
         ],
         removedSessionRefs: [],
       }),

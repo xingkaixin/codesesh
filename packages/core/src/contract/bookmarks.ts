@@ -1,14 +1,5 @@
-import type { SessionStats } from "./session.js";
+import type { ReferencedSessionHead } from "./session.js";
 
-export interface BookmarkRecord {
-  agentKey: string;
-  sessionId: string;
-  fullPath: string;
-  title: string;
-  display_title?: string;
-  directory: string;
-  time_created: number;
-  time_updated?: number;
-  stats: SessionStats;
-  bookmarked_at: number;
+export interface BookmarkRecord extends ReferencedSessionHead {
+  bookmarkedAt: number;
 }

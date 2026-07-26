@@ -37,6 +37,7 @@ describe("contract browser-safety", () => {
         "getSessionAgentKey",
         "getSessionRouteKey",
         "mergeSortedSessions",
+        "normalizeSessionReference",
         "parseSessionReference",
         "sortSessionsByActivity",
         "updateSessionIndex",

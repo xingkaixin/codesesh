@@ -26,6 +26,16 @@ vi.mock("node:os", async (importOriginal) => {
 const now = 1_700_000_000_000;
 const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
 
+interface BookmarkOverrides {
+  agentName?: string;
+  sessionId?: string;
+  title?: string;
+  directory?: string;
+  timeCreated?: number;
+  timeUpdated?: number;
+  stats?: BookmarkRecord["session"]["stats"];
+}
+
 function getStateDir(): string {
   return join(testHomeDir, ".local", "share", "codesesh");
 }
@@ -43,22 +53,26 @@ function getUserVersion(dbPath: string): number {
   }
 }
 
-function makeBookmark(
-  overrides: Partial<Omit<BookmarkRecord, "bookmarked_at">> = {},
-): Omit<BookmarkRecord, "bookmarked_at"> {
-  return {
-    agentKey: overrides.agentKey ?? "codex",
+function makeBookmark(overrides: BookmarkOverrides = {}): Omit<BookmarkRecord, "bookmarkedAt"> {
+  const reference = {
+    agentName: overrides.agentName ?? "codex",
     sessionId: overrides.sessionId ?? "s1",
-    fullPath: overrides.fullPath ?? "codex/s1",
-    title: overrides.title ?? "Session 1",
-    directory: overrides.directory ?? "/tmp/project",
-    time_created: overrides.time_created ?? now - 1000,
-    time_updated: overrides.time_updated ?? now,
-    stats: overrides.stats ?? {
-      message_count: 1,
-      total_input_tokens: 2,
-      total_output_tokens: 3,
-      total_cost: 0,
+  };
+  return {
+    reference,
+    session: {
+      id: reference.sessionId,
+      slug: `${reference.agentName}/${reference.sessionId}`,
+      title: overrides.title ?? "Session 1",
+      directory: overrides.directory ?? "/tmp/project",
+      time_created: overrides.timeCreated ?? now - 1000,
+      time_updated: overrides.timeUpdated ?? now,
+      stats: overrides.stats ?? {
+        message_count: 1,
+        total_input_tokens: 2,
+        total_output_tokens: 3,
+        total_cost: 0,
+      },
     },
   };
 }
@@ -83,21 +97,39 @@ describe("bookmarks state storage", () => {
     expect(listBookmarks()).toEqual([
       {
         ...makeBookmark(),
-        bookmarked_at: now,
+        bookmarkedAt: now,
       },
     ]);
     expect(getUserVersion(getStatePath())).toBe(2);
   });
 
-  it("preserves bookmarked_at when refreshing a snapshot", () => {
+  it("derives canonical identity fields instead of trusting the legacy slug column", () => {
+    const bookmark = makeBookmark({ agentName: " CoDeX " });
+    bookmark.session.slug = "stale/route";
+    upsertBookmark(bookmark);
+
+    const db = new Database(getStatePath());
+    try {
+      db.prepare("UPDATE bookmarks SET slug = 'another/stale-route'").run();
+    } finally {
+      db.close();
+    }
+
+    expect(listBookmarks()[0]).toMatchObject({
+      reference: { agentName: "codex", sessionId: "s1" },
+      session: { id: "s1", slug: "codex/s1" },
+    });
+  });
+
+  it("preserves bookmarkedAt when refreshing a snapshot", () => {
     upsertBookmark(makeBookmark({ title: "Old title" }));
     dateNowSpy.mockReturnValue(now + 5000);
 
     const updated = upsertBookmark(makeBookmark({ title: "New title" }));
 
-    expect(updated.bookmarked_at).toBe(now);
-    expect(listBookmarks()[0]?.title).toBe("New title");
-    expect(listBookmarks()[0]?.bookmarked_at).toBe(now);
+    expect(updated.bookmarkedAt).toBe(now);
+    expect(listBookmarks()[0]?.session.title).toBe("New title");
+    expect(listBookmarks()[0]?.bookmarkedAt).toBe(now);
   });
 
   it("imports multiple bookmarks without duplicating existing rows", () => {
@@ -106,20 +138,22 @@ describe("bookmarks state storage", () => {
     const imported = importBookmarks([
       makeBookmark({ sessionId: "s1", title: "After import" }),
       makeBookmark({
-        agentKey: "cursor",
+        agentName: "cursor",
         sessionId: "s2",
-        fullPath: "cursor/s2",
         title: "Cursor session",
       }),
     ]);
 
     expect(imported).toHaveLength(2);
-    expect(imported.map((bookmark) => bookmark.title)).toEqual(["After import", "Cursor session"]);
+    expect(imported.map((bookmark) => bookmark.session.title)).toEqual([
+      "After import",
+      "Cursor session",
+    ]);
   });
 
-  it("deletes a bookmark by agent and session", () => {
+  it("deletes a bookmark by normalized session reference", () => {
     upsertBookmark(makeBookmark());
-    deleteBookmark("codex", "s1");
+    deleteBookmark({ agentName: " CoDeX ", sessionId: "s1" });
     expect(listBookmarks()).toEqual([]);
   });
 
@@ -135,11 +169,11 @@ describe("bookmarks state storage", () => {
   it("uses memory state storage when configured", () => {
     vi.stubEnv("CODESESH_STATE_STORE", "memory");
 
-    expect(upsertBookmark(makeBookmark()).bookmarked_at).toBe(now);
-    expect(listBookmarks()).toEqual([{ ...makeBookmark(), bookmarked_at: now }]);
+    expect(upsertBookmark(makeBookmark()).bookmarkedAt).toBe(now);
+    expect(listBookmarks()).toEqual([{ ...makeBookmark(), bookmarkedAt: now }]);
     expect(existsSync(getStatePath())).toBe(false);
 
-    deleteBookmark("codex", "s1");
+    deleteBookmark({ agentName: "codex", sessionId: "s1" });
     expect(listBookmarks()).toEqual([]);
   });
 
@@ -162,7 +196,7 @@ describe("bookmarks state storage", () => {
     // Force ensureSchema to re-run against the externally rewritten file,
     // as a fresh process would on its first open.
     setStateSchemaEnsuredPath(null);
-    expect(listBookmarks()[0]?.sessionId).toBe("s1");
+    expect(listBookmarks()[0]?.reference.sessionId).toBe("s1");
     expect(getUserVersion(getStatePath())).toBe(2);
   });
 
@@ -176,7 +210,7 @@ describe("bookmarks state storage", () => {
     }
 
     setStateSchemaEnsuredPath(null);
-    expect(listBookmarks()[0]?.sessionId).toBe("s1");
+    expect(listBookmarks()[0]?.reference.sessionId).toBe("s1");
     expect(getUserVersion(getStatePath())).toBe(3);
   });
 });

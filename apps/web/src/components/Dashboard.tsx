@@ -28,10 +28,7 @@ interface DashboardProps {
   projects?: ProjectGroup[];
   bookmarkedSessions: BookmarkedSessionSnapshot[];
   isBookmarked: (agentKey: string, sessionId: string) => boolean;
-  onToggleBookmark: (
-    session: DashboardRecentSession | BookmarkedSessionSnapshot,
-    agentKey?: string,
-  ) => void;
+  onToggleBookmark: (session: DashboardRecentSession | BookmarkedSessionSnapshot) => void;
 }
 
 function formatCompact(value: number): string {
@@ -617,13 +614,14 @@ function BookmarkedSessions({
         </span>
       </div>
       <ul className="space-y-2">
-        {sessions.map((session) => {
-          const agent = findAgent(agentCatalog, session.agentKey);
+        {sessions.map((bookmark) => {
+          const { reference, session } = bookmark;
+          const agent = findAgent(agentCatalog, reference.agentName);
           const updated = session.time_updated ?? session.time_created;
           return (
-            <li key={getSessionBookmarkKey(session.agentKey, session.sessionId)}>
+            <li key={getSessionBookmarkKey(reference)}>
               <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
-                <Link to={`/${session.fullPath}`} className="flex min-w-0 flex-1 items-start gap-2">
+                <Link to={`/${session.slug}`} className="flex min-w-0 flex-1 items-start gap-2">
                   {agent?.icon ? (
                     <AgentIcon
                       icon={agent.icon}
@@ -637,11 +635,11 @@ function BookmarkedSessions({
                       {getSessionDisplayTitle(session)}
                     </p>
                     <p className="console-mono mt-0.5 line-clamp-1 text-[11px] text-[var(--console-muted)]">
-                      /{session.fullPath} · {formatRelativeTime(updated)}
+                      /{session.slug} · {formatRelativeTime(updated)}
                     </p>
                   </div>
                 </Link>
-                <BookmarkButton active onToggle={() => onToggleBookmark(session)} />
+                <BookmarkButton active onToggle={() => onToggleBookmark(bookmark)} />
               </div>
             </li>
           );
@@ -660,7 +658,7 @@ function RecentSessions({
   sessions: DashboardRecentSession[];
   agentCatalog: AgentCatalog;
   isBookmarked: (agentKey: string, sessionId: string) => boolean;
-  onToggleBookmark: (session: DashboardRecentSession, agentKey: string) => void;
+  onToggleBookmark: (session: DashboardRecentSession) => void;
 }) {
   if (sessions.length === 0) {
     return (
@@ -681,13 +679,14 @@ function RecentSessions({
         </span>
       </div>
       <ul className="space-y-2">
-        {sessions.map((session) => {
-          const agentKey = session.agentName.toLowerCase();
+        {sessions.map((item) => {
+          const { reference, session } = item;
+          const agentKey = reference.agentName.toLowerCase();
           const agent = findAgent(agentCatalog, agentKey);
           const updated = session.time_updated ?? session.time_created;
-          const bookmarked = isBookmarked(agentKey, session.id);
+          const bookmarked = isBookmarked(agentKey, reference.sessionId);
           return (
-            <li key={session.id}>
+            <li key={getSessionBookmarkKey(reference)}>
               <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
                 <Link to={`/${session.slug}`} className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -711,10 +710,7 @@ function RecentSessions({
                   </p>
                   <SmartTagChips tags={session.smart_tags} className="mt-1.5" />
                 </Link>
-                <BookmarkButton
-                  active={bookmarked}
-                  onToggle={() => onToggleBookmark(session, agentKey)}
-                />
+                <BookmarkButton active={bookmarked} onToggle={() => onToggleBookmark(item)} />
               </div>
             </li>
           );
@@ -745,9 +741,11 @@ function RecentFileActivity({ activity }: { activity: FileActivityResult[] }) {
       </div>
       <ul className="space-y-2">
         {activity.map((item) => {
-          const updated = item.latest_time;
+          const updated = item.latestTime;
           return (
-            <li key={`${item.agent_name}/${item.session_id}/${item.kind}/${item.path}`}>
+            <li
+              key={`${item.reference.agentName}/${item.reference.sessionId}/${item.kind}/${item.path}`}
+            >
               <Link
                 to={`/${item.session.slug}`}
                 className="block rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"

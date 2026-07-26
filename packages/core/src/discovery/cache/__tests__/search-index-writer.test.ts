@@ -32,7 +32,7 @@ describe("search index writer", () => {
     });
     expect(searchSessions("needle")).toEqual([
       expect.objectContaining({
-        agentName: "codex",
+        reference: { agentName: "codex", sessionId: "one" },
         session: expect.objectContaining({ id: "one" }),
       }),
     ]);

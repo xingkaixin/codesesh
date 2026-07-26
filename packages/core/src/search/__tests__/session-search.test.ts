@@ -599,7 +599,7 @@ describe("search candidate filtering", () => {
   it("keeps alias-style candidates subject to indexed file and tool qualifiers", () => {
     const snapshot = makeSnapshot();
     const candidates = [fileQualifierMatch, fileQualifierMismatch].map((spec) => ({
-      agentName: spec.agent,
+      reference: { agentName: spec.agent, sessionId: spec.id },
       session: snapshot.byAgent[spec.agent]!.find((session) => session.id === spec.id)!,
       snippet: "Alias",
       matchType: "title" as const,
@@ -631,10 +631,10 @@ describe("search characterization: recent vs SQLite-indexed equivalence (tag fil
     ["time", { to: now - 1_500 }],
   ])("returns the same synced result set for a %s filter", (_label, options) => {
     const liveIds = search("", { ...options, limit: 100 })
-      .map((result) => `${result.agentName}/${result.session.id}`)
+      .map((result) => `${result.reference.agentName}/${result.reference.sessionId}`)
       .sort();
     const indexedIds = searchSessions("", { ...options, limit: 100 })
-      .map((result) => `${result.agentName}/${result.session.id}`)
+      .map((result) => `${result.reference.agentName}/${result.reference.sessionId}`)
       .sort();
 
     expect(liveIds).toEqual(indexedIds);

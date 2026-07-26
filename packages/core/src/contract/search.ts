@@ -1,4 +1,4 @@
-import type { SessionHead } from "./session.js";
+import type { ReferencedSessionHead } from "./session.js";
 
 export type SearchMatchType =
   | "recent"
@@ -8,9 +8,7 @@ export type SearchMatchType =
   | "tool_output"
   | "file_path";
 
-export interface SearchResult {
-  agentName: string;
-  session: SessionHead;
+export interface SearchResult extends ReferencedSessionHead {
   snippet: string;
   matchType: SearchMatchType;
 }

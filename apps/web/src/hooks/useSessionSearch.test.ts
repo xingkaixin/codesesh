@@ -18,9 +18,28 @@ const emptyIndexes = {
   sessionsByActivity: [],
 } as unknown as SessionIndexes;
 
-const serverResults = [
-  { agentName: "cc", session: { id: "s1" }, snippet: "", matchType: "content" },
-] as unknown as SearchResult[];
+function makeSearchResult(id: string): SearchResult {
+  return {
+    reference: { agentName: "cc", sessionId: id },
+    session: {
+      id,
+      slug: `cc/${id}`,
+      title: id,
+      directory: "/workspace",
+      time_created: 1,
+      stats: {
+        message_count: 1,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 0,
+      },
+    },
+    snippet: "",
+    matchType: "assistant_reply",
+  };
+}
+
+const serverResults = [makeSearchResult("s1")];
 
 beforeEach(() => {
   vi.mocked(api.fetchSearchResults).mockResolvedValue({ results: [] });
@@ -141,9 +160,7 @@ describe("useSessionSearch", () => {
     act(() => result.current.submitSearch());
     await waitFor(() => expect(result.current.searchResults).toEqual(serverResults));
 
-    const next = [
-      { agentName: "cc", session: { id: "s2" }, snippet: "", matchType: "content" },
-    ] as unknown as SearchResult[];
+    const next = [makeSearchResult("s2")];
     vi.mocked(api.fetchSearchResults).mockResolvedValue({ results: next });
     await act(async () => {
       await result.current.refresh();

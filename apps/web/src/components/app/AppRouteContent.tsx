@@ -145,12 +145,12 @@ export function AppRouteContent({
           projects={projects}
           bookmarkedSessions={bookmarks.sessions}
           isBookmarked={bookmarks.isBookmarked}
-          onToggleBookmark={(session, agentKey) => {
-            if ("agentName" in session) {
-              bookmarks.toggleSessionBookmark(session, agentKey ?? session.agentName.toLowerCase());
+          onToggleBookmark={(item) => {
+            if (!("bookmarkedAt" in item)) {
+              bookmarks.toggleSessionBookmark(item.session, item.reference.agentName);
               return;
             }
-            bookmarks.toggleBookmark(session);
+            bookmarks.toggleBookmark(item);
           }}
         />
       </RenderProfiler>

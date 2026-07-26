@@ -27,13 +27,12 @@ export type SmartTag =
 export type FileActivityKind = "read" | "edit" | "write" | "delete";
 
 export interface SessionFileActivity {
-  agent_name: string;
-  session_id: string;
-  project_identity_key: string;
+  reference: SessionReference;
+  projectIdentityKey: string;
   path: string;
   kind: FileActivityKind;
   count: number;
-  latest_time: number;
+  latestTime: number;
 }
 
 export interface SessionFileActivityOccurrence {
@@ -139,6 +138,11 @@ export interface SessionHead {
   model_usage?: Record<string, number>;
   smart_tags?: SmartTag[];
   smart_tags_source_updated_at?: number;
+}
+
+export interface ReferencedSessionHead {
+  reference: SessionReference;
+  session: SessionHead;
 }
 
 /** Full session data for detail view */

@@ -165,7 +165,7 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
         event.preventDefault();
         dismissShortcutHint();
         closeSearch();
-        navigate(`/${result.agentName.toLowerCase()}/${result.session.id}`, {
+        navigate(`/${result.reference.agentName.toLowerCase()}/${result.reference.sessionId}`, {
           state: { searchQuery: activeSearchQuery },
         });
       }

@@ -203,7 +203,7 @@ export function buildFileChangeSummaryFromActivity(
     fromActivity[item.kind].push({
       path: item.path,
       count: item.count,
-      latestTime: item.latest_time,
+      latestTime: item.latestTime,
       latestAnchorId: anchors?.latestAnchorId ?? "",
       toolLabel: anchors?.toolLabel ?? item.kind,
       anchors: anchors?.anchors ?? [],

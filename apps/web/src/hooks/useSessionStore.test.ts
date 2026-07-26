@@ -160,7 +160,12 @@ describe("useSessionStore", () => {
     await act(() =>
       result.current.applyLiveEvent({
         ...SAMPLE_SESSIONS_UPDATED_EVENT,
-        changedSessionHeads: [{ agentName: "claudecode", session: changedSession }],
+        changedSessionHeads: [
+          {
+            reference: { agentName: "claudecode", sessionId: changedSession.id },
+            session: changedSession,
+          },
+        ],
       }),
     );
 
@@ -181,7 +186,12 @@ describe("useSessionStore", () => {
     await act(() =>
       result.current.applyLiveEvent({
         ...SAMPLE_SESSIONS_UPDATED_EVENT,
-        changedSessionHeads: [{ agentName: "claudecode", session: changedSession }],
+        changedSessionHeads: [
+          {
+            reference: { agentName: "claudecode", sessionId: changedSession.id },
+            session: changedSession,
+          },
+        ],
       }),
     );
 

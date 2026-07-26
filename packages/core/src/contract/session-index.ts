@@ -1,14 +1,11 @@
-import type { ProjectIdentity, SessionHead } from "./session.js";
+import type { ProjectIdentity, ReferencedSessionHead, SessionHead } from "./session.js";
 import {
   formatSessionReference,
   getSessionAgentKey,
   type SessionReference,
 } from "./session-reference.js";
 
-export interface SessionHeadChange {
-  agentName: string;
-  session: SessionHead;
-}
+export type SessionHeadChange = ReferencedSessionHead;
 
 export type SessionHeadRemoval = SessionReference;
 
@@ -140,7 +137,10 @@ export function applySessionChanges(
     byRouteKey.delete(getSessionRouteKey(removal.agentName, removal.sessionId));
   }
   for (const change of changes) {
-    byRouteKey.set(getSessionRouteKey(change.agentName, change.session.id), change.session);
+    byRouteKey.set(
+      getSessionRouteKey(change.reference.agentName, change.reference.sessionId),
+      change.session,
+    );
   }
 
   return sortSessionsByActivity([...byRouteKey.values()]);

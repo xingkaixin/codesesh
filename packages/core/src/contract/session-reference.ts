@@ -5,6 +5,13 @@ export interface SessionReference {
 
 export const UNKNOWN_AGENT_NAME = "unknown";
 
+export function normalizeSessionReference(reference: SessionReference): SessionReference {
+  return {
+    agentName: reference.agentName.trim().toLowerCase(),
+    sessionId: reference.sessionId,
+  };
+}
+
 export function parseSessionReference(value: string): SessionReference | null {
   const separatorIndex = value.indexOf("/");
   if (separatorIndex <= 0 || separatorIndex === value.length - 1) return null;
@@ -18,7 +25,8 @@ export function parseSessionReference(value: string): SessionReference | null {
 }
 
 export function formatSessionReference(reference: SessionReference): string {
-  return `${reference.agentName.trim().toLowerCase()}/${reference.sessionId}`;
+  const normalized = normalizeSessionReference(reference);
+  return `${normalized.agentName}/${normalized.sessionId}`;
 }
 
 export function getSessionAgentKey(session: { slug: string }): string {

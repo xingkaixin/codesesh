@@ -287,14 +287,15 @@ export function AppSidebar({
             </span>
           ) : (
             <ul className="space-y-1">
-              {bookmarkedSessions.map((session) => {
+              {bookmarkedSessions.map((bookmark) => {
+                const { reference, session } = bookmark;
                 const isActive =
                   viewState.mode === "session" &&
-                  viewState.activeAgentKey === session.agentKey &&
-                  viewState.activeSessionSlug === session.sessionId;
-                const agent = findAgent(agentCatalog, session.agentKey);
+                  viewState.activeAgentKey === reference.agentName &&
+                  viewState.activeSessionSlug === reference.sessionId;
+                const agent = findAgent(agentCatalog, reference.agentName);
                 return (
-                  <li key={getSessionBookmarkKey(session.agentKey, session.sessionId)}>
+                  <li key={getSessionBookmarkKey(reference)}>
                     <div
                       className={`flex items-start gap-2 rounded-sm border px-2 py-1.5 motion-hover ${
                         isActive
@@ -303,7 +304,7 @@ export function AppSidebar({
                       }`}
                     >
                       <Link
-                        to={`/${session.fullPath}`}
+                        to={`/${session.slug}`}
                         className="flex min-w-0 flex-1 items-start gap-2"
                       >
                         {agent?.icon ? (
@@ -319,14 +320,14 @@ export function AppSidebar({
                             {getSessionDisplayTitle(session)}
                           </span>
                           <span className="console-mono mt-0.5 line-clamp-1 block text-[10px] text-[var(--console-muted)]">
-                            {agent?.displayName ?? session.agentKey}
+                            {agent?.displayName ?? reference.agentName}
                           </span>
                         </div>
                       </Link>
                       <SessionActionsMenu
                         bookmarked
-                        onRename={() => onRenameBookmarkedSession(session)}
-                        onToggleBookmark={() => onToggleBookmark(session)}
+                        onRename={() => onRenameBookmarkedSession(bookmark)}
+                        onToggleBookmark={() => onToggleBookmark(bookmark)}
                       />
                     </div>
                   </li>

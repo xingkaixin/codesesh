@@ -1,13 +1,13 @@
 import { StateStorageUnavailableError, useMemoryStateStore, withStateDb } from "./database.js";
 import type { DatabaseRow } from "../utils/sqlite.js";
+import { normalizeSessionReference, type SessionReference } from "../contract/index.js";
 
 export const SESSION_ALIAS_MAX_LENGTH = 160;
 
 export interface SessionAlias {
-  agentKey: string;
-  sessionId: string;
+  reference: SessionReference;
   alias: string;
-  updated_at: number;
+  updatedAt: number;
 }
 
 interface SessionAliasRow extends DatabaseRow {
@@ -19,16 +19,20 @@ interface SessionAliasRow extends DatabaseRow {
 
 const memoryAliases = new Map<string, SessionAlias>();
 
-function getAliasKey(agentKey: string, sessionId: string): string {
-  return JSON.stringify([agentKey, sessionId]);
+function getAliasKey(reference: SessionReference): string {
+  const normalized = normalizeSessionReference(reference);
+  return JSON.stringify([normalized.agentName, normalized.sessionId]);
 }
 
 function toSessionAlias(row: SessionAliasRow): SessionAlias {
-  return {
-    agentKey: String(row.agent_name ?? ""),
+  const reference = normalizeSessionReference({
+    agentName: String(row.agent_name ?? ""),
     sessionId: String(row.session_id ?? ""),
+  });
+  return {
+    reference,
     alias: String(row.alias ?? ""),
-    updated_at: Number(row.updated_at ?? 0),
+    updatedAt: Number(row.updated_at ?? 0),
   };
 }
 
@@ -56,24 +60,20 @@ export function listSessionAliases(): SessionAlias[] {
   );
 }
 
-export function upsertSessionAlias(
-  agentKey: string,
-  sessionId: string,
-  alias: string,
-): SessionAlias {
+export function upsertSessionAlias(reference: SessionReference, alias: string): SessionAlias {
   const normalizedAlias = normalizeSessionAlias(alias);
   if (!normalizedAlias) {
     throw new TypeError("Invalid session alias");
   }
 
+  const normalizedReference = normalizeSessionReference(reference);
   const saved: SessionAlias = {
-    agentKey,
-    sessionId,
+    reference: normalizedReference,
     alias: normalizedAlias,
-    updated_at: Date.now(),
+    updatedAt: Date.now(),
   };
   if (useMemoryStateStore()) {
-    memoryAliases.set(getAliasKey(agentKey, sessionId), saved);
+    memoryAliases.set(getAliasKey(normalizedReference), saved);
     return saved;
   }
 
@@ -86,14 +86,15 @@ export function upsertSessionAlias(
           alias = excluded.alias,
           updated_at = excluded.updated_at
       `,
-    ).run(saved.agentKey, saved.sessionId, saved.alias, saved.updated_at);
+    ).run(saved.reference.agentName, saved.reference.sessionId, saved.alias, saved.updatedAt);
     return saved;
   });
 }
 
-export function deleteSessionAlias(agentKey: string, sessionId: string): void {
+export function deleteSessionAlias(reference: SessionReference): void {
+  const normalizedReference = normalizeSessionReference(reference);
   if (useMemoryStateStore()) {
-    memoryAliases.delete(getAliasKey(agentKey, sessionId));
+    memoryAliases.delete(getAliasKey(normalizedReference));
     return;
   }
 
@@ -103,7 +104,7 @@ export function deleteSessionAlias(agentKey: string, sessionId: string): void {
         DELETE FROM session_aliases
         WHERE agent_name = ? AND session_id = ?
       `,
-    ).run(agentKey, sessionId);
+    ).run(normalizedReference.agentName, normalizedReference.sessionId);
   });
 }
 

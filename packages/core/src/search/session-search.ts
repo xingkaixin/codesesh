@@ -111,14 +111,19 @@ export function filterSessionSearchCandidates(
 ): SearchResult[] {
   const projectScope = options.cwd ? createProjectScopeMatcher(options.cwd) : null;
   const headMatches = candidates.filter((candidate) =>
-    matchesSessionSearchFilters(candidate.agentName, candidate.session, options, projectScope),
+    matchesSessionSearchFilters(
+      candidate.reference.agentName,
+      candidate.session,
+      options,
+      projectScope,
+    ),
   );
   if (!options.file && !options.fileKind && !options.tools?.length) return headMatches;
 
   const indexedMatches = filterIndexedSessionReferences(
     headMatches.map((candidate) => ({
-      agentName: candidate.agentName,
-      sessionId: candidate.session.id,
+      agentName: candidate.reference.agentName,
+      sessionId: candidate.reference.sessionId,
     })),
     {
       file: options.file,
@@ -127,7 +132,9 @@ export function filterSessionSearchCandidates(
     },
   );
   return headMatches.filter((candidate) =>
-    indexedMatches.has(sessionReferenceKey(candidate.agentName, candidate.session.id)),
+    indexedMatches.has(
+      sessionReferenceKey(candidate.reference.agentName, candidate.reference.sessionId),
+    ),
   );
 }
 
@@ -144,7 +151,10 @@ function searchRecentSessions(
     .flatMap(([agentName, sessions]) =>
       sessions
         .filter((session) => matchesSessionSearchFilters(agentName, session, options, projectScope))
-        .map((session) => ({ agentName, session })),
+        .map((session) => ({
+          reference: { agentName, sessionId: session.id },
+          session,
+        })),
     )
     .sort(
       (a, b) =>
@@ -152,8 +162,8 @@ function searchRecentSessions(
         (a.session.time_updated ?? a.session.time_created),
     )
     .slice(0, options.limit ?? 50)
-    .map(({ agentName, session }) => ({
-      agentName,
+    .map(({ reference, session }) => ({
+      reference,
       session,
       snippet: `Recent session · ${session.directory}`,
       matchType: "recent",
@@ -179,7 +189,7 @@ function mergeSearchResultSources(results: SearchResult[], limit: number): Searc
   const merged: SearchResult[] = [];
 
   for (const result of results) {
-    const key = sessionReferenceKey(result.agentName, result.session.id);
+    const key = sessionReferenceKey(result.reference.agentName, result.reference.sessionId);
     if (seen.has(key)) continue;
     seen.add(key);
     merged.push(result);
@@ -207,12 +217,16 @@ function searchIndexedSessions(
   const textMatchReferences =
     textQuery && options.file
       ? new Set(
-          sessionResults.map((result) => sessionReferenceKey(result.agentName, result.session.id)),
+          sessionResults.map((result) =>
+            sessionReferenceKey(result.reference.agentName, result.reference.sessionId),
+          ),
         )
       : null;
   const matchingFileResults = textMatchReferences
     ? fileResults.filter((result) =>
-        textMatchReferences.has(sessionReferenceKey(result.agentName, result.session.id)),
+        textMatchReferences.has(
+          sessionReferenceKey(result.reference.agentName, result.reference.sessionId),
+        ),
       )
     : fileResults;
 

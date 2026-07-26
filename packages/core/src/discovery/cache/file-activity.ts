@@ -71,13 +71,15 @@ export function fileActivityFilters(options: FileActivityOptions): {
 
 export function fileActivityFromRow(row: FileActivityRow): SessionFileActivity {
   return {
-    agent_name: String(row.agent_name),
-    session_id: String(row.session_id),
-    project_identity_key: String(row.project_identity_key ?? ""),
+    reference: {
+      agentName: String(row.agent_name),
+      sessionId: String(row.session_id),
+    },
+    projectIdentityKey: String(row.project_identity_key ?? ""),
     path: String(row.path ?? ""),
     kind: (row.kind ?? "read") as FileActivityKind,
     count: Number(row.count ?? 0),
-    latest_time: Number(row.latest_time ?? 0),
+    latestTime: Number(row.latest_time ?? 0),
   };
 }
 
@@ -259,11 +261,11 @@ export function searchFileActivitySessions(
   const results: SearchResult[] = [];
 
   for (const row of rows) {
-    const key = `${row.agent_name}/${row.session_id}`;
+    const key = `${row.reference.agentName}/${row.reference.sessionId}`;
     if (seen.has(key)) continue;
     seen.add(key);
     results.push({
-      agentName: row.agent_name,
+      reference: row.reference,
       session: row.session,
       snippet: `${row.kind} ${highlightFilePath(row.path, path)} · ${row.count} events`,
       matchType: "file_path",

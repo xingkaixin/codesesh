@@ -281,13 +281,13 @@ export function writeFileActivityRows(
 ): void {
   for (const activity of activities) {
     statement.run(
-      activity.agent_name,
-      activity.session_id,
-      activity.project_identity_key,
+      activity.reference.agentName,
+      activity.reference.sessionId,
+      activity.projectIdentityKey,
       activity.path,
       activity.kind,
       activity.count,
-      activity.latest_time,
+      activity.latestTime,
     );
   }
 }

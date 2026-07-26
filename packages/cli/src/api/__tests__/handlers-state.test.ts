@@ -83,10 +83,29 @@ function getResponsePayload<T>(context: ReturnType<typeof makeContext>): T {
   return context.json.mock.calls[0]![0] as T;
 }
 
-const validBookmark: Omit<BookmarkRecord, "bookmarked_at"> = {
+const validBookmark: Omit<BookmarkRecord, "bookmarkedAt"> = {
+  reference: { agentName: "codex", sessionId: "s1" },
+  session: {
+    id: "s1",
+    slug: "codex/s1",
+    title: "Session one",
+    directory: "/workspace",
+    time_created: 1,
+    time_updated: 2,
+    stats: {
+      message_count: 1,
+      total_input_tokens: 2,
+      total_output_tokens: 3,
+      total_cost: 0.1,
+      total_tokens: 5,
+    },
+  },
+};
+
+const legacyBookmark = {
   agentKey: "codex",
   sessionId: "s1",
-  fullPath: "codex/s1",
+  fullPath: "stale/legacy-route",
   title: "Session one",
   directory: "/workspace",
   time_created: 1,
@@ -102,7 +121,7 @@ const validBookmark: Omit<BookmarkRecord, "bookmarked_at"> = {
 
 const storedBookmark: BookmarkRecord = {
   ...validBookmark,
-  bookmarked_at: 3,
+  bookmarkedAt: 3,
 };
 
 const scanSource: ScanResultSource = {
@@ -125,10 +144,9 @@ beforeEach(() => {
   coreMocks.upsertBookmark.mockReturnValue(storedBookmark);
   coreMocks.importBookmarks.mockReturnValue([storedBookmark]);
   coreMocks.upsertSessionAlias.mockReturnValue({
-    agentKey: "codex",
-    sessionId: "s1",
+    reference: { agentName: "codex", sessionId: "s1" },
     alias: "Renamed",
-    updated_at: 1,
+    updatedAt: 1,
   });
 });
 
@@ -188,14 +206,23 @@ describe("bookmark handlers", () => {
   it("projects aliases onto stored bookmark snapshots", () => {
     coreMocks.listBookmarks.mockReturnValue([storedBookmark]);
     coreMocks.listSessionAliases.mockReturnValue([
-      { agentKey: "codex", sessionId: "s1", alias: "Renamed", updated_at: 1 },
+      {
+        reference: { agentName: "codex", sessionId: "s1" },
+        alias: "Renamed",
+        updatedAt: 1,
+      },
     ]);
     const c = makeContext();
 
     handleGetBookmarks(c as never);
 
     expect(c.json).toHaveBeenCalledWith({
-      bookmarks: [{ ...storedBookmark, display_title: "Renamed" }],
+      bookmarks: [
+        {
+          ...storedBookmark,
+          session: { ...storedBookmark.session, display_title: "Renamed" },
+        },
+      ],
       storageAvailable: true,
     });
   });
@@ -246,19 +273,50 @@ describe("bookmark handlers", () => {
   it.each([
     null,
     {},
-    { ...validBookmark, agentKey: 1 },
-    { ...validBookmark, sessionId: 1 },
-    { ...validBookmark, fullPath: 1 },
-    { ...validBookmark, title: 1 },
-    { ...validBookmark, directory: 1 },
-    { ...validBookmark, time_created: "1" },
-    { ...validBookmark, time_updated: "2" },
-    { ...validBookmark, stats: null },
-    { ...validBookmark, stats: { ...validBookmark.stats, message_count: "1" } },
-    { ...validBookmark, stats: { ...validBookmark.stats, total_input_tokens: "2" } },
-    { ...validBookmark, stats: { ...validBookmark.stats, total_output_tokens: "3" } },
-    { ...validBookmark, stats: { ...validBookmark.stats, total_cost: "0.1" } },
-    { ...validBookmark, stats: { ...validBookmark.stats, total_tokens: "5" } },
+    { ...validBookmark, reference: { ...validBookmark.reference, agentName: 1 } },
+    { ...validBookmark, reference: { ...validBookmark.reference, sessionId: 1 } },
+    { ...validBookmark, session: { ...validBookmark.session, id: "other" } },
+    { ...validBookmark, session: { ...validBookmark.session, slug: 1 } },
+    { ...validBookmark, session: { ...validBookmark.session, title: 1 } },
+    { ...validBookmark, session: { ...validBookmark.session, directory: 1 } },
+    { ...validBookmark, session: { ...validBookmark.session, time_created: "1" } },
+    { ...validBookmark, session: { ...validBookmark.session, time_updated: "2" } },
+    { ...validBookmark, session: { ...validBookmark.session, stats: null } },
+    {
+      ...validBookmark,
+      session: {
+        ...validBookmark.session,
+        stats: { ...validBookmark.session.stats, message_count: "1" },
+      },
+    },
+    {
+      ...validBookmark,
+      session: {
+        ...validBookmark.session,
+        stats: { ...validBookmark.session.stats, total_input_tokens: "2" },
+      },
+    },
+    {
+      ...validBookmark,
+      session: {
+        ...validBookmark.session,
+        stats: { ...validBookmark.session.stats, total_output_tokens: "3" },
+      },
+    },
+    {
+      ...validBookmark,
+      session: {
+        ...validBookmark.session,
+        stats: { ...validBookmark.session.stats, total_cost: "0.1" },
+      },
+    },
+    {
+      ...validBookmark,
+      session: {
+        ...validBookmark.session,
+        stats: { ...validBookmark.session.stats, total_tokens: "5" },
+      },
+    },
   ])("rejects invalid bookmark payload %#", async (body) => {
     const c = makeContext({ body });
 
@@ -269,7 +327,7 @@ describe("bookmark handlers", () => {
   });
 
   it("stores valid bookmarks without transport-only fields", async () => {
-    const c = makeContext({ body: { ...validBookmark, bookmarked_at: 99 } });
+    const c = makeContext({ body: { ...validBookmark, bookmarkedAt: 99 } });
 
     await handlePutBookmark(c as never);
 
@@ -312,6 +370,10 @@ describe("bookmark handlers", () => {
       bookmarks: [storedBookmark],
       storageAvailable: true,
     });
+
+    const legacy = makeContext({ body: [legacyBookmark] });
+    await handleImportBookmarks(legacy as never);
+    expect(coreMocks.importBookmarks).toHaveBeenLastCalledWith([validBookmark]);
   });
 
   it("maps bookmark import availability errors and rethrows unexpected failures", async () => {
@@ -347,7 +409,10 @@ describe("bookmark handlers", () => {
   it("deletes bookmarks and handles storage failures", () => {
     const valid = makeContext({ param: { agent: "codex", id: "s1" } });
     handleDeleteBookmark(valid as never);
-    expect(coreMocks.deleteBookmark).toHaveBeenCalledWith("codex", "s1");
+    expect(coreMocks.deleteBookmark).toHaveBeenCalledWith({
+      agentName: "codex",
+      sessionId: "s1",
+    });
     expect(valid.json).toHaveBeenCalledWith({ ok: true, storageAvailable: true });
 
     coreMocks.deleteBookmark.mockImplementationOnce(() => {
@@ -399,7 +464,10 @@ describe("session alias handlers", () => {
       param: { agent: "codex", id: "s1" },
     });
     await handlePutSessionAlias(valid as never);
-    expect(coreMocks.upsertSessionAlias).toHaveBeenCalledWith("codex", "s1", "Renamed");
+    expect(coreMocks.upsertSessionAlias).toHaveBeenCalledWith(
+      { agentName: "codex", sessionId: "s1" },
+      "Renamed",
+    );
 
     coreMocks.upsertSessionAlias.mockImplementationOnce(() => {
       throw new TypeError("invalid alias");
@@ -461,7 +529,10 @@ describe("session alias handlers", () => {
   it("deletes aliases and handles storage failures", () => {
     const valid = makeContext({ param: { agent: "codex", id: "s1" } });
     handleDeleteSessionAlias(valid as never);
-    expect(coreMocks.deleteSessionAlias).toHaveBeenCalledWith("codex", "s1");
+    expect(coreMocks.deleteSessionAlias).toHaveBeenCalledWith({
+      agentName: "codex",
+      sessionId: "s1",
+    });
     expect(valid.json).toHaveBeenCalledWith({ ok: true });
 
     coreMocks.deleteSessionAlias.mockImplementationOnce(() => {
@@ -588,7 +659,11 @@ describe("query boundary handlers", () => {
 });
 
 describe("session alias caching", () => {
-  const aliasRecord = { agentKey: "codex", sessionId: "s1", alias: "Renamed", updated_at: 1 };
+  const aliasRecord = {
+    reference: { agentName: "codex", sessionId: "s1" },
+    alias: "Renamed",
+    updatedAt: 1,
+  };
 
   it("queries alias storage once across repeated reads", () => {
     coreMocks.listSessionAliases.mockReturnValue([aliasRecord]);
@@ -615,7 +690,7 @@ describe("session alias caching", () => {
     handleGetBookmarks(after as never);
 
     expect(getResponsePayload<{ bookmarks: BookmarkRecord[] }>(after).bookmarks[0]).toMatchObject({
-      display_title: "Renamed",
+      session: { display_title: "Renamed" },
     });
   });
 
@@ -631,7 +706,8 @@ describe("session alias caching", () => {
     handleGetBookmarks(after as never);
 
     expect(
-      getResponsePayload<{ bookmarks: BookmarkRecord[] }>(after).bookmarks[0]?.display_title,
+      getResponsePayload<{ bookmarks: BookmarkRecord[] }>(after).bookmarks[0]?.session
+        .display_title,
     ).toBeUndefined();
   });
 
@@ -652,6 +728,6 @@ describe("session alias caching", () => {
 
     expect(
       getResponsePayload<{ bookmarks: BookmarkRecord[] }>(recovered).bookmarks[0],
-    ).toMatchObject({ display_title: "Renamed" });
+    ).toMatchObject({ session: { display_title: "Renamed" } });
   });
 });

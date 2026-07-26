@@ -133,7 +133,7 @@ export function useSessionSearch(
     if (!searchMode) return;
     const selectedResult = searchResults[selectedSearchIndex];
     if (!selectedResult) return;
-    const key = `${selectedResult.agentName}/${selectedResult.session.id}`;
+    const key = `${selectedResult.reference.agentName}/${selectedResult.reference.sessionId}`;
     searchResultRefs.current.get(key)?.scrollIntoView({ block: "nearest" });
   }, [searchMode, searchResults, selectedSearchIndex]);
 
