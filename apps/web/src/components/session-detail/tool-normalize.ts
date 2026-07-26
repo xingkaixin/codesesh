@@ -6,7 +6,7 @@
  * in ./utils and are re-exported here for convenience.
  */
 import type { LoaderCircle } from "../ui/icons";
-import type { Message, MessagePart } from "../../lib/api";
+import type { Message, ToolPart } from "../../lib/api";
 import type { ToolOutputContent } from "../tool-output/types";
 import type { ToolDetailItem } from "./codex-tool";
 import {
@@ -172,19 +172,19 @@ export function cleanToolTitle(value: string) {
   return trimmed.replace(/^tool:\s*/i, "").replace(/^\.+(?=\w)/, "");
 }
 
-export function normalizeToolLabel(part: MessagePart) {
-  if (typeof part.title === "string" && part.title.trim()) {
+export function normalizeToolLabel(part: ToolPart) {
+  if (part.title?.trim()) {
     return cleanToolTitle(part.title);
   }
-  if (typeof part.tool === "string" && part.tool.trim()) return cleanToolTitle(part.tool);
+  if (part.tool.trim()) return cleanToolTitle(part.tool);
   return "tool";
 }
 
-export function normalizeToolName(part: MessagePart) {
+export function normalizeToolName(part: ToolPart) {
   return normalizeToolLabel(part).trim().toLowerCase();
 }
 
-export function getToolTitle(tool: MessagePart, fallback = "Tool") {
+export function getToolTitle(tool: ToolPart, fallback = "Tool") {
   return cleanToolTitle(toPlainText(tool.title)) || toPlainText(tool.tool) || fallback;
 }
 
@@ -207,18 +207,12 @@ export function getOutputOrErrorText(state: NormalizedToolState) {
 // Tool state normalization
 // ---------------------------------------------------------------------------
 
-export function normalizeToolState(part: MessagePart): NormalizedToolState {
-  const rawState = (part.state || {}) as Record<string, unknown>;
-  const rawStatus = rawState.status;
-  const status: ToolStatus =
-    rawStatus === "running" || rawStatus === "error" || rawStatus === "completed"
-      ? rawStatus
-      : "completed";
-
-  const outputValue = rawState.output ?? rawState.result ?? "";
-  const errorValue = rawState.error ?? "";
-  const inputValue = parseInputCandidate(rawState.input ?? rawState.arguments ?? {});
-  const metadataValue = rawState.metadata ?? {};
+export function normalizeToolState(part: ToolPart): NormalizedToolState {
+  const { status, input, output, error, metadata } = part.state;
+  const outputValue = output ?? "";
+  const errorValue = error ?? "";
+  const inputValue = parseInputCandidate(input ?? {});
+  const metadataValue = metadata ?? {};
   const command = extractCommand(inputValue);
 
   return {

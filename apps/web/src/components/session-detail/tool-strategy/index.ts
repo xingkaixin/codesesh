@@ -10,7 +10,7 @@
  *
  * Pure logic — no React. Consumed by SessionDetail's ToolItem / MessageItem.
  */
-import type { MessagePart } from "../../../lib/api";
+import type { ToolPart } from "../../../lib/api";
 import type { NormalizedToolState, ToolDisplayStrategy } from "../tool-normalize";
 import { buildClaudeToolStrategy } from "./claudecode";
 import { buildOpencodeToolStrategy } from "./opencode";
@@ -42,7 +42,7 @@ export { buildPiToolStrategy } from "./pi";
 export { buildZCodeToolStrategy } from "./zcode";
 
 type ToolStrategyBuilder = (
-  tool: MessagePart,
+  tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
 ) => ToolDisplayStrategy;
@@ -61,7 +61,7 @@ const TOOL_STRATEGY_BUILDERS: Record<string, ToolStrategyBuilder> = {
 
 export function getToolDisplayStrategy(
   sessionAgentKey: string,
-  tool: MessagePart,
+  tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
 ): ToolDisplayStrategy {

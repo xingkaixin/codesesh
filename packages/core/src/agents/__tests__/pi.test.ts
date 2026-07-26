@@ -527,7 +527,8 @@ describe("PiAgent", () => {
       ]);
 
       agent.scan();
-      const text = String(agent.getSessionData(sessionId).messages[0]?.parts[0]?.text ?? "");
+      const part = agent.getSessionData(sessionId).messages[0]?.parts[0];
+      const text = part?.type === "text" ? part.text : "";
 
       expect(text).toHaveLength(padding.length + MARKER.length);
       expect(text.endsWith(MARKER)).toBe(true);

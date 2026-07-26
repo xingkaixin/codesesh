@@ -279,8 +279,8 @@ describe("ClaudeCodeAgent cache refresh", () => {
           { type: "text", text: "package output" },
           { type: "image", data: "iVBORw0KGgo=", mime_type: "image/png" },
         ],
-        status: "success",
-        meta: { commandName: "read" },
+        status: "completed",
+        metadata: { commandName: "read" },
       },
     });
     expect(

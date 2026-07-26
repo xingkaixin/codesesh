@@ -10,13 +10,13 @@ import {
   UserRound,
   XCircle,
 } from "../ui/icons";
-import type { AgentInfo, Message, MessagePart } from "../../lib/api";
+import type { AgentInfo, Message, PlanPart, ReasoningPart, ToolPart } from "../../lib/api";
 import { formatMessageTime } from "../../lib/format";
 import { AgentIcon } from "../AgentIcon";
 import { MarkdownContent } from "../MarkdownContent";
 import { ToolOutputRenderer } from "../tool-output/ToolOutputRenderer";
 import { Collapsible } from "../ui/Collapsible";
-import { extractMessageText, type MessageBlock } from "./blocks";
+import type { MessageBlock } from "./blocks";
 import { isCodexTurnAbortedMessage } from "./codex-abort";
 import { buildCodexPlanDisplay } from "./codex-plan";
 import { getDisplayTextWithRelativePaths } from "./path-extract";
@@ -214,7 +214,7 @@ export const MessageItem = memo(function MessageItem({
                     {block.parts.map((part, partIndex) => (
                       <MessageMarkdown
                         key={partIndex}
-                        text={extractMessageText(part.text)}
+                        text={part.text}
                         highlightQuery={highlightQuery}
                       />
                     ))}
@@ -279,12 +279,12 @@ function ReasoningSection({
   highlightQuery,
 }: {
   anchorId: string;
-  parts: MessagePart[];
+  parts: ReasoningPart[];
   highlightQuery?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const fullText = parts
-    .map((p) => extractMessageText(p.text))
+    .map((part) => part.text)
     .filter(Boolean)
     .join("\n\n");
 
@@ -326,7 +326,7 @@ function ToolsSection({
   baseDirectory,
   highlightQuery,
 }: {
-  parts: MessagePart[];
+  parts: ToolPart[];
   anchorIds?: string[];
   sessionAgentKey: string;
   baseDirectory: string;
@@ -356,7 +356,7 @@ function PlansSection({
   highlightQuery,
 }: {
   anchorId: string;
-  parts: MessagePart[];
+  parts: PlanPart[];
   highlightQuery?: string;
 }) {
   return (
@@ -368,7 +368,7 @@ function PlansSection({
   );
 }
 
-function PlanItem({ part, highlightQuery }: { part: MessagePart; highlightQuery?: string }) {
+function PlanItem({ part, highlightQuery }: { part: PlanPart; highlightQuery?: string }) {
   const [expanded, setExpanded] = useState(false);
   const display = buildCodexPlanDisplay(part);
   const statusMeta =
@@ -448,7 +448,7 @@ function ToolItem({
   baseDirectory,
   highlightQuery,
 }: {
-  tool: MessagePart;
+  tool: ToolPart;
   anchorId?: string;
   sessionAgentKey: string;
   baseDirectory?: string;

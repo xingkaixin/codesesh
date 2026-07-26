@@ -1165,7 +1165,8 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       callID: callId,
       title: `Tool: ${toolIdentity.tool}`,
       state: {
-        arguments: arguments_,
+        status: "running",
+        input: arguments_,
         output: null,
         metadata: toolIdentity.metadata,
       },
@@ -1234,7 +1235,8 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       callID: callId,
       title: `Tool: ${toolIdentity.tool}`,
       state: {
-        arguments: normalizedInput,
+        status: "running",
+        input: normalizedInput,
         output: null,
         metadata: toolIdentity.metadata,
       },
@@ -1285,7 +1287,8 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
       callID: callId,
       title: `Tool: ${toolIdentity.tool}`,
       state: {
-        arguments: arguments_,
+        status: "running",
+        input: arguments_,
         output: null,
         metadata: toolIdentity.metadata,
       },

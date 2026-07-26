@@ -3,7 +3,7 @@
  * Classifies tool calls into read/edit/write/delete kinds and builds
  * per-path summaries (with anchor ids for click-to-scroll).
  */
-import type { Message, MessagePart, SessionFileActivity } from "../../lib/api";
+import type { Message, SessionFileActivity, ToolPart } from "../../lib/api";
 import type { MessageDisplayModel } from "./display-model";
 import { getCodexPatchEntries } from "./codex-patch";
 import { normalizeToolLabel, normalizeToolName } from "./tool-normalize";
@@ -62,7 +62,7 @@ export function buildToolAnchorId(messageIndex: number, toolIndex: number) {
   return `tool-${messageIndex}-${toolIndex}`;
 }
 
-export function classifyToolKind(part: MessagePart): FileChangeKind | null {
+export function classifyToolKind(part: ToolPart): FileChangeKind | null {
   const toolName = normalizeToolName(part);
   if (FILE_READ_TOOLS.has(toolName)) return "read";
   if (FILE_EDIT_TOOLS.has(toolName)) return "edit";

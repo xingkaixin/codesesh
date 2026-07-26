@@ -1,8 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../db.js";
+import { getCachePath, setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../db.js";
 import * as schema from "../schema.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-schema-test-"));
@@ -61,7 +62,7 @@ describe("cache schema boundary", () => {
       "indexed_message_count",
       "indexed_at",
     ]);
-    expect(state?.version).toBe(15);
+    expect(state?.version).toBe(16);
   });
 
   it("exposes capabilities instead of migration steps", () => {
@@ -72,5 +73,78 @@ describe("cache schema boundary", () => {
       "withSearchDb",
       "withSearchIndexDb",
     ]);
+  });
+
+  it("normalizes legacy message parts once during migration", () => {
+    schema.withCacheDb(() => undefined);
+
+    const legacyDb = new Database(getCachePath());
+    legacyDb.pragma("foreign_keys = OFF");
+    legacyDb
+      .prepare(
+        `
+          INSERT INTO messages(
+            agent_name,
+            session_id,
+            message_index,
+            message_id,
+            role,
+            time_created,
+            parts_json,
+            content_text
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .run(
+        "codex",
+        "legacy",
+        0,
+        "m1",
+        "assistant",
+        1,
+        JSON.stringify([
+          {
+            type: "tool",
+            tool: "Read",
+            state: { status: "success", arguments: { path: "src/a.ts" }, result: "done" },
+          },
+        ]),
+        "legacy",
+      );
+    legacyDb.pragma("user_version = 15");
+    legacyDb.prepare("UPDATE cache_meta SET value = '15' WHERE key = 'version'").run();
+    legacyDb.close();
+    setSchemaEnsuredPath(null);
+
+    const migrated = schema.withCacheDb((db) => ({
+      version: Number(
+        (db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined)
+          ?.user_version ?? 0,
+      ),
+      parts: JSON.parse(
+        String(
+          (
+            db.prepare("SELECT parts_json FROM messages WHERE message_id = 'm1'").get() as {
+              parts_json?: string;
+            }
+          ).parts_json,
+        ),
+      ) as unknown,
+    }));
+
+    expect(migrated).toEqual({
+      version: 16,
+      parts: [
+        {
+          type: "tool",
+          tool: "Read",
+          state: {
+            status: "completed",
+            input: { path: "src/a.ts" },
+            output: "done",
+          },
+        },
+      ],
+    });
   });
 });

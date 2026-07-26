@@ -1,4 +1,10 @@
-import type { Message, MessagePart, SessionStats } from "../types/index.js";
+import type {
+  Message,
+  MessagePart,
+  SessionStats,
+  ToolPart,
+  ToolPartStatus,
+} from "../types/index.js";
 import { cleanParsedMessages } from "../utils/session-normalization.js";
 
 export interface TranscriptMessageInput {
@@ -21,7 +27,7 @@ export type AssistantMessageInput = Omit<TranscriptMessageInput, "role" | "parts
 
 export interface ToolResolution {
   output?: unknown;
-  status?: NonNullable<MessagePart["state"]>["status"];
+  status?: ToolPartStatus;
   metadata?: unknown;
   consume?: boolean;
 }
@@ -33,7 +39,7 @@ export interface TranscriptResult {
 
 export class TranscriptBuilder {
   private readonly messages: Message[] = [];
-  private readonly pendingToolCalls = new Map<string, MessagePart>();
+  private readonly pendingToolCalls = new Map<string, ToolPart>();
   private currentAssistant: Message | null = null;
   private latestTextAssistant: Message | null = null;
 
@@ -98,7 +104,7 @@ export class TranscriptBuilder {
   }
 
   appendToolCall(
-    part: MessagePart,
+    part: ToolPart,
     input: AssistantMessageInput,
     options: {
       markModeAsTool?: boolean;
@@ -136,7 +142,7 @@ export class TranscriptBuilder {
     return true;
   }
 
-  updateToolCall(callId: string, update: (part: MessagePart) => void): boolean {
+  updateToolCall(callId: string, update: (part: ToolPart) => void): boolean {
     const part = this.pendingToolCalls.get(callId);
     if (!part) return false;
     update(part);
@@ -145,9 +151,12 @@ export class TranscriptBuilder {
 
   resolveToolCall(callId: string, resolution: ToolResolution): boolean {
     return this.updateToolCall(callId, (part) => {
-      const state = part.state ?? (part.state = {});
+      const state = part.state;
       if (resolution.output !== undefined) state.output = resolution.output;
       if (resolution.status !== undefined) state.status = resolution.status;
+      else if (resolution.output !== undefined && state.status === "running") {
+        state.status = "completed";
+      }
       if (resolution.metadata !== undefined) state.metadata = resolution.metadata;
       if (resolution.consume) this.pendingToolCalls.delete(callId);
     });
@@ -216,7 +225,9 @@ export class TranscriptBuilder {
 
   private appendPartIfNew(message: Message, part: MessagePart): void {
     const tail = message.parts.at(-1);
-    if (tail?.type === part.type && tail.text === part.text) return;
+    if ("text" in part && tail?.type === part.type && "text" in tail && tail.text === part.text) {
+      return;
+    }
     message.parts.push(part);
   }
 

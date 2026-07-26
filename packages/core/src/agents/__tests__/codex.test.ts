@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexAgent } from "../codex.js";
-import type { Message, MessagePart, SessionHead } from "../../types/index.js";
+import type { Message, MessagePart, SessionHead, ToolPart } from "../../types/index.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
 // Spies while delegating to the real implementation so regression tests can
@@ -685,7 +685,7 @@ describe("CodexAgent cache refresh", () => {
       tool: "linear.list_issue_labels",
       title: "Tool: linear.list_issue_labels",
       state: {
-        arguments: { team: "research&develop" },
+        input: { team: "research&develop" },
         metadata: {
           name: "_list_issue_labels",
           namespace: "mcp__codex_apps__linear",
@@ -735,7 +735,7 @@ describe("CodexAgent cache refresh", () => {
       tool: "js",
       title: "Tool: js",
       state: {
-        arguments: { code: "1 + 1" },
+        input: { code: "1 + 1" },
         metadata: {
           name: "js",
           namespace: "mcp__node_repl__",
@@ -947,7 +947,7 @@ describe("CodexAgent cache refresh", () => {
       type: "tool",
       tool: "bash",
       state: {
-        arguments: { cmd: "ls" },
+        input: { cmd: "ls" },
         output: [{ type: "text", text: "package.json" }],
         status: "completed",
       },
@@ -956,7 +956,7 @@ describe("CodexAgent cache refresh", () => {
       type: "tool",
       tool: "patch",
       state: {
-        arguments: [
+        input: [
           { type: "write_file", path: "package.json" },
           { type: "move_file", path: "src/a.ts", targetPath: "src/b.ts" },
           { type: "delete_file", path: "old.ts" },
@@ -1050,7 +1050,7 @@ describe("CodexAgent code-mode exec decoding", () => {
       type: "tool",
       tool: "bash",
       state: {
-        arguments: { cmd: "ls", workdir: "/tmp/project" },
+        input: { cmd: "ls", workdir: "/tmp/project" },
         output: [{ type: "text", text: "package.json" }],
         status: "completed",
       },
@@ -1086,7 +1086,7 @@ describe("CodexAgent code-mode exec decoding", () => {
       type: "tool",
       tool: "patch",
       state: {
-        arguments: [{ type: "write_file", path: "a.txt", content: "+hello" }],
+        input: [{ type: "write_file", path: "a.txt", content: "+hello" }],
         output: [{ type: "text", text: "Success" }],
         status: "completed",
       },
@@ -1112,7 +1112,7 @@ describe("CodexAgent code-mode exec decoding", () => {
       tool: "js",
       title: "Tool: js",
       state: {
-        arguments: { title: "Check state", code: "1+1" },
+        input: { title: "Check state", code: "1+1" },
         metadata: { name: "js", namespace: "mcp__node_repl__" },
       },
     });
@@ -1135,7 +1135,7 @@ describe("CodexAgent code-mode exec decoding", () => {
     expect(firstToolPart(agent, sessionId)).toMatchObject({
       type: "tool",
       tool: "write_stdin",
-      state: { arguments: { session_id: 68920, chars: "yes" } },
+      state: { input: { session_id: 68920, chars: "yes" } },
     });
   });
 
@@ -1165,11 +1165,11 @@ describe("CodexAgent code-mode exec decoding", () => {
     ]);
 
     const data = agent.getSessionData(sessionId);
-    const toolParts = data.messages
-      .flatMap((message: Message) => message.parts)
-      .filter((partValue: MessagePart) => partValue.type === "tool");
+    const toolParts = (data.messages as Message[])
+      .flatMap((message) => message.parts)
+      .filter((partValue): partValue is ToolPart => partValue.type === "tool");
 
-    expect(toolParts.map((partValue: MessagePart) => partValue.tool)).toEqual(["bash", "patch"]);
+    expect(toolParts.map((partValue) => partValue.tool)).toEqual(["bash", "patch"]);
     // The combined output routes to the output-bearing bash part, not the patch.
     expect(toolParts[0]).toMatchObject({
       tool: "bash",
@@ -1177,7 +1177,7 @@ describe("CodexAgent code-mode exec decoding", () => {
     });
     expect(toolParts[1]).toMatchObject({
       tool: "patch",
-      state: { arguments: [{ type: "write_file", path: "a.txt", content: "+hi" }], output: null },
+      state: { input: [{ type: "write_file", path: "a.txt", content: "+hi" }], output: null },
     });
   });
 });

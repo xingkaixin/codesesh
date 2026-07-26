@@ -8,7 +8,14 @@ import {
   parsedSession,
 } from "./base.js";
 import type { AgentScanOptions } from "./base.js";
-import type { SessionHead, SessionData, Message, MessagePart } from "../types/index.js";
+import type {
+  SessionHead,
+  SessionData,
+  Message,
+  MessagePart,
+  ToolPartState,
+} from "../types/index.js";
+import { normalizeMessageParts } from "../contract/message-part.js";
 import { getCursorDataPath } from "../discovery/paths.js";
 import { openDbReadOnly, isSqliteAvailable, type SQLiteDatabase } from "../utils/sqlite.js";
 import { resolveSessionTitle } from "../utils/title-fallback.js";
@@ -306,39 +313,24 @@ function isInternalBubble(bubble: BubbleData): boolean {
 }
 
 /** Build a normalized tool state object from an action entry */
-function buildToolState(action: ActionEntry): MessagePart["state"] {
-  const state: MessagePart["state"] = {};
-
-  // Copy input
-  if (action.input) {
-    state.input = action.input;
-  }
-
-  // Normalize output into parts
+function buildToolState(action: ActionEntry): ToolPartState {
+  let output = action.output;
   if (action.output != null) {
     const ts = 0; // we don't have a finer-grained timestamp for the output
     const outputParts = normalizeToolOutputParts(action.output, ts);
-    state.output = outputParts.length > 0 ? outputParts : action.output;
+    output = outputParts.length > 0 ? outputParts : action.output;
   }
 
-  // Merge any explicit state fields
-  if (action.state) {
-    Object.assign(state, action.state);
-  }
-
-  // Derive status from output shape if not set
-  if (!state.status) {
-    if (typeof action.output === "object" && action.output !== null) {
-      const out = asRecord(action.output);
-      if (out?.success === true) state.status = "completed";
-      else if (out?.success === false) state.status = "error";
-      else state.status = "completed";
-    } else if (action.output != null) {
-      state.status = "completed";
-    }
-  }
-
-  return state;
+  const [part] = normalizeMessageParts([
+    {
+      type: "tool",
+      tool: action.tool ?? "unknown",
+      input: action.input,
+      output,
+      state: action.state,
+    },
+  ]);
+  return part?.type === "tool" ? part.state : { status: "running" };
 }
 
 /** Build a MessagePart for a tool action */
@@ -359,18 +351,19 @@ function buildTerminalToolPart(action: ActionEntry, timestampMs: number): Messag
   const command = String(action.input?.command ?? "");
   const description = cleanInternalText(String(action.input?.commandDescription ?? ""));
 
+  const state = buildToolState(action);
+  state.input = { command };
+  state.output =
+    typeof action.output === "string"
+      ? [{ type: "text" as const, text: action.output, time_created: timestampMs }]
+      : normalizeToolOutputParts(action.output, timestampMs);
+
   return {
     type: "tool",
     tool: "bash",
     callID: "",
     title: description || `bash: ${command.slice(0, 60)}`,
-    state: {
-      input: { command },
-      output:
-        typeof action.output === "string"
-          ? [{ type: "text" as const, text: action.output, time_created: timestampMs }]
-          : normalizeToolOutputParts(action.output, timestampMs),
-    },
+    state,
     time_created: timestampMs,
   };
 }
@@ -983,7 +976,7 @@ export class CursorAgent extends DatabaseSessionSource {
     const normalizedName = toolName === "create_plan" ? "plan" : mapToolTitle(toolName);
 
     // Build state
-    const state: MessagePart["state"] = {
+    const state: ToolPartState = {
       status: toolData.status === "completed" ? "completed" : "running",
     };
 
@@ -1020,15 +1013,15 @@ export class CursorAgent extends DatabaseSessionSource {
 
     // Handle plan tool specially
     if (toolName === "create_plan") {
-      const planText = asRecord(state.input)?.plan;
-      return {
-        type: "plan",
-        title: "Plan",
-        input: planText,
-        approval_status: state.status === "completed" ? "success" : "fail",
-        state,
-        time_created: timestampMs,
-      };
+      const planText = String(asRecord(state.input)?.plan ?? "").trim();
+      if (planText) {
+        return {
+          type: "plan",
+          text: planText,
+          approval_status: state.status === "completed" ? "success" : "fail",
+          time_created: timestampMs,
+        };
+      }
     }
 
     return {

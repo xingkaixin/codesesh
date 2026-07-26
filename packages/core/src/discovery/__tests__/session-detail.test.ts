@@ -105,7 +105,7 @@ function makeDetail(title = "Source Session"): SessionData {
           {
             type: "tool",
             tool: "Read",
-            state: { arguments: { file_path: "src/index.ts" } },
+            state: { status: "completed", input: { file_path: "src/index.ts" } },
           },
         ],
       },

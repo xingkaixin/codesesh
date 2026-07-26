@@ -18,7 +18,7 @@ export function isCodexTurnAbortedMessage(msg: Message, sessionAgentKey: string)
   }
 
   const [part] = msg.parts;
-  if (!part || part.type !== "text" || typeof part.text !== "string") {
+  if (!part || part.type !== "text") {
     return false;
   }
 

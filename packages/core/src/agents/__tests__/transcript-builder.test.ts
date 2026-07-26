@@ -9,7 +9,12 @@ describe("TranscriptBuilder", () => {
     builder.appendAssistantPart({ type: "reasoning", text: "think" }, meta);
     builder.appendAssistantPart({ type: "text", text: "answer" }, meta);
     builder.appendToolCall(
-      { type: "tool", tool: "read", callID: "call-1", state: { input: { path: "a.ts" } } },
+      {
+        type: "tool",
+        tool: "read",
+        callID: "call-1",
+        state: { status: "running", input: { path: "a.ts" } },
+      },
       meta,
       { markModeAsTool: true },
     );
@@ -78,7 +83,7 @@ describe("TranscriptBuilder", () => {
       id: "assistant",
       role: "assistant",
       timestampMs: 10,
-      parts: [{ type: "tool", tool: "read", callID: "call-1", state: {} }],
+      parts: [{ type: "tool", tool: "read", callID: "call-1", state: { status: "running" } }],
     });
 
     expect(
@@ -89,9 +94,11 @@ describe("TranscriptBuilder", () => {
       }),
     ).toBe(true);
     expect(builder.resolveToolCall("call-1", { status: "error" })).toBe(false);
-    expect(builder.finish().messages[0]?.parts[0]?.state).toEqual({
-      output: [{ type: "text", text: "done" }],
-      status: "completed",
+    expect(builder.finish().messages[0]?.parts[0]).toMatchObject({
+      state: {
+        output: [{ type: "text", text: "done" }],
+        status: "completed",
+      },
     });
   });
 
@@ -102,9 +109,13 @@ describe("TranscriptBuilder", () => {
     builder.appendAssistantPart({ type: "text", text: "before" }, meta, {
       grouping: "current",
     });
-    builder.appendToolCall({ type: "tool", tool: "read", callID: "call-1", state: {} }, meta, {
-      target: "current",
-    });
+    builder.appendToolCall(
+      { type: "tool", tool: "read", callID: "call-1", state: { status: "running" } },
+      meta,
+      {
+        target: "current",
+      },
+    );
     builder.appendAssistantPart({ type: "reasoning", text: "after" }, meta, {
       grouping: "current",
     });
@@ -113,7 +124,7 @@ describe("TranscriptBuilder", () => {
       expect.objectContaining({
         parts: [
           { type: "text", text: "before" },
-          { type: "tool", tool: "read", callID: "call-1", state: {} },
+          { type: "tool", tool: "read", callID: "call-1", state: { status: "running" } },
           { type: "reasoning", text: "after" },
         ],
       }),
@@ -128,13 +139,16 @@ describe("TranscriptBuilder", () => {
     builder.appendAssistantPart({ type: "reasoning", text: "next thought" }, meta, {
       resetLatestText: true,
     });
-    builder.appendToolCall({ type: "tool", tool: "read", callID: "call-1", state: {} }, meta);
+    builder.appendToolCall(
+      { type: "tool", tool: "read", callID: "call-1", state: { status: "running" } },
+      meta,
+    );
 
     const messages = builder.finish().messages;
     expect(messages[0]?.parts).toEqual([{ type: "text", text: "answer" }]);
     expect(messages[1]?.parts).toEqual([
       { type: "reasoning", text: "next thought" },
-      { type: "tool", tool: "read", callID: "call-1", state: {} },
+      { type: "tool", tool: "read", callID: "call-1", state: { status: "running" } },
     ]);
   });
 

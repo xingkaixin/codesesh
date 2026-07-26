@@ -1,4 +1,4 @@
-import type { MessagePart } from "../../lib/api";
+import type { ToolPart } from "../../lib/api";
 import type { MessageDisplayModel } from "./display-model";
 import type { MessageBlock } from "./blocks";
 
@@ -23,18 +23,20 @@ export interface FilteredSessionMessage {
   index: number;
 }
 
-function buildToolLabel(part: MessagePart) {
+type ToolMessageBlock = Extract<MessageBlock, { type: "tool" }>;
+
+function buildToolLabel(part: ToolPart) {
   if (isNodeReplBrowserTool(part)) return "Browser";
-  if (typeof part.title === "string" && part.title.trim()) {
+  if (part.title?.trim()) {
     return cleanToolLabel(part.title);
   }
-  if (typeof part.tool === "string" && part.tool.trim()) return cleanToolLabel(part.tool);
+  if (part.tool.trim()) return cleanToolLabel(part.tool);
   return "tool";
 }
 
-function normalizeToolKey(part: MessagePart) {
+function normalizeToolKey(part: ToolPart) {
   if (isNodeReplBrowserTool(part)) return "browser";
-  const raw = typeof part.tool === "string" && part.tool.trim() ? part.tool : buildToolLabel(part);
+  const raw = part.tool.trim() ? part.tool : buildToolLabel(part);
   return cleanToolLabel(raw).toLowerCase();
 }
 
@@ -56,8 +58,8 @@ function toPlainText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function isNodeReplBrowserTool(part: MessagePart) {
-  const metadata = toRecord(part.state?.metadata);
+function isNodeReplBrowserTool(part: ToolPart) {
+  const metadata = toRecord(part.state.metadata);
   const namespace = toPlainText(metadata.namespace);
   return (
     cleanToolLabel(toPlainText(part.tool)).toLowerCase() === "js" &&
@@ -65,7 +67,7 @@ function isNodeReplBrowserTool(part: MessagePart) {
   );
 }
 
-function countToolPart(toolMap: Map<string, ToolFilterItem>, part: MessagePart) {
+function countToolPart(toolMap: Map<string, ToolFilterItem>, part: ToolPart) {
   const key = normalizeToolKey(part);
   const id = `tool:${key}` as const;
   const cur = toolMap.get(key);
@@ -126,7 +128,7 @@ export function buildSessionDetailToc(messages: MessageDisplayModel[]): SessionD
   };
 }
 
-function isToolPartVisible(part: MessagePart, filters: Set<string>) {
+function isToolPartVisible(part: ToolPart, filters: Set<string>) {
   return filters.has(`tool:${normalizeToolKey(part)}`);
 }
 
@@ -142,7 +144,7 @@ function isBlockVisible(
   return block.parts.some((p) => isToolPartVisible(p, filters));
 }
 
-function filterToolBlock(block: MessageBlock, filters: Set<string>): MessageBlock | null {
+function filterToolBlock(block: ToolMessageBlock, filters: Set<string>): ToolMessageBlock | null {
   const visibleIndexes = block.parts
     .map((part, index) => (isToolPartVisible(part, filters) ? index : -1))
     .filter((index) => index >= 0);

@@ -3,7 +3,7 @@
  *
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
-import type { MessagePart } from "../../../lib/api";
+import type { ToolPart } from "../../../lib/api";
 import { detectLanguageByFilePath } from "../../tool-output/language";
 import type { TaskListItem } from "../../tool-output/types";
 import { buildStructuredDiffFromTexts } from "../diff";
@@ -92,8 +92,8 @@ function buildQuestionOutput(input: Record<string, unknown>, outputText: string)
   return questions;
 }
 
-function claudeToolKey(tool: MessagePart) {
-  return (tool.tool || "").trim().toLowerCase();
+function claudeToolKey(tool: ToolPart) {
+  return tool.tool.trim().toLowerCase();
 }
 
 function displayValue(value: unknown) {
@@ -116,7 +116,7 @@ function buildSendMessageOutput(input: Record<string, unknown>, state: Normalize
 }
 
 export function buildClaudeToolStrategy(
-  tool: MessagePart,
+  tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
 ): ToolDisplayStrategy {

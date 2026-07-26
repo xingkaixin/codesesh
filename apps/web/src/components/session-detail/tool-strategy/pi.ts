@@ -3,7 +3,7 @@
  *
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
-import type { MessagePart } from "../../../lib/api";
+import type { ToolPart } from "../../../lib/api";
 import { detectLanguageByFilePath } from "../../tool-output/language";
 import type { ToolDetailItem } from "../codex-tool";
 import { buildPiEditDiffBlocks } from "../diff";
@@ -61,12 +61,12 @@ export function buildPiSubagentResultDetails(text: string): ToolDetailItem[] {
 }
 
 export function buildPiToolStrategy(
-  tool: MessagePart,
+  tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
 ): ToolDisplayStrategy {
   const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
-  const toolKey = (tool.tool || "").toLowerCase();
+  const toolKey = tool.tool.toLowerCase();
   const input = toRecord(state.inputValue);
   const metadata = toRecord(state.metadataValue);
   const filePath = getFilePathFromInput(state.inputValue);
