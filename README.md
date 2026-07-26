@@ -55,7 +55,7 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 | OpenCode | Supported |
 | ZCode | Supported |
 
-More agents coming soon. Adding a new one is [a single file](#extending).
+More agents coming soon. See the [extension checklist](#extending).
 
 ---
 
@@ -284,9 +284,11 @@ apps/web            React frontend
 
 ### Extending
 
-Adding support for a new AI agent takes one file:
+Agent capabilities have one registration point:
 
-1. Create `packages/core/src/agents/youragent.ts` implementing `BaseAgent`
-2. Register it in `packages/core/src/agents/register.ts`
+1. Create `packages/core/src/agents/youragent.ts`, implement `BaseAgent`, and export its data-root resolver.
+2. Register it in `packages/core/src/agents/register.ts`, explicitly declaring its icon, data root, resume command support (`null` when unsupported), and whether it uses a custom or default tool display strategy.
+3. Add its SVG to `apps/web/public/icon/agent/`.
+4. For a custom tool display strategy, add `apps/web/src/components/session-detail/tool-strategy/youragent.ts` and register its builder in that directory's `index.ts`.
 
-No other files need to change. The agent immediately appears in the UI.
+The registration completeness test rejects missing icons, undeclared resume support, and custom strategy mismatches.

@@ -42,4 +42,11 @@ CLI 参数 → core 全量扫描 / 缓存恢复 → LiveScanStore 文件监听�
 
 ## 扩展新 Agent
 
-在 `packages/core/src/agents/` 新增适配器文件，并在 `register.ts` 中导入注册即可，无需改动其他模块。
+1. 在 `packages/core/src/agents/` 新增适配器并导出数据根目录解析器。
+2. 在 `register.ts` 注册图标、根目录解析器、resume 命令能力（不支持时显式为
+   `null`）与工具展示策略类型。
+3. 在 `apps/web/public/icon/agent/` 添加对应 SVG。
+4. 自定义工具展示需新增 `apps/web/src/components/session-detail/tool-strategy/<agent>.ts`
+   并在同目录 `index.ts` 注册 builder；使用默认策略则无需新增实现。
+
+注册完备性测试必须覆盖图标与工具展示策略声明。
