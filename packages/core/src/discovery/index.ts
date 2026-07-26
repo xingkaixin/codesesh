@@ -9,6 +9,8 @@ export {
 export type { ScanResult, ScanOptions } from "./scanner.js";
 export {
   materializeSessionDetail,
+  materializeSessionDetailResponse,
+  type SessionDetailResponseResult,
   type SessionDetailResult,
   type SessionReference,
 } from "./session-detail.js";

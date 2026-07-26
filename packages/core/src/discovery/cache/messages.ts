@@ -346,7 +346,7 @@ export function sessionFromRow(row: SessionRow): SessionHead {
   return session;
 }
 
-export function messageFromBackfillRow(row: MessageBackfillRow): Message {
+function messageMetadataFromBackfillRow(row: MessageBackfillRow): Omit<Message, "parts"> {
   const role = row.role === "assistant" || row.role === "tool" ? row.role : "user";
   return {
     id: String(row.message_id ?? ""),
@@ -357,14 +357,13 @@ export function messageFromBackfillRow(row: MessageBackfillRow): Message {
     mode: row.mode ?? null,
     model: row.model ?? null,
     provider: row.provider ?? null,
-    parts: JSON.parse(String(row.parts_json ?? "[]")) as MessagePart[],
     subagent_id: row.subagent_id ?? undefined,
     nickname: row.nickname ?? undefined,
   };
 }
 
-export function messageFromCachedRow(row: CachedMessageRow): Message {
-  const message = messageFromBackfillRow(row);
+function messageMetadataFromCachedRow(row: CachedMessageRow): Omit<Message, "parts"> {
+  const message = messageMetadataFromBackfillRow(row);
   const tokens = parseOptionalJson<Message["tokens"]>(row.tokens_json);
   if (tokens) {
     message.tokens = tokens;
@@ -376,6 +375,36 @@ export function messageFromCachedRow(row: CachedMessageRow): Message {
     message.cost_source = row.cost_source;
   }
   return message;
+}
+
+export function messageFromBackfillRow(row: MessageBackfillRow): Message {
+  return {
+    ...messageMetadataFromBackfillRow(row),
+    parts: JSON.parse(String(row.parts_json ?? "[]")) as MessagePart[],
+  };
+}
+
+export function messageFromCachedRow(row: CachedMessageRow): Message {
+  return {
+    ...messageMetadataFromCachedRow(row),
+    parts: JSON.parse(String(row.parts_json ?? "[]")) as MessagePart[],
+  };
+}
+
+export function messageJsonFromCachedRow(row: CachedMessageRow): string {
+  const metadataJson = JSON.stringify(messageMetadataFromBackfillRow(row));
+  const fields: string[] = [];
+  if (row.tokens_json != null) {
+    fields.push(`"tokens":${String(row.tokens_json)}`);
+  }
+  if (row.cost != null) {
+    fields.push(`"cost":${JSON.stringify(Number(row.cost))}`);
+  }
+  if (row.cost_source) {
+    fields.push(`"cost_source":${JSON.stringify(row.cost_source)}`);
+  }
+  fields.push(`"parts":${String(row.parts_json ?? "[]")}`);
+  return `${metadataJson.slice(0, -1)},${fields.join(",")}}`;
 }
 
 export function appendPlainText(value: unknown, chunks: string[]): void {

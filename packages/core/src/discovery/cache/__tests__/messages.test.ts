@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildMessageText,
   buildSessionContentFromMessages,
   messageFromCachedRow,
+  messageJsonFromCachedRow,
   normalizeMessages,
   toolNamesFromMetadataJson,
 } from "../messages.js";
@@ -32,6 +33,29 @@ describe("cached messages", () => {
       subagent_id: "sub-1",
       nickname: "worker",
     });
+  });
+
+  it("serializes owned JSON fields without parsing them", () => {
+    const row = {
+      message_id: "m1",
+      role: "assistant" as const,
+      time_created: 10,
+      time_completed: 11,
+      parts_json: JSON.stringify([{ type: "text", text: "done" }]),
+      tokens_json: JSON.stringify({ input: 2, output: 3 }),
+      cost: 0.4,
+      cost_source: "recorded" as const,
+      subagent_id: "sub-1",
+      nickname: "worker",
+    };
+    const parse = vi.spyOn(JSON, "parse");
+
+    const json = messageJsonFromCachedRow(row);
+    const parseCalls = parse.mock.calls.length;
+    parse.mockRestore();
+
+    expect(parseCalls).toBe(0);
+    expect(JSON.parse(json)).toEqual(messageFromCachedRow(row));
   });
 
   it("normalizes searchable content and unique tool names", () => {

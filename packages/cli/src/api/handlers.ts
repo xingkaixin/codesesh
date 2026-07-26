@@ -1,5 +1,11 @@
 import type { Context } from "hono";
-import type { BookmarkRecord, ScanResult, SessionHead, SmartTag } from "@codesesh/core";
+import type {
+  BookmarkRecord,
+  ScanResult,
+  SessionData,
+  SessionHead,
+  SmartTag,
+} from "@codesesh/core";
 import type { AppConfig, ScanStatusEvent } from "@codesesh/core/contract";
 import {
   BookmarkStorageUnavailableError,
@@ -14,7 +20,7 @@ import {
   listCachedProjectGroups,
   listBookmarks,
   deleteSessionAlias,
-  materializeSessionDetail,
+  materializeSessionDetailResponse,
   upsertSessionAlias,
   upsertBookmark,
   matchesProjectScope as sessionMatchesProjectScope,
@@ -162,6 +168,43 @@ function toSessionListItem(session: SessionHead): SessionHead {
   const item = { ...session };
   delete item.model_usage;
   return item;
+}
+
+function createSessionDetailJsonResponse(
+  data: Omit<SessionData, "messages">,
+  messages: Iterable<string>,
+): Response {
+  const encoder = new TextEncoder();
+  const headerJson = JSON.stringify(data);
+  const iterator = messages[Symbol.iterator]();
+  let wroteHeader = false;
+  let wroteMessage = false;
+
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (!wroteHeader) {
+          controller.enqueue(encoder.encode(`${headerJson.slice(0, -1)},"messages":[`));
+          wroteHeader = true;
+          return;
+        }
+
+        const next = iterator.next();
+        if (!next.done) {
+          controller.enqueue(encoder.encode(`${wroteMessage ? "," : ""}${next.value}`));
+          wroteMessage = true;
+          return;
+        }
+
+        controller.enqueue(encoder.encode("]}"));
+        controller.close();
+      },
+      cancel() {
+        iterator.return?.();
+      },
+    }),
+    { headers: { "Content-Type": "application/json; charset=UTF-8" } },
+  );
 }
 
 export function handleGetConfig(c: Context, defaults: SessionListDefaults) {
@@ -353,7 +396,10 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
   }
 
   try {
-    const result = materializeSessionDetail(scanSource.getSnapshot(), { agentName, sessionId });
+    const result = materializeSessionDetailResponse(scanSource.getSnapshot(), {
+      agentName,
+      sessionId,
+    });
     if (result.status === "unknown-agent") {
       return c.json({ error: `Unknown agent: ${agentName}` }, 404);
     }
@@ -369,10 +415,16 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
     appLogger.info("api.session_data", {
       agent: agentName,
       session_id: sessionId,
-      messages: result.data.messages.length,
+      messages: result.status === "found-json" ? result.messageCount : result.data.messages.length,
       duration_ms: Math.round(performance.now() - startedAt),
     });
     const aliases = loadAliasView();
+    if (result.status === "found-json") {
+      return createSessionDetailJsonResponse(
+        aliases.decorate(result.data, agentName),
+        result.messages,
+      );
+    }
     return c.json(aliases.decorate(result.data, agentName));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load session";
