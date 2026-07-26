@@ -1,361 +1,204 @@
-# CodeSesh 扫描与缓存机制说明文档
+# CodeSesh 扫描与缓存
 
 ## 概述
 
-本文档详细说明 CodeSesh 的会话扫描、并行处理和缓存机制的设计理念与实现细节。
+CodeSesh 的扫描链路分成两个阶段：
 
-SQLite 表结构和搜索索引数据流见 [sqlite-storage.md](./sqlite-storage.md)。
+1. 尽快从 SQLite 恢复可浏览的会话列表。
+2. 在 worker 中核对真实数据源，将变化持久化到缓存和搜索索引，再发布新快照。
 
-## 1. 整体架构
+SQLite schema 与详情快照说明见 [sqlite-storage.md](./sqlite-storage.md)。
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        扫描流程                              │
-├─────────────────────────────────────────────────────────────┤
-│  CLI 启动                                                   │
-│     │                                                       │
-│     ▼                                                       │
-│  ┌──────────────────┐    ┌──────────────────┐              │
-│  │   scanSessions   │───▶│  Agent 并行扫描   │              │
-│  │   (入口函数)      │    │  (5个并发)       │              │
-│  └──────────────────┘    └──────────────────┘              │
-│                                   │                         │
-│                    ┌──────────────┼──────────────┐         │
-│                    ▼              ▼              ▼         │
-│              ┌─────────┐   ┌─────────┐   ┌─────────┐      │
-│              │ Claude  │   │  Codex  │   │  Kimi   │      │
-│              │ (文件)  │   │ (文件)  │   │ (文件)  │      │
-│              └─────────┘   └─────────┘   └─────────┘      │
-│                                                    │       │
-│              ┌─────────┐   ┌─────────┐            │       │
-│              │OpenCode │   │ Cursor  │────────────┘       │
-│              │ (SQLite)│   │ (SQLite)│                    │
-│              └─────────┘   └─────────┘                    │
-└─────────────────────────────────────────────────────────────┘
+## 运行时结构
+
+```text
+CLI
+  -> LiveScanStore
+       -> scanSessions() 恢复初始快照
+       -> AgentSyncEngine 协调每个 Agent 的刷新与 backfill
+       -> SessionWatcher 把文件系统事件归并为 Agent 刷新
+            -> scan-refresh worker 读取/解析数据源
+            -> search-index worker 持久化会话、详情与索引
+            -> LiveScanStore 发布内存快照和 SSE 更新
 ```
 
-## 2. 并行扫描机制
+核心边界：
 
-### 2.1 Agent 级别并行
+| 模块 | 职责 |
+|------|------|
+| `packages/core/src/discovery/scanner.ts` | 通用扫描、缓存恢复和同步增量合并 |
+| `packages/core/src/agents/base.ts` | 文件型/数据库型 Agent 的变更检测模板 |
+| `packages/cli/src/live-scan.ts` | 持有当前不可变快照，对外提供订阅 |
+| `packages/cli/src/agent-sync-engine.ts` | 串行化单个 Agent 的 refresh/backfill，并协调发布 |
+| `packages/cli/src/session-watcher.ts` | 跨平台文件监听、写入稳定性等待与事件归并 |
+| `packages/cli/src/scan-refresh-worker.ts` | 在 worker thread 中扫描和解析 |
+| `packages/cli/src/search-index-worker.ts` | 写入缓存、详情和搜索索引 |
 
-所有 Agent 同时扫描，而非串行执行：
+## Agent 并行模型
+
+`scanSessions()` 对所有选中的注册 Agent 调用 `scanAgentSmart()`，并通过 `Promise.all`
+并行等待结果；没有固定“5 个并发”的限制。
+
+当前数据源类型：
+
+- 文件型：Claude Code、Codex、Kimi、Pi
+- 单 SQLite 数据库型：OpenCode、Cursor、ZCode
+
+不同 Agent 可以并行刷新；同一个 Agent 的 refresh 与 backfill 由 `AgentSyncEngine`
+串行化，并为每次 operation 记录 generation。SQLite 搜索写入另由单一 job runner
+排队。
+
+## 启动流程
+
+### 交互式 Web 模式
+
+`LiveScanStore` 以 `deferInitialRefresh: true` 启动：
+
+```text
+loadCachedSessions()
+  -> 从 agent_cache + sessions 恢复 SessionHead[] / SessionCacheMeta
+  -> 启动 HTTP 服务
+  -> startBackgroundRefresh()
+  -> 逐 Agent 核对真实数据源并更新快照
+```
+
+缓存不存在时，初始快照可以为空；服务启动后后台初始化对应 Agent。缓存存在时，UI 先
+看到已持久化快照，再通过 SSE 收到刷新结果。
+
+### JSON 模式
+
+`--json` 不延迟初始刷新。扫描与索引同步完成后才输出 JSON，并在输出阶段应用
+`--days` / `--from` / `--to` 列表窗口。
+
+## 变更检测
+
+### 文件型 Agent：源枚举 + 指纹 diff
+
+`FileSystemSessionSource.checkForChanges()` 不用缓存时间戳判断单个文件是否变化。它先由
+适配器枚举当前 `SessionSourceRef[]`：
 
 ```typescript
-// 并行扫描所有 Agent
-const scanPromises = agentsToScan.map((agent) =>
-  scanAgentSmart(agent, options, onProgress)
-);
-const results = await Promise.all(scanPromises);
-```
-
-**性能对比**：
-- 串行扫描：~10.6s (Agent 一个接一个)
-- 并行扫描：~5s (所有 Agent 同时进行)
-
-### 2.2 会话级别扫描（当前实现）
-
-每个 Agent 内部仍然是串行扫描文件：
-
-```typescript
-// Claude Code - 串行读取项目目录
-for (const projectDir of this.listProjectDirs()) {
-  for (const file of this.listJsonlFiles(projectDir)) {
-    const head = this.parseSessionHead(file, projectDir);
-    // ...
-  }
+interface SessionSourceRef {
+  sessionId: string;
+  sourcePath: string;
+  fingerprint: string;
 }
 ```
 
-**未来优化方向**：
-- 使用 `Promise.all` 并行读取多个文件
-- 使用 Worker Threads 处理 CPU 密集型解析
+`diffSessionSources()` 将当前引用与缓存的会话和 `SessionCacheMeta` 比较：
 
-## 3. 智能刷新机制 (Smart Refresh)
+- 缓存中没有该会话：新增；
+- `sourcePath` 改变或 `sourceFingerprint` 不同：变更；
+- 上次在本次扫描窗口内、现在却没有对应引用：删除；
+- 其余会话保持原对象，不重新解析。
 
-### 3.1 设计理念
+指纹由各适配器生成，并纳入其解析结果所依赖的事实，例如文件大小、mtime、辅助索引
+mtime 或解析器版本。比较采用精确字符串相等；声明版本字段的适配器可通过提升版本主动
+失效旧缓存。
 
-解决缓存的两大痛点：
-1. **启动速度**：缓存可立即返回结果（14ms）
-2. **数据新鲜度**：后台检测变更并增量更新
+`incrementalScan()` 复用本次枚举得到的 refs，只对变更/新增源调用
+`scanSessionSource()`，同时移除已消失的会话。
 
-```
-┌────────────────────────────────────────────────────────────┐
-│                     智能刷新流程                            │
-├────────────────────────────────────────────────────────────┤
-│                                                            │
-│   启动                                                      │
-│     │                                                       │
-│     ▼                                                       │
-│   ┌─────────────┐    是    ┌─────────────┐                │
-│   │  缓存存在？  │────────▶│  立即返回    │ 14ms          │
-│   └─────────────┘         └─────────────┘                │
-│     │ 否                         │                        │
-│     ▼                            ▼                        │
-│   ┌─────────────┐         ┌─────────────┐                │
-│   │  完整扫描    │         │  后台检测    │                │
-│   │  (10.6s)   │         │  文件变更    │                │
-│   └─────────────┘         └─────────────┘                │
-│                                    │                        │
-│                                    ▼                        │
-│                           ┌─────────────┐                 │
-│                           │  增量更新    │                 │
-│                           │  (100-500ms)│                 │
-│                           └─────────────┘                 │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
-```
+### 数据库型 Agent：数据库 mtime + 全量重扫
 
-### 3.2 实现细节
+`DatabaseSessionSource.checkForChanges()` 比较数据库文件 mtime 与 `agent_cache.timestamp`。
+由于多个会话共享一个数据库文件，当前无法从文件状态安全推导行级变化：
 
-#### 3.2.1 变更检测 (checkForChanges)
+- mtime 未推进：保持缓存；
+- mtime 推进：报告数据源变化；
+- `incrementalScan()` 退化为该 Agent 的全量 `scan()`。
 
-**文件系统 Agent**（Claude/Codex/Kimi）：
-```typescript
-checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
-  const changedIds: string[] = [];
+这条路径已经实现；它不是待补充的示例逻辑。
 
-  for (const session of cachedSessions) {
-    const meta = this.sessionMetaMap.get(session.id);
-    const stat = statSync(meta.sourcePath);
-    
-    // 通过文件修改时间判断是否变更
-    if (stat.mtimeMs > sinceTimestamp) {
-      changedIds.push(session.id);
-    }
-  }
+## 文件监听与事件归并
 
-  return {
-    hasChanges: changedIds.length > 0,
-    changedIds,
-    timestamp: Date.now(),
-  };
-}
+`SessionWatcher` 根据每个适配器的 `getSessionWatchPlan()` 建立监听：
+
+- 平台支持时使用递归监听；
+- 不支持时遍历目录建立非递归 fallback；
+- 等待写入稳定后，把路径事件归并为 Agent 名称；
+- 普通 Agent 默认 debounce 200ms，空 Agent 使用更长等待，以容纳首次创建目录/数据库。
+
+监听事件只是刷新提示，最终变化仍由指纹或数据库 mtime 验证，因此重复、合并或无关的
+文件事件不会直接修改会话状态。
+
+## 持久化与发布
+
+刷新结果先计算 `changedSessions` 和 `removedSessionIds`，再交给 search-index worker：
+
+```text
+saveCachedSessionChanges()
+  + syncSessionSearchIndexChanges()
+  -> SQLite commit
+  -> LiveScanStore 更新内存快照
+  -> SSE sessions-updated
 ```
 
-**数据库 Agent**（OpenCode/Cursor）：
-```typescript
-// 理论上可以通过 SQL 检测变更
-// 当前未实现，需要补充
+完整初始化/backfill 使用 `saveCachedSessions()` 和 `syncSessionSearchIndex()`。增量路径
+只加载需要重新索引的会话详情；未变化会话不会再次调用 `getSessionData()`。
 
-// 示例实现：
-checkForChanges(sinceTimestamp: number): ChangeCheckResult {
-  const result = db.query(`
-    SELECT COUNT(*) as count, MAX(time_updated) as last_update 
-    FROM session 
-    WHERE time_updated > ?
-  `, [sinceTimestamp]);
-  
-  return {
-    hasChanges: result.count > 0,
-    changedIds: [], // 可以通过 SQL 查询具体变更的 ID
-    timestamp: Date.now(),
-  };
-}
-```
+当变化量达到 `SEARCH_INDEX_BULK_SYNC_THRESHOLD` 时，FTS 使用批量重建；小批量变化由
+触发器增量维护。
 
-#### 3.2.2 增量扫描 (incrementalScan)
+## 详情一致性
 
-只重新扫描变更的文件，而非全部：
+详情请求由 `packages/core/src/discovery/session-detail.ts` 物化：
 
-```typescript
-incrementalScan(cachedSessions: SessionHead[], changedIds: string[]): SessionHead[] {
-  // 1. 创建缓存会话的 Map
-  const sessionMap = new Map(cachedSessions.map(s => [s.id, s]));
+1. 从 `sessions + messages` 读取结构化详情快照。
+2. 快照消息完整且缓存指纹与当前 `SessionCacheMeta` 一致时直接返回。
+3. 指纹不一致、消息缺失或会话待 reindex 时调用适配器 `getSessionData()` 回源。
 
-  // 2. 只重新扫描变更的会话
-  for (const file of this.listJsonlFiles()) {
-    const sessionId = extractSessionId(file);
-    
-    if (changedIds.includes(sessionId)) {
-      const head = this.parseSessionHead(file);
-      sessionMap.set(head.id, head); // 更新缓存
-    }
-  }
+所以一致性模型是“materialized detail + 源指纹失效 + 回源兜底”，不是“详情永远实时
+读取源文件”。完整规则见 [sqlite-storage.md](./sqlite-storage.md#3-读取会话详情)。
 
-  // 3. 检查新文件
-  for (const file of this.listJsonlFiles()) {
-    if (!sessionMap.has(sessionId)) {
-      const head = this.parseSessionHead(file);
-      sessionMap.set(head.id, head); // 添加新会话
-    }
-  }
+## 窗口扫描与 backfill
 
-  return Array.from(sessionMap.values());
-}
-```
+交互式启动可以只扫描当前列表时间窗口，以缩短首次刷新。窗口扫描不会把窗口外、且无法
+确认已被枚举的缓存会话误删。
 
-### 3.3 缓存数据结构
+为了最终覆盖完整历史，`AgentSyncEngine` 会为可用 Agent 安排无窗口 backfill：
 
-当前缓存后端已经切换为 SQLite，位置是 `~/.cache/codesesh/codesesh.db`。
+- 从未完成全历史同步时执行；
+- 距离上次全历史同步超过 24 小时时再次执行；
+- 不同 Agent 的 backfill 排队运行；
+- 同一个 Agent 的 backfill 与 refresh 仍保持串行。
 
-核心表：
+7 天是 CLI 默认列表窗口，不是 SQLite 缓存 TTL。
 
-- `cache_meta`
-- `agent_cache`
-- `cached_sessions`
-- `session_documents`
-- `session_documents_fts`
-
-结构说明见 [sqlite-storage.md](./sqlite-storage.md)。
-
-## 4. 数据一致性保证
-
-### 4.1 会话详情加载
-
-`getSessionData()` 依赖 `sessionMetaMap` 获取文件路径：
-
-```typescript
-getSessionData(sessionId: string): SessionData {
-  // 从缓存恢复的 meta 中获取 sourcePath
-  const meta = this.sessionMetaMap.get(sessionId);
-  
-  // 直接读取文件（不使用缓存，保证内容最新）
-  const content = readFileSync(meta.sourcePath, "utf-8");
-  
-  // 解析并返回
-  return parseMessages(content);
-}
-```
-
-**关键设计**：
-- 会话列表使用缓存（元数据）
-- 会话详情实时读取文件（保证内容最新）
-- 后台刷新只更新元数据，不影响正在查看的详情
-
-### 4.2 缓存失效策略
-
-| 触发条件 | 处理方式 |
-|---------|---------|
-| 缓存不存在 | 执行完整扫描 |
-| 缓存过期 (7天) | 执行完整扫描 |
-| 文件有变更 | 增量更新 |
-| 文件被删除 | 从缓存中移除 |
-| 新文件出现 | 添加到缓存 |
-
-## 5. 性能数据
-
-### 5.1 不同场景对比
-
-| 场景 | 耗时 | 说明 |
-|------|------|------|
-| 首次启动（无缓存） | ~10.6s | 扫描所有文件 |
-| 缓存启动（无变更） | ~14ms | 直接返回缓存 |
-| 缓存启动（有变更） | ~14ms + ~200ms | 先返回缓存，后台增量更新 |
-| 禁用缓存 | ~10.6s | 每次都完整扫描 |
-
-### 5.2 并行加速效果
-
-```
-串行扫描：
-Claude (1.1s) → Codex (3.9s) → Cursor (5.6s) = 10.6s
-
-并行扫描：
-Claude (1.1s) 
-Codex (3.9s)    = ~5s (取决于最慢的 Agent)
-Cursor (5.6s)   
-```
-
-## 6. 配置选项
-
-### 6.1 CLI 参数
+## 缓存控制
 
 ```bash
-# 使用缓存（默认开启）
+# 默认：使用缓存，Web 模式后台刷新
 codesesh
 
-# 禁用缓存
+# 忽略缓存执行扫描
 codesesh --no-cache
 
-# 清除缓存后启动
+# 清空 SQLite 缓存后启动
 codesesh --clear-cache
 
-# 性能追踪
+# 输出扫描性能追踪
 codesesh --trace
 ```
 
-### 6.2 程序化配置
+程序化入口使用 `ScanOptions` 控制 Agent、cwd、时间窗口、缓存读写和 cache-only 行为。
+具体字段以 `packages/core/src/discovery/scanner.ts` 的类型定义为准。
 
-```typescript
-const result = await scanSessions({
-  useCache: true,      // 启用缓存
-  smartRefresh: true,  // 启用智能刷新
-  agents: ['claudecode', 'codex'], // 只扫描特定 Agent
-  from: Date.now() - 7 * 24 * 60 * 60 * 1000, // 只扫描最近7天
-});
+## 性能验证
+
+文档不固化缺少硬件、样本规模和 commit 信息的毫秒数字。当前版本使用仓库基准脚本：
+
+```bash
+pnpm bench:perf -- --iterations 3
 ```
 
-## 7. 监控与调试
+报告性能时至少记录 commit、操作系统、Node 版本、会话规模、缓存冷热状态与迭代次数。
 
-### 7.1 性能追踪
+## 正确性不变量
 
-启用 `--trace` 查看详细耗时：
-
-```
-=== Performance Report ===
-
-scanSessions: 14.60ms
-  agent:claudecode: 3.89ms
-    isAvailable: 0.27ms
-    scan: 0ms (from cache)
-  agent:codex: 2.52ms
-    isAvailable: 0.15ms
-    scan: 0ms (from cache)
-```
-
-### 7.2 缓存信息
-
-```typescript
-import { getCacheInfo } from "@codesesh/core";
-
-const info = getCacheInfo();
-console.log(info);
-// { lastScanTime: 1776241234567, size: 124 }
-```
-
-## 8. 未来优化方向
-
-### 8.1 会话级别并行
-
-```typescript
-// 当前：串行读取文件
-for (const file of files) {
-  await parseFile(file);
-}
-
-// 优化：并行读取
-await Promise.all(files.map(file => parseFile(file)));
-```
-
-### 8.2 文件监听（Watch Mode）
-
-```typescript
-// 使用 fs.watch 实时监控文件变化
-fs.watch(sessionDir, (eventType, filename) => {
-  if (filename.endsWith('.jsonl')) {
-    incrementalUpdate(filename);
-  }
-});
-```
-
-### 8.3 SQLite 存储深化
-
-```typescript
-// 当前已经使用 SQLite 统一持久化缓存和搜索索引
-const db = new Database("~/.cache/codesesh/codesesh.db");
-
-// 后续可以继续深化：
-// - 将首次搜索的按需建索引改成后台预热
-// - 将更多过滤条件前移到 SQLite 查询层
-// - 让搜索索引覆盖更多结构化工具输出
-```
-
-## 9. 总结
-
-CodeSesh 的扫描与缓存机制通过以下方式实现高性能：
-
-1. **并行扫描**：所有 Agent 同时工作
-2. **智能缓存**：先返回缓存，后台增量刷新
-3. **变更检测**：通过文件修改时间精确识别变更
-4. **数据一致性**：元数据缓存 + 内容实时读取
-
-这种设计在保持极速启动（14ms）的同时，确保数据的新鲜度和一致性。
+- 新快照只能在对应 SQLite 写入成功后发布。
+- 文件型会话是否变化由 source fingerprint 决定，不由全局 mtime 截断决定。
+- 数据库型 Agent 检测到数据库变化后必须全量重扫。
+- 未变化会话不重新解析、不重写结构化消息。
+- 缓存详情指纹过期时不得直接返回旧消息。
+- 窗口扫描不能把未枚举的历史会话当作已删除。
