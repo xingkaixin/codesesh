@@ -507,7 +507,16 @@ export class AgentSyncEngine {
       preciseChangedIds,
     );
     this.state(agent.name).lastRefreshAt = Date.now();
-    if (preciseChangedIds.length === 0) this.logUnchangedRefresh(agent.name, refreshStartedAt);
+    if (
+      persistenceDiff.changedSessions.length === 0 &&
+      persistenceDiff.removedSessionIds.length === 0
+    ) {
+      this.logUnchangedRefresh(agent.name, refreshStartedAt);
+      return this.refreshStrategyResult(sessions, {
+        status: "unchanged",
+        scanDuration: performance.now() - scanStartedAt,
+      });
+    }
     return this.refreshStrategyResult(sessions, {
       preciseChangedIds,
       persistenceDiff,

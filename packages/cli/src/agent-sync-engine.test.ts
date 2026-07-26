@@ -73,6 +73,31 @@ function makeAgent(overrides: Partial<BaseAgent> = {}): BaseAgent {
   } as BaseAgent;
 }
 
+class FakeSyncAgent extends FileSystemSessionSource {
+  readonly name = "codex";
+  readonly displayName = "Codex";
+
+  isAvailable(): boolean {
+    return true;
+  }
+
+  listSessionSources() {
+    return [];
+  }
+
+  scanSessionSource() {
+    return null;
+  }
+
+  getSessionData() {
+    return { messages: [] } as never;
+  }
+
+  getSessionWatchPlan() {
+    return { status: "not-needed" as const, reason: "sync test adapter" };
+  }
+}
+
 function makeWorkerRunner(): WorkerRunner {
   return {
     activeCount: 0,
@@ -357,6 +382,30 @@ describe("AgentSyncEngine", () => {
     expect(signatureCache.has("gone")).toBe(false);
   });
 
+  it("short-circuits source sync when fingerprints and signatures are unchanged", async () => {
+    const session = makeSession("steady");
+    const agent = new FakeSyncAgent();
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async () => ({ sessions: [session], meta: {}, changedIds: [] })),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const { engine } = makeEngine(agent, [session], workerRunner);
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [session],
+      meta: {},
+      timestamp: Date.now(),
+    });
+    const sessionChanges = vi.fn();
+    engine.subscribeSessionsChanged(sessionChanges);
+
+    await engine.refresh("codex");
+
+    expect(workerRunner.run).toHaveBeenCalledOnce();
+    expect(searchIndex.enqueue).not.toHaveBeenCalled();
+    expect(sessionChanges).not.toHaveBeenCalled();
+  });
+
   it("still emits a changed event for a signature-only update reported via the DB-baseline (sync) path", async () => {
     // Regression test for a bug where the strategy-path diff (DB `cached.sessions`
     // baseline) and the event-path diff (in-memory `previousSessions` baseline)
@@ -366,26 +415,6 @@ describe("AgentSyncEngine", () => {
     // no reported changedIds (e.g. smart-tag reclassification) looked like no
     // change at all and the UI event was dropped. Only the event path may use the
     // cache now — this asserts the event still fires in that scenario.
-    class FakeSyncAgent extends FileSystemSessionSource {
-      readonly name = "codex";
-      readonly displayName = "Codex";
-      isAvailable(): boolean {
-        return true;
-      }
-      listSessionSources() {
-        return [];
-      }
-      scanSessionSource() {
-        return null;
-      }
-      getSessionData() {
-        return { messages: [] } as never;
-      }
-      getSessionWatchPlan() {
-        return { status: "not-needed" as const, reason: "sync test adapter" };
-      }
-    }
-
     const oldSession = { ...makeSession("sess1"), smart_tags_source_updated_at: 1 };
     const newSession = { ...makeSession("sess1"), smart_tags_source_updated_at: 2 };
     const agent = new FakeSyncAgent();

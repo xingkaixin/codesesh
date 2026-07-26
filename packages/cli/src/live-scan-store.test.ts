@@ -65,6 +65,7 @@ const workerThreads = vi.hoisted(() => ({
     workerData: any;
     on: ReturnType<typeof vi.fn>;
     once: ReturnType<typeof vi.fn>;
+    postMessage: ReturnType<typeof vi.fn>;
     unref: ReturnType<typeof vi.fn>;
     terminate: ReturnType<typeof vi.fn>;
     emitDone: () => void;
@@ -72,13 +73,16 @@ const workerThreads = vi.hoisted(() => ({
     emitExit: (code: number) => void;
   }>,
   Worker: vi.fn(function (this: unknown, url: URL, options?: { workerData?: unknown }) {
-    const workerData = options?.workerData as any;
-    const deferredSearchWorker = workerThreads.deferSearchIndexWorkers && workerData?.jobs;
-    const deferredScanWorker = workerThreads.deferScanRefreshWorkers && workerData?.agentName;
-    const deferredMessageHandlers: Array<(message: unknown) => void> = [];
-    const deferredExitHandlers: Array<(code: number) => void> = [];
-    const deferredErrorHandlers: Array<(error: Error) => void> = [];
-    const runSourceSync = (agent: any) => {
+    const workerData = (options?.workerData ?? {}) as any;
+    const isSearchWorker = Boolean(workerData.jobs);
+    const isScanWorker = Boolean(workerData.agentName);
+    const deferMessages =
+      (isSearchWorker && workerThreads.deferSearchIndexWorkers) ||
+      (isScanWorker && workerThreads.deferScanRefreshWorkers);
+    const messageHandlers: Array<(message: unknown) => void> = [];
+    const exitHandlers: Array<(code: number) => void> = [];
+    const errorHandlers: Array<(error: Error) => void> = [];
+    const runSourceSync = (data: any, agent: any) => {
       const parseSourceFingerprint = (fingerprint: string) => {
         try {
           const parsed = JSON.parse(fingerprint);
@@ -98,7 +102,7 @@ const workerThreads = vi.hoisted(() => ({
         );
       };
       const sessionMap = new Map(
-        (workerData.previousSessions ?? []).map((session: SessionHead) => [session.id, session]),
+        (data.previousSessions ?? []).map((session: SessionHead) => [session.id, session]),
       );
       const changedIds = new Set<string>();
       const sources = agent.listSessionSources();
@@ -106,7 +110,7 @@ const workerThreads = vi.hoisted(() => ({
 
       for (const source of sources) {
         const cachedSession = sessionMap.get(source.sessionId);
-        const cached = workerData.meta?.[source.sessionId];
+        const cached = data.meta?.[source.sessionId];
         if (
           cachedSession &&
           cached?.sourcePath === source.sourcePath &&
@@ -120,7 +124,7 @@ const workerThreads = vi.hoisted(() => ({
         else sessionMap.delete(source.sessionId);
       }
 
-      for (const session of workerData.previousSessions ?? []) {
+      for (const session of data.previousSessions ?? []) {
         if (!currentIds.has(session.id)) {
           sessionMap.delete(session.id);
           changedIds.add(session.id);
@@ -131,93 +135,134 @@ const workerThreads = vi.hoisted(() => ({
     };
     const serializeMeta = (agent: any) =>
       Object.fromEntries(agent.getSessionMetaMap?.()?.entries?.() ?? []);
+    const computeDelta = (
+      data: any,
+      sessions: SessionHead[],
+      changedIds: string[] | undefined,
+      meta: Record<string, SessionCacheMeta>,
+    ) => {
+      const previousById = new Map(
+        (data.previousSessions ?? []).map((session: SessionHead) => [session.id, session]),
+      );
+      const updatedIds = new Set(sessions.map((session) => session.id));
+      const nextMeta = Object.fromEntries(
+        Object.entries(meta).filter(([sessionId]) => updatedIds.has(sessionId)),
+      ) as Record<string, SessionCacheMeta>;
+      const changedMeta = Object.fromEntries(
+        Object.entries(nextMeta).filter(
+          ([sessionId, value]) => JSON.stringify(data.meta?.[sessionId]) !== JSON.stringify(value),
+        ),
+      );
+      const removedMetaIds = Object.keys(data.meta ?? {}).filter(
+        (sessionId) => !Object.hasOwn(nextMeta, sessionId),
+      );
+      const changedIdSet = new Set([
+        ...(changedIds ?? []),
+        ...Object.keys(changedMeta),
+        ...removedMetaIds,
+      ]);
+      const changes = sessions.flatMap((session, sortIndex) => {
+        const previous = previousById.get(session.id);
+        return !previous ||
+          changedIdSet.has(session.id) ||
+          JSON.stringify(previous) !== JSON.stringify(session)
+          ? [{ session, sortIndex }]
+          : [];
+      });
+      const removedSessionIds = (data.previousSessions ?? [])
+        .filter((session: SessionHead) => !updatedIds.has(session.id))
+        .map((session: SessionHead) => session.id);
+      return { changes, removedSessionIds, meta: changedMeta, removedMetaIds };
+    };
+    const dispatch = (data: any) => {
+      queueMicrotask(() => {
+        for (const handler of messageHandlers) {
+          try {
+            if (data?.agentName) {
+              const agent = core
+                .createRegisteredAgents()
+                .find((item: any) => item.name === data.agentName);
+              agent?.setSessionMetaMap?.(new Map(Object.entries(data.meta ?? {})));
+              let sessions: SessionHead[] = [];
+              let changedIds: string[] | undefined;
+              if (agent?.isAvailable?.() !== false) {
+                if (data.sourceSync && agent?.listSessionSources && agent?.scanSessionSource) {
+                  const result = runSourceSync(data, agent);
+                  sessions = result.sessions as SessionHead[];
+                  changedIds = result.changedIds;
+                } else if (data.changedIds && agent?.incrementalScan) {
+                  sessions = agent.incrementalScan(data.previousSessions, data.changedIds);
+                } else {
+                  sessions = agent?.scan?.({
+                    ...data.scanOptions,
+                    onProgress: () => undefined,
+                  });
+                }
+              }
+              const delta = computeDelta(data, sessions, changedIds, serializeMeta(agent));
+              handler({
+                type: "done",
+                requestId: data.requestId,
+                ...delta,
+                durationMs: 0,
+              });
+              continue;
+            }
+          } catch (error) {
+            handler({
+              type: "error",
+              requestId: data.requestId,
+              error: error instanceof Error ? error.message : String(error),
+              durationMs: 0,
+            });
+            continue;
+          }
+          const jobs = data?.jobs ?? [];
+          handler({
+            type: "done",
+            context: data?.context ?? "",
+            durationMs: 0,
+            sessions: jobs.length,
+          });
+        }
+      });
+    };
     const worker = {
       url,
       workerData,
       on: vi.fn((event: string, handler: (message: unknown) => void) => {
         if (event === "message") {
-          if (deferredSearchWorker || deferredScanWorker) {
-            deferredMessageHandlers.push(handler);
-            return worker;
-          }
-          queueMicrotask(() => {
-            try {
-              if (workerData?.agentName) {
-                const agent = core
-                  .createRegisteredAgents()
-                  .find((item: any) => item.name === workerData.agentName);
-                agent?.setSessionMetaMap?.(new Map(Object.entries(workerData.meta ?? {})));
-                let sessions: SessionHead[] = [];
-                let changedIds: string[] | undefined;
-                if (agent?.isAvailable?.() !== false) {
-                  if (
-                    workerData.sourceSync &&
-                    agent?.listSessionSources &&
-                    agent?.scanSessionSource
-                  ) {
-                    const result = runSourceSync(agent);
-                    sessions = result.sessions as SessionHead[];
-                    changedIds = result.changedIds;
-                  } else if (workerData.changedIds && agent?.incrementalScan) {
-                    sessions = agent.incrementalScan(
-                      workerData.previousSessions,
-                      workerData.changedIds,
-                    );
-                  } else {
-                    sessions = agent?.scan?.({
-                      ...workerData.scanOptions,
-                      onProgress: () => undefined,
-                    });
-                  }
-                }
-                handler({
-                  type: "done",
-                  sessions,
-                  meta: serializeMeta(agent),
-                  changedIds,
-                  durationMs: 0,
-                });
-                return;
-              }
-            } catch (error) {
-              handler({
-                type: "error",
-                error: error instanceof Error ? error.message : String(error),
-                durationMs: 0,
-              });
-              return;
-            }
-            const jobs = workerData?.jobs ?? [];
-            handler({
-              type: "done",
-              context: workerData?.context ?? "",
-              durationMs: 0,
-              sessions: jobs.length,
-            });
-          });
+          messageHandlers.push(handler);
+          if (!deferMessages) dispatch(workerData);
         }
         if (event === "exit") {
-          if (deferredSearchWorker || deferredScanWorker) deferredExitHandlers.push(handler);
-          else queueMicrotask(() => handler(0));
+          exitHandlers.push(handler);
+          if (isSearchWorker && !workerThreads.deferSearchIndexWorkers) {
+            queueMicrotask(() => handler(0));
+          }
         }
-        if (event === "error" && (deferredSearchWorker || deferredScanWorker)) {
-          deferredErrorHandlers.push(handler);
-        }
+        if (event === "error") errorHandlers.push(handler as (error: Error) => void);
         return worker;
       }),
       once: vi.fn((event: string, handler: (message: unknown) => void) => {
         if (event === "exit") {
-          if (deferredSearchWorker || deferredScanWorker) deferredExitHandlers.push(handler);
-          else queueMicrotask(() => handler(0));
+          exitHandlers.push(handler);
+          if (isSearchWorker && !workerThreads.deferSearchIndexWorkers) {
+            queueMicrotask(() => handler(0));
+          }
         }
         return worker;
       }),
+      postMessage: vi.fn((data: unknown) => {
+        Object.assign(workerData, data);
+        if (!workerThreads.deferScanRefreshWorkers) dispatch(workerData);
+      }),
       unref: vi.fn(),
       terminate: vi.fn(async () => {
-        for (const handler of deferredExitHandlers) handler(0);
+        for (const handler of exitHandlers) handler(0);
       }),
       emitDone: () => {
-        for (const handler of deferredMessageHandlers) {
+        for (const handler of messageHandlers) {
           handler({
             type: "done",
             context: workerData?.context ?? "",
@@ -225,13 +270,13 @@ const workerThreads = vi.hoisted(() => ({
             sessions: workerData?.jobs?.length ?? 0,
           });
         }
-        for (const handler of deferredExitHandlers) handler(0);
+        for (const handler of exitHandlers) handler(0);
       },
       emitError: (error: Error) => {
-        for (const handler of deferredErrorHandlers) handler(error);
+        for (const handler of errorHandlers) handler(error);
       },
       emitExit: (code: number) => {
-        for (const handler of deferredExitHandlers) handler(code);
+        for (const handler of exitHandlers) handler(code);
       },
     };
     workerThreads.workers.push(worker);
@@ -758,7 +803,11 @@ describe("LiveScanStore", () => {
         saveCache: true,
       }),
     ]);
-    expect(workerThreads.workers).toHaveLength(4);
+    const scanWorkers = workerThreads.workers.filter(
+      (worker) => worker.workerData.agentName === "codex",
+    );
+    expect(scanWorkers).toHaveLength(1);
+    expect(scanWorkers[0]?.postMessage).toHaveBeenCalledTimes(1);
   });
 
   it("serializes refresh behind an in-flight backfill for the same agent", async () => {
@@ -993,6 +1042,49 @@ describe("LiveScanStore", () => {
     });
   });
 
+  it("reconstructs an ordered snapshot from a scan worker delta", async () => {
+    const removed = makeSession("removed");
+    const retained = makeSession("retained");
+    const added = makeSession("added", { time_updated: 2000 });
+    let meta = new Map<string, SessionCacheMeta>();
+    const agent = makeAgent("codex", {
+      scan: vi.fn(() => {
+        meta = new Map([
+          ["added", { id: "added", sourcePath: "/added" }],
+          ["retained", { id: "retained", sourcePath: "/retained" }],
+        ]);
+        return [added, retained];
+      }),
+      getSessionMetaMap: vi.fn(() => meta),
+      setSessionMetaMap: vi.fn((next: Map<string, SessionCacheMeta>) => {
+        meta = new Map(next);
+      }),
+    });
+    core.createRegisteredAgents.mockReturnValue([agent]);
+    const runner = new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
+
+    const result = await runner.run("codex", {
+      previousSessions: [removed, retained],
+      changedIds: null,
+      scanOptions: {},
+      meta: {
+        removed: { id: "removed", sourcePath: "/removed" },
+        retained: { id: "retained", sourcePath: "/retained" },
+      },
+    });
+
+    expect(result).toEqual({
+      sessions: [added, retained],
+      meta: {
+        added: { id: "added", sourcePath: "/added" },
+        retained: { id: "retained", sourcePath: "/retained" },
+      },
+      changedIds: undefined,
+    });
+    expect(runner.activeCount).toBe(0);
+    await runner.shutdown();
+  });
+
   it("persists incremental changes outside the startup time window", async () => {
     vi.useFakeTimers();
     const old = makeSession("old", { title: "old", time_updated: 1000 });
@@ -1214,16 +1306,12 @@ describe("LiveScanStore", () => {
 
     const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
+    const workerCountBeforeRefresh = workerThreads.workers.length;
     await syncEngineOf(store).refresh("codex");
 
     expect(scanSessionSource).not.toHaveBeenCalled();
-    expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
-      expect.objectContaining({
-        kind: "changes",
-        changes: [],
-        removedSessionIds: [],
-      }),
-    ]);
+    expect(workerThreads.workers).toHaveLength(workerCountBeforeRefresh + 1);
+    expect(workerThreads.workers.at(-1)?.workerData.agentName).toBe("codex");
   });
 
   it("emits refresh events and persists changed agent sessions", async () => {

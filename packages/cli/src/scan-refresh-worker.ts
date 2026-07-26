@@ -1,37 +1,48 @@
 import "./diagnostics-bridge.js";
 import { parentPort, workerData } from "node:worker_threads";
+import { isDeepStrictEqual } from "node:util";
 import {
   attachMissingProjectIdentities,
+  buildAgentCacheMeta,
+  computeSessionDiff,
   createRegisteredAgents,
   diffSessionSources,
   ensureSessionTagsSync,
   FileSystemSessionSource,
+  sessionSignature,
   type AgentScanProgress,
   type BaseAgent,
   type ScanOptions,
   type SessionCacheMeta,
   type SessionHead,
+  type SessionHeadChange,
 } from "@codesesh/core";
 
 export type ScanRefreshWorkerMessage =
   | {
       type: "progress";
+      requestId: number;
       progress: AgentScanProgress;
     }
   | {
       type: "done";
-      sessions: SessionHead[];
+      requestId: number;
+      changes: SessionHeadChange[];
+      removedSessionIds: string[];
       meta: Record<string, SessionCacheMeta>;
-      changedIds?: string[];
+      removedMetaIds: string[];
       durationMs: number;
     }
   | {
       type: "error";
+      requestId: number;
       error: string;
       durationMs: number;
     };
 
-interface ScanRefreshWorkerData {
+export interface ScanRefreshWorkerRequest {
+  type: "run";
+  requestId: number;
   agentName: string;
   previousSessions: SessionHead[];
   changedIds: string[] | null;
@@ -40,15 +51,24 @@ interface ScanRefreshWorkerData {
   meta: Record<string, SessionCacheMeta>;
 }
 
-function serializeMeta(agent: {
-  getSessionMetaMap: () => Map<string, SessionCacheMeta>;
-}): Record<string, SessionCacheMeta> {
-  const metaMap = agent.getSessionMetaMap();
-  const meta: Record<string, SessionCacheMeta> = {};
-  for (const [id, data] of metaMap.entries()) {
-    meta[id] = { id, ...(data as Record<string, unknown>) } as SessionCacheMeta;
+interface CacheMetaDiff {
+  changes: Record<string, SessionCacheMeta>;
+  removedIds: string[];
+}
+
+function computeCacheMetaDiff(
+  previous: Record<string, SessionCacheMeta>,
+  next: Record<string, SessionCacheMeta>,
+): CacheMetaDiff {
+  const changes: Record<string, SessionCacheMeta> = {};
+  const removedIds: string[] = [];
+  for (const [id, meta] of Object.entries(next)) {
+    if (!isDeepStrictEqual(previous[id], meta)) changes[id] = meta;
   }
-  return meta;
+  for (const id of Object.keys(previous)) {
+    if (!Object.hasOwn(next, id)) removedIds.push(id);
+  }
+  return { changes, removedIds };
 }
 
 /**
@@ -120,10 +140,8 @@ export function finalizeSessions(agent: BaseAgent, sessions: SessionHead[]): Ses
   return withIdentity.map((session) => taggedById.get(session.id) ?? session);
 }
 
-const data = workerData as ScanRefreshWorkerData;
-const startedAt = performance.now();
-
-async function run(): Promise<void> {
+async function run(data: ScanRefreshWorkerRequest): Promise<void> {
+  const startedAt = performance.now();
   const agent = createRegisteredAgents().find((item) => item.name === data.agentName);
   if (!agent) {
     throw new Error(`Unknown agent: ${data.agentName}`);
@@ -150,6 +168,7 @@ async function run(): Promise<void> {
         onProgress: (progress) => {
           parentPort?.postMessage({
             type: "progress",
+            requestId: data.requestId,
             progress,
           } satisfies ScanRefreshWorkerMessage);
         },
@@ -158,22 +177,56 @@ async function run(): Promise<void> {
   }
 
   sessions = finalizeSessions(agent, sessions);
+  const nextMeta = buildAgentCacheMeta(agent, new Set(sessions.map((session) => session.id)));
+  const metaDiff = computeCacheMetaDiff(data.meta, nextMeta);
+  const diff = computeSessionDiff(
+    data.previousSessions,
+    sessions,
+    [...(changedIds ?? []), ...Object.keys(metaDiff.changes), ...metaDiff.removedIds],
+    sessionSignature,
+  );
 
   parentPort?.postMessage({
     type: "done",
-    sessions,
-    meta: serializeMeta(agent),
-    changedIds,
+    requestId: data.requestId,
+    changes: diff.changes,
+    removedSessionIds: diff.removedSessionIds,
+    meta: metaDiff.changes,
+    removedMetaIds: metaDiff.removedIds,
     durationMs: performance.now() - startedAt,
   } satisfies ScanRefreshWorkerMessage);
 }
 
-try {
-  await run();
-} catch (error) {
-  parentPort?.postMessage({
-    type: "error",
-    error: error instanceof Error ? error.message : String(error),
-    durationMs: performance.now() - startedAt,
-  } satisfies ScanRefreshWorkerMessage);
+async function handleRequest(data: ScanRefreshWorkerRequest): Promise<void> {
+  const startedAt = performance.now();
+  try {
+    await run(data);
+  } catch (error) {
+    parentPort?.postMessage({
+      type: "error",
+      requestId: data.requestId,
+      error: error instanceof Error ? error.message : String(error),
+      durationMs: performance.now() - startedAt,
+    } satisfies ScanRefreshWorkerMessage);
+  }
 }
+
+let requestTail = Promise.resolve();
+
+function enqueueRequest(data: ScanRefreshWorkerRequest): void {
+  requestTail = requestTail.then(() => handleRequest(data));
+}
+
+const initialRequest = workerData as Partial<ScanRefreshWorkerRequest> | undefined;
+if (
+  initialRequest?.type === "run" &&
+  typeof initialRequest.requestId === "number" &&
+  typeof initialRequest.agentName === "string" &&
+  Array.isArray(initialRequest.previousSessions)
+) {
+  enqueueRequest(initialRequest as ScanRefreshWorkerRequest);
+}
+
+parentPort?.on("message", (message: ScanRefreshWorkerRequest) => {
+  if (message.type === "run") enqueueRequest(message);
+});
