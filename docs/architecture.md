@@ -46,10 +46,10 @@
 
 ┌────────────────────────────────────────────────────────────────┐
 │                          Cache Layer                           │
-│              packages/core/src/discovery/cache.ts               │
+│             packages/core/src/discovery/cache/*.ts              │
 │                                                                │
 │   存储位置: ~/.cache/codesesh/codesesh.db                     │
-│   存储内容: sessions cache + meta + FTS index                 │
+│   存储内容: session heads + materialized details + FTS        │
 └────────────────────────────────────────────────────────────────┘
 
 详细表结构和数据流见 [sqlite-storage.md](./sqlite-storage.md)。
@@ -80,7 +80,7 @@ pnpm bench:perf -- --iterations 3
 1. **并行扫描**: 所有 Agent 同时工作
 2. **快速返回**: 缓存命中时优先返回缓存数据
 3. **智能刷新**: 后台检测变更，增量更新
-4. **数据一致**: 列表用缓存，详情实时读取
+4. **数据一致**: 详情优先读取结构化快照，源指纹失效时回源解析
 
 ## 使用方法
 
