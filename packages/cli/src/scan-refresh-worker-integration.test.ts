@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("node:worker_threads", () => ({
-  parentPort: { postMessage: mocks.postMessage },
+  parentPort: { postMessage: mocks.postMessage, on: vi.fn() },
   get workerData() {
     return mocks.workerData;
   },
@@ -71,6 +71,8 @@ function makeAgent(overrides: Record<string, unknown> = {}) {
 
 function setWorkerData(overrides: Record<string, unknown> = {}) {
   mocks.workerData = {
+    type: "run",
+    requestId: 1,
     agentName: "codex",
     previousSessions: [],
     changedIds: null,
@@ -133,6 +135,7 @@ describe("scan refresh worker entry", () => {
 
     expect(mocks.postMessage).toHaveBeenNthCalledWith(1, {
       type: "progress",
+      requestId: 1,
       progress: { agent: "codex", current: 1 },
     });
     expect(mocks.postMessage).toHaveBeenLastCalledWith(

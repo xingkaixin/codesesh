@@ -16,10 +16,12 @@ import {
 export type ScanRefreshWorkerMessage =
   | {
       type: "progress";
+      requestId: number;
       progress: AgentScanProgress;
     }
   | {
       type: "done";
+      requestId: number;
       sessions: SessionHead[];
       meta: Record<string, SessionCacheMeta>;
       changedIds?: string[];
@@ -27,11 +29,14 @@ export type ScanRefreshWorkerMessage =
     }
   | {
       type: "error";
+      requestId: number;
       error: string;
       durationMs: number;
     };
 
-interface ScanRefreshWorkerData {
+export interface ScanRefreshWorkerRequest {
+  type: "run";
+  requestId: number;
   agentName: string;
   previousSessions: SessionHead[];
   changedIds: string[] | null;
@@ -120,10 +125,8 @@ export function finalizeSessions(agent: BaseAgent, sessions: SessionHead[]): Ses
   return withIdentity.map((session) => taggedById.get(session.id) ?? session);
 }
 
-const data = workerData as ScanRefreshWorkerData;
-const startedAt = performance.now();
-
-async function run(): Promise<void> {
+async function run(data: ScanRefreshWorkerRequest): Promise<void> {
+  const startedAt = performance.now();
   const agent = createRegisteredAgents().find((item) => item.name === data.agentName);
   if (!agent) {
     throw new Error(`Unknown agent: ${data.agentName}`);
@@ -150,6 +153,7 @@ async function run(): Promise<void> {
         onProgress: (progress) => {
           parentPort?.postMessage({
             type: "progress",
+            requestId: data.requestId,
             progress,
           } satisfies ScanRefreshWorkerMessage);
         },
@@ -161,6 +165,7 @@ async function run(): Promise<void> {
 
   parentPort?.postMessage({
     type: "done",
+    requestId: data.requestId,
     sessions,
     meta: serializeMeta(agent),
     changedIds,
@@ -168,12 +173,36 @@ async function run(): Promise<void> {
   } satisfies ScanRefreshWorkerMessage);
 }
 
-try {
-  await run();
-} catch (error) {
-  parentPort?.postMessage({
-    type: "error",
-    error: error instanceof Error ? error.message : String(error),
-    durationMs: performance.now() - startedAt,
-  } satisfies ScanRefreshWorkerMessage);
+async function handleRequest(data: ScanRefreshWorkerRequest): Promise<void> {
+  const startedAt = performance.now();
+  try {
+    await run(data);
+  } catch (error) {
+    parentPort?.postMessage({
+      type: "error",
+      requestId: data.requestId,
+      error: error instanceof Error ? error.message : String(error),
+      durationMs: performance.now() - startedAt,
+    } satisfies ScanRefreshWorkerMessage);
+  }
 }
+
+let requestTail = Promise.resolve();
+
+function enqueueRequest(data: ScanRefreshWorkerRequest): void {
+  requestTail = requestTail.then(() => handleRequest(data));
+}
+
+const initialRequest = workerData as Partial<ScanRefreshWorkerRequest> | undefined;
+if (
+  initialRequest?.type === "run" &&
+  typeof initialRequest.requestId === "number" &&
+  typeof initialRequest.agentName === "string" &&
+  Array.isArray(initialRequest.previousSessions)
+) {
+  enqueueRequest(initialRequest as ScanRefreshWorkerRequest);
+}
+
+parentPort?.on("message", (message: ScanRefreshWorkerRequest) => {
+  if (message.type === "run") enqueueRequest(message);
+});

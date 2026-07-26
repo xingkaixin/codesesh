@@ -1,7 +1,7 @@
 import { Worker } from "node:worker_threads";
 import type { AgentScanProgress, ScanOptions, SessionCacheMeta, SessionHead } from "@codesesh/core";
 import { appLogger } from "./logging.js";
-import type { ScanRefreshWorkerMessage } from "./scan-refresh-worker.js";
+import type { ScanRefreshWorkerMessage, ScanRefreshWorkerRequest } from "./scan-refresh-worker.js";
 
 export interface WorkerPayload {
   previousSessions: SessionHead[];
@@ -24,73 +24,136 @@ export interface WorkerRunner {
   shutdown(): Promise<void>;
 }
 
+interface PendingRequest {
+  resolve: (result: WorkerResult) => void;
+  reject: (error: Error) => void;
+  onProgress?: (progress: AgentScanProgress) => void;
+}
+
+interface WorkerSlot {
+  worker: Worker;
+  pending: Map<number, PendingRequest>;
+  closed: boolean;
+}
+
+const SHUTDOWN_ERROR_MESSAGE = "Scan refresh worker shut down";
+
 export class ThreadWorkerRunner implements WorkerRunner {
-  private workers = new Set<Worker>();
+  private workers = new Map<string, WorkerSlot>();
+  private nextRequestId = 1;
+  private isShuttingDown = false;
 
   constructor(private readonly workerUrl: URL) {}
 
   get activeCount(): number {
-    return this.workers.size;
+    let count = 0;
+    for (const slot of this.workers.values()) count += slot.pending.size;
+    return count;
   }
 
   run(agentName: string, payload: WorkerPayload): Promise<WorkerResult> {
+    if (this.isShuttingDown) return Promise.reject(new Error(SHUTDOWN_ERROR_MESSAGE));
+
+    const request: ScanRefreshWorkerRequest = {
+      type: "run",
+      requestId: this.nextRequestId++,
+      agentName,
+      previousSessions: payload.previousSessions,
+      changedIds: payload.changedIds,
+      sourceSync: payload.sourceSync,
+      scanOptions: payload.scanOptions,
+      meta: payload.meta,
+    };
+
     return new Promise((resolve, reject) => {
-      const worker = new Worker(this.workerUrl, {
-        workerData: {
-          agentName,
-          previousSessions: payload.previousSessions,
-          changedIds: payload.changedIds,
-          sourceSync: payload.sourceSync,
-          scanOptions: payload.scanOptions,
-          meta: payload.meta,
-        },
-      });
-      worker.unref();
-      this.workers.add(worker);
-
-      let settled = false;
-      const finish = (callback: () => void, terminate = true) => {
-        if (settled) return;
-        settled = true;
-        this.workers.delete(worker);
-        if (terminate) void worker.terminate();
-        callback();
-      };
-
-      worker.on("message", (message: ScanRefreshWorkerMessage) => {
-        if (message.type === "progress") {
-          payload.onProgress?.(message.progress);
+      let slot = this.workers.get(agentName);
+      const isNewWorker = !slot;
+      if (!slot) {
+        try {
+          slot = this.createWorker(agentName, request);
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error)));
           return;
         }
-        if (message.type === "done") {
-          finish(() =>
-            resolve({
-              sessions: message.sessions,
-              meta: message.meta,
-              changedIds: message.changedIds,
-            }),
-          );
-          return;
+      }
+
+      slot.pending.set(request.requestId, {
+        resolve,
+        reject,
+        onProgress: payload.onProgress,
+      });
+
+      if (!isNewWorker) {
+        try {
+          slot.worker.postMessage(request);
+        } catch (error) {
+          slot.pending.delete(request.requestId);
+          reject(error instanceof Error ? error : new Error(String(error)));
         }
-        finish(() => reject(new Error(message.error)));
-      });
-      worker.once("error", (error) => {
-        finish(() => reject(error));
-      });
-      worker.once("exit", (code) => {
-        if (settled) return;
-        appLogger.warn("scan.refresh_worker.exit_before_done", { agent: agentName, code });
-        finish(
-          () => reject(new Error(`Scan refresh worker exited before completing (code ${code})`)),
-          false,
-        );
-      });
+      }
     });
   }
 
   async shutdown(): Promise<void> {
-    const workers = [...this.workers];
-    await Promise.allSettled(workers.map((worker) => worker.terminate()));
+    this.isShuttingDown = true;
+    const slots = [...this.workers.values()];
     this.workers.clear();
+    const shutdownError = new Error(SHUTDOWN_ERROR_MESSAGE);
+    for (const slot of slots) {
+      slot.closed = true;
+      for (const pending of slot.pending.values()) pending.reject(shutdownError);
+      slot.pending.clear();
+    }
+    await Promise.allSettled(slots.map((slot) => slot.worker.terminate()));
+  }
+
+  private createWorker(agentName: string, request: ScanRefreshWorkerRequest): WorkerSlot {
+    const worker = new Worker(this.workerUrl, { workerData: request });
+    const slot: WorkerSlot = { worker, pending: new Map(), closed: false };
+    worker.unref();
+    this.workers.set(agentName, slot);
+    worker.on("message", (message: ScanRefreshWorkerMessage) => {
+      this.handleMessage(slot, message);
+    });
+    worker.on("error", (error) => {
+      this.closeWorker(agentName, slot, error);
+    });
+    worker.on("exit", (code) => {
+      if (slot.closed) return;
+      const error = new Error(`Scan refresh worker exited before completing (code ${code})`);
+      if (slot.pending.size > 0) {
+        appLogger.warn("scan.refresh_worker.exit_before_done", { agent: agentName, code });
+      }
+      this.closeWorker(agentName, slot, error);
+    });
+    return slot;
+  }
+
+  private handleMessage(slot: WorkerSlot, message: ScanRefreshWorkerMessage): void {
+    const pending = slot.pending.get(message.requestId);
+    if (!pending) return;
+    if (message.type === "progress") {
+      pending.onProgress?.(message.progress);
+      return;
+    }
+
+    slot.pending.delete(message.requestId);
+    if (message.type === "error") {
+      pending.reject(new Error(message.error));
+      return;
+    }
+    pending.resolve({
+      sessions: message.sessions,
+      meta: message.meta,
+      changedIds: message.changedIds,
+    });
+  }
+
+  private closeWorker(agentName: string, slot: WorkerSlot, error: Error): void {
+    if (slot.closed) return;
+    slot.closed = true;
+    if (this.workers.get(agentName) === slot) this.workers.delete(agentName);
+    for (const pending of slot.pending.values()) pending.reject(error);
+    slot.pending.clear();
   }
 }
