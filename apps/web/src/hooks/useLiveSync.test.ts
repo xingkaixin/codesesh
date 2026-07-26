@@ -27,6 +27,7 @@ vi.mock("../lib/api", () => ({
 function makeDeps() {
   return {
     applyLiveEvent: vi.fn().mockResolvedValue({}),
+    resyncLiveState: vi.fn().mockResolvedValue({}),
     setScanStatus: vi.fn(),
   };
 }
@@ -76,7 +77,7 @@ describe("useLiveSync", () => {
     expect(result.current.liveNotice).toBe("实时更新已断开，重连中…");
   });
 
-  it("clears the notice and asks the store for a full reload on reconnect", async () => {
+  it("clears the notice and explicitly resyncs the store on reconnect", async () => {
     const deps = makeDeps();
     const { result } = renderHook(() => useLiveSync(deps));
     act(() => disconnectCallback?.());
@@ -87,8 +88,7 @@ describe("useLiveSync", () => {
     });
 
     expect(result.current.liveNotice).toBeNull();
-    expect(deps.applyLiveEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "sessions-updated" }),
-    );
+    expect(deps.resyncLiveState).toHaveBeenCalledOnce();
+    expect(deps.applyLiveEvent).not.toHaveBeenCalled();
   });
 });

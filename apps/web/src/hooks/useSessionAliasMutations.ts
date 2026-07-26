@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { deleteSessionAlias, upsertSessionAlias } from "../lib/api";
-import { queryKeys } from "../lib/query-keys";
+import { invalidateSessionDerivedQueries } from "../lib/session-query-consistency";
 
 export interface SessionAliasIdentity {
   agentKey: string;
@@ -16,12 +16,7 @@ export function useSessionAliasMutations(refreshSessionSnapshot: () => Promise<v
   const queryClient = useQueryClient();
 
   const refreshAliasConsumers = useCallback(async () => {
-    await Promise.all([
-      refreshSessionSnapshot(),
-      queryClient.invalidateQueries({ queryKey: queryKeys.sessionDetails }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboards }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
-    ]);
+    await Promise.all([refreshSessionSnapshot(), invalidateSessionDerivedQueries(queryClient)]);
   }, [queryClient, refreshSessionSnapshot]);
 
   const { mutateAsync: mutateAlias } = useMutation({

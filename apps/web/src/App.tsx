@@ -58,6 +58,7 @@ export default function App() {
     error,
     reload,
     applyLiveEvent,
+    resyncLiveState,
   } = sessionStore;
   useWindowedDataLoad({
     window: timeWindow,
@@ -256,6 +257,7 @@ export default function App() {
 
   const { liveNotice } = useLiveSync({
     applyLiveEvent,
+    resyncLiveState,
     setScanStatus,
   });
 

@@ -1,6 +1,6 @@
 import { applySessionChanges } from "@codesesh/core/contract";
 import { isCancelledError, queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   type AgentInfo,
   type AppConfig,
@@ -16,12 +16,7 @@ import {
 } from "../lib/api";
 import { createAgentCatalog } from "../lib/agents";
 import { queryKeys } from "../lib/query-keys";
-
-export type LiveSessionsUpdate = Omit<
-  SessionsUpdatedEvent,
-  "changedSessionHeads" | "removedSessionRefs"
-> &
-  Partial<Pick<SessionsUpdatedEvent, "changedSessionHeads" | "removedSessionRefs">>;
+import { invalidateSessionDerivedQueries } from "../lib/session-query-consistency";
 
 export interface SessionStoreSnapshot {
   window: AppConfig["window"];
@@ -94,6 +89,7 @@ function sessionSnapshotOptions(window: AppConfig["window"]) {
 export function useSessionStore() {
   const queryClient = useQueryClient();
   const [requestedWindow, setRequestedWindow] = useState<AppConfig["window"] | null>(null);
+  const requestedWindowRef = useRef<AppConfig["window"] | null>(null);
   const configQuery = useQuery({
     queryKey: queryKeys.config,
     queryFn: async ({ signal }) => {
@@ -113,6 +109,7 @@ export function useSessionStore() {
 
   const reload = useCallback(
     async (window: AppConfig["window"]): Promise<SessionStoreSnapshot | null> => {
+      requestedWindowRef.current = window;
       setRequestedWindow(window);
       try {
         await queryClient.cancelQueries({ queryKey: queryKeys.sessionSnapshots });
@@ -131,18 +128,14 @@ export function useSessionStore() {
   );
 
   const applyLiveEvent = useCallback(
-    async (event: LiveSessionsUpdate): Promise<SessionStoreSnapshot | null> => {
-      if (!requestedWindow) return null;
-      const snapshotKey = queryKeys.sessionSnapshot(requestedWindow);
+    async (event: SessionsUpdatedEvent): Promise<SessionStoreSnapshot | null> => {
+      const activeWindow = requestedWindowRef.current;
+      if (!activeWindow) return null;
+      const snapshotKey = queryKeys.sessionSnapshot(activeWindow);
       const current = queryClient.getQueryData<SessionStoreSnapshot>(snapshotKey);
-      if (!current || !event.changedSessionHeads || !event.removedSessionRefs) {
-        await queryClient.invalidateQueries({
-          queryKey: snapshotKey,
-          exact: true,
-          refetchType: "none",
-        });
-        const refreshed = await queryClient.fetchQuery(sessionSnapshotOptions(requestedWindow));
-        await queryClient.invalidateQueries({ queryKey: queryKeys.sessionDetails });
+      if (!current) {
+        const refreshed = await reload(activeWindow);
+        await invalidateSessionDerivedQueries(queryClient);
         return refreshed;
       }
 
@@ -154,16 +147,24 @@ export function useSessionStore() {
           event.removedSessionRefs,
         ),
       });
-      const aggregates = await queryClient.fetchQuery(snapshotAggregatesOptions(requestedWindow));
+      await invalidateSessionDerivedQueries(queryClient);
+      const aggregates = await queryClient.fetchQuery(snapshotAggregatesOptions(activeWindow));
       const updated =
         queryClient.setQueryData<SessionStoreSnapshot>(snapshotKey, (latest) =>
           latest ? { ...latest, ...aggregates } : latest,
         ) ?? null;
-      await queryClient.invalidateQueries({ queryKey: queryKeys.sessionDetails });
       return updated;
     },
-    [queryClient, requestedWindow],
+    [queryClient, reload],
   );
+
+  const resyncLiveState = useCallback(async (): Promise<SessionStoreSnapshot | null> => {
+    const activeWindow = requestedWindowRef.current;
+    if (!activeWindow) return null;
+    const refreshed = await reload(activeWindow);
+    await invalidateSessionDerivedQueries(queryClient);
+    return refreshed;
+  }, [queryClient, reload]);
 
   const agents = snapshot?.agents ?? EMPTY_SNAPSHOT.agents;
   const agentCatalog = useMemo(() => createAgentCatalog(agents), [agents]);
@@ -191,5 +192,6 @@ export function useSessionStore() {
     agentNameMap: agentCatalog.displayNameByKey,
     reload,
     applyLiveEvent,
+    resyncLiveState,
   };
 }
