@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { homedir, platform } from "node:os";
 import { join, normalize } from "node:path";
 import {
   DatabaseSessionSource,
@@ -16,7 +17,7 @@ import type {
   ToolPartState,
 } from "../types/index.js";
 import { normalizeMessageParts } from "../contract/message-part.js";
-import { getCursorDataPath } from "../discovery/paths.js";
+import { firstExisting, readEnvPath } from "../discovery/paths.js";
 import { openDbReadOnly, isSqliteAvailable, type SQLiteDatabase } from "../utils/sqlite.js";
 import { resolveSessionTitle } from "../utils/title-fallback.js";
 import { isInternalEventType } from "../utils/parse-cleanup.js";
@@ -35,6 +36,25 @@ import {
   narrowField,
   safeParseJsonRecord,
 } from "../utils/narrow.js";
+
+export function resolveCursorDataRoot(): string | null {
+  const override = readEnvPath("CURSOR_DATA_PATH");
+  if (override) return override;
+
+  const currentPlatform = platform();
+  if (currentPlatform === "darwin") {
+    return firstExisting(join(homedir(), "Library", "Application Support", "Cursor", "User"));
+  }
+  if (currentPlatform === "linux") {
+    const configRoot = readEnvPath("XDG_CONFIG_HOME") ?? join(homedir(), ".config");
+    return firstExisting(join(configRoot, "Cursor", "User"));
+  }
+  if (currentPlatform === "win32") {
+    const appData = readEnvPath("APPDATA") ?? join(homedir(), "AppData", "Roaming");
+    return firstExisting(join(appData, "Cursor", "User"));
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Cursor data model interfaces
@@ -407,13 +427,13 @@ export class CursorAgent extends DatabaseSessionSource {
 
   private findDbPath(): string | null {
     if (!isSqliteAvailable()) return null;
-    const dataPath = getCursorDataPath();
+    const dataPath = resolveCursorDataRoot();
     if (!dataPath) return null;
     return join(dataPath, "globalStorage", "state.vscdb");
   }
 
   getSessionWatchPlan() {
-    const dataPath = getCursorDataPath();
+    const dataPath = resolveCursorDataRoot();
     return {
       status: "supported" as const,
       targets: dataPath
@@ -434,7 +454,7 @@ export class CursorAgent extends DatabaseSessionSource {
    */
   private buildWorkspacePathMap(): Map<string, string> {
     const map = new Map<string, string>();
-    const dataPath = getCursorDataPath();
+    const dataPath = resolveCursorDataRoot();
     if (!dataPath) return map;
 
     const wsStoragePath = join(dataPath, "workspaceStorage");

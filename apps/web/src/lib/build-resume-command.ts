@@ -16,37 +16,20 @@ export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-const RESUME_COMMAND_PREFIX_BY_AGENT = {
-  claudecode: "claude --resume",
-  codex: "codex resume",
-  kimi: "kimi -r",
-  opencode: "opencode -s",
-  pi: "pi --session",
-} as const;
-
-type ResumeAgentKey = keyof typeof RESUME_COMMAND_PREFIX_BY_AGENT;
-
 export interface BuildResumeCommandInput {
-  agentName: string;
+  resumeCommandPrefix: string | null;
   sessionId: string;
   directory?: string | null;
 }
 
-function getResumeCommandPrefix(agentName: string) {
-  const key = agentName.toLowerCase();
-  if (!(key in RESUME_COMMAND_PREFIX_BY_AGENT)) return null;
-  return RESUME_COMMAND_PREFIX_BY_AGENT[key as ResumeAgentKey];
-}
-
 export function buildResumeCommand({
-  agentName,
+  resumeCommandPrefix,
   sessionId,
   directory,
 }: BuildResumeCommandInput): string | null {
-  const prefix = getResumeCommandPrefix(agentName);
-  if (!prefix) return null;
+  if (!resumeCommandPrefix) return null;
 
-  const invocation = `${prefix} ${shellQuote(sessionId)}`;
+  const invocation = `${resumeCommandPrefix} ${shellQuote(sessionId)}`;
   const raw = directory ?? "";
   // Use trim() only to detect "effectively empty" — don't lose surrounding
   // whitespace from the actual cd argument. The shellQuote'd path must match

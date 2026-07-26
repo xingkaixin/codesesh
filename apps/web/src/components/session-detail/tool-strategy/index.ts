@@ -33,13 +33,6 @@ export {
   extractReadContent,
   extractWriteContent,
 } from "./shared";
-export { buildClaudeToolStrategy } from "./claudecode";
-export { buildOpencodeToolStrategy } from "./opencode";
-export { buildKimiToolStrategy } from "./kimi";
-export { buildCodexToolStrategy, extractCodexNodeReplTextOutput } from "./codex";
-export { buildCursorToolStrategy } from "./cursor";
-export { buildPiToolStrategy } from "./pi";
-export { buildZCodeToolStrategy } from "./zcode";
 
 type ToolStrategyBuilder = (
   tool: ToolPart,
@@ -47,8 +40,9 @@ type ToolStrategyBuilder = (
   baseDirectory?: string,
 ) => ToolDisplayStrategy;
 
-// agentKey → 展示策略 builder。新增 agent 时在此登记一行；值类型保证 builder
-// 签名一致，未登记的 agent 走 buildDefaultToolStrategy 兜底（默认渲染，非错误）。
+// Registered agents declare custom/default explicitly; the cross-package completeness
+// test keeps that declaration aligned with this map. Unknown future agents still get
+// a safe default renderer when an older web bundle reads a newer server response.
 const TOOL_STRATEGY_BUILDERS: Record<string, ToolStrategyBuilder> = {
   claudecode: buildClaudeToolStrategy,
   opencode: buildOpencodeToolStrategy,
@@ -58,6 +52,10 @@ const TOOL_STRATEGY_BUILDERS: Record<string, ToolStrategyBuilder> = {
   pi: buildPiToolStrategy,
   zcode: buildZCodeToolStrategy,
 };
+
+export function hasCustomToolStrategy(agentName: string): boolean {
+  return Object.hasOwn(TOOL_STRATEGY_BUILDERS, agentName.toLowerCase());
+}
 
 export function getToolDisplayStrategy(
   sessionAgentKey: string,

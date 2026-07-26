@@ -15,7 +15,7 @@ import type {
   SessionSourceRef,
 } from "./base.js";
 import type { SessionHead, SessionDetail, MessagePart } from "../types/index.js";
-import { resolveAgentRoots, firstExisting } from "../discovery/paths.js";
+import { firstExisting, resolveHomePath } from "../discovery/paths.js";
 import { readJsonlFile } from "../utils/jsonl.js";
 import { normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { isInternalEventType } from "../utils/parse-cleanup.js";
@@ -41,6 +41,10 @@ const KIMI_TOOL_TITLE_MAP: Record<string, string> = {
 };
 
 const KIMI_IGNORED_TOOLS = new Set(["SetTodoList"]);
+
+export function resolveKimiDataRoot(): string {
+  return resolveHomePath("KIMI_SHARE_DIR", ".kimi");
+}
 
 function mapToolTitle(toolName: string): string {
   return KIMI_TOOL_TITLE_MAP[toolName] ?? toolName;
@@ -183,26 +187,22 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
   private defaultModel: string | null = null;
 
   private findBasePath(): string | null {
-    const roots = resolveAgentRoots();
-    return firstExisting(join(roots.kimiRoot, "sessions"), "data/kimi");
+    return firstExisting(join(resolveKimiDataRoot(), "sessions"), "data/kimi");
   }
 
   getSessionWatchPlan() {
-    const roots = resolveAgentRoots();
+    const dataRoot = resolveKimiDataRoot();
     return {
       status: "supported" as const,
-      targets: [
-        { root: roots.kimiRoot, path: join(roots.kimiRoot, "sessions") },
-        { path: "data/kimi" },
-      ],
+      targets: [{ root: dataRoot, path: join(dataRoot, "sessions") }, { path: "data/kimi" }],
     };
   }
 
   /** Parse kimi.json and build md5(project_path) → cwd mapping */
   private loadKimiConfig(): void {
-    const roots = resolveAgentRoots();
-    const configPath = join(roots.kimiRoot, "kimi.json");
-    const tomlPath = join(roots.kimiRoot, "config.toml");
+    const dataRoot = resolveKimiDataRoot();
+    const configPath = join(dataRoot, "kimi.json");
+    const tomlPath = join(dataRoot, "config.toml");
     if (existsSync(tomlPath)) {
       const configText = readFileSync(tomlPath, "utf-8");
       this.defaultModel = configText.match(/^default_model\s*=\s*"([^"]+)"/m)?.[1] ?? null;

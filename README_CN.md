@@ -55,7 +55,7 @@ CodeSesh 认为，你的会话历史属于**你** —— 你应该在一个地�
 | OpenCode | 已支持 |
 | ZCode | 已支持 |
 
-更多 Agent 持续接入中。添加新 Agent [只需一个文件](#扩展新-agent)。
+更多 Agent 持续接入中。参见[扩展清单](#扩展新-agent)。
 
 ---
 
@@ -283,9 +283,14 @@ apps/web            React 前端
 
 ### 扩展新 Agent
 
-添加对新 AI Agent 的支持只需一个文件：
+Agent 能力统一在一个注册点声明：
 
-1. 创建 `packages/core/src/agents/youragent.ts`，实现 `BaseAgent` 接口
-2. 在 `packages/core/src/agents/register.ts` 中注册
+1. 创建 `packages/core/src/agents/youragent.ts`，实现 `BaseAgent` 并导出数据根目录解析器。
+2. 在 `packages/core/src/agents/register.ts` 中注册，显式声明图标、数据根目录、resume
+   命令能力（不支持时填 `null`）以及使用自定义还是默认工具展示策略。
+3. 在 `apps/web/public/icon/agent/` 添加 SVG。
+4. 如使用自定义工具展示策略，在
+   `apps/web/src/components/session-detail/tool-strategy/youragent.ts` 实现，并在同目录
+   `index.ts` 注册 builder。
 
-无需改动其他任何文件，该 Agent 会立即出现在 UI 中。
+注册完备性测试会拒绝缺失图标、未声明 resume 能力或自定义策略不匹配的注册。

@@ -32,6 +32,7 @@ import { ThemeToggle } from "./components/app/ThemeToggle";
 import { AppRouteContent } from "./components/app/AppRouteContent";
 import type { BrowseBy } from "./components/app/types";
 import { formatScanStatusLabel, formatSearchSubtitle } from "./lib/scan-format";
+import { findAgent } from "./lib/agents";
 import { getProjectIdentityKey, getProjectPath, type ProjectRouteIdentity } from "./lib/projects";
 import {
   buildSessionIndexes,
@@ -589,7 +590,10 @@ export default function App() {
                   ) : null}
                   {!isSearchMode && viewState.mode === "session" && session ? (
                     <CopyResumeButton
-                      agentName={viewState.activeAgentKey}
+                      resumeCommandPrefix={
+                        findAgent(agentCatalog, viewState.activeAgentKey)?.resumeCommandPrefix ??
+                        null
+                      }
                       sessionId={session.id}
                       directory={session.directory}
                     />

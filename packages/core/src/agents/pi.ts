@@ -14,7 +14,7 @@ import type {
   SessionSourceRef,
 } from "./base.js";
 import type { Message, MessagePart, SessionDetail, SessionHead } from "../types/index.js";
-import { firstExisting, resolveAgentRoots } from "../discovery/paths.js";
+import { firstExisting, resolveHomePath } from "../discovery/paths.js";
 import { readJsonlFile } from "../utils/jsonl.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import { asNumber, asRecord, asString, narrowField } from "../utils/narrow.js";
@@ -24,6 +24,10 @@ import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-bui
 
 const HEAD_INDEX_VERSION = "pi-head-v1";
 const PARSER_VERSION = "pi-parser-v1";
+
+export function resolvePiDataRoot(): string {
+  return resolveHomePath("PI_HOME", ".pi");
+}
 
 interface SessionMeta extends FileSessionMeta {
   headIndexVersion: string;
@@ -139,16 +143,15 @@ export class PiAgent extends SingleFileSessionSource<SessionMeta> {
   private basePath: string | null = null;
 
   private findBasePath(): string | null {
-    const roots = resolveAgentRoots();
-    return firstExisting(join(roots.piRoot, "agent", "sessions"), "data/pi");
+    return firstExisting(join(resolvePiDataRoot(), "agent", "sessions"), "data/pi");
   }
 
   getSessionWatchPlan() {
-    const roots = resolveAgentRoots();
+    const dataRoot = resolvePiDataRoot();
     return {
       status: "supported" as const,
       targets: [
-        { root: roots.piRoot, path: join(roots.piRoot, "agent", "sessions") },
+        { root: dataRoot, path: join(dataRoot, "agent", "sessions") },
         { root: "data/pi", path: "data/pi" },
       ],
     };
