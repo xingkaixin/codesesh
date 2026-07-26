@@ -340,21 +340,18 @@ function syncEngineOf(store: LiveScanStore): AgentSyncEngine {
 
 function runBackfill(store: LiveScanStore, agentName: string) {
   const engine = syncEngineOf(store) as unknown as {
-    serialize: (
-      agentName: string,
-      kind: "backfill",
-      operation: () => Promise<unknown>,
-    ) => Promise<unknown>;
-    performBackfill: (agentName: string) => Promise<unknown>;
+    runBackfill: (agentName: string) => Promise<unknown>;
   };
-  return engine.serialize(agentName, "backfill", () => engine.performBackfill(agentName));
+  return engine.runBackfill(agentName);
 }
 
 function setRefreshDuration(store: LiveScanStore, agentName: string, durationMs: number): void {
   const engine = syncEngineOf(store) as unknown as {
-    state: (agentName: string) => { lastRefreshDurationMs: number };
+    scheduler: {
+      recordRefreshDuration: (agentName: string, durationMs: number) => void;
+    };
   };
-  engine.state(agentName).lastRefreshDurationMs = durationMs;
+  engine.scheduler.recordRefreshDuration(agentName, durationMs);
 }
 
 let restoreRuntime: (() => void) | null = null;
