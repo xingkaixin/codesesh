@@ -15,6 +15,8 @@ export type {
   SessionCacheMeta,
   SessionSourceDiff,
   SessionSourceRef,
+  SessionWatchPlan,
+  SessionWatchTarget,
 } from "./base.js";
 export type { ParseSessionResult } from "../types/index.js";
 export {

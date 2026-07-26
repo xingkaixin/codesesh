@@ -419,6 +419,22 @@ export class CursorAgent extends DatabaseSessionSource {
     return join(dataPath, "globalStorage", "state.vscdb");
   }
 
+  getSessionWatchPlan() {
+    const dataPath = getCursorDataPath();
+    return {
+      status: "supported" as const,
+      targets: dataPath
+        ? [
+            {
+              root: dataPath,
+              path: join(dataPath, "globalStorage", "state.vscdb"),
+            },
+            { root: dataPath, path: join(dataPath, "workspaceStorage") },
+          ]
+        : [],
+    };
+  }
+
   /**
    * Build a map of composerId → workspace folder path by reading
    * workspaceStorage/{id}/workspace.json and the corresponding state.vscdb.

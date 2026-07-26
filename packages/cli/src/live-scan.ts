@@ -18,10 +18,9 @@ import type {
 } from "@codesesh/core/contract";
 import { AgentSyncEngine, type AgentSessionsChanged } from "./agent-sync-engine.js";
 import { appLogger } from "./logging.js";
-import { SessionWatcher, resolveAgentWatchTargets } from "./session-watcher.js";
+import { SessionWatcher } from "./session-watcher.js";
 import { ThreadWorkerRunner, type WorkerRunner } from "./worker-runner.js";
 
-export { resolveAgentWatchTargets };
 export type { AgentScanStatus, BackfillStatus, ScanStatusEvent, SessionsUpdatedEvent };
 
 type StoreListener = (event: SessionsUpdatedEvent) => void;
@@ -155,7 +154,7 @@ export class LiveScanStore {
     if (!this.watchEnabled) return;
     this.watcher = new SessionWatcher();
     this.watcher.onAgentsChanged((agentNames) => this.syncEngine.handleAgentsChanged(agentNames));
-    this.watcher.start(this.agents.map((agent) => agent.name));
+    this.watcher.start(this.agents);
   }
 
   startBackgroundRefresh(): void {

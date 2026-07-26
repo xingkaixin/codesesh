@@ -276,7 +276,7 @@ vi.mock("node:worker_threads", () => ({
   Worker: workerThreads.Worker,
 }));
 
-import { LiveScanStore, resolveAgentWatchTargets, type SessionsUpdatedEvent } from "./live-scan.js";
+import { LiveScanStore, type SessionsUpdatedEvent } from "./live-scan.js";
 import { AgentSyncEngine } from "./agent-sync-engine.js";
 import { appLogger } from "./logging.js";
 import { SearchIndexJobRunner } from "./search-index-job-runner.js";
@@ -376,6 +376,20 @@ const projectIdentity = {
   displayName: FIXTURE_DIR_NAME,
 };
 
+function watchPlanFor(name: string) {
+  const roots = core.resolveProviderRoots();
+  return {
+    status: "supported" as const,
+    targets:
+      name === "codex"
+        ? [
+            { path: join(roots.codexRoot, "sessions") },
+            { path: join(roots.codexRoot, "session_index.jsonl") },
+          ]
+        : [],
+  };
+}
+
 function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
   const agent: Record<string, unknown> = {
     name,
@@ -396,6 +410,7 @@ function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
       },
       messages: [],
     })),
+    getSessionWatchPlan: vi.fn(() => watchPlanFor(name)),
     getSessionMetaMap: vi.fn(() => new Map([["session", { id: "session", sourcePath: "/tmp/s" }]])),
     setSessionMetaMap: vi.fn(),
     // Database-style agents detect changes via checkForChanges and rescan via
@@ -432,6 +447,7 @@ function makeFileSystemAgent(
   agent.isAvailable = vi.fn(() => true);
   agent.scan = vi.fn(() => []);
   agent.getSessionData = vi.fn(() => ({}) as SessionData);
+  agent.getSessionWatchPlan = vi.fn(() => watchPlanFor(name));
   agent.listSessionSources = overrides.listSessionSources ?? vi.fn(() => []);
   agent.scanSessionSource = overrides.scanSessionSource ?? vi.fn(() => null);
   agent.getSessionMetaMap = overrides.getSessionMetaMap ?? vi.fn(() => new Map());
@@ -2112,34 +2128,5 @@ describe("LiveScanStore", () => {
     expect(searchIndexWorkers).toHaveLength(2);
     expect(searchIndexWorkers[0]?.workerData.skipFtsIntegrityCheck).toBe(false);
     expect(searchIndexWorkers[1]?.workerData.skipFtsIntegrityCheck).toBe(true);
-  });
-});
-
-describe("resolveAgentWatchTargets", () => {
-  it("resolves cursor, OpenCode, and ZCode watch targets", () => {
-    expect(resolveAgentWatchTargets("cursor")).toEqual([
-      {
-        root: "/tmp/cursor",
-        path: join("/tmp/cursor", "globalStorage", "state.vscdb"),
-      },
-      { root: "/tmp/cursor", path: join("/tmp/cursor", "workspaceStorage") },
-    ]);
-    expect(resolveAgentWatchTargets("opencode")).toEqual([
-      { root: "/tmp/opencode", path: join("/tmp/opencode", "opencode.db") },
-      { root: "data/opencode", path: "data/opencode/opencode.db" },
-    ]);
-    expect(resolveAgentWatchTargets("zcode")).toEqual([
-      { root: "/tmp/zcode", path: join("/tmp/zcode", "cli", "db", "db.sqlite") },
-    ]);
-    core.resolveProviderRoots.mockReturnValue({
-      claudeRoot: "/tmp/claude",
-      codexRoot: "/tmp/codex",
-      kimiRoot: "/tmp/kimi",
-      opencodeRoot: "/tmp/opencode",
-      piRoot: "/tmp/pi",
-      zcodeRoot: null,
-    });
-    expect(resolveAgentWatchTargets("zcode")).toEqual([]);
-    expect(resolveAgentWatchTargets("unknown")).toEqual([]);
   });
 });

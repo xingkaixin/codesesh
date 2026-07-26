@@ -114,6 +114,17 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     return firstExisting(join(roots.claudeRoot, "projects"), "data/claudecode");
   }
 
+  getSessionWatchPlan() {
+    const roots = resolveProviderRoots();
+    return {
+      status: "supported" as const,
+      targets: [
+        { root: roots.claudeRoot, path: join(roots.claudeRoot, "projects") },
+        { path: "data/claudecode" },
+      ],
+    };
+  }
+
   isAvailable(): boolean {
     this.basePath = this.findBasePath();
     if (!this.basePath) return false;

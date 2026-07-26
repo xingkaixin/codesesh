@@ -187,6 +187,17 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     return firstExisting(join(roots.kimiRoot, "sessions"), "data/kimi");
   }
 
+  getSessionWatchPlan() {
+    const roots = resolveProviderRoots();
+    return {
+      status: "supported" as const,
+      targets: [
+        { root: roots.kimiRoot, path: join(roots.kimiRoot, "sessions") },
+        { path: "data/kimi" },
+      ],
+    };
+  }
+
   /** Parse kimi.json and build md5(project_path) → cwd mapping */
   private loadKimiConfig(): void {
     const roots = resolveProviderRoots();

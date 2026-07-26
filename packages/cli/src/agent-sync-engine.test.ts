@@ -345,6 +345,9 @@ describe("AgentSyncEngine", () => {
       getSessionData() {
         return { messages: [] } as never;
       }
+      getSessionWatchPlan() {
+        return { status: "not-needed" as const, reason: "sync test adapter" };
+      }
     }
 
     const oldSession = { ...makeSession("sess1"), smart_tags_source_updated_at: 1 };
