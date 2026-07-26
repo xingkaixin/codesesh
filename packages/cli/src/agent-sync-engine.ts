@@ -20,13 +20,14 @@ import type {
   ScanStatusEvent,
   SessionsUpdatedEvent,
 } from "@codesesh/core/contract";
+import { AgentOperationScheduler, type AgentOperationResult } from "./agent-operation-scheduler.js";
 import { appLogger, logSearchIndexSync } from "./logging.js";
 import { SearchIndexJobRunner } from "./search-index-job-runner.js";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 import { ScanStatusModel } from "./scan-status-model.js";
 import type { WorkerRunner } from "./worker-runner.js";
 
-export type AgentOperationResult = "committed" | "failed" | "skipped" | "unchanged";
+export type { AgentOperationResult } from "./agent-operation-scheduler.js";
 
 export interface AgentSessionsChanged {
   agentName: string;
@@ -42,17 +43,10 @@ export interface AgentSyncEngineOptions {
 
 type SessionsChangedListener = (change: AgentSessionsChanged) => void;
 type StatusChangedListener = (event: ScanStatusEvent) => void;
-type AgentOperationKind = "backfill" | "refresh";
 type CachedSessions = NonNullable<ReturnType<typeof loadCachedSessions>>;
 
 interface AgentRefreshState {
-  timer: NodeJS.Timeout | null;
-  timerDeadline: number;
-  isRunning: boolean;
-  hasPendingRerun: boolean;
   lastRefreshAt: number;
-  lastRefreshDurationMs: number;
-  pendingPathCount: number;
   /**
    * id → sessionSignature, carried across refreshes so unchanged sessions skip
    * re-stringifying. Only ever passed into the runRefresh event-path diff
@@ -65,13 +59,6 @@ interface AgentRefreshState {
    * was already written back by the strategy-path diff.
    */
   signatureCache: Map<string, string>;
-}
-
-interface AgentOperationLifecycle {
-  agentName: string;
-  kind: AgentOperationKind;
-  generation: number;
-  startedAt: number;
 }
 
 interface SessionRefreshDiff {
@@ -100,9 +87,6 @@ interface RefreshStrategyResult {
 
 const REFRESH_DEBOUNCE_MS = 200;
 const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
-const PENDING_REFRESH_DELAY_MS = 100;
-const MAX_ADAPTIVE_REFRESH_DELAY_MS = 30_000;
-const ADAPTIVE_REFRESH_DELAY_MULTIPLIER = 4;
 const SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD = 100;
 const BACKFILL_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -150,8 +134,7 @@ function restoreAgentCacheMeta(agent: BaseAgent, cached: CachedSessions): void {
 
 export class AgentSyncEngine {
   private refreshStates = new Map<string, AgentRefreshState>();
-  private operationGenerations = new Map<string, number>();
-  private operationTails = new Map<string, Promise<void>>();
+  private readonly scheduler: AgentOperationScheduler;
   private backfillQueue: string[] = [];
   private currentBackfillAgent: string | undefined;
   private completedBackfillAgents: string[] = [];
@@ -164,7 +147,9 @@ export class AgentSyncEngine {
   private backgroundRefreshTimer: NodeJS.Timeout | null = null;
   private isShuttingDown = false;
 
-  constructor(private readonly options: AgentSyncEngineOptions) {}
+  constructor(private readonly options: AgentSyncEngineOptions) {
+    this.scheduler = new AgentOperationScheduler((agentName) => this.performRefresh(agentName));
+  }
 
   initialize(cacheTimestamps: Record<string, number> = {}): void {
     for (const agent of this.options.snapshot().agents) {
@@ -197,12 +182,11 @@ export class AgentSyncEngine {
   handleAgentsChanged(agentNames: Iterable<string>): void {
     const snapshot = this.options.snapshot();
     for (const agentName of agentNames) {
-      this.state(agentName).pendingPathCount += 1;
       const delayMs =
         (snapshot.byAgent[agentName]?.length ?? 0) === 0
           ? EMPTY_AGENT_REFRESH_DEBOUNCE_MS
           : REFRESH_DEBOUNCE_MS;
-      this.scheduleRefresh(agentName, delayMs);
+      this.scheduler.notify(agentName, delayMs);
     }
   }
 
@@ -212,32 +196,28 @@ export class AgentSyncEngine {
     this.startScanBatch(agentNames, "scanning");
     this.backgroundRefreshTimer = setTimeout(() => {
       this.backgroundRefreshTimer = null;
-      for (const agentName of agentNames) this.scheduleRefresh(agentName, 0);
+      for (const agentName of agentNames) this.scheduler.schedule(agentName, 0);
       if (agentNames.length === 0) this.finishScanBatch();
     }, 0);
   }
 
   async refresh(agentName: string): Promise<void> {
-    await this.runCoalescedRefresh(agentName);
+    await this.scheduler.refresh(agentName);
   }
 
   async shutdown(): Promise<void> {
     this.isShuttingDown = true;
+    const schedulerSnapshot = this.scheduler.snapshot();
     const activeOperations = {
-      agent_operations: this.operationTails.size,
-      refreshes: [...this.refreshStates.values()].filter((state) => state.isRunning).length,
+      agent_operations: schedulerSnapshot.activeOperations,
+      refreshes: schedulerSnapshot.activeRefreshes,
       backfill_running: this.currentBackfillAgent != null || undefined,
       scan_workers: this.options.workerRunner.activeCount,
     };
     if (activeOperations.agent_operations > 0 || activeOperations.scan_workers > 0) {
       appLogger.warn("scan.shutdown.active_operations", activeOperations);
     }
-    for (const state of this.refreshStates.values()) {
-      if (!state.timer) continue;
-      clearTimeout(state.timer);
-      state.timer = null;
-      state.timerDeadline = 0;
-    }
+    this.scheduler.stop();
     if (this.backgroundRefreshTimer) {
       clearTimeout(this.backgroundRefreshTimer);
       this.backgroundRefreshTimer = null;
@@ -251,7 +231,7 @@ export class AgentSyncEngine {
     });
     await this.searchIndexJobs.shutdown();
     await this.options.workerRunner.shutdown();
-    await Promise.allSettled(this.operationTails.values());
+    await this.scheduler.waitForIdle();
     const stoppedSearchIndexSnapshot = this.searchIndexJobs.snapshot();
     appLogger.info("search_index.shutdown.completed", {
       active_batch_id: searchIndexSnapshot.activeBatchId,
@@ -306,46 +286,6 @@ export class AgentSyncEngine {
     for (const listener of this.sessionsChangedListeners) listener(change);
   }
 
-  private scheduleRefresh(agentName: string, delayMs: number): void {
-    if (this.isShuttingDown) return;
-    const state = this.state(agentName);
-    const adaptiveDelayMs = Math.min(
-      state.lastRefreshDurationMs * ADAPTIVE_REFRESH_DELAY_MULTIPLIER,
-      MAX_ADAPTIVE_REFRESH_DELAY_MS,
-    );
-    const effectiveDelayMs = Math.max(delayMs, adaptiveDelayMs);
-    const deadline = Date.now() + effectiveDelayMs;
-    if (state.timer) {
-      if (deadline >= state.timerDeadline) return;
-      clearTimeout(state.timer);
-    }
-    appLogger.debug("scan.refresh.schedule", { agent: agentName, delay_ms: effectiveDelayMs });
-    state.timerDeadline = deadline;
-    state.timer = setTimeout(() => {
-      state.timer = null;
-      void this.runCoalescedRefresh(agentName);
-    }, effectiveDelayMs);
-  }
-
-  private async runCoalescedRefresh(agentName: string): Promise<void> {
-    const state = this.state(agentName);
-    if (state.isRunning) {
-      appLogger.debug("scan.refresh.pending", { agent: agentName });
-      state.hasPendingRerun = true;
-      return;
-    }
-    state.isRunning = true;
-    try {
-      await this.serialize(agentName, "refresh", () => this.performRefresh(agentName));
-    } finally {
-      state.isRunning = false;
-      if (state.hasPendingRerun && !this.isShuttingDown) {
-        state.hasPendingRerun = false;
-        this.scheduleRefresh(agentName, PENDING_REFRESH_DELAY_MS);
-      }
-    }
-  }
-
   private async performRefresh(agentName: string): Promise<AgentOperationResult> {
     this.beginAgentScan(agentName);
     try {
@@ -364,8 +304,7 @@ export class AgentSyncEngine {
   private async runRefresh(agentName: string): Promise<Exclude<AgentOperationResult, "failed">> {
     const startedAt = performance.now();
     const state = this.state(agentName);
-    const pendingPathCount = state.pendingPathCount;
-    state.pendingPathCount = 0;
+    const pendingPathCount = this.scheduler.takePendingSignalCount(agentName);
     const agent = this.findAgent(agentName);
     if (!agent) {
       appLogger.warn("scan.refresh.missing_agent", { agent: agentName });
@@ -449,7 +388,7 @@ export class AgentSyncEngine {
     logSearchIndexSync("scan.refresh", null, { pending_paths: pendingPathCount });
 
     const totalDurationMs = performance.now() - startedAt;
-    state.lastRefreshDurationMs = totalDurationMs;
+    this.scheduler.recordRefreshDuration(agentName, totalDurationMs);
     appLogger.info("scan.refresh.done", {
       agent: agentName,
       duration_ms: Math.round(totalDurationMs),
@@ -639,24 +578,26 @@ export class AgentSyncEngine {
     if (!agentName) return;
     this.currentBackfillAgent = agentName;
     this.publishBackfillStatus();
-    void this.serialize(agentName, "backfill", () => this.performBackfill(agentName)).then(
-      (result) => {
-        if (this.isShuttingDown) return;
-        this.currentBackfillAgent = undefined;
-        if (result === "committed") {
-          if (!this.completedBackfillAgents.includes(agentName)) {
-            this.completedBackfillAgents.push(agentName);
-          }
-          this.failedBackfillAgents = this.failedBackfillAgents.filter(
-            (failedAgent) => failedAgent !== agentName,
-          );
-        } else if (!this.failedBackfillAgents.includes(agentName)) {
-          this.failedBackfillAgents.push(agentName);
+    void this.runBackfill(agentName).then((result) => {
+      if (this.isShuttingDown) return;
+      this.currentBackfillAgent = undefined;
+      if (result === "committed") {
+        if (!this.completedBackfillAgents.includes(agentName)) {
+          this.completedBackfillAgents.push(agentName);
         }
-        this.publishBackfillStatus();
-        this.pumpBackfillQueue();
-      },
-    );
+        this.failedBackfillAgents = this.failedBackfillAgents.filter(
+          (failedAgent) => failedAgent !== agentName,
+        );
+      } else if (!this.failedBackfillAgents.includes(agentName)) {
+        this.failedBackfillAgents.push(agentName);
+      }
+      this.publishBackfillStatus();
+      this.pumpBackfillQueue();
+    });
+  }
+
+  private runBackfill(agentName: string): Promise<AgentOperationResult> {
+    return this.scheduler.run(agentName, "backfill", () => this.performBackfill(agentName));
   }
 
   private async performBackfill(agentName: string): Promise<AgentOperationResult> {
@@ -716,79 +657,15 @@ export class AgentSyncEngine {
     }
   }
 
-  private serialize(
-    agentName: string,
-    kind: AgentOperationKind,
-    operation: () => Promise<AgentOperationResult>,
-  ): Promise<AgentOperationResult> {
-    const previous = this.operationTails.get(agentName) ?? Promise.resolve();
-    const run = previous.then(async () => {
-      if (this.isShuttingDown) return "skipped";
-      const lifecycle = this.beginOperation(agentName, kind);
-      try {
-        const result = await operation();
-        this.completeOperation(lifecycle, result);
-        return result;
-      } catch (error) {
-        this.completeOperation(lifecycle, "failed");
-        throw error;
-      }
-    });
-    const tail = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    this.operationTails.set(agentName, tail);
-    void tail.finally(() => {
-      if (this.operationTails.get(agentName) === tail) this.operationTails.delete(agentName);
-    });
-    return run;
-  }
-
   private state(agentName: string): AgentRefreshState {
     const existing = this.refreshStates.get(agentName);
     if (existing) return existing;
     const state: AgentRefreshState = {
-      timer: null,
-      timerDeadline: 0,
-      isRunning: false,
-      hasPendingRerun: false,
       lastRefreshAt: 0,
-      lastRefreshDurationMs: 0,
-      pendingPathCount: 0,
       signatureCache: new Map(),
     };
     this.refreshStates.set(agentName, state);
     return state;
-  }
-
-  private beginOperation(agentName: string, kind: AgentOperationKind): AgentOperationLifecycle {
-    const generation = (this.operationGenerations.get(agentName) ?? 0) + 1;
-    const startedAt = Date.now();
-    this.operationGenerations.set(agentName, generation);
-    appLogger.info("scan.agent_operation.started", {
-      agent: agentName,
-      operation: kind,
-      generation,
-      started_at: startedAt,
-    });
-    return { agentName, kind, generation, startedAt };
-  }
-
-  private completeOperation(
-    lifecycle: AgentOperationLifecycle,
-    result: AgentOperationResult,
-  ): void {
-    const completedAt = Date.now();
-    appLogger.info("scan.agent_operation.completed", {
-      agent: lifecycle.agentName,
-      operation: lifecycle.kind,
-      generation: lifecycle.generation,
-      started_at: lifecycle.startedAt,
-      completed_at: completedAt,
-      duration_ms: completedAt - lifecycle.startedAt,
-      result,
-    });
   }
 
   private backfillStatus(): BackfillStatus {
