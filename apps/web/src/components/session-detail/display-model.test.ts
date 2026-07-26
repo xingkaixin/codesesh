@@ -1,65 +1,133 @@
 import { describe, expect, it } from "vitest";
-import type { Message, MessagePart } from "../../lib/api";
-import type { MessageBlock } from "./blocks";
-import { buildMessageDisplayModels, type MessageDisplayModel } from "./display-model";
-import { buildSessionDetailToc, filterSessionMessages } from "./toc";
+import type { Message, SessionFileActivity } from "../../lib/api";
+import { buildSessionDetailDisplayModel } from "./display-model";
 
-function message(id: string, role: Message["role"], parts: MessagePart[]): Message {
-  return {
-    id,
-    role,
-    time_created: 1,
-    parts,
-  };
-}
+const messages: Message[] = [
+  {
+    id: "duplicate",
+    role: "user",
+    time_created: 10,
+    parts: [{ type: "text", text: "Inspect these files" }],
+  },
+  {
+    id: "duplicate",
+    role: "assistant",
+    time_created: 20,
+    parts: [
+      { type: "reasoning", text: "Checking" },
+      { type: "text", text: "I will inspect them." },
+      { type: "plan", text: "Read then update" },
+      {
+        type: "tool",
+        tool: "Read",
+        time_created: 21,
+        state: { arguments: { file_path: "src/a.ts" } },
+      },
+      {
+        type: "tool",
+        tool: "Write",
+        time_created: 22,
+        state: { arguments: { file_path: "src/b.ts" } },
+      },
+    ],
+  },
+  {
+    id: "duplicate",
+    role: "assistant",
+    time_created: 30,
+    parts: [
+      {
+        type: "tool",
+        tool: "Read",
+        state: { arguments: { file_path: "src/a.ts" } },
+      },
+      { type: "text", text: "Done." },
+    ],
+  },
+];
+
+const fileActivity: SessionFileActivity[] = [
+  {
+    agent_name: "claudecode",
+    session_id: "s1",
+    project_identity_key: "project",
+    path: "src/a.ts",
+    kind: "read",
+    count: 2,
+    latest_time: 30,
+  },
+  {
+    agent_name: "claudecode",
+    session_id: "s1",
+    project_identity_key: "project",
+    path: "src/b.ts",
+    kind: "write",
+    count: 1,
+    latest_time: 22,
+  },
+];
 
 describe("session detail display model", () => {
-  it("builds visible message models once in display order", () => {
-    const userPart: MessagePart = { type: "text", text: "hello" };
-    const toolPart: MessagePart = { type: "tool", tool: "read" };
-    const models = buildMessageDisplayModels([
-      message("empty", "assistant", [{ type: "text", text: "   " }]),
-      message("user", "user", [userPart]),
-      message("tool", "assistant", [toolPart]),
-    ]);
+  it("prepares filtering, navigation, timeline, and file changes through one interface", () => {
+    const model = buildSessionDetailDisplayModel({
+      messages,
+      agentName: "claudecode",
+      fileActivity,
+    });
 
-    expect(models.map((model) => model.msg.id)).toEqual(["user", "tool"]);
-    expect(models.map((model) => model.index)).toEqual([0, 1]);
-    expect(models[0]?.blocks).toEqual([{ type: "text", parts: [userPart] }]);
-    expect(models[1]?.blocks).toEqual([{ type: "tool", parts: [toolPart] }]);
+    expect(model.messages.map((message) => message.index)).toEqual([0, 1, 2]);
+    expect(model.messages.map((message) => message.msg.id)).toEqual([
+      "duplicate",
+      "duplicate",
+      "duplicate",
+    ]);
+    expect(model.toc.counts).toEqual({
+      user: 1,
+      agent_message: 2,
+      thinking: 1,
+      plan: 1,
+      tools_all: 3,
+    });
+
+    const firstTools = model.messages[1]?.blocks.find((block) => block.type === "tool");
+    const secondTools = model.messages[2]?.blocks.find((block) => block.type === "tool");
+    expect(firstTools?.anchorIds).toEqual(["tool-1-0", "tool-1-1"]);
+    expect(secondTools?.anchorIds).toEqual(["tool-2-0"]);
+
+    expect(model.fileChangeSummary.read).toEqual([
+      expect.objectContaining({
+        path: "src/a.ts",
+        count: 2,
+        latestAnchorId: "tool-2-0",
+        anchors: [
+          expect.objectContaining({ anchorId: "tool-1-0" }),
+          expect.objectContaining({ anchorId: "tool-2-0" }),
+        ],
+      }),
+    ]);
+    expect(model.fileChangeSummary.write).toHaveLength(1);
+
+    const reads = model.select(new Set(["tool:read"]));
+    expect(reads.messages.map((message) => message.index)).toEqual([1, 2]);
+    expect(reads.timelineEntries.map((entry) => entry.anchorId)).toEqual(["tool-1-0", "tool-2-0"]);
+    expect(reads.resolveListIndex(1)).toBe(0);
+    expect(reads.resolveListIndex(2)).toBe(1);
+    expect(model.resolveMessageIndex("tool-2-0")).toBe(2);
+
+    const writes = model.select(new Set(["tool:write"]));
+    expect(writes.messages.map((message) => message.index)).toEqual([1]);
+    expect(writes.timelineEntries.map((entry) => entry.anchorId)).toEqual(["tool-1-1"]);
+    expect(model.resolveMessageIndex("tool-1-1")).toBe(1);
   });
 
-  it("reuses precomputed blocks for toc and filtering", () => {
-    const textPart: MessagePart = { type: "text", text: "precomputed reply" };
-    const readPart: MessagePart = { type: "tool", tool: "Read" };
-    const writePart: MessagePart = { type: "tool", tool: "Write" };
-    const blocks: MessageBlock[] = [
-      { type: "text", parts: [textPart] },
-      { type: "tool", parts: [readPart, writePart] },
-    ];
-    const models: MessageDisplayModel[] = [
-      {
-        msg: message("assistant", "assistant", []),
-        blocks,
-        index: 7,
-      },
-    ];
+  it("returns an empty coherent selection when no messages are visible", () => {
+    const model = buildSessionDetailDisplayModel({
+      messages: [{ id: "empty", role: "assistant", time_created: 1, parts: [] }],
+      agentName: "claudecode",
+    });
 
-    const toc = buildSessionDetailToc(models);
-    expect(toc.counts.agent_message).toBe(1);
-    expect(toc.counts.tools_all).toBe(2);
-    expect(toc.tools.map((tool) => tool.id)).toEqual(["tool:read", "tool:write"]);
-
-    const filtered = filterSessionMessages(
-      models,
-      new Set(["agent_message", "tools_all", "tool:read"]),
-    );
-
-    expect(filtered).toHaveLength(1);
-    expect(filtered[0]?.index).toBe(7);
-    expect(filtered[0]?.blocks).toEqual([
-      { type: "text", parts: [textPart] },
-      { type: "tool", parts: [readPart] },
-    ]);
+    expect(model.messages).toEqual([]);
+    expect(model.toc.filterIds.size).toBe(0);
+    expect(model.select(new Set()).messages).toEqual([]);
   });
 });

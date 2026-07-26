@@ -58,7 +58,6 @@ describe("MessageList virtualization", () => {
     const view = render(
       <MessageList
         messages={createMessages().slice(0, 2)}
-        toolAnchorIds={new Map()}
         sessionAgentKey="claudecode"
         baseDirectory="/tmp/project"
         apiRef={apiRef}
@@ -75,7 +74,6 @@ describe("MessageList virtualization", () => {
     render(
       <MessageList
         messages={createMessages()}
-        toolAnchorIds={new Map()}
         sessionAgentKey="claudecode"
         baseDirectory="/tmp/project"
         apiRef={{ current: null }}
@@ -92,7 +90,6 @@ describe("MessageList virtualization", () => {
     const view = render(
       <MessageList
         messages={createMessages()}
-        toolAnchorIds={new Map()}
         sessionAgentKey="claudecode"
         baseDirectory="/tmp/project"
         apiRef={apiRef}
@@ -126,7 +123,6 @@ describe("MessageList virtualization", () => {
     render(
       <MessageList
         messages={createMessages()}
-        toolAnchorIds={new Map()}
         sessionAgentKey="claudecode"
         baseDirectory="/tmp/project"
         apiRef={apiRef}
@@ -149,7 +145,6 @@ describe("MessageList virtualization", () => {
     const view = render(
       <MessageList
         messages={createMessages()}
-        toolAnchorIds={new Map()}
         sessionAgentKey="claudecode"
         baseDirectory="/tmp/project"
         apiRef={{ current: null }}
@@ -179,7 +174,6 @@ describe("MessageList virtualization", () => {
     const view = render(
       <MessageList
         messages={createMessages()}
-        toolAnchorIds={new Map()}
         sessionAgentKey="claudecode"
         baseDirectory="/tmp/project"
         apiRef={{ current: null }}
@@ -205,7 +199,6 @@ describe("MessageList virtualization", () => {
     const view = render(
       <MessageList
         messages={createMessages()}
-        toolAnchorIds={new Map()}
         sessionAgentKey="claudecode"
         baseDirectory="/tmp/project"
         apiRef={{ current: null }}

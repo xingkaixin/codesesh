@@ -143,9 +143,18 @@ function isBlockVisible(
 }
 
 function filterToolBlock(block: MessageBlock, filters: Set<string>): MessageBlock | null {
-  const parts = block.parts.filter((p) => isToolPartVisible(p, filters));
+  const visibleIndexes = block.parts
+    .map((part, index) => (isToolPartVisible(part, filters) ? index : -1))
+    .filter((index) => index >= 0);
+  const parts = visibleIndexes.map((index) => block.parts[index]!);
   if (parts.length === 0) return null;
-  return { ...block, parts };
+  return {
+    ...block,
+    parts,
+    anchorIds: block.anchorIds
+      ? visibleIndexes.map((index) => block.anchorIds![index]!)
+      : undefined,
+  };
 }
 
 export function filterSessionMessages(

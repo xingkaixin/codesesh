@@ -36,12 +36,8 @@ describe("session timeline", () => {
         ],
       },
     ];
-    const toolAnchorIds = new Map<MessagePart, string>([
-      [readTool, "tool-7-0"],
-      [writeTool, "tool-7-1"],
-    ]);
-
-    const entries = buildSessionTimelineEntries(messages, toolAnchorIds);
+    messages[1]!.blocks[1]!.anchorIds = ["tool-7-0", "tool-7-1"];
+    const entries = buildSessionTimelineEntries(messages);
 
     expect(entries.map((entry) => entry.kind)).toEqual([
       "user",

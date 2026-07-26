@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AgentInfo, MessagePart } from "../../lib/api";
+import type { AgentInfo } from "../../lib/api";
 import { formatTokens } from "../../lib/format";
 import type { FilteredSessionMessage } from "./toc";
 import { MessageItem } from "./message-rendering";
@@ -23,7 +23,6 @@ export interface MessageListHandle {
 
 interface MessageListProps {
   messages: FilteredSessionMessage[];
-  toolAnchorIds: Map<MessagePart, string>;
   sessionAgentKey: string;
   agent?: AgentInfo;
   baseDirectory: string;
@@ -136,7 +135,6 @@ function scrollParentTo(parent: ScrollParent, top: number) {
 
 export function MessageList({
   messages,
-  toolAnchorIds,
   sessionAgentKey,
   agent,
   baseDirectory,
@@ -153,7 +151,6 @@ export function MessageList({
     return (
       <VirtualizedMessageList
         messages={messages}
-        toolAnchorIds={toolAnchorIds}
         sessionAgentKey={sessionAgentKey}
         agent={agent}
         baseDirectory={baseDirectory}
@@ -171,7 +168,6 @@ export function MessageList({
           messageIndex={index}
           msg={msg}
           blocks={blocks}
-          toolAnchorIds={toolAnchorIds}
           formatTokens={formatTokens}
           sessionAgentKey={sessionAgentKey}
           agent={agent}
@@ -185,7 +181,6 @@ export function MessageList({
 
 function VirtualizedMessageList({
   messages,
-  toolAnchorIds,
   sessionAgentKey,
   agent,
   baseDirectory,
@@ -406,7 +401,6 @@ function VirtualizedMessageList({
               messageIndex={item.index}
               msg={item.msg}
               blocks={item.blocks}
-              toolAnchorIds={toolAnchorIds}
               formatTokens={formatTokens}
               sessionAgentKey={sessionAgentKey}
               agent={agent}

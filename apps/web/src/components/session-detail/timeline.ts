@@ -74,7 +74,6 @@ const TOOL_KIND_LABEL = {
 
 export function buildSessionTimelineEntries(
   messages: FilteredSessionMessage[],
-  toolAnchorIds: Map<MessagePart, string>,
 ): SessionTimelineEntry[] {
   const entries: SessionTimelineEntry[] = [];
 
@@ -94,8 +93,8 @@ export function buildSessionTimelineEntries(
 
     blocks.forEach((block, blockIndex) => {
       if (block.type === "tool") {
-        block.parts.forEach((part) => {
-          const anchorId = toolAnchorIds.get(part);
+        block.parts.forEach((part, partIndex) => {
+          const anchorId = block.anchorIds?.[partIndex];
           if (!anchorId) return;
           const kind = classifyTimelineToolKind(part);
           entries.push({
