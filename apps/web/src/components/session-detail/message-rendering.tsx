@@ -90,7 +90,6 @@ export function MessageItem({
   messageIndex,
   msg,
   blocks,
-  toolAnchorIds,
   formatTokens: fmtTokens,
   sessionAgentKey,
   agent,
@@ -100,7 +99,6 @@ export function MessageItem({
   messageIndex: number;
   msg: Message;
   blocks: MessageBlock[];
-  toolAnchorIds: Map<MessagePart, string>;
   formatTokens: (n: number) => string;
   sessionAgentKey: string;
   agent?: AgentInfo;
@@ -198,7 +196,7 @@ export function MessageItem({
                   <ToolsSection
                     key={index}
                     parts={block.parts}
-                    toolAnchorIds={toolAnchorIds}
+                    anchorIds={block.anchorIds}
                     sessionAgentKey={sessionAgentKey}
                     baseDirectory={baseDirectory}
                     highlightQuery={highlightQuery}
@@ -323,13 +321,13 @@ function ReasoningSection({
 
 function ToolsSection({
   parts,
-  toolAnchorIds,
+  anchorIds,
   sessionAgentKey,
   baseDirectory,
   highlightQuery,
 }: {
   parts: MessagePart[];
-  toolAnchorIds: Map<MessagePart, string>;
+  anchorIds?: string[];
   sessionAgentKey: string;
   baseDirectory: string;
   highlightQuery?: string;
@@ -337,11 +335,11 @@ function ToolsSection({
   return (
     <div className="space-y-2">
       <div className="space-y-2">
-        {parts.map((tool, i) => (
+        {parts.map((tool, index) => (
           <ToolItem
-            key={i}
+            key={index}
             tool={tool}
-            anchorId={toolAnchorIds.get(tool)}
+            anchorId={anchorIds?.[index]}
             sessionAgentKey={sessionAgentKey}
             baseDirectory={baseDirectory}
             highlightQuery={highlightQuery}

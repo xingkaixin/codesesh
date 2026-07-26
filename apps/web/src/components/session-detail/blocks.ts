@@ -5,6 +5,7 @@ export type MessageBlockType = "reasoning" | "text" | "tool" | "plan";
 export interface MessageBlock {
   type: MessageBlockType;
   parts: MessagePart[];
+  anchorIds?: string[];
 }
 
 export function extractMessageText(value: unknown): string {

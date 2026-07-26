@@ -113,11 +113,9 @@ export function summarizeFileChangeItems(records: FileChangeRecord[]): FileChang
 }
 
 export function buildFileChangeSummary(messages: MessageDisplayModel[]): {
-  toolAnchorIds: Map<MessagePart, string>;
   anchorMessageIndexes: Map<string, number>;
   summary: FileChangeSummary;
 } {
-  const toolAnchorIds = new Map<MessagePart, string>();
   const anchorMessageIndexes = new Map<string, number>();
   const fileChanges: Record<FileChangeKind, FileChangeRecord[]> = {
     read: [],
@@ -132,10 +130,9 @@ export function buildFileChangeSummary(messages: MessageDisplayModel[]): {
     for (const block of blocks) {
       if (block.type !== "tool") continue;
 
-      for (const part of block.parts) {
-        const anchorId = buildToolAnchorId(messageIndex, toolIndex);
+      for (const [partIndex, part] of block.parts.entries()) {
+        const anchorId = block.anchorIds?.[partIndex] ?? buildToolAnchorId(messageIndex, toolIndex);
         toolIndex += 1;
-        toolAnchorIds.set(part, anchorId);
         anchorMessageIndexes.set(anchorId, messageIndex);
 
         const inputValue = getToolInputValue(part);
@@ -171,7 +168,6 @@ export function buildFileChangeSummary(messages: MessageDisplayModel[]): {
   });
 
   return {
-    toolAnchorIds,
     anchorMessageIndexes,
     summary: {
       read: summarizeFileChangeItems(fileChanges.read),

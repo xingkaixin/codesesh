@@ -10,14 +10,8 @@ import {
   recordRenderProfileEntry,
   RenderProfiler,
 } from "./RenderProfiler";
-import { buildSessionDetailToc, filterSessionMessages } from "./session-detail/toc";
-import { buildMessageDisplayModels } from "./session-detail/display-model";
-import {
-  buildFileChangeSummary,
-  buildFileChangeSummaryFromActivity,
-} from "./session-detail/file-change";
+import { buildSessionDetailDisplayModel } from "./session-detail/display-model";
 import { SessionToc, toggleTocFilter } from "./session-detail/session-toc";
-import { normalizeMessagesForDisplay } from "./session-detail/tool-strategy";
 import {
   MessageList,
   type MessageListHandle,
@@ -33,7 +27,6 @@ import {
   resolveReducedMotionScrollBehavior,
   type SessionAnchorScrollBehavior,
 } from "./session-detail/scroll-behavior";
-import { buildSessionTimelineEntries } from "./session-detail/timeline";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -111,38 +104,18 @@ function measureSessionDetailWork<T>(id: string, compute: () => T): T {
 export function SessionDetail({ session, agentCatalog, highlightQuery }: SessionDetailProps) {
   const sessionAgentKey = getSessionAgentKey({ slug: session.slug ?? "" });
   const sessionAgent = findAgent(agentCatalog, sessionAgentKey);
-  const normalizedMessages = useMemo(
+  const displayModel = useMemo(
     () =>
-      measureSessionDetailWork("SessionDetail:normalizeMessages", () =>
-        normalizeMessagesForDisplay(session.messages, sessionAgentKey),
+      measureSessionDetailWork("SessionDetail:buildDisplayModel", () =>
+        buildSessionDetailDisplayModel({
+          messages: session.messages,
+          agentName: sessionAgentKey,
+          fileActivity: session.file_activity,
+        }),
       ),
-    [session.messages, sessionAgentKey],
+    [session.file_activity, session.messages, sessionAgentKey],
   );
-  const messageModels = useMemo(
-    () =>
-      measureSessionDetailWork("SessionDetail:buildMessageDisplayModels", () =>
-        buildMessageDisplayModels(normalizedMessages),
-      ),
-    [normalizedMessages],
-  );
-  const {
-    toolAnchorIds,
-    anchorMessageIndexes,
-    summary: localFileChangeSummary,
-  } = useMemo(
-    () =>
-      measureSessionDetailWork("SessionDetail:buildFileChangeSummary", () =>
-        buildFileChangeSummary(messageModels),
-      ),
-    [messageModels],
-  );
-  const toc = useMemo(
-    () =>
-      measureSessionDetailWork("SessionDetail:buildSessionDetailToc", () =>
-        buildSessionDetailToc(messageModels),
-      ),
-    [messageModels],
-  );
+  const { messages: messageModels, toc, fileChangeSummary } = displayModel;
   const [selectedFilters, setSelectedFilters] = useState<Set<string>>(() => new Set(toc.filterIds));
   const [openAuxPanel, setOpenAuxPanel] = useState<"toc" | "files" | null>(null);
   const tocSignature = useMemo(() => [...toc.filterIds].toSorted().join("|"), [toc.filterIds]);
@@ -150,40 +123,21 @@ export function SessionDetail({ session, agentCatalog, highlightQuery }: Session
     () => [...selectedFilters].toSorted().join("|"),
     [selectedFilters],
   );
-  const filteredMessages = useMemo(
+  const selection = useMemo(
     () =>
-      measureSessionDetailWork("SessionDetail:filterSessionMessages", () =>
-        filterSessionMessages(messageModels, selectedFilters),
+      measureSessionDetailWork("SessionDetail:selectDisplayModel", () =>
+        displayModel.select(selectedFilters),
       ),
-    [messageModels, selectedFilters],
+    [displayModel, selectedFilters],
   );
+  const { messages: filteredMessages, timelineEntries } = selection;
   const virtualListRef = useRef<MessageListHandle | null>(null);
   const scrollRequestRef = useRef(0);
-  const anchorListIndexes = useMemo(() => {
-    return measureSessionDetailWork("SessionDetail:buildAnchorListIndexes", () => {
-      const indexes = new Map<number, number>();
-      filteredMessages.forEach((item, listIndex) => {
-        indexes.set(item.index, listIndex);
-      });
-      return indexes;
-    });
-  }, [filteredMessages]);
-  const fileChangeSummary = useMemo(
-    () =>
-      measureSessionDetailWork("SessionDetail:mergeFileActivitySummary", () =>
-        buildFileChangeSummaryFromActivity(session.file_activity, localFileChangeSummary),
-      ),
-    [session.file_activity, localFileChangeSummary],
-  );
-  const timelineEntries = useMemo(
-    () => buildSessionTimelineEntries(filteredMessages, toolAnchorIds),
-    [filteredMessages, toolAnchorIds],
-  );
   const handleJumpToMessageAnchor = useCallback(
     (anchorId: string, messageIndex: number | undefined, behavior: SessionAnchorScrollBehavior) => {
       const requestId = scrollRequestRef.current + 1;
       scrollRequestRef.current = requestId;
-      const listIndex = messageIndex == null ? undefined : anchorListIndexes.get(messageIndex);
+      const listIndex = messageIndex == null ? undefined : selection.resolveListIndex(messageIndex);
       scrollToSessionAnchor({
         anchorId,
         behavior,
@@ -192,13 +146,13 @@ export function SessionDetail({ session, agentCatalog, highlightQuery }: Session
         isCurrent: () => scrollRequestRef.current === requestId,
       });
     },
-    [anchorListIndexes],
+    [selection],
   );
   const handleJumpToAnchor = useCallback(
     (anchorId: string, behavior: SessionAnchorScrollBehavior) => {
-      handleJumpToMessageAnchor(anchorId, anchorMessageIndexes.get(anchorId), behavior);
+      handleJumpToMessageAnchor(anchorId, displayModel.resolveMessageIndex(anchorId), behavior);
     },
-    [anchorMessageIndexes, handleJumpToMessageAnchor],
+    [displayModel, handleJumpToMessageAnchor],
   );
 
   useEffect(() => {
@@ -278,7 +232,6 @@ export function SessionDetail({ session, agentCatalog, highlightQuery }: Session
                 <MessageList
                   key={`${session.id}:${selectedFilterSignature}`}
                   messages={filteredMessages}
-                  toolAnchorIds={toolAnchorIds}
                   sessionAgentKey={sessionAgentKey}
                   agent={sessionAgent}
                   baseDirectory={session.directory}

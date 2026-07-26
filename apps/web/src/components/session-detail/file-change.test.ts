@@ -72,7 +72,7 @@ describe("summarizeFileChangeItems", () => {
 describe("buildFileChangeSummary", () => {
   it("returns empty summary for no messages", () => {
     const result = buildFileChangeSummary([]);
-    expect(result.toolAnchorIds.size).toBe(0);
+    expect(result.anchorMessageIndexes.size).toBe(0);
     expect(result.summary.read).toEqual([]);
   });
 });

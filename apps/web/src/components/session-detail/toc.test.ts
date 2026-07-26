@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message, MessagePart } from "../../lib/api";
-import { buildMessageDisplayModels } from "./display-model";
+import { buildSessionDetailDisplayModel } from "./display-model";
 import { buildSessionDetailToc, filterSessionMessages } from "./toc";
 
 function createMessage(id: string, role: Message["role"], parts: MessagePart[]): Message {
@@ -10,6 +10,10 @@ function createMessage(id: string, role: Message["role"], parts: MessagePart[]):
     time_created: 100,
     parts,
   };
+}
+
+function buildModels(messages: Message[]) {
+  return buildSessionDetailDisplayModel({ messages, agentName: "claudecode" }).messages;
 }
 
 describe("session detail display model", () => {
@@ -23,7 +27,7 @@ describe("session detail display model", () => {
       ]),
     ];
 
-    const models = buildMessageDisplayModels(messages);
+    const models = buildModels(messages);
 
     expect(models).toHaveLength(1);
     expect(models[0]?.index).toBe(0);
@@ -44,7 +48,7 @@ describe("session detail display model", () => {
       tool: "Write",
       state: { input: { path: "a.ts" } },
     } satisfies MessagePart;
-    const models = buildMessageDisplayModels([
+    const models = buildModels([
       createMessage("user", "user", [{ type: "text", text: "open file" }]),
       createMessage("assistant", "assistant", [
         { type: "reasoning", text: "thinking" },
@@ -71,7 +75,7 @@ describe("session detail display model", () => {
     expect(filtered).toHaveLength(1);
     expect(filtered[0]?.index).toBe(1);
     expect(filtered[0]?.msg.id).toBe("assistant");
-    expect(filtered[0]?.blocks).toEqual([{ type: "tool", parts: [readTool] }]);
+    expect(filtered[0]?.blocks).toMatchObject([{ type: "tool", parts: [readTool] }]);
   });
 
   it("filters tool items without requiring the Tools parent filter", () => {
@@ -85,14 +89,12 @@ describe("session detail display model", () => {
       tool: "Write",
       state: { input: { path: "b.ts" } },
     } satisfies MessagePart;
-    const models = buildMessageDisplayModels([
-      createMessage("assistant", "assistant", [readTool, writeTool]),
-    ]);
+    const models = buildModels([createMessage("assistant", "assistant", [readTool, writeTool])]);
 
     const filtered = filterSessionMessages(models, new Set(["tool:read"]));
 
     expect(filtered).toHaveLength(1);
-    expect(filtered[0]?.blocks).toEqual([{ type: "tool", parts: [readTool] }]);
+    expect(filtered[0]?.blocks).toMatchObject([{ type: "tool", parts: [readTool] }]);
   });
 
   it("normalizes legacy leading-dot tool labels", () => {
@@ -101,13 +103,13 @@ describe("session detail display model", () => {
       tool: ".js",
       title: "Tool: .js",
     } satisfies MessagePart;
-    const models = buildMessageDisplayModels([createMessage("assistant", "assistant", [jsTool])]);
+    const models = buildModels([createMessage("assistant", "assistant", [jsTool])]);
 
     const toc = buildSessionDetailToc(models);
     expect(toc.tools).toEqual([{ id: "tool:js", toolKey: "js", label: "js", count: 1 }]);
 
     const filtered = filterSessionMessages(models, new Set(["tools_all", "tool:js"]));
-    expect(filtered[0]?.blocks).toEqual([{ type: "tool", parts: [jsTool] }]);
+    expect(filtered[0]?.blocks).toMatchObject([{ type: "tool", parts: [jsTool] }]);
   });
 
   it("labels Codex node repl js tools as Browser", () => {
@@ -117,9 +119,7 @@ describe("session detail display model", () => {
       title: "Tool: js",
       state: { metadata: { name: "js", namespace: "mcp__node_repl__" } },
     } satisfies MessagePart;
-    const models = buildMessageDisplayModels([
-      createMessage("assistant", "assistant", [browserTool]),
-    ]);
+    const models = buildModels([createMessage("assistant", "assistant", [browserTool])]);
 
     const toc = buildSessionDetailToc(models);
     expect(toc.tools).toEqual([
@@ -127,6 +127,6 @@ describe("session detail display model", () => {
     ]);
 
     const filtered = filterSessionMessages(models, new Set(["tools_all", "tool:browser"]));
-    expect(filtered[0]?.blocks).toEqual([{ type: "tool", parts: [browserTool] }]);
+    expect(filtered[0]?.blocks).toMatchObject([{ type: "tool", parts: [browserTool] }]);
   });
 });
