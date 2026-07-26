@@ -139,7 +139,7 @@ export function sessionMatchesSearchCost(session: SessionHead, options: SearchOp
   return true;
 }
 
-function buildSessionSearchFilters(options: SearchOptions): {
+export function buildSessionSearchFilters(options: SearchOptions): {
   where: string;
   params: unknown[];
 } {
@@ -227,6 +227,50 @@ function buildSessionSearchFilters(options: SearchOptions): {
     where: clauses.length > 0 ? ` AND ${clauses.join(" AND ")}` : "",
     params,
   };
+}
+
+export interface SessionSearchReference {
+  agentName: string;
+  sessionId: string;
+}
+
+const SQLITE_REFERENCE_BATCH_SIZE = 200;
+
+export function filterIndexedSessionReferences(
+  references: SessionSearchReference[],
+  options: SearchOptions,
+): Set<string> {
+  if (references.length === 0 || !hasCacheStorage()) return new Set();
+
+  const matches = withCacheDb((db) => {
+    ensureFtsReady(db);
+    const filters = buildSessionSearchFilters(options);
+    const result = new Set<string>();
+
+    for (let offset = 0; offset < references.length; offset += SQLITE_REFERENCE_BATCH_SIZE) {
+      const batch = references.slice(offset, offset + SQLITE_REFERENCE_BATCH_SIZE);
+      const referenceClauses = batch.map(() => "(s.agent_name = ? AND s.session_id = ?)");
+      const referenceParams = batch.flatMap(({ agentName, sessionId }) => [agentName, sessionId]);
+      const rows = db
+        .prepare(
+          `
+            SELECT s.agent_name, s.session_id
+            FROM sessions s
+            WHERE (${referenceClauses.join(" OR ")})
+              ${filters.where}
+          `,
+        )
+        .all(...referenceParams, ...filters.params) as SearchResultRow[];
+
+      for (const row of rows) {
+        result.add(searchResultRowKey(row));
+      }
+    }
+
+    return result;
+  });
+
+  return matches ?? new Set();
 }
 
 function searchSessionColumns(): string {

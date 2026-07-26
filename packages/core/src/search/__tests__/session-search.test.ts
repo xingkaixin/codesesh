@@ -20,7 +20,11 @@ import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import type { Message, ProjectIdentity, SessionHead, SmartTag } from "../../types/index.js";
 import type { SearchOptions } from "../../discovery/cache/search.js";
 import { searchSessions, syncSessionSearchIndex } from "../../discovery/cache.js";
-import { executeSessionSearch, type SessionSearchSnapshot } from "../session-search.js";
+import {
+  executeSessionSearch,
+  filterSessionSearchCandidates,
+  type SessionSearchSnapshot,
+} from "../session-search.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-session-search-"));
 
@@ -276,6 +280,29 @@ const fileTagPlanningMismatch: FixtureSpec = {
   messages: [fileToolMessage("file-tag-planning-m1", "edit", "src/tagcheck.ts")],
 };
 
+const fileQualifierMatch: FixtureSpec = {
+  id: "file-qualifier-match",
+  agent: "claudecode",
+  cost: 2,
+  tags: ["docs"],
+  project: PROJ_APP,
+  timeUpdated: now - 15_500,
+  messages: [
+    fileToolMessage("file-qualifier-match-m1", "edit", "src/qualifier-matrix.ts"),
+    toolOutputMessage("file-qualifier-match-m2", "bash", "matrixtextneedle"),
+  ],
+};
+
+const fileQualifierMismatch: FixtureSpec = {
+  id: "file-qualifier-mismatch",
+  agent: "claudecode",
+  cost: 0.1,
+  tags: ["planning"],
+  project: PROJ_OTHER,
+  timeUpdated: now - 15_600,
+  messages: [fileToolMessage("file-qualifier-mismatch-m1", "edit", "src/qualifier-matrix.ts")],
+};
+
 const recentOld: FixtureSpec = {
   id: "recent-old",
   agent: "claudecode",
@@ -304,6 +331,8 @@ const syncedFixtures: FixtureSpec[] = [
   tagMergeFeatDevOnly,
   fileTagDocsMatch,
   fileTagPlanningMismatch,
+  fileQualifierMatch,
+  fileQualifierMismatch,
   ...limitSessions,
 ];
 
@@ -379,7 +408,7 @@ describe("search characterization: source selection", () => {
     // just like the recent path -- except results now come from the SQLite
     // index instead of the snapshot.
     const results = search("", { tools: ["bash"], limit: 50 });
-    expect(results.map((r) => r.session.id)).toEqual(["fts-tool"]);
+    expect(results.map((r) => r.session.id)).toEqual(["fts-tool", "file-qualifier-match"]);
     expect(results[0]!.matchType).toBe("recent");
   });
 
@@ -418,7 +447,7 @@ describe("search characterization: recent (empty-query) path", () => {
       limit: 50,
     });
     expect(results.map((r) => r.session.id).sort()).toEqual(
-      ["recent-mid", "lagging-session"].sort(),
+      ["recent-mid", "lagging-session", "file-qualifier-mismatch"].sort(),
     );
   });
 
@@ -430,7 +459,7 @@ describe("search characterization: recent (empty-query) path", () => {
   it("filters by costMin", () => {
     const results = search("", { costMin: 1, limit: 50 });
     expect(results.map((r) => r.session.id).sort()).toEqual(
-      ["recent-mid", "lagging-session"].sort(),
+      ["recent-mid", "lagging-session", "file-qualifier-match"].sort(),
     );
   });
 });
@@ -496,6 +525,83 @@ describe("search characterization: file activity path", () => {
     expect(matches).toHaveLength(1);
     expect(matches[0]!.matchType).toBe("file_path");
   });
+
+  it.each([
+    ["file", { file: "qualifier-matrix.ts" }, ["file-qualifier-match", "file-qualifier-mismatch"]],
+    [
+      "file + file kind",
+      { file: "qualifier-matrix.ts", fileKind: "edit" as const },
+      ["file-qualifier-match", "file-qualifier-mismatch"],
+    ],
+    ["file + tool", { file: "qualifier-matrix.ts", tools: ["bash"] }, ["file-qualifier-match"]],
+    [
+      "file + tag",
+      { file: "qualifier-matrix.ts", tags: ["docs"] as SmartTag[] },
+      ["file-qualifier-match"],
+    ],
+    ["file + cost", { file: "qualifier-matrix.ts", costMin: 1 }, ["file-qualifier-match"]],
+    ["file + time", { file: "qualifier-matrix.ts", from: now - 15_550 }, ["file-qualifier-match"]],
+    [
+      "file + project",
+      {
+        file: "qualifier-matrix.ts",
+        projectKind: PROJ_APP.kind,
+        projectKey: PROJ_APP.key,
+      },
+      ["file-qualifier-match"],
+    ],
+    [
+      "file + cwd",
+      { file: "qualifier-matrix.ts", cwd: `/projects/${PROJ_APP.key}` },
+      ["file-qualifier-match"],
+    ],
+    [
+      "all qualifiers",
+      {
+        file: "qualifier-matrix.ts",
+        fileKind: "edit" as const,
+        tools: ["bash"],
+        tags: ["docs"] as SmartTag[],
+        costMin: 1,
+        from: now - 15_550,
+        projectKind: PROJ_APP.kind,
+        projectKey: PROJ_APP.key,
+        cwd: `/projects/${PROJ_APP.key}`,
+      },
+      ["file-qualifier-match"],
+    ],
+  ])("applies complete search semantics for %s", (_label, options, expectedIds) => {
+    expect(search("", { ...options, limit: 50 }).map((result) => result.session.id)).toEqual(
+      expectedIds,
+    );
+  });
+
+  it("requires both text and an explicit file qualifier to match", () => {
+    const results = search("matrixtextneedle", {
+      file: "qualifier-matrix.ts",
+      limit: 50,
+    });
+    expect(results.map((result) => result.session.id)).toEqual(["file-qualifier-match"]);
+  });
+});
+
+describe("search candidate filtering", () => {
+  it("keeps alias-style candidates subject to indexed file and tool qualifiers", () => {
+    const snapshot = makeSnapshot();
+    const candidates = [fileQualifierMatch, fileQualifierMismatch].map((spec) => ({
+      agentName: spec.agent,
+      session: snapshot.byAgent[spec.agent]!.find((session) => session.id === spec.id)!,
+      snippet: "Alias",
+      matchType: "title" as const,
+    }));
+
+    const results = filterSessionSearchCandidates(candidates, {
+      file: "qualifier-matrix.ts",
+      tools: ["bash"],
+    });
+
+    expect(results.map((result) => result.session.id)).toEqual(["file-qualifier-match"]);
+  });
 });
 
 describe("search characterization: limit", () => {
@@ -507,6 +613,23 @@ describe("search characterization: limit", () => {
 });
 
 describe("search characterization: recent vs SQLite-indexed equivalence (tag filter, empty query)", () => {
+  it.each([
+    ["tag", { tags: ["docs"] as SmartTag[] }],
+    ["agent", { agent: "codex" }],
+    ["project", { projectKind: PROJ_APP.kind, projectKey: PROJ_APP.key }],
+    ["cost", { costMax: 0.05 }],
+    ["time", { to: now - 1_500 }],
+  ])("returns the same synced result set for a %s filter", (_label, options) => {
+    const liveIds = search("", { ...options, limit: 100 })
+      .map((result) => `${result.agentName}/${result.session.id}`)
+      .sort();
+    const indexedIds = searchSessions("", { ...options, limit: 100 })
+      .map((result) => `${result.agentName}/${result.session.id}`)
+      .sort();
+
+    expect(liveIds).toEqual(indexedIds);
+  });
+
   it("diverges when the SQLite index lags behind the live snapshot", () => {
     // Both fixtures are tagged "bugfix": recent-mid was synced to SQLite,
     // lagging-session was deliberately left out to model index lag. The
@@ -571,24 +694,19 @@ describe("search characterization: skip redundant sessions query for file-only s
     expect(ranSearchSessions(sql)).toBe(true);
   });
 
-  it("still queries the sessions table when tags are combined with a file filter", () => {
+  it("applies tags inside the file adapter without a broad sessions query", () => {
     const { result, sql } = withPreparedSqlCapture(() =>
       search("", { file: "tagcheck.ts", tags: ["docs"], limit: 50 }),
     );
-    // Quirk: searchFileActivitySessions ignores the tags option, and its
-    // (tag-blind) hits win the first-write-wins dedupe over searchSessions's
-    // (tag-filtered) hits -- so a file match with a mismatched tag still
-    // surfaces even though searchSessions did run with the tag filter.
-    expect(result.map((r) => r.session.id).sort()).toEqual(
-      ["file-tag-docs", "file-tag-planning"].sort(),
-    );
-    expect(ranSearchSessions(sql)).toBe(true);
+    expect(result.map((r) => r.session.id)).toEqual(["file-tag-docs"]);
+    expect(result[0]?.session.smart_tags).toEqual(["docs"]);
+    expect(ranSearchSessions(sql)).toBe(false);
   });
 
-  it("still queries the sessions table when a from/to window is combined with a file filter", () => {
+  it("applies the session activity window inside the file adapter", () => {
     const { sql } = withPreparedSqlCapture(() =>
       search("", { file: "app.tsx", from: now - 20_000, limit: 50 }),
     );
-    expect(ranSearchSessions(sql)).toBe(true);
+    expect(ranSearchSessions(sql)).toBe(false);
   });
 });

@@ -13,9 +13,9 @@ import type { SQLiteDatabase } from "../../utils/sqlite.js";
 import { filePathFtsQuery, hasCacheStorage, likePattern, normalizeFilePathSearch } from "./db.js";
 import { withCacheDb, withCacheDbReadOnly } from "./schema.js";
 import {
+  buildSessionSearchFilters,
   mergeSearchQueryOptions,
   sessionHeadFromSearchRow,
-  sessionMatchesSearchCost,
   type SearchOptions,
   type SearchResult,
   type SearchResultRow,
@@ -149,11 +149,26 @@ export function buildFileActivityWhere(options: FileActivityOptions): {
 }
 
 export function listFileActivity(options: FileActivityOptions = {}): FileActivityResult[] {
+  return queryFileActivity(options);
+}
+
+function queryFileActivity(
+  options: FileActivityOptions,
+  sessionSearchOptions?: SearchOptions,
+): FileActivityResult[] {
   if (!hasCacheStorage()) {
     return [];
   }
 
   const filters = buildFileActivityWhere(options);
+  const sessionFilters = sessionSearchOptions
+    ? buildSessionSearchFilters(sessionSearchOptions)
+    : { where: "", params: [] };
+  const whereClauses = [
+    filters.where.replace(/^WHERE /, ""),
+    sessionFilters.where.replace(/^ AND /, ""),
+  ].filter(Boolean);
+  const where = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
   const queryRows = (db: SQLiteDatabase) =>
     db
       .prepare(
@@ -180,15 +195,18 @@ export function listFileActivity(options: FileActivityOptions = {}): FileActivit
             s.total_cache_create_tokens,
             s.total_cost,
             s.cost_source,
-            s.total_tokens
+            s.total_tokens,
+            s.model_usage_json,
+            s.smart_tags_json,
+            s.smart_tags_source_updated_at
           FROM session_file_activity fa
           JOIN sessions s ON s.agent_name = fa.agent_name AND s.session_id = fa.session_id
-          ${filters.where}
+          ${where}
           ORDER BY fa.latest_time DESC, fa.count DESC, fa.path
           LIMIT ?
         `,
       )
-      .all(...filters.params, options.limit ?? 50) as FileActivityRow[];
+      .all(...filters.params, ...sessionFilters.params, options.limit ?? 50) as FileActivityRow[];
 
   let rows = withCacheDbReadOnly(queryRows);
   if (rows == null && options.path) {
@@ -229,25 +247,20 @@ export function searchFileActivitySessions(
   const path = normalizeFilePathSearch(search.options.file ?? search.text);
   if (!path) return [];
 
-  const rows = listFileActivity({
-    agent: search.options.agent,
-    projectKind: search.options.projectKind,
-    projectKey: search.options.projectKey,
-    project: search.options.project,
-    cwd: search.options.cwd,
-    path,
-    kind: search.options.fileKind,
-    from: search.options.from,
-    to: search.options.to,
-    limit: (search.options.limit ?? 50) * 3,
-  });
+  const rows = queryFileActivity(
+    {
+      path,
+      kind: search.options.fileKind,
+      limit: (search.options.limit ?? 50) * 3,
+    },
+    search.options,
+  );
   const seen = new Set<string>();
   const results: SearchResult[] = [];
 
   for (const row of rows) {
     const key = `${row.agent_name}/${row.session_id}`;
     if (seen.has(key)) continue;
-    if (!sessionMatchesSearchCost(row.session, search.options)) continue;
     seen.add(key);
     results.push({
       agentName: row.agent_name,
