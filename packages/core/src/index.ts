@@ -75,6 +75,7 @@ export {
   importBookmarks,
   listBookmarks,
   listSessionAliases,
+  SessionAliasValidationError,
   StateStorageUnavailableError,
   upsertBookmark,
   upsertSessionAlias,

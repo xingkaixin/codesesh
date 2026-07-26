@@ -4,6 +4,13 @@ import { normalizeSessionReference, type SessionReference } from "../contract/in
 
 export const SESSION_ALIAS_MAX_LENGTH = 160;
 
+export class SessionAliasValidationError extends Error {
+  constructor() {
+    super("Invalid session alias");
+    this.name = "SessionAliasValidationError";
+  }
+}
+
 export interface SessionAlias {
   reference: SessionReference;
   alias: string;
@@ -63,7 +70,7 @@ export function listSessionAliases(): SessionAlias[] {
 export function upsertSessionAlias(reference: SessionReference, alias: string): SessionAlias {
   const normalizedAlias = normalizeSessionAlias(alias);
   if (!normalizedAlias) {
-    throw new TypeError("Invalid session alias");
+    throw new SessionAliasValidationError();
   }
 
   const normalizedReference = normalizeSessionReference(reference);

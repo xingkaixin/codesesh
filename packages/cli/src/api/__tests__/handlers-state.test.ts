@@ -37,6 +37,7 @@ vi.mock("../../logging.js", () => ({ appLogger: loggerMocks }));
 
 import {
   BookmarkStorageUnavailableError,
+  SessionAliasValidationError,
   StateStorageUnavailableError,
   type BookmarkRecord,
   type LiveSnapshot,
@@ -54,6 +55,7 @@ import {
   handlePutSessionAlias,
   type ScanResultSource,
 } from "../handlers.js";
+import { createApiRoutes } from "../routes.js";
 import { invalidateAliasView } from "../session-aliases-view.js";
 
 interface ContextOptions {
@@ -470,7 +472,7 @@ describe("session alias handlers", () => {
     );
 
     coreMocks.upsertSessionAlias.mockImplementationOnce(() => {
-      throw new TypeError("invalid alias");
+      throw new SessionAliasValidationError();
     });
     const invalid = makeContext({
       body: { alias: " " },
@@ -481,6 +483,27 @@ describe("session alias handlers", () => {
       { error: "Session alias must be non-empty and at most 160 characters" },
       400,
     );
+  });
+
+  it("lets internal TypeErrors reach the HTTP error boundary", async () => {
+    coreMocks.upsertSessionAlias.mockImplementationOnce(() => {
+      throw new TypeError("Cannot read properties of undefined");
+    });
+    const app = createApiRoutes(scanSource);
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const response = await app.request("http://localhost/session-aliases/codex/s1", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ alias: "Renamed" }),
+      });
+
+      expect(response.status).toBe(500);
+      expect(errorLog).toHaveBeenCalledWith(expect.any(TypeError));
+    } finally {
+      errorLog.mockRestore();
+    }
   });
 
   it("maps unavailable alias storage and rethrows unexpected write failures", async () => {

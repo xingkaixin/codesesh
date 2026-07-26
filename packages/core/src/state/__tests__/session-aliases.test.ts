@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { join } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { deleteSessionAlias, listSessionAliases, upsertSessionAlias } from "../session-aliases.js";
+import {
+  deleteSessionAlias,
+  listSessionAliases,
+  SessionAliasValidationError,
+  upsertSessionAlias,
+} from "../session-aliases.js";
 import { setStateSchemaEnsuredPath } from "../database.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-aliases-test-"));
@@ -64,5 +69,14 @@ describe("session aliases", () => {
 
     deleteSessionAlias(reference);
     expect(listSessionAliases()).toEqual([]);
+  });
+
+  it("rejects invalid aliases with a named validation error", () => {
+    const reference = { agentName: "codex", sessionId: "s1" };
+
+    expect(() => upsertSessionAlias(reference, " ")).toThrow(SessionAliasValidationError);
+    expect(() => upsertSessionAlias(reference, "x".repeat(161))).toThrow(
+      SessionAliasValidationError,
+    );
   });
 });
