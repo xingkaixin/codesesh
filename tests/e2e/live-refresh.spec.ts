@@ -16,7 +16,8 @@ test("refreshes an open session when its source file changes", async ({ page }, 
     if (frame === page.mainFrame()) mainFrameNavigations += 1;
   });
 
-  const liveMessage = `Live refresh reached the browser on attempt ${testInfo.retry}.`;
+  const searchNeedle = `liveindexneedle${testInfo.retry}`;
+  const liveMessage = `Live refresh reached the browser on attempt ${testInfo.retry}: ${searchNeedle}.`;
   const record = {
     type: "assistant",
     uuid: `assistant-live-${testInfo.retry}`,
@@ -37,5 +38,11 @@ test("refreshes an open session when its source file changes", async ({ page }, 
   await appendFile(fixtureSessionPath, `${JSON.stringify(record)}\n`, "utf8");
 
   await expect(page.getByText(liveMessage)).toBeVisible();
+  const searchResponse = await page.request.get(`/api/search?q=${searchNeedle}`);
+  expect(searchResponse.ok()).toBe(true);
+  const searchBody = (await searchResponse.json()) as {
+    results?: Array<{ session?: { id?: string } }>;
+  };
+  expect(searchBody.results?.some((result) => result.session?.id === "e2e-dashboard")).toBe(true);
   expect(mainFrameNavigations).toBe(0);
 });

@@ -176,6 +176,102 @@ describe("AgentSyncEngine", () => {
     );
   });
 
+  it("publishes an ordinary refresh only after the search index commits", async () => {
+    let commitIndex!: () => void;
+    searchIndex.enqueue.mockReturnValueOnce(
+      new Promise<undefined>((resolve) => {
+        commitIndex = () => resolve(undefined);
+      }),
+    );
+    const previous = makeSession("session", "before");
+    const updated = makeSession("session", "after");
+    const { engine, state } = makeEngine(
+      makeAgent({
+        checkForChanges: () => ({ hasChanges: true, changedIds: [updated.id], timestamp: 2 }),
+        incrementalScan: () => [updated],
+      }),
+      [previous],
+    );
+
+    const refresh = engine.refresh("codex");
+    await vi.waitFor(() => expect(searchIndex.enqueue).toHaveBeenCalledOnce());
+    expect(state.sessions[0]?.title).toBe("before");
+
+    commitIndex();
+    await refresh;
+
+    expect(state.sessions[0]?.title).toBe("after");
+  });
+
+  it("waits for the initial search index commit", async () => {
+    let commitIndex!: () => void;
+    searchIndex.enqueue.mockReturnValueOnce(
+      new Promise<undefined>((resolve) => {
+        commitIndex = () => resolve(undefined);
+      }),
+    );
+    const { engine } = makeEngine(makeAgent(), [makeSession("session")]);
+    let completed = false;
+
+    const initialIndex = engine.syncInitialIndex().then(() => {
+      completed = true;
+    });
+    await vi.waitFor(() => expect(searchIndex.enqueue).toHaveBeenCalledOnce());
+    expect(completed).toBe(false);
+
+    commitIndex();
+    await initialIndex;
+
+    expect(completed).toBe(true);
+  });
+
+  it("commits a full search-index job when change detection cannot identify sessions", async () => {
+    const updated = makeSession("session", "after");
+    const { engine } = makeEngine(
+      makeAgent({
+        checkForChanges: () => ({ hasChanges: true, timestamp: 2 }),
+        incrementalScan: () => [updated],
+      }),
+      [makeSession("session", "before")],
+    );
+
+    await engine.refresh("codex");
+
+    expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
+      expect.objectContaining({
+        kind: "full",
+        agentName: "codex",
+        sessions: [expect.objectContaining({ id: "session", title: "after" })],
+        saveCache: true,
+      }),
+    ]);
+  });
+
+  it("keeps the previous snapshot when search indexing fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    searchIndex.enqueue.mockRejectedValueOnce(new Error("index failed"));
+    const previous = makeSession("session", "before");
+    const updated = makeSession("session", "after");
+    const { engine, state } = makeEngine(
+      makeAgent({
+        checkForChanges: () => ({ hasChanges: true, changedIds: [updated.id], timestamp: 2 }),
+        incrementalScan: () => [updated],
+      }),
+      [previous],
+    );
+    const sessionChanges = vi.fn();
+    engine.subscribeSessionsChanged(sessionChanges);
+
+    await engine.refresh("codex");
+
+    expect(state.sessions[0]?.title).toBe("before");
+    expect(sessionChanges).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(
+      "[codex] Session refresh failed:",
+      expect.objectContaining({ message: "index failed" }),
+    );
+  });
+
   it("clears pending refresh work during shutdown", async () => {
     vi.useFakeTimers();
     const checkForChanges = vi.fn(() => ({ hasChanges: false, timestamp: Date.now() }));
