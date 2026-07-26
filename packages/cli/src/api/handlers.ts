@@ -20,6 +20,7 @@ import {
   matchesProjectScope as sessionMatchesProjectScope,
   matchesProjectIdentity,
   buildDashboard,
+  startOfLocalDay,
   type DashboardData,
   type DashboardScope,
 } from "@codesesh/core";
@@ -51,6 +52,42 @@ export interface ScanResultSource {
 
 export interface ScanStatusSource {
   getScanStatus(): ScanStatusEvent;
+}
+
+interface SnapshotAggregationCache {
+  sessions: SessionHead[];
+  values: Map<string, unknown>;
+}
+
+const SNAPSHOT_AGGREGATION_CACHE_LIMIT = 64;
+const snapshotAggregationCaches = new WeakMap<ScanResultSource, SnapshotAggregationCache>();
+
+/**
+ * LiveScanStore replaces its canonical sessions array whenever the snapshot
+ * changes, so that existing reference is the snapshot version.
+ */
+function getSnapshotAggregation<T>(
+  source: ScanResultSource,
+  sessions: SessionHead[],
+  key: readonly unknown[],
+  build: () => T,
+): T {
+  let cache = snapshotAggregationCaches.get(source);
+  if (!cache || cache.sessions !== sessions) {
+    cache = { sessions, values: new Map() };
+    snapshotAggregationCaches.set(source, cache);
+  }
+
+  const cacheKey = JSON.stringify(key);
+  if (cache.values.has(cacheKey)) return cache.values.get(cacheKey) as T;
+
+  const value = build();
+  if (cache.values.size >= SNAPSHOT_AGGREGATION_CACHE_LIMIT) {
+    const oldestKey = cache.values.keys().next().value;
+    if (oldestKey != null) cache.values.delete(oldestKey);
+  }
+  cache.values.set(cacheKey, value);
+  return value;
 }
 
 interface ClientLogPayload {
@@ -143,13 +180,21 @@ export function handleGetAgents(
   const scanResult = scanSource.getSnapshot();
   const from = parseDateParam(c.req.query("from"), defaults.from);
   const to = parseDateParam(c.req.query("to"), defaults.to);
-  const counts = Object.fromEntries(
-    Object.entries(scanResult.byAgent).map(([agentName, sessions]) => [
-      agentName,
-      filterSessionsByActivityWindow(sessions, from, to).length,
-    ]),
+  const agents = getSnapshotAggregation(
+    scanSource,
+    scanResult.sessions,
+    ["agents", from, to],
+    () => {
+      const counts = Object.fromEntries(
+        Object.entries(scanResult.byAgent).map(([agentName, sessions]) => [
+          agentName,
+          filterSessionsByActivityWindow(sessions, from, to).length,
+        ]),
+      );
+      return getAgentInfoMap(counts);
+    },
   );
-  return c.json(getAgentInfoMap(counts));
+  return c.json(agents);
 }
 
 export function handleGetProjects(
@@ -160,10 +205,18 @@ export function handleGetProjects(
   const scanResult = scanSource.getSnapshot();
   const from = parseDateParam(c.req.query("from"), defaults.from);
   const to = parseDateParam(c.req.query("to"), defaults.to);
-  const sessions = filterSessionsByActivityWindow(scanResult.sessions, from, to);
-  return c.json({
-    projects: attachProjectMetrics(listCachedProjectGroups(sessions), sessions),
-  });
+  const projects = getSnapshotAggregation(
+    scanSource,
+    scanResult.sessions,
+    ["projects", from, to],
+    () => {
+      const sessions = filterSessionsByActivityWindow(scanResult.sessions, from, to);
+      return {
+        projects: attachProjectMetrics(listCachedProjectGroups(sessions), sessions),
+      };
+    },
+  );
+  return c.json(projects);
 }
 
 export function handleGetSessions(
@@ -483,16 +536,30 @@ export function handleGetDashboard(
     projectKey: projectIdentity?.key,
   };
 
-  const agentInfo = getAgentInfoMap({});
-  const agentInfoMap = new Map(agentInfo.map((a) => [a.name, a]));
-
-  const aggregate = buildDashboard(scanResult.sessions, {
-    byAgentNames: Object.keys(scanResult.byAgent),
-    scope,
-    from,
-    to,
-    agentInfoMap,
-  });
+  const fixedTo = parseDateParam(c.req.query("to"), defaults.to);
+  const aggregate = getSnapshotAggregation(
+    scanSource,
+    scanResult.sessions,
+    [
+      "dashboard",
+      scope.agent,
+      scope.projectKind,
+      scope.projectKey,
+      from,
+      fixedTo ?? startOfLocalDay(to),
+    ],
+    () => {
+      const agentInfo = getAgentInfoMap({});
+      const agentInfoMap = new Map(agentInfo.map((agent) => [agent.name, agent]));
+      return buildDashboard(scanResult.sessions, {
+        byAgentNames: Object.keys(scanResult.byAgent),
+        scope,
+        from,
+        to,
+        agentInfoMap,
+      });
+    },
+  );
 
   const data: DashboardData = {
     ...aggregate,
