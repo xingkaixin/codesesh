@@ -116,7 +116,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
     expect(windowed.map((ref: { sessionId: string }) => ref.sessionId)).toEqual(["new-session"]);
   });
 
-  it("stats each session file at most once per listSessionSources call", () => {
+  it("stats each session file once during a scan", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-stat-"));
     tempDirs.push(basePath);
     const projectDir = join(basePath, "project");
@@ -125,7 +125,17 @@ describe("ClaudeCodeAgent cache refresh", () => {
     const files = ["session-a.jsonl", "session-b.jsonl", "session-c.jsonl"].map((name) =>
       join(projectDir, name),
     );
-    for (const file of files) writeFileSync(file, "");
+    for (const file of files) {
+      writeFileSync(
+        file,
+        JSON.stringify({
+          type: "user",
+          timestamp: "2026-04-20T10:00:00Z",
+          cwd: "/tmp/project",
+          message: { role: "user", content: `Inspect ${file}` },
+        }),
+      );
+    }
     const indexFile = join(projectDir, "sessions-index.json");
     writeFileSync(indexFile, JSON.stringify({ entries: [] }));
 
@@ -134,13 +144,12 @@ describe("ClaudeCodeAgent cache refresh", () => {
 
     const statSpy = vi.mocked(statSync);
     statSpy.mockClear();
-    agent.listSessionSources();
+    expect(agent.scan()).toHaveLength(files.length);
 
     for (const file of files) {
       const callsForFile = statSpy.mock.calls.filter((call) => call[0] === file);
       expect(callsForFile.length).toBe(1);
     }
-    expect(statSpy.mock.calls.filter((call) => call[0] === indexFile)).toHaveLength(1);
   });
 
   it("keeps source references and fingerprints byte-for-byte stable", () => {

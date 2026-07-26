@@ -605,18 +605,10 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
   // --- Helpers ---
 
   private sourceFingerprint(meta: Pick<SessionSource, "metaFile" | "contextFile" | "wireFile">) {
-    const fileMtime = (path: string | null) => {
-      if (!path) return null;
-      try {
-        return statSync(path).mtimeMs;
-      } catch {
-        return null;
-      }
-    };
     return JSON.stringify([
-      fileMtime(meta.metaFile),
-      fileMtime(meta.contextFile),
-      fileMtime(meta.wireFile),
+      this.readFileMtimeMs(meta.metaFile),
+      this.readFileMtimeMs(meta.contextFile),
+      this.readFileMtimeMs(meta.wireFile),
     ]);
   }
 

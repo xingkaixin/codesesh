@@ -1,4 +1,5 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync, type Dirent, type Stats } from "node:fs";
+import { join } from "node:path";
 import type { SessionHead, SessionDetail, ParseSessionResult } from "../types/index.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
 
@@ -39,6 +40,11 @@ export interface AgentScanProgress {
   sessions?: number;
 }
 
+export interface FileWalkOptions {
+  recursive?: boolean;
+  scanWindow?: Pick<AgentScanOptions, "from" | "to">;
+}
+
 export function matchesScanWindow(activityTime: number, options?: AgentScanOptions): boolean {
   if (options?.from != null && activityTime < options.from) return false;
   if (options?.to != null && activityTime > options.to) return false;
@@ -61,6 +67,23 @@ export interface SessionSourceRef {
   sessionId: string;
   sourcePath: string;
   fingerprint: string;
+}
+
+export interface SessionSourceFile {
+  file: string;
+  stat: Stats;
+}
+
+export interface FileSessionMeta extends SessionCacheMeta {
+  id: string;
+  title: string;
+  sourcePath: string;
+  sourceFingerprint: string;
+  sourceMtimeMs: number;
+  directory: string;
+  messageCount: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface SessionWatchTarget {
@@ -232,6 +255,7 @@ export abstract class FileSystemSessionSource<
   TMeta extends SessionCacheMeta = SessionCacheMeta,
 > extends BaseAgent {
   protected sessionMetaMap = new Map<string, TMeta>();
+  private sourceFileStats = new Map<string, Stats>();
 
   /** 枚举所有会话源及其指纹。传入 options 时按 mtime 限定扫描窗口。 */
   abstract listSessionSources(options?: AgentScanOptions): SessionSourceRef[];
@@ -273,6 +297,63 @@ export abstract class FileSystemSessionSource<
 
   setSessionMetaMap(meta: Map<string, SessionCacheMeta>): void {
     this.sessionMetaMap = meta as Map<string, TMeta>;
+  }
+
+  protected walkFiles(
+    roots: string | readonly string[],
+    isSessionFile: (entry: Dirent) => boolean,
+    options: FileWalkOptions = {},
+  ): SessionSourceFile[] {
+    const files: SessionSourceFile[] = [];
+    this.sourceFileStats.clear();
+
+    const walk = (directory: string): void => {
+      let entries: Dirent[];
+      try {
+        entries = readdirSync(directory, { withFileTypes: true });
+      } catch {
+        return;
+      }
+
+      for (const entry of entries) {
+        const filePath = join(directory, entry.name);
+        if (entry.isDirectory()) {
+          if (options.recursive !== false) walk(filePath);
+          continue;
+        }
+        if (!isSessionFile(entry)) continue;
+
+        let stat: Stats;
+        try {
+          stat = statSync(filePath);
+        } catch {
+          continue;
+        }
+        if (!matchesScanWindow(stat.mtimeMs, options.scanWindow)) continue;
+
+        files.push({ file: filePath, stat });
+        this.sourceFileStats.set(filePath, stat);
+      }
+    };
+
+    for (const root of typeof roots === "string" ? [roots] : roots) walk(root);
+    return files;
+  }
+
+  protected sessionSourceFile(sourcePath: string): SessionSourceFile {
+    return {
+      file: sourcePath,
+      stat: this.sourceFileStats.get(sourcePath) ?? statSync(sourcePath),
+    };
+  }
+
+  protected readFileMtimeMs(filePath: string | null): number | null {
+    if (!filePath) return null;
+    try {
+      return statSync(filePath).mtimeMs;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -327,6 +408,54 @@ export abstract class FileSystemSessionSource<
     }
 
     return [...sessionMap.values()];
+  }
+}
+
+/** Shared scan template for agents whose session source is a single stat-able file. */
+export abstract class SingleFileSessionSource<
+  TMeta extends FileSessionMeta = FileSessionMeta,
+> extends FileSystemSessionSource<TMeta> {
+  protected abstract parseFileSessionHead(
+    sourcePath: string,
+    options?: AgentScanOptions,
+  ): SessionHead | null;
+
+  protected abstract createFileSessionMeta(head: SessionHead, source: SessionSourceFile): TMeta;
+
+  scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null {
+    const head = this.parseFileSessionHead(sourcePath, options);
+    if (head) {
+      this.sessionMetaMap.set(
+        head.id,
+        this.createFileSessionMeta(head, this.sessionSourceFile(sourcePath)),
+      );
+    }
+    return head;
+  }
+
+  protected buildFileSessionMeta<TExtra extends object>({
+    head,
+    source,
+    fingerprint,
+    extras,
+  }: {
+    head: SessionHead;
+    source: SessionSourceFile;
+    fingerprint: string;
+    extras: TExtra;
+  }): FileSessionMeta & TExtra {
+    return {
+      ...extras,
+      id: head.id,
+      title: head.title,
+      sourcePath: source.file,
+      sourceFingerprint: fingerprint,
+      sourceMtimeMs: source.stat.mtimeMs,
+      directory: head.directory,
+      messageCount: head.stats.message_count,
+      createdAt: head.time_created,
+      updatedAt: head.time_updated ?? head.time_created,
+    };
   }
 }
 

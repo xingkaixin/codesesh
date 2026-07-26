@@ -1,16 +1,16 @@
-import { existsSync, readdirSync, statSync, type Stats } from "node:fs";
+import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import {
-  FileSystemSessionSource,
+  SingleFileSessionSource,
   filteredSession,
   getParsedSession,
-  matchesScanWindow,
   parsedSession,
 } from "./base.js";
 import type {
   AgentScanOptions,
+  FileSessionMeta,
   ParseSessionResult,
-  SessionCacheMeta,
+  SessionSourceFile,
   SessionSourceRef,
 } from "./base.js";
 import type { Message, MessagePart, SessionDetail, SessionHead } from "../types/index.js";
@@ -25,17 +25,9 @@ import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-bui
 const HEAD_INDEX_VERSION = "pi-head-v1";
 const PARSER_VERSION = "pi-parser-v1";
 
-interface SessionMeta extends SessionCacheMeta {
-  id: string;
-  title: string;
-  sourcePath: string;
-  sourceMtimeMs: number;
+interface SessionMeta extends FileSessionMeta {
   headIndexVersion: string;
   parserVersion: string;
-  directory: string;
-  messageCount: number;
-  createdAt: number;
-  updatedAt: number;
 }
 
 interface ParsedPiFile {
@@ -140,7 +132,7 @@ function buildCurrentPathEntries(entries: Record<string, unknown>[]): Record<str
   return path.reverse();
 }
 
-export class PiAgent extends FileSystemSessionSource<SessionMeta> {
+export class PiAgent extends SingleFileSessionSource<SessionMeta> {
   readonly name = "pi";
   readonly displayName = "Pi";
 
@@ -170,19 +162,11 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
 
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {
     if (!this.basePath) return [];
-    return this.walkJsonlFiles(this.basePath, options).map(({ file, stat }) => ({
+    return this.listSessionFiles(options).map(({ file, stat }) => ({
       sessionId: extractSessionIdFromFilename(file),
       sourcePath: file,
       fingerprint: this.sourceFingerprint(stat),
     }));
-  }
-
-  scanSessionSource(sourcePath: string): SessionHead | null {
-    const head = getParsedSession(this.parseSessionHeadResult(sourcePath));
-    if (head) {
-      this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, sourcePath));
-    }
-    return head;
   }
 
   getSessionData(sessionId: string): SessionDetail {
@@ -214,57 +198,34 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     };
   }
 
-  private listSessionFiles(options?: AgentScanOptions): string[] {
+  private listSessionFiles(options?: AgentScanOptions): SessionSourceFile[] {
     if (!this.basePath) return [];
-    return this.walkJsonlFiles(this.basePath, options).map(({ file }) => file);
+    return this.walkFiles(
+      this.basePath,
+      (entry) => entry.isFile() && entry.name.endsWith(".jsonl"),
+      { scanWindow: options },
+    );
   }
 
-  /** Stats each file once during the walk; caller reuses it for both the scan window check and the fingerprint. */
-  private walkJsonlFiles(dir: string, options?: AgentScanOptions): { file: string; stat: Stats }[] {
-    const files: { file: string; stat: Stats }[] = [];
-    try {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const fullPath = join(dir, entry.name);
-        if (entry.isDirectory()) {
-          files.push(...this.walkJsonlFiles(fullPath, options));
-          continue;
-        }
-        if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-        let stat: Stats;
-        try {
-          stat = statSync(fullPath);
-        } catch {
-          continue;
-        }
-        if (!matchesScanWindow(stat.mtimeMs, options)) continue;
-        files.push({ file: fullPath, stat });
-      }
-    } catch {
-      // skip inaccessible dirs
-    }
-    return files;
-  }
-
-  private buildSessionMeta(head: SessionHead, file: string): SessionMeta {
-    const stat = statSync(file);
-    return {
-      id: head.id,
-      title: head.title,
-      sourcePath: file,
-      sourceFingerprint: this.sourceFingerprint(stat),
-      sourceMtimeMs: stat.mtimeMs,
-      headIndexVersion: HEAD_INDEX_VERSION,
-      parserVersion: PARSER_VERSION,
-      directory: head.directory,
-      messageCount: head.stats.message_count,
-      createdAt: head.time_created,
-      updatedAt: head.time_updated ?? head.time_created,
-    };
+  protected createFileSessionMeta(head: SessionHead, source: SessionSourceFile): SessionMeta {
+    return this.buildFileSessionMeta({
+      head,
+      source,
+      fingerprint: this.sourceFingerprint(source.stat),
+      extras: {
+        headIndexVersion: HEAD_INDEX_VERSION,
+        parserVersion: PARSER_VERSION,
+      },
+    });
   }
 
   /** Fingerprint depends on an already-fetched stat to avoid re-statting the same file. */
   private sourceFingerprint(stat: { mtimeMs: number; size: number }): string {
     return JSON.stringify([HEAD_INDEX_VERSION, PARSER_VERSION, stat.mtimeMs, stat.size]);
+  }
+
+  protected parseFileSessionHead(filePath: string): SessionHead | null {
+    return getParsedSession(this.parseSessionHeadResult(filePath));
   }
 
   private parseSessionHeadResult(filePath: string): ParseSessionResult<SessionHead> {
@@ -319,7 +280,7 @@ export class PiAgent extends FileSystemSessionSource<SessionMeta> {
     const sessionId = String(header["id"] ?? extractSessionIdFromFilename(filePath)).trim();
     if (!sessionId) throw new Error("missing session id");
 
-    const stat = statSync(filePath);
+    const stat = this.sessionSourceFile(filePath).stat;
     const directory = String(header["cwd"] ?? "").trim() || basename(filePath, ".jsonl");
     const createdAt = narrowTimestampMs("session.timestamp", header["timestamp"]) || stat.mtimeMs;
     const updatedAt = pathEntries.reduce(

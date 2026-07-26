@@ -182,7 +182,7 @@ describe("CodexAgent cache refresh", () => {
     expect(windowed.map((ref: { sourcePath: string }) => ref.sourcePath)).toEqual([newFile]);
   });
 
-  it("stats each rollout file at most once per listSessionSources call", () => {
+  it("stats each rollout file once during a scan", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
     tempDirs.push(tempDir);
 
@@ -191,11 +191,26 @@ describe("CodexAgent cache refresh", () => {
       "019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb",
       "019dcccc-cccc-7ccc-cccc-cccccccccccc",
     ];
-    const files = sessionIds.map((id) => join(tempDir, `rollout-2026-04-20T10-00-00-${id}.jsonl`));
-    for (const file of files) {
+    const files = sessionIds.map((id) => ({
+      id,
+      file: join(tempDir, `rollout-2026-04-20T10-00-00-${id}.jsonl`),
+    }));
+    for (const { id, file } of files) {
       writeFileSync(
         file,
-        '{"type":"session_meta","payload":{"timestamp":"2026-04-20T10:00:00Z"}}\n',
+        [
+          JSON.stringify({
+            timestamp: "2026-04-20T10:00:00Z",
+            type: "session_meta",
+            payload: { id, cwd: "/tmp/project" },
+          }),
+          JSON.stringify({
+            timestamp: "2026-04-20T10:00:01Z",
+            type: "response_item",
+            payload: { type: "message", role: "user", content: `Inspect ${id}` },
+          }),
+          "",
+        ].join("\n"),
       );
     }
 
@@ -204,9 +219,9 @@ describe("CodexAgent cache refresh", () => {
 
     const statSpy = vi.mocked(statSync);
     statSpy.mockClear();
-    agent.listSessionSources();
+    expect(agent.scan()).toHaveLength(files.length);
 
-    for (const file of files) {
+    for (const { file } of files) {
       const callsForFile = statSpy.mock.calls.filter((call) => call[0] === file);
       expect(callsForFile.length).toBe(1);
     }

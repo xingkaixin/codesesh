@@ -1,10 +1,9 @@
-import { existsSync, readdirSync, readFileSync, statSync, type Stats } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
 import {
-  FileSystemSessionSource,
+  SingleFileSessionSource,
   filteredSession,
   getParsedSession,
-  matchesScanWindow,
   parsedSession,
   skippedSession,
 } from "./base.js";
@@ -24,7 +23,12 @@ import { isInternalEventType } from "../utils/parse-cleanup.js";
 import { cleanInternalText } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import { asArray, asNumber, asRecord, asString, reportFieldMismatch } from "../utils/narrow.js";
-import type { AgentScanOptions, SessionCacheMeta, SessionSourceRef } from "./base.js";
+import type {
+  AgentScanOptions,
+  FileSessionMeta,
+  SessionSourceFile,
+  SessionSourceRef,
+} from "./base.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
 const HEAD_INDEX_VERSION = "claudecode-head-v2";
@@ -37,19 +41,11 @@ interface ClaudeUsage {
   cacheCreate: number;
 }
 
-interface SessionMeta extends SessionCacheMeta {
-  id: string;
-  title: string;
-  sourcePath: string;
-  sourceMtimeMs: number;
+interface SessionMeta extends FileSessionMeta {
   indexPath: string | null;
   indexMtimeMs: number | null;
   headIndexVersion: string;
-  directory: string;
   model: string | null | undefined;
-  messageCount: number;
-  createdAt: number;
-  updatedAt: number;
 }
 
 function parseTimestampMs(data: Record<string, unknown>): number {
@@ -107,7 +103,7 @@ function extractClaudeUsage(
   };
 }
 
-export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
+export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
   readonly name = "claudecode";
   readonly displayName = "Claude Code";
 
@@ -150,36 +146,26 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
 
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {
     if (!this.basePath) return [];
-    const refs: SessionSourceRef[] = [];
-    for (const projectDir of this.listProjectDirs()) {
+    const projectDirs = this.listProjectDirs();
+    const indexMtimes = new Map<string, number | null>();
+    for (const projectDir of projectDirs) {
       const indexPath = this.getSessionsIndexPath(projectDir);
-      const indexMtime = this.getFileMtimeMs(indexPath);
-      for (const file of this.listJsonlFiles(projectDir)) {
-        let stat: Stats;
-        try {
-          stat = statSync(file);
-        } catch {
-          continue;
-        }
-        if (!matchesScanWindow(stat.mtimeMs, options)) continue;
-        const sessionId = basename(file, ".jsonl");
-        refs.push({
-          sessionId,
-          sourcePath: file,
-          fingerprint: this.sourceFingerprint(stat, indexMtime),
-        });
-      }
+      indexMtimes.set(projectDir, this.readFileMtimeMs(indexPath));
     }
-    return refs;
+
+    return this.walkFiles(projectDirs, (entry) => entry.name.endsWith(".jsonl"), {
+      recursive: false,
+      scanWindow: options,
+    }).map(({ file, stat }) => ({
+      sessionId: basename(file, ".jsonl"),
+      sourcePath: file,
+      fingerprint: this.sourceFingerprint(stat, indexMtimes.get(dirname(file)) ?? null),
+    }));
   }
 
-  scanSessionSource(sourcePath: string): SessionHead | null {
+  protected parseFileSessionHead(sourcePath: string): SessionHead | null {
     const projectDir = dirname(sourcePath);
-    const head = getParsedSession(this.parseSessionHeadResult(sourcePath, projectDir));
-    if (head) {
-      this.sessionMetaMap.set(head.id, this.buildSessionMeta(head, sourcePath, projectDir));
-    }
-    return head;
+    return getParsedSession(this.parseSessionHeadResult(sourcePath, projectDir));
   }
 
   getSessionData(sessionId: string): SessionDetail {
@@ -231,35 +217,21 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     }
   }
 
-  private listJsonlFiles(dir: string): string[] {
-    try {
-      return readdirSync(dir)
-        .filter((f) => f.endsWith(".jsonl") && f !== "sessions-index.json")
-        .map((f) => join(dir, f));
-    } catch {
-      return [];
-    }
-  }
-
-  private buildSessionMeta(head: SessionHead, file: string, projectDir: string): SessionMeta {
+  protected createFileSessionMeta(head: SessionHead, source: SessionSourceFile): SessionMeta {
+    const projectDir = dirname(source.file);
     const indexPath = this.getSessionsIndexPath(projectDir);
-    const indexMtime = this.getFileMtimeMs(indexPath);
-    const stat = statSync(file);
-    return {
-      id: head.id,
-      title: head.title,
-      sourcePath: file,
-      sourceFingerprint: this.sourceFingerprint(stat, indexMtime),
-      sourceMtimeMs: stat.mtimeMs,
-      indexPath: indexMtime === null ? null : indexPath,
-      indexMtimeMs: indexMtime,
-      headIndexVersion: HEAD_INDEX_VERSION,
-      directory: head.directory,
-      model: head.stats.total_tokens ? "unknown" : undefined,
-      messageCount: head.stats.message_count,
-      createdAt: head.time_created,
-      updatedAt: head.time_updated ?? head.time_created,
-    };
+    const indexMtime = this.readFileMtimeMs(indexPath);
+    return this.buildFileSessionMeta({
+      head,
+      source,
+      fingerprint: this.sourceFingerprint(source.stat, indexMtime),
+      extras: {
+        indexPath: indexMtime === null ? null : indexPath,
+        indexMtimeMs: indexMtime,
+        headIndexVersion: HEAD_INDEX_VERSION,
+        model: head.stats.total_tokens ? "unknown" : undefined,
+      },
+    });
   }
 
   /** Fingerprint depends on an already-fetched stat to avoid re-statting the same file. */
@@ -274,18 +246,10 @@ export class ClaudeCodeAgent extends FileSystemSessionSource<SessionMeta> {
     return join(projectDir, "sessions-index.json");
   }
 
-  private getFileMtimeMs(filePath: string): number | null {
-    try {
-      return statSync(filePath).mtimeMs;
-    } catch {
-      return null;
-    }
-  }
-
   private loadSessionsIndex(projectDir: string): Map<string, Record<string, unknown>> {
     const cacheKey = basename(projectDir);
     const indexPath = this.getSessionsIndexPath(projectDir);
-    const mtime = this.getFileMtimeMs(indexPath);
+    const mtime = this.readFileMtimeMs(indexPath);
 
     // Invalidate when the index file mtime advances so long-running processes
     // pick up title changes without relying on callers to evict manually.
