@@ -2,13 +2,9 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   createRegisteredAgents,
-  mergeSortedSessions,
   scanSessions,
-  sortSessions,
-  type BaseAgent,
-  type ScanOptions,
   type LiveSnapshot,
-  type SessionHead,
+  type ScanOptions,
   type SessionReference,
 } from "@codesesh/core";
 import type {
@@ -18,7 +14,7 @@ import type {
   ScanStatusEvent,
   SessionsUpdatedEvent,
 } from "@codesesh/core/contract";
-import { AgentSyncEngine, type AgentSessionsChanged } from "./agent-sync-engine.js";
+import { AgentSyncEngine } from "./agent-sync-engine.js";
 import { appLogger } from "./logging.js";
 import { SessionWatcher } from "./session-watcher.js";
 import { ThreadWorkerRunner, type WorkerRunner } from "./worker-runner.js";
@@ -78,9 +74,6 @@ export class LiveScanStore {
   private readonly startupScanOptions: Pick<ScanOptions, "from" | "to">;
   private readonly deferInitialRefresh: boolean;
   private readonly syncEngine: AgentSyncEngine;
-  private agents: BaseAgent[] = [];
-  private byAgent: Record<string, SessionHead[]> = {};
-  private sessions: SessionHead[] = [];
   private listeners = new Set<StoreListener>();
   private watcher: SessionWatcher | null = null;
   private pendingEvent: SessionsUpdatedEvent | null = null;
@@ -97,11 +90,12 @@ export class LiveScanStore {
       options.workerRunner ??
       new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
     this.syncEngine = new AgentSyncEngine({
-      snapshot: () => this.getSnapshot(),
       startupScanOptions: this.startupScanOptions,
       workerRunner,
     });
-    this.syncEngine.subscribeSessionsChanged((change) => this.applySessionsChanged(change));
+    this.syncEngine.subscribeSessionsChanged((change) => {
+      if (change.event) this.emit(change.event);
+    });
   }
 
   async initialize(): Promise<void> {
@@ -123,8 +117,12 @@ export class LiveScanStore {
       smartTagWorkerUrl: this.getSmartTagWorkerUrl() ?? undefined,
       includeSmartTags: this.deferInitialRefresh ? false : undefined,
     });
-    this.applyScanResult(initialResult);
-    this.syncEngine.initialize(initialResult.cacheTimestamps);
+    this.syncEngine.initialize(initialResult, {
+      cacheTimestamps: initialResult.cacheTimestamps,
+      registeredAgents: createRegisteredAgents(),
+      allowedAgents: this.getAllowedAgents(),
+    });
+    const snapshot = this.getSnapshot();
     const indexStartedAt = performance.now();
     if (!this.deferInitialRefresh) await this.syncEngine.syncInitialIndex();
     const indexDuration = performance.now() - indexStartedAt;
@@ -132,9 +130,9 @@ export class LiveScanStore {
       duration_ms: Math.round(performance.now() - startedAt),
       index_ms: this.deferInitialRefresh ? undefined : Math.round(indexDuration),
       deferred: this.deferInitialRefresh || undefined,
-      sessions: this.sessions.length,
+      sessions: snapshot.sessions.length,
       agents: Object.fromEntries(
-        Object.entries(this.byAgent).map(([key, value]) => [key, value.length]),
+        Object.entries(snapshot.byAgent).map(([key, value]) => [key, value.length]),
       ),
       agent_timings: initialResult.timings
         ? Object.fromEntries(
@@ -156,7 +154,7 @@ export class LiveScanStore {
     if (!this.watchEnabled) return;
     this.watcher = new SessionWatcher();
     this.watcher.onAgentsChanged((agentNames) => this.syncEngine.handleAgentsChanged(agentNames));
-    this.watcher.start(this.agents);
+    this.watcher.start(snapshot.agents);
   }
 
   startBackgroundRefresh(): void {
@@ -164,7 +162,7 @@ export class LiveScanStore {
   }
 
   getSnapshot(): LiveSnapshot {
-    return { sessions: this.sessions, byAgent: this.byAgent, agents: this.agents };
+    return this.syncEngine.snapshot();
   }
 
   getScanStatus(): ScanStatusEvent {
@@ -199,14 +197,6 @@ export class LiveScanStore {
     }
   }
 
-  private applySessionsChanged(change: AgentSessionsChanged): void {
-    this.byAgent[change.agentName] = sortSessions(change.sessions);
-    this.rebuildSessions();
-    if (!change.event) return;
-    change.event.totalSessions = this.sessions.length;
-    this.emit(change.event);
-  }
-
   private emit(event: SessionsUpdatedEvent): void {
     if (this.shuttingDown) return;
     if (this.pendingEvent || event.newSessions > 0) {
@@ -231,34 +221,10 @@ export class LiveScanStore {
     }, NEW_SESSION_EVENT_WINDOW_MS);
   }
 
-  /**
-   * Every byAgent shard is kept sorted by its two writers (applySessionsChanged
-   * and applyScanResult), so combining them is a merge, not a sort.
-   */
-  private rebuildSessions(): void {
-    this.sessions = mergeSortedSessions(Object.values(this.byAgent));
-  }
-
   private getSmartTagWorkerUrl(): URL | null {
     const workerUrl = new URL("./smart-tag-worker.js", import.meta.url);
     if (workerUrl.protocol === "file:" && !existsSync(fileURLToPath(workerUrl))) return null;
     return workerUrl;
-  }
-
-  private applyScanResult(result: LiveSnapshot): void {
-    const agentMap = new Map<string, BaseAgent>();
-    const allowedAgents = this.getAllowedAgents();
-    for (const agent of result.agents) agentMap.set(agent.name, agent);
-    for (const agent of createRegisteredAgents()) {
-      if (!agentMap.has(agent.name)) agentMap.set(agent.name, agent);
-    }
-    this.agents = [...agentMap.values()].filter(
-      (agent) => !allowedAgents || allowedAgents.has(agent.name.toLowerCase()),
-    );
-    this.byAgent = Object.fromEntries(
-      this.agents.map((agent) => [agent.name, sortSessions(result.byAgent[agent.name] ?? [])]),
-    );
-    this.rebuildSessions();
   }
 
   private getAllowedAgents(): Set<string> | null {

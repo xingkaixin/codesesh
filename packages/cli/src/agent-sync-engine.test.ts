@@ -116,16 +116,9 @@ function makeEngine(
     byAgent: { [agent.name]: sessions },
     sessions,
   };
-  const engine = new AgentSyncEngine({
-    snapshot: () => state,
-    workerRunner,
-  });
-  engine.subscribeSessionsChanged((change) => {
-    state.byAgent[change.agentName] = change.sessions;
-    state.sessions = Object.values(state.byAgent).flat();
-  });
-  engine.initialize();
-  return { engine, state };
+  const engine = new AgentSyncEngine({ workerRunner });
+  engine.initialize(state);
+  return { engine };
 }
 
 afterEach(() => {
@@ -185,7 +178,7 @@ describe("AgentSyncEngine", () => {
       checkForChanges: () => ({ hasChanges: true, changedIds: [updated.id], timestamp: 2 }),
       incrementalScan: () => [updated],
     });
-    const { engine, state } = makeEngine(agent, [previous]);
+    const { engine } = makeEngine(agent, [previous]);
     const sessionChanges = vi.fn();
     const statusChanges = vi.fn();
     engine.subscribeSessionsChanged(sessionChanges);
@@ -193,7 +186,7 @@ describe("AgentSyncEngine", () => {
 
     await engine.refresh("codex");
 
-    expect(state.sessions[0]?.title).toBe("after");
+    expect(engine.snapshot().sessions[0]?.title).toBe("after");
     expect(sessionChanges).toHaveBeenCalledWith(
       expect.objectContaining({
         agentName: "codex",
@@ -214,7 +207,7 @@ describe("AgentSyncEngine", () => {
     );
     const previous = makeSession("session", "before");
     const updated = makeSession("session", "after");
-    const { engine, state } = makeEngine(
+    const { engine } = makeEngine(
       makeAgent({
         checkForChanges: () => ({ hasChanges: true, changedIds: [updated.id], timestamp: 2 }),
         incrementalScan: () => [updated],
@@ -224,12 +217,12 @@ describe("AgentSyncEngine", () => {
 
     const refresh = engine.refresh("codex");
     await vi.waitFor(() => expect(searchIndex.enqueue).toHaveBeenCalledOnce());
-    expect(state.sessions[0]?.title).toBe("before");
+    expect(engine.snapshot().sessions[0]?.title).toBe("before");
 
     commitIndex();
     await refresh;
 
-    expect(state.sessions[0]?.title).toBe("after");
+    expect(engine.snapshot().sessions[0]?.title).toBe("after");
   });
 
   it("waits for the initial search index commit", async () => {
@@ -309,7 +302,7 @@ describe("AgentSyncEngine", () => {
     searchIndex.enqueue.mockRejectedValueOnce(new Error("index failed"));
     const previous = makeSession("session", "before");
     const updated = makeSession("session", "after");
-    const { engine, state } = makeEngine(
+    const { engine } = makeEngine(
       makeAgent({
         checkForChanges: () => ({ hasChanges: true, changedIds: [updated.id], timestamp: 2 }),
         incrementalScan: () => [updated],
@@ -321,7 +314,7 @@ describe("AgentSyncEngine", () => {
 
     await engine.refresh("codex");
 
-    expect(state.sessions[0]?.title).toBe("before");
+    expect(engine.snapshot().sessions[0]?.title).toBe("before");
     expect(sessionChanges).not.toHaveBeenCalled();
     expect(console.error).toHaveBeenCalledWith(
       "[codex] Session refresh failed:",
@@ -366,7 +359,7 @@ describe("AgentSyncEngine", () => {
     expect(secondRoundCalls).toBeLessThan(firstRoundCalls);
   });
 
-  it("clears cached session signatures when a session is removed", async () => {
+  it("removes sessions from its owned snapshot", async () => {
     const session = makeSession("gone");
     const agent = makeAgent({
       checkForChanges: () => ({ hasChanges: true, timestamp: Date.now() }),
@@ -376,10 +369,8 @@ describe("AgentSyncEngine", () => {
 
     await engine.refresh("codex");
 
-    const signatureCache = (
-      engine as unknown as { state: (name: string) => { signatureCache: Map<string, string> } }
-    ).state("codex").signatureCache;
-    expect(signatureCache.has("gone")).toBe(false);
+    expect(engine.snapshot().byAgent.codex).toEqual([]);
+    expect(engine.snapshot().sessions).toEqual([]);
   });
 
   it("short-circuits source sync when fingerprints and signatures are unchanged", async () => {
@@ -431,12 +422,8 @@ describe("AgentSyncEngine", () => {
       byAgent: { codex: [oldSession] },
       sessions: [oldSession],
     };
-    const engine = new AgentSyncEngine({ snapshot: () => state, workerRunner });
-    engine.subscribeSessionsChanged((change) => {
-      state.byAgent[change.agentName] = change.sessions;
-      state.sessions = Object.values(state.byAgent).flat();
-    });
-    engine.initialize();
+    const engine = new AgentSyncEngine({ workerRunner });
+    engine.initialize(state);
 
     core.loadCachedSessions.mockReturnValue({
       sessions: [oldSession],
@@ -452,6 +439,51 @@ describe("AgentSyncEngine", () => {
     expect(sessionChanges).toHaveBeenCalledWith(
       expect.objectContaining({
         agentName: "codex",
+        event: expect.objectContaining({ updatedSessions: 1 }),
+      }),
+    );
+  });
+
+  it("does not advance signature lineage when search indexing fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    searchIndex.enqueue.mockRejectedValueOnce(new Error("index failed"));
+    const oldSession = { ...makeSession("sess1"), smart_tags_source_updated_at: 1 };
+    const newSession = { ...makeSession("sess1"), smart_tags_source_updated_at: 2 };
+    const agent = new FakeSyncAgent();
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async () => ({ sessions: [newSession], meta: {}, changedIds: [] })),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const engine = new AgentSyncEngine({ workerRunner });
+    engine.initialize({
+      agents: [agent],
+      byAgent: { codex: [oldSession] },
+      sessions: [oldSession],
+    });
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [oldSession],
+      meta: {},
+      timestamp: Date.now(),
+    });
+    const sessionChanges = vi.fn();
+    engine.subscribeSessionsChanged(sessionChanges);
+
+    await engine.refresh("codex");
+
+    expect(engine.snapshot().sessions).toEqual([oldSession]);
+    expect(sessionChanges).not.toHaveBeenCalled();
+
+    await engine.refresh("codex");
+
+    expect(engine.snapshot().sessions).toEqual([
+      expect.objectContaining({
+        id: newSession.id,
+        smart_tags_source_updated_at: newSession.smart_tags_source_updated_at,
+      }),
+    ]);
+    expect(sessionChanges).toHaveBeenCalledWith(
+      expect.objectContaining({
         event: expect.objectContaining({ updatedSessions: 1 }),
       }),
     );
@@ -485,15 +517,10 @@ describe("AgentSyncEngine", () => {
     };
     const state: LiveSnapshot = { agents: [agent], byAgent: { codex: [] }, sessions: [] };
     const engine = new AgentSyncEngine({
-      snapshot: () => state,
       workerRunner,
       startupScanOptions: { from: 1, to: 2 },
     });
-    engine.subscribeSessionsChanged((change) => {
-      state.byAgent[change.agentName] = change.sessions;
-      state.sessions = Object.values(state.byAgent).flat();
-    });
-    engine.initialize();
+    engine.initialize(state);
 
     await engine.refresh("codex");
     expect(cacheInitialized).toBe(true);
