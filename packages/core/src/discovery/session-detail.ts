@@ -1,4 +1,5 @@
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
+import type { SessionReference } from "../contract/index.js";
 import type { SessionData, SessionHead } from "../types/index.js";
 import { computeIdentity, realFs } from "../projects/index.js";
 import {
@@ -10,11 +11,6 @@ import { listSessionFileActivity } from "./cache.js";
 import { loadCachedSessionRawEntry, type CachedSessionRawEntry } from "./cache/sessions.js";
 import { messageFromCachedRow, messageJsonFromCachedRow } from "./cache/messages.js";
 import type { ScanResult } from "./scanner.js";
-
-export interface SessionReference {
-  agentName: string;
-  sessionId: string;
-}
 
 export type SessionDetailResult =
   | { status: "found"; data: SessionData }
@@ -150,6 +146,7 @@ function materializeStructuredSessionDetail(
     status: "found",
     data: {
       ...data,
+      reference,
       project_identity: projectIdentity,
       smart_tags: data.smart_tags ?? classifySessionTags(data),
       smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
@@ -194,6 +191,7 @@ export function materializeSessionDetailResponse(
     status: "found-json",
     data: {
       ...data,
+      reference,
       project_identity: getProjectIdentity(data, context.head),
       smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
       file_activity:

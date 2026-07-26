@@ -1,14 +1,16 @@
 import type { ProjectIdentity, SessionHead } from "./session.js";
+import {
+  formatSessionReference,
+  getSessionAgentKey,
+  type SessionReference,
+} from "./session-reference.js";
 
 export interface SessionHeadChange {
   agentName: string;
   session: SessionHead;
 }
 
-export interface SessionHeadRemoval {
-  agentName: string;
-  sessionId: string;
-}
+export type SessionHeadRemoval = SessionReference;
 
 export interface CanonicalSessionIndex {
   sourceSessions: SessionHead[];
@@ -68,12 +70,8 @@ export function mergeSortedSessions(shards: SessionHead[][]): SessionHead[] {
   return merged;
 }
 
-export function getSessionAgentKey(session: Pick<SessionHead, "slug">): string {
-  return session.slug.split("/")[0]?.toLowerCase() || "unknown";
-}
-
 export function getSessionRouteKey(agentName: string, sessionId: string): string {
-  return `${agentName.toLowerCase()}/${sessionId}`;
+  return formatSessionReference({ agentName, sessionId });
 }
 
 export function getProjectIdentityKey(identity: Pick<ProjectIdentity, "kind" | "key">): string {

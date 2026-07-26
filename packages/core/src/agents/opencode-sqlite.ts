@@ -447,6 +447,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
       }
 
       return {
+        reference: { agentName: this.name, sessionId: id },
         id,
         title,
         slug,

@@ -95,6 +95,7 @@ function makeHead(overrides: Partial<SessionHead> = {}): SessionHead {
 function makeDetail(title = "Source Session"): SessionData {
   return {
     ...makeHead({ title }),
+    reference: { agentName: "test", sessionId: "s1" },
     messages: [
       {
         id: "m1",
@@ -187,14 +188,24 @@ describe("materializeSessionDetail", () => {
   it("reads the source when its fingerprint no longer matches the cache", () => {
     const head = makeHead();
     persistDetail(head, makeDetail("Cached Session"), "old");
-    const agent = new TestAgent(makeDetail(), new Map([["s1", makeMeta("current")]]));
+    const sourceDetail = {
+      ...makeDetail(),
+      reference: { agentName: "wrong", sessionId: "wrong" },
+    };
+    const agent = new TestAgent(sourceDetail, new Map([["s1", makeMeta("current")]]));
 
     const result = materializeSessionDetail(makeScanResult(agent, head), {
       agentName: "test",
       sessionId: "s1",
     });
 
-    expect(result).toMatchObject({ status: "found", data: { title: "Source Session" } });
+    expect(result).toMatchObject({
+      status: "found",
+      data: {
+        title: "Source Session",
+        reference: { agentName: "test", sessionId: "s1" },
+      },
+    });
     expect(agent.reads).toBe(1);
   });
 

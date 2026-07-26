@@ -112,6 +112,7 @@ class MockAgent extends BaseAgent {
 
   getSessionData(_sessionId: string): SessionData {
     return {
+      reference: { agentName: "claudecode", sessionId: "s1" },
       id: "s1",
       slug: "claudecode/s1",
       title: "Test Session",
@@ -357,6 +358,26 @@ describe("handleGetSessions", () => {
       title: "Session s1",
       display_title: "Fix session cache refresh",
     });
+  });
+
+  it("uses the canonical unknown agent bucket for a malformed legacy slug", () => {
+    const session = makeSession("legacy", { slug: "" });
+    coreMocks.listSessionAliases.mockReturnValue([
+      {
+        agentKey: "unknown",
+        sessionId: "legacy",
+        alias: "Legacy alias",
+        updated_at: 1,
+      },
+    ]);
+    const c = makeMockContext();
+
+    handleGetSessions(
+      c,
+      makeScanSource({ sessions: [session], byAgent: { claudecode: [session] } }),
+    );
+
+    expect(c.json.mock.calls[0]![0].sessions[0].display_title).toBe("Legacy alias");
   });
 
   it("filters by cwd using project scope match", () => {
@@ -1157,6 +1178,7 @@ describe("handleGetDashboard", () => {
 
 describe("handleGetSessionData", () => {
   const detail: SessionData = {
+    reference: { agentName: "claudecode", sessionId: "s1" },
     id: "s1",
     slug: "claudecode/s1",
     title: "Test Session",

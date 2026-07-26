@@ -497,6 +497,7 @@ export class CodexAgent extends FileSystemSessionSource<SessionMeta> {
     });
 
     return {
+      reference: { agentName: this.name, sessionId: meta.id },
       id: meta.id,
       title: meta.title,
       slug: `codex/${meta.id}`,

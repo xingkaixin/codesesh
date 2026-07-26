@@ -798,6 +798,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
   ): SessionData {
     const transcript = builder.finish(stats);
     return {
+      reference: { agentName: this.name, sessionId: meta.id },
       id: meta.id,
       title: meta.title,
       slug: `kimi/${meta.id}`,

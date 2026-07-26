@@ -1,4 +1,5 @@
 import type { SessionHead } from "./session.js";
+import type { SessionReference } from "./session-reference.js";
 
 export interface SessionsUpdatedEvent {
   type: "sessions-updated";
@@ -9,7 +10,7 @@ export interface SessionsUpdatedEvent {
   totalSessions: number;
   timestamp: number;
   changedSessionHeads: Array<{ agentName: string; session: SessionHead }>;
-  removedSessionRefs: Array<{ agentName: string; sessionId: string }>;
+  removedSessionRefs: SessionReference[];
 }
 
 export interface AgentScanStatus {

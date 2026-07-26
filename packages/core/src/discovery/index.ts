@@ -12,8 +12,8 @@ export {
   materializeSessionDetailResponse,
   type SessionDetailResponseResult,
   type SessionDetailResult,
-  type SessionReference,
 } from "./session-detail.js";
+export type { SessionReference } from "../contract/index.js";
 export {
   attachMissingProjectIdentities,
   buildAgentCacheMeta,

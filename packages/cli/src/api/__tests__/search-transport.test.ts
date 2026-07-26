@@ -82,6 +82,7 @@ beforeAll(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
   syncSessionSearchIndex("claudecode", [ftsTitle], () => ({
     ...ftsTitle,
+    reference: { agentName: "claudecode", sessionId: ftsTitle.id },
     messages: [{ id: `${ftsTitle.id}-m1`, role: "assistant", time_created: now, parts: [] }],
   }));
 });
