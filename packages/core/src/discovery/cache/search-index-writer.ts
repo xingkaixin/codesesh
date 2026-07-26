@@ -18,18 +18,7 @@ import {
   writeFileActivityRows,
   type StructuredMessageRecord,
 } from "./messages.js";
-import {
-  createMessageSearchTriggers,
-  createSearchTriggers,
-  dropMessageSearchTriggers,
-  dropSearchTriggers,
-  ensureFtsConsistency,
-  rebuildMessageSearchIndex,
-  rebuildSearchIndex,
-  withCacheDb,
-  type IndexedSearchRow,
-  type MessageCountRow,
-} from "./schema.js";
+import { runSearchIndexWrite, withSearchIndexDb } from "./schema.js";
 
 export interface SearchIndexSyncOptions {
   isBulk?: boolean;
@@ -53,6 +42,17 @@ interface SearchIndexState {
   indexedMessageCountBySessionId: Map<string, number>;
   messageCountBySessionId: Map<string, number>;
   pendingReindexSessionIds: Set<string>;
+}
+
+interface IndexedSearchRow {
+  session_id?: string;
+  content_hash?: string;
+  indexed_message_count?: number;
+}
+
+interface MessageCountRow {
+  session_id?: string;
+  value?: number;
 }
 
 function readPendingReindexIds(db: SQLiteDatabase, agentName: string): Set<string> {
@@ -382,8 +382,7 @@ export function syncSessionSearchIndex(
   loadSessionData: (sessionId: string) => SessionData,
   options: SearchIndexSyncOptions = {},
 ): SearchIndexSyncResult | null {
-  return withCacheDb((db) => {
-    ensureFtsConsistency(db);
+  return withSearchIndexDb((db) => {
     const startedAt = performance.now();
     const existingRows = db
       .prepare(
@@ -425,24 +424,8 @@ export function syncSessionSearchIndex(
       );
     };
 
-    let rebuildDurationMs: number | undefined;
     const needsRebuild = isBulk && changedCount > 0;
-
-    if (needsRebuild) {
-      db.transaction(() => {
-        dropSearchTriggers(db);
-        dropMessageSearchTriggers(db);
-        writeRows();
-        const rebuildStartedAt = performance.now();
-        rebuildSearchIndex(db);
-        rebuildMessageSearchIndex(db);
-        rebuildDurationMs = performance.now() - rebuildStartedAt;
-        createSearchTriggers(db);
-        createMessageSearchTriggers(db);
-      })();
-    } else {
-      db.transaction(writeRows)();
-    }
+    const { rebuildDurationMs } = runSearchIndexWrite(db, needsRebuild, writeRows);
 
     return {
       agentName,
@@ -478,8 +461,7 @@ export function syncSessionSearchIndexChanges(
     };
   }
 
-  return withCacheDb((db) => {
-    ensureFtsConsistency(db);
+  return withSearchIndexDb((db) => {
     const startedAt = performance.now();
     const searchIndexState = readSearchIndexState(
       db,
@@ -502,24 +484,8 @@ export function syncSessionSearchIndexChanges(
       );
     };
 
-    let rebuildDurationMs: number | undefined;
     const needsRebuild = isBulk && changedCount > 0;
-
-    if (needsRebuild) {
-      db.transaction(() => {
-        dropSearchTriggers(db);
-        dropMessageSearchTriggers(db);
-        writeRows();
-        const rebuildStartedAt = performance.now();
-        rebuildSearchIndex(db);
-        rebuildMessageSearchIndex(db);
-        rebuildDurationMs = performance.now() - rebuildStartedAt;
-        createSearchTriggers(db);
-        createMessageSearchTriggers(db);
-      })();
-    } else {
-      db.transaction(writeRows)();
-    }
+    const { rebuildDurationMs } = runSearchIndexWrite(db, needsRebuild, writeRows);
 
     return {
       agentName,

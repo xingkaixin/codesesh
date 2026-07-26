@@ -1,6 +1,6 @@
 /**
- * Schema, migrations, and the read/write DB handle factory. withCacheDb runs
- * ensureSchema on every write open, so all feature modules inherit migration.
+ * Cache storage boundary. Callers request a ready database capability while
+ * schema creation, migrations, and search-index maintenance stay internal.
  */
 import type { ProjectIdentityKind, SessionHead } from "../../types/index.js";
 import { computeIdentity, realFs } from "../../projects/index.js";
@@ -38,26 +38,15 @@ import {
   type SessionRow,
 } from "./messages.js";
 
-export const CACHE_SCHEMA_VERSION = 14;
-export interface IndexedSearchRow extends DatabaseRow {
-  session_id?: string;
-  content_hash?: string;
-  indexed_message_count?: number;
-}
-
-export interface MessageCountRow extends DatabaseRow {
-  session_id?: string;
-  value?: number;
-}
-
-export interface MessageToolBackfillRow extends DatabaseRow {
+const CACHE_SCHEMA_VERSION = 14;
+interface MessageToolBackfillRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
   message_index?: number;
   tool_metadata_json?: string | null;
 }
 
-export interface ProjectBackfillSessionRow extends DatabaseRow {
+interface ProjectBackfillSessionRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
   session_json?: string;
@@ -65,7 +54,7 @@ export interface ProjectBackfillSessionRow extends DatabaseRow {
   sort_index?: number;
 }
 
-export interface ProjectBackfillDocumentRow extends DatabaseRow {
+interface ProjectBackfillDocumentRow extends DatabaseRow {
   id?: number;
   agent_name?: string;
   session_id?: string;
@@ -80,7 +69,7 @@ export interface ProjectBackfillDocumentRow extends DatabaseRow {
   activity_time?: number;
 }
 
-export interface ProjectIdentityRefreshRow extends DatabaseRow {
+interface ProjectIdentityRefreshRow extends DatabaseRow {
   id?: number;
   agent_name?: string;
   session_id?: string;
@@ -121,7 +110,53 @@ export function withCacheDbReadOnly<T>(fn: (db: SQLiteDatabase) => T): T | null 
   }
 }
 
-export function createCacheTables(db: SQLiteDatabase): void {
+export function withSearchDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
+  return withCacheDb((db) => {
+    ensureFtsReady(db);
+    return fn(db);
+  });
+}
+
+export function withSearchIndexDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
+  return withCacheDb((db) => {
+    ensureFtsConsistency(db);
+    return fn(db);
+  });
+}
+
+interface SearchIndexWriteResult<T> {
+  value: T;
+  rebuildDurationMs?: number;
+}
+
+export function runSearchIndexWrite<T>(
+  db: SQLiteDatabase,
+  rebuild: boolean,
+  write: () => T,
+): SearchIndexWriteResult<T> {
+  return db.transaction(() => {
+    if (rebuild) {
+      dropSearchTriggers(db);
+      dropMessageSearchTriggers(db);
+    }
+
+    const value = write();
+    let rebuildDurationMs: number | undefined;
+
+    if (rebuild) {
+      const rebuildStartedAt = performance.now();
+      rebuildSearchIndex(db);
+      rebuildMessageSearchIndex(db);
+      rebuildDurationMs = performance.now() - rebuildStartedAt;
+      createSearchTriggers(db);
+      createMessageSearchTriggers(db);
+    }
+
+    return { value, rebuildDurationMs };
+  })();
+}
+
+function createCacheTables(db: SQLiteDatabase): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS cache_meta (
       key TEXT PRIMARY KEY,
@@ -156,7 +191,7 @@ export function createCacheTables(db: SQLiteDatabase): void {
   `);
 }
 
-export function createSessionTables(db: SQLiteDatabase): void {
+function createSessionTables(db: SQLiteDatabase): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       agent_name TEXT NOT NULL,
@@ -226,7 +261,7 @@ export function createSessionTables(db: SQLiteDatabase): void {
   createMessageToolTables(db);
 }
 
-export function createMessageToolTables(db: SQLiteDatabase): void {
+function createMessageToolTables(db: SQLiteDatabase): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS message_tools (
       agent_name TEXT NOT NULL,
@@ -244,7 +279,7 @@ export function createMessageToolTables(db: SQLiteDatabase): void {
   `);
 }
 
-export function createMessageSearchTables(db: SQLiteDatabase): void {
+function createMessageSearchTables(db: SQLiteDatabase): void {
   if (!tableExists(db, "messages")) {
     createSessionTables(db);
   }
@@ -260,7 +295,7 @@ export function createMessageSearchTables(db: SQLiteDatabase): void {
   createMessageSearchTriggers(db);
 }
 
-export function createMessageSearchTriggers(db: SQLiteDatabase): void {
+function createMessageSearchTriggers(db: SQLiteDatabase): void {
   db.exec(`
     CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
       INSERT INTO messages_fts(rowid, content_text)
@@ -281,7 +316,7 @@ export function createMessageSearchTriggers(db: SQLiteDatabase): void {
   `);
 }
 
-export function dropMessageSearchTriggers(db: SQLiteDatabase): void {
+function dropMessageSearchTriggers(db: SQLiteDatabase): void {
   db.exec(`
     DROP TRIGGER IF EXISTS messages_ai;
     DROP TRIGGER IF EXISTS messages_ad;
@@ -289,7 +324,7 @@ export function dropMessageSearchTriggers(db: SQLiteDatabase): void {
   `);
 }
 
-export function createFileActivityTables(db: SQLiteDatabase): void {
+function createFileActivityTables(db: SQLiteDatabase): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS session_file_activity (
       agent_name TEXT NOT NULL,
@@ -327,7 +362,7 @@ export function createFileActivityTables(db: SQLiteDatabase): void {
   createFileActivityPathSearchTables(db);
 }
 
-export function createFileActivityPathSearchTables(db: SQLiteDatabase): void {
+function createFileActivityPathSearchTables(db: SQLiteDatabase): void {
   db.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS session_file_activity_path_fts USING fts5(
       path,
@@ -340,7 +375,7 @@ export function createFileActivityPathSearchTables(db: SQLiteDatabase): void {
   createFileActivityPathSearchTriggers(db);
 }
 
-export function createFileActivityPathSearchTriggers(db: SQLiteDatabase): void {
+function createFileActivityPathSearchTriggers(db: SQLiteDatabase): void {
   db.exec(`
     CREATE TRIGGER IF NOT EXISTS session_file_activity_path_ai
     AFTER INSERT ON session_file_activity BEGIN
@@ -364,7 +399,7 @@ export function createFileActivityPathSearchTriggers(db: SQLiteDatabase): void {
   `);
 }
 
-export function rebuildFileActivityPathIndex(db: SQLiteDatabase): void {
+function rebuildFileActivityPathIndex(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_file_activity_path_fts")) {
     return;
   }
@@ -373,7 +408,7 @@ export function rebuildFileActivityPathIndex(db: SQLiteDatabase): void {
   );
 }
 
-export function createSearchTables(db: SQLiteDatabase): void {
+function createSearchTables(db: SQLiteDatabase): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS session_documents (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -403,7 +438,7 @@ export function createSearchTables(db: SQLiteDatabase): void {
   createSearchTriggers(db);
 }
 
-export function createSearchTriggers(db: SQLiteDatabase): void {
+function createSearchTriggers(db: SQLiteDatabase): void {
   db.exec(`
     CREATE TRIGGER IF NOT EXISTS session_documents_ai AFTER INSERT ON session_documents BEGIN
       INSERT INTO session_documents_fts(rowid, title, content_text)
@@ -424,7 +459,7 @@ export function createSearchTriggers(db: SQLiteDatabase): void {
   `);
 }
 
-export function addIndexedMessageCount(db: SQLiteDatabase): void {
+function addIndexedMessageCount(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents")) return;
 
   if (!columnExists(db, "session_documents", "indexed_message_count")) {
@@ -445,7 +480,7 @@ export function addIndexedMessageCount(db: SQLiteDatabase): void {
   `);
 }
 
-export function dropSearchTriggers(db: SQLiteDatabase): void {
+function dropSearchTriggers(db: SQLiteDatabase): void {
   db.exec(`
     DROP TRIGGER IF EXISTS session_documents_ai;
     DROP TRIGGER IF EXISTS session_documents_ad;
@@ -453,7 +488,7 @@ export function dropSearchTriggers(db: SQLiteDatabase): void {
   `);
 }
 
-export function ensureProjectColumns(db: SQLiteDatabase): void {
+function ensureProjectColumns(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents")) {
     return;
   }
@@ -475,7 +510,7 @@ export function ensureProjectColumns(db: SQLiteDatabase): void {
   }
 }
 
-export function createProjectTables(db: SQLiteDatabase): void {
+function createProjectTables(db: SQLiteDatabase): void {
   ensureProjectColumns(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS project_sessions (
@@ -495,7 +530,7 @@ export function createProjectTables(db: SQLiteDatabase): void {
   createProjectGroupsView(db);
 }
 
-export function createProjectGroupsView(db: SQLiteDatabase): void {
+function createProjectGroupsView(db: SQLiteDatabase): void {
   if (!tableExists(db, "sessions")) {
     db.exec(`
       CREATE VIEW IF NOT EXISTS project_groups_v AS
@@ -526,12 +561,12 @@ export function createProjectGroupsView(db: SQLiteDatabase): void {
   `);
 }
 
-export function recreateProjectGroupsView(db: SQLiteDatabase): void {
+function recreateProjectGroupsView(db: SQLiteDatabase): void {
   db.exec("DROP VIEW IF EXISTS project_groups_v");
   createProjectGroupsView(db);
 }
 
-export function createLatestCacheSchema(db: SQLiteDatabase): void {
+function createLatestCacheSchema(db: SQLiteDatabase): void {
   createCacheTables(db);
   createSessionTables(db);
   createMessageSearchTables(db);
@@ -540,7 +575,7 @@ export function createLatestCacheSchema(db: SQLiteDatabase): void {
   createProjectTables(db);
 }
 
-export function recreateSearchIndexSchema(db: SQLiteDatabase): void {
+function recreateSearchIndexSchema(db: SQLiteDatabase): void {
   db.exec(`
     DROP TRIGGER IF EXISTS session_documents_ai;
     DROP TRIGGER IF EXISTS session_documents_ad;
@@ -551,7 +586,7 @@ export function recreateSearchIndexSchema(db: SQLiteDatabase): void {
   rebuildSearchIndex(db);
 }
 
-export function readLegacyCacheVersion(db: SQLiteDatabase): number {
+function readLegacyCacheVersion(db: SQLiteDatabase): number {
   if (
     !tableExists(db, "cache_meta") ||
     !columnExists(db, "cache_meta", "key") ||
@@ -566,7 +601,7 @@ export function readLegacyCacheVersion(db: SQLiteDatabase): number {
   return Number(versionRow?.value ?? 0);
 }
 
-export function inferCacheSchemaVersion(db: SQLiteDatabase): number {
+function inferCacheSchemaVersion(db: SQLiteDatabase): number {
   if (columnExists(db, "session_documents", "indexed_message_count")) {
     return 14;
   }
@@ -600,7 +635,7 @@ export function inferCacheSchemaVersion(db: SQLiteDatabase): number {
   return 0;
 }
 
-export function getCurrentCacheSchemaVersion(db: SQLiteDatabase): number {
+function getCurrentCacheSchemaVersion(db: SQLiteDatabase): number {
   const userVersion = getUserVersion(db);
   if (userVersion > 0) {
     return userVersion;
@@ -610,7 +645,7 @@ export function getCurrentCacheSchemaVersion(db: SQLiteDatabase): number {
   return Math.max(legacyVersion, inferCacheSchemaVersion(db));
 }
 
-export function hasAnyCacheSchema(db: SQLiteDatabase): boolean {
+function hasAnyCacheSchema(db: SQLiteDatabase): boolean {
   return [
     "cache_meta",
     "agent_cache",
@@ -626,7 +661,7 @@ export function hasAnyCacheSchema(db: SQLiteDatabase): boolean {
   ].some((table) => tableExists(db, table));
 }
 
-export function backfillProjectSessions(db: SQLiteDatabase): void {
+function backfillProjectSessions(db: SQLiteDatabase): void {
   if (!tableExists(db, "cached_sessions") || !tableExists(db, "project_sessions")) {
     return;
   }
@@ -675,7 +710,7 @@ export function backfillProjectSessions(db: SQLiteDatabase): void {
   }
 }
 
-export function backfillSessionDocumentProjects(db: SQLiteDatabase): void {
+function backfillSessionDocumentProjects(db: SQLiteDatabase): void {
   if (
     !tableExists(db, "session_documents") ||
     !columnExists(db, "session_documents", "project_identity_key")
@@ -701,13 +736,13 @@ export function backfillSessionDocumentProjects(db: SQLiteDatabase): void {
   }
 }
 
-export function migrateProjectIdentity(db: SQLiteDatabase): void {
+function migrateProjectIdentity(db: SQLiteDatabase): void {
   createProjectTables(db);
   backfillProjectSessions(db);
   backfillSessionDocumentProjects(db);
 }
 
-export function refreshProjectIdentities(db: SQLiteDatabase): void {
+function refreshProjectIdentities(db: SQLiteDatabase): void {
   if (
     tableExists(db, "sessions") &&
     columnExists(db, "sessions", "project_identity_key") &&
@@ -768,7 +803,7 @@ export function refreshProjectIdentities(db: SQLiteDatabase): void {
   recreateProjectGroupsView(db);
 }
 
-export function backfillStructuredSessions(db: SQLiteDatabase): void {
+function backfillStructuredSessions(db: SQLiteDatabase): void {
   createSessionTables(db);
   recreateProjectGroupsView(db);
   const upsertSession = prepareUpsertSession(db);
@@ -865,7 +900,7 @@ export function backfillStructuredSessions(db: SQLiteDatabase): void {
   }
 }
 
-export function backfillMessageTools(db: SQLiteDatabase): void {
+function backfillMessageTools(db: SQLiteDatabase): void {
   createMessageToolTables(db);
   if (!tableExists(db, "messages")) {
     return;
@@ -894,7 +929,7 @@ export function backfillMessageTools(db: SQLiteDatabase): void {
   }
 }
 
-export function backfillFileActivity(db: SQLiteDatabase): void {
+function backfillFileActivity(db: SQLiteDatabase): void {
   createFileActivityTables(db);
   if (!tableExists(db, "sessions") || !tableExists(db, "messages")) {
     return;
@@ -953,7 +988,7 @@ export function backfillFileActivity(db: SQLiteDatabase): void {
   }
 }
 
-export function invalidateSearchContentHashes(db: SQLiteDatabase): void {
+function invalidateSearchContentHashes(db: SQLiteDatabase): void {
   if (
     tableExists(db, "session_documents") &&
     columnExists(db, "session_documents", "content_hash")
@@ -975,7 +1010,7 @@ const CODEX_EXEC_DECODE_MIGRATION_KEY = "codex_exec_decode_migrated_v3";
  * the search index clears the marker as it repopulates each one. Gated by a
  * cache_meta flag; a fresh cache just records it.
  */
-export function migrateCodexExecDecode(db: SQLiteDatabase): void {
+function migrateCodexExecDecode(db: SQLiteDatabase): void {
   if (!tableExists(db, "cache_meta")) return;
   const done = db
     .prepare("SELECT value FROM cache_meta WHERE key = ?")
@@ -993,21 +1028,21 @@ export function migrateCodexExecDecode(db: SQLiteDatabase): void {
   ).run(CODEX_EXEC_DECODE_MIGRATION_KEY);
 }
 
-export function rebuildSearchIndex(db: SQLiteDatabase): void {
+function rebuildSearchIndex(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents_fts")) {
     return;
   }
   db.exec("INSERT INTO session_documents_fts(session_documents_fts) VALUES ('rebuild')");
 }
 
-export function rebuildMessageSearchIndex(db: SQLiteDatabase): void {
+function rebuildMessageSearchIndex(db: SQLiteDatabase): void {
   if (!tableExists(db, "messages_fts")) {
     return;
   }
   db.exec("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')");
 }
 
-export function ensureFtsReady(db: SQLiteDatabase): void {
+function ensureFtsReady(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents_fts")) {
     createSearchTables(db);
   }
@@ -1020,7 +1055,7 @@ export function ensureFtsReady(db: SQLiteDatabase): void {
   }
 }
 
-export function ensureFtsConsistency(db: SQLiteDatabase): void {
+function ensureFtsConsistency(db: SQLiteDatabase): void {
   ensureFtsReady(db);
   const cachePath = getCachePath();
   if (getFtsIntegrityCheckedPath() === cachePath) {
@@ -1040,7 +1075,7 @@ export function ensureFtsConsistency(db: SQLiteDatabase): void {
   }
 }
 
-export function setCacheSchemaVersion(db: SQLiteDatabase): void {
+function setCacheSchemaVersion(db: SQLiteDatabase): void {
   createCacheTables(db);
   setUserVersion(db, CACHE_SCHEMA_VERSION);
   db.prepare(
@@ -1052,7 +1087,7 @@ export function setCacheSchemaVersion(db: SQLiteDatabase): void {
   ).run(String(CACHE_SCHEMA_VERSION));
 }
 
-export function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
+function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
   const currentVersion = getCurrentCacheSchemaVersion(db);
   if (currentVersion === 0 && !hasAnyCacheSchema(db)) {
     createLatestCacheSchema(db);
