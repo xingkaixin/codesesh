@@ -1,6 +1,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionHead } from "../lib/api";
+import { getSessionReferenceKey } from "../lib/session-indexes";
 import { buildSessionTreeModel, SessionTreeSidebar } from "./SessionTreeSidebar";
 
 function makeSession(overrides: Partial<SessionHead> & { id: string }): SessionHead {
@@ -90,6 +91,16 @@ describe("buildSessionTreeModel group sorting", () => {
     expect(() => buildSessionTreeModel(sessions)).not.toThrow();
     expect(groupOrderOf(paths)).toEqual(["small", "big"]);
   });
+
+  it("keeps paths for equal session ids from different agents", () => {
+    const codex = makeSession({ id: "same", slug: "codex/same" });
+    const claude = makeSession({ id: "same", slug: "claude/same" });
+
+    const model = buildSessionTreeModel([codex, claude]);
+
+    expect(model.pathBySessionReference.get(getSessionReferenceKey(codex))).toBeDefined();
+    expect(model.pathBySessionReference.get(getSessionReferenceKey(claude))).toBeDefined();
+  });
 });
 
 // happy-dom dispatches events into the tree's shadow DOM without retargeting
@@ -115,10 +126,10 @@ function renderSessionTreeSidebar() {
   render(
     <SessionTreeSidebar
       sessions={[session]}
-      activeSessionId={session.id}
-      selectedSessionId={session.id}
+      activeSessionReference={getSessionReferenceKey(session)}
+      selectedSessionReference={getSessionReferenceKey(session)}
       onSelectSession={() => {}}
-      bookmarkedSessionIds={new Set()}
+      bookmarkedSessionReferences={new Set()}
       onToggleBookmark={onToggleBookmark}
       onRenameSession={onRenameSession}
     />,

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SessionHead } from "../../lib/api";
 import { findAgent, type AgentCatalog } from "../../lib/agents";
-import { getSessionAgentKey } from "../../lib/session-indexes";
+import { getSessionAgentKey, getSessionReferenceKey } from "../../lib/session-indexes";
 import { formatRelativeTime } from "../../lib/format";
 import { getSessionDisplayTitle } from "../../lib/session-title";
 import { AgentIcon } from "../AgentIcon";
@@ -22,9 +22,9 @@ const SESSION_LIST_HEIGHT_CLASS = "h-[min(560px,calc(100vh-410px))] min-h-56";
 interface SidebarFlatSessionListProps {
   sessions: SessionHead[];
   agentCatalog: AgentCatalog;
-  activeSessionId: string | null;
-  selectedSessionId: string | null;
-  bookmarkedSessionIds: Set<string>;
+  activeSessionReference: string | null;
+  selectedSessionReference: string | null;
+  bookmarkedSessionReferences: Set<string>;
   onSelectSession: (session: SessionHead) => void;
   onToggleBookmark: (session: SessionHead) => void;
   onRenameSession: (session: SessionHead) => void;
@@ -38,7 +38,7 @@ function SessionRow({
   onSelectSession,
   onToggleBookmark,
   onRenameSession,
-  bookmarkedSessionIds,
+  bookmarkedSessionReferences,
 }: {
   session: SessionHead;
   agentCatalog: AgentCatalog;
@@ -47,7 +47,7 @@ function SessionRow({
   onSelectSession: (session: SessionHead) => void;
   onToggleBookmark: (session: SessionHead) => void;
   onRenameSession: (session: SessionHead) => void;
-  bookmarkedSessionIds: Set<string>;
+  bookmarkedSessionReferences: Set<string>;
 }) {
   const agentKey = getSessionAgentKey(session);
   const agent = findAgent(agentCatalog, agentKey);
@@ -82,7 +82,7 @@ function SessionRow({
         </span>
       </button>
       <SessionActionsMenu
-        bookmarked={bookmarkedSessionIds.has(session.id)}
+        bookmarked={bookmarkedSessionReferences.has(getSessionReferenceKey(session))}
         onRename={() => onRenameSession(session)}
         onToggleBookmark={() => onToggleBookmark(session)}
       />
@@ -98,9 +98,9 @@ export function SidebarFlatSessionList(props: SidebarFlatSessionListProps) {
   const {
     sessions,
     agentCatalog,
-    activeSessionId,
-    selectedSessionId,
-    bookmarkedSessionIds,
+    activeSessionReference,
+    selectedSessionReference,
+    bookmarkedSessionReferences,
     onSelectSession,
     onToggleBookmark,
     onRenameSession,
@@ -114,9 +114,9 @@ export function SidebarFlatSessionList(props: SidebarFlatSessionListProps) {
             <SessionRow
               session={sessionItem}
               agentCatalog={agentCatalog}
-              active={activeSessionId === sessionItem.id}
-              selected={selectedSessionId === sessionItem.id}
-              bookmarkedSessionIds={bookmarkedSessionIds}
+              active={activeSessionReference === getSessionReferenceKey(sessionItem)}
+              selected={selectedSessionReference === getSessionReferenceKey(sessionItem)}
+              bookmarkedSessionReferences={bookmarkedSessionReferences}
               onSelectSession={onSelectSession}
               onToggleBookmark={onToggleBookmark}
               onRenameSession={onRenameSession}
@@ -131,9 +131,9 @@ export function SidebarFlatSessionList(props: SidebarFlatSessionListProps) {
 function VirtualizedSidebarFlatSessionList({
   sessions,
   agentCatalog,
-  activeSessionId,
-  selectedSessionId,
-  bookmarkedSessionIds,
+  activeSessionReference,
+  selectedSessionReference,
+  bookmarkedSessionReferences,
   onSelectSession,
   onToggleBookmark,
   onRenameSession,
@@ -211,9 +211,9 @@ function VirtualizedSidebarFlatSessionList({
               <SessionRow
                 session={sessionItem}
                 agentCatalog={agentCatalog}
-                active={activeSessionId === sessionItem.id}
-                selected={selectedSessionId === sessionItem.id}
-                bookmarkedSessionIds={bookmarkedSessionIds}
+                active={activeSessionReference === getSessionReferenceKey(sessionItem)}
+                selected={selectedSessionReference === getSessionReferenceKey(sessionItem)}
+                bookmarkedSessionReferences={bookmarkedSessionReferences}
                 onSelectSession={onSelectSession}
                 onToggleBookmark={onToggleBookmark}
                 onRenameSession={onRenameSession}

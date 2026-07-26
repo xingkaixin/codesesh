@@ -2,7 +2,7 @@ import { cleanup, fireEvent, renderHook } from "@testing-library/react";
 import type { NavigateFunction } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SearchResult, SessionHead } from "../lib/api";
-import { buildSidebarSessionLookup } from "../lib/session-indexes";
+import { buildSidebarSessionLookup, getSessionReferenceKey } from "../lib/session-indexes";
 import type { ViewState } from "../lib/view-state";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 
@@ -44,8 +44,8 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     activeAgentKey: "codex",
     sidebarSessions: sessions,
     sidebarSessionLookup: buildSidebarSessionLookup(sessions),
-    selectedSidebarSessionId: null,
-    setSelectedSidebarSessionId: vi.fn(),
+    selectedSidebarSessionReference: null,
+    setSelectedSidebarSessionReference: vi.fn(),
     selectedProjectNavigationIdentity: null,
     shortcutHelpOpen: false,
     setShortcutHelpOpen: vi.fn(),
@@ -104,7 +104,7 @@ describe("useKeyboardShortcuts", () => {
     const { unmount } = renderHook(() => useKeyboardShortcuts(helpDeps));
 
     dispatchKey("j");
-    expect(helpDeps.setSelectedSidebarSessionId).not.toHaveBeenCalled();
+    expect(helpDeps.setSelectedSidebarSessionReference).not.toHaveBeenCalled();
     expect(dispatchKey("Escape").defaultPrevented).toBe(true);
     expect(helpDeps.setShortcutHelpOpen).toHaveBeenCalledWith(false);
     unmount();
@@ -116,7 +116,7 @@ describe("useKeyboardShortcuts", () => {
     input.focus();
 
     fireEvent.keyDown(input, { key: "j" });
-    expect(editableDeps.setSelectedSidebarSessionId).not.toHaveBeenCalled();
+    expect(editableDeps.setSelectedSidebarSessionReference).not.toHaveBeenCalled();
     fireEvent.keyDown(input, { key: "Escape" });
     expect(document.activeElement).not.toBe(input);
     input.remove();
@@ -184,16 +184,16 @@ describe("useKeyboardShortcuts", () => {
     const { unmount } = renderHook(() => useKeyboardShortcuts(deps));
 
     dispatchKey("j");
-    expect(deps.setSelectedSidebarSessionId).toHaveBeenNthCalledWith(1, "s1");
+    expect(deps.setSelectedSidebarSessionReference).toHaveBeenNthCalledWith(1, "codex/s1");
     dispatchKey("k");
-    expect(deps.setSelectedSidebarSessionId).toHaveBeenNthCalledWith(2, "s3");
+    expect(deps.setSelectedSidebarSessionReference).toHaveBeenNthCalledWith(2, "codex/s3");
     dispatchKey("g");
-    expect(deps.setSelectedSidebarSessionId).toHaveBeenNthCalledWith(3, "s1");
+    expect(deps.setSelectedSidebarSessionReference).toHaveBeenNthCalledWith(3, "codex/s1");
     dispatchKey("G");
-    expect(deps.setSelectedSidebarSessionId).toHaveBeenNthCalledWith(4, "s3");
+    expect(deps.setSelectedSidebarSessionReference).toHaveBeenNthCalledWith(4, "codex/s3");
     unmount();
 
-    const agentDeps = makeDeps({ selectedSidebarSessionId: "s2" });
+    const agentDeps = makeDeps({ selectedSidebarSessionReference: "codex/s2" });
     const agentHook = renderHook(() => useKeyboardShortcuts(agentDeps));
     dispatchKey("Enter");
     expect(agentDeps.navigate).toHaveBeenCalledWith("/codex/s2");
@@ -201,7 +201,7 @@ describe("useKeyboardShortcuts", () => {
 
     const projectDeps = makeDeps({
       browseBy: "projects" as const,
-      selectedSidebarSessionId: "s2",
+      selectedSidebarSessionReference: "codex/s2",
     });
     renderHook(() => useKeyboardShortcuts(projectDeps));
     dispatchKey("Enter");
@@ -226,6 +226,23 @@ describe("useKeyboardShortcuts", () => {
     const sidebarDeps = makeDeps({ activeAgentKey: null });
     renderHook(() => useKeyboardShortcuts(sidebarDeps));
     dispatchKey("j");
-    expect(sidebarDeps.setSelectedSidebarSessionId).not.toHaveBeenCalled();
+    expect(sidebarDeps.setSelectedSidebarSessionReference).not.toHaveBeenCalled();
+  });
+
+  it("opens the selected agent when project sessions share a native id", () => {
+    const codex = makeSession("same");
+    const claude = { ...makeSession("same"), slug: "claude/same" };
+    const projectSessions = [codex, claude];
+    const deps = makeDeps({
+      browseBy: "projects" as const,
+      sidebarSessions: projectSessions,
+      sidebarSessionLookup: buildSidebarSessionLookup(projectSessions),
+      selectedSidebarSessionReference: getSessionReferenceKey(claude),
+    });
+    renderHook(() => useKeyboardShortcuts(deps));
+
+    dispatchKey("Enter");
+
+    expect(deps.navigate).toHaveBeenCalledWith("/claude/same");
   });
 });

@@ -12,15 +12,16 @@ import {
   type MouseEvent,
 } from "react";
 import type { SessionHead } from "../lib/api";
+import { getSessionReferenceKey } from "../lib/session-indexes";
 import { getSessionDisplayTitle } from "../lib/session-title";
 import { isRenderProfilerEnabled, recordRenderProfileEntry } from "./RenderProfiler";
 
 interface SessionTreeSidebarProps {
   sessions: SessionHead[];
-  activeSessionId: string | null;
-  selectedSessionId: string | null;
-  onSelectSession: (sessionId: string) => void;
-  bookmarkedSessionIds: Set<string>;
+  activeSessionReference: string | null;
+  selectedSessionReference: string | null;
+  onSelectSession: (session: SessionHead) => void;
+  bookmarkedSessionReferences: Set<string>;
   onToggleBookmark: (session: SessionHead) => void;
   onRenameSession: (session: SessionHead) => void;
 }
@@ -28,9 +29,8 @@ interface SessionTreeSidebarProps {
 interface SessionTreeModel {
   paths: string[];
   sortOrderByPath: Map<string, number>;
-  pathBySessionId: Map<string, string>;
-  groupPathBySessionId: Map<string, string>;
-  sessionIdByPath: Map<string, string>;
+  pathBySessionReference: Map<string, string>;
+  groupPathBySessionReference: Map<string, string>;
   groupCountByPath: Map<string, string>;
   sessionByPath: Map<string, SessionHead>;
 }
@@ -147,9 +147,8 @@ function compareTreeOrder(
 
 export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel {
   const sortOrderByPath = new Map<string, number>();
-  const pathBySessionId = new Map<string, string>();
-  const groupPathBySessionId = new Map<string, string>();
-  const sessionIdByPath = new Map<string, string>();
+  const pathBySessionReference = new Map<string, string>();
+  const groupPathBySessionReference = new Map<string, string>();
   const groupCountByPath = new Map<string, string>();
   const sessionByPath = new Map<string, SessionHead>();
   const usedPaths = new Set<string>();
@@ -215,9 +214,9 @@ export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel
       paths.push(path);
       sortOrderByPath.set(path, order);
       order += 1;
-      pathBySessionId.set(session.id, path);
-      groupPathBySessionId.set(session.id, groupPath);
-      sessionIdByPath.set(path, session.id);
+      const reference = getSessionReferenceKey(session);
+      pathBySessionReference.set(reference, path);
+      groupPathBySessionReference.set(reference, groupPath);
       sessionByPath.set(path, session);
     }
   }
@@ -225,9 +224,8 @@ export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel
   return {
     paths,
     sortOrderByPath,
-    pathBySessionId,
-    groupPathBySessionId,
-    sessionIdByPath,
+    pathBySessionReference,
+    groupPathBySessionReference,
     groupCountByPath,
     sessionByPath,
   };
@@ -253,10 +251,10 @@ function measureSessionTreeWork<T>(id: string, compute: () => T): T {
 
 export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   sessions,
-  activeSessionId,
-  selectedSessionId,
+  activeSessionReference,
+  selectedSessionReference,
   onSelectSession,
-  bookmarkedSessionIds,
+  bookmarkedSessionReferences,
   onToggleBookmark,
   onRenameSession,
 }: SessionTreeSidebarProps) {
@@ -272,10 +270,9 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     [sessions],
   );
   const sortOrderRef = useRef(modelData.sortOrderByPath);
-  const sessionIdByPathRef = useRef(modelData.sessionIdByPath);
   const groupCountByPathRef = useRef(modelData.groupCountByPath);
   const sessionByPathRef = useRef(modelData.sessionByPath);
-  const bookmarkedSessionIdsRef = useRef(bookmarkedSessionIds);
+  const bookmarkedSessionReferencesRef = useRef(bookmarkedSessionReferences);
   const onSelectSessionRef = useRef(onSelectSession);
   const onToggleBookmarkRef = useRef(onToggleBookmark);
   const onRenameSessionRef = useRef(onRenameSession);
@@ -300,8 +297,8 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     density: "compact",
     unsafeCSS: SESSION_TREE_CSS,
     onSelectionChange(paths) {
-      const sessionId = sessionIdByPathRef.current.get(paths[0] ?? "");
-      if (sessionId) onSelectSessionRef.current(sessionId);
+      const session = sessionByPathRef.current.get(paths[0] ?? "");
+      if (session) onSelectSessionRef.current(session);
     },
     renderRowDecoration({ item }) {
       const session = sessionByPathRef.current.get(item.path);
@@ -316,7 +313,6 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
 
   useEffect(() => {
     sortOrderRef.current = modelData.sortOrderByPath;
-    sessionIdByPathRef.current = modelData.sessionIdByPath;
     groupCountByPathRef.current = modelData.groupCountByPath;
     sessionByPathRef.current = modelData.sessionByPath;
     model.resetPaths(modelData.paths);
@@ -327,8 +323,8 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   }, [onSelectSession]);
 
   useEffect(() => {
-    bookmarkedSessionIdsRef.current = bookmarkedSessionIds;
-  }, [bookmarkedSessionIds]);
+    bookmarkedSessionReferencesRef.current = bookmarkedSessionReferences;
+  }, [bookmarkedSessionReferences]);
 
   useEffect(() => {
     onToggleBookmarkRef.current = onToggleBookmark;
@@ -393,21 +389,21 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   }
 
   useEffect(() => {
-    const activePath = modelData.pathBySessionId.get(activeSessionId ?? "");
-    const selectedPath = modelData.pathBySessionId.get(selectedSessionId ?? "");
+    const activePath = modelData.pathBySessionReference.get(activeSessionReference ?? "");
+    const selectedPath = modelData.pathBySessionReference.get(selectedSessionReference ?? "");
     const focusedPath = selectedPath ?? activePath;
-    const focusedSessionId = selectedSessionId ?? activeSessionId ?? "";
-    const focusedGroupPath = modelData.groupPathBySessionId.get(focusedSessionId);
+    const focusedSessionReference = selectedSessionReference ?? activeSessionReference ?? "";
+    const focusedGroupPath = modelData.groupPathBySessionReference.get(focusedSessionReference);
 
     if (activePath) model.getItem(activePath)?.select();
-    if (focusedPath && activeSessionId) {
+    if (focusedPath && activeSessionReference) {
       const focusedGroup = focusedGroupPath ? model.getItem(focusedGroupPath) : null;
       if (focusedGroup && "expand" in focusedGroup) focusedGroup.expand();
       model.focusPath(focusedPath);
       return;
     }
     if (focusedGroupPath) model.focusPath(focusedGroupPath);
-  }, [activeSessionId, model, modelData, selectedSessionId]);
+  }, [activeSessionReference, model, modelData, selectedSessionReference]);
 
   return (
     <div
@@ -448,7 +444,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
                     onClick={() => onToggleBookmarkRef.current(menuSession)}
                     className="motion-hover motion-press block w-full rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] data-[highlighted]:bg-[var(--console-surface-muted)] focus-visible:outline-none"
                   >
-                    {bookmarkedSessionIdsRef.current.has(menuSession.id)
+                    {bookmarkedSessionReferencesRef.current.has(getSessionReferenceKey(menuSession))
                       ? "Remove bookmark"
                       : "Add bookmark"}
                   </Menu.Item>

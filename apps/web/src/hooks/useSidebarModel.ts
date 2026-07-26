@@ -9,6 +9,7 @@ import {
   buildSidebarSessionLookup,
   getProjectAgentKey,
   getSessionAgentKey,
+  getSessionReferenceKey,
   getSessionRouteKey,
   type SessionIndexes,
 } from "../lib/session-indexes";
@@ -146,12 +147,12 @@ export function useSidebarModel({
     );
     const sidebarSessions = browseBy === "projects" ? projectSessions : agentSessions;
     const sidebarSessionLookup = buildSidebarSessionLookup(sidebarSessions);
-    const bookmarkedSidebarSessionIds = new Set(
+    const bookmarkedSidebarSessionReferences = new Set(
       sidebarSessions
         .filter((sessionItem) =>
           isSessionBookmarked(getSessionAgentKey(sessionItem), sessionItem.id),
         )
-        .map((sessionItem) => sessionItem.id),
+        .map(getSessionReferenceKey),
     );
 
     return {
@@ -163,7 +164,7 @@ export function useSidebarModel({
       selectedProjectNavigation,
       sidebarSessions,
       sidebarSessionLookup,
-      bookmarkedSidebarSessionIds,
+      bookmarkedSidebarSessionReferences,
     };
   }, [
     agents,

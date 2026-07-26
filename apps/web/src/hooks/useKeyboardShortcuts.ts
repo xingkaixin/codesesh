@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent } from "react";
 import type { NavigateFunction } from "react-router-dom";
 import type { SearchResult, SessionHead } from "../lib/api";
-import type { SidebarSessionLookup } from "../lib/session-indexes";
+import { getSessionReferenceKey, type SidebarSessionLookup } from "../lib/session-indexes";
 import { getProjectPath, type ProjectRouteIdentity } from "../lib/projects";
 import type { ViewState } from "../lib/view-state";
 import type { BrowseBy } from "../components/app/types";
@@ -13,8 +13,8 @@ interface KeyboardShortcutsDeps {
   activeAgentKey: string | null;
   sidebarSessions: SessionHead[];
   sidebarSessionLookup: SidebarSessionLookup;
-  selectedSidebarSessionId: string | null;
-  setSelectedSidebarSessionId: (id: string | null) => void;
+  selectedSidebarSessionReference: string | null;
+  setSelectedSidebarSessionReference: (reference: string | null) => void;
   selectedProjectNavigationIdentity: ProjectRouteIdentity | null;
   shortcutHelpOpen: boolean;
   setShortcutHelpOpen: (open: boolean) => void;
@@ -54,8 +54,8 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
     activeAgentKey,
     sidebarSessions,
     sidebarSessionLookup,
-    selectedSidebarSessionId,
-    setSelectedSidebarSessionId,
+    selectedSidebarSessionReference,
+    setSelectedSidebarSessionReference,
     selectedProjectNavigationIdentity,
     shortcutHelpOpen,
     setShortcutHelpOpen,
@@ -178,13 +178,14 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
     const moveSidebarSelection = (offset: number) => {
       dismissShortcutHint();
       const currentIndex =
-        selectedSidebarSessionId != null
-          ? (sidebarSessionLookup.indexById.get(selectedSidebarSessionId) ?? -1)
+        selectedSidebarSessionReference != null
+          ? (sidebarSessionLookup.indexByReference.get(selectedSidebarSessionReference) ?? -1)
           : -1;
       const baseIndex =
         currentIndex >= 0 ? currentIndex : offset >= 0 ? -1 : sidebarSessions.length;
       const nextIndex = Math.max(0, Math.min(baseIndex + offset, sidebarSessions.length - 1));
-      setSelectedSidebarSessionId(sidebarSessions[nextIndex]?.id ?? null);
+      const nextSession = sidebarSessions[nextIndex];
+      setSelectedSidebarSessionReference(nextSession ? getSessionReferenceKey(nextSession) : null);
     };
 
     if (key === "j") {
@@ -200,19 +201,21 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
     if (key === "g") {
       event.preventDefault();
       dismissShortcutHint();
-      setSelectedSidebarSessionId(sidebarSessions[0]?.id ?? null);
+      const first = sidebarSessions[0];
+      setSelectedSidebarSessionReference(first ? getSessionReferenceKey(first) : null);
       return;
     }
     if (key === "G") {
       event.preventDefault();
       dismissShortcutHint();
-      setSelectedSidebarSessionId(sidebarSessions.at(-1)?.id ?? null);
+      const last = sidebarSessions.at(-1);
+      setSelectedSidebarSessionReference(last ? getSessionReferenceKey(last) : null);
       return;
     }
     if (key === "Enter") {
       const selected =
-        selectedSidebarSessionId != null
-          ? sidebarSessionLookup.byId.get(selectedSidebarSessionId)
+        selectedSidebarSessionReference != null
+          ? sidebarSessionLookup.byReference.get(selectedSidebarSessionReference)
           : null;
       if (!selected) return;
       event.preventDefault();

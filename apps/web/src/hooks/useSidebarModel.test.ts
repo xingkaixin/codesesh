@@ -2,7 +2,7 @@ import { SAMPLE_SESSION_HEAD } from "@codesesh/core/contract";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentInfo, ProjectGroup, SessionHead } from "../lib/api";
-import { buildSessionIndexes } from "../lib/session-indexes";
+import { buildSessionIndexes, getSessionReferenceKey } from "../lib/session-indexes";
 import type { ViewState } from "../lib/view-state";
 import { useSidebarModel } from "./useSidebarModel";
 
@@ -63,7 +63,7 @@ const sessionView = {
 
 afterEach(cleanup);
 
-function renderModel(initialViewState: ViewState = rootView) {
+function renderModel(initialViewState: ViewState = rootView, indexes = sessionIndexes) {
   const isSessionBookmarked = vi.fn((agentKey, sessionId) => {
     return agentKey === "codex" && sessionId === codexSession.id;
   });
@@ -71,7 +71,7 @@ function renderModel(initialViewState: ViewState = rootView) {
     ({ viewState, selectedProjectAgent }) =>
       useSidebarModel({
         viewState,
-        sessionIndexes,
+        sessionIndexes: indexes,
         session: null,
         agents,
         projects,
@@ -129,8 +129,25 @@ describe("useSidebarModel", () => {
     rerender({ viewState: projectView, selectedProjectAgent: "codex" });
 
     expect(result.current.sidebarSessions).toEqual([codexSession]);
-    expect(result.current.bookmarkedSidebarSessionIds).toEqual(new Set([codexSession.id]));
-    expect(result.current.sidebarSessionLookup.byId.get(codexSession.id)).toBe(codexSession);
+    const reference = getSessionReferenceKey(codexSession);
+    expect(result.current.bookmarkedSidebarSessionReferences).toEqual(new Set([reference]));
+    expect(result.current.sidebarSessionLookup.byReference.get(reference)).toBe(codexSession);
+  });
+
+  it("keeps bookmark and lookup identity separate across agents with the same session id", () => {
+    const sameIdClaude = {
+      ...claudeSession,
+      id: codexSession.id,
+      slug: `claudecode/${codexSession.id}`,
+    };
+    const indexes = buildSessionIndexes([codexSession, sameIdClaude], agents);
+    const { result } = renderModel(projectView, indexes);
+    const codexReference = getSessionReferenceKey(codexSession);
+    const claudeReference = getSessionReferenceKey(sameIdClaude);
+
+    expect(result.current.bookmarkedSidebarSessionReferences).toEqual(new Set([codexReference]));
+    expect(result.current.sidebarSessionLookup.byReference.get(codexReference)).toBe(codexSession);
+    expect(result.current.sidebarSessionLookup.byReference.get(claudeReference)).toBe(sameIdClaude);
   });
 
   it("resolves the active project once for route consumers", () => {
