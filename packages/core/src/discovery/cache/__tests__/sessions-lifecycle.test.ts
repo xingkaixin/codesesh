@@ -16,7 +16,7 @@ import {
   saveCachedSessions,
   type SessionCacheMeta,
 } from "../../cache.js";
-import { ensureFtsConsistency, withCacheDb } from "../schema.js";
+import { withCacheDb, withSearchIndexDb } from "../schema.js";
 import {
   getFtsIntegrityCheckedPath,
   getSchemaEnsuredPath,
@@ -182,27 +182,18 @@ describe("loadCachedSessions", () => {
   });
 });
 
-describe("ensureFtsConsistency", () => {
-  it("runs the FTS integrity check once per cache path and marks it checked", () => {
-    withCacheDb((db) => {
-      const execSpy = vi.spyOn(db, "exec");
-      ensureFtsConsistency(db);
-      expect(execSpy.mock.calls.some((call) => String(call[0]).includes("integrity-check"))).toBe(
-        true,
-      );
-      expect(getFtsIntegrityCheckedPath()).toBe(getCachePath());
-    });
-  });
+describe("withSearchIndexDb", () => {
+  it("provides a consistent search index and records readiness", () => {
+    const tables = withSearchIndexDb((db) =>
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE name IN ('session_documents_fts', 'messages_fts')",
+        )
+        .all(),
+    );
 
-  it("skips the integrity check when the cache path is already marked checked", () => {
-    withCacheDb((db) => {
-      setFtsIntegrityCheckedPath(getCachePath());
-      const execSpy = vi.spyOn(db, "exec");
-      ensureFtsConsistency(db);
-      expect(execSpy.mock.calls.some((call) => String(call[0]).includes("integrity-check"))).toBe(
-        false,
-      );
-    });
+    expect(tables).toHaveLength(2);
+    expect(getFtsIntegrityCheckedPath()).toBe(getCachePath());
   });
 });
 

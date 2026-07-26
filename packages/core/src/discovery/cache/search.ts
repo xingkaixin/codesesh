@@ -13,7 +13,7 @@ import { computeIdentity, realFs } from "../../projects/index.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import { escapeRegExp, filePathFtsQuery, hasCacheStorage, likePattern } from "./db.js";
 import { normalizeToolName, sessionFromRow, type SessionRow } from "./messages.js";
-import { ensureFtsReady, withCacheDb } from "./schema.js";
+import { withSearchDb } from "./schema.js";
 import {
   parseSearchQuery,
   splitSearchTokens,
@@ -242,8 +242,7 @@ export function filterIndexedSessionReferences(
 ): Set<string> {
   if (references.length === 0 || !hasCacheStorage()) return new Set();
 
-  const matches = withCacheDb((db) => {
-    ensureFtsReady(db);
+  const matches = withSearchDb((db) => {
     const filters = buildSessionSearchFilters(options);
     const result = new Set<string>();
 
@@ -458,8 +457,7 @@ export function searchSessions(query: string, options: SearchOptions = {}): Sear
     return [];
   }
 
-  const results = withCacheDb((db) => {
-    ensureFtsReady(db);
+  const results = withSearchDb((db) => {
     const filters = buildSessionSearchFilters(search.options);
 
     if (!normalizedQuery) {

@@ -16,8 +16,7 @@ import {
   syncSessionSearchIndexChanges,
 } from "../../cache.js";
 import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../db.js";
-import { migrateCodexExecDecode } from "../schema.js";
-import type { SQLiteDatabase } from "../../../utils/sqlite.js";
+import { withCacheDb } from "../schema.js";
 import type { SessionData, SessionHead } from "../../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-test-"));
@@ -170,11 +169,13 @@ describe("session detail re-indexing", () => {
     );
     expect(loadCachedSessionData("codex", "codex-1")?.messages).toHaveLength(1);
 
-    // Simulate a pre-migration cache (flag not yet set) and run the migration.
+    // Simulate a pre-migration cache and reopen it through the storage boundary.
     const raw = new Database(getCachePath());
     raw.prepare("DELETE FROM cache_meta WHERE key = 'codex_exec_decode_migrated_v3'").run();
-    migrateCodexExecDecode(raw as unknown as SQLiteDatabase);
+    raw.pragma("user_version = 13");
     raw.close();
+    setSchemaEnsuredPath(null);
+    withCacheDb(() => undefined);
 
     // Codex details read as pending (no messages) so the API re-parses them;
     // other agents are untouched. No bulk deletion happens.
@@ -183,9 +184,8 @@ describe("session detail re-indexing", () => {
 
     // Idempotent: re-parsed rows survive a second run because the flag is set.
     syncSessionSearchIndex("codex", [makeSession("codex-1")], (id) => toolSessionData(id, "bash"));
-    const raw2 = new Database(getCachePath());
-    migrateCodexExecDecode(raw2 as unknown as SQLiteDatabase);
-    raw2.close();
+    setSchemaEnsuredPath(null);
+    withCacheDb(() => undefined);
     expect(loadCachedSessionData("codex", "codex-1")?.messages[0]?.parts[0]).toMatchObject({
       tool: "bash",
     });
