@@ -1214,16 +1214,12 @@ describe("LiveScanStore", () => {
 
     const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
+    const workerCountBeforeRefresh = workerThreads.workers.length;
     await syncEngineOf(store).refresh("codex");
 
     expect(scanSessionSource).not.toHaveBeenCalled();
-    expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
-      expect.objectContaining({
-        kind: "changes",
-        changes: [],
-        removedSessionIds: [],
-      }),
-    ]);
+    expect(workerThreads.workers).toHaveLength(workerCountBeforeRefresh + 1);
+    expect(workerThreads.workers.at(-1)?.workerData.agentName).toBe("codex");
   });
 
   it("emits refresh events and persists changed agent sessions", async () => {
