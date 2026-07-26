@@ -34,11 +34,15 @@ export interface SessionIndexes {
 }
 
 export interface SidebarSessionLookup {
-  byId: Map<string, SessionHead>;
-  indexById: Map<string, number>;
+  byReference: Map<string, SessionHead>;
+  indexByReference: Map<string, number>;
 }
 
 export { getProjectAgentKey, getSessionAgentKey, getSessionRouteKey };
+
+export function getSessionReferenceKey(session: Pick<SessionHead, "id" | "slug">): string {
+  return getSessionRouteKey(getSessionAgentKey(session), session.id);
+}
 
 function pushMapValue<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const current = map.get(key);
@@ -117,15 +121,16 @@ export function buildSessionIndexes(sessions: SessionHead[], agents: AgentInfo[]
 }
 
 export function buildSidebarSessionLookup(sessions: SessionHead[]): SidebarSessionLookup {
-  const byId = new Map<string, SessionHead>();
-  const indexById = new Map<string, number>();
+  const byReference = new Map<string, SessionHead>();
+  const indexByReference = new Map<string, number>();
 
   for (let index = 0; index < sessions.length; index += 1) {
     const session = sessions[index]!;
-    if (byId.has(session.id)) continue;
-    byId.set(session.id, session);
-    indexById.set(session.id, index);
+    const reference = getSessionReferenceKey(session);
+    if (byReference.has(reference)) continue;
+    byReference.set(reference, session);
+    indexByReference.set(reference, index);
   }
 
-  return { byId, indexById };
+  return { byReference, indexByReference };
 }

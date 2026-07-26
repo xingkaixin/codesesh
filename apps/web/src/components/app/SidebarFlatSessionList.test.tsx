@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionHead } from "../../lib/api";
 import { createAgentCatalog } from "../../lib/agents";
+import { getSessionReferenceKey } from "../../lib/session-indexes";
 import { SidebarFlatSessionList, VIRTUALIZED_SESSION_THRESHOLD } from "./SidebarFlatSessionList";
 
 afterEach(cleanup);
@@ -46,9 +47,9 @@ describe("SidebarFlatSessionList", () => {
       <SidebarFlatSessionList
         sessions={[session]}
         agentCatalog={createAgentCatalog([])}
-        activeSessionId={null}
-        selectedSessionId={null}
-        bookmarkedSessionIds={new Set()}
+        activeSessionReference={null}
+        selectedSessionReference={null}
+        bookmarkedSessionReferences={new Set()}
         onSelectSession={onSelectSession}
         onRenameSession={onRenameSession}
         onToggleBookmark={onToggleBookmark}
@@ -74,9 +75,9 @@ describe("SidebarFlatSessionList virtualization", () => {
       <SidebarFlatSessionList
         sessions={sessions}
         agentCatalog={createAgentCatalog([])}
-        activeSessionId={null}
-        selectedSessionId={null}
-        bookmarkedSessionIds={new Set()}
+        activeSessionReference={null}
+        selectedSessionReference={null}
+        bookmarkedSessionReferences={new Set()}
         onSelectSession={vi.fn()}
         onRenameSession={vi.fn()}
         onToggleBookmark={vi.fn()}
@@ -93,9 +94,9 @@ describe("SidebarFlatSessionList virtualization", () => {
       <SidebarFlatSessionList
         sessions={sessions}
         agentCatalog={createAgentCatalog([])}
-        activeSessionId={null}
-        selectedSessionId={null}
-        bookmarkedSessionIds={new Set()}
+        activeSessionReference={null}
+        selectedSessionReference={null}
+        bookmarkedSessionReferences={new Set()}
         onSelectSession={vi.fn()}
         onRenameSession={vi.fn()}
         onToggleBookmark={vi.fn()}
@@ -117,9 +118,9 @@ describe("SidebarFlatSessionList virtualization", () => {
       <SidebarFlatSessionList
         sessions={sessions}
         agentCatalog={createAgentCatalog([])}
-        activeSessionId={targetSession.id}
-        selectedSessionId={targetSession.id}
-        bookmarkedSessionIds={new Set()}
+        activeSessionReference={getSessionReferenceKey(targetSession)}
+        selectedSessionReference={getSessionReferenceKey(targetSession)}
+        bookmarkedSessionReferences={new Set()}
         onSelectSession={onSelectSession}
         onRenameSession={onRenameSession}
         onToggleBookmark={vi.fn()}

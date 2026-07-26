@@ -45,8 +45,8 @@ describe("AppSidebar agent counts", () => {
             loading: false,
             bookmarkedSessions: [],
             sidebarSessions: [],
-            selectedSidebarSessionId: null,
-            bookmarkedSidebarSessionIds: new Set(),
+            selectedSidebarSessionReference: null,
+            bookmarkedSidebarSessionReferences: new Set(),
           }}
           actions={actions}
         />

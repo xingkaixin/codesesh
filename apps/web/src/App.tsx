@@ -33,7 +33,12 @@ import { AppRouteContent } from "./components/app/AppRouteContent";
 import type { BrowseBy } from "./components/app/types";
 import { formatScanStatusLabel, formatSearchSubtitle } from "./lib/scan-format";
 import { getProjectIdentityKey, getProjectPath, type ProjectRouteIdentity } from "./lib/projects";
-import { buildSessionIndexes, getSessionAgentKey } from "./lib/session-indexes";
+import {
+  buildSessionIndexes,
+  getSessionAgentKey,
+  getSessionReferenceKey,
+  getSessionRouteKey,
+} from "./lib/session-indexes";
 
 export default function App() {
   const navigate = useNavigate();
@@ -62,7 +67,9 @@ export default function App() {
   const [selectedProjectIdentity, setSelectedProjectIdentity] =
     useState<ProjectRouteIdentity | null>(null);
   const { scanStatus, setScanStatus } = useScanStatus();
-  const [selectedSidebarSessionId, setSelectedSidebarSessionId] = useState<string | null>(null);
+  const [selectedSidebarSessionReference, setSelectedSidebarSessionReference] = useState<
+    string | null
+  >(null);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const {
     shortcutHintDismissed,
@@ -176,14 +183,14 @@ export default function App() {
     selectedProjectNavigation,
     sidebarSessions,
     sidebarSessionLookup,
-    bookmarkedSidebarSessionIds,
+    bookmarkedSidebarSessionReferences,
   } = sidebar;
   const selectedProjectNavigationIdentity = selectedProjectNavigation?.identity ?? null;
   const selectedProjectNavigationId = selectedProjectNavigation?.identityKey ?? null;
 
   const handleSelectFlatSidebarSession = useCallback(
     (sessionItem: SessionHead) => {
-      setSelectedSidebarSessionId(sessionItem.id);
+      setSelectedSidebarSessionReference(getSessionReferenceKey(sessionItem));
       navigate(`/${sessionItem.slug}`);
     },
     [navigate],
@@ -215,12 +222,11 @@ export default function App() {
   }, []);
 
   const handleSelectTreeSidebarSession = useCallback(
-    (sessionId: string) => {
-      setSelectedSidebarSessionId(sessionId);
-      const selected = sidebarSessionLookup.byId.get(sessionId);
-      if (selected) navigate(`/${selected.slug}`);
+    (sessionItem: SessionHead) => {
+      setSelectedSidebarSessionReference(getSessionReferenceKey(sessionItem));
+      navigate(`/${sessionItem.slug}`);
     },
-    [navigate, sidebarSessionLookup],
+    [navigate],
   );
 
   // 可见标签每次渲染直接计算，保证 processed/total 计数实时更新。
@@ -275,17 +281,25 @@ export default function App() {
     if (isSearchMode) return;
 
     if (viewState.mode === "session") {
-      setSelectedSidebarSessionId(viewState.activeSessionSlug);
+      setSelectedSidebarSessionReference(
+        getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionSlug),
+      );
       return;
     }
 
     if (viewState.mode === "agent") {
-      setSelectedSidebarSessionId(null);
+      setSelectedSidebarSessionReference(null);
       return;
     }
 
-    setSelectedSidebarSessionId(null);
-  }, [isSearchMode, viewState.mode, viewState.activeSessionSlug, sidebarSessions]);
+    setSelectedSidebarSessionReference(null);
+  }, [
+    isSearchMode,
+    viewState.mode,
+    viewState.activeAgentKey,
+    viewState.activeSessionSlug,
+    sidebarSessions,
+  ]);
 
   const searchSubtitle =
     searchState.status === "failed"
@@ -360,7 +374,7 @@ export default function App() {
   function changeBrowseBy(next: BrowseBy) {
     if (next === "projects" && isScanActive) return;
     selectBrowseBy(next);
-    setSelectedSidebarSessionId(null);
+    setSelectedSidebarSessionReference(null);
     if (next === "projects") {
       const project =
         openedSessionProjectIdentity ??
@@ -378,8 +392,8 @@ export default function App() {
     activeAgentKey,
     sidebarSessions,
     sidebarSessionLookup,
-    selectedSidebarSessionId,
-    setSelectedSidebarSessionId,
+    selectedSidebarSessionReference,
+    setSelectedSidebarSessionReference,
     selectedProjectNavigationIdentity,
     shortcutHelpOpen,
     setShortcutHelpOpen,
@@ -500,8 +514,8 @@ export default function App() {
               loading,
               bookmarkedSessions,
               sidebarSessions,
-              selectedSidebarSessionId,
-              bookmarkedSidebarSessionIds,
+              selectedSidebarSessionReference,
+              bookmarkedSidebarSessionReferences,
             }}
             actions={{
               onChangeBrowseBy: changeBrowseBy,

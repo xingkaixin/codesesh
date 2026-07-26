@@ -7,6 +7,7 @@ import type {
 } from "../../lib/api";
 import { findAgent, type AgentCatalog } from "../../lib/agents";
 import { getSessionBookmarkKey } from "../../lib/bookmarks";
+import { getSessionRouteKey } from "../../lib/session-indexes";
 import { getSessionDisplayTitle } from "../../lib/session-title";
 import { formatAgentScanProgress } from "../../lib/scan-format";
 import { getProjectGroupIdentity, getProjectIdentityKey, getProjectPath } from "../../lib/projects";
@@ -150,8 +151,8 @@ export interface AppSidebarViewModel {
   loading: boolean;
   bookmarkedSessions: BookmarkedSessionSnapshot[];
   sidebarSessions: SessionHead[];
-  selectedSidebarSessionId: string | null;
-  bookmarkedSidebarSessionIds: Set<string>;
+  selectedSidebarSessionReference: string | null;
+  bookmarkedSidebarSessionReferences: Set<string>;
 }
 
 export interface AppSidebarActions {
@@ -162,7 +163,7 @@ export interface AppSidebarActions {
   onToggleSidebarSessionBookmark: (session: SessionHead) => void;
   onRenameSession: (session: SessionHead) => void;
   onRenameBookmarkedSession: (session: BookmarkedSessionSnapshot) => void;
-  onSelectTreeSidebarSession: (sessionId: string) => void;
+  onSelectTreeSidebarSession: (session: SessionHead) => void;
 }
 
 export function AppSidebar({
@@ -180,8 +181,8 @@ export function AppSidebar({
     loading,
     bookmarkedSessions,
     sidebarSessions,
-    selectedSidebarSessionId,
-    bookmarkedSidebarSessionIds,
+    selectedSidebarSessionReference,
+    bookmarkedSidebarSessionReferences,
   },
   actions: {
     onChangeBrowseBy,
@@ -197,6 +198,11 @@ export function AppSidebar({
   model: AppSidebarViewModel;
   actions: AppSidebarActions;
 }) {
+  const activeSessionReference =
+    viewState.mode === "session"
+      ? getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionSlug)
+      : null;
+
   return (
     <aside
       className={`w-64 shrink-0 flex-col border-r border-[var(--console-border)] bg-[var(--console-sidebar-bg)] ${
@@ -355,9 +361,9 @@ export function AppSidebar({
             <SidebarFlatSessionList
               sessions={sidebarSessions}
               agentCatalog={agentCatalog}
-              activeSessionId={viewState.mode === "session" ? viewState.activeSessionSlug : null}
-              selectedSessionId={selectedSidebarSessionId}
-              bookmarkedSessionIds={bookmarkedSidebarSessionIds}
+              activeSessionReference={activeSessionReference}
+              selectedSessionReference={selectedSidebarSessionReference}
+              bookmarkedSessionReferences={bookmarkedSidebarSessionReferences}
               onSelectSession={onSelectFlatSidebarSession}
               onToggleBookmark={onToggleSidebarSessionBookmark}
               onRenameSession={onRenameSession}
@@ -366,10 +372,10 @@ export function AppSidebar({
             <RenderProfiler id="SessionTreeSidebar" detail={{ sessions: sidebarSessions.length }}>
               <SessionTreeSidebar
                 sessions={sidebarSessions}
-                activeSessionId={viewState.mode === "session" ? viewState.activeSessionSlug : null}
-                selectedSessionId={selectedSidebarSessionId}
+                activeSessionReference={activeSessionReference}
+                selectedSessionReference={selectedSidebarSessionReference}
                 onSelectSession={onSelectTreeSidebarSession}
-                bookmarkedSessionIds={bookmarkedSidebarSessionIds}
+                bookmarkedSessionReferences={bookmarkedSidebarSessionReferences}
                 onToggleBookmark={onToggleSidebarSessionBookmark}
                 onRenameSession={onRenameSession}
               />

@@ -4,6 +4,7 @@ import {
   buildSessionIndexes,
   buildSidebarSessionLookup,
   getProjectAgentKey,
+  getSessionReferenceKey,
   getSessionRouteKey,
 } from "./session-indexes";
 
@@ -150,17 +151,19 @@ describe("session indexes", () => {
     ]);
   });
 
-  it("keeps sidebar lookup compatible with first-match selection", () => {
+  it("keeps equal session ids from different agents in separate sidebar entries", () => {
     const first = createSession({ id: "same", slug: "codex/same", title: "First" });
     const duplicate = createSession({ id: "same", slug: "claude/same", title: "Duplicate" });
     const next = createSession({ id: "next", slug: "codex/next", title: "Next" });
 
     const lookup = buildSidebarSessionLookup([first, duplicate, next]);
 
-    expect(lookup.byId.get("same")).toBe(first);
-    expect(lookup.indexById.get("same")).toBe(0);
-    expect(lookup.byId.get("next")).toBe(next);
-    expect(lookup.indexById.get("next")).toBe(2);
+    expect(lookup.byReference.get(getSessionReferenceKey(first))).toBe(first);
+    expect(lookup.indexByReference.get(getSessionReferenceKey(first))).toBe(0);
+    expect(lookup.byReference.get(getSessionReferenceKey(duplicate))).toBe(duplicate);
+    expect(lookup.indexByReference.get(getSessionReferenceKey(duplicate))).toBe(1);
+    expect(lookup.byReference.get(getSessionReferenceKey(next))).toBe(next);
+    expect(lookup.indexByReference.get(getSessionReferenceKey(next))).toBe(2);
   });
 
   it("keeps route lookup compatible with first-match session search", () => {
