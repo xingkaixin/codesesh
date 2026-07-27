@@ -15,7 +15,7 @@ export interface SessionsUpdatedEvent {
 
 export interface AgentScanStatus {
   agentName: string;
-  status: "pending" | "scanning" | "complete";
+  status: "pending" | "scanning" | "indexing" | "complete";
   total?: number;
   processed?: number;
   sessions?: number;

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FileSystemSessionSource } from "@codesesh/core";
 import type { BaseAgent, loadCachedSessions, LiveSnapshot, SessionHead } from "@codesesh/core";
+import type { ScanStatusEvent } from "@codesesh/core/contract";
 import type { WorkerRunner } from "./worker-runner.js";
 
 const core = vi.hoisted(() => ({
@@ -214,10 +215,21 @@ describe("AgentSyncEngine", () => {
       }),
       [previous],
     );
+    const statuses: ScanStatusEvent[] = [];
+    engine.subscribeStatusChanged((status) => statuses.push(status));
 
     const refresh = engine.refresh("codex");
     await vi.waitFor(() => expect(searchIndex.enqueue).toHaveBeenCalledOnce());
     expect(engine.snapshot().sessions[0]?.title).toBe("before");
+    expect(statuses.at(-1)).toEqual(
+      expect.objectContaining({
+        active: true,
+        phase: "indexing",
+        agentStatuses: {
+          codex: expect.objectContaining({ status: "indexing" }),
+        },
+      }),
+    );
 
     commitIndex();
     await refresh;

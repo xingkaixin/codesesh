@@ -1,4 +1,5 @@
 import type {
+  AgentScanStatus,
   AgentInfo,
   BookmarkRecord,
   ApiProjectGroup,
@@ -21,6 +22,20 @@ import { BrowseByToggle } from "./BrowseByToggle";
 import { SidebarFlatSessionList } from "./SidebarFlatSessionList";
 import type { BrowseBy } from "./types";
 
+function agentProgressPercent(status: AgentScanStatus | undefined): number | null {
+  if (
+    status?.status !== "scanning" ||
+    typeof status.total !== "number" ||
+    !Number.isFinite(status.total) ||
+    status.total <= 0 ||
+    typeof status.processed !== "number" ||
+    !Number.isFinite(status.processed)
+  ) {
+    return null;
+  }
+  return Math.min(100, Math.max(0, Math.round((status.processed / status.total) * 100)));
+}
+
 function AgentNavList({
   agents,
   activeAgentKey,
@@ -37,7 +52,9 @@ function AgentNavList({
       {agents.map((agent) => {
         const key = agent.name.toLowerCase();
         const isSelected = key === activeAgentKey;
+        const agentStatus = scanStatus?.agentStatuses[agent.name];
         const agentProgress = formatAgentScanProgress(scanStatus, agent.name);
+        const progressPercent = agentProgressPercent(agentStatus);
         const disabled = isScanActive && agentProgress !== null;
         const className = `ml-4 flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left motion-hover ${
           disabled
@@ -74,20 +91,22 @@ function AgentNavList({
               </Link>
             )}
             {agentProgress ? (
-              <span className="ml-4 mt-1 block h-1 overflow-hidden rounded-sm bg-[var(--console-surface-muted)]">
+              <span
+                className="ml-4 mt-1 block h-1 overflow-hidden rounded-sm bg-[var(--console-surface-muted)]"
+                role="progressbar"
+                aria-label={`${agent.displayName} ${
+                  agentStatus?.status === "indexing" ? "indexing" : "scan"
+                } progress`}
+                aria-valuemin={progressPercent == null ? undefined : 0}
+                aria-valuemax={progressPercent == null ? undefined : 100}
+                aria-valuenow={progressPercent ?? undefined}
+                aria-valuetext={progressPercent == null ? agentProgress : undefined}
+              >
                 <span
-                  className="block h-full bg-[var(--console-accent)]"
-                  style={{
-                    width: `${
-                      scanStatus?.agentStatuses[agent.name]?.total
-                        ? Math.round(
-                            ((scanStatus.agentStatuses[agent.name]?.processed ?? 0) /
-                              scanStatus.agentStatuses[agent.name]!.total!) *
-                              100,
-                          )
-                        : 8
-                    }%`,
-                  }}
+                  className={`block h-full bg-[var(--console-accent)] ${
+                    progressPercent == null ? "scan-progress-indeterminate" : ""
+                  }`}
+                  style={progressPercent == null ? undefined : { width: `${progressPercent}%` }}
                 />
               </span>
             ) : null}

@@ -131,6 +131,23 @@ export class ScanStatusModel {
     });
   }
 
+  indexAgent(agentName: string): ScanStatusEvent | null {
+    const status = this.status.agentStatuses[agentName];
+    if (!this.status.active || !status || status.status !== "scanning") return null;
+
+    const now = Date.now();
+    const agentStatuses = {
+      ...this.status.agentStatuses,
+      [agentName]: { ...status, status: "indexing" as const, updatedAt: now },
+    };
+    return this.set({
+      ...this.status,
+      phase: this.activePhase(this.status.pendingAgents, this.status.scanningAgents, agentStatuses),
+      agentStatuses,
+      updatedAt: now,
+    });
+  }
+
   finishAgent(agentName: string, sessionCount?: number): ScanStatusEvent {
     const pendingAgents = this.status.pendingAgents.filter((agent) => agent !== agentName);
     const scanningAgents = this.status.scanningAgents.filter((agent) => agent !== agentName);
@@ -139,27 +156,28 @@ export class ScanStatusModel {
     const now = Date.now();
     const previousStatus = this.status.agentStatuses[agentName];
     const total = previousStatus?.total ?? previousStatus?.processed;
+    const agentStatuses = {
+      ...this.status.agentStatuses,
+      [agentName]: {
+        agentName,
+        status: "complete" as const,
+        total,
+        processed: total,
+        sessions: sessionCount ?? previousStatus?.sessions ?? 0,
+        startedAt: previousStatus?.startedAt,
+        updatedAt: now,
+        completedAt: now,
+      },
+    };
 
     return this.set({
       ...this.status,
       active: isActive,
-      phase: isActive ? "scanning" : "idle",
+      phase: isActive ? this.activePhase(pendingAgents, scanningAgents, agentStatuses) : "idle",
       pendingAgents,
       scanningAgents,
       completedAgents,
-      agentStatuses: {
-        ...this.status.agentStatuses,
-        [agentName]: {
-          agentName,
-          status: "complete",
-          total,
-          processed: total,
-          sessions: sessionCount ?? previousStatus?.sessions ?? 0,
-          startedAt: previousStatus?.startedAt,
-          updatedAt: now,
-          completedAt: now,
-        },
-      },
+      agentStatuses,
       updatedAt: now,
       completedAt: isActive ? undefined : now,
     });
@@ -190,6 +208,21 @@ export class ScanStatusModel {
       backfill: { ...this.status.backfill, ...patch },
       updatedAt: Date.now(),
     });
+  }
+
+  private activePhase(
+    pendingAgents: string[],
+    scanningAgents: string[],
+    agentStatuses: ScanStatus["agentStatuses"],
+  ): ScanStatusEvent["phase"] {
+    if (
+      pendingAgents.length === 0 &&
+      scanningAgents.length > 0 &&
+      scanningAgents.every((agentName) => agentStatuses[agentName]?.status === "indexing")
+    ) {
+      return "indexing";
+    }
+    return this.status.phase === "initializing" ? "initializing" : "scanning";
   }
 
   private set(status: ScanStatus): ScanStatusEvent {

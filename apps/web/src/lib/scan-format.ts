@@ -75,6 +75,7 @@ export function formatAgentScanProgress(
 ): string | null {
   const agentStatus = status?.agentStatuses[agentName];
   if (!agentStatus || agentStatus.status === "complete") return null;
+  if (agentStatus.status === "indexing") return "Indexing";
   if (agentStatus.total && agentStatus.processed != null) {
     return `${agentStatus.processed}/${agentStatus.total}`;
   }
