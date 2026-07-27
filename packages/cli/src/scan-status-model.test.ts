@@ -85,6 +85,30 @@ describe("ScanStatusModel", () => {
     expect(model.updateAgent("codex", { processed: 2 })).toBeNull();
   });
 
+  it("moves agents from scanning to indexing before completion", () => {
+    const model = new ScanStatusModel();
+    model.startBatch(["codex", "claude"], "scanning", {});
+    model.beginAgent("codex", 2);
+
+    const codexIndexing = model.indexAgent("codex");
+
+    expect(codexIndexing).toEqual(
+      expect.objectContaining({
+        phase: "scanning",
+        pendingAgents: ["claude"],
+      }),
+    );
+    expect(codexIndexing?.agentStatuses.codex?.status).toBe("indexing");
+
+    model.beginAgent("claude", 3);
+    const allIndexing = model.indexAgent("claude");
+    expect(allIndexing?.phase).toBe("indexing");
+
+    const oneRemaining = model.finishAgent("codex");
+    expect(oneRemaining.phase).toBe("indexing");
+    expect(model.updateAgent("claude", { processed: 1 })).toBeNull();
+  });
+
   it("completes unseen agents and normalizes unfinished statuses at batch end", () => {
     const model = new ScanStatusModel();
     const unseen = model.finishAgent("codex");

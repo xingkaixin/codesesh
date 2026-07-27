@@ -9,7 +9,6 @@ import {
   getCachePath,
   getLegacyCachePath,
   hasCacheStorage,
-  setFtsIntegrityCheckedPath,
   setSchemaEnsuredPath,
   type ScalarRow,
   type SessionHeadChange,
@@ -472,7 +471,6 @@ export function saveCachedSessionChanges(
 }
 
 export function clearCache(): void {
-  setFtsIntegrityCheckedPath(null);
   setSchemaEnsuredPath(null);
   if (!hasCacheStorage()) {
     deleteLegacyCacheFile();

@@ -48,7 +48,6 @@ export {
   saveCachedSessions,
   scanSessions,
   sessionSignature,
-  setFtsIntegrityCheckedPath,
   sortSessions,
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,

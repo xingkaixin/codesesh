@@ -73,4 +73,18 @@ describe("formatAgentScanProgress", () => {
   it("returns null for complete or missing agent", () => {
     expect(formatAgentScanProgress(null, "codex")).toBeNull();
   });
+
+  it("distinguishes indexing from scanning and pending", () => {
+    const status = {
+      agentStatuses: {
+        codex: { status: "indexing" },
+        claude: { status: "scanning" },
+        kimi: { status: "pending" },
+      },
+    } as unknown as ScanStatusEvent;
+
+    expect(formatAgentScanProgress(status, "codex")).toBe("Indexing");
+    expect(formatAgentScanProgress(status, "claude")).toBe("Scanning");
+    expect(formatAgentScanProgress(status, "kimi")).toBe("Pending");
+  });
 });

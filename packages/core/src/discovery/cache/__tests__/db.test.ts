@@ -2,12 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   escapeRegExp,
   filePathFtsQuery,
+  getSchemaEnsuredPath,
   likePattern,
   normalizeFilePathSearch,
-  setFtsIntegrityCheckedPath,
   setSchemaEnsuredPath,
-  getFtsIntegrityCheckedPath,
-  getSchemaEnsuredPath,
 } from "../db.js";
 
 describe("cache db helpers", () => {
@@ -19,14 +17,11 @@ describe("cache db helpers", () => {
     expect(escapeRegExp("a+b?.ts")).toBe("a\\+b\\?\\.ts");
   });
 
-  it("owns the process-local schema guards", () => {
-    setFtsIntegrityCheckedPath("/cache/a.db");
+  it("owns the process-local schema guard", () => {
     setSchemaEnsuredPath("/cache/b.db");
 
-    expect(getFtsIntegrityCheckedPath()).toBe("/cache/a.db");
     expect(getSchemaEnsuredPath()).toBe("/cache/b.db");
 
-    setFtsIntegrityCheckedPath(null);
     setSchemaEnsuredPath(null);
   });
 });

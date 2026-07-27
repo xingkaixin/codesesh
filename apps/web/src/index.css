@@ -86,6 +86,16 @@
       scale: 0.96;
     }
   }
+
+  @keyframes scan-progress-indeterminate {
+    from {
+      transform: translateX(-100%);
+    }
+
+    to {
+      transform: translateX(250%);
+    }
+  }
 }
 
 @layer base {
@@ -179,6 +189,7 @@
     --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
     --dur-fast: 120ms;
     --dur-base: 180ms;
+    --scan-progress-duration: 1.2s;
     --tt-in-dur: 150ms;
     --tt-out-dur: 50ms;
     --tt-scale: 0.98;
@@ -308,6 +319,13 @@
     background-image:
       linear-gradient(to right, rgba(0, 0, 0, 0.04) 1px, transparent 1px),
       linear-gradient(to bottom, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+  }
+
+  .scan-progress-indeterminate {
+    width: 40%;
+    transform: translateX(-100%);
+    animation: scan-progress-indeterminate var(--scan-progress-duration) linear infinite;
+    will-change: transform;
   }
 
   .shortcut-overlay[data-open] {
@@ -653,6 +671,13 @@
 
   .session-timeline-segment {
     transition: none;
+  }
+
+  .scan-progress-indeterminate {
+    width: 40%;
+    transform: translateX(75%);
+    animation: none;
+    opacity: 0.65;
   }
 }
 

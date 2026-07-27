@@ -16,9 +16,9 @@ import {
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
 } from "../search.js";
-import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../db.js";
+import { setSchemaEnsuredPath } from "../db.js";
 import { MESSAGE_PARTS_FORMAT_VERSION } from "../messages.js";
-import { withCacheDb } from "../schema.js";
+import { withCacheDb, withSearchDb } from "../schema.js";
 import type { SessionDetail, SessionHead } from "../../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-test-"));
@@ -114,13 +114,11 @@ function getUserVersion(dbPath: string): number {
 beforeEach(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
   dateNowSpy.mockReturnValue(now);
-  setFtsIntegrityCheckedPath(null);
   setSchemaEnsuredPath(null);
 });
 
 afterEach(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
-  setFtsIntegrityCheckedPath(null);
   setSchemaEnsuredPath(null);
 });
 
@@ -1584,5 +1582,101 @@ describe("searchSessions", () => {
     expect(results).toHaveLength(1);
     expect(results[0]?.session.id).toBe("fts-empty");
     expect(results[0]?.snippet).toContain("<mark>orphan</mark>");
+  });
+
+  it("rebuilds affected FTS indexes when update triggers are missing", () => {
+    const session = makeSession("missing-fts-triggers");
+    saveCachedSessions("claudecode", [session]);
+    syncSessionSearchIndex("claudecode", [session], (sessionId) =>
+      makeSessionData(sessionId, "original indexed content"),
+    );
+
+    const db = new Database(getCachePath());
+    try {
+      db.exec(`
+        DROP TRIGGER session_documents_au;
+        DROP TRIGGER messages_au;
+      `);
+      db.prepare(
+        "UPDATE session_documents SET content_text = ? WHERE agent_name = ? AND session_id = ?",
+      ).run("documentrepairneedle", "claudecode", session.id);
+      db.prepare(
+        "UPDATE messages SET content_text = ? WHERE agent_name = ? AND session_id = ?",
+      ).run("messagerepairneedle", "claudecode", session.id);
+    } finally {
+      db.close();
+    }
+
+    const matches = withSearchDb((searchDb) => ({
+      documents: searchDb
+        .prepare(
+          "SELECT COUNT(*) AS value FROM session_documents_fts WHERE session_documents_fts MATCH ?",
+        )
+        .get("documentrepairneedle") as { value: number },
+      messages: searchDb
+        .prepare("SELECT COUNT(*) AS value FROM messages_fts WHERE messages_fts MATCH ?")
+        .get("messagerepairneedle") as { value: number },
+    }));
+
+    expect(matches?.documents.value).toBe(1);
+    expect(matches?.messages.value).toBe(1);
+  });
+
+  it("recreates and rebuilds a missing FTS table", () => {
+    const session = makeSession("missing-fts-table");
+    saveCachedSessions("claudecode", [session]);
+    syncSessionSearchIndex("claudecode", [session], (sessionId) =>
+      makeSessionData(sessionId, "tablerepairneedle"),
+    );
+
+    const db = new Database(getCachePath());
+    try {
+      db.exec("DROP TABLE session_documents_fts");
+    } finally {
+      db.close();
+    }
+
+    expect(searchSessions("tablerepairneedle")[0]?.session.id).toBe(session.id);
+  });
+
+  it("validates and rebuilds FTS indexes after SQLite reports corruption", () => {
+    const session = makeSession("corrupt-fts");
+    const content = Array.from({ length: 200 }, (_, index) => `recoverytoken${index}`).join(" ");
+    saveCachedSessions("claudecode", [session]);
+    syncSessionSearchIndex("claudecode", [session], (sessionId) =>
+      makeSessionData(sessionId, content),
+    );
+
+    const db = new Database(getCachePath());
+    try {
+      const row = db
+        .prepare(
+          "SELECT id, block FROM session_documents_fts_data WHERE id > 10 AND length(block) > 4 LIMIT 1",
+        )
+        .get() as { id: number; block: Buffer } | undefined;
+      if (!row) throw new Error("Expected an FTS segment block");
+
+      const corruptBlock = Buffer.from(row.block);
+      const corruptIndex = Math.floor(corruptBlock.length / 2);
+      corruptBlock[corruptIndex] = (corruptBlock[corruptIndex] ?? 0) ^ 0xff;
+      db.unsafeMode(true);
+      db.prepare("UPDATE session_documents_fts_data SET block = ? WHERE id = ?").run(
+        corruptBlock,
+        row.id,
+      );
+      db.unsafeMode(false);
+    } finally {
+      db.close();
+    }
+
+    const result = withSearchDb((searchDb) => {
+      searchDb.exec(
+        "INSERT INTO session_documents_fts(session_documents_fts, rank) VALUES ('integrity-check', 1)",
+      );
+      return "recovered";
+    });
+
+    expect(result).toBe("recovered");
+    expect(searchSessions("recoverytoken42")[0]?.session.id).toBe(session.id);
   });
 });

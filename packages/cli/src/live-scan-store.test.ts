@@ -2217,22 +2217,4 @@ describe("LiveScanStore", () => {
     expect(worker.terminate).toHaveBeenCalledTimes(1);
     expect(workerThreads.workers.filter((item) => item.workerData.jobs)).toHaveLength(1);
   });
-
-  it("skips the FTS integrity check on search-index batches after the first one completes", async () => {
-    const runner = new SearchIndexJobRunner();
-    const job = {
-      kind: "full" as const,
-      context: "scan.refresh",
-      agentName: "codex",
-      sessions: [],
-      meta: {},
-    };
-    await runner.enqueue("scan.refresh", [job]);
-    await runner.enqueue("scan.refresh", [job]);
-
-    const searchIndexWorkers = workerThreads.workers.filter((worker) => worker.workerData.jobs);
-    expect(searchIndexWorkers).toHaveLength(2);
-    expect(searchIndexWorkers[0]?.workerData.skipFtsIntegrityCheck).toBe(false);
-    expect(searchIndexWorkers[1]?.workerData.skipFtsIntegrityCheck).toBe(true);
-  });
 });

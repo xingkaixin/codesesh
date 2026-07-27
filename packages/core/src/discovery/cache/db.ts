@@ -1,6 +1,6 @@
 /**
- * Cache infrastructure: cache paths, shared query helpers, and the FTS
- * integrity-check guard. Lower-level than schema.ts — no DB handles here.
+ * Cache infrastructure: cache paths and shared query helpers.
+ * Lower-level than schema.ts — no DB handles here.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -30,17 +30,6 @@ export interface CacheRow extends DatabaseRow {
 }
 
 export type SQLiteStatement = ReturnType<SQLiteDatabase["prepare"]>;
-
-// One-shot per-process FTS integrity check guard; reset by clearCache.
-let ftsIntegrityCheckedPath: string | null = null;
-
-export function getFtsIntegrityCheckedPath(): string | null {
-  return ftsIntegrityCheckedPath;
-}
-
-export function setFtsIntegrityCheckedPath(path: string | null): void {
-  ftsIntegrityCheckedPath = path;
-}
 
 // One-shot per-process ensureSchema guard; reset by clearCache. Once a path
 // has been schema-checked, withCacheDb skips ensureSchema's DDL exec (which

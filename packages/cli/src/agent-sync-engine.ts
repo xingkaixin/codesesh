@@ -241,6 +241,10 @@ export class AgentSyncEngine {
     this.publishStatus(this.scanStatus.updateAgent(agentName, progress));
   }
 
+  private beginAgentIndexing(agentName: string): void {
+    this.publishStatus(this.scanStatus.indexAgent(agentName));
+  }
+
   private finishAgentScan(agentName: string): void {
     const count = this.sessionIndex.snapshot().byAgent[agentName]?.length;
     this.publishStatus(this.scanStatus.finishAgent(agentName, count));
@@ -342,6 +346,7 @@ export class AgentSyncEngine {
           saveCache: true,
           ...(searchIndexOptions ? { searchIndexOptions } : {}),
         };
+    this.beginAgentIndexing(agentName);
     const publication = await this.commitSessionPublication({
       context: "scan.refresh",
       agentName,

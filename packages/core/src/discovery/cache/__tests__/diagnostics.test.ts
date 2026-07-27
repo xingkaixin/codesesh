@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../../utils/diagnostics.js";
-import { withCacheDb } from "../schema.js";
+import { withCacheDb, withSearchIndexDb } from "../schema.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-diag-test-"));
 
@@ -16,9 +16,12 @@ afterEach(() => {
   setCoreDiagnostics(null);
 });
 
-function collectDiagnostics(): Array<{ event: string; detail?: Record<string, unknown> }> {
+function collectDiagnostics(
+  includeInfo = false,
+): Array<{ event: string; detail?: Record<string, unknown> }> {
   const events: Array<{ event: string; detail?: Record<string, unknown> }> = [];
   const diagnostics: CoreDiagnostics = {
+    info: includeInfo ? (event, detail) => events.push({ event, detail }) : undefined,
     warn: (event, detail) => events.push({ event, detail }),
   };
   setCoreDiagnostics(diagnostics);
@@ -43,5 +46,12 @@ describe("withCacheDb diagnostics", () => {
         throw new Error("boom");
       }),
     ).not.toThrow();
+  });
+
+  it("does not run a full FTS integrity check during a normal index write", () => {
+    const events = collectDiagnostics(true);
+
+    expect(withSearchIndexDb(() => "ready")).toBe("ready");
+    expect(events.some(({ event }) => event === "sqlite.fts_integrity.started")).toBe(false);
   });
 });
