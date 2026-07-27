@@ -1,5 +1,80 @@
 # Changelog
 
+## [0.17.0] - 2026-07-27
+
+This release hardens large-history performance across scanning, APIs, and the session timeline, fixes live-scan and cache correctness issues that could drop or stale sessions, and reworks domain contracts around explicit session references and centralized agent capabilities.
+
+### Performance
+
+- Streamed agent transcripts and single-pass Pi parsing instead of loading whole session files into memory; kept Kimi source enumeration off the transcript path. (#190, #192, #193)
+- Cached the session-alias read model and snapshot aggregate API responses; optimized session-detail payloads. (#196, #214, #215)
+- Merged per-agent live session shards without full re-sorts; reused CLI refresh workers and returned incremental deltas. (#197, #209)
+- Virtualized the Web session timeline for long histories. (#213)
+
+### Bug Fixes
+
+- Assembled multi-chunk JSONL records in linear time. (#191)
+- Stopped deleting cached sessions that fall outside the current scan window. (#198)
+- Preserved session reference identity across Web navigation; unified live cache invalidation and cross-source search filters. (#200, #201, #202)
+- Unified session publication commits and offloaded database refresh scans so the CLI event loop stays responsive. (#203, #208)
+- Cached session-index snapshots and reused rendered message markdown while scrolling. (#211, #212)
+- Distinguished alias validation errors in the API. (#226)
+- Avoided blocking startup on message migration and skipped expensive FTS integrity checks at open. (#227, #228)
+
+### Refactor
+
+- Modeled session references explicitly and normalized message parts and public domain terminology. (#216, #217, #218, #219)
+- Centralized agent capabilities, file sources, and session watch plans; shared one source change-detection pass. (#194, #204, #220, #221)
+- Materialized session details, narrowed the cache schema boundary, and removed cache shadow writes. (#205, #206, #210)
+- Unified the Web session-detail model and shared file tool strategies; migrated Web and product-site icons from Lucide to Hugeicons. (#199, #207, #224)
+- Split API handlers and AgentSyncEngine responsibilities; tightened core public exports. (#195, #223, #225)
+
+### Documentation
+
+- Refreshed the scanning and caching architecture documentation. (#222)
+
+### Changelog Detail
+
+- #228 fix(cache): avoid startup FTS integrity checks @xingkaixin
+- #227 fix(cache): avoid blocking startup on message migration @xingkaixin
+- #226 fix(api): distinguish alias validation errors @xingkaixin
+- #225 refactor(core): tighten public exports @xingkaixin
+- #224 refactor(web): share file tool strategies @xingkaixin
+- #223 refactor(cli): split AgentSyncEngine responsibilities @xingkaixin
+- #222 docs: refresh scanning architecture @xingkaixin
+- #221 refactor(agents)!: centralize agent capabilities @xingkaixin
+- #220 refactor(agents): centralize file sources @xingkaixin
+- #219 refactor(domain)!: align public terminology @xingkaixin
+- #218 refactor(contract)!: normalize message parts @xingkaixin
+- #217 refactor(contract)!: unify session references @xingkaixin
+- #216 refactor: model session references explicitly @xingkaixin
+- #215 perf: optimize session detail responses @xingkaixin
+- #214 perf(api): cache snapshot aggregate responses @xingkaixin
+- #213 perf(web): virtualize session timeline @xingkaixin
+- #212 fix(web): reuse message markdown while scrolling @xingkaixin
+- #211 fix(core): cache session index snapshots @xingkaixin
+- #210 refactor(core): remove cache shadow writes @xingkaixin
+- #209 perf(cli): reuse refresh workers and return deltas @xingkaixin
+- #208 fix(cli): offload database refresh scans @xingkaixin
+- #207 refactor(web): unify session detail model @xingkaixin
+- #206 refactor(core): materialize session details @xingkaixin
+- #205 refactor(core): narrow cache schema boundary @xingkaixin
+- #204 refactor(agents): own session watch plans @xingkaixin
+- #203 fix(cli): unify session publication commits @xingkaixin
+- #202 fix(web): unify live cache invalidation @xingkaixin
+- #201 fix(search): unify cross-source filters @xingkaixin
+- #200 fix(web): preserve session reference identity @xingkaixin
+- #199 refactor(icons): migrate web and www from lucide to hugeicons @xingkaixin
+- #198 fix(agents): stop deleting cached sessions outside the scan window @xingkaixin
+- #197 perf(live): merge per-agent session shards instead of re-sorting @xingkaixin
+- #196 perf(api): cache the session alias read model @xingkaixin
+- #195 refactor(api): split handlers into parsing, aliases and analytics @xingkaixin
+- #194 refactor(agents): share one source change-detection pass @xingkaixin
+- #193 perf(agents): stream transcripts instead of loading whole files @xingkaixin
+- #192 perf(pi): parse session files in one streaming pass @xingkaixin
+- #191 fix(jsonl): assemble long records in linear time @xingkaixin
+- #190 perf(kimi): keep source enumeration off transcripts @xingkaixin
+
 ## [0.16.0] - 2026-07-23
 
 This release adds persistent light, dark, and system themes across the Web app and product site, improves live-session correctness and large-history performance, and strengthens diagnostics, accessibility, and production quality gates.

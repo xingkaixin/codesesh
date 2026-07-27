@@ -1,5 +1,80 @@
 # Changelog
 
+## [0.17.0] - 2026-07-27
+
+本版本强化大规模历史在扫描、API 与会话时间轴上的性能，修复可能导致会话丢失或过期的实时扫描与缓存正确性问题，并围绕显式会话引用与集中化 Agent 能力重构领域契约。
+
+### 性能
+
+- 以流式方式读取 Agent 转录，并在单次扫描中解析 Pi 会话，避免整文件载入内存；将 Kimi 源枚举与转录读取路径解耦。 (#190, #192, #193)
+- 缓存会话别名读模型与快照聚合 API 响应，并优化会话详情载荷。 (#196, #214, #215)
+- 合并各 Agent 的实时会话分片时不再全量重排；复用 CLI 刷新 worker 并返回增量 delta。 (#197, #209)
+- 虚拟化 Web 会话时间轴，改善长历史滚动体验。 (#213)
+
+### 问题修复
+
+- 以线性时间组装跨块的长 JSONL 记录。 (#191)
+- 停止删除落在当前扫描窗口之外的已缓存会话。 (#198)
+- 在 Web 导航中保留会话引用身份；统一实时缓存失效与跨源搜索筛选。 (#200, #201, #202)
+- 统一会话发布提交，并将数据库刷新扫描卸载到 worker，保持 CLI 事件循环响应。 (#203, #208)
+- 缓存会话索引快照，并在滚动时复用已渲染的消息 Markdown。 (#211, #212)
+- 在 API 中区分别名校验错误。 (#226)
+- 避免启动时阻塞于消息迁移，并跳过打开数据库时昂贵的 FTS 完整性检查。 (#227, #228)
+
+### 重构
+
+- 显式建模会话引用，规范化消息部件与公共领域术语。 (#216, #217, #218, #219)
+- 集中 Agent 能力、文件源与会话监听计划；共享单次源变更检测。 (#194, #204, #220, #221)
+- 物化会话详情，收窄缓存 schema 边界，并移除缓存影子写入。 (#205, #206, #210)
+- 统一 Web 会话详情模型并共享文件工具策略；将 Web 与产品站图标从 Lucide 迁移到 Hugeicons。 (#199, #207, #224)
+- 拆分 API handler 与 AgentSyncEngine 职责；收紧 core 公共导出。 (#195, #223, #225)
+
+### 文档
+
+- 刷新扫描与缓存架构文档。 (#222)
+
+### Changelog Detail
+
+- #228 fix(cache): avoid startup FTS integrity checks @xingkaixin
+- #227 fix(cache): avoid blocking startup on message migration @xingkaixin
+- #226 fix(api): distinguish alias validation errors @xingkaixin
+- #225 refactor(core): tighten public exports @xingkaixin
+- #224 refactor(web): share file tool strategies @xingkaixin
+- #223 refactor(cli): split AgentSyncEngine responsibilities @xingkaixin
+- #222 docs: refresh scanning architecture @xingkaixin
+- #221 refactor(agents)!: centralize agent capabilities @xingkaixin
+- #220 refactor(agents): centralize file sources @xingkaixin
+- #219 refactor(domain)!: align public terminology @xingkaixin
+- #218 refactor(contract)!: normalize message parts @xingkaixin
+- #217 refactor(contract)!: unify session references @xingkaixin
+- #216 refactor: model session references explicitly @xingkaixin
+- #215 perf: optimize session detail responses @xingkaixin
+- #214 perf(api): cache snapshot aggregate responses @xingkaixin
+- #213 perf(web): virtualize session timeline @xingkaixin
+- #212 fix(web): reuse message markdown while scrolling @xingkaixin
+- #211 fix(core): cache session index snapshots @xingkaixin
+- #210 refactor(core): remove cache shadow writes @xingkaixin
+- #209 perf(cli): reuse refresh workers and return deltas @xingkaixin
+- #208 fix(cli): offload database refresh scans @xingkaixin
+- #207 refactor(web): unify session detail model @xingkaixin
+- #206 refactor(core): materialize session details @xingkaixin
+- #205 refactor(core): narrow cache schema boundary @xingkaixin
+- #204 refactor(agents): own session watch plans @xingkaixin
+- #203 fix(cli): unify session publication commits @xingkaixin
+- #202 fix(web): unify live cache invalidation @xingkaixin
+- #201 fix(search): unify cross-source filters @xingkaixin
+- #200 fix(web): preserve session reference identity @xingkaixin
+- #199 refactor(icons): migrate web and www from lucide to hugeicons @xingkaixin
+- #198 fix(agents): stop deleting cached sessions outside the scan window @xingkaixin
+- #197 perf(live): merge per-agent session shards instead of re-sorting @xingkaixin
+- #196 perf(api): cache the session alias read model @xingkaixin
+- #195 refactor(api): split handlers into parsing, aliases and analytics @xingkaixin
+- #194 refactor(agents): share one source change-detection pass @xingkaixin
+- #193 perf(agents): stream transcripts instead of loading whole files @xingkaixin
+- #192 perf(pi): parse session files in one streaming pass @xingkaixin
+- #191 fix(jsonl): assemble long records in linear time @xingkaixin
+- #190 perf(kimi): keep source enumeration off transcripts @xingkaixin
+
 ## [0.16.0] - 2026-07-23
 
 本版本为 Web 应用与产品站新增可持久化的浅色、深色和跟随系统主题，提升实时会话正确性与大规模历史数据性能，并强化诊断能力、无障碍体验和生产质量门禁。
