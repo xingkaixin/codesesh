@@ -9,6 +9,9 @@ import { appLogger } from "./logging.js";
  * diagnostics singleton is per-thread, not shared across workers.
  */
 setCoreDiagnostics({
+  info(event, detail) {
+    appLogger.info(event, detail);
+  },
   warn(event, detail) {
     appLogger.warn(event, detail);
   },

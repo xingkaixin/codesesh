@@ -6,6 +6,7 @@
  */
 
 export interface CoreDiagnostics {
+  info?(event: string, detail?: Record<string, unknown>): void;
   warn(event: string, detail?: Record<string, unknown>): void;
 }
 
@@ -19,6 +20,11 @@ let diagnostics: CoreDiagnostics | null = null;
  */
 function toSafeSink(sink: CoreDiagnostics): CoreDiagnostics {
   return {
+    info(event, detail) {
+      try {
+        sink.info?.(event, detail);
+      } catch {}
+    },
     warn(event, detail) {
       try {
         sink.warn(event, detail);
