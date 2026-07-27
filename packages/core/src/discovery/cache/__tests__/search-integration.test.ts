@@ -17,6 +17,7 @@ import {
   syncSessionSearchIndexChanges,
 } from "../search.js";
 import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../db.js";
+import { MESSAGE_PARTS_FORMAT_VERSION } from "../messages.js";
 import { withCacheDb } from "../schema.js";
 import type { SessionDetail, SessionHead } from "../../../types/index.js";
 
@@ -679,7 +680,7 @@ describe("searchSessions", () => {
     } finally {
       migratedDb.close();
     }
-    expect(getUserVersion(getCachePath())).toBe(16);
+    expect(getUserVersion(getCachePath())).toBe(17);
   });
 
   it("keeps small incremental updates searchable immediately", () => {
@@ -1042,19 +1043,21 @@ describe("searchSessions", () => {
     try {
       const rows = db
         .prepare(
-          "SELECT message_id, role, content_text, tool_metadata_json FROM messages ORDER BY message_index",
+          "SELECT message_id, role, content_text, tool_metadata_json, parts_format_version FROM messages ORDER BY message_index",
         )
         .all() as Array<{
         message_id?: string;
         role?: string;
         content_text?: string;
         tool_metadata_json?: string | null;
+        parts_format_version?: number;
       }>;
 
       expect(rows).toHaveLength(1);
       expect(rows[0]?.message_id).toBe("m1-updated");
       expect(rows[0]?.role).toBe("user");
       expect(rows[0]?.content_text).toContain("updated sqlite message");
+      expect(rows[0]?.parts_format_version).toBe(MESSAGE_PARTS_FORMAT_VERSION);
     } finally {
       db.close();
     }
@@ -1310,7 +1313,7 @@ describe("searchSessions", () => {
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(16);
+    expect(getUserVersion(getCachePath())).toBe(17);
   });
 
   it("refreshes cached project identities when migrating to schema version 12", () => {

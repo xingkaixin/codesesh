@@ -5,6 +5,7 @@ import type { SQLiteDatabase } from "../../utils/sqlite.js";
 import { SEARCH_INDEX_BULK_SYNC_THRESHOLD, type SessionHeadChange } from "./db.js";
 import {
   buildSessionContentFromMessages,
+  MESSAGE_PARTS_FORMAT_VERSION,
   normalizeMessages,
   prepareInsertFileActivity,
   prepareInsertMessageTool,
@@ -243,11 +244,12 @@ function writeSearchIndexRows(
       cost,
       cost_source,
       parts_json,
+      parts_format_version,
       subagent_id,
       nickname,
       content_text,
       tool_metadata_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(agent_name, session_id, message_index) DO UPDATE SET
       message_id = excluded.message_id,
       role = excluded.role,
@@ -261,6 +263,7 @@ function writeSearchIndexRows(
       cost = excluded.cost,
       cost_source = excluded.cost_source,
       parts_json = excluded.parts_json,
+      parts_format_version = excluded.parts_format_version,
       subagent_id = excluded.subagent_id,
       nickname = excluded.nickname,
       content_text = excluded.content_text,
@@ -320,6 +323,7 @@ function writeSearchIndexRows(
         message.cost ?? null,
         message.costSource ?? null,
         message.partsJson,
+        MESSAGE_PARTS_FORMAT_VERSION,
         message.subagentId ?? null,
         message.nickname ?? null,
         message.contentText,

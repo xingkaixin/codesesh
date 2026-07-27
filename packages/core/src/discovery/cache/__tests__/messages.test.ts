@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildMessageText,
   buildSessionContentFromMessages,
+  MESSAGE_PARTS_FORMAT_VERSION,
   messageFromCachedRow,
   messageJsonFromCachedRow,
   normalizeMessages,
@@ -41,7 +42,7 @@ describe("cached messages", () => {
       role: "assistant" as const,
       time_created: 10,
       time_completed: 11,
-      cache_version: 16,
+      parts_format_version: MESSAGE_PARTS_FORMAT_VERSION,
       parts_json: JSON.stringify([{ type: "text", text: "done" }]),
       tokens_json: JSON.stringify({ input: 2, output: 3 }),
       cost: 0.4,
@@ -64,7 +65,7 @@ describe("cached messages", () => {
       message_id: "m1",
       role: "assistant" as const,
       time_created: 10,
-      cache_version: 15,
+      parts_format_version: 0,
       parts_json: JSON.stringify([
         {
           type: "tool",

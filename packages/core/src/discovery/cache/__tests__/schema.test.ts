@@ -36,6 +36,9 @@ describe("cache schema boundary", () => {
         documentColumns: (
           db.prepare("PRAGMA table_info(session_documents)").all() as Array<{ name: string }>
         ).map((row) => row.name),
+        messageColumns: (
+          db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>
+        ).map((row) => row.name),
         version: Number(
           (db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined)
             ?.user_version ?? 0,
@@ -62,7 +65,8 @@ describe("cache schema boundary", () => {
       "indexed_message_count",
       "indexed_at",
     ]);
-    expect(state?.version).toBe(16);
+    expect(state?.messageColumns).toContain("parts_format_version");
+    expect(state?.version).toBe(17);
   });
 
   it("exposes capabilities instead of migration steps", () => {
@@ -75,76 +79,73 @@ describe("cache schema boundary", () => {
     ]);
   });
 
-  it("normalizes legacy message parts once during migration", () => {
-    schema.withCacheDb(() => undefined);
+  it.each([15, 16])(
+    "upgrades a v%s cache without rewriting legacy message payloads",
+    (legacyVersion) => {
+      schema.withCacheDb(() => undefined);
 
-    const legacyDb = new Database(getCachePath());
-    legacyDb.pragma("foreign_keys = OFF");
-    legacyDb
-      .prepare(
-        `
-          INSERT INTO messages(
-            agent_name,
-            session_id,
-            message_index,
-            message_id,
-            role,
-            time_created,
-            parts_json,
-            content_text
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-      )
-      .run(
-        "codex",
-        "legacy",
-        0,
-        "m1",
-        "assistant",
-        1,
-        JSON.stringify([
-          {
-            type: "tool",
-            tool: "Read",
-            state: { status: "success", arguments: { path: "src/a.ts" }, result: "done" },
-          },
-        ]),
-        "legacy",
-      );
-    legacyDb.pragma("user_version = 15");
-    legacyDb.prepare("UPDATE cache_meta SET value = '15' WHERE key = 'version'").run();
-    legacyDb.close();
-    setSchemaEnsuredPath(null);
-
-    const migrated = schema.withCacheDb((db) => ({
-      version: Number(
-        (db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined)
-          ?.user_version ?? 0,
-      ),
-      parts: JSON.parse(
-        String(
-          (
-            db.prepare("SELECT parts_json FROM messages WHERE message_id = 'm1'").get() as {
-              parts_json?: string;
-            }
-          ).parts_json,
-        ),
-      ) as unknown,
-    }));
-
-    expect(migrated).toEqual({
-      version: 16,
-      parts: [
+      const legacyDb = new Database(getCachePath());
+      legacyDb.pragma("foreign_keys = OFF");
+      legacyDb.exec("ALTER TABLE messages DROP COLUMN parts_format_version");
+      const legacyPartsJson = JSON.stringify([
         {
           type: "tool",
           tool: "Read",
-          state: {
-            status: "completed",
-            input: { path: "src/a.ts" },
-            output: "done",
-          },
+          state: { status: "success", arguments: { path: "src/a.ts" }, result: "done" },
         },
-      ],
-    });
-  });
+      ]);
+      legacyDb
+        .prepare(
+          `
+            INSERT INTO messages(
+              agent_name,
+              session_id,
+              message_index,
+              message_id,
+              role,
+              time_created,
+              parts_json,
+              content_text
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .run("codex", "legacy", 0, "m1", "assistant", 1, legacyPartsJson, "legacy");
+      legacyDb.exec(`
+        CREATE TRIGGER reject_message_parts_rewrite
+        BEFORE UPDATE OF parts_json ON messages
+        BEGIN
+          SELECT RAISE(ABORT, 'legacy message payload must not be rewritten');
+        END;
+      `);
+      legacyDb.pragma(`user_version = ${legacyVersion}`);
+      legacyDb
+        .prepare("UPDATE cache_meta SET value = ? WHERE key = 'version'")
+        .run(String(legacyVersion));
+      legacyDb.close();
+      setSchemaEnsuredPath(null);
+
+      const migrated = schema.withCacheDb((db) => {
+        const row = db
+          .prepare("SELECT parts_json, parts_format_version FROM messages WHERE message_id = 'm1'")
+          .get() as {
+          parts_json?: string;
+          parts_format_version?: number;
+        };
+        return {
+          version: Number(
+            (db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined)
+              ?.user_version ?? 0,
+          ),
+          partsJson: row.parts_json,
+          partsFormatVersion: Number(row.parts_format_version),
+        };
+      });
+
+      expect(migrated).toEqual({
+        version: 17,
+        partsJson: legacyPartsJson,
+        partsFormatVersion: 0,
+      });
+    },
+  );
 });
