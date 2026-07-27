@@ -1105,16 +1105,34 @@ function ensureFtsConsistency(db: SQLiteDatabase): void {
     return;
   }
 
+  const startedAt = performance.now();
+  getCoreDiagnostics()?.info?.("sqlite.fts_integrity.started", {
+    indexes: 2,
+  });
   try {
     db.exec(
       "INSERT INTO session_documents_fts(session_documents_fts, rank) VALUES ('integrity-check', 1)",
     );
     db.exec("INSERT INTO messages_fts(messages_fts, rank) VALUES ('integrity-check', 1)");
     setFtsIntegrityCheckedPath(cachePath);
-  } catch {
+    getCoreDiagnostics()?.info?.("sqlite.fts_integrity.completed", {
+      indexes: 2,
+      duration_ms: Math.round(performance.now() - startedAt),
+    });
+  } catch (error) {
+    getCoreDiagnostics()?.warn("sqlite.fts_integrity.failed", {
+      indexes: 2,
+      duration_ms: Math.round(performance.now() - startedAt),
+      message: error instanceof Error ? error.message : String(error),
+    });
+    const rebuildStartedAt = performance.now();
     rebuildSearchIndex(db);
     rebuildMessageSearchIndex(db);
     setFtsIntegrityCheckedPath(cachePath);
+    getCoreDiagnostics()?.info?.("sqlite.fts_integrity.rebuilt", {
+      indexes: 2,
+      duration_ms: Math.round(performance.now() - rebuildStartedAt),
+    });
   }
 }
 
