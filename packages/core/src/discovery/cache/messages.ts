@@ -17,7 +17,7 @@ import { computeIdentity, realFs } from "../../projects/index.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import type { SQLiteStatement } from "./db.js";
 
-const NORMALIZED_MESSAGE_PARTS_CACHE_VERSION = 16;
+export const MESSAGE_PARTS_FORMAT_VERSION = 1;
 
 export interface SessionRow extends DatabaseRow {
   agent_name?: string;
@@ -62,7 +62,7 @@ export interface MessageBackfillRow extends DatabaseRow {
 }
 
 export interface CachedMessageRow extends MessageBackfillRow {
-  cache_version?: number | string;
+  parts_format_version?: number | string;
   tokens_json?: string | null;
   cost?: number | null;
   cost_source?: SessionHead["stats"]["cost_source"] | null;
@@ -421,7 +421,7 @@ export function messageJsonFromCachedRow(row: CachedMessageRow): string {
     fields.push(`"cost_source":${JSON.stringify(row.cost_source)}`);
   }
   const partsJson =
-    Number(row.cache_version) >= NORMALIZED_MESSAGE_PARTS_CACHE_VERSION
+    Number(row.parts_format_version) >= MESSAGE_PARTS_FORMAT_VERSION
       ? String(row.parts_json ?? "[]")
       : normalizeMessagePartsJson(row.parts_json);
   fields.push(`"parts":${partsJson}`);

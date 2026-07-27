@@ -177,24 +177,55 @@ export function runSchemaMigrations(
       break;
     }
 
-    if (migration.destructive) {
-      const backupPath = backupDatabaseIfPopulated(
-        db,
-        options.dbPath,
-        options.backupLabel,
-        options.backupTables,
-      );
-      if (backupPath) {
-        backups.push(backupPath);
-      }
-    }
-
-    const apply = db.transaction(() => {
-      migration.migrate(db);
-      setUserVersion(db, migration.version);
+    const fromVersion = currentVersion;
+    const startedAt = performance.now();
+    getCoreDiagnostics()?.info?.("sqlite.migration.started", {
+      label: options.backupLabel,
+      from_version: fromVersion,
+      to_version: migration.version,
+      destructive: migration.destructive ?? false,
     });
-    apply();
-    currentVersion = migration.version;
+
+    try {
+      let backupCreated = false;
+      if (migration.destructive) {
+        const backupPath = backupDatabaseIfPopulated(
+          db,
+          options.dbPath,
+          options.backupLabel,
+          options.backupTables,
+        );
+        if (backupPath) {
+          backups.push(backupPath);
+          backupCreated = true;
+        }
+      }
+
+      const apply = db.transaction(() => {
+        migration.migrate(db);
+        setUserVersion(db, migration.version);
+      });
+      apply();
+      currentVersion = migration.version;
+      getCoreDiagnostics()?.info?.("sqlite.migration.completed", {
+        label: options.backupLabel,
+        from_version: fromVersion,
+        to_version: migration.version,
+        destructive: migration.destructive ?? false,
+        backup_created: backupCreated,
+        duration_ms: Math.round(performance.now() - startedAt),
+      });
+    } catch (error) {
+      getCoreDiagnostics()?.warn("sqlite.migration.failed", {
+        label: options.backupLabel,
+        from_version: fromVersion,
+        to_version: migration.version,
+        destructive: migration.destructive ?? false,
+        duration_ms: Math.round(performance.now() - startedAt),
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   if (currentVersion < options.targetVersion) {

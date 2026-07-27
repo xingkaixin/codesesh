@@ -7,11 +7,33 @@ import {
   backupDatabaseIfPopulated,
   openDb,
   openDbReadOnly,
+  runSchemaMigrations,
   type SQLiteDatabase,
 } from "../sqlite.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../diagnostics.js";
 
 describe("sqlite migration helpers", () => {
+  afterEach(() => {
+    setCoreDiagnostics(null);
+  });
+
+  function collectMigrationDiagnostics(): Array<{
+    level: "info" | "warn";
+    event: string;
+    detail?: Record<string, unknown>;
+  }> {
+    const events: Array<{
+      level: "info" | "warn";
+      event: string;
+      detail?: Record<string, unknown>;
+    }> = [];
+    setCoreDiagnostics({
+      info: (event, detail) => events.push({ level: "info", event, detail }),
+      warn: (event, detail) => events.push({ level: "warn", event, detail }),
+    });
+    return events;
+  }
+
   it("skips backups for in-memory databases", () => {
     const db = new Database(":memory:") as unknown as SQLiteDatabase;
     try {
@@ -23,6 +45,87 @@ describe("sqlite migration helpers", () => {
       `);
 
       expect(backupDatabaseIfPopulated(db, ":memory:", "migration", ["rows"])).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("reports migration start and completion", () => {
+    const db = new Database(":memory:") as unknown as SQLiteDatabase;
+    const events = collectMigrationDiagnostics();
+    try {
+      runSchemaMigrations(db, {
+        dbPath: ":memory:",
+        currentVersion: 0,
+        targetVersion: 1,
+        migrations: [{ version: 1, migrate: (database) => database.exec("CREATE TABLE rows(id)") }],
+        backupTables: [],
+        backupLabel: "test-migration",
+      });
+
+      expect(events).toEqual([
+        {
+          level: "info",
+          event: "sqlite.migration.started",
+          detail: {
+            label: "test-migration",
+            from_version: 0,
+            to_version: 1,
+            destructive: false,
+          },
+        },
+        {
+          level: "info",
+          event: "sqlite.migration.completed",
+          detail: expect.objectContaining({
+            label: "test-migration",
+            from_version: 0,
+            to_version: 1,
+            destructive: false,
+            backup_created: false,
+            duration_ms: expect.any(Number),
+          }),
+        },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("reports migration failures before rethrowing", () => {
+    const db = new Database(":memory:") as unknown as SQLiteDatabase;
+    const events = collectMigrationDiagnostics();
+    try {
+      expect(() =>
+        runSchemaMigrations(db, {
+          dbPath: ":memory:",
+          currentVersion: 0,
+          targetVersion: 1,
+          migrations: [
+            {
+              version: 1,
+              migrate() {
+                throw new Error("migration boom");
+              },
+            },
+          ],
+          backupTables: [],
+          backupLabel: "test-migration",
+        }),
+      ).toThrow("migration boom");
+
+      expect(events.map(({ level, event }) => ({ level, event }))).toEqual([
+        { level: "info", event: "sqlite.migration.started" },
+        { level: "warn", event: "sqlite.migration.failed" },
+      ]);
+      expect(events[1]?.detail).toEqual(
+        expect.objectContaining({
+          from_version: 0,
+          to_version: 1,
+          message: "migration boom",
+          duration_ms: expect.any(Number),
+        }),
+      );
     } finally {
       db.close();
     }
