@@ -20,7 +20,6 @@ export class SearchIndexJobRunner {
   private nextBatchId = 1;
   private pendingJobs = new PendingSearchIndexJobs();
   private isShuttingDown = false;
-  private hasCheckedFtsIntegrity = false;
 
   enqueue(context: string, jobs: SearchIndexWorkerJob[]): Promise<void> {
     if (jobs.length === 0) return Promise.resolve();
@@ -104,7 +103,6 @@ export class SearchIndexJobRunner {
         agentNames: [],
         sessionsByAgent: {},
         metaByAgent: {},
-        skipFtsIntegrityCheck: this.hasCheckedFtsIntegrity,
       },
     });
     worker.unref();
@@ -122,7 +120,6 @@ export class SearchIndexJobRunner {
         duration_ms: Math.round(message.durationMs),
         sessions: message.sessions,
       });
-      this.hasCheckedFtsIntegrity = true;
       this.settle(batch);
     });
     worker.on("error", (error) => {

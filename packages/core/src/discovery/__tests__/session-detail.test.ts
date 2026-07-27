@@ -7,7 +7,7 @@ import { saveCachedSessions } from "../cache/sessions.js";
 import { syncSessionSearchIndex } from "../cache/search.js";
 import { materializeSessionDetail, materializeSessionDetailResponse } from "../session-detail.js";
 import type { LiveSnapshot } from "../scanner.js";
-import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../cache/db.js";
+import { setSchemaEnsuredPath } from "../cache/db.js";
 
 const { testHomeDir } = vi.hoisted(() => ({
   testHomeDir: `/tmp/codesesh-session-detail-test-${process.pid}`,
@@ -130,13 +130,11 @@ function persistDetail(head: SessionHead, detail: SessionDetail, fingerprint: st
 
 beforeEach(() => {
   rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
-  setFtsIntegrityCheckedPath(null);
   setSchemaEnsuredPath(null);
 });
 
 afterEach(() => {
   rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
-  setFtsIntegrityCheckedPath(null);
   setSchemaEnsuredPath(null);
 });
 

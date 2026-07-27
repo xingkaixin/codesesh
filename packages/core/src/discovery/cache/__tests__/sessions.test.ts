@@ -9,7 +9,7 @@ import {
   saveCachedSessionChanges,
   saveCachedSessions,
 } from "../sessions.js";
-import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../db.js";
+import { setSchemaEnsuredPath } from "../db.js";
 import { makeSessionHead } from "./fixtures.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-sessions-test-"));
@@ -21,7 +21,6 @@ vi.mock("node:os", async (importOriginal) => {
 
 afterEach(() => {
   rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
-  setFtsIntegrityCheckedPath(null);
   setSchemaEnsuredPath(null);
 });
 

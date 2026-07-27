@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { clearCache, loadCachedSessionData, saveCachedSessions } from "../cache/sessions.js";
 import { searchSessions, syncSessionSearchIndex } from "../cache/search.js";
-import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../cache/db.js";
+import { setSchemaEnsuredPath } from "../cache/db.js";
 import type { SessionDetail, SessionHead } from "../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-smoke-test-"));
@@ -17,7 +17,6 @@ vi.mock("node:os", async (importOriginal) => {
 afterEach(() => {
   clearCache();
   rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
-  setFtsIntegrityCheckedPath(null);
   setSchemaEnsuredPath(null);
 });
 

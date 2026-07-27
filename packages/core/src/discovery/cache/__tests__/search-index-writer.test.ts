@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { searchSessions } from "../search.js";
 import { syncSessionSearchIndex, syncSessionSearchIndexChanges } from "../search-index-writer.js";
-import { setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../db.js";
+import { setSchemaEnsuredPath } from "../db.js";
 import { makeSessionData, makeSessionHead } from "./fixtures.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-search-writer-test-"));
@@ -16,7 +16,6 @@ vi.mock("node:os", async (importOriginal) => {
 
 afterEach(() => {
   rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
-  setFtsIntegrityCheckedPath(null);
   setSchemaEnsuredPath(null);
 });
 

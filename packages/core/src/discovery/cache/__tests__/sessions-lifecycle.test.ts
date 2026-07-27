@@ -17,12 +17,7 @@ import {
 import { listCachedProjectGroups } from "../project-groups.js";
 import type { SessionCacheMeta } from "../../../agents/base.js";
 import { withCacheDb, withSearchIndexDb } from "../schema.js";
-import {
-  getFtsIntegrityCheckedPath,
-  getSchemaEnsuredPath,
-  setFtsIntegrityCheckedPath,
-  setSchemaEnsuredPath,
-} from "../db.js";
+import { getSchemaEnsuredPath, setSchemaEnsuredPath } from "../db.js";
 import type { SessionHead } from "../../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-test-"));
@@ -131,13 +126,11 @@ function getMigrationBackups(): string[] {
 beforeEach(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
   dateNowSpy.mockReturnValue(now);
-  setFtsIntegrityCheckedPath(null);
   setSchemaEnsuredPath(null);
 });
 
 afterEach(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
-  setFtsIntegrityCheckedPath(null);
   setSchemaEnsuredPath(null);
 });
 describe("loadCachedSessions", () => {
@@ -183,7 +176,7 @@ describe("loadCachedSessions", () => {
 });
 
 describe("withSearchIndexDb", () => {
-  it("provides a consistent search index and records readiness", () => {
+  it("provides ready search-index tables", () => {
     const tables = withSearchIndexDb((db) =>
       db
         .prepare(
@@ -193,7 +186,6 @@ describe("withSearchIndexDb", () => {
     );
 
     expect(tables).toHaveLength(2);
-    expect(getFtsIntegrityCheckedPath()).toBe(getCachePath());
   });
 });
 

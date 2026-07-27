@@ -17,14 +17,7 @@ import {
   type DatabaseRow,
   type SQLiteDatabase,
 } from "../../utils/sqlite.js";
-import {
-  getCachePath,
-  getFtsIntegrityCheckedPath,
-  getSchemaEnsuredPath,
-  setFtsIntegrityCheckedPath,
-  setSchemaEnsuredPath,
-  type CacheRow,
-} from "./db.js";
+import { getCachePath, getSchemaEnsuredPath, setSchemaEnsuredPath, type CacheRow } from "./db.js";
 import {
   messageFromBackfillRow,
   prepareInsertFileActivity,
@@ -111,17 +104,11 @@ export function withCacheDbReadOnly<T>(fn: (db: SQLiteDatabase) => T): T | null 
 }
 
 export function withSearchDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
-  return withCacheDb((db) => {
-    ensureFtsReady(db);
-    return fn(db);
-  });
+  return withCacheDb((db) => runWithFtsRecovery(db, fn));
 }
 
 export function withSearchIndexDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
-  return withCacheDb((db) => {
-    ensureFtsConsistency(db);
-    return fn(db);
-  });
+  return withCacheDb((db) => runWithFtsRecovery(db, fn));
 }
 
 interface SearchIndexWriteResult<T> {
@@ -565,10 +552,9 @@ function recreateProjectGroupsView(db: SQLiteDatabase): void {
 function createLatestCacheSchema(db: SQLiteDatabase): void {
   createCacheTables(db);
   createSessionTables(db);
-  createMessageSearchTables(db);
   createFileActivityTables(db);
-  createSearchTables(db);
   createProjectTables(db);
+  ensureFtsReady(db);
 }
 
 function recreateSearchIndexSchema(db: SQLiteDatabase): void {
@@ -1085,26 +1071,70 @@ function rebuildMessageSearchIndex(db: SQLiteDatabase): void {
   db.exec("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')");
 }
 
-function ensureFtsReady(db: SQLiteDatabase): void {
-  if (!tableExists(db, "session_documents_fts")) {
-    createSearchTables(db);
-  }
-  createSearchTriggers(db);
+const SEARCH_FTS_INDEXES = ["session_documents_fts", "messages_fts"] as const;
 
-  const needsMessageSearchRebuild = !tableExists(db, "messages_fts");
-  createMessageSearchTables(db);
-  if (needsMessageSearchRebuild) {
-    rebuildMessageSearchIndex(db);
+type SearchFtsIndex = (typeof SEARCH_FTS_INDEXES)[number];
+
+function triggerExists(db: SQLiteDatabase, triggerName: string): boolean {
+  return (
+    db
+      .prepare("SELECT 1 AS value FROM sqlite_master WHERE name = ? AND type = 'trigger' LIMIT 1")
+      .get(triggerName) !== undefined
+  );
+}
+
+function hasAllTriggers(db: SQLiteDatabase, triggerNames: string[]): boolean {
+  return triggerNames.every((triggerName) => triggerExists(db, triggerName));
+}
+
+function rebuildSearchFtsIndexes(
+  db: SQLiteDatabase,
+  indexes: SearchFtsIndex[],
+  reason: "corruption" | "schema_missing",
+): void {
+  if (indexes.length === 0) return;
+
+  const startedAt = performance.now();
+  getCoreDiagnostics()?.info?.("sqlite.fts_rebuild.started", { indexes, reason });
+  try {
+    for (const index of indexes) {
+      if (index === "session_documents_fts") rebuildSearchIndex(db);
+      else rebuildMessageSearchIndex(db);
+    }
+    getCoreDiagnostics()?.info?.("sqlite.fts_rebuild.completed", {
+      indexes,
+      reason,
+      duration_ms: Math.round(performance.now() - startedAt),
+    });
+  } catch (error) {
+    getCoreDiagnostics()?.warn("sqlite.fts_rebuild.failed", {
+      indexes,
+      reason,
+      duration_ms: Math.round(performance.now() - startedAt),
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
   }
 }
 
-function ensureFtsConsistency(db: SQLiteDatabase): void {
-  ensureFtsReady(db);
-  const cachePath = getCachePath();
-  if (getFtsIntegrityCheckedPath() === cachePath) {
-    return;
-  }
+function ensureFtsReady(db: SQLiteDatabase): void {
+  const needsSearchRebuild =
+    !tableExists(db, "session_documents_fts") ||
+    !hasAllTriggers(db, ["session_documents_ai", "session_documents_ad", "session_documents_au"]);
+  const needsMessageSearchRebuild =
+    !tableExists(db, "messages_fts") ||
+    !hasAllTriggers(db, ["messages_ai", "messages_ad", "messages_au"]);
 
+  createSearchTables(db);
+  createMessageSearchTables(db);
+
+  const indexes: SearchFtsIndex[] = [];
+  if (needsSearchRebuild) indexes.push("session_documents_fts");
+  if (needsMessageSearchRebuild) indexes.push("messages_fts");
+  rebuildSearchFtsIndexes(db, indexes, "schema_missing");
+}
+
+function ensureFtsConsistency(db: SQLiteDatabase): void {
   const startedAt = performance.now();
   getCoreDiagnostics()?.info?.("sqlite.fts_integrity.started", {
     indexes: 2,
@@ -1114,7 +1144,6 @@ function ensureFtsConsistency(db: SQLiteDatabase): void {
       "INSERT INTO session_documents_fts(session_documents_fts, rank) VALUES ('integrity-check', 1)",
     );
     db.exec("INSERT INTO messages_fts(messages_fts, rank) VALUES ('integrity-check', 1)");
-    setFtsIntegrityCheckedPath(cachePath);
     getCoreDiagnostics()?.info?.("sqlite.fts_integrity.completed", {
       indexes: 2,
       duration_ms: Math.round(performance.now() - startedAt),
@@ -1125,14 +1154,30 @@ function ensureFtsConsistency(db: SQLiteDatabase): void {
       duration_ms: Math.round(performance.now() - startedAt),
       message: error instanceof Error ? error.message : String(error),
     });
-    const rebuildStartedAt = performance.now();
-    rebuildSearchIndex(db);
-    rebuildMessageSearchIndex(db);
-    setFtsIntegrityCheckedPath(cachePath);
-    getCoreDiagnostics()?.info?.("sqlite.fts_integrity.rebuilt", {
-      indexes: 2,
-      duration_ms: Math.round(performance.now() - rebuildStartedAt),
+    rebuildSearchFtsIndexes(db, [...SEARCH_FTS_INDEXES], "corruption");
+  }
+}
+
+function isFtsCorruptionError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "SQLITE_CORRUPT_VTAB"
+  );
+}
+
+function runWithFtsRecovery<T>(db: SQLiteDatabase, fn: (db: SQLiteDatabase) => T): T {
+  ensureFtsReady(db);
+  try {
+    return fn(db);
+  } catch (error) {
+    if (!isFtsCorruptionError(error)) throw error;
+    getCoreDiagnostics()?.warn("sqlite.fts_corruption.detected", {
+      message: error instanceof Error ? error.message : String(error),
     });
+    ensureFtsConsistency(db);
+    return fn(db);
   }
 }
 

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getCachePath, setFtsIntegrityCheckedPath, setSchemaEnsuredPath } from "../db.js";
+import { getCachePath, setSchemaEnsuredPath } from "../db.js";
 import * as schema from "../schema.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-schema-test-"));
@@ -15,13 +15,11 @@ vi.mock("node:os", async (importOriginal) => {
 
 beforeEach(() => {
   rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
-  setFtsIntegrityCheckedPath(null);
   setSchemaEnsuredPath(null);
 });
 
 afterEach(() => {
   rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
-  setFtsIntegrityCheckedPath(null);
   setSchemaEnsuredPath(null);
 });
 

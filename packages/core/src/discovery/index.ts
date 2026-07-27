@@ -30,7 +30,7 @@ export {
   saveCachedSessions,
 } from "./cache/sessions.js";
 export type { CachedSessionDataEntry } from "./cache/sessions.js";
-export { getCachePath, setFtsIntegrityCheckedPath } from "./cache/db.js";
+export { getCachePath } from "./cache/db.js";
 export type { SessionHeadChange } from "./cache/db.js";
 export { listCachedProjectGroups } from "./cache/project-groups.js";
 export {

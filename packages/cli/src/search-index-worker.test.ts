@@ -4,11 +4,9 @@ const mocks = vi.hoisted(() => ({
   workerData: {} as Record<string, unknown>,
   postMessage: vi.fn(),
   createRegisteredAgents: vi.fn(),
-  getCachePath: vi.fn(() => "/cache"),
   markAgentCacheInitialized: vi.fn(),
   saveCachedSessionChanges: vi.fn(),
   saveCachedSessions: vi.fn(),
-  setFtsIntegrityCheckedPath: vi.fn(),
   syncSessionSearchIndex: vi.fn(),
   syncSessionSearchIndexChanges: vi.fn(),
   appLoggerWarn: vi.fn(),
@@ -23,11 +21,9 @@ vi.mock("node:worker_threads", () => ({
 
 vi.mock("@codesesh/core", () => ({
   createRegisteredAgents: mocks.createRegisteredAgents,
-  getCachePath: mocks.getCachePath,
   markAgentCacheInitialized: mocks.markAgentCacheInitialized,
   saveCachedSessionChanges: mocks.saveCachedSessionChanges,
   saveCachedSessions: mocks.saveCachedSessions,
-  setFtsIntegrityCheckedPath: mocks.setFtsIntegrityCheckedPath,
   syncSessionSearchIndex: mocks.syncSessionSearchIndex,
   syncSessionSearchIndexChanges: mocks.syncSessionSearchIndexChanges,
   // diagnostics-bridge.js (imported by the worker for its side effect) needs this export.
@@ -62,7 +58,7 @@ beforeEach(() => {
 });
 
 describe("search index worker", () => {
-  it("builds legacy full jobs and preserves the integrity-check state", async () => {
+  it("builds legacy full jobs", async () => {
     const agent = makeAgent();
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     mocks.syncSessionSearchIndex.mockImplementation(
@@ -76,12 +72,10 @@ describe("search index worker", () => {
       agentNames: ["codex", "unknown"],
       sessionsByAgent: { codex: [{ id: "s1" }] },
       metaByAgent: { codex: { s1: { id: "s1" } } },
-      skipFtsIntegrityCheck: true,
     };
 
     await runWorker();
 
-    expect(mocks.setFtsIntegrityCheckedPath).toHaveBeenCalledWith("/cache");
     expect(agent.setSessionMetaMap).toHaveBeenCalledWith(new Map([["s1", { id: "s1" }]]));
     expect(mocks.postMessage).toHaveBeenNthCalledWith(1, {
       type: "sync-result",
