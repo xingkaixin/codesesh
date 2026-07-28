@@ -30,6 +30,7 @@ describe("CS-151: documentation path check", () => {
         "Data lives in `~/.claude/projects/**/*.jsonl`.",
         "Create `packages/core/src/agents/<youragent>.ts`.",
         "Sources match `packages/core/src/**/*.ts`.",
+        "Run `node packages/cli/dist/index.js --version`.",
       ].join("\n"),
     );
 

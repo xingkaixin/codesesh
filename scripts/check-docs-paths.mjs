@@ -29,6 +29,14 @@ function isTemplate(path) {
   return path.includes("*") || path.includes("<");
 }
 
+/**
+ * Build output. Whether it exists depends on whether anything has been built,
+ * not on whether the documentation is accurate.
+ */
+function isBuildOutput(path) {
+  return path.includes("/dist/") || path.endsWith("/dist");
+}
+
 export function extractRepositoryPaths(markdown) {
   const quoted = markdown.match(/`[^`\n]+`/g) ?? [];
   return [
@@ -36,7 +44,7 @@ export function extractRepositoryPaths(markdown) {
       quoted
         .map((token) => token.slice(1, -1).trim())
         .filter((token) => REPO_ROOTS.some((root) => token.startsWith(root)))
-        .filter((token) => !isTemplate(token)),
+        .filter((token) => !isTemplate(token) && !isBuildOutput(token)),
     ),
   ];
 }
