@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { SessionHead } from "../session.js";
+import { getProjectAgentKey } from "../project-identity.js";
 import {
   applySessionChanges,
   createSessionIndex,
-  getProjectAgentKey,
   getSessionRouteKey,
   mergeSortedSessions,
   sortSessionsByActivity,

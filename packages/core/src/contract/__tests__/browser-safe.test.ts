@@ -23,6 +23,7 @@ describe("contract browser-safety", () => {
     const contract = await import(distEntry);
     expect(Object.keys(contract).sort()).toEqual(
       [
+        "PROJECT_IDENTITY_KINDS",
         "SAMPLE_DASHBOARD_DATA",
         "SAMPLE_SCAN_STATUS_EVENT",
         "SAMPLE_SESSIONS_UPDATED_EVENT",
@@ -40,6 +41,8 @@ describe("contract browser-safety", () => {
         "getSessionAgentKey",
         "getSessionRouteKey",
         "getSessionRoutePath",
+        "isProjectIdentityKind",
+        "matchesProjectIdentity",
         "mergeSortedSessions",
         "normalizeMessageParts",
         "normalizeSessionReference",

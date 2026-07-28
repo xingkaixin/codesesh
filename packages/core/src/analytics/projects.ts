@@ -5,6 +5,7 @@
  */
 import type { ProjectGroup, SessionHead } from "../types/index.js";
 import type { ApiProjectAgentStat, ApiProjectGroup } from "../contract/index.js";
+import { getProjectIdentityKey } from "../contract/project-identity.js";
 import { getSessionAgentName, getTotalTokens } from "./dashboard.js";
 
 interface ProjectMetrics {
@@ -13,10 +14,6 @@ interface ProjectMetrics {
   cost: number;
   hasEstimatedCost: boolean;
   agentStats: Map<string, ApiProjectAgentStat>;
-}
-
-function getProjectGroupKey(identityKind: string, identityKey: string): string {
-  return `${identityKind}:${identityKey}`;
 }
 
 function emptyMetrics(): ProjectMetrics {
@@ -37,7 +34,7 @@ export function attachProjectMetrics(
     const identity = session.project_identity;
     if (!identity) continue;
 
-    const key = getProjectGroupKey(identity.kind, identity.key);
+    const key = getProjectIdentityKey(identity);
     let current = metrics.get(key);
     if (!current) {
       current = emptyMetrics();
@@ -70,7 +67,9 @@ export function attachProjectMetrics(
   }
 
   return projects.map((project) => {
-    const metric = metrics.get(getProjectGroupKey(project.identityKind, project.identityKey));
+    const metric = metrics.get(
+      getProjectIdentityKey({ kind: project.identityKind, key: project.identityKey }),
+    );
     return {
       ...project,
       messages: metric?.messages ?? 0,

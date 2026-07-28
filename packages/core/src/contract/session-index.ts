@@ -1,4 +1,5 @@
-import type { ProjectIdentity, ReferencedSessionHead, SessionHead } from "./session.js";
+import type { ReferencedSessionHead, SessionHead } from "./session.js";
+import { getProjectAgentKey, getProjectIdentityKey } from "./project-identity.js";
 import {
   formatSessionReference,
   getSessionAgentKey,
@@ -69,14 +70,6 @@ export function mergeSortedSessions(shards: SessionHead[][]): SessionHead[] {
 
 export function getSessionRouteKey(agentName: string, sessionId: string): string {
   return formatSessionReference({ agentName, sessionId });
-}
-
-export function getProjectIdentityKey(identity: Pick<ProjectIdentity, "kind" | "key">): string {
-  return `${identity.kind}:${identity.key}`;
-}
-
-export function getProjectAgentKey(projectIdentityKey: string, agentName: string): string {
-  return `${projectIdentityKey}\0${agentName.toLowerCase()}`;
 }
 
 function pushMapValue<K, V>(map: Map<K, V[]>, key: K, value: V): void {
