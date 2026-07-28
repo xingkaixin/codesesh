@@ -378,8 +378,22 @@ export class AgentSyncEngine {
     return "committed";
   }
 
+  /**
+   * An agent that cannot be reached was never scanned, so there is nothing to
+   * compare against. Publishing an empty result here would diff every known
+   * session into a removal — the same mistake as reading a failed query as an
+   * empty database.
+   */
   private refreshUnavailableAgent(agentName: string): RefreshStrategyResult {
     this.lastRefreshAtByAgent.set(agentName, Date.now());
+    const previousSessions = this.sessionIndex.snapshot().byAgent[agentName] ?? [];
+    if (previousSessions.length > 0) {
+      appLogger.warn("scan.refresh.agent_unavailable", {
+        agent: agentName,
+        retained_sessions: previousSessions.length,
+      });
+      return this.refreshStrategyResult(previousSessions, { status: "unchanged" });
+    }
     return this.refreshStrategyResult([]);
   }
 

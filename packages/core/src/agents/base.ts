@@ -464,6 +464,25 @@ export abstract class SingleFileSessionSource<
  * 无法做 per-file 指纹，故变更检测退化为"库文件 mtime 是否推进"，
  * 增量扫描退化为全量重扫。
  */
+/**
+ * A scan that could not prove its result complete — the database would not
+ * open, a table was missing, or a top-level query failed.
+ *
+ * This is not the same as an agent with no sessions. Callers must keep the last
+ * successful snapshot: treating it as an empty result would diff every known
+ * session into a removal and wipe the agent from cache, search and the UI.
+ */
+export class SessionScanError extends Error {
+  constructor(
+    readonly agentName: string,
+    readonly stage: string,
+    options?: { cause?: unknown },
+  ) {
+    super(`${agentName} session scan failed while ${stage}`, options);
+    this.name = "SessionScanError";
+  }
+}
+
 export abstract class DatabaseSessionSource extends BaseAgent {
   protected sessionMetaMap = new Map<string, SessionCacheMeta>();
 

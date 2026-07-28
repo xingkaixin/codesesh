@@ -1,5 +1,6 @@
 import {
   DatabaseSessionSource,
+  SessionScanError,
   filteredSession,
   getParsedSession,
   parsedSession,
@@ -109,7 +110,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
     if (!this.dbPath) return [];
 
     const db = openDbReadOnly(this.dbPath);
-    if (!db) return [];
+    if (!db) throw new SessionScanError(this.name, "opening the database");
 
     try {
       const cutoffTime = options?.from ?? Date.now() - 3650 * 24 * 60 * 60 * 1000;
@@ -173,8 +174,8 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
       }
 
       return heads;
-    } catch {
-      return [];
+    } catch (error) {
+      throw new SessionScanError(this.name, "reading sessions", { cause: error });
     } finally {
       db.close();
     }

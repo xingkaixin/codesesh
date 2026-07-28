@@ -7,6 +7,7 @@ import {
   getParsedSession,
   matchesScanWindow,
   parsedSession,
+  SessionScanError,
 } from "./base.js";
 import type { AgentScanOptions } from "./base.js";
 import type {
@@ -539,7 +540,7 @@ export class CursorAgent extends DatabaseSessionSource {
     const db = this.openDatabase();
     perf.end(dbMarker);
 
-    if (!db) return [];
+    if (!db) throw new SessionScanError(this.name, "opening the database");
 
     // Build composerId → workspace path map from workspaceStorage
     const wsMarker = perf.start("buildWorkspacePathMap");
@@ -688,8 +689,8 @@ export class CursorAgent extends DatabaseSessionSource {
 
       perf.end(scanMarker);
       return heads;
-    } catch {
-      return [];
+    } catch (error) {
+      throw new SessionScanError(this.name, "reading composers", { cause: error });
     } finally {
       db.close();
     }

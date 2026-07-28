@@ -2,6 +2,7 @@ export {
   BaseAgent,
   DatabaseSessionSource,
   FileSystemSessionSource,
+  SessionScanError,
   SingleFileSessionSource,
 } from "./base.js";
 export {
