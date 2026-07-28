@@ -10,6 +10,8 @@ import { getCoreDiagnostics } from "./diagnostics.js";
 interface SQLiteStatement {
   all(...params: unknown[]): DatabaseRow[];
   get(...params: unknown[]): DatabaseRow | undefined;
+  /** Streams rows so a large result set never has to be materialized at once. */
+  iterate(...params: unknown[]): IterableIterator<DatabaseRow>;
   run(...params: unknown[]): unknown;
 }
 

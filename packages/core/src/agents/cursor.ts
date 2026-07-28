@@ -19,7 +19,12 @@ import type {
 } from "../types/index.js";
 import { normalizeMessageParts } from "../contract/message-part.js";
 import { firstExisting, readEnvPath } from "../discovery/paths.js";
-import { openDbReadOnly, isSqliteAvailable, type SQLiteDatabase } from "../utils/sqlite.js";
+import {
+  openDbReadOnly,
+  isSqliteAvailable,
+  type DatabaseRow,
+  type SQLiteDatabase,
+} from "../utils/sqlite.js";
 import { resolveSessionTitle } from "../utils/title-fallback.js";
 import { isInternalEventType } from "../utils/parse-cleanup.js";
 import {
@@ -214,6 +219,59 @@ function parseComposerRow(value: string): ComposerData | null {
     outputTokenCount: narrowNumber("composer.outputTokenCount", record.outputTokenCount),
     subagentInfos: parseSubagentInfos(record.subagentInfos),
     chatMessages: parseChatMessages(record.chatMessages),
+  };
+}
+
+interface BubbleRow extends DatabaseRow {
+  row_id: number;
+  key: string;
+  value: string;
+}
+
+interface BubbleEntry {
+  rowId: number;
+  key: string;
+  bubble: BubbleData;
+}
+
+/**
+ * One composer's bubbles, parsed once and offered in both orders the readers
+ * need: request ids come from the key-ordered view, messages from insertion
+ * order.
+ */
+interface ComposerBubbles {
+  composerId: string;
+  byKey: BubbleEntry[];
+  byRowId: BubbleEntry[];
+}
+
+/** A composer waiting for its bubbles in the second phase of a scan. */
+interface PendingComposer {
+  composer: ComposerData;
+  composerId: string;
+  createdAt: number;
+  updatedAt: number;
+  hasSubagents: boolean;
+  order: number;
+}
+
+function composerIdFromBubbleKey(key: string): string {
+  const start = key.indexOf(":") + 1;
+  const end = key.indexOf(":", start);
+  return end === -1 ? key.slice(start) : key.slice(start, end);
+}
+
+function groupBubbleRows(rows: BubbleRow[]): ComposerBubbles {
+  const byKey: BubbleEntry[] = [];
+  for (const row of rows) {
+    const bubble = parseBubbleRow(row.value);
+    if (bubble) byKey.push({ rowId: row.row_id, key: row.key, bubble });
+  }
+  byKey.sort((left, right) => left.key.localeCompare(right.key));
+  return {
+    composerId: rows.length > 0 ? composerIdFromBubbleKey(rows[0]!.key) : "",
+    byKey,
+    byRowId: [...byKey].sort((left, right) => left.rowId - right.rowId),
   };
 }
 
@@ -552,7 +610,11 @@ export class CursorAgent extends DatabaseSessionSource {
         .prepare("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'")
         .all() as Array<{ key: string; value: string }>;
 
-      const heads: SessionHead[] = [];
+      // Heads are emitted by composer order regardless of which phase produced
+      // them, so the scan output does not depend on how bubbles are read.
+      const emitted = new Map<number, SessionHead>();
+      const pending: PendingComposer[] = [];
+      let order = 0;
       options?.onProgress?.({ total: rows.length, processed: 0, sessions: 0 });
       let processed = 0;
 
@@ -599,7 +661,8 @@ export class CursorAgent extends DatabaseSessionSource {
                   }),
             );
             if (!head) continue;
-            heads.push(head);
+            emitted.set(order, head);
+            order += 1;
             this.composerCache.set(composerId, composer);
             this.sessionMetaMap.set(composerId, {
               id: composerId,
@@ -608,84 +671,43 @@ export class CursorAgent extends DatabaseSessionSource {
             continue;
           }
 
-          // Try to extract requestId from bubbles (like agent-dump does)
-          const requestId = this.extractRequestIdFromBubbles(db, composerId);
-          const sessionId = requestId || composerId;
-
-          // Load actual messages to filter out empty composers
-          const parsedMessages = cleanParsedMessages(
-            this.loadMessagesFromBubbles(
-              db,
-              composerId,
-              sessionId,
-              composer.modelConfig?.modelName ?? composer.model ?? null,
-            ),
-          );
-          const messages = getParsedSession(
-            parsedMessages.length === 0 && !hasSubagents
-              ? filteredSession<Message[]>("no visible messages")
-              : parsedSession(parsedMessages),
-          );
-          if (!messages) continue;
-          const messageCount = messages.length;
-          const title = this.extractTitle(composer, messages);
-
-          const directory = workspacePathMap.get(composerId) ?? "";
-
-          const modelUsageMap: Record<string, number> = {};
-          let totalCost = 0;
-          for (const msg of messages) {
-            totalCost += msg.cost ?? 0;
-            if (msg.model) {
-              const msgTokens = (msg.tokens?.input ?? 0) + (msg.tokens?.output ?? 0);
-              if (msgTokens > 0) {
-                modelUsageMap[msg.model] = (modelUsageMap[msg.model] ?? 0) + msgTokens;
-              }
-            }
-          }
-          const hasModelUsage = Object.keys(modelUsageMap).length > 0;
-
-          heads.push({
-            id: sessionId,
-            slug: `cursor/${sessionId}`,
-            title,
-            directory,
-            time_created: createdAt,
-            time_updated: updatedAt || undefined,
-            stats: {
-              message_count: messageCount,
-              total_input_tokens: composer.inputTokenCount ?? 0,
-              total_output_tokens: composer.outputTokenCount ?? 0,
-              total_cost: totalCost,
-              cost_source: totalCost > 0 ? "estimated" : undefined,
-            },
-            model_usage: hasModelUsage ? modelUsageMap : undefined,
-          });
-
-          // Cache with sessionId (requestId) as key
-          this.composerCache.set(sessionId, composer);
-          // Also cache composerId -> sessionId mapping and directory
-          this.composerCache.set(`__mapping__${composerId}`, {
-            sessionId,
-          } as unknown as ComposerData);
-          if (directory) {
-            this.composerCache.set(`__dir__${composerId}`, {
-              directory,
-            } as unknown as ComposerData);
-          }
-
-          // Store session metadata for caching
-          this.sessionMetaMap.set(sessionId, {
-            id: sessionId,
-            sourcePath: this.dbPath || "",
-          });
+          pending.push({ composer, composerId, createdAt, updatedAt, hasSubagents, order });
+          order += 1;
         } catch {
           // skip malformed entries
         } finally {
           processed += 1;
-          options?.onProgress?.({ total: rows.length, processed, sessions: heads.length });
+          options?.onProgress?.({ total: rows.length, processed, sessions: emitted.size });
         }
       }
+
+      // Second phase: one ordered pass over every bubble row. Keys share the
+      // composer prefix, so each group arrives contiguously and only one group
+      // is held at a time — replacing two full scans per composer.
+      const bubbleMarker = perf.start("cursor:bubbles");
+      const wanted = new Map(pending.map((entry) => [entry.composerId, entry]));
+      this.forEachComposerBubbles(db, wanted, (bubbles) => {
+        const entry = wanted.get(bubbles.composerId);
+        if (!entry) return;
+        wanted.delete(bubbles.composerId);
+        const head = this.buildScanHead(entry, bubbles, workspacePathMap);
+        if (head) emitted.set(entry.order, head);
+      });
+      // Composers with no bubbles at all still go through the same builder.
+      for (const entry of wanted.values()) {
+        const head = this.buildScanHead(
+          entry,
+          { composerId: entry.composerId, byKey: [], byRowId: [] },
+          workspacePathMap,
+        );
+        if (head) emitted.set(entry.order, head);
+      }
+      perf.end(bubbleMarker);
+
+      const heads = [...emitted.entries()]
+        .sort(([left], [right]) => left - right)
+        .map(([, head]) => head);
+      options?.onProgress?.({ total: rows.length, processed, sessions: heads.length });
 
       perf.end(scanMarker);
       return heads;
@@ -808,25 +830,111 @@ export class CursorAgent extends DatabaseSessionSource {
     return openDbReadOnly(this.dbPath);
   }
 
-  /** Extract requestId from bubbles for a composer (like agent-dump) */
-  private extractRequestIdFromBubbles(db: SQLiteDatabase, composerId: string): string | null {
-    try {
-      const rows = db
-        .prepare("SELECT value FROM cursorDiskKV WHERE key LIKE ? ORDER BY key")
-        .all(`bubbleId:${composerId}:%`) as Array<{ value: string }>;
+  /**
+   * Streams every bubble row once, in key order, handing each composer's group
+   * to the caller. A key-ordered scan keeps a composer's bubbles contiguous, so
+   * only one group is materialized at a time.
+   */
+  private forEachComposerBubbles(
+    db: SQLiteDatabase,
+    wanted: Map<string, PendingComposer>,
+    onGroup: (bubbles: ComposerBubbles) => void,
+  ): void {
+    if (wanted.size === 0) return;
 
-      for (const row of rows) {
-        try {
-          const bubble = parseBubbleRow(row.value);
-          if (bubble?.requestId?.trim()) {
-            return bubble.requestId.trim();
-          }
-        } catch {
-          // skip malformed bubbles
+    let currentId: string | null = null;
+    let group: BubbleRow[] = [];
+    const flush = () => {
+      if (currentId != null && group.length > 0) onGroup(groupBubbleRows(group));
+      group = [];
+    };
+
+    const rows = db
+      .prepare(
+        "SELECT rowid AS row_id, key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%' ORDER BY key",
+      )
+      .iterate() as Iterable<BubbleRow>;
+    for (const row of rows) {
+      const composerId = composerIdFromBubbleKey(row.key);
+      if (composerId !== currentId) {
+        flush();
+        currentId = composerId;
+      }
+      if (wanted.has(composerId)) group.push(row);
+    }
+    flush();
+  }
+
+  /** Builds the head for one composer from bubbles that were parsed once. */
+  private buildScanHead(
+    entry: PendingComposer,
+    bubbles: ComposerBubbles,
+    workspacePathMap: Map<string, string>,
+  ): SessionHead | null {
+    const { composer, composerId, createdAt, updatedAt, hasSubagents } = entry;
+    const requestId = this.requestIdFromBubbles(bubbles);
+    const sessionId = requestId || composerId;
+
+    const parsedMessages = cleanParsedMessages(
+      this.messagesFromBubbles(bubbles, composer.modelConfig?.modelName ?? composer.model ?? null),
+    );
+    const messages = getParsedSession(
+      parsedMessages.length === 0 && !hasSubagents
+        ? filteredSession<Message[]>("no visible messages")
+        : parsedSession(parsedMessages),
+    );
+    if (!messages) return null;
+
+    const title = this.extractTitle(composer, messages);
+    const directory = workspacePathMap.get(composerId) ?? "";
+
+    const modelUsageMap: Record<string, number> = {};
+    let totalCost = 0;
+    for (const msg of messages) {
+      totalCost += msg.cost ?? 0;
+      if (msg.model) {
+        const msgTokens = (msg.tokens?.input ?? 0) + (msg.tokens?.output ?? 0);
+        if (msgTokens > 0) {
+          modelUsageMap[msg.model] = (modelUsageMap[msg.model] ?? 0) + msgTokens;
         }
       }
-    } catch {
-      // ignore errors
+    }
+    const hasModelUsage = Object.keys(modelUsageMap).length > 0;
+
+    this.composerCache.set(sessionId, composer);
+    this.composerCache.set(`__mapping__${composerId}`, {
+      sessionId,
+    } as unknown as ComposerData);
+    if (directory) {
+      this.composerCache.set(`__dir__${composerId}`, {
+        directory,
+      } as unknown as ComposerData);
+    }
+    this.sessionMetaMap.set(sessionId, { id: sessionId, sourcePath: this.dbPath || "" });
+
+    return {
+      id: sessionId,
+      slug: `cursor/${sessionId}`,
+      title,
+      directory,
+      time_created: createdAt,
+      time_updated: updatedAt || undefined,
+      stats: {
+        message_count: messages.length,
+        total_input_tokens: composer.inputTokenCount ?? 0,
+        total_output_tokens: composer.outputTokenCount ?? 0,
+        total_cost: totalCost,
+        cost_source: totalCost > 0 ? "estimated" : undefined,
+      },
+      model_usage: hasModelUsage ? modelUsageMap : undefined,
+    };
+  }
+
+  /** First request id in key order, matching what agent-dump reports. */
+  private requestIdFromBubbles(bubbles: ComposerBubbles): string | null {
+    for (const entry of bubbles.byKey) {
+      const requestId = entry.bubble.requestId?.trim();
+      if (requestId) return requestId;
     }
     return null;
   }
@@ -890,28 +998,39 @@ export class CursorAgent extends DatabaseSessionSource {
     }
   }
 
-  /** Load messages from bubbles (like agent-dump) */
+  /** Load one composer's bubbles, for the detail path that only needs a single session. */
   private loadMessagesFromBubbles(
     db: SQLiteDatabase,
     composerId: string,
     _sessionId: string,
     initialModelName: string | null,
   ): Message[] {
-    const messages: Message[] = [];
-
     try {
       const rows = db
-        .prepare("SELECT key, value FROM cursorDiskKV WHERE key LIKE ? ORDER BY rowid ASC")
-        .all(`bubbleId:${composerId}:%`) as Array<{ key: string; value: string }>;
+        .prepare("SELECT rowid AS row_id, key, value FROM cursorDiskKV WHERE key LIKE ?")
+        .all(`bubbleId:${composerId}:%`) as BubbleRow[];
+      return this.messagesFromBubbles(groupBubbleRows(rows), initialModelName);
+    } catch {
+      return [];
+    }
+  }
 
+  /** Build messages from bubbles already parsed once, in insertion order. */
+  private messagesFromBubbles(
+    bubbles: ComposerBubbles,
+    initialModelName: string | null,
+  ): Message[] {
+    const messages: Message[] = [];
+
+    {
       let activeModelName: string | null = initialModelName;
       let messageIndex = 0;
 
-      for (const row of rows) {
-        try {
-          const bubble = parseBubbleRow(row.value);
-          if (!bubble || isInternalBubble(bubble)) continue;
-          const bubbleId = row.key.split(":").pop() || String(messageIndex);
+      for (const entry of bubbles.byRowId) {
+        {
+          const bubble = entry.bubble;
+          if (isInternalBubble(bubble)) continue;
+          const bubbleId = entry.key.split(":").pop() || String(messageIndex);
 
           // Determine role: type 2 = assistant, otherwise user
           const role = bubble.type === 2 ? "assistant" : "user";
@@ -960,7 +1079,7 @@ export class CursorAgent extends DatabaseSessionSource {
           const cost = estimateTokenCost(modelName, tokens);
 
           messages.push({
-            id: `cursor-${composerId}-${bubbleId}`,
+            id: `cursor-${bubbles.composerId}-${bubbleId}`,
             role: role as Message["role"],
             agent: "cursor",
             time_created: timestampMs,
@@ -975,12 +1094,8 @@ export class CursorAgent extends DatabaseSessionSource {
           });
 
           messageIndex++;
-        } catch {
-          // skip malformed bubbles
         }
       }
-    } catch {
-      // ignore errors
     }
 
     return messages;
