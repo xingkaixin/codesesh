@@ -341,12 +341,13 @@ export function loadCachedSessionData(agentName: string, sessionId: string): Ses
   return loadCachedSessionDataEntry(agentName, sessionId)?.data ?? null;
 }
 
+/** Returns whether the write reached disk; callers must not publish on `false`. */
 export function saveCachedSessions(
   agentName: string,
   sessions: SessionHead[],
   meta: Record<string, SessionCacheMeta> = {},
-): void {
-  withCacheDb((db) => {
+): boolean {
+  const persisted = withCacheDb((db) => {
     const deleteSession = db.prepare(
       "DELETE FROM sessions WHERE agent_name = ? AND session_id = ?",
     );
@@ -404,20 +405,24 @@ export function saveCachedSessions(
 
     write();
     deleteLegacyCacheFile();
+    return true;
   });
+
+  return persisted ?? false;
 }
 
+/** Returns whether the write reached disk; callers must not publish on `false`. */
 export function saveCachedSessionChanges(
   agentName: string,
   changes: SessionHeadChange[],
   removedSessionIds: string[],
   meta: Record<string, SessionCacheMeta> = {},
-): void {
+): boolean {
   if (changes.length === 0 && removedSessionIds.length === 0) {
-    return;
+    return true;
   }
 
-  withCacheDb((db) => {
+  const persisted = withCacheDb((db) => {
     const deleteSession = db.prepare(
       "DELETE FROM sessions WHERE agent_name = ? AND session_id = ?",
     );
@@ -467,7 +472,10 @@ export function saveCachedSessionChanges(
 
     write();
     deleteLegacyCacheFile();
+    return true;
   });
+
+  return persisted ?? false;
 }
 
 export function clearCache(): void {
