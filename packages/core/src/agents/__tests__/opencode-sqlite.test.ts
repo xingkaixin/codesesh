@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { OpenCodeSqliteAgent } from "../opencode-sqlite.js";
 import { SessionScanError } from "../base.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
@@ -254,5 +254,172 @@ describe("CS-138: unreadable databases are not empty scans", () => {
     db.close();
 
     expect(makeAgent(dbPath).scan({ from: 0 })).toEqual([]);
+  });
+});
+
+describe("CS-144: session detail reads parts in one query", () => {
+  function seedDetail(options: {
+    messages: number;
+    partsEach: number;
+    extra?: (db: Database.Database) => void;
+  }): string {
+    const dir = mkdtempSync(join(tmpdir(), "codesesh-detail-batch-"));
+    tempDirs.push(dir);
+    const dbPath = join(dir, "agent.db");
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE session (
+        id TEXT PRIMARY KEY, title TEXT, time_created INTEGER, time_updated INTEGER,
+        slug TEXT, directory TEXT, version TEXT, summary_files TEXT
+      );
+      CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, data TEXT, time_created INTEGER);
+      CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, data TEXT, time_created INTEGER);
+    `);
+    db.prepare(
+      "INSERT INTO session (id, title, time_created, time_updated, directory) VALUES (?,?,?,?,?)",
+    ).run("s1", "Detail", 1_000, 2_000, "/workspace/project");
+    const insertMessage = db.prepare(
+      "INSERT INTO message (id, session_id, data, time_created) VALUES (?,?,?,?)",
+    );
+    const insertPart = db.prepare(
+      "INSERT INTO part (id, message_id, data, time_created) VALUES (?,?,?,?)",
+    );
+    db.transaction(() => {
+      for (let index = 0; index < options.messages; index += 1) {
+        const id = `m${String(index).padStart(4, "0")}`;
+        insertMessage.run(
+          id,
+          "s1",
+          JSON.stringify({ role: index % 2 ? "assistant" : "user", modelID: "claude-sonnet-4-6" }),
+          1_000 + index,
+        );
+        for (let part = 0; part < options.partsEach; part += 1) {
+          insertPart.run(
+            `${id}-${part}`,
+            id,
+            JSON.stringify({ type: "text", text: `body ${index}.${part}` }),
+            1_000 + index,
+          );
+        }
+      }
+      options.extra?.(db);
+    })();
+    db.close();
+    return dbPath;
+  }
+
+  function detailAgent(dbPath: string) {
+    const agent = new OpenCodeSqliteAgent({
+      name: "test-agent",
+      displayName: "Test Agent",
+      findDbPath: () => dbPath,
+      getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
+    });
+    agent.isAvailable();
+    return agent;
+  }
+
+  function countPartQueries(run: () => void): number {
+    let queries = 0;
+    const prepare = Database.prototype.prepare;
+    const spy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+      this: Database.Database,
+      sql: string,
+    ) {
+      if (sql.includes("FROM part")) queries += 1;
+      return prepare.call(this, sql) as ReturnType<Database.Database["prepare"]>;
+    });
+    try {
+      run();
+    } finally {
+      spy.mockRestore();
+    }
+    return queries;
+  }
+
+  // One query per message meant M+2 reads, each scanning the part table when no
+  // index on part(message_id) exists.
+  it.each([5, 200])("issues one part query for %i messages", (messages) => {
+    const agent = detailAgent(seedDetail({ messages, partsEach: 2 }));
+    let detail: ReturnType<typeof agent.getSessionData> | undefined;
+
+    const queries = countPartQueries(() => {
+      detail = agent.getSessionData("s1");
+    });
+
+    expect(detail?.messages).toHaveLength(messages);
+    expect(queries).toBe(1);
+  });
+
+  it("keeps message and part order", () => {
+    const agent = detailAgent(seedDetail({ messages: 3, partsEach: 2 }));
+
+    const detail = agent.getSessionData("s1");
+
+    expect(detail.messages.map((message) => message.id)).toEqual(["m0000", "m0001", "m0002"]);
+    expect(detail.messages[0]?.parts.map((part) => ("text" in part ? part.text : ""))).toEqual([
+      "body 0.0",
+      "body 0.1",
+    ]);
+  });
+
+  it("drops messages whose parts are all internal or malformed", () => {
+    const agent = detailAgent(
+      seedDetail({
+        messages: 1,
+        partsEach: 1,
+        extra: (db) => {
+          db.prepare("INSERT INTO message VALUES (?,?,?,?)").run(
+            "m-internal",
+            "s1",
+            JSON.stringify({ role: "assistant" }),
+            9_000,
+          );
+          db.prepare("INSERT INTO part VALUES (?,?,?,?)").run(
+            "m-internal-0",
+            "m-internal",
+            JSON.stringify({ type: "step-start" }),
+            9_000,
+          );
+          db.prepare("INSERT INTO message VALUES (?,?,?,?)").run(
+            "m-empty",
+            "s1",
+            JSON.stringify({ role: "assistant" }),
+            9_100,
+          );
+        },
+      }),
+    );
+
+    const detail = agent.getSessionData("s1");
+
+    expect(detail.messages.map((message) => message.id)).toEqual(["m0000"]);
+  });
+
+  it("drives the batched read off the message index", () => {
+    const dbPath = seedDetail({ messages: 2, partsEach: 1 });
+    const db = new Database(dbPath, { readonly: true });
+
+    try {
+      const plan = db
+        .prepare(
+          `
+            EXPLAIN QUERY PLAN
+            SELECT p.message_id, p.data, p.time_created
+            FROM part p
+            JOIN message m ON m.id = p.message_id
+            WHERE m.session_id = ?
+            ORDER BY p.message_id, p.time_created ASC, p.id ASC
+          `,
+        )
+        .all("s1")
+        .map((row) => String((row as { detail?: unknown }).detail ?? ""))
+        .join("\n");
+
+      // Whatever the planner picks, it must not re-scan parts per message.
+      expect(plan).not.toContain("CORRELATED");
+    } finally {
+      db.close();
+    }
   });
 });
