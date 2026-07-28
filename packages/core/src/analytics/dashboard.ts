@@ -16,7 +16,12 @@ import type {
   DashboardTotals,
   ModelDistributionEntry,
 } from "../contract/index.js";
-import { getSessionAgentKey } from "../contract/index.js";
+import {
+  addCalendarDays,
+  countCalendarDays,
+  getSessionAgentKey,
+  toCalendarDayKey,
+} from "../contract/index.js";
 
 export type {
   DailyTokenBucket,
@@ -70,21 +75,6 @@ export function getSessionActivityTime(session: SessionHead): number {
   return session.time_updated ?? session.time_created;
 }
 
-// --- Local-day bucketing helpers ---
-
-export function toLocalDateKey(ts: number): string {
-  const d = new Date(ts);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate(),
-  ).padStart(2, "0")}`;
-}
-
-export function startOfLocalDay(ts: number): number {
-  const d = new Date(ts);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
 /**
  * Aggregate sessions into dashboard metrics, daily buckets, model distribution,
  * and the recent-sessions window. Pure — no HTTP, no DB.
@@ -115,11 +105,9 @@ export function buildDashboard(
   const dailyMap = new Map<string, DashboardDailyBucket>();
   const dailyTokenMap = new Map<string, DailyTokenBucket>();
   if (from != null) {
-    const bucketStart = startOfLocalDay(from);
-    const bucketDays = Math.floor((startOfLocalDay(to) - bucketStart) / 86400000) + 1;
+    const bucketDays = countCalendarDays(from, to);
     for (let i = 0; i < bucketDays; i += 1) {
-      const ts = bucketStart + i * 86400000;
-      const key = toLocalDateKey(ts);
+      const key = toCalendarDayKey(addCalendarDays(from, i));
       dailyMap.set(key, { date: key, sessions: 0, messages: 0 });
       dailyTokenMap.set(key, { date: key, input: 0, output: 0, cache_read: 0, cache_create: 0 });
     }
@@ -162,7 +150,7 @@ export function buildDashboard(
       metric.tokens += sessionTokens;
     }
 
-    const key = toLocalDateKey(activity);
+    const key = toCalendarDayKey(activity);
     let bucket = dailyMap.get(key);
     if (!bucket) {
       bucket = { date: key, sessions: 0, messages: 0 };
