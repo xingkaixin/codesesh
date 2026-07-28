@@ -10,6 +10,7 @@ import {
   saveCachedSessions,
 } from "../sessions.js";
 import { setSchemaEnsuredPath } from "../db.js";
+import { withCacheDb } from "../schema.js";
 import { makeSessionHead } from "./fixtures.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-sessions-test-"));
@@ -46,6 +47,21 @@ describe("cached sessions", () => {
     expect(loadCachedSessions("codex")?.sessions).toEqual([
       expect.objectContaining({ id: "keep", title: "Updated" }),
     ]);
+  });
+
+  it("CS-137: reports whether the write reached disk", () => {
+    expect(saveCachedSessions("codex", [makeSessionHead("one")])).toBe(true);
+    expect(
+      saveCachedSessionChanges("codex", [{ session: makeSessionHead("one"), sortIndex: 0 }], []),
+    ).toBe(true);
+    expect(saveCachedSessionChanges("codex", [], [])).toBe(true);
+
+    withCacheDb((db) => db.exec("DROP TABLE sessions"));
+
+    expect(saveCachedSessions("codex", [makeSessionHead("two")])).toBe(false);
+    expect(
+      saveCachedSessionChanges("codex", [{ session: makeSessionHead("two"), sortIndex: 0 }], []),
+    ).toBe(false);
   });
 
   it("clears persisted rows without leaving stale state", () => {

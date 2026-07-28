@@ -114,6 +114,22 @@ export class SearchIndexJobRunner {
         logSearchIndexSync(message.context, message.result);
         return;
       }
+      if (message.type === "persist-failed") {
+        appLogger.error("search_index.persist_failed", {
+          batch_id: batch.id,
+          context: message.context,
+          stage: message.stage,
+          agent: message.agentName,
+          sessions: message.sessions,
+        });
+        this.settle(
+          batch,
+          new Error(
+            `Search index worker failed to persist ${message.stage} for ${message.agentName}`,
+          ),
+        );
+        return;
+      }
       if (message.type !== "done") return;
 
       appLogger.info(`${message.context}.done`, {

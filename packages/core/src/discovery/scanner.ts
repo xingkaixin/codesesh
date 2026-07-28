@@ -5,6 +5,7 @@ import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import { createRegisteredAgents } from "../agents/index.js";
 import { filterSessionsByProjectScope } from "../projects/index.js";
 import { classifySessionTags, getSmartTagSourceTimestamp, perf } from "../utils/index.js";
+import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import {
   loadCachedSessions,
   markAgentCacheInitialized,
@@ -471,12 +472,19 @@ async function scanAgentFull(
 
     if (options.writeCache !== false) {
       // 全量（无时间窗）扫描才落盘完整会话列表并记录一次全量同步，用于 backfill 节流判断
-      if (options.from == null && options.to == null) {
-        saveCachedSessions(agent.name, tagged.sessions, meta);
-        markAgentFullSyncCompleted(agent.name);
+      const isFullWindow = options.from == null && options.to == null;
+      // 落盘失败时不得标记缓存已建立，否则后续刷新会基于不存在的缓存走增量路径
+      const persisted = isFullWindow ? saveCachedSessions(agent.name, tagged.sessions, meta) : true;
+      if (persisted) {
+        if (isFullWindow) markAgentFullSyncCompleted(agent.name);
+        // head 缓存是否建立与搜索索引是否完整是两回事，带时间窗的扫描同样应当标记
+        markAgentCacheInitialized(agent.name);
+      } else {
+        getCoreDiagnostics()?.warn("cache.save_failed", {
+          agent: agent.name,
+          sessions: tagged.sessions.length,
+        });
       }
-      // head 缓存是否建立与搜索索引是否完整是两回事，带时间窗的扫描同样应当标记
-      markAgentCacheInitialized(agent.name);
     }
 
     onProgress?.({ agent: agent.name, phase: "complete", newCount: tagged.sessions.length });

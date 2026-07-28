@@ -124,7 +124,13 @@ export class LiveScanStore {
     });
     const snapshot = this.getSnapshot();
     const indexStartedAt = performance.now();
-    if (!this.deferInitialRefresh) await this.syncEngine.syncInitialIndex();
+    if (!this.deferInitialRefresh) {
+      // The snapshot is already served from memory, so an index-write failure
+      // degrades search freshness rather than startup.
+      await this.syncEngine.syncInitialIndex().catch((error: unknown) => {
+        appLogger.error("scan.initial.index_failed", { error });
+      });
+    }
     const indexDuration = performance.now() - indexStartedAt;
     appLogger.info("scan.initial.done", {
       duration_ms: Math.round(performance.now() - startedAt),

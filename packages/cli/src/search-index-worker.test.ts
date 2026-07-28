@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   syncSessionSearchIndex: vi.fn(),
   syncSessionSearchIndexChanges: vi.fn(),
   appLoggerWarn: vi.fn(),
+  appLoggerError: vi.fn(),
 }));
 
 vi.mock("node:worker_threads", () => ({
@@ -31,7 +32,7 @@ vi.mock("@codesesh/core", () => ({
 }));
 
 vi.mock("./logging.js", () => ({
-  appLogger: { warn: mocks.appLoggerWarn },
+  appLogger: { warn: mocks.appLoggerWarn, error: mocks.appLoggerError },
 }));
 
 function makeAgent() {
@@ -49,6 +50,8 @@ async function runWorker() {
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
+  mocks.saveCachedSessions.mockReturnValue(true);
+  mocks.saveCachedSessionChanges.mockReturnValue(true);
   mocks.workerData = {
     context: "refresh",
     agentNames: [],
@@ -211,5 +214,80 @@ describe("search index worker", () => {
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({ type: "done", sessions: 1 }),
     );
+  });
+
+  it("CS-137: reports a failed cache write instead of settling the batch as done", async () => {
+    const agent = makeAgent();
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    mocks.saveCachedSessionChanges.mockReturnValue(false);
+    mocks.workerData = {
+      context: "scan.refresh",
+      agentNames: [],
+      sessionsByAgent: {},
+      metaByAgent: {},
+      jobs: [
+        {
+          kind: "changes",
+          context: "scan.refresh",
+          agentName: "codex",
+          changes: [{ session: { id: "s1" }, sortIndex: 0 }],
+          removedSessionIds: [],
+          meta: {},
+        },
+      ],
+    };
+
+    await runWorker();
+
+    expect(mocks.syncSessionSearchIndexChanges).not.toHaveBeenCalled();
+    expect(mocks.postMessage).toHaveBeenCalledExactlyOnceWith({
+      type: "persist-failed",
+      context: "scan.refresh",
+      stage: "cache",
+      agentName: "codex",
+      sessions: 1,
+    });
+  });
+
+  it("CS-137: reports a failed index write and skips the remaining jobs", async () => {
+    const agent = makeAgent();
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    mocks.syncSessionSearchIndex.mockReturnValue(null);
+    mocks.workerData = {
+      context: "scan.refresh",
+      agentNames: [],
+      sessionsByAgent: {},
+      metaByAgent: {},
+      jobs: [
+        {
+          kind: "full",
+          context: "scan.refresh",
+          agentName: "codex",
+          sessions: [{ id: "s1" }, { id: "s2" }],
+          meta: {},
+          saveCache: true,
+        },
+        {
+          kind: "full",
+          context: "scan.refresh",
+          agentName: "codex",
+          sessions: [{ id: "s3" }],
+          meta: {},
+          saveCache: true,
+        },
+      ],
+    };
+
+    await runWorker();
+
+    expect(mocks.markAgentCacheInitialized).not.toHaveBeenCalled();
+    expect(mocks.syncSessionSearchIndex).toHaveBeenCalledOnce();
+    expect(mocks.postMessage).toHaveBeenCalledExactlyOnceWith({
+      type: "persist-failed",
+      context: "scan.refresh",
+      stage: "search_index",
+      agentName: "codex",
+      sessions: 2,
+    });
   });
 });
