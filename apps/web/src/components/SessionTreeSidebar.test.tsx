@@ -88,7 +88,6 @@ describe("buildSessionTreeModel group sorting", () => {
 
     const { paths } = buildSessionTreeModel(sessions);
 
-    expect(() => buildSessionTreeModel(sessions)).not.toThrow();
     expect(groupOrderOf(paths)).toEqual(["small", "big"]);
   });
 
@@ -100,6 +99,53 @@ describe("buildSessionTreeModel group sorting", () => {
 
     expect(model.pathBySessionReference.get(getSessionReferenceKey(codex))).toBeDefined();
     expect(model.pathBySessionReference.get(getSessionReferenceKey(claude))).toBeDefined();
+  });
+});
+
+describe("buildSessionTreeModel path allocation", () => {
+  it("CS-145: allocates unique paths for fully colliding titles and id prefixes", () => {
+    // Same title and same first 8 id characters: every leaf lands on one base
+    // path. A restart-from-2 probe is O(N²) here and cannot finish in time.
+    const sessions = Array.from({ length: 20_000 }, (_, index) =>
+      makeSession({
+        id: `deadbeef-${index}`,
+        title: "Same title",
+        directory: "/repo/one",
+      }),
+    );
+
+    const model = buildSessionTreeModel(sessions);
+
+    expect(model.paths).toHaveLength(sessions.length);
+    expect(new Set(model.paths).size).toBe(sessions.length);
+    for (const session of sessions) {
+      const path = model.pathBySessionReference.get(getSessionReferenceKey(session));
+      expect(model.sessionByPath.get(path ?? "")).toBe(session);
+    }
+  });
+
+  it("CS-145: keeps groups with the same label distinct", () => {
+    const sessions = [
+      makeSession({ id: "a", directory: "/repo/one/shared" }),
+      makeSession({ id: "b", directory: "/repo/two/shared" }),
+      makeSession({ id: "c", directory: "/repo/three/shared" }),
+    ];
+
+    const { paths } = buildSessionTreeModel(sessions);
+
+    expect(groupOrderOf(paths)).toEqual(["shared", "shared (2)", "shared (3)"]);
+  });
+
+  it("CS-145: does not reuse a numbered label already taken by another title", () => {
+    const sessions = [
+      makeSession({ id: "a", title: "Report (2)" }),
+      makeSession({ id: "b", title: "Report" }),
+      makeSession({ id: "c", title: "Report" }),
+    ];
+
+    const { paths } = buildSessionTreeModel(sessions);
+
+    expect(new Set(paths).size).toBe(sessions.length);
   });
 });
 

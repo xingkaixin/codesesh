@@ -145,13 +145,41 @@ function compareTreeOrder(
   return left.path.localeCompare(right.path);
 }
 
+/**
+ * Hands out unique paths for repeated labels. Each base resumes its suffix
+ * search where the last collision left off, so a run of N identical labels
+ * costs O(N) probes instead of O(N²).
+ */
+function createPathAllocator() {
+  const used = new Set<string>();
+  const nextSuffix = new Map<string, number>();
+
+  return function allocate(base: string): string {
+    if (!used.has(base)) {
+      used.add(base);
+      return base;
+    }
+
+    let suffix = nextSuffix.get(base) ?? 2;
+    let path = `${base} (${suffix})`;
+    // A distinct base may already own this exact numbered label.
+    while (used.has(path)) {
+      suffix += 1;
+      path = `${base} (${suffix})`;
+    }
+    nextSuffix.set(base, suffix + 1);
+    used.add(path);
+    return path;
+  };
+}
+
 export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel {
   const sortOrderByPath = new Map<string, number>();
   const pathBySessionReference = new Map<string, string>();
   const groupPathBySessionReference = new Map<string, string>();
   const groupCountByPath = new Map<string, string>();
   const sessionByPath = new Map<string, SessionHead>();
-  const usedPaths = new Set<string>();
+  const allocateSessionPath = createPathAllocator();
   const paths: string[] = [];
   const groups = new Map<string, { label: string; sessions: SessionHead[]; maxTime: number }>();
 
@@ -174,17 +202,10 @@ export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel
   });
 
   let order = 0;
-  const usedGroupPaths = new Set<string>();
+  const allocateGroupPath = createPathAllocator();
   for (const [, group] of sortedGroups) {
-    const groupLeaf = sanitizeSegment(group.label);
-    let groupPath = `${groupLeaf}/`;
-    let groupSuffix = 2;
-    while (usedGroupPaths.has(groupPath)) {
-      groupPath = `${groupLeaf} (${groupSuffix})/`;
-      groupSuffix += 1;
-    }
-    usedGroupPaths.add(groupPath);
-    const bareGroupPath = groupPath.slice(0, -1);
+    const bareGroupPath = allocateGroupPath(sanitizeSegment(group.label));
+    const groupPath = `${bareGroupPath}/`;
     const titleCounts = new Map<string, number>();
 
     sortOrderByPath.set(groupPath, order);
@@ -203,14 +224,8 @@ export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel
       const leaf = needsDisambiguation
         ? `${sanitizeSegment(title)} #${session.id.slice(0, 8)}`
         : sanitizeSegment(title);
-      let path = `${groupPath}${leaf}`;
-      let suffix = 2;
-      while (usedPaths.has(path)) {
-        path = `${groupPath}${leaf} (${suffix})`;
-        suffix += 1;
-      }
+      const path = allocateSessionPath(`${groupPath}${leaf}`);
 
-      usedPaths.add(path);
       paths.push(path);
       sortOrderByPath.set(path, order);
       order += 1;
