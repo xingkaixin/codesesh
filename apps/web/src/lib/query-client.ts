@@ -1,4 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
+import { installSessionDetailCachePolicy } from "./session-detail-cache";
 
 export function createQueryClient(): QueryClient {
   return new QueryClient({
@@ -16,3 +17,4 @@ export function createQueryClient(): QueryClient {
 }
 
 export const queryClient = createQueryClient();
+installSessionDetailCachePolicy(queryClient);
