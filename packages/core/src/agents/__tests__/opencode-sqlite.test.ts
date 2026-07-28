@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { OpenCodeSqliteAgent } from "../opencode-sqlite.js";
+import { SessionScanError } from "../base.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
 const tempDirs: string[] = [];
@@ -211,5 +212,47 @@ describe("OpenCodeSqliteAgent", () => {
         },
       ]),
     );
+  });
+});
+
+describe("CS-138: unreadable databases are not empty scans", () => {
+  function makeAgent(dbPath: string) {
+    const agent = new OpenCodeSqliteAgent({
+      name: "test-agent",
+      displayName: "Test Agent",
+      findDbPath: () => dbPath,
+      getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
+    });
+    agent.isAvailable();
+    return agent;
+  }
+
+  function tempFile(name: string): string {
+    const dir = mkdtempSync(join(tmpdir(), "codesesh-scan-failure-"));
+    tempDirs.push(dir);
+    return join(dir, name);
+  }
+
+  it("reports a corrupt database as a failure", () => {
+    const dbPath = tempFile("corrupt.db");
+    writeFileSync(dbPath, "this is not a sqlite file");
+
+    expect(() => makeAgent(dbPath).scan({ from: 0 })).toThrow(SessionScanError);
+  });
+
+  it("reports a missing session table as a failure", () => {
+    const dbPath = tempFile("empty.db");
+    new Database(dbPath).close();
+
+    expect(() => makeAgent(dbPath).scan({ from: 0 })).toThrow(SessionScanError);
+  });
+
+  it("still reports a readable but empty database as an empty scan", () => {
+    const dbPath = createDatabase();
+    const db = new Database(dbPath);
+    db.exec("DELETE FROM part; DELETE FROM message; DELETE FROM session;");
+    db.close();
+
+    expect(makeAgent(dbPath).scan({ from: 0 })).toEqual([]);
   });
 });
