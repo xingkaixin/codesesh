@@ -334,6 +334,58 @@ describe("AgentSyncEngine", () => {
     );
   });
 
+  it("CS-138: keeps the previous snapshot when a scan fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const workerRunner = makeWorkerRunner();
+    workerRunner.run = vi.fn(async () => {
+      throw new Error("codex session scan failed while opening the database");
+    });
+    const previous = makeSession("session", "before");
+    const { engine } = makeEngine(
+      makeAgent({ checkForChanges: () => ({ hasChanges: true, timestamp: 2 }) }),
+      [previous],
+      workerRunner,
+    );
+    const sessionChanges = vi.fn();
+    engine.subscribeSessionsChanged(sessionChanges);
+
+    await engine.refresh("codex");
+
+    expect(engine.snapshot().byAgent.codex).toEqual([previous]);
+    expect(sessionChanges).not.toHaveBeenCalled();
+    expect(searchIndex.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("CS-138: keeps sessions when the agent becomes unreachable", async () => {
+    const previous = makeSession("session", "before");
+    const { engine } = makeEngine(makeAgent({ isAvailable: () => false }), [previous]);
+    const sessionChanges = vi.fn();
+    engine.subscribeSessionsChanged(sessionChanges);
+
+    await engine.refresh("codex");
+
+    expect(engine.snapshot().byAgent.codex).toEqual([previous]);
+    expect(sessionChanges).not.toHaveBeenCalled();
+    expect(searchIndex.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("CS-138: still publishes a genuinely empty scan as removals", async () => {
+    const workerRunner = makeWorkerRunner();
+    const previous = makeSession("session", "before");
+    const { engine } = makeEngine(
+      makeAgent({ checkForChanges: () => ({ hasChanges: true, timestamp: 2 }) }),
+      [previous],
+      workerRunner,
+    );
+    const sessionChanges = vi.fn();
+    engine.subscribeSessionsChanged(sessionChanges);
+
+    await engine.refresh("codex");
+
+    expect(engine.snapshot().byAgent.codex).toEqual([]);
+    expect(sessionChanges).toHaveBeenCalled();
+  });
+
   it("clears pending refresh work during shutdown", async () => {
     vi.useFakeTimers();
     const checkForChanges = vi.fn(() => ({ hasChanges: false, timestamp: Date.now() }));

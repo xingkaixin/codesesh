@@ -1517,7 +1517,10 @@ describe("LiveScanStore", () => {
     ]);
   });
 
-  it("removes sessions when an agent becomes unavailable", async () => {
+  // CS-138: an unreachable agent was never scanned, so an empty result proves
+  // nothing. Publishing it would delete every session the agent ever had —
+  // a moved database file or an unmounted share would wipe the history.
+  it("keeps sessions when an agent becomes unavailable", async () => {
     const previous = makeSession("session");
     const codex = makeAgent("codex", {
       isAvailable: vi.fn(() => false),
@@ -1538,26 +1541,9 @@ describe("LiveScanStore", () => {
     await syncEngineOf(store).refresh("codex");
 
     expect(core.saveCachedSessions).not.toHaveBeenCalled();
-    expect(workerThreads.workers).toHaveLength(workerCount + 1);
-    expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
-      expect.objectContaining({
-        kind: "full",
-        agentName: "codex",
-        sessions: [],
-        saveCache: true,
-      }),
-    ]);
-    expect(events).toEqual([
-      expect.objectContaining({
-        newSessions: 0,
-        updatedSessions: 0,
-        removedSessions: 1,
-        totalSessions: 0,
-        changedSessionHeads: [],
-        removedSessionRefs: [{ agentName: "codex", sessionId: "session" }],
-      }),
-    ]);
-    expect(store.getSnapshot().sessions).toEqual([]);
+    expect(workerThreads.workers).toHaveLength(workerCount);
+    expect(events).toEqual([]);
+    expect(store.getSnapshot().sessions).toEqual([previous]);
   });
 
   it("uses native recursive watch and waits for appended files to stabilize", async () => {
