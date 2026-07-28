@@ -2,10 +2,15 @@
  * SQLite helper — graceful degradation if better-sqlite3 is unavailable.
  */
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { createRequire } from "node:module";
 import { getCoreDiagnostics } from "./diagnostics.js";
+import {
+  ensurePrivateDirectory,
+  restrictPrivateDatabase,
+  restrictPrivateFile,
+} from "./private-storage.js";
 
 interface SQLiteStatement {
   all(...params: unknown[]): DatabaseRow[];
@@ -148,6 +153,8 @@ export function backupDatabase(db: SQLiteDatabase, dbPath: string, label: string
     backupPath = join(dirname(dbPath), `${basename(dbPath)}.${timestamp}.${label}.${counter}.bak`);
   }
   db.exec(`VACUUM INTO ${quoteSqlString(backupPath)}`);
+  // A fresh inode does not inherit the source database's mode.
+  restrictPrivateFile(backupPath);
   return backupPath;
 }
 
@@ -265,8 +272,10 @@ export function openDb(dbPath: string): SQLiteDatabase | null {
     return null;
   }
   try {
-    mkdirSync(dirname(dbPath), { recursive: true });
+    ensurePrivateDirectory(dirname(dbPath));
     const db = DatabaseConstructor(dbPath);
+    // The sidecars only exist once the connection is established.
+    restrictPrivateDatabase(dbPath);
     try {
       db.pragma("journal_mode = WAL");
       db.pragma("synchronous = NORMAL");
