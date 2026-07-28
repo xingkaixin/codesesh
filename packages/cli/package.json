@@ -40,7 +40,7 @@
     "build": "tsc --noEmit && tsup && node scripts/copy-web-dist.js",
     "release": "tsc --noEmit && tsup && node scripts/copy-web-dist.js",
     "dev": "tsup --watch",
-    "clean": "rm -rf dist",
+    "clean": "node ../../scripts/clean.mjs",
     "start": "node dist/index.js",
     "lint": "oxlint src/",
     "lint:fix": "oxlint src/ --fix",

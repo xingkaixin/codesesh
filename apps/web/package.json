@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "clean": "rm -rf dist",
+    "clean": "node ../../scripts/clean.mjs",
     "lint": "oxlint src/",
     "lint:fix": "oxlint src/ --fix",
     "format": "oxfmt --write src/",

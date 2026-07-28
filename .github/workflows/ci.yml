@@ -42,6 +42,16 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == 22
         run: node packages/cli/dist/index.js --version
 
+      # `pnpm clean` is a documented command, so it has to work on every OS we
+      # claim to support — including a shell with no `rm`.
+      - name: Smoke test clean and rebuild
+        if: matrix.node-version == 24
+        run: |
+          node -e "require('node:fs').writeFileSync('packages/core/dist/clean-sentinel.txt','x')"
+          pnpm clean
+          node -e "if (require('node:fs').existsSync('packages/core/dist')) { console.error('dist survived pnpm clean'); process.exit(1) }"
+          pnpm build
+
       - run: pnpm test
 
   smoke:

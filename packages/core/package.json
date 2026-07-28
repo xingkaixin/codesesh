@@ -23,7 +23,7 @@
   "scripts": {
     "build": "tsup && tsc6 --emitDeclarationOnly",
     "dev": "tsup --watch",
-    "clean": "rm -rf dist",
+    "clean": "node ../../scripts/clean.mjs",
     "lint": "oxlint src/",
     "lint:fix": "oxlint src/ --fix",
     "format": "oxfmt --write src/",
