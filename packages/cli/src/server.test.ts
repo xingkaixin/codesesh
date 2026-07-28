@@ -1,4 +1,7 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createNodeServer, type Server as NodeServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/core/contract";
 import { createServer } from "./server.js";
@@ -212,6 +215,38 @@ describe("createServer", () => {
       await eventsResponse.body?.cancel();
     } finally {
       await app.shutdown();
+    }
+  });
+
+  it("CS-131: serves the web build without reading outside its root", async () => {
+    const root = mkdtempSync(join(tmpdir(), "codesesh-static-root-"));
+    const webDist = join(root, "web");
+    mkdirSync(webDist);
+    writeFileSync(join(webDist, "index.html"), "<html>app shell</html>");
+    writeFileSync(join(webDist, "app.js"), "console.log('bundle')");
+    // Only reachable by escaping the static root.
+    const outsideMarker = "outside-static-root-marker";
+    writeFileSync(join(root, "private.txt"), outsideMarker);
+
+    const app = await createServer(0, createStore(), { webDistPath: webDist });
+    const encodedDot = "%2e";
+    const separators = ["/", "\\", "%2f", "%5c"];
+
+    try {
+      expect(await (await fetch(`${app.url}/app.js`)).text()).toContain("bundle");
+      // SPA fallback still resolves unknown routes to the app shell.
+      expect(await (await fetch(`${app.url}/sessions/anything`)).text()).toContain("app shell");
+
+      for (const separator of separators) {
+        for (const dots of ["..", `${encodedDot}${encodedDot}`]) {
+          const escape = `${dots}${separator}`.repeat(4);
+          const response = await fetch(`${app.url}/${escape}private.txt`);
+          expect(await response.text()).not.toContain(outsideMarker);
+        }
+      }
+    } finally {
+      await app.shutdown();
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

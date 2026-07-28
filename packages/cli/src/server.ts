@@ -29,6 +29,8 @@ export interface CreateServerOptions {
   hostname?: string;
   remoteAccess?: boolean;
   remoteAccessToken?: string;
+  /** Overrides the auto-detected web build directory; used to pin the static root in tests. */
+  webDistPath?: string;
 }
 
 function findWebDistPath(): string | null {
@@ -152,7 +154,7 @@ export async function createServer(
   app.route("/api", createApiRoutes(store, store, routeOptions));
 
   // Serve static files from web dist (if available)
-  const webDistPath = findWebDistPath();
+  const webDistPath = options.webDistPath ?? findWebDistPath();
 
   if (webDistPath) {
     app.use("/*", serveStatic({ root: webDistPath }));

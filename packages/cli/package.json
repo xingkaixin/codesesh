@@ -50,7 +50,7 @@
   },
   "dependencies": {
     "@codesesh/core": "workspace:*",
-    "@hono/node-server": "^1.14.0",
+    "@hono/node-server": "^2.0.12",
     "better-sqlite3": "^12.11.1",
     "citty": "^0.1.6",
     "consola": "^3.4.2",
