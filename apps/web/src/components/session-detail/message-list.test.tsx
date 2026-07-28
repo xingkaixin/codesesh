@@ -1,3 +1,4 @@
+import { Profiler } from "react";
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FilteredSessionMessage } from "./toc";
@@ -219,5 +220,49 @@ describe("MessageList virtualization", () => {
 
     ResizeObserverMock.instances.forEach((observer) => observer.trigger(row));
     expect(Number.parseInt(list.style.height, 10)).toBe(initialHeight + 320);
+  });
+
+  it("CS-143: commits one update for a frame of measurements", async () => {
+    ResizeObserverMock.instances = [];
+    vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+    const commits: number[] = [];
+    const view = render(
+      <Profiler id="message-list" onRender={(_id, _phase, duration) => commits.push(duration)}>
+        <MessageList
+          messages={createMessages()}
+          sessionAgentKey="claudecode"
+          baseDirectory="/tmp/project"
+          apiRef={{ current: null }}
+        />
+      </Profiler>,
+    );
+    const list = view.container.firstElementChild as HTMLElement;
+    const initialHeight = Number.parseInt(list.style.height, 10);
+    const rows = [...view.container.querySelectorAll("[data-message-index]")].map(
+      (node) => node.parentElement as HTMLElement,
+    );
+    expect(rows.length).toBeGreaterThan(1);
+
+    for (const row of rows) {
+      vi.spyOn(row, "getBoundingClientRect").mockReturnValue({
+        ...row.getBoundingClientRect(),
+        bottom: 600,
+        height: 600,
+      });
+    }
+
+    const before = commits.length;
+    // Every visible row resizing in the same frame is one layout change, so it
+    // must not cost one commit per row.
+    act(() => {
+      for (const row of rows) {
+        ResizeObserverMock.instances.forEach((observer) => observer.trigger(row));
+      }
+    });
+
+    await waitFor(() =>
+      expect(Number.parseInt(list.style.height, 10)).toBeGreaterThan(initialHeight),
+    );
+    expect(commits.length - before).toBe(1);
   });
 });
