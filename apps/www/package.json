@@ -7,7 +7,7 @@
     "dev": "astro dev",
     "build": "astro check && astro build",
     "preview": "astro preview",
-    "clean": "rm -rf dist",
+    "clean": "node ../../scripts/clean.mjs",
     "deploy:cf": "pnpm build && wrangler pages deploy dist --project-name codesesh"
   },
   "dependencies": {
