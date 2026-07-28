@@ -1,3 +1,4 @@
+import type { ProjectIdentityKind } from "./project-identity.js";
 import type { SessionReference } from "./session-reference.js";
 
 export interface SessionStats {
@@ -44,21 +45,13 @@ export interface SessionFileActivityOccurrence {
   tool_index: number;
 }
 
-export type ProjectIdentityKind =
-  | "git_remote"
-  | "git_common_dir"
-  | "manifest_path"
-  | "synthetic"
-  | "path"
-  | "loose";
+export type { ProjectIdentityKind, ProjectIdentityRef } from "./project-identity.js";
 
 export interface ProjectIdentity {
   kind: ProjectIdentityKind;
   key: string;
   displayName: string;
 }
-
-export type ProjectIdentityRef = Pick<ProjectIdentity, "kind" | "key">;
 
 export interface ProjectGroup {
   identityKind: ProjectIdentityKind;

@@ -1,29 +1,17 @@
-import type { ApiProjectGroup, ProjectIdentityKind } from "./api";
+import {
+  getProjectIdentityKey,
+  isProjectIdentityKind,
+  type ProjectIdentityRef,
+} from "@codesesh/core/contract";
+import type { ApiProjectGroup } from "./api";
 
-export interface ProjectRouteIdentity {
-  kind: ProjectIdentityKind;
-  key: string;
-}
+// Identity semantics come from the contract; this module only turns them into
+// URLs and back. A route key is percent-encoded, an identity key is not.
+export { getProjectIdentityKey, isProjectIdentityKind };
+export type ProjectRouteIdentity = ProjectIdentityRef;
 
 export function getProjectGroupIdentity(project: ApiProjectGroup): ProjectRouteIdentity {
   return { kind: project.identityKind, key: project.identityKey };
-}
-
-const projectIdentityKinds = new Set<string>([
-  "git_remote",
-  "git_common_dir",
-  "manifest_path",
-  "synthetic",
-  "path",
-  "loose",
-]);
-
-export function isProjectIdentityKind(value: string): value is ProjectIdentityKind {
-  return projectIdentityKinds.has(value);
-}
-
-export function getProjectIdentityKey(project: ProjectRouteIdentity): string {
-  return `${project.kind}:${project.key}`;
 }
 
 export function decodeProjectRouteKey(value: string): string {

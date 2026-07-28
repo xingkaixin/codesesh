@@ -1,6 +1,6 @@
 import * as os from "node:os";
 import * as path from "node:path";
-import type { ProjectIdentity, ProjectIdentityKind, ProjectIdentityRef } from "../types/index.js";
+import type { ProjectIdentity, ProjectIdentityKind } from "../types/index.js";
 import { fallbackDisplayName } from "./display-name.js";
 import { realFs } from "./fs.js";
 
@@ -24,33 +24,18 @@ const PARSEABLE_MANIFESTS = ["package.json", "Cargo.toml", "pyproject.toml"] as 
 
 const LOOSE_DIRS = new Set(["/tmp", "/private/tmp"]);
 const LOOSE_HOME_DIRS = ["Desktop", "Downloads", "Documents"];
-const PROJECT_IDENTITY_KINDS = new Set<ProjectIdentityKind>([
-  "git_remote",
-  "git_common_dir",
-  "manifest_path",
-  "synthetic",
-  "path",
-  "loose",
-]);
 type PathOps = Pick<
   typeof path.posix,
   "dirname" | "isAbsolute" | "join" | "relative" | "resolve" | "sep"
 >;
 
-export function isProjectIdentityKind(value: string): value is ProjectIdentityKind {
-  return PROJECT_IDENTITY_KINDS.has(value as ProjectIdentityKind);
-}
-
-export function getProjectIdentityKey(identity: ProjectIdentityRef): string {
-  return `${identity.kind}:${identity.key}`;
-}
-
-export function matchesProjectIdentity(
-  identity: ProjectIdentityRef | null | undefined,
-  expected: ProjectIdentityRef,
-): boolean {
-  return identity?.kind === expected.kind && identity.key === expected.key;
-}
+// Identity semantics live in the contract; this module only discovers them
+// from the filesystem and git.
+export {
+  getProjectIdentityKey,
+  isProjectIdentityKind,
+  matchesProjectIdentity,
+} from "../contract/project-identity.js";
 
 export function normalizeGitRemote(url: string): string | null {
   if (!url) return null;

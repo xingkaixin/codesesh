@@ -7,6 +7,7 @@ export type * from "./bookmarks.js";
 export type * from "./dashboard.js";
 export type * from "./events.js";
 export * from "./calendar-day.js";
+export * from "./project-identity.js";
 export * from "./session-reference.js";
 export * from "./session-index.js";
 export type * from "./api.js";

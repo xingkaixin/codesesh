@@ -12,6 +12,7 @@ import {
   type MouseEvent,
 } from "react";
 import type { SessionHead } from "../lib/api";
+import { getProjectIdentityKey } from "../lib/projects";
 import { getSessionReferenceKey } from "../lib/session-indexes";
 import { getSessionDisplayTitle } from "../lib/session-title";
 import { isRenderProfilerEnabled, recordRenderProfileEntry } from "./RenderProfiler";
@@ -119,7 +120,7 @@ function getProjectGroup(session: SessionHead) {
   const identity = session.project_identity;
   if (identity) {
     return {
-      key: `${identity.kind}:${identity.key}`,
+      key: getProjectIdentityKey(identity),
       label: identity.displayName || getDirectoryLabel(session.directory),
     };
   }
