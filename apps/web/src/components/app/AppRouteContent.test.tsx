@@ -5,6 +5,8 @@ import type { ApiProjectGroup } from "../../lib/api";
 import { createAgentCatalog } from "../../lib/agents";
 import { AppRouteContent } from "./AppRouteContent";
 
+const LAZY_SURFACE_TIMEOUT_MS = 5_000;
+
 const project = {
   identityKind: "git_remote",
   identityKey: "github.com/acme/app",
@@ -68,7 +70,8 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
 afterEach(cleanup);
 
 describe("AppRouteContent", () => {
-  // The route surfaces load on demand, so the assertion waits for the chunk.
+  // The route surfaces load on demand, so these assertions wait for the chunk.
+  // The default 1s query timeout is tight when the suite runs under load.
   it("renders a project from the resolved project model", async () => {
     const props = makeProps();
     props.viewState = {
@@ -86,7 +89,13 @@ describe("AppRouteContent", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "acme/app" })).toBeTruthy();
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: "acme/app" },
+        { timeout: LAZY_SURFACE_TIMEOUT_MS },
+      ),
+    ).toBeTruthy();
   });
 
   it("renders search content from the explicit search contract", async () => {
@@ -99,6 +108,12 @@ describe("AppRouteContent", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "No recent sessions" })).toBeTruthy();
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: "No recent sessions" },
+        { timeout: LAZY_SURFACE_TIMEOUT_MS },
+      ),
+    ).toBeTruthy();
   });
 });
