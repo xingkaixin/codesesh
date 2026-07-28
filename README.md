@@ -295,27 +295,37 @@ node --watch packages/cli/dist/index.js --cwd . --days 3
 
 ```
 packages/core       Core library (framework-agnostic)
-  agents/           Agent adapters (one file per agent)
-  discovery/        Session path resolution & file scanning
+  agents/           Agent adapters, registry, and registration
+  analytics/        Dashboard aggregation
+  contract/         Browser-safe types and shared pure logic
+  discovery/        Session scanning, SQLite cache, and search index
+  pricing/          Model price registry and cost estimation
+  projects/         Project identity resolution
+  search/           Session search across sources
+  state/            Bookmarks, aliases, and preferences
   types/            Shared TypeScript types
   utils/            Utility functions
 
 packages/cli        CLI entry point & HTTP server
-  src/commands/     CLI subcommands
-  src/api/          Hono route handlers
+  api/              Hono routes and request handlers
+  *-worker.ts       Scan, search-index and smart-tag worker threads
 
 apps/web            React frontend
-  src/components/   UI components
-  src/lib/          API client & utilities
+  components/       UI components
+  hooks/            Data loading and interaction hooks
+  lib/              API client & utilities
 ```
+
+`docs/architecture.md` describes how a scan flows through these; `docs/sqlite-storage.md` covers
+the cache and search index.
 
 ### Extending
 
 Agent capabilities have one registration point:
 
-1. Create `packages/core/src/agents/youragent.ts`, implement `BaseAgent`, and export its data-root resolver.
+1. Create `packages/core/src/agents/<youragent>.ts`, implement `BaseAgent`, and export its data-root resolver.
 2. Register it in `packages/core/src/agents/register.ts`, explicitly declaring its icon, data root, resume command support (`null` when unsupported), and whether it uses a custom or default tool display strategy.
 3. Add its SVG to `apps/web/public/icon/agent/`.
-4. For a custom tool display strategy, add `apps/web/src/components/session-detail/tool-strategy/youragent.ts` and register its builder in that directory's `index.ts`.
+4. For a custom tool display strategy, add `apps/web/src/components/session-detail/tool-strategy/<youragent>.ts` and register its builder in that directory's `index.ts`.
 
 The registration completeness test rejects missing icons, undeclared resume support, and custom strategy mismatches.

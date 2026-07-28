@@ -1,5 +1,18 @@
 # CodeSesh - 产品需求文档 (PRD)
 
+> **这是立项时的历史文档，不是当前架构的描述。**
+>
+> 它记录 CodeSesh 从 agent-dump / agent-view 整合而来的初始动机与需求范围。文件树、API 清单
+> 与里程碑均为当时的实现计划，之后已经演进；照此文档定位代码会指向不存在的模块。
+>
+> 当前事实来源：
+>
+> - 产品能力与 CLI 参数：[`README.md`](../README.md)
+> - 扫描与缓存架构：[`docs/architecture.md`](./architecture.md)、[`docs/scanning-and-caching.md`](./scanning-and-caching.md)
+> - SQLite 存储与搜索索引：[`docs/sqlite-storage.md`](./sqlite-storage.md)
+> - 支持的 Agent 清单：`packages/core/src/agents/register.ts`
+> - 发布流程：[`docs/release-guide.md`](./release-guide.md)
+
 ## 1. 概述
 
 ### 1.1 产品定位
@@ -10,7 +23,7 @@ CodeSesh 是一个本地 CLI 工具，用于发现、聚合和可视化多种 AI
 
 当前存在两个独立项目：
 
-- **agent-dump** (Python)：从本地文件系统发现并导出 5 种 Coding Agent（Claude Code、Codex、OpenCode、Cursor、Kimi）的会话记录，统一为 JSON 格式
+- **agent-dump** (Python)：从本地文件系统发现并导出 5 种 Coding Agent（Claude Code、Codex、OpenCode、Cursor、Kimi）的会话记录，统一为 JSON 格式（立项时的范围；当前支持的 Agent 以 `packages/core/src/agents/register.ts` 为准）
 - **agent-view** (React)：将导出的 JSON 会话文件可视化为网页，支持消息时间线、工具输出渲染、TOC 过滤等
 
 CodeSesh 将两者的能力整合为一个 TypeScript monorepo，提供从会话发现到可视化的端到端体验，无需 Python 环境。
@@ -126,158 +139,33 @@ CLI 启动时应有结构化的控制台输出：
 
 ### 3.2 Monorepo 结构
 
-```
-codesesh/
-├── pnpm-workspace.yaml
-├── turbo.json
-├── package.json                 # root scripts, devDeps
-├── tsconfig.base.json
-│
-├── packages/
-│   ├── core/                    # @codesesh/core
-│   │   └── src/
-│   │       ├── types/           # 统一类型定义
-│   │       │   ├── session.ts   # SessionHead, SessionData, Message, MessagePart
-│   │       │   ├── agent.ts     # AgentInfo, ScanOptions
-│   │       │   └── filters.ts   # FilterOptions
-│   │       ├── agents/          # 各 Agent 适配器
-│   │       │   ├── base.ts      # BaseAgent 抽象类
-│   │       │   ├── registry.ts  # Agent 注册表
-│   │       │   ├── claudecode.ts
-│   │       │   ├── codex.ts
-│   │       │   ├── opencode.ts
-│   │       │   ├── cursor.ts
-│   │       │   └── kimi.ts
-│   │       ├── discovery/       # 会话发现
-│   │       │   ├── scanner.ts   # AgentScanner
-│   │       │   └── paths.ts     # 平台路径解析
-│   │       └── utils/           # 工具函数
-│   │           ├── jsonl.ts
-│   │           └── sqlite.ts
-│   │
-│   └── cli/                     # @codesesh/cli（npm bin: codesesh）
-│       └── src/
-│           ├── index.ts         # CLI 入口
-│           ├── commands/
-│           │   └── serve.ts     # 默认命令：发现 + 启动服务
-│           ├── server.ts        # Hono HTTP 服务器
-│           ├── api/
-│           │   ├── routes.ts    # API 路由定义
-│           │   └── handlers.ts  # 请求处理器
-│           └── output.ts        # 控制台输出格式化
-│
-└── apps/
-    └── web/                     # @codesesh/web
-        ├── vite.config.ts
-        ├── index.html
-        └── src/
-            ├── App.tsx          # 基于 agent-view 改造
-            ├── components/      # 从 agent-view 移植
-            ├── config.ts        # Agent 配置
-            └── lib/
-                └── api.ts       # API 客户端
-```
+立项时规划的目录树已不再准确（包名、命令入口与模块划分都已变化）。当前结构见
+[`README.md`](../README.md) 的 Project Structure 一节，扫描链路见
+[`docs/architecture.md`](./architecture.md)。
 
 ### 3.3 数据流
 
-```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│   本地文件    │────▶│  Core 适配器  │────▶│  CLI 服务器   │
-│ JSONL/SQLite │     │  发现 + 转换  │     │  Hono API    │
-└─────────────┘     └──────────────┘     └──────┬───────┘
-                                                │ HTTP
-                                         ┌──────▼───────┐
-                                         │   Web UI     │
-                                         │  React SPA   │
-                                         └──────────────┘
-```
-
-1. **发现阶段**（Core）：Scanner 遍历所有已注册的 Agent 适配器，调用 `isAvailable()` 和 `scan()` 收集 `SessionHead`（轻量元数据：id、title、cwd、时间、消息数）
-2. **服务阶段**（CLI）：启动 Hono HTTP 服务器，暴露 API 并托管 Web 静态资源
-3. **展示阶段**（Web）：SPA 通过 API 获取会话列表和详情，按需加载完整消息数据
+见 [`docs/architecture.md`](./architecture.md) 与
+[`docs/scanning-and-caching.md`](./scanning-and-caching.md)。
 
 ### 3.4 API 设计
 
-```
-GET /api/agents
-  → [{ name, displayName, count, icon }]
-
-GET /api/sessions?agent=X&cwd=Y&from=Z&to=W&q=keyword
-  → { sessions: SessionHead[] }
-
-GET /api/sessions/:agent/:sessionId
-  → SessionData（含完整 messages）
-```
-
-会话列表只返回元数据，完整消息数据按需加载，避免一次性传输大量数据。
+立项时只规划了 3 条路由。当前 API 以 `packages/cli/src/api/routes.ts` 为准。
 
 ### 3.5 核心类型
 
-```typescript
-// 会话元数据（列表展示用）
-interface SessionHead {
-  id: string;
-  agent: string;            // "claudecode" | "codex" | "opencode" | "cursor" | "kimi"
-  agentDisplayName: string;
-  title: string;
-  cwd: string;
-  createdAt: number;        // ms epoch
-  updatedAt: number;
-  model?: string;
-  messageCount?: number;
-}
-
-// 完整会话数据（详情展示用）
-interface SessionData {
-  id: string;
-  title: string;
-  directory: string;
-  timeCreated: number;
-  timeUpdated?: number;
-  stats: SessionStats;
-  messages: Message[];
-}
-
-// Agent 适配器接口
-abstract class BaseAgent {
-  abstract name: string;
-  abstract displayName: string;
-  abstract isAvailable(): Promise<boolean>;
-  abstract scan(options?: ScanOptions): Promise<SessionHead[]>;
-  abstract getSessionData(sessionId: string): Promise<SessionData>;
-}
-```
-
-消息和消息片段类型（Message、MessagePart）复用 agent-view 已有定义。
+当前类型定义以 `packages/core/src/types/` 与 `packages/core/src/contract/` 为准。
 
 ### 3.6 构建与发布
 
-**构建顺序**（Turborepo 管理依赖）：
-
-1. `@codesesh/core` → tsc 编译
-2. `@codesesh/web` → vite build（依赖 core 类型）
-3. `@codesesh/cli` → tsup 打包（依赖 core；将 web dist 嵌入到产物中）
-
-**发布**：
-
-仅发布 `codesesh` CLI 包到 npm。CLI 包内嵌 Web 构建产物，用户 `npx codesesh` 即可使用，无需额外安装。
-
-```json
-{
-  "name": "codesesh",
-  "bin": { "codesesh": "dist/cli.mjs" },
-  "files": ["dist/"],
-  "dependencies": {
-    "better-sqlite3": "^11.0.0",
-    "hono": "^4.0.0",
-    "@hono/node-server": "^1.0.0"
-  }
-}
-```
+见 [`docs/release-guide.md`](./release-guide.md)。
 
 ---
 
-## 4. 里程碑
+## 4. 里程碑（立项计划）
+
+以下为立项时的阶段划分，仅作历史记录；当前进度见 `CHANGELOG.md` 与 `.issues/`。
+
 
 ### M1: 项目骨架
 

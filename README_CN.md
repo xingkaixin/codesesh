@@ -289,12 +289,12 @@ apps/web            React 前端
 
 Agent 能力统一在一个注册点声明：
 
-1. 创建 `packages/core/src/agents/youragent.ts`，实现 `BaseAgent` 并导出数据根目录解析器。
+1. 创建 `packages/core/src/agents/<youragent>.ts`，实现 `BaseAgent` 并导出数据根目录解析器。
 2. 在 `packages/core/src/agents/register.ts` 中注册，显式声明图标、数据根目录、resume
    命令能力（不支持时填 `null`）以及使用自定义还是默认工具展示策略。
 3. 在 `apps/web/public/icon/agent/` 添加 SVG。
 4. 如使用自定义工具展示策略，在
-   `apps/web/src/components/session-detail/tool-strategy/youragent.ts` 实现，并在同目录
+   `apps/web/src/components/session-detail/tool-strategy/<youragent>.ts` 实现，并在同目录
    `index.ts` 注册 builder。
 
 注册完备性测试会拒绝缺失图标、未声明 resume 能力或自定义策略不匹配的注册。
