@@ -71,7 +71,7 @@ npx codesesh --cwd .
 # Only show specific agent
 npx codesesh --agent claudecode
 
-# Output JSON instead of starting server
+# Print the session index as JSON instead of starting the server
 npx codesesh --json
 
 # Show performance trace logs
@@ -91,7 +91,7 @@ npx codesesh --trace
 | `--from`    | —     | —       | Sessions active after this date `YYYY-MM-DD`                |
 | `--to`      | —     | —       | Sessions active before this date `YYYY-MM-DD`               |
 | `--session` | `-s`  | —       | Directly open a session (`agent://session-id`)              |
-| `--json`    | `-j`  | `false` | Output JSON and exit (no server)                            |
+| `--json`    | `-j`  | `false` | Print the session index as JSON and exit (metadata only)    |
 | `--no-open` | —     | `false` | Don't auto-open the browser                                 |
 | `--trace`   | —     | `false` | Print performance trace logs                                |
 | `--cache`   | —     | `true`  | Use cached scan results when available                      |
