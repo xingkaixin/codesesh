@@ -95,8 +95,23 @@ function isSameOrChildPath(parentPath: string, childPath: string): boolean {
   return path === "" || (!path.startsWith("..") && !isAbsolute(path));
 }
 
+/**
+ * Sidecars a SQLite commit writes. `-shm` is excluded because a read-only open
+ * rewrites it, which would make every scan look like a new change.
+ */
+const SQLITE_SIDECAR_SUFFIXES = ["-wal", "-journal"];
+
+/** True for `foo.db-wal` against `foo.db`, but not for `foo.db.bak`. */
+function isSqliteSidecarOf(changedPath: string, targetPath: string): boolean {
+  return SQLITE_SIDECAR_SUFFIXES.some((suffix) => changedPath === `${targetPath}${suffix}`);
+}
+
 function isRelatedPath(changedPath: string, targetPath: string): boolean {
-  return isSameOrChildPath(targetPath, changedPath) || isSameOrChildPath(changedPath, targetPath);
+  return (
+    isSameOrChildPath(targetPath, changedPath) ||
+    isSameOrChildPath(changedPath, targetPath) ||
+    isSqliteSidecarOf(changedPath, targetPath)
+  );
 }
 
 function mergeScopes(target: WatchScope[], scopes: WatchScope[]): void {

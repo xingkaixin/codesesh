@@ -282,6 +282,45 @@ describe("SessionWatcher", () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it("CS-139: emits a database agent change for its WAL sidecar", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "watcher-db-wal-"));
+    try {
+      const dbPath = join(tempDir, "opencode.db");
+      writeFileSync(dbPath, "main");
+      writeFileSync(`${dbPath}-wal`, "commit");
+      writeFileSync(join(tempDir, "unrelated.db-wal"), "other");
+      writeFileSync(`${dbPath}.bak`, "backup");
+      const watcher = new SessionWatcher();
+      const changed = vi.fn();
+      watcher.onAgentsChanged(changed);
+      watcher.start([
+        source("database-agent", {
+          status: "supported",
+          targets: [{ root: tempDir, path: dbPath }],
+        }),
+      ]);
+
+      // A WAL-mode commit appends here and leaves the main file alone.
+      fsWatch.watchers[0]!.listener("change", "opencode.db-wal");
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(changed).toHaveBeenCalledWith(new Set(["database-agent"]));
+
+      changed.mockClear();
+      for (const filename of ["unrelated.db-wal", "opencode.db.bak", "opencode.db-shm"]) {
+        fsWatch.watchers[0]!.listener("change", filename);
+      }
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(changed).not.toHaveBeenCalled();
+      await watcher.dispose();
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("isRecursiveWatchSupported", () => {
