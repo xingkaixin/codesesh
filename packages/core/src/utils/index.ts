@@ -1,3 +1,11 @@
+export {
+  PRIVATE_DIR_MODE,
+  PRIVATE_FILE_MODE,
+  ensurePrivateDirectory,
+  restrictExistingPrivateFiles,
+  restrictPrivateDatabase,
+  restrictPrivateFile,
+} from "./private-storage.js";
 export { parseJsonlLines, readJsonlFile } from "./jsonl.js";
 export { setCoreDiagnostics, type CoreDiagnostics } from "./diagnostics.js";
 export { asRecord, asString, asNumber, asArray, reportFieldMismatch } from "./narrow.js";

@@ -82,8 +82,11 @@ export {
 export type { BookmarkRecord, SessionAlias } from "./state/index.js";
 export {
   classifySessionTags,
+  ensurePrivateDirectory,
   getSmartTagSourceTimestamp,
   perf,
+  restrictExistingPrivateFiles,
+  restrictPrivateFile,
   setCoreDiagnostics,
 } from "./utils/index.js";
 export { refreshPricingCache } from "./pricing/index.js";
