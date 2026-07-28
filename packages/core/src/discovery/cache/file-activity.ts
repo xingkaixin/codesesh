@@ -150,65 +150,113 @@ export function buildFileActivityWhere(options: FileActivityOptions): {
   };
 }
 
+const FILE_ACTIVITY_COLUMNS = `
+  fa.agent_name,
+  fa.session_id,
+  fa.project_identity_key,
+  fa.path,
+  fa.kind,
+  fa.count,
+  fa.latest_time,
+  s.slug,
+  s.title,
+  s.directory,
+  s.project_identity_kind,
+  s.project_display_name,
+  s.time_created,
+  s.time_updated,
+  s.message_count,
+  s.total_input_tokens,
+  s.total_output_tokens,
+  s.total_cache_read_tokens,
+  s.total_cache_create_tokens,
+  s.total_cost,
+  s.cost_source,
+  s.total_tokens,
+  s.model_usage_json,
+  s.smart_tags_json,
+  s.smart_tags_source_updated_at
+`;
+
+const FILE_ACTIVITY_JOIN = `
+  FROM session_file_activity fa
+  JOIN sessions s ON s.agent_name = fa.agent_name AND s.session_id = fa.session_id
+`;
+
+/** Most recent first, then busiest, then path — the tie-break every caller relies on. */
+const FILE_ACTIVITY_ORDER = "fa.latest_time DESC, fa.count DESC, fa.path";
+
 export function listFileActivity(options: FileActivityOptions = {}): FileActivityResult[] {
   return queryFileActivity(options);
+}
+
+interface FileActivityQuery {
+  options: FileActivityOptions;
+  sessionSearchOptions?: SearchOptions;
+  /** Keep only each session's top-ranked row, so the limit counts sessions. */
+  onePerSession?: boolean;
+}
+
+function fileActivityWhere(query: FileActivityQuery): { where: string; params: unknown[] } {
+  const filters = buildFileActivityWhere(query.options);
+  const sessionFilters = query.sessionSearchOptions
+    ? buildSessionSearchFilters(query.sessionSearchOptions)
+    : { where: "", params: [] };
+  const clauses = [
+    filters.where.replace(/^WHERE /, ""),
+    sessionFilters.where.replace(/^ AND /, ""),
+  ].filter(Boolean);
+  return {
+    where: clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "",
+    params: [...filters.params, ...sessionFilters.params],
+  };
+}
+
+function fileActivitySql(query: FileActivityQuery, where: string): string {
+  if (!query.onePerSession) {
+    return `
+      SELECT ${FILE_ACTIVITY_COLUMNS}
+      ${FILE_ACTIVITY_JOIN}
+      ${where}
+      ORDER BY ${FILE_ACTIVITY_ORDER}
+      LIMIT ?
+    `;
+  }
+
+  return `
+    SELECT ${FILE_ACTIVITY_COLUMNS}
+    FROM (
+      SELECT
+        fa.rowid AS activity_rowid,
+        ROW_NUMBER() OVER (
+          PARTITION BY fa.agent_name, fa.session_id
+          ORDER BY ${FILE_ACTIVITY_ORDER}
+        ) AS session_rank
+      ${FILE_ACTIVITY_JOIN}
+      ${where}
+    ) ranked
+    JOIN session_file_activity fa ON fa.rowid = ranked.activity_rowid
+    JOIN sessions s ON s.agent_name = fa.agent_name AND s.session_id = fa.session_id
+    WHERE ranked.session_rank = 1
+    ORDER BY ${FILE_ACTIVITY_ORDER}
+    LIMIT ?
+  `;
 }
 
 function queryFileActivity(
   options: FileActivityOptions,
   sessionSearchOptions?: SearchOptions,
+  onePerSession = false,
 ): FileActivityResult[] {
   if (!hasCacheStorage()) {
     return [];
   }
 
-  const filters = buildFileActivityWhere(options);
-  const sessionFilters = sessionSearchOptions
-    ? buildSessionSearchFilters(sessionSearchOptions)
-    : { where: "", params: [] };
-  const whereClauses = [
-    filters.where.replace(/^WHERE /, ""),
-    sessionFilters.where.replace(/^ AND /, ""),
-  ].filter(Boolean);
-  const where = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+  const query: FileActivityQuery = { options, sessionSearchOptions, onePerSession };
+  const { where, params } = fileActivityWhere(query);
+  const sql = fileActivitySql(query, where);
   const queryRows = (db: SQLiteDatabase) =>
-    db
-      .prepare(
-        `
-          SELECT
-            fa.agent_name,
-            fa.session_id,
-            fa.project_identity_key,
-            fa.path,
-            fa.kind,
-            fa.count,
-            fa.latest_time,
-            s.slug,
-            s.title,
-            s.directory,
-            s.project_identity_kind,
-            s.project_display_name,
-            s.time_created,
-            s.time_updated,
-            s.message_count,
-            s.total_input_tokens,
-            s.total_output_tokens,
-            s.total_cache_read_tokens,
-            s.total_cache_create_tokens,
-            s.total_cost,
-            s.cost_source,
-            s.total_tokens,
-            s.model_usage_json,
-            s.smart_tags_json,
-            s.smart_tags_source_updated_at
-          FROM session_file_activity fa
-          JOIN sessions s ON s.agent_name = fa.agent_name AND s.session_id = fa.session_id
-          ${where}
-          ORDER BY fa.latest_time DESC, fa.count DESC, fa.path
-          LIMIT ?
-        `,
-      )
-      .all(...filters.params, ...sessionFilters.params, options.limit ?? 50) as FileActivityRow[];
+    db.prepare(sql).all(...params, options.limit ?? 50) as FileActivityRow[];
 
   let rows = withCacheDbReadOnly(queryRows);
   if (rows == null && options.path) {
@@ -253,25 +301,16 @@ export function searchFileActivitySessions(
     {
       path,
       kind: search.options.fileKind,
-      limit: (search.options.limit ?? 50) * 3,
+      limit: search.options.limit ?? 50,
     },
     search.options,
+    true,
   );
-  const seen = new Set<string>();
-  const results: SearchResult[] = [];
 
-  for (const row of rows) {
-    const key = `${row.reference.agentName}/${row.reference.sessionId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    results.push({
-      reference: row.reference,
-      session: row.session,
-      snippet: `${row.kind} ${highlightFilePath(row.path, path)} · ${row.count} events`,
-      matchType: "file_path",
-    });
-    if (results.length >= (search.options.limit ?? 50)) break;
-  }
-
-  return results;
+  return rows.map((row) => ({
+    reference: row.reference,
+    session: row.session,
+    snippet: `${row.kind} ${highlightFilePath(row.path, path)} · ${row.count} events`,
+    matchType: "file_path",
+  }));
 }

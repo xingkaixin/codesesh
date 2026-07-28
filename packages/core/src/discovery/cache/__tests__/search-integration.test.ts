@@ -1219,6 +1219,126 @@ describe("searchSessions", () => {
     expect(directWriteResults[0]?.snippet).toContain("write");
   });
 
+  it("CS-134: applies the search limit to sessions, not activity rows", () => {
+    const sessions = [
+      { id: "dense", paths: 6, time: now + 100 },
+      { id: "sparse", paths: 1, time: now },
+    ].map(({ id, paths, time }) => {
+      const session = { ...makeSession(id), time_updated: time };
+      const activityParts = Array.from({ length: paths }, (_, index) => ({
+        type: "tool" as const,
+        tool: "Read",
+        time_created: time + index,
+        state: {
+          status: "completed" as const,
+          input: { file_path: `src/shared/module-${id}-${index}.ts` },
+        },
+      }));
+      return { session, activityParts };
+    });
+
+    saveCachedSessions(
+      "claudecode",
+      sessions.map(({ session }) => session),
+    );
+    syncSessionSearchIndex(
+      "claudecode",
+      sessions.map(({ session }) => session),
+      (sessionId) => {
+        const entry = sessions.find(({ session }) => session.id === sessionId)!;
+        return {
+          ...entry.session,
+          messages: [
+            {
+              id: "m1",
+              role: "assistant",
+              time_created: entry.session.time_updated!,
+              parts: entry.activityParts,
+            },
+          ],
+        } as SessionDetail;
+      },
+    );
+
+    // The denser session owns the six most recent matching rows; a row-level
+    // limit would spend the whole budget there and never reach "sparse".
+    const results = searchFileActivitySessions("src/shared/module", { limit: 2 });
+
+    expect(results.map((result) => result.session.id)).toEqual(["dense", "sparse"]);
+  });
+
+  it("CS-134: keeps same-id sessions from different agents apart", () => {
+    for (const agent of ["claudecode", "codex"]) {
+      const session = { ...makeSession("shared-id"), slug: `${agent}/shared-id` };
+      saveCachedSessions(agent, [session]);
+      syncSessionSearchIndex(
+        agent,
+        [session],
+        () =>
+          ({
+            ...session,
+            messages: [
+              {
+                id: "m1",
+                role: "assistant",
+                time_created: now,
+                parts: [
+                  {
+                    type: "tool" as const,
+                    tool: "Read",
+                    time_created: now,
+                    state: {
+                      status: "completed" as const,
+                      input: { file_path: "src/cross/agent.ts" },
+                    },
+                  },
+                ],
+              },
+            ],
+          }) as SessionDetail,
+      );
+    }
+
+    const results = searchFileActivitySessions("src/cross/agent.ts", { limit: 10 });
+
+    expect(results.map((result) => result.reference.agentName).sort()).toEqual([
+      "claudecode",
+      "codex",
+    ]);
+  });
+
+  it("CS-134: picks the top-ranked row for the snippet on a tie", () => {
+    const session = makeSession("tied");
+    saveCachedSessions("claudecode", [session]);
+    syncSessionSearchIndex(
+      "claudecode",
+      [session],
+      () =>
+        ({
+          ...session,
+          messages: [
+            {
+              id: "m1",
+              role: "assistant",
+              time_created: now,
+              parts: ["b.ts", "a.ts", "c.ts"].map((name) => ({
+                type: "tool" as const,
+                tool: "Read",
+                time_created: now,
+                state: { status: "completed" as const, input: { file_path: `src/tie/${name}` } },
+              })),
+            },
+          ],
+        }) as SessionDetail,
+    );
+
+    const results = searchFileActivitySessions("src/tie", { limit: 10 });
+
+    expect(results).toHaveLength(1);
+    // Equal latest_time and count, so the path breaks the tie.
+    expect(results[0]?.snippet).toContain("</mark>/a.ts");
+  });
+
   it("uses latest-time indexes for recent file activity query plans", () => {
     saveCachedSessions("claudecode", [makeSession("indexed")]);
 
@@ -1263,6 +1383,41 @@ describe("searchSessions", () => {
       );
       expect(pathPlan).toContain("session_file_activity_path_fts");
       expect(pathPlan).not.toContain("SCAN fa\n");
+
+      // CS-134: ranking one row per session stays a single pass over the FTS
+      // matches — not a correlated lookup per session.
+      const rankedPlan = (
+        db
+          .prepare(
+            `
+              EXPLAIN QUERY PLAN
+              SELECT fa.agent_name, fa.session_id, fa.path
+              FROM (
+                SELECT
+                  fa.rowid AS activity_rowid,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY fa.agent_name, fa.session_id
+                    ORDER BY fa.latest_time DESC, fa.count DESC, fa.path
+                  ) AS session_rank
+                FROM session_file_activity fa
+                JOIN sessions s ON s.agent_name = fa.agent_name AND s.session_id = fa.session_id
+                WHERE fa.rowid IN (SELECT rowid FROM session_file_activity_path_fts WHERE path MATCH ?)
+              ) ranked
+              JOIN session_file_activity fa ON fa.rowid = ranked.activity_rowid
+              JOIN sessions s ON s.agent_name = fa.agent_name AND s.session_id = fa.session_id
+              WHERE ranked.session_rank = 1
+              ORDER BY fa.latest_time DESC, fa.count DESC, fa.path
+              LIMIT ?
+            `,
+          )
+          .all('"src/App"', 50) as Array<{ detail?: string }>
+      )
+        .map((row) => String(row.detail ?? ""))
+        .join("\n");
+
+      expect(rankedPlan).toContain("session_file_activity_path_fts");
+      expect(rankedPlan).not.toContain("CORRELATED");
+      expect(rankedPlan).not.toContain("SCAN fa\n");
     } finally {
       db.close();
     }
