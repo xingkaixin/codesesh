@@ -8,7 +8,7 @@ import type {
 } from "../../lib/api";
 import { findAgent, type AgentCatalog } from "../../lib/agents";
 import { getSessionBookmarkKey } from "../../lib/bookmarks";
-import { getSessionRouteKey } from "../../lib/session-indexes";
+import { agentRoutePath, getSessionRoutePath, getSessionRouteKey } from "../../lib/session-indexes";
 import { getSessionDisplayTitle } from "../../lib/session-title";
 import { formatAgentScanProgress } from "../../lib/scan-format";
 import { getProjectGroupIdentity, getProjectIdentityKey, getProjectPath } from "../../lib/projects";
@@ -86,7 +86,7 @@ function AgentNavList({
                 {content}
               </span>
             ) : (
-              <Link to={`/${key}`} className={className}>
+              <Link to={agentRoutePath(key)} className={className}>
                 {content}
               </Link>
             )}
@@ -323,7 +323,7 @@ export function AppSidebar({
                       }`}
                     >
                       <Link
-                        to={`/${session.slug}`}
+                        to={getSessionRoutePath(session)}
                         className="flex min-w-0 flex-1 items-start gap-2"
                       >
                         {agent?.icon ? (

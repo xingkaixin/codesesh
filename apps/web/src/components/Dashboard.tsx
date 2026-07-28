@@ -16,6 +16,7 @@ import { findAgent, type AgentCatalog } from "../lib/agents";
 import { getSessionBookmarkKey } from "../lib/bookmarks";
 import { formatCostSource, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getProjectPath } from "../lib/projects";
+import { agentRoutePath, getSessionRoutePath } from "../lib/session-indexes";
 import { getSessionDisplayTitle } from "../lib/session-title";
 import { AgentIcon } from "./AgentIcon";
 import { BookmarkButton } from "./BookmarkButton";
@@ -485,7 +486,7 @@ function AgentDistribution({ perAgent }: { perAgent: DashboardAgentStat[] }) {
           return (
             <li key={agent.name}>
               <Link
-                to={`/${agent.name.toLowerCase()}`}
+                to={agentRoutePath(agent.name)}
                 className="block rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
               >
                 <div className="flex items-center gap-2">
@@ -621,7 +622,10 @@ function BookmarkedSessions({
           return (
             <li key={getSessionBookmarkKey(reference)}>
               <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
-                <Link to={`/${session.slug}`} className="flex min-w-0 flex-1 items-start gap-2">
+                <Link
+                  to={getSessionRoutePath(session)}
+                  className="flex min-w-0 flex-1 items-start gap-2"
+                >
                   {agent?.icon ? (
                     <AgentIcon
                       icon={agent.icon}
@@ -688,7 +692,7 @@ function RecentSessions({
           return (
             <li key={getSessionBookmarkKey(reference)}>
               <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
-                <Link to={`/${session.slug}`} className="min-w-0 flex-1">
+                <Link to={getSessionRoutePath(session)} className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     {agent?.icon ? (
                       <AgentIcon
@@ -747,7 +751,7 @@ function RecentFileActivity({ activity }: { activity: FileActivityResult[] }) {
               key={`${item.reference.agentName}/${item.reference.sessionId}/${item.kind}/${item.path}`}
             >
               <Link
-                to={`/${item.session.slug}`}
+                to={getSessionRoutePath(item.session)}
                 className="block rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
               >
                 <div className="flex items-center gap-2">

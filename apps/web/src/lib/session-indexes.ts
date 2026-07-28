@@ -1,9 +1,12 @@
 import type { AgentInfo, ProjectIdentityKind, SessionHead } from "./api";
 import {
+  agentRoutePath,
   createSessionIndex,
   getProjectAgentKey,
   getSessionAgentKey,
+  getSessionRoutePath,
   getSessionRouteKey,
+  sessionRoutePath,
 } from "@codesesh/core/contract";
 import { getProjectIdentityKey } from "./projects";
 
@@ -38,7 +41,14 @@ export interface SidebarSessionLookup {
   indexByReference: Map<string, number>;
 }
 
-export { getProjectAgentKey, getSessionAgentKey, getSessionRouteKey };
+export {
+  agentRoutePath,
+  getProjectAgentKey,
+  getSessionAgentKey,
+  getSessionRoutePath,
+  getSessionRouteKey,
+  sessionRoutePath,
+};
 
 export function getSessionReferenceKey(session: Pick<SessionHead, "id" | "slug">): string {
   return getSessionRouteKey(getSessionAgentKey(session), session.id);

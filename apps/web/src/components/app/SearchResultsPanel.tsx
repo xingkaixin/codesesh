@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import { Link } from "react-router-dom";
 import type { AgentInfo, SearchResult } from "../../lib/api";
+import { sessionRoutePath } from "../../lib/session-indexes";
 import { getSessionDisplayTitle } from "../../lib/session-title";
 import { SmartTagChips } from "../SmartTagChips";
 import { SearchFilterBar } from "./SearchFilterBar";
@@ -142,7 +143,7 @@ export function SearchResultsPanel({
           <Link
             key={resultKey}
             ref={(node) => registerResultRef(resultKey, node)}
-            to={`/${agentKey}/${result.reference.sessionId}`}
+            to={sessionRoutePath(result.reference)}
             state={{ searchQuery: query }}
             onClick={onOpenResult}
             className={`rounded-sm border bg-[var(--console-surface)]/85 p-4 motion-hover hover:border-[var(--console-border-strong)] hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none ${

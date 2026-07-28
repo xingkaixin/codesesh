@@ -5,6 +5,7 @@ import { PanelLeftClose, PanelLeftOpen } from "./components/ui/icons";
 import { Link, useLocation, useMatches, useNavigate } from "react-router-dom";
 import type { BookmarkRecord, SessionHead } from "./lib/api";
 import { logClientEvent } from "./lib/api";
+import { getSessionRoutePath } from "./lib/session-indexes";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { CopyResumeButton } from "./components/CopyResumeButton";
 import { SessionAliasDialog, type SessionAliasTarget } from "./components/SessionAliasDialog";
@@ -193,7 +194,7 @@ export default function App() {
   const handleSelectFlatSidebarSession = useCallback(
     (sessionItem: SessionHead) => {
       setSelectedSidebarSessionReference(getSessionReferenceKey(sessionItem));
-      navigate(`/${sessionItem.slug}`);
+      navigate(getSessionRoutePath(sessionItem));
     },
     [navigate],
   );
@@ -226,7 +227,7 @@ export default function App() {
   const handleSelectTreeSidebarSession = useCallback(
     (sessionItem: SessionHead) => {
       setSelectedSidebarSessionReference(getSessionReferenceKey(sessionItem));
-      navigate(`/${sessionItem.slug}`);
+      navigate(getSessionRoutePath(sessionItem));
     },
     [navigate],
   );

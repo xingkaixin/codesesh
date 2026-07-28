@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import type { SessionHead } from "../lib/api";
 import { formatCostSource, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
+import { agentRoutePath, sessionRoutePath } from "../lib/session-indexes";
 import { getSessionDisplayTitle } from "../lib/session-title";
 import { AgentIcon } from "./AgentIcon";
 import { BookmarkButton } from "./BookmarkButton";
@@ -129,7 +130,7 @@ function RecommendedAgents({ agentItems }: { agentItems: LandingAgentItem[] }) {
         {agentItems.map((agent) => (
           <li key={agent.key}>
             <Link
-              to={`/${agent.key}`}
+              to={agentRoutePath(agent.key)}
               className="flex min-h-11 items-center gap-2 rounded-sm border border-transparent px-3 py-2 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-accent)]"
             >
               {agent.icon ? (
@@ -187,7 +188,13 @@ function RecentSessions({
           return (
             <li key={session.id}>
               <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
-                <Link to={`/${session.reference}`} className="min-w-0 flex-1">
+                <Link
+                  to={sessionRoutePath({
+                    agentName: session.agentKey,
+                    sessionId: session.sessionId,
+                  })}
+                  className="min-w-0 flex-1"
+                >
                   <p className="line-clamp-1 text-sm text-[var(--console-text)]">
                     {getSessionDisplayTitle(session)}
                   </p>
@@ -329,7 +336,7 @@ export function DetailLanding({
             {agentItems.map((agent) => (
               <li key={agent.key}>
                 <Link
-                  to={`/${agent.key}`}
+                  to={agentRoutePath(agent.key)}
                   className="flex items-center gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
                 >
                   {agent.icon ? (

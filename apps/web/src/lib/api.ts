@@ -40,6 +40,7 @@ export type {
   BookmarkRecord,
 } from "@codesesh/core/contract";
 
+import { sessionRoutePath } from "@codesesh/core/contract";
 import type {
   AgentInfo,
   ApiProjectGroup,
@@ -181,7 +182,7 @@ export async function fetchSessionData(
   sessionId: string,
   options?: FetchOptions,
 ): Promise<SessionDetail> {
-  return fetchJson(`/api/sessions/${agent}/${sessionId}`, options);
+  return fetchJson(`/api/sessions${sessionRoutePath({ agentName: agent, sessionId })}`, options);
 }
 
 export async function fetchDashboard(
@@ -245,12 +246,7 @@ export async function importBookmarks(
 }
 
 export async function deleteBookmark(reference: SessionReference): Promise<void> {
-  await fetchJson(
-    `/api/bookmarks/${encodeURIComponent(reference.agentName)}/${encodeURIComponent(reference.sessionId)}`,
-    {
-      method: "DELETE",
-    },
-  );
+  await fetchJson(`/api/bookmarks${sessionRoutePath(reference)}`, { method: "DELETE" });
 }
 
 export async function upsertSessionAlias(
@@ -258,23 +254,17 @@ export async function upsertSessionAlias(
   sessionId: string,
   alias: string,
 ): Promise<void> {
-  await fetchJson(
-    `/api/session-aliases/${encodeURIComponent(agentKey)}/${encodeURIComponent(sessionId)}`,
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ alias }),
-    },
-  );
+  await fetchJson(`/api/session-aliases${sessionRoutePath({ agentName: agentKey, sessionId })}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alias }),
+  });
 }
 
 export async function deleteSessionAlias(agentKey: string, sessionId: string): Promise<void> {
-  await fetchJson(
-    `/api/session-aliases/${encodeURIComponent(agentKey)}/${encodeURIComponent(sessionId)}`,
-    {
-      method: "DELETE",
-    },
-  );
+  await fetchJson(`/api/session-aliases${sessionRoutePath({ agentName: agentKey, sessionId })}`, {
+    method: "DELETE",
+  });
 }
 
 export function logClientEvent(event: string, data: Record<string, unknown> = {}): void {
