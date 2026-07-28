@@ -87,7 +87,7 @@ export {
   setCoreDiagnostics,
 } from "./utils/index.js";
 export { refreshPricingCache } from "./pricing/index.js";
-export { buildDashboard, getSessionActivityTime, startOfLocalDay } from "./analytics/dashboard.js";
+export { buildDashboard, getSessionActivityTime } from "./analytics/dashboard.js";
 export type { DashboardData, DashboardScope } from "./analytics/dashboard.js";
 export { attachProjectMetrics } from "./analytics/projects.js";
 export { executeSessionSearch, filterSessionSearchCandidates } from "./search/index.js";

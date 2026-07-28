@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { startOfLocalDay } from "@codesesh/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { addCalendarDays, startOfCalendarDay } from "@codesesh/core/contract";
 import { resolveTimeWindow } from "./time-window-resolution.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -33,6 +33,7 @@ describe("resolveTimeWindow", () => {
     );
   });
 
+  // `days` counts the calendar days the window covers, matching one bucket per day.
   it("derives dashboard days from an explicit query window", () => {
     const from = new Date("2026-07-10T00:00:00.000Z").getTime();
     const to = new Date("2026-07-13T00:00:00.000Z").getTime();
@@ -45,7 +46,7 @@ describe("resolveTimeWindow", () => {
           to: "2026-07-13T00:00:00.000Z",
         },
       }),
-    ).toEqual({ from, to, days: 3 });
+    ).toEqual({ from, to, days: 4 });
   });
 
   it("keeps the CLI default from value ahead of dashboard query days", () => {
@@ -74,7 +75,7 @@ describe("resolveTimeWindow", () => {
 
   it("uses the 30-day dashboard fallback from the local day boundary", () => {
     expect(resolveTimeWindow({ mode: "dashboard", query: {}, now: NOW })).toEqual({
-      from: startOfLocalDay(NOW) - 29 * DAY_MS,
+      from: addCalendarDays(startOfCalendarDay(NOW), -29),
       to: NOW,
       days: 30,
     });
@@ -90,5 +91,46 @@ describe("resolveTimeWindow", () => {
         defaults: { from: defaultFrom, to: NOW, days: 5 },
       }),
     ).toEqual({ from: defaultFrom, to: NOW, days: 5 });
+  });
+});
+
+describe("CS-133: dashboard windows are calendar ranges", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // The web preset builds the same window from calendar fields; both must land
+  // on the same local midnight even when a DST transition sits inside the range.
+  it.each([
+    { name: "spring forward", now: [2026, 2, 10, 8], days: 7 },
+    { name: "fall back", now: [2026, 10, 3, 8], days: 7 },
+    { name: "no transition", now: [2026, 5, 10, 8], days: 30 },
+  ])("matches the web preset boundary for $name", ({ now, days }) => {
+    vi.stubEnv("TZ", "America/New_York");
+    const nowMs = new Date(now[0]!, now[1]!, now[2]!, now[3]!).getTime();
+    const webPresetFrom = new Date(now[0]!, now[1]!, now[2]! - days + 1).getTime();
+
+    const resolved = resolveTimeWindow({
+      mode: "dashboard",
+      query: { days: String(days) },
+      now: nowMs,
+    });
+
+    expect(resolved.from).toBe(webPresetFrom);
+    expect(new Date(resolved.from!).getHours()).toBe(0);
+  });
+
+  it("reports elapsed days as calendar days across a transition", () => {
+    vi.stubEnv("TZ", "America/New_York");
+    const from = new Date(2026, 2, 7).getTime();
+    const to = new Date(2026, 2, 9, 23, 59).getTime();
+
+    expect(
+      resolveTimeWindow({
+        mode: "dashboard",
+        query: { from: new Date(from).toISOString() },
+        now: to,
+      }).days,
+    ).toBe(3);
   });
 });

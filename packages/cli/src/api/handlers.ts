@@ -13,6 +13,7 @@ import {
   type AppConfig,
   type ScanStatusEvent,
   type SessionReference,
+  startOfCalendarDay,
 } from "@codesesh/core/contract";
 import {
   SessionAliasValidationError,
@@ -33,7 +34,6 @@ import {
   matchesProjectScope as sessionMatchesProjectScope,
   matchesProjectIdentity,
   buildDashboard,
-  startOfLocalDay,
   type DashboardData,
   type DashboardScope,
 } from "@codesesh/core";
@@ -675,7 +675,7 @@ export function handleGetDashboard(
       scope.projectKind,
       scope.projectKey,
       from,
-      fixedTo ?? startOfLocalDay(to),
+      fixedTo ?? startOfCalendarDay(to),
     ],
     () => {
       const agentInfo = getAgentInfoMap({});

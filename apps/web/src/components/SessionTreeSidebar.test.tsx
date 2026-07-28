@@ -89,7 +89,8 @@ describe("buildSessionTreeModel group sorting", () => {
     const { paths } = buildSessionTreeModel(sessions);
 
     expect(groupOrderOf(paths)).toEqual(["small", "big"]);
-  });
+    // 200k heads is heavy enough to exceed the default timeout on a loaded runner.
+  }, 30_000);
 
   it("keeps paths for equal session ids from different agents", () => {
     const codex = makeSession({ id: "same", slug: "codex/same" });

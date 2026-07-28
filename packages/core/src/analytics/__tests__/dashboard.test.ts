@@ -1,12 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildDashboard,
   getSessionActivityTime,
   getSessionAgentName,
   getTotalTokens,
-  startOfLocalDay,
-  toLocalDateKey,
 } from "../dashboard.js";
+import { startOfCalendarDay } from "../../contract/calendar-day.js";
 import type { SessionHead } from "../../types/session.js";
 
 function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
@@ -71,20 +70,6 @@ describe("getTotalTokens / getSessionAgentName / getSessionActivityTime", () => 
       200,
     );
     expect(getSessionActivityTime(makeSession("a", { time_created: 100 }))).toBe(100);
-  });
-});
-
-describe("toLocalDateKey / startOfLocalDay", () => {
-  it("toLocalDateKey formats as YYYY-MM-DD", () => {
-    const key = toLocalDateKey(new Date("2026-03-05T14:30:00").getTime());
-    expect(key).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  });
-
-  it("startOfLocalDay zeroes the time", () => {
-    const ts = new Date("2026-03-05T14:30:00").getTime();
-    const start = startOfLocalDay(ts);
-    expect(new Date(start).getHours()).toBe(0);
-    expect(new Date(start).getMinutes()).toBe(0);
   });
 });
 
@@ -213,7 +198,7 @@ describe("buildDashboard", () => {
   });
 
   it("buckets token activity including cache split", () => {
-    const ts = startOfLocalDay(Date.now());
+    const ts = startOfCalendarDay(Date.now());
     const result = buildDashboard(
       [
         makeSession("a", {
@@ -271,5 +256,28 @@ describe("buildDashboard", () => {
     expect(result.totals.sessions).toBe(0);
     expect(result.perAgent).toEqual([]);
     expect(result.recentSessions).toEqual([]);
+  });
+});
+
+describe("CS-133: dashboard buckets across DST transitions", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    { name: "spring forward", from: [2026, 2, 7], to: [2026, 2, 9], days: 3 },
+    { name: "fall back", from: [2026, 9, 31], to: [2026, 10, 2], days: 3 },
+  ])("emits one bucket per local day for $name", ({ from, to, days }) => {
+    vi.stubEnv("TZ", "America/New_York");
+    const windowFrom = new Date(from[0]!, from[1]!, from[2]!).getTime();
+    const windowTo = new Date(to[0]!, to[1]!, to[2]!, 23, 59, 59, 999).getTime();
+
+    const result = buildDashboard([], opts({ from: windowFrom, to: windowTo }));
+    const dates = result.dailyActivity.map((bucket) => bucket.date);
+
+    expect(dates).toHaveLength(days);
+    expect(new Set(dates).size).toBe(days);
+    expect(dates).toEqual([...dates].sort());
+    expect(result.dailyTokenActivity.map((bucket) => bucket.date)).toEqual(dates);
   });
 });

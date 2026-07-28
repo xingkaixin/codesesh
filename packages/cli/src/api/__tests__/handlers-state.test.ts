@@ -645,6 +645,7 @@ describe("query boundary handlers", () => {
     );
   });
 
+  // `days` is the number of calendar days covered, so it matches the bucket count.
   it("derives dashboard days from custom and default windows", () => {
     const custom = makeContext({
       query: {
@@ -656,14 +657,14 @@ describe("query boundary handlers", () => {
     expect(getResponsePayload<{ window: unknown }>(custom).window).toEqual({
       from: new Date("2026-01-01T00:00:00.000Z").getTime(),
       to: new Date("2026-01-03T00:00:00.000Z").getTime(),
-      days: 2,
+      days: 3,
     });
 
     const fallback = makeContext({ query: { to: "2026-01-04T00:00:00.000Z" } });
     handleGetDashboard(fallback as never, scanSource, {
       from: new Date("2026-01-01T00:00:00.000Z").getTime(),
     });
-    expect(getResponsePayload<{ window: { days: number } }>(fallback).window.days).toBe(3);
+    expect(getResponsePayload<{ window: { days: number } }>(fallback).window.days).toBe(4);
   });
 
   it("supports explicit all-time dashboard queries", () => {

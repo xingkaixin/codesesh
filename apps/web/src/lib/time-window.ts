@@ -1,3 +1,4 @@
+import { addCalendarDays, startOfCalendarDay, toCalendarDayKey } from "@codesesh/core/contract";
 import type { AppConfig } from "./api";
 
 export type TimeWindow = AppConfig["window"];
@@ -17,14 +18,8 @@ const PRESET_DAYS: Record<Exclude<TimeWindowPreset, "all" | "custom">, number> =
   "90d": 90,
 };
 
-function startOfLocalDay(timestamp: number): number {
-  const date = new Date(timestamp);
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-}
-
 function endOfLocalDay(timestamp: number): number {
-  const date = new Date(startOfLocalDay(timestamp));
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime() - 1;
+  return addCalendarDays(timestamp, 1) - 1;
 }
 
 function parseLocalDate(value: string, endOfDay: boolean): number | null {
@@ -54,17 +49,13 @@ function presetFromDefault(window: TimeWindow): TimeWindowPreset {
 }
 
 function presetWindow(preset: Exclude<TimeWindowPreset, "custom">, now: number): TimeWindow {
-  const todayStart = startOfLocalDay(now);
-  const todayEnd = endOfLocalDay(now);
   if (preset === "all") return { from: 0, days: 0 };
   const days = PRESET_DAYS[preset];
-  const today = new Date(todayStart);
-  const from = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate() - days + 1,
-  ).getTime();
-  return { from, to: todayEnd, days };
+  return {
+    from: addCalendarDays(startOfCalendarDay(now), -(days - 1)),
+    to: endOfLocalDay(now),
+    days,
+  };
 }
 
 export function resolveTimeWindow(
@@ -93,17 +84,9 @@ export function resolveTimeWindow(
   return {
     preset: fallbackPreset,
     window: fallback,
-    customFrom: fallback.from == null ? undefined : formatLocalDate(fallback.from),
-    customTo: formatLocalDate(fallback.to ?? now),
+    customFrom: fallback.from == null ? undefined : toCalendarDayKey(fallback.from),
+    customTo: toCalendarDayKey(fallback.to ?? now),
   };
-}
-
-function formatLocalDate(timestamp: number): string {
-  const date = new Date(timestamp);
-  const year = String(date.getFullYear()).padStart(4, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 export function writeTimeWindowPreset(params: URLSearchParams, preset: TimeWindowPreset) {

@@ -1,6 +1,7 @@
-import { startOfLocalDay } from "@codesesh/core";
+import { addCalendarDays, countCalendarDays, startOfCalendarDay } from "@codesesh/core/contract";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+/** Rolling duration for CLI --days, which is a span of hours, not a calendar range. */
+const ROLLING_DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_DASHBOARD_DAYS = 30;
 
 export interface TimeWindow {
@@ -50,7 +51,7 @@ function resolveCliWindow(request: CliTimeWindowRequest): TimeWindow {
   if (days === 0) return { to, days };
   if (days == null || days < 0) return { to };
 
-  const rollingFrom = now - days * DAY_MS;
+  const rollingFrom = now - days * ROLLING_DAY_MS;
   return Number.isFinite(rollingFrom) ? { from: rollingFrom, to, days } : { to };
 }
 
@@ -64,7 +65,7 @@ function resolveDashboardWindow(request: DashboardTimeWindowRequest): DashboardT
 
   const queryFrom = parseOptionalDate(request.query.from);
   if (queryFrom != null) {
-    days ??= elapsedDays(queryFrom, to);
+    days ??= countCalendarDays(queryFrom, to);
     return { from: queryFrom, to, days };
   }
 
@@ -73,13 +74,13 @@ function resolveDashboardWindow(request: DashboardTimeWindowRequest): DashboardT
   }
 
   if (defaults.from != null) {
-    days ??= elapsedDays(defaults.from, to);
+    days ??= countCalendarDays(defaults.from, to);
     return { from: defaults.from, to, days };
   }
 
   const resolvedDays = days != null && days > 0 ? days : DEFAULT_DASHBOARD_DAYS;
   return {
-    from: startOfLocalDay(to) - (resolvedDays - 1) * DAY_MS,
+    from: addCalendarDays(startOfCalendarDay(to), -(resolvedDays - 1)),
     to,
     days: resolvedDays,
   };
@@ -101,9 +102,7 @@ function parseOptionalDate(value: string | undefined): number | undefined {
 function parseDays(value: string | undefined): number | undefined {
   if (value == null) return undefined;
   const days = Number.parseInt(value, 10);
-  return Number.isSafeInteger(days) && Number.isSafeInteger(days * DAY_MS) ? days : undefined;
-}
-
-function elapsedDays(from: number, to: number): number {
-  return Math.max(1, Math.ceil((to - from) / DAY_MS));
+  return Number.isSafeInteger(days) && Number.isSafeInteger(days * ROLLING_DAY_MS)
+    ? days
+    : undefined;
 }
