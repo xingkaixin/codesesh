@@ -89,7 +89,13 @@ export {
   restrictPrivateFile,
   setCoreDiagnostics,
 } from "./utils/index.js";
-export { refreshPricingCache } from "./pricing/index.js";
+export {
+  getPricingGeneration,
+  hasPendingPricing,
+  publishPendingPricing,
+  refreshPricingCache,
+  type PricingGeneration,
+} from "./pricing/index.js";
 export { buildDashboard, getSessionActivityTime } from "./analytics/dashboard.js";
 export type { DashboardData, DashboardScope } from "./analytics/dashboard.js";
 export { attachProjectMetrics } from "./analytics/projects.js";

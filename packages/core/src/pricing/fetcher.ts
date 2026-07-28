@@ -1,6 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { ensurePrivateDirectory, restrictPrivateFile } from "../utils/private-storage.js";
+import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import snapshotData from "./data/snapshot.json";
 
 export interface ModelPricing {
@@ -28,8 +30,21 @@ const LITELLM_URL =
   "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const WEB_SEARCH_COST = 0.01;
+const REFRESH_TIMEOUT_MS = 10_000;
 
-let pricingCache = loadSnapshot();
+/**
+ * A published set of prices. Estimates read one generation for as long as they
+ * need it: a refresh landing mid-scan used to mean the first sessions of a scan
+ * were priced differently from the last, with no record of which applied.
+ */
+export interface PricingGeneration {
+  id: number;
+  pricing: Map<string, ModelPricing>;
+}
+
+let published: PricingGeneration = { id: 1, pricing: loadSnapshot() };
+/** A completed refresh waiting for a safe point to become current. */
+let pending: Map<string, ModelPricing> | null = null;
 loadDiskCache();
 
 function normalizeKey(key: string): string {
@@ -134,7 +149,7 @@ function loadDiskCache() {
         if (!pricing) continue;
         next.set(normalizeKey(name), pricing);
       }
-      pricingCache = next;
+      published = { id: published.id + 1, pricing: next };
     }
   } catch {
     // ignore malformed cache
@@ -142,7 +157,32 @@ function loadDiskCache() {
 }
 
 export function getPricingRegistry(): Map<string, ModelPricing> {
-  return pricingCache;
+  return published.pricing;
+}
+
+/** The generation estimates are currently reading. */
+export function getPricingGeneration(): PricingGeneration {
+  return published;
+}
+
+/**
+ * Makes a completed refresh current. Owners call this between scans, never
+ * during one, so a scan cannot span two generations.
+ */
+export function publishPendingPricing(): boolean {
+  if (!pending) return false;
+  published = { id: published.id + 1, pricing: pending };
+  pending = null;
+  getCoreDiagnostics()?.info?.("pricing.generation.published", {
+    generation: published.id,
+    models: published.pricing.size,
+  });
+  return true;
+}
+
+/** Whether a refresh is waiting to be published. */
+export function hasPendingPricing(): boolean {
+  return pending !== null;
 }
 
 export function hasBillablePricing(pricing: ModelPricing): boolean {
@@ -154,7 +194,35 @@ export function hasBillablePricing(pricing: ModelPricing): boolean {
   );
 }
 
-export async function refreshPricingCache(): Promise<boolean> {
+/** Replaces the cache in one step, so an interrupted write cannot truncate it. */
+function writeDiskCacheAtomically(path: string, pricing: Map<string, ModelPricing>): void {
+  const temporaryPath = `${path}.${process.pid}.tmp`;
+  const payload = JSON.stringify({ timestamp: Date.now(), data: Object.fromEntries(pricing) });
+  try {
+    ensurePrivateDirectory(getCacheDir());
+    writeFileSync(temporaryPath, payload);
+    restrictPrivateFile(temporaryPath);
+    renameSync(temporaryPath, path);
+  } catch (error) {
+    rmSync(temporaryPath, { force: true });
+    getCoreDiagnostics()?.warn("pricing.cache_write_failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+export interface RefreshPricingOptions {
+  /** Abort the request when it outlives a startup's patience. */
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+/**
+ * Fetches prices into a pending generation. It does not become current until
+ * {@link publishPendingPricing}, so an in-flight scan keeps the prices it
+ * started with.
+ */
+export async function refreshPricingCache(options: RefreshPricingOptions = {}): Promise<boolean> {
   const path = getCachePath();
   if (existsSync(path)) {
     try {
@@ -167,8 +235,12 @@ export async function refreshPricingCache(): Promise<boolean> {
     }
   }
 
+  const timeout = AbortSignal.timeout(options.timeoutMs ?? REFRESH_TIMEOUT_MS);
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+
+  getCoreDiagnostics()?.info?.("pricing.refresh.started", { generation: published.id });
   try {
-    const response = await fetch(LITELLM_URL);
+    const response = await fetch(LITELLM_URL, { signal });
     if (!response.ok) return false;
     const data = (await response.json()) as Record<string, LiteLLMEntry>;
     const remote = parseLiteLLMData(data);
@@ -179,11 +251,19 @@ export async function refreshPricingCache(): Promise<boolean> {
       next.set(name, pricing);
     }
 
-    pricingCache = next;
-    mkdirSync(getCacheDir(), { recursive: true });
-    writeFileSync(path, JSON.stringify({ timestamp: Date.now(), data: Object.fromEntries(next) }));
+    pending = next;
+    writeDiskCacheAtomically(path, next);
+    getCoreDiagnostics()?.info?.("pricing.refresh.completed", {
+      generation: published.id,
+      models: next.size,
+    });
     return true;
-  } catch {
+  } catch (error) {
+    getCoreDiagnostics()?.warn("pricing.refresh.failed", {
+      generation: published.id,
+      aborted: signal.aborted,
+      message: error instanceof Error ? error.message : String(error),
+    });
     return false;
   }
 }
