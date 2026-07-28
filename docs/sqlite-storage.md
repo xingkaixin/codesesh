@@ -6,7 +6,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 
 - 路径：`~/.cache/codesesh/codesesh.db`
 - 当前 schema：`CACHE_SCHEMA_VERSION = 16`
-- 稳定导出入口：`packages/core/src/discovery/cache.ts`
+- 稳定导出入口：`packages/core/src/discovery/index.ts`
 - 实现目录：`packages/core/src/discovery/cache/`
 
 `cache.ts` 只是公共 barrel。数据库连接、schema、会话持久化和搜索实现分别位于
@@ -166,7 +166,7 @@ materializeSessionDetailResponse()
 
 ## 相关代码
 
-- `packages/core/src/discovery/cache.ts`
+- `packages/core/src/discovery/index.ts`
 - `packages/core/src/discovery/cache/`
 - `packages/core/src/discovery/session-detail.ts`
 - `packages/core/src/agents/base.ts`
