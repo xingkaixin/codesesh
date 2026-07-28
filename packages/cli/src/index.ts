@@ -23,7 +23,8 @@ import {
   hasExplicitPortArg,
   parsePort,
 } from "./ports.js";
-import { createRegisteredAgents, refreshPricingCache, perf } from "@codesesh/core";
+import { createRegisteredAgents, perf } from "@codesesh/core";
+import { startPricingRefresh } from "./pricing-refresh.js";
 
 const main = defineCommand({
   meta: {
@@ -169,7 +170,9 @@ const main = defineCommand({
       console.log("Cache cleared.");
     }
 
-    void refreshPricingCache();
+    // Owns the refresh: bounded, cancellable, and published only between scans
+    // so a scan never spans two price generations.
+    const pricingRefresh = startPricingRefresh();
 
     // Parse session URI if provided
     let targetSession: { agent: string; sessionId: string } | null = null;
@@ -219,6 +222,8 @@ const main = defineCommand({
     }
 
     if (jsonOnly) {
+      // Nothing will consume a later generation, so stop waiting for it.
+      await pricingRefresh.cancel();
       const output = buildSessionIndexOutput(result, { from: listDefaultFrom, to: listDefaultTo });
       appLogger.info("cli.json_output", {
         sessions: output.sessions.length,
@@ -251,6 +256,8 @@ const main = defineCommand({
 
     const { url } = app;
     if (!jsonOnly) {
+      // The startup scan has finished and background scans have not begun.
+      pricingRefresh.publish();
       store.startBackgroundRefresh();
     }
     let shuttingDown = false;
@@ -258,6 +265,7 @@ const main = defineCommand({
       if (shuttingDown) return;
       shuttingDown = true;
       appLogger.info("cli.shutdown", { signal });
+      await pricingRefresh.cancel();
       await app.shutdown();
       process.exit(0);
     };
