@@ -11,6 +11,7 @@ import type { AgentInfo } from "../../lib/api";
 import { formatTokens } from "../../lib/format";
 import type { FilteredSessionMessage } from "./toc";
 import { MessageItem } from "./message-rendering";
+import { HeightIndex } from "./height-index";
 
 const MESSAGE_LIST_GAP_PX = 32;
 export const VIRTUALIZED_MESSAGE_THRESHOLD = 80;
@@ -30,70 +31,10 @@ interface MessageListProps {
   apiRef: { current: MessageListHandle | null };
 }
 
-interface VirtualMeasurement {
-  start: number;
-  end: number;
-}
-
 type ScrollParent = HTMLElement | Window;
 
 function isWindowScrollParent(parent: ScrollParent): parent is Window {
   return parent === window;
-}
-
-function buildVirtualMeasurements(
-  count: number,
-  heights: Array<number | undefined>,
-): {
-  items: VirtualMeasurement[];
-  totalSize: number;
-} {
-  const items: VirtualMeasurement[] = [];
-  let offset = 0;
-
-  for (let index = 0; index < count; index += 1) {
-    const height = heights[index] ?? VIRTUALIZED_MESSAGE_ESTIMATE_PX;
-    const start = offset;
-    const end = start + height;
-    items.push({ start, end });
-    offset = end + (index === count - 1 ? 0 : MESSAGE_LIST_GAP_PX);
-  }
-
-  return { items, totalSize: offset };
-}
-
-function findFirstEndAfter(items: VirtualMeasurement[], offset: number) {
-  let low = 0;
-  let high = items.length;
-
-  while (low < high) {
-    const mid = Math.floor((low + high) / 2);
-    const item = items[mid];
-    if (item && item.end < offset) {
-      low = mid + 1;
-    } else {
-      high = mid;
-    }
-  }
-
-  return low;
-}
-
-function findFirstStartAfter(items: VirtualMeasurement[], offset: number) {
-  let low = 0;
-  let high = items.length;
-
-  while (low < high) {
-    const mid = Math.floor((low + high) / 2);
-    const item = items[mid];
-    if (item && item.start <= offset) {
-      low = mid + 1;
-    } else {
-      high = mid;
-    }
-  }
-
-  return low;
 }
 
 function findScrollParent(node: HTMLElement): ScrollParent {
@@ -189,7 +130,11 @@ function VirtualizedMessageList({
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollParentRef = useRef<ScrollParent | null>(null);
-  const [measuredHeights, setMeasuredHeights] = useState<Array<number | undefined>>([]);
+  // Heights live outside React state: a measurement mutates the index in place
+  // and a single version bump per frame tells the view to re-read it.
+  const heightIndexRef = useRef<HeightIndex | null>(null);
+  const [measurementVersion, setMeasurementVersion] = useState(0);
+  const pendingMeasureFrameRef = useRef(0);
   const [forcedIndex, setForcedIndex] = useState<number | null>(null);
   const [viewport, setViewport] = useState(() => ({
     scrollTop: 0,
@@ -293,74 +238,80 @@ function VirtualizedMessageList({
     };
   }, [updateViewport]);
 
+  const heightIndex = useMemo(() => {
+    const index = new HeightIndex(
+      messages.length,
+      VIRTUALIZED_MESSAGE_ESTIMATE_PX,
+      MESSAGE_LIST_GAP_PX,
+    );
+    heightIndexRef.current = index;
+    return index;
+  }, [messages]);
+
   useEffect(() => {
-    setMeasuredHeights([]);
     setForcedIndex(null);
+    setMeasurementVersion(0);
     updateViewport();
   }, [messages, updateViewport]);
 
-  const measurements = useMemo(
-    () => buildVirtualMeasurements(messages.length, measuredHeights),
-    [measuredHeights, messages.length],
-  );
+  useEffect(() => {
+    return () => {
+      if (pendingMeasureFrameRef.current) cancelAnimationFrame(pendingMeasureFrameRef.current);
+      pendingMeasureFrameRef.current = 0;
+    };
+  }, []);
 
   const measureItem = useCallback((index: number, height: number) => {
-    const nextHeight = Math.ceil(height);
-    if (!Number.isFinite(nextHeight) || nextHeight <= 0) return;
-
-    setMeasuredHeights((current) => {
-      const currentHeight = current[index];
-      if (currentHeight != null && Math.abs(currentHeight - nextHeight) <= 1) return current;
-
-      const next = [...current];
-      next[index] = nextHeight;
-      return next;
+    if (!heightIndexRef.current?.setHeight(index, height)) return;
+    // Every row mounting in one frame would otherwise commit its own render.
+    if (pendingMeasureFrameRef.current) return;
+    pendingMeasureFrameRef.current = requestAnimationFrame(() => {
+      pendingMeasureFrameRef.current = 0;
+      setMeasurementVersion((version) => version + 1);
     });
   }, []);
 
   const virtualItems = useMemo(() => {
     if (messages.length === 0) return [];
+    void measurementVersion;
 
     const localStart = Math.max(0, viewport.scrollTop - viewport.listTop);
     const localEnd = localStart + viewport.height;
     const startIndex = Math.max(
       0,
-      findFirstEndAfter(measurements.items, localStart) - VIRTUALIZED_MESSAGE_OVERSCAN,
+      heightIndex.firstEndAfter(localStart) - VIRTUALIZED_MESSAGE_OVERSCAN,
     );
     const endIndex = Math.min(
       messages.length,
-      findFirstStartAfter(measurements.items, localEnd) + VIRTUALIZED_MESSAGE_OVERSCAN,
+      heightIndex.firstStartAfter(localEnd) + VIRTUALIZED_MESSAGE_OVERSCAN,
     );
 
     const items: Array<{ index: number; start: number }> = [];
     for (let index = startIndex; index < endIndex; index += 1) {
-      const measurement = measurements.items[index];
-      if (measurement) items.push({ index, start: measurement.start });
+      items.push({ index, start: heightIndex.startAt(index) });
     }
 
     if (forcedIndex != null && forcedIndex >= 0 && forcedIndex < messages.length) {
-      const measurement = measurements.items[forcedIndex];
-      if (measurement && !items.some((item) => item.index === forcedIndex)) {
-        items.push({ index: forcedIndex, start: measurement.start });
+      if (!items.some((item) => item.index === forcedIndex)) {
+        items.push({ index: forcedIndex, start: heightIndex.startAt(forcedIndex) });
         items.sort((a, b) => a.start - b.start);
       }
     }
 
     return items;
-  }, [forcedIndex, measurements, messages.length, viewport]);
+  }, [forcedIndex, heightIndex, measurementVersion, messages.length, viewport]);
 
   const scrollToIndex = useCallback(
     (index: number) => {
       if (typeof window === "undefined") return;
-      const measurement = measurements.items[index];
-      if (!measurement) return;
+      if (index < 0 || index >= messages.length) return;
 
       setForcedIndex(index);
       const node = containerRef.current;
       const scrollParent = node ? findScrollParent(node) : (scrollParentRef.current ?? window);
       scrollParentRef.current = scrollParent;
       const listTop = node ? getListTop(node, scrollParent) : 0;
-      const nextTop = Math.max(0, listTop + measurement.start - 24);
+      const nextTop = Math.max(0, listTop + heightIndex.startAt(index) - 24);
       scrollParentTo(scrollParent, nextTop);
       const nextViewport = {
         scrollTop: nextTop,
@@ -370,7 +321,7 @@ function VirtualizedMessageList({
       viewportRef.current = nextViewport;
       setViewport(nextViewport);
     },
-    [measurements.items],
+    [heightIndex, messages.length],
   );
 
   useEffect(() => {
@@ -384,7 +335,7 @@ function VirtualizedMessageList({
     <div
       ref={containerRef}
       className="relative min-w-0"
-      style={{ height: Math.max(1, measurements.totalSize) }}
+      style={{ height: Math.max(1, heightIndex.totalSize) }}
     >
       {virtualItems.map(({ index, start }) => {
         const item = messages[index];
