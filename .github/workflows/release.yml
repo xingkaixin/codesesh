@@ -28,6 +28,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Before anything is built, rewritten or published: the tag and all four
+      # manifests must already agree.
+      - name: Verify release versions
+        run: node scripts/release-preflight.mjs "${GITHUB_REF_NAME}"
+
       - run: pnpm build
 
       # Build CLI with @codesesh/core bundled in (self-contained)

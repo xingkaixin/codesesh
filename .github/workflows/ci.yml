@@ -33,6 +33,9 @@ jobs:
 
       - run: pnpm format:check
 
+      - name: Verify package versions agree
+        run: node scripts/release-preflight.mjs
+
       - run: pnpm build
 
       - name: Smoke test CLI on minimum Node version

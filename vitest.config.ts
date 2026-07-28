@@ -14,7 +14,12 @@ const WEB_INTERACTIONS_SCOPE =
 
 export default defineConfig({
   test: {
-    projects: ["packages/core", "packages/cli", "apps/web"],
+    projects: [
+      "packages/core",
+      "packages/cli",
+      "apps/web",
+      { test: { name: "scripts", include: ["scripts/**/*.test.mjs"] } },
+    ],
     coverage: {
       provider: "v8",
       include: [CORE_SOURCE_SCOPE, CLI_SOURCE_SCOPE, WEB_SOURCE_SCOPE],
