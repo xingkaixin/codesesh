@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveTimeWindow, writeCustomTimeWindow, writeTimeWindowPreset } from "./time-window";
 
 const now = new Date(2026, 6, 14, 12).getTime();
@@ -72,5 +72,27 @@ describe("time window URL state", () => {
     expect(writeCustomTimeWindow(params, "2026-07-01", "2026-07-14").toString()).toBe(
       "view=projects&from=2026-07-01&to=2026-07-14&range=custom",
     );
+  });
+});
+
+describe("CS-133: presets are calendar ranges", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // The CLI dashboard fallback builds the same window from the shared calendar
+  // module; both must land on the same local midnight across a DST transition.
+  it.each([
+    { name: "spring forward", today: [2026, 2, 10], days: 7 },
+    { name: "fall back", today: [2026, 10, 3], days: 7 },
+  ])("keeps the preset start at local midnight for $name", ({ today, days }) => {
+    vi.stubEnv("TZ", "America/New_York");
+    const nowMs = new Date(today[0]!, today[1]!, today[2]!, 12).getTime();
+
+    const { window } = resolveTimeWindow(new URLSearchParams(`range=${days}d`), { days }, nowMs);
+
+    expect(window.from).toBe(new Date(today[0]!, today[1]!, today[2]! - days + 1).getTime());
+    expect(new Date(window.from!).getHours()).toBe(0);
+    expect(window.to).toBe(new Date(today[0]!, today[1]!, today[2]! + 1).getTime() - 1);
   });
 });
