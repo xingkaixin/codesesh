@@ -483,8 +483,43 @@ export class SessionScanError extends Error {
   }
 }
 
+/**
+ * Files that reflect committed data. `-shm` is deliberately absent: opening the
+ * database read-only rewrites it, so including it would report a change after
+ * every scan.
+ */
+export function sqliteSourceFiles(dbPath: string): string[] {
+  return [dbPath, `${dbPath}-wal`];
+}
+
+function statOrNull(path: string): { size: number; mtimeMs: number } | null {
+  try {
+    return statSync(path);
+  } catch {
+    return null;
+  }
+}
+
+/** Changes whenever committed data changes, and only then. */
+function sqliteSourceFingerprint(dbPath: string): string {
+  return sqliteSourceFiles(dbPath)
+    .map((path) => {
+      const stats = statOrNull(path);
+      return stats ? `${stats.size}:${Math.round(stats.mtimeMs)}` : "-";
+    })
+    .join("|");
+}
+
+function latestSqliteSourceMtime(dbPath: string): number {
+  return sqliteSourceFiles(dbPath).reduce((latest, path) => {
+    const stats = statOrNull(path);
+    return stats && stats.mtimeMs > latest ? stats.mtimeMs : latest;
+  }, 0);
+}
+
 export abstract class DatabaseSessionSource extends BaseAgent {
   protected sessionMetaMap = new Map<string, SessionCacheMeta>();
+  private lastSourceFingerprint: string | null = null;
 
   /** 返回数据库文件路径（供 mtime 检测）。 */
   protected abstract getDatabasePath(): string | null;
@@ -505,7 +540,12 @@ export abstract class DatabaseSessionSource extends BaseAgent {
   }
 
   /**
-   * 变更检测：数据库内部变更难以按行定位，按库文件 mtime 判定。
+   * 变更检测：数据库内部变更难以按行定位，按库文件集合的指纹判定。
+   *
+   * In WAL mode a commit appends to the sidecar and leaves the main file
+   * untouched until checkpoint, so watching the database alone misses recent
+   * writes entirely. Size is part of the fingerprint because an uncheckpointed
+   * commit may land in the same millisecond as the previous one.
    */
   checkForChanges(sinceTimestamp: number, _cachedSessions: SessionHead[]): ChangeCheckResult {
     const dbPath = this.getDatabasePath();
@@ -514,7 +554,15 @@ export abstract class DatabaseSessionSource extends BaseAgent {
     }
 
     try {
-      const hasChanges = statSync(dbPath).mtimeMs > sinceTimestamp;
+      const fingerprint = sqliteSourceFingerprint(dbPath);
+      const previous = this.lastSourceFingerprint;
+      this.lastSourceFingerprint = fingerprint;
+      // Nothing to compare against on the first pass — fall back to the caller's
+      // baseline, which also covers a WAL written while the process was down.
+      const hasChanges =
+        previous == null
+          ? latestSqliteSourceMtime(dbPath) > sinceTimestamp
+          : fingerprint !== previous;
       return {
         hasChanges,
         timestamp: Date.now(),
