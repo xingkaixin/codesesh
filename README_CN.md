@@ -155,10 +155,14 @@ npx codesesh --session claudecode://3b0e4ead-eba9-43e7-9fac-b30647e189f8
 ### JSON 输出（用于脚本）
 
 ```bash
-# 以 JSON 格式输出所有会话数据，不启动服务器
+# 以 JSON 格式输出会话索引，不启动服务器
 npx codesesh --json
 npx codesesh -j
 ```
+
+输出是索引而非归档：包含 `agents` 摘要与 `sessions` 数组（id、slug、标题、目录、项目身份、
+时间戳、token/成本统计与智能标签），**不包含**消息、工具调用、推理过程与文件活动，因此
+不能作为历史记录的备份。会话内容仍保存在各 Agent 自己的数据目录中。
 
 ### CLI 参数一览
 
@@ -173,7 +177,7 @@ npx codesesh -j
 | `--from` | — | — | 指定日期之后有活动的会话 `YYYY-MM-DD`（覆盖 `--days`） |
 | `--to` | — | — | 指定日期之前有活动的会话 `YYYY-MM-DD` |
 | `--session` | `-s` | — | 直接打开某个会话（`agent://session-id`） |
-| `--json` | `-j` | `false` | 输出 JSON 后退出（不启动服务器） |
+| `--json` | `-j` | `false` | 输出会话索引 JSON 后退出（仅元数据，不含消息） |
 | `--no-open` | — | `false` | 不自动打开浏览器 |
 | `--trace` | — | `false` | 打印性能追踪日志 |
 | `--cache` | — | `true` | 优先使用缓存扫描结果 |

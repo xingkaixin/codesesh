@@ -5,6 +5,7 @@ import { LiveScanStore } from "./live-scan.js";
 import { printScanResults } from "./output.js";
 import { VERSION } from "./version.js";
 import { appLogger } from "./logging.js";
+import { buildSessionIndexOutput } from "./session-index-output.js";
 import {
   isLoopbackHostname,
   resolveRemoteTransport,
@@ -22,7 +23,7 @@ import {
   hasExplicitPortArg,
   parsePort,
 } from "./ports.js";
-import { createRegisteredAgents, getAgentInfoMap, refreshPricingCache, perf } from "@codesesh/core";
+import { createRegisteredAgents, refreshPricingCache, perf } from "@codesesh/core";
 
 const main = defineCommand({
   meta: {
@@ -218,27 +219,9 @@ const main = defineCommand({
     }
 
     if (jsonOnly) {
-      // Apply --days/--from/--to window to the JSON output so CLI semantics are preserved.
-      const windowed = result.sessions.filter((s) => {
-        const activity = s.time_updated ?? s.time_created;
-        if (listDefaultFrom != null && activity < listDefaultFrom) return false;
-        if (listDefaultTo != null && activity > listDefaultTo) return false;
-        return true;
-      });
-      const info = getAgentInfoMap(
-        Object.fromEntries(Object.entries(result.byAgent).map(([k, v]) => [k, v.length])),
-      );
-      const output = {
-        agents: info.map(({ name, displayName, count }) => ({
-          name,
-          displayName,
-          count,
-          available: count > 0,
-        })),
-        sessions: windowed,
-      };
+      const output = buildSessionIndexOutput(result, { from: listDefaultFrom, to: listDefaultTo });
       appLogger.info("cli.json_output", {
-        sessions: windowed.length,
+        sessions: output.sessions.length,
         duration_ms: Math.round(performance.now() - startedAt),
       });
       console.log(JSON.stringify(output, null, 2));

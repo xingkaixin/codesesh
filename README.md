@@ -155,10 +155,15 @@ npx codesesh --session claudecode://3b0e4ead-eba9-43e7-9fac-b30647e189f8
 ### JSON Output (for scripting)
 
 ```bash
-# Dump all session data as JSON instead of starting the server
+# Print the session index as JSON instead of starting the server
 npx codesesh --json
 npx codesesh -j
 ```
+
+The output is an index, not an archive: an `agents` summary and a `sessions` array of session
+metadata — id, slug, title, directory, project identity, timestamps, token/cost stats and smart
+tags. It does **not** include messages, tool calls, reasoning or file activity, so it is not a
+backup of your history. Session content stays in each agent's own data directory.
 
 ### CLI Options Reference
 
@@ -176,7 +181,7 @@ npx codesesh -j
 | `--from` | — | — | Sessions active after this date `YYYY-MM-DD` (overrides `--days`) |
 | `--to` | — | — | Sessions active before this date `YYYY-MM-DD` |
 | `--session` | `-s` | — | Directly open a session (`agent://session-id`) |
-| `--json` | `-j` | `false` | Output JSON and exit (no server) |
+| `--json` | `-j` | `false` | Print the session index as JSON and exit (metadata only, no messages) |
 | `--no-open` | — | `false` | Don't auto-open the browser |
 | `--trace` | — | `false` | Print performance trace logs |
 | `--cache` | — | `true` | Use cached scan results when available |
