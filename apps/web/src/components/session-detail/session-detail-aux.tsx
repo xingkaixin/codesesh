@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { FileText, Funnel } from "../ui/icons";
 import type { SessionDetail } from "../../lib/api";
-import { InteractiveReceipt } from "../InteractiveReceipt";
+import { ErrorBoundary } from "../ErrorBoundary";
 import { RenderProfiler } from "../RenderProfiler";
 import { DrawerDialog } from "../DrawerDialog";
 import type { SessionDetailToc } from "./toc";
@@ -9,6 +9,17 @@ import type { FileChangeSummary } from "./file-change";
 import { FileChangeTracker, getFileTrackerItemCount } from "./file-change-tracker";
 import type { SessionAnchorScrollHandler } from "./scroll-behavior";
 import { SessionTocFilterPanel } from "./session-toc";
+
+// The receipt is only reachable from its drawer, so it downloads on open.
+const InteractiveReceipt = lazy(() =>
+  import("../InteractiveReceipt").then((m) => ({ default: m.InteractiveReceipt })),
+);
+
+function ReceiptPlaceholder() {
+  return (
+    <div className="h-[calc(100dvh-5.5rem)] min-h-[420px] rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]" />
+  );
+}
 
 export function DeferredInteractiveReceipt({
   session,
@@ -63,10 +74,14 @@ export function DeferredInteractiveReceipt({
       <DrawerDialog open={open} onOpenChange={setOpen} title="Session Receipt" variant="desktop">
         {ready ? (
           <RenderProfiler id="InteractiveReceipt">
-            <InteractiveReceipt key={session.id} session={session} toc={toc} />
+            <ErrorBoundary>
+              <Suspense fallback={<ReceiptPlaceholder />}>
+                <InteractiveReceipt key={session.id} session={session} toc={toc} />
+              </Suspense>
+            </ErrorBoundary>
           </RenderProfiler>
         ) : (
-          <div className="h-[calc(100dvh-5.5rem)] min-h-[420px] rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]" />
+          <ReceiptPlaceholder />
         )}
       </DrawerDialog>
     </>

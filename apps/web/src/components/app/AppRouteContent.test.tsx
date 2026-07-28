@@ -68,7 +68,8 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
 afterEach(cleanup);
 
 describe("AppRouteContent", () => {
-  it("renders a project from the resolved project model", () => {
+  // The route surfaces load on demand, so the assertion waits for the chunk.
+  it("renders a project from the resolved project model", async () => {
     const props = makeProps();
     props.viewState = {
       mode: "project",
@@ -85,10 +86,10 @@ describe("AppRouteContent", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: "acme/app" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "acme/app" })).toBeTruthy();
   });
 
-  it("renders search content from the explicit search contract", () => {
+  it("renders search content from the explicit search contract", async () => {
     const props = makeProps();
     props.search.active = true;
 
@@ -98,6 +99,6 @@ describe("AppRouteContent", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: "No recent sessions" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "No recent sessions" })).toBeTruthy();
   });
 });
