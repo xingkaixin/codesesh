@@ -1,4 +1,5 @@
 import type { ScanOptions } from "@codesesh/core";
+import { sessionRoutePath } from "@codesesh/core/contract";
 import { resolveTimeWindow, type TimeWindow } from "./time-window-resolution.js";
 
 export interface TargetSession {
@@ -63,7 +64,10 @@ export function buildCliRuntimePlan(
 export function resolveStartupUrl(startupUrl: string, targetSession: TargetSession | null): string {
   if (!targetSession) return startupUrl;
   const url = new URL(startupUrl);
-  url.pathname = `/${targetSession.agent.toLowerCase()}/${targetSession.sessionId}`;
+  url.pathname = sessionRoutePath({
+    agentName: targetSession.agent,
+    sessionId: targetSession.sessionId,
+  });
   return url.toString();
 }
 

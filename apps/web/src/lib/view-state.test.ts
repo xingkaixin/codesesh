@@ -3,6 +3,7 @@ import { matchRoutes } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
 import { APP_ROUTE_IDS, appRouteChildren, assertValidRouteEncoding } from "./app-routes";
 import { getProjectPath } from "./projects";
+import { sessionRoutePath } from "./session-indexes";
 import { viewStateFromRouteMatches } from "./view-state";
 
 const agents = new Set(["claudecode", "codex"]);
@@ -35,6 +36,19 @@ describe("viewStateFromRouteMatches", () => {
       activeSessionId: "abc-123",
     });
   });
+
+  it.each(["nested/session", "query?part", "fragment#part", "percent%part", "unicode ✓"])(
+    "CS-132: opens opaque session id %j from a canonical path",
+    (sessionId) => {
+      const path = sessionRoutePath({ agentName: "codex", sessionId });
+
+      expect(viewState(path)).toEqual({
+        mode: "session",
+        activeAgentKey: "codex",
+        activeSessionId: sessionId,
+      });
+    },
+  );
 
   it("keeps the static projects route ahead of the agent parameter", () => {
     const matches = matchRoutes(routes, "/projects");

@@ -1,7 +1,12 @@
 import { useEffect, useEffectEvent } from "react";
 import type { NavigateFunction } from "react-router-dom";
 import type { SearchResult, SessionHead } from "../lib/api";
-import { getSessionReferenceKey, type SidebarSessionLookup } from "../lib/session-indexes";
+import {
+  agentRoutePath,
+  getSessionReferenceKey,
+  sessionRoutePath,
+  type SidebarSessionLookup,
+} from "../lib/session-indexes";
 import { getProjectPath, type ProjectRouteIdentity } from "../lib/projects";
 import type { ViewState } from "../lib/view-state";
 import type { BrowseBy } from "../components/app/types";
@@ -127,7 +132,7 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
           navigate(getProjectPath(selectedProjectNavigationIdentity));
           return;
         }
-        navigate(`/${viewState.activeAgentKey}`);
+        navigate(agentRoutePath(viewState.activeAgentKey));
       }
       return;
     }
@@ -165,7 +170,7 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
         event.preventDefault();
         dismissShortcutHint();
         closeSearch();
-        navigate(`/${result.reference.agentName.toLowerCase()}/${result.reference.sessionId}`, {
+        navigate(sessionRoutePath(result.reference), {
           state: { searchQuery: activeSearchQuery },
         });
       }

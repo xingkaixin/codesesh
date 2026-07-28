@@ -3,6 +3,7 @@ import type { DashboardData, ApiProjectAgentStat, ApiProjectGroup, SessionHead }
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import { formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getProjectPath } from "../lib/projects";
+import { sessionRoutePath } from "../lib/session-indexes";
 import { getSessionDisplayTitle } from "../lib/session-title";
 import { AgentIcon } from "./AgentIcon";
 import { Dashboard } from "./Dashboard";
@@ -265,7 +266,7 @@ function TopCostSessions({
           return (
             <li key={session.reference}>
               <Link
-                to={`/${session.reference}`}
+                to={sessionRoutePath({ agentName: session.agentKey, sessionId: session.sessionId })}
                 className="block rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
               >
                 <div className="flex items-center gap-2">
