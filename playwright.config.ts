@@ -86,6 +86,7 @@ export default defineConfig({
       testMatch: [
         "aggregation.spec.ts",
         "browsing.spec.ts",
+        "code-splitting.spec.ts",
         "live-refresh.spec.ts",
         "local-media.spec.ts",
       ],
