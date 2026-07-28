@@ -1,5 +1,18 @@
 #!/usr/bin/env node
 
+/**
+ * End-to-end cold-start and navigation timings against a real browser.
+ *
+ * This reads the developer's own session data and measures wall-clock in a live
+ * browser, so it is a local and nightly tool — not a PR gate. Its numbers move
+ * with the machine and with whatever history happens to be on it, which is
+ * exactly the kind of signal that makes a required check flaky.
+ *
+ * PR-time performance assurance lives in two other places:
+ *   - deterministic gates in the unit tests (query counts, bundle bytes, cache
+ *     cardinality), next to the code they protect
+ *   - growth-rate checks in scripts/perf-scale.mjs
+ */
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { createServer } from "node:net";

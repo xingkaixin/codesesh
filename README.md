@@ -317,7 +317,8 @@ apps/web            React frontend
 ```
 
 `docs/architecture.md` describes how a scan flows through these; `docs/sqlite-storage.md` covers
-the cache and search index.
+the cache and search index; `docs/performance.md` describes what guards performance and where to add
+a new guard.
 
 ### Extending
 

@@ -1,5 +1,21 @@
+/**
+ * Compares the canonical index build against a version that redundantly re-sorts.
+ *
+ * The budget is a ratio, not a wall-clock number: whatever the machine, doing
+ * the work once must not cost more than doing it twice. An absolute millisecond
+ * threshold would either be flaky on a loaded runner or too loose to catch
+ * anything.
+ */
 import { performance } from "node:perf_hooks";
 import { applySessionChanges, createSessionIndex } from "../packages/core/dist/contract/index.mjs";
+
+/**
+ * The canonical path must not cost more than redundantly re-sorting on top of
+ * it. The two are close — a re-sort of already-sorted data is nearly linear —
+ * so the budget allows for run-to-run noise rather than claiming a large win.
+ * Complexity is covered by scripts/perf-scale.mjs, not by this ratio.
+ */
+const MAX_CANONICAL_RATIO = 1.05;
 
 const sessionCount = Number(process.env.SESSION_INDEX_BENCH_SIZE ?? 25_000);
 const changeCount = Number(process.env.SESSION_INDEX_BENCH_CHANGES ?? 100);
@@ -23,7 +39,10 @@ const sessions = Array.from({ length: sessionCount }, (_, index) => ({
   },
 }));
 const changes = Array.from({ length: changeCount }, (_, index) => ({
-  agentName: index % 2 === 0 ? "codex" : "claude",
+  reference: {
+    agentName: index % 2 === 0 ? "codex" : "claude",
+    sessionId: sessions[index * 2].id,
+  },
   session: {
     ...sessions[index * 2],
     time_updated: sessionCount + index + 1,
@@ -52,6 +71,9 @@ const repeatedSortMs = measure(() => {
   createSessionIndex(redundantlySorted);
 });
 
+const ratio = canonicalMs / repeatedSortMs;
+const withinBudget = ratio <= MAX_CANONICAL_RATIO;
+
 console.log(
   JSON.stringify(
     {
@@ -59,8 +81,18 @@ console.log(
       changes: changeCount,
       canonical_ms: Number(canonicalMs.toFixed(2)),
       repeated_sort_ms: Number(repeatedSortMs.toFixed(2)),
+      canonical_ratio: Number(ratio.toFixed(3)),
+      budget: MAX_CANONICAL_RATIO,
+      within_budget: withinBudget,
     },
     null,
     2,
   ),
 );
+
+if (!withinBudget) {
+  console.error(
+    `Canonical index build cost ${ratio.toFixed(2)}x the redundant one; expected at most ${MAX_CANONICAL_RATIO}.`,
+  );
+  process.exit(1);
+}
