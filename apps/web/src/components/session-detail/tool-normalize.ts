@@ -9,6 +9,7 @@ import type { LoaderCircle } from "../ui/icons";
 import type { Message, ToolPart } from "../../lib/api";
 import type { ToolOutputContent } from "../tool-output/types";
 import type { ToolDetailItem } from "./codex-tool";
+import { inlineImageSource, resolveLocalMediaSource } from "../../lib/local-media-policy";
 import {
   compactText,
   normalizeEscapedNewlines,
@@ -42,13 +43,9 @@ export interface ToolDisplayStrategy {
 }
 
 function toSafeImageSource(part: Record<string, unknown>) {
-  const mimeType = toPlainText(part.mime_type);
-  const data = toPlainText(part.data);
-  if (mimeType.startsWith("image/") && data) return `data:${mimeType};base64,${data}`;
-
-  const url = toPlainText(part.url);
-  if (/^data:image\//i.test(url)) return url;
-  return "";
+  const inline = inlineImageSource(toPlainText(part.mime_type), toPlainText(part.data));
+  if (inline) return inline;
+  return resolveLocalMediaSource(toPlainText(part.url)) ?? "";
 }
 
 export function extractToolMedia(value: unknown) {

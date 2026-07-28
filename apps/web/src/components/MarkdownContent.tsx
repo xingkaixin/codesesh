@@ -1,10 +1,39 @@
 import { memo, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components, Options } from "react-markdown";
+import { resolveLocalMediaSource } from "../lib/local-media-policy";
 
 const markdownComponents: Components = {
   a: ({ children }) => <span className="console-markdown-link">{children}</span>,
+  img: ({ src, alt, title }) => {
+    const safeSrc = resolveLocalMediaSource(typeof src === "string" ? src : undefined);
+    if (!safeSrc) {
+      return (
+        <span className="console-mono inline-block rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
+          Remote image not loaded{alt ? `: ${alt}` : ""}
+        </span>
+      );
+    }
+    return (
+      <img
+        src={safeSrc}
+        alt={alt ?? ""}
+        title={title}
+        loading="lazy"
+        className="max-h-[520px] max-w-full object-contain"
+      />
+    );
+  },
 };
+
+/**
+ * react-markdown's default transform drops inline image data and keeps remote
+ * URLs — the opposite of what a local-only reader wants. The media policy makes
+ * that call instead, for every URL the tree carries.
+ */
+function transformMediaUrl(url: string): string {
+  return resolveLocalMediaSource(url) ?? "";
+}
 
 interface MarkdownContentProps {
   text: string;
@@ -111,7 +140,11 @@ export const MarkdownContent = memo(function MarkdownContent({
 
   return (
     <div>
-      <ReactMarkdown components={markdownComponents} rehypePlugins={rehypePlugins}>
+      <ReactMarkdown
+        components={markdownComponents}
+        rehypePlugins={rehypePlugins}
+        urlTransform={transformMediaUrl}
+      >
         {text}
       </ReactMarkdown>
     </div>
