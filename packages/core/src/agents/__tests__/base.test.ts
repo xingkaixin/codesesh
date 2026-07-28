@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import Database from "better-sqlite3";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -434,5 +435,102 @@ describe("DatabaseSessionSource", () => {
     agent.rememberSession("db-1");
     const meta: SessionCacheMeta | undefined = agent.getSessionMetaMap().get("db-1");
     expect(meta?.sourcePath).toBe("/tmp/fake.db");
+  });
+});
+
+describe("CS-139: WAL-mode change detection", () => {
+  const dbDirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of dbDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  class WalDatabaseSource extends DatabaseSessionSource {
+    readonly name = "waldb";
+    readonly displayName = "WAL DB";
+
+    constructor(private readonly dbPath: string) {
+      super();
+    }
+
+    isAvailable(): boolean {
+      return true;
+    }
+
+    getSessionWatchPlan() {
+      return { status: "not-needed" as const, reason: "temporary test database" };
+    }
+
+    scan(): SessionHead[] {
+      const db = new Database(this.dbPath, { readonly: true });
+      try {
+        db.prepare("SELECT id FROM session").all();
+        return [];
+      } finally {
+        db.close();
+      }
+    }
+
+    getSessionData(): SessionDetail {
+      return {} as SessionDetail;
+    }
+
+    protected getDatabasePath(): string {
+      return this.dbPath;
+    }
+  }
+
+  function createWalDatabase() {
+    const dir = mkdtempSync(join(tmpdir(), "codesesh-wal-test-"));
+    dbDirs.push(dir);
+    const dbPath = join(dir, "opencode.db");
+    const db = new Database(dbPath);
+    db.pragma("journal_mode = WAL");
+    db.exec("CREATE TABLE session (id TEXT PRIMARY KEY)");
+    db.prepare("INSERT INTO session VALUES (?)").run("s1");
+    return { dbPath, db, agent: new WalDatabaseSource(dbPath) };
+  }
+
+  it("sees a commit that has not been checkpointed", () => {
+    const { db, agent } = createWalDatabase();
+    // Establish the baseline the way a running server would.
+    agent.checkForChanges(0, []);
+    expect(agent.checkForChanges(0, []).hasChanges).toBe(false);
+
+    db.prepare("INSERT INTO session VALUES (?)").run("s2");
+
+    expect(agent.checkForChanges(0, []).hasChanges).toBe(true);
+    db.close();
+  });
+
+  it("does not report a change caused by its own read-only scan", () => {
+    const { db, agent } = createWalDatabase();
+    agent.checkForChanges(0, []);
+
+    agent.scan();
+
+    expect(agent.checkForChanges(0, []).hasChanges).toBe(false);
+    db.close();
+  });
+
+  it("sees a checkpoint and the sidecar removal that follows", () => {
+    const { db, agent } = createWalDatabase();
+    db.prepare("INSERT INTO session VALUES (?)").run("s2");
+    agent.checkForChanges(0, []);
+
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    expect(agent.checkForChanges(0, []).hasChanges).toBe(true);
+
+    db.close();
+    expect(agent.checkForChanges(0, []).hasChanges).toBe(true);
+  });
+
+  it("uses the newest sidecar time on the first check after startup", () => {
+    const { db, agent } = createWalDatabase();
+    const before = Date.now() - 60_000;
+
+    // A WAL written while the process was down leaves the main file untouched.
+    expect(agent.checkForChanges(before, []).hasChanges).toBe(true);
+    db.close();
   });
 });
