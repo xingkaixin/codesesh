@@ -1,12 +1,17 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { get as httpsGet } from "node:https";
 import { createServer as createNodeServer, type Server as NodeServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/core/contract";
 import { createServer } from "./server.js";
+import { resolveRemoteTransport } from "./remote-access.js";
 
-const serveOptionsLog = vi.hoisted(() => [] as { hostname?: string; port?: number }[]);
+const serveOptionsLog = vi.hoisted(
+  () => [] as { hostname?: string; port?: number; hasCreateServer: boolean }[],
+);
 
 vi.mock("@hono/node-server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@hono/node-server")>();
@@ -16,11 +21,74 @@ vi.mock("@hono/node-server", async (importOriginal) => {
       serveOptionsLog.push({
         hostname: (options as { hostname?: string }).hostname,
         port: (options as { port?: number }).port,
+        hasCreateServer: "createServer" in (options as object),
       });
       return actual.serve(options);
     },
   };
 });
+
+/** Requests a self-signed listener; Node's fetch has no per-call trust override. */
+function httpsRequest(
+  url: string,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; contentType: string | undefined }> {
+  return new Promise((resolvePromise, reject) => {
+    // agent:false so no keep-alive socket outlives the request and stalls close().
+    const request = httpsGet(
+      url,
+      { headers, rejectUnauthorized: false, agent: false },
+      (response) => {
+        resolvePromise({
+          status: response.statusCode ?? 0,
+          contentType: response.headers["content-type"],
+        });
+        // The SSE route never ends on its own, so drop the socket rather than
+        // waiting for a body.
+        response.destroy();
+        request.destroy();
+      },
+    );
+    request.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "ECONNRESET") return;
+      reject(error);
+    });
+  });
+}
+
+/** Self-signed material for the TLS listener; requires openssl on PATH. */
+function createTestCertificate(): { certPath: string; keyPath: string } | null {
+  const dir = mkdtempSync(join(tmpdir(), "codesesh-tls-server-"));
+  const certPath = join(dir, "cert.pem");
+  const keyPath = join(dir, "key.pem");
+  try {
+    execFileSync(
+      "openssl",
+      [
+        "req",
+        "-x509",
+        "-newkey",
+        "ec",
+        "-pkeyopt",
+        "ec_paramgen_curve:prime256v1",
+        "-nodes",
+        "-keyout",
+        keyPath,
+        "-out",
+        certPath,
+        "-days",
+        "1",
+        "-subj",
+        "/CN=localhost",
+      ],
+      { stdio: "ignore" },
+    );
+    return { certPath, keyPath };
+  } catch {
+    rmSync(dir, { recursive: true, force: true });
+    return null;
+  }
+}
 
 function createStore() {
   return {
@@ -247,6 +315,99 @@ describe("createServer", () => {
     } finally {
       await app.shutdown();
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("CS-140: serves remote access over TLS when a certificate is supplied", async () => {
+    const material = createTestCertificate();
+    if (!material) return; // openssl unavailable on this runner
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const transport = resolveRemoteTransport({
+      hostname: "0.0.0.0",
+      tlsCertPath: material.certPath,
+      tlsKeyPath: material.keyPath,
+    });
+    const app = await createServer(0, createStore(), {
+      hostname: "0.0.0.0",
+      remoteAccessToken: "tls-token",
+      transport,
+    });
+
+    try {
+      expect(app.url.startsWith("https://")).toBe(true);
+      expect(serveOptionsLog.at(-1)?.hasCreateServer).toBe(true);
+
+      const origin = `https://127.0.0.1:${new URL(app.url).port}`;
+
+      expect((await httpsRequest(`${origin}/api/agents`)).status).toBe(401);
+      expect(
+        (await httpsRequest(`${origin}/api/agents`, { Authorization: "Bearer tls-token" })).status,
+      ).toBe(200);
+
+      const events = await httpsRequest(`${origin}/api/events?access_token=tls-token`);
+      expect(events.contentType).toContain("text/event-stream");
+
+      const shell = await httpsRequest(`${origin}/app.js`);
+      expect(shell.status).toBeGreaterThan(0);
+    } finally {
+      await app.shutdown();
+      warnSpy.mockRestore();
+      rmSync(dirname(material.certPath), { recursive: true, force: true });
+    }
+    // Node builds its TLS context on the first https server in a process, which
+    // can take tens of seconds while it loads the system trust store.
+  }, 60_000);
+
+  it("CS-140: warns that a plaintext remote listener is unprotected", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const app = await createServer(0, createStore(), {
+      hostname: "0.0.0.0",
+      remoteAccessToken: "plaintext-token",
+      transport: { kind: "plaintext" },
+    });
+
+    try {
+      expect(app.url.startsWith("http://")).toBe(true);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("传输未加密"));
+    } finally {
+      await app.shutdown();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("CS-140: refuses requests that bypassed the trusted proxy", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const app = await createServer(0, createStore(), {
+      hostname: "0.0.0.0",
+      remoteAccessToken: "proxy-token",
+      transport: { kind: "trusted-proxy" },
+    });
+    const origin = `http://127.0.0.1:${new URL(app.url).port}`;
+    const authorized = { Authorization: "Bearer proxy-token" };
+
+    try {
+      expect((await fetch(`${origin}/api/agents`, { headers: authorized })).status).toBe(403);
+      expect(
+        (
+          await fetch(`${origin}/api/agents`, {
+            headers: { ...authorized, "X-Forwarded-Proto": "http" },
+          })
+        ).status,
+      ).toBe(403);
+      expect(
+        (
+          await fetch(`${origin}/api/agents`, {
+            headers: { ...authorized, "X-Forwarded-Proto": "https, http" },
+          })
+        ).status,
+      ).toBe(200);
+      // The proxy check runs first, so a bypassed request never reaches auth.
+      expect(
+        (await fetch(`${origin}/api/agents`, { headers: { "X-Forwarded-Proto": "https" } })).status,
+      ).toBe(401);
+    } finally {
+      await app.shutdown();
+      warnSpy.mockRestore();
     }
   });
 

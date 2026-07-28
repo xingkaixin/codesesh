@@ -5,6 +5,7 @@ import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { existsSync } from "node:fs";
+import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +17,8 @@ import {
   isLoopbackHostname,
   REMOTE_ACCESS_QUERY_PARAM,
   remoteAccessAuth,
+  requireProxyTls,
+  type RemoteTransport,
 } from "./remote-access.js";
 import type { ScanEventSource } from "./scan-source.js";
 
@@ -29,6 +32,8 @@ export interface CreateServerOptions {
   hostname?: string;
   remoteAccess?: boolean;
   remoteAccessToken?: string;
+  /** How the listener is protected; defaults to plaintext for a non-loopback host. */
+  transport?: RemoteTransport;
   /** Overrides the auto-detected web build directory; used to pin the static root in tests. */
   webDistPath?: string;
 }
@@ -99,6 +104,8 @@ export async function createServer(
   const app = new Hono();
   const hostname = options.hostname ?? "127.0.0.1";
   const isLoopback = isLoopbackHostname(hostname);
+  const transport: RemoteTransport =
+    options.transport ?? (isLoopback ? { kind: "loopback" } : { kind: "plaintext" });
   const remoteAccessToken = !isLoopback
     ? (options.remoteAccessToken ?? (options.remoteAccess ? createRemoteAccessToken() : null))
     : null;
@@ -131,6 +138,11 @@ export async function createServer(
     }
   });
 
+  // Ordered before authentication: a request that bypassed the proxy must be
+  // refused outright, not given a chance to present a token in the clear.
+  if (transport.kind === "trusted-proxy") {
+    app.use("/api/*", requireProxyTls());
+  }
   if (remoteAccessToken) {
     app.use("/api/*", remoteAccessAuth(remoteAccessToken));
   }
@@ -167,7 +179,17 @@ export async function createServer(
 
   for (let offset = 0; offset < attempts; offset += 1) {
     const candidatePort = port + offset;
-    server = serve({ fetch: app.fetch, port: candidatePort, hostname });
+    server = serve({
+      fetch: app.fetch,
+      port: candidatePort,
+      hostname,
+      ...(transport.kind === "tls"
+        ? {
+            createServer: createHttpsServer,
+            serverOptions: { cert: transport.cert, key: transport.key },
+          }
+        : {}),
+    });
 
     try {
       await waitForListening(server);
@@ -193,9 +215,12 @@ export async function createServer(
     }
   }
 
+  // A trusted proxy publishes its own https origin, so only direct TLS changes
+  // the scheme CodeSesh prints for itself.
+  const scheme = transport.kind === "tls" ? "https" : "http";
   const baseUrl = isLoopback
-    ? `http://localhost:${actualPort}`
-    : `http://${hostname}:${actualPort}`;
+    ? `${scheme}://localhost:${actualPort}`
+    : `${scheme}://${hostname}:${actualPort}`;
   const url = remoteAccessToken
     ? `${baseUrl}/?${REMOTE_ACCESS_QUERY_PARAM}=${encodeURIComponent(remoteAccessToken)}`
     : baseUrl;
@@ -204,11 +229,23 @@ export async function createServer(
     requested_port: port,
     hostname,
     remote_access: Boolean(remoteAccessToken),
+    transport: transport.kind,
   });
 
   if (!isLoopback) {
-    appLogger.warn("server.listen.remote_access", { hostname, port: actualPort });
+    appLogger.warn("server.listen.remote_access", {
+      hostname,
+      port: actualPort,
+      transport: transport.kind,
+    });
     console.warn(`\n⚠ 远程访问已启用。任何持有启动 URL 的人都可以读取你的 AI 会话记录。\n`);
+    if (transport.kind === "plaintext") {
+      appLogger.warn("server.listen.plaintext", { hostname, port: actualPort });
+      console.warn(
+        `⚠ 传输未加密。访问令牌与完整会话内容以明文经过网络，URL 中的令牌还可能写入代理访问日志。\n` +
+          `  使用 --tls-cert/--tls-key 直接启用 TLS，或在受信反向代理后使用 --trust-proxy。\n`,
+      );
+    }
   }
 
   return {
