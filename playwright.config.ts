@@ -83,7 +83,12 @@ export default defineConfig({
   projects: [
     {
       name: "web-chromium",
-      testMatch: ["aggregation.spec.ts", "browsing.spec.ts", "live-refresh.spec.ts"],
+      testMatch: [
+        "aggregation.spec.ts",
+        "browsing.spec.ts",
+        "live-refresh.spec.ts",
+        "local-media.spec.ts",
+      ],
       metadata: { fixtureSessionPath },
       use: { ...devices["Desktop Chrome"], baseURL: `http://127.0.0.1:${port}` },
     },

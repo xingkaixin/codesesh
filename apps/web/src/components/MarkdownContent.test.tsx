@@ -68,3 +68,31 @@ describe("MarkdownContent search highlighting", () => {
     expect(view.container.textContent).toBe("plain text");
   });
 });
+
+describe("CS-136: markdown media stays local", () => {
+  it.each([
+    ["remote https", "https://tracker.example.com/pixel.png"],
+    ["protocol relative", "//tracker.example.com/pixel.png"],
+  ])("does not emit a requestable src for a %s image", (_name, url) => {
+    const view = render(<MarkdownContent text={`![shot](${url})`} />);
+
+    expect(view.container.querySelectorAll("img")).toHaveLength(0);
+    expect(view.container.textContent).toContain("Remote image not loaded");
+    expect(view.container.textContent).toContain("shot");
+  });
+
+  it("renders inline image data", () => {
+    const src = "data:image/png;base64,iVBORw0KGgo=";
+    const view = render(<MarkdownContent text={`![local](${src})`} />);
+
+    expect(view.container.querySelector("img")?.getAttribute("src")).toBe(src);
+  });
+
+  it("renders a same-origin asset path", () => {
+    const view = render(<MarkdownContent text="![asset](/api/assets/a.png)" />);
+
+    expect(view.container.querySelector("img")?.getAttribute("src")).toBe(
+      `${window.location.origin}/api/assets/a.png`,
+    );
+  });
+});
