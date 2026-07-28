@@ -36,6 +36,9 @@ jobs:
       - name: Verify package versions agree
         run: node scripts/release-preflight.mjs
 
+      - name: Verify documented paths exist
+        run: node scripts/check-docs-paths.mjs
+
       - run: pnpm build
 
       - name: Smoke test CLI on minimum Node version
