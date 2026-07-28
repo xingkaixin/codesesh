@@ -105,6 +105,22 @@ describe("CLI runtime plan", () => {
     expect(resolveStartupUrl("http://127.0.0.1:4521/", null)).toBe("http://127.0.0.1:4521/");
   });
 
+  it.each(["nested/session", "query?part", "fragment#part", "percent%part", "unicode ✓"])(
+    "CS-132: keeps opaque session id %j intact in the startup URL",
+    (sessionId) => {
+      const url = new URL(
+        resolveStartupUrl("http://127.0.0.1:4521/", { agent: "Codex", sessionId }),
+      );
+      const [, agentSegment, ...rest] = url.pathname.split("/");
+
+      expect(url.search).toBe("");
+      expect(url.hash).toBe("");
+      expect(decodeURIComponent(agentSegment!)).toBe("codex");
+      expect(rest).toHaveLength(1);
+      expect(decodeURIComponent(rest[0]!)).toBe(sessionId);
+    },
+  );
+
   it("redacts every startup URL query value", () => {
     const redacted = new URL(
       redactStartupUrl("http://0.0.0.0:4521/?access_token=secret&mode=remote"),
