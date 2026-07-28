@@ -1,4 +1,12 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -45,5 +53,38 @@ describe("AppLogger", () => {
     const files = readdirSync(logDir).filter((name) => name.endsWith(".log"));
     expect(files.length).toBeLessThanOrEqual(2);
     expect(files).toContain("codesesh.log");
+  });
+});
+
+describe("CS-141: log permissions", () => {
+  const isPosix = process.platform !== "win32";
+
+  it.runIf(isPosix)("tightens logs a previous run left readable", () => {
+    const dir = mkdtempSync(join(tmpdir(), "codesesh-log-existing-"));
+    try {
+      const stale = join(dir, "codesesh-2026-01-01T000000-000Z-1-1.log");
+      writeFileSync(stale, "old entry");
+      chmodSync(stale, 0o644);
+
+      new AppLogger({ logDir: dir }).info("permissions.check", { ok: true });
+
+      expect(statSync(stale).mode & 0o777).toBe(0o600);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.runIf(isPosix)("keeps the log directory and file owner-only", () => {
+    const dir = mkdtempSync(join(tmpdir(), "codesesh-log-perms-"));
+    try {
+      const logger = new AppLogger({ logDir: dir });
+      logger.info("permissions.check", { ok: true });
+      const logPath = logger.getLogPath();
+
+      expect(statSync(dir).mode & 0o777).toBe(0o700);
+      expect(statSync(logPath!).mode & 0o777).toBe(0o600);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

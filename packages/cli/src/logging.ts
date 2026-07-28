@@ -1,14 +1,11 @@
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  renameSync,
-  statSync,
-  unlinkSync,
-} from "node:fs";
+import { appendFileSync, existsSync, readdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import {
+  ensurePrivateDirectory,
+  restrictExistingPrivateFiles,
+  restrictPrivateFile,
+} from "@codesesh/core";
 import type { SearchIndexSyncResult } from "@codesesh/core";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
@@ -79,6 +76,7 @@ export class AppLogger {
   private readonly maxFiles: number;
   private readonly currentPath: string;
   private rotationIndex = 0;
+  private restrictedExistingLogs = false;
 
   constructor(options: LoggerOptions = {}) {
     this.logDir = options.logDir ?? process.env.CODESESH_LOG_DIR ?? getDefaultLogDir();
@@ -113,7 +111,8 @@ export class AppLogger {
     if (LEVEL_WEIGHT[level] < LEVEL_WEIGHT[this.level]) return;
 
     try {
-      mkdirSync(this.logDir, { recursive: true });
+      ensurePrivateDirectory(this.logDir);
+      this.restrictExistingLogs();
       const line = `${JSON.stringify({
         ts: new Date().toISOString(),
         level,
@@ -123,7 +122,19 @@ export class AppLogger {
       })}\n`;
       this.rotateIfNeeded(Buffer.byteLength(line));
       appendFileSync(this.currentPath, line, "utf8");
+      // Logs carry project paths and error detail.
+      restrictPrivateFile(this.currentPath);
     } catch {}
+  }
+
+  /** Logs rotated by an earlier run predate the owner-only policy. */
+  private restrictExistingLogs(): void {
+    if (this.restrictedExistingLogs) return;
+    this.restrictedExistingLogs = true;
+    restrictExistingPrivateFiles(
+      this.logDir,
+      (name) => name.startsWith("codesesh") && name.endsWith(".log"),
+    );
   }
 
   private rotateIfNeeded(nextBytes: number): void {
@@ -141,6 +152,7 @@ export class AppLogger {
       `codesesh-${timestampForFile()}-${process.pid}-${this.rotationIndex}.log`,
     );
     renameSync(this.currentPath, rotatedPath);
+    restrictPrivateFile(rotatedPath);
     this.removeExpiredLogs();
   }
 
