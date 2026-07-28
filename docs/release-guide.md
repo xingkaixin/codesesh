@@ -43,6 +43,16 @@ CLI 运行时版本来自 `packages/cli/src/version.ts`，读取 **同目录** `
   - `packages/core/package.json`
   - `apps/web/package.json`
   - `apps/www/package.json`
+
+  改完后本地自检（与 CI、Release workflow 用的是同一个脚本）：
+
+  ```bash
+  node scripts/release-preflight.mjs vX.Y.Z
+  ```
+
+  常规 CI 只做包与包之间的一致性检查（不带参数）；Release workflow 在 build 与
+  publish 之前用 tag 再校验一次，任何一处漂移都会在改动 `packages/cli/package.json`
+  之前失败。
 - [ ] **README（按需）**：若本版有用户可见的新能力、Agent 列表或 CLI 行为变化，更新：
   - `README.md`
   - `README_CN.md`
