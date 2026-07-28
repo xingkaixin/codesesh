@@ -16,6 +16,7 @@ export const CHECKED_DOCUMENTS = [
   "packages/cli/README.md",
   "docs/PRD.md",
   "docs/architecture.md",
+  "docs/performance.md",
   "docs/scanning-and-caching.md",
   "docs/sqlite-storage.md",
   "docs/release-guide.md",
