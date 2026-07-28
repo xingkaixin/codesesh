@@ -236,7 +236,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
           JOIN message m ON m.id = p.message_id
           JOIN session s ON s.id = m.session_id
           WHERE COALESCE(s.time_updated, s.time_created) >= ?
-          ORDER BY p.message_id, p.time_created ASC
+          ORDER BY p.message_id, p.time_created ASC, p.id ASC
         `,
       )
       .all(cutoffTime) as OpenCodePartRow[];
@@ -254,13 +254,23 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
     return part ? cleanMessagePart(part) : null;
   }
 
-  private readMessageParts(db: SQLiteDatabase, messageId: unknown): MessagePart[] {
-    const partRows = db
-      .prepare("SELECT data, time_created FROM part WHERE message_id = ? ORDER BY time_created ASC")
-      .all(messageId) as OpenCodePartRow[];
-    return partRows
-      .map((partRow) => this.parsePartRow(partRow))
-      .filter((part): part is MessagePart => part !== null);
+  /**
+   * Every part of one session in a single read. Fetching per message turned a
+   * detail into M+2 queries, and without an index on part(message_id) each one
+   * scanned the whole table.
+   */
+  private readSessionPartRows(db: SQLiteDatabase, sessionId: string): OpenCodePartRow[] {
+    return db
+      .prepare(
+        `
+          SELECT p.message_id, p.data, p.time_created
+          FROM part p
+          JOIN message m ON m.id = p.message_id
+          WHERE m.session_id = ?
+          ORDER BY p.message_id, p.time_created ASC, p.id ASC
+        `,
+      )
+      .all(sessionId) as OpenCodePartRow[];
   }
 
   private buildPartsByMessage(partRows: OpenCodePartRow[]): Map<string, MessagePart[]> {
@@ -382,8 +392,9 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
 
       // Get messages
       const msgRows = db
-        .prepare("SELECT * FROM message WHERE session_id = ? ORDER BY time_created ASC")
+        .prepare("SELECT * FROM message WHERE session_id = ? ORDER BY time_created ASC, id ASC")
         .all(sessionId) as Record<string, unknown>[];
+      const partsByMessage = this.buildPartsByMessage(this.readSessionPartRows(db, sessionId));
 
       for (const msgRow of msgRows) {
         const msgData = parseJsonRecord(msgRow.data, this.name, "message.data");
@@ -398,7 +409,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
           cost > 0 ? null : estimateTokenCost(model, { input: inputTokens, output: outputTokens });
         const resolvedCost = cost || estimatedCost || 0;
 
-        const parts = this.readMessageParts(db, msgRow.id);
+        const parts = partsByMessage.get(String(msgRow.id ?? "")) ?? [];
         if (parts.length === 0) continue;
 
         messages.push({
