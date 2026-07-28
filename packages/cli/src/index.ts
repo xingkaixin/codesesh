@@ -5,7 +5,11 @@ import { LiveScanStore } from "./live-scan.js";
 import { printScanResults } from "./output.js";
 import { VERSION } from "./version.js";
 import { appLogger } from "./logging.js";
-import { isLoopbackHostname } from "./remote-access.js";
+import {
+  isLoopbackHostname,
+  resolveRemoteTransport,
+  type RemoteTransport,
+} from "./remote-access.js";
 import {
   buildCliRuntimePlan,
   parseSessionUri,
@@ -41,6 +45,19 @@ const main = defineCommand({
     "remote-access": {
       type: "boolean",
       description: "Allow authenticated access when binding to a non-loopback address",
+      default: false,
+    },
+    "tls-cert": {
+      type: "string",
+      description: "Path to a TLS certificate; serve remote access over HTTPS",
+    },
+    "tls-key": {
+      type: "string",
+      description: "Path to the TLS private key matching --tls-cert",
+    },
+    "trust-proxy": {
+      type: "boolean",
+      description: "A reverse proxy in front of CodeSesh terminates TLS",
       default: false,
     },
     agent: {
@@ -114,6 +131,19 @@ const main = defineCommand({
       console.error(
         `Refusing to expose CodeSesh on ${hostname} without authentication. Add --remote-access to continue.`,
       );
+      process.exit(1);
+    }
+
+    let transport: RemoteTransport;
+    try {
+      transport = resolveRemoteTransport({
+        hostname,
+        tlsCertPath: args["tls-cert"] as string | undefined,
+        tlsKeyPath: args["tls-key"] as string | undefined,
+        trustProxy: args["trust-proxy"] as boolean,
+      });
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
 
@@ -229,6 +259,7 @@ const main = defineCommand({
         portFallbackAttempts: explicitPort ? 1 : DEFAULT_PORT_FALLBACK_ATTEMPTS,
         hostname,
         remoteAccess,
+        transport,
       });
     } catch (error) {
       console.error(getServerStartupErrorMessage(error, port));

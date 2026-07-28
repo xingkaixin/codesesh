@@ -167,6 +167,9 @@ npx codesesh -j
 | `--port` | `-p` | `4521` | HTTP server starting port; falls back to the next available port if busy |
 | `--host` | — | `127.0.0.1` | HTTP server bind address; default is local-only, set explicitly (e.g. `0.0.0.0`) to expose on the network |
 | `--remote-access` | — | `false` | Enable token-protected access for a non-loopback `--host`; anyone with the startup URL can read session data |
+| `--tls-cert` | — | — | Path to a TLS certificate; serves remote access over HTTPS |
+| `--tls-key` | — | — | Path to the private key matching `--tls-cert` |
+| `--trust-proxy` | — | `false` | A reverse proxy in front of CodeSesh terminates TLS |
 | `--days` | `-d` | `7` | Only include sessions active in the last N days (`0` = all time) |
 | `--cwd` | — | — | Filter to sessions from a project directory (`.` = current dir) |
 | `--agent` | `-a` | all | Filter to specific agent(s), comma-separated |
@@ -184,6 +187,25 @@ npx codesesh -j
 Non-loopback binding is rejected unless `--remote-access` is also present. CodeSesh generates a
 new access token for every process and includes it in the printed startup URL. Treat that URL as a
 password: do not publish it or place it in shared shell history.
+
+A token proves who is asking; it does not hide the answer. Without TLS the token and the full
+session content travel the network in the clear, and the token in the URL can end up in reverse
+proxy access logs. Pick one of:
+
+```bash
+# CodeSesh terminates TLS
+npx codesesh --host 0.0.0.0 --remote-access --tls-cert ./cert.pem --tls-key ./key.pem
+
+# A reverse proxy terminates TLS and forwards to CodeSesh
+npx codesesh --host 0.0.0.0 --remote-access --trust-proxy
+```
+
+`--trust-proxy` requires every API request to arrive with `X-Forwarded-Proto: https`, and refuses
+it otherwise — so a request that bypassed the proxy is rejected before authentication. This assumes
+the deployment makes CodeSesh unreachable except through that proxy.
+
+Binding to a non-loopback address without either option still starts, and prints a warning that the
+transport is unencrypted.
 
 ---
 
