@@ -39,6 +39,11 @@ jobs:
       - name: Verify documented paths exist
         run: node scripts/check-docs-paths.mjs
 
+      # Growth-rate checks only; wall-clock benchmarks stay out of PR CI.
+      - name: Check algorithmic growth rates
+        if: matrix.node-version == 24
+        run: pnpm perf:check
+
       - run: pnpm build
 
       - name: Smoke test CLI on minimum Node version
