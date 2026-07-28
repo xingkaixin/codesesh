@@ -8,12 +8,18 @@ const { markdownRender } = vi.hoisted(() => ({
   markdownRender: vi.fn(),
 }));
 
+// Stubbed so the assertions count parses rather than markdown output; the
+// rendered highlight itself is covered by MarkdownContent.test.tsx.
 vi.mock("react-markdown", () => ({
-  default: ({ children }: { children: string }) => {
-    markdownRender(children);
+  default: ({ children, rehypePlugins }: { children: string; rehypePlugins?: unknown[] }) => {
+    markdownRender(children, rehypePlugins);
     return <span>{children}</span>;
   },
 }));
+
+function lastHighlightPlugins(): unknown[] | undefined {
+  return markdownRender.mock.calls.at(-1)?.[1] as unknown[] | undefined;
+}
 
 afterEach(() => {
   cleanup();
@@ -49,7 +55,11 @@ describe("message markdown memoization", () => {
 
     view.rerender(<MarkdownContent text="Memoized markdown" highlightQuery="memoized" />);
     expect(markdownRender).toHaveBeenCalledTimes(2);
-    expect(view.container.querySelector("mark")?.textContent).toBe("Memoized");
+    expect(lastHighlightPlugins()).toHaveLength(1);
+
+    view.rerender(<MarkdownContent text="Memoized markdown" highlightQuery="" />);
+    expect(markdownRender).toHaveBeenCalledTimes(3);
+    expect(lastHighlightPlugins()).toBeUndefined();
   });
 
   it("does not reparse stable visible messages on viewport updates", () => {
@@ -97,7 +107,7 @@ describe("message markdown memoization", () => {
       />,
     );
     expect(markdownRender.mock.calls.length).toBeGreaterThan(initialRenderCount);
-    expect(view.container.querySelectorAll("mark").length).toBeGreaterThan(0);
+    expect(lastHighlightPlugins()).toHaveLength(1);
     scrollContainer.remove();
   });
 });
