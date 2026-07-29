@@ -23,7 +23,10 @@ export function pruneSessionDetailCache(client: QueryClient): void {
     .getAll()
     .map((query, position) => ({ query, position }))
     .filter(
-      ({ query }) => query.queryKey[0] === SESSION_DETAIL_PREFIX && query.getObserversCount() === 0,
+      ({ query }) =>
+        query.queryKey[0] === SESSION_DETAIL_PREFIX &&
+        query.state.status === "success" &&
+        query.getObserversCount() === 0,
     )
     // Newest first. Two details fetched in the same millisecond tie on
     // dataUpdatedAt, so cache insertion order breaks it.
