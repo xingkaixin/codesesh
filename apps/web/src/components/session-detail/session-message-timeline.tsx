@@ -124,6 +124,9 @@ function getVirtualizedSegmentStyle(
 ): CSSProperties {
   const segmentWidth = 100 / entryCount;
   return {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
     left: `calc(${index * segmentWidth}% + ${(index * gapWidth) / entryCount}px)`,
     width: `calc(${segmentWidth}% - ${((entryCount - 1) * gapWidth) / entryCount}px)`,
   };
@@ -143,7 +146,7 @@ const TimelineSegment = memo(function TimelineSegment({
   const tooltipId = `timeline-tooltip-${entry.id}`;
   return (
     <span
-      className={`t-tt-wrap session-timeline-item min-w-0 ${virtualized ? "absolute inset-y-0" : ""}`}
+      className="session-timeline-item min-w-0"
       style={virtualized ? getVirtualizedSegmentStyle(index, entryCount, gapWidth) : undefined}
     >
       <button
