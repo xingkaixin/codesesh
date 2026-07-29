@@ -5,15 +5,14 @@ import {
   scanSessions,
   type LiveSnapshot,
   type ScanOptions,
-  type SessionReference,
 } from "@codesesh/core";
 import type {
   AgentScanStatus,
   BackfillStatus,
-  ReferencedSessionHead,
   ScanStatusEvent,
   SessionsUpdatedEvent,
 } from "@codesesh/core/contract";
+import { mergeSessionsUpdatedEvents } from "@codesesh/core/contract";
 import { AgentSyncEngine } from "./agent-sync-engine.js";
 import { appLogger } from "./logging.js";
 import { SessionWatcher } from "./session-watcher.js";
@@ -33,40 +32,6 @@ export interface LiveScanStoreOptions {
 }
 
 const NEW_SESSION_EVENT_WINDOW_MS = 250;
-
-function mergeEvents(
-  previous: SessionsUpdatedEvent,
-  next: SessionsUpdatedEvent,
-): SessionsUpdatedEvent {
-  const changedSessionHeads = new Map<string, ReferencedSessionHead>();
-  const removedSessionRefs = new Map<string, SessionReference>();
-  const sessionKey = (agentName: string, sessionId: string) => `${agentName}\0${sessionId}`;
-  const addChanged = (item: ReferencedSessionHead) => {
-    const key = sessionKey(item.reference.agentName, item.reference.sessionId);
-    removedSessionRefs.delete(key);
-    changedSessionHeads.set(key, item);
-  };
-  const addRemoved = (item: SessionReference) => {
-    const key = sessionKey(item.agentName, item.sessionId);
-    changedSessionHeads.delete(key);
-    removedSessionRefs.set(key, item);
-  };
-  for (const item of previous.changedSessionHeads) addChanged(item);
-  for (const item of previous.removedSessionRefs) addRemoved(item);
-  for (const item of next.changedSessionHeads) addChanged(item);
-  for (const item of next.removedSessionRefs) addRemoved(item);
-  return {
-    type: "sessions-updated",
-    changedAgents: Array.from(new Set([...previous.changedAgents, ...next.changedAgents])),
-    newSessions: previous.newSessions + next.newSessions,
-    updatedSessions: previous.updatedSessions + next.updatedSessions,
-    removedSessions: previous.removedSessions + next.removedSessions,
-    totalSessions: next.totalSessions,
-    timestamp: next.timestamp,
-    changedSessionHeads: [...changedSessionHeads.values()],
-    removedSessionRefs: [...removedSessionRefs.values()],
-  };
-}
 
 export class LiveScanStore {
   private readonly watchEnabled: boolean;
@@ -217,7 +182,9 @@ export class LiveScanStore {
   }
 
   private queueEvent(event: SessionsUpdatedEvent): void {
-    this.pendingEvent = this.pendingEvent ? mergeEvents(this.pendingEvent, event) : event;
+    this.pendingEvent = this.pendingEvent
+      ? mergeSessionsUpdatedEvents(this.pendingEvent, event)
+      : event;
     if (this.pendingEventTimer) return;
     this.pendingEventTimer = setTimeout(() => {
       const pending = this.pendingEvent;

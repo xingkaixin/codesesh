@@ -224,6 +224,20 @@ describe("useSessionStore", () => {
     expect(client.getQueryState(inactiveAggregateKey)?.isInvalidated).toBe(true);
   });
 
+  it("invalidates only session details changed by a live event", async () => {
+    const { result, client } = await renderStore();
+    await act(() => result.current.reload(config.window));
+    const changedDetailKey = queryKeys.sessionDetail("claudecode", SAMPLE_SESSION_HEAD.id);
+    const unchangedDetailKey = queryKeys.sessionDetail("claudecode", "unchanged-session");
+    client.setQueryData(changedDetailKey, { id: SAMPLE_SESSION_HEAD.id });
+    client.setQueryData(unchangedDetailKey, { id: "unchanged-session" });
+
+    await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
+
+    expect(client.getQueryState(changedDetailKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(unchangedDetailKey)?.isInvalidated).toBe(false);
+  });
+
   it("performs an explicit full reload when live state reconnects", async () => {
     const { result } = await renderStore();
     await act(() => result.current.reload(config.window));

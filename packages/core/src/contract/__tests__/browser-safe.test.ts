@@ -43,6 +43,7 @@ describe("contract browser-safety", () => {
         "getSessionRoutePath",
         "isProjectIdentityKind",
         "matchesProjectIdentity",
+        "mergeSessionsUpdatedEvents",
         "mergeSortedSessions",
         "normalizeMessageParts",
         "normalizeSessionReference",

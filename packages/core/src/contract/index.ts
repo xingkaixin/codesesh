@@ -5,7 +5,7 @@ export type * from "./file-activity.js";
 export type * from "./search.js";
 export type * from "./bookmarks.js";
 export type * from "./dashboard.js";
-export type * from "./events.js";
+export * from "./events.js";
 export * from "./calendar-day.js";
 export * from "./project-identity.js";
 export * from "./session-reference.js";
