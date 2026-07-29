@@ -19,6 +19,7 @@ export function useSessionDetail(viewState: ViewState) {
   const query = useQuery({
     queryKey: queryKeys.sessionDetail(route?.agent ?? "", route?.sessionId ?? ""),
     enabled: route !== null,
+    staleTime: Infinity,
     queryFn: async ({ signal }) => {
       if (!route) throw new Error("Session route is required");
       const requestId = nextSessionRequestId++;
@@ -31,7 +32,7 @@ export function useSessionDetail(viewState: ViewState) {
         logClientEvent("session.open.cancel", {
           request_id: requestId,
           request_key: requestKey,
-          reason: "route-change",
+          reason: "query-cancelled",
         });
       };
       signal.addEventListener("abort", logCancellation, { once: true });

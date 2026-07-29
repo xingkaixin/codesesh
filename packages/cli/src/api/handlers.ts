@@ -249,6 +249,8 @@ function getSessionHeadReference(session: SessionHead): SessionReference {
   };
 }
 
+const SESSION_DETAIL_STREAM_BATCH_CHARS = 64 * 1024;
+
 function createSessionDetailJsonResponse(
   data: Omit<SessionDetail, "messages">,
   messages: Iterable<string>,
@@ -268,15 +270,26 @@ function createSessionDetailJsonResponse(
           return;
         }
 
-        const next = iterator.next();
-        if (!next.done) {
-          controller.enqueue(encoder.encode(`${wroteMessage ? "," : ""}${next.value}`));
+        const batch: string[] = [];
+        let batchLength = 0;
+        let next = iterator.next();
+        while (!next.done) {
+          const prefix = wroteMessage ? "," : "";
+          batch.push(prefix, next.value);
+          batchLength += prefix.length + next.value.length;
           wroteMessage = true;
+          if (batchLength >= SESSION_DETAIL_STREAM_BATCH_CHARS) break;
+          next = iterator.next();
+        }
+
+        if (next.done) {
+          batch.push("]}");
+          controller.enqueue(encoder.encode(batch.join("")));
+          controller.close();
           return;
         }
 
-        controller.enqueue(encoder.encode("]}"));
-        controller.close();
+        controller.enqueue(encoder.encode(batch.join("")));
       },
       cancel() {
         iterator.return?.();

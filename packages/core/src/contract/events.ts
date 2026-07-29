@@ -13,6 +13,42 @@ export interface SessionsUpdatedEvent {
   removedSessionRefs: SessionReference[];
 }
 
+export function mergeSessionsUpdatedEvents(
+  previous: SessionsUpdatedEvent,
+  next: SessionsUpdatedEvent,
+): SessionsUpdatedEvent {
+  const changedSessionHeads = new Map<string, ReferencedSessionHead>();
+  const removedSessionRefs = new Map<string, SessionReference>();
+  const sessionKey = (agentName: string, sessionId: string) => `${agentName}\0${sessionId}`;
+  const addChanged = (item: ReferencedSessionHead) => {
+    const key = sessionKey(item.reference.agentName, item.reference.sessionId);
+    removedSessionRefs.delete(key);
+    changedSessionHeads.set(key, item);
+  };
+  const addRemoved = (item: SessionReference) => {
+    const key = sessionKey(item.agentName, item.sessionId);
+    changedSessionHeads.delete(key);
+    removedSessionRefs.set(key, item);
+  };
+
+  for (const item of previous.changedSessionHeads) addChanged(item);
+  for (const item of previous.removedSessionRefs) addRemoved(item);
+  for (const item of next.changedSessionHeads) addChanged(item);
+  for (const item of next.removedSessionRefs) addRemoved(item);
+
+  return {
+    type: "sessions-updated",
+    changedAgents: Array.from(new Set([...previous.changedAgents, ...next.changedAgents])),
+    newSessions: previous.newSessions + next.newSessions,
+    updatedSessions: previous.updatedSessions + next.updatedSessions,
+    removedSessions: previous.removedSessions + next.removedSessions,
+    totalSessions: next.totalSessions,
+    timestamp: next.timestamp,
+    changedSessionHeads: [...changedSessionHeads.values()],
+    removedSessionRefs: [...removedSessionRefs.values()],
+  };
+}
+
 export interface AgentScanStatus {
   agentName: string;
   status: "pending" | "scanning" | "indexing" | "complete";

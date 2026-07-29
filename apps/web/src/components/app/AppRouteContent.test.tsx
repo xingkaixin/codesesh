@@ -1,9 +1,15 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ApiProjectGroup } from "../../lib/api";
+import type { ApiProjectGroup, SessionDetail } from "../../lib/api";
 import { createAgentCatalog } from "../../lib/agents";
 import { AppRouteContent } from "./AppRouteContent";
+
+vi.mock("../SessionDetail", () => ({
+  SessionDetail: ({ session }: { session: SessionDetail }) => (
+    <div data-testid="session-detail">{session.id}</div>
+  ),
+}));
 
 const LAZY_SURFACE_TIMEOUT_MS = 5_000;
 
@@ -67,6 +73,24 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
   };
 }
 
+function makeSession(id: string): SessionDetail {
+  return {
+    reference: { agentName: "claudecode", sessionId: id },
+    id,
+    slug: `claudecode/${id}`,
+    title: `Session ${id}`,
+    directory: "/repo",
+    time_created: 1,
+    stats: {
+      message_count: 0,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_cost: 0,
+    },
+    messages: [],
+  };
+}
+
 afterEach(cleanup);
 
 describe("AppRouteContent", () => {
@@ -115,5 +139,39 @@ describe("AppRouteContent", () => {
         { timeout: LAZY_SURFACE_TIMEOUT_MS },
       ),
     ).toBeTruthy();
+  });
+
+  it("remounts session-scoped UI when the route changes to another session", async () => {
+    const props = makeProps();
+    props.viewState = {
+      mode: "session",
+      activeAgentKey: "claudecode",
+      activeSessionId: "session-a",
+    };
+    props.sessionDetail.session = makeSession("session-a");
+    const view = render(
+      <MemoryRouter>
+        <AppRouteContent {...props} />
+      </MemoryRouter>,
+    );
+    const firstDetail = await screen.findByTestId(
+      "session-detail",
+      {},
+      { timeout: LAZY_SURFACE_TIMEOUT_MS },
+    );
+
+    props.viewState = {
+      mode: "session",
+      activeAgentKey: "claudecode",
+      activeSessionId: "session-b",
+    };
+    props.sessionDetail.session = makeSession("session-b");
+    view.rerender(
+      <MemoryRouter>
+        <AppRouteContent {...props} />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId("session-detail")).not.toBe(firstDetail);
   });
 });

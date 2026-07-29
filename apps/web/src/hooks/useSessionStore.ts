@@ -16,7 +16,10 @@ import {
 } from "../lib/api";
 import { createAgentCatalog } from "../lib/agents";
 import { queryKeys } from "../lib/query-keys";
-import { invalidateSessionDerivedQueries } from "../lib/session-query-consistency";
+import {
+  invalidateLiveSessionDerivedQueries,
+  invalidateSessionDerivedQueries,
+} from "../lib/session-query-consistency";
 
 export interface SessionStoreSnapshot {
   window: AppConfig["window"];
@@ -135,7 +138,7 @@ export function useSessionStore() {
       const current = queryClient.getQueryData<SessionStoreSnapshot>(snapshotKey);
       if (!current) {
         const refreshed = await reload(activeWindow);
-        await invalidateSessionDerivedQueries(queryClient);
+        await invalidateLiveSessionDerivedQueries(queryClient, event);
         return refreshed;
       }
 
@@ -147,7 +150,7 @@ export function useSessionStore() {
           event.removedSessionRefs,
         ),
       });
-      await invalidateSessionDerivedQueries(queryClient);
+      await invalidateLiveSessionDerivedQueries(queryClient, event);
       const aggregates = await queryClient.fetchQuery(snapshotAggregatesOptions(activeWindow));
       const updated =
         queryClient.setQueryData<SessionStoreSnapshot>(snapshotKey, (latest) =>

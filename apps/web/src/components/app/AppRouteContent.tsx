@@ -256,6 +256,7 @@ export function AppRouteContent({
       >
         <LazySurface>
           <SessionDetail
+            key={`${sessionDetail.session.reference.agentName}/${sessionDetail.session.reference.sessionId}`}
             session={sessionDetail.session}
             agentCatalog={agentCatalog}
             highlightQuery={detailHighlightQuery}

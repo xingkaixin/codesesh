@@ -76,6 +76,28 @@ describe("CS-147: session detail cache is bounded", () => {
     observed.removeObserver(observer as never);
   });
 
+  it("keeps a newly created detail during observer handoff", async () => {
+    const active = makeClient();
+    await openDetail(active, "previous-1");
+    await openDetail(active, "previous-2");
+
+    const previous = active
+      .getQueryCache()
+      .find({ queryKey: queryKeys.sessionDetail("codex", "previous-2") })!;
+    const observer = { onQueryUpdate: () => {} };
+    previous.addObserver(observer as never);
+
+    const pendingKey = queryKeys.sessionDetail("codex", "pending");
+    const pending = active.getQueryCache().build(active, {
+      queryKey: pendingKey,
+      queryFn: async () => transcript("pending"),
+    });
+
+    previous.removeObserver(observer as never);
+
+    expect(active.getQueryCache().find({ queryKey: pendingKey })).toBe(pending);
+  });
+
   it("leaves other resources alone", async () => {
     const active = makeClient();
     for (const key of [queryKeys.bookmarks, queryKeys.config, queryKeys.dashboards]) {

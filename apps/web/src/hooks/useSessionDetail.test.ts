@@ -3,6 +3,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { SessionDetail } from "../lib/api";
 import type { ViewState } from "../lib/view-state";
 import * as api from "../lib/api";
+import { queryKeys } from "../lib/query-keys";
 import { createQueryWrapper } from "../test/query-wrapper";
 import { useSessionDetail } from "./useSessionDetail";
 
@@ -30,11 +31,14 @@ function deferred<T>() {
 }
 
 function renderSessionDetail(view: ViewState = sessionView) {
-  const { Wrapper } = createQueryWrapper();
-  return renderHook(({ currentView }) => useSessionDetail(currentView), {
-    initialProps: { currentView: view },
-    wrapper: Wrapper,
-  });
+  const { client, Wrapper } = createQueryWrapper();
+  return {
+    client,
+    ...renderHook(({ currentView }) => useSessionDetail(currentView), {
+      initialProps: { currentView: view },
+      wrapper: Wrapper,
+    }),
+  };
 }
 
 afterEach(() => {
@@ -83,6 +87,34 @@ describe("useSessionDetail", () => {
       await result.current.refresh();
     });
     await waitFor(() => expect(result.current.session).toEqual(updated));
+  });
+
+  it("reuses a cached detail when returning to a session route", async () => {
+    vi.mocked(api.fetchSessionData).mockResolvedValue(sample);
+    const rootView: ViewState = { mode: "root", activeAgentKey: null, activeSessionId: null };
+    const { result, rerender } = renderSessionDetail();
+    await waitFor(() => expect(result.current.session).toEqual(sample));
+
+    rerender({ currentView: rootView });
+    rerender({ currentView: sessionView });
+    await waitFor(() => expect(result.current.session).toEqual(sample));
+
+    expect(api.fetchSessionData).toHaveBeenCalledOnce();
+  });
+
+  it("re-fetches a cached detail when a live update invalidates it", async () => {
+    vi.mocked(api.fetchSessionData).mockResolvedValue(sample);
+    const { client, result } = renderSessionDetail();
+    await waitFor(() => expect(result.current.session).toEqual(sample));
+
+    await act(() =>
+      client.invalidateQueries({
+        queryKey: queryKeys.sessionDetail("claudecode", "claudecode/abc"),
+        exact: true,
+      }),
+    );
+
+    expect(api.fetchSessionData).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the current route when an older request resolves last", async () => {

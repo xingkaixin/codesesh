@@ -1,4 +1,5 @@
-import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { SAMPLE_SESSIONS_UPDATED_EVENT } from "@codesesh/core/contract";
+import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionsUpdatedEvent } from "../lib/api";
 import * as api from "../lib/api";
@@ -48,27 +49,53 @@ describe("useLiveSync", () => {
   });
 
   it("forwards session events to the store", async () => {
+    vi.useFakeTimers();
     const deps = makeDeps();
     renderHook(() => useLiveSync(deps));
-    const event = { newSessions: 0 } as SessionsUpdatedEvent;
+    const event = SAMPLE_SESSIONS_UPDATED_EVENT;
 
     await act(async () => {
       sessionsCallback?.(event);
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(500);
     });
 
     expect(deps.applyLiveEvent).toHaveBeenCalledWith(event);
   });
 
   it("surfaces a notice when new sessions arrive", async () => {
+    vi.useFakeTimers();
     const { result } = renderHook(() => useLiveSync(makeDeps()));
 
     await act(async () => {
-      sessionsCallback?.({ newSessions: 3 } as SessionsUpdatedEvent);
-      await Promise.resolve();
+      sessionsCallback?.({ ...SAMPLE_SESSIONS_UPDATED_EVENT, newSessions: 3 });
+      await vi.advanceTimersByTimeAsync(500);
     });
 
-    await waitFor(() => expect(result.current.liveNotice).toContain("3"));
+    expect(result.current.liveNotice).toContain("3");
+  });
+
+  it("merges burst updates into one store refresh", async () => {
+    vi.useFakeTimers();
+    const deps = makeDeps();
+    renderHook(() => useLiveSync(deps));
+
+    await act(async () => {
+      sessionsCallback?.({ ...SAMPLE_SESSIONS_UPDATED_EVENT, newSessions: 1 });
+      sessionsCallback?.({
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        newSessions: 2,
+        timestamp: SAMPLE_SESSIONS_UPDATED_EVENT.timestamp + 1,
+      });
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(deps.applyLiveEvent).toHaveBeenCalledOnce();
+    expect(deps.applyLiveEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        newSessions: 3,
+        timestamp: SAMPLE_SESSIONS_UPDATED_EVENT.timestamp + 1,
+      }),
+    );
   });
 
   it("shows a persistent connection notice on disconnect", () => {

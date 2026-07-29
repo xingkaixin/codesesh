@@ -173,7 +173,11 @@ describe("SessionMessageTimeline", () => {
     expect(track.style.minWidth).toBe("1099px");
     expect(track.style.gridTemplateColumns).toBe("");
     expect(track.querySelectorAll("[data-timeline-index]")).toHaveLength(34);
-    expect((track.firstElementChild as HTMLElement).style.width).toBe("calc(1% - 0.99px)");
+    const firstSegment = track.firstElementChild as HTMLElement;
+    expect(firstSegment.style.position).toBe("absolute");
+    expect(firstSegment.style.top).toBe("0px");
+    expect(firstSegment.style.bottom).toBe("0px");
+    expect(firstSegment.style.width).toBe("calc(1% - 0.99px)");
 
     fireEvent.click(getByRole("button", { name: "Scroll timeline right" }));
 
