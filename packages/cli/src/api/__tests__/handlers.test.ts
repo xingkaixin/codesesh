@@ -1238,18 +1238,20 @@ describe("handleGetSessionData", () => {
     const { messages: _messages, ...detailHeader } = detail;
     let serializedMessages = 0;
     function* messages() {
-      serializedMessages += 1;
-      yield JSON.stringify({
-        id: "m1",
-        role: "assistant",
-        agent: null,
-        time_created: 1000,
-        time_completed: null,
-        mode: null,
-        model: null,
-        provider: null,
-        parts: [{ type: "text", text: "cached" }],
-      });
+      for (let index = 0; index < 200; index += 1) {
+        serializedMessages += 1;
+        yield JSON.stringify({
+          id: `m${index}`,
+          role: "assistant",
+          agent: null,
+          time_created: 1000,
+          time_completed: null,
+          mode: null,
+          model: null,
+          provider: null,
+          parts: [{ type: "text", text: "cached".repeat(100) }],
+        });
+      }
     }
     coreMocks.listSessionAliases.mockReturnValue([
       {
@@ -1262,7 +1264,7 @@ describe("handleGetSessionData", () => {
       status: "found-json",
       data: detailHeader,
       messages: messages(),
-      messageCount: 1,
+      messageCount: 200,
     });
     const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
 
@@ -1271,13 +1273,24 @@ describe("handleGetSessionData", () => {
     expect(response).toBeInstanceOf(Response);
     expect(serializedMessages).toBe(0);
     expect(c.json).not.toHaveBeenCalled();
-    const payload = await (response as Response).json();
-    expect(payload).toMatchObject({
-      id: "s1",
-      display_title: "Local Alias",
-      messages: [{ id: "m1", parts: [{ type: "text", text: "cached" }] }],
-    });
-    expect(serializedMessages).toBe(1);
+    const reader = (response as Response).body!.getReader();
+    const decoder = new TextDecoder();
+    const chunks: Uint8Array[] = [];
+    let json = "";
+    for (;;) {
+      const result = await reader.read();
+      if (result.done) break;
+      chunks.push(result.value);
+      json += decoder.decode(result.value, { stream: true });
+    }
+    json += decoder.decode();
+    const payload = JSON.parse(json);
+    expect(payload.id).toBe("s1");
+    expect(payload.display_title).toBe("Local Alias");
+    expect(payload.messages[0].id).toBe("m0");
+    expect(payload.messages).toHaveLength(200);
+    expect(chunks.length).toBeLessThan(10);
+    expect(serializedMessages).toBe(200);
   });
 
   it("returns 400 when agent name is missing", async () => {
