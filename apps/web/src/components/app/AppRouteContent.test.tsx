@@ -1,10 +1,15 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ApiProjectGroup } from "../../lib/api";
-import type { SessionDetail } from "../../lib/api";
+import type { ApiProjectGroup, SessionDetail } from "../../lib/api";
 import { createAgentCatalog } from "../../lib/agents";
 import { AppRouteContent } from "./AppRouteContent";
+
+vi.mock("../SessionDetail", () => ({
+  SessionDetail: ({ session }: { session: SessionDetail }) => (
+    <div data-testid="session-detail">{session.id}</div>
+  ),
+}));
 
 const LAZY_SURFACE_TIMEOUT_MS = 5_000;
 
