@@ -1,5 +1,80 @@
 # Changelog
 
+## [0.18.0] - 2026-07-30
+
+本版本保护远程与本地会话数据，避免失败或不完整的扫描破坏已发布状态，并消除大规模会话历史中的主要加载与渲染瓶颈。
+
+### 新功能
+
+- 新增加密远程访问，支持直接终止 TLS 和可信代理传输校验。 (#240)
+
+### 安全
+
+- 升级 Hono 服务并固定静态文件服务根目录边界，修复 Windows 静态路径遍历。 (#231)
+- 阻止转录内容发起跨源媒体请求，并限制内联媒体载荷大小。 (#237)
+- 将会话数据库、sidecar、备份和日志限制为仅所有者可访问。 (#249)
+
+### 问题修复
+
+- 仅在持久化与搜索索引成功后发布会话更新；Agent 扫描失败或暂时不可用时保留现有会话。 (#230, #238)
+- 在文件指纹与监听中检测 WAL 模式的数据库提交。 (#239)
+- 在路由、API 请求和 CLI 启动 URL 中完整保留不透明会话 ID。 (#233)
+- 以日历日定义 Dashboard 时间窗口，正确处理夏令时切换。 (#234)
+- 按不同会话限制文件活动结果，并让 Markdown 搜索高亮与当前查询保持同步。 (#235, #236)
+- 让定价刷新具备原子性、时间边界和可取消能力，并在一次扫描代际内保持一致。 (#250)
+- 稳定会话时间轴布局与详情查询，合并实时更新并批量流式传输详情，避免渲染和加载卡顿。 (#254)
+
+### 性能
+
+- 以摊销常数时间分配冲突的侧栏路径，并在线性单次扫描中读取 Cursor bubble。 (#232, #241)
+- 以对数时间索引虚拟时间轴高度。 (#242)
+- 按需加载路由界面与语法高亮，将初始 JavaScript 的 gzip 体积从 459 KB 降至 259 KB。 (#243)
+- 通过单次查询读取会话全部部件，并将 Web 转录缓存限制为当前详情与最近两个详情。 (#247, #248)
+
+### 重构
+
+- 在共享契约中集中项目身份类型、键与比较逻辑。 (#252)
+
+### 构建
+
+- 新增发布预检，在发布前校验 tag 与所有带版本 manifest 的一致性。 (#244)
+- 以跨平台脚本替代依赖 shell 的清理命令，并在 CI 的每种操作系统上验证清理后重新构建。 (#246)
+- 在 CI 中新增结构化性能增长率门禁。 (#253)
+
+### 文档
+
+- 明确 `--json` 导出的是会话索引，而不是完整转录备份。 (#245)
+- 将 PRD 明确为项目初始文档，并链接当前架构事实来源。 (#251)
+- 记录性能保障的分层策略。 (#253)
+
+### Changelog Detail
+
+- #254 fix(web): prevent session timeline rendering and loading stalls @xingkaixin
+- #253 chore(perf): gate performance structurally, not by wall-clock @xingkaixin
+- #252 refactor: give project identity one owner @xingkaixin
+- #251 docs: stop the PRD from describing a deleted architecture @xingkaixin
+- #250 fix: make pricing refreshes deterministic @xingkaixin
+- #249 fix: keep session storage and logs owner-only @xingkaixin
+- #248 perf(web): bound how many transcripts the cache retains @xingkaixin
+- #247 perf(core): read a session's parts in one query @xingkaixin
+- #246 chore: make pnpm clean work on Windows @xingkaixin
+- #245 docs: describe --json as a session index @xingkaixin
+- #244 chore: verify release versions before publishing @xingkaixin
+- #243 perf: load route surfaces on demand @xingkaixin
+- #242 perf(web): index virtual list heights logarithmically @xingkaixin
+- #241 perf: read Cursor bubbles once per scan @xingkaixin
+- #240 feat: encrypt remote access transport @xingkaixin
+- #239 fix: detect WAL-mode database commits @xingkaixin
+- #238 fix: never read a failed database scan as an empty agent @xingkaixin
+- #237 fix: keep transcript media local @xingkaixin
+- #236 fix(web): render search highlights through the markdown tree @xingkaixin
+- #235 fix(core): limit file activity search by session, not row @xingkaixin
+- #234 fix: define dashboard windows in calendar days @xingkaixin
+- #233 fix: carry opaque session ids through routes and the API @xingkaixin
+- #232 perf(web): allocate sidebar paths in amortized constant time @xingkaixin
+- #231 fix: close the Windows static path traversal @xingkaixin
+- #230 fix: gate session publication on successful persistence @xingkaixin
+
 ## [0.17.0] - 2026-07-27
 
 本版本强化大规模历史在扫描、API 与会话时间轴上的性能，修复可能导致会话丢失或过期的实时扫描与缓存正确性问题，并围绕显式会话引用与集中化 Agent 能力重构领域契约。
