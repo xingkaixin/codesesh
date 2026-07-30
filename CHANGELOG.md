@@ -1,5 +1,80 @@
 # Changelog
 
+## [0.18.0] - 2026-07-30
+
+This release secures remote and local session data, prevents failed or incomplete scans from corrupting published state, and removes major loading and rendering bottlenecks across large session histories.
+
+### Features
+
+- Added encrypted remote access with direct TLS termination and trusted-proxy transport validation. (#240)
+
+### Security
+
+- Closed a Windows static-file path traversal by upgrading the Hono server and pinning the served-root boundary. (#231)
+- Blocked off-origin transcript media requests and bounded inline media payloads. (#237)
+- Restricted session databases, sidecars, backups, and logs to their owner. (#249)
+
+### Bug Fixes
+
+- Published session updates only after persistence and search indexing succeed, and preserved existing sessions when an Agent scan fails or becomes unavailable. (#230, #238)
+- Detected WAL-mode database commits in fingerprints and file watching. (#239)
+- Preserved opaque session IDs across routes, API requests, and CLI startup URLs. (#233)
+- Defined dashboard windows by calendar days across daylight-saving transitions. (#234)
+- Limited file activity by distinct session and kept Markdown search highlights synchronized with the active query. (#235, #236)
+- Made pricing refreshes atomic, bounded, cancellable, and consistent within a scan generation. (#250)
+- Stabilized session timeline layout and detail queries, coalesced live updates, and batched detail streaming to prevent rendering and loading stalls. (#254)
+
+### Performance
+
+- Allocated colliding sidebar paths in amortized constant time and read Cursor bubbles in one linear scan. (#232, #241)
+- Indexed virtual timeline heights in logarithmic time. (#242)
+- Loaded route surfaces and syntax highlighting on demand, reducing initial JavaScript from 459 KB to 259 KB gzipped. (#243)
+- Read all parts for a session in one query and bounded the Web transcript cache to the active and two most recent details. (#247, #248)
+
+### Refactor
+
+- Centralized project identity kinds, keys, and comparison in the shared contract. (#252)
+
+### Build
+
+- Added a release preflight that verifies the tag and all versioned manifests before publishing. (#244)
+- Replaced shell-specific clean commands with a cross-platform script and verified clean rebuilds on every CI operating system. (#246)
+- Added structural performance growth-rate gates to CI. (#253)
+
+### Documentation
+
+- Clarified that `--json` exports a session index rather than a full transcript backup. (#245)
+- Reframed the PRD as an inception document and linked current architecture sources. (#251)
+- Documented the performance assurance layers. (#253)
+
+### Changelog Detail
+
+- #254 fix(web): prevent session timeline rendering and loading stalls @xingkaixin
+- #253 chore(perf): gate performance structurally, not by wall-clock @xingkaixin
+- #252 refactor: give project identity one owner @xingkaixin
+- #251 docs: stop the PRD from describing a deleted architecture @xingkaixin
+- #250 fix: make pricing refreshes deterministic @xingkaixin
+- #249 fix: keep session storage and logs owner-only @xingkaixin
+- #248 perf(web): bound how many transcripts the cache retains @xingkaixin
+- #247 perf(core): read a session's parts in one query @xingkaixin
+- #246 chore: make pnpm clean work on Windows @xingkaixin
+- #245 docs: describe --json as a session index @xingkaixin
+- #244 chore: verify release versions before publishing @xingkaixin
+- #243 perf: load route surfaces on demand @xingkaixin
+- #242 perf(web): index virtual list heights logarithmically @xingkaixin
+- #241 perf: read Cursor bubbles once per scan @xingkaixin
+- #240 feat: encrypt remote access transport @xingkaixin
+- #239 fix: detect WAL-mode database commits @xingkaixin
+- #238 fix: never read a failed database scan as an empty agent @xingkaixin
+- #237 fix: keep transcript media local @xingkaixin
+- #236 fix(web): render search highlights through the markdown tree @xingkaixin
+- #235 fix(core): limit file activity search by session, not row @xingkaixin
+- #234 fix: define dashboard windows in calendar days @xingkaixin
+- #233 fix: carry opaque session ids through routes and the API @xingkaixin
+- #232 perf(web): allocate sidebar paths in amortized constant time @xingkaixin
+- #231 fix: close the Windows static path traversal @xingkaixin
+- #230 fix: gate session publication on successful persistence @xingkaixin
+
 ## [0.17.0] - 2026-07-27
 
 This release hardens large-history performance across scanning, APIs, and the session timeline, fixes live-scan and cache correctness issues that could drop or stale sessions, and reworks domain contracts around explicit session references and centralized agent capabilities.
