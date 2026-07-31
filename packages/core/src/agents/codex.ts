@@ -396,12 +396,10 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
         if (threadMeta?.threadSource === "subagent") {
           const parentId = threadMeta.parentThreadId;
           if (parentId) {
-            const childHead = getParsedSession(this.parseSessionHeadResult(file, options));
-            if (childHead) {
-              const list = childStatsByParent.get(parentId);
-              if (list) list.push(childHead.stats);
-              else childStatsByParent.set(parentId, [childHead.stats]);
-            }
+            const stats = this.parseTokenStats(file);
+            const list = childStatsByParent.get(parentId);
+            if (list) list.push(stats);
+            else childStatsByParent.set(parentId, [stats]);
           }
         } else {
           const head = this.scanSessionSource(file, options);
@@ -445,6 +443,86 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     } catch {
       return null;
     }
+  }
+
+  private parseTokenStats(filePath: string): SessionHead["stats"] {
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let totalCacheReadTokens = 0;
+    let totalCost = 0;
+    let activeModel: string | null = null;
+
+    let prevCumulativeTotal = 0;
+    let prevInput = 0;
+    let prevOutput = 0;
+    let prevReasoning = 0;
+    let prevCachedInput = 0;
+
+    for (const line of readJsonlFileLines(filePath)) {
+      try {
+        const data = JSON.parse(line);
+        const recordType = String(data["type"] ?? "");
+        const payload = extractPayload(data);
+
+        if (recordType === "session_meta" || recordType === "turn_context") {
+          const nextModel = extractModelName(payload["model"]);
+          if (nextModel) activeModel = nextModel;
+          continue;
+        }
+
+        if (recordType === "event_msg" && String(payload["type"] ?? "") === "token_count") {
+          const { totalUsage, lastUsage } = extractTokenUsage(payload);
+          const cumulativeTotal = Number(totalUsage?.["total_tokens"] ?? 0);
+          if (cumulativeTotal <= 0 || cumulativeTotal === prevCumulativeTotal) continue;
+          prevCumulativeTotal = cumulativeTotal;
+
+          let inputTokens = 0;
+          let outputTokens = 0;
+          let reasoningTokens = 0;
+          let cacheReadTokens = 0;
+
+          if (lastUsage) {
+            inputTokens = Number(lastUsage["input_tokens"] ?? 0);
+            outputTokens = Number(lastUsage["output_tokens"] ?? 0);
+            reasoningTokens = Number(lastUsage["reasoning_output_tokens"] ?? 0);
+            cacheReadTokens = extractCachedInputTokens(lastUsage);
+          } else if (totalUsage) {
+            inputTokens = Number(totalUsage["input_tokens"] ?? 0) - prevInput;
+            outputTokens = Number(totalUsage["output_tokens"] ?? 0) - prevOutput;
+            reasoningTokens = Number(totalUsage["reasoning_output_tokens"] ?? 0) - prevReasoning;
+            cacheReadTokens = extractCachedInputTokens(totalUsage) - prevCachedInput;
+            prevInput = Number(totalUsage["input_tokens"] ?? 0);
+            prevOutput = Number(totalUsage["output_tokens"] ?? 0);
+            prevReasoning = Number(totalUsage["reasoning_output_tokens"] ?? 0);
+            prevCachedInput = extractCachedInputTokens(totalUsage);
+          }
+
+          const totalInput = Math.max(0, inputTokens);
+          const totalCacheRead = Math.max(0, cacheReadTokens);
+          totalInputTokens += totalInput;
+          totalOutputTokens += outputTokens + reasoningTokens;
+          totalCacheReadTokens += totalCacheRead;
+          totalCost +=
+            estimateTokenCost(activeModel, {
+              input: totalInput,
+              output: outputTokens,
+              reasoning: reasoningTokens || undefined,
+              cache_read: totalCacheRead || undefined,
+            }) ?? 0;
+        }
+      } catch {
+        // skip malformed records
+      }
+    }
+
+    return {
+      message_count: 0,
+      total_input_tokens: totalInputTokens,
+      total_output_tokens: totalOutputTokens,
+      total_cache_read_tokens: totalCacheReadTokens || undefined,
+      total_cost: totalCost,
+      cost_source: totalCost > 0 ? "estimated" : undefined,
+    };
   }
 
   getSessionData(sessionId: string): SessionDetail {
@@ -586,8 +664,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       const threadMeta = this.readThreadMeta(file);
       if (threadMeta?.threadSource !== "subagent") continue;
       if (threadMeta.parentThreadId !== parentSessionId) continue;
-      const childHead = getParsedSession(this.parseSessionHeadResult(file));
-      if (childHead) stats.push(childHead.stats);
+      stats.push(this.parseTokenStats(file));
     }
 
     if (stats.length > 0) this.subagentStatsByParent.set(parentSessionId, stats);
@@ -746,6 +823,9 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
           return skippedSession("malformed first record");
         }
         firstPayload = extractPayload(firstRecord);
+        if (extractThreadMeta(firstRecord)?.threadSource === "subagent") {
+          return filteredSession("subagent child");
+        }
         createdAt =
           parseTimestampMs(firstRecord) ||
           parseTimestampMs(firstPayload) ||
@@ -891,6 +971,10 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       firstRecord = JSON.parse(lines[0]!);
     } catch {
       return skippedSession("malformed first record");
+    }
+
+    if (extractThreadMeta(firstRecord)?.threadSource === "subagent") {
+      return filteredSession("subagent child");
     }
 
     const payload = extractPayload(firstRecord);

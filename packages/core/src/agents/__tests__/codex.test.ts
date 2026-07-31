@@ -1426,4 +1426,22 @@ describe("CodexAgent subagent folding", () => {
     expect(head.stats.total_input_tokens).toBe(100);
     expect(head.stats.total_output_tokens).toBe(20);
   });
+
+  it("filters subagent files via scanSessionSource (incrementalScan path)", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
+    tempDirs.push(tempDir);
+
+    writeSession(tempDir, CHILD_ID, {
+      threadSource: "subagent",
+      parentThreadId: PARENT_ID,
+      extra: [tokenCountLine(40, 60, 100)],
+    });
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.sessionIndexCache = new Map();
+
+    const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
+    expect(agent.scanSessionSource(childFile)).toBeNull();
+  });
 });
