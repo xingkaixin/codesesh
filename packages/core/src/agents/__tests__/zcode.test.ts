@@ -51,6 +51,68 @@ afterEach(() => {
   setCoreDiagnostics(null);
 });
 
+function createZCodeDbWithSubagent(tempDir: string): string {
+  const dbPath = join(tempDir, "db.sqlite");
+  const db = new Database(dbPath);
+  db.exec(`
+    CREATE TABLE session (
+      id TEXT PRIMARY KEY,
+      title TEXT,
+      time_created INTEGER,
+      time_updated INTEGER,
+      slug TEXT,
+      directory TEXT,
+      path TEXT,
+      version TEXT,
+      summary_files INTEGER,
+      task_type TEXT,
+      parent_id TEXT
+    );
+    CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      time_created INTEGER,
+      time_updated INTEGER,
+      data TEXT
+    );
+    CREATE TABLE part (
+      id TEXT PRIMARY KEY,
+      message_id TEXT,
+      session_id TEXT,
+      time_created INTEGER,
+      time_updated INTEGER,
+      data TEXT
+    );
+  `);
+  db.close();
+  return dbPath;
+}
+
+function insertMessage(
+  db: Database.Database,
+  id: string,
+  sessionId: string,
+  data: Record<string, unknown>,
+  timeCreated: number,
+) {
+  db.prepare(
+    "INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)",
+  ).run(id, sessionId, timeCreated, timeCreated, JSON.stringify(data));
+}
+
+function insertTextPart(
+  db: Database.Database,
+  id: string,
+  messageId: string,
+  sessionId: string,
+  text: string,
+  timeCreated: number,
+) {
+  db.prepare(
+    "INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run(id, messageId, sessionId, timeCreated, timeCreated, JSON.stringify({ type: "text", text }));
+}
+
 describe("ZCodeAgent parsing", () => {
   it("reads ZCode SQLite sessions through the OpenCode-compatible schema", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-zcode-test-"));
@@ -195,5 +257,258 @@ describe("ZCodeAgent parsing", () => {
       event: "agent.field_shape_mismatch",
       detail: { agentName: "zcode", field: "message.modelID" },
     });
+  });
+});
+
+describe("ZCodeAgent subagent folding", () => {
+  it("filters subagent_child sessions out of the top-level list and folds their tokens", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-zcode-subagent-"));
+    tempDirs.push(tempDir);
+    const dbPath = createZCodeDbWithSubagent(tempDir);
+    const db = new Database(dbPath);
+
+    db.prepare(
+      "INSERT INTO session (id, title, time_created, time_updated, directory, path, version, summary_files, task_type, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "parent",
+      "",
+      1_000,
+      2_000,
+      "/tmp/project",
+      "/tmp/project",
+      "0.14.8",
+      1,
+      "interactive",
+      null,
+    );
+    db.prepare(
+      "INSERT INTO session (id, title, time_created, time_updated, directory, path, version, summary_files, task_type, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "child",
+      "",
+      1_100,
+      1_500,
+      "/tmp/project",
+      "/tmp/project",
+      "0.14.8",
+      0,
+      "subagent_child",
+      "parent",
+    );
+
+    insertMessage(
+      db,
+      "msg_parent",
+      "parent",
+      { role: "user", tokens: { input: 10, output: 0 } },
+      1_000,
+    );
+    insertTextPart(db, "part_parent", "msg_parent", "parent", "hi", 1_000);
+    insertMessage(
+      db,
+      "msg_child",
+      "child",
+      { role: "assistant", tokens: { input: 40, output: 60 } },
+      1_200,
+    );
+    insertTextPart(db, "part_child", "msg_child", "child", "working", 1_200);
+    db.close();
+
+    const agent = new ZCodeAgent() as any;
+    agent.dbPath = dbPath;
+
+    const heads = agent.scan({ from: 0 });
+    expect(heads.map((h: any) => h.id)).toEqual(["parent"]);
+    const [head] = heads;
+    expect(head.stats).toMatchObject({
+      message_count: 1,
+      total_input_tokens: 50,
+      total_output_tokens: 60,
+    });
+  });
+
+  it("folds child tokens into getSessionData detail stats without surfacing child messages", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-zcode-subagent-"));
+    tempDirs.push(tempDir);
+    const dbPath = createZCodeDbWithSubagent(tempDir);
+    const db = new Database(dbPath);
+
+    db.prepare(
+      "INSERT INTO session (id, title, time_created, time_updated, directory, path, version, summary_files, task_type, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "parent",
+      "",
+      1_000,
+      2_000,
+      "/tmp/project",
+      "/tmp/project",
+      "0.14.8",
+      1,
+      "interactive",
+      null,
+    );
+    db.prepare(
+      "INSERT INTO session (id, title, time_created, time_updated, directory, path, version, summary_files, task_type, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "child",
+      "",
+      1_100,
+      1_500,
+      "/tmp/project",
+      "/tmp/project",
+      "0.14.8",
+      0,
+      "subagent_child",
+      "parent",
+    );
+
+    insertMessage(
+      db,
+      "msg_parent",
+      "parent",
+      { role: "user", tokens: { input: 10, output: 0 } },
+      1_000,
+    );
+    insertTextPart(db, "part_parent", "msg_parent", "parent", "hi", 1_000);
+    insertMessage(
+      db,
+      "msg_child",
+      "child",
+      { role: "assistant", tokens: { input: 40, output: 60 } },
+      1_200,
+    );
+    insertTextPart(db, "part_child", "msg_child", "child", "working", 1_200);
+    db.close();
+
+    const agent = new ZCodeAgent() as any;
+    agent.dbPath = dbPath;
+
+    const data = agent.getSessionData("parent");
+    expect(data.stats).toMatchObject({
+      message_count: 1,
+      total_input_tokens: 50,
+      total_output_tokens: 60,
+    });
+    expect(data.messages).toHaveLength(1);
+    expect(data.messages[0].id).toBe("msg_parent");
+  });
+
+  it("aggregates tokens across multiple children", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-zcode-subagent-"));
+    tempDirs.push(tempDir);
+    const dbPath = createZCodeDbWithSubagent(tempDir);
+    const db = new Database(dbPath);
+
+    db.prepare(
+      "INSERT INTO session (id, title, time_created, time_updated, directory, path, version, summary_files, task_type, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "parent",
+      "",
+      1_000,
+      3_000,
+      "/tmp/project",
+      "/tmp/project",
+      "0.14.8",
+      1,
+      "interactive",
+      null,
+    );
+    db.prepare(
+      "INSERT INTO session (id, title, time_created, time_updated, directory, path, version, summary_files, task_type, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "child_a",
+      "",
+      1_100,
+      1_500,
+      "/tmp/project",
+      "/tmp/project",
+      "0.14.8",
+      0,
+      "subagent_child",
+      "parent",
+    );
+    db.prepare(
+      "INSERT INTO session (id, title, time_created, time_updated, directory, path, version, summary_files, task_type, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "child_b",
+      "",
+      2_000,
+      2_500,
+      "/tmp/project",
+      "/tmp/project",
+      "0.14.8",
+      0,
+      "subagent_child",
+      "parent",
+    );
+
+    insertMessage(
+      db,
+      "msg_parent",
+      "parent",
+      { role: "user", tokens: { input: 5, output: 5 } },
+      1_000,
+    );
+    insertTextPart(db, "part_parent", "msg_parent", "parent", "hi", 1_000);
+    insertMessage(
+      db,
+      "msg_a",
+      "child_a",
+      { role: "assistant", tokens: { input: 30, output: 10 } },
+      1_200,
+    );
+    insertTextPart(db, "part_a", "msg_a", "child_a", "a", 1_200);
+    insertMessage(
+      db,
+      "msg_b",
+      "child_b",
+      { role: "assistant", tokens: { input: 20, output: 20 } },
+      2_100,
+    );
+    insertTextPart(db, "part_b", "msg_b", "child_b", "b", 2_100);
+    db.close();
+
+    const agent = new ZCodeAgent() as any;
+    agent.dbPath = dbPath;
+
+    const [head] = agent.scan({ from: 0 });
+    expect(head.stats).toMatchObject({
+      message_count: 1,
+      total_input_tokens: 55,
+      total_output_tokens: 35,
+    });
+
+    const data = agent.getSessionData("parent");
+    expect(data.stats.total_input_tokens).toBe(55);
+    expect(data.stats.total_output_tokens).toBe(35);
+    expect(data.messages).toHaveLength(1);
+  });
+
+  it("does not fold when task_type/parent_id columns are absent (OpenCode baseline)", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-zcode-subagent-"));
+    tempDirs.push(tempDir);
+    const dbPath = createZCodeDb(tempDir);
+    const db = new Database(dbPath);
+
+    db.prepare(
+      "INSERT INTO session (id, title, time_created, time_updated, directory, path, version, summary_files) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run("only", "", 1_000, 2_000, "/tmp/project", "/tmp/project", "0.14.8", 1);
+    insertMessage(
+      db,
+      "msg_only",
+      "only",
+      { role: "user", tokens: { input: 10, output: 0 } },
+      1_000,
+    );
+    insertTextPart(db, "part_only", "msg_only", "only", "hi", 1_000);
+    db.close();
+
+    const agent = new ZCodeAgent() as any;
+    agent.dbPath = dbPath;
+
+    const [head] = agent.scan({ from: 0 });
+    expect(head.id).toBe("only");
+    expect(head.stats).toMatchObject({ total_input_tokens: 10, total_output_tokens: 0 });
+    expect(agent.getSessionData("only").stats.total_input_tokens).toBe(10);
   });
 });
