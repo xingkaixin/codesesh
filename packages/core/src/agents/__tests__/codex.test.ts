@@ -254,7 +254,7 @@ describe("CodexAgent cache refresh", () => {
         sourcePath: sessionFile,
         fingerprint: JSON.stringify([
           "codex-head-v1",
-          "codex-parser-v4",
+          "codex-parser-v5",
           sessionTime.getTime(),
           statSync(sessionFile).size,
           "Indexed title",
@@ -1313,5 +1313,117 @@ describe("CodexAgent field shape mismatches", () => {
       event: "agent.field_shape_mismatch",
       detail: { agentName: "codex", field: "payload" },
     });
+  });
+});
+
+describe("CodexAgent subagent folding", () => {
+  const PARENT_ID = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+  const CHILD_ID = "019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb";
+
+  function writeSession(
+    dir: string,
+    id: string,
+    lines: { threadSource: string; parentThreadId?: string | null; extra?: string[] },
+  ) {
+    const meta = {
+      session_id: lines.parentThreadId ?? id,
+      id,
+      thread_source: lines.threadSource,
+      ...(lines.parentThreadId ? { parent_thread_id: lines.parentThreadId } : {}),
+    };
+    const content = [
+      `{"timestamp":"2026-04-20T10:00:00Z","type":"session_meta","payload":${JSON.stringify({ cwd: "/tmp/project", ...meta })}}`,
+      ...(lines.extra ?? []),
+      "",
+    ].join("\n");
+    writeFileSync(join(dir, `rollout-2026-04-20T10-00-00-${id}.jsonl`), content);
+  }
+
+  function tokenCountLine(input: number, output: number, total: number) {
+    return `{"timestamp":"2026-04-20T10:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":${input},"output_tokens":${output}},"total_token_usage":{"total_tokens":${total}}}}}`;
+  }
+
+  afterEach(() => {
+    for (const dir of tempDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    tempDirs = [];
+  });
+
+  it("filters subagent files out of scan and folds their tokens into the parent head", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
+    tempDirs.push(tempDir);
+
+    writeSession(tempDir, PARENT_ID, {
+      threadSource: "user",
+      extra: [
+        tokenCountLine(100, 20, 120),
+        '{"timestamp":"2026-04-20T10:02:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}}',
+      ],
+    });
+    writeSession(tempDir, CHILD_ID, {
+      threadSource: "subagent",
+      parentThreadId: PARENT_ID,
+      extra: [tokenCountLine(40, 60, 100)],
+    });
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.sessionIndexCache = new Map();
+
+    const heads = agent.scan({ from: 0 });
+    expect(heads.map((h: SessionHead) => h.id)).toEqual([PARENT_ID]);
+    expect(heads[0].stats.total_input_tokens).toBe(140);
+    expect(heads[0].stats.total_output_tokens).toBe(80);
+  });
+
+  it("folds subagent tokens into getSessionData detail stats", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
+    tempDirs.push(tempDir);
+
+    writeSession(tempDir, PARENT_ID, {
+      threadSource: "user",
+      extra: [
+        tokenCountLine(100, 20, 120),
+        '{"timestamp":"2026-04-20T10:02:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}}',
+      ],
+    });
+    writeSession(tempDir, CHILD_ID, {
+      threadSource: "subagent",
+      parentThreadId: PARENT_ID,
+      extra: [tokenCountLine(40, 60, 100)],
+    });
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.sessionIndexCache = new Map();
+    agent.scan({ from: 0 });
+
+    const data = agent.getSessionData(PARENT_ID);
+    expect(data.stats.total_input_tokens).toBe(140);
+    expect(data.stats.total_output_tokens).toBe(80);
+    expect(data.messages.every((m: Message) => m.parts.length >= 0)).toBe(true);
+  });
+
+  it("leaves a session without children unchanged", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
+    tempDirs.push(tempDir);
+
+    writeSession(tempDir, PARENT_ID, {
+      threadSource: "user",
+      extra: [
+        tokenCountLine(100, 20, 120),
+        '{"timestamp":"2026-04-20T10:02:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}}',
+      ],
+    });
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.sessionIndexCache = new Map();
+
+    const [head] = agent.scan({ from: 0 });
+    expect(head.id).toBe(PARENT_ID);
+    expect(head.stats.total_input_tokens).toBe(100);
+    expect(head.stats.total_output_tokens).toBe(20);
   });
 });
