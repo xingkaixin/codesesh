@@ -77,27 +77,6 @@ export function extractCodexNodeReplTextOutput(outputText: string) {
   return text || outputText;
 }
 
-function getSubagentToolTitle(part: ToolPart) {
-  const input = toRecord(part.state.input);
-  const agentType = compactText(input.agent_type);
-  const model = compactText(input.model);
-  const reasoningEffort = compactText(input.reasoning_effort);
-  const modelSuffix = [model, reasoningEffort].filter(Boolean).join("-");
-  return [agentType, modelSuffix].filter(Boolean).join(" ");
-}
-
-function getSubagentPrompt(part: ToolPart) {
-  const metadata = toRecord(part.state.metadata);
-  const prompt = compactText(metadata.prompt);
-  if (prompt) return prompt;
-
-  const input = toRecord(part.state.input);
-  const message = compactText(input.message);
-  if (message) return message;
-
-  return "";
-}
-
 export function buildCodexToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
@@ -269,18 +248,24 @@ export function buildCodexToolStrategy(
   }
 
   if (toolKey === "subagent") {
-    const prompt = getSubagentPrompt(tool);
+    const input = toRecord(state.inputValue);
+    const taskName = compactText(input.task_name);
+    const model = compactText(input.model);
+    const reasoningEffort = compactText(input.reasoning_effort);
     const fallbackText = getOutputOrErrorText(state);
     return {
       ...defaultStrategy,
       Icon: Bot,
-      title: getSubagentToolTitle(tool) || getToolTitle(tool, "subagent"),
+      title: taskName || getToolTitle(tool, "subagent"),
       secondaryText: undefined,
-      details: [],
+      details: [
+        model ? { label: "Model", value: model } : null,
+        reasoningEffort ? { label: "Effort", value: reasoningEffort } : null,
+      ].filter((d): d is NonNullable<typeof d> => d !== null),
       showInputPreview: false,
       outputContent: {
         kind: "plain",
-        text: prompt || fallbackText,
+        text: fallbackText,
         language: "markdown",
         isCode: false,
       },

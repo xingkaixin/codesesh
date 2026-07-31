@@ -34,7 +34,7 @@ const PLAN_APPROVAL_PREFIX = "PLEASE IMPLEMENT THIS PLAN";
 const SUBAGENT_NOTIFICATION_PATTERN =
   /<subagent_notification>\s*([\s\S]*?)\s*<\/subagent_notification>/;
 const HEAD_INDEX_VERSION = "codex-head-v1";
-const PARSER_VERSION = "codex-parser-v4";
+const PARSER_VERSION = "codex-parser-v5";
 
 export function resolveCodexDataRoot(): string {
   return resolveHomePath("CODEX_HOME", ".codex");
@@ -108,6 +108,19 @@ function narrowRecordField(value: unknown, field: string): Record<string, unknow
 
 function extractPayload(data: Record<string, unknown>): Record<string, unknown> {
   return narrowRecordField(data["payload"], "payload") ?? {};
+}
+
+interface ThreadMeta {
+  threadSource: string;
+  parentThreadId: string | null;
+}
+
+function extractThreadMeta(firstRecord: Record<string, unknown>): ThreadMeta | null {
+  if (firstRecord["type"] !== "session_meta") return null;
+  const payload = extractPayload(firstRecord);
+  const threadSource = asString(payload["thread_source"]) ?? "";
+  const parentThreadId = asString(payload["parent_thread_id"]) ?? null;
+  return { threadSource, parentThreadId };
 }
 
 function extractTokenUsage(payload: Record<string, unknown>): {
@@ -331,6 +344,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   private sessionIndexCache = new Map<string, string>();
   private sessionIndexMtime: number | null | undefined;
   private sessionIndexPath: string | undefined;
+  private subagentStatsByParent = new Map<string, SessionHead["stats"][]>();
 
   // ---- BaseAgent implementation ----
 
@@ -363,6 +377,74 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       sourcePath: file,
       fingerprint: this.sourceFingerprint(file, stat),
     }));
+  }
+
+  scan(options?: AgentScanOptions): SessionHead[] {
+    this.loadSessionIndex();
+    const sources = this.listRolloutFiles(options);
+
+    const childStatsByParent = new Map<string, SessionHead["stats"][]>();
+    this.subagentStatsByParent = childStatsByParent;
+
+    const heads: SessionHead[] = [];
+    options?.onProgress?.({ total: sources.length, processed: 0, sessions: 0 });
+
+    for (const [index, { file }] of sources.entries()) {
+      try {
+        const threadMeta = this.readThreadMeta(file);
+
+        if (threadMeta?.threadSource === "subagent") {
+          const parentId = threadMeta.parentThreadId;
+          if (parentId) {
+            const childHead = getParsedSession(this.parseSessionHeadResult(file, options));
+            if (childHead) {
+              const list = childStatsByParent.get(parentId);
+              if (list) list.push(childHead.stats);
+              else childStatsByParent.set(parentId, [childHead.stats]);
+            }
+          }
+        } else {
+          const head = this.scanSessionSource(file, options);
+          if (head) heads.push(head);
+        }
+      } catch {
+        // skip unreadable files
+      } finally {
+        options?.onProgress?.({
+          total: sources.length,
+          processed: index + 1,
+          sessions: heads.length,
+        });
+      }
+    }
+
+    for (const head of heads) {
+      const childStats = childStatsByParent.get(head.id);
+      if (!childStats) continue;
+      for (const stats of childStats) {
+        head.stats.total_input_tokens += stats.total_input_tokens ?? 0;
+        head.stats.total_output_tokens += stats.total_output_tokens ?? 0;
+        head.stats.total_cost += stats.total_cost ?? 0;
+        if (stats.total_cache_read_tokens) {
+          head.stats.total_cache_read_tokens =
+            (head.stats.total_cache_read_tokens ?? 0) + stats.total_cache_read_tokens;
+        }
+      }
+    }
+
+    return heads;
+  }
+
+  private readThreadMeta(filePath: string): ThreadMeta | null {
+    try {
+      const firstLine = this.readFilePrefix(filePath)
+        .split("\n")
+        .filter((l) => l.trim())[0];
+      if (!firstLine) return null;
+      return extractThreadMeta(JSON.parse(firstLine));
+    } catch {
+      return null;
+    }
   }
 
   getSessionData(sessionId: string): SessionDetail {
@@ -471,6 +553,17 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       cost_source: totalCost > 0 ? "estimated" : undefined,
     });
 
+    const childStats = this.collectChildStats(meta.id);
+    for (const stats of childStats) {
+      result.stats.total_input_tokens += stats.total_input_tokens ?? 0;
+      result.stats.total_output_tokens += stats.total_output_tokens ?? 0;
+      result.stats.total_cost += stats.total_cost ?? 0;
+      if (stats.total_cache_read_tokens) {
+        result.stats.total_cache_read_tokens =
+          (result.stats.total_cache_read_tokens ?? 0) + stats.total_cache_read_tokens;
+      }
+    }
+
     return {
       reference: { agentName: this.name, sessionId: meta.id },
       id: meta.id,
@@ -482,6 +575,23 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       stats: result.stats,
       messages: result.messages,
     };
+  }
+
+  private collectChildStats(parentSessionId: string): SessionHead["stats"][] {
+    const cached = this.subagentStatsByParent.get(parentSessionId);
+    if (cached) return cached;
+
+    const stats: SessionHead["stats"][] = [];
+    for (const { file } of this.listRolloutFiles()) {
+      const threadMeta = this.readThreadMeta(file);
+      if (threadMeta?.threadSource !== "subagent") continue;
+      if (threadMeta.parentThreadId !== parentSessionId) continue;
+      const childHead = getParsedSession(this.parseSessionHeadResult(file));
+      if (childHead) stats.push(childHead.stats);
+    }
+
+    if (stats.length > 0) this.subagentStatsByParent.set(parentSessionId, stats);
+    return stats;
   }
 
   // ---- File listing ----
