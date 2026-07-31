@@ -252,6 +252,8 @@ export function buildCodexToolStrategy(
     const taskName = compactText(input.task_name);
     const model = compactText(input.model);
     const reasoningEffort = compactText(input.reasoning_effort);
+    const forkTurns = compactText(input.fork_turns);
+    const isPriority = compactText(input.service_tier) === "priority";
     const fallbackText = getOutputOrErrorText(state);
     return {
       ...defaultStrategy,
@@ -259,8 +261,9 @@ export function buildCodexToolStrategy(
       title: taskName || getToolTitle(tool, "subagent"),
       secondaryText: undefined,
       details: [
-        model ? { label: "Model", value: model } : null,
+        model ? { label: "Model", value: isPriority ? `${model} · Fast` : model } : null,
         reasoningEffort ? { label: "Effort", value: reasoningEffort } : null,
+        forkTurns ? { label: "Fork", value: forkTurns } : null,
       ].filter((d): d is NonNullable<typeof d> => d !== null),
       showInputPreview: false,
       outputContent: {
