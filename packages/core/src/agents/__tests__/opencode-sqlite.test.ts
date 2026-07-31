@@ -423,3 +423,31 @@ describe("CS-144: session detail reads parts in one query", () => {
     }
   });
 });
+
+describe("subagent folding degrades when task_type/parent_id are absent", () => {
+  it("scans a database without task_type/parent_id columns without error", () => {
+    const dbPath = createDatabase();
+    const agent = new OpenCodeSqliteAgent({
+      name: "opencode",
+      displayName: "OpenCode",
+      findDbPath: () => dbPath,
+      getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
+    });
+    agent.isAvailable();
+
+    const heads = agent.scan({ from: 0 });
+    expect(heads).toHaveLength(1);
+    expect(heads[0]).toMatchObject({
+      id: "s1",
+      stats: expect.objectContaining({
+        message_count: 1,
+        total_input_tokens: 1_000,
+        total_output_tokens: 500,
+      }),
+    });
+
+    const detail = agent.getSessionData("s1");
+    expect(detail.stats.total_input_tokens).toBe(1_000);
+    expect(detail.messages).toHaveLength(1);
+  });
+});
