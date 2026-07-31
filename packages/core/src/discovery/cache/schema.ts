@@ -1057,6 +1057,30 @@ function migrateCodexExecDecode(db: SQLiteDatabase): void {
   ).run(CODEX_EXEC_DECODE_MIGRATION_KEY);
 }
 
+const OPENCODE_SUBAGENT_FOLD_KEY = "opencode_subagent_fold_v1";
+
+/**
+ * One-time: drop cached OpenCode-family (zcode/opencode) heads so the next scan
+ * re-parses them with subagent_child sessions filtered out and their tokens
+ * folded into the parent. `loadCachedSessions` returns null when agent_cache has
+ * no row for an agent, forcing a full rescan; the now-orphaned child session
+ * rows are removed by `saveCachedSessions` once the rescan publishes its set.
+ */
+function migrateOpenCodeSubagentFold(db: SQLiteDatabase): void {
+  if (!tableExists(db, "cache_meta")) return;
+  const done = db
+    .prepare("SELECT value FROM cache_meta WHERE key = ?")
+    .get(OPENCODE_SUBAGENT_FOLD_KEY);
+  if (done) return;
+
+  if (tableExists(db, "agent_cache")) {
+    db.prepare("DELETE FROM agent_cache WHERE agent_name IN ('zcode', 'opencode')").run();
+  }
+  db.prepare(
+    "INSERT INTO cache_meta(key, value) VALUES (?, '1') ON CONFLICT(key) DO UPDATE SET value = '1'",
+  ).run(OPENCODE_SUBAGENT_FOLD_KEY);
+}
+
 function rebuildSearchIndex(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents_fts")) {
     return;
@@ -1199,6 +1223,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
     createLatestCacheSchema(db);
     setCacheSchemaVersion(db);
     migrateCodexExecDecode(db);
+    migrateOpenCodeSubagentFold(db);
     return;
   }
 
@@ -1273,4 +1298,5 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
   }
 
   migrateCodexExecDecode(db);
+  migrateOpenCodeSubagentFold(db);
 }

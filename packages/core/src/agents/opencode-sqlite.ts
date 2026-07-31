@@ -9,7 +9,7 @@ import {
 import type { AgentScanOptions, ParseSessionResult, SessionWatchPlan } from "./base.js";
 import type { SessionHead, SessionDetail, Message, MessagePart } from "../types/index.js";
 import { normalizeMessageParts } from "../contract/message-part.js";
-import { openDbReadOnly, type SQLiteDatabase } from "../utils/sqlite.js";
+import { columnExists, openDbReadOnly, type SQLiteDatabase } from "../utils/sqlite.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import { resolveSessionTitle } from "../utils/title-fallback.js";
 import { isInternalEventType } from "../utils/parse-cleanup.js";
@@ -25,6 +25,7 @@ interface OpenCodeMessageRow {
   session_id?: unknown;
   data?: string;
   time_created?: unknown;
+  parent_id?: unknown;
 }
 
 interface OpenCodePartRow {
@@ -46,6 +47,25 @@ interface OpenCodeSqliteAgentConfig {
 }
 
 const MESSAGE_ROLES = new Set<Message["role"]>(["user", "assistant", "tool"]);
+
+function accumulateTokenStats(
+  stats: SessionHead["stats"],
+  msgData: Record<string, unknown>,
+  agentName: string,
+): void {
+  const cost = Number(msgData.cost ?? 0);
+  const tokens = parseTokens(msgData.tokens, agentName);
+  const inputTokens = Number(tokens?.input ?? 0);
+  const outputTokens = Number(tokens?.output ?? 0);
+  const model = parseModel(msgData.modelID, agentName);
+  const estimatedCost =
+    cost > 0 ? null : estimateTokenCost(model, { input: inputTokens, output: outputTokens });
+
+  if (estimatedCost !== null) stats.cost_source = "estimated";
+  stats.total_cost += cost || estimatedCost || 0;
+  stats.total_input_tokens += inputTokens;
+  stats.total_output_tokens += outputTokens;
+}
 
 /** Parses a SQLite `data` JSON column; non-object payloads fall back to `{}` (reported as drift). */
 function parseJsonRecord(raw: unknown, agentName: string, field: string): Record<string, unknown> {
@@ -121,6 +141,12 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
           .get(),
       );
 
+      const hasTaskType = columnExists(db, "session", "task_type");
+      const hasParentId = columnExists(db, "session", "parent_id");
+      const childPredicate = hasTaskType
+        ? "AND (s.task_type IS NULL OR s.task_type != 'subagent_child')"
+        : "";
+
       let rows: Record<string, unknown>[];
       if (hasMessageTable) {
         rows = db
@@ -130,6 +156,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
             s.version, s.summary_files
           FROM session s
           WHERE COALESCE(s.time_updated, s.time_created) >= ?
+          ${childPredicate}
           ORDER BY s.time_created DESC
         `)
           .all(cutoffTime);
@@ -140,6 +167,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
             s.version, s.summary_files, 0 AS message_count, NULL AS model_message_data
           FROM session s
           WHERE COALESCE(s.time_updated, s.time_created) >= ?
+          ${childPredicate}
           ORDER BY s.time_created DESC
         `)
           .all(cutoffTime);
@@ -147,8 +175,9 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
 
       const headContexts = hasMessageTable
         ? this.buildHeadContexts(
-            this.readHeadMessageRows(db, cutoffTime),
+            this.readHeadMessageRows(db, cutoffTime, hasParentId),
             this.readHeadPartRows(db, cutoffTime),
+            hasParentId,
           )
         : new Map<string, OpenCodeHeadContext>();
       const heads: SessionHead[] = [];
@@ -213,11 +242,16 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
     });
   }
 
-  private readHeadMessageRows(db: SQLiteDatabase, cutoffTime: number): OpenCodeMessageRow[] {
+  private readHeadMessageRows(
+    db: SQLiteDatabase,
+    cutoffTime: number,
+    withParentId: boolean,
+  ): OpenCodeMessageRow[] {
+    const parentIdSelect = withParentId ? ", s.parent_id" : "";
     return db
       .prepare(
         `
-          SELECT m.id, m.session_id, m.data, m.time_created
+          SELECT m.id, m.session_id, m.data, m.time_created${parentIdSelect}
           FROM message m
           JOIN session s ON s.id = m.session_id
           WHERE COALESCE(s.time_updated, s.time_created) >= ?
@@ -293,18 +327,12 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
   private buildHeadContexts(
     messageRows: OpenCodeMessageRow[],
     partRows: OpenCodePartRow[],
+    withParentId: boolean,
   ): Map<string, OpenCodeHeadContext> {
     const partsByMessage = this.buildPartsByMessage(partRows);
     const contexts = new Map<string, OpenCodeHeadContext>();
 
-    for (const row of messageRows) {
-      const sessionId = String(row.session_id ?? "");
-      if (!sessionId) continue;
-      const msgData = parseJsonRecord(row.data, this.name, "message.data");
-      if (isInternalEventType(msgData.type)) continue;
-      const parts = partsByMessage.get(String(row.id ?? "")) ?? [];
-      if (parts.length === 0) continue;
-
+    const ensureContext = (sessionId: string): OpenCodeHeadContext => {
       let context = contexts.get(sessionId);
       if (!context) {
         context = {
@@ -318,19 +346,29 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
         };
         contexts.set(sessionId, context);
       }
+      return context;
+    };
 
-      const cost = Number(msgData.cost ?? 0);
-      const tokens = parseTokens(msgData.tokens, this.name);
-      const inputTokens = Number(tokens?.input ?? 0);
-      const outputTokens = Number(tokens?.output ?? 0);
-      const model = parseModel(msgData.modelID, this.name);
-      const estimatedCost =
-        cost > 0 ? null : estimateTokenCost(model, { input: inputTokens, output: outputTokens });
+    for (const row of messageRows) {
+      const sessionId = String(row.session_id ?? "");
+      if (!sessionId) continue;
+      const msgData = parseJsonRecord(row.data, this.name, "message.data");
+      if (isInternalEventType(msgData.type)) continue;
 
-      if (estimatedCost !== null) context.stats.cost_source = "estimated";
-      context.stats.total_cost += cost || estimatedCost || 0;
-      context.stats.total_input_tokens += inputTokens;
-      context.stats.total_output_tokens += outputTokens;
+      const parentId = withParentId ? String(row.parent_id ?? "") : "";
+      const isChild = parentId !== "";
+
+      if (isChild) {
+        const context = ensureContext(parentId);
+        accumulateTokenStats(context.stats, msgData, this.name);
+        continue;
+      }
+
+      const parts = partsByMessage.get(String(row.id ?? "")) ?? [];
+      if (parts.length === 0) continue;
+
+      const context = ensureContext(sessionId);
+      accumulateTokenStats(context.stats, msgData, this.name);
       context.stats.message_count += 1;
 
       if (!context.messageTitle && String(msgData.role ?? "") === "user") {
@@ -353,6 +391,36 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
     }
 
     return contexts;
+  }
+
+  private sumChildTokenStats(db: SQLiteDatabase, parentSessionId: string): SessionHead["stats"][] {
+    if (!columnExists(db, "session", "parent_id")) return [];
+
+    const childRows = db
+      .prepare("SELECT id FROM session WHERE parent_id = ?")
+      .all(parentSessionId) as Record<string, unknown>[];
+
+    const results: SessionHead["stats"][] = [];
+    for (const child of childRows) {
+      const childId = String(child.id ?? "");
+      if (!childId) continue;
+      const msgRows = db
+        .prepare("SELECT data FROM message WHERE session_id = ? ORDER BY time_created ASC, id ASC")
+        .all(childId) as OpenCodeMessageRow[];
+      const stats: SessionHead["stats"] = {
+        message_count: 0,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 0,
+      };
+      for (const row of msgRows) {
+        const msgData = parseJsonRecord(row.data, this.name, "message.data");
+        if (isInternalEventType(msgData.type)) continue;
+        accumulateTokenStats(stats, msgData, this.name);
+      }
+      results.push(stats);
+    }
+    return results;
   }
 
   getSessionData(sessionId: string): SessionDetail {
@@ -385,9 +453,6 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
       const timeUpdated = Number(sessionRow.time_updated ?? timeCreated);
 
       const messages: Message[] = [];
-      let totalCost = 0;
-      let totalInputTokens = 0;
-      let totalOutputTokens = 0;
       let hasEstimatedCost = false;
 
       // Get messages
@@ -433,11 +498,24 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
         firstUserMessageTitle(cleanedMessages),
         null,
       );
+      const stats: SessionHead["stats"] = {
+        message_count: cleanedMessages.length,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 0,
+      };
       for (const message of cleanedMessages) {
-        totalCost += message.cost ?? 0;
-        totalInputTokens += message.tokens?.input ?? 0;
-        totalOutputTokens += message.tokens?.output ?? 0;
+        stats.total_cost += message.cost ?? 0;
+        stats.total_input_tokens += message.tokens?.input ?? 0;
+        stats.total_output_tokens += message.tokens?.output ?? 0;
         if (message.cost_source === "estimated") hasEstimatedCost = true;
+      }
+
+      for (const childStats of this.sumChildTokenStats(db, sessionId)) {
+        stats.total_cost += childStats.total_cost;
+        stats.total_input_tokens += childStats.total_input_tokens;
+        stats.total_output_tokens += childStats.total_output_tokens;
+        if (childStats.cost_source === "estimated") hasEstimatedCost = true;
       }
 
       return {
@@ -451,11 +529,12 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
         time_updated: timeUpdated,
         summary_files: sessionRow.summary_files ?? undefined,
         stats: {
-          message_count: cleanedMessages.length,
-          total_input_tokens: totalInputTokens,
-          total_output_tokens: totalOutputTokens,
-          total_cost: totalCost,
-          cost_source: totalCost > 0 ? (hasEstimatedCost ? "estimated" : "recorded") : undefined,
+          message_count: stats.message_count,
+          total_input_tokens: stats.total_input_tokens,
+          total_output_tokens: stats.total_output_tokens,
+          total_cost: stats.total_cost,
+          cost_source:
+            stats.total_cost > 0 ? (hasEstimatedCost ? "estimated" : "recorded") : undefined,
         },
         messages: cleanedMessages,
       };
