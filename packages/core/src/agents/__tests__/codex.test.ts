@@ -254,7 +254,7 @@ describe("CodexAgent cache refresh", () => {
         sourcePath: sessionFile,
         fingerprint: JSON.stringify([
           "codex-head-v1",
-          "codex-parser-v5",
+          "codex-parser-v6",
           sessionTime.getTime(),
           statSync(sessionFile).size,
           "Indexed title",
@@ -1323,13 +1323,19 @@ describe("CodexAgent subagent folding", () => {
   function writeSession(
     dir: string,
     id: string,
-    lines: { threadSource: string; parentThreadId?: string | null; extra?: string[] },
+    lines: {
+      threadSource: string;
+      parentThreadId?: string | null;
+      agentNickname?: string;
+      extra?: string[];
+    },
   ) {
     const meta = {
       session_id: lines.parentThreadId ?? id,
       id,
       thread_source: lines.threadSource,
       ...(lines.parentThreadId ? { parent_thread_id: lines.parentThreadId } : {}),
+      ...(lines.agentNickname ? { agent_nickname: lines.agentNickname } : {}),
     };
     const content = [
       `{"timestamp":"2026-04-20T10:00:00Z","type":"session_meta","payload":${JSON.stringify({ cwd: "/tmp/project", ...meta })}}`,
@@ -1403,6 +1409,81 @@ describe("CodexAgent subagent folding", () => {
     expect(data.stats.total_input_tokens).toBe(140);
     expect(data.stats.total_output_tokens).toBe(80);
     expect(data.messages.every((m: Message) => m.parts.length >= 0)).toBe(true);
+  });
+
+  it("loads the final assistant output from a child rollout", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
+    tempDirs.push(tempDir);
+
+    writeSession(tempDir, PARENT_ID, {
+      threadSource: "user",
+      extra: [
+        '{"timestamp":"2026-04-20T10:02:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"parent done"}]}}',
+      ],
+    });
+    writeSession(tempDir, CHILD_ID, {
+      threadSource: "subagent",
+      parentThreadId: PARENT_ID,
+      agentNickname: "worker",
+      extra: [
+        '{"timestamp":"2026-04-20T10:01:00Z","type":"response_item","phase":"commentary","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"working"}]}}',
+        '{"timestamp":"2026-04-20T10:03:00Z","type":"response_item","payload":{"type":"message","id":"child-final","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"child result"}]}}',
+      ],
+    });
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.sessionIndexCache = new Map();
+    agent.scan({ from: 0 });
+
+    const data = agent.getSessionData(PARENT_ID);
+    expect(data.messages).toContainEqual(
+      expect.objectContaining({
+        id: "child-final",
+        role: "assistant",
+        subagent_id: CHILD_ID,
+        nickname: "worker",
+        parts: [{ type: "text", text: "child result", time_created: expect.any(Number) }],
+      }),
+    );
+    expect(
+      data.messages.some((message: Message) =>
+        message.parts.some((part: MessagePart) => part.type === "text" && part.text === "working"),
+      ),
+    ).toBe(false);
+    expect(data.stats.message_count).toBe(data.messages.length);
+  });
+
+  it("finds child rollouts when detail parsing starts from cached metadata", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
+    tempDirs.push(tempDir);
+
+    writeSession(tempDir, PARENT_ID, { threadSource: "user" });
+    writeSession(tempDir, CHILD_ID, {
+      threadSource: "subagent",
+      parentThreadId: PARENT_ID,
+      agentNickname: "worker",
+      extra: [
+        '{"timestamp":"2026-04-20T10:03:00Z","type":"response_item","phase":"final_answer","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"cached child result"}]}}',
+      ],
+    });
+
+    const scanned = new CodexAgent() as any;
+    scanned.basePath = tempDir;
+    scanned.sessionIndexCache = new Map();
+    scanned.scan({ from: 0 });
+
+    const fresh = new CodexAgent() as any;
+    fresh.findBasePath = () => tempDir;
+    fresh.setSessionMetaMap(new Map(scanned.getSessionMetaMap()));
+
+    const data = fresh.getSessionData(PARENT_ID);
+    expect(data.messages).toContainEqual(
+      expect.objectContaining({
+        subagent_id: CHILD_ID,
+        parts: [expect.objectContaining({ type: "text", text: "cached child result" })],
+      }),
+    );
   });
 
   it("leaves a session without children unchanged", () => {
