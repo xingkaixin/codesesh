@@ -39,6 +39,10 @@ interface SessionTreeModel {
 type TreeHostStyle = CSSProperties & Record<`--${string}`, string>;
 
 const SESSION_TREE_CSS = `
+  [data-item-section='spacing-item'] {
+    border-left: none;
+  }
+
   [data-type='item'][data-item-type='file'] > [data-item-section='icon'] {
     display: none;
   }
@@ -79,14 +83,14 @@ const SESSION_TREE_CSS = `
   }
 
   [data-type='item'][data-item-type='file'] > [data-item-section='decoration'] {
-    flex: 0 0 auto;
-    padding-inline: 6px 2px;
+    flex: 1 1 0;
+    padding: 0;
   }
 
   [data-type='item'][data-item-type='file'] > [data-item-section='decoration'] > span {
     cursor: pointer;
-    font-size: 18px;
-    line-height: 1;
+    font-size: 12px;
+    line-height: 24px;
   }
 
   [data-type='item'][data-item-type='file'] [data-truncate-group-container='middle'] {
