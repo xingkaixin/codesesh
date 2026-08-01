@@ -51,6 +51,29 @@ const SESSION_TREE_CSS = `
     margin-right: 4px;
   }
 
+  [data-type='item'][data-item-parent-path][data-item-type='folder'] > [data-item-section='spacing'] {
+    padding-left: 2px;
+  }
+
+  [data-type='item'][data-item-parent-path][data-item-type='folder']
+    > [data-item-section='spacing']
+    > [data-item-section='spacing-item'] {
+    margin-right: 4px;
+  }
+
+  [data-type='item'][data-item-parent-path][data-item-type='folder'] > [data-item-section='icon'] {
+    flex: 0 0 8px;
+    width: 8px;
+    margin-left: calc(-1 * (8px + var(--trees-item-row-gap)));
+  }
+
+  [data-type='item'][data-item-parent-path][data-item-type='folder']
+    > [data-item-section='icon']
+    > svg {
+    width: 8px;
+    height: 8px;
+  }
+
   [data-type='item'][data-item-type='file'] > [data-item-section='content'] {
     flex: 1 1 auto;
   }
