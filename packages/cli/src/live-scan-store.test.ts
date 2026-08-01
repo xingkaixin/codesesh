@@ -806,6 +806,45 @@ describe("LiveScanStore", () => {
     expect(scanWorkers[0]?.postMessage).toHaveBeenCalledTimes(1);
   });
 
+  it("queues a backfill when a recent full-sync marker has a truncated file cache", async () => {
+    const cached = makeSession("cached");
+    const codex = makeFileSystemAgent("codex", {
+      listSessionSources: vi.fn(() =>
+        ["cached", "missing-1", "missing-2"].map((sessionId) => ({
+          sessionId,
+          sourcePath: `/tmp/${sessionId}`,
+          fingerprint: sessionId,
+        })),
+      ),
+    });
+    core.getAgentLastFullSyncAt.mockReturnValue(Date.now());
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [cached],
+      meta: {},
+      timestamp: Date.now(),
+    });
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [cached],
+      byAgent: { codex: [cached] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore({
+      watchEnabled: false,
+      startupScanOptions: { from: 3000 },
+      deferInitialRefresh: true,
+    });
+    await store.initialize();
+
+    const needsBackfill = (
+      syncEngineOf(store) as unknown as {
+        needsBackfill: (agent: typeof codex) => boolean;
+      }
+    ).needsBackfill.bind(syncEngineOf(store));
+    expect(needsBackfill(codex)).toBe(true);
+  });
+
   it("serializes refresh behind an in-flight backfill for the same agent", async () => {
     const initial = makeSession("session", { title: "initial", time_updated: 1000 });
     const stale = makeSession("session", { title: "stale backfill", time_updated: 2000 });

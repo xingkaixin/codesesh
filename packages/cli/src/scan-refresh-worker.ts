@@ -118,8 +118,14 @@ function syncAgentSources(
     agent.shouldRescanAllSourcesOnChange?.() &&
     (changedIds.length > 0 || removedIds.length > 0)
   ) {
+    const scannedSessions = agent.scan({ ...windowOptions, onProgress });
+    const enumeratedIds = new Set(sourceRefs.map((source) => source.sessionId));
+    const removedIdSet = new Set(removedIds);
+    const retainedSessions = cachedSessions.filter(
+      (session) => !enumeratedIds.has(session.id) && !removedIdSet.has(session.id),
+    );
     return {
-      sessions: agent.scan({ ...windowOptions, onProgress }),
+      sessions: sortSessions([...retainedSessions, ...scannedSessions]),
       changedIds: [...new Set([...changedIds, ...removedIds])],
     };
   }

@@ -86,6 +86,7 @@ const REFRESH_DEBOUNCE_MS = 200;
 const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
 const SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD = 100;
 const BACKFILL_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const CACHE_TRUNCATION_COVERAGE = 0.5;
 
 function buildPersistenceDiff(
   previousSessions: SessionHead[],
@@ -112,6 +113,7 @@ export class AgentSyncEngine {
   private backfillQueue: string[] = [];
   private currentBackfillAgent: string | undefined;
   private currentBackfillProgress: BackfillProgress | undefined;
+  private cacheIntegrityCheckedAgents = new Set<string>();
   private completedBackfillAgents: string[] = [];
   private failedBackfillAgents: string[] = [];
   private sessionsChangedListeners = new Set<SessionsChangedListener>();
@@ -209,6 +211,7 @@ export class AgentSyncEngine {
     this.backfillQueue.length = 0;
     this.currentBackfillAgent = undefined;
     this.currentBackfillProgress = undefined;
+    this.cacheIntegrityCheckedAgents.clear();
     const searchIndexSnapshot = this.searchIndexJobs.snapshot();
     appLogger.info("search_index.shutdown.started", {
       active_batch_id: searchIndexSnapshot.activeBatchId,
@@ -611,7 +614,24 @@ export class AgentSyncEngine {
     if (startupScanOptions.from == null && startupScanOptions.to == null) return false;
     if (!agent.isAvailable()) return false;
     const lastSyncAt = getAgentLastFullSyncAt(agent.name);
-    return lastSyncAt == null || Date.now() - lastSyncAt > BACKFILL_INTERVAL_MS;
+    if (lastSyncAt == null || Date.now() - lastSyncAt > BACKFILL_INTERVAL_MS) return true;
+    if (!(agent instanceof FileSystemSessionSource)) return false;
+    if (this.cacheIntegrityCheckedAgents.has(agent.name)) return false;
+
+    const cached = loadCachedSessions(agent.name);
+    const sourceCount = agent.listSessionSources().length;
+    const cachedCount = cached?.sessions.length ?? 0;
+    this.cacheIntegrityCheckedAgents.add(agent.name);
+    if (sourceCount > 0 && cachedCount / sourceCount < CACHE_TRUNCATION_COVERAGE) {
+      appLogger.warn("scan.backfill.cache_truncated", {
+        agent: agent.name,
+        cached_sessions: cachedCount,
+        source_files: sourceCount,
+        last_sync_at: lastSyncAt,
+      });
+      return true;
+    }
+    return false;
   }
 
   private enqueueBackfill(agentName: string): void {
@@ -647,6 +667,7 @@ export class AgentSyncEngine {
         );
       } else if (!this.failedBackfillAgents.includes(agentName)) {
         this.failedBackfillAgents.push(agentName);
+        this.cacheIntegrityCheckedAgents.delete(agentName);
       }
       this.publishBackfillStatus();
       this.pumpBackfillQueue();

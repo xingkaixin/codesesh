@@ -240,6 +240,53 @@ describe("scan refresh worker entry", () => {
     );
   });
 
+  it("preserves cached sessions outside a windowed full rescan", async () => {
+    const old = makeSession("old", { time_updated: 1 });
+    const recent = makeSession("recent", { time_updated: 10, title: "new" });
+    const scan = vi.fn(() => [recent]);
+    const agent = makeAgent({
+      scan,
+      shouldRescanAllSourcesOnChange: vi.fn(() => true),
+      listSessionSources: vi.fn(() => [
+        { sessionId: "recent", sourcePath: "/recent", fingerprint: "new" },
+      ]),
+    });
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    setWorkerData({
+      sourceSync: true,
+      previousSessions: [recent, old],
+      scanOptions: { from: 5, fast: true },
+      meta: {
+        recent: {
+          id: "recent",
+          sourcePath: "/recent",
+          sourceFingerprint: "old",
+          sourceMtimeMs: 10,
+        },
+        old: {
+          id: "old",
+          sourcePath: "/old",
+          sourceFingerprint: "same",
+          sourceMtimeMs: 1,
+        },
+      },
+    });
+
+    await runWorker();
+
+    expect(scan).toHaveBeenCalledWith(
+      expect.objectContaining({ from: 5, onProgress: expect.any(Function) }),
+    );
+    expect(mocks.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: "done",
+        changes: [{ session: recent, sortIndex: 0 }],
+        removedSessionIds: [],
+        removedMetaIds: [],
+      }),
+    );
+  });
+
   it("returns a head when only its metadata changes", async () => {
     const session = makeSession("same");
     let meta = new Map<string, SessionCacheMeta>();
