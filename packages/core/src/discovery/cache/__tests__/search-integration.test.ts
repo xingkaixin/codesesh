@@ -528,7 +528,7 @@ describe("searchSessions", () => {
     ).toBe(false);
   });
 
-  it("bulk sync rebuilds FTS for large initial indexes", () => {
+  it("keeps FTS searchable through a chunked large initial index", () => {
     const sessions = Array.from({ length: 101 }, (_, index) => {
       const session = makeSession(`bulk-${index}`);
       if (index === 42) {
@@ -578,15 +578,16 @@ describe("searchSessions", () => {
       ],
     }));
 
+    // Large backlogs commit in durable chunks with FTS triggers active
+    // instead of one bulk rebuild transaction.
     expect(result).toMatchObject({
-      mode: "bulk",
+      mode: "incremental",
       sessions: 101,
       changed: 101,
       deleted: 0,
       indexed: 101,
       skipped: 0,
     });
-    expect(result?.rebuildDurationMs).toBeGreaterThanOrEqual(0);
 
     const allResults = searchSessions("needle");
     expect(allResults).toHaveLength(2);
