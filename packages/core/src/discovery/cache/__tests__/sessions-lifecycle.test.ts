@@ -10,6 +10,7 @@ import {
   isAgentCacheInitialized,
   loadCachedSessions,
   markAgentCacheInitialized,
+  markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
   saveCachedSessionChanges,
   saveCachedSessions,
@@ -537,6 +538,15 @@ describe("cache initialization tracking", () => {
     markAgentFullSyncCompleted("claudecode");
 
     expect(getAgentLastFullSyncAt("claudecode")).toBe(now);
+  });
+
+  it("keeps a full-sync marker pending until reconciliation completes", () => {
+    markAgentCacheInitialized("claudecode");
+    markAgentFullSyncCompleted("claudecode");
+
+    markAgentFullSyncStarted("claudecode");
+
+    expect(getAgentLastFullSyncAt("claudecode")).toBeNull();
   });
 
   it("re-initializing an already-synced agent preserves its last full sync", () => {

@@ -7,6 +7,7 @@ import {
   isAgentCacheInitialized,
   loadCachedSessions,
   markAgentCacheInitialized,
+  markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
   saveCachedSessionChanges,
   saveCachedSessions,
@@ -688,6 +689,7 @@ export class AgentSyncEngine {
     const meta = cached?.meta ?? buildAgentCacheMeta(agent);
     if (cached) restoreAgentCacheMeta(agent, cached);
     try {
+      markAgentFullSyncStarted(agentName);
       const result = await this.runWorker(
         agent,
         baseline,

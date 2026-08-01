@@ -180,6 +180,19 @@ export function markAgentCacheInitialized(
   });
 }
 
+/** Mark a full-history reconciliation as incomplete until it commits. */
+export function markAgentFullSyncStarted(agentName: string): void {
+  withCacheDb((db) => {
+    db.prepare(
+      `
+        UPDATE cache_initialization
+        SET last_sync_at = 0
+        WHERE agent_name = ?
+      `,
+    ).run(agentName);
+  });
+}
+
 /** Timestamp of the agent's last full (unbounded) history reconciliation, or null if none yet. */
 export function getAgentLastFullSyncAt(agentName: string): number | null {
   if (!hasCacheStorage()) {

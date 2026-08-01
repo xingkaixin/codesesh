@@ -40,6 +40,7 @@ export {
   listFileActivity,
   loadCachedSessions,
   markAgentCacheInitialized,
+  markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
   materializeSessionDetailResponse,
   mergeSearchQueryOptions,

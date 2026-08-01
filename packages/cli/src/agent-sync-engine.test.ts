@@ -9,6 +9,7 @@ const core = vi.hoisted(() => ({
   isAgentCacheInitialized: vi.fn(() => true),
   loadCachedSessions: vi.fn((): ReturnType<typeof loadCachedSessions> => null),
   markAgentCacheInitialized: vi.fn(),
+  markAgentFullSyncStarted: vi.fn(),
   markAgentFullSyncCompleted: vi.fn(),
   saveCachedSessionChanges: vi.fn(() => true),
   saveCachedSessions: vi.fn(() => true),
@@ -31,6 +32,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     isAgentCacheInitialized: core.isAgentCacheInitialized,
     loadCachedSessions: core.loadCachedSessions,
     markAgentCacheInitialized: core.markAgentCacheInitialized,
+    markAgentFullSyncStarted: core.markAgentFullSyncStarted,
     markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
     saveCachedSessionChanges: core.saveCachedSessionChanges,
     saveCachedSessions: core.saveCachedSessions,
@@ -135,6 +137,7 @@ afterEach(() => {
   core.isAgentCacheInitialized.mockReturnValue(true);
   core.loadCachedSessions.mockReturnValue(null);
   core.markAgentCacheInitialized.mockClear();
+  core.markAgentFullSyncStarted.mockClear();
   core.saveCachedSessionChanges.mockClear();
   core.saveCachedSessions.mockClear();
   searchIndex.enqueue.mockImplementation(async () => undefined);

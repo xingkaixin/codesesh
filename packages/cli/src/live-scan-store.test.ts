@@ -49,6 +49,7 @@ const core = vi.hoisted(() => ({
   isAgentCacheInitialized: vi.fn(),
   loadCachedSessions: vi.fn(),
   markAgentCacheInitialized: vi.fn(),
+  markAgentFullSyncStarted: vi.fn(),
   markAgentFullSyncCompleted: vi.fn(),
   scanSessions: vi.fn(),
   saveCachedSessions: vi.fn(),
@@ -306,6 +307,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     isAgentCacheInitialized: core.isAgentCacheInitialized,
     loadCachedSessions: core.loadCachedSessions,
     markAgentCacheInitialized: core.markAgentCacheInitialized,
+    markAgentFullSyncStarted: core.markAgentFullSyncStarted,
     markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
     resolveAgentRoots: core.resolveAgentRoots,
     scanSessions: core.scanSessions,
@@ -518,6 +520,7 @@ describe("LiveScanStore", () => {
     core.isAgentCacheInitialized.mockReturnValue(true);
     core.loadCachedSessions.mockReturnValue(null);
     core.markAgentCacheInitialized.mockReset();
+    core.markAgentFullSyncStarted.mockReset();
     core.resolveAgentRoots.mockReturnValue({
       claudecode: "/tmp/claude",
       codex: "/tmp/codex",
@@ -804,6 +807,7 @@ describe("LiveScanStore", () => {
     );
     expect(scanWorkers).toHaveLength(1);
     expect(scanWorkers[0]?.postMessage).toHaveBeenCalledTimes(1);
+    expect(core.markAgentFullSyncStarted).toHaveBeenCalledWith("codex");
   });
 
   it("queues a backfill when a recent full-sync marker has a truncated file cache", async () => {
