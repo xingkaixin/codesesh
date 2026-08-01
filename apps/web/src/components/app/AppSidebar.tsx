@@ -39,12 +39,10 @@ function AgentNavList({
   agents,
   activeAgentKey,
   scanStatus,
-  isScanActive,
 }: {
   agents: AgentInfo[];
   activeAgentKey: string | null;
   scanStatus: ScanStatusEvent | null;
-  isScanActive: boolean;
 }) {
   return (
     <>
@@ -54,13 +52,10 @@ function AgentNavList({
         const agentStatus = scanStatus?.agentStatuses[agent.name];
         const agentProgress = formatAgentScanProgress(scanStatus, agent.name);
         const progressPercent = agentProgressPercent(agentStatus);
-        const disabled = isScanActive && agentProgress !== null;
         const className = `ml-4 flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left motion-hover ${
-          disabled
-            ? "cursor-not-allowed border-transparent text-[var(--console-muted)] opacity-50"
-            : isSelected
-              ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
-              : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+          isSelected
+            ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
+            : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
         }`;
         const content = (
           <>
@@ -73,22 +68,21 @@ function AgentNavList({
               />
             )}
             <span className="console-mono line-clamp-1 flex-1 text-xs">{agent.displayName}</span>
+            {agentProgress ? (
+              <span className="console-mono text-[11px] text-[var(--console-muted)]">
+                {agentProgress}
+              </span>
+            ) : null}
             <span className="console-mono text-[11px] text-[var(--console-muted)]">
-              {agentProgress ?? agent.count}
+              {agent.count}
             </span>
           </>
         );
         return (
           <li key={agent.name}>
-            {disabled ? (
-              <span className={className} title="Available after this agent scan completes">
-                {content}
-              </span>
-            ) : (
-              <Link to={agentRoutePath(key)} className={className}>
-                {content}
-              </Link>
-            )}
+            <Link to={agentRoutePath(key)} className={className}>
+              {content}
+            </Link>
             {agentProgress ? (
               <span
                 className="ml-4 mt-1 block h-1 overflow-hidden rounded-sm bg-[var(--console-surface-muted)]"
@@ -273,7 +267,6 @@ export function AppSidebar({
                 agents={agents}
                 activeAgentKey={activeAgentKey}
                 scanStatus={scanStatus}
-                isScanActive={isScanActive}
               />
             ) : (
               <ProjectNavList
