@@ -230,4 +230,22 @@ describe("ScanStatusModel", () => {
       failedAgents: [],
     });
   });
+
+  it("keeps backfill progress separate from the main agent statuses", () => {
+    const model = new ScanStatusModel();
+
+    const status = model.updateBackfill({
+      active: true,
+      currentAgent: "codex",
+      progress: { phase: "finalizing", total: 2107, processed: 68, sessions: 2108 },
+    });
+
+    expect(status.backfill.progress).toEqual({
+      phase: "finalizing",
+      total: 2107,
+      processed: 68,
+      sessions: 2108,
+    });
+    expect(status.agentStatuses).toEqual({});
+  });
 });

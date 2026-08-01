@@ -79,6 +79,21 @@ describe("finalizeSessions", () => {
     ]);
   });
 
+  it("checkpoints settled sessions from newest to oldest", () => {
+    const agent = makeAgent(() => ({ messages: [] }) as never);
+    const newest = makeSession("newest", { time_updated: 3_000 });
+    const oldest = makeSession("oldest", { time_updated: 2_000 });
+    const checkpoints: string[][] = [];
+
+    finalizeSessions(agent, [oldest, newest], undefined, (checkpoint) => {
+      if (checkpoint.stage === "finalizing") {
+        checkpoints.push(checkpoint.changes.map(({ session }) => session.id));
+      }
+    });
+
+    expect(checkpoints).toEqual([["newest", "oldest"]]);
+  });
+
   it("does not recompute tags for a session whose tags are already current", () => {
     const getSessionData = vi.fn();
     const agent = makeAgent(getSessionData as unknown as BaseAgent["getSessionData"]);

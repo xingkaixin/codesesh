@@ -8,7 +8,10 @@ const core = vi.hoisted(() => ({
   getAgentLastFullSyncAt: vi.fn(() => Date.now()),
   isAgentCacheInitialized: vi.fn(() => true),
   loadCachedSessions: vi.fn((): ReturnType<typeof loadCachedSessions> => null),
+  markAgentCacheInitialized: vi.fn(),
   markAgentFullSyncCompleted: vi.fn(),
+  saveCachedSessionChanges: vi.fn(() => true),
+  saveCachedSessions: vi.fn(() => true),
   sessionSignature: vi.fn(),
 }));
 
@@ -27,7 +30,10 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     getAgentLastFullSyncAt: core.getAgentLastFullSyncAt,
     isAgentCacheInitialized: core.isAgentCacheInitialized,
     loadCachedSessions: core.loadCachedSessions,
+    markAgentCacheInitialized: core.markAgentCacheInitialized,
     markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
+    saveCachedSessionChanges: core.saveCachedSessionChanges,
+    saveCachedSessions: core.saveCachedSessions,
     sessionSignature: core.sessionSignature,
   };
 });
@@ -128,6 +134,9 @@ afterEach(() => {
   core.getAgentLastFullSyncAt.mockReturnValue(Date.now());
   core.isAgentCacheInitialized.mockReturnValue(true);
   core.loadCachedSessions.mockReturnValue(null);
+  core.markAgentCacheInitialized.mockClear();
+  core.saveCachedSessionChanges.mockClear();
+  core.saveCachedSessions.mockClear();
   searchIndex.enqueue.mockImplementation(async () => undefined);
 });
 
@@ -235,6 +244,43 @@ describe("AgentSyncEngine", () => {
     await refresh;
 
     expect(engine.snapshot().sessions[0]?.title).toBe("after");
+  });
+
+  it("publishes and persists the head checkpoint before final indexing", async () => {
+    core.isAgentCacheInitialized.mockReturnValue(false);
+    const head = makeSession("head");
+    const tagged: SessionHead = {
+      ...head,
+      smart_tags: ["feature-dev"],
+      smart_tags_source_updated_at: 1,
+    };
+    const meta = { head: { id: "head", sourcePath: "/head" } };
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async (_agentName, payload) => {
+        payload.onCheckpoint?.({ stage: "scanned", sessions: [head], meta });
+        payload.onCheckpoint?.({
+          stage: "finalizing",
+          changes: [{ session: tagged, sortIndex: 0 }],
+          meta,
+        });
+        return { sessions: [tagged], meta };
+      }),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const { engine } = makeEngine(makeAgent(), [], workerRunner);
+
+    await engine.refresh("codex");
+
+    expect(core.saveCachedSessions).toHaveBeenCalledWith("codex", [head], meta);
+    expect(core.markAgentCacheInitialized).toHaveBeenCalledWith("codex");
+    expect(core.saveCachedSessionChanges).toHaveBeenCalledWith(
+      "codex",
+      [{ session: tagged, sortIndex: 0 }],
+      [],
+      meta,
+    );
+    expect(engine.snapshot().sessions[0]?.smart_tags).toEqual(["feature-dev"]);
   });
 
   it("waits for the initial search index commit", async () => {

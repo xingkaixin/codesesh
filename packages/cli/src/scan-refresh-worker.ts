@@ -10,6 +10,7 @@ import {
   ensureSessionTagsSync,
   FileSystemSessionSource,
   sessionSignature,
+  sortSessions,
   type AgentScanProgress,
   type BaseAgent,
   type ScanOptions,
@@ -24,6 +25,11 @@ export type ScanRefreshWorkerMessage =
       type: "progress";
       requestId: number;
       progress: AgentScanProgress;
+    }
+  | {
+      type: "checkpoint";
+      requestId: number;
+      checkpoint: ScanRefreshWorkerCheckpoint;
     }
   | {
       type: "done";
@@ -41,6 +47,18 @@ export type ScanRefreshWorkerMessage =
       durationMs: number;
     };
 
+export type ScanRefreshWorkerCheckpoint =
+  | {
+      stage: "scanned";
+      sessions: SessionHead[];
+      meta: Record<string, SessionCacheMeta>;
+    }
+  | {
+      stage: "finalizing";
+      changes: SessionHeadChange[];
+      meta: Record<string, SessionCacheMeta>;
+    };
+
 export interface ScanRefreshWorkerRequest {
   type: "run";
   requestId: number;
@@ -48,6 +66,7 @@ export interface ScanRefreshWorkerRequest {
   previousSessions: SessionHead[];
   changedIds: string[] | null;
   sourceSync?: boolean;
+  checkpoint?: boolean;
   scanOptions: Pick<ScanOptions, "from" | "to" | "fast">;
   meta: Record<string, SessionCacheMeta>;
 }
@@ -130,6 +149,7 @@ function syncAgentSources(
  * settle before paying the getSessionData() parse cost.
  */
 const TAG_SETTLE_MS = 60_000;
+const TAG_CHECKPOINT_SIZE = 32;
 
 function isSettled(session: SessionHead, now: number): boolean {
   return now - (session.time_updated ?? session.time_created) >= TAG_SETTLE_MS;
@@ -143,12 +163,13 @@ export function finalizeSessions(
   agent: BaseAgent,
   sessions: SessionHead[],
   onProgress?: (progress: AgentScanProgress) => void,
+  onCheckpoint?: (checkpoint: ScanRefreshWorkerCheckpoint) => void,
 ): SessionHead[] {
-  const withIdentity = attachMissingProjectIdentities(sessions);
+  const ordered = sortSessions(attachMissingProjectIdentities(sessions));
 
   const now = Date.now();
-  const settled = withIdentity.filter((session) => isSettled(session, now));
-  if (settled.length === 0) return withIdentity;
+  const settled = ordered.filter((session) => isSettled(session, now));
+  if (settled.length === 0) return ordered;
 
   let lastReportedAt = -Infinity;
   const reportProgress = (processed: number, total: number): void => {
@@ -159,18 +180,30 @@ export function finalizeSessions(
       phase: "finalizing",
       total,
       processed,
-      sessions: withIdentity.length,
+      sessions: ordered.length,
     });
   };
   reportProgress(0, settled.length);
 
-  const taggedById = new Map(
-    ensureSessionTagsSync(agent, settled, reportProgress).sessions.map((session) => [
-      session.id,
-      session,
-    ]),
-  );
-  return withIdentity.map((session) => taggedById.get(session.id) ?? session);
+  const sortIndexById = new Map(ordered.map((session, index) => [session.id, index]));
+  const taggedById = new Map<string, SessionHead>();
+  for (let start = 0; start < settled.length; start += TAG_CHECKPOINT_SIZE) {
+    const batch = settled.slice(start, start + TAG_CHECKPOINT_SIZE);
+    const taggedBatch = ensureSessionTagsSync(agent, batch, (processed) => {
+      reportProgress(start + processed, settled.length);
+    }).sessions;
+    for (const session of taggedBatch) taggedById.set(session.id, session);
+
+    onCheckpoint?.({
+      stage: "finalizing",
+      changes: taggedBatch.map((session) => ({
+        session,
+        sortIndex: sortIndexById.get(session.id) ?? 0,
+      })),
+      meta: buildAgentCacheMeta(agent, new Set(taggedBatch.map((session) => session.id))),
+    });
+  }
+  return ordered.map((session) => taggedById.get(session.id) ?? session);
 }
 
 async function run(data: ScanRefreshWorkerRequest): Promise<void> {
@@ -224,6 +257,21 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
     );
   }
 
+  sessions = attachMissingProjectIdentities(sessions);
+  if (data.checkpoint) {
+    const ordered = sortSessions(sessions);
+    parentPort?.postMessage({
+      type: "checkpoint",
+      requestId: data.requestId,
+      checkpoint: {
+        stage: "scanned",
+        sessions: ordered,
+        meta: buildAgentCacheMeta(agent, new Set(ordered.map((session) => session.id))),
+      },
+    } satisfies ScanRefreshWorkerMessage);
+    sessions = ordered;
+  }
+
   const scanDuration = performance.now() - startedAt;
   appLogger.debug("scan.refresh_worker.scanned", {
     agent: data.agentName,
@@ -234,7 +282,13 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
   });
 
   const finalizeStartedAt = performance.now();
-  sessions = finalizeSessions(agent, sessions, reportProgress);
+  sessions = finalizeSessions(agent, sessions, reportProgress, (checkpoint) =>
+    parentPort?.postMessage({
+      type: "checkpoint",
+      requestId: data.requestId,
+      checkpoint,
+    } satisfies ScanRefreshWorkerMessage),
+  );
   appLogger.debug("scan.refresh_worker.finalized", {
     agent: data.agentName,
     sessions: sessions.length,

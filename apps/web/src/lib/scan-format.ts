@@ -32,9 +32,17 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
   if (status.backfill?.active) {
     const current = status.backfill.currentAgent;
     const pending = status.backfill.pendingAgents.length;
+    const progress = status.backfill.progress;
+    const progressLabel =
+      progress?.total && progress.processed != null
+        ? ` · ${progress.processed}/${progress.total}`
+        : "";
+    const stageLabel =
+      progress?.phase === "finalizing" ? "Finalizing session metadata" : "Indexing full history";
+    const resumeLabel = progress ? ". Progress is saved; you can resume later." : "";
     return current
-      ? `Indexing full history · ${current}${pending > 0 ? ` · ${pending} queued` : ""}`
-      : "Indexing full history";
+      ? `${stageLabel} · ${current}${progressLabel}${pending > 0 ? ` · ${pending} queued` : ""}${resumeLabel}`
+      : `${stageLabel}${progressLabel}${resumeLabel}`;
   }
   if (status.backfill?.failedAgents.length) {
     return `History indexing failed · ${status.backfill.failedAgents.join(", ")}`;
@@ -63,11 +71,11 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
         : "Checking for new or changed sessions";
 
   if (status.phase === "initializing") {
-    return `First-run setup: indexing recent sessions${agentProgress}. Full history continues in the background.`;
+    return `Initializing recent sessions${agentProgress}. Progress is saved; you can resume later.`;
   }
   if (status.phase === "indexing") {
     return currentStatus?.status === "finalizing"
-      ? `${stageLabel}${agentProgress}`
+      ? `${stageLabel}${agentProgress}. Progress is saved; you can resume later.`
       : "Preparing local session index";
   }
 

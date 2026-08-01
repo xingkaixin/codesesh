@@ -7,15 +7,21 @@ import type {
   SessionHeadChange,
 } from "@codesesh/core";
 import { appLogger } from "./logging.js";
-import type { ScanRefreshWorkerMessage, ScanRefreshWorkerRequest } from "./scan-refresh-worker.js";
+import type {
+  ScanRefreshWorkerCheckpoint,
+  ScanRefreshWorkerMessage,
+  ScanRefreshWorkerRequest,
+} from "./scan-refresh-worker.js";
 
 export interface WorkerPayload {
   previousSessions: SessionHead[];
   changedIds: string[] | null;
   sourceSync?: boolean;
+  checkpoint?: boolean;
   scanOptions: Pick<ScanOptions, "from" | "to" | "fast">;
   meta: Record<string, SessionCacheMeta>;
   onProgress?: (progress: AgentScanProgress) => void;
+  onCheckpoint?: (checkpoint: ScanRefreshWorkerCheckpoint) => void;
 }
 
 export interface WorkerResult {
@@ -35,6 +41,7 @@ interface PendingRequest {
   reject: (error: Error) => void;
   payload: WorkerPayload;
   onProgress?: (progress: AgentScanProgress) => void;
+  onCheckpoint?: (checkpoint: ScanRefreshWorkerCheckpoint) => void;
 }
 
 interface WorkerSlot {
@@ -107,6 +114,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
       previousSessions: payload.previousSessions,
       changedIds: payload.changedIds,
       sourceSync: payload.sourceSync,
+      checkpoint: payload.checkpoint,
       scanOptions: payload.scanOptions,
       meta: payload.meta,
     };
@@ -128,6 +136,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
         reject,
         payload,
         onProgress: payload.onProgress,
+        onCheckpoint: payload.onCheckpoint,
       });
 
       if (!isNewWorker) {
@@ -181,6 +190,10 @@ export class ThreadWorkerRunner implements WorkerRunner {
     if (!pending) return;
     if (message.type === "progress") {
       pending.onProgress?.(message.progress);
+      return;
+    }
+    if (message.type === "checkpoint") {
+      pending.onCheckpoint?.(message.checkpoint);
       return;
     }
 

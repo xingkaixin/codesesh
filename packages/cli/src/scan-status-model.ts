@@ -17,6 +17,17 @@ export class ScanStatusModel {
   };
 
   snapshot(): ScanStatusEvent {
+    const backfill = {
+      ...this.status.backfill,
+      pendingAgents: [...this.status.backfill.pendingAgents],
+      completedAgents: [...this.status.backfill.completedAgents],
+      failedAgents: [...this.status.backfill.failedAgents],
+    };
+    if (this.status.backfill.progress) {
+      backfill.progress = { ...this.status.backfill.progress };
+    } else {
+      delete backfill.progress;
+    }
     return {
       type: "scan-status",
       ...this.status,
@@ -29,12 +40,7 @@ export class ScanStatusModel {
           { ...status },
         ]),
       ),
-      backfill: {
-        ...this.status.backfill,
-        pendingAgents: [...this.status.backfill.pendingAgents],
-        completedAgents: [...this.status.backfill.completedAgents],
-        failedAgents: [...this.status.backfill.failedAgents],
-      },
+      backfill,
     };
   }
 

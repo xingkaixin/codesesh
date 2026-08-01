@@ -68,6 +68,24 @@ describe("formatScanStatusLabel", () => {
     ).toBe("Indexing full history · codex · 1 queued");
   });
 
+  it("shows backfill finalization progress", () => {
+    expect(
+      formatScanStatusLabel({
+        active: false,
+        backfill: {
+          active: true,
+          currentAgent: "codex",
+          pendingAgents: [],
+          progress: { phase: "finalizing", total: 2107, processed: 68 },
+          completedAgents: [],
+          failedAgents: [],
+        },
+      } as unknown as ScanStatusEvent),
+    ).toBe(
+      "Finalizing session metadata · codex · 68/2107. Progress is saved; you can resume later.",
+    );
+  });
+
   it("shows finalization progress instead of a stalled scan label", () => {
     expect(
       formatScanStatusLabel({
@@ -86,7 +104,9 @@ describe("formatScanStatusLabel", () => {
           },
         },
       } as unknown as ScanStatusEvent),
-    ).toBe("Finalizing session metadata · codex · 17/2108 · 1/2 agents ready");
+    ).toBe(
+      "Finalizing session metadata · codex · 17/2108 · 1/2 agents ready. Progress is saved; you can resume later.",
+    );
   });
 });
 

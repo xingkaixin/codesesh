@@ -6,7 +6,10 @@ import {
   getAgentLastFullSyncAt,
   isAgentCacheInitialized,
   loadCachedSessions,
+  markAgentCacheInitialized,
   markAgentFullSyncCompleted,
+  saveCachedSessionChanges,
+  saveCachedSessions,
   sessionSignature,
   type AgentScanProgress,
   type BaseAgent,
@@ -16,6 +19,7 @@ import {
   type SessionHeadChange,
 } from "@codesesh/core";
 import type {
+  BackfillProgress,
   BackfillStatus,
   ScanStatusEvent,
   SessionsUpdatedEvent,
@@ -26,6 +30,7 @@ import { appLogger, logSearchIndexSync } from "./logging.js";
 import { SearchIndexJobRunner } from "./search-index-job-runner.js";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 import { ScanStatusModel } from "./scan-status-model.js";
+import type { ScanRefreshWorkerCheckpoint } from "./scan-refresh-worker.js";
 import type { WorkerRunner } from "./worker-runner.js";
 
 export type { AgentOperationResult } from "./agent-operation-scheduler.js";
@@ -106,6 +111,7 @@ export class AgentSyncEngine {
   private readonly sessionIndex = new LiveSessionIndex();
   private backfillQueue: string[] = [];
   private currentBackfillAgent: string | undefined;
+  private currentBackfillProgress: BackfillProgress | undefined;
   private completedBackfillAgents: string[] = [];
   private failedBackfillAgents: string[] = [];
   private sessionsChangedListeners = new Set<SessionsChangedListener>();
@@ -202,6 +208,7 @@ export class AgentSyncEngine {
     }
     this.backfillQueue.length = 0;
     this.currentBackfillAgent = undefined;
+    this.currentBackfillProgress = undefined;
     const searchIndexSnapshot = this.searchIndexJobs.snapshot();
     appLogger.info("search_index.shutdown.started", {
       active_batch_id: searchIndexSnapshot.activeBatchId,
@@ -238,6 +245,16 @@ export class AgentSyncEngine {
   }
 
   private updateAgentScanProgress(agentName: string, progress: AgentScanProgress): void {
+    if (this.currentBackfillAgent === agentName) {
+      this.currentBackfillProgress = {
+        phase: progress.phase,
+        total: progress.total,
+        processed: progress.processed,
+        sessions: progress.sessions,
+      };
+      this.publishBackfillStatus();
+      return;
+    }
     this.publishStatus(this.scanStatus.updateAgent(agentName, progress));
   }
 
@@ -403,7 +420,9 @@ export class AgentSyncEngine {
   ): Promise<RefreshStrategyResult> {
     this.setScanPhase("initializing");
     const scanStartedAt = performance.now();
-    const result = await this.runWorker(agent, previousSessions, null, this.startupScanOptions());
+    const result = await this.runWorker(agent, previousSessions, null, this.startupScanOptions(), {
+      checkpoint: true,
+    });
     agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
     const sessions = attachMissingProjectIdentities(result.sessions);
     this.lastRefreshAtByAgent.set(agent.name, Date.now());
@@ -462,7 +481,7 @@ export class AgentSyncEngine {
     const preciseChangedIds = checkResult.changedIds ?? null;
     const scanStartedAt = performance.now();
     if (preciseChangedIds === null) {
-      const result = await this.runWorker(agent, baseline, null, {});
+      const result = await this.runWorker(agent, baseline, null, {}, { checkpoint: true });
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const sessions = attachMissingProjectIdentities(result.sessions);
       return this.refreshStrategyResult(sessions, {
@@ -487,7 +506,7 @@ export class AgentSyncEngine {
     previousSessions: SessionHead[],
   ): Promise<RefreshStrategyResult> {
     const scanStartedAt = performance.now();
-    const result = await this.runWorker(agent, previousSessions, null, {});
+    const result = await this.runWorker(agent, previousSessions, null, {}, { checkpoint: true });
     agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
     const sessions = attachMissingProjectIdentities(result.sessions);
     this.lastRefreshAtByAgent.set(agent.name, Date.now());
@@ -518,15 +537,72 @@ export class AgentSyncEngine {
     previousSessions: SessionHead[],
     changedIds: string[] | null,
     scanOptions: Pick<ScanOptions, "from" | "to" | "fast">,
-    workerOptions: { sourceSync?: boolean; meta?: CachedSessions["meta"] } = {},
+    workerOptions: {
+      sourceSync?: boolean;
+      checkpoint?: boolean;
+      meta?: CachedSessions["meta"];
+    } = {},
   ) {
     return this.options.workerRunner.run(agent.name, {
       previousSessions,
       changedIds,
       scanOptions,
       sourceSync: workerOptions.sourceSync,
+      checkpoint: workerOptions.checkpoint,
       meta: workerOptions.meta ?? buildAgentCacheMeta(agent),
       onProgress: (progress) => this.updateAgentScanProgress(agent.name, progress),
+      onCheckpoint: (checkpoint) => this.handleWorkerCheckpoint(agent, checkpoint),
+    });
+  }
+
+  private handleWorkerCheckpoint(agent: BaseAgent, checkpoint: ScanRefreshWorkerCheckpoint): void {
+    if (this.isShuttingDown) return;
+
+    if (checkpoint.stage === "scanned") {
+      let persisted = false;
+      try {
+        persisted = saveCachedSessions(agent.name, checkpoint.sessions, checkpoint.meta);
+        if (persisted) markAgentCacheInitialized(agent.name);
+      } catch (error) {
+        appLogger.error("scan.checkpoint.failed", {
+          agent: agent.name,
+          stage: checkpoint.stage,
+          error,
+        });
+      }
+      agent.setSessionMetaMap(new Map(Object.entries(checkpoint.meta)));
+
+      const event = this.sessionIndex.commitAgentSessions(agent.name, checkpoint.sessions);
+      this.emitSessionsChanged({
+        agentName: agent.name,
+        sessions: this.sessionIndex.snapshot().byAgent[agent.name] ?? [],
+        event,
+      });
+      appLogger.info("scan.checkpoint.persisted", {
+        agent: agent.name,
+        stage: checkpoint.stage,
+        sessions: checkpoint.sessions.length,
+        persisted,
+      });
+      return;
+    }
+
+    let persisted = false;
+    try {
+      persisted = saveCachedSessionChanges(agent.name, checkpoint.changes, [], checkpoint.meta);
+    } catch (error) {
+      appLogger.error("scan.checkpoint.failed", {
+        agent: agent.name,
+        stage: checkpoint.stage,
+        sessions: checkpoint.changes.length,
+        error,
+      });
+    }
+    appLogger.debug("scan.checkpoint.persisted", {
+      agent: agent.name,
+      stage: checkpoint.stage,
+      sessions: checkpoint.changes.length,
+      persisted,
     });
   }
 
@@ -556,10 +632,12 @@ export class AgentSyncEngine {
     const agentName = this.backfillQueue.shift();
     if (!agentName) return;
     this.currentBackfillAgent = agentName;
+    this.currentBackfillProgress = undefined;
     this.publishBackfillStatus();
     void this.runBackfill(agentName).then((result) => {
       if (this.isShuttingDown) return;
       this.currentBackfillAgent = undefined;
+      this.currentBackfillProgress = undefined;
       if (result === "committed") {
         if (!this.completedBackfillAgents.includes(agentName)) {
           this.completedBackfillAgents.push(agentName);
@@ -597,10 +675,13 @@ export class AgentSyncEngine {
         {
           sourceSync: agent instanceof FileSystemSessionSource,
           meta,
+          checkpoint: true,
         },
       );
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const fullSessions = attachMissingProjectIdentities(result.sessions);
+      this.currentBackfillProgress = { phase: "indexing", sessions: fullSessions.length };
+      this.publishBackfillStatus();
       await this.commitSessionPublication({
         context: "scan.backfill",
         agentName,
@@ -635,6 +716,7 @@ export class AgentSyncEngine {
       active: this.currentBackfillAgent != null || this.backfillQueue.length > 0,
       pendingAgents: [...this.backfillQueue],
       currentAgent: this.currentBackfillAgent,
+      progress: this.currentBackfillProgress,
       completedAgents: [...this.completedBackfillAgents],
       failedAgents: [...this.failedBackfillAgents],
     };

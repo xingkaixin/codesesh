@@ -40,6 +40,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     buildAgentCacheMeta: actual.buildAgentCacheMeta,
     computeSessionDiff: actual.computeSessionDiff,
     sessionSignature: actual.sessionSignature,
+    sortSessions: actual.sortSessions,
     // The change decision is shared with FileSystemSessionSource.checkForChanges;
     // stubbing it would stop this suite from covering the wiring it exists to test.
     diffSessionSources: actual.diffSessionSources,
@@ -170,6 +171,31 @@ describe("scan refresh worker entry", () => {
         meta: { fresh: { id: "fresh", sourcePath: "/fresh" } },
         removedMetaIds: [],
       }),
+    );
+  });
+
+  it("emits a durable head checkpoint before metadata finalization", async () => {
+    const session = makeSession("fresh", { time_updated: 1 });
+    const agent = makeAgent({
+      scan: vi.fn(() => [session]),
+      getSessionMetaMap: vi.fn(() => new Map([["fresh", { sourcePath: "/fresh" }]])),
+    });
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    setWorkerData({ checkpoint: true });
+
+    await runWorker();
+
+    expect(mocks.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "checkpoint",
+        checkpoint: expect.objectContaining({
+          stage: "scanned",
+          sessions: [session],
+        }),
+      }),
+    );
+    expect(mocks.postMessage.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ type: "done" }),
     );
   });
 
