@@ -36,6 +36,7 @@ export interface AgentScanOptions {
 }
 
 export interface AgentScanProgress {
+  phase?: "scanning" | "finalizing";
   total?: number;
   processed?: number;
   sessions?: number;

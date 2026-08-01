@@ -9,7 +9,16 @@ const mocks = vi.hoisted(() => {
     postMessage: vi.fn(),
     attachMissingProjectIdentities: vi.fn((sessions: SessionHead[]) => sessions),
     createRegisteredAgents: vi.fn(),
-    ensureSessionTagsSync: vi.fn((_agent: BaseAgent, sessions: SessionHead[]) => ({ sessions })),
+    ensureSessionTagsSync: vi.fn(
+      (
+        _agent: BaseAgent,
+        sessions: SessionHead[],
+        onProgress?: (processed: number, total: number) => void,
+      ) => {
+        onProgress?.(sessions.length, sessions.length);
+        return { sessions };
+      },
+    ),
     FileSystemSessionSource,
   };
 });
@@ -96,7 +105,10 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   mocks.attachMissingProjectIdentities.mockImplementation((sessions) => sessions);
-  mocks.ensureSessionTagsSync.mockImplementation((_agent, sessions) => ({ sessions }));
+  mocks.ensureSessionTagsSync.mockImplementation((_agent, sessions, onProgress) => {
+    onProgress?.(sessions.length, sessions.length);
+    return { sessions };
+  });
   setWorkerData();
 });
 
@@ -157,6 +169,47 @@ describe("scan refresh worker entry", () => {
         removedSessionIds: [],
         meta: { fresh: { id: "fresh", sourcePath: "/fresh" } },
         removedMetaIds: [],
+      }),
+    );
+  });
+
+  it("forwards progress when a changed source triggers a full rescan", async () => {
+    const session = makeSession("changed");
+    const scan = vi.fn((options: { onProgress?: (progress: object) => void }) => {
+      options.onProgress?.({ total: 1, processed: 1, sessions: 1 });
+      return [session];
+    });
+    const agent = makeAgent({
+      scan,
+      shouldRescanAllSourcesOnChange: vi.fn(() => true),
+      listSessionSources: vi.fn(() => [
+        { sessionId: "changed", sourcePath: "/changed", fingerprint: "new" },
+      ]),
+    });
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    setWorkerData({
+      sourceSync: true,
+      previousSessions: [makeSession("changed")],
+      meta: {
+        changed: {
+          id: "changed",
+          sourcePath: "/changed",
+          sourceFingerprint: "old",
+        },
+      },
+    });
+
+    await runWorker();
+
+    expect(scan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onProgress: expect.any(Function),
+      }),
+    );
+    expect(mocks.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "progress",
+        progress: { total: 1, processed: 1, sessions: 1 },
       }),
     );
   });

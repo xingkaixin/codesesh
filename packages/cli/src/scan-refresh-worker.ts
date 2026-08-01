@@ -17,6 +17,7 @@ import {
   type SessionHead,
   type SessionHeadChange,
 } from "@codesesh/core";
+import { appLogger } from "./logging.js";
 
 export type ScanRefreshWorkerMessage =
   | {
@@ -82,6 +83,7 @@ function syncAgentSources(
   cachedSessions: SessionHead[],
   cachedMeta: Record<string, SessionCacheMeta>,
   windowOptions?: Pick<ScanOptions, "from" | "to">,
+  onProgress?: (progress: AgentScanProgress) => void,
 ): { sessions: SessionHead[]; changedIds: string[] } {
   const sessionMap = new Map(cachedSessions.map((session) => [session.id, session]));
   const sourceRefs = agent.listSessionSources(windowOptions);
@@ -98,7 +100,7 @@ function syncAgentSources(
     (changedIds.length > 0 || removedIds.length > 0)
   ) {
     return {
-      sessions: agent.scan(windowOptions),
+      sessions: agent.scan({ ...windowOptions, onProgress }),
       changedIds: [...new Set([...changedIds, ...removedIds])],
     };
   }
@@ -137,15 +139,36 @@ function isSettled(session: SessionHead, now: number): boolean {
  * Runs identity resolution (spawns git) and stale smart-tag reclassification
  * on the worker thread, off the server's main event loop.
  */
-export function finalizeSessions(agent: BaseAgent, sessions: SessionHead[]): SessionHead[] {
+export function finalizeSessions(
+  agent: BaseAgent,
+  sessions: SessionHead[],
+  onProgress?: (progress: AgentScanProgress) => void,
+): SessionHead[] {
   const withIdentity = attachMissingProjectIdentities(sessions);
 
   const now = Date.now();
   const settled = withIdentity.filter((session) => isSettled(session, now));
   if (settled.length === 0) return withIdentity;
 
+  let lastReportedAt = -Infinity;
+  const reportProgress = (processed: number, total: number): void => {
+    const now = performance.now();
+    if (processed !== 0 && processed !== total && now - lastReportedAt < 100) return;
+    lastReportedAt = now;
+    onProgress?.({
+      phase: "finalizing",
+      total,
+      processed,
+      sessions: withIdentity.length,
+    });
+  };
+  reportProgress(0, settled.length);
+
   const taggedById = new Map(
-    ensureSessionTagsSync(agent, settled).sessions.map((session) => [session.id, session]),
+    ensureSessionTagsSync(agent, settled, reportProgress).sessions.map((session) => [
+      session.id,
+      session,
+    ]),
   );
   return withIdentity.map((session) => taggedById.get(session.id) ?? session);
 }
@@ -157,6 +180,21 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
     throw new Error(`Unknown agent: ${data.agentName}`);
   }
 
+  appLogger.debug("scan.refresh_worker.started", {
+    agent: data.agentName,
+    source_sync: data.sourceSync ?? false,
+    changed_ids: data.changedIds?.length ?? 0,
+    previous_sessions: data.previousSessions.length,
+  });
+
+  const reportProgress = (progress: AgentScanProgress): void => {
+    parentPort?.postMessage({
+      type: "progress",
+      requestId: data.requestId,
+      progress,
+    } satisfies ScanRefreshWorkerMessage);
+  };
+
   agent.setSessionMetaMap(new Map(Object.entries(data.meta)));
 
   const isAvailable = agent.isAvailable();
@@ -166,7 +204,13 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
   if (!isAvailable) {
     sessions = [];
   } else if (data.sourceSync && agent instanceof FileSystemSessionSource) {
-    const result = syncAgentSources(agent, data.previousSessions, data.meta, data.scanOptions);
+    const result = syncAgentSources(
+      agent,
+      data.previousSessions,
+      data.meta,
+      data.scanOptions,
+      reportProgress,
+    );
     sessions = result.sessions;
     changedIds = result.changedIds;
   } else if (data.changedIds) {
@@ -175,18 +219,28 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
     sessions = await Promise.resolve(
       agent.scan({
         ...data.scanOptions,
-        onProgress: (progress) => {
-          parentPort?.postMessage({
-            type: "progress",
-            requestId: data.requestId,
-            progress,
-          } satisfies ScanRefreshWorkerMessage);
-        },
+        onProgress: reportProgress,
       }),
     );
   }
 
-  sessions = finalizeSessions(agent, sessions);
+  const scanDuration = performance.now() - startedAt;
+  appLogger.debug("scan.refresh_worker.scanned", {
+    agent: data.agentName,
+    source_sync: data.sourceSync ?? false,
+    sessions: sessions.length,
+    changed_ids: changedIds?.length ?? 0,
+    duration_ms: Math.round(scanDuration),
+  });
+
+  const finalizeStartedAt = performance.now();
+  sessions = finalizeSessions(agent, sessions, reportProgress);
+  appLogger.debug("scan.refresh_worker.finalized", {
+    agent: data.agentName,
+    sessions: sessions.length,
+    duration_ms: Math.round(performance.now() - finalizeStartedAt),
+    total_duration_ms: Math.round(performance.now() - startedAt),
+  });
   const nextMeta = buildAgentCacheMeta(agent, new Set(sessions.map((session) => session.id)));
   const metaDiff = computeCacheMetaDiff(data.meta, nextMeta);
   const diff = computeSessionDiff(

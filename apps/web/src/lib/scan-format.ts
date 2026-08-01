@@ -55,15 +55,25 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
         ? ` · ${current}${itemProgress} · ${completed}/${total} agents ready`
         : ` · ${completed}/${total} agents ready`
       : "";
+  const stageLabel =
+    currentStatus?.status === "finalizing"
+      ? "Finalizing session metadata"
+      : currentStatus?.status === "indexing"
+        ? "Preparing local session index"
+        : "Checking for new or changed sessions";
 
   if (status.phase === "initializing") {
     return `First-run setup: indexing recent sessions${agentProgress}. Full history continues in the background.`;
   }
-  if (status.phase === "indexing") return "Preparing local session index";
+  if (status.phase === "indexing") {
+    return currentStatus?.status === "finalizing"
+      ? `${stageLabel}${agentProgress}`
+      : "Preparing local session index";
+  }
 
   if (total > 0) {
     return current
-      ? `Checking for new or changed sessions · ${current}${itemProgress} · ${completed}/${total} agents ready`
+      ? `${stageLabel} · ${current}${itemProgress} · ${completed}/${total} agents ready`
       : `Checking for new or changed sessions · ${completed}/${total} agents ready`;
   }
   return "Checking for new or changed sessions";
@@ -75,6 +85,12 @@ export function formatAgentScanProgress(
 ): string | null {
   const agentStatus = status?.agentStatuses[agentName];
   if (!agentStatus || agentStatus.status === "complete") return null;
+  if (agentStatus.status === "finalizing") {
+    if (agentStatus.total && agentStatus.processed != null) {
+      return `${agentStatus.processed}/${agentStatus.total}`;
+    }
+    return "Finalizing";
+  }
   if (agentStatus.status === "indexing") return "Indexing";
   if (agentStatus.total && agentStatus.processed != null) {
     return `${agentStatus.processed}/${agentStatus.total}`;

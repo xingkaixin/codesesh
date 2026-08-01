@@ -109,6 +109,34 @@ describe("ScanStatusModel", () => {
     expect(model.updateAgent("claude", { processed: 1 })).toBeNull();
   });
 
+  it("reports session finalization separately from source scanning", () => {
+    const model = new ScanStatusModel();
+    model.startBatch(["codex"], "scanning", {});
+    model.beginAgent("codex", 2);
+
+    const status = model.updateAgent("codex", {
+      phase: "finalizing",
+      total: 4,
+      processed: 2,
+      sessions: 2,
+    });
+
+    expect(status).toEqual(
+      expect.objectContaining({
+        phase: "indexing",
+        scanningAgents: ["codex"],
+      }),
+    );
+    expect(status?.agentStatuses.codex).toEqual(
+      expect.objectContaining({
+        status: "finalizing",
+        total: 4,
+        processed: 2,
+        sessions: 2,
+      }),
+    );
+  });
+
   it("completes unseen agents and normalizes unfinished statuses at batch end", () => {
     const model = new ScanStatusModel();
     const unseen = model.finishAgent("codex");

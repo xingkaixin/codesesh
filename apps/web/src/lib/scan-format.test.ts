@@ -67,6 +67,27 @@ describe("formatScanStatusLabel", () => {
       } as unknown as ScanStatusEvent),
     ).toBe("Indexing full history · codex · 1 queued");
   });
+
+  it("shows finalization progress instead of a stalled scan label", () => {
+    expect(
+      formatScanStatusLabel({
+        active: true,
+        phase: "indexing",
+        completedAgents: ["claudecode"],
+        scanningAgents: ["codex"],
+        totalAgents: 2,
+        agentStatuses: {
+          codex: {
+            agentName: "codex",
+            status: "finalizing",
+            total: 2108,
+            processed: 17,
+            updatedAt: 1,
+          },
+        },
+      } as unknown as ScanStatusEvent),
+    ).toBe("Finalizing session metadata · codex · 17/2108 · 1/2 agents ready");
+  });
 });
 
 describe("formatAgentScanProgress", () => {

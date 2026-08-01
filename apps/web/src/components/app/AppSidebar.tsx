@@ -23,7 +23,7 @@ import type { BrowseBy } from "./types";
 
 function agentProgressPercent(status: AgentScanStatus | undefined): number | null {
   if (
-    status?.status !== "scanning" ||
+    (status?.status !== "scanning" && status?.status !== "finalizing") ||
     typeof status.total !== "number" ||
     !Number.isFinite(status.total) ||
     status.total <= 0 ||
@@ -94,7 +94,11 @@ function AgentNavList({
                 className="ml-4 mt-1 block h-1 overflow-hidden rounded-sm bg-[var(--console-surface-muted)]"
                 role="progressbar"
                 aria-label={`${agent.displayName} ${
-                  agentStatus?.status === "indexing" ? "indexing" : "scan"
+                  agentStatus?.status === "indexing"
+                    ? "indexing"
+                    : agentStatus?.status === "finalizing"
+                      ? "finalizing"
+                      : "scan"
                 } progress`}
                 aria-valuemin={progressPercent == null ? undefined : 0}
                 aria-valuemax={progressPercent == null ? undefined : 100}

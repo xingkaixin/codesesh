@@ -148,13 +148,18 @@ function chunkSessions<T>(items: T[], chunkCount: number): T[][] {
 export function ensureSessionTagsSync(
   agent: BaseAgent,
   sessions: SessionHead[],
+  onProgress?: (processed: number, total: number) => void,
 ): { sessions: SessionHead[]; changed: boolean } {
   let changed = false;
+  let processed = 0;
+  const total = sessions.length;
 
   const tagged = sessions.map((session) => {
     const sourceUpdatedAt = session.time_updated ?? session.time_created;
     const currentTags = Array.isArray(session.smart_tags) ? session.smart_tags : null;
     if (currentTags && session.smart_tags_source_updated_at === sourceUpdatedAt) {
+      processed += 1;
+      onProgress?.(processed, total);
       return session;
     }
 
@@ -169,6 +174,9 @@ export function ensureSessionTagsSync(
       };
     } catch {
       return session;
+    } finally {
+      processed += 1;
+      onProgress?.(processed, total);
     }
   });
 

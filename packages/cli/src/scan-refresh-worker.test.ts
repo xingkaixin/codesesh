@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { BaseAgent, SessionHead } from "@codesesh/core";
+import type { AgentScanProgress, BaseAgent, SessionHead } from "@codesesh/core";
 import { finalizeSessions } from "./scan-refresh-worker.js";
 
 // Isolated temp directory so computeIdentity resolves a stable "path" identity
@@ -65,6 +65,18 @@ describe("finalizeSessions", () => {
     expect(getSessionData).toHaveBeenCalledWith("s1");
     expect(result?.smart_tags).toContain("bugfix");
     expect(result?.smart_tags_source_updated_at).toBe(1000);
+  });
+
+  it("reports progress while finalizing settled sessions", () => {
+    const agent = makeAgent(() => ({ messages: [] }) as never);
+    const progress: AgentScanProgress[] = [];
+
+    finalizeSessions(agent, [makeSession("s1")], (update) => progress.push(update));
+
+    expect(progress).toEqual([
+      { phase: "finalizing", total: 1, processed: 0, sessions: 1 },
+      { phase: "finalizing", total: 1, processed: 1, sessions: 1 },
+    ]);
   });
 
   it("does not recompute tags for a session whose tags are already current", () => {
