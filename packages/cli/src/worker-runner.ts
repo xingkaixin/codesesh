@@ -17,6 +17,8 @@ export interface WorkerPayload {
   previousSessions: SessionHead[];
   changedIds: string[] | null;
   sourceSync?: boolean;
+  backfill?: boolean;
+  backfillCursor?: string | null;
   checkpoint?: boolean;
   scanOptions: Pick<ScanOptions, "from" | "to" | "fast">;
   meta: Record<string, SessionCacheMeta>;
@@ -114,6 +116,8 @@ export class ThreadWorkerRunner implements WorkerRunner {
       previousSessions: payload.previousSessions,
       changedIds: payload.changedIds,
       sourceSync: payload.sourceSync,
+      backfill: payload.backfill,
+      backfillCursor: payload.backfillCursor,
       checkpoint: payload.checkpoint,
       scanOptions: payload.scanOptions,
       meta: payload.meta,

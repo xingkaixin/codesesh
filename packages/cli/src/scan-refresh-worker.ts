@@ -58,6 +58,7 @@ export type ScanRefreshWorkerCheckpoint =
       stage: "finalizing";
       changes: SessionHeadChange[];
       meta: Record<string, SessionCacheMeta>;
+      backfillCursor?: string;
     };
 
 export interface ScanRefreshWorkerRequest {
@@ -67,6 +68,8 @@ export interface ScanRefreshWorkerRequest {
   previousSessions: SessionHead[];
   changedIds: string[] | null;
   sourceSync?: boolean;
+  backfill?: boolean;
+  backfillCursor?: string | null;
   checkpoint?: boolean;
   scanOptions: Pick<ScanOptions, "from" | "to" | "fast">;
   meta: Record<string, SessionCacheMeta>;
@@ -90,6 +93,66 @@ function computeCacheMetaDiff(
     if (!Object.hasOwn(next, id)) removedIds.push(id);
   }
   return { changes, removedIds };
+}
+
+function hasStaleSmartTags(session: SessionHead): boolean {
+  const sourceUpdatedAt = session.time_updated ?? session.time_created;
+  return (
+    !Array.isArray(session.smart_tags) || session.smart_tags_source_updated_at !== sourceUpdatedAt
+  );
+}
+
+function preserveCachedSmartTags(
+  scannedSessions: SessionHead[],
+  cachedSessions: SessionHead[],
+  changedIds: string[],
+): SessionHead[] {
+  const changedIdSet = new Set(changedIds);
+  const cachedById = new Map(cachedSessions.map((session) => [session.id, session]));
+
+  return scannedSessions.map((session) => {
+    const cached = cachedById.get(session.id);
+    if (!cached || changedIdSet.has(session.id) || !Array.isArray(cached.smart_tags)) {
+      return session;
+    }
+    return {
+      ...session,
+      smart_tags: cached.smart_tags,
+      smart_tags_source_updated_at: cached.smart_tags_source_updated_at,
+    };
+  });
+}
+
+interface BackfillSelection {
+  orderedSessions: SessionHead[];
+  finalizeSessionIds: ReadonlySet<string>;
+  cursorIndex: number;
+}
+
+function selectBackfillSessions(
+  sessions: SessionHead[],
+  changedIds: string[],
+  cursor: string | null | undefined,
+): BackfillSelection {
+  const orderedSessions = sortSessions(sessions);
+  const cursorIndex = cursor ? orderedSessions.findIndex((session) => session.id === cursor) : -1;
+  const finalizeSessionIds = new Set<string>();
+  const startIndex = cursorIndex >= 0 ? cursorIndex + 1 : 0;
+
+  for (let index = startIndex; index < orderedSessions.length; index += 1) {
+    finalizeSessionIds.add(orderedSessions[index]!.id);
+  }
+
+  for (const changedId of changedIds) finalizeSessionIds.add(changedId);
+
+  // A hot session before the cursor remains stale until it settles. Keep it in
+  // the next pass so it is not permanently skipped when it becomes idle.
+  for (let index = 0; index <= cursorIndex; index += 1) {
+    const session = orderedSessions[index]!;
+    if (hasStaleSmartTags(session)) finalizeSessionIds.add(session.id);
+  }
+
+  return { orderedSessions, finalizeSessionIds, cursorIndex };
 }
 
 /**
@@ -131,13 +194,18 @@ function syncAgentSources(
     (changedIds.length > 0 || removedIds.length > 0)
   ) {
     const scannedSessions = agent.scan({ ...windowOptions, onProgress });
+    const mergedScannedSessions = preserveCachedSmartTags(
+      scannedSessions,
+      cachedSessions,
+      changedIds,
+    );
     const enumeratedIds = new Set(sourceRefs.map((source) => source.sessionId));
     const removedIdSet = new Set(removedIds);
     const retainedSessions = cachedSessions.filter(
       (session) => !enumeratedIds.has(session.id) && !removedIdSet.has(session.id),
     );
     return {
-      sessions: sortSessions([...retainedSessions, ...scannedSessions]),
+      sessions: sortSessions([...retainedSessions, ...mergedScannedSessions]),
       changedIds: [...new Set([...changedIds, ...removedIds])],
       finalizeSessionIds,
       sourceCount: sourceRefs.length,
@@ -282,6 +350,8 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
   appLogger.debug("scan.refresh_worker.started", {
     agent: data.agentName,
     source_sync: data.sourceSync ?? false,
+    backfill: data.backfill ?? false,
+    backfill_cursor: data.backfillCursor ?? undefined,
     changed_ids: data.changedIds?.length ?? 0,
     previous_sessions: data.previousSessions.length,
   });
@@ -300,6 +370,8 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
   let sessions: SessionHead[];
   let changedIds: string[] | undefined;
   let finalizeSessionIds: ReadonlySet<string> | undefined;
+  let backfillOrder: SessionHead[] | undefined;
+  let backfillCursorIndex = -1;
   let sourceSyncDetails:
     | {
         sourceCount: number;
@@ -348,10 +420,20 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
     sessions = ordered;
   }
 
+  if (data.backfill) {
+    const selection = selectBackfillSessions(sessions, changedIds ?? [], data.backfillCursor);
+    sessions = selection.orderedSessions;
+    finalizeSessionIds = selection.finalizeSessionIds;
+    backfillOrder = selection.orderedSessions;
+    backfillCursorIndex = selection.cursorIndex;
+  }
+
   const scanDuration = performance.now() - startedAt;
   appLogger.debug("scan.refresh_worker.scanned", {
     agent: data.agentName,
     source_sync: data.sourceSync ?? false,
+    backfill: data.backfill ?? false,
+    backfill_cursor: data.backfillCursor ?? undefined,
     sessions: sessions.length,
     changed_ids: changedIds?.length ?? 0,
     source_count: sourceSyncDetails?.sourceCount,
@@ -362,16 +444,35 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
 
   const finalizeStartedAt = performance.now();
   const finalizationTiming = createSessionFinalizationTiming();
+  const backfillPositionById = backfillOrder
+    ? new Map(backfillOrder.map((session, index) => [session.id, index]))
+    : undefined;
   sessions = finalizeSessions(
     agent,
     sessions,
     reportProgress,
-    (checkpoint) =>
+    (checkpoint) => {
+      let nextCheckpoint = checkpoint;
+      if (checkpoint.stage === "finalizing" && backfillOrder && backfillPositionById) {
+        let nextCursorIndex = backfillCursorIndex;
+        for (const { session } of checkpoint.changes) {
+          const index = backfillPositionById.get(session.id);
+          if (index != null && index > nextCursorIndex) nextCursorIndex = index;
+        }
+        if (nextCursorIndex > backfillCursorIndex) {
+          backfillCursorIndex = nextCursorIndex;
+          nextCheckpoint = {
+            ...checkpoint,
+            backfillCursor: backfillOrder[nextCursorIndex]?.id,
+          };
+        }
+      }
       parentPort?.postMessage({
         type: "checkpoint",
         requestId: data.requestId,
-        checkpoint,
-      } satisfies ScanRefreshWorkerMessage),
+        checkpoint: nextCheckpoint,
+      } satisfies ScanRefreshWorkerMessage);
+    },
     finalizeSessionIds,
     (batchTiming) => {
       finalizationTiming.batches += 1;
@@ -399,6 +500,8 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
   );
   appLogger.debug("scan.refresh_worker.finalized", {
     agent: data.agentName,
+    backfill: data.backfill ?? false,
+    backfill_cursor: backfillOrder?.[backfillCursorIndex]?.id,
     sessions: sessions.length,
     finalized_sessions: finalizationTiming.sessions,
     batches: finalizationTiming.batches,

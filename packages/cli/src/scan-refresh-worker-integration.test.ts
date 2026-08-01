@@ -240,6 +240,111 @@ describe("scan refresh worker entry", () => {
     );
   });
 
+  it("preserves cached smart tags when a full rescan rebuilds unchanged heads", async () => {
+    const unchanged = makeSession("unchanged", {
+      smart_tags: ["bugfix"],
+      smart_tags_source_updated_at: 1,
+      time_created: 1,
+      time_updated: 1,
+    });
+    const changed = makeSession("changed", { time_created: 1, time_updated: 1 });
+    const agent = makeAgent({
+      scan: vi.fn(() => [makeSession(unchanged.id, { time_created: 1, time_updated: 1 }), changed]),
+      shouldRescanAllSourcesOnChange: vi.fn(() => true),
+      listSessionSources: vi.fn(() => [
+        { sessionId: unchanged.id, sourcePath: "/unchanged", fingerprint: "same" },
+        { sessionId: changed.id, sourcePath: "/changed", fingerprint: "new" },
+      ]),
+    });
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    setWorkerData({
+      sourceSync: true,
+      checkpoint: true,
+      previousSessions: [unchanged, makeSession(changed.id, { time_created: 1, time_updated: 1 })],
+      meta: {
+        unchanged: {
+          id: unchanged.id,
+          sourcePath: "/unchanged",
+          sourceFingerprint: "same",
+        },
+        changed: {
+          id: changed.id,
+          sourcePath: "/changed",
+          sourceFingerprint: "old",
+        },
+      },
+    });
+
+    await runWorker();
+
+    const scannedCheckpoint = mocks.postMessage.mock.calls
+      .map(([message]) => message)
+      .find((message) => message?.type === "checkpoint" && message.checkpoint.stage === "scanned");
+    expect(scannedCheckpoint?.checkpoint.sessions).toContainEqual(
+      expect.objectContaining({
+        id: unchanged.id,
+        smart_tags: ["bugfix"],
+        smart_tags_source_updated_at: 1,
+      }),
+    );
+  });
+
+  it("resumes backfill finalization after the durable cursor", async () => {
+    const newest = makeSession("newest", {
+      time_created: 3_000,
+      time_updated: 3_000,
+      smart_tags: [],
+      smart_tags_source_updated_at: 3_000,
+    });
+    const cursor = makeSession("cursor", {
+      time_created: 2_000,
+      time_updated: 2_000,
+      smart_tags: [],
+      smart_tags_source_updated_at: 2_000,
+    });
+    const next = makeSession("next", { time_created: 1_000, time_updated: 1_000 });
+    const agent = makeAgent({
+      listSessionSources: vi.fn(() =>
+        [newest, cursor, next].map((session) => ({
+          sessionId: session.id,
+          sourcePath: `/${session.id}`,
+          fingerprint: "same",
+        })),
+      ),
+    });
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    setWorkerData({
+      sourceSync: true,
+      backfill: true,
+      backfillCursor: cursor.id,
+      checkpoint: true,
+      previousSessions: [newest, cursor, next],
+      meta: Object.fromEntries(
+        [newest, cursor, next].map((session) => [
+          session.id,
+          {
+            id: session.id,
+            sourcePath: `/${session.id}`,
+            sourceFingerprint: "same",
+          },
+        ]),
+      ),
+    });
+
+    await runWorker();
+
+    expect(mocks.ensureSessionTagsSync).toHaveBeenCalledWith(agent, [next], expect.any(Function));
+    expect(mocks.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "checkpoint",
+        checkpoint: expect.objectContaining({
+          stage: "finalizing",
+          backfillCursor: next.id,
+        }),
+      }),
+    );
+  });
+
   it("preserves cached sessions outside a windowed full rescan", async () => {
     const old = makeSession("old", { time_updated: 1 });
     const recent = makeSession("recent", { time_updated: 10, title: "new" });

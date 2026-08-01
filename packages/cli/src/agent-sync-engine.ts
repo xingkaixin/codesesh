@@ -2,11 +2,13 @@ import {
   FileSystemSessionSource,
   attachMissingProjectIdentities,
   buildAgentCacheMeta,
+  getAgentFullSyncCursor,
   computeSessionDiff,
   getAgentLastFullSyncAt,
   isAgentCacheInitialized,
   loadCachedSessions,
   markAgentCacheInitialized,
+  markAgentFullSyncProgress,
   markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
   saveCachedSessionChanges,
@@ -543,6 +545,8 @@ export class AgentSyncEngine {
     scanOptions: Pick<ScanOptions, "from" | "to" | "fast">,
     workerOptions: {
       sourceSync?: boolean;
+      backfill?: boolean;
+      backfillCursor?: string | null;
       checkpoint?: boolean;
       meta?: CachedSessions["meta"];
     } = {},
@@ -552,6 +556,8 @@ export class AgentSyncEngine {
       changedIds,
       scanOptions,
       sourceSync: workerOptions.sourceSync,
+      backfill: workerOptions.backfill,
+      backfillCursor: workerOptions.backfillCursor,
       checkpoint: workerOptions.checkpoint,
       meta: workerOptions.meta ?? buildAgentCacheMeta(agent),
       onProgress: (progress) => this.updateAgentScanProgress(agent.name, progress),
@@ -602,10 +608,14 @@ export class AgentSyncEngine {
         error,
       });
     }
+    if (persisted && checkpoint.backfillCursor) {
+      markAgentFullSyncProgress(agent.name, checkpoint.backfillCursor);
+    }
     appLogger.debug("scan.checkpoint.persisted", {
       agent: agent.name,
       stage: checkpoint.stage,
       sessions: checkpoint.changes.length,
+      backfill_cursor: checkpoint.backfillCursor,
       persisted,
     });
   }
@@ -687,6 +697,7 @@ export class AgentSyncEngine {
     const cached = loadCachedSessions(agentName);
     const baseline = cached?.sessions ?? snapshot.byAgent[agentName] ?? [];
     const meta = cached?.meta ?? buildAgentCacheMeta(agent);
+    const backfillCursor = getAgentFullSyncCursor(agentName);
     if (cached) restoreAgentCacheMeta(agent, cached);
     try {
       markAgentFullSyncStarted(agentName);
@@ -697,6 +708,8 @@ export class AgentSyncEngine {
         {},
         {
           sourceSync: agent instanceof FileSystemSessionSource,
+          backfill: true,
+          backfillCursor,
           meta,
           checkpoint: true,
         },

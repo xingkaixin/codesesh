@@ -34,6 +34,7 @@ const fsWatch = vi.hoisted(() => ({
 const core = vi.hoisted(() => ({
   createRegisteredAgents: vi.fn(),
   filterSessions: vi.fn((sessions: SessionHead[], _options: ScanOptions) => sessions),
+  getAgentFullSyncCursor: vi.fn(() => null as string | null),
   getAgentLastFullSyncAt: vi.fn(),
   resolveAgentRoots: vi.fn(
     (): AgentRoots => ({
@@ -49,6 +50,7 @@ const core = vi.hoisted(() => ({
   isAgentCacheInitialized: vi.fn(),
   loadCachedSessions: vi.fn(),
   markAgentCacheInitialized: vi.fn(),
+  markAgentFullSyncProgress: vi.fn(),
   markAgentFullSyncStarted: vi.fn(),
   markAgentFullSyncCompleted: vi.fn(),
   scanSessions: vi.fn(),
@@ -303,10 +305,12 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     ...actual,
     createRegisteredAgents: core.createRegisteredAgents,
     filterSessions: core.filterSessions,
+    getAgentFullSyncCursor: core.getAgentFullSyncCursor,
     getAgentLastFullSyncAt: core.getAgentLastFullSyncAt,
     isAgentCacheInitialized: core.isAgentCacheInitialized,
     loadCachedSessions: core.loadCachedSessions,
     markAgentCacheInitialized: core.markAgentCacheInitialized,
+    markAgentFullSyncProgress: core.markAgentFullSyncProgress,
     markAgentFullSyncStarted: core.markAgentFullSyncStarted,
     markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
     resolveAgentRoots: core.resolveAgentRoots,

@@ -5,10 +5,12 @@ import type { ScanStatusEvent } from "@codesesh/core/contract";
 import type { WorkerRunner } from "./worker-runner.js";
 
 const core = vi.hoisted(() => ({
+  getAgentFullSyncCursor: vi.fn(() => null as string | null),
   getAgentLastFullSyncAt: vi.fn(() => Date.now()),
   isAgentCacheInitialized: vi.fn(() => true),
   loadCachedSessions: vi.fn((): ReturnType<typeof loadCachedSessions> => null),
   markAgentCacheInitialized: vi.fn(),
+  markAgentFullSyncProgress: vi.fn(),
   markAgentFullSyncStarted: vi.fn(),
   markAgentFullSyncCompleted: vi.fn(),
   saveCachedSessionChanges: vi.fn(() => true),
@@ -28,10 +30,12 @@ vi.mock("@codesesh/core", async (importOriginal) => {
   core.sessionSignature.mockImplementation(original.sessionSignature);
   return {
     ...original,
+    getAgentFullSyncCursor: core.getAgentFullSyncCursor,
     getAgentLastFullSyncAt: core.getAgentLastFullSyncAt,
     isAgentCacheInitialized: core.isAgentCacheInitialized,
     loadCachedSessions: core.loadCachedSessions,
     markAgentCacheInitialized: core.markAgentCacheInitialized,
+    markAgentFullSyncProgress: core.markAgentFullSyncProgress,
     markAgentFullSyncStarted: core.markAgentFullSyncStarted,
     markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
     saveCachedSessionChanges: core.saveCachedSessionChanges,
