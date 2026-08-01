@@ -103,7 +103,13 @@ function syncAgentSources(
   cachedMeta: Record<string, SessionCacheMeta>,
   windowOptions?: Pick<ScanOptions, "from" | "to">,
   onProgress?: (progress: AgentScanProgress) => void,
-): { sessions: SessionHead[]; changedIds: string[] } {
+): {
+  sessions: SessionHead[];
+  changedIds: string[];
+  sourceCount: number;
+  removedCount: number;
+  fullRescan: boolean;
+} {
   const sessionMap = new Map(cachedSessions.map((session) => [session.id, session]));
   const sourceRefs = agent.listSessionSources(windowOptions);
   const sourceById = new Map(sourceRefs.map((source) => [source.sessionId, source]));
@@ -127,6 +133,9 @@ function syncAgentSources(
     return {
       sessions: sortSessions([...retainedSessions, ...scannedSessions]),
       changedIds: [...new Set([...changedIds, ...removedIds])],
+      sourceCount: sourceRefs.length,
+      removedCount: removedIds.length,
+      fullRescan: true,
     };
   }
 
@@ -146,6 +155,9 @@ function syncAgentSources(
   return {
     sessions: [...sessionMap.values()],
     changedIds: [...new Set([...changedIds, ...removedIds])],
+    sourceCount: sourceRefs.length,
+    removedCount: removedIds.length,
+    fullRescan: false,
   };
 }
 
@@ -239,6 +251,13 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
   const isAvailable = agent.isAvailable();
   let sessions: SessionHead[];
   let changedIds: string[] | undefined;
+  let sourceSyncDetails:
+    | {
+        sourceCount: number;
+        removedCount: number;
+        fullRescan: boolean;
+      }
+    | undefined;
 
   if (!isAvailable) {
     sessions = [];
@@ -252,6 +271,7 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
     );
     sessions = result.sessions;
     changedIds = result.changedIds;
+    sourceSyncDetails = result;
   } else if (data.changedIds) {
     sessions = await Promise.resolve(agent.incrementalScan(data.previousSessions, data.changedIds));
   } else {
@@ -284,6 +304,9 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
     source_sync: data.sourceSync ?? false,
     sessions: sessions.length,
     changed_ids: changedIds?.length ?? 0,
+    source_count: sourceSyncDetails?.sourceCount,
+    removed_count: sourceSyncDetails?.removedCount,
+    full_rescan: sourceSyncDetails?.fullRescan,
     duration_ms: Math.round(scanDuration),
   });
 
