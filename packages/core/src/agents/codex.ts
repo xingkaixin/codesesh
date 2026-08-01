@@ -436,26 +436,29 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     this.subagentStatsByParent.clear();
   }
 
-  shouldRescanAllSourcesOnChange(): boolean {
-    return true;
-  }
-
-  incrementalScan(
-    cachedSessions: SessionHead[],
-    changedIds: string[],
-    refs?: SessionSourceRef[],
-  ): SessionHead[] {
-    const cachedById = new Set(cachedSessions.map((session) => session.id));
-    const hasCachedRelation = cachedSessions.some((session) => {
-      const parent = session.parent_reference;
-      return parent?.agentName === this.name && cachedById.has(parent.sessionId);
-    });
-    const hasChangedChild = (refs ?? []).some((ref) => {
-      const meta = this.readThreadMeta(ref.sourcePath);
-      return meta?.threadSource === "subagent";
-    });
-    if (hasCachedRelation || hasChangedChild) return this.scan();
-    return super.incrementalScan(cachedSessions, changedIds, refs);
+  /**
+   * A changed subagent file leaves its parent's aggregated token stats stale,
+   * so the parent must re-parse alongside the child.
+   */
+  expandChangedSessionIds(changedIds: string[], refs?: SessionSourceRef[]): string[] {
+    if (changedIds.length === 0) return changedIds;
+    const pathById = new Map((refs ?? []).map((ref) => [ref.sessionId, ref.sourcePath]));
+    const expanded = new Set(changedIds);
+    for (const id of changedIds) {
+      const sourcePath = pathById.get(id) ?? this.sessionMetaMap.get(id)?.sourcePath;
+      const threadMeta = sourcePath ? this.readThreadMeta(sourcePath) : null;
+      // A removed file cannot be read back; cached meta still knows its parent.
+      const parentId = threadMeta
+        ? threadMeta.threadSource === "subagent"
+          ? threadMeta.parentThreadId
+          : null
+        : (this.sessionMetaMap.get(id)?.parentThreadId ?? null);
+      if (!parentId) continue;
+      expanded.add(parentId);
+      this.subagentIndex = null;
+      this.subagentStatsByParent.delete(parentId);
+    }
+    return [...expanded];
   }
 
   private readThreadMeta(filePath: string): ThreadMeta | null {

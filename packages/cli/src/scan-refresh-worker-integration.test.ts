@@ -199,15 +199,11 @@ describe("scan refresh worker entry", () => {
     );
   });
 
-  it("forwards progress when a changed source triggers a full rescan", async () => {
+  it("re-parses only changed sources and forwards progress", async () => {
     const session = makeSession("changed");
-    const scan = vi.fn((options: { onProgress?: (progress: object) => void }) => {
-      options.onProgress?.({ total: 1, processed: 1, sessions: 1 });
-      return [session];
-    });
+    const scanSessionSource = vi.fn(() => session);
     const agent = makeAgent({
-      scan,
-      shouldRescanAllSourcesOnChange: vi.fn(() => true),
+      scanSessionSource,
       listSessionSources: vi.fn(() => [
         { sessionId: "changed", sourcePath: "/changed", fingerprint: "new" },
       ]),
@@ -227,11 +223,8 @@ describe("scan refresh worker entry", () => {
 
     await runWorker();
 
-    expect(scan).toHaveBeenCalledWith(
-      expect.objectContaining({
-        onProgress: expect.any(Function),
-      }),
-    );
+    expect(agent.scan).not.toHaveBeenCalled();
+    expect(scanSessionSource).toHaveBeenCalledWith("/changed");
     expect(mocks.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "progress",
@@ -240,7 +233,7 @@ describe("scan refresh worker entry", () => {
     );
   });
 
-  it("preserves cached smart tags when a full rescan rebuilds unchanged heads", async () => {
+  it("keeps unchanged heads and their smart tags without re-parsing them", async () => {
     const unchanged = makeSession("unchanged", {
       smart_tags: ["bugfix"],
       smart_tags_source_updated_at: 1,
@@ -248,9 +241,9 @@ describe("scan refresh worker entry", () => {
       time_updated: 1,
     });
     const changed = makeSession("changed", { time_created: 1, time_updated: 1 });
+    const scanSessionSource = vi.fn(() => changed);
     const agent = makeAgent({
-      scan: vi.fn(() => [makeSession(unchanged.id, { time_created: 1, time_updated: 1 }), changed]),
-      shouldRescanAllSourcesOnChange: vi.fn(() => true),
+      scanSessionSource,
       listSessionSources: vi.fn(() => [
         { sessionId: unchanged.id, sourcePath: "/unchanged", fingerprint: "same" },
         { sessionId: changed.id, sourcePath: "/changed", fingerprint: "new" },
@@ -277,6 +270,7 @@ describe("scan refresh worker entry", () => {
 
     await runWorker();
 
+    expect(scanSessionSource).not.toHaveBeenCalledWith("/unchanged");
     const scannedCheckpoint = mocks.postMessage.mock.calls
       .map(([message]) => message)
       .find((message) => message?.type === "checkpoint" && message.checkpoint.stage === "scanned");
@@ -287,6 +281,45 @@ describe("scan refresh worker entry", () => {
         smart_tags_source_updated_at: 1,
       }),
     );
+  });
+
+  it("re-parses sessions pulled in by changed-id expansion", async () => {
+    const parent = makeSession("parent");
+    const child = makeSession("child", {
+      parent_reference: { agentName: "codex", sessionId: "parent" },
+    });
+    const scanSessionSource = vi.fn((sourcePath: string) =>
+      sourcePath === "/parent" ? parent : child,
+    );
+    const expandChangedSessionIds = vi.fn((ids: string[]) =>
+      ids.includes("child") ? [...new Set([...ids, "parent"])] : ids,
+    );
+    const agent = makeAgent({
+      scanSessionSource,
+      expandChangedSessionIds,
+      listSessionSources: vi.fn(() => [
+        { sessionId: "parent", sourcePath: "/parent", fingerprint: "same" },
+        { sessionId: "child", sourcePath: "/child", fingerprint: "new" },
+      ]),
+    });
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    setWorkerData({
+      sourceSync: true,
+      previousSessions: [parent, makeSession("child")],
+      meta: {
+        parent: { id: "parent", sourcePath: "/parent", sourceFingerprint: "same" },
+        child: { id: "child", sourcePath: "/child", sourceFingerprint: "old" },
+      },
+    });
+
+    await runWorker();
+
+    expect(expandChangedSessionIds).toHaveBeenCalledWith(
+      ["child"],
+      expect.arrayContaining([expect.objectContaining({ sessionId: "parent" })]),
+    );
+    expect(scanSessionSource).toHaveBeenCalledWith("/child");
+    expect(scanSessionSource).toHaveBeenCalledWith("/parent");
   });
 
   it("resumes backfill finalization after the durable cursor", async () => {
@@ -345,13 +378,12 @@ describe("scan refresh worker entry", () => {
     );
   });
 
-  it("preserves cached sessions outside a windowed full rescan", async () => {
+  it("preserves cached sessions outside a windowed sync", async () => {
     const old = makeSession("old", { time_updated: 1 });
     const recent = makeSession("recent", { time_updated: 10, title: "new" });
-    const scan = vi.fn(() => [recent]);
+    const scanSessionSource = vi.fn(() => recent);
     const agent = makeAgent({
-      scan,
-      shouldRescanAllSourcesOnChange: vi.fn(() => true),
+      scanSessionSource,
       listSessionSources: vi.fn(() => [
         { sessionId: "recent", sourcePath: "/recent", fingerprint: "new" },
       ]),
@@ -379,9 +411,7 @@ describe("scan refresh worker entry", () => {
 
     await runWorker();
 
-    expect(scan).toHaveBeenCalledWith(
-      expect.objectContaining({ from: 5, onProgress: expect.any(Function) }),
-    );
+    expect(scanSessionSource).toHaveBeenCalledWith("/recent");
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({
         type: "done",

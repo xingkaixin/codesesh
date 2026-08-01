@@ -102,27 +102,6 @@ function hasStaleSmartTags(session: SessionHead): boolean {
   );
 }
 
-function preserveCachedSmartTags(
-  scannedSessions: SessionHead[],
-  cachedSessions: SessionHead[],
-  changedIds: string[],
-): SessionHead[] {
-  const changedIdSet = new Set(changedIds);
-  const cachedById = new Map(cachedSessions.map((session) => [session.id, session]));
-
-  return scannedSessions.map((session) => {
-    const cached = cachedById.get(session.id);
-    if (!cached || changedIdSet.has(session.id) || !Array.isArray(cached.smart_tags)) {
-      return session;
-    }
-    return {
-      ...session,
-      smart_tags: cached.smart_tags,
-      smart_tags_source_updated_at: cached.smart_tags_source_updated_at,
-    };
-  });
-}
-
 interface BackfillSelection {
   orderedSessions: SessionHead[];
   finalizeSessionIds: ReadonlySet<string>;
@@ -158,8 +137,9 @@ function selectBackfillSessions(
 /**
  * Source-level incremental sync. The change decision itself lives in
  * diffSessionSources so this path and FileSystemSessionSource.checkForChanges
- * cannot drift; only the re-parse and merge are local, because the worker holds
- * cached meta received over workerData rather than the agent's live metaMap.
+ * cannot drift; only the expansion, re-parse and merge are local, because the
+ * worker holds cached meta received over workerData rather than the agent's
+ * live metaMap.
  */
 function syncAgentSources(
   agent: FileSystemSessionSource,
@@ -173,7 +153,6 @@ function syncAgentSources(
   finalizeSessionIds: string[];
   sourceCount: number;
   removedCount: number;
-  fullRescan: boolean;
 } {
   const sessionMap = new Map(cachedSessions.map((session) => [session.id, session]));
   const sourceRefs = agent.listSessionSources(windowOptions);
@@ -184,56 +163,38 @@ function syncAgentSources(
     cachedMeta,
     windowOptions,
   );
+  // Expansion pulls in sessions whose derived data depends on the changed ones
+  // (e.g. parents of changed subagent files), so a targeted re-parse stays
+  // correct without rescanning the whole directory.
+  const rescanIds = agent.expandChangedSessionIds?.(
+    [...new Set([...changedIds, ...removedIds])],
+    sourceRefs,
+  ) ?? [...new Set([...changedIds, ...removedIds])];
   const isWindowed = windowOptions?.from != null || windowOptions?.to != null;
   const finalizeSessionIds = isWindowed
-    ? [...changedIds]
+    ? [...rescanIds]
     : sourceRefs.map((source) => source.sessionId);
 
-  if (
-    agent.shouldRescanAllSourcesOnChange?.() &&
-    (changedIds.length > 0 || removedIds.length > 0)
-  ) {
-    const scannedSessions = agent.scan({ ...windowOptions, onProgress });
-    const mergedScannedSessions = preserveCachedSmartTags(
-      scannedSessions,
-      cachedSessions,
-      changedIds,
-    );
-    const enumeratedIds = new Set(sourceRefs.map((source) => source.sessionId));
-    const removedIdSet = new Set(removedIds);
-    const retainedSessions = cachedSessions.filter(
-      (session) => !enumeratedIds.has(session.id) && !removedIdSet.has(session.id),
-    );
-    return {
-      sessions: sortSessions([...retainedSessions, ...mergedScannedSessions]),
-      changedIds: [...new Set([...changedIds, ...removedIds])],
-      finalizeSessionIds,
-      sourceCount: sourceRefs.length,
-      removedCount: removedIds.length,
-      fullRescan: true,
-    };
-  }
-
-  for (const sessionId of changedIds) {
+  rescanIds.forEach((sessionId, index) => {
     const source = sourceById.get(sessionId);
-    if (!source) continue;
+    if (!source) return;
     const next = agent.scanSessionSource(source.sourcePath);
     if (next) {
       sessionMap.set(next.id, next);
     } else {
       sessionMap.delete(sessionId);
     }
-  }
+    onProgress?.({ total: rescanIds.length, processed: index + 1, sessions: sessionMap.size });
+  });
 
   for (const sessionId of removedIds) sessionMap.delete(sessionId);
 
   return {
     sessions: [...sessionMap.values()],
-    changedIds: [...new Set([...changedIds, ...removedIds])],
+    changedIds: rescanIds,
     finalizeSessionIds,
     sourceCount: sourceRefs.length,
     removedCount: removedIds.length,
-    fullRescan: false,
   };
 }
 
@@ -376,7 +337,6 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
     | {
         sourceCount: number;
         removedCount: number;
-        fullRescan: boolean;
       }
     | undefined;
 
@@ -438,7 +398,6 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
     changed_ids: changedIds?.length ?? 0,
     source_count: sourceSyncDetails?.sourceCount,
     removed_count: sourceSyncDetails?.removedCount,
-    full_rescan: sourceSyncDetails?.fullRescan,
     duration_ms: Math.round(scanDuration),
   });
 
