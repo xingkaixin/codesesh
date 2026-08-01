@@ -2,9 +2,7 @@
 import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findAgent, type AgentCatalog } from "../lib/agents";
-import { getSessionRoutePath, sessionRoutePath } from "../lib/session-indexes";
 import type { SessionDetail, SessionHead } from "../lib/api";
-import { Link } from "react-router-dom";
 import { MarkdownContent } from "./MarkdownContent";
 import {
   isRenderProfilerEnabled,
@@ -176,7 +174,6 @@ export function SessionDetail({
         data-testid="session-detail"
         className="mx-auto max-w-4xl rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]"
       >
-        <SessionRelationPanel session={session} childSessions={childSessions} />
         当前会话暂无可展示的消息内容。
       </div>
     );
@@ -187,7 +184,6 @@ export function SessionDetail({
       data-testid="session-detail"
       className="mx-auto w-full max-w-[1440px] space-y-8 px-2 md:px-4"
     >
-      <SessionRelationPanel session={session} childSessions={childSessions} />
       <SessionSummarySection
         summary={typeof session.summary_files === "string" ? session.summary_files : undefined}
       />
@@ -263,49 +259,6 @@ export function SessionDetail({
       </div>
       <DeferredInteractiveReceipt session={session} toc={toc} />
     </div>
-  );
-}
-
-function SessionRelationPanel({
-  session,
-  childSessions,
-}: {
-  session: SessionDetail;
-  childSessions: SessionHead[];
-}) {
-  const parent = session.parent_reference;
-  if (!parent && childSessions.length === 0) return null;
-
-  return (
-    <nav
-      aria-label="Session relationships"
-      className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-4 py-3"
-    >
-      {parent ? (
-        <Link
-          to={sessionRoutePath(parent)}
-          className="console-mono text-xs text-[var(--console-accent)] underline-offset-2 hover:underline"
-        >
-          ← 返回主会话
-        </Link>
-      ) : null}
-      {childSessions.length > 0 ? (
-        <div className={parent ? "mt-2" : undefined}>
-          <span className="console-mono mr-2 text-[11px] text-[var(--console-muted)]">子会话</span>
-          <span className="inline-flex flex-wrap gap-1.5">
-            {childSessions.map((child) => (
-              <Link
-                key={getSessionRoutePath(child)}
-                to={getSessionRoutePath(child)}
-                className="console-mono rounded-sm border border-[var(--console-border)] px-1.5 py-0.5 text-[11px] text-[var(--console-text)] hover:bg-[var(--console-surface-muted)]"
-              >
-                {child.title || child.id}
-              </Link>
-            ))}
-          </span>
-        </div>
-      ) : null}
-    </nav>
   );
 }
 
