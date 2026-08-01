@@ -39,6 +39,7 @@ import type * as Api from "../../lib/api";
 import type { AgentCatalog } from "../../lib/agents";
 import type { ViewState } from "../../lib/view-state";
 import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
+import { getSessionRouteKey } from "../../lib/session-indexes";
 
 interface SessionDetailModel {
   session: Api.SessionDetail | null;
@@ -84,6 +85,7 @@ interface AppRouteContentProps {
   agentNameMap: ReadonlyMap<string, string>;
   projects: ApiProjectGroup[];
   landingSessions: LandingSession[];
+  sessions?: SessionHead[];
   sessionsByAgent: Map<string, LandingSession[]>;
   activeProject: ApiProjectGroup | null;
   activeProjectSessions: LandingSession[];
@@ -104,6 +106,7 @@ export function AppRouteContent({
   agentNameMap,
   projects,
   landingSessions,
+  sessions = [],
   sessionsByAgent,
   activeProject,
   activeProjectSessions,
@@ -246,20 +249,30 @@ export function AppRouteContent({
         />
       );
     }
+    const currentSession = sessionDetail.session;
+    const childSessions = sessions.filter(
+      (candidate) =>
+        candidate.parent_reference &&
+        getSessionRouteKey(
+          candidate.parent_reference.agentName,
+          candidate.parent_reference.sessionId,
+        ) === getSessionRouteKey(currentSession.reference.agentName, currentSession.id),
+    );
     return (
       <RenderProfiler
         id="SessionDetail"
         detail={{
-          messages: sessionDetail.session.messages.length,
-          session: sessionDetail.session.id,
+          messages: currentSession.messages.length,
+          session: currentSession.id,
         }}
       >
         <LazySurface>
           <SessionDetail
-            key={`${sessionDetail.session.reference.agentName}/${sessionDetail.session.reference.sessionId}`}
-            session={sessionDetail.session}
+            key={`${currentSession.reference.agentName}/${currentSession.reference.sessionId}`}
+            session={currentSession}
             agentCatalog={agentCatalog}
             highlightQuery={detailHighlightQuery}
+            childSessions={childSessions}
           />
         </LazySurface>
       </RenderProfiler>

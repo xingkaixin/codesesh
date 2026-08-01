@@ -177,7 +177,7 @@ vi.mock("../../agents/index.js", () => ({
   BaseAgent: class {},
 }));
 
-import { finalizeAgentScan, scanSessions } from "../scanner.js";
+import { ensureSessionTagsSync, finalizeAgentScan, scanSessions } from "../scanner.js";
 import { createRegisteredAgents } from "../../agents/index.js";
 import {
   loadCachedSessions,
@@ -234,6 +234,30 @@ function createTestAgent(overrides: {
   }
   return agent as BaseAgent;
 }
+
+describe("ensureSessionTagsSync", () => {
+  it("separates cache hits, source reads, and tag classification timing", () => {
+    const cached = makeSession("cached", {
+      smart_tags: [],
+      smart_tags_source_updated_at: 1000,
+    });
+    const stale = makeSession("stale", { time_updated: 2000 });
+    const agent = createTestAgent({ name: "test", available: true, sessions: [cached, stale] });
+
+    const result = ensureSessionTagsSync(agent, [cached, stale]);
+
+    expect(result.timing).toMatchObject({
+      sessions: 2,
+      cacheHits: 1,
+      staleSessions: 1,
+      failedSessions: 0,
+      getSessionDataCalls: 1,
+      classifySessionTagsCalls: 1,
+    });
+    expect(result.timing.getSessionDataMs).toBeGreaterThanOrEqual(0);
+    expect(result.timing.classifySessionTagsMs).toBeGreaterThanOrEqual(0);
+  });
+});
 
 describe("finalizeAgentScan", () => {
   it("finalizes cache-only sessions without classifying or writing", async () => {

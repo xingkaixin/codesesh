@@ -79,6 +79,33 @@ describe("attachProjectMetrics", () => {
     expect(project?.tokens).toBe(999);
   });
 
+  it("does not add child rows to parent project metrics", () => {
+    const [project] = attachProjectMetrics(
+      [makeGroup("repo-a")],
+      [
+        makeSession("parent", {
+          stats: {
+            message_count: 1,
+            total_input_tokens: 50,
+            total_output_tokens: 0,
+            total_cost: 0,
+          },
+        }),
+        makeSession("child", {
+          parent_reference: { agentName: "claudecode", sessionId: "parent" },
+          stats: {
+            message_count: 1,
+            total_input_tokens: 20,
+            total_output_tokens: 0,
+            total_cost: 0,
+          },
+        }),
+      ],
+    );
+
+    expect(project).toMatchObject({ messages: 1, tokens: 50 });
+  });
+
   it("marks the project cost estimated when any session's cost is estimated", () => {
     const recorded = makeSession("a", {
       stats: {

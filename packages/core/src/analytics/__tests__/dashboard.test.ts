@@ -197,6 +197,37 @@ describe("buildDashboard", () => {
     expect(result.totals.sessions).toBe(1);
   });
 
+  it("does not double-count child tokens already folded into the parent", () => {
+    const result = buildDashboard(
+      [
+        makeSession("parent", {
+          time_created: 1000,
+          time_updated: 1000,
+          stats: {
+            message_count: 1,
+            total_input_tokens: 50,
+            total_output_tokens: 0,
+            total_cost: 0,
+          },
+        }),
+        makeSession("child", {
+          time_created: 1,
+          time_updated: 1,
+          parent_reference: { agentName: "claudecode", sessionId: "parent" },
+          stats: {
+            message_count: 1,
+            total_input_tokens: 20,
+            total_output_tokens: 0,
+            total_cost: 0,
+          },
+        }),
+      ],
+      opts({ from: 900, to: 1100 }),
+    );
+
+    expect(result.totals).toMatchObject({ sessions: 1, tokens: 50 });
+  });
+
   it("buckets token activity including cache split", () => {
     const ts = startOfCalendarDay(Date.now());
     const result = buildDashboard(

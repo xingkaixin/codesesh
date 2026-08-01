@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { BaseAgent, SessionHead } from "@codesesh/core";
+import type { AgentScanProgress, BaseAgent, SessionHead } from "@codesesh/core";
 import { finalizeSessions } from "./scan-refresh-worker.js";
 
 // Isolated temp directory so computeIdentity resolves a stable "path" identity
@@ -65,6 +65,71 @@ describe("finalizeSessions", () => {
     expect(getSessionData).toHaveBeenCalledWith("s1");
     expect(result?.smart_tags).toContain("bugfix");
     expect(result?.smart_tags_source_updated_at).toBe(1000);
+  });
+
+  it("reports source-read and tag-classification timing separately", () => {
+    const agent = makeAgent(
+      () =>
+        ({
+          time_created: 1000,
+          time_updated: 1000,
+          messages: [],
+        }) as never,
+    );
+    const timings: unknown[] = [];
+
+    finalizeSessions(agent, [makeSession("s1")], undefined, undefined, undefined, (timing) =>
+      timings.push(timing),
+    );
+
+    expect(timings).toHaveLength(1);
+    expect(timings[0]).toMatchObject({
+      sessions: 1,
+      staleSessions: 1,
+      getSessionDataCalls: 1,
+      classifySessionTagsCalls: 1,
+    });
+  });
+
+  it("reports progress while finalizing settled sessions", () => {
+    const agent = makeAgent(() => ({ messages: [] }) as never);
+    const progress: AgentScanProgress[] = [];
+
+    finalizeSessions(agent, [makeSession("s1")], (update) => progress.push(update));
+
+    expect(progress).toEqual([
+      { phase: "finalizing", total: 1, processed: 0, sessions: 1 },
+      { phase: "finalizing", total: 1, processed: 1, sessions: 1 },
+    ]);
+  });
+
+  it("limits finalization to the selected session ids", () => {
+    const getSessionData = vi.fn(() => ({
+      messages: [],
+    })) as unknown as BaseAgent["getSessionData"];
+    const agent = makeAgent(getSessionData);
+    const selected = makeSession("selected");
+    const retained = makeSession("retained");
+
+    finalizeSessions(agent, [selected, retained], undefined, undefined, new Set([selected.id]));
+
+    expect(getSessionData).toHaveBeenCalledTimes(1);
+    expect(getSessionData).toHaveBeenCalledWith(selected.id);
+  });
+
+  it("checkpoints settled sessions from newest to oldest", () => {
+    const agent = makeAgent(() => ({ messages: [] }) as never);
+    const newest = makeSession("newest", { time_updated: 3_000 });
+    const oldest = makeSession("oldest", { time_updated: 2_000 });
+    const checkpoints: string[][] = [];
+
+    finalizeSessions(agent, [oldest, newest], undefined, (checkpoint) => {
+      if (checkpoint.stage === "finalizing") {
+        checkpoints.push(checkpoint.changes.map(({ session }) => session.id));
+      }
+    });
+
+    expect(checkpoints).toEqual([["newest", "oldest"]]);
   });
 
   it("does not recompute tags for a session whose tags are already current", () => {

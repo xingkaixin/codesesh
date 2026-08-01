@@ -31,7 +31,7 @@ import {
   type SessionRow,
 } from "./messages.js";
 
-const CACHE_SCHEMA_VERSION = 17;
+const CACHE_SCHEMA_VERSION = 18;
 interface MessageToolBackfillRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
@@ -188,6 +188,8 @@ function createSessionTables(db: SQLiteDatabase): void {
       title TEXT NOT NULL,
       source_path TEXT,
       directory TEXT NOT NULL,
+      parent_agent_name TEXT,
+      parent_session_id TEXT,
       project_identity_kind TEXT NOT NULL,
       project_identity_key TEXT NOT NULL,
       project_display_name TEXT NOT NULL,
@@ -214,6 +216,9 @@ function createSessionTables(db: SQLiteDatabase): void {
 
     CREATE INDEX IF NOT EXISTS idx_sessions_project
       ON sessions(project_identity_kind, project_identity_key, activity_time);
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_parent
+      ON sessions(parent_agent_name, parent_session_id);
 
     CREATE TABLE IF NOT EXISTS messages (
       agent_name TEXT NOT NULL,
@@ -530,6 +535,9 @@ function createProjectGroupsView(db: SQLiteDatabase): void {
     return;
   }
 
+  const hasParentReference =
+    columnExists(db, "sessions", "parent_agent_name") &&
+    columnExists(db, "sessions", "parent_session_id");
   db.exec(`
     CREATE VIEW IF NOT EXISTS project_groups_v AS
       SELECT
@@ -540,6 +548,7 @@ function createProjectGroupsView(db: SQLiteDatabase): void {
         COUNT(*) AS session_count,
         MAX(activity_time) AS last_activity
       FROM sessions
+      ${hasParentReference ? "WHERE parent_agent_name IS NULL OR parent_session_id IS NULL" : ""}
       GROUP BY project_identity_kind, project_identity_key;
   `);
 }
@@ -1026,6 +1035,21 @@ function addMessagePartsFormatVersion(db: SQLiteDatabase): void {
   db.exec("ALTER TABLE messages ADD COLUMN parts_format_version INTEGER NOT NULL DEFAULT 0");
 }
 
+function addSessionParentReference(db: SQLiteDatabase): void {
+  if (!tableExists(db, "sessions")) return;
+
+  if (!columnExists(db, "sessions", "parent_agent_name")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN parent_agent_name TEXT");
+  }
+  if (!columnExists(db, "sessions", "parent_session_id")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN parent_session_id TEXT");
+  }
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parent_agent_name, parent_session_id)",
+  );
+  recreateProjectGroupsView(db);
+}
+
 const CODEX_EXEC_DECODE_MIGRATION_KEY = "codex_exec_decode_migrated_v3";
 
 /**
@@ -1058,13 +1082,12 @@ function migrateCodexExecDecode(db: SQLiteDatabase): void {
 }
 
 const OPENCODE_SUBAGENT_FOLD_KEY = "opencode_subagent_fold_v1";
+const SUBAGENT_TREE_KEY = "subagent_tree_v1";
 
 /**
- * One-time: drop cached OpenCode-family (zcode/opencode) heads so the next scan
- * re-parses them with subagent_child sessions filtered out and their tokens
- * folded into the parent. `loadCachedSessions` returns null when agent_cache has
- * no row for an agent, forcing a full rescan; the now-orphaned child session
- * rows are removed by `saveCachedSessions` once the rescan publishes its set.
+ * One-time: invalidate cached OpenCode-family (zcode/opencode) heads after the
+ * subagent relation format changed. The next scan rebuilds parent references
+ * and folded token totals from the source database.
  */
 function migrateOpenCodeSubagentFold(db: SQLiteDatabase): void {
   if (!tableExists(db, "cache_meta")) return;
@@ -1079,6 +1102,19 @@ function migrateOpenCodeSubagentFold(db: SQLiteDatabase): void {
   db.prepare(
     "INSERT INTO cache_meta(key, value) VALUES (?, '1') ON CONFLICT(key) DO UPDATE SET value = '1'",
   ).run(OPENCODE_SUBAGENT_FOLD_KEY);
+}
+
+function migrateSubagentTree(db: SQLiteDatabase): void {
+  if (!tableExists(db, "cache_meta")) return;
+  const done = db.prepare("SELECT value FROM cache_meta WHERE key = ?").get(SUBAGENT_TREE_KEY);
+  if (done) return;
+
+  if (tableExists(db, "agent_cache")) {
+    db.prepare("DELETE FROM agent_cache WHERE agent_name IN ('codex', 'zcode', 'opencode')").run();
+  }
+  db.prepare(
+    "INSERT INTO cache_meta(key, value) VALUES (?, '1') ON CONFLICT(key) DO UPDATE SET value = '1'",
+  ).run(SUBAGENT_TREE_KEY);
 }
 
 function rebuildSearchIndex(db: SQLiteDatabase): void {
@@ -1224,6 +1260,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
     setCacheSchemaVersion(db);
     migrateCodexExecDecode(db);
     migrateOpenCodeSubagentFold(db);
+    migrateSubagentTree(db);
     return;
   }
 
@@ -1256,7 +1293,13 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
           invalidateSearchContentHashes(db);
         },
       },
-      { version: 7, migrate: backfillStructuredSessions },
+      {
+        version: 7,
+        migrate(db) {
+          addSessionParentReference(db);
+          backfillStructuredSessions(db);
+        },
+      },
       { version: 8, migrate: backfillFileActivity },
       {
         version: 9,
@@ -1288,6 +1331,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 14, migrate: addIndexedMessageCount },
       { version: 15, destructive: true, migrate: compactSessionDocuments },
       { version: 17, migrate: addMessagePartsFormatVersion },
+      { version: 18, migrate: addSessionParentReference },
     ],
   });
 
@@ -1299,4 +1343,5 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
 
   migrateCodexExecDecode(db);
   migrateOpenCodeSubagentFold(db);
+  migrateSubagentTree(db);
 }

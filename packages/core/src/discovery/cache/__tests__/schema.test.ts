@@ -64,7 +64,7 @@ describe("cache schema boundary", () => {
       "indexed_at",
     ]);
     expect(state?.messageColumns).toContain("parts_format_version");
-    expect(state?.version).toBe(17);
+    expect(state?.version).toBe(18);
   });
 
   it("exposes capabilities instead of migration steps", () => {
@@ -140,7 +140,7 @@ describe("cache schema boundary", () => {
       });
 
       expect(migrated).toEqual({
-        version: 17,
+        version: 18,
         partsJson: legacyPartsJson,
         partsFormatVersion: 0,
       });

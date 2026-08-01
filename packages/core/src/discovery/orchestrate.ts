@@ -48,6 +48,8 @@ export function sessionSignature(session: SessionHead): string {
   return JSON.stringify([
     session.title,
     session.directory,
+    session.parent_reference?.agentName ?? null,
+    session.parent_reference?.sessionId ?? null,
     session.time_created,
     session.time_updated ?? session.time_created,
     session.stats.message_count,

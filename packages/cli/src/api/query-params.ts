@@ -6,7 +6,7 @@
 import type { Context } from "hono";
 import type { SessionHead, SmartTag } from "@codesesh/core";
 import {
-  getSessionActivityTime,
+  filterSessionTreeByActivityWindow,
   isProjectIdentityKind,
   type FileActivityKind,
   type ProjectIdentityRef,
@@ -129,11 +129,5 @@ export function filterSessionsByActivityWindow(
   from: number | undefined,
   to: number | undefined,
 ): SessionHead[] {
-  if (from == null && to == null) return sessions;
-  return sessions.filter((session) => {
-    const activity = getSessionActivityTime(session);
-    if (from != null && activity < from) return false;
-    if (to != null && activity > to) return false;
-    return true;
-  });
+  return filterSessionTreeByActivityWindow(sessions, from, to);
 }

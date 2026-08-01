@@ -19,12 +19,11 @@ import { SessionActionsMenu } from "../SessionActionsMenu";
 import { SessionTreeSidebar } from "../SessionTreeSidebar";
 import { Link } from "react-router-dom";
 import { BrowseByToggle } from "./BrowseByToggle";
-import { SidebarFlatSessionList } from "./SidebarFlatSessionList";
 import type { BrowseBy } from "./types";
 
 function agentProgressPercent(status: AgentScanStatus | undefined): number | null {
   if (
-    status?.status !== "scanning" ||
+    (status?.status !== "scanning" && status?.status !== "finalizing") ||
     typeof status.total !== "number" ||
     !Number.isFinite(status.total) ||
     status.total <= 0 ||
@@ -40,12 +39,10 @@ function AgentNavList({
   agents,
   activeAgentKey,
   scanStatus,
-  isScanActive,
 }: {
   agents: AgentInfo[];
   activeAgentKey: string | null;
   scanStatus: ScanStatusEvent | null;
-  isScanActive: boolean;
 }) {
   return (
     <>
@@ -55,13 +52,10 @@ function AgentNavList({
         const agentStatus = scanStatus?.agentStatuses[agent.name];
         const agentProgress = formatAgentScanProgress(scanStatus, agent.name);
         const progressPercent = agentProgressPercent(agentStatus);
-        const disabled = isScanActive && agentProgress !== null;
         const className = `ml-4 flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left motion-hover ${
-          disabled
-            ? "cursor-not-allowed border-transparent text-[var(--console-muted)] opacity-50"
-            : isSelected
-              ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
-              : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+          isSelected
+            ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
+            : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
         }`;
         const content = (
           <>
@@ -74,28 +68,31 @@ function AgentNavList({
               />
             )}
             <span className="console-mono line-clamp-1 flex-1 text-xs">{agent.displayName}</span>
+            {agentProgress ? (
+              <span className="console-mono text-[11px] text-[var(--console-muted)]">
+                {agentProgress}
+              </span>
+            ) : null}
             <span className="console-mono text-[11px] text-[var(--console-muted)]">
-              {agentProgress ?? agent.count}
+              {agent.count}
             </span>
           </>
         );
         return (
           <li key={agent.name}>
-            {disabled ? (
-              <span className={className} title="Available after this agent scan completes">
-                {content}
-              </span>
-            ) : (
-              <Link to={agentRoutePath(key)} className={className}>
-                {content}
-              </Link>
-            )}
+            <Link to={agentRoutePath(key)} className={className}>
+              {content}
+            </Link>
             {agentProgress ? (
               <span
                 className="ml-4 mt-1 block h-1 overflow-hidden rounded-sm bg-[var(--console-surface-muted)]"
                 role="progressbar"
                 aria-label={`${agent.displayName} ${
-                  agentStatus?.status === "indexing" ? "indexing" : "scan"
+                  agentStatus?.status === "indexing"
+                    ? "indexing"
+                    : agentStatus?.status === "finalizing"
+                      ? "finalizing"
+                      : "scan"
                 } progress`}
                 aria-valuemin={progressPercent == null ? undefined : 0}
                 aria-valuemax={progressPercent == null ? undefined : 100}
@@ -270,7 +267,6 @@ export function AppSidebar({
                 agents={agents}
                 activeAgentKey={activeAgentKey}
                 scanStatus={scanStatus}
-                isScanActive={isScanActive}
               />
             ) : (
               <ProjectNavList
@@ -377,24 +373,15 @@ export function AppSidebar({
             <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
               {scanStatus?.active ? "Scanning sessions..." : "No sessions yet"}
             </span>
-          ) : browseBy === "projects" ? (
-            <SidebarFlatSessionList
-              sessions={sidebarSessions}
-              agentCatalog={agentCatalog}
-              activeSessionReference={activeSessionReference}
-              selectedSessionReference={selectedSidebarSessionReference}
-              bookmarkedSessionReferences={bookmarkedSidebarSessionReferences}
-              onSelectSession={onSelectFlatSidebarSession}
-              onToggleBookmark={onToggleSidebarSessionBookmark}
-              onRenameSession={onRenameSession}
-            />
           ) : (
             <RenderProfiler id="SessionTreeSidebar" detail={{ sessions: sidebarSessions.length }}>
               <SessionTreeSidebar
                 sessions={sidebarSessions}
                 activeSessionReference={activeSessionReference}
                 selectedSessionReference={selectedSidebarSessionReference}
-                onSelectSession={onSelectTreeSidebarSession}
+                onSelectSession={
+                  browseBy === "projects" ? onSelectFlatSidebarSession : onSelectTreeSidebarSession
+                }
                 bookmarkedSessionReferences={bookmarkedSidebarSessionReferences}
                 onToggleBookmark={onToggleSidebarSessionBookmark}
                 onRenameSession={onRenameSession}

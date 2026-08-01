@@ -121,6 +121,9 @@ describe("AppSidebar agent counts", () => {
       </MemoryRouter>,
     );
 
+    const codexLink = screen.getByRole("link", { name: /Codex/ });
+    expect(codexLink.textContent).toContain("5");
+    expect(codexLink.textContent).toContain("Indexing");
     expect(screen.getByText("Indexing")).toBeTruthy();
     const indexingProgress = screen.getByRole("progressbar", {
       name: "Codex indexing progress",

@@ -6,6 +6,7 @@
 import type { ProjectGroup, SessionHead } from "../types/index.js";
 import type { ApiProjectAgentStat, ApiProjectGroup } from "../contract/index.js";
 import { getProjectIdentityKey } from "../contract/project-identity.js";
+import { isChildSession } from "../contract/session-tree.js";
 import { getSessionAgentName, getTotalTokens } from "./dashboard.js";
 
 interface ProjectMetrics {
@@ -31,6 +32,7 @@ export function attachProjectMetrics(
   const metrics = new Map<string, ProjectMetrics>();
 
   for (const session of sessions) {
+    if (isChildSession(session)) continue;
     const identity = session.project_identity;
     if (!identity) continue;
 

@@ -51,7 +51,7 @@ export function mergeSessionsUpdatedEvents(
 
 export interface AgentScanStatus {
   agentName: string;
-  status: "pending" | "scanning" | "indexing" | "complete";
+  status: "pending" | "scanning" | "finalizing" | "indexing" | "complete";
   total?: number;
   processed?: number;
   sessions?: number;
@@ -65,10 +65,18 @@ export interface AgentScanStatus {
  * startup only syncs the display window, so a low-priority background pass
  * (capped at one agent at a time) periodically re-checks the rest of history.
  */
+export interface BackfillProgress {
+  phase?: "scanning" | "finalizing" | "indexing";
+  total?: number;
+  processed?: number;
+  sessions?: number;
+}
+
 export interface BackfillStatus {
   active: boolean;
   pendingAgents: string[];
   currentAgent?: string;
+  progress?: BackfillProgress;
   completedAgents: string[];
   failedAgents: string[];
 }

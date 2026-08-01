@@ -2,7 +2,7 @@
 import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findAgent, type AgentCatalog } from "../lib/agents";
-import type { SessionDetail } from "../lib/api";
+import type { SessionDetail, SessionHead } from "../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
 import {
   isRenderProfilerEnabled,
@@ -35,6 +35,7 @@ interface SessionDetailProps {
   session: SessionDetail;
   agentCatalog: AgentCatalog;
   highlightQuery?: string;
+  childSessions?: SessionHead[];
 }
 
 // ---------------------------------------------------------------------------
@@ -100,7 +101,12 @@ function measureSessionDetailWork<T>(id: string, compute: () => T): T {
 // SessionDetail (main export)
 // ---------------------------------------------------------------------------
 
-export function SessionDetail({ session, agentCatalog, highlightQuery }: SessionDetailProps) {
+export function SessionDetail({
+  session,
+  agentCatalog,
+  highlightQuery,
+  childSessions = [],
+}: SessionDetailProps) {
   const sessionAgentKey = session.reference.agentName;
   const sessionAgent = findAgent(agentCatalog, sessionAgentKey);
   const displayModel = useMemo(
@@ -130,6 +136,10 @@ export function SessionDetail({ session, agentCatalog, highlightQuery }: Session
     [displayModel, selectedFilters],
   );
   const { messages: filteredMessages, timelineEntries } = selection;
+  const childSessionById = useMemo(
+    () => new Map(childSessions.map((child) => [child.id, child])),
+    [childSessions],
+  );
   const virtualListRef = useRef<MessageListHandle | null>(null);
   const scrollRequestRef = useRef(0);
   const handleJumpToMessageAnchor = useCallback(
@@ -235,6 +245,7 @@ export function SessionDetail({ session, agentCatalog, highlightQuery }: Session
                   agent={sessionAgent}
                   baseDirectory={session.directory}
                   highlightQuery={highlightQuery}
+                  childSessionById={childSessionById}
                   apiRef={virtualListRef}
                 />
               </RenderProfiler>

@@ -1,6 +1,7 @@
 import { availableParallelism } from "node:os";
 import { Worker } from "node:worker_threads";
-import type { SessionHead, SmartTag } from "../types/index.js";
+import type { SessionDetail, SessionHead, SmartTag } from "../types/index.js";
+import { filterSessionTreeByActivityWindow } from "../contract/session-tree.js";
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import { createRegisteredAgents } from "../agents/index.js";
 import { filterSessionsByProjectScope } from "../projects/index.js";
@@ -70,15 +71,7 @@ export function filterSessions(sessions: SessionHead[], options: ScanOptions): S
     result = filterSessionsByProjectScope(result, options.cwd);
   }
 
-  if (options.from != null) {
-    result = result.filter((s) => (s.time_updated ?? s.time_created) >= options.from!);
-  }
-
-  if (options.to != null) {
-    result = result.filter((s) => (s.time_updated ?? s.time_created) <= options.to!);
-  }
-
-  return result;
+  return filterSessionTreeByActivityWindow(result, options.from, options.to);
 }
 
 export interface AgentScanTiming {
@@ -88,6 +81,17 @@ export interface AgentScanTiming {
   identity?: number;
   tags?: number;
   total: number;
+}
+
+export interface SessionTagTiming {
+  sessions: number;
+  cacheHits: number;
+  staleSessions: number;
+  failedSessions: number;
+  getSessionDataCalls: number;
+  getSessionDataMs: number;
+  classifySessionTagsCalls: number;
+  classifySessionTagsMs: number;
 }
 
 interface AgentScanResult {
@@ -155,19 +159,52 @@ function chunkSessions<T>(items: T[], chunkCount: number): T[][] {
 export function ensureSessionTagsSync(
   agent: BaseAgent,
   sessions: SessionHead[],
-): { sessions: SessionHead[]; changed: boolean } {
+  onProgress?: (processed: number, total: number) => void,
+): { sessions: SessionHead[]; changed: boolean; timing: SessionTagTiming } {
   let changed = false;
+  let processed = 0;
+  const total = sessions.length;
+  const timing: SessionTagTiming = {
+    sessions: total,
+    cacheHits: 0,
+    staleSessions: 0,
+    failedSessions: 0,
+    getSessionDataCalls: 0,
+    getSessionDataMs: 0,
+    classifySessionTagsCalls: 0,
+    classifySessionTagsMs: 0,
+  };
 
   const tagged = sessions.map((session) => {
     const sourceUpdatedAt = session.time_updated ?? session.time_created;
     const currentTags = Array.isArray(session.smart_tags) ? session.smart_tags : null;
     if (currentTags && session.smart_tags_source_updated_at === sourceUpdatedAt) {
+      timing.cacheHits += 1;
+      processed += 1;
+      onProgress?.(processed, total);
       return session;
     }
 
+    timing.staleSessions += 1;
     try {
-      const data = agent.getSessionData(session.id);
-      const tags = classifySessionTags(data);
+      timing.getSessionDataCalls += 1;
+      const getSessionDataStartedAt = performance.now();
+      let data: SessionDetail;
+      try {
+        data = agent.getSessionData(session.id);
+      } finally {
+        timing.getSessionDataMs += performance.now() - getSessionDataStartedAt;
+      }
+
+      timing.classifySessionTagsCalls += 1;
+      const classifySessionTagsStartedAt = performance.now();
+      let tags: SmartTag[];
+      try {
+        tags = classifySessionTags(data);
+      } finally {
+        timing.classifySessionTagsMs += performance.now() - classifySessionTagsStartedAt;
+      }
+
       changed = true;
       return {
         ...session,
@@ -175,11 +212,15 @@ export function ensureSessionTagsSync(
         smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
       };
     } catch {
+      timing.failedSessions += 1;
       return session;
+    } finally {
+      processed += 1;
+      onProgress?.(processed, total);
     }
   });
 
-  return { sessions: tagged, changed };
+  return { sessions: tagged, changed, timing };
 }
 
 async function classifySessionTagsInWorker(
@@ -444,6 +485,7 @@ async function scanAgentFull(
       from: options.from,
       to: options.to,
       fast: options.fast,
+      includeRelatedSessions: true,
       onProgress: (progress) => {
         onProgress?.({
           agent: agent.name,

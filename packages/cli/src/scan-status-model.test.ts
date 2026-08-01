@@ -109,6 +109,34 @@ describe("ScanStatusModel", () => {
     expect(model.updateAgent("claude", { processed: 1 })).toBeNull();
   });
 
+  it("reports session finalization separately from source scanning", () => {
+    const model = new ScanStatusModel();
+    model.startBatch(["codex"], "scanning", {});
+    model.beginAgent("codex", 2);
+
+    const status = model.updateAgent("codex", {
+      phase: "finalizing",
+      total: 4,
+      processed: 2,
+      sessions: 2,
+    });
+
+    expect(status).toEqual(
+      expect.objectContaining({
+        phase: "indexing",
+        scanningAgents: ["codex"],
+      }),
+    );
+    expect(status?.agentStatuses.codex).toEqual(
+      expect.objectContaining({
+        status: "finalizing",
+        total: 4,
+        processed: 2,
+        sessions: 2,
+      }),
+    );
+  });
+
   it("completes unseen agents and normalizes unfinished statuses at batch end", () => {
     const model = new ScanStatusModel();
     const unseen = model.finishAgent("codex");
@@ -201,5 +229,23 @@ describe("ScanStatusModel", () => {
       completedAgents: [],
       failedAgents: [],
     });
+  });
+
+  it("keeps backfill progress separate from the main agent statuses", () => {
+    const model = new ScanStatusModel();
+
+    const status = model.updateBackfill({
+      active: true,
+      currentAgent: "codex",
+      progress: { phase: "finalizing", total: 2107, processed: 68, sessions: 2108 },
+    });
+
+    expect(status.backfill.progress).toEqual({
+      phase: "finalizing",
+      total: 2107,
+      processed: 68,
+      sessions: 2108,
+    });
+    expect(status.agentStatuses).toEqual({});
   });
 });

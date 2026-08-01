@@ -31,10 +31,12 @@ export interface AgentScanOptions {
   from?: number;
   to?: number;
   fast?: boolean;
+  includeRelatedSessions?: boolean;
   onProgress?: (progress: AgentScanProgress) => void;
 }
 
 export interface AgentScanProgress {
+  phase?: "scanning" | "finalizing";
   total?: number;
   processed?: number;
   sessions?: number;
@@ -267,6 +269,15 @@ export abstract class FileSystemSessionSource<
   /** 解析单个源并写入 metaMap，返回会话 head（解析失败/不可见返回 null）。 */
   abstract scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null;
 
+  /**
+   * 变更集合扩展：当某些会话变更会影响其他会话的派生数据时
+   * （如 subagent 文件变更需要父会话重新聚合 token 统计），
+   * 子类返回需要一并重解析的会话 ID 集合。默认无关联，原样返回。
+   */
+  expandChangedSessionIds(changedIds: string[], _refs?: SessionSourceRef[]): string[] {
+    return changedIds;
+  }
+
   scan(options?: AgentScanOptions): SessionHead[] {
     const sources = this.listSessionSources(options);
     const sessions: SessionHead[] = [];
@@ -387,11 +398,12 @@ export abstract class FileSystemSessionSource<
     changedIds: string[],
     refs?: SessionSourceRef[],
   ): SessionHead[] {
+    const sources = refs ?? this.listSessionSources();
     const sessionMap = new Map(cachedSessions.map((session) => [session.id, session]));
-    const changedSet = new Set(changedIds);
+    const changedSet = new Set(this.expandChangedSessionIds(changedIds, sources));
     const currentIds = new Set<string>();
 
-    for (const ref of refs ?? this.listSessionSources()) {
+    for (const ref of sources) {
       currentIds.add(ref.sessionId);
       if (!changedSet.has(ref.sessionId)) continue;
       const head = this.scanSessionSource(ref.sourcePath);

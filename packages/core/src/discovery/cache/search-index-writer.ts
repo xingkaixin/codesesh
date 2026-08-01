@@ -61,6 +61,7 @@ function readPendingReindexIds(db: SQLiteDatabase, agentName: string): Set<strin
 type SearchIndexStateRow = IndexedSearchRow & MessageCountRow;
 
 const SEARCH_INDEX_STATE_BATCH_SIZE = 900;
+const SEARCH_INDEX_COMMIT_CHUNK_SIZE = 64;
 
 interface LoadedSearchIndexEntry {
   session: SessionHead;
@@ -387,6 +388,38 @@ export function syncSessionSearchIndex(
       sortIndex: sessionSortIndexMap.get(session.id) ?? 0,
     }));
     let indexed = 0;
+
+    // A large backlog (e.g. the first full-history backfill) takes minutes to
+    // parse; one transaction would roll all of it back on interrupt. Chunked
+    // commits keep the FTS triggers active so every chunk is durable, and a
+    // restarted sync skips already-indexed sessions via their content hashes.
+    if (changes.length > SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
+      runSearchIndexWrite(db, false, () => {
+        indexed += writeSearchIndexRows(db, agentName, toDelete, []);
+      });
+      for (let offset = 0; offset < changes.length; offset += SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
+        const chunk = changes.slice(offset, offset + SEARCH_INDEX_COMMIT_CHUNK_SIZE);
+        runSearchIndexWrite(db, false, () => {
+          indexed += writeSearchIndexRows(
+            db,
+            agentName,
+            [],
+            loadSearchIndexEntries(agentName, chunk, loadSessionData),
+          );
+        });
+      }
+      return {
+        agentName,
+        mode: "incremental",
+        sessions: sessions.length,
+        changed: toUpsert.length,
+        deleted: toDelete.length,
+        indexed,
+        skipped: toUpsert.length - indexed,
+        durationMs: performance.now() - startedAt,
+      };
+    }
+
     const writeRows = () => {
       indexed = writeSearchIndexRows(
         db,

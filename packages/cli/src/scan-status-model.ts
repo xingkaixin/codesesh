@@ -17,6 +17,17 @@ export class ScanStatusModel {
   };
 
   snapshot(): ScanStatusEvent {
+    const backfill = {
+      ...this.status.backfill,
+      pendingAgents: [...this.status.backfill.pendingAgents],
+      completedAgents: [...this.status.backfill.completedAgents],
+      failedAgents: [...this.status.backfill.failedAgents],
+    };
+    if (this.status.backfill.progress) {
+      backfill.progress = { ...this.status.backfill.progress };
+    } else {
+      delete backfill.progress;
+    }
     return {
       type: "scan-status",
       ...this.status,
@@ -29,12 +40,7 @@ export class ScanStatusModel {
           { ...status },
         ]),
       ),
-      backfill: {
-        ...this.status.backfill,
-        pendingAgents: [...this.status.backfill.pendingAgents],
-        completedAgents: [...this.status.backfill.completedAgents],
-        failedAgents: [...this.status.backfill.failedAgents],
-      },
+      backfill,
     };
   }
 
@@ -113,27 +119,45 @@ export class ScanStatusModel {
 
   updateAgent(agentName: string, progress: AgentScanProgress): ScanStatusEvent | null {
     const status = this.status.agentStatuses[agentName];
-    if (!status || status.status !== "scanning") return null;
+    if (
+      !status ||
+      status.status === "pending" ||
+      status.status === "complete" ||
+      (status.status === "indexing" && progress.phase !== "finalizing")
+    ) {
+      return null;
+    }
     const now = Date.now();
+    const nextStatus: "finalizing" | "scanning" =
+      progress.phase === "finalizing" ? "finalizing" : "scanning";
+    const agentStatuses = {
+      ...this.status.agentStatuses,
+      [agentName]: {
+        ...status,
+        status: nextStatus,
+        total: progress.total ?? status.total,
+        processed: progress.processed ?? status.processed,
+        sessions: progress.sessions ?? status.sessions,
+        updatedAt: now,
+      },
+    };
     return this.set({
       ...this.status,
-      agentStatuses: {
-        ...this.status.agentStatuses,
-        [agentName]: {
-          ...status,
-          total: progress.total ?? status.total,
-          processed: progress.processed ?? status.processed,
-          sessions: progress.sessions ?? status.sessions,
-          updatedAt: now,
-        },
-      },
+      phase: this.activePhase(this.status.pendingAgents, this.status.scanningAgents, agentStatuses),
+      agentStatuses,
       updatedAt: now,
     });
   }
 
   indexAgent(agentName: string): ScanStatusEvent | null {
     const status = this.status.agentStatuses[agentName];
-    if (!this.status.active || !status || status.status !== "scanning") return null;
+    if (
+      !this.status.active ||
+      !status ||
+      (status.status !== "scanning" && status.status !== "finalizing")
+    ) {
+      return null;
+    }
 
     const now = Date.now();
     const agentStatuses = {
@@ -218,7 +242,10 @@ export class ScanStatusModel {
     if (
       pendingAgents.length === 0 &&
       scanningAgents.length > 0 &&
-      scanningAgents.every((agentName) => agentStatuses[agentName]?.status === "indexing")
+      scanningAgents.every((agentName) => {
+        const status = agentStatuses[agentName]?.status;
+        return status === "finalizing" || status === "indexing";
+      })
     ) {
       return "indexing";
     }

@@ -33,6 +33,7 @@ export {
   clearCache,
   computeSessionDiff,
   ensureSessionTagsSync,
+  getAgentFullSyncCursor,
   getAgentLastFullSyncAt,
   getCachePath,
   isAgentCacheInitialized,
@@ -40,6 +41,8 @@ export {
   listFileActivity,
   loadCachedSessions,
   markAgentCacheInitialized,
+  markAgentFullSyncProgress,
+  markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
   materializeSessionDetailResponse,
   mergeSearchQueryOptions,
@@ -52,6 +55,11 @@ export {
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
 } from "./discovery/index.js";
+export {
+  filterSessionTreeByActivityWindow,
+  isChildSession,
+  getRootSessions,
+} from "./contract/index.js";
 export type {
   FileActivityResult,
   LiveSnapshot,
@@ -60,6 +68,7 @@ export type {
   SearchIndexSyncResult,
   SearchOptions,
   SessionHeadChange,
+  SessionTagTiming,
 } from "./discovery/index.js";
 export {
   createProjectScopeMatcher,

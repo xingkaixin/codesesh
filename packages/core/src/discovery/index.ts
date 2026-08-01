@@ -1,6 +1,6 @@
 export { firstExisting, readEnvPath, resolveDataHome, resolveHomePath } from "./paths.js";
 export { ensureSessionTagsSync, filterSessions, scanSessions } from "./scanner.js";
-export type { LiveSnapshot, ScanOptions } from "./scanner.js";
+export type { LiveSnapshot, ScanOptions, SessionTagTiming } from "./scanner.js";
 export {
   materializeSessionDetail,
   materializeSessionDetailResponse,
@@ -18,6 +18,7 @@ export {
 export { mergeSortedSessions } from "../contract/session-index.js";
 export {
   clearCache,
+  getAgentFullSyncCursor,
   getAgentLastFullSyncAt,
   getCacheInfo,
   isAgentCacheInitialized,
@@ -25,6 +26,8 @@ export {
   loadCachedSessionDataEntry,
   loadCachedSessions,
   markAgentCacheInitialized,
+  markAgentFullSyncProgress,
+  markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
   saveCachedSessionChanges,
   saveCachedSessions,

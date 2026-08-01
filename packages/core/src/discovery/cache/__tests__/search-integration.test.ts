@@ -528,7 +528,7 @@ describe("searchSessions", () => {
     ).toBe(false);
   });
 
-  it("bulk sync rebuilds FTS for large initial indexes", () => {
+  it("keeps FTS searchable through a chunked large initial index", () => {
     const sessions = Array.from({ length: 101 }, (_, index) => {
       const session = makeSession(`bulk-${index}`);
       if (index === 42) {
@@ -578,15 +578,16 @@ describe("searchSessions", () => {
       ],
     }));
 
+    // Large backlogs commit in durable chunks with FTS triggers active
+    // instead of one bulk rebuild transaction.
     expect(result).toMatchObject({
-      mode: "bulk",
+      mode: "incremental",
       sessions: 101,
       changed: 101,
       deleted: 0,
       indexed: 101,
       skipped: 0,
     });
-    expect(result?.rebuildDurationMs).toBeGreaterThanOrEqual(0);
 
     const allResults = searchSessions("needle");
     expect(allResults).toHaveLength(2);
@@ -678,7 +679,7 @@ describe("searchSessions", () => {
     } finally {
       migratedDb.close();
     }
-    expect(getUserVersion(getCachePath())).toBe(17);
+    expect(getUserVersion(getCachePath())).toBe(18);
   });
 
   it("keeps small incremental updates searchable immediately", () => {
@@ -1466,7 +1467,7 @@ describe("searchSessions", () => {
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(17);
+    expect(getUserVersion(getCachePath())).toBe(18);
   });
 
   it("refreshes cached project identities when migrating to schema version 12", () => {

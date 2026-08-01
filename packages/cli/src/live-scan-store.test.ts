@@ -34,6 +34,7 @@ const fsWatch = vi.hoisted(() => ({
 const core = vi.hoisted(() => ({
   createRegisteredAgents: vi.fn(),
   filterSessions: vi.fn((sessions: SessionHead[], _options: ScanOptions) => sessions),
+  getAgentFullSyncCursor: vi.fn(() => null as string | null),
   getAgentLastFullSyncAt: vi.fn(),
   resolveAgentRoots: vi.fn(
     (): AgentRoots => ({
@@ -49,6 +50,8 @@ const core = vi.hoisted(() => ({
   isAgentCacheInitialized: vi.fn(),
   loadCachedSessions: vi.fn(),
   markAgentCacheInitialized: vi.fn(),
+  markAgentFullSyncProgress: vi.fn(),
+  markAgentFullSyncStarted: vi.fn(),
   markAgentFullSyncCompleted: vi.fn(),
   scanSessions: vi.fn(),
   saveCachedSessions: vi.fn(),
@@ -302,10 +305,13 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     ...actual,
     createRegisteredAgents: core.createRegisteredAgents,
     filterSessions: core.filterSessions,
+    getAgentFullSyncCursor: core.getAgentFullSyncCursor,
     getAgentLastFullSyncAt: core.getAgentLastFullSyncAt,
     isAgentCacheInitialized: core.isAgentCacheInitialized,
     loadCachedSessions: core.loadCachedSessions,
     markAgentCacheInitialized: core.markAgentCacheInitialized,
+    markAgentFullSyncProgress: core.markAgentFullSyncProgress,
+    markAgentFullSyncStarted: core.markAgentFullSyncStarted,
     markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
     resolveAgentRoots: core.resolveAgentRoots,
     scanSessions: core.scanSessions,
@@ -518,6 +524,7 @@ describe("LiveScanStore", () => {
     core.isAgentCacheInitialized.mockReturnValue(true);
     core.loadCachedSessions.mockReturnValue(null);
     core.markAgentCacheInitialized.mockReset();
+    core.markAgentFullSyncStarted.mockReset();
     core.resolveAgentRoots.mockReturnValue({
       claudecode: "/tmp/claude",
       codex: "/tmp/codex",
@@ -804,6 +811,46 @@ describe("LiveScanStore", () => {
     );
     expect(scanWorkers).toHaveLength(1);
     expect(scanWorkers[0]?.postMessage).toHaveBeenCalledTimes(1);
+    expect(core.markAgentFullSyncStarted).toHaveBeenCalledWith("codex");
+  });
+
+  it("queues a backfill when a recent full-sync marker has a truncated file cache", async () => {
+    const cached = makeSession("cached");
+    const codex = makeFileSystemAgent("codex", {
+      listSessionSources: vi.fn(() =>
+        ["cached", "missing-1", "missing-2"].map((sessionId) => ({
+          sessionId,
+          sourcePath: `/tmp/${sessionId}`,
+          fingerprint: sessionId,
+        })),
+      ),
+    });
+    core.getAgentLastFullSyncAt.mockReturnValue(Date.now());
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [cached],
+      meta: {},
+      timestamp: Date.now(),
+    });
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [cached],
+      byAgent: { codex: [cached] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore({
+      watchEnabled: false,
+      startupScanOptions: { from: 3000 },
+      deferInitialRefresh: true,
+    });
+    await store.initialize();
+
+    const needsBackfill = (
+      syncEngineOf(store) as unknown as {
+        needsBackfill: (agent: typeof codex) => boolean;
+      }
+    ).needsBackfill.bind(syncEngineOf(store));
+    expect(needsBackfill(codex)).toBe(true);
   });
 
   it("serializes refresh behind an in-flight backfill for the same agent", async () => {

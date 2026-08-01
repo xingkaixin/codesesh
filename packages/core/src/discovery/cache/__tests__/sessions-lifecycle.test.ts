@@ -5,11 +5,14 @@ import Database from "better-sqlite3";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearCache,
+  getAgentFullSyncCursor,
   getAgentLastFullSyncAt,
   getCacheInfo,
   isAgentCacheInitialized,
   loadCachedSessions,
   markAgentCacheInitialized,
+  markAgentFullSyncProgress,
+  markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
   saveCachedSessionChanges,
   saveCachedSessions,
@@ -193,7 +196,7 @@ describe("withCacheDb schema memo", () => {
   it("runs ensureSchema on the first open but skips it on later opens for the same path", () => {
     withCacheDb(() => undefined);
     expect(getSchemaEnsuredPath()).toBe(getCachePath());
-    expect(getUserVersion(getCachePath())).toBe(17);
+    expect(getUserVersion(getCachePath())).toBe(18);
 
     const db = new Database(getCachePath());
     db.pragma("user_version = 14");
@@ -204,7 +207,7 @@ describe("withCacheDb schema memo", () => {
 
     setSchemaEnsuredPath(null);
     withCacheDb(() => undefined);
-    expect(getUserVersion(getCachePath())).toBe(17);
+    expect(getUserVersion(getCachePath())).toBe(18);
   });
 });
 
@@ -212,7 +215,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(17);
+    expect(getUserVersion(getCachePath())).toBe(18);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -400,7 +403,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(17);
+    expect(getUserVersion(getCachePath())).toBe(18);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
@@ -537,6 +540,26 @@ describe("cache initialization tracking", () => {
     markAgentFullSyncCompleted("claudecode");
 
     expect(getAgentLastFullSyncAt("claudecode")).toBe(now);
+  });
+
+  it("keeps a full-sync marker pending until reconciliation completes", () => {
+    markAgentCacheInitialized("claudecode");
+    markAgentFullSyncCompleted("claudecode");
+
+    markAgentFullSyncStarted("claudecode");
+
+    expect(getAgentLastFullSyncAt("claudecode")).toBeNull();
+  });
+
+  it("persists an incomplete full-sync cursor and clears it on completion", () => {
+    markAgentCacheInitialized("claudecode");
+    markAgentFullSyncProgress("claudecode", "session-200");
+
+    expect(getAgentFullSyncCursor("claudecode")).toBe("session-200");
+
+    markAgentFullSyncCompleted("claudecode");
+
+    expect(getAgentFullSyncCursor("claudecode")).toBeNull();
   });
 
   it("re-initializing an already-synced agent preserves its last full sync", () => {

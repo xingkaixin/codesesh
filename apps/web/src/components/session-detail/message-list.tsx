@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AgentInfo } from "../../lib/api";
+import type { AgentInfo, SessionHead } from "../../lib/api";
 import { formatTokens } from "../../lib/format";
 import type { FilteredSessionMessage } from "./toc";
 import { MessageItem } from "./message-rendering";
@@ -28,6 +28,7 @@ interface MessageListProps {
   agent?: AgentInfo;
   baseDirectory: string;
   highlightQuery?: string;
+  childSessionById?: ReadonlyMap<string, SessionHead>;
   apiRef: { current: MessageListHandle | null };
 }
 
@@ -80,6 +81,7 @@ export function MessageList({
   agent,
   baseDirectory,
   highlightQuery,
+  childSessionById,
   apiRef,
 }: MessageListProps) {
   const shouldVirtualize = messages.length > VIRTUALIZED_MESSAGE_THRESHOLD;
@@ -96,6 +98,7 @@ export function MessageList({
         agent={agent}
         baseDirectory={baseDirectory}
         highlightQuery={highlightQuery}
+        childSessionById={childSessionById}
         apiRef={apiRef}
       />
     );
@@ -114,6 +117,7 @@ export function MessageList({
           agent={agent}
           baseDirectory={baseDirectory}
           highlightQuery={highlightQuery}
+          childSessionById={childSessionById}
         />
       ))}
     </div>
@@ -126,6 +130,7 @@ function VirtualizedMessageList({
   agent,
   baseDirectory,
   highlightQuery,
+  childSessionById,
   apiRef,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -357,6 +362,7 @@ function VirtualizedMessageList({
               agent={agent}
               baseDirectory={baseDirectory}
               highlightQuery={highlightQuery}
+              childSessionById={childSessionById}
             />
           </VirtualizedMessageRow>
         );
