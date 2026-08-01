@@ -79,6 +79,20 @@ describe("finalizeSessions", () => {
     ]);
   });
 
+  it("limits finalization to the selected session ids", () => {
+    const getSessionData = vi.fn(() => ({
+      messages: [],
+    })) as unknown as BaseAgent["getSessionData"];
+    const agent = makeAgent(getSessionData);
+    const selected = makeSession("selected");
+    const retained = makeSession("retained");
+
+    finalizeSessions(agent, [selected, retained], undefined, undefined, new Set([selected.id]));
+
+    expect(getSessionData).toHaveBeenCalledTimes(1);
+    expect(getSessionData).toHaveBeenCalledWith(selected.id);
+  });
+
   it("checkpoints settled sessions from newest to oldest", () => {
     const agent = makeAgent(() => ({ messages: [] }) as never);
     const newest = makeSession("newest", { time_updated: 3_000 });

@@ -285,6 +285,7 @@ describe("scan refresh worker entry", () => {
         removedMetaIds: [],
       }),
     );
+    expect(mocks.ensureSessionTagsSync).toHaveBeenCalledWith(agent, [recent], expect.any(Function));
   });
 
   it("returns a head when only its metadata changes", async () => {
@@ -390,6 +391,33 @@ describe("scan refresh worker entry", () => {
         removedMetaIds: [],
       }),
     );
+  });
+
+  it("does not finalize unchanged sessions outside a bounded refresh delta", async () => {
+    const recent = makeSession("recent", { time_updated: 10 });
+    const agent = makeAgent({
+      listSessionSources: vi.fn(() => [
+        { sessionId: "recent", sourcePath: "/recent", fingerprint: "same" },
+      ]),
+    });
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    setWorkerData({
+      sourceSync: true,
+      previousSessions: [recent],
+      scanOptions: { from: 5, fast: true },
+      meta: {
+        recent: {
+          id: "recent",
+          sourcePath: "/recent",
+          sourceFingerprint: "same",
+          sourceMtimeMs: 10,
+        },
+      },
+    });
+
+    await runWorker();
+
+    expect(mocks.ensureSessionTagsSync).not.toHaveBeenCalled();
   });
 
   it("synchronizes changed, removed, and out-of-window sources", async () => {

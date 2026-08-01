@@ -106,6 +106,7 @@ function syncAgentSources(
 ): {
   sessions: SessionHead[];
   changedIds: string[];
+  finalizeSessionIds: string[];
   sourceCount: number;
   removedCount: number;
   fullRescan: boolean;
@@ -119,6 +120,10 @@ function syncAgentSources(
     cachedMeta,
     windowOptions,
   );
+  const isWindowed = windowOptions?.from != null || windowOptions?.to != null;
+  const finalizeSessionIds = isWindowed
+    ? [...changedIds]
+    : sourceRefs.map((source) => source.sessionId);
 
   if (
     agent.shouldRescanAllSourcesOnChange?.() &&
@@ -133,6 +138,7 @@ function syncAgentSources(
     return {
       sessions: sortSessions([...retainedSessions, ...scannedSessions]),
       changedIds: [...new Set([...changedIds, ...removedIds])],
+      finalizeSessionIds,
       sourceCount: sourceRefs.length,
       removedCount: removedIds.length,
       fullRescan: true,
@@ -155,6 +161,7 @@ function syncAgentSources(
   return {
     sessions: [...sessionMap.values()],
     changedIds: [...new Set([...changedIds, ...removedIds])],
+    finalizeSessionIds,
     sourceCount: sourceRefs.length,
     removedCount: removedIds.length,
     fullRescan: false,
@@ -182,11 +189,15 @@ export function finalizeSessions(
   sessions: SessionHead[],
   onProgress?: (progress: AgentScanProgress) => void,
   onCheckpoint?: (checkpoint: ScanRefreshWorkerCheckpoint) => void,
+  finalizeSessionIds?: ReadonlySet<string>,
 ): SessionHead[] {
   const ordered = sortSessions(attachMissingProjectIdentities(sessions));
 
   const now = Date.now();
-  const settled = ordered.filter((session) => isSettled(session, now));
+  const settled = ordered.filter(
+    (session) =>
+      (!finalizeSessionIds || finalizeSessionIds.has(session.id)) && isSettled(session, now),
+  );
   if (settled.length === 0) return ordered;
 
   let lastReportedAt = -Infinity;
@@ -251,6 +262,7 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
   const isAvailable = agent.isAvailable();
   let sessions: SessionHead[];
   let changedIds: string[] | undefined;
+  let finalizeSessionIds: ReadonlySet<string> | undefined;
   let sourceSyncDetails:
     | {
         sourceCount: number;
@@ -271,6 +283,7 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
     );
     sessions = result.sessions;
     changedIds = result.changedIds;
+    finalizeSessionIds = new Set(result.finalizeSessionIds);
     sourceSyncDetails = result;
   } else if (data.changedIds) {
     sessions = await Promise.resolve(agent.incrementalScan(data.previousSessions, data.changedIds));
@@ -311,12 +324,17 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
   });
 
   const finalizeStartedAt = performance.now();
-  sessions = finalizeSessions(agent, sessions, reportProgress, (checkpoint) =>
-    parentPort?.postMessage({
-      type: "checkpoint",
-      requestId: data.requestId,
-      checkpoint,
-    } satisfies ScanRefreshWorkerMessage),
+  sessions = finalizeSessions(
+    agent,
+    sessions,
+    reportProgress,
+    (checkpoint) =>
+      parentPort?.postMessage({
+        type: "checkpoint",
+        requestId: data.requestId,
+        checkpoint,
+      } satisfies ScanRefreshWorkerMessage),
+    finalizeSessionIds,
   );
   appLogger.debug("scan.refresh_worker.finalized", {
     agent: data.agentName,
