@@ -11,11 +11,14 @@ import {
   XCircle,
 } from "../ui/icons";
 import type { AgentInfo, Message, PlanPart, ReasoningPart, ToolPart } from "../../lib/api";
+import type { SessionHead } from "../../lib/api";
 import { formatMessageTime } from "../../lib/format";
+import { getSessionRoutePath } from "../../lib/session-indexes";
 import { AgentIcon } from "../AgentIcon";
 import { MarkdownContent } from "../MarkdownContent";
 import { ToolOutputRenderer } from "../tool-output/ToolOutputRenderer";
 import { Collapsible } from "../ui/Collapsible";
+import { Link } from "react-router-dom";
 import type { MessageBlock } from "./blocks";
 import { isCodexTurnAbortedMessage } from "./codex-abort";
 import { buildCodexPlanDisplay } from "./codex-plan";
@@ -95,6 +98,7 @@ export const MessageItem = memo(function MessageItem({
   agent,
   baseDirectory,
   highlightQuery,
+  childSessionById,
 }: {
   messageIndex: number;
   msg: Message;
@@ -104,6 +108,7 @@ export const MessageItem = memo(function MessageItem({
   agent?: AgentInfo;
   baseDirectory: string;
   highlightQuery?: string;
+  childSessionById?: ReadonlyMap<string, SessionHead>;
 }) {
   const isUser = msg.role === "user";
   const isAbortMessage = isCodexTurnAbortedMessage(msg, sessionAgentKey);
@@ -131,6 +136,7 @@ export const MessageItem = memo(function MessageItem({
   const modelLabel = msg.model || null;
   const roleLabel = getAssistantDisplayLabel(msg);
   const time = formatMessageTime(msg.time_created);
+  const childSession = msg.subagent_id ? childSessionById?.get(msg.subagent_id) : undefined;
 
   return (
     <article
@@ -166,6 +172,14 @@ export const MessageItem = memo(function MessageItem({
                 {modelLabel}
               </span>
             )}
+            {childSession ? (
+              <Link
+                to={getSessionRoutePath(childSession)}
+                className="console-mono rounded-sm border border-[var(--console-accent)] px-1.5 py-0.5 text-[10px] text-[var(--console-accent)] hover:bg-[var(--console-surface-muted)]"
+              >
+                打开子会话 ↗
+              </Link>
+            ) : null}
           </div>
 
           {isAbortMessage ? (

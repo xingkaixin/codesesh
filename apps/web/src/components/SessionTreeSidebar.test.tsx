@@ -101,6 +101,37 @@ describe("buildSessionTreeModel group sorting", () => {
     expect(model.pathBySessionReference.get(getSessionReferenceKey(codex))).toBeDefined();
     expect(model.pathBySessionReference.get(getSessionReferenceKey(claude))).toBeDefined();
   });
+
+  it("mounts child sessions below their parent path", () => {
+    const parent = makeSession({ id: "parent", title: "Main" });
+    const child = makeSession({
+      id: "child",
+      title: "Worker",
+      parent_reference: { agentName: "codex", sessionId: "parent" },
+    });
+
+    const model = buildSessionTreeModel([parent, child]);
+    const parentPath = model.pathBySessionReference.get(getSessionReferenceKey(parent))!;
+    const childPath = model.pathBySessionReference.get(getSessionReferenceKey(child))!;
+
+    expect(parentPath.endsWith("/")).toBe(true);
+    expect(childPath.startsWith(parentPath)).toBe(true);
+    expect(model.paths).toContain(childPath);
+    expect(model.sessionByPath.get(parentPath)).toBe(parent);
+    expect(model.sessionByPath.get(childPath)).toBe(child);
+  });
+
+  it("does not render a child without its parent", () => {
+    const child = makeSession({
+      id: "orphan",
+      parent_reference: { agentName: "codex", sessionId: "missing" },
+    });
+
+    const model = buildSessionTreeModel([child]);
+
+    expect(model.paths).toEqual([]);
+    expect(model.pathBySessionReference).toEqual(new Map());
+  });
 });
 
 describe("buildSessionTreeModel path allocation", () => {

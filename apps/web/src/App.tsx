@@ -338,6 +338,7 @@ export default function App() {
       agentNameMap={agentNameMap}
       projects={projects}
       landingSessions={sessionIndexes.landingSessions}
+      sessions={sessions}
       sessionsByAgent={sessionIndexes.byLandingAgent}
       activeProject={activeProject?.project ?? null}
       activeProjectSessions={activeProjectSessions}

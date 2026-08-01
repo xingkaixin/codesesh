@@ -13,7 +13,7 @@ import {
 } from "react";
 import type { SessionHead } from "../lib/api";
 import { getProjectIdentityKey } from "../lib/projects";
-import { getSessionReferenceKey } from "../lib/session-indexes";
+import { getSessionReferenceKey, getSessionRouteKey } from "../lib/session-indexes";
 import { getSessionDisplayTitle } from "../lib/session-title";
 import { isRenderProfilerEnabled, recordRenderProfileEntry } from "./RenderProfiler";
 
@@ -182,9 +182,23 @@ export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel
   const sessionByPath = new Map<string, SessionHead>();
   const allocateSessionPath = createPathAllocator();
   const paths: string[] = [];
+  const childrenByParent = new Map<string, SessionHead[]>();
+  const roots: SessionHead[] = [];
+  for (const session of sessions) {
+    const parentReference = session.parent_reference;
+    if (!parentReference) {
+      roots.push(session);
+      continue;
+    }
+    const parentKey = getSessionRouteKey(parentReference.agentName, parentReference.sessionId);
+    const children = childrenByParent.get(parentKey);
+    if (children) children.push(session);
+    else childrenByParent.set(parentKey, [session]);
+  }
+
   const groups = new Map<string, { label: string; sessions: SessionHead[]; maxTime: number }>();
 
-  for (const session of sessions) {
+  for (const session of roots) {
     const { key, label } = getProjectGroup(session);
     const time = getSessionTime(session);
     const group = groups.get(key);
@@ -207,33 +221,53 @@ export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel
   for (const [, group] of sortedGroups) {
     const bareGroupPath = allocateGroupPath(sanitizeSegment(group.label));
     const groupPath = `${bareGroupPath}/`;
-    const titleCounts = new Map<string, number>();
-
     sortOrderByPath.set(groupPath, order);
     sortOrderByPath.set(bareGroupPath, order);
     order += 1;
     groupCountByPath.set(groupPath, `${group.sessions.length}`);
     groupCountByPath.set(bareGroupPath, `${group.sessions.length}`);
-    for (const session of group.sessions) {
-      const title = getSessionDisplayTitle(session);
-      titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1);
-    }
 
-    for (const session of group.sessions) {
+    const appendSession = (
+      session: SessionHead,
+      parentPath: string,
+      siblingTitleCounts: Map<string, number>,
+    ): void => {
       const title = getSessionDisplayTitle(session);
-      const needsDisambiguation = (titleCounts.get(title) ?? 0) > 1;
-      const leaf = needsDisambiguation
-        ? `${sanitizeSegment(title)} #${session.id.slice(0, 8)}`
-        : sanitizeSegment(title);
-      const path = allocateSessionPath(`${groupPath}${leaf}`);
-
-      paths.push(path);
-      sortOrderByPath.set(path, order);
-      order += 1;
+      siblingTitleCounts.set(title, (siblingTitleCounts.get(title) ?? 0) + 1);
+      const siblingCount = siblingTitleCounts.get(title) ?? 1;
+      const leaf =
+        siblingCount > 1
+          ? `${sanitizeSegment(title)} #${session.id.slice(0, 8)}`
+          : sanitizeSegment(title);
+      const basePath = allocateSessionPath(`${parentPath}${leaf}`);
       const reference = getSessionReferenceKey(session);
-      pathBySessionReference.set(reference, path);
+      const childSessions = childrenByParent.get(reference) ?? [];
+      const isDirectory = childSessions.length > 0;
+      const sessionPath = isDirectory ? `${basePath}/` : basePath;
+
+      if (isDirectory) {
+        sortOrderByPath.set(basePath, order);
+        sortOrderByPath.set(sessionPath, order);
+        sessionByPath.set(basePath, session);
+        sessionByPath.set(sessionPath, session);
+      } else {
+        paths.push(basePath);
+        sortOrderByPath.set(basePath, order);
+        sessionByPath.set(basePath, session);
+      }
+      order += 1;
+      pathBySessionReference.set(reference, sessionPath);
       groupPathBySessionReference.set(reference, groupPath);
-      sessionByPath.set(path, session);
+
+      const childTitleCounts = new Map<string, number>();
+      for (const child of childSessions) {
+        appendSession(child, sessionPath, childTitleCounts);
+      }
+    };
+
+    const rootTitleCounts = new Map<string, number>();
+    for (const session of group.sessions) {
+      appendSession(session, groupPath, rootTitleCounts);
     }
   }
 
@@ -413,6 +447,12 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
 
     if (activePath) model.getItem(activePath)?.select();
     if (focusedPath && activeSessionReference) {
+      const segments = focusedPath.split("/").filter(Boolean);
+      for (let index = 1; index <= segments.length; index += 1) {
+        const ancestorPath = `${segments.slice(0, index).join("/")}/`;
+        const ancestor = model.getItem(ancestorPath);
+        if (ancestor && "expand" in ancestor) ancestor.expand();
+      }
       const focusedGroup = focusedGroupPath ? model.getItem(focusedGroupPath) : null;
       if (focusedGroup && "expand" in focusedGroup) focusedGroup.expand();
       model.focusPath(focusedPath);

@@ -19,7 +19,6 @@ import { SessionActionsMenu } from "../SessionActionsMenu";
 import { SessionTreeSidebar } from "../SessionTreeSidebar";
 import { Link } from "react-router-dom";
 import { BrowseByToggle } from "./BrowseByToggle";
-import { SidebarFlatSessionList } from "./SidebarFlatSessionList";
 import type { BrowseBy } from "./types";
 
 function agentProgressPercent(status: AgentScanStatus | undefined): number | null {
@@ -377,24 +376,15 @@ export function AppSidebar({
             <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
               {scanStatus?.active ? "Scanning sessions..." : "No sessions yet"}
             </span>
-          ) : browseBy === "projects" ? (
-            <SidebarFlatSessionList
-              sessions={sidebarSessions}
-              agentCatalog={agentCatalog}
-              activeSessionReference={activeSessionReference}
-              selectedSessionReference={selectedSidebarSessionReference}
-              bookmarkedSessionReferences={bookmarkedSidebarSessionReferences}
-              onSelectSession={onSelectFlatSidebarSession}
-              onToggleBookmark={onToggleSidebarSessionBookmark}
-              onRenameSession={onRenameSession}
-            />
           ) : (
             <RenderProfiler id="SessionTreeSidebar" detail={{ sessions: sidebarSessions.length }}>
               <SessionTreeSidebar
                 sessions={sidebarSessions}
                 activeSessionReference={activeSessionReference}
                 selectedSessionReference={selectedSidebarSessionReference}
-                onSelectSession={onSelectTreeSidebarSession}
+                onSelectSession={
+                  browseBy === "projects" ? onSelectFlatSidebarSession : onSelectTreeSidebarSession
+                }
                 bookmarkedSessionReferences={bookmarkedSidebarSessionReferences}
                 onToggleBookmark={onToggleSidebarSessionBookmark}
                 onRenameSession={onRenameSession}
