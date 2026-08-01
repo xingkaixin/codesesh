@@ -5,11 +5,13 @@ import Database from "better-sqlite3";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearCache,
+  getAgentFullSyncCursor,
   getAgentLastFullSyncAt,
   getCacheInfo,
   isAgentCacheInitialized,
   loadCachedSessions,
   markAgentCacheInitialized,
+  markAgentFullSyncProgress,
   markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
   saveCachedSessionChanges,
@@ -547,6 +549,17 @@ describe("cache initialization tracking", () => {
     markAgentFullSyncStarted("claudecode");
 
     expect(getAgentLastFullSyncAt("claudecode")).toBeNull();
+  });
+
+  it("persists an incomplete full-sync cursor and clears it on completion", () => {
+    markAgentCacheInitialized("claudecode");
+    markAgentFullSyncProgress("claudecode", "session-200");
+
+    expect(getAgentFullSyncCursor("claudecode")).toBe("session-200");
+
+    markAgentFullSyncCompleted("claudecode");
+
+    expect(getAgentFullSyncCursor("claudecode")).toBeNull();
   });
 
   it("re-initializing an already-synced agent preserves its last full sync", () => {

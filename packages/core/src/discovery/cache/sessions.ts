@@ -26,6 +26,7 @@ import {
 import { fileActivityFromRow, type FileActivityRow } from "./file-activity.js";
 
 export const CACHE_INITIALIZATION_VERSION = "session-cache-v2";
+const FULL_SYNC_CURSOR_PREFIX = "full_sync_cursor:";
 export interface CachedResult {
   sessions: SessionHead[];
   meta: Record<string, SessionCacheMeta>;
@@ -193,6 +194,44 @@ export function markAgentFullSyncStarted(agentName: string): void {
   });
 }
 
+/** Return the last durable source position reached by an incomplete full sync. */
+export function getAgentFullSyncCursor(agentName: string): string | null {
+  if (!hasCacheStorage()) return null;
+
+  return (
+    withCacheDbReadOnly((db) => {
+      const row = db
+        .prepare("SELECT value FROM cache_meta WHERE key = ?")
+        .get(`${FULL_SYNC_CURSOR_PREFIX}${agentName}`) as { value?: string } | undefined;
+      return row?.value || null;
+    }) ?? null
+  );
+}
+
+/** Persist a full-sync cursor only after the corresponding checkpoint is durable. */
+export function markAgentFullSyncProgress(agentName: string, cursor: string): void {
+  if (!cursor) return;
+
+  withCacheDb((db) => {
+    db.prepare(
+      `
+        INSERT INTO cache_meta(key, value)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+      `,
+    ).run(`${FULL_SYNC_CURSOR_PREFIX}${agentName}`, cursor);
+  });
+}
+
+/** Remove the cursor after the complete unbounded reconciliation commits. */
+function clearAgentFullSyncCursor(agentName: string): void {
+  withCacheDb((db) => {
+    db.prepare("DELETE FROM cache_meta WHERE key = ?").run(
+      `${FULL_SYNC_CURSOR_PREFIX}${agentName}`,
+    );
+  });
+}
+
 /** Timestamp of the agent's last full (unbounded) history reconciliation, or null if none yet. */
 export function getAgentLastFullSyncAt(agentName: string): number | null {
   if (!hasCacheStorage()) {
@@ -227,6 +266,7 @@ export function markAgentFullSyncCompleted(agentName: string): void {
       `,
     ).run(Date.now(), agentName);
   });
+  clearAgentFullSyncCursor(agentName);
 }
 
 export function loadCachedSessionRawEntry(

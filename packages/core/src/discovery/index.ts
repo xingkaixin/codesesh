@@ -18,6 +18,7 @@ export {
 export { mergeSortedSessions } from "../contract/session-index.js";
 export {
   clearCache,
+  getAgentFullSyncCursor,
   getAgentLastFullSyncAt,
   getCacheInfo,
   isAgentCacheInitialized,
@@ -25,6 +26,7 @@ export {
   loadCachedSessionDataEntry,
   loadCachedSessions,
   markAgentCacheInitialized,
+  markAgentFullSyncProgress,
   markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
   saveCachedSessionChanges,
