@@ -351,6 +351,21 @@ interface SessionMeta extends FileSessionMeta {
   parentThreadId: string | null;
 }
 
+function compareSourceActivityDesc(left: SessionSourceFile, right: SessionSourceFile): number {
+  const leftTimestamp = sourceTimestamp(left.file, left.stat.mtimeMs);
+  const rightTimestamp = sourceTimestamp(right.file, right.stat.mtimeMs);
+  return rightTimestamp - leftTimestamp || left.file.localeCompare(right.file);
+}
+
+function sourceTimestamp(filePath: string, fallback: number): number {
+  // Sort before parsing heads; the rollout filename is the only cheap activity hint.
+  const match = basename(filePath).match(/^rollout-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})-/);
+  if (!match) return fallback;
+  const timestamp = match[1]!.replace(/-(\d{2})-(\d{2})$/, ":$1:$2");
+  const parsed = Date.parse(timestamp);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 // ---------------------------------------------------------------------------
 // CodexAgent
 // ---------------------------------------------------------------------------
@@ -822,7 +837,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   }
 
   private listScanSources(options?: AgentScanOptions): SessionSourceFile[] {
-    const windowed = this.listRolloutFiles(options);
+    const windowed = this.listRolloutFiles(options).sort(compareSourceActivityDesc);
     if (options?.from == null && options?.to == null) return windowed;
 
     const rootFiles = windowed.filter((source) => {
@@ -832,7 +847,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     const rootIds = new Set(rootFiles.map(({ file }) => extractSessionId(file)));
     if (rootIds.size === 0) return rootFiles;
 
-    const allFiles = this.listRolloutFiles();
+    const allFiles = this.listRolloutFiles().sort(compareSourceActivityDesc);
     const childrenByParent = new Map<string, SessionSourceFile[]>();
     for (const source of allFiles) {
       const meta = this.readThreadMeta(source.file);
@@ -855,7 +870,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
         pending.push(extractSessionId(child.file));
       }
     }
-    return [...selected.values()];
+    return [...selected.values()].sort(compareSourceActivityDesc);
   }
 
   protected createFileSessionMeta(head: SessionHead, source: SessionSourceFile): SessionMeta {

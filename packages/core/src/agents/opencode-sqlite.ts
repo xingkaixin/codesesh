@@ -49,6 +49,19 @@ interface OpenCodeSqliteAgentConfig {
 const MESSAGE_ROLES = new Set<Message["role"]>(["user", "assistant", "tool"]);
 const SESSION_ID_QUERY_CHUNK_SIZE = 500;
 
+function compareSessionRowsByActivityDesc(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): number {
+  const leftUpdated = Number(left.time_updated ?? left.time_created ?? 0);
+  const rightUpdated = Number(right.time_updated ?? right.time_created ?? 0);
+  return (
+    rightUpdated - leftUpdated ||
+    Number(right.time_created ?? 0) - Number(left.time_created ?? 0) ||
+    String(right.id ?? "").localeCompare(String(left.id ?? ""))
+  );
+}
+
 function accumulateTokenStats(
   stats: SessionHead["stats"],
   msgData: Record<string, unknown>,
@@ -161,7 +174,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
           FROM session s
           WHERE COALESCE(s.time_updated, s.time_created) >= ?
           ${childPredicate}
-          ORDER BY s.time_created DESC
+          ORDER BY COALESCE(s.time_updated, s.time_created) DESC, s.time_created DESC, s.id DESC
         `)
           .all(cutoffTime);
       } else {
@@ -172,7 +185,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
           FROM session s
           WHERE COALESCE(s.time_updated, s.time_created) >= ?
           ${childPredicate}
-          ORDER BY s.time_created DESC
+          ORDER BY COALESCE(s.time_updated, s.time_created) DESC, s.time_created DESC, s.id DESC
         `)
           .all(cutoffTime);
       }
@@ -183,6 +196,8 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
         const knownIds = new Set(rootIds);
         rows.push(...relatedRows.filter((row) => !knownIds.has(String(row.id ?? ""))));
       }
+
+      rows.sort(compareSessionRowsByActivityDesc);
 
       const sessionIds = new Set(rows.map((row) => String(row.id ?? "")).filter(Boolean));
 
