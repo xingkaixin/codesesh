@@ -452,6 +452,15 @@ describe("saveCachedSessions", () => {
 });
 
 describe("saveCachedSessionChanges", () => {
+  it("advances the cache timestamp for a successful no-op refresh", () => {
+    saveCachedSessions("claudecode", [makeSession("unchanged")]);
+    expect(loadCachedSessions("claudecode")?.timestamp).toBe(now);
+
+    dateNowSpy.mockReturnValue(now + 1_000);
+    expect(saveCachedSessionChanges("claudecode", [], [])).toBe(true);
+    expect(loadCachedSessions("claudecode")?.timestamp).toBe(now + 1_000);
+  });
+
   it("updates changed sessions and removes deleted sessions", () => {
     const unchanged = makeSession("unchanged");
     const changed = makeSession("changed");

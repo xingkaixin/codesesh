@@ -2,6 +2,7 @@ import { registerAgent } from "./registry.js";
 import { ClaudeCodeAgent, resolveClaudeCodeDataRoot } from "./claudecode.js";
 import { OpenCodeAgent, resolveOpenCodeDataRoot } from "./opencode.js";
 import { KimiAgent, resolveKimiDataRoot } from "./kimi.js";
+import { KimiCodeAgent, resolveKimiCodeDataRoot } from "./kimi-code.js";
 import { CodexAgent, resolveCodexDataRoot } from "./codex.js";
 import { CursorAgent, resolveCursorDataRoot } from "./cursor.js";
 import { PiAgent, resolvePiDataRoot } from "./pi.js";
@@ -38,6 +39,14 @@ registerAgent({
   resumeCommandPrefix: "kimi -r",
   toolStrategy: "custom",
   create: () => new KimiAgent(),
+});
+
+registerAgent({
+  icon: "/icon/agent/kimi.svg",
+  resolveDataRoot: resolveKimiCodeDataRoot,
+  resumeCommandPrefix: "kimi -r",
+  toolStrategy: "custom",
+  create: () => new KimiCodeAgent(),
 });
 
 registerAgent({

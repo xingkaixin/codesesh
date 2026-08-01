@@ -338,12 +338,13 @@ async function scanAgentSmart(
       agent.setSessionMetaMap(metaMap);
 
       if (options.cacheOnly) {
+        const visibleSessions = agent.filterCachedSessions(cached.sessions);
         onProgress?.({
           agent: agent.name,
           phase: "cache",
-          cachedCount: cached.sessions.length,
+          cachedCount: visibleSessions.length,
         });
-        return finalizeAgentScan(agent, cached.sessions, {
+        return finalizeAgentScan(agent, visibleSessions, {
           finalization: { kind: "cache-only", cached },
           options,
           timing,

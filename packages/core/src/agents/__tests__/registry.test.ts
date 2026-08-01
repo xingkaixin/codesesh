@@ -35,6 +35,13 @@ describe("agent registry", () => {
         count: 0,
       },
       {
+        name: "kimi-code",
+        displayName: "Kimi-Code",
+        icon: "/icon/agent/kimi.svg",
+        resumeCommandPrefix: "kimi -r",
+        count: 0,
+      },
+      {
         name: "codex",
         displayName: "Codex",
         icon: "/icon/agent/codex.svg",

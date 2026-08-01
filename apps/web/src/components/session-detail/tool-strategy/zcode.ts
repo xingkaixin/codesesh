@@ -46,7 +46,7 @@ function buildZCodeTodoOutput(todos: unknown[]) {
     const item = toRecord(todo);
     const status = toPlainText(item.status) || "pending";
     const priority = toPlainText(item.priority);
-    const content = toPlainText(item.content);
+    const content = toPlainText(item.content) || toPlainText(item.title);
     counts.set(status, (counts.get(status) ?? 0) + 1);
     const marker = status === "completed" ? "x" : status === "in_progress" ? "~" : " ";
     const suffix = priority ? ` _${priority}_` : "";
@@ -65,6 +65,19 @@ function buildZCodeTodoOutput(todos: unknown[]) {
 
 function parseZCodeQuestionAnswers(outputText: string) {
   const answers = new Map<string, string[]>();
+  try {
+    const parsed = JSON.parse(outputText) as unknown;
+    const answerRecord = toRecord(toRecord(parsed).answers);
+    if (answerRecord) {
+      for (const [question, answer] of Object.entries(answerRecord)) {
+        const value = toPlainText(answer);
+        if (question.trim() && value) answers.set(question.trim(), [stripRecommendedMarker(value)]);
+      }
+    }
+  } catch {
+    // Tool output may be a human-readable sentence instead of JSON.
+  }
+
   const pattern = /"([^"]+)"="([^"]+)"/g;
   for (const match of outputText.matchAll(pattern)) {
     const question = match[1]?.trim();
@@ -135,7 +148,7 @@ export function buildZCodeToolStrategy(
   const displayPath = getDisplayPath(filePath, baseDirectory);
   const outputText = getOutputOrErrorText(state);
 
-  if (toolKey === "bash") {
+  if (toolKey === "bash" || toolKey === "shell") {
     const description = toPlainText(input.description);
     const command = toPlainText(input.command);
     const displayCommand = getDisplayTextWithRelativePaths(command, baseDirectory);
@@ -161,11 +174,11 @@ export function buildZCodeToolStrategy(
     };
   }
 
-  if (toolKey === "read") {
+  if (toolKey === "read" || toolKey === "readfile") {
     return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath });
   }
 
-  if (toolKey === "edit") {
+  if (toolKey === "edit" || toolKey === "strreplacefile") {
     const diffBlocks = buildZCodeEditDiffBlocks(state, displayPath || filePath);
     const oldValue = toStringValue(input.old_string);
     const newValue = toStringValue(input.new_string);
@@ -194,7 +207,7 @@ export function buildZCodeToolStrategy(
     });
   }
 
-  if (toolKey === "write") {
+  if (toolKey === "write" || toolKey === "writefile") {
     return buildFileWriteStrategy({
       defaultStrategy,
       state,
@@ -220,7 +233,7 @@ export function buildZCodeToolStrategy(
     };
   }
 
-  if (toolKey === "todowrite") {
+  if (toolKey === "todowrite" || toolKey === "todolist") {
     const todos = Array.isArray(input.todos) ? input.todos : [];
     const todoOutput = buildZCodeTodoOutput(todos);
     return {

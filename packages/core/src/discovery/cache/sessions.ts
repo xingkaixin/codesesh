@@ -418,10 +418,6 @@ export function saveCachedSessionChanges(
   removedSessionIds: string[],
   meta: Record<string, SessionCacheMeta> = {},
 ): boolean {
-  if (changes.length === 0 && removedSessionIds.length === 0) {
-    return true;
-  }
-
   const persisted = withCacheDb((db) => {
     const deleteSession = db.prepare(
       "DELETE FROM sessions WHERE agent_name = ? AND session_id = ?",

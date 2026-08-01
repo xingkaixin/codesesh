@@ -132,7 +132,15 @@ describe("formatTokens", () => {
 describe("formatMessageTime", () => {
   it("formats a millisecond timestamp", () => {
     const result = formatMessageTime(Date.now());
-    expect(typeof result).toBe("string");
+    expect(result).toBeTypeOf("string");
+    if (result === null) throw new Error("expected a formatted message time");
     expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("omits missing or invalid timestamps", () => {
+    expect(formatMessageTime(0)).toBeNull();
+    expect(formatMessageTime(undefined)).toBeNull();
+    expect(formatMessageTime("0")).toBeNull();
+    expect(formatMessageTime("not-a-time")).toBeNull();
   });
 });

@@ -33,6 +33,12 @@ const FILE_TOOL_CASES = [
   ["kimi", "ReadFile", "read"],
   ["kimi", "StrReplaceFile", "edit"],
   ["kimi", "WriteFile", "write"],
+  ["kimi-code", "ReadFile", "read"],
+  ["kimi-code", "StrReplaceFile", "edit"],
+  ["kimi-code", "WriteFile", "write"],
+  ["kimi-code", "Read", "read"],
+  ["kimi-code", "Edit", "edit"],
+  ["kimi-code", "Write", "write"],
   ["cursor", "read_file_v2", "read"],
   ["cursor", "edit_file_v2", "edit"],
 ] as const;
@@ -239,6 +245,71 @@ describe("getToolDisplayStrategy", () => {
     expect(strategy.outputContent).toMatchObject({
       kind: "plain",
       text: "No output captured.",
+    });
+  });
+
+  it("renders Kimi-Code question answers from JSON output", () => {
+    const tool = part({
+      tool: "AskUserQuestion",
+      title: "ask",
+      state: {
+        status: "completed",
+        input: {
+          questions: [
+            {
+              header: "响应式",
+              question: "响应式回退方案怎么定？",
+              options: [{ label: "浮层", description: "不挤压详情" }],
+            },
+          ],
+        },
+        output: JSON.stringify({ answers: { "响应式回退方案怎么定？": "浮层" } }),
+      },
+    });
+
+    const strategy = getToolDisplayStrategy("kimi-code", tool, normalizeToolState(tool));
+
+    expect(strategy).toMatchObject({ title: "ask", showInputPreview: false });
+    expect(strategy.outputContent).toEqual({
+      kind: "question-list",
+      questions: [
+        {
+          header: "响应式",
+          question: "响应式回退方案怎么定？",
+          options: [{ label: "浮层", description: "不挤压详情" }],
+          answers: ["浮层"],
+        },
+      ],
+    });
+  });
+
+  it("renders Kimi-Code TodoList items instead of raw JSON", () => {
+    const tool = part({
+      tool: "TodoList",
+      title: "todo",
+      state: {
+        status: "completed",
+        input: {
+          todos: [
+            { title: "Inspect", status: "completed" },
+            { title: "Patch", status: "pending" },
+          ],
+        },
+        output: "Todo list updated.",
+      },
+    });
+
+    const strategy = getToolDisplayStrategy("kimi-code", tool, normalizeToolState(tool));
+
+    expect(strategy).toMatchObject({
+      title: "todo",
+      secondaryText: "1 completed · 1 pending",
+      showInputPreview: false,
+      outputContent: {
+        kind: "plain",
+        text: "- [x] Inspect\n- [ ] Patch",
+        language: "markdown",
+      },
     });
   });
 

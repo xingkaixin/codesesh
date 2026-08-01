@@ -228,6 +228,10 @@ export abstract class BaseAgent {
     refs?: SessionSourceRef[],
   ): Promise<SessionHead[]> | SessionHead[];
 
+  filterCachedSessions(sessions: SessionHead[]): SessionHead[] {
+    return sessions;
+  }
+
   /** Get session metadata for caching. */
   abstract getSessionMetaMap(): Map<string, SessionCacheMeta>;
 

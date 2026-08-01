@@ -253,6 +253,7 @@ describe("handleGetAgents", () => {
       "opencode",
       "zcode",
       "kimi",
+      "kimi-code",
       "codex",
       "pi",
       "cursor",
