@@ -52,6 +52,11 @@ export {
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
 } from "./discovery/index.js";
+export {
+  filterSessionTreeByActivityWindow,
+  isChildSession,
+  getRootSessions,
+} from "./contract/index.js";
 export type {
   FileActivityResult,
   LiveSnapshot,

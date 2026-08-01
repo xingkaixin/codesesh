@@ -93,6 +93,16 @@ function syncAgentSources(
     windowOptions,
   );
 
+  if (
+    agent.shouldRescanAllSourcesOnChange?.() &&
+    (changedIds.length > 0 || removedIds.length > 0)
+  ) {
+    return {
+      sessions: agent.scan(windowOptions),
+      changedIds: [...new Set([...changedIds, ...removedIds])],
+    };
+  }
+
   for (const sessionId of changedIds) {
     const source = sourceById.get(sessionId);
     if (!source) continue;

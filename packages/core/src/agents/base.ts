@@ -31,6 +31,7 @@ export interface AgentScanOptions {
   from?: number;
   to?: number;
   fast?: boolean;
+  includeRelatedSessions?: boolean;
   onProgress?: (progress: AgentScanProgress) => void;
 }
 
@@ -266,6 +267,10 @@ export abstract class FileSystemSessionSource<
 
   /** 解析单个源并写入 metaMap，返回会话 head（解析失败/不可见返回 null）。 */
   abstract scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null;
+
+  shouldRescanAllSourcesOnChange(): boolean {
+    return false;
+  }
 
   scan(options?: AgentScanOptions): SessionHead[] {
     const sources = this.listSessionSources(options);

@@ -47,6 +47,7 @@ interface OpenCodeSqliteAgentConfig {
 }
 
 const MESSAGE_ROLES = new Set<Message["role"]>(["user", "assistant", "tool"]);
+const SESSION_ID_QUERY_CHUNK_SIZE = 500;
 
 function accumulateTokenStats(
   stats: SessionHead["stats"],
@@ -143,17 +144,20 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
 
       const hasTaskType = columnExists(db, "session", "task_type");
       const hasParentId = columnExists(db, "session", "parent_id");
-      const childPredicate = hasTaskType
-        ? "AND (s.task_type IS NULL OR s.task_type != 'subagent_child')"
-        : "";
+      const childPredicate = hasParentId
+        ? "AND s.parent_id IS NULL"
+        : hasTaskType
+          ? "AND (s.task_type IS NULL OR s.task_type != 'subagent_child')"
+          : "";
 
       let rows: Record<string, unknown>[];
+      const parentIdSelect = hasParentId ? ", s.parent_id" : "";
       if (hasMessageTable) {
         rows = db
           .prepare(`
           SELECT
             s.id, s.title, s.time_created, s.time_updated, s.slug, s.directory,
-            s.version, s.summary_files
+            s.version, s.summary_files${parentIdSelect}
           FROM session s
           WHERE COALESCE(s.time_updated, s.time_created) >= ?
           ${childPredicate}
@@ -164,7 +168,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
         rows = db
           .prepare(`
           SELECT s.id, s.title, s.time_created, s.time_updated, s.slug, s.directory,
-            s.version, s.summary_files, 0 AS message_count, NULL AS model_message_data
+            s.version, s.summary_files, 0 AS message_count, NULL AS model_message_data${parentIdSelect}
           FROM session s
           WHERE COALESCE(s.time_updated, s.time_created) >= ?
           ${childPredicate}
@@ -173,10 +177,24 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
           .all(cutoffTime);
       }
 
+      if (hasParentId && options?.includeRelatedSessions !== false) {
+        const rootIds = rows.map((row) => String(row.id ?? "")).filter(Boolean);
+        const relatedRows = this.readRelatedSessionRows(db, rootIds);
+        const knownIds = new Set(rootIds);
+        rows.push(...relatedRows.filter((row) => !knownIds.has(String(row.id ?? ""))));
+      }
+
+      const sessionIds = new Set(rows.map((row) => String(row.id ?? "")).filter(Boolean));
+
       const headContexts = hasMessageTable
         ? this.buildHeadContexts(
-            this.readHeadMessageRows(db, cutoffTime, hasParentId),
-            this.readHeadPartRows(db, cutoffTime),
+            this.readHeadMessageRows(
+              db,
+              cutoffTime,
+              hasParentId,
+              sessionIds.size > 0 ? sessionIds : undefined,
+            ),
+            this.readHeadPartRows(db, cutoffTime, sessionIds.size > 0 ? sessionIds : undefined),
             hasParentId,
           )
         : new Map<string, OpenCodeHeadContext>();
@@ -230,6 +248,10 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
       slug: `${this.name}/${id}`,
       title: resolveSessionTitle(String(row.title ?? ""), messageTitle, null),
       directory: String(row.directory ?? ""),
+      parent_reference:
+        row.parent_id == null || String(row.parent_id) === ""
+          ? undefined
+          : { agentName: this.name, sessionId: String(row.parent_id) },
       time_created: timeCreated,
       time_updated: timeUpdated,
       stats: {
@@ -246,34 +268,124 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
     db: SQLiteDatabase,
     cutoffTime: number,
     withParentId: boolean,
+    sessionIds?: Set<string>,
   ): OpenCodeMessageRow[] {
     const parentIdSelect = withParentId ? ", s.parent_id" : "";
-    return db
-      .prepare(
-        `
-          SELECT m.id, m.session_id, m.data, m.time_created${parentIdSelect}
-          FROM message m
-          JOIN session s ON s.id = m.session_id
-          WHERE COALESCE(s.time_updated, s.time_created) >= ?
-          ORDER BY m.session_id, m.time_created ASC
-        `,
-      )
-      .all(cutoffTime) as OpenCodeMessageRow[];
+    const ids = sessionIds ? [...sessionIds] : [];
+    if (ids.length === 0) {
+      return db
+        .prepare(
+          `
+            SELECT m.id, m.session_id, m.data, m.time_created${parentIdSelect}
+            FROM message m
+            JOIN session s ON s.id = m.session_id
+            WHERE COALESCE(s.time_updated, s.time_created) >= ?
+            ORDER BY m.session_id, m.time_created ASC
+          `,
+        )
+        .all(cutoffTime) as OpenCodeMessageRow[];
+    }
+
+    const rows: OpenCodeMessageRow[] = [];
+    for (let offset = 0; offset < ids.length; offset += SESSION_ID_QUERY_CHUNK_SIZE) {
+      const chunk = ids.slice(offset, offset + SESSION_ID_QUERY_CHUNK_SIZE);
+      rows.push(
+        ...(db
+          .prepare(
+            `
+              SELECT m.id, m.session_id, m.data, m.time_created${parentIdSelect}
+              FROM message m
+              JOIN session s ON s.id = m.session_id
+              WHERE s.id IN (${chunk.map(() => "?").join(",")})
+              ORDER BY m.session_id, m.time_created ASC
+            `,
+          )
+          .all(...chunk) as OpenCodeMessageRow[]),
+      );
+    }
+    return rows;
   }
 
-  private readHeadPartRows(db: SQLiteDatabase, cutoffTime: number): OpenCodePartRow[] {
-    return db
+  private readHeadPartRows(
+    db: SQLiteDatabase,
+    cutoffTime: number,
+    sessionIds?: Set<string>,
+  ): OpenCodePartRow[] {
+    const ids = sessionIds ? [...sessionIds] : [];
+    if (ids.length === 0) {
+      return db
+        .prepare(
+          `
+            SELECT p.message_id, p.data, p.time_created
+            FROM part p
+            JOIN message m ON m.id = p.message_id
+            JOIN session s ON s.id = m.session_id
+            WHERE COALESCE(s.time_updated, s.time_created) >= ?
+            ORDER BY p.message_id, p.time_created ASC, p.id ASC
+          `,
+        )
+        .all(cutoffTime) as OpenCodePartRow[];
+    }
+
+    const rows: OpenCodePartRow[] = [];
+    for (let offset = 0; offset < ids.length; offset += SESSION_ID_QUERY_CHUNK_SIZE) {
+      const chunk = ids.slice(offset, offset + SESSION_ID_QUERY_CHUNK_SIZE);
+      rows.push(
+        ...(db
+          .prepare(
+            `
+              SELECT p.message_id, p.data, p.time_created
+              FROM part p
+              JOIN message m ON m.id = p.message_id
+              JOIN session s ON s.id = m.session_id
+              WHERE s.id IN (${chunk.map(() => "?").join(",")})
+              ORDER BY p.message_id, p.time_created ASC, p.id ASC
+            `,
+          )
+          .all(...chunk) as OpenCodePartRow[]),
+      );
+    }
+    return rows;
+  }
+
+  private readRelatedSessionRows(db: SQLiteDatabase, rootIds: string[]): Record<string, unknown>[] {
+    if (rootIds.length === 0) return [];
+
+    const rows = db
       .prepare(
         `
-          SELECT p.message_id, p.data, p.time_created
-          FROM part p
-          JOIN message m ON m.id = p.message_id
-          JOIN session s ON s.id = m.session_id
-          WHERE COALESCE(s.time_updated, s.time_created) >= ?
-          ORDER BY p.message_id, p.time_created ASC, p.id ASC
+          SELECT
+            s.id, s.title, s.time_created, s.time_updated, s.slug, s.directory,
+            s.version, s.summary_files, s.parent_id
+          FROM session s
+          WHERE s.parent_id IS NOT NULL
+          ORDER BY s.time_created ASC
         `,
       )
-      .all(cutoffTime) as OpenCodePartRow[];
+      .all() as Record<string, unknown>[];
+    const childrenByParent = new Map<string, Record<string, unknown>[]>();
+    for (const row of rows) {
+      const parentId = String(row.parent_id ?? "");
+      if (!parentId) continue;
+      const children = childrenByParent.get(parentId);
+      if (children) children.push(row);
+      else childrenByParent.set(parentId, [row]);
+    }
+
+    const result: Record<string, unknown>[] = [];
+    const pending = [...rootIds];
+    const seen = new Set<string>();
+    while (pending.length > 0) {
+      const parentId = pending.pop()!;
+      for (const row of childrenByParent.get(parentId) ?? []) {
+        const id = String(row.id ?? "");
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        result.push(row);
+        pending.push(id);
+      }
+    }
+    return result;
   }
 
   private parsePartRow(
@@ -359,8 +471,25 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
       const isChild = parentId !== "";
 
       if (isChild) {
-        const context = ensureContext(parentId);
-        accumulateTokenStats(context.stats, msgData, this.name);
+        const childContext = ensureContext(sessionId);
+        const parts = partsByMessage.get(String(row.id ?? "")) ?? [];
+        if (parts.length > 0) {
+          accumulateTokenStats(childContext.stats, msgData, this.name);
+          childContext.stats.message_count += 1;
+          if (!childContext.messageTitle && String(msgData.role ?? "") === "user") {
+            childContext.messageTitle = firstUserMessageTitle([
+              {
+                id: String(row.id ?? ""),
+                role: "user",
+                agent: null,
+                time_created: Number(row.time_created ?? 0),
+                parts,
+              },
+            ]);
+          }
+        }
+        const parentContext = ensureContext(parentId);
+        accumulateTokenStats(parentContext.stats, msgData, this.name);
         continue;
       }
 
@@ -524,6 +653,10 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
         title,
         slug,
         directory,
+        parent_reference:
+          sessionRow.parent_id == null || String(sessionRow.parent_id) === ""
+            ? undefined
+            : { agentName: this.name, sessionId: String(sessionRow.parent_id) },
         version: asString(sessionRow.version) ?? undefined,
         time_created: timeCreated,
         time_updated: timeUpdated,

@@ -152,6 +152,7 @@ export interface SessionHead {
   title: string;
   display_title?: string;
   directory: string;
+  parent_reference?: SessionReference;
   project_identity?: ProjectIdentity;
   time_created: number;
   time_updated?: number;
@@ -174,6 +175,7 @@ export interface SessionDetail {
   display_title?: string;
   slug?: string | null;
   directory: string;
+  parent_reference?: SessionReference;
   project_identity?: ProjectIdentity;
   version?: string | null;
   time_created: number;

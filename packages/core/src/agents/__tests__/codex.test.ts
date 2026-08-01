@@ -1356,7 +1356,7 @@ describe("CodexAgent subagent folding", () => {
     tempDirs = [];
   });
 
-  it("filters subagent files out of scan and folds their tokens into the parent head", () => {
+  it("returns subagent files and folds their tokens into the parent head", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
     tempDirs.push(tempDir);
 
@@ -1378,9 +1378,11 @@ describe("CodexAgent subagent folding", () => {
     agent.sessionIndexCache = new Map();
 
     const heads = agent.scan({ from: 0 });
-    expect(heads.map((h: SessionHead) => h.id)).toEqual([PARENT_ID]);
+    expect(heads.map((h: SessionHead) => h.id)).toEqual([PARENT_ID, CHILD_ID]);
     expect(heads[0].stats.total_input_tokens).toBe(140);
     expect(heads[0].stats.total_output_tokens).toBe(80);
+    expect(heads[1].parent_reference).toEqual({ agentName: "codex", sessionId: PARENT_ID });
+    expect(heads[1].stats.total_input_tokens).toBe(40);
   });
 
   it("folds subagent tokens into getSessionData detail stats", () => {
@@ -1508,7 +1510,7 @@ describe("CodexAgent subagent folding", () => {
     expect(head.stats.total_output_tokens).toBe(20);
   });
 
-  it("filters subagent files via scanSessionSource (incrementalScan path)", () => {
+  it("parses subagent files via scanSessionSource", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
     tempDirs.push(tempDir);
 
@@ -1523,6 +1525,9 @@ describe("CodexAgent subagent folding", () => {
     agent.sessionIndexCache = new Map();
 
     const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
-    expect(agent.scanSessionSource(childFile)).toBeNull();
+    expect(agent.scanSessionSource(childFile)).toMatchObject({
+      id: CHILD_ID,
+      parent_reference: { agentName: "codex", sessionId: PARENT_ID },
+    });
   });
 });

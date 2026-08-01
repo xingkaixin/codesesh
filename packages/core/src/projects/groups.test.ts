@@ -41,4 +41,17 @@ describe("buildProjectGroups", () => {
       },
     ]);
   });
+
+  it("counts root sessions only when children are present", () => {
+    const groups = buildProjectGroups([
+      makeSession("parent", "codex", 200),
+      {
+        ...makeSession("child", "codex", 300),
+        parent_reference: { agentName: "codex", sessionId: "parent" },
+      },
+    ]);
+
+    expect(groups[0]?.sessionCount).toBe(1);
+    expect(groups[0]?.lastActivity).toBe(200);
+  });
 });

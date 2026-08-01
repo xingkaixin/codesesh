@@ -49,6 +49,18 @@ describe("cached sessions", () => {
     ]);
   });
 
+  it("round-trips parent references through the structured cache", () => {
+    const child = makeSessionHead("child", {
+      parent_reference: { agentName: "codex", sessionId: "parent" },
+    });
+    saveCachedSessions("codex", [makeSessionHead("parent"), child]);
+
+    expect(loadCachedSessions("codex")?.sessions[1]?.parent_reference).toEqual({
+      agentName: "codex",
+      sessionId: "parent",
+    });
+  });
+
   it("CS-137: reports whether the write reached disk", () => {
     expect(saveCachedSessions("codex", [makeSessionHead("one")])).toBe(true);
     expect(

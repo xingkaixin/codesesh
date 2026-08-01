@@ -19,7 +19,9 @@ import type {
 import {
   addCalendarDays,
   countCalendarDays,
+  filterSessionTreeByActivityWindow,
   getSessionAgentKey,
+  isChildSession,
   toCalendarDayKey,
 } from "../contract/index.js";
 
@@ -113,7 +115,9 @@ export function buildDashboard(
     }
   }
 
-  for (const session of sessions) {
+  const visibleSessions = filterSessionTreeByActivityWindow(sessions, from, to);
+  for (const session of visibleSessions) {
+    if (isChildSession(session)) continue;
     const agentName = getSessionAgentName(session);
     if (scope.agent && agentName !== scope.agent) continue;
     if (scope.projectKind || scope.projectKey) {
@@ -130,8 +134,6 @@ export function buildDashboard(
     }
 
     const activity = getSessionActivityTime(session);
-    if (from != null && activity < from) continue;
-    if (activity > to) continue;
 
     const messageCount = session.stats.message_count;
     const sessionTokens = getTotalTokens(session.stats);

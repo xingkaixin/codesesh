@@ -61,6 +61,19 @@ describe("CS-150: --json is a session index", () => {
     expect(output.sessions.map((session) => session.id)).toEqual(["new"]);
   });
 
+  it("filters by parent activity while retaining child sessions", () => {
+    const parent = makeSession("parent", 5_000);
+    const child = {
+      ...makeSession("child", 100),
+      parent_reference: { agentName: "codex", sessionId: "parent" },
+    };
+
+    const output = buildSessionIndexOutput(makeSnapshot([parent, child]), { from: 1_000 });
+
+    expect(output.sessions.map((session) => session.id)).toEqual(["parent", "child"]);
+    expect(output.agents.find((agent) => agent.name === "codex")?.count).toBe(2);
+  });
+
   it("reports an agent with no sessions as unavailable", () => {
     const output = buildSessionIndexOutput({ sessions: [], byAgent: { codex: [] } });
 

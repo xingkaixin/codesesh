@@ -261,7 +261,7 @@ describe("ZCodeAgent parsing", () => {
 });
 
 describe("ZCodeAgent subagent folding", () => {
-  it("filters subagent_child sessions out of the top-level list and folds their tokens", () => {
+  it("returns child sessions and folds their tokens into the parent", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-zcode-subagent-"));
     tempDirs.push(tempDir);
     const dbPath = createZCodeDbWithSubagent(tempDir);
@@ -318,13 +318,16 @@ describe("ZCodeAgent subagent folding", () => {
     agent.dbPath = dbPath;
 
     const heads = agent.scan({ from: 0 });
-    expect(heads.map((h: any) => h.id)).toEqual(["parent"]);
+    expect(heads.map((h: any) => h.id)).toEqual(["parent", "child"]);
     const [head] = heads;
     expect(head.stats).toMatchObject({
       message_count: 1,
       total_input_tokens: 50,
       total_output_tokens: 60,
     });
+    expect(head.parent_reference).toBeUndefined();
+    expect(heads[1].parent_reference).toEqual({ agentName: "zcode", sessionId: "parent" });
+    expect(heads[1].stats).toMatchObject({ message_count: 1, total_input_tokens: 40 });
   });
 
   it("folds child tokens into getSessionData detail stats without surfacing child messages", () => {
@@ -391,6 +394,10 @@ describe("ZCodeAgent subagent folding", () => {
     });
     expect(data.messages).toHaveLength(1);
     expect(data.messages[0].id).toBe("msg_parent");
+
+    const child = agent.getSessionData("child");
+    expect(child.parent_reference).toEqual({ agentName: "zcode", sessionId: "parent" });
+    expect(child.messages).toHaveLength(1);
   });
 
   it("aggregates tokens across multiple children", () => {

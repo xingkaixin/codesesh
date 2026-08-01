@@ -27,6 +27,8 @@ export interface SessionRow extends DatabaseRow {
   title?: string;
   source_path?: string | null;
   directory?: string;
+  parent_agent_name?: string | null;
+  parent_session_id?: string | null;
   project_identity_kind?: ProjectIdentityKind;
   project_identity_key?: string;
   project_display_name?: string;
@@ -117,6 +119,8 @@ export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
       title,
       source_path,
       directory,
+      parent_agent_name,
+      parent_session_id,
       project_identity_kind,
       project_identity_key,
       project_display_name,
@@ -135,13 +139,15 @@ export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
       smart_tags_json,
       smart_tags_source_updated_at,
       meta_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(agent_name, session_id) DO UPDATE SET
       sort_index = excluded.sort_index,
       slug = excluded.slug,
       title = excluded.title,
       source_path = excluded.source_path,
       directory = excluded.directory,
+      parent_agent_name = excluded.parent_agent_name,
+      parent_session_id = excluded.parent_session_id,
       project_identity_kind = excluded.project_identity_kind,
       project_identity_key = excluded.project_identity_key,
       project_display_name = excluded.project_display_name,
@@ -173,6 +179,8 @@ export function prepareUpsertIndexedSession(db: SQLiteDatabase): SQLiteStatement
       title,
       source_path,
       directory,
+      parent_agent_name,
+      parent_session_id,
       project_identity_kind,
       project_identity_key,
       project_display_name,
@@ -191,11 +199,13 @@ export function prepareUpsertIndexedSession(db: SQLiteDatabase): SQLiteStatement
       smart_tags_json,
       smart_tags_source_updated_at,
       meta_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(agent_name, session_id) DO UPDATE SET
       slug = excluded.slug,
       title = excluded.title,
       directory = excluded.directory,
+      parent_agent_name = excluded.parent_agent_name,
+      parent_session_id = excluded.parent_session_id,
       project_identity_kind = excluded.project_identity_kind,
       project_identity_key = excluded.project_identity_key,
       project_display_name = excluded.project_display_name,
@@ -234,6 +244,8 @@ export function upsertSessionRow(
     session.title,
     sourcePath,
     session.directory,
+    session.parent_reference?.agentName ?? null,
+    session.parent_reference?.sessionId ?? null,
     identity.kind,
     identity.key,
     identity.displayName,
@@ -317,6 +329,12 @@ export function sessionFromRow(row: SessionRow): SessionHead {
       kind: row.project_identity_kind ?? "path",
       key: String(row.project_identity_key),
       displayName: String(row.project_display_name ?? ""),
+    };
+  }
+  if (row.parent_agent_name && row.parent_session_id) {
+    session.parent_reference = {
+      agentName: String(row.parent_agent_name),
+      sessionId: String(row.parent_session_id),
     };
   }
   if (row.time_updated != null) {

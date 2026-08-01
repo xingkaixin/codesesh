@@ -1,6 +1,7 @@
 import { availableParallelism } from "node:os";
 import { Worker } from "node:worker_threads";
 import type { SessionHead, SmartTag } from "../types/index.js";
+import { filterSessionTreeByActivityWindow } from "../contract/session-tree.js";
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import { createRegisteredAgents } from "../agents/index.js";
 import { filterSessionsByProjectScope } from "../projects/index.js";
@@ -70,15 +71,7 @@ export function filterSessions(sessions: SessionHead[], options: ScanOptions): S
     result = filterSessionsByProjectScope(result, options.cwd);
   }
 
-  if (options.from != null) {
-    result = result.filter((s) => (s.time_updated ?? s.time_created) >= options.from!);
-  }
-
-  if (options.to != null) {
-    result = result.filter((s) => (s.time_updated ?? s.time_created) <= options.to!);
-  }
-
-  return result;
+  return filterSessionTreeByActivityWindow(result, options.from, options.to);
 }
 
 export interface AgentScanTiming {
@@ -444,6 +437,7 @@ async function scanAgentFull(
       from: options.from,
       to: options.to,
       fast: options.fast,
+      includeRelatedSessions: true,
       onProgress: (progress) => {
         onProgress?.({
           agent: agent.name,
