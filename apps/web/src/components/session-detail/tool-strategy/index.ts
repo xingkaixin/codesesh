@@ -16,10 +16,11 @@ import type { NormalizedToolState, ToolDisplayStrategy } from "../tool-normalize
 import { buildClaudeToolStrategy } from "./claudecode";
 import { buildOpencodeToolStrategy } from "./opencode";
 import { buildKimiToolStrategy } from "./kimi";
+import { buildKimiCodeToolStrategy } from "./kimi-code";
+import { buildZCodeToolStrategy } from "./zcode";
 import { buildCodexToolStrategy } from "./codex";
 import { buildCursorToolStrategy } from "./cursor";
 import { buildPiToolStrategy } from "./pi";
-import { buildZCodeToolStrategy } from "./zcode";
 import { buildDefaultToolStrategy } from "./shared";
 
 export type { NormalizedToolState, ToolDisplayStrategy, ToolStatus } from "../tool-normalize";
@@ -48,6 +49,7 @@ const TOOL_STRATEGY_BUILDERS: Record<string, ToolStrategyBuilder> = {
   claudecode: buildClaudeToolStrategy,
   opencode: buildOpencodeToolStrategy,
   kimi: buildKimiToolStrategy,
+  "kimi-code": buildKimiCodeToolStrategy,
   codex: buildCodexToolStrategy,
   cursor: buildCursorToolStrategy,
   pi: buildPiToolStrategy,

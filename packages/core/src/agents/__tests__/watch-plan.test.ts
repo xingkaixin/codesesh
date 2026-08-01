@@ -16,6 +16,7 @@ describe("registered agent session watch plans", () => {
       "codex",
       "cursor",
       "kimi",
+      "kimi-code",
       "opencode",
       "pi",
       "zcode",
@@ -32,6 +33,7 @@ describe("registered agent session watch plans", () => {
     vi.stubEnv("CODEX_HOME", "/tmp/codex-home");
     vi.stubEnv("PI_HOME", "/tmp/pi-home");
     vi.stubEnv("KIMI_SHARE_DIR", "/tmp/kimi-home");
+    vi.stubEnv("KIMI_CODE_HOME", "/tmp/kimi-code-home");
     vi.stubEnv("CURSOR_DATA_PATH", "/tmp/cursor-home");
     vi.stubEnv("XDG_DATA_HOME", "/tmp/data-home");
     const agents = new Map(createRegisteredAgents().map((agent) => [agent.name, agent]));
@@ -61,6 +63,13 @@ describe("registered agent session watch plans", () => {
     expect(agents.get("kimi")?.getSessionWatchPlan()).toEqual({
       status: "supported",
       targets: [{ root: roots.kimi, path: join(roots.kimi!, "sessions") }, { path: "data/kimi" }],
+    });
+    expect(agents.get("kimi-code")?.getSessionWatchPlan()).toEqual({
+      status: "supported",
+      targets: [
+        { root: roots["kimi-code"], path: join(roots["kimi-code"]!, "sessions") },
+        { root: roots["kimi-code"], path: join(roots["kimi-code"]!, "session_index.jsonl") },
+      ],
     });
     expect(agents.get("cursor")?.getSessionWatchPlan()).toEqual({
       status: "supported",

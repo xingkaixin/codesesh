@@ -34,6 +34,7 @@ beforeEach(() => {
   vi.stubEnv("CODEX_HOME", undefined);
   vi.stubEnv("CLAUDE_CONFIG_DIR", undefined);
   vi.stubEnv("KIMI_SHARE_DIR", undefined);
+  vi.stubEnv("KIMI_CODE_HOME", undefined);
   vi.stubEnv("PI_HOME", undefined);
   vi.stubEnv("CURSOR_DATA_PATH", undefined);
   vi.stubEnv("XDG_DATA_HOME", undefined);
@@ -52,6 +53,7 @@ describe("resolveAgentRoots", () => {
     expectPath(roots.codex!).toBe("/home/user/.codex");
     expectPath(roots.claudecode!).toBe("/home/user/.claude");
     expectPath(roots.kimi!).toBe("/home/user/.kimi");
+    expectPath(roots["kimi-code"]!).toBe("/home/user/.kimi-code");
     expectPath(roots.pi!).toBe("/home/user/.pi");
     expectPath(roots.zcode!).toBe("/home/user/.zcode");
   });
@@ -75,6 +77,13 @@ describe("resolveAgentRoots", () => {
     mockedHomedir.mockReturnValue("/home/user");
     const roots = resolveAgentRoots();
     expectPath(roots.kimi!).toBe("/custom/kimi");
+  });
+
+  it("respects KIMI_CODE_HOME override", () => {
+    vi.stubEnv("KIMI_CODE_HOME", "/custom/kimi-code");
+    mockedHomedir.mockReturnValue("/home/user");
+    const roots = resolveAgentRoots();
+    expectPath(roots["kimi-code"]!).toBe("/custom/kimi-code");
   });
 
   it("respects PI_HOME override", () => {

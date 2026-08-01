@@ -34,13 +34,15 @@ describe("agent registration completeness", () => {
   });
 
   it("keeps the agent icon directory aligned with registered icons", () => {
-    const registeredIcons = getRegisteredAgents()
-      .map((registration) => {
-        const iconPath = resolve(PUBLIC_ROOT, registration.icon.replace(/^\/+/, ""));
-        expect(existsSync(iconPath), `${registrationName(registration)} icon`).toBe(true);
-        return basename(iconPath);
-      })
-      .toSorted();
+    const registeredIcons = [
+      ...new Set(
+        getRegisteredAgents().map((registration) => {
+          const iconPath = resolve(PUBLIC_ROOT, registration.icon.replace(/^\/+/, ""));
+          expect(existsSync(iconPath), `${registrationName(registration)} icon`).toBe(true);
+          return basename(iconPath);
+        }),
+      ),
+    ].toSorted();
     const iconFiles = readdirSync(AGENT_ICON_ROOT)
       .filter((file) => file.endsWith(".svg"))
       .toSorted();

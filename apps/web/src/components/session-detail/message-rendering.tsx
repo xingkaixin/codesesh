@@ -153,7 +153,9 @@ export const MessageItem = memo(function MessageItem({
             <span className="console-mono text-sm font-bold tracking-wide text-[var(--console-text)]">
               {roleLabel}
             </span>
-            <time className="console-mono text-xs text-[var(--console-muted)]">{time}</time>
+            {time ? (
+              <time className="console-mono text-xs text-[var(--console-muted)]">{time}</time>
+            ) : null}
             {modeLabel && (
               <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]">
                 {modeLabel}

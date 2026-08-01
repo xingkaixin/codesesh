@@ -500,6 +500,34 @@ describe("scanSessions", () => {
     expect(mockedSaveCachedSessions).not.toHaveBeenCalled();
   });
 
+  it("filters agent-specific stale sessions from cache-only results", async () => {
+    const empty = makeSession("empty", {
+      stats: { message_count: 0, total_input_tokens: 0, total_output_tokens: 0, total_cost: 0 },
+    });
+    const visible = makeSession("visible");
+    const cachedSessions = [empty, visible];
+    mockedLoadCachedSessions.mockReturnValue({
+      sessions: cachedSessions,
+      meta: {},
+      timestamp: Date.now(),
+    });
+    const filterCachedSessions = vi.fn(() => [visible]);
+    const agent = createTestAgent({
+      name: "test",
+      available: false,
+      sessions: [],
+    });
+    agent.filterCachedSessions = filterCachedSessions;
+    mockedCreateRegisteredAgents.mockReturnValue([agent]);
+
+    const result = await scanSessions({ useCache: true, cacheOnly: true });
+
+    expect(filterCachedSessions).toHaveBeenCalledWith(cachedSessions);
+    expect(result.sessions.map((session) => session.id)).toEqual(["visible"]);
+    expect(mockedSaveCachedSessionChanges).not.toHaveBeenCalled();
+    expect(mockedSaveCachedSessions).not.toHaveBeenCalled();
+  });
+
   it("uses cached sessions even when last refresh is old", async () => {
     mockedLoadCachedSessions.mockReturnValue({
       sessions: [makeSession("cached")],

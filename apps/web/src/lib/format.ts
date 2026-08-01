@@ -37,8 +37,9 @@ export function formatTokens(n: number) {
   return n.toString();
 }
 
-export function formatMessageTime(rawTime: number | string) {
-  if (typeof rawTime === "number" && rawTime <= 0) return "Unknown time";
+export function formatMessageTime(rawTime: number | string | null | undefined): string | null {
+  if (rawTime == null) return null;
+  if (typeof rawTime === "number" && (!Number.isFinite(rawTime) || rawTime <= 0)) return null;
 
   let date: Date | null = null;
   if (typeof rawTime === "number") {
@@ -47,15 +48,15 @@ export function formatMessageTime(rawTime: number | string) {
   } else if (typeof rawTime === "string") {
     if (rawTime.trim()) {
       const timestamp = Number(rawTime);
-      if (!Number.isNaN(timestamp) && timestamp > 0) {
+      if (Number.isFinite(timestamp) && timestamp > 0) {
         date = new Date(timestamp < 10 ** 12 ? timestamp * 1000 : timestamp);
       } else {
-        date = new Date(rawTime);
+        date = Number.isFinite(timestamp) ? null : new Date(rawTime);
       }
     }
   }
 
-  if (!date || Number.isNaN(date.getTime())) return "Unknown time";
+  if (!date || Number.isNaN(date.getTime())) return null;
 
   return date.toLocaleTimeString("en-US", {
     hour: "2-digit",
