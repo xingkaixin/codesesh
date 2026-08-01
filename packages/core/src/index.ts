@@ -66,6 +66,7 @@ export type {
   SearchIndexSyncResult,
   SearchOptions,
   SessionHeadChange,
+  SessionTagTiming,
 } from "./discovery/index.js";
 export {
   createProjectScopeMatcher,

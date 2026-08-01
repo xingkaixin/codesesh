@@ -1,6 +1,6 @@
 export { firstExisting, readEnvPath, resolveDataHome, resolveHomePath } from "./paths.js";
 export { ensureSessionTagsSync, filterSessions, scanSessions } from "./scanner.js";
-export type { LiveSnapshot, ScanOptions } from "./scanner.js";
+export type { LiveSnapshot, ScanOptions, SessionTagTiming } from "./scanner.js";
 export {
   materializeSessionDetail,
   materializeSessionDetailResponse,

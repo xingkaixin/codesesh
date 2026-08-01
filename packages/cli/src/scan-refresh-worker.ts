@@ -17,6 +17,7 @@ import {
   type SessionCacheMeta,
   type SessionHead,
   type SessionHeadChange,
+  type SessionTagTiming,
 } from "@codesesh/core";
 import { appLogger } from "./logging.js";
 
@@ -176,6 +177,39 @@ function syncAgentSources(
 const TAG_SETTLE_MS = 60_000;
 const TAG_CHECKPOINT_SIZE = 32;
 
+interface SessionFinalizationTiming extends SessionTagTiming {
+  batches: number;
+}
+
+function createSessionFinalizationTiming(): SessionFinalizationTiming {
+  return {
+    batches: 0,
+    sessions: 0,
+    cacheHits: 0,
+    staleSessions: 0,
+    failedSessions: 0,
+    getSessionDataCalls: 0,
+    getSessionDataMs: 0,
+    classifySessionTagsCalls: 0,
+    classifySessionTagsMs: 0,
+  };
+}
+
+function addSessionTagTiming(target: SessionFinalizationTiming, source: SessionTagTiming): void {
+  target.sessions += source.sessions;
+  target.cacheHits += source.cacheHits;
+  target.staleSessions += source.staleSessions;
+  target.failedSessions += source.failedSessions;
+  target.getSessionDataCalls += source.getSessionDataCalls;
+  target.getSessionDataMs += source.getSessionDataMs;
+  target.classifySessionTagsCalls += source.classifySessionTagsCalls;
+  target.classifySessionTagsMs += source.classifySessionTagsMs;
+}
+
+function roundMilliseconds(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 function isSettled(session: SessionHead, now: number): boolean {
   return now - (session.time_updated ?? session.time_created) >= TAG_SETTLE_MS;
 }
@@ -190,6 +224,7 @@ export function finalizeSessions(
   onProgress?: (progress: AgentScanProgress) => void,
   onCheckpoint?: (checkpoint: ScanRefreshWorkerCheckpoint) => void,
   finalizeSessionIds?: ReadonlySet<string>,
+  onTiming?: (timing: SessionTagTiming) => void,
 ): SessionHead[] {
   const ordered = sortSessions(attachMissingProjectIdentities(sessions));
 
@@ -218,9 +253,11 @@ export function finalizeSessions(
   const taggedById = new Map<string, SessionHead>();
   for (let start = 0; start < settled.length; start += TAG_CHECKPOINT_SIZE) {
     const batch = settled.slice(start, start + TAG_CHECKPOINT_SIZE);
-    const taggedBatch = ensureSessionTagsSync(agent, batch, (processed) => {
+    const taggedResult = ensureSessionTagsSync(agent, batch, (processed) => {
       reportProgress(start + processed, settled.length);
-    }).sessions;
+    });
+    if (taggedResult.timing) onTiming?.(taggedResult.timing);
+    const taggedBatch = taggedResult.sessions;
     for (const session of taggedBatch) taggedById.set(session.id, session);
 
     onCheckpoint?.({
@@ -324,6 +361,7 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
   });
 
   const finalizeStartedAt = performance.now();
+  const finalizationTiming = createSessionFinalizationTiming();
   sessions = finalizeSessions(
     agent,
     sessions,
@@ -335,11 +373,54 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
         checkpoint,
       } satisfies ScanRefreshWorkerMessage),
     finalizeSessionIds,
+    (batchTiming) => {
+      finalizationTiming.batches += 1;
+      addSessionTagTiming(finalizationTiming, batchTiming);
+      appLogger.debug("scan.refresh_worker.finalization_batch", {
+        agent: data.agentName,
+        batch: finalizationTiming.batches,
+        sessions: batchTiming.sessions,
+        cache_hits: batchTiming.cacheHits,
+        stale_sessions: batchTiming.staleSessions,
+        failed_sessions: batchTiming.failedSessions,
+        get_session_data_calls: batchTiming.getSessionDataCalls,
+        get_session_data_ms: roundMilliseconds(batchTiming.getSessionDataMs),
+        classify_session_tags_calls: batchTiming.classifySessionTagsCalls,
+        classify_session_tags_ms: roundMilliseconds(batchTiming.classifySessionTagsMs),
+      });
+    },
+  );
+  const finalizationDuration = performance.now() - finalizeStartedAt;
+  const otherFinalizationMs = Math.max(
+    0,
+    finalizationDuration -
+      finalizationTiming.getSessionDataMs -
+      finalizationTiming.classifySessionTagsMs,
   );
   appLogger.debug("scan.refresh_worker.finalized", {
     agent: data.agentName,
     sessions: sessions.length,
-    duration_ms: Math.round(performance.now() - finalizeStartedAt),
+    finalized_sessions: finalizationTiming.sessions,
+    batches: finalizationTiming.batches,
+    cache_hits: finalizationTiming.cacheHits,
+    stale_sessions: finalizationTiming.staleSessions,
+    failed_sessions: finalizationTiming.failedSessions,
+    get_session_data_calls: finalizationTiming.getSessionDataCalls,
+    get_session_data_ms: roundMilliseconds(finalizationTiming.getSessionDataMs),
+    get_session_data_avg_ms: roundMilliseconds(
+      finalizationTiming.getSessionDataCalls > 0
+        ? finalizationTiming.getSessionDataMs / finalizationTiming.getSessionDataCalls
+        : 0,
+    ),
+    classify_session_tags_calls: finalizationTiming.classifySessionTagsCalls,
+    classify_session_tags_ms: roundMilliseconds(finalizationTiming.classifySessionTagsMs),
+    classify_session_tags_avg_ms: roundMilliseconds(
+      finalizationTiming.classifySessionTagsCalls > 0
+        ? finalizationTiming.classifySessionTagsMs / finalizationTiming.classifySessionTagsCalls
+        : 0,
+    ),
+    other_finalization_ms: roundMilliseconds(otherFinalizationMs),
+    duration_ms: roundMilliseconds(finalizationDuration),
     total_duration_ms: Math.round(performance.now() - startedAt),
   });
   const nextMeta = buildAgentCacheMeta(agent, new Set(sessions.map((session) => session.id)));

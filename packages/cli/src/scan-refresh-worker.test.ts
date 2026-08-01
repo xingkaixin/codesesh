@@ -67,6 +67,30 @@ describe("finalizeSessions", () => {
     expect(result?.smart_tags_source_updated_at).toBe(1000);
   });
 
+  it("reports source-read and tag-classification timing separately", () => {
+    const agent = makeAgent(
+      () =>
+        ({
+          time_created: 1000,
+          time_updated: 1000,
+          messages: [],
+        }) as never,
+    );
+    const timings: unknown[] = [];
+
+    finalizeSessions(agent, [makeSession("s1")], undefined, undefined, undefined, (timing) =>
+      timings.push(timing),
+    );
+
+    expect(timings).toHaveLength(1);
+    expect(timings[0]).toMatchObject({
+      sessions: 1,
+      staleSessions: 1,
+      getSessionDataCalls: 1,
+      classifySessionTagsCalls: 1,
+    });
+  });
+
   it("reports progress while finalizing settled sessions", () => {
     const agent = makeAgent(() => ({ messages: [] }) as never);
     const progress: AgentScanProgress[] = [];
