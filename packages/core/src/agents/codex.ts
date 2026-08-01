@@ -8,7 +8,7 @@ import {
   skippedSession,
 } from "./base.js";
 import type { ParseSessionResult } from "./base.js";
-import type { SessionHead, SessionDetail, MessagePart } from "../types/index.js";
+import type { Message, SessionHead, SessionDetail, MessagePart } from "../types/index.js";
 import { firstExisting, resolveHomePath } from "../discovery/paths.js";
 import { parseJsonlLines, readJsonlFile, readJsonlFileLines } from "../utils/jsonl.js";
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
@@ -34,7 +34,7 @@ const PLAN_APPROVAL_PREFIX = "PLEASE IMPLEMENT THIS PLAN";
 const SUBAGENT_NOTIFICATION_PATTERN =
   /<subagent_notification>\s*([\s\S]*?)\s*<\/subagent_notification>/;
 const HEAD_INDEX_VERSION = "codex-head-v1";
-const PARSER_VERSION = "codex-parser-v5";
+const PARSER_VERSION = "codex-parser-v6";
 
 export function resolveCodexDataRoot(): string {
   return resolveHomePath("CODEX_HOME", ".codex");
@@ -113,6 +113,7 @@ function extractPayload(data: Record<string, unknown>): Record<string, unknown> 
 interface ThreadMeta {
   threadSource: string;
   parentThreadId: string | null;
+  agentNickname: string | null;
 }
 
 function extractThreadMeta(firstRecord: Record<string, unknown>): ThreadMeta | null {
@@ -120,7 +121,8 @@ function extractThreadMeta(firstRecord: Record<string, unknown>): ThreadMeta | n
   const payload = extractPayload(firstRecord);
   const threadSource = asString(payload["thread_source"]) ?? "";
   const parentThreadId = asString(payload["parent_thread_id"]) ?? null;
-  return { threadSource, parentThreadId };
+  const agentNickname = asString(payload["agent_nickname"]) ?? null;
+  return { threadSource, parentThreadId, agentNickname };
 }
 
 function extractTokenUsage(payload: Record<string, unknown>): {
@@ -199,6 +201,22 @@ function flattenOutputText(output: unknown): string {
         return record ? (asString(record["text"]) ?? "") : "";
       })
       .join("");
+  }
+  return "";
+}
+
+function extractAssistantOutputText(payload: Record<string, unknown>): string {
+  const content = payload["content"];
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => {
+        const record = asRecord(item);
+        return record && String(record["type"] ?? "") === "output_text"
+          ? String(record["text"] ?? "")
+          : "";
+      })
+      .filter(Boolean)
+      .join("\n");
   }
   return "";
 }
@@ -345,6 +363,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   private sessionIndexMtime: number | null | undefined;
   private sessionIndexPath: string | undefined;
   private subagentStatsByParent = new Map<string, SessionHead["stats"][]>();
+  private subagentFilesByParent = new Map<string, string[]>();
 
   // ---- BaseAgent implementation ----
 
@@ -384,7 +403,9 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     const sources = this.listRolloutFiles(options);
 
     const childStatsByParent = new Map<string, SessionHead["stats"][]>();
+    const childFilesByParent = new Map<string, string[]>();
     this.subagentStatsByParent = childStatsByParent;
+    this.subagentFilesByParent = childFilesByParent;
 
     const heads: SessionHead[] = [];
     options?.onProgress?.({ total: sources.length, processed: 0, sessions: 0 });
@@ -396,6 +417,10 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
         if (threadMeta?.threadSource === "subagent") {
           const parentId = threadMeta.parentThreadId;
           if (parentId) {
+            const files = childFilesByParent.get(parentId);
+            if (files) files.push(file);
+            else childFilesByParent.set(parentId, [file]);
+
             const stats = this.parseTokenStats(file);
             const list = childStatsByParent.get(parentId);
             if (list) list.push(stats);
@@ -529,6 +554,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     const meta = this.sessionMetaMap.get(sessionId);
     if (!meta) throw new Error(`Session not found: ${sessionId}`);
     if (!existsSync(meta.sourcePath)) throw new Error(`Session file missing: ${meta.sourcePath}`);
+    this.basePath ??= this.findBasePath();
 
     const transcript = new TranscriptBuilder();
 
@@ -642,6 +668,22 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       }
     }
 
+    const childMessages = this.collectChildMessages(meta.id);
+    for (const message of childMessages) {
+      const messageText = message.parts.find((part) => part.type === "text")?.text;
+      const alreadyVisible = result.messages.some(
+        (existing) =>
+          (message.subagent_id !== undefined && existing.subagent_id === message.subagent_id) ||
+          (existing.subagent_id === undefined &&
+            message.nickname !== undefined &&
+            messageText !== undefined &&
+            existing.nickname === message.nickname &&
+            existing.parts.some((part) => part.type === "text" && part.text === messageText)),
+      );
+      if (!alreadyVisible) result.messages.push(message);
+    }
+    result.stats.message_count = result.messages.length;
+
     return {
       reference: { agentName: this.name, sessionId: meta.id },
       id: meta.id,
@@ -659,16 +701,87 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     const cached = this.subagentStatsByParent.get(parentSessionId);
     if (cached) return cached;
 
-    const stats: SessionHead["stats"][] = [];
+    const stats = this.collectChildFiles(parentSessionId).map((file) => this.parseTokenStats(file));
+
+    if (stats.length > 0) this.subagentStatsByParent.set(parentSessionId, stats);
+    return stats;
+  }
+
+  private collectChildFiles(parentSessionId: string): string[] {
+    const cached = this.subagentFilesByParent.get(parentSessionId);
+    if (cached) return cached;
+
+    const files: string[] = [];
     for (const { file } of this.listRolloutFiles()) {
       const threadMeta = this.readThreadMeta(file);
       if (threadMeta?.threadSource !== "subagent") continue;
       if (threadMeta.parentThreadId !== parentSessionId) continue;
-      stats.push(this.parseTokenStats(file));
+      files.push(file);
     }
 
-    if (stats.length > 0) this.subagentStatsByParent.set(parentSessionId, stats);
-    return stats;
+    if (files.length > 0) this.subagentFilesByParent.set(parentSessionId, files);
+    return files;
+  }
+
+  private collectChildMessages(parentSessionId: string): Message[] {
+    return this.collectChildFiles(parentSessionId)
+      .flatMap((file) => {
+        const message = this.parseChildFinalMessage(file);
+        return message ? [message] : [];
+      })
+      .sort((left, right) => left.time_created - right.time_created);
+  }
+
+  private parseChildFinalMessage(filePath: string): Message | null {
+    const sessionId = extractSessionId(filePath);
+    const threadMeta = this.readThreadMeta(filePath);
+    type ChildOutput = { id: string; text: string; timestampMs: number; isFinal: boolean };
+    let latestOutput: ChildOutput | null = null;
+    let finalOutput: ChildOutput | null = null;
+
+    for (const record of readJsonlFile(filePath)) {
+      try {
+        const recordType = String(record["type"] ?? "");
+        if (recordType !== "response_item") continue;
+        const payload = extractPayload(record);
+        if (String(payload["type"] ?? "") !== "message") continue;
+        if (String(payload["role"] ?? "") !== "assistant") continue;
+
+        const text = cleanInternalText(extractAssistantOutputText(payload));
+        if (!text) continue;
+
+        const candidate: ChildOutput = {
+          id: asString(payload["id"]) ?? `codex-subagent-${sessionId}`,
+          text,
+          timestampMs:
+            parseTimestampMs(record) || parseTimestampMs(payload) || statSync(filePath).mtimeMs,
+          isFinal:
+            String(record["phase"] ?? "") === "final_answer" ||
+            String(payload["phase"] ?? "") === "final_answer",
+        };
+        latestOutput = candidate;
+        if (candidate.isFinal) finalOutput = candidate;
+      } catch {
+        // skip malformed records
+      }
+    }
+
+    const selected = finalOutput ?? latestOutput;
+    if (!selected) return null;
+
+    return {
+      id: selected.id,
+      role: "assistant",
+      agent: "codex",
+      time_created: selected.timestampMs,
+      mode: null,
+      model: null,
+      provider: null,
+      cost: 0,
+      subagent_id: sessionId,
+      nickname: threadMeta?.agentNickname ?? undefined,
+      parts: [{ type: "text", text: selected.text, time_created: selected.timestampMs }],
+    };
   }
 
   // ---- File listing ----
@@ -1118,22 +1231,8 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     pendingPlan: MessagePart | null,
     activeModel: string | null,
   ): MessagePart | null {
-    const content = payload["content"];
-    if (!Array.isArray(content)) return pendingPlan;
-
-    const textParts: string[] = [];
-    for (const item of content) {
-      const ci = asRecord(item);
-      if (!ci) continue;
-      if (String(ci["type"] ?? "") === "output_text") {
-        const text = String(ci["text"] ?? "");
-        if (text.trim()) textParts.push(text);
-      }
-    }
-
-    if (textParts.length === 0) return pendingPlan;
-
-    const fullText = textParts.join("\n");
+    const fullText = extractAssistantOutputText(payload);
+    if (!fullText) return pendingPlan;
 
     const planMatch = fullText.match(PROPOSED_PLAN_PATTERN);
     if (planMatch) {
