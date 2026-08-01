@@ -1,4 +1,13 @@
-import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  statSync,
+  type Dirent,
+} from "node:fs";
 import { join, basename } from "node:path";
 import {
   SingleFileSessionSource,
@@ -338,9 +347,16 @@ function extractPatchContent(
 import type {
   AgentScanOptions,
   FileSessionMeta,
+  SessionCacheMeta,
   SessionSourceFile,
   SessionSourceRef,
 } from "./base.js";
+
+/** 一次全量前缀扫构建的 subagent 关系索引；miss 即代表"无子会话"。 */
+interface SubagentIndex {
+  childFilesByParent: Map<string, string[]>;
+  subagentFiles: Set<string>;
+}
 
 interface SessionMeta extends FileSessionMeta {
   indexPath: string | null;
@@ -378,8 +394,8 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   private sessionIndexCache = new Map<string, string>();
   private sessionIndexMtime: number | null | undefined;
   private sessionIndexPath: string | undefined;
+  private subagentIndex: SubagentIndex | null = null;
   private subagentStatsByParent = new Map<string, SessionHead["stats"][]>();
-  private subagentFilesByParent = new Map<string, string[]>();
 
   // ---- BaseAgent implementation ----
 
@@ -414,63 +430,10 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     }));
   }
 
-  scan(options?: AgentScanOptions): SessionHead[] {
-    this.loadSessionIndex();
-    const sources = this.listScanSources(options);
-
-    const childStatsByParent = new Map<string, SessionHead["stats"][]>();
-    const childFilesByParent = new Map<string, string[]>();
-    this.subagentStatsByParent = childStatsByParent;
-    this.subagentFilesByParent = childFilesByParent;
-
-    const heads: SessionHead[] = [];
-    options?.onProgress?.({ total: sources.length, processed: 0, sessions: 0 });
-
-    for (const [index, { file }] of sources.entries()) {
-      try {
-        const threadMeta = this.readThreadMeta(file);
-
-        if (threadMeta?.threadSource === "subagent") {
-          const parentId = threadMeta.parentThreadId;
-          if (parentId) {
-            const files = childFilesByParent.get(parentId);
-            if (files) files.push(file);
-            else childFilesByParent.set(parentId, [file]);
-
-            const stats = this.parseTokenStats(file);
-            const list = childStatsByParent.get(parentId);
-            if (list) list.push(stats);
-            else childStatsByParent.set(parentId, [stats]);
-          }
-        }
-        const head = this.scanSessionSource(file, options);
-        if (head) heads.push(head);
-      } catch {
-        // skip unreadable files
-      } finally {
-        options?.onProgress?.({
-          total: sources.length,
-          processed: index + 1,
-          sessions: heads.length,
-        });
-      }
-    }
-
-    for (const head of heads) {
-      const childStats = childStatsByParent.get(head.id);
-      if (!childStats) continue;
-      for (const stats of childStats) {
-        head.stats.total_input_tokens += stats.total_input_tokens ?? 0;
-        head.stats.total_output_tokens += stats.total_output_tokens ?? 0;
-        head.stats.total_cost += stats.total_cost ?? 0;
-        if (stats.total_cache_read_tokens) {
-          head.stats.total_cache_read_tokens =
-            (head.stats.total_cache_read_tokens ?? 0) + stats.total_cache_read_tokens;
-        }
-      }
-    }
-
-    return heads;
+  setSessionMetaMap(meta: Map<string, SessionCacheMeta>): void {
+    super.setSessionMetaMap(meta);
+    this.subagentIndex = null;
+    this.subagentStatsByParent.clear();
   }
 
   shouldRescanAllSourcesOnChange(): boolean {
@@ -694,16 +657,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       cost_source: totalCost > 0 ? "estimated" : undefined,
     });
 
-    const childStats = this.collectChildStats(meta.id);
-    for (const stats of childStats) {
-      result.stats.total_input_tokens += stats.total_input_tokens ?? 0;
-      result.stats.total_output_tokens += stats.total_output_tokens ?? 0;
-      result.stats.total_cost += stats.total_cost ?? 0;
-      if (stats.total_cache_read_tokens) {
-        result.stats.total_cache_read_tokens =
-          (result.stats.total_cache_read_tokens ?? 0) + stats.total_cache_read_tokens;
-      }
-    }
+    this.applyChildStats(result.stats, meta.id);
 
     const childMessages = this.collectChildMessages(meta.id);
     for (const message of childMessages) {
@@ -738,30 +692,53 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     };
   }
 
+  /**
+   * Builds the complete parent→children map in one prefix sweep. A cache miss
+   * afterwards means "no children", so per-session directory rescans (the old
+   * O(N²) finalization hotspot) never happen.
+   */
+  private ensureSubagentIndex(): SubagentIndex {
+    if (this.subagentIndex) return this.subagentIndex;
+    this.basePath ??= this.findBasePath();
+    const index: SubagentIndex = { childFilesByParent: new Map(), subagentFiles: new Set() };
+    for (const file of this.listRolloutFilePaths()) {
+      const threadMeta = this.readThreadMeta(file);
+      if (threadMeta?.threadSource !== "subagent") continue;
+      index.subagentFiles.add(file);
+      if (!threadMeta.parentThreadId) continue;
+      const files = index.childFilesByParent.get(threadMeta.parentThreadId);
+      if (files) files.push(file);
+      else index.childFilesByParent.set(threadMeta.parentThreadId, [file]);
+    }
+    this.subagentIndex = index;
+    return index;
+  }
+
+  private applyChildStats(target: SessionHead["stats"], sessionId: string): void {
+    for (const stats of this.collectChildStats(sessionId)) {
+      target.total_input_tokens += stats.total_input_tokens ?? 0;
+      target.total_output_tokens += stats.total_output_tokens ?? 0;
+      target.total_cost += stats.total_cost ?? 0;
+      if (stats.total_cache_read_tokens) {
+        target.total_cache_read_tokens =
+          (target.total_cache_read_tokens ?? 0) + stats.total_cache_read_tokens;
+      }
+    }
+  }
+
   private collectChildStats(parentSessionId: string): SessionHead["stats"][] {
+    const files = this.collectChildFiles(parentSessionId);
+    if (files.length === 0) return [];
     const cached = this.subagentStatsByParent.get(parentSessionId);
     if (cached) return cached;
 
-    const stats = this.collectChildFiles(parentSessionId).map((file) => this.parseTokenStats(file));
-
-    if (stats.length > 0) this.subagentStatsByParent.set(parentSessionId, stats);
+    const stats = files.map((file) => this.parseTokenStats(file));
+    this.subagentStatsByParent.set(parentSessionId, stats);
     return stats;
   }
 
   private collectChildFiles(parentSessionId: string): string[] {
-    const cached = this.subagentFilesByParent.get(parentSessionId);
-    if (cached) return cached;
-
-    const files: string[] = [];
-    for (const { file } of this.listRolloutFiles()) {
-      const threadMeta = this.readThreadMeta(file);
-      if (threadMeta?.threadSource !== "subagent") continue;
-      if (threadMeta.parentThreadId !== parentSessionId) continue;
-      files.push(file);
-    }
-
-    if (files.length > 0) this.subagentFilesByParent.set(parentSessionId, files);
-    return files;
+    return this.ensureSubagentIndex().childFilesByParent.get(parentSessionId) ?? [];
   }
 
   private collectChildMessages(parentSessionId: string): Message[] {
@@ -836,26 +813,37 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     );
   }
 
+  /** Path-only listing for the subagent index: no per-file stat needed. */
+  private listRolloutFilePaths(): string[] {
+    if (!this.basePath) return [];
+    const paths: string[] = [];
+    const walk = (directory: string): void => {
+      let entries: Dirent[];
+      try {
+        entries = readdirSync(directory, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const filePath = join(directory, entry.name);
+        if (entry.isDirectory()) walk(filePath);
+        else if (entry.name.startsWith("rollout-") && entry.name.endsWith(".jsonl")) {
+          paths.push(filePath);
+        }
+      }
+    };
+    walk(this.basePath);
+    return paths;
+  }
+
   private listScanSources(options?: AgentScanOptions): SessionSourceFile[] {
     const windowed = this.listRolloutFiles(options).sort(compareSourceActivityDesc);
     if (options?.from == null && options?.to == null) return windowed;
 
-    const rootFiles = windowed.filter((source) => {
-      const meta = this.readThreadMeta(source.file);
-      return meta?.threadSource !== "subagent";
-    });
+    const { childFilesByParent, subagentFiles } = this.ensureSubagentIndex();
+    const rootFiles = windowed.filter((source) => !subagentFiles.has(source.file));
     const rootIds = new Set(rootFiles.map(({ file }) => extractSessionId(file)));
     if (rootIds.size === 0) return rootFiles;
-
-    const allFiles = this.listRolloutFiles().sort(compareSourceActivityDesc);
-    const childrenByParent = new Map<string, SessionSourceFile[]>();
-    for (const source of allFiles) {
-      const meta = this.readThreadMeta(source.file);
-      if (meta?.threadSource !== "subagent" || !meta.parentThreadId) continue;
-      const children = childrenByParent.get(meta.parentThreadId);
-      if (children) children.push(source);
-      else childrenByParent.set(meta.parentThreadId, [source]);
-    }
 
     const selected = new Map(rootFiles.map((source) => [source.file, source]));
     const pending = [...rootIds];
@@ -864,10 +852,14 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       const parentId = pending.pop()!;
       if (seenParents.has(parentId)) continue;
       seenParents.add(parentId);
-      for (const child of childrenByParent.get(parentId) ?? []) {
-        if (selected.has(child.file)) continue;
-        selected.set(child.file, child);
-        pending.push(extractSessionId(child.file));
+      for (const file of childFilesByParent.get(parentId) ?? []) {
+        if (selected.has(file)) continue;
+        try {
+          selected.set(file, this.sessionSourceFile(file));
+        } catch {
+          continue;
+        }
+        pending.push(extractSessionId(file));
       }
     }
     return [...selected.values()].sort(compareSourceActivityDesc);
@@ -961,7 +953,9 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
 
   protected parseFileSessionHead(filePath: string, options?: AgentScanOptions): SessionHead | null {
     this.loadSessionIndex();
-    return this.parseSessionHead(filePath, options);
+    const head = this.parseSessionHead(filePath, options);
+    if (head) this.applyChildStats(head.stats, head.id);
+    return head;
   }
 
   private parseSessionHead(filePath: string, options?: AgentScanOptions): SessionHead | null {
@@ -1147,10 +1141,6 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       },
       model_usage: Object.keys(modelUsageMap).length > 0 ? modelUsageMap : undefined,
     });
-  }
-
-  private parseFastSessionHead(filePath: string): SessionHead | null {
-    return getParsedSession(this.parseFastSessionHeadResult(filePath));
   }
 
   private parseFastSessionHeadResult(filePath: string): ParseSessionResult<SessionHead> {
