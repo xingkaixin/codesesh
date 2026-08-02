@@ -46,7 +46,7 @@ CodeSesh puts sessions back into project, task, and engineering context.
 
 - Engineering Memory Overview: see cross-agent activity, models, tokens, smart tags, and bookmarked sessions together.
 - Project Browse Mode: open a project overview with project-level metrics, sessions, and cross-agent drill-down.
-- Project-Aware Session Tree: group sessions by repository and project identity across supported agents.
+- Project & Nested Session Tree: group sessions by repository and project identity while keeping subagent sessions under their parent.
 - Smart Tags: label bugfix, refactor, feature, testing, docs, planning, Git, build, and exploration work.
 
 ### Recover

@@ -28,13 +28,14 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 - **Structured Global Search** — Search titles, messages, tool output, and file paths with filters for agent, project, smart tag, tool, file activity, and cost
 - **Dashboard & Activity Trends** — Track daily activity, agent distribution, recent sessions, latest activity, token usage, model usage, smart tags, and cost at a glance
 - **Project Browse Mode** — Open a dedicated projects view with project-level metrics, sessions, and cross-agent drill-down
-- **Project-Aware Session Tree** — Group sessions by repository or project identity across every supported agent
+- **Project & Nested Session Tree** — Group sessions by repository or project identity, while keeping subagent sessions under their parent
 - **Smart Tags** — Automatically label sessions such as bugfix, refactoring, feature work, testing, docs, planning, git operations, build/deploy, and exploration
 - **Bookmarks** — Save important sessions and keep them visible from the dashboard
 - **Full Conversation Replay** — Read every message, tool call, and reasoning step exactly as it happened
 - **File Activity Index** — Jump to files that were read, edited, created, deleted, or moved, and search sessions by file activity
 - **Keyboard Navigation** — Move through views, focus search, and open shortcuts without leaving the keyboard
 - **Agent Resume Commands** — Copy worktree-aware resume commands from supported agent session details
+- **Resumable History Indexing** — Checkpoint large backfills, resume interrupted scans, and show durable progress
 - **Cost & Token Visibility** — See token totals, cache tokens, recorded costs, and model-based cost estimates
 - **SQLite Cache, Migrations & Search Index** — Restore session lists quickly, upgrade local schemas safely, and reuse the same local store for search
 - **Zero Configuration** — Just run it. CodeSesh auto-discovers everything on your filesystem
@@ -222,7 +223,7 @@ Once CodeSesh is running, here's what you'll find:
 1. **Dashboard** — Start from a summary view with total sessions, total messages, total tokens, latest activity, daily activity, agent distribution, model distribution, token trends, smart tags, bookmarks, and recent sessions.
 2. **Structured Global Search** — Query titles, messages, tool output, and file paths, then narrow results by agent, project, tag, tool, file activity, or cost.
 3. **Projects** — Browse project-level totals, recent activity, agent mix, scoped dashboards, and sessions for a single repository or project identity.
-4. **Session Tree Sidebar** — Browse sessions grouped by agent or project identity and filter by agent or smart tag.
+4. **Session Tree Sidebar** — Browse sessions grouped by agent or project identity, with nested subagent sessions kept under their parents, and filter by agent or smart tag.
 5. **Time Range Control** — Filter the entire Web UI with rolling presets, all history, or a custom date range.
 6. **Session List** — Browse your sessions sorted by most recent. Each card shows the session title, working directory, message count, and total cost at a glance.
 7. **Session Aliases, Smart Tags & Bookmarks** — Rename sessions locally, spot their intent quickly, and pin the ones you want to revisit.
