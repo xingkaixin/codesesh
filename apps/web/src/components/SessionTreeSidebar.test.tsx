@@ -305,10 +305,11 @@ describe("SessionTreeSidebar session options menu", () => {
       expect(content.scrollLeft).toBe(0);
       runFrame(1_500);
       expect(content.scrollLeft).toBeGreaterThan(0);
-      runFrame(2_850);
-      expect(content.scrollLeft).toBeLessThan(scrollDistance);
-      expect(content.scrollLeft).toBeGreaterThan(240);
       runFrame(3_000);
+      expect(content.scrollLeft).toBeLessThan(scrollDistance);
+      expect(content.scrollLeft).toBeGreaterThan(200);
+      expect(content.dataset.sessionTitleScrollComplete).toBeUndefined();
+      runFrame(4_200);
       expect(content.scrollLeft).toBe(scrollDistance);
       expect(content.dataset.sessionTitleScrollComplete).toBe("true");
 

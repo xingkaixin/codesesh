@@ -342,7 +342,6 @@ function measureSessionTreeWork<T>(id: string, compute: () => T): T {
 const SESSION_TITLE_SCROLL_SPEED_PX_PER_MS = 0.08;
 const SESSION_TITLE_SCROLL_GAP_PX = 16;
 const SESSION_TITLE_SCROLL_MIN_DURATION_MS = 700;
-const SESSION_TITLE_SCROLL_MAX_DURATION_MS = 3_000;
 const SESSION_TITLE_SCROLL_SLOWDOWN_START = 0.75;
 
 function getSessionTitleContent(target: EventTarget | null): HTMLElement | null {
@@ -409,12 +408,9 @@ function installSessionTitleScrolling(host: HTMLElement) {
     element.setAttribute("data-session-title-scroll", "running");
 
     const scrollDistance = trackWidth + SESSION_TITLE_SCROLL_GAP_PX;
-    const forwardDuration = Math.min(
-      SESSION_TITLE_SCROLL_MAX_DURATION_MS,
-      Math.max(
-        SESSION_TITLE_SCROLL_MIN_DURATION_MS,
-        scrollDistance / SESSION_TITLE_SCROLL_SPEED_PX_PER_MS,
-      ),
+    const forwardDuration = Math.max(
+      SESSION_TITLE_SCROLL_MIN_DURATION_MS,
+      scrollDistance / SESSION_TITLE_SCROLL_SPEED_PX_PER_MS,
     );
     const startedAt = performance.now();
     activeElements.add(element);
