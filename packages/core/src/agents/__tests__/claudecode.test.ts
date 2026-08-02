@@ -1,4 +1,12 @@
-import { mkdtempSync, mkdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,7 +18,11 @@ import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostic
 // single-stat regression test can count per-file calls during a live scan.
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
-  return { ...actual, statSync: vi.fn(actual.statSync) };
+  return {
+    ...actual,
+    readFileSync: vi.fn(actual.readFileSync),
+    statSync: vi.fn(actual.statSync),
+  };
 });
 
 let tempDirs: string[] = [];
@@ -161,6 +173,93 @@ describe("ClaudeCodeAgent cache refresh", () => {
     ).toEqual([parentId]);
   });
 
+  it("reuses child metadata between source refreshes", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-meta-cache-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    const parentId = "parent-session";
+    const childIds = ["child-a", "child-b"];
+    const childDir = join(projectDir, parentId, "subagents");
+    mkdirSync(childDir, { recursive: true });
+    writeFileSync(join(projectDir, parentId + ".jsonl"), "parent");
+    const metaPaths: string[] = [];
+
+    for (const childId of childIds) {
+      writeFileSync(join(childDir, "agent-" + childId + ".jsonl"), "child");
+      const metaPath = join(childDir, "agent-" + childId + ".meta.json");
+      metaPaths.push(metaPath);
+      writeFileSync(metaPath, JSON.stringify({ name: childId }));
+    }
+
+    const agent = new ClaudeCodeAgent() as any;
+    agent.basePath = basePath;
+    const readSpy = vi.mocked(readFileSync);
+    const statSpy = vi.mocked(statSync);
+
+    readSpy.mockClear();
+    statSpy.mockClear();
+    agent.listSessionSources();
+    const firstMetaReads = readSpy.mock.calls.filter((call) =>
+      String(call[0]).endsWith(".meta.json"),
+    ).length;
+    const firstMetaStats = statSpy.mock.calls.filter((call) =>
+      String(call[0]).endsWith(".meta.json"),
+    ).length;
+
+    readSpy.mockClear();
+    statSpy.mockClear();
+    agent.listSessionSources();
+    const secondMetaReads = readSpy.mock.calls.filter((call) =>
+      String(call[0]).endsWith(".meta.json"),
+    ).length;
+    const secondMetaStats = statSpy.mock.calls.filter((call) =>
+      String(call[0]).endsWith(".meta.json"),
+    ).length;
+
+    expect(firstMetaReads).toBe(childIds.length);
+    expect(firstMetaStats).toBe(childIds.length);
+    expect(secondMetaReads).toBe(0);
+    expect(secondMetaStats).toBe(childIds.length);
+
+    const changedMetaTime = new Date(Date.now() + 2000);
+    utimesSync(metaPaths[0]!, changedMetaTime, changedMetaTime);
+    readSpy.mockClear();
+    agent.listSessionSources();
+    expect(
+      readSpy.mock.calls.filter((call) => String(call[0]).endsWith(".meta.json")),
+    ).toHaveLength(1);
+  });
+
+  it("drops a window-only child when its parent is outside the window", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-orphan-window-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    const parentId = "parent-session";
+    const childId = "child-session";
+    const childDir = join(projectDir, parentId, "subagents");
+    mkdirSync(childDir, { recursive: true });
+
+    const parentFile = join(projectDir, parentId + ".jsonl");
+    const childFile = join(childDir, "agent-" + childId + ".jsonl");
+    writeFileSync(parentFile, "parent");
+    writeFileSync(childFile, "child");
+    writeFileSync(join(childDir, "agent-" + childId + ".meta.json"), "{}");
+
+    const parentTime = new Date(1_600_000_100_000);
+    const childTime = new Date(1_700_000_100_000);
+    utimesSync(parentFile, parentTime, parentTime);
+    utimesSync(childFile, childTime, childTime);
+
+    const agent = new ClaudeCodeAgent() as any;
+    agent.basePath = basePath;
+
+    expect(
+      agent
+        .listSessionSources({ from: childTime.getTime() - 1 })
+        .map((ref: { sessionId: string }) => ref.sessionId),
+    ).toEqual([]);
+  });
+
   it("stats each session file once during a scan", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-stat-"));
     tempDirs.push(basePath);
@@ -220,7 +319,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
         sessionId: "session-1",
         sourcePath: sessionFile,
         fingerprint: JSON.stringify([
-          "claudecode-head-v3",
+          "claudecode-head-v4",
           sessionTime.getTime(),
           statSync(sessionFile).size,
           indexTime.getTime(),
@@ -814,6 +913,35 @@ describe("ClaudeCodeAgent head parsing", () => {
   it("skips an empty file", () => {
     expect(writeSession([]).agent.scan()).toEqual([]);
     expect(writeSession(["", "   ", ""]).agent.scan()).toEqual([]);
+  });
+
+  it("treats a child with missing metadata and parent as a root", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-orphan-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    const childDir = join(projectDir, "missing-parent", "subagents");
+    const childId = "orphan-child";
+    mkdirSync(childDir, { recursive: true });
+    writeFileSync(
+      join(childDir, "agent-" + childId + ".jsonl"),
+      JSON.stringify({
+        type: "user",
+        timestamp: "2026-04-20T10:00:00Z",
+        cwd: "/tmp/project",
+        message: { role: "user", content: "Orphan child" },
+      }),
+    );
+
+    const agent = new ClaudeCodeAgent() as any;
+    agent.basePath = basePath;
+
+    expect(agent.scan()).toMatchObject([
+      {
+        id: childId,
+        title: "Orphan child",
+        parent_reference: undefined,
+      },
+    ]);
   });
 
   it("skips a file whose first record is malformed", () => {
