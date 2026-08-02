@@ -342,7 +342,10 @@ function measureSessionTreeWork<T>(id: string, compute: () => T): T {
 const SESSION_TITLE_SCROLL_SPEED_PX_PER_MS = 0.08;
 const SESSION_TITLE_SCROLL_GAP_PX = 16;
 const SESSION_TITLE_SCROLL_MIN_DURATION_MS = 700;
-const SESSION_TITLE_SCROLL_SLOWDOWN_START = 0.75;
+const SESSION_TITLE_SCROLL_SLOWDOWN_DISTANCE = 1 / 3;
+const SESSION_TITLE_SCROLL_DURATION_MULTIPLIER = 1 + SESSION_TITLE_SCROLL_SLOWDOWN_DISTANCE;
+const SESSION_TITLE_SCROLL_SLOWDOWN_START =
+  (1 - SESSION_TITLE_SCROLL_SLOWDOWN_DISTANCE) / SESSION_TITLE_SCROLL_DURATION_MULTIPLIER;
 
 function getSessionTitleContent(target: EventTarget | null): HTMLElement | null {
   if (!(target instanceof Element)) return null;
@@ -356,13 +359,20 @@ function isReducedMotionPreferred() {
 }
 
 function easeSessionTitleScrollToStop(progress: number) {
-  if (progress <= SESSION_TITLE_SCROLL_SLOWDOWN_START) return progress;
+  if (progress <= SESSION_TITLE_SCROLL_SLOWDOWN_START) {
+    return (
+      (progress / SESSION_TITLE_SCROLL_SLOWDOWN_START) *
+      (1 - SESSION_TITLE_SCROLL_SLOWDOWN_DISTANCE)
+    );
+  }
 
   const slowdownProgress =
     (progress - SESSION_TITLE_SCROLL_SLOWDOWN_START) / (1 - SESSION_TITLE_SCROLL_SLOWDOWN_START);
-  const easedProgress = slowdownProgress + slowdownProgress ** 2 - slowdownProgress ** 3;
+  const slowdownPosition = slowdownProgress * (2 - slowdownProgress);
   return (
-    SESSION_TITLE_SCROLL_SLOWDOWN_START + (1 - SESSION_TITLE_SCROLL_SLOWDOWN_START) * easedProgress
+    1 -
+    SESSION_TITLE_SCROLL_SLOWDOWN_DISTANCE +
+    SESSION_TITLE_SCROLL_SLOWDOWN_DISTANCE * slowdownPosition
   );
 }
 
@@ -410,7 +420,8 @@ function installSessionTitleScrolling(host: HTMLElement) {
     const scrollDistance = trackWidth + SESSION_TITLE_SCROLL_GAP_PX;
     const forwardDuration = Math.max(
       SESSION_TITLE_SCROLL_MIN_DURATION_MS,
-      scrollDistance / SESSION_TITLE_SCROLL_SPEED_PX_PER_MS,
+      (scrollDistance / SESSION_TITLE_SCROLL_SPEED_PX_PER_MS) *
+        SESSION_TITLE_SCROLL_DURATION_MULTIPLIER,
     );
     const startedAt = performance.now();
     activeElements.add(element);

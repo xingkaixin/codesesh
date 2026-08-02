@@ -305,12 +305,19 @@ describe("SessionTreeSidebar session options menu", () => {
       expect(content.scrollLeft).toBe(0);
       runFrame(1_500);
       expect(content.scrollLeft).toBeGreaterThan(0);
-      runFrame(3_000);
-      expect(content.scrollLeft).toBeLessThan(scrollDistance);
-      expect(content.scrollLeft).toBeGreaterThan(200);
-      expect(content.dataset.sessionTitleScrollComplete).toBeUndefined();
+      runFrame(2_800);
+      expect(content.scrollLeft).toBeCloseTo((scrollDistance * 2) / 3, 5);
+      const slowdownStartOffset = content.scrollLeft;
       runFrame(4_200);
+      expect(content.scrollLeft).toBeGreaterThan(slowdownStartOffset);
+      expect(content.scrollLeft).toBeLessThan(scrollDistance);
+      expect(content.dataset.sessionTitleScrollComplete).toBeUndefined();
+      const slowdownMidpointOffset = content.scrollLeft;
+      runFrame(5_600);
       expect(content.scrollLeft).toBe(scrollDistance);
+      expect(slowdownMidpointOffset - slowdownStartOffset).toBeGreaterThan(
+        scrollDistance - slowdownMidpointOffset,
+      );
       expect(content.dataset.sessionTitleScrollComplete).toBe("true");
 
       dispatch(content, "pointerout");
