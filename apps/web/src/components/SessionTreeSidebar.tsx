@@ -340,6 +340,7 @@ function measureSessionTreeWork<T>(id: string, compute: () => T): T {
 }
 
 const SESSION_TITLE_SCROLL_SPEED_PX_PER_MS = 0.08;
+const SESSION_TITLE_SCROLL_GAP_PX = 16;
 const SESSION_TITLE_SCROLL_MIN_DURATION_MS = 700;
 const SESSION_TITLE_SCROLL_MAX_DURATION_MS = 3_000;
 const SESSION_TITLE_SCROLL_SLOWDOWN_START = 0.75;
@@ -401,16 +402,18 @@ function installSessionTitleScrolling(host: HTMLElement) {
     const copy = track.cloneNode(true) as HTMLElement;
     copy.dataset.sessionTitleScrollCopy = "true";
     copy.setAttribute("aria-hidden", "true");
+    copy.style.marginInlineStart = `${SESSION_TITLE_SCROLL_GAP_PX}px`;
     element.append(copy);
     copyByElement.set(element, copy);
     preparedElements.add(element);
     element.setAttribute("data-session-title-scroll", "running");
 
+    const scrollDistance = trackWidth + SESSION_TITLE_SCROLL_GAP_PX;
     const forwardDuration = Math.min(
       SESSION_TITLE_SCROLL_MAX_DURATION_MS,
       Math.max(
         SESSION_TITLE_SCROLL_MIN_DURATION_MS,
-        trackWidth / SESSION_TITLE_SCROLL_SPEED_PX_PER_MS,
+        scrollDistance / SESSION_TITLE_SCROLL_SPEED_PX_PER_MS,
       ),
     );
     const startedAt = performance.now();
@@ -420,7 +423,7 @@ function installSessionTitleScrolling(host: HTMLElement) {
       if (!activeElements.has(element)) return;
 
       const progress = Math.min(1, Math.max(0, (now - startedAt) / forwardDuration));
-      element.scrollLeft = trackWidth * easeSessionTitleScrollToStop(progress);
+      element.scrollLeft = scrollDistance * easeSessionTitleScrollToStop(progress);
 
       if (progress >= 1) {
         activeElements.delete(element);

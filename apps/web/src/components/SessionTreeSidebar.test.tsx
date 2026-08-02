@@ -295,17 +295,21 @@ describe("SessionTreeSidebar session options menu", () => {
     try {
       dispatch(content, "pointerover");
       expect(content.dataset.sessionTitleScroll).toBe("running");
-      expect(content.querySelector("[data-session-title-scroll-copy]")).not.toBeNull();
+      const copy = content.querySelector<HTMLElement>("[data-session-title-scroll-copy]");
+      expect(copy).not.toBeNull();
+      const gap = Number.parseFloat(copy!.style.marginInlineStart);
+      expect(gap).toBeGreaterThan(0);
+      const scrollDistance = 320 + gap;
 
       runFrame(0);
       expect(content.scrollLeft).toBe(0);
       runFrame(1_500);
       expect(content.scrollLeft).toBeGreaterThan(0);
       runFrame(2_850);
-      expect(content.scrollLeft).toBeLessThan(320);
+      expect(content.scrollLeft).toBeLessThan(scrollDistance);
       expect(content.scrollLeft).toBeGreaterThan(240);
       runFrame(3_000);
-      expect(content.scrollLeft).toBe(320);
+      expect(content.scrollLeft).toBe(scrollDistance);
       expect(content.dataset.sessionTitleScrollComplete).toBe("true");
 
       dispatch(content, "pointerout");
