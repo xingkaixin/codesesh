@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.19.0] - 2026-08-02
+
+This release brings nested subagent sessions into one session tree, adds Kimi-Code support, and makes large or interrupted scans resumable while improving long-title navigation and subagent details.
+
+### Features
+
+- Added Kimi-Code session discovery, parsing, tool rendering, and registration. (#259)
+- Added nested session trees that preserve parent-child relationships and aggregate subagent token statistics for ZCode, Codex, and Claude Code. (#256, #257, #263)
+- Added checkpointed, resumable full-history indexing with batched backfills and durable scan progress. (#260)
+
+### Bug Fixes
+
+- Surfaced final Codex subagent output inside parent session details and kept Claude child transcripts visible as roots when their parent file is missing. (#258, #263)
+- Kept out-of-window sessions and available agents stable while scans run, and corrected scan finalization and progress behavior across interrupted refreshes. (#260)
+- Made long session titles scroll smoothly and kept parent-session actions available in the sidebar. (#261, #262)
+
+### Performance
+
+- Indexed Codex subagent files once per pass, reparsed only changed sources and affected parents, and committed large search-index updates in resumable chunks. (#260)
+
+### Changelog Detail
+
+- #263 feat(core): support Claude Code subagents @xingkaixin
+- #262 fix(web): keep session title scrolling readable @xingkaixin
+- #261 feat(web): improve long session title behavior @xingkaixin
+- #260 feat: add nested session trees and resumable scans @xingkaixin
+- #259 feat(kimi-code): add Kimi-Code session support @xingkaixin
+- #258 fix(core): surface Codex subagent output @xingkaixin
+- #257 feat(core): fold Codex subagent sessions into parent @xingkaixin
+- #256 feat(core): fold ZCode subagent sessions into parent @xingkaixin
+
 ## [0.18.0] - 2026-07-30
 
 This release secures remote and local session data, prevents failed or incomplete scans from corrupting published state, and removes major loading and rendering bottlenecks across large session histories.

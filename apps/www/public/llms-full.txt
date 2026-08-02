@@ -55,7 +55,7 @@ The Web UI includes:
 
 - A dashboard for overall activity and usage.
 - Structured global search across session titles, conversation content, tool output, and file paths.
-- Project browse mode and a project-aware session tree.
+- Project browse mode and a project-aware session tree with nested subagent sessions.
 - Smart tags for common engineering work types.
 - Bookmarks for important sessions.
 - Complete session replay.
@@ -193,9 +193,9 @@ Users can search session titles, conversation content, tool output, and file pat
 
 The dashboard summarizes local AI coding activity. It can show total sessions, message counts, token usage, recent activity, daily activity, agent distribution, model usage, smart tags, bookmarks, and recent sessions.
 
-### Project-Aware Session Tree
+### Project & Nested Session Tree
 
-CodeSesh groups sessions by repository or project identity across supported agents. This helps users recover context around a specific codebase.
+CodeSesh groups sessions by repository or project identity across supported agents while keeping subagent sessions under their parent. This helps users recover context around a specific codebase and task.
 
 ### Project Browse Mode
 
@@ -244,7 +244,7 @@ After CodeSesh starts, users can navigate these main areas:
 1. Dashboard: summary metrics, daily activity, agent distribution, model distribution, token trends, smart tags, bookmarks, and recent sessions.
 2. Search: structured global search across titles, conversation content, tool output, and file paths.
 3. Projects: project-level totals, recent activity, agent mix, scoped dashboards, and sessions.
-4. Session Tree Sidebar: project-aware browsing with agent and smart tag filters.
+4. Session Tree Sidebar: project-aware browsing with nested subagent sessions and agent or smart tag filters.
 5. Session List: recent sessions with title, working directory, message count, and cost details.
 6. Smart Tags and Bookmarks: quick access to important or categorized sessions.
 7. Session Detail: full replay with messages, assistant responses, tool calls, reasoning steps, model labels, file activity, and Claude Code resume command copy.

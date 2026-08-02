@@ -210,8 +210,8 @@ export const copy = {
             },
             {
               icon: "list-tree",
-              title: "项目化会话树",
-              description: "按仓库和项目身份组织会话，让记录回到同一个工程现场。",
+              title: "项目与嵌套会话树",
+              description: "按仓库和项目身份组织会话，并将子 Agent 会话保留在父会话下。",
             },
             {
               icon: "tags",
@@ -412,9 +412,9 @@ export const copy = {
             },
             {
               icon: "list-tree",
-              title: "Project-Aware Session Tree",
+              title: "Project & Nested Session Tree",
               description:
-                "Group sessions by repository and project identity across supported agents.",
+                "Group sessions by repository and project identity while keeping subagent sessions under their parent.",
             },
             {
               icon: "tags",

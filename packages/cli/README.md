@@ -25,13 +25,14 @@ Your browser will open at `http://localhost:4521` with all your sessions ready t
 - **Structured Global Search** — Search titles, messages, tool output, and file paths with filters for agent, project, smart tag, tool, file activity, and cost
 - **Dashboard & Activity Trends** — See totals, daily activity, agent distribution, model usage, token trends, smart tags, bookmarks, and recent sessions
 - **Project Browse Mode** — Open a dedicated projects view with project-level metrics, sessions, and cross-agent drill-down
-- **Project-Aware Session Tree** — Group sessions by repository or project identity across supported agents
+- **Project & Nested Session Tree** — Group sessions by repository or project identity, while keeping subagent sessions under their parent
 - **Smart Tags** — Automatically label bugfix, refactoring, feature work, testing, docs, planning, git, build/deploy, and exploration sessions
 - **Bookmarks** — Save important sessions and keep them visible from the dashboard
 - **Full Conversation Replay** — Read every message, tool call, and reasoning step exactly as it happened
 - **File Activity Index** — Jump to files that were read, edited, created, deleted, or moved, and search sessions by file activity
 - **Keyboard Navigation** — Move through views, focus search, and open shortcuts without leaving the keyboard
 - **Agent Resume Commands** — Copy worktree-aware resume commands from supported agent session details
+- **Resumable History Indexing** — Checkpoint large backfills, resume interrupted scans, and show durable progress
 - **Cost & Token Visibility** — See token totals, cache tokens, recorded costs, and model-based cost estimates
 - **SQLite Cache, Migrations & Search Index** — Restore session lists quickly, upgrade local schemas safely, and reuse the same local store for search
 - **Zero Configuration** — Just run it. CodeSesh auto-discovers everything on your filesystem

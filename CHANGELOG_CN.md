@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.19.0] - 2026-08-02
+
+本版本将子 Agent 会话纳入嵌套会话树，新增 Kimi-Code 支持，并让大规模或中断的扫描能够续跑，同时改善长标题浏览与子 Agent 详情展示。
+
+### 新功能
+
+- 新增 Kimi-Code 会话发现、解析、工具展示和注册。 (#259)
+- 新增嵌套会话树，保留父子关系，并为 ZCode、Codex 和 Claude Code 聚合子 Agent 的 Token 统计。 (#256, #257, #263)
+- 新增带检查点的可恢复全历史索引，以分批回填和持久化扫描进度支持中断后继续。 (#260)
+
+### 问题修复
+
+- 在父会话详情中展示 Codex 子 Agent 的最终输出，并在父文件缺失时让 Claude 子会话继续作为根会话可见。 (#258, #263)
+- 扫描期间保持时间窗外会话与 Agent 可用，并修正中断刷新时的扫描收尾和进度状态。 (#260)
+- 让长会话标题平滑滚动，并在侧栏中保留父会话操作。 (#261, #262)
+
+### 性能
+
+- 每轮仅索引一次 Codex 子 Agent 文件，只重新解析变化源及受影响的父会话，并将大型搜索索引同步拆成可恢复的分批提交。 (#260)
+
+### Changelog Detail
+
+- #263 feat(core): support Claude Code subagents @xingkaixin
+- #262 fix(web): keep session title scrolling readable @xingkaixin
+- #261 feat(web): improve long session title behavior @xingkaixin
+- #260 feat: add nested session trees and resumable scans @xingkaixin
+- #259 feat(kimi-code): add Kimi-Code session support @xingkaixin
+- #258 fix(core): surface Codex subagent output @xingkaixin
+- #257 feat(core): fold Codex subagent sessions into parent @xingkaixin
+- #256 feat(core): fold ZCode subagent sessions into parent @xingkaixin
+
 ## [0.18.0] - 2026-07-30
 
 本版本保护远程与本地会话数据，避免失败或不完整的扫描破坏已发布状态，并消除大规模会话历史中的主要加载与渲染瓶颈。
