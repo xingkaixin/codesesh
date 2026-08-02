@@ -219,7 +219,12 @@ function renderSessionTreeSidebar(sessions = [makeSession({ id: "s1" })]) {
 }
 
 function dispatch(target: HTMLElement, type: string, init: EventInit & { key?: string } = {}) {
-  const Ctor = type === "keydown" ? KeyboardEvent : MouseEvent;
+  const Ctor =
+    type === "keydown"
+      ? KeyboardEvent
+      : type.startsWith("pointer") && typeof PointerEvent !== "undefined"
+        ? PointerEvent
+        : MouseEvent;
   target.dispatchEvent(
     new Ctor(type, { bubbles: true, cancelable: true, composed: true, ...init }),
   );
@@ -248,20 +253,53 @@ describe("SessionTreeSidebar session options menu", () => {
   it("scrolls an overflowing title once while hovered", async () => {
     const title = "A deliberately long session title that needs a marquee";
     const { shadowRoot } = renderSessionTreeSidebar([makeSession({ id: "long", title })]);
-    const content = shadowRoot.querySelector<HTMLElement>(
-      '[data-item-type="file"] [data-item-section="content"]',
-    )!;
+    const content = await waitFor(() => {
+      const element = shadowRoot.querySelector<HTMLElement>(
+        '[data-item-type="file"] [data-item-section="content"]',
+      );
+      expect(element).not.toBeNull();
+      return element!;
+    });
     Object.defineProperties(content, {
       clientWidth: { configurable: true, value: 100 },
       scrollWidth: { configurable: true, value: 320 },
     });
 
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     dispatch(content, "pointerover");
     await waitFor(() => expect(content.dataset.sessionTitleScroll).toBe("running"));
 
     dispatch(content, "pointerout");
     expect(content.scrollLeft).toBe(0);
     expect(content.dataset.sessionTitleScroll).toBeUndefined();
+  });
+
+  it("shows and opens the parent row options when it has a child session", async () => {
+    const parent = makeSession({ id: "parent", title: "Main parent session with child" });
+    const child = makeSession({
+      id: "child",
+      title: "Worker",
+      parent_reference: { agentName: "codex", sessionId: "parent" },
+    });
+
+    const { onToggleBookmark, shadowRoot } = renderSessionTreeSidebar([parent, child]);
+
+    const parentItem = await waitFor(() => {
+      const parentItem = shadowRoot.querySelector<HTMLElement>(
+        '[data-item-type="folder"][aria-label="Main parent session with child"]',
+      );
+      expect(parentItem).not.toBeNull();
+      return parentItem!;
+    });
+    const decoration = parentItem.querySelector<HTMLElement>(
+      '[data-item-section="decoration"] > span',
+    );
+    expect(decoration).not.toBeNull();
+    dispatch(decoration!, "click");
+
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeNull());
+    dispatch(await screen.findByRole("menuitem", { name: "Add bookmark" }), "click");
+    expect(onToggleBookmark).toHaveBeenCalledWith(parent);
   });
 
   it("opens via keyboard (ContextMenu key) with the first item focused, navigates, and executes", async () => {

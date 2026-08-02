@@ -78,7 +78,7 @@ const SESSION_TREE_CSS = `
     height: 8px;
   }
 
-  [data-type='item'][data-item-type='file'] > [data-item-section='content'] {
+  [data-type='item'] > [data-item-section='content'] {
     flex: 1 1 auto;
   }
 
@@ -91,13 +91,12 @@ const SESSION_TREE_CSS = `
     direction: ltr;
   }
 
-  [data-type='item'][data-item-type='file'] > [data-item-section='decoration'] {
-    flex: 1 1 0;
-    padding: 0;
+  [data-type='item'] > [data-item-section='decoration'] {
+    flex: 0 0 auto;
+    padding-inline: 6px 2px;
   }
 
-  [data-type='item'][data-item-type='file'] > [data-item-section='decoration'] > span,
-  [data-type='item'][data-item-type='folder'] > [data-item-section='decoration'] > span {
+  [data-type='item'] > [data-item-section='decoration'] > span {
     cursor: pointer;
     font-size: 12px;
     line-height: 24px;
@@ -531,9 +530,23 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   }, [onRenameSession]);
 
   useEffect(() => {
-    const host = model.getFileTreeContainer();
-    if (!host) return;
-    return installSessionTitleScrolling(host);
+    let cleanup: (() => void) | undefined;
+    let frame = 0;
+
+    const install = () => {
+      const host = model.getFileTreeContainer();
+      if (!host) {
+        frame = requestAnimationFrame(install);
+        return;
+      }
+      cleanup = installSessionTitleScrolling(host);
+    };
+
+    install();
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      cleanup?.();
+    };
   }, [model]);
 
   function openSessionMenu(session: SessionHead, anchor: HTMLElement, trigger: HTMLElement) {
