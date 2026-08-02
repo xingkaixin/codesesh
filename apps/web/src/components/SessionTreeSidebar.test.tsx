@@ -197,13 +197,13 @@ function patchShadowEventRetargeting() {
   document.addEventListener("keydown", retarget, true);
 }
 
-function renderSessionTreeSidebar() {
-  const session = makeSession({ id: "s1" });
+function renderSessionTreeSidebar(sessions = [makeSession({ id: "s1" })]) {
+  const session = sessions[0]!;
   const onToggleBookmark = vi.fn();
   const onRenameSession = vi.fn();
   render(
     <SessionTreeSidebar
-      sessions={[session]}
+      sessions={sessions}
       activeSessionReference={getSessionReferenceKey(session)}
       selectedSessionReference={getSessionReferenceKey(session)}
       onSelectSession={() => {}}
@@ -243,6 +243,25 @@ describe("SessionTreeSidebar session options menu", () => {
     expect(onToggleBookmark).toHaveBeenCalledWith(session);
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     await waitFor(() => expect((item.getRootNode() as ShadowRoot).activeElement).toBe(item));
+  });
+
+  it("scrolls an overflowing title once while hovered", async () => {
+    const title = "A deliberately long session title that needs a marquee";
+    const { shadowRoot } = renderSessionTreeSidebar([makeSession({ id: "long", title })]);
+    const content = shadowRoot.querySelector<HTMLElement>(
+      '[data-item-type="file"] [data-item-section="content"]',
+    )!;
+    Object.defineProperties(content, {
+      clientWidth: { configurable: true, value: 100 },
+      scrollWidth: { configurable: true, value: 320 },
+    });
+
+    dispatch(content, "pointerover");
+    await waitFor(() => expect(content.dataset.sessionTitleScroll).toBe("running"));
+
+    dispatch(content, "pointerout");
+    expect(content.scrollLeft).toBe(0);
+    expect(content.dataset.sessionTitleScroll).toBeUndefined();
   });
 
   it("opens via keyboard (ContextMenu key) with the first item focused, navigates, and executes", async () => {

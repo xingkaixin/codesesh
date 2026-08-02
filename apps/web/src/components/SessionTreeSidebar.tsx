@@ -82,56 +82,69 @@ const SESSION_TREE_CSS = `
     flex: 1 1 auto;
   }
 
+  [data-type='item'] > [data-item-section='content'] {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: ltr;
+  }
+
   [data-type='item'][data-item-type='file'] > [data-item-section='decoration'] {
     flex: 1 1 0;
     padding: 0;
   }
 
-  [data-type='item'][data-item-type='file'] > [data-item-section='decoration'] > span {
+  [data-type='item'][data-item-type='file'] > [data-item-section='decoration'] > span,
+  [data-type='item'][data-item-type='folder'] > [data-item-section='decoration'] > span {
     cursor: pointer;
     font-size: 12px;
     line-height: 24px;
   }
 
-  [data-type='item'][data-item-type='file'] [data-truncate-group-container='middle'] {
-    width: 100%;
+  [data-type='item'] [data-truncate-group-container='middle'] {
+    display: inline;
+    min-width: 0;
+    white-space: nowrap;
   }
 
-  [data-type='item'][data-item-type='file']
-    [data-truncate-group-container='middle']
-    > div[data-truncate-segment-priority='2'] {
-    flex: 0 1 auto;
+  [data-type='item'] [data-truncate-group-container='middle'] > div {
+    display: inline;
+    min-width: 0;
   }
 
-  [data-type='item'][data-item-type='file']
-    [data-truncate-group-container='middle']
-    > div[data-truncate-segment-priority='1'] {
-    flex: 1 999999 auto;
+  [data-type='item'] [data-truncate-container] {
+    display: inline;
+    height: auto;
+    margin: 0;
+    overflow: visible;
   }
 
-  [data-type='item'][data-item-type='file']
-    [data-truncate-group-container='middle']
-    [data-truncate-container='fruncate']
-    [data-truncate-grid] {
-    grid-template-columns: minmax(0, max-content) 0;
+  [data-type='item'] [data-truncate-grid] {
+    display: inline;
+    position: static;
   }
 
-  [data-type='item'][data-item-type='file']
-    [data-truncate-group-container='middle']
-    [data-truncate-container='fruncate']
-    [data-truncate-content] {
+  [data-type='item'] [data-truncate-grid] > div:not([data-truncate-marker-cell]) {
+    display: inline;
+  }
+
+  [data-type='item'] [data-truncate-content='visible'] {
+    display: inline;
+    white-space: nowrap;
     direction: ltr;
   }
 
-  [data-type='item'][data-item-type='file']
-    [data-truncate-group-container='middle']
-    [data-truncate-container='fruncate']
-    [data-truncate-marker] {
-    right: 0;
+  [data-type='item'] [data-truncate-content='overflow'],
+  [data-type='item'] [data-truncate-fill],
+  [data-type='item'] [data-truncate-marker-cell],
+  [data-type='item'] [data-truncate-marker] {
+    display: none;
   }
 
-  [data-type='item'][data-item-type='file'] [data-truncate-marker] {
-    display: none;
+  [data-type='item'] [data-session-title-scroll='running'] {
+    text-overflow: clip;
   }
 `;
 
@@ -326,6 +339,112 @@ function measureSessionTreeWork<T>(id: string, compute: () => T): T {
   return value;
 }
 
+const SESSION_TITLE_SCROLL_SPEED_PX_PER_MS = 0.08;
+const SESSION_TITLE_SCROLL_MIN_DURATION_MS = 700;
+const SESSION_TITLE_SCROLL_MAX_DURATION_MS = 3_000;
+const SESSION_TITLE_RETURN_DURATION_RATIO = 0.75;
+
+function getSessionTitleContent(target: EventTarget | null): HTMLElement | null {
+  if (!(target instanceof Element)) return null;
+  const content = target.closest<HTMLElement>('[data-item-section="content"]');
+  if (!content || content.parentElement?.getAttribute("data-type") !== "item") return null;
+  return content;
+}
+
+function isReducedMotionPreferred() {
+  return globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
+function installSessionTitleScrolling(host: HTMLElement) {
+  const root = host.shadowRoot;
+  if (!root) return () => {};
+
+  const activeElements = new Set<HTMLElement>();
+  const frameByElement = new WeakMap<HTMLElement, number>();
+
+  function reset(element: HTMLElement) {
+    const frame = frameByElement.get(element);
+    if (frame !== undefined) cancelAnimationFrame(frame);
+    frameByElement.delete(element);
+    activeElements.delete(element);
+    element.scrollLeft = 0;
+    element.removeAttribute("data-session-title-scroll");
+  }
+
+  function start(element: HTMLElement) {
+    if (isReducedMotionPreferred() || element.hasAttribute("data-session-title-scroll-complete")) {
+      return;
+    }
+
+    reset(element);
+    const maxScroll = element.scrollWidth - element.clientWidth;
+    if (maxScroll <= 1) return;
+
+    const forwardDuration = Math.min(
+      SESSION_TITLE_SCROLL_MAX_DURATION_MS,
+      Math.max(
+        SESSION_TITLE_SCROLL_MIN_DURATION_MS,
+        maxScroll / SESSION_TITLE_SCROLL_SPEED_PX_PER_MS,
+      ),
+    );
+    const returnDuration = forwardDuration * SESSION_TITLE_RETURN_DURATION_RATIO;
+    const startedAt = performance.now();
+    const returnStartedAt = startedAt + forwardDuration;
+    activeElements.add(element);
+    element.setAttribute("data-session-title-scroll", "running");
+
+    const step = (now: number) => {
+      if (!activeElements.has(element)) return;
+
+      if (now < returnStartedAt) {
+        const progress = Math.min(1, (now - startedAt) / forwardDuration);
+        element.scrollLeft = maxScroll * progress;
+      } else {
+        const progress = Math.min(1, (now - returnStartedAt) / returnDuration);
+        const easedProgress = 1 - (1 - progress) ** 3;
+        element.scrollLeft = maxScroll * (1 - easedProgress);
+      }
+
+      if (now >= returnStartedAt + returnDuration) {
+        element.scrollLeft = 0;
+        activeElements.delete(element);
+        frameByElement.delete(element);
+        element.removeAttribute("data-session-title-scroll");
+        element.setAttribute("data-session-title-scroll-complete", "true");
+        return;
+      }
+
+      frameByElement.set(element, requestAnimationFrame(step));
+    };
+
+    frameByElement.set(element, requestAnimationFrame(step));
+  }
+
+  function handlePointerOver(event: Event) {
+    const element = getSessionTitleContent(event.target);
+    const relatedTarget = (event as PointerEvent).relatedTarget;
+    if (!element || (relatedTarget instanceof Node && element.contains(relatedTarget))) return;
+    start(element);
+  }
+
+  function handlePointerOut(event: Event) {
+    const element = getSessionTitleContent(event.target);
+    const relatedTarget = (event as PointerEvent).relatedTarget;
+    if (!element || (relatedTarget instanceof Node && element.contains(relatedTarget))) return;
+    reset(element);
+    element.removeAttribute("data-session-title-scroll-complete");
+  }
+
+  root.addEventListener("pointerover", handlePointerOver);
+  root.addEventListener("pointerout", handlePointerOut);
+
+  return () => {
+    root.removeEventListener("pointerover", handlePointerOver);
+    root.removeEventListener("pointerout", handlePointerOut);
+    for (const element of activeElements) reset(element);
+  };
+}
+
 export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   sessions,
   activeSessionReference,
@@ -410,6 +529,12 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   useEffect(() => {
     onRenameSessionRef.current = onRenameSession;
   }, [onRenameSession]);
+
+  useEffect(() => {
+    const host = model.getFileTreeContainer();
+    if (!host) return;
+    return installSessionTitleScrolling(host);
+  }, [model]);
 
   function openSessionMenu(session: SessionHead, anchor: HTMLElement, trigger: HTMLElement) {
     menuAnchorRef.current = anchor;
