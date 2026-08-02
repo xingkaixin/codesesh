@@ -197,13 +197,13 @@ function patchShadowEventRetargeting() {
   document.addEventListener("keydown", retarget, true);
 }
 
-function renderSessionTreeSidebar() {
-  const session = makeSession({ id: "s1" });
+function renderSessionTreeSidebar(sessions = [makeSession({ id: "s1" })]) {
+  const session = sessions[0]!;
   const onToggleBookmark = vi.fn();
   const onRenameSession = vi.fn();
   render(
     <SessionTreeSidebar
-      sessions={[session]}
+      sessions={sessions}
       activeSessionReference={getSessionReferenceKey(session)}
       selectedSessionReference={getSessionReferenceKey(session)}
       onSelectSession={() => {}}
@@ -219,7 +219,12 @@ function renderSessionTreeSidebar() {
 }
 
 function dispatch(target: HTMLElement, type: string, init: EventInit & { key?: string } = {}) {
-  const Ctor = type === "keydown" ? KeyboardEvent : MouseEvent;
+  const Ctor =
+    type === "keydown"
+      ? KeyboardEvent
+      : type.startsWith("pointer") && typeof PointerEvent !== "undefined"
+        ? PointerEvent
+        : MouseEvent;
   target.dispatchEvent(
     new Ctor(type, { bubbles: true, cancelable: true, composed: true, ...init }),
   );
@@ -243,6 +248,108 @@ describe("SessionTreeSidebar session options menu", () => {
     expect(onToggleBookmark).toHaveBeenCalledWith(session);
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     await waitFor(() => expect((item.getRootNode() as ShadowRoot).activeElement).toBe(item));
+  });
+
+  it("scrolls an overflowing title once while hovered", async () => {
+    const title = "A deliberately long session title that needs a marquee";
+    const { shadowRoot } = renderSessionTreeSidebar([makeSession({ id: "long", title })]);
+    const content = await waitFor(() => {
+      const element = shadowRoot.querySelector<HTMLElement>(
+        '[data-item-type="file"] [data-item-section="content"]',
+      );
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    const track = content.querySelector<HTMLElement>('[data-truncate-group-container="middle"]');
+    expect(track).not.toBeNull();
+    Object.defineProperty(track!, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ width: 320 }) as DOMRect,
+    });
+    Object.defineProperties(content, {
+      clientWidth: { configurable: true, value: 100 },
+      scrollWidth: { configurable: true, value: 640 },
+    });
+
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 1;
+    const requestFrame = vi
+      .spyOn(globalThis, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        const frame = nextFrame++;
+        frames.set(frame, callback);
+        return frame;
+      });
+    const cancelFrame = vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation((frame) => {
+      frames.delete(frame);
+    });
+    const performanceNow = vi.spyOn(performance, "now").mockReturnValue(0);
+
+    const runFrame = (timestamp: number) => {
+      const callbacks = [...frames.values()];
+      frames.clear();
+      for (const callback of callbacks) callback(timestamp);
+    };
+
+    try {
+      dispatch(content, "pointerover");
+      expect(content.dataset.sessionTitleScroll).toBe("running");
+      const copy = content.querySelector<HTMLElement>("[data-session-title-scroll-copy]");
+      expect(copy).not.toBeNull();
+      const gap = Number.parseFloat(copy!.style.marginInlineStart);
+      expect(gap).toBeGreaterThan(0);
+      const scrollDistance = 320 + gap;
+
+      runFrame(0);
+      expect(content.scrollLeft).toBe(0);
+      runFrame(1_500);
+      expect(content.scrollLeft).toBeGreaterThan(0);
+      runFrame(2_850);
+      expect(content.scrollLeft).toBeLessThan(scrollDistance);
+      expect(content.scrollLeft).toBeGreaterThan(240);
+      runFrame(3_000);
+      expect(content.scrollLeft).toBe(scrollDistance);
+      expect(content.dataset.sessionTitleScrollComplete).toBe("true");
+
+      dispatch(content, "pointerout");
+      expect(content.scrollLeft).toBe(0);
+      expect(content.dataset.sessionTitleScroll).toBeUndefined();
+      expect(content.dataset.sessionTitleScrollComplete).toBeUndefined();
+      expect(content.querySelector("[data-session-title-scroll-copy]")).toBeNull();
+    } finally {
+      requestFrame.mockRestore();
+      cancelFrame.mockRestore();
+      performanceNow.mockRestore();
+    }
+  });
+
+  it("shows and opens the parent row options when it has a child session", async () => {
+    const parent = makeSession({ id: "parent", title: "Main parent session with child" });
+    const child = makeSession({
+      id: "child",
+      title: "Worker",
+      parent_reference: { agentName: "codex", sessionId: "parent" },
+    });
+
+    const { onToggleBookmark, shadowRoot } = renderSessionTreeSidebar([parent, child]);
+
+    const parentItem = await waitFor(() => {
+      const parentItem = shadowRoot.querySelector<HTMLElement>(
+        '[data-item-type="folder"][aria-label="Main parent session with child"]',
+      );
+      expect(parentItem).not.toBeNull();
+      return parentItem!;
+    });
+    const decoration = parentItem.querySelector<HTMLElement>(
+      '[data-item-section="decoration"] > span',
+    );
+    expect(decoration).not.toBeNull();
+    dispatch(decoration!, "click");
+
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeNull());
+    dispatch(await screen.findByRole("menuitem", { name: "Add bookmark" }), "click");
+    expect(onToggleBookmark).toHaveBeenCalledWith(parent);
   });
 
   it("opens via keyboard (ContextMenu key) with the first item focused, navigates, and executes", async () => {
