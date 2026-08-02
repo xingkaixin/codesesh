@@ -260,18 +260,64 @@ describe("SessionTreeSidebar session options menu", () => {
       expect(element).not.toBeNull();
       return element!;
     });
+    const track = content.querySelector<HTMLElement>('[data-truncate-group-container="middle"]');
+    expect(track).not.toBeNull();
+    Object.defineProperty(track!, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ width: 320 }) as DOMRect,
+    });
     Object.defineProperties(content, {
       clientWidth: { configurable: true, value: 100 },
-      scrollWidth: { configurable: true, value: 320 },
+      scrollWidth: { configurable: true, value: 640 },
     });
 
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    dispatch(content, "pointerover");
-    await waitFor(() => expect(content.dataset.sessionTitleScroll).toBe("running"));
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 1;
+    const requestFrame = vi
+      .spyOn(globalThis, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        const frame = nextFrame++;
+        frames.set(frame, callback);
+        return frame;
+      });
+    const cancelFrame = vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation((frame) => {
+      frames.delete(frame);
+    });
+    const performanceNow = vi.spyOn(performance, "now").mockReturnValue(0);
 
-    dispatch(content, "pointerout");
-    expect(content.scrollLeft).toBe(0);
-    expect(content.dataset.sessionTitleScroll).toBeUndefined();
+    const runFrame = (timestamp: number) => {
+      const callbacks = [...frames.values()];
+      frames.clear();
+      for (const callback of callbacks) callback(timestamp);
+    };
+
+    try {
+      dispatch(content, "pointerover");
+      expect(content.dataset.sessionTitleScroll).toBe("running");
+      expect(content.querySelector("[data-session-title-scroll-copy]")).not.toBeNull();
+
+      runFrame(0);
+      expect(content.scrollLeft).toBe(0);
+      runFrame(1_500);
+      expect(content.scrollLeft).toBeGreaterThan(0);
+      runFrame(2_850);
+      expect(content.scrollLeft).toBeLessThan(320);
+      expect(content.scrollLeft).toBeGreaterThan(240);
+      runFrame(3_000);
+      expect(content.scrollLeft).toBe(320);
+      expect(content.dataset.sessionTitleScrollComplete).toBe("true");
+
+      dispatch(content, "pointerout");
+      expect(content.scrollLeft).toBe(0);
+      expect(content.dataset.sessionTitleScroll).toBeUndefined();
+      expect(content.dataset.sessionTitleScrollComplete).toBeUndefined();
+      expect(content.querySelector("[data-session-title-scroll-copy]")).toBeNull();
+    } finally {
+      requestFrame.mockRestore();
+      cancelFrame.mockRestore();
+      performanceNow.mockRestore();
+    }
   });
 
   it("shows and opens the parent row options when it has a child session", async () => {

@@ -142,7 +142,8 @@ const SESSION_TREE_CSS = `
     display: none;
   }
 
-  [data-type='item'] [data-session-title-scroll='running'] {
+  [data-type='item'] [data-session-title-scroll='running'],
+  [data-type='item'] [data-session-title-scroll-complete] {
     text-overflow: clip;
   }
 `;
@@ -341,7 +342,7 @@ function measureSessionTreeWork<T>(id: string, compute: () => T): T {
 const SESSION_TITLE_SCROLL_SPEED_PX_PER_MS = 0.08;
 const SESSION_TITLE_SCROLL_MIN_DURATION_MS = 700;
 const SESSION_TITLE_SCROLL_MAX_DURATION_MS = 3_000;
-const SESSION_TITLE_RETURN_DURATION_RATIO = 0.75;
+const SESSION_TITLE_SCROLL_SLOWDOWN_START = 0.75;
 
 function getSessionTitleContent(target: EventTarget | null): HTMLElement | null {
   if (!(target instanceof Element)) return null;
@@ -354,20 +355,37 @@ function isReducedMotionPreferred() {
   return globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
+function easeSessionTitleScrollToStop(progress: number) {
+  if (progress <= SESSION_TITLE_SCROLL_SLOWDOWN_START) return progress;
+
+  const slowdownProgress =
+    (progress - SESSION_TITLE_SCROLL_SLOWDOWN_START) / (1 - SESSION_TITLE_SCROLL_SLOWDOWN_START);
+  const easedProgress = slowdownProgress + slowdownProgress ** 2 - slowdownProgress ** 3;
+  return (
+    SESSION_TITLE_SCROLL_SLOWDOWN_START + (1 - SESSION_TITLE_SCROLL_SLOWDOWN_START) * easedProgress
+  );
+}
+
 function installSessionTitleScrolling(host: HTMLElement) {
   const root = host.shadowRoot;
   if (!root) return () => {};
 
   const activeElements = new Set<HTMLElement>();
+  const preparedElements = new Set<HTMLElement>();
   const frameByElement = new WeakMap<HTMLElement, number>();
+  const copyByElement = new WeakMap<HTMLElement, HTMLElement>();
 
   function reset(element: HTMLElement) {
     const frame = frameByElement.get(element);
     if (frame !== undefined) cancelAnimationFrame(frame);
+    copyByElement.get(element)?.remove();
+    copyByElement.delete(element);
+    preparedElements.delete(element);
     frameByElement.delete(element);
     activeElements.delete(element);
     element.scrollLeft = 0;
     element.removeAttribute("data-session-title-scroll");
+    element.removeAttribute("data-session-title-scroll-complete");
   }
 
   function start(element: HTMLElement) {
@@ -376,36 +394,35 @@ function installSessionTitleScrolling(host: HTMLElement) {
     }
 
     reset(element);
-    const maxScroll = element.scrollWidth - element.clientWidth;
-    if (maxScroll <= 1) return;
+    const track = element.querySelector<HTMLElement>('[data-truncate-group-container="middle"]');
+    const trackWidth = track?.getBoundingClientRect().width ?? 0;
+    if (!track || trackWidth <= element.clientWidth + 1) return;
+
+    const copy = track.cloneNode(true) as HTMLElement;
+    copy.dataset.sessionTitleScrollCopy = "true";
+    copy.setAttribute("aria-hidden", "true");
+    element.append(copy);
+    copyByElement.set(element, copy);
+    preparedElements.add(element);
+    element.setAttribute("data-session-title-scroll", "running");
 
     const forwardDuration = Math.min(
       SESSION_TITLE_SCROLL_MAX_DURATION_MS,
       Math.max(
         SESSION_TITLE_SCROLL_MIN_DURATION_MS,
-        maxScroll / SESSION_TITLE_SCROLL_SPEED_PX_PER_MS,
+        trackWidth / SESSION_TITLE_SCROLL_SPEED_PX_PER_MS,
       ),
     );
-    const returnDuration = forwardDuration * SESSION_TITLE_RETURN_DURATION_RATIO;
     const startedAt = performance.now();
-    const returnStartedAt = startedAt + forwardDuration;
     activeElements.add(element);
-    element.setAttribute("data-session-title-scroll", "running");
 
     const step = (now: number) => {
       if (!activeElements.has(element)) return;
 
-      if (now < returnStartedAt) {
-        const progress = Math.min(1, (now - startedAt) / forwardDuration);
-        element.scrollLeft = maxScroll * progress;
-      } else {
-        const progress = Math.min(1, (now - returnStartedAt) / returnDuration);
-        const easedProgress = 1 - (1 - progress) ** 3;
-        element.scrollLeft = maxScroll * (1 - easedProgress);
-      }
+      const progress = Math.min(1, Math.max(0, (now - startedAt) / forwardDuration));
+      element.scrollLeft = trackWidth * easeSessionTitleScrollToStop(progress);
 
-      if (now >= returnStartedAt + returnDuration) {
-        element.scrollLeft = 0;
+      if (progress >= 1) {
         activeElements.delete(element);
         frameByElement.delete(element);
         element.removeAttribute("data-session-title-scroll");
@@ -431,7 +448,6 @@ function installSessionTitleScrolling(host: HTMLElement) {
     const relatedTarget = (event as PointerEvent).relatedTarget;
     if (!element || (relatedTarget instanceof Node && element.contains(relatedTarget))) return;
     reset(element);
-    element.removeAttribute("data-session-title-scroll-complete");
   }
 
   root.addEventListener("pointerover", handlePointerOver);
@@ -440,7 +456,7 @@ function installSessionTitleScrolling(host: HTMLElement) {
   return () => {
     root.removeEventListener("pointerover", handlePointerOver);
     root.removeEventListener("pointerout", handlePointerOut);
-    for (const element of activeElements) reset(element);
+    for (const element of preparedElements) reset(element);
   };
 }
 
