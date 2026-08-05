@@ -26,6 +26,8 @@ Thumbs.db
 .claude
 .agents
 .issues
+skills-lock.json
+.design/
 
 
 # cf
@@ -33,7 +35,3 @@ Thumbs.db
 
 # worktree
 .worktree
-
-
-# agent-skills
-skills-lock.json
