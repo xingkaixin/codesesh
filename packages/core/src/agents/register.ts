@@ -62,7 +62,7 @@ registerAgent({
   icon: "/icon/agent/grok.svg",
   resolveDataRoot: resolveGrokDataRoot,
   resumeCommandPrefix: "grok --resume",
-  toolStrategy: "default",
+  toolStrategy: "custom",
   create: () => new GrokAgent(),
 });
 

@@ -20,6 +20,7 @@ import { buildKimiCodeToolStrategy } from "./kimi-code";
 import { buildZCodeToolStrategy } from "./zcode";
 import { buildCodexToolStrategy } from "./codex";
 import { buildCursorToolStrategy } from "./cursor";
+import { buildGrokToolStrategy } from "./grok";
 import { buildPiToolStrategy } from "./pi";
 import { buildDefaultToolStrategy } from "./shared";
 
@@ -52,6 +53,7 @@ const TOOL_STRATEGY_BUILDERS: Record<string, ToolStrategyBuilder> = {
   "kimi-code": buildKimiCodeToolStrategy,
   codex: buildCodexToolStrategy,
   cursor: buildCursorToolStrategy,
+  grok: buildGrokToolStrategy,
   pi: buildPiToolStrategy,
   zcode: buildZCodeToolStrategy,
 };

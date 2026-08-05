@@ -248,6 +248,214 @@ describe("getToolDisplayStrategy", () => {
     });
   });
 
+  it("renders Grok read_file as file content", () => {
+    const tool = part({
+      tool: "read_file",
+      title: "read",
+      state: {
+        status: "completed",
+        input: { variant: "ReadFile", target_file: "src/example.ts", limit: 20 },
+        output: {
+          type: "ReadFile",
+          FileContent: {
+            content: "1→export const value = 1;",
+            content_concise: "1→export const value = 1;",
+            absolute_path: "/repo/src/example.ts",
+            offset: 0,
+            limit: 20,
+            raw_output: "export const value = 1;\n",
+            total_lines: 1,
+          },
+        },
+      },
+    });
+    const strategy = getToolDisplayStrategy("grok", tool, normalizeToolState(tool), "/repo");
+
+    expect(strategy).toMatchObject({
+      title: "read",
+      secondaryText: "src/example.ts",
+      details: [
+        { label: "Lines", value: "1" },
+        { label: "Offset", value: "0" },
+        { label: "Limit", value: "20" },
+      ],
+      showInputPreview: false,
+      outputContent: {
+        kind: "plain",
+        text: "export const value = 1;\n",
+        language: "typescript",
+        isCode: true,
+      },
+    });
+  });
+
+  it("renders Grok image reads as media", () => {
+    const tool = part({
+      tool: "read_file",
+      title: "read",
+      state: {
+        status: "completed",
+        input: { target_file: "preview.png" },
+        output: {
+          type: "ReadFile",
+          ImageContent: {
+            data: "iVBORw0KGgo=",
+            mime_type: "image/png",
+          },
+        },
+      },
+    });
+    const strategy = getToolDisplayStrategy("grok", tool, normalizeToolState(tool));
+
+    expect(strategy).toMatchObject({
+      title: "read",
+      secondaryText: "preview.png",
+      details: [{ label: "Format", value: "image/png" }],
+      showInputPreview: false,
+      outputContent: {
+        kind: "media",
+        items: [{ src: "data:image/png;base64,iVBORw0KGgo=", alt: "Tool output image 1" }],
+      },
+    });
+  });
+
+  it("does not render rejected Grok image data as text", () => {
+    const tool = part({
+      tool: "read_file",
+      title: "read",
+      state: {
+        status: "completed",
+        input: { target_file: "preview.bin" },
+        output: {
+          type: "ReadFile",
+          ImageContent: {
+            data: "not-an-image",
+            mime_type: "application/octet-stream",
+          },
+        },
+      },
+    });
+    const strategy = getToolDisplayStrategy("grok", tool, normalizeToolState(tool));
+
+    expect(strategy).toMatchObject({
+      title: "read",
+      secondaryText: "preview.bin",
+      showInputPreview: false,
+      outputContent: {
+        kind: "plain",
+        text: "Image preview unavailable.",
+        language: "text",
+        isCode: false,
+      },
+    });
+  });
+
+  it("decodes Grok terminal bytes into terminal output", () => {
+    const tool = part({
+      tool: "run_terminal_command",
+      title: "bash",
+      state: {
+        status: "completed",
+        input: { command: "pnpm test", description: "Run tests" },
+        output: {
+          type: "Bash",
+          output: [112, 97, 115, 115, 101, 100, 10],
+          output_for_prompt: "exit: 0\npassed",
+          exit_code: 0,
+          command: "pnpm test",
+          current_dir: "/repo",
+          signal: null,
+          timed_out: false,
+          truncated: false,
+        },
+      },
+    });
+    const strategy = getToolDisplayStrategy("grok", tool, normalizeToolState(tool), "/repo");
+
+    expect(strategy).toMatchObject({
+      title: "bash",
+      secondaryText: "Run tests",
+      details: [
+        { label: "Command", value: "pnpm test" },
+        { label: "Workdir", value: "." },
+        { label: "Exit code", value: "0" },
+      ],
+      showInputPreview: false,
+      contentLabel: "Terminal output",
+      outputContent: { kind: "plain", text: "passed\n", language: "text", isCode: false },
+    });
+  });
+
+  it("renders Grok web_fetch failures without raw JSON", () => {
+    const tool = part({
+      tool: "web_fetch",
+      title: "web fetch",
+      state: {
+        status: "error",
+        input: { variant: "WebFetch", url: "https://example.com/docs" },
+        error: {
+          error: "tool_execution_failed",
+          message: "Request blocked by policy.",
+        },
+      },
+    });
+    const strategy = getToolDisplayStrategy("grok", tool, normalizeToolState(tool));
+
+    expect(strategy).toMatchObject({
+      title: "web fetch",
+      secondaryText: "https://example.com/docs",
+      details: [{ label: "Type", value: "tool_execution_failed" }],
+      showInputPreview: false,
+      contentLabel: "Error",
+      outputContent: {
+        kind: "plain",
+        text: "Request blocked by policy.",
+        language: "markdown",
+        isCode: false,
+      },
+    });
+  });
+
+  it("renders successful Grok web_fetch content", () => {
+    const tool = part({
+      tool: "web_fetch",
+      title: "web fetch",
+      state: {
+        status: "completed",
+        input: { url: "https://example.com/start" },
+        output: {
+          type: "WebFetch",
+          Content: {
+            url: "https://example.com/final",
+            content: "# Example\n\nPage body",
+            content_type: "markdown",
+            status_code: 200,
+            bytes: 20,
+          },
+        },
+      },
+    });
+    const strategy = getToolDisplayStrategy("grok", tool, normalizeToolState(tool));
+
+    expect(strategy).toMatchObject({
+      title: "web fetch",
+      secondaryText: "https://example.com/final",
+      details: [
+        { label: "Status", value: "200" },
+        { label: "Content type", value: "markdown" },
+        { label: "Size", value: "20 bytes" },
+      ],
+      showInputPreview: false,
+      contentLabel: "Page content",
+      outputContent: {
+        kind: "plain",
+        text: "# Example\n\nPage body",
+        language: "markdown",
+        isCode: false,
+      },
+    });
+  });
+
   it("renders Kimi-Code question answers from JSON output", () => {
     const tool = part({
       tool: "AskUserQuestion",
