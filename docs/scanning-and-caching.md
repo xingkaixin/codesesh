@@ -41,7 +41,7 @@ CLI
 
 当前数据源类型：
 
-- 文件型：Claude Code、Codex、Kimi、Pi
+- 文件型：Claude Code、Codex、Grok、Kimi、Pi
 - 单 SQLite 数据库型：OpenCode、Cursor、ZCode
 
 不同 Agent 可以并行刷新；同一个 Agent 的 refresh 与 backfill 由 `AgentSyncEngine`
