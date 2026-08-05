@@ -7,6 +7,7 @@ import { CodexAgent, resolveCodexDataRoot } from "./codex.js";
 import { CursorAgent, resolveCursorDataRoot } from "./cursor.js";
 import { PiAgent, resolvePiDataRoot } from "./pi.js";
 import { ZCodeAgent, resolveZCodeDataRoot } from "./zcode.js";
+import { GrokAgent, resolveGrokDataRoot } from "./grok.js";
 
 registerAgent({
   icon: "/icon/agent/claudecode.svg",
@@ -55,6 +56,14 @@ registerAgent({
   resumeCommandPrefix: "codex resume",
   toolStrategy: "custom",
   create: () => new CodexAgent(),
+});
+
+registerAgent({
+  icon: "/icon/agent/grok.svg",
+  resolveDataRoot: resolveGrokDataRoot,
+  resumeCommandPrefix: "grok --resume",
+  toolStrategy: "custom",
+  create: () => new GrokAgent(),
 });
 
 registerAgent({

@@ -49,6 +49,13 @@ describe("agent registry", () => {
         count: 1,
       },
       {
+        name: "grok",
+        displayName: "Grok",
+        icon: "/icon/agent/grok.svg",
+        resumeCommandPrefix: "grok --resume",
+        count: 0,
+      },
+      {
         name: "pi",
         displayName: "Pi",
         icon: "/icon/agent/pi.svg",
