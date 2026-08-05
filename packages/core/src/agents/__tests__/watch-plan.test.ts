@@ -15,6 +15,7 @@ describe("registered agent session watch plans", () => {
       "claudecode",
       "codex",
       "cursor",
+      "grok",
       "kimi",
       "kimi-code",
       "opencode",
@@ -32,6 +33,7 @@ describe("registered agent session watch plans", () => {
     vi.stubEnv("CLAUDE_CONFIG_DIR", "/tmp/claude-home");
     vi.stubEnv("CODEX_HOME", "/tmp/codex-home");
     vi.stubEnv("PI_HOME", "/tmp/pi-home");
+    vi.stubEnv("GROK_HOME", "/tmp/grok-home");
     vi.stubEnv("KIMI_SHARE_DIR", "/tmp/kimi-home");
     vi.stubEnv("KIMI_CODE_HOME", "/tmp/kimi-code-home");
     vi.stubEnv("CURSOR_DATA_PATH", "/tmp/cursor-home");
@@ -59,6 +61,10 @@ describe("registered agent session watch plans", () => {
         { root: roots.pi, path: join(roots.pi!, "agent", "sessions") },
         { root: "data/pi", path: "data/pi" },
       ],
+    });
+    expect(agents.get("grok")?.getSessionWatchPlan()).toEqual({
+      status: "supported",
+      targets: [{ root: roots.grok, path: join(roots.grok!, "sessions") }, { path: "data/grok" }],
     });
     expect(agents.get("kimi")?.getSessionWatchPlan()).toEqual({
       status: "supported",

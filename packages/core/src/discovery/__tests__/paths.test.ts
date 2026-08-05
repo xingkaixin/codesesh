@@ -36,6 +36,7 @@ beforeEach(() => {
   vi.stubEnv("KIMI_SHARE_DIR", undefined);
   vi.stubEnv("KIMI_CODE_HOME", undefined);
   vi.stubEnv("PI_HOME", undefined);
+  vi.stubEnv("GROK_HOME", undefined);
   vi.stubEnv("CURSOR_DATA_PATH", undefined);
   vi.stubEnv("XDG_DATA_HOME", undefined);
   vi.stubEnv("LOCALAPPDATA", undefined);
@@ -55,6 +56,7 @@ describe("resolveAgentRoots", () => {
     expectPath(roots.kimi!).toBe("/home/user/.kimi");
     expectPath(roots["kimi-code"]!).toBe("/home/user/.kimi-code");
     expectPath(roots.pi!).toBe("/home/user/.pi");
+    expectPath(roots.grok!).toBe("/home/user/.grok");
     expectPath(roots.zcode!).toBe("/home/user/.zcode");
   });
 
@@ -91,6 +93,12 @@ describe("resolveAgentRoots", () => {
     mockedHomedir.mockReturnValue("/home/user");
     const roots = resolveAgentRoots();
     expectPath(roots.pi!).toBe("/custom/pi");
+  });
+
+  it("respects GROK_HOME override", () => {
+    vi.stubEnv("GROK_HOME", "/custom/grok");
+    mockedHomedir.mockReturnValue("/home/user");
+    expectPath(resolveAgentRoots().grok!).toBe("/custom/grok");
   });
 
   it("computes the OpenCode root from the data home", () => {

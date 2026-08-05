@@ -255,6 +255,7 @@ describe("handleGetAgents", () => {
       "kimi",
       "kimi-code",
       "codex",
+      "grok",
       "pi",
       "cursor",
     ]);
