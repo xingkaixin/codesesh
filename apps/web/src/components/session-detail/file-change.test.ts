@@ -5,6 +5,7 @@ import {
   buildFileChangeSummaryFromActivity,
   buildToolAnchorId,
   classifyToolKind,
+  classifyToolOperation,
   summarizeFileChangeItems,
   type FileChangeRecord,
   type FileChangeSummary,
@@ -47,6 +48,18 @@ describe("classifyToolKind", () => {
 
   it("returns null for unknown tools", () => {
     expect(classifyToolKind(part({ tool: "bash", title: "bash" }))).toBeNull();
+  });
+});
+
+describe("classifyToolOperation", () => {
+  it("collapses the file kinds into read / write and defaults to execute", () => {
+    expect(classifyToolOperation(part({ tool: "read", title: "read" }))).toBe("read");
+    expect(classifyToolOperation(part({ tool: "edit", title: "edit" }))).toBe("write");
+    expect(classifyToolOperation(part({ tool: "create_file", title: "create_file" }))).toBe(
+      "write",
+    );
+    expect(classifyToolOperation(part({ tool: "delete", title: "delete" }))).toBe("write");
+    expect(classifyToolOperation(part({ tool: "bash", title: "bash" }))).toBe("execute");
   });
 });
 

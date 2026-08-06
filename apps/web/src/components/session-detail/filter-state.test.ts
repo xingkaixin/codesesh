@@ -1,0 +1,187 @@
+import { describe, expect, it } from "vitest";
+import {
+  countSelectedTools,
+  createFilterState,
+  deriveActiveChips,
+  deriveHiddenCount,
+  deriveHiddenTools,
+  deriveToolsParentState,
+  deriveVisibleTools,
+  resetAll,
+  selectWriteToolsOnly,
+  setAllTools,
+  setToolQuery,
+  toggleContentKind,
+  toggleTool,
+  toggleToolsExpanded,
+  type SessionFilterState,
+} from "./filter-state";
+import type { SessionDetailToc, ToolFilterItem } from "./toc";
+
+const TOOLS: ToolFilterItem[] = [
+  { id: "tool:bash", toolKey: "bash", label: "Bash", count: 4, kind: "execute" },
+  { id: "tool:edit", toolKey: "edit", label: "Edit", count: 2, kind: "write" },
+  { id: "tool:grep", toolKey: "grep", label: "Grep", count: 9, kind: "execute" },
+  { id: "tool:read", toolKey: "read", label: "Read", count: 6, kind: "read" },
+  { id: "tool:write", toolKey: "write", label: "Write", count: 1, kind: "write" },
+];
+
+function createToc(): SessionDetailToc {
+  const counts = { user: 3, agent_message: 5, thinking: 2, plan: 1, tools_all: 22 };
+  return {
+    filterIds: new Set<string>([
+      "user",
+      "agent_message",
+      "thinking",
+      "plan",
+      ...TOOLS.map((tool) => tool.id),
+    ]),
+    counts,
+    tools: TOOLS,
+    maxToolCount: 9,
+    totalUnitCount: 33,
+  };
+}
+
+const toc = createToc();
+
+function selectedIds(state: SessionFilterState) {
+  return [...state.selected].toSorted();
+}
+
+describe("createFilterState", () => {
+  it("starts with every filter on, no query and the tool group open", () => {
+    const state = createFilterState(toc);
+    expect(selectedIds(state)).toEqual([...toc.filterIds].toSorted());
+    expect(state.selected.has("tools_all")).toBe(false);
+    expect(state.toolQuery).toBe("");
+    expect(state.toolsExpanded).toBe(true);
+  });
+});
+
+describe("reducers", () => {
+  it("toggles a content kind off and back on without touching tools", () => {
+    const off = toggleContentKind(createFilterState(toc), "thinking");
+    expect(off.selected.has("thinking")).toBe(false);
+    expect(countSelectedTools(toc, off)).toBe(TOOLS.length);
+    expect(toggleContentKind(off, "thinking").selected.has("thinking")).toBe(true);
+  });
+
+  it("toggles a single tool", () => {
+    const off = toggleTool(createFilterState(toc), "tool:grep");
+    expect(off.selected.has("tool:grep")).toBe(false);
+    expect(toggleTool(off, "tool:grep").selected.has("tool:grep")).toBe(true);
+  });
+
+  it("scopes 全选 / 全不选 to the queried tool subset", () => {
+    const none = setAllTools(createFilterState(toc), toc, false);
+    expect(countSelectedTools(toc, none)).toBe(0);
+
+    const queried = setToolQuery(none, "re");
+    expect(deriveVisibleTools(toc, queried).map((tool) => tool.label)).toEqual(["Grep", "Read"]);
+
+    const some = setAllTools(queried, toc, true);
+    expect([...some.selected].filter((id) => id.startsWith("tool:")).toSorted()).toEqual([
+      "tool:grep",
+      "tool:read",
+    ]);
+
+    const cleared = setAllTools(some, toc, false);
+    expect(countSelectedTools(toc, cleared)).toBe(0);
+  });
+
+  it("applies 全选 to every tool when the query is empty", () => {
+    const none = setAllTools(createFilterState(toc), toc, false);
+    expect(countSelectedTools(toc, setAllTools(none, toc, true))).toBe(TOOLS.length);
+  });
+
+  it("selects exactly the write tools and leaves content kinds alone", () => {
+    const state = selectWriteToolsOnly(toggleContentKind(createFilterState(toc), "user"), toc);
+    expect([...state.selected].filter((id) => id.startsWith("tool:")).toSorted()).toEqual([
+      "tool:edit",
+      "tool:write",
+    ]);
+    expect(state.selected.has("agent_message")).toBe(true);
+    expect(state.selected.has("user")).toBe(false);
+  });
+
+  it("stores the tool query and the group collapse flag", () => {
+    const queried = setToolQuery(createFilterState(toc), "Ba");
+    expect(queried.toolQuery).toBe("Ba");
+    expect(toggleToolsExpanded(queried).toolsExpanded).toBe(false);
+  });
+
+  it("resets every filter and the query while keeping the group open state", () => {
+    const messy = toggleToolsExpanded(
+      setToolQuery(
+        selectWriteToolsOnly(toggleContentKind(createFilterState(toc), "plan"), toc),
+        "x",
+      ),
+    );
+    const reset = resetAll(messy, toc);
+    expect(selectedIds(reset)).toEqual([...toc.filterIds].toSorted());
+    expect(reset.toolQuery).toBe("");
+    expect(reset.toolsExpanded).toBe(false);
+  });
+});
+
+describe("deriveToolsParentState", () => {
+  it("covers the tri-state truth table", () => {
+    const all = createFilterState(toc);
+    expect(deriveToolsParentState(toc, all)).toBe("all");
+    expect(deriveToolsParentState(toc, toggleTool(all, "tool:grep"))).toBe("partial");
+    expect(deriveToolsParentState(toc, setAllTools(all, toc, false))).toBe("none");
+  });
+
+  it("reports none when the session used no tools", () => {
+    const toolless: SessionDetailToc = { ...toc, tools: [], maxToolCount: 0 };
+    expect(deriveToolsParentState(toolless, createFilterState(toolless))).toBe("none");
+  });
+});
+
+describe("deriveVisibleTools", () => {
+  it("matches case-insensitively and returns every tool for a blank query", () => {
+    const state = createFilterState(toc);
+    expect(deriveVisibleTools(toc, state)).toBe(toc.tools);
+    expect(deriveVisibleTools(toc, setToolQuery(state, "  ")).length).toBe(TOOLS.length);
+    expect(deriveVisibleTools(toc, setToolQuery(state, "wRi")).map((t) => t.label)).toEqual([
+      "Write",
+    ]);
+  });
+});
+
+describe("deriveActiveChips", () => {
+  it("is empty while every tool is on, and lists the survivors otherwise", () => {
+    const all = createFilterState(toc);
+    expect(deriveActiveChips(toc, all)).toEqual([]);
+
+    const withoutGrep = toggleTool(all, "tool:grep");
+    expect(deriveActiveChips(toc, withoutGrep).map((chip) => chip.label)).toEqual([
+      "Bash",
+      "Edit",
+      "Read",
+      "Write",
+    ]);
+
+    const readOnly = setAllTools(setToolQuery(setAllTools(all, toc, false), "read"), toc, true);
+    expect(deriveActiveChips(toc, readOnly)).toEqual([{ id: "tool:read", label: "Read" }]);
+  });
+});
+
+describe("hidden derivations", () => {
+  it("lists the unselected tools with their counts", () => {
+    const state = toggleTool(toggleTool(createFilterState(toc), "tool:grep"), "tool:bash");
+    expect(deriveHiddenTools(toc, state)).toEqual([
+      { label: "Bash", count: 4 },
+      { label: "Grep", count: 9 },
+    ]);
+  });
+
+  it("counts hidden units across content kinds and tools", () => {
+    const all = createFilterState(toc);
+    expect(deriveHiddenCount(toc, all)).toBe(0);
+    expect(deriveHiddenCount(toc, toggleContentKind(all, "thinking"))).toBe(toc.counts.thinking);
+    expect(deriveHiddenCount(toc, toggleTool(all, "tool:grep"))).toBe(9);
+    expect(deriveHiddenCount(toc, setAllTools(all, toc, false))).toBe(toc.counts.tools_all);
+  });
+});

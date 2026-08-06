@@ -1,20 +1,37 @@
 import type { ToolPart } from "../../lib/api";
 import type { MessageDisplayModel } from "./display-model";
 import type { MessageBlock } from "./blocks";
+import { classifyToolOperation, type ToolOperationKind } from "./file-change";
 
-export type TocFilterId = "user" | "agent_message" | "thinking" | "plan" | "tools_all";
+/** The four content kinds the reader can toggle independently of tools. */
+export type TocContentFilterId = "user" | "agent_message" | "thinking" | "plan";
+
+export type TocFilterId = TocContentFilterId | "tools_all";
+
+export const TOC_CONTENT_FILTER_IDS = [
+  "user",
+  "agent_message",
+  "thinking",
+  "plan",
+] as const satisfies readonly TocContentFilterId[];
 
 export interface ToolFilterItem {
   id: `tool:${string}`;
   toolKey: string;
   label: string;
   count: number;
+  kind: ToolOperationKind;
 }
 
 export interface SessionDetailToc {
+  /** Selectable filter ids only — `tools_all` is derived from the tool subset. */
   filterIds: Set<string>;
   counts: Record<TocFilterId, number>;
   tools: ToolFilterItem[];
+  /** Largest per-tool count, the denominator of the usage bars. */
+  maxToolCount: number;
+  /** Every filterable unit: content blocks plus individual tool parts. */
+  totalUnitCount: number;
 }
 
 export interface FilteredSessionMessage {
@@ -75,7 +92,25 @@ function countToolPart(toolMap: Map<string, ToolFilterItem>, part: ToolPart) {
     cur.count += 1;
     return;
   }
-  toolMap.set(key, { id, toolKey: key, label: buildToolLabel(part), count: 1 });
+  toolMap.set(key, {
+    id,
+    toolKey: key,
+    label: buildToolLabel(part),
+    count: 1,
+    kind: classifyToolOperation(part),
+  });
+}
+
+/** Tool blocks are classified by the tool branch whatever the role; every other
+ *  block inside a user message counts as the user's own content. */
+function contentFilterIdOf(
+  block: Exclude<MessageBlock, ToolMessageBlock>,
+  msg: MessageDisplayModel["msg"],
+): TocContentFilterId {
+  if (msg.role === "user") return "user";
+  if (block.type === "reasoning") return "thinking";
+  if (block.type === "plan") return "plan";
+  return "agent_message";
 }
 
 export function buildSessionDetailToc(messages: MessageDisplayModel[]): SessionDetailToc {
@@ -91,40 +126,30 @@ export function buildSessionDetailToc(messages: MessageDisplayModel[]): SessionD
 
   for (const { msg, blocks } of messages) {
     for (const block of blocks) {
-      if (msg.role === "user") {
-        counts.user += 1;
-        filterIds.add("user");
-        continue;
-      }
-      if (block.type === "text") {
-        counts.agent_message += 1;
-        filterIds.add("agent_message");
-        continue;
-      }
-      if (block.type === "reasoning") {
-        counts.thinking += 1;
-        filterIds.add("thinking");
-        continue;
-      }
-      if (block.type === "plan") {
-        counts.plan += 1;
-        filterIds.add("plan");
+      if (block.type === "tool") {
+        counts.tools_all += block.parts.length;
+        for (const part of block.parts) {
+          countToolPart(toolMap, part);
+          filterIds.add(`tool:${normalizeToolKey(part)}`);
+        }
         continue;
       }
 
-      counts.tools_all += block.parts.length;
-      filterIds.add("tools_all");
-      for (const part of block.parts) {
-        countToolPart(toolMap, part);
-        filterIds.add(`tool:${normalizeToolKey(part)}`);
-      }
+      const id = contentFilterIdOf(block, msg);
+      counts[id] += 1;
+      filterIds.add(id);
     }
   }
+
+  const tools = [...toolMap.values()].toSorted((a, b) => a.label.localeCompare(b.label));
 
   return {
     filterIds,
     counts,
-    tools: [...toolMap.values()].toSorted((a, b) => a.label.localeCompare(b.label)),
+    tools,
+    maxToolCount: tools.reduce((max, tool) => Math.max(max, tool.count), 0),
+    totalUnitCount:
+      counts.user + counts.agent_message + counts.thinking + counts.plan + counts.tools_all,
   };
 }
 
@@ -137,11 +162,8 @@ function isBlockVisible(
   msg: MessageDisplayModel["msg"],
   filters: Set<string>,
 ) {
-  if (msg.role === "user") return filters.has("user");
-  if (block.type === "text") return filters.has("agent_message");
-  if (block.type === "reasoning") return filters.has("thinking");
-  if (block.type === "plan") return filters.has("plan");
-  return block.parts.some((p) => isToolPartVisible(p, filters));
+  if (block.type === "tool") return block.parts.some((p) => isToolPartVisible(p, filters));
+  return filters.has(contentFilterIdOf(block, msg));
 }
 
 function filterToolBlock(block: ToolMessageBlock, filters: Set<string>): ToolMessageBlock | null {
@@ -159,18 +181,29 @@ function filterToolBlock(block: ToolMessageBlock, filters: Set<string>): ToolMes
   };
 }
 
+export interface FilteredSessionMessages {
+  messages: FilteredSessionMessage[];
+  /** Units left on screen, counted the way `SessionDetailToc.counts` counts them. */
+  visibleUnitCount: number;
+}
+
 export function filterSessionMessages(
   messages: MessageDisplayModel[],
   selectedFilters: Set<string>,
-): FilteredSessionMessage[] {
-  return messages
-    .map((model) => {
-      const blocks = model.blocks
-        .filter((b) => isBlockVisible(b, model.msg, selectedFilters))
-        .map((b) => (b.type === "tool" ? filterToolBlock(b, selectedFilters) : b))
-        .filter((b): b is MessageBlock => b != null);
-      if (blocks.length === 0) return null;
-      return { msg: model.msg, blocks, index: model.index };
-    })
-    .filter((item): item is FilteredSessionMessage => item != null);
+): FilteredSessionMessages {
+  const filtered: FilteredSessionMessage[] = [];
+  let visibleUnitCount = 0;
+
+  for (const model of messages) {
+    const blocks = model.blocks
+      .filter((b) => isBlockVisible(b, model.msg, selectedFilters))
+      .map((b) => (b.type === "tool" ? filterToolBlock(b, selectedFilters) : b))
+      .filter((b): b is MessageBlock => b != null);
+    if (blocks.length === 0) continue;
+
+    for (const block of blocks) visibleUnitCount += block.type === "tool" ? block.parts.length : 1;
+    filtered.push({ msg: model.msg, blocks, index: model.index });
+  }
+
+  return { messages: filtered, visibleUnitCount };
 }
