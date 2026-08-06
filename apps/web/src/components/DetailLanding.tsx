@@ -7,6 +7,7 @@ import { getSessionDisplayTitle } from "../lib/session-title";
 import { AgentIcon } from "./AgentIcon";
 import { BookmarkButton } from "./BookmarkButton";
 import { SmartTagChips } from "./SmartTagChips";
+import { Panel, PanelHeader } from "./ui/panel";
 
 export interface LandingSession extends SessionHead {
   agentKey: string;
@@ -40,22 +41,18 @@ function getSessionTotalTokens(stats: SessionHead["stats"]) {
 
 function LandingCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
-      <p className="console-mono text-[11px] uppercase tracking-wider text-[var(--console-muted)]">
-        {label}
-      </p>
+    <Panel className="p-4">
+      <p className="console-eyebrow">{label}</p>
       <p className="console-mono mt-2 text-xl font-semibold text-[var(--console-text)]">{value}</p>
       {hint ? <p className="mt-1 text-xs text-[var(--console-muted)]">{hint}</p> : null}
-    </div>
+    </Panel>
   );
 }
 
 function DiagnosticItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-3">
-      <p className="console-mono text-[11px] uppercase tracking-wider text-[var(--console-muted)]">
-        {label}
-      </p>
+    <div className="rounded-md border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-3">
+      <p className="console-eyebrow">{label}</p>
       <p className="console-mono mt-2 break-all text-sm leading-6 text-[var(--console-text)]">
         {value}
       </p>
@@ -81,10 +78,10 @@ function MissingStateHero({
   iconAlt?: string;
 }) {
   return (
-    <div className="rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] p-5 md:p-6">
+    <Panel className="p-5 md:p-6">
       <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
         <div className="max-w-2xl">
-          <span className="console-mono inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--console-muted)]">
+          <span className="console-eyebrow inline-flex rounded-full border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2.5 py-1">
             {code}
           </span>
           <div className="mt-4 flex items-start gap-3">
@@ -96,7 +93,7 @@ function MissingStateHero({
                 className="mt-1 size-8 shrink-0 object-contain"
               />
             ) : null}
-            <h2 className="console-mono text-2xl leading-tight font-semibold tracking-tight text-[var(--console-text)] md:text-[2rem]">
+            <h2 className="console-display text-2xl leading-tight font-semibold text-[var(--console-text)] md:text-[2rem]">
               {title}
             </h2>
           </div>
@@ -104,34 +101,25 @@ function MissingStateHero({
             {description}
           </p>
         </div>
-        <div className="min-w-0 rounded-sm border border-dashed border-[var(--console-border)] bg-[var(--console-surface-muted)] px-4 py-3 md:max-w-xs">
-          <p className="console-mono text-[11px] uppercase tracking-[0.16em] text-[var(--console-muted)]">
-            STATUS NOTE
-          </p>
+        <div className="min-w-0 rounded-md border border-dashed border-[var(--console-border)] bg-[var(--console-surface-muted)] px-4 py-3 md:max-w-xs">
+          <p className="console-eyebrow">STATUS NOTE</p>
           <p className="mt-2 text-sm leading-6 text-[var(--console-text)]">{aside}</p>
         </div>
       </div>
-    </div>
+    </Panel>
   );
 }
 
 function RecommendedAgents({ agentItems }: { agentItems: LandingAgentItem[] }) {
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
-          Known Agents
-        </h3>
-        <span className="console-mono text-[11px] text-[var(--console-muted)]">
-          {agentItems.length} items
-        </span>
-      </div>
-      <ul className="grid gap-2 sm:grid-cols-2">
+    <Panel className="p-4">
+      <PanelHeader title="Known Agents" meta={`${agentItems.length} items`} />
+      <ul className="mt-3 grid gap-2 sm:grid-cols-2">
         {agentItems.map((agent) => (
           <li key={agent.key}>
             <Link
               to={agentRoutePath(agent.key)}
-              className="flex min-h-11 items-center gap-2 rounded-sm border border-transparent px-3 py-2 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-accent)]"
+              className="flex min-h-11 items-center gap-2 rounded-sm border border-transparent px-3 py-2 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)]"
             >
               {agent.icon ? (
                 <AgentIcon
@@ -151,7 +139,7 @@ function RecommendedAgents({ agentItems }: { agentItems: LandingAgentItem[] }) {
           </li>
         ))}
       </ul>
-    </div>
+    </Panel>
   );
 }
 
@@ -165,24 +153,13 @@ function RecentSessions({
   onToggleBookmark: (session: LandingSession) => void;
 }) {
   if (sessions.length === 0) {
-    return (
-      <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4 text-sm text-[var(--console-muted)]">
-        No sessions yet
-      </div>
-    );
+    return <Panel className="p-4 text-sm text-[var(--console-muted)]">No sessions yet</Panel>;
   }
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
-          Recent Sessions
-        </h3>
-        <span className="console-mono text-[11px] text-[var(--console-muted)]">
-          {sessions.length} items
-        </span>
-      </div>
-      <ul className="space-y-2">
+    <Panel className="p-4">
+      <PanelHeader title="Recent Sessions" meta={`${sessions.length} items`} />
+      <ul className="mt-3 space-y-2">
         {sessions.map((session) => {
           const bookmarked = isBookmarked(session.agentKey, session.id);
           return (
@@ -210,7 +187,7 @@ function RecentSessions({
           );
         })}
       </ul>
-    </div>
+    </Panel>
   );
 }
 
@@ -285,10 +262,8 @@ export function DetailLanding({
         />
 
         <div className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-3">
-            <p className="console-mono text-[11px] uppercase tracking-wider text-[var(--console-muted)]">
-              Agent
-            </p>
+          <div className="rounded-md border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-3">
+            <p className="console-eyebrow">Agent</p>
             <div className="mt-2 flex items-center gap-2">
               {agentIcon ? (
                 <AgentIcon
@@ -328,11 +303,9 @@ export function DetailLanding({
           />
         </div>
 
-        <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
-          <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
-            Agents
-          </h3>
-          <ul className="grid gap-2 sm:grid-cols-2">
+        <Panel className="p-4">
+          <PanelHeader title="Agents" meta={`${agentItems.length} items`} />
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2">
             {agentItems.map((agent) => (
               <li key={agent.key}>
                 <Link
@@ -357,7 +330,7 @@ export function DetailLanding({
               </li>
             ))}
           </ul>
-        </div>
+        </Panel>
 
         <RecentSessions
           sessions={recentSessions}
@@ -374,7 +347,7 @@ export function DetailLanding({
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
-      <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
+      <Panel className="p-4">
         <div className="flex items-center gap-3">
           {activeAgent?.icon ? (
             <AgentIcon
@@ -385,7 +358,7 @@ export function DetailLanding({
             />
           ) : null}
           <div>
-            <h3 className="console-mono text-sm font-semibold text-[var(--console-text)]">
+            <h3 className="console-display text-[15px] font-semibold text-[var(--console-text)]">
               {displayName}
             </h3>
             <p className="console-mono text-xs text-[var(--console-muted)]">
@@ -393,7 +366,7 @@ export function DetailLanding({
             </p>
           </div>
         </div>
-      </div>
+      </Panel>
 
       <div className="grid gap-3 md:grid-cols-4">
         <LandingCard label="Sessions" value={formatNumber(sessions.length)} />

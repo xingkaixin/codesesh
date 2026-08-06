@@ -19,7 +19,7 @@ export function SessionActionsMenu({
         ref={triggerRef}
         aria-label="Session options"
         onClick={(event) => event.stopPropagation()}
-        className="motion-hover motion-press inline-flex size-6 shrink-0 items-center justify-center rounded-sm border border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none"
+        className="motion-hover motion-press inline-flex size-6 shrink-0 items-center justify-center rounded-sm border border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
       >
         <MoreHorizontal className="size-3.5" aria-hidden="true" />
       </Menu.Trigger>
@@ -27,7 +27,7 @@ export function SessionActionsMenu({
         <Menu.Positioner side="bottom" align="end" sideOffset={4} className="z-30">
           <Menu.Popup
             finalFocus={triggerRef}
-            className="motion-menu w-36 rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] p-1 shadow-lg focus-visible:outline-none"
+            className="motion-menu w-36 rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] p-1 shadow-[var(--shadow-overlay)] focus-visible:outline-none"
           >
             <Menu.Item
               onClick={onRename}
