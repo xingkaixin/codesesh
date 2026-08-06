@@ -16,7 +16,6 @@ import { useScanStatus } from "./hooks/useScanStatus";
 import { useSessionDetail } from "./hooks/useSessionDetail";
 import { useSessionSearch } from "./hooks/useSessionSearch";
 import { useBookmarks } from "./hooks/useBookmarks";
-import { type DashboardScope, useDashboard } from "./hooks/useDashboard";
 import { useSidebarModel } from "./hooks/useSidebarModel";
 import { useSessionStore } from "./hooks/useSessionStore";
 import { useSessionAliasMutations } from "./hooks/useSessionAliasMutations";
@@ -159,17 +158,6 @@ export default function App() {
       ? getProjectIdentityKey({ kind: activeProjectKind, key: activeProjectKey })
       : null;
 
-  const projectDashboardScope = useMemo<DashboardScope>(
-    () =>
-      activeProjectKind && activeProjectKey
-        ? { kind: "project", projectKind: activeProjectKind, projectKey: activeProjectKey }
-        : { kind: "global" },
-    [activeProjectKey, activeProjectKind],
-  );
-  const projectController = useDashboard(
-    projectDashboardScope.kind === "project" ? loadedWindow : null,
-    projectDashboardScope,
-  );
   const [projectAgentFilter, setProjectAgentFilter] = useState<{
     identityKey: string;
     agentKey?: string;
@@ -362,16 +350,19 @@ export default function App() {
       sessionsByAgent={sessionIndexes.byLandingAgent}
       activeProject={activeProject?.project ?? null}
       activeProjectSessions={activeProjectSessions}
-      dashboard={dashboard}
+      overview={{
+        window: loadedWindow,
+        // `preset` is null only until the config resolves, and until then the
+        // shell renders its loading skeleton instead of the overview.
+        rangePreset: timeWindowController.preset ?? "all",
+        onRangeChange: timeWindowController.selectPreset,
+      }}
       sessionDetail={{
         session: sessionDetail.session,
         loading: sessionDetail.sessionLoading,
         error: sessionDetail.sessionError,
       }}
-      projectDashboard={{
-        dashboard: projectController.dashboard,
-        loading: projectController.loading,
-        error: projectController.error,
+      projectAgentFilter={{
         selectedAgent: selectedProjectAgent,
         onChangeAgent: selectProjectAgent,
       }}
@@ -388,9 +379,7 @@ export default function App() {
         registerResultRef: search.registerResultRef,
       }}
       bookmarks={{
-        sessions: bookmarks.bookmarkedSessions,
         isBookmarked: bookmarks.isSessionBookmarked,
-        toggleBookmark: bookmarks.toggleBookmark,
         toggleSessionBookmark: bookmarks.toggleSessionBookmark,
       }}
     />
@@ -438,7 +427,7 @@ export default function App() {
       <div className="console-ui flex h-screen flex-col overflow-hidden bg-[var(--console-bg)] text-[var(--console-text)]">
         <a
           href="#main"
-          className="console-mono sr-only rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-1.5 text-xs text-[var(--console-text)] focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none"
+          className="console-mono sr-only rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-1.5 text-xs text-[var(--console-text)] focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
         >
           Skip to content
         </a>
@@ -451,7 +440,7 @@ export default function App() {
                 aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1.5 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] lg:inline-flex"
+                className="hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1.5 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none lg:inline-flex"
               >
                 {sidebarCollapsed ? (
                   <PanelLeftOpen className="size-4" />
@@ -461,7 +450,7 @@ export default function App() {
               </button>
               <Link to="/" className="flex items-center gap-2 text-[var(--console-text)]">
                 <img src="/logo.svg?v=3" alt="CodeSesh" className="h-6 w-6 rounded-sm" />
-                <span className="console-mono text-sm font-semibold uppercase tracking-[0.05em]">
+                <span className="console-display text-sm font-semibold uppercase tracking-[0.05em]">
                   CodeSesh
                 </span>
               </Link>
@@ -473,7 +462,7 @@ export default function App() {
                 submitSearch();
               }}
             >
-              <label className="flex min-w-0 flex-1 items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 focus-within:border-[var(--console-border-strong)] focus-within:ring-2 focus-within:ring-[var(--console-accent)] focus-within:ring-offset-2">
+              <label className="flex min-w-0 flex-1 items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 focus-within:border-[var(--brand-line)] focus-within:ring-2 focus-within:ring-[var(--brand)]">
                 <span className="sr-only">Search Sessions</span>
                 <input
                   ref={searchInputRef}
@@ -488,7 +477,7 @@ export default function App() {
               </label>
               <button
                 type="submit"
-                className="console-mono rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-3 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none"
+                className="console-mono rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-3 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
               >
                 Search
               </button>
@@ -501,7 +490,7 @@ export default function App() {
                   setShortcutHelpOpen(true);
                   dismissShortcutHint();
                 }}
-                className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)]"
+                className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
                 title="Show keyboard shortcuts"
               >
                 ?<span className="hidden sm:inline"> Shortcuts</span>
@@ -578,10 +567,10 @@ export default function App() {
                   ))}
                 </nav>
                 <div className="flex items-center gap-2">
-                  <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] font-bold uppercase text-[var(--console-muted)]">
+                  <span className="console-eyebrow rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5">
                     {routeHeader.contextLabel}
                   </span>
-                  <h1 className="console-mono text-xl font-semibold tracking-tight text-[var(--console-text)]">
+                  <h1 className="console-display text-2xl font-semibold text-[var(--console-text)]">
                     {routeHeader.title}
                   </h1>
                 </div>

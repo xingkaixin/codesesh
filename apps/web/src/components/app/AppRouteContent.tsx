@@ -6,7 +6,9 @@ import { SessionDetailSkeleton } from "../SessionDetailSkeleton";
 
 // Each surface owns its heavy dependencies — markdown, syntax highlighting and
 // the receipt reach the browser when their route does, not on first paint.
-const Dashboard = lazy(() => import("../Dashboard").then((m) => ({ default: m.Dashboard })));
+const OverviewScreen = lazy(() =>
+  import("../overview/OverviewScreen").then((m) => ({ default: m.OverviewScreen })),
+);
 const ProjectsOverview = lazy(() =>
   import("../Projects").then((m) => ({ default: m.ProjectsOverview })),
 );
@@ -28,15 +30,10 @@ function LazySurface({ children }: { children: ReactNode }) {
     </ErrorBoundary>
   );
 }
-import type {
-  AgentInfo,
-  BookmarkRecord,
-  DashboardData,
-  ApiProjectGroup,
-  SessionHead,
-} from "../../lib/api";
+import type { AgentInfo, AppConfig, ApiProjectGroup, SessionHead } from "../../lib/api";
 import type * as Api from "../../lib/api";
 import type { AgentCatalog } from "../../lib/agents";
+import type { TimeWindowPreset } from "../../lib/time-window";
 import type { ViewState } from "../../lib/view-state";
 import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
 import { getSessionRouteKey } from "../../lib/session-indexes";
@@ -47,10 +44,15 @@ interface SessionDetailModel {
   error: string | null;
 }
 
-interface ProjectDashboardModel {
-  dashboard: DashboardData | null;
-  loading: boolean;
-  error: string | null;
+/** The overview owns its scope and its own request; the shell only lends it the
+ *  loaded window and the app-wide time-window presets. */
+interface OverviewModel {
+  window: AppConfig["window"] | null;
+  rangePreset: TimeWindowPreset;
+  onRangeChange: (preset: TimeWindowPreset) => void;
+}
+
+interface ProjectAgentFilterModel {
   selectedAgent?: string;
   onChangeAgent: (agent?: string) => void;
 }
@@ -69,9 +71,7 @@ interface SearchContentModel {
 }
 
 interface BookmarkContentModel {
-  sessions: BookmarkRecord[];
   isBookmarked: (agentKey: string, sessionId: string) => boolean;
-  toggleBookmark: (session: BookmarkRecord) => void;
   toggleSessionBookmark: (session: SessionHead, agentKey: string) => void;
 }
 
@@ -89,9 +89,9 @@ interface AppRouteContentProps {
   sessionsByAgent: Map<string, LandingSession[]>;
   activeProject: ApiProjectGroup | null;
   activeProjectSessions: LandingSession[];
-  dashboard: DashboardData | null;
+  overview: OverviewModel;
   sessionDetail: SessionDetailModel;
-  projectDashboard: ProjectDashboardModel;
+  projectAgentFilter: ProjectAgentFilterModel;
   search: SearchContentModel;
   bookmarks: BookmarkContentModel;
 }
@@ -110,9 +110,9 @@ export function AppRouteContent({
   sessionsByAgent,
   activeProject,
   activeProjectSessions,
-  dashboard,
+  overview,
   sessionDetail,
-  projectDashboard,
+  projectAgentFilter,
   search,
   bookmarks,
 }: AppRouteContentProps) {
@@ -161,37 +161,19 @@ export function AppRouteContent({
     );
   }
   if (viewState.mode === "root") {
-    return dashboard ? (
-      <RenderProfiler
-        id="Dashboard"
-        detail={{ sessions: dashboard.totals.sessions, projects: projects.length }}
-      >
+    return (
+      <RenderProfiler id="OverviewScreen" detail={{ projects: projects.length }}>
         <LazySurface>
-          <Dashboard
-            data={dashboard}
-            agentCatalog={agentCatalog}
+          <OverviewScreen
+            scope={{ kind: "global" }}
+            window={overview.window}
             projects={projects}
-            bookmarkedSessions={bookmarks.sessions}
-            isBookmarked={bookmarks.isBookmarked}
-            onToggleBookmark={(item) => {
-              if (!("bookmarkedAt" in item)) {
-                bookmarks.toggleSessionBookmark(item.session, item.reference.agentName);
-                return;
-              }
-              bookmarks.toggleBookmark(item);
-            }}
+            agentCatalog={agentCatalog}
+            rangePreset={overview.rangePreset}
+            onRangeChange={overview.onRangeChange}
           />
         </LazySurface>
       </RenderProfiler>
-    ) : (
-      <DetailLanding
-        type="global"
-        agentCatalog={agentCatalog}
-        sessions={landingSessions}
-        agentItems={landingAgentItems}
-        isBookmarked={bookmarks.isBookmarked}
-        onToggleBookmark={(session) => bookmarks.toggleSessionBookmark(session, session.agentKey)}
-      />
     );
   }
   if (viewState.mode === "projects") {
@@ -208,14 +190,13 @@ export function AppRouteContent({
           project={activeProject}
           agentCatalog={agentCatalog}
           projectKey={viewState.activeProjectKey}
-          dashboard={projectDashboard.dashboard}
-          loading={projectDashboard.loading}
-          error={projectDashboard.error}
+          projects={projects}
           sessions={activeProjectSessions}
-          activeAgent={projectDashboard.selectedAgent}
-          onChangeAgent={projectDashboard.onChangeAgent}
-          isBookmarked={bookmarks.isBookmarked}
-          onToggleSessionBookmark={bookmarks.toggleSessionBookmark}
+          activeAgent={projectAgentFilter.selectedAgent}
+          onChangeAgent={projectAgentFilter.onChangeAgent}
+          timeWindow={overview.window}
+          rangePreset={overview.rangePreset}
+          onRangeChange={overview.onRangeChange}
         />
       </LazySurface>
     );

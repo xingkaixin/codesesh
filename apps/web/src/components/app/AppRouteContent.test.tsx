@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApiProjectGroup, SessionDetail } from "../../lib/api";
 import { createAgentCatalog } from "../../lib/agents";
+import { createQueryWrapper } from "../../test/query-wrapper";
 import { AppRouteContent } from "./AppRouteContent";
 
 vi.mock("../SessionDetail", () => ({
@@ -44,14 +45,11 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
     sessionsByAgent: new Map(),
     activeProject: null,
     activeProjectSessions: [],
-    dashboard: null,
+    // A null window keeps the overview's dashboard query idle, so these
+    // assertions never depend on the network.
+    overview: { window: null, rangePreset: "30d", onRangeChange: vi.fn() },
     sessionDetail: { session: null, loading: false, error: null },
-    projectDashboard: {
-      dashboard: null,
-      loading: false,
-      error: null,
-      onChangeAgent: vi.fn(),
-    },
+    projectAgentFilter: { onChangeAgent: vi.fn() },
     search: {
       active: false,
       query: "",
@@ -65,9 +63,7 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
       registerResultRef: vi.fn(),
     },
     bookmarks: {
-      sessions: [],
       isBookmarked: vi.fn(() => false),
-      toggleBookmark: vi.fn(),
       toggleSessionBookmark: vi.fn(),
     },
   };
@@ -93,7 +89,27 @@ function makeSession(id: string): SessionDetail {
 
 afterEach(cleanup);
 
+function renderContent(props: Parameters<typeof AppRouteContent>[0]) {
+  const { Wrapper } = createQueryWrapper();
+  return render(
+    <Wrapper>
+      <MemoryRouter>
+        <AppRouteContent {...props} />
+      </MemoryRouter>
+    </Wrapper>,
+  );
+}
+
 describe("AppRouteContent", () => {
+  it("renders the overview on the root route", async () => {
+    renderContent(makeProps());
+
+    expect(
+      await screen.findByTestId("dashboard", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS }),
+    ).toBeTruthy();
+    expect(screen.getByRole("radiogroup", { name: "统计范围" })).toBeTruthy();
+  });
+
   // The route surfaces load on demand, so these assertions wait for the chunk.
   // The default 1s query timeout is tight when the suite runs under load.
   it("renders a project from the resolved project model", async () => {
@@ -107,11 +123,7 @@ describe("AppRouteContent", () => {
     };
     props.activeProject = project;
 
-    render(
-      <MemoryRouter>
-        <AppRouteContent {...props} />
-      </MemoryRouter>,
-    );
+    renderContent(props);
 
     expect(
       await screen.findByRole(
@@ -126,11 +138,7 @@ describe("AppRouteContent", () => {
     const props = makeProps();
     props.search.active = true;
 
-    render(
-      <MemoryRouter>
-        <AppRouteContent {...props} />
-      </MemoryRouter>,
-    );
+    renderContent(props);
 
     expect(
       await screen.findByRole(
@@ -149,11 +157,7 @@ describe("AppRouteContent", () => {
       activeSessionId: "session-a",
     };
     props.sessionDetail.session = makeSession("session-a");
-    const view = render(
-      <MemoryRouter>
-        <AppRouteContent {...props} />
-      </MemoryRouter>,
-    );
+    const view = renderContent(props);
     const firstDetail = await screen.findByTestId(
       "session-detail",
       {},

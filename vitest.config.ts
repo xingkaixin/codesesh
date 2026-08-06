@@ -10,7 +10,7 @@ const CLI_RUNTIME_SCOPE =
 const CLI_RUNTIME_PLAN_SCOPE = "packages/cli/src/runtime-plan.ts";
 const WEB_HOOKS_SCOPE = "apps/web/src/hooks/**";
 const WEB_INTERACTIONS_SCOPE =
-  "{apps/web/src/components/Dashboard.tsx,apps/web/src/components/app/SearchResultsPanel.tsx,apps/web/src/components/session-detail/message-list.tsx,apps/web/src/components/session-detail/session-message-timeline.tsx}";
+  "{apps/web/src/components/overview/OverviewScreen.tsx,apps/web/src/components/app/SearchResultsPanel.tsx,apps/web/src/components/session-detail/message-list.tsx,apps/web/src/components/session-detail/session-message-timeline.tsx}";
 
 export default defineConfig({
   test: {
