@@ -3,150 +3,111 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
+  --font-display:
+    "Space Grotesk Variable", "Space Grotesk", "PingFang SC", -apple-system, sans-serif;
   --font-sans:
-    "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", -apple-system, sans-serif;
+    "IBM Plex Sans Variable", "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC",
+    -apple-system, sans-serif;
+  --font-mono:
+    "JetBrains Mono Variable", "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas,
+    monospace;
 
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
-  --color-background: hsl(var(--background));
-  --color-foreground: hsl(var(--foreground));
+  --tracking-display: -0.02em;
+  --tracking-eyebrow: 0.08em;
 
-  --color-primary: hsl(var(--primary));
-  --color-primary-foreground: hsl(var(--primary-foreground));
+  --radius-xs: 2px;
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
 
-  --color-secondary: hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --shadow-raised: var(--elevation-raised);
+  --shadow-overlay: var(--elevation-overlay);
 
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
-
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-
-  --color-accent: hsl(var(--accent));
-  --color-accent-foreground: hsl(var(--accent-foreground));
-
-  --color-popover: hsl(var(--popover));
-  --color-popover-foreground: hsl(var(--popover-foreground));
-
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
-
-  --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-sm: calc(var(--radius) - 4px);
+  --color-background: var(--console-bg);
+  --color-foreground: var(--console-text);
+  --color-card: var(--console-surface);
+  --color-card-foreground: var(--console-text);
+  --color-popover: var(--console-surface);
+  --color-popover-foreground: var(--console-text);
+  --color-primary: var(--console-accent);
+  --color-primary-foreground: var(--console-accent-fg);
+  --color-secondary: var(--console-surface-muted);
+  --color-secondary-foreground: var(--console-text);
+  --color-muted: var(--console-surface-muted);
+  --color-muted-foreground: var(--console-muted);
+  --color-accent: var(--console-surface-sunken);
+  --color-accent-foreground: var(--console-text);
+  --color-border: var(--console-border);
+  --color-input: var(--console-border-strong);
+  --color-ring: var(--brand);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-line: var(--brand-line);
+  --color-brand-foreground: var(--brand-fg);
 }
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
-    --radius: 0.5rem;
-
-    --console-bg: #f7f7f7;
-    --console-sidebar-bg: #fbfbfb;
+    --console-bg: #f7f6f3;
+    --console-sidebar-bg: #fbfaf8;
     --console-surface: #ffffff;
-    --console-surface-muted: #f5f5f5;
-    --console-border: #e5e5e5;
-    --console-border-strong: #d4d4d4;
-    --console-text: #1a1a1a;
-    --console-muted: #666666;
-    --console-accent: #2d2d2d;
-    --console-accent-strong: #1f1f1f;
-    --console-thread: #e8e8e8;
-    --console-thinking-bg: #f9f9f9;
-    --console-thinking-border: #ebebeb;
-    --console-success: #15803d;
-    --console-success-bg: #dcfce7;
-    --console-success-border: #bbf7d0;
-    --console-warning: #b45309;
-    --console-warning-bg: #fef3c7;
-    --console-warning-border: #fde68a;
-    --console-error: #b91c1c;
-    --console-error-bg: #fee2e2;
-    --console-error-border: #fecaca;
-
-    --timeline-user: #a85f82;
-    --timeline-agent: #5e86aa;
-    --timeline-tool-read: #478b7d;
-    --timeline-tool-write: #bd7336;
-    --timeline-tool-execute: #786ca3;
+    --console-surface-muted: #fbfaf8;
+    --console-surface-sunken: #f1f0ec;
+    --console-border: #e6e4de;
+    --console-border-strong: #d6d3cb;
+    --console-text: #16161a;
+    --console-text-secondary: #5c5b63;
+    --console-muted: #71707a;
+    --console-accent: #16161a;
+    --console-accent-strong: #000000;
+    --console-accent-fg: #ffffff;
+    --brand: #e8622e;
+    --brand-hover: #c94e1f;
+    --brand-soft: #fdede5;
+    --brand-line: #f6c7ae;
+    --brand-fg: #ffffff;
+    --elevation-raised: 0 1px 2px rgba(20, 20, 25, 0.05), 0 8px 24px -12px rgba(20, 20, 25, 0.12);
+    --elevation-overlay:
+      0 4px 12px rgba(20, 20, 25, 0.08), 0 24px 48px -24px rgba(20, 20, 25, 0.24);
+    --scrim: rgba(20, 20, 25, 0.35);
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+    --dur-fast: 120ms;
+    --dur-base: 180ms;
   }
 
-  /* Dark tone values copied from apps/web/src/index.css `.dark` block (CS-89)
-     to keep the landing page's dark palette aligned with the product app. */
   .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
-
-    --console-bg: #19191c;
-    --console-sidebar-bg: #1d1d20;
-    --console-surface: #242428;
-    --console-surface-muted: #202023;
-    --console-border: #2e2e32;
-    --console-border-strong: #3d3d42;
-    --console-text: #f2f2f0;
-    --console-muted: #a3a3a8;
-    --console-accent: #ececec;
+    --console-bg: #101012;
+    --console-sidebar-bg: #0b0b0d;
+    --console-surface: #18181b;
+    --console-surface-muted: #1e1e22;
+    --console-surface-sunken: #0b0b0d;
+    --console-border: #2a2a30;
+    --console-border-strong: #3a3a42;
+    --console-text: #f3f2ef;
+    --console-text-secondary: #b6b5bd;
+    --console-muted: #8e8e98;
+    --console-accent: #f3f2ef;
     --console-accent-strong: #ffffff;
-    --console-thread: #313135;
-    --console-thinking-bg: #202024;
-    --console-thinking-border: #2c2c30;
-    --console-success: #4ade80;
-    --console-success-bg: #122016;
-    --console-success-border: #20492c;
-    --console-warning: #fbbf24;
-    --console-warning-bg: #241a05;
-    --console-warning-border: #5c3d0a;
-    --console-error: #f87171;
-    --console-error-bg: #241010;
-    --console-error-border: #5c1e1e;
-    --timeline-user: #c98aa8;
-    --timeline-agent: #82aed4;
-    --timeline-tool-read: #6bb3a0;
-    --timeline-tool-write: #d99a5c;
-    --timeline-tool-execute: #a89bc9;
+    --console-accent-fg: #101012;
+    --brand: #ff7a45;
+    --brand-hover: #ff9166;
+    --brand-soft: #2a1710;
+    --brand-line: #5a2e19;
+    --brand-fg: #101012;
+    --elevation-raised: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px -16px rgba(0, 0, 0, 0.7);
+    --elevation-overlay: 0 4px 16px rgba(0, 0, 0, 0.5), 0 24px 56px -24px rgba(0, 0, 0, 0.8);
+    --scrim: rgba(0, 0, 0, 0.55);
   }
 
   * {
     @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
   }
 
   body {
@@ -160,24 +121,41 @@
 
 @layer utilities {
   .console-ui {
-    font-family:
-      "IBM Plex Sans",
-      "Avenir Next",
-      "PingFang SC",
-      -apple-system,
-      sans-serif;
+    font-family: var(--font-sans);
+  }
+
+  .console-display {
+    font-family: var(--font-display);
+    letter-spacing: var(--tracking-display);
   }
 
   .console-mono {
-    font-family:
-      "JetBrains Mono", "IBM Plex Mono", "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .console-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: var(--tracking-eyebrow);
+    text-transform: uppercase;
+    color: var(--console-muted);
   }
 
   .bg-grid {
     background-size: 40px 40px;
     background-image:
-      linear-gradient(to right, rgba(0, 0, 0, 0.04) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+      linear-gradient(
+        to right,
+        color-mix(in oklab, var(--console-text) 5%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in oklab, var(--console-text) 5%, transparent) 1px,
+        transparent 1px
+      );
   }
 
   .landing-heading {
@@ -188,18 +166,33 @@
 
   .pressable {
     touch-action: manipulation;
-    transition: transform 160ms var(--ease-out);
+    transition: transform var(--dur-fast) var(--ease-out);
   }
 
   .pressable:active {
     transform: scale(0.97);
   }
 
+  .motion-hover {
+    transition:
+      color var(--dur-fast) var(--ease-out),
+      background-color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out);
+  }
+
+  .hero-copy {
+    animation: hero-enter 420ms var(--ease-out) both;
+  }
+
+  .hero-visual {
+    animation: hero-enter 480ms 80ms var(--ease-out) both;
+  }
+
   .product-showcase-expand {
     opacity: 1;
     transition:
-      opacity 160ms var(--ease-out),
-      transform 160ms var(--ease-out);
+      opacity var(--dur-fast) var(--ease-out),
+      transform var(--dur-fast) var(--ease-out);
   }
 
   .copy-icon-stack > span {
@@ -207,19 +200,13 @@
     opacity: 0;
     transform: scale(0.9);
     transition:
-      opacity 150ms var(--ease-out),
-      transform 150ms var(--ease-out);
+      opacity var(--dur-fast) var(--ease-out),
+      transform var(--dur-fast) var(--ease-out);
   }
 
   .copy-icon-stack > span[data-active="true"] {
     opacity: 1;
     transform: scale(1);
-  }
-
-  .tl-row {
-    transform-origin: left center;
-    animation: tl-grow 260ms var(--ease-out) both;
-    animation-delay: calc(var(--tl-i, 0) * 60ms);
   }
 }
 
@@ -242,21 +229,15 @@
   }
 
   .card-lift {
-    transition: transform 200ms var(--ease-out);
+    transition:
+      transform var(--dur-base) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out);
   }
 
   .card-lift:hover {
     transform: translateY(-2px);
+    border-color: var(--brand-line);
   }
-}
-
-/* .bg-grid bakes its line color into an rgba() background-image, which the
-   `dark:` variant can't reach; override it directly, matching
-   apps/web/src/index.css's `.dark .bg-grid` rule. */
-.dark .bg-grid {
-  background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
 }
 
 .scene-dialog {
@@ -306,32 +287,26 @@
   transition: none;
 }
 
-@keyframes tl-grow {
+@keyframes hero-enter {
   from {
     opacity: 0;
-    transform: scaleX(0);
+    transform: translateY(12px);
   }
 
   to {
     opacity: 1;
-    transform: scaleX(1);
-  }
-}
-
-@keyframes tl-fade {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
+    transform: translateY(0);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tl-row {
-    animation-name: tl-fade;
-    animation-delay: 0ms;
+  html {
+    scroll-behavior: auto;
+  }
+
+  .hero-copy,
+  .hero-visual {
+    animation: none;
   }
 
   .pressable,
@@ -344,12 +319,12 @@
   .product-showcase-card .product-showcase-expand:hover,
   .product-showcase-card .product-showcase-expand:active {
     transform: none;
-    transition: opacity 160ms var(--ease-out);
+    transition: opacity var(--dur-fast) var(--ease-out);
   }
 
   .copy-icon-stack > span {
     transform: none;
-    transition: opacity 150ms var(--ease-out);
+    transition: opacity var(--dur-fast) var(--ease-out);
   }
 
   .card-lift,

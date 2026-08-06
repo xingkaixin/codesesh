@@ -1,4 +1,7 @@
 ---
+import "@fontsource-variable/ibm-plex-sans";
+import "@fontsource-variable/jetbrains-mono";
+import "@fontsource-variable/space-grotesk";
 import { copy, localeRoutes, siteUrl, type Locale } from "../data/landing";
 import "../styles/global.css";
 
@@ -144,35 +147,32 @@ const jsonLd = {
            by the --console-* custom properties. */
         @media (prefers-color-scheme: dark) {
           :root {
-            --console-bg: #19191c;
-            --console-sidebar-bg: #1d1d20;
-            --console-surface: #242428;
-            --console-surface-muted: #202023;
-            --console-border: #2e2e32;
-            --console-border-strong: #3d3d42;
-            --console-text: #f2f2f0;
-            --console-muted: #a3a3a8;
-            --console-accent: #ececec;
+            --console-bg: #101012;
+            --console-sidebar-bg: #0b0b0d;
+            --console-surface: #18181b;
+            --console-surface-muted: #1e1e22;
+            --console-surface-sunken: #0b0b0d;
+            --console-border: #2a2a30;
+            --console-border-strong: #3a3a42;
+            --console-text: #f3f2ef;
+            --console-text-secondary: #b6b5bd;
+            --console-muted: #8e8e98;
+            --console-accent: #f3f2ef;
             --console-accent-strong: #ffffff;
-            --timeline-user: #c98aa8;
-            --timeline-agent: #82aed4;
-            --timeline-tool-read: #6bb3a0;
-            --timeline-tool-write: #d99a5c;
-            --timeline-tool-execute: #a89bc9;
+            --console-accent-fg: #101012;
+            --brand: #ff7a45;
+            --brand-hover: #ff9166;
+            --brand-soft: #2a1710;
+            --brand-line: #5a2e19;
+            --brand-fg: #101012;
           }
 
           [data-copy-command] {
-            color: var(--console-bg);
+            color: var(--brand-fg);
           }
 
           [data-copy-command]:hover {
-            background: var(--console-muted);
-          }
-
-          .bg-grid {
-            background-image:
-              linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-              linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+            background: var(--brand-hover);
           }
         }
 

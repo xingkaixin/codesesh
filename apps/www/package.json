@@ -11,6 +11,9 @@
     "deploy:cf": "pnpm build && wrangler pages deploy dist --project-name codesesh"
   },
   "dependencies": {
+    "@fontsource-variable/ibm-plex-sans": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/space-grotesk": "^5.3.0",
     "astro": "^6.4.8"
   },
   "devDependencies": {

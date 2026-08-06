@@ -55,14 +55,11 @@ interface LandingCopy {
   };
   hero: {
     title: HeadingCopy;
-    latest: string;
     body: string;
-    commandTitle: string;
     command: string;
     copied: string;
     copyFailed: string;
     copyCommand: string;
-    runtime: string;
   };
   tour: {
     label: string;
@@ -76,18 +73,15 @@ interface LandingCopy {
   };
   scenes: ProductScene[];
   features: {
-    label: string;
     title: HeadingCopy;
     body: string;
     groups: FeatureGroup[];
   };
   agents: {
-    label: string;
     title: HeadingCopy;
     body: string;
   };
   faq: {
-    label: string;
     title: HeadingCopy;
     body: string;
     items: FAQItem[];
@@ -130,15 +124,12 @@ export const copy = {
       themeSwitchTo: "，点击切换到{next}",
     },
     hero: {
-      title: ["把 AI 编码历史，", "变成可复用的工程记忆。"],
-      latest: "最新版",
-      body: "CodeSesh 自动发现 Claude Code、Cursor、Kimi、Kimi-Code、Codex、Grok、Pi、OpenCode 和 ZCode 的本地会话，把问题、推理、尝试、文件活动和结果沉淀成按项目组织、可结构化检索、可复盘的工程记忆。",
-      commandTitle: "从本地开始积累",
+      title: ["AI 编码历史，", "随时可复用。"],
+      body: "统一发现、搜索和回放本地 AI 编码会话，让跨 Agent 的工程上下文长期可追溯。",
       command: "npx codesesh",
       copied: "已复制",
       copyFailed: "复制失败，请手动复制命令",
       copyCommand: "复制命令",
-      runtime: "需要 Node.js 22+ · 从终端本地运行",
     },
     tour: {
       label: "Product Tour",
@@ -174,7 +165,6 @@ export const copy = {
       },
     ],
     features: {
-      label: "Features",
       title: ["围绕长期积累", "设计产品结构"],
       body: "CodeSesh 围绕真实的 AI 协作循环设计：发现、组织、找回、复盘。",
       groups: [
@@ -279,12 +269,10 @@ export const copy = {
       ],
     },
     agents: {
-      label: "Supported Agents",
       title: ["覆盖主流本地", "AI 编码工具"],
       body: "把多 Agent 工作流收束到同一个工程记忆层。",
     },
     faq: {
-      label: "FAQ",
       title: "常见问题",
       body: "关于 CodeSesh 的定位、支持范围、安装方式和数据边界的简短回答。",
       items: [
@@ -327,15 +315,12 @@ export const copy = {
       themeSwitchTo: ". Switch to {next}.",
     },
     hero: {
-      title: ["Turn AI coding history", "into reusable engineering memory."],
-      latest: "Latest",
-      body: "CodeSesh discovers local sessions from Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, and ZCode, then preserves problems, reasoning, attempts, file activity, and outcomes in one project-aware searchable memory layer.",
-      commandTitle: "Start from your machine",
+      title: ["AI coding history,", "ready to reuse."],
+      body: "Find, search, and replay local AI coding sessions across agents, projects, messages, tools, and files.",
       command: "npx codesesh",
       copied: "Copied",
       copyFailed: "Copy failed. Copy the command manually.",
       copyCommand: "Copy command",
-      runtime: "Requires Node.js 22+ · Runs locally from your terminal",
     },
     tour: {
       label: "Product Tour",
@@ -374,7 +359,6 @@ export const copy = {
       },
     ],
     features: {
-      label: "Features",
       title: "Designed for long-term accumulation",
       body: "CodeSesh follows the real loop of AI-assisted engineering: discover, organize, recover, and replay.",
       groups: [
@@ -487,12 +471,10 @@ export const copy = {
       ],
     },
     agents: {
-      label: "Supported Agents",
       title: "Built for the local AI coding stack",
       body: "Unify multi-agent workflows into one engineering memory layer.",
     },
     faq: {
-      label: "FAQ",
       title: "Frequently asked questions",
       body: "Short answers about what CodeSesh is, what it supports, and where your data stays.",
       items: [
