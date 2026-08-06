@@ -47,7 +47,12 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
     activeProjectSessions: [],
     // A null window keeps the overview's dashboard query idle, so these
     // assertions never depend on the network.
-    overview: { window: null, rangePreset: "30d", onRangeChange: vi.fn() },
+    overview: {
+      window: null,
+      rangePreset: "30d",
+      onRangeChange: vi.fn(),
+      onSelectCustom: vi.fn(),
+    },
     sessionDetail: { session: null, loading: false, error: null },
     projectAgentFilter: { onChangeAgent: vi.fn() },
     search: {

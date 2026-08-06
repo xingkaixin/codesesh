@@ -341,6 +341,7 @@ export default function App() {
         // shell renders its loading skeleton instead of the overview.
         rangePreset: timeWindowController.preset ?? "all",
         onRangeChange: timeWindowController.selectPreset,
+        onSelectCustom: timeWindowController.selectCustom,
       }}
       sessionDetail={{
         session: sessionDetail.session,

@@ -50,6 +50,7 @@ interface OverviewModel {
   window: AppConfig["window"] | null;
   rangePreset: TimeWindowPreset;
   onRangeChange: (preset: TimeWindowPreset) => void;
+  onSelectCustom: (from: string, to: string) => void;
 }
 
 interface ProjectAgentFilterModel {
@@ -169,6 +170,7 @@ export function AppRouteContent({
             agentCatalog={agentCatalog}
             rangePreset={overview.rangePreset}
             onRangeChange={overview.onRangeChange}
+            onSelectCustom={overview.onSelectCustom}
           />
         </LazySurface>
       </RenderProfiler>
@@ -194,6 +196,7 @@ export function AppRouteContent({
           timeWindow={overview.window}
           rangePreset={overview.rangePreset}
           onRangeChange={overview.onRangeChange}
+          onSelectCustom={overview.onSelectCustom}
         />
       </LazySurface>
     );

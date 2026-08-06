@@ -235,6 +235,7 @@ export function ProjectDashboardView({
   timeWindow,
   rangePreset,
   onRangeChange,
+  onSelectCustom,
 }: {
   project: ApiProjectGroup | null;
   agentCatalog: AgentCatalog;
@@ -245,6 +246,7 @@ export function ProjectDashboardView({
   timeWindow: AppConfig["window"] | null;
   rangePreset: TimeWindowPreset;
   onRangeChange: (preset: TimeWindowPreset) => void;
+  onSelectCustom: (from: string, to: string) => void;
 }) {
   const navigate = useNavigate();
 
@@ -290,6 +292,7 @@ export function ProjectDashboardView({
         agentCatalog={agentCatalog}
         rangePreset={rangePreset}
         onRangeChange={onRangeChange}
+        onSelectCustom={onSelectCustom}
       />
 
       <ProjectTimeline

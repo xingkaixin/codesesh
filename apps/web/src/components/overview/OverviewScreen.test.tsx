@@ -91,10 +91,11 @@ function renderScreen(props: Partial<ComponentProps<typeof OverviewScreen>> = {}
       <MemoryRouter>
         <OverviewScreen
           window={timeWindow}
-          {...props}
           agentCatalog={createAgentCatalog(agents)}
           rangePreset="7d"
           onRangeChange={vi.fn()}
+          onSelectCustom={vi.fn()}
+          {...props}
         />
       </MemoryRouter>
     </Wrapper>,
@@ -174,5 +175,20 @@ describe("OverviewScreen", () => {
       { project: { kind: "path", key: "/repo/codesesh" }, agent: "codex" },
       { signal: expect.any(AbortSignal) },
     );
+  });
+
+  it("opens and applies the shared custom time range", async () => {
+    const onSelectCustom = vi.fn();
+    renderScreen({ onSelectCustom });
+
+    fireEvent.click(screen.getByRole("button", { name: "Custom" }));
+    await screen.findByRole("dialog", { name: "Custom time range" });
+
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-07-01" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-07-14" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply range" }));
+
+    expect(onSelectCustom).toHaveBeenCalledWith("2026-07-01", "2026-07-14");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });

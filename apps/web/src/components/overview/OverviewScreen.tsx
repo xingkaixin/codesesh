@@ -34,6 +34,7 @@ export function OverviewScreen({
   agentCatalog,
   rangePreset,
   onRangeChange,
+  onSelectCustom,
 }: {
   project?: DashboardFilters["project"];
   agent?: string;
@@ -42,6 +43,7 @@ export function OverviewScreen({
   agentCatalog: AgentCatalog;
   rangePreset: TimeWindowPreset;
   onRangeChange: (preset: TimeWindowPreset) => void;
+  onSelectCustom: (from: string, to: string) => void;
 }) {
   const [ownAgent, setOwnAgent] = useState<string | undefined>(undefined);
   const agent = onAgentChange ? controlledAgent : ownAgent;
@@ -58,8 +60,10 @@ export function OverviewScreen({
         onAgentChange={onAgentChange ? undefined : setOwnAgent}
         agentCatalog={agentCatalog}
         scopeCounts={dashboard?.scopeCounts}
+        window={window}
         rangePreset={rangePreset}
         onRangeChange={onRangeChange}
+        onSelectCustom={onSelectCustom}
       />
 
       {error ? (
