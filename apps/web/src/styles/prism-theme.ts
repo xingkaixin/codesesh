@@ -8,10 +8,6 @@ import type { CSSProperties } from "react";
  * never has to know which mode is resolved.
  */
 
-/** Shared by the Prism theme and `CodeHighlighter`'s plain-text fallback, so the
- *  lazy-load swap does not visibly reflow the block. */
-export const CODE_METRICS = { fontSize: "0.75rem", lineHeight: 1.55 } as const;
-
 const CODE_BASE: CSSProperties = {
   background: "var(--code-bg)",
   color: "var(--code-fg)",

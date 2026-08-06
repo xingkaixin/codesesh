@@ -20,7 +20,8 @@ import toml from "react-syntax-highlighter/dist/esm/languages/prism/toml";
 import tsx from "react-syntax-highlighter/dist/esm/languages/prism/tsx";
 import typescript from "react-syntax-highlighter/dist/esm/languages/prism/typescript";
 import yaml from "react-syntax-highlighter/dist/esm/languages/prism/yaml";
-import { CODE_METRICS, codeseshPrismTheme } from "../../styles/prism-theme";
+import { codeseshPrismTheme } from "../../styles/prism-theme";
+import { CODE_METRICS } from "./code-metrics";
 
 SyntaxHighlighter.registerLanguage("bash", bash);
 SyntaxHighlighter.registerLanguage("c", c);

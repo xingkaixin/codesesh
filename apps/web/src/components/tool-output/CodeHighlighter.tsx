@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { ErrorBoundary } from "../ErrorBoundary";
-import { CODE_METRICS } from "../../styles/prism-theme";
+import { CODE_METRICS } from "./code-metrics";
 
 export interface CodeHighlighterProps {
   language: string;
