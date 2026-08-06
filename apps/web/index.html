@@ -34,24 +34,28 @@
       })();
     </script>
     <style>
+      /* Duplicates the light/dark tokens of src/index.css so the pre-hydration
+         skeleton below paints in the real palette. Keep both in sync. */
       :root {
-        --console-bg: #f7f7f7;
-        --console-sidebar-bg: #fbfbfb;
+        --console-bg: #f7f6f3;
+        --console-sidebar-bg: #fbfaf8;
         --console-surface: #ffffff;
-        --console-surface-muted: #f5f5f5;
-        --console-border: #e5e5e5;
-        --console-text: #1a1a1a;
-        --console-muted: #666666;
+        --console-surface-muted: #fbfaf8;
+        --console-surface-sunken: #f1f0ec;
+        --console-border: #e6e4de;
+        --console-text: #16161a;
+        --console-muted: #71707a;
       }
 
       .dark {
-        --console-bg: #19191c;
-        --console-sidebar-bg: #1d1d20;
-        --console-surface: #242428;
-        --console-surface-muted: #202023;
-        --console-border: #2e2e32;
-        --console-text: #f2f2f0;
-        --console-muted: #a3a3a8;
+        --console-bg: #101012;
+        --console-sidebar-bg: #0b0b0d;
+        --console-surface: #18181b;
+        --console-surface-muted: #1e1e22;
+        --console-surface-sunken: #0b0b0d;
+        --console-border: #2a2a30;
+        --console-text: #f3f2ef;
+        --console-muted: #8e8e98;
       }
 
       body {
@@ -59,8 +63,11 @@
         background: var(--console-bg);
         color: var(--console-text);
         font-family:
-          "Avenir Next",
+          "IBM Plex Sans Variable",
+          "IBM Plex Sans",
           "PingFang SC",
+          "Hiragino Sans GB",
+          "Noto Sans SC",
           -apple-system,
           sans-serif;
       }
@@ -84,7 +91,7 @@
       }
 
       .dark .app-header {
-        background: rgba(36, 36, 40, 0.85);
+        background: rgba(24, 24, 27, 0.85);
       }
 
       .app-brand,
@@ -93,14 +100,19 @@
       .app-sidebar-line,
       .app-card,
       .app-line {
-        border-radius: 2px;
+        border-radius: 6px;
       }
 
       .app-brand {
         display: flex;
         align-items: center;
         gap: 8px;
-        font: 600 13px "SFMono-Regular", Menlo, monospace;
+        font:
+          600 13px "JetBrains Mono Variable",
+          "JetBrains Mono",
+          "SFMono-Regular",
+          Menlo,
+          monospace;
         letter-spacing: 0.05em;
       }
 
@@ -158,13 +170,13 @@
       }
 
       .dark .app-titlebar {
-        background: rgba(36, 36, 40, 0.7);
+        background: rgba(24, 24, 27, 0.7);
       }
 
       .app-title {
         height: 24px;
         width: 220px;
-        border-radius: 2px;
+        border-radius: 6px;
         background: var(--console-surface-muted);
       }
 
@@ -182,7 +194,7 @@
       }
 
       .dark .app-card {
-        background: rgba(36, 36, 40, 0.8);
+        background: rgba(24, 24, 27, 0.8);
       }
 
       .app-line {

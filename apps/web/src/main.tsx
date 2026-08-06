@@ -5,6 +5,9 @@ import { RenderProfiler } from "./components/RenderProfiler.tsx";
 import { initializeRemoteAccess } from "./lib/api.ts";
 import { queryClient } from "./lib/query-client.ts";
 import { AppRouter } from "./router.tsx";
+import "@fontsource-variable/space-grotesk";
+import "@fontsource-variable/jetbrains-mono";
+import "@fontsource-variable/ibm-plex-sans";
 import "./index.css";
 
 initializeRemoteAccess();
