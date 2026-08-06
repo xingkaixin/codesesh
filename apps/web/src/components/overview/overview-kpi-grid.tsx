@@ -19,18 +19,27 @@ function oneDecimal(value: number): string {
   return value.toFixed(1);
 }
 
+/** Activity counts rising or falling is a neutral fact; only cost carries a judgement. */
+type TrendTone = "neutral" | "warning" | "positive";
+
+const TREND_TONE_CLASS: Record<TrendTone, string> = {
+  neutral: "text-[var(--console-muted)]",
+  warning: "text-[var(--brand)]",
+  positive: "text-[var(--positive)]",
+};
+
 function KpiCard({
   label,
   value,
   trend,
-  trendTone = "positive",
+  trendTone = "neutral",
   hint,
   emphasis = false,
 }: {
   label: string;
   value: string;
   trend?: string;
-  trendTone?: "positive" | "brand";
+  trendTone?: TrendTone;
   hint?: string;
   emphasis?: boolean;
 }) {
@@ -49,10 +58,7 @@ function KpiCard({
         {trend === undefined ? null : (
           <span
             data-testid="overview-kpi-trend"
-            className={cn(
-              "console-mono text-[10.5px]",
-              trendTone === "brand" ? "text-[var(--brand)]" : "text-[var(--positive)]",
-            )}
+            className={cn("console-mono text-[10.5px]", TREND_TONE_CLASS[trendTone])}
           >
             {trend}
           </span>
@@ -95,6 +101,7 @@ export function OverviewKpiGrid({
   const messagesTrend = delta(totals.messages, previous?.messages);
   const tokensTrend = delta(totals.tokens, previous?.tokens);
   const costTrend = delta(totals.cost, previous?.cost);
+  const costRising = previous?.cost !== undefined && totals.cost > previous.cost;
 
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
@@ -124,7 +131,7 @@ export function OverviewKpiGrid({
         label="花费"
         value={formatUsd(totals.cost)}
         trend={costTrend ?? undefined}
-        trendTone="brand"
+        trendTone={costRising ? "warning" : "positive"}
         hint={costHint(totals)}
         emphasis
       />
@@ -134,6 +141,7 @@ export function OverviewKpiGrid({
           totals.latestActivity === undefined ? "暂无活动" : formatRelativeCn(totals.latestActivity)
         }
         trend={totals.latestActivity === undefined ? undefined : "●"}
+        trendTone="positive"
         hint={totals.latestActivity === undefined ? undefined : latestActivityHint(totals)}
       />
     </div>

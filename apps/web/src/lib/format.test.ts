@@ -132,6 +132,11 @@ describe("formatTokens", () => {
     expect(formatTokens(2500000)).toBe("2.5M");
   });
 
+  it("formats billions with B suffix", () => {
+    expect(formatTokens(1_000_000_000)).toBe("1.0B");
+    expect(formatTokens(3_308_500_000)).toBe("3.3B");
+  });
+
   it("formats negative values as-is", () => {
     expect(formatTokens(-500)).toBe("-500");
   });
@@ -152,6 +157,11 @@ describe("formatCompact", () => {
   it("formats millions with one decimal", () => {
     expect(formatCompact(128_400_000)).toBe("128.4M");
     expect(formatCompact(1_000_000)).toBe("1.0M");
+  });
+
+  it("formats billions with one decimal", () => {
+    expect(formatCompact(3_308_500_000)).toBe("3.3B");
+    expect(formatCompact(1_000_000_000)).toBe("1.0B");
   });
 
   it("formats thousands with one decimal", () => {
