@@ -121,30 +121,28 @@ export function AppSidebar({
         sidebarCollapsed ? "hidden" : "hidden lg:flex"
       }`}
     >
-      <div className="flex items-center justify-end px-4 pt-4">
-        <button
-          type="button"
-          aria-expanded="true"
-          aria-label="Collapse sidebar"
-          title="Collapse sidebar"
-          onClick={onCollapse}
-          className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-        >
-          <PanelLeftClose className="size-4" />
-        </button>
-      </div>
       <div className="console-scrollbar flex-1 space-y-8 overflow-y-auto px-4 py-6">
         <section>
           <ul className="console-scrollbar max-h-[min(320px,calc(100vh-400px))] space-y-1 overflow-y-auto pr-1">
-            <li>
+            <li className="flex items-center gap-2">
               <Link
                 to="/"
                 data-active={isOverviewSelected ? "true" : undefined}
-                className={navItemClass(isOverviewSelected)}
+                className={`min-w-0 flex-1 ${navItemClass(isOverviewSelected)}`}
               >
                 <img src="/logo.svg?v=3" alt="Dashboard" className="size-3.5 rounded-[2px]" />
                 <span className="console-mono line-clamp-1 flex-1 text-xs">Dashboard</span>
               </Link>
+              <button
+                type="button"
+                aria-expanded="true"
+                aria-label="Collapse sidebar"
+                title="Collapse sidebar"
+                onClick={onCollapse}
+                className="shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+              >
+                <PanelLeftClose className="size-4" />
+              </button>
             </li>
             <ProjectNavList
               projects={projects}

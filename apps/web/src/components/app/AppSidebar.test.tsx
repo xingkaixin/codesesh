@@ -86,11 +86,15 @@ describe("AppSidebar", () => {
     expect(screen.getByRole("link", { name: /Dashboard/ }).dataset.active).toBeUndefined();
   });
 
-  it("collapses from its own control rather than the app header", () => {
+  it("renders its collapse control beside the dashboard link", () => {
     const onCollapse = vi.fn();
     renderSidebar({}, createActions({ onCollapse }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    const dashboardLink = screen.getByRole("link", { name: /Dashboard/ });
+    const collapseButton = screen.getByRole("button", { name: "Collapse sidebar" });
+
+    expect(collapseButton.closest("li")).toBe(dashboardLink.closest("li"));
+    fireEvent.click(collapseButton);
 
     expect(onCollapse).toHaveBeenCalledTimes(1);
   });

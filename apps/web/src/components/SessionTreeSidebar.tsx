@@ -16,6 +16,7 @@ import { getProjectIdentityKey } from "../lib/projects";
 import { getSessionReferenceKey, getSessionRouteKey } from "../lib/session-indexes";
 import { getSessionDisplayTitle } from "../lib/session-title";
 import { isRenderProfilerEnabled, recordRenderProfileEntry } from "./RenderProfiler";
+import { SessionActionMenuItems } from "./SessionActionsMenu";
 
 interface SessionTreeSidebarProps {
   sessions: SessionHead[];
@@ -98,10 +99,37 @@ const SESSION_TREE_CSS = `
     padding-inline: 6px 2px;
   }
 
-  [data-type='item'] > [data-item-section='decoration'] > span {
+  [data-type='item'] > [data-item-section='decoration']:has(> span[title='Session options']) {
+    flex-basis: 24px;
+    padding-inline: 0;
+  }
+
+  [data-type='item'] > [data-item-section='decoration'] > span[title='Session options'] {
+    box-sizing: border-box;
+    width: 24px;
+    height: 24px;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
+    border: 1px solid transparent;
+    border-radius: 6px;
     font-size: 12px;
     line-height: 24px;
+    transition:
+      color var(--dur-fast) var(--ease-out),
+      background-color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out),
+      transform var(--dur-fast) var(--ease-out);
+  }
+
+  [data-type='item'] > [data-item-section='decoration'] > span[title='Session options']:hover {
+    color: var(--console-text);
+    background-color: var(--console-surface-muted);
+    border-color: var(--console-border);
+  }
+
+  [data-type='item'] > [data-item-section='decoration'] > span[title='Session options']:active {
+    transform: scale(0.97);
   }
 
   [data-type='item'] [data-truncate-group-container='middle'] {
@@ -708,22 +736,13 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
               className="motion-menu w-36 rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] p-1 shadow-[var(--shadow-overlay)] focus-visible:outline-none"
             >
               {menuSession ? (
-                <>
-                  <Menu.Item
-                    onClick={() => onRenameSessionRef.current(menuSession)}
-                    className="motion-hover motion-press block w-full rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] data-[highlighted]:bg-[var(--console-surface-muted)] focus-visible:outline-none"
-                  >
-                    Rename
-                  </Menu.Item>
-                  <Menu.Item
-                    onClick={() => onToggleBookmarkRef.current(menuSession)}
-                    className="motion-hover motion-press block w-full rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] data-[highlighted]:bg-[var(--console-surface-muted)] focus-visible:outline-none"
-                  >
-                    {bookmarkedSessionReferencesRef.current.has(getSessionReferenceKey(menuSession))
-                      ? "Remove bookmark"
-                      : "Add bookmark"}
-                  </Menu.Item>
-                </>
+                <SessionActionMenuItems
+                  bookmarked={bookmarkedSessionReferencesRef.current.has(
+                    getSessionReferenceKey(menuSession),
+                  )}
+                  onRename={() => onRenameSessionRef.current(menuSession)}
+                  onToggleBookmark={() => onToggleBookmarkRef.current(menuSession)}
+                />
               ) : null}
             </Menu.Popup>
           </Menu.Positioner>

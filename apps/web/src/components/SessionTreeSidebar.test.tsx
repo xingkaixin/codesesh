@@ -265,6 +265,8 @@ describe("SessionTreeSidebar session options menu", () => {
     await waitFor(() => expect(screen.queryByRole("menu")).not.toBeNull());
 
     const bookmarkItem = await screen.findByRole("menuitem", { name: "Add bookmark" });
+    expect(screen.getByRole("menuitem", { name: "Rename" }).querySelector("svg")).not.toBeNull();
+    expect(bookmarkItem.querySelector("svg")).not.toBeNull();
     dispatch(bookmarkItem, "click");
 
     expect(onToggleBookmark).toHaveBeenCalledWith(session);
