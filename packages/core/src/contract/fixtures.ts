@@ -83,9 +83,15 @@ export const SAMPLE_DASHBOARD_DATA = {
     messages: 12,
     tokens: 6000,
     cost: 0.042,
+    costRecorded: 0.042,
+    costEstimated: 0,
+    cacheReadTokens: 3000,
     cost_source: "recorded",
     latestActivity: 1_700_003_600_000,
+    latestActivityProject: "example/project",
+    latestActivityAgent: "claudecode",
   },
+  scopeCounts: { projects: 1, agents: 1 },
   perAgent: [
     {
       name: "claudecode",
@@ -94,13 +100,37 @@ export const SAMPLE_DASHBOARD_DATA = {
       sessions: 1,
       messages: 12,
       tokens: 6000,
+      cost: 0.042,
     },
   ],
-  dailyActivity: [{ date: "2023-11-14", sessions: 1, messages: 12 }],
-  dailyTokenActivity: [
-    { date: "2023-11-14", input: 700, output: 1800, cache_read: 3000, cache_create: 500 },
+  dailyActivity: [
+    {
+      date: "2023-11-14",
+      sessions: 1,
+      messages: 12,
+      cost: 0.042,
+      input: 700,
+      output: 1800,
+      cache_read: 3000,
+      cache_create: 500,
+    },
   ],
   modelDistribution: [{ model: "claude-5-sonnet", tokens: 6000, sessions: 1 }],
+  perProject: [
+    {
+      identityKind: "git_remote",
+      identityKey: "github.com/example/project",
+      displayName: "example/project",
+      sessions: 1,
+      messages: 12,
+      tokens: 6000,
+      cost: 0.042,
+      cost_source: "recorded",
+      agents: ["claudecode"],
+      sparkline: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.042],
+    },
+  ],
+  projectRollup: { projects: 0, sessions: 0, tokens: 0, cost: 0 },
   recentSessions: [
     {
       reference: { agentName: "claudecode", sessionId: SAMPLE_SESSION_HEAD.id },
@@ -108,5 +138,6 @@ export const SAMPLE_DASHBOARD_DATA = {
     },
   ],
   recentFileActivities: [],
+  modelCost: null,
   window: { from: 1_699_900_000_000, to: 1_700_003_600_000, days: 1 },
 } satisfies DashboardData;

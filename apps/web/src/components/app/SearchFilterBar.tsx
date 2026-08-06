@@ -57,11 +57,9 @@ export function SearchFilterBar({
   };
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]/85 p-3">
+    <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-3 shadow-[var(--shadow-raised)]">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
-          Scope
-        </span>
+        <span className="console-eyebrow">Scope</span>
         <FilterChip
           active={!filters.project}
           label="All"
@@ -88,9 +86,7 @@ export function SearchFilterBar({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
-          Agent
-        </span>
+        <span className="console-eyebrow">Agent</span>
         <FilterChip
           active={!filters.agent}
           label="All Agents"
@@ -107,9 +103,7 @@ export function SearchFilterBar({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
-          Tag
-        </span>
+        <span className="console-eyebrow">Tag</span>
         {SMART_TAG_OPTIONS.map((tag) => (
           <FilterChip
             key={tag}
@@ -121,9 +115,7 @@ export function SearchFilterBar({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
-          Signal
-        </span>
+        <span className="console-eyebrow">Signal</span>
         {SEARCH_TOOL_OPTIONS.map((tool) => (
           <FilterChip
             key={tool}
@@ -135,9 +127,7 @@ export function SearchFilterBar({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
-          File Activity
-        </span>
+        <span className="console-eyebrow">File Activity</span>
         {FILE_ACTIVITY_OPTIONS.map((option) => (
           <FilterChip
             key={option.kind}
@@ -149,9 +139,7 @@ export function SearchFilterBar({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
-          Cost Range
-        </span>
+        <span className="console-eyebrow">Cost Range</span>
         <FilterChip
           active={!filters.costRange}
           label="Any Cost"
@@ -169,7 +157,7 @@ export function SearchFilterBar({
           <button
             type="button"
             onClick={() => onChangeFilters({})}
-            className="console-mono ml-auto rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[10px] text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface)]"
+            className="console-mono ml-auto rounded-full border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2.5 py-1 text-[10px] text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
           >
             Clear
           </button>

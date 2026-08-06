@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SAMPLE_DASHBOARD_DATA } from "@codesesh/core/contract";
+import type { DashboardFilters } from "./api";
 import {
   fetchAgents,
   fetchConfig,
@@ -59,7 +60,7 @@ describe("remote access", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await fetchDashboard();
+    await fetchDashboard(undefined, {});
 
     expect(window.location.search).toBe("");
     expect(window.sessionStorage.getItem("codesesh:remote-access-token")).toBe("remote-secret");
@@ -91,7 +92,7 @@ describe("fetchDashboard", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await fetchDashboard();
+    const result = await fetchDashboard(undefined, {});
 
     expect(result).toEqual(SAMPLE_DASHBOARD_DATA);
   });
@@ -103,9 +104,34 @@ describe("fetchDashboard", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await fetchDashboard({ from: 0, days: 0 });
+    await fetchDashboard({ from: 0, days: 0 }, {});
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/dashboard?days=0");
+  });
+
+  it.each<[string, DashboardFilters, string]>([
+    ["unfiltered", {}, "/api/dashboard?days=7"],
+    [
+      "project",
+      { project: { kind: "path", key: "/a/b" } },
+      "/api/dashboard?days=7&projectKind=path&projectKey=%2Fa%2Fb",
+    ],
+    ["agent", { agent: "codex" }, "/api/dashboard?days=7&agent=codex"],
+    [
+      "project and agent together",
+      { project: { kind: "path", key: "/a/b" }, agent: "codex" },
+      "/api/dashboard?days=7&projectKind=path&projectKey=%2Fa%2Fb&agent=codex",
+    ],
+  ])("builds the %s query string", async (_name, filters, expected) => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(SAMPLE_DASHBOARD_DATA),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchDashboard({ days: 7 }, filters);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(expected);
   });
 });
 

@@ -105,7 +105,11 @@ describe("session detail display model", () => {
     ]);
     expect(model.fileChangeSummary.write).toHaveLength(1);
 
+    expect(model.toc.totalUnitCount).toBe(8);
+    expect(model.select(model.toc.filterIds).visibleUnitCount).toBe(model.toc.totalUnitCount);
+
     const reads = model.select(new Set(["tool:read"]));
+    expect(reads.visibleUnitCount).toBe(2);
     expect(reads.messages.map((message) => message.index)).toEqual([1, 2]);
     expect(reads.timelineEntries.map((entry) => entry.anchorId)).toEqual(["tool-1-0", "tool-2-0"]);
     expect(reads.resolveListIndex(1)).toBe(0);
@@ -126,6 +130,8 @@ describe("session detail display model", () => {
 
     expect(model.messages).toEqual([]);
     expect(model.toc.filterIds.size).toBe(0);
+    expect(model.toc.totalUnitCount).toBe(0);
     expect(model.select(new Set()).messages).toEqual([]);
+    expect(model.select(new Set()).visibleUnitCount).toBe(0);
   });
 });

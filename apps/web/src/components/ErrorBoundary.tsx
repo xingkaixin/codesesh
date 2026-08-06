@@ -30,11 +30,11 @@ export class ErrorBoundary extends Component<Props, State> {
         return this.props.fallback;
       }
       return (
-        <div className="rounded-sm border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-6">
+        <div className="rounded-md border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-6">
           <h3 className="console-mono mb-2 text-sm font-semibold text-[var(--console-error)]">
             Something went wrong
           </h3>
-          <p className="console-mono text-xs text-[var(--console-muted)]">
+          <p className="console-mono text-xs text-[var(--console-text-secondary)]">
             {this.state.error?.message || "Unknown error"}
           </p>
         </div>

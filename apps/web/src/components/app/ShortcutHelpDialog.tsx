@@ -24,18 +24,16 @@ export function ShortcutHelpDialog({ open, onClose }: { open: boolean; onClose: 
   return (
     <Dialog.Root open={open} onOpenChange={(next) => (!next ? onClose() : undefined)}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="shortcut-overlay fixed inset-0 z-50 bg-black/35" />
-        <Dialog.Popup className="shortcut-content fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl origin-center -translate-x-1/2 -translate-y-1/2 rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] p-5 shadow-2xl outline-none">
+        <Dialog.Backdrop className="shortcut-overlay fixed inset-0 z-50 bg-[var(--scrim)]" />
+        <Dialog.Popup className="shortcut-content fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl origin-center -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-5 shadow-[var(--shadow-overlay)] outline-none">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="console-mono text-[11px] uppercase tracking-[0.16em] text-[var(--console-muted)]">
-                Keyboard Shortcuts
-              </p>
-              <Dialog.Title className="console-mono mt-2 text-xl font-semibold text-[var(--console-text)]">
+              <p className="console-eyebrow">Keyboard Shortcuts</p>
+              <Dialog.Title className="console-display mt-2 text-[19px] font-semibold text-[var(--console-text)]">
                 Navigate without leaving the keyboard
               </Dialog.Title>
             </div>
-            <Dialog.Close className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)]">
+            <Dialog.Close className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none">
               Esc
             </Dialog.Close>
           </div>
@@ -44,16 +42,14 @@ export function ShortcutHelpDialog({ open, onClose }: { open: boolean; onClose: 
             {SHORTCUT_GROUPS.map((group) => (
               <div
                 key={group.title}
-                className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-4"
+                className="rounded-md border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-4"
               >
-                <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
-                  {group.title}
-                </h3>
+                <h3 className="console-eyebrow">{group.title}</h3>
                 <div className="mt-3 space-y-3">
                   {group.items.map((item) => (
                     <div key={item.keys}>
                       <p className="console-mono text-xs text-[var(--console-text)]">{item.keys}</p>
-                      <p className="mt-1 text-sm leading-6 text-[var(--console-muted)]">
+                      <p className="mt-1 text-[13px] leading-6 text-[var(--console-text-secondary)]">
                         {item.description}
                       </p>
                     </div>

@@ -39,9 +39,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
       activeAgentKey: null,
       activeSessionId: null,
     } satisfies ViewState,
-    browseBy: "agents" as const,
     navigate: vi.fn() as unknown as NavigateFunction,
-    activeAgentKey: "codex",
     sidebarSessions: sessions,
     sidebarSessionLookup: buildSidebarSessionLookup(sessions),
     selectedSidebarSessionReference: null,
@@ -132,7 +130,6 @@ describe("useKeyboardShortcuts", () => {
     unmount();
 
     const projectDeps = makeDeps({
-      browseBy: "projects" as const,
       viewState: {
         mode: "session",
         activeAgentKey: "codex",
@@ -200,7 +197,6 @@ describe("useKeyboardShortcuts", () => {
     agentHook.unmount();
 
     const projectDeps = makeDeps({
-      browseBy: "projects" as const,
       selectedSidebarSessionReference: "codex/s2",
     });
     renderHook(() => useKeyboardShortcuts(projectDeps));
@@ -210,23 +206,18 @@ describe("useKeyboardShortcuts", () => {
 
   it("does nothing without navigable results or sessions", () => {
     const deps = makeDeps({
-      activeAgentKey: null,
       sidebarSessions: [],
       sidebarSessionLookup: buildSidebarSessionLookup([]),
       isSearchMode: true,
       searchResults: [],
     });
-    const { unmount } = renderHook(() => useKeyboardShortcuts(deps));
+    renderHook(() => useKeyboardShortcuts(deps));
 
     dispatchKey("j");
     dispatchKey("Enter");
-    expect(deps.navigate).not.toHaveBeenCalled();
-    unmount();
 
-    const sidebarDeps = makeDeps({ activeAgentKey: null });
-    renderHook(() => useKeyboardShortcuts(sidebarDeps));
-    dispatchKey("j");
-    expect(sidebarDeps.setSelectedSidebarSessionReference).not.toHaveBeenCalled();
+    expect(deps.navigate).not.toHaveBeenCalled();
+    expect(deps.setSelectedSidebarSessionReference).not.toHaveBeenCalled();
   });
 
   it("opens the selected agent when project sessions share a native id", () => {
@@ -234,7 +225,6 @@ describe("useKeyboardShortcuts", () => {
     const claude = { ...makeSession("same"), slug: "claude/same" };
     const projectSessions = [codex, claude];
     const deps = makeDeps({
-      browseBy: "projects" as const,
       sidebarSessions: projectSessions,
       sidebarSessionLookup: buildSidebarSessionLookup(projectSessions),
       selectedSidebarSessionReference: getSessionReferenceKey(claude),

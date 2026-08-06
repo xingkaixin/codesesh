@@ -1,5 +1,5 @@
 import type { ProjectGroup, ProjectIdentity, SessionHead } from "../types/index.js";
-import { getSessionAgentKey, isChildSession } from "../contract/index.js";
+import { buildSessionTree, getSessionAgentKey } from "../contract/index.js";
 import { getProjectIdentityKey } from "./identity.js";
 
 export function buildProjectGroups(sessions: SessionHead[]): ProjectGroup[] {
@@ -8,8 +8,9 @@ export function buildProjectGroups(sessions: SessionHead[]): ProjectGroup[] {
     { identity: ProjectIdentity; sources: Set<string>; sessionCount: number; lastActivity: number }
   >();
 
+  const tree = buildSessionTree(sessions);
   for (const session of sessions) {
-    if (isChildSession(session)) continue;
+    if (tree.mountStateOf(session) === "mounted-child") continue;
     const identity = session.project_identity;
     if (!identity) continue;
     const activity = session.time_updated ?? session.time_created;

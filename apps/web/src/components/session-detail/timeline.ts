@@ -1,5 +1,5 @@
 import type { MessagePart, ToolPart } from "../../lib/api";
-import { classifyToolKind } from "./file-change";
+import { classifyToolOperation } from "./file-change";
 import { normalizeToolLabel } from "./tool-normalize";
 import type { FilteredSessionMessage } from "./toc";
 
@@ -61,10 +61,7 @@ function summarizeParts(parts: MessagePart[]) {
 }
 
 export function classifyTimelineToolKind(part: ToolPart): ToolTimelineEntryKind {
-  const fileKind = classifyToolKind(part);
-  if (fileKind === "read") return "tool-read";
-  if (fileKind) return "tool-write";
-  return "tool-execute";
+  return `tool-${classifyToolOperation(part)}`;
 }
 
 const TOOL_KIND_LABEL = {

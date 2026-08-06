@@ -39,6 +39,7 @@ export {
   isAgentCacheInitialized,
   listCachedProjectGroups,
   listFileActivity,
+  listModelCostDistribution,
   loadCachedSessions,
   markAgentCacheInitialized,
   markAgentFullSyncProgress,

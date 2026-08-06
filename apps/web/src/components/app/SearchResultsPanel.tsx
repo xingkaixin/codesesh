@@ -73,12 +73,13 @@ export function SearchResultsPanel({
           {Array.from({ length: 4 }).map((_, index) => (
             <div
               key={index}
-              className="animate-pulse rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]/80 p-4 motion-reduce:animate-none"
+              data-testid="search-result-skeleton"
+              className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-4 shadow-[var(--shadow-raised)]"
             >
-              <div className="h-3 w-32 rounded bg-[var(--console-surface-muted)]" />
-              <div className="mt-3 h-4 w-2/3 rounded bg-[var(--console-surface-muted)]" />
-              <div className="mt-2 h-3 w-full rounded bg-[var(--console-surface-muted)]" />
-              <div className="mt-1 h-3 w-5/6 rounded bg-[var(--console-surface-muted)]" />
+              <div className="skeleton-shimmer h-3 w-32 rounded-sm" />
+              <div className="skeleton-shimmer mt-3 h-4 w-2/3 rounded-sm" />
+              <div className="skeleton-shimmer mt-2 h-3 w-full rounded-sm" />
+              <div className="skeleton-shimmer mt-1 h-3 w-5/6 rounded-sm" />
             </div>
           ))}
         </div>
@@ -91,10 +92,10 @@ export function SearchResultsPanel({
       <div className="flex flex-col gap-3">
         {filterBar}
         <div
-          className="rounded-sm border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-6"
+          className="rounded-lg border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-6"
           aria-live="polite"
         >
-          <h2 className="console-mono text-sm font-semibold text-[var(--console-error)]">
+          <h2 className="console-display text-[15px] font-semibold text-[var(--console-error)]">
             Search Failed
           </h2>
           <p className="console-mono mt-2 break-words text-xs text-[var(--console-error)]">
@@ -103,7 +104,7 @@ export function SearchResultsPanel({
           <button
             type="button"
             onClick={onRetry}
-            className="console-mono motion-hover motion-press mt-4 rounded-sm border border-[var(--console-error-border)] bg-[var(--console-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--console-error)] hover:bg-[var(--console-error-bg)] focus-visible:ring-2 focus-visible:ring-[var(--console-error)] focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="console-mono motion-hover motion-press mt-4 rounded-sm border border-[var(--console-error-border)] bg-[var(--console-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--console-error)] hover:bg-[var(--console-error-bg)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
           >
             Retry Search
           </button>
@@ -116,8 +117,8 @@ export function SearchResultsPanel({
     return (
       <div className="flex flex-col gap-3">
         {filterBar}
-        <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]/80 p-6">
-          <h2 className="console-mono text-sm font-semibold text-[var(--console-text)]">
+        <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-6 shadow-[var(--shadow-raised)]">
+          <h2 className="console-display text-[15px] font-semibold text-[var(--console-text)]">
             {query ? "No matches" : "No recent sessions"}
           </h2>
           {query ? (
@@ -138,6 +139,8 @@ export function SearchResultsPanel({
         const agentKey = result.reference.agentName.toLowerCase();
         const agentLabel = agentNameMap.get(agentKey) ?? result.reference.agentName;
         const resultKey = `${result.reference.agentName}/${result.reference.sessionId}`;
+        const isSelected = index === selectedIndex;
+        const isUnmountedChild = Boolean(result.session.parent_reference) && !result.parent;
 
         return (
           <Link
@@ -146,29 +149,47 @@ export function SearchResultsPanel({
             to={sessionRoutePath(result.reference)}
             state={{ searchQuery: query }}
             onClick={onOpenResult}
-            className={`rounded-sm border bg-[var(--console-surface)]/85 p-4 motion-hover hover:border-[var(--console-border-strong)] hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none ${
-              index === selectedIndex
-                ? "border-[var(--console-border-strong)]"
-                : "border-[var(--console-border)]"
+            data-selected={isSelected ? "true" : undefined}
+            className={`rounded-lg border bg-[var(--console-surface)] p-4 shadow-[var(--shadow-raised)] motion-hover hover:border-[var(--console-border-strong)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none ${
+              isSelected ? "border-[var(--brand)]" : "border-[var(--console-border)]"
             }`}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--console-muted)]">
                 {agentLabel}
               </span>
               <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--console-muted)]">
                 {SEARCH_MATCH_LABELS[result.matchType]}
               </span>
+              {isUnmountedChild ? (
+                <span className="console-mono rounded-sm border border-[var(--console-border-strong)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]">
+                  Unmounted
+                </span>
+              ) : null}
               <span className="console-mono text-[11px] text-[var(--console-muted)]">
                 {result.session.directory}
               </span>
             </div>
-            <h2 className="console-mono mt-3 text-sm font-semibold text-[var(--console-text)]">
+            {result.parent ? (
+              <p className="console-mono mt-3 line-clamp-1 text-[11px] text-[var(--console-muted)]">
+                {result.parent.title}
+              </p>
+            ) : null}
+            <h2
+              className={`text-[13px] font-semibold text-[var(--console-text)] ${
+                result.parent ? "mt-1 flex items-center gap-1.5 pl-3" : "mt-3"
+              }`}
+            >
+              {result.parent ? (
+                <span aria-hidden="true" className="console-mono text-[var(--brand)]">
+                  ›
+                </span>
+              ) : null}
               {getSessionDisplayTitle(result.session)}
             </h2>
             <SmartTagChips tags={result.session.smart_tags} className="mt-2" />
             <p
-              className="console-mono mt-2 text-xs leading-6 text-[var(--console-muted)] [&_mark]:bg-[var(--console-accent)] [&_mark]:px-0.5 [&_mark]:text-white dark:[&_mark]:text-[var(--console-bg)]"
+              className="mt-2 text-xs leading-6 text-[var(--console-text-secondary)]"
               dangerouslySetInnerHTML={{
                 __html: toSafeSnippetHtml(result.snippet || getSessionDisplayTitle(result.session)),
               }}

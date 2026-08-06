@@ -121,16 +121,38 @@ describe("buildSessionTreeModel group sorting", () => {
     expect(model.sessionByPath.get(childPath)).toBe(child);
   });
 
-  it("does not render a child without its parent", () => {
+  it("renders a child without its parent under the Unmounted group", () => {
+    const rooted = makeSession({ id: "rooted", directory: "/repo/known" });
     const child = makeSession({
       id: "orphan",
       parent_reference: { agentName: "codex", sessionId: "missing" },
     });
 
-    const model = buildSessionTreeModel([child]);
+    const model = buildSessionTreeModel([rooted, child]);
+    const childPath = model.pathBySessionReference.get(getSessionReferenceKey(child))!;
 
-    expect(model.paths).toEqual([]);
-    expect(model.pathBySessionReference).toEqual(new Map());
+    expect(childPath.startsWith("Unmounted/")).toBe(true);
+    expect(model.paths).toContain(childPath);
+    expect(model.sessionByPath.get(childPath)).toBe(child);
+    expect(groupOrderOf(model.paths)).toEqual(["known", "Unmounted"]);
+  });
+
+  it("keeps a grandchild mounted under its orphaned parent", () => {
+    const orphan = makeSession({
+      id: "orphan",
+      parent_reference: { agentName: "codex", sessionId: "missing" },
+    });
+    const grandchild = makeSession({
+      id: "grandchild",
+      parent_reference: { agentName: "codex", sessionId: "orphan" },
+    });
+
+    const model = buildSessionTreeModel([orphan, grandchild]);
+    const orphanPath = model.pathBySessionReference.get(getSessionReferenceKey(orphan))!;
+    const grandchildPath = model.pathBySessionReference.get(getSessionReferenceKey(grandchild))!;
+
+    expect(orphanPath.endsWith("/")).toBe(true);
+    expect(grandchildPath.startsWith(orphanPath)).toBe(true);
   });
 });
 
@@ -243,6 +265,8 @@ describe("SessionTreeSidebar session options menu", () => {
     await waitFor(() => expect(screen.queryByRole("menu")).not.toBeNull());
 
     const bookmarkItem = await screen.findByRole("menuitem", { name: "Add bookmark" });
+    expect(screen.getByRole("menuitem", { name: "Rename" }).querySelector("svg")).not.toBeNull();
+    expect(bookmarkItem.querySelector("svg")).not.toBeNull();
     dispatch(bookmarkItem, "click");
 
     expect(onToggleBookmark).toHaveBeenCalledWith(session);

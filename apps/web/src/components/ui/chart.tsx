@@ -61,7 +61,7 @@ function ChartContainer({
         data-slot="chart"
         data-chart={chartId}
         className={cn(
-          "flex aspect-video justify-center text-xs [&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-hidden [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-border [&_.recharts-radial-bar-background-sector]:fill-muted [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-muted [&_.recharts-reference-line_[stroke='#ccc']]:stroke-border [&_.recharts-sector]:outline-hidden [&_.recharts-sector[stroke='#fff']]:stroke-transparent [&_.recharts-surface]:outline-hidden",
+          "flex aspect-video justify-center text-xs [&_.recharts-cartesian-axis-tick_text]:fill-[var(--console-muted)] [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-[var(--console-border)] [&_.recharts-curve.recharts-tooltip-cursor]:stroke-[var(--console-border)] [&_.recharts-dot[stroke='#fff']]:stroke-[var(--console-surface)] [&_.recharts-layer]:outline-hidden [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-[var(--console-border)] [&_.recharts-radial-bar-background-sector]:fill-[var(--console-surface-sunken)] [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-[var(--console-surface-sunken)] [&_.recharts-reference-line_[stroke='#ccc']]:stroke-[var(--console-border)] [&_.recharts-sector]:outline-hidden [&_.recharts-sector[stroke='#fff']]:stroke-[var(--console-surface)] [&_.recharts-surface]:outline-hidden",
           className,
         )}
         {...props}
@@ -166,7 +166,7 @@ function ChartTooltipContent({
   return (
     <div
       className={cn(
-        "grid min-w-[8rem] items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl",
+        "grid min-w-[8rem] items-start gap-1.5 rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-1.5 text-xs shadow-[var(--shadow-overlay)]",
         className,
       )}
     >
@@ -183,7 +183,7 @@ function ChartTooltipContent({
               <div
                 key={index}
                 className={cn(
-                  "flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-muted-foreground",
+                  "flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-[var(--console-muted)]",
                   indicator === "dot" && "items-center",
                 )}
               >
@@ -223,12 +223,12 @@ function ChartTooltipContent({
                     >
                       <div className="grid gap-1.5">
                         {nestLabel ? tooltipLabel : null}
-                        <span className="text-muted-foreground">
+                        <span className="text-[var(--console-muted)]">
                           {itemConfig?.label ?? item.name}
                         </span>
                       </div>
                       {item.value != null && (
-                        <span className="font-mono font-medium text-foreground tabular-nums">
+                        <span className="console-mono font-medium text-[var(--console-text)]">
                           {typeof item.value === "number"
                             ? item.value.toLocaleString()
                             : String(item.value)}
@@ -281,7 +281,7 @@ function ChartLegendContent({
             <div
               key={index}
               className={cn(
-                "flex items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-muted-foreground",
+                "console-mono flex items-center gap-1.5 text-[11px] text-[var(--console-muted)] [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-[var(--console-muted)]",
               )}
             >
               {itemConfig?.icon && !hideIcon ? (

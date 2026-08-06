@@ -6,6 +6,7 @@ import {
   nextReceiptReleaseFrame,
   nextReceiptSettledFrame,
   shouldSimulateReceiptFrame,
+  whenReceiptFontsReady,
 } from "../lib/interactive-receipt-frame-policy";
 import { SMART_TAG_LABELS } from "./SmartTagChips";
 import type { SessionDetailToc } from "./session-detail/toc";
@@ -81,6 +82,39 @@ const SOLVER_ITERATIONS = 5;
 const RECEIPT_WIDTH = 270;
 const RECEIPT_HEIGHT = 500;
 const TEXTURE_SCALE = 2;
+const RECEIPT_GRAIN_ALPHA = 0.035;
+
+/** A canvas cannot resolve `var()`, so every colour the receipt paints is read from the
+ *  theme tokens once per repaint and passed down explicitly. Mirrors the palette bridge in
+ *  `session-detail/session-message-timeline.tsx`. */
+interface ReceiptPalette {
+  paperTop: string;
+  paperBottom: string;
+  ink: string;
+  inkMuted: string;
+  line: string;
+  shadow: string;
+}
+
+function readReceiptPalette(root: HTMLElement): ReceiptPalette {
+  const styles = window.getComputedStyle(root);
+  // An unresolved token would leave the previous fillStyle in place, so every read falls
+  // back to a CSS colour keyword rather than to an empty string.
+  const read = (token: string, fallback: string) =>
+    styles.getPropertyValue(token).trim() || fallback;
+  return {
+    paperTop: read("--console-surface", "white"),
+    paperBottom: read("--console-surface-sunken", "whitesmoke"),
+    ink: read("--console-text", "black"),
+    inkMuted: read("--console-text-secondary", "dimgray"),
+    line: read("--console-border-strong", "silver"),
+    shadow: read("--scrim", "gray"),
+  };
+}
+
+function readReceiptMonoFamily(root: HTMLElement): string {
+  return window.getComputedStyle(root).getPropertyValue("--font-mono").trim() || "monospace";
+}
 
 function formatCount(value?: number) {
   return Math.round(value ?? 0).toLocaleString("en-US");
@@ -215,7 +249,7 @@ function wrapTitle(
   return lines.slice(0, maxLines);
 }
 
-function drawTexture(payload: ReceiptPayload) {
+function drawTexture(payload: ReceiptPayload, palette: ReceiptPalette, monoFamily: string) {
   const texture = document.createElement("canvas");
   texture.width = RECEIPT_WIDTH * TEXTURE_SCALE;
   texture.height = RECEIPT_HEIGHT * TEXTURE_SCALE;
@@ -224,34 +258,35 @@ function drawTexture(payload: ReceiptPayload) {
   if (!ctx) return texture;
 
   ctx.scale(TEXTURE_SCALE, TEXTURE_SCALE);
+  const font = (spec: string) => `${spec} ${monoFamily}`;
 
   const paper = ctx.createLinearGradient(0, 0, RECEIPT_WIDTH, RECEIPT_HEIGHT);
-  paper.addColorStop(0, "#ffffff");
-  paper.addColorStop(0.55, "#fafaf6");
-  paper.addColorStop(1, "#f2f2ec");
+  paper.addColorStop(0, palette.paperTop);
+  paper.addColorStop(1, palette.paperBottom);
   ctx.fillStyle = paper;
   ctx.fillRect(0, 0, RECEIPT_WIDTH, RECEIPT_HEIGHT);
 
   const random = createRandom(hashString(payload.id));
-  ctx.fillStyle = "rgba(0, 0, 0, 0.035)";
+  ctx.fillStyle = palette.ink;
   for (let i = 0; i < 1200; i += 1) {
-    ctx.globalAlpha = 0.12 + random() * 0.14;
+    ctx.globalAlpha = RECEIPT_GRAIN_ALPHA * (0.12 + random() * 0.14);
     ctx.fillRect(random() * RECEIPT_WIDTH, random() * RECEIPT_HEIGHT, 0.7, 0.7);
   }
   ctx.globalAlpha = 1;
 
-  ctx.fillStyle = "rgba(0, 0, 0, 0.78)";
-  ctx.font = "700 18px 'Courier New', monospace";
+  ctx.fillStyle = palette.ink;
+  ctx.font = font("700 18px");
   ctx.textAlign = "center";
   ctx.fillText("CODESESH MART", RECEIPT_WIDTH / 2, 34);
-  ctx.font = "11px 'Courier New', monospace";
+  ctx.fillStyle = palette.inkMuted;
+  ctx.font = font("11px");
   ctx.fillText(
     fitText(ctx, formatReceiptSubtitle(payload.tags).toUpperCase(), RECEIPT_WIDTH - 36),
     RECEIPT_WIDTH / 2,
     51,
   );
 
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
+  ctx.strokeStyle = palette.line;
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 4]);
   ctx.beginPath();
@@ -261,8 +296,8 @@ function drawTexture(payload: ReceiptPayload) {
   ctx.setLineDash([]);
 
   ctx.textAlign = "left";
-  ctx.fillStyle = "rgba(0, 0, 0, 0.74)";
-  ctx.font = "11px 'Courier New', monospace";
+  ctx.fillStyle = palette.ink;
+  ctx.font = font("11px");
   drawMonoLine(ctx, "Agent", payload.agent, 88, RECEIPT_WIDTH);
   drawMonoLine(ctx, "Updated", formatDate(payload.updatedAt), 104, RECEIPT_WIDTH);
   drawMonoLine(ctx, "Session", `#${payload.id.slice(0, 8)}`, 120, RECEIPT_WIDTH);
@@ -274,9 +309,9 @@ function drawTexture(payload: ReceiptPayload) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  ctx.font = "700 12px 'Courier New', monospace";
+  ctx.font = font("700 12px");
   ctx.fillText("SESSION TOC RECEIPT LIST", 18, 163);
-  ctx.font = "11px 'Courier New', monospace";
+  ctx.font = font("11px");
 
   let y = 185;
   for (const item of payload.items) {
@@ -286,7 +321,7 @@ function drawTexture(payload: ReceiptPayload) {
     y += 17;
   }
 
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.62)";
+  ctx.strokeStyle = palette.line;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(18, y + 5);
@@ -313,10 +348,10 @@ function drawTexture(payload: ReceiptPayload) {
   drawMonoLine(ctx, "Messages", formatCount(payload.stats.message_count), y, RECEIPT_WIDTH);
   y += 22;
 
-  ctx.font = "700 13px 'Courier New', monospace";
+  ctx.font = font("700 13px");
   drawMonoLine(ctx, "TOTAL COST", formatMoney(payload.stats.total_cost), y, RECEIPT_WIDTH);
 
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.45)";
+  ctx.strokeStyle = palette.line;
   ctx.setLineDash([4, 4]);
   ctx.beginPath();
   ctx.moveTo(18, y + 18);
@@ -324,9 +359,9 @@ function drawTexture(payload: ReceiptPayload) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  ctx.font = "10px 'Courier New', monospace";
+  ctx.font = font("10px");
   ctx.textAlign = "center";
-  ctx.fillStyle = "rgba(0, 0, 0, 0.62)";
+  ctx.fillStyle = palette.inkMuted;
   const titleLines = wrapTitle(ctx, payload.title, RECEIPT_WIDTH - 36, 2);
   titleLines.forEach((line, index) => {
     ctx.fillText(line, RECEIPT_WIDTH / 2, y + 38 + index * 13);
@@ -442,6 +477,7 @@ function solveConstraint(particles: Particle[], constraint: Constraint) {
 function drawMappedCell(
   ctx: CanvasRenderingContext2D,
   texture: HTMLCanvasElement,
+  palette: ReceiptPalette,
   particles: Particle[],
   row: number,
   column: number,
@@ -499,7 +535,11 @@ function drawMappedCell(
   ctx.lineTo(bottomRight.x, bottomRight.y);
   ctx.lineTo(bottomLeft.x, bottomLeft.y);
   ctx.closePath();
-  ctx.fillStyle = shade > 0 ? `rgba(255,255,255,${shade})` : `rgba(0,0,0,${-shade})`;
+  ctx.globalAlpha = Math.abs(shade);
+  // A fold lightens toward the paper's brightest tone and darkens toward the scrim. Ink
+  // cannot serve as the dark side: in the dark theme it is the near-white text colour and
+  // would brighten the fold instead.
+  ctx.fillStyle = shade > 0 ? palette.paperTop : palette.shadow;
   ctx.fill();
   ctx.restore();
 }
@@ -563,7 +603,8 @@ export function InteractiveReceipt({
       vy: 0,
       grabbedIndex: null,
     };
-    const texture = drawTexture(payload);
+    let paper: { texture: HTMLCanvasElement; palette: ReceiptPalette } | null = null;
+    let disposed = false;
     let animationFrame = 0;
     let width = 0;
     let height = 0;
@@ -584,7 +625,13 @@ export function InteractiveReceipt({
     const desktopMedia = window.matchMedia(minWidthQuery);
     const reducedMotionMedia = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-    const shouldRun = () => desktopMedia.matches && document.visibilityState === "visible";
+    const shouldRun = () =>
+      paper != null && desktopMedia.matches && document.visibilityState === "visible";
+
+    const repaintPaper = () => {
+      const palette = readReceiptPalette(anchor);
+      paper = { texture: drawTexture(payload, palette, readReceiptMonoFamily(anchor)), palette };
+    };
 
     const getSheetMetrics = (): SheetMetrics => {
       const rect = anchor.getBoundingClientRect();
@@ -748,7 +795,7 @@ export function InteractiveReceipt({
       hitSurface.style.height = `${maxY - minY + padding * 2}px`;
     };
 
-    const drawShadow = () => {
+    const drawShadow = (palette: ReceiptPalette) => {
       const first = sheet.particles[0];
       const topRight = sheet.particles[COLUMNS - 1];
       const bottomRight = sheet.particles[ROWS * COLUMNS - 1];
@@ -756,10 +803,10 @@ export function InteractiveReceipt({
       if (!first || !topRight || !bottomRight || !bottomLeft) return;
 
       ctx.save();
-      ctx.shadowColor = "rgba(0,0,0,0.24)";
+      ctx.shadowColor = palette.shadow;
       ctx.shadowBlur = 24;
       ctx.shadowOffsetY = 16;
-      ctx.fillStyle = "rgba(0,0,0,0.14)";
+      ctx.fillStyle = palette.shadow;
       ctx.beginPath();
       ctx.moveTo(first.x, first.y);
       ctx.lineTo(topRight.x, topRight.y);
@@ -770,13 +817,13 @@ export function InteractiveReceipt({
       ctx.restore();
     };
 
-    const drawRail = () => {
+    const drawRail = (palette: ReceiptPalette) => {
       const left = sheet.particles[0];
       const right = sheet.particles[COLUMNS - 1];
       if (!left || !right) return;
 
       ctx.save();
-      ctx.strokeStyle = "rgba(0,0,0,0.72)";
+      ctx.strokeStyle = palette.ink;
       ctx.lineWidth = 4;
       ctx.lineCap = "round";
       ctx.beginPath();
@@ -784,7 +831,7 @@ export function InteractiveReceipt({
       ctx.lineTo(right.x + 10, right.y - 3);
       ctx.stroke();
 
-      ctx.strokeStyle = "rgba(255,255,255,0.55)";
+      ctx.strokeStyle = palette.paperTop;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(left.x - 8, left.y - 5);
@@ -794,16 +841,17 @@ export function InteractiveReceipt({
     };
 
     const draw = () => {
+      if (!paper) return;
       ctx.clearRect(0, 0, width, height);
-      drawShadow();
+      drawShadow(paper.palette);
 
       for (let row = 0; row < ROWS - 1; row += 1) {
         for (let column = 0; column < COLUMNS - 1; column += 1) {
-          drawMappedCell(ctx, texture, sheet.particles, row, column);
+          drawMappedCell(ctx, paper.texture, paper.palette, sheet.particles, row, column);
         }
       }
 
-      drawRail();
+      drawRail(paper.palette);
       updateHitSurface();
     };
 
@@ -858,9 +906,26 @@ export function InteractiveReceipt({
     };
 
     setVisible(false);
-    if (shouldRun()) resize();
+    // The texture is laid out with ctx.measureText, so painting it before the mono webfont
+    // loads would bake the fallback face's metrics into the sheet. shouldRun() keeps the
+    // canvas hidden and the loop idle until the texture exists.
+    void whenReceiptFontsReady().then(() => {
+      if (disposed) return;
+      repaintPaper();
+      syncLoopState();
+    });
     const observer = new ResizeObserver(resize);
     observer.observe(anchor);
+    // The palette resolves once per texture build; toggling .dark on <html> changes the
+    // resolved tokens without resizing the canvas, so it must trigger its own repaint.
+    const themeObserver = new MutationObserver(() => {
+      repaintPaper();
+      draw();
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
     desktopMedia.addEventListener("change", syncLoopState);
     reducedMotionMedia.addEventListener("change", syncLoopState);
     document.addEventListener("visibilitychange", syncLoopState);
@@ -869,11 +934,12 @@ export function InteractiveReceipt({
     hitSurface.addEventListener("pointermove", onPointerMove);
     hitSurface.addEventListener("pointerup", releasePointer);
     hitSurface.addEventListener("pointercancel", releasePointer);
-    startLoop();
 
     return () => {
+      disposed = true;
       stopLoop();
       observer.disconnect();
+      themeObserver.disconnect();
       desktopMedia.removeEventListener("change", syncLoopState);
       reducedMotionMedia.removeEventListener("change", syncLoopState);
       document.removeEventListener("visibilitychange", syncLoopState);

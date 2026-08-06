@@ -1,36 +1,27 @@
-import { Link } from "react-router-dom";
-import type { DashboardData, ApiProjectAgentStat, ApiProjectGroup, SessionHead } from "../lib/api";
+import { Link, useNavigate } from "react-router-dom";
+import type { ApiProjectAgentStat, ApiProjectGroup, AppConfig } from "../lib/api";
 import { findAgent, type AgentCatalog } from "../lib/agents";
-import { formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
+import { formatCompact, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getProjectPath } from "../lib/projects";
 import { sessionRoutePath } from "../lib/session-indexes";
-import { getSessionDisplayTitle } from "../lib/session-title";
+import type { TimeWindowPreset } from "../lib/time-window";
 import { AgentIcon } from "./AgentIcon";
-import { Dashboard } from "./Dashboard";
 import type { LandingSession } from "./DetailLanding";
-
-function formatCompact(value: number): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
-  return formatNumber(value);
-}
-
-function getSessionTotalTokens(session: SessionHead): number {
-  return (
-    session.stats.total_tokens ??
-    session.stats.total_input_tokens + session.stats.total_output_tokens
-  );
-}
+import { OverviewScreen } from "./overview/OverviewScreen";
+import { ProjectTimeline } from "./project-timeline/ProjectTimeline";
+import { Panel } from "./ui/panel";
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
-      <p className="console-mono text-[11px] uppercase tracking-wider text-[var(--console-muted)]">
-        {label}
+    <Panel className="p-[14px_16px]">
+      <p className="console-eyebrow">{label}</p>
+      <p className="console-mono mt-[9px] text-[27px] font-semibold tracking-[-0.02em] text-[var(--console-text)]">
+        {value}
       </p>
-      <p className="console-mono mt-2 text-xl font-semibold text-[var(--console-text)]">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-[var(--console-muted)]">{hint}</p> : null}
-    </div>
+      {hint ? (
+        <p className="console-mono mt-[7px] text-[10.5px] text-[var(--console-muted)]">{hint}</p>
+      ) : null}
+    </Panel>
   );
 }
 
@@ -79,29 +70,29 @@ function ProjectListItem({
     <li>
       <Link
         to={getProjectPath({ kind: project.identityKind, key: project.identityKey })}
-        className="block rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]/85 p-4 motion-hover hover:border-[var(--console-border-strong)] hover:bg-[var(--console-surface)]"
+        className="block rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-4 shadow-[var(--shadow-raised)] motion-hover hover:border-[var(--brand-line)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
       >
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0">
-            <h2 className="console-mono line-clamp-1 text-sm font-semibold text-[var(--console-text)]">
+            <h2 className="line-clamp-1 text-[13px] font-medium text-[var(--console-text)]">
               {project.displayName}
             </h2>
-            <p className="console-mono mt-1 break-all text-[11px] text-[var(--console-muted)]">
+            <p className="console-mono mt-[5px] break-all text-[10.5px] text-[var(--console-muted)]">
               {project.identityKey}
             </p>
           </div>
-          <div className="console-mono flex shrink-0 flex-wrap gap-2 text-[11px] text-[var(--console-muted)]">
+          <div className="console-mono flex shrink-0 flex-wrap gap-2 text-[11px] text-[var(--console-text-secondary)]">
             <span>{formatNumber(project.sessionCount)} sessions</span>
             <span>{formatCompact(project.tokens)} tokens</span>
-            <span>{formatMoney(project.cost)}</span>
-            <span>{formatRelativeTime(project.lastActivity)}</span>
+            <span className="text-[var(--brand)]">{formatMoney(project.cost)}</span>
+            <span className="text-[var(--console-muted)]">
+              {formatRelativeTime(project.lastActivity)}
+            </span>
           </div>
         </div>
         <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <AgentPills agents={project.agentStats} agentCatalog={agentCatalog} />
-          <span className="console-mono text-[10px] uppercase text-[var(--console-muted)]">
-            {project.identityKind}
-          </span>
+          <span className="console-eyebrow">{project.identityKind}</span>
         </div>
       </Link>
     </li>
@@ -122,14 +113,14 @@ export function ProjectsOverview({
 
   if (projects.length === 0) {
     return (
-      <div className="mx-auto max-w-5xl rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]">
+      <Panel className="mx-auto max-w-6xl p-6 text-sm text-[var(--console-muted)]">
         No projects found
-      </div>
+      </Panel>
     );
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
+    <div className="mx-auto max-w-6xl space-y-4">
       <div className="grid gap-3 md:grid-cols-4">
         <StatCard label="Projects" value={formatNumber(projects.length)} />
         <StatCard label="Sessions" value={formatNumber(totalSessions)} />
@@ -165,20 +156,21 @@ function ProjectAgentFilter({
   activeAgent?: string;
   onChange: (agent?: string) => void;
 }) {
+  const pillClass = (active: boolean) =>
+    `console-mono inline-flex items-center gap-1 rounded-full border px-[13px] py-[5px] text-[11px] motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
+      active
+        ? "border-[var(--brand)] bg-[var(--brand)] text-[var(--brand-fg)]"
+        : "border-[var(--console-border)] bg-[var(--console-surface)] text-[var(--console-muted)] hover:border-[var(--brand-line)]"
+    }`;
+
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-3">
+    <Panel className="p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="console-mono text-[10px] font-semibold uppercase text-[var(--console-muted)]">
-          Agent
-        </span>
+        <span className="console-eyebrow">Agent</span>
         <button
           type="button"
           onClick={() => onChange(undefined)}
-          className={`console-mono rounded-sm border px-2 py-1 text-[10px] motion-hover ${
-            activeAgent
-              ? "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-muted)] hover:bg-[var(--console-surface)]"
-              : "border-[var(--console-border-strong)] bg-[var(--console-accent)] text-white dark:text-[var(--console-bg)]"
-          }`}
+          className={pillClass(!activeAgent)}
         >
           All Agents
         </button>
@@ -190,11 +182,7 @@ function ProjectAgentFilter({
               key={agent.name}
               type="button"
               onClick={() => onChange(active ? undefined : agent.name)}
-              className={`console-mono inline-flex items-center gap-1 rounded-sm border px-2 py-1 text-[10px] motion-hover ${
-                active
-                  ? "border-[var(--console-border-strong)] bg-[var(--console-accent)] text-white dark:text-[var(--console-bg)]"
-                  : "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-muted)] hover:bg-[var(--console-surface)]"
-              }`}
+              className={pillClass(active)}
             >
               {agentInfo?.icon ? (
                 <AgentIcon
@@ -209,91 +197,20 @@ function ProjectAgentFilter({
           );
         })}
       </div>
-    </div>
+    </Panel>
   );
 }
 
-function ProjectHeader({
-  project,
-  agentCatalog,
-}: {
-  project: ApiProjectGroup;
-  agentCatalog: AgentCatalog;
-}) {
+function ProjectHeader({ project }: { project: ApiProjectGroup }) {
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0">
-          <h2 className="console-mono text-base font-semibold text-[var(--console-text)]">
-            {project.displayName}
-          </h2>
-          <p className="console-mono mt-1 break-all text-[11px] text-[var(--console-muted)]">
-            {project.identityKind}: {project.identityKey}
-          </p>
-        </div>
-        <AgentPills agents={project.agentStats} agentCatalog={agentCatalog} />
-      </div>
-    </div>
-  );
-}
-
-function TopCostSessions({
-  sessions,
-  agentCatalog,
-}: {
-  sessions: LandingSession[];
-  agentCatalog: AgentCatalog;
-}) {
-  if (sessions.length === 0) return null;
-
-  const topSessions = sessions
-    .toSorted((a, b) => b.stats.total_cost - a.stats.total_cost)
-    .slice(0, 5);
-
-  return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="console-mono text-xs font-bold uppercase text-[var(--console-text)]">
-          Top Cost
-        </h3>
-        <span className="console-mono text-[11px] text-[var(--console-muted)]">
-          {topSessions.length} sessions
-        </span>
-      </div>
-      <ul className="space-y-2">
-        {topSessions.map((session) => {
-          const agent = findAgent(agentCatalog, session.agentKey);
-          return (
-            <li key={session.reference}>
-              <Link
-                to={sessionRoutePath({ agentName: session.agentKey, sessionId: session.sessionId })}
-                className="block rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
-              >
-                <div className="flex items-center gap-2">
-                  {agent?.icon ? (
-                    <AgentIcon
-                      icon={agent.icon}
-                      iconColored={agent.iconColored}
-                      alt={agent.displayName}
-                      className="size-3.5 object-contain"
-                    />
-                  ) : null}
-                  <span className="line-clamp-1 flex-1 text-sm text-[var(--console-text)]">
-                    {getSessionDisplayTitle(session)}
-                  </span>
-                  <span className="console-mono text-[11px] text-[var(--console-muted)]">
-                    {formatMoney(session.stats.total_cost)}
-                  </span>
-                </div>
-                <p className="console-mono mt-1 text-[11px] text-[var(--console-muted)]">
-                  /{session.reference} · {formatCompact(getSessionTotalTokens(session))} tokens
-                </p>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+    <Panel className="p-4">
+      <h2 className="console-display text-[19px] font-semibold text-[var(--console-text)]">
+        {project.displayName}
+      </h2>
+      <p className="console-mono mt-1 break-all text-[10.5px] text-[var(--console-muted)]">
+        {project.identityKind}: {project.identityKey}
+      </p>
+    </Panel>
   );
 }
 
@@ -301,31 +218,31 @@ export function ProjectDashboardView({
   project,
   agentCatalog,
   projectKey,
-  dashboard,
-  loading,
-  error,
   sessions,
   activeAgent,
   onChangeAgent,
-  isBookmarked,
-  onToggleSessionBookmark,
+  timeWindow,
+  rangePreset,
+  onRangeChange,
+  onSelectCustom,
 }: {
   project: ApiProjectGroup | null;
   agentCatalog: AgentCatalog;
   projectKey: string;
-  dashboard: DashboardData | null;
-  loading: boolean;
-  error: string | null;
   sessions: LandingSession[];
   activeAgent?: string;
   onChangeAgent: (agent?: string) => void;
-  isBookmarked: (agentKey: string, sessionId: string) => boolean;
-  onToggleSessionBookmark: (session: SessionHead, agentKey: string) => void;
+  timeWindow: AppConfig["window"] | null;
+  rangePreset: TimeWindowPreset;
+  onRangeChange: (preset: TimeWindowPreset) => void;
+  onSelectCustom: (from: string, to: string) => void;
 }) {
+  const navigate = useNavigate();
+
   if (!project) {
     return (
-      <div className="mx-auto max-w-4xl rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-6">
-        <h2 className="console-mono text-sm font-semibold text-[var(--console-text)]">
+      <Panel className="mx-auto max-w-4xl p-6">
+        <h2 className="console-display text-[15px] font-semibold text-[var(--console-text)]">
           Project Not Found
         </h2>
         <p className="console-mono mt-2 break-all text-xs text-[var(--console-muted)]">
@@ -333,11 +250,11 @@ export function ProjectDashboardView({
         </p>
         <Link
           to="/projects"
-          className="console-mono mt-4 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)]"
+          className="console-mono mt-4 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
         >
           Back to Projects
         </Link>
-      </div>
+      </Panel>
     );
   }
 
@@ -346,8 +263,8 @@ export function ProjectDashboardView({
     : sessions;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
-      <ProjectHeader project={project} agentCatalog={agentCatalog} />
+    <div className="mx-auto max-w-6xl space-y-4">
+      <ProjectHeader project={project} />
       <ProjectAgentFilter
         agents={project.agentStats}
         agentCatalog={agentCatalog}
@@ -355,30 +272,24 @@ export function ProjectDashboardView({
         onChange={onChangeAgent}
       />
 
-      {loading ? (
-        <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]">
-          Loading project dashboard
-        </div>
-      ) : error ? (
-        <div className="rounded-sm border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-6 text-sm text-[var(--console-error)]">
-          {error}
-        </div>
-      ) : dashboard ? (
-        <Dashboard
-          data={dashboard}
-          agentCatalog={agentCatalog}
-          projects={[]}
-          bookmarkedSessions={[]}
-          isBookmarked={isBookmarked}
-          onToggleBookmark={(item) => {
-            if (!("bookmarkedAt" in item)) {
-              onToggleSessionBookmark(item.session, item.reference.agentName);
-            }
-          }}
-        />
-      ) : null}
+      <OverviewScreen
+        key={`${project.identityKind}:${project.identityKey}`}
+        project={{ kind: project.identityKind, key: project.identityKey }}
+        agent={activeAgent}
+        onAgentChange={onChangeAgent}
+        window={timeWindow}
+        agentCatalog={agentCatalog}
+        rangePreset={rangePreset}
+        onRangeChange={onRangeChange}
+        onSelectCustom={onSelectCustom}
+      />
 
-      <TopCostSessions sessions={scopedSessions} agentCatalog={agentCatalog} />
+      <ProjectTimeline
+        sessions={scopedSessions}
+        projectName={project.displayName}
+        agentCatalog={agentCatalog}
+        onOpenSession={(reference) => navigate(sessionRoutePath(reference))}
+      />
     </div>
   );
 }

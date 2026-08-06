@@ -1,7 +1,7 @@
 declare const __APP_VERSION__: string;
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PanelLeftClose, PanelLeftOpen } from "./components/ui/icons";
+import { PanelLeftOpen } from "./components/ui/icons";
 import { Link, useLocation, useMatches, useNavigate } from "react-router-dom";
 import type { BookmarkRecord, SessionHead } from "./lib/api";
 import { logClientEvent } from "./lib/api";
@@ -16,7 +16,6 @@ import { useScanStatus } from "./hooks/useScanStatus";
 import { useSessionDetail } from "./hooks/useSessionDetail";
 import { useSessionSearch } from "./hooks/useSessionSearch";
 import { useBookmarks } from "./hooks/useBookmarks";
-import { useDashboard } from "./hooks/useDashboard";
 import { useSidebarModel } from "./hooks/useSidebarModel";
 import { useSessionStore } from "./hooks/useSessionStore";
 import { useSessionAliasMutations } from "./hooks/useSessionAliasMutations";
@@ -31,10 +30,9 @@ import { AppSidebar } from "./components/app/AppSidebar";
 import { ShortcutHelpDialog } from "./components/app/ShortcutHelpDialog";
 import { ThemeToggle } from "./components/app/ThemeToggle";
 import { AppRouteContent } from "./components/app/AppRouteContent";
-import type { BrowseBy } from "./components/app/types";
 import { formatScanStatusLabel, formatSearchSubtitle } from "./lib/scan-format";
 import { findAgent } from "./lib/agents";
-import { getProjectIdentityKey, getProjectPath, type ProjectRouteIdentity } from "./lib/projects";
+import { getProjectIdentityKey, type ProjectRouteIdentity } from "./lib/projects";
 import {
   buildSessionIndexes,
   getSessionAgentKey,
@@ -67,8 +65,7 @@ export default function App() {
     reload,
   });
 
-  const [selectedProjectIdentity, setSelectedProjectIdentity] =
-    useState<ProjectRouteIdentity | null>(null);
+  const [, setSelectedProjectIdentity] = useState<ProjectRouteIdentity | null>(null);
   const { scanStatus, setScanStatus } = useScanStatus();
   const [selectedSidebarSessionReference, setSelectedSidebarSessionReference] = useState<
     string | null
@@ -154,35 +151,40 @@ export default function App() {
   const activeProjectKind = viewState.mode === "project" ? viewState.activeProjectKind : null;
   const activeProjectKey = viewState.mode === "project" ? viewState.activeProjectKey : null;
 
-  const projectDashboardFilters = useMemo(
-    () => ({
-      projectKind: activeProjectKind ?? undefined,
-      projectKey: activeProjectKey ?? undefined,
-      identityKey:
-        activeProjectKind && activeProjectKey
-          ? getProjectIdentityKey({ kind: activeProjectKind, key: activeProjectKey })
-          : undefined,
-    }),
-    [activeProjectKey, activeProjectKind],
+  const activeProjectIdentityKey =
+    activeProjectKind && activeProjectKey
+      ? getProjectIdentityKey({ kind: activeProjectKind, key: activeProjectKey })
+      : null;
+
+  const [projectAgentFilter, setProjectAgentFilter] = useState<{
+    identityKey: string;
+    agentKey?: string;
+  } | null>(null);
+  const selectedProjectAgent =
+    projectAgentFilter?.identityKey === activeProjectIdentityKey
+      ? projectAgentFilter?.agentKey
+      : undefined;
+  const selectProjectAgent = useCallback(
+    (agentKey?: string) => {
+      setProjectAgentFilter(
+        activeProjectIdentityKey ? { identityKey: activeProjectIdentityKey, agentKey } : null,
+      );
+    },
+    [activeProjectIdentityKey],
   );
-  const projectController = useDashboard(loadedWindow, projectDashboardFilters);
   const sidebar = useSidebarModel({
     viewState,
     sessionIndexes,
     session,
     agents: activeAgents,
     projects,
-    selectedProjectAgent: projectController.selectedAgent,
+    selectedProjectAgent,
     isSessionBookmarked,
   });
   const {
-    browseBy,
-    selectBrowseBy,
-    activeAgentKey,
     activeAgent,
     activeProject,
     activeProjectSessions,
-    openedSessionProjectIdentity,
     selectedProjectNavigation,
     sidebarSessions,
     sidebarSessionLookup,
@@ -223,14 +225,6 @@ export default function App() {
       displayTitle: bookmark.session.display_title,
     });
   }, []);
-
-  const handleSelectTreeSidebarSession = useCallback(
-    (sessionItem: SessionHead) => {
-      setSelectedSidebarSessionReference(getSessionReferenceKey(sessionItem));
-      navigate(getSessionRoutePath(sessionItem));
-    },
-    [navigate],
-  );
 
   // 可见标签每次渲染直接计算，保证 processed/total 计数实时更新。
   const scanStatusLabel = formatScanStatusLabel(scanStatus);
@@ -312,7 +306,6 @@ export default function App() {
 
   const routeHeader = buildRouteHeaderModel({
     viewState,
-    browseBy,
     isSearchMode,
     searchSubtitle,
     dashboard,
@@ -342,18 +335,22 @@ export default function App() {
       sessionsByAgent={sessionIndexes.byLandingAgent}
       activeProject={activeProject?.project ?? null}
       activeProjectSessions={activeProjectSessions}
-      dashboard={dashboard}
+      overview={{
+        window: loadedWindow,
+        // `preset` is null only until the config resolves, and until then the
+        // shell renders its loading skeleton instead of the overview.
+        rangePreset: timeWindowController.preset ?? "all",
+        onRangeChange: timeWindowController.selectPreset,
+        onSelectCustom: timeWindowController.selectCustom,
+      }}
       sessionDetail={{
         session: sessionDetail.session,
         loading: sessionDetail.sessionLoading,
         error: sessionDetail.sessionError,
       }}
-      projectDashboard={{
-        dashboard: projectController.dashboard,
-        loading: projectController.loading,
-        error: projectController.error,
-        selectedAgent: projectController.selectedAgent,
-        onChangeAgent: projectController.setSelectedAgent,
+      projectAgentFilter={{
+        selectedAgent: selectedProjectAgent,
+        onChangeAgent: selectProjectAgent,
       }}
       search={{
         active: search.searchMode,
@@ -368,33 +365,15 @@ export default function App() {
         registerResultRef: search.registerResultRef,
       }}
       bookmarks={{
-        sessions: bookmarks.bookmarkedSessions,
         isBookmarked: bookmarks.isSessionBookmarked,
-        toggleBookmark: bookmarks.toggleBookmark,
         toggleSessionBookmark: bookmarks.toggleSessionBookmark,
       }}
     />
   );
 
-  function changeBrowseBy(next: BrowseBy) {
-    if (next === "projects" && isScanActive) return;
-    selectBrowseBy(next);
-    setSelectedSidebarSessionReference(null);
-    if (next === "projects") {
-      const project =
-        openedSessionProjectIdentity ??
-        (viewState.mode === "session" ? null : selectedProjectIdentity);
-      navigate(project ? getProjectPath(project) : "/projects");
-      return;
-    }
-    navigate("/");
-  }
-
   useKeyboardShortcuts({
     viewState,
-    browseBy,
     navigate,
-    activeAgentKey,
     sidebarSessions,
     sidebarSessionLookup,
     selectedSidebarSessionReference,
@@ -418,30 +397,16 @@ export default function App() {
       <div className="console-ui flex h-screen flex-col overflow-hidden bg-[var(--console-bg)] text-[var(--console-text)]">
         <a
           href="#main"
-          className="console-mono sr-only rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-1.5 text-xs text-[var(--console-text)] focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none"
+          className="console-mono sr-only rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-1.5 text-xs text-[var(--console-text)] focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
         >
           Skip to content
         </a>
         <header className="shrink-0 border-b border-[var(--console-border)] bg-[var(--console-surface)]/85 backdrop-blur-sm">
           <div className="grid min-h-14 grid-cols-[auto_1fr] items-center gap-3 px-4 py-2 sm:grid-cols-[auto_1fr_auto] sm:py-0">
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                aria-expanded={!sidebarCollapsed}
-                aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1.5 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] lg:inline-flex"
-              >
-                {sidebarCollapsed ? (
-                  <PanelLeftOpen className="size-4" />
-                ) : (
-                  <PanelLeftClose className="size-4" />
-                )}
-              </button>
               <Link to="/" className="flex items-center gap-2 text-[var(--console-text)]">
                 <img src="/logo.svg?v=3" alt="CodeSesh" className="h-6 w-6 rounded-sm" />
-                <span className="console-mono text-sm font-semibold uppercase tracking-[0.05em]">
+                <span className="console-display text-sm font-semibold uppercase tracking-[0.05em]">
                   CodeSesh
                 </span>
               </Link>
@@ -453,7 +418,7 @@ export default function App() {
                 submitSearch();
               }}
             >
-              <label className="flex min-w-0 flex-1 items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 focus-within:border-[var(--console-border-strong)] focus-within:ring-2 focus-within:ring-[var(--console-accent)] focus-within:ring-offset-2">
+              <label className="flex min-w-0 flex-1 items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 focus-within:border-[var(--brand-line)] focus-within:ring-2 focus-within:ring-[var(--brand)]">
                 <span className="sr-only">Search Sessions</span>
                 <input
                   ref={searchInputRef}
@@ -468,7 +433,7 @@ export default function App() {
               </label>
               <button
                 type="submit"
-                className="console-mono rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-3 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--console-accent)] focus-visible:ring-offset-2 focus-visible:outline-none"
+                className="console-mono rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-3 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
               >
                 Search
               </button>
@@ -481,7 +446,7 @@ export default function App() {
                   setShortcutHelpOpen(true);
                   dismissShortcutHint();
                 }}
-                className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)]"
+                className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
                 title="Show keyboard shortcuts"
               >
                 ?<span className="hidden sm:inline"> Shortcuts</span>
@@ -507,12 +472,9 @@ export default function App() {
           <AppSidebar
             model={{
               sidebarCollapsed,
-              browseBy,
               isScanActive,
               viewState,
-              agents: activeAgents,
               agentCatalog,
-              activeAgentKey,
               scanStatus,
               projects,
               selectedProjectNavigationId,
@@ -523,20 +485,31 @@ export default function App() {
               bookmarkedSidebarSessionReferences,
             }}
             actions={{
-              onChangeBrowseBy: changeBrowseBy,
+              onCollapse: () => setSidebarCollapsed(true),
               onSelectProject: setSelectedProjectIdentity,
               onToggleBookmark: toggleBookmark,
               onSelectFlatSidebarSession: handleSelectFlatSidebarSession,
               onToggleSidebarSessionBookmark: handleToggleSidebarSessionBookmark,
               onRenameSession: handleRenameSession,
               onRenameBookmarkedSession: handleRenameBookmarkedSession,
-              onSelectTreeSidebarSession: handleSelectTreeSidebarSession,
             }}
           />
 
           <main id="main" tabIndex={-1} className="flex min-w-0 flex-1 flex-col outline-none">
-            <section className="shrink-0 border-b border-[var(--console-border)] bg-[var(--console-surface)]/70 px-4 py-4 backdrop-blur-sm md:px-8">
-              <div>
+            <section className="flex shrink-0 items-start gap-3 border-b border-[var(--console-border)] bg-[var(--console-surface)]/70 px-4 py-4 backdrop-blur-sm md:px-8">
+              {sidebarCollapsed ? (
+                <button
+                  type="button"
+                  aria-expanded="false"
+                  aria-label="Expand sidebar"
+                  title="Expand sidebar"
+                  onClick={() => setSidebarCollapsed(false)}
+                  className="mt-0.5 hidden shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none lg:inline-flex"
+                >
+                  <PanelLeftOpen className="size-4" />
+                </button>
+              ) : null}
+              <div className="min-w-0 flex-1">
                 <nav
                   aria-label="Breadcrumb"
                   className="console-mono mb-2 flex flex-wrap items-center gap-1 text-[11px] text-[var(--console-muted)]"
@@ -558,10 +531,10 @@ export default function App() {
                   ))}
                 </nav>
                 <div className="flex items-center gap-2">
-                  <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] font-bold uppercase text-[var(--console-muted)]">
+                  <span className="console-eyebrow rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5">
                     {routeHeader.contextLabel}
                   </span>
-                  <h1 className="console-mono text-xl font-semibold tracking-tight text-[var(--console-text)]">
+                  <h1 className="console-display text-2xl font-semibold text-[var(--console-text)]">
                     {routeHeader.title}
                   </h1>
                 </div>

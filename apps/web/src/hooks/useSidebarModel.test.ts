@@ -1,5 +1,5 @@
 import { SAMPLE_SESSION_HEAD } from "@codesesh/core/contract";
-import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentInfo, ApiProjectGroup, SessionHead } from "../lib/api";
 import { buildSessionIndexes, getSessionReferenceKey } from "../lib/session-indexes";
@@ -88,7 +88,7 @@ function renderModel(initialViewState: ViewState = rootView, indexes = sessionIn
 }
 
 describe("useSidebarModel", () => {
-  it("derives agent navigation from an agent route", () => {
+  it("resolves the agent behind an agent route without listing its sessions", () => {
     const agentView = {
       mode: "agent",
       activeAgentKey: "codex",
@@ -96,35 +96,21 @@ describe("useSidebarModel", () => {
     } satisfies ViewState;
     const { result } = renderModel(agentView);
 
-    expect(result.current.browseBy).toBe("agents");
     expect(result.current.activeAgent?.displayName).toBe("Codex");
-    expect(result.current.sidebarSessions).toEqual([codexSession]);
+    expect(result.current.sidebarSessions).toEqual([]);
   });
 
-  it("preserves project browsing when a project opens a session", async () => {
+  it("keeps the opened session's project selected in the sidebar", () => {
     const { result, rerender } = renderModel(projectView);
-    expect(result.current.browseBy).toBe("projects");
-    await waitFor(() => expect(result.current.browseBy).toBe("projects"));
 
     rerender({ viewState: sessionView, selectedProjectAgent: undefined });
 
-    expect(result.current.browseBy).toBe("projects");
     expect(result.current.selectedProjectNavigation?.identity).toEqual(projectIdentity);
     expect(result.current.sidebarSessions).toEqual([codexSession, claudeSession]);
   });
 
-  it("remembers an explicit browsing choice on ambiguous routes", () => {
-    const { result } = renderModel();
-    expect(result.current.browseBy).toBe("agents");
-
-    act(() => result.current.selectBrowseBy("projects"));
-
-    expect(result.current.browseBy).toBe("projects");
-  });
-
-  it("filters project sessions by the selected agent", async () => {
+  it("filters project sessions by the selected agent", () => {
     const { result, rerender } = renderModel(projectView);
-    await waitFor(() => expect(result.current.browseBy).toBe("projects"));
 
     rerender({ viewState: projectView, selectedProjectAgent: "codex" });
 

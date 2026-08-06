@@ -14,8 +14,7 @@ test("keeps project navigation aligned with the overview route", async ({ page }
     .getByRole("link", { name: "Projects" })
     .click();
   await expect(page).toHaveURL(/\/projects$/);
-  await expect(page.getByText("Select a project")).toBeVisible();
-  await expect(projectNavigation).not.toHaveClass(/bg-white/);
+  await expect(projectNavigation).not.toHaveAttribute("data-active", "true");
 });
 
 test("persists app shell preferences across reloads", async ({ page }) => {
@@ -37,24 +36,22 @@ test("browses the dashboard and project tree with a keyboard", async ({ page }) 
   await page.goto("/");
   const dashboard = page.getByTestId("dashboard");
   await expect(dashboard).toBeVisible();
-  await expect(dashboard.getByText("Total Sessions")).toBeVisible();
-  await expect(dashboard.getByText("Core browsing smoke session")).toBeVisible();
-  const activityChart = page.getByRole("region", { name: "Daily Activity" });
+  await expect(dashboard.getByTestId("overview-project-row")).toContainText("codesesh-e2e");
+  const activityChart = page.getByRole("region", { name: "Daily usage" });
   const activityBar = activityChart.getByRole("button").first();
   await activityBar.focus();
   await expect(activityBar).toBeFocused();
-  await expect(activityChart.getByRole("table", { name: "Daily Activity data" })).toBeAttached();
+  await expect(activityChart.getByRole("table", { name: "Daily usage data" })).toBeAttached();
 
   await page
-    .getByRole("link", { name: /Claude Code/ })
+    .locator("aside")
+    .getByRole("link", { name: /codesesh-e2e/ })
     .first()
     .click();
-  await expect(page.getByRole("heading", { level: 1, name: "Claude Code" })).toBeVisible();
-  const projectTreeItem = page.getByRole("treeitem", { name: /codesesh-e2e/ });
-  await expect(projectTreeItem).toBeVisible();
-  await projectTreeItem.click();
+  await expect(page.getByRole("heading", { level: 1, name: "codesesh-e2e" })).toBeVisible();
 
   const treeSession = page.getByRole("treeitem", { name: /Core browsing smoke session/ });
+  await expect(treeSession).toBeVisible();
   await treeSession.focus();
   await treeSession.press("Shift+F10");
   await expect(page.getByRole("menuitem", { name: "Rename" })).toBeVisible();
@@ -62,10 +59,15 @@ test("browses the dashboard and project tree with a keyboard", async ({ page }) 
   await expect(treeSession).toBeFocused();
 });
 
-test("opens a session detail from the dashboard", async ({ page }) => {
-  await page.goto("/");
+test("opens a session detail from the project timeline", async ({ page }) => {
+  await page.goto("/projects");
+  await page
+    .locator("main")
+    .getByRole("link", { name: /codesesh-e2e/ })
+    .first()
+    .click();
 
-  await page.getByText("Core browsing smoke session").first().click();
+  await page.getByRole("button", { name: /Core browsing smoke session/ }).click();
   await expect(page).toHaveURL(/\/claudecode\/e2e-dashboard$/);
   await expect(
     page.getByRole("heading", { level: 1, name: "Core browsing smoke session" }),
@@ -107,9 +109,9 @@ test("bookmarks a recent session", async ({ page }) => {
   const resetBookmark = await page.request.delete("/api/bookmarks/claudecode/e2e-dashboard");
   expect(resetBookmark.ok()).toBe(true);
 
-  await page.goto("/");
+  await page.goto("/claudecode");
   const recentSession = page
-    .getByTestId("dashboard")
+    .locator("main")
     .locator("li")
     .filter({ hasText: "Core browsing smoke session" })
     .first();
@@ -137,11 +139,10 @@ test("bookmarks a recent session", async ({ page }) => {
       );
     })
     .toBe(true);
-  await expect(page.getByText("Bookmarked Sessions")).toBeVisible();
   await expect(recentSession.getByRole("button", { name: "Remove bookmark" })).toBeVisible();
-  await expect(page.locator("section").filter({ hasText: "BOOKMARKS" })).toContainText(
-    "Core browsing smoke session",
-  );
+  await expect(
+    page.locator("aside").locator("section").filter({ hasText: "BOOKMARKS" }),
+  ).toContainText("Core browsing smoke session");
 });
 
 test("persists the selected time range across navigation", async ({ page }) => {
@@ -245,23 +246,23 @@ test("keeps detail drawers modal and restores focus", async ({ page }) => {
     .not.toBe("hidden");
 
   await page.setViewportSize({ width: 390, height: 844 });
-  const tocTrigger = page.getByRole("button", { name: /^TOC/ });
-  await tocTrigger.click();
-  const tocDialog = page.getByRole("dialog", { name: "Session TOC" });
-  await expect(tocDialog).toBeVisible();
-  await expect(page.getByRole("button", { name: "Close session toc" })).toBeFocused();
+  const filterTrigger = page.getByRole("button", { name: "Content filters" });
+  await filterTrigger.click();
+  const filterDialog = page.getByRole("dialog", { name: "Content filters" });
+  await expect(filterDialog).toBeVisible();
+  await expect(page.getByRole("button", { name: "Close Content filters" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect
-    .poll(() => tocDialog.evaluate((dialog) => dialog.contains(document.activeElement)))
+    .poll(() => filterDialog.evaluate((dialog) => dialog.contains(document.activeElement)))
     .toBe(true);
   await page.keyboard.press("Escape");
-  await expect(tocDialog).toBeHidden();
-  await expect(tocTrigger).toBeFocused();
+  await expect(filterDialog).toBeHidden();
+  await expect(filterTrigger).toBeFocused();
 
-  await tocTrigger.click();
-  await expect(tocDialog).toBeVisible();
+  await filterTrigger.click();
+  await expect(filterDialog).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 800 });
-  await expect(tocDialog).toBeHidden();
+  await expect(filterDialog).toBeHidden();
 });
 
 test("returns a dragged receipt to its resting position", async ({ page }) => {

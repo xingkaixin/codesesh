@@ -27,9 +27,11 @@ export type {
   AgentScanStatus,
   DashboardAgentStat,
   DashboardDailyBucket,
-  DailyTokenBucket,
   ModelDistributionEntry,
+  ModelCostEntry,
   DashboardTotals,
+  DashboardPreviousTotals,
+  DashboardProjectStat,
   DashboardRecentSession,
   DashboardData,
   AppConfig,
@@ -119,6 +121,16 @@ export interface FetchOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * Which slice of the snapshot a dashboard request covers. Project and agent are
+ * independent and either may be absent: no project means every project, no agent
+ * means every agent. A project dashboard is the global one with `project` set.
+ */
+export interface DashboardFilters {
+  project?: { kind: ProjectIdentityKind; key: string };
+  agent?: string;
+}
+
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, withRemoteAccess(init));
   if (!res.ok) {
@@ -186,15 +198,17 @@ export async function fetchSessionData(
 }
 
 export async function fetchDashboard(
-  window?: AppConfig["window"],
-  filters: { projectKind?: ProjectIdentityKind; projectKey?: string; agent?: string } = {},
+  window: AppConfig["window"] | undefined,
+  filters: DashboardFilters,
   options?: FetchOptions,
 ): Promise<DashboardData> {
   const params = new URLSearchParams();
   if (window?.days !== 0) appendTimeWindow(params, window);
   if (window?.days != null) params.set("days", String(window.days));
-  if (filters.projectKind) params.set("projectKind", filters.projectKind);
-  if (filters.projectKey) params.set("projectKey", filters.projectKey);
+  if (filters.project) {
+    params.set("projectKind", filters.project.kind);
+    params.set("projectKey", filters.project.key);
+  }
   if (filters.agent) params.set("agent", filters.agent);
   const suffix = params.toString();
   return fetchJson(suffix ? `/api/dashboard?${suffix}` : "/api/dashboard", options);

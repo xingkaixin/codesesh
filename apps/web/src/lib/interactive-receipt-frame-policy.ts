@@ -19,6 +19,14 @@ export function nextReceiptReleaseFrame(isDragging: boolean, releaseFrames: numb
   return isDragging ? 0 : releaseFrames + 1;
 }
 
+/** The receipt texture is laid out with `ctx.measureText`, so painting before the mono
+ *  webfont loads bakes the fallback face's metrics into the sheet. Resolves immediately
+ *  where `FontFaceSet` is unavailable (non-browser test environments). */
+export function whenReceiptFontsReady(): Promise<void> {
+  const fonts = typeof document === "undefined" ? undefined : document.fonts;
+  return fonts ? fonts.ready.then(() => undefined) : Promise.resolve();
+}
+
 export function isReceiptSettled(
   stableFrames: number,
   settledFrames: number,

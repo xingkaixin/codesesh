@@ -9,13 +9,10 @@ import {
 } from "../lib/session-indexes";
 import { getProjectPath, type ProjectRouteIdentity } from "../lib/projects";
 import type { ViewState } from "../lib/view-state";
-import type { BrowseBy } from "../components/app/types";
 
 interface KeyboardShortcutsDeps {
   viewState: ViewState;
-  browseBy: BrowseBy;
   navigate: NavigateFunction;
-  activeAgentKey: string | null;
   sidebarSessions: SessionHead[];
   sidebarSessionLookup: SidebarSessionLookup;
   selectedSidebarSessionReference: string | null;
@@ -54,9 +51,7 @@ function isEditableTarget(target: EventTarget | null) {
 export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
   const {
     viewState,
-    browseBy,
     navigate,
-    activeAgentKey,
     sidebarSessions,
     sidebarSessionLookup,
     selectedSidebarSessionReference,
@@ -128,7 +123,7 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
         return;
       }
       if (viewState.mode === "session" && viewState.activeAgentKey) {
-        if (browseBy === "projects" && selectedProjectNavigationIdentity) {
+        if (selectedProjectNavigationIdentity) {
           navigate(getProjectPath(selectedProjectNavigationIdentity));
           return;
         }
@@ -177,7 +172,6 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
       return;
     }
 
-    if (browseBy === "agents" && !activeAgentKey) return;
     if (sidebarSessions.length === 0) return;
 
     const moveSidebarSelection = (offset: number) => {
@@ -225,7 +219,7 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
       if (!selected) return;
       event.preventDefault();
       dismissShortcutHint();
-      navigate(browseBy === "projects" ? `/${selected.slug}` : `/${activeAgentKey}/${selected.id}`);
+      navigate(`/${selected.slug}`);
     }
   });
 

@@ -1,4 +1,5 @@
-import type { DiffBlock, DiffLineItem } from "./types";
+import { diffToneClass } from "./diff-tone";
+import type { DiffBlock } from "./types";
 
 interface StructuredDiffOutputProps {
   blocks: DiffBlock[];
@@ -6,16 +7,6 @@ interface StructuredDiffOutputProps {
 
 function getBlockKey(block: DiffBlock) {
   return `${block.label}:${block.lines.map((l) => `${l.type}:${l.text}`).join("\n")}`;
-}
-
-function getStructuredDiffLineClassName(type: DiffLineItem["type"]) {
-  if (type === "add") {
-    return "text-[#15803d] bg-[#f0fdf4] dark:text-[var(--console-success)] dark:bg-[var(--console-success-bg)]";
-  }
-  if (type === "remove") {
-    return "text-[#b91c1c] bg-[#fef2f2] dark:text-[var(--console-error)] dark:bg-[var(--console-error-bg)]";
-  }
-  return "text-[var(--console-text)]";
 }
 
 export function StructuredDiffOutput({ blocks }: StructuredDiffOutputProps) {
@@ -41,7 +32,7 @@ export function StructuredDiffOutput({ blocks }: StructuredDiffOutputProps) {
                 return (
                   <span
                     key={`${key}:${occ}`}
-                    className={`block rounded-[2px] px-1 ${getStructuredDiffLineClassName(line.type)}`}
+                    className={`block rounded-[2px] px-1 ${diffToneClass(line.type)}`}
                   >
                     {line.type === "add" ? "+" : line.type === "remove" ? "-" : " "}
                     {line.text || " "}

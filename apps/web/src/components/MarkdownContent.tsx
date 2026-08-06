@@ -20,7 +20,7 @@ const markdownComponents: Components = {
         alt={alt ?? ""}
         title={title}
         loading="lazy"
-        className="max-h-[520px] max-w-full object-contain"
+        className="max-h-[520px] max-w-full rounded-md object-contain"
       />
     );
   },

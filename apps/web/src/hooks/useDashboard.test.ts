@@ -1,7 +1,8 @@
-import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppConfig, DashboardData, ProjectIdentityKind } from "../lib/api";
+import type { AppConfig, DashboardData, DashboardFilters } from "../lib/api";
 import * as api from "../lib/api";
+import { queryKeys } from "../lib/query-keys";
 import { createQueryWrapper } from "../test/query-wrapper";
 import { useDashboard } from "./useDashboard";
 
@@ -9,7 +10,10 @@ vi.mock("../lib/api", () => ({ fetchDashboard: vi.fn() }));
 
 const window = { from: 1, to: 2 } as AppConfig["window"];
 const data = { totals: { sessions: 3 }, perAgent: [] } as unknown as DashboardData;
-const projectKind = "path" as ProjectIdentityKind;
+
+const globalScope: DashboardFilters = {};
+const projectScope: DashboardFilters = { project: { kind: "path", key: "pk" } };
+const agentScope: DashboardFilters = { agent: "codex" };
 
 beforeEach(() => {
   vi.mocked(api.fetchDashboard).mockResolvedValue(data);
@@ -23,59 +27,54 @@ afterEach(() => {
 describe("useDashboard", () => {
   it("stays idle without a window", () => {
     const { Wrapper } = createQueryWrapper();
-    const { result } = renderHook(() => useDashboard(null), { wrapper: Wrapper });
+    const { result } = renderHook(() => useDashboard(null, globalScope), { wrapper: Wrapper });
     expect(result.current.dashboard).toBeNull();
     expect(api.fetchDashboard).not.toHaveBeenCalled();
   });
 
-  it("loads an unfiltered dashboard", async () => {
+  it.each([
+    ["global", globalScope],
+    ["project", projectScope],
+    ["agent", agentScope],
+  ])("loads the %s scope", async (_name, scope) => {
     const { Wrapper } = createQueryWrapper();
-    const { result } = renderHook(() => useDashboard(window), { wrapper: Wrapper });
+    const { result } = renderHook(() => useDashboard(window, scope), { wrapper: Wrapper });
+
+    expect(result.current.loading).toBe(true);
+    expect(result.current.dashboard).toBeNull();
+
     await waitFor(() => expect(result.current.dashboard).toEqual(data));
-    expect(api.fetchDashboard).toHaveBeenCalledWith(
-      window,
-      {
-        projectKind: undefined,
-        projectKey: undefined,
-        agent: undefined,
-      },
-      { signal: expect.any(AbortSignal) },
-    );
+    expect(result.current.loading).toBe(false);
+    expect(api.fetchDashboard).toHaveBeenCalledWith(window, scope, {
+      signal: expect.any(AbortSignal),
+    });
   });
 
-  it("loads a project dashboard and refetches for its selected agent", async () => {
-    const filters = { projectKind, projectKey: "pk", identityKey: "path:pk" };
+  it("refetches when the scope changes", async () => {
     const { Wrapper } = createQueryWrapper();
-    const { result } = renderHook(() => useDashboard(window, filters), { wrapper: Wrapper });
+    const { result, rerender } = renderHook<
+      ReturnType<typeof useDashboard>,
+      { scope: DashboardFilters }
+    >(({ scope }) => useDashboard(window, scope), {
+      initialProps: { scope: projectScope },
+      wrapper: Wrapper,
+    });
     await waitFor(() => expect(result.current.dashboard).toEqual(data));
 
-    act(() => result.current.setSelectedAgent("codex"));
+    rerender({ scope: agentScope });
 
     await waitFor(() =>
-      expect(api.fetchDashboard).toHaveBeenLastCalledWith(
-        window,
-        {
-          projectKind: "path",
-          projectKey: "pk",
-          agent: "codex",
-        },
-        { signal: expect.any(AbortSignal) },
-      ),
+      expect(api.fetchDashboard).toHaveBeenLastCalledWith(window, agentScope, {
+        signal: expect.any(AbortSignal),
+      }),
     );
   });
 
-  it("resets the selected agent when the project changes", async () => {
-    const { Wrapper } = createQueryWrapper();
-    const { result, rerender } = renderHook(
-      ({ identityKey }) => useDashboard(window, { projectKind, projectKey: "pk", identityKey }),
-      { initialProps: { identityKey: "path:pk" }, wrapper: Wrapper },
+  it("keys each scope separately", () => {
+    const keys = [globalScope, projectScope, agentScope].map((scope) =>
+      JSON.stringify(queryKeys.dashboard(window, scope)),
     );
-    act(() => result.current.setSelectedAgent("codex"));
-    expect(result.current.selectedAgent).toBe("codex");
-
-    rerender({ identityKey: "path:other" });
-
-    await waitFor(() => expect(result.current.selectedAgent).toBeUndefined());
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
   it("ignores an earlier response after the dashboard scope changes", async () => {
@@ -87,8 +86,7 @@ describe("useDashboard", () => {
     vi.mocked(api.fetchDashboard).mockReturnValueOnce(first).mockResolvedValueOnce(latest);
     const { Wrapper } = createQueryWrapper();
     const { result, rerender } = renderHook(
-      ({ projectKey }) =>
-        useDashboard(window, { projectKind, projectKey, identityKey: `path:${projectKey}` }),
+      ({ projectKey }) => useDashboard(window, { project: { kind: "path", key: projectKey } }),
       { initialProps: { projectKey: "first" }, wrapper: Wrapper },
     );
 
@@ -106,7 +104,7 @@ describe("useDashboard", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.mocked(api.fetchDashboard).mockRejectedValueOnce(error);
     const { Wrapper } = createQueryWrapper();
-    const { result } = renderHook(() => useDashboard(window), { wrapper: Wrapper });
+    const { result } = renderHook(() => useDashboard(window, globalScope), { wrapper: Wrapper });
 
     await waitFor(() => expect(result.current.error).toBe("Failed to load dashboard"));
 

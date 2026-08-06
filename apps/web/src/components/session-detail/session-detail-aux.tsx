@@ -5,10 +5,12 @@ import { ErrorBoundary } from "../ErrorBoundary";
 import { RenderProfiler } from "../RenderProfiler";
 import { DrawerDialog } from "../DrawerDialog";
 import type { SessionDetailToc } from "./toc";
+import type { SessionFilterState } from "./filter-state";
 import type { FileChangeSummary } from "./file-change";
 import { FileChangeTracker, getFileTrackerItemCount } from "./file-change-tracker";
 import type { SessionAnchorScrollHandler } from "./scroll-behavior";
-import { SessionTocFilterPanel } from "./session-toc";
+import { SessionFilterPanel, type SessionFilterPanelProps } from "./filter-panel";
+import { countActiveFilterChips } from "./filter-chips";
 
 // The receipt is only reachable from its drawer, so it downloads on open.
 const InteractiveReceipt = lazy(() =>
@@ -67,7 +69,7 @@ export function DeferredInteractiveReceipt({
         aria-expanded={open}
         aria-label="Open session receipt"
         onClick={() => setOpen(true)}
-        className="console-mono fixed right-0 top-1/2 z-40 hidden h-32 w-10 -translate-y-1/2 items-center justify-center rounded-l-sm border border-r-0 border-[var(--console-border)] bg-[var(--console-surface)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--console-text)] shadow-[-2px_4px_14px_rgba(15,23,42,0.14)] motion-hover hover:bg-[var(--console-surface-muted)] min-[1025px]:flex"
+        className="console-mono fixed right-0 top-1/2 z-40 hidden h-32 w-10 -translate-y-1/2 items-center justify-center rounded-l-sm border border-r-0 border-[var(--console-border)] bg-[var(--console-surface)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--console-text)] shadow-[var(--shadow-overlay)] motion-hover hover:bg-[var(--console-surface-muted)] min-[1025px]:flex"
       >
         <span className="[writing-mode:vertical-rl]">Receipt</span>
       </button>
@@ -88,34 +90,33 @@ export function DeferredInteractiveReceipt({
   );
 }
 
+const AUX_BUTTON_CLASS =
+  "console-mono motion-hover inline-flex h-9 items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 text-xs font-semibold tracking-[0.12em] text-[var(--console-text)] uppercase shadow-[var(--shadow-raised)] hover:bg-[var(--console-surface-muted)]";
+
+/** Below 1025px the filter chips collapse into this row: one button that opens
+ *  the aside in a drawer, labelled with the number of active tool chips. */
 export function SessionDetailAuxControls({
   toc,
+  state,
   fileChangeSummary,
   onOpen,
 }: {
   toc: SessionDetailToc;
+  state: SessionFilterState;
   fileChangeSummary: FileChangeSummary;
   onOpen: (panel: "toc" | "files") => void;
 }) {
   const fileCount = getFileTrackerItemCount(fileChangeSummary);
+  const chipCount = countActiveFilterChips(toc, state);
 
   return (
     <div className="flex flex-wrap gap-2 min-[1025px]:hidden">
-      <button
-        type="button"
-        onClick={() => onOpen("toc")}
-        className="console-mono inline-flex h-9 items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--console-text)] shadow-[0_1px_2px_rgba(15,23,42,0.04)] motion-hover hover:bg-[var(--console-surface-muted)]"
-      >
-        <Funnel className="size-3.5 text-[var(--console-accent)]" />
-        TOC
-        <span className="text-[var(--console-muted)]">{toc.counts.tools_all}</span>
+      <button type="button" onClick={() => onOpen("toc")} className={AUX_BUTTON_CLASS}>
+        <Funnel className="size-3.5 text-[var(--brand)]" />
+        {chipCount > 0 ? `${chipCount} filters` : "Content filters"}
       </button>
       {fileCount > 0 ? (
-        <button
-          type="button"
-          onClick={() => onOpen("files")}
-          className="console-mono inline-flex h-9 items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--console-text)] shadow-[0_1px_2px_rgba(15,23,42,0.04)] motion-hover hover:bg-[var(--console-surface-muted)]"
-        >
+        <button type="button" onClick={() => onOpen("files")} className={AUX_BUTTON_CLASS}>
           <FileText className="size-3.5 text-[var(--console-accent)]" />
           Files
           <span className="text-[var(--console-muted)]">{fileCount}</span>
@@ -127,21 +128,16 @@ export function SessionDetailAuxControls({
 
 export function SessionDetailAuxOverlay({
   openPanel,
-  toc,
   fileChangeSummary,
   baseDirectory,
-  selectedFilters,
   onClose,
-  onToggle,
   onJumpToAnchor,
-}: {
+  ...panelProps
+}: SessionFilterPanelProps & {
   openPanel: "toc" | "files" | null;
-  toc: SessionDetailToc;
   fileChangeSummary: FileChangeSummary;
   baseDirectory: string;
-  selectedFilters: Set<string>;
   onClose: () => void;
-  onToggle: (filterId: string) => void;
   onJumpToAnchor: SessionAnchorScrollHandler;
 }) {
   useEffect(() => {
@@ -163,12 +159,12 @@ export function SessionDetailAuxOverlay({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title={openPanel === "files" ? "File Tracker" : "Session TOC"}
+      title={openPanel === "files" ? "File Tracker" : "Content filters"}
       variant="mobile"
     >
       {openPanel ? (
         openPanel === "toc" ? (
-          <SessionTocFilterPanel toc={toc} selectedFilters={selectedFilters} onToggle={onToggle} />
+          <SessionFilterPanel {...panelProps} />
         ) : (
           <FileChangeTracker
             summary={fileChangeSummary}

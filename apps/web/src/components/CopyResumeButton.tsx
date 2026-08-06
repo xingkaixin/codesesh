@@ -76,9 +76,9 @@ export function CopyResumeButton({
       }}
       aria-label={copied ? `Resume command copied: ${command}` : `Copy resume command: ${command}`}
       title={copied ? `Copied: ${command}` : `Copy: ${command}`}
-      className={`console-mono motion-hover motion-press inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[11px] ${className} ${
+      className={`console-mono motion-hover motion-press inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[11px] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none ${className} ${
         copied
-          ? "border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] text-[var(--console-text)]"
+          ? "border-[var(--positive)] bg-[var(--positive-soft)] text-[var(--positive)]"
           : "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-muted)] hover:border-[var(--console-border-strong)] hover:text-[var(--console-text)]"
       }`}
     >

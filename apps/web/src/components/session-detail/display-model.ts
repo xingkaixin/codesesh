@@ -23,6 +23,8 @@ export interface MessageDisplayModel {
 
 export interface SessionDetailSelection {
   messages: FilteredSessionMessage[];
+  /** Σ(selected `toc.counts`) — the numerator of the reader's Current view card. */
+  visibleUnitCount: number;
   timelineEntries: SessionTimelineEntry[];
   resolveListIndex(messageIndex: number): number | undefined;
 }
@@ -79,12 +81,16 @@ export function buildSessionDetailDisplayModel({
     toc,
     fileChangeSummary,
     select(selectedFilters) {
-      const filteredMessages = filterSessionMessages(displayMessages, selectedFilters);
+      const { messages: filteredMessages, visibleUnitCount } = filterSessionMessages(
+        displayMessages,
+        selectedFilters,
+      );
       const listIndexes = new Map(
         filteredMessages.map((message, listIndex) => [message.index, listIndex]),
       );
       return {
         messages: filteredMessages,
+        visibleUnitCount,
         timelineEntries: buildSessionTimelineEntries(filteredMessages),
         resolveListIndex(messageIndex) {
           return listIndexes.get(messageIndex);

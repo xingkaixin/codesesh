@@ -75,10 +75,10 @@ describe("SearchResultsPanel", () => {
   });
 
   it("shows loading feedback without empty-state content", () => {
-    const { container } = renderPanel({ status: "loading" });
+    renderPanel({ status: "loading" });
 
     expect(screen.getByText("Searching…")).toBeTruthy();
-    expect(container.querySelectorAll(".animate-pulse")).toHaveLength(4);
+    expect(screen.getAllByTestId("search-result-skeleton")).toHaveLength(4);
     expect(screen.queryByText("No matches")).toBeNull();
   });
 
@@ -141,11 +141,53 @@ describe("SearchResultsPanel", () => {
       .find((element) => element.tagName === "H2");
     const selectedLink = selectedTitle?.closest("a");
     expect(firstLink?.getAttribute("href")).toBe("/codex/s1");
-    expect(firstLink?.className).toContain("border-[var(--console-border)]");
-    expect(selectedLink?.className).toContain("border-[var(--console-border-strong)]");
+    expect(firstLink?.getAttribute("data-selected")).toBeNull();
+    expect(selectedLink?.getAttribute("data-selected")).toBe("true");
     fireEvent.click(selectedLink!);
     expect(onOpenResult).toHaveBeenCalledOnce();
     expect(registerResultRef).toHaveBeenCalledWith("Codex/s1", expect.any(HTMLAnchorElement));
     expect(registerResultRef).toHaveBeenCalledWith("Other/s2", expect.any(HTMLAnchorElement));
+  });
+
+  it("shows the parent title above a sub-session hit", () => {
+    const results: SearchResult[] = [
+      {
+        reference: { agentName: "Codex", sessionId: "child" },
+        session: makeSession("child", {
+          title: "Child work",
+          parent_reference: { agentName: "codex", sessionId: "parent" },
+        }),
+        snippet: "",
+        matchType: "title",
+        parent: {
+          reference: { agentName: "codex", sessionId: "parent" },
+          title: "Parent work",
+        },
+      },
+    ];
+
+    renderPanel({ status: "loaded", results });
+
+    expect(screen.getByText("Parent work")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Child work" })).toBeTruthy();
+    expect(screen.queryByText("Unmounted")).toBeNull();
+  });
+
+  it("labels a sub-session hit whose parent is missing from the snapshot", () => {
+    const results: SearchResult[] = [
+      {
+        reference: { agentName: "Codex", sessionId: "child" },
+        session: makeSession("child", {
+          title: "Child work",
+          parent_reference: { agentName: "codex", sessionId: "missing" },
+        }),
+        snippet: "",
+        matchType: "title",
+      },
+    ];
+
+    renderPanel({ status: "loaded", results });
+
+    expect(screen.getByText("Unmounted")).toBeTruthy();
   });
 });

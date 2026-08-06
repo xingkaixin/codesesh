@@ -20,10 +20,8 @@ import toml from "react-syntax-highlighter/dist/esm/languages/prism/toml";
 import tsx from "react-syntax-highlighter/dist/esm/languages/prism/tsx";
 import typescript from "react-syntax-highlighter/dist/esm/languages/prism/typescript";
 import yaml from "react-syntax-highlighter/dist/esm/languages/prism/yaml";
-import oneDark from "react-syntax-highlighter/dist/esm/styles/prism/one-dark";
-import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
-import { useContext } from "react";
-import { ResolvedThemeContext } from "../../hooks/useTheme";
+import { codeseshPrismTheme } from "../../styles/prism-theme";
+import { CODE_METRICS } from "./code-metrics";
 
 SyntaxHighlighter.registerLanguage("bash", bash);
 SyntaxHighlighter.registerLanguage("c", c);
@@ -55,18 +53,16 @@ function normalizeLanguage(language: string) {
 }
 
 export function PrismHighlighter({ language, text }: CodeHighlighterProps) {
-  const resolvedTheme = useContext(ResolvedThemeContext);
   return (
     <SyntaxHighlighter
       language={normalizeLanguage(language)}
-      style={resolvedTheme === "dark" ? oneDark : oneLight}
+      style={codeseshPrismTheme}
       customStyle={{
         margin: 0,
         padding: "0.75rem",
         borderRadius: 0,
         background: "transparent",
-        fontSize: "0.75rem",
-        lineHeight: 1.55,
+        ...CODE_METRICS,
       }}
       codeTagProps={{ className: "console-mono" }}
       wrapLongLines

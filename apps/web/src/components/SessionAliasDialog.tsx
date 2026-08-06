@@ -63,8 +63,8 @@ export function SessionAliasDialog({
   return (
     <Dialog.Root open={target !== null} onOpenChange={(open) => (!open ? onClose() : undefined)}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="motion-backdrop fixed inset-0 z-50 bg-black/35" />
-        <Dialog.Popup className="motion-modal fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] p-5 shadow-2xl outline-none">
+        <Dialog.Backdrop className="motion-backdrop fixed inset-0 z-50 bg-[var(--scrim)]" />
+        <Dialog.Popup className="motion-modal fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-5 shadow-[var(--shadow-overlay)] outline-none">
           <Dialog.Title className="console-mono text-sm font-semibold text-[var(--console-text)]">
             Rename session
           </Dialog.Title>
@@ -82,7 +82,7 @@ export function SessionAliasDialog({
               }}
               aria-invalid={error ? true : undefined}
               aria-describedby={error ? "session-alias-error" : undefined}
-              className="mt-1.5 w-full rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 py-2 text-sm normal-case tracking-normal text-[var(--console-text)] outline-none focus:border-[var(--console-accent)] focus:ring-2 focus:ring-[var(--console-accent)]/25"
+              className="mt-1.5 w-full rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-2 text-sm normal-case tracking-normal text-[var(--console-text)] outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)]/25"
             />
           </label>
           {error ? (
@@ -111,7 +111,7 @@ export function SessionAliasDialog({
                 type="button"
                 disabled={saving}
                 onClick={() => void saveAlias()}
-                className="rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-text)] px-3 py-1.5 text-xs text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 dark:text-[var(--console-bg)]"
+                className="rounded-sm border border-[var(--console-accent)] bg-[var(--console-accent)] px-3 py-1.5 text-xs text-[var(--console-accent-fg)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving ? "Saving…" : "Save title"}
               </button>

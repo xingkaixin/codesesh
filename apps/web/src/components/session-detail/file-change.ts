@@ -11,6 +11,9 @@ import { extractPathsFromToolInput, getToolInputValue } from "./path-extract";
 
 export type FileChangeKind = "read" | "edit" | "write" | "delete";
 
+/** Coarse operation class shared by the reader's tool filter and the timeline. */
+export type ToolOperationKind = "read" | "write" | "execute";
+
 export interface FileChangeRecord {
   kind: FileChangeKind;
   path: string;
@@ -69,6 +72,13 @@ export function classifyToolKind(part: ToolPart): FileChangeKind | null {
   if (FILE_WRITE_TOOLS.has(toolName)) return "write";
   if (FILE_DELETE_TOOLS.has(toolName)) return "delete";
   return null;
+}
+
+export function classifyToolOperation(part: ToolPart): ToolOperationKind {
+  const fileKind = classifyToolKind(part);
+  if (fileKind === "read") return "read";
+  if (fileKind) return "write";
+  return "execute";
 }
 
 export function summarizeFileChangeItems(records: FileChangeRecord[]): FileChangeSummaryItem[] {

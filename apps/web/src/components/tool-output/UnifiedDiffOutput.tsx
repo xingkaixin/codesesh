@@ -1,3 +1,5 @@
+import { type DiffTone, diffToneClass } from "./diff-tone";
+
 interface UnifiedDiffOutputProps {
   text: string;
 }
@@ -6,23 +8,13 @@ function getLineKey(line: string, occurrence: number) {
   return `${line}:${occurrence}`;
 }
 
-function getUnifiedDiffLineClassName(line: string) {
-  if (/^(Index:|diff\s|===)/.test(line)) {
-    return "text-[var(--console-text)] bg-[#f3f4f6] dark:bg-[var(--console-surface-muted)]";
-  }
-  if (line.startsWith("@@")) {
-    return "text-[#7c3aed] bg-[#f5f3ff] dark:text-[var(--tag-refactoring-text)] dark:bg-[var(--tag-refactoring-background)]";
-  }
-  if (line.startsWith("+++ ") || line.startsWith("--- ")) {
-    return "text-[#1d4ed8] bg-[#eff6ff] dark:text-[var(--tag-feature-dev-text)] dark:bg-[var(--tag-feature-dev-background)]";
-  }
-  if (line.startsWith("+")) {
-    return "text-[#15803d] bg-[#f0fdf4] dark:text-[var(--console-success)] dark:bg-[var(--console-success-bg)]";
-  }
-  if (line.startsWith("-")) {
-    return "text-[#b91c1c] bg-[#fef2f2] dark:text-[var(--console-error)] dark:bg-[var(--console-error-bg)]";
-  }
-  return "text-[var(--console-text)]";
+function getUnifiedDiffLineTone(line: string): DiffTone {
+  if (/^(Index:|diff\s|===)/.test(line)) return "header";
+  if (line.startsWith("@@")) return "hunk";
+  if (line.startsWith("+++ ") || line.startsWith("--- ")) return "meta";
+  if (line.startsWith("+")) return "add";
+  if (line.startsWith("-")) return "remove";
+  return "context";
 }
 
 export function UnifiedDiffOutput({ text }: UnifiedDiffOutputProps) {
@@ -37,7 +29,7 @@ export function UnifiedDiffOutput({ text }: UnifiedDiffOutputProps) {
         return (
           <span
             key={getLineKey(line, occurrence)}
-            className={`block rounded-[2px] px-1 ${getUnifiedDiffLineClassName(line)}`}
+            className={`block rounded-[2px] px-1 ${diffToneClass(getUnifiedDiffLineTone(line))}`}
           >
             {line || " "}
           </span>

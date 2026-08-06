@@ -46,7 +46,7 @@ export function FileChangeTracker({
   if (sections.length === 0) return null;
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+    <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[var(--shadow-raised)]">
       <div className="flex items-center gap-2 border-b border-[var(--console-border)] px-4 py-3">
         <FileText className="size-3.5 text-[var(--console-accent)]" />
         <span className="console-mono text-xs font-semibold uppercase tracking-[0.16em] text-[var(--console-text)]">
@@ -85,7 +85,7 @@ function FileTrackerSection({
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)]">
+    <div className="rounded-md border border-[var(--console-border)] bg-[var(--console-surface-sunken)]">
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}

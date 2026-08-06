@@ -17,9 +17,9 @@ export function BookmarkButton({ active, onToggle, className = "" }: BookmarkBut
       }}
       aria-label={active ? "Remove bookmark" : "Add bookmark"}
       title={active ? "Remove bookmark" : "Add bookmark"}
-      className={`motion-hover motion-press inline-flex size-6 shrink-0 items-center justify-center rounded-sm border ${className} ${
+      className={`motion-hover motion-press inline-flex size-6 shrink-0 items-center justify-center rounded-sm border focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none ${className} ${
         active
-          ? "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-text)]"
+          ? "border-[var(--brand-line)] bg-[var(--brand-soft)] text-[var(--brand)]"
           : "border-transparent text-[var(--console-muted)] opacity-70 hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] hover:opacity-100"
       }`}
     >

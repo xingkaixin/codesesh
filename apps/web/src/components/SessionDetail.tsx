@@ -1,6 +1,6 @@
 /* eslint-disable react/no-array-index-key */
 import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import type { SessionDetail, SessionHead } from "../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
@@ -10,7 +10,11 @@ import {
   RenderProfiler,
 } from "./RenderProfiler";
 import { buildSessionDetailDisplayModel } from "./session-detail/display-model";
-import { SessionToc, toggleTocFilter } from "./session-detail/session-toc";
+import { SessionFilterAside } from "./session-detail/filter-panel";
+import { SessionFilterChips } from "./session-detail/filter-chips";
+import { deriveHiddenCount, deriveHiddenTools } from "./session-detail/filter-state";
+import { HiddenToolsFooter } from "./session-detail/hidden-tools-footer";
+import { useSessionFilters } from "./session-detail/use-session-filters";
 import {
   MessageList,
   type MessageListHandle,
@@ -121,21 +125,16 @@ export function SessionDetail({
     [session.file_activity, session.messages, sessionAgentKey],
   );
   const { messages: messageModels, toc, fileChangeSummary } = displayModel;
-  const [selectedFilters, setSelectedFilters] = useState<Set<string>>(() => new Set(toc.filterIds));
+  const { state: filterState, actions: filterActions } = useSessionFilters(toc, session.id);
   const [openAuxPanel, setOpenAuxPanel] = useState<"toc" | "files" | null>(null);
-  const tocSignature = useMemo(() => [...toc.filterIds].toSorted().join("|"), [toc.filterIds]);
-  const selectedFilterSignature = useMemo(
-    () => [...selectedFilters].toSorted().join("|"),
-    [selectedFilters],
-  );
   const selection = useMemo(
     () =>
       measureSessionDetailWork("SessionDetail:selectDisplayModel", () =>
-        displayModel.select(selectedFilters),
+        displayModel.select(filterState.selected),
       ),
-    [displayModel, selectedFilters],
+    [displayModel, filterState.selected],
   );
-  const { messages: filteredMessages, timelineEntries } = selection;
+  const { messages: filteredMessages, timelineEntries, visibleUnitCount } = selection;
   const childSessionById = useMemo(
     () => new Map(childSessions.map((child) => [child.id, child])),
     [childSessions],
@@ -164,17 +163,13 @@ export function SessionDetail({
     [displayModel, handleJumpToMessageAnchor],
   );
 
-  useEffect(() => {
-    setSelectedFilters(new Set(toc.filterIds));
-  }, [tocSignature, toc.filterIds]);
-
   if (messageModels.length === 0) {
     return (
       <div
         data-testid="session-detail"
-        className="mx-auto max-w-4xl rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]"
+        className="mx-auto max-w-4xl rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]"
       >
-        当前会话暂无可展示的消息内容。
+        This session has no displayable messages.
       </div>
     );
   }
@@ -187,42 +182,38 @@ export function SessionDetail({
       <SessionSummarySection
         summary={typeof session.summary_files === "string" ? session.summary_files : undefined}
       />
-      <div className="grid gap-6 min-[1025px]:grid-cols-[240px_minmax(0,1fr)] min-[1025px]:items-start min-[1280px]:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="grid gap-6 min-[1025px]:grid-cols-[288px_minmax(0,1fr)] min-[1025px]:items-start">
         <SessionDetailAuxControls
           toc={toc}
+          state={filterState}
           fileChangeSummary={fileChangeSummary}
           onOpen={setOpenAuxPanel}
         />
         <SessionDetailAuxOverlay
           openPanel={openAuxPanel}
           toc={toc}
+          state={filterState}
+          actions={filterActions}
+          visibleUnitCount={visibleUnitCount}
           fileChangeSummary={fileChangeSummary}
           baseDirectory={session.directory}
-          selectedFilters={selectedFilters}
           onClose={() => setOpenAuxPanel(null)}
-          onToggle={(filterId) =>
-            setSelectedFilters((current) => {
-              return toggleTocFilter(current, filterId, toc);
-            })
-          }
           onJumpToAnchor={(anchorId, behavior) => {
             setOpenAuxPanel(null);
             handleJumpToAnchor(anchorId, behavior);
           }}
         />
-        <SessionToc
+        <SessionFilterAside
           toc={toc}
+          state={filterState}
+          actions={filterActions}
+          visibleUnitCount={visibleUnitCount}
           fileChangeSummary={fileChangeSummary}
           baseDirectory={session.directory}
-          selectedFilters={selectedFilters}
-          onToggle={(filterId) =>
-            setSelectedFilters((current) => {
-              return toggleTocFilter(current, filterId, toc);
-            })
-          }
           onJumpToAnchor={handleJumpToAnchor}
         />
         <div className="flex min-w-0 flex-col gap-8">
+          <SessionFilterChips toc={toc} state={filterState} actions={filterActions} />
           {filteredMessages.length > 0 ? (
             <>
               <SessionMessageTimeline
@@ -239,7 +230,7 @@ export function SessionDetail({
                 }}
               >
                 <MessageList
-                  key={`${session.id}:${selectedFilterSignature}`}
+                  key={session.id}
                   messages={filteredMessages}
                   sessionAgentKey={sessionAgentKey}
                   agent={sessionAgent}
@@ -251,10 +242,15 @@ export function SessionDetail({
               </RenderProfiler>
             </>
           ) : (
-            <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]">
-              当前筛选条件下暂无可展示的消息内容。
+            <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]">
+              No messages match the current filters.
             </div>
           )}
+          <HiddenToolsFooter
+            hiddenCount={deriveHiddenCount(toc, filterState)}
+            hiddenTools={deriveHiddenTools(toc, filterState)}
+            onShowAll={filterActions.resetAll}
+          />
         </div>
       </div>
       <DeferredInteractiveReceipt session={session} toc={toc} />
@@ -281,7 +277,7 @@ export function SessionSummarySection({
   if (!content) return null;
 
   return (
-    <section className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+    <section className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[var(--shadow-raised)]">
       <button
         type="button"
         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"

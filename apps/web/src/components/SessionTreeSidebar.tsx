@@ -16,6 +16,7 @@ import { getProjectIdentityKey } from "../lib/projects";
 import { getSessionReferenceKey, getSessionRouteKey } from "../lib/session-indexes";
 import { getSessionDisplayTitle } from "../lib/session-title";
 import { isRenderProfilerEnabled, recordRenderProfileEntry } from "./RenderProfiler";
+import { SessionActionMenuItems } from "./SessionActionsMenu";
 
 interface SessionTreeSidebarProps {
   sessions: SessionHead[];
@@ -25,6 +26,8 @@ interface SessionTreeSidebarProps {
   bookmarkedSessionReferences: Set<string>;
   onToggleBookmark: (session: SessionHead) => void;
   onRenameSession: (session: SessionHead) => void;
+  /** False when the listing already covers one project. */
+  groupByProject?: boolean;
 }
 
 interface SessionTreeModel {
@@ -96,10 +99,37 @@ const SESSION_TREE_CSS = `
     padding-inline: 6px 2px;
   }
 
-  [data-type='item'] > [data-item-section='decoration'] > span {
+  [data-type='item'] > [data-item-section='decoration']:has(> span[title='Session options']) {
+    flex-basis: 24px;
+    padding-inline: 0;
+  }
+
+  [data-type='item'] > [data-item-section='decoration'] > span[title='Session options'] {
+    box-sizing: border-box;
+    width: 24px;
+    height: 24px;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
+    border: 1px solid transparent;
+    border-radius: 6px;
     font-size: 12px;
     line-height: 24px;
+    transition:
+      color var(--dur-fast) var(--ease-out),
+      background-color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out),
+      transform var(--dur-fast) var(--ease-out);
+  }
+
+  [data-type='item'] > [data-item-section='decoration'] > span[title='Session options']:hover {
+    color: var(--console-text);
+    background-color: var(--console-surface-muted);
+    border-color: var(--console-border);
+  }
+
+  [data-type='item'] > [data-item-section='decoration'] > span[title='Session options']:active {
+    transform: scale(0.97);
   }
 
   [data-type='item'] [data-truncate-group-container='middle'] {
@@ -214,7 +244,19 @@ function createPathAllocator() {
   };
 }
 
-export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel {
+/** Sub-sessions whose parent is missing from the current listing still have to
+ *  reach the user, so they hang off a dedicated top-level group. */
+const UNMOUNTED_GROUP_LABEL = "Unmounted";
+
+/**
+ * `groupByProject: false` drops the project layer, for listings that already
+ * cover exactly one project — a lone group node there carries no information.
+ * Orphans keep their own group either way, because that one does.
+ */
+export function buildSessionTreeModel(
+  sessions: SessionHead[],
+  { groupByProject = true }: { groupByProject?: boolean } = {},
+): SessionTreeModel {
   const sortOrderByPath = new Map<string, number>();
   const pathBySessionReference = new Map<string, string>();
   const groupPathBySessionReference = new Map<string, string>();
@@ -224,6 +266,8 @@ export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel
   const paths: string[] = [];
   const childrenByParent = new Map<string, SessionHead[]>();
   const roots: SessionHead[] = [];
+  const orphans: SessionHead[] = [];
+  const presentReferences = new Set(sessions.map((session) => getSessionReferenceKey(session)));
   for (const session of sessions) {
     const parentReference = session.parent_reference;
     if (!parentReference) {
@@ -231,6 +275,10 @@ export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel
       continue;
     }
     const parentKey = getSessionRouteKey(parentReference.agentName, parentReference.sessionId);
+    if (!presentReferences.has(parentKey)) {
+      orphans.push(session);
+      continue;
+    }
     const children = childrenByParent.get(parentKey);
     if (children) children.push(session);
     else childrenByParent.set(parentKey, [session]);
@@ -250,22 +298,30 @@ export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel
     }
   }
 
-  const sortedGroups = [...groups.entries()].sort(([, a], [, b]) => {
-    if (a.label === "(unknown)") return 1;
-    if (b.label === "(unknown)") return -1;
-    return b.maxTime - a.maxTime;
-  });
+  const orderedGroups: Array<{ label: string | null; sessions: SessionHead[] }> = groupByProject
+    ? [...groups.values()].sort((a, b) => {
+        if (a.label === "(unknown)") return 1;
+        if (b.label === "(unknown)") return -1;
+        return b.maxTime - a.maxTime;
+      })
+    : [{ label: null, sessions: roots }];
+  if (orphans.length > 0) {
+    orderedGroups.push({ label: UNMOUNTED_GROUP_LABEL, sessions: orphans });
+  }
 
   let order = 0;
   const allocateGroupPath = createPathAllocator();
-  for (const [, group] of sortedGroups) {
-    const bareGroupPath = allocateGroupPath(sanitizeSegment(group.label));
-    const groupPath = `${bareGroupPath}/`;
-    sortOrderByPath.set(groupPath, order);
-    sortOrderByPath.set(bareGroupPath, order);
-    order += 1;
-    groupCountByPath.set(groupPath, `${group.sessions.length}`);
-    groupCountByPath.set(bareGroupPath, `${group.sessions.length}`);
+  for (const group of orderedGroups) {
+    let groupPath = "";
+    if (group.label !== null) {
+      const bareGroupPath = allocateGroupPath(sanitizeSegment(group.label));
+      groupPath = `${bareGroupPath}/`;
+      sortOrderByPath.set(groupPath, order);
+      sortOrderByPath.set(bareGroupPath, order);
+      order += 1;
+      groupCountByPath.set(groupPath, `${group.sessions.length}`);
+      groupCountByPath.set(bareGroupPath, `${group.sessions.length}`);
+    }
 
     const appendSession = (
       session: SessionHead,
@@ -478,6 +534,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   bookmarkedSessionReferences,
   onToggleBookmark,
   onRenameSession,
+  groupByProject = true,
 }: SessionTreeSidebarProps) {
   const [menuSession, setMenuSession] = useState<SessionHead | null>(null);
   const menuAnchorRef = useRef<HTMLElement | null>(null);
@@ -486,9 +543,9 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   const modelData = useMemo(
     () =>
       measureSessionTreeWork("SessionTreeSidebar:buildTreeModel", () =>
-        buildSessionTreeModel(sessions),
+        buildSessionTreeModel(sessions, { groupByProject }),
       ),
-    [sessions],
+    [sessions, groupByProject],
   );
   const sortOrderRef = useRef(modelData.sortOrderByPath);
   const groupCountByPathRef = useRef(modelData.groupCountByPath);
@@ -502,13 +559,12 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     "--trees-border-color-override": "var(--console-border)",
     "--trees-fg-override": "var(--console-text)",
     "--trees-fg-muted-override": "var(--console-muted)",
-    "--trees-font-family-override":
-      '"JetBrains Mono", "IBM Plex Mono", "SFMono-Regular", Menlo, Monaco, Consolas, monospace',
+    "--trees-font-family-override": "var(--font-mono)",
     "--trees-font-size-override": "12px",
     "--trees-item-margin-x-override": "0px",
     "--trees-item-padding-x-override": "4px",
     "--trees-padding-inline-override": "4px",
-    "--trees-selected-bg-override": "var(--console-surface-muted)",
+    "--trees-selected-bg-override": "var(--brand-soft)",
   };
   const { model } = useFileTree({
     flattenEmptyDirectories: false,
@@ -677,25 +733,16 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
           >
             <Menu.Popup
               finalFocus={menuTriggerRef}
-              className="motion-menu w-36 rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] p-1 shadow-lg focus-visible:outline-none"
+              className="motion-menu w-36 rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] p-1 shadow-[var(--shadow-overlay)] focus-visible:outline-none"
             >
               {menuSession ? (
-                <>
-                  <Menu.Item
-                    onClick={() => onRenameSessionRef.current(menuSession)}
-                    className="motion-hover motion-press block w-full rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] data-[highlighted]:bg-[var(--console-surface-muted)] focus-visible:outline-none"
-                  >
-                    Rename
-                  </Menu.Item>
-                  <Menu.Item
-                    onClick={() => onToggleBookmarkRef.current(menuSession)}
-                    className="motion-hover motion-press block w-full rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] data-[highlighted]:bg-[var(--console-surface-muted)] focus-visible:outline-none"
-                  >
-                    {bookmarkedSessionReferencesRef.current.has(getSessionReferenceKey(menuSession))
-                      ? "Remove bookmark"
-                      : "Add bookmark"}
-                  </Menu.Item>
-                </>
+                <SessionActionMenuItems
+                  bookmarked={bookmarkedSessionReferencesRef.current.has(
+                    getSessionReferenceKey(menuSession),
+                  )}
+                  onRename={() => onRenameSessionRef.current(menuSession)}
+                  onToggleBookmark={() => onToggleBookmarkRef.current(menuSession)}
+                />
               ) : null}
             </Menu.Popup>
           </Menu.Positioner>
