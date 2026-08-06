@@ -554,6 +554,9 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   const onSelectSessionRef = useRef(onSelectSession);
   const onToggleBookmarkRef = useRef(onToggleBookmark);
   const onRenameSessionRef = useRef(onRenameSession);
+  const syncingActiveSelectionRef = useRef(false);
+  const hasPendingSessionSelection =
+    selectedSessionReference !== null && selectedSessionReference !== activeSessionReference;
   const treeHostStyle: TreeHostStyle = {
     "--trees-bg-override": "transparent",
     "--trees-border-color-override": "var(--console-border)",
@@ -564,7 +567,9 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     "--trees-item-margin-x-override": "0px",
     "--trees-item-padding-x-override": "4px",
     "--trees-padding-inline-override": "4px",
-    "--trees-selected-bg-override": "var(--brand-soft)",
+    "--trees-selected-bg-override": hasPendingSessionSelection
+      ? "transparent"
+      : "var(--brand-soft)",
   };
   const { model } = useFileTree({
     flattenEmptyDirectories: false,
@@ -574,6 +579,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     density: "compact",
     unsafeCSS: SESSION_TREE_CSS,
     onSelectionChange(paths) {
+      if (syncingActiveSelectionRef.current) return;
       const session = sessionByPathRef.current.get(paths[0] ?? "");
       if (session) onSelectSessionRef.current(session);
     },
@@ -692,7 +698,17 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     const focusedSessionReference = selectedSessionReference ?? activeSessionReference ?? "";
     const focusedGroupPath = modelData.groupPathBySessionReference.get(focusedSessionReference);
 
-    if (activePath) model.getItem(activePath)?.select();
+    syncingActiveSelectionRef.current = true;
+    try {
+      for (const path of model.getSelectedPaths()) {
+        if (path !== activePath) model.getItem(path)?.deselect();
+      }
+      if (activePath && !model.getSelectedPaths().includes(activePath)) {
+        model.getItem(activePath)?.select();
+      }
+    } finally {
+      syncingActiveSelectionRef.current = false;
+    }
     if (focusedPath && activeSessionReference) {
       const segments = focusedPath.split("/").filter(Boolean);
       for (let index = 1; index <= segments.length; index += 1) {
