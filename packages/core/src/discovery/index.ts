@@ -42,6 +42,8 @@ export {
   searchFileActivitySessions,
 } from "./cache/file-activity.js";
 export type { FileActivityOptions, FileActivityResult } from "./cache/file-activity.js";
+export { listModelCostDistribution } from "./cache/model-cost.js";
+export type { ModelCostEntry, ModelCostOptions } from "./cache/model-cost.js";
 export {
   mergeSearchQueryOptions,
   parseSearchQuery,
