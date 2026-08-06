@@ -252,6 +252,52 @@ function dispatch(target: HTMLElement, type: string, init: EventInit & { key?: s
   );
 }
 
+describe("SessionTreeSidebar selection state", () => {
+  afterEach(cleanup);
+
+  it("keeps one active row and hides its fill while keyboard focus is elsewhere", async () => {
+    const first = makeSession({ id: "first", title: "First session" });
+    const second = makeSession({ id: "second", title: "Second session" });
+    const sessions = [first, second];
+    const firstReference = getSessionReferenceKey(first);
+    const secondReference = getSessionReferenceKey(second);
+    const onSelectSession = vi.fn();
+    const renderTree = (activeSessionReference: string, selectedSessionReference: string) => (
+      <SessionTreeSidebar
+        sessions={sessions}
+        activeSessionReference={activeSessionReference}
+        selectedSessionReference={selectedSessionReference}
+        onSelectSession={onSelectSession}
+        bookmarkedSessionReferences={new Set()}
+        onToggleBookmark={() => {}}
+        onRenameSession={() => {}}
+        groupByProject={false}
+      />
+    );
+    const { rerender } = render(renderTree(firstReference, secondReference));
+    const tree = document.querySelector<HTMLElement>(".session-tree")!;
+    const shadowRoot = document.querySelector("file-tree-container")!.shadowRoot!;
+
+    await waitFor(() => {
+      const activeRows = shadowRoot.querySelectorAll('[aria-selected="true"]');
+      expect(activeRows).toHaveLength(1);
+      expect(activeRows[0]?.getAttribute("aria-label")).toBe("First session");
+    });
+    expect(tree.style.getPropertyValue("--trees-selected-bg-override")).toBe("transparent");
+    expect(onSelectSession).not.toHaveBeenCalled();
+
+    rerender(renderTree(secondReference, secondReference));
+
+    await waitFor(() => {
+      const activeRows = shadowRoot.querySelectorAll('[aria-selected="true"]');
+      expect(activeRows).toHaveLength(1);
+      expect(activeRows[0]?.getAttribute("aria-label")).toBe("Second session");
+    });
+    expect(tree.style.getPropertyValue("--trees-selected-bg-override")).toBe("var(--brand-soft)");
+    expect(onSelectSession).not.toHaveBeenCalled();
+  });
+});
+
 describe("SessionTreeSidebar session options menu", () => {
   beforeEach(() => {
     patchShadowEventRetargeting();
