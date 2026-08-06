@@ -10,7 +10,6 @@
 import type { AgentInfo } from "../types/index.js";
 import type { ProjectIdentityKind, SessionHead } from "../types/session.js";
 import type {
-  DailyTokenBucket,
   DashboardAgentStat,
   DashboardAggregate,
   DashboardDailyBucket,
@@ -34,7 +33,6 @@ import {
 } from "../contract/index.js";
 
 export type {
-  DailyTokenBucket,
   DashboardAgentStat,
   DashboardAggregate,
   DashboardDailyBucket,
@@ -382,16 +380,6 @@ export function buildDashboard(
     .sort((a, b) => b.sessions - a.sessions);
 
   const dailyActivity = [...acc.daily.values()].sort((a, b) => a.date.localeCompare(b.date));
-  const dailyTokenActivity: DailyTokenBucket[] = dailyActivity.map(
-    ({ date, input, output, cache_read, cache_create }) => ({
-      date,
-      input,
-      output,
-      cache_read,
-      cache_create,
-    }),
-  );
-
   const modelDistribution: ModelDistributionEntry[] = [...acc.models.entries()]
     .map(([model, { tokens, sessions: count }]) => ({ model, tokens, sessions: count }))
     .sort((a, b) => b.tokens - a.tokens);
@@ -434,7 +422,6 @@ export function buildDashboard(
     scopeCounts: { projects: acc.projects.size, agents: acc.agentKeys.size },
     perAgent,
     dailyActivity,
-    dailyTokenActivity,
     modelDistribution,
     perProject,
     projectRollup,

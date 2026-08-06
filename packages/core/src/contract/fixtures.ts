@@ -115,9 +115,6 @@ export const SAMPLE_DASHBOARD_DATA = {
       cache_create: 500,
     },
   ],
-  dailyTokenActivity: [
-    { date: "2023-11-14", input: 700, output: 1800, cache_read: 3000, cache_create: 500 },
-  ],
   modelDistribution: [{ model: "claude-5-sonnet", tokens: 6000, sessions: 1 }],
   perProject: [
     {

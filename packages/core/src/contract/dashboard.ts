@@ -14,21 +14,12 @@ export interface DashboardAgentStat {
   cost: number;
 }
 
-/** One bucket per calendar day; absorbs the deprecated DailyTokenBucket. */
+/** One bucket per calendar day. */
 export interface DashboardDailyBucket {
   date: string;
   sessions: number;
   messages: number;
   cost: number;
-  input: number;
-  output: number;
-  cache_read: number;
-  cache_create: number;
-}
-
-/** @deprecated Projected from DashboardDailyBucket; removed once the web layer drops it. */
-export interface DailyTokenBucket {
-  date: string;
   input: number;
   output: number;
   cache_read: number;
@@ -94,8 +85,6 @@ export interface DashboardAggregate {
   scopeCounts: { projects: number; agents: number };
   perAgent: DashboardAgentStat[];
   dailyActivity: DashboardDailyBucket[];
-  /** @deprecated Use `dailyActivity`. */
-  dailyTokenActivity: DailyTokenBucket[];
   modelDistribution: ModelDistributionEntry[];
   perProject: DashboardProjectStat[];
   projectRollup: DashboardProjectRollup;

@@ -325,17 +325,12 @@ describe("buildDashboard", () => {
       ],
       opts({ from: ts, to: ts + 86400000 }),
     );
-    expect(result.dailyTokenActivity.length).toBeGreaterThan(0);
-    const bucket = result.dailyTokenActivity[0]!;
-    expect(bucket.cache_read).toBe(20);
-    expect(bucket.cache_create).toBe(10);
-    // pure input = 100 - 20 - 10 = 70
-    expect(bucket.input).toBe(70);
-    expect(bucket.output).toBe(50);
+    expect(result.dailyActivity.length).toBeGreaterThan(0);
     expect(result.dailyActivity[0]).toMatchObject({
       sessions: 1,
       messages: 1,
       cost: 0,
+      // pure input = 100 - 20 - 10 = 70
       input: 70,
       output: 50,
       cache_read: 20,
@@ -501,6 +496,5 @@ describe("CS-133: dashboard buckets across DST transitions", () => {
     expect(dates).toHaveLength(days);
     expect(new Set(dates).size).toBe(days);
     expect(dates).toEqual([...dates].sort());
-    expect(result.dailyTokenActivity.map((bucket) => bucket.date)).toEqual(dates);
   });
 });
