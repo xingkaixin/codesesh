@@ -81,7 +81,7 @@ function renderTimeline(timelineEntries = entries) {
 }
 
 describe("SessionMessageTimeline", () => {
-  it("uses distinct colors for read, write, and execute tools", () => {
+  it("tags read, write, and execute tools with distinct timeline kinds", () => {
     const toolEntries: SessionTimelineEntry[] = [
       { ...entries[2]!, id: "read", anchorId: "read", kind: "tool-read", tooltip: "Read · Read" },
       {
@@ -101,14 +101,14 @@ describe("SessionMessageTimeline", () => {
     ];
     const { getByRole } = renderTimeline(toolEntries);
 
-    expect(getByRole("button", { name: "Go to Read · Read" }).className).toContain(
-      "--timeline-tool-read",
+    expect(getByRole("button", { name: "Go to Read · Read" }).dataset.timelineKind).toBe(
+      "tool-read",
     );
-    expect(getByRole("button", { name: "Go to Write · Edit" }).className).toContain(
-      "--timeline-tool-write",
+    expect(getByRole("button", { name: "Go to Write · Edit" }).dataset.timelineKind).toBe(
+      "tool-write",
     );
-    expect(getByRole("button", { name: "Go to Execute · Bash" }).className).toContain(
-      "--timeline-tool-execute",
+    expect(getByRole("button", { name: "Go to Execute · Bash" }).dataset.timelineKind).toBe(
+      "tool-execute",
     );
   });
 

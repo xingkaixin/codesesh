@@ -39,7 +39,7 @@ const TOOL_STATUS_META: Record<
   completed: {
     label: "Success",
     className:
-      "border-[var(--console-success-border)] bg-[var(--console-success-bg)] text-[var(--console-success)]",
+      "border-[var(--console-success-border)] bg-[var(--positive-soft)] text-[var(--positive)]",
     icon: CheckCircle2,
   },
   error: {
@@ -175,7 +175,7 @@ export const MessageItem = memo(function MessageItem({
             {childSession ? (
               <Link
                 to={getSessionRoutePath(childSession)}
-                className="console-mono rounded-sm border border-[var(--console-accent)] px-1.5 py-0.5 text-[10px] text-[var(--console-accent)] hover:bg-[var(--console-surface-muted)]"
+                className="console-mono rounded-full border border-[var(--brand-line)] px-1.5 py-0.5 text-[10px] text-[var(--brand)] hover:bg-[var(--brand-soft)] hover:text-[var(--brand-hover)]"
               >
                 打开子会话 ↗
               </Link>
@@ -224,7 +224,7 @@ export const MessageItem = memo(function MessageItem({
                   key={index}
                   id={timelineAnchorId}
                   data-session-timeline-anchor={timelineAnchorId}
-                  className="scroll-mt-20 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+                  className="scroll-mt-20 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-4 shadow-[var(--shadow-raised)]"
                 >
                   <div className="console-markdown text-sm leading-relaxed text-[var(--console-text)]">
                     {block.parts.map((part, partIndex) => (
@@ -274,7 +274,7 @@ function AbortToolItem() {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-start gap-2">
-        <div className="w-full rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-2 text-left shadow-[2px_2px_0_0_rgba(15,23,42,0.05)] md:w-[560px]">
+        <div className="w-full rounded-lg border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-2 text-left shadow-[var(--shadow-raised)] md:w-[560px]">
           <div className="flex items-start gap-2">
             <MessageCircleX className="mt-0.5 size-3.5 shrink-0 text-[var(--console-accent)]" />
             <span className="min-w-0 flex-1">
@@ -308,7 +308,7 @@ function ReasoningSection({
     <div
       id={anchorId}
       data-session-timeline-anchor={anchorId}
-      className="scroll-mt-20 overflow-hidden rounded-sm border border-[var(--console-thinking-border)] bg-[var(--console-thinking-bg)]"
+      className="scroll-mt-20 overflow-hidden rounded-lg border border-[var(--console-thinking-border)] bg-[var(--console-thinking-bg)]"
     >
       <div
         className="flex cursor-pointer items-center justify-between bg-[var(--console-surface-muted)] px-3 py-2"
@@ -395,7 +395,7 @@ function PlanItem({ part, highlightQuery }: { part: PlanPart; highlightQuery?: s
     <div>
       <div className="flex flex-wrap items-start gap-2">
         <div
-          className={`w-full md:w-[560px] rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-2 text-left shadow-[2px_2px_0_0_rgba(15,23,42,0.05)] ${
+          className={`w-full md:w-[560px] rounded-lg border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-2 text-left shadow-[var(--shadow-raised)] ${
             display.expandable ? "motion-hover hover:bg-[var(--console-surface-muted)]" : ""
           }`}
         >
@@ -430,7 +430,7 @@ function PlanItem({ part, highlightQuery }: { part: PlanPart; highlightQuery?: s
           )}
         </div>
         <span
-          className={`console-mono inline-flex items-center gap-1 rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusMeta.className}`}
+          className={`console-mono inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusMeta.className}`}
         >
           <StatusIcon className="size-3" />
           {statusMeta.label}
@@ -439,13 +439,13 @@ function PlanItem({ part, highlightQuery }: { part: PlanPart; highlightQuery?: s
 
       <Collapsible open={display.expandable && expanded}>
         {() => (
-          <div className="mt-2 overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <div className="mt-2 overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[var(--shadow-raised)]">
             <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5">
               <span className="console-mono text-xs text-[var(--console-muted)]">
                 {display.contentLabel}
               </span>
             </div>
-            <div className="p-4">
+            <div className="bg-[var(--console-surface-sunken)] p-4">
               <div className="console-markdown text-sm leading-relaxed text-[var(--console-text)]">
                 <MessageMarkdown text={display.contentMarkdown} highlightQuery={highlightQuery} />
               </div>
@@ -482,7 +482,7 @@ function ToolItem({
     <div id={anchorId} data-session-timeline-anchor={anchorId} className="scroll-mt-20">
       <div className="flex flex-wrap items-start gap-2">
         <div
-          className={`w-full max-w-[720px] rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-2.5 text-left shadow-[2px_2px_0_0_rgba(15,23,42,0.05)] ${
+          className={`w-full max-w-[720px] rounded-lg border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-2.5 text-left shadow-[var(--shadow-raised)] ${
             strategy.expandable ? "motion-hover hover:bg-[var(--console-surface-muted)]" : ""
           }`}
         >
@@ -505,7 +505,7 @@ function ToolItem({
                 ) : null}
               </span>
               <span
-                className={`console-mono inline-flex shrink-0 items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${statusMeta.className}`}
+                className={`console-mono inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${statusMeta.className}`}
               >
                 <StatusIcon
                   className={`size-2.5 ${state.status === "running" ? "animate-spin motion-reduce:animate-none" : ""}`}
@@ -533,7 +533,7 @@ function ToolItem({
                 ) : null}
               </span>
               <span
-                className={`console-mono inline-flex shrink-0 items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${statusMeta.className}`}
+                className={`console-mono inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${statusMeta.className}`}
               >
                 <StatusIcon className="size-2.5" />
                 {statusMeta.label}
@@ -545,15 +545,15 @@ function ToolItem({
 
       <Collapsible open={strategy.expandable && expanded}>
         {() => (
-          <div className="mt-2 overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <div className="mt-2 overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[var(--shadow-raised)]">
             <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5">
               <span className="console-mono text-xs text-[var(--console-muted)]">
                 {strategy.contentLabel ?? "Output"}
               </span>
             </div>
-            <div className="space-y-3 p-3">
+            <div className="space-y-3 bg-[var(--console-surface-sunken)] p-3">
               {strategy.details.length > 0 ? (
-                <div className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)] px-3 py-2">
+                <div className="rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-3 py-2">
                   <div className="space-y-2">
                     {strategy.details.map((detail) => (
                       <div

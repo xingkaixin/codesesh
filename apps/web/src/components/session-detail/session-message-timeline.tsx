@@ -50,12 +50,14 @@ const KIND_CLASS: Record<SessionTimelineEntryKind, string> = {
   "tool-execute": "bg-[var(--timeline-tool-execute)]",
 };
 
-const KIND_FALLBACK_COLOR: Record<SessionTimelineEntryKind, string> = {
-  user: "#a85f82",
-  agent: "#5e86aa",
-  "tool-read": "#478b7d",
-  "tool-write": "#bd7336",
-  "tool-execute": "#786ca3",
+// The canvas minimap cannot resolve var(), so it reads the same tokens KIND_CLASS
+// paints with. Tailwind needs the classes above as literals, hence the two maps.
+const KIND_TOKEN: Record<SessionTimelineEntryKind, string> = {
+  user: "--timeline-user",
+  agent: "--timeline-agent",
+  "tool-read": "--timeline-tool-read",
+  "tool-write": "--timeline-tool-write",
+  "tool-execute": "--timeline-tool-execute",
 };
 
 interface MinimapWindow {
@@ -152,10 +154,11 @@ const TimelineSegment = memo(function TimelineSegment({
       <button
         type="button"
         data-timeline-index={index}
+        data-timeline-kind={entry.kind}
         aria-current={isActive ? "location" : undefined}
         aria-describedby={isTooltipVisible ? tooltipId : undefined}
         aria-label={`Go to ${entry.tooltip}`}
-        className={`t-tt-trigger session-timeline-segment h-full w-full rounded-[3px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-text)] ${KIND_CLASS[entry.kind]}`}
+        className={`t-tt-trigger session-timeline-segment h-full w-full rounded-[2px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)] ${KIND_CLASS[entry.kind]}`}
         onPointerEnter={(event) => onShowTooltip(entry, event.currentTarget, "pointer")}
         onPointerLeave={() => onHideTooltip(entry.id)}
         onFocus={(event) => onShowTooltip(entry, event.currentTarget, "focus")}
@@ -503,19 +506,13 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
       context.scale(ratio, ratio);
       context.clearRect(0, 0, width, height);
       const styles = window.getComputedStyle(canvas);
-      const colors: Record<SessionTimelineEntryKind, string> = {
-        user: styles.getPropertyValue("--timeline-user").trim() || KIND_FALLBACK_COLOR.user,
-        agent: styles.getPropertyValue("--timeline-agent").trim() || KIND_FALLBACK_COLOR.agent,
-        "tool-read":
-          styles.getPropertyValue("--timeline-tool-read").trim() ||
-          KIND_FALLBACK_COLOR["tool-read"],
-        "tool-write":
-          styles.getPropertyValue("--timeline-tool-write").trim() ||
-          KIND_FALLBACK_COLOR["tool-write"],
-        "tool-execute":
-          styles.getPropertyValue("--timeline-tool-execute").trim() ||
-          KIND_FALLBACK_COLOR["tool-execute"],
-      };
+      // Canvas cannot parse `currentColor`, so the fallback is its resolved value.
+      const colors = Object.fromEntries(
+        Object.entries(KIND_TOKEN).map(([kind, token]) => [
+          kind,
+          styles.getPropertyValue(token).trim() || styles.color,
+        ]),
+      ) as Record<SessionTimelineEntryKind, string>;
       entries.forEach((entry, index) => {
         const x0 = (index / entries.length) * width;
         const x1 = ((index + 1) / entries.length) * width;
@@ -679,7 +676,7 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
     <div className="sticky top-0 z-20 -mx-2 bg-[var(--console-bg)] px-2 py-3">
       <div
         ref={rootRef}
-        className="session-message-timeline relative rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 py-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]"
+        className="session-message-timeline relative rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] px-3 py-2.5 shadow-[var(--shadow-raised)]"
       >
         <div className="relative">
           <div
@@ -774,7 +771,7 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
             <button
               type="button"
               aria-label="Scroll timeline left"
-              className="absolute inset-y-0 left-0 z-10 flex w-8 items-center justify-start bg-[linear-gradient(to_right,var(--console-surface)_55%,transparent)] pl-0.5 text-[var(--console-muted)] hover:text-[var(--console-text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--console-text)]"
+              className="absolute inset-y-0 left-0 z-10 flex w-8 items-center justify-start bg-[linear-gradient(to_right,var(--console-surface)_55%,transparent)] pl-0.5 text-[var(--console-muted)] hover:text-[var(--console-text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--brand)]"
               onClick={() => scrollTimeline(-1)}
             >
               <ChevronLeft size={14} aria-hidden="true" />
@@ -784,7 +781,7 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
             <button
               type="button"
               aria-label="Scroll timeline right"
-              className="absolute inset-y-0 right-0 z-10 flex w-8 items-center justify-end bg-[linear-gradient(to_left,var(--console-surface)_55%,transparent)] pr-0.5 text-[var(--console-muted)] hover:text-[var(--console-text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--console-text)]"
+              className="absolute inset-y-0 right-0 z-10 flex w-8 items-center justify-end bg-[linear-gradient(to_left,var(--console-surface)_55%,transparent)] pr-0.5 text-[var(--console-muted)] hover:text-[var(--console-text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--brand)]"
               onClick={() => scrollTimeline(1)}
             >
               <ChevronRight size={14} aria-hidden="true" />
@@ -802,7 +799,7 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
             aria-valuenow={Math.round((minimapWindow.start / (1 - minimapWindow.size)) * 100)}
             aria-label="Timeline scroll position"
             tabIndex={0}
-            className="session-timeline-minimap relative mt-2 h-2.5 cursor-pointer touch-none select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--console-text)]"
+            className="session-timeline-minimap relative mt-2 h-2.5 cursor-pointer touch-none select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]"
             onKeyDown={handleMinimapKeyDown}
             onPointerDown={(event) => {
               if (event.button !== 0) return;
