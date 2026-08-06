@@ -27,8 +27,8 @@ export function SessionDetailSkeleton() {
       <div className="hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-3 min-[1025px]:block">
         <SkeletonBlock className="h-2.5 w-20" />
         <div className="mt-4 space-y-2.5">
-          {SKELETON_FILTER_ROWS.map((width) => (
-            <div key={width} className="flex items-center gap-2.5">
+          {SKELETON_FILTER_ROWS.map((width, index) => (
+            <div key={`${index}-${width}`} className="flex items-center gap-2.5">
               <SkeletonBlock className="size-3.5 shrink-0" />
               <SkeletonBlock className={`h-3 ${width}`} />
             </div>
