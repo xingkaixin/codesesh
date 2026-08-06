@@ -6,6 +6,7 @@ const coreMocks = vi.hoisted(() => {
     buildDashboard: vi.fn(),
     materializeSessionDetailResponse: vi.fn(),
     listFileActivity: vi.fn((): FileActivityResult[] => []),
+    listModelCostDistribution: vi.fn((): ModelCostEntry[] | null => null),
     listSessionAliases: vi.fn<
       () => Array<{
         reference: { agentName: string; sessionId: string };
@@ -40,6 +41,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     },
     materializeSessionDetailResponse: coreMocks.materializeSessionDetailResponse,
     listFileActivity: coreMocks.listFileActivity,
+    listModelCostDistribution: coreMocks.listModelCostDistribution,
     listSessionAliases: coreMocks.listSessionAliases,
     executeSessionSearch: coreMocks.executeSessionSearch,
   };
@@ -65,6 +67,7 @@ import type {
   SessionHead,
   SessionDetail,
 } from "@codesesh/core";
+import type { ModelCostEntry } from "@codesesh/core/contract";
 import { BaseAgent } from "@codesesh/core";
 
 // --- Helpers ---
@@ -202,6 +205,8 @@ afterEach(() => {
   coreMocks.materializeSessionDetailResponse.mockReset();
   coreMocks.listFileActivity.mockReset();
   coreMocks.listFileActivity.mockReturnValue([]);
+  coreMocks.listModelCostDistribution.mockReset();
+  coreMocks.listModelCostDistribution.mockReturnValue(null);
   coreMocks.listSessionAliases.mockReset();
   coreMocks.listSessionAliases.mockReturnValue([]);
   // The alias read model caches for the process lifetime; tests stub
@@ -671,6 +676,58 @@ describe("handleSearchSessions", () => {
 
     expect(c.json.mock.calls[0]![0].results).toHaveLength(0);
   });
+
+  it("attaches the parent title to a sub-session hit and omits it when the parent is missing", () => {
+    const parent = makeSession("p1", { slug: "claudecode/p1", title: "Parent session" });
+    const mounted = makeSession("c1", {
+      slug: "claudecode/c1",
+      parent_reference: { agentName: "claudecode", sessionId: "p1" },
+    });
+    const orphan = makeSession("c2", {
+      slug: "claudecode/c2",
+      parent_reference: { agentName: "claudecode", sessionId: "gone" },
+    });
+    coreMocks.executeSessionSearch.mockReturnValue([
+      { reference: { agentName: "claudecode", sessionId: "c1" }, session: mounted },
+      { reference: { agentName: "claudecode", sessionId: "c2" }, session: orphan },
+    ]);
+    const c = makeMockContext({ query: { q: "needle" } });
+
+    handleSearchSessions(
+      c,
+      makeScanSource({
+        sessions: [parent, mounted, orphan],
+        byAgent: { claudecode: [parent, mounted, orphan] },
+      }),
+    );
+
+    const results = c.json.mock.calls[0]![0].results;
+    expect(results[0].parent).toEqual({
+      reference: { agentName: "claudecode", sessionId: "p1" },
+      title: "Parent session",
+    });
+    expect(results[1]).not.toHaveProperty("parent");
+  });
+
+  it("uses the parent's alias as its parent-context title", () => {
+    const parent = makeSession("p1", { slug: "claudecode/p1", title: "Parent session" });
+    const child = makeSession("c1", {
+      slug: "claudecode/c1",
+      parent_reference: { agentName: "claudecode", sessionId: "p1" },
+    });
+    coreMocks.listSessionAliases.mockReturnValue([makeAlias("claudecode", "p1", "Renamed parent")]);
+    coreMocks.executeSessionSearch.mockReturnValue([
+      { reference: { agentName: "claudecode", sessionId: "c1" }, session: child },
+    ]);
+    const c = makeMockContext({ query: { q: "needle" } });
+
+    handleSearchSessions(
+      c,
+      makeScanSource({ sessions: [parent, child], byAgent: { claudecode: [parent, child] } }),
+    );
+
+    expect(c.json.mock.calls[0]![0].results[0].parent.title).toBe("Renamed parent");
+  });
 });
 
 describe("handleGetFileActivity", () => {
@@ -993,9 +1050,11 @@ describe("handleGetDashboard", () => {
         name: "codex",
         displayName: "Codex",
         icon: "/icon/agent/codex.svg",
+        iconColored: undefined,
         sessions: 12,
         messages: 12,
         tokens: 36,
+        cost: 0,
       },
     ]);
     expect(
@@ -1063,10 +1122,18 @@ describe("handleGetDashboard", () => {
         date: "2026-04-20",
         sessions: 1,
         messages: 3,
+        cost: 0,
+        input: 10,
+        output: 5,
+        cache_read: 0,
+        cache_create: 0,
       },
     ]);
     expect(response.window.from).toBeUndefined();
     expect(response.window.days).toBe(0);
+    expect(response.window.compareFrom).toBeUndefined();
+    expect(response.window.compareTo).toBeUndefined();
+    expect(response.totals.previous).toBeUndefined();
   });
 
   it("produces per-agent breakdown sorted by session count", () => {
@@ -1190,6 +1257,99 @@ describe("handleGetDashboard", () => {
         0,
       ),
     ).toBe(2);
+  });
+
+  it("reports the preceding equal-length window as the compare baseline", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 4, 20, 12));
+
+    const inWindow = makeSession("current", {
+      time_created: new Date(2026, 4, 19, 9).getTime(),
+      time_updated: new Date(2026, 4, 19, 9).getTime(),
+      stats: {
+        message_count: 4,
+        total_input_tokens: 10,
+        total_output_tokens: 5,
+        total_cost: 0.4,
+      },
+    });
+    const inPreviousWindow = makeSession("previous", {
+      time_created: new Date(2026, 4, 9, 9).getTime(),
+      time_updated: new Date(2026, 4, 9, 9).getTime(),
+      stats: {
+        message_count: 3,
+        total_input_tokens: 2,
+        total_output_tokens: 1,
+        total_cost: 0.1,
+      },
+    });
+    const c = makeMockContext({ query: { days: "7" } });
+
+    handleGetDashboard(
+      c,
+      makeScanSource({
+        sessions: [inWindow, inPreviousWindow],
+        byAgent: { claudecode: [inWindow, inPreviousWindow] },
+      }),
+    );
+
+    const response = c.json.mock.calls[0]![0];
+    const from = new Date(2026, 4, 14).getTime();
+    expect(response.window.from).toBe(from);
+    expect(response.window.compareFrom).toBe(new Date(2026, 4, 7).getTime());
+    expect(response.window.compareTo).toBe(from - 1);
+    expect(response.totals.sessions).toBe(1);
+    expect(response.totals.previous).toEqual({
+      sessions: 1,
+      messages: 3,
+      tokens: 3,
+      cost: 0.1,
+    });
+  });
+
+  it("keys the aggregate cache on the compare window", () => {
+    const source = makeScanSource();
+    const to = "2026-07-26T12:00:00.000Z";
+
+    handleGetDashboard(makeMockContext({ query: { from: "2026-07-20", to } }), source);
+    handleGetDashboard(makeMockContext({ query: { from: "2026-07-20", to, days: "3" } }), source);
+
+    expect(coreMocks.buildDashboard).toHaveBeenCalledTimes(2);
+  });
+
+  it("propagates a null model-cost distribution instead of substituting zeros", () => {
+    const c = makeMockContext();
+
+    handleGetDashboard(c, makeScanSource());
+
+    expect(c.json.mock.calls[0]![0].modelCost).toBeNull();
+  });
+
+  it("passes the dashboard scope and window to the model-cost producer", () => {
+    const entries: ModelCostEntry[] = [
+      { model: "sonnet", cost: 1.5, costRecorded: 0, costEstimated: 1.5 },
+    ];
+    coreMocks.listModelCostDistribution.mockReturnValue(entries);
+    const c = makeMockContext({
+      query: {
+        agent: "codex",
+        projectKind: "git_remote",
+        projectKey: "github.com/acme/app",
+        days: "7",
+      },
+    });
+
+    handleGetDashboard(c, makeScanSource());
+    const response = c.json.mock.calls[0]![0];
+
+    expect(coreMocks.listModelCostDistribution).toHaveBeenCalledWith({
+      agent: "codex",
+      projectKind: "git_remote",
+      projectKey: "github.com/acme/app",
+      from: response.window.from,
+      to: response.window.to,
+    });
+    expect(response.modelCost).toEqual(entries);
   });
 });
 

@@ -6,6 +6,7 @@ const coreMocks = vi.hoisted(() => ({
   importBookmarks: vi.fn(),
   listBookmarks: vi.fn(),
   listFileActivity: vi.fn(),
+  listModelCostDistribution: vi.fn(() => null),
   listSessionAliases: vi.fn(),
   upsertBookmark: vi.fn(),
   upsertSessionAlias: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     importBookmarks: coreMocks.importBookmarks,
     listBookmarks: coreMocks.listBookmarks,
     listFileActivity: coreMocks.listFileActivity,
+    listModelCostDistribution: coreMocks.listModelCostDistribution,
     listSessionAliases: coreMocks.listSessionAliases,
     upsertBookmark: coreMocks.upsertBookmark,
     upsertSessionAlias: coreMocks.upsertSessionAlias,
@@ -55,6 +57,7 @@ import {
   handlePutSessionAlias,
   type ScanResultSource,
 } from "../handlers.js";
+import { addCalendarDays } from "@codesesh/core/contract";
 import { createApiRoutes } from "../routes.js";
 import { invalidateAliasView } from "../session-aliases-view.js";
 
@@ -654,10 +657,13 @@ describe("query boundary handlers", () => {
       },
     });
     handleGetDashboard(custom as never, scanSource);
+    const customFrom = new Date("2026-01-01T00:00:00.000Z").getTime();
     expect(getResponsePayload<{ window: unknown }>(custom).window).toEqual({
-      from: new Date("2026-01-01T00:00:00.000Z").getTime(),
+      from: customFrom,
       to: new Date("2026-01-03T00:00:00.000Z").getTime(),
       days: 3,
+      compareFrom: addCalendarDays(customFrom, -3),
+      compareTo: customFrom - 1,
     });
 
     const fallback = makeContext({ query: { to: "2026-01-04T00:00:00.000Z" } });

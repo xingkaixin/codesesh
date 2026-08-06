@@ -7,11 +7,15 @@ import type {
   SmartTag,
 } from "@codesesh/core";
 import {
+  addCalendarDays,
+  countCalendarDays,
   formatSessionReference,
   getSessionAgentKey,
+  getSessionRouteKey,
   normalizeSessionReference,
   type AppConfig,
   type ScanStatusEvent,
+  type SearchResult,
   type SessionReference,
   startOfCalendarDay,
 } from "@codesesh/core/contract";
@@ -27,6 +31,7 @@ import {
   listFileActivity,
   listCachedProjectGroups,
   listBookmarks,
+  listModelCostDistribution,
   deleteSessionAlias,
   materializeSessionDetailResponse,
   upsertSessionAlias,
@@ -54,6 +59,7 @@ import {
   findAliasSearchResults,
   invalidateAliasView,
   loadAliasView,
+  type AliasView,
 } from "./session-aliases-view.js";
 
 export type { SessionListDefaults };
@@ -417,6 +423,35 @@ export function handleGetSessions(
   });
 }
 
+/**
+ * Sub-session hits render as 父 › 子, so each one needs its parent's title. The
+ * index is built only when some hit actually has a parent — the common query
+ * touches no sub-session at all.
+ */
+function withParentContext(
+  results: SearchResult[],
+  sessions: SessionHead[],
+  aliases: AliasView,
+): SearchResult[] {
+  if (!results.some((result) => result.session.parent_reference)) return results;
+
+  const byRouteKey = new Map(
+    sessions.map((session) => [
+      getSessionRouteKey(getSessionAgentKey(session), session.id),
+      session,
+    ]),
+  );
+
+  return results.map((result) => {
+    const parentReference = result.session.parent_reference;
+    if (!parentReference) return result;
+    const parent = byRouteKey.get(formatSessionReference(parentReference));
+    if (!parent) return result;
+    const reference = normalizeSessionReference(parentReference);
+    return { ...result, parent: { reference, title: aliases.get(reference) ?? parent.title } };
+  });
+}
+
 export function handleSearchSessions(
   c: Context,
   scanSource: ScanResultSource,
@@ -442,7 +477,13 @@ export function handleSearchSessions(
   for (const result of [...aliasResults, ...results]) {
     deduped.set(`${result.reference.agentName}\0${result.reference.sessionId}`, result);
   }
-  return c.json({ results: [...deduped.values()].slice(0, searchOptions.limit ?? 50) });
+  return c.json({
+    results: withParentContext(
+      [...deduped.values()].slice(0, searchOptions.limit ?? 50),
+      scanResult.sessions,
+      aliases,
+    ),
+  });
 }
 
 export function handleGetFileActivity(c: Context, defaults: SessionListDefaults = {}) {
@@ -678,6 +719,11 @@ export function handleGetDashboard(
     projectKey: projectIdentity?.key,
   };
 
+  const compare =
+    from == null
+      ? undefined
+      : { from: addCalendarDays(from, -(days ?? countCalendarDays(from, to))), to: from - 1 };
+
   const fixedTo = parseDateParam(c.req.query("to"), defaults.to);
   const aggregate = getSnapshotAggregation(
     scanSource,
@@ -689,6 +735,8 @@ export function handleGetDashboard(
       scope.projectKey,
       from,
       fixedTo ?? startOfCalendarDay(to),
+      compare?.from,
+      compare?.to,
     ],
     () => {
       const agentInfo = getAgentInfoMap({});
@@ -699,6 +747,7 @@ export function handleGetDashboard(
         from,
         to,
         agentInfoMap,
+        compare,
       });
     },
   );
@@ -713,7 +762,14 @@ export function handleGetDashboard(
       to,
       limit: 12,
     }),
-    window: { from, to, days },
+    modelCost: listModelCostDistribution({
+      agent: scope.agent,
+      projectKind: scope.projectKind,
+      projectKey: scope.projectKey,
+      from,
+      to,
+    }),
+    window: { from, to, days, compareFrom: compare?.from, compareTo: compare?.to },
   };
 
   const aliases = loadAliasView();
