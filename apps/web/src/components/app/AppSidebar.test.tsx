@@ -1,143 +1,113 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
-import type { AgentInfo, ScanStatusEvent } from "../../lib/api";
+import type { AgentInfo, ApiProjectGroup, ScanStatusEvent } from "../../lib/api";
 import { createAgentCatalog } from "../../lib/agents";
-import { AppSidebar, type AppSidebarActions } from "./AppSidebar";
+import { AppSidebar, type AppSidebarActions, type AppSidebarViewModel } from "./AppSidebar";
 
 afterEach(cleanup);
 
-const actions: AppSidebarActions = {
-  onChangeBrowseBy: vi.fn(),
-  onSelectProject: vi.fn(),
-  onToggleBookmark: vi.fn(),
-  onSelectFlatSidebarSession: vi.fn(),
-  onToggleSidebarSessionBookmark: vi.fn(),
-  onRenameSession: vi.fn(),
-  onRenameBookmarkedSession: vi.fn(),
-  onSelectTreeSidebarSession: vi.fn(),
-};
+const agents = [{ name: "codex", displayName: "Codex", count: 5 }] as AgentInfo[];
 
-describe("AppSidebar agent counts", () => {
-  it("uses the filtered API count after scanning completes", () => {
-    const agents = [{ name: "codex", displayName: "Codex", count: 5 }] as AgentInfo[];
-    const scanStatus = {
-      active: false,
-      agentStatuses: {
-        codex: { status: "complete", sessions: 1856 },
-      },
-    } as unknown as ScanStatusEvent;
+const projects = [
+  {
+    identityKind: "path",
+    identityKey: "/repo/codesesh",
+    displayName: "codesesh",
+    sessionCount: 12,
+  },
+] as ApiProjectGroup[];
 
-    render(
-      <MemoryRouter>
-        <AppSidebar
-          model={{
-            sidebarCollapsed: false,
-            browseBy: "agents",
-            isScanActive: false,
-            viewState: { mode: "root", activeAgentKey: null, activeSessionId: null },
-            agents,
-            agentCatalog: createAgentCatalog(agents),
-            activeAgentKey: null,
-            scanStatus,
-            projects: [],
-            selectedProjectNavigationId: null,
-            loading: false,
-            bookmarkedSessions: [],
-            sidebarSessions: [],
-            selectedSidebarSessionReference: null,
-            bookmarkedSidebarSessionReferences: new Set(),
-          }}
-          actions={actions}
-        />
-      </MemoryRouter>,
-    );
+function createActions(overrides: Partial<AppSidebarActions> = {}): AppSidebarActions {
+  return {
+    onCollapse: vi.fn(),
+    onSelectProject: vi.fn(),
+    onToggleBookmark: vi.fn(),
+    onSelectFlatSidebarSession: vi.fn(),
+    onToggleSidebarSessionBookmark: vi.fn(),
+    onRenameSession: vi.fn(),
+    onRenameBookmarkedSession: vi.fn(),
+    ...overrides,
+  };
+}
 
-    const codexLink = screen.getByRole("link", { name: /Codex/ });
-    expect(codexLink.textContent).toContain("5");
-    expect(codexLink.textContent).not.toContain("1856");
+function renderSidebar(
+  model: Partial<AppSidebarViewModel> = {},
+  actions: AppSidebarActions = createActions(),
+) {
+  return render(
+    <MemoryRouter>
+      <AppSidebar
+        model={{
+          sidebarCollapsed: false,
+          isScanActive: false,
+          viewState: { mode: "root", activeAgentKey: null, activeSessionId: null },
+          agentCatalog: createAgentCatalog(agents),
+          scanStatus: null,
+          projects,
+          selectedProjectNavigationId: null,
+          loading: false,
+          bookmarkedSessions: [],
+          sidebarSessions: [],
+          selectedSidebarSessionReference: null,
+          bookmarkedSidebarSessionReferences: new Set(),
+          ...model,
+        }}
+        actions={actions}
+      />
+    </MemoryRouter>,
+  );
+}
+
+describe("AppSidebar", () => {
+  it("lists projects under the global dashboard entry", () => {
+    renderSidebar();
+
+    expect(screen.getByRole("link", { name: /Dashboard/ })).toBeTruthy();
+    const projectLink = screen.getByRole("link", { name: /codesesh/ });
+    expect(projectLink.getAttribute("href")).toBe("/projects/path/%2Frepo%2Fcodesesh");
+    expect(projectLink.textContent).toContain("12");
   });
 
-  it("uses indeterminate progress for indexing and determinate progress for known totals", () => {
-    const agents = [
-      { name: "codex", displayName: "Codex", count: 5 },
-      { name: "claudecode", displayName: "Claude Code", count: 8 },
-    ] as AgentInfo[];
-    const scanStatus = {
-      type: "scan-status",
-      active: true,
-      phase: "scanning",
-      pendingAgents: [],
-      scanningAgents: ["codex", "claudecode"],
-      completedAgents: [],
-      totalAgents: 2,
-      updatedAt: 1,
-      backfill: {
-        active: false,
-        pendingAgents: [],
-        completedAgents: [],
-        failedAgents: [],
+  it("marks the dashboard entry active only on the root route", () => {
+    renderSidebar();
+    expect(screen.getByRole("link", { name: /Dashboard/ }).dataset.active).toBe("true");
+
+    cleanup();
+    renderSidebar({
+      viewState: {
+        mode: "project",
+        activeProjectKind: "path",
+        activeProjectKey: "/repo/codesesh",
+        activeAgentKey: null,
+        activeSessionId: null,
       },
-      agentStatuses: {
-        codex: {
-          agentName: "codex",
-          status: "indexing",
-          processed: 5,
-          total: 5,
-          updatedAt: 1,
-        },
-        claudecode: {
-          agentName: "claudecode",
-          status: "scanning",
-          processed: 4,
-          total: 10,
-          updatedAt: 1,
-        },
-      },
-    } satisfies ScanStatusEvent;
-
-    render(
-      <MemoryRouter>
-        <AppSidebar
-          model={{
-            sidebarCollapsed: false,
-            browseBy: "agents",
-            isScanActive: true,
-            viewState: { mode: "root", activeAgentKey: null, activeSessionId: null },
-            agents,
-            agentCatalog: createAgentCatalog(agents),
-            activeAgentKey: null,
-            scanStatus,
-            projects: [],
-            selectedProjectNavigationId: null,
-            loading: false,
-            bookmarkedSessions: [],
-            sidebarSessions: [],
-            selectedSidebarSessionReference: null,
-            bookmarkedSidebarSessionReferences: new Set(),
-          }}
-          actions={actions}
-        />
-      </MemoryRouter>,
-    );
-
-    const codexLink = screen.getByRole("link", { name: /Codex/ });
-    expect(codexLink.textContent).toContain("5");
-    expect(codexLink.textContent).toContain("Indexing");
-    expect(screen.getByText("Indexing")).toBeTruthy();
-    const indexingProgress = screen.getByRole("progressbar", {
-      name: "Codex indexing progress",
     });
-    expect(indexingProgress.getAttribute("aria-valuenow")).toBeNull();
-    expect(
-      indexingProgress.firstElementChild?.classList.contains("scan-progress-indeterminate"),
-    ).toBe(true);
+    expect(screen.getByRole("link", { name: /Dashboard/ }).dataset.active).toBeUndefined();
+  });
 
-    expect(screen.getByText("4/10")).toBeTruthy();
-    const scanningProgress = screen.getByRole("progressbar", {
-      name: "Claude Code scan progress",
+  it("collapses from its own control rather than the app header", () => {
+    const onCollapse = vi.fn();
+    renderSidebar({}, createActions({ onCollapse }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+
+    expect(onCollapse).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports scanning while no projects have been discovered yet", () => {
+    renderSidebar({
+      projects: [],
+      isScanActive: true,
+      scanStatus: { active: true } as ScanStatusEvent,
     });
-    expect(scanningProgress.getAttribute("aria-valuenow")).toBe("40");
-    expect((scanningProgress.firstElementChild as HTMLElement).style.width).toBe("40%");
+
+    expect(screen.getByText("Scanning projects...")).toBeTruthy();
+  });
+
+  it("asks for a project before it can list sessions", () => {
+    renderSidebar();
+
+    expect(screen.getByText("Select a project")).toBeTruthy();
   });
 });

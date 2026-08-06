@@ -1,25 +1,16 @@
-import type {
-  AgentScanStatus,
-  AgentInfo,
-  BookmarkRecord,
-  ApiProjectGroup,
-  ScanStatusEvent,
-  SessionHead,
-} from "../../lib/api";
+import type { BookmarkRecord, ApiProjectGroup, ScanStatusEvent, SessionHead } from "../../lib/api";
 import { findAgent, type AgentCatalog } from "../../lib/agents";
 import { getSessionBookmarkKey } from "../../lib/bookmarks";
-import { agentRoutePath, getSessionRoutePath, getSessionRouteKey } from "../../lib/session-indexes";
+import { getSessionRoutePath, getSessionRouteKey } from "../../lib/session-indexes";
 import { getSessionDisplayTitle } from "../../lib/session-title";
-import { formatAgentScanProgress } from "../../lib/scan-format";
 import { getProjectGroupIdentity, getProjectIdentityKey, getProjectPath } from "../../lib/projects";
 import type { ViewState } from "../../lib/view-state";
 import { AgentIcon } from "../AgentIcon";
 import { RenderProfiler } from "../RenderProfiler";
 import { SessionActionsMenu } from "../SessionActionsMenu";
 import { SessionTreeSidebar } from "../SessionTreeSidebar";
+import { PanelLeftClose } from "../ui/icons";
 import { Link } from "react-router-dom";
-import { BrowseByToggle } from "./BrowseByToggle";
-import type { BrowseBy } from "./types";
 
 function navItemClass(isSelected: boolean): string {
   return `flex items-center gap-2 rounded-sm border-l-2 px-3 py-1.5 text-left motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
@@ -27,99 +18,6 @@ function navItemClass(isSelected: boolean): string {
       ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]"
       : "border-transparent text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)]"
   }`;
-}
-
-function agentProgressPercent(status: AgentScanStatus | undefined): number | null {
-  if (
-    (status?.status !== "scanning" && status?.status !== "finalizing") ||
-    typeof status.total !== "number" ||
-    !Number.isFinite(status.total) ||
-    status.total <= 0 ||
-    typeof status.processed !== "number" ||
-    !Number.isFinite(status.processed)
-  ) {
-    return null;
-  }
-  return Math.min(100, Math.max(0, Math.round((status.processed / status.total) * 100)));
-}
-
-function AgentNavList({
-  agents,
-  activeAgentKey,
-  scanStatus,
-}: {
-  agents: AgentInfo[];
-  activeAgentKey: string | null;
-  scanStatus: ScanStatusEvent | null;
-}) {
-  return (
-    <>
-      {agents.map((agent) => {
-        const key = agent.name.toLowerCase();
-        const isSelected = key === activeAgentKey;
-        const agentStatus = scanStatus?.agentStatuses[agent.name];
-        const agentProgress = formatAgentScanProgress(scanStatus, agent.name);
-        const progressPercent = agentProgressPercent(agentStatus);
-        const className = `ml-4 ${navItemClass(isSelected)}`;
-        const content = (
-          <>
-            {agent.icon && (
-              <AgentIcon
-                icon={agent.icon}
-                iconColored={agent.iconColored}
-                alt={agent.displayName}
-                className="size-3.5 object-contain"
-              />
-            )}
-            <span className="console-mono line-clamp-1 flex-1 text-xs">{agent.displayName}</span>
-            {agentProgress ? (
-              <span className="console-mono text-[11px] text-[var(--console-muted)]">
-                {agentProgress}
-              </span>
-            ) : null}
-            <span className="console-mono text-[11px] text-[var(--console-muted)]">
-              {agent.count}
-            </span>
-          </>
-        );
-        return (
-          <li key={agent.name}>
-            <Link
-              to={agentRoutePath(key)}
-              className={className}
-              data-active={isSelected ? "true" : undefined}
-            >
-              {content}
-            </Link>
-            {agentProgress ? (
-              <span
-                className="ml-4 mt-1 block h-1 overflow-hidden rounded-full bg-[var(--console-surface-sunken)]"
-                role="progressbar"
-                aria-label={`${agent.displayName} ${
-                  agentStatus?.status === "indexing"
-                    ? "indexing"
-                    : agentStatus?.status === "finalizing"
-                      ? "finalizing"
-                      : "scan"
-                } progress`}
-                aria-valuemin={progressPercent == null ? undefined : 0}
-                aria-valuemax={progressPercent == null ? undefined : 100}
-                aria-valuenow={progressPercent ?? undefined}
-                aria-valuetext={progressPercent == null ? agentProgress : undefined}
-              >
-                <span
-                  className={`block h-full bg-[var(--brand)] ${
-                    progressPercent == null ? "scan-progress-indeterminate" : ""
-                  }`}
-                  style={progressPercent == null ? undefined : { width: `${progressPercent}%` }}
-                />
-              </span>
-            ) : null}
-          </li>
-        );
-      })}
-    </>
-  );
 }
 
 function ProjectNavList({
@@ -160,12 +58,9 @@ function ProjectNavList({
 
 export interface AppSidebarViewModel {
   sidebarCollapsed: boolean;
-  browseBy: BrowseBy;
   isScanActive: boolean;
   viewState: ViewState;
-  agents: AgentInfo[];
   agentCatalog: AgentCatalog;
-  activeAgentKey: string | null;
   scanStatus: ScanStatusEvent | null;
   projects: ApiProjectGroup[];
   selectedProjectNavigationId: string | null;
@@ -177,25 +72,21 @@ export interface AppSidebarViewModel {
 }
 
 export interface AppSidebarActions {
-  onChangeBrowseBy: (value: BrowseBy) => void;
+  onCollapse: () => void;
   onSelectProject: (identity: ReturnType<typeof getProjectGroupIdentity>) => void;
   onToggleBookmark: (session: BookmarkRecord) => void;
   onSelectFlatSidebarSession: (session: SessionHead) => void;
   onToggleSidebarSessionBookmark: (session: SessionHead) => void;
   onRenameSession: (session: SessionHead) => void;
   onRenameBookmarkedSession: (session: BookmarkRecord) => void;
-  onSelectTreeSidebarSession: (session: SessionHead) => void;
 }
 
 export function AppSidebar({
   model: {
     sidebarCollapsed,
-    browseBy,
     isScanActive,
     viewState,
-    agents,
     agentCatalog,
-    activeAgentKey,
     scanStatus,
     projects,
     selectedProjectNavigationId,
@@ -206,14 +97,13 @@ export function AppSidebar({
     bookmarkedSidebarSessionReferences,
   },
   actions: {
-    onChangeBrowseBy,
+    onCollapse,
     onSelectProject,
     onToggleBookmark,
     onSelectFlatSidebarSession,
     onToggleSidebarSessionBookmark,
     onRenameSession,
     onRenameBookmarkedSession,
-    onSelectTreeSidebarSession,
   },
 }: {
   model: AppSidebarViewModel;
@@ -223,9 +113,7 @@ export function AppSidebar({
     viewState.mode === "session"
       ? getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionId)
       : null;
-  const isOverviewSelected =
-    (browseBy === "agents" && viewState.mode === "root") ||
-    (browseBy === "projects" && viewState.mode === "projects");
+  const isOverviewSelected = viewState.mode === "root";
 
   return (
     <aside
@@ -233,28 +121,25 @@ export function AppSidebar({
         sidebarCollapsed ? "hidden" : "hidden lg:flex"
       }`}
     >
+      <div className="flex items-center justify-between gap-2 px-4 pt-4">
+        <h2 className="console-eyebrow">PROJECTS</h2>
+        <button
+          type="button"
+          aria-expanded="true"
+          aria-label="Collapse sidebar"
+          title="Collapse sidebar"
+          onClick={onCollapse}
+          className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+        >
+          <PanelLeftClose className="size-4" />
+        </button>
+      </div>
       <div className="console-scrollbar flex-1 space-y-8 overflow-y-auto px-4 py-6">
         <section>
-          <h3 className="console-eyebrow mb-3">BROWSE BY</h3>
-          <BrowseByToggle
-            value={browseBy}
-            onChange={onChangeBrowseBy}
-            projectsDisabled={isScanActive}
-          />
-        </section>
-
-        <section>
-          <h3 className="console-eyebrow mb-3">NAVIGATION</h3>
-          <ul
-            className={`space-y-1 ${
-              browseBy === "projects"
-                ? "console-scrollbar max-h-[min(280px,calc(100vh-440px))] overflow-y-auto pr-1"
-                : ""
-            }`}
-          >
+          <ul className="console-scrollbar max-h-[min(320px,calc(100vh-400px))] space-y-1 overflow-y-auto pr-1">
             <li>
               <Link
-                to={browseBy === "projects" ? "/projects" : "/"}
+                to="/"
                 data-active={isOverviewSelected ? "true" : undefined}
                 className={navItemClass(isOverviewSelected)}
               >
@@ -262,30 +147,17 @@ export function AppSidebar({
                 <span className="console-mono line-clamp-1 flex-1 text-xs">Dashboard</span>
               </Link>
             </li>
-            {browseBy === "agents" ? (
-              <AgentNavList
-                agents={agents}
-                activeAgentKey={activeAgentKey}
-                scanStatus={scanStatus}
-              />
-            ) : (
-              <ProjectNavList
-                projects={projects}
-                selectedProjectNavigationId={selectedProjectNavigationId}
-                onSelectProject={onSelectProject}
-              />
-            )}
-            {browseBy === "agents" && agents.length === 0 && !loading ? (
+            <ProjectNavList
+              projects={projects}
+              selectedProjectNavigationId={selectedProjectNavigationId}
+              onSelectProject={onSelectProject}
+            />
+            {projects.length === 0 && !loading ? (
               <li>
                 <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-                  {scanStatus?.active ? "Scanning agents..." : "No agents found"}
-                </span>
-              </li>
-            ) : null}
-            {browseBy === "projects" && projects.length === 0 && !loading ? (
-              <li>
-                <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-                  {scanStatus?.active ? "Scanning projects..." : "No projects found"}
+                  {isScanActive || scanStatus?.active
+                    ? "Scanning projects..."
+                    : "No projects found"}
                 </span>
               </li>
             ) : null}
@@ -360,11 +232,7 @@ export function AppSidebar({
               </span>
             ) : null}
           </h3>
-          {browseBy === "agents" && !activeAgentKey ? (
-            <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-              Select an agent
-            </span>
-          ) : browseBy === "projects" && !selectedProjectNavigationId ? (
+          {!selectedProjectNavigationId ? (
             <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
               Select a project
             </span>
@@ -378,9 +246,7 @@ export function AppSidebar({
                 sessions={sidebarSessions}
                 activeSessionReference={activeSessionReference}
                 selectedSessionReference={selectedSidebarSessionReference}
-                onSelectSession={
-                  browseBy === "projects" ? onSelectFlatSidebarSession : onSelectTreeSidebarSession
-                }
+                onSelectSession={onSelectFlatSidebarSession}
                 bookmarkedSessionReferences={bookmarkedSidebarSessionReferences}
                 onToggleBookmark={onToggleSidebarSessionBookmark}
                 onRenameSession={onRenameSession}

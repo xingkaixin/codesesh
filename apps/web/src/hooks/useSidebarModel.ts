@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { AgentInfo, ApiProjectGroup, SessionDetail, SessionHead } from "../lib/api";
 import {
   getProjectGroupIdentity,
@@ -14,7 +14,6 @@ import {
   type SessionIndexes,
 } from "../lib/session-indexes";
 import type { ViewState } from "../lib/view-state";
-import type { BrowseBy } from "../components/app/types";
 
 interface UseSidebarModelOptions {
   viewState: ViewState;
@@ -30,12 +29,6 @@ export interface ProjectNavigationModel {
   identity: ProjectRouteIdentity;
   identityKey: string;
   project: ApiProjectGroup | null;
-}
-
-function browseByForRoute(viewState: ViewState): BrowseBy | null {
-  if (viewState.mode === "projects" || viewState.mode === "project") return "projects";
-  if (viewState.mode === "agent" || viewState.mode === "missingAgent") return "agents";
-  return null;
 }
 
 function findProject(
@@ -72,18 +65,6 @@ export function useSidebarModel({
   selectedProjectAgent,
   isSessionBookmarked,
 }: UseSidebarModelOptions) {
-  const routeBrowseBy = browseByForRoute(viewState);
-  const [rememberedBrowseBy, setRememberedBrowseBy] = useState<BrowseBy>(routeBrowseBy ?? "agents");
-  const browseBy = routeBrowseBy ?? rememberedBrowseBy;
-
-  useEffect(() => {
-    if (routeBrowseBy) setRememberedBrowseBy(routeBrowseBy);
-  }, [routeBrowseBy]);
-
-  const selectBrowseBy = useCallback((next: BrowseBy) => {
-    setRememberedBrowseBy(next);
-  }, []);
-
   const model = useMemo(() => {
     const activeAgentKey = viewState.activeAgentKey;
     const activeAgent = agents.find((agent) => agent.name.toLowerCase() === activeAgentKey) ?? null;
@@ -117,13 +98,11 @@ export function useSidebarModel({
     const openedSessionProjectIdentity =
       openedSessionData?.project_identity ?? openedSessionHead?.project_identity ?? null;
     const selectedProjectIdentity =
-      browseBy !== "projects"
-        ? null
-        : viewState.mode === "project"
-          ? activeProjectIdentity
-          : viewState.mode === "session"
-            ? openedSessionProjectIdentity
-            : null;
+      viewState.mode === "project"
+        ? activeProjectIdentity
+        : viewState.mode === "session"
+          ? openedSessionProjectIdentity
+          : null;
     const selectedProjectIdentityKey = selectedProjectIdentity
       ? getProjectIdentityKey(selectedProjectIdentity)
       : null;
@@ -139,13 +118,11 @@ export function useSidebarModel({
             };
     }
 
-    const agentSessions = activeAgentKey ? (sessionIndexes.byAgent.get(activeAgentKey) ?? []) : [];
-    const projectSessions = getProjectSessions(
+    const sidebarSessions = getProjectSessions(
       sessionIndexes,
       selectedProjectIdentityKey,
       selectedProjectAgent,
     );
-    const sidebarSessions = browseBy === "projects" ? projectSessions : agentSessions;
     const sidebarSessionLookup = buildSidebarSessionLookup(sidebarSessions);
     const bookmarkedSidebarSessionReferences = new Set(
       sidebarSessions
@@ -168,7 +145,6 @@ export function useSidebarModel({
     };
   }, [
     agents,
-    browseBy,
     isSessionBookmarked,
     projects,
     selectedProjectAgent,
@@ -177,5 +153,5 @@ export function useSidebarModel({
     viewState,
   ]);
 
-  return { browseBy, selectBrowseBy, ...model };
+  return model;
 }

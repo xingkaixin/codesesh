@@ -10,7 +10,6 @@ function createInput(
 ): RouteHeaderInput {
   return {
     viewState,
-    browseBy: "agents",
     isSearchMode: false,
     searchSubtitle: "Search results",
     dashboard: null,

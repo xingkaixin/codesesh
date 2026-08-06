@@ -5,7 +5,6 @@ import { getProjectPath, type ProjectRouteIdentity } from "../lib/projects";
 import { getSessionDisplayTitle } from "./session-title";
 import type { ViewState } from "../lib/view-state";
 import { SmartTagChips } from "../components/SmartTagChips";
-import type { BrowseBy } from "../components/app/types";
 
 function Count({ value }: { value: number }) {
   return <span className="console-mono">{formatInt(value)}</span>;
@@ -18,7 +17,6 @@ export interface BreadcrumbItem {
 
 interface RouteHeaderInput {
   viewState: ViewState;
-  browseBy: BrowseBy;
   isSearchMode: boolean;
   searchSubtitle: string;
   dashboard: DashboardData | null;
@@ -159,13 +157,7 @@ function routeBreadcrumbs(input: RouteHeaderInput): BreadcrumbItem[] {
 
   const dashboard: BreadcrumbItem = {
     label: "Dashboard",
-    to:
-      (input.browseBy === "agents" && viewState.mode === "root") ||
-      (input.browseBy === "projects" && viewState.mode === "projects")
-        ? undefined
-        : input.browseBy === "projects"
-          ? "/projects"
-          : "/",
+    to: viewState.mode === "root" ? undefined : "/",
   };
   if (viewState.mode === "root") return [{ label: "Dashboard" }];
   if (viewState.mode === "projects") return [dashboard, { label: "Projects" }];
@@ -176,11 +168,7 @@ function routeBreadcrumbs(input: RouteHeaderInput): BreadcrumbItem[] {
       { label: input.activeProject?.displayName ?? viewState.activeProjectKey },
     ];
   }
-  if (
-    viewState.mode === "session" &&
-    input.browseBy === "projects" &&
-    input.selectedProjectIdentity
-  ) {
+  if (viewState.mode === "session" && input.selectedProjectIdentity) {
     return [
       dashboard,
       { label: "Projects", to: "/projects" },

@@ -1,7 +1,7 @@
 declare const __APP_VERSION__: string;
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PanelLeftClose, PanelLeftOpen } from "./components/ui/icons";
+import { PanelLeftOpen } from "./components/ui/icons";
 import { Link, useLocation, useMatches, useNavigate } from "react-router-dom";
 import type { BookmarkRecord, SessionHead } from "./lib/api";
 import { logClientEvent } from "./lib/api";
@@ -30,10 +30,9 @@ import { AppSidebar } from "./components/app/AppSidebar";
 import { ShortcutHelpDialog } from "./components/app/ShortcutHelpDialog";
 import { ThemeToggle } from "./components/app/ThemeToggle";
 import { AppRouteContent } from "./components/app/AppRouteContent";
-import type { BrowseBy } from "./components/app/types";
 import { formatScanStatusLabel, formatSearchSubtitle } from "./lib/scan-format";
 import { findAgent } from "./lib/agents";
-import { getProjectIdentityKey, getProjectPath, type ProjectRouteIdentity } from "./lib/projects";
+import { getProjectIdentityKey, type ProjectRouteIdentity } from "./lib/projects";
 import {
   buildSessionIndexes,
   getSessionAgentKey,
@@ -66,8 +65,7 @@ export default function App() {
     reload,
   });
 
-  const [selectedProjectIdentity, setSelectedProjectIdentity] =
-    useState<ProjectRouteIdentity | null>(null);
+  const [, setSelectedProjectIdentity] = useState<ProjectRouteIdentity | null>(null);
   const { scanStatus, setScanStatus } = useScanStatus();
   const [selectedSidebarSessionReference, setSelectedSidebarSessionReference] = useState<
     string | null
@@ -184,13 +182,9 @@ export default function App() {
     isSessionBookmarked,
   });
   const {
-    browseBy,
-    selectBrowseBy,
-    activeAgentKey,
     activeAgent,
     activeProject,
     activeProjectSessions,
-    openedSessionProjectIdentity,
     selectedProjectNavigation,
     sidebarSessions,
     sidebarSessionLookup,
@@ -231,14 +225,6 @@ export default function App() {
       displayTitle: bookmark.session.display_title,
     });
   }, []);
-
-  const handleSelectTreeSidebarSession = useCallback(
-    (sessionItem: SessionHead) => {
-      setSelectedSidebarSessionReference(getSessionReferenceKey(sessionItem));
-      navigate(getSessionRoutePath(sessionItem));
-    },
-    [navigate],
-  );
 
   // 可见标签每次渲染直接计算，保证 processed/total 计数实时更新。
   const scanStatusLabel = formatScanStatusLabel(scanStatus);
@@ -320,7 +306,6 @@ export default function App() {
 
   const routeHeader = buildRouteHeaderModel({
     viewState,
-    browseBy,
     isSearchMode,
     searchSubtitle,
     dashboard,
@@ -385,25 +370,9 @@ export default function App() {
     />
   );
 
-  function changeBrowseBy(next: BrowseBy) {
-    if (next === "projects" && isScanActive) return;
-    selectBrowseBy(next);
-    setSelectedSidebarSessionReference(null);
-    if (next === "projects") {
-      const project =
-        openedSessionProjectIdentity ??
-        (viewState.mode === "session" ? null : selectedProjectIdentity);
-      navigate(project ? getProjectPath(project) : "/projects");
-      return;
-    }
-    navigate("/");
-  }
-
   useKeyboardShortcuts({
     viewState,
-    browseBy,
     navigate,
-    activeAgentKey,
     sidebarSessions,
     sidebarSessionLookup,
     selectedSidebarSessionReference,
@@ -434,20 +403,6 @@ export default function App() {
         <header className="shrink-0 border-b border-[var(--console-border)] bg-[var(--console-surface)]/85 backdrop-blur-sm">
           <div className="grid min-h-14 grid-cols-[auto_1fr] items-center gap-3 px-4 py-2 sm:grid-cols-[auto_1fr_auto] sm:py-0">
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                aria-expanded={!sidebarCollapsed}
-                aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1.5 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none lg:inline-flex"
-              >
-                {sidebarCollapsed ? (
-                  <PanelLeftOpen className="size-4" />
-                ) : (
-                  <PanelLeftClose className="size-4" />
-                )}
-              </button>
               <Link to="/" className="flex items-center gap-2 text-[var(--console-text)]">
                 <img src="/logo.svg?v=3" alt="CodeSesh" className="h-6 w-6 rounded-sm" />
                 <span className="console-display text-sm font-semibold uppercase tracking-[0.05em]">
@@ -516,12 +471,9 @@ export default function App() {
           <AppSidebar
             model={{
               sidebarCollapsed,
-              browseBy,
               isScanActive,
               viewState,
-              agents: activeAgents,
               agentCatalog,
-              activeAgentKey,
               scanStatus,
               projects,
               selectedProjectNavigationId,
@@ -532,20 +484,31 @@ export default function App() {
               bookmarkedSidebarSessionReferences,
             }}
             actions={{
-              onChangeBrowseBy: changeBrowseBy,
+              onCollapse: () => setSidebarCollapsed(true),
               onSelectProject: setSelectedProjectIdentity,
               onToggleBookmark: toggleBookmark,
               onSelectFlatSidebarSession: handleSelectFlatSidebarSession,
               onToggleSidebarSessionBookmark: handleToggleSidebarSessionBookmark,
               onRenameSession: handleRenameSession,
               onRenameBookmarkedSession: handleRenameBookmarkedSession,
-              onSelectTreeSidebarSession: handleSelectTreeSidebarSession,
             }}
           />
 
           <main id="main" tabIndex={-1} className="flex min-w-0 flex-1 flex-col outline-none">
-            <section className="shrink-0 border-b border-[var(--console-border)] bg-[var(--console-surface)]/70 px-4 py-4 backdrop-blur-sm md:px-8">
-              <div>
+            <section className="flex shrink-0 items-start gap-3 border-b border-[var(--console-border)] bg-[var(--console-surface)]/70 px-4 py-4 backdrop-blur-sm md:px-8">
+              {sidebarCollapsed ? (
+                <button
+                  type="button"
+                  aria-expanded="false"
+                  aria-label="Expand sidebar"
+                  title="Expand sidebar"
+                  onClick={() => setSidebarCollapsed(false)}
+                  className="mt-0.5 hidden shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none lg:inline-flex"
+                >
+                  <PanelLeftOpen className="size-4" />
+                </button>
+              ) : null}
+              <div className="min-w-0 flex-1">
                 <nav
                   aria-label="Breadcrumb"
                   className="console-mono mb-2 flex flex-wrap items-center gap-1 text-[11px] text-[var(--console-muted)]"
