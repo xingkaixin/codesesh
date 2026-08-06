@@ -6,7 +6,7 @@ const CODEX_SESSION_ID = "019daaaa-bbbb-7bbb-8bbb-bbbbbbbbbbbb";
 /** The overview KPI cards carry no test id; each is a Panel whose text opens with
  *  its own eyebrow label, which makes the label a stable anchor. */
 function sessionsKpi(dashboard: Locator): Locator {
-  return dashboard.locator("section").filter({ hasText: /^会话/ });
+  return dashboard.locator("section").filter({ hasText: /^Sessions/ });
 }
 
 test("aggregates Claude and Codex sessions under one project", async ({ page }) => {
@@ -14,7 +14,7 @@ test("aggregates Claude and Codex sessions under one project", async ({ page }) 
 
   const dashboard = page.getByTestId("dashboard");
   await expect(sessionsKpi(dashboard)).toContainText("2");
-  await expect(dashboard.getByText("范围内 1 项目 · 2 agent")).toBeVisible();
+  await expect(dashboard.getByText("1 projects · 2 agents in scope")).toBeVisible();
   const agentRows = dashboard.getByTestId("overview-agent-row");
   await expect(agentRows).toHaveCount(2);
   await expect(agentRows.filter({ hasText: "Claude Code" })).toContainText("1 · $0.00");

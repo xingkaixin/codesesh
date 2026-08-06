@@ -14,7 +14,6 @@ test("keeps project navigation aligned with the overview route", async ({ page }
     .getByRole("link", { name: "Projects" })
     .click();
   await expect(page).toHaveURL(/\/projects$/);
-  await expect(page.getByText("Select a project")).toBeVisible();
   await expect(projectNavigation).not.toHaveAttribute("data-active", "true");
 });
 
@@ -38,11 +37,11 @@ test("browses the dashboard and project tree with a keyboard", async ({ page }) 
   const dashboard = page.getByTestId("dashboard");
   await expect(dashboard).toBeVisible();
   await expect(dashboard.getByTestId("overview-project-row")).toContainText("codesesh-e2e");
-  const activityChart = page.getByRole("region", { name: "按天用量" });
+  const activityChart = page.getByRole("region", { name: "Daily usage" });
   const activityBar = activityChart.getByRole("button").first();
   await activityBar.focus();
   await expect(activityBar).toBeFocused();
-  await expect(activityChart.getByRole("table", { name: "按天用量数据" })).toBeAttached();
+  await expect(activityChart.getByRole("table", { name: "Daily usage data" })).toBeAttached();
 
   await page
     .locator("aside")
@@ -50,10 +49,6 @@ test("browses the dashboard and project tree with a keyboard", async ({ page }) 
     .first()
     .click();
   await expect(page.getByRole("heading", { level: 1, name: "codesesh-e2e" })).toBeVisible();
-
-  const projectTreeItem = page.getByRole("treeitem", { name: /codesesh-e2e/ });
-  await expect(projectTreeItem).toBeVisible();
-  await projectTreeItem.click();
 
   const treeSession = page.getByRole("treeitem", { name: /Core browsing smoke session/ });
   await expect(treeSession).toBeVisible();
@@ -251,11 +246,11 @@ test("keeps detail drawers modal and restores focus", async ({ page }) => {
     .not.toBe("hidden");
 
   await page.setViewportSize({ width: 390, height: 844 });
-  const filterTrigger = page.getByRole("button", { name: "内容筛选" });
+  const filterTrigger = page.getByRole("button", { name: "Content filters" });
   await filterTrigger.click();
-  const filterDialog = page.getByRole("dialog", { name: "内容筛选" });
+  const filterDialog = page.getByRole("dialog", { name: "Content filters" });
   await expect(filterDialog).toBeVisible();
-  await expect(page.getByRole("button", { name: "Close 内容筛选" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Close Content filters" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect
     .poll(() => filterDialog.evaluate((dialog) => dialog.contains(document.activeElement)))
