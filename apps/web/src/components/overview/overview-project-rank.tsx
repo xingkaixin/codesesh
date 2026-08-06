@@ -1,0 +1,148 @@
+/**
+ * The ranking card. Ranking projects inside a single project is meaningless, so
+ * under a project scope the very same card ranks agents instead — one component,
+ * two row sources.
+ */
+import type { DashboardProjectRollup } from "@codesesh/core/contract";
+import { Link } from "react-router-dom";
+
+import type { AgentCatalog } from "../../lib/agents";
+import type { DashboardAgentStat, DashboardProjectStat, DashboardScope } from "../../lib/api";
+import { formatCompact, formatInt, formatUsd } from "../../lib/format";
+import { Panel, PanelHeader } from "../ui/panel";
+import { ShareBar } from "../ui/share-bar";
+import { Sparkline } from "../ui/sparkline";
+import { agentDisplayName } from "./types";
+
+const RANK_LIMIT = 6;
+
+interface RankRow {
+  key: string;
+  name: string;
+  detail: string;
+  sessions: number;
+  tokens: number;
+  cost: number;
+  sparkline?: number[];
+}
+
+function toProjectRow(project: DashboardProjectStat, catalog: AgentCatalog): RankRow {
+  return {
+    key: `${project.identityKind}:${project.identityKey}`,
+    name: project.displayName,
+    detail: project.agents.map((agent) => agentDisplayName(catalog, agent)).join(" · "),
+    sessions: project.sessions,
+    tokens: project.tokens,
+    cost: project.cost,
+    sparkline: project.sparkline,
+  };
+}
+
+function toAgentRow(agent: DashboardAgentStat): RankRow {
+  return {
+    key: agent.name,
+    name: agent.displayName,
+    detail: "",
+    sessions: agent.sessions,
+    tokens: agent.tokens,
+    cost: agent.cost,
+  };
+}
+
+export function OverviewProjectRank({
+  scope,
+  projects,
+  perAgent,
+  rollup,
+  scopeCounts,
+  agentCatalog,
+}: {
+  scope: DashboardScope;
+  projects: DashboardProjectStat[];
+  perAgent: DashboardAgentStat[];
+  rollup: DashboardProjectRollup;
+  scopeCounts: { projects: number; agents: number };
+  agentCatalog: AgentCatalog;
+}) {
+  const rankAgents = scope.kind === "project";
+  const rows = rankAgents
+    ? perAgent.map(toAgentRow)
+    : projects.map((project) => toProjectRow(project, agentCatalog));
+  const visible = rows.slice(0, RANK_LIMIT);
+  const topCost = visible.reduce((peak, row) => Math.max(peak, row.cost), 0);
+  const showFooter = !rankAgents && rollup.projects > 0;
+
+  return (
+    <Panel className="p-4">
+      <PanelHeader
+        title={rankAgents ? "Agent 排行" : "项目排行"}
+        meta={`按花费 · 共 ${rankAgents ? scopeCounts.agents : scopeCounts.projects} 个`}
+      />
+
+      <div className="console-eyebrow mt-3 flex items-center gap-3 border-b border-[var(--console-border)] pb-2">
+        <span className="min-w-0 flex-1">{rankAgents ? "Agent" : "项目"}</span>
+        <span className="w-[52px] text-right">会话</span>
+        <span className="w-[60px] text-right">Tokens</span>
+        <span className="w-[66px] text-right">花费</span>
+        {rankAgents ? null : <span className="w-[74px]">近 14 天</span>}
+      </div>
+
+      {visible.length === 0 ? (
+        <p className="console-mono mt-3 text-[11px] text-[var(--console-muted)]">暂无数据</p>
+      ) : (
+        <ul>
+          {visible.map((row) => (
+            <li
+              key={row.key}
+              data-testid="overview-project-row"
+              className="flex items-center gap-3 border-b border-[var(--console-border)] py-[10px] last:border-b-0"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] font-medium text-[var(--console-text)]">
+                  {row.name}
+                </p>
+                <div className="mt-[5px] flex items-center gap-[6px]">
+                  <ShareBar ratio={row.cost / topCost} className="h-1 max-w-[180px]" />
+                  {row.detail ? (
+                    <span className="console-mono truncate text-[9.5px] text-[var(--console-muted)]">
+                      {row.detail}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <span className="console-mono w-[52px] shrink-0 text-right text-xs text-[var(--console-text)]">
+                {formatInt(row.sessions)}
+              </span>
+              <span className="console-mono w-[60px] shrink-0 text-right text-xs text-[var(--console-muted)]">
+                {formatCompact(row.tokens)}
+              </span>
+              <span className="console-mono w-[66px] shrink-0 text-right text-xs text-[var(--brand)]">
+                {formatUsd(row.cost)}
+              </span>
+              {row.sparkline ? (
+                <span className="w-[74px] shrink-0">
+                  <Sparkline values={row.sparkline} label={`${row.name} 近 14 天花费`} />
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {showFooter ? (
+        <div className="console-mono mt-3 flex items-center gap-3 border-t border-[var(--console-border)] pt-3 text-[10.5px] text-[var(--console-muted)]">
+          <span className="min-w-0 truncate">
+            其余 {rollup.projects} 个项目 · {formatInt(rollup.sessions)} 会话 ·{" "}
+            {formatUsd(rollup.cost)}
+          </span>
+          <Link
+            to="/projects"
+            className="ml-auto shrink-0 text-[var(--brand)] hover:text-[var(--brand-hover)]"
+          >
+            查看全部 {scopeCounts.projects} 个 →
+          </Link>
+        </div>
+      ) : null}
+    </Panel>
+  );
+}
