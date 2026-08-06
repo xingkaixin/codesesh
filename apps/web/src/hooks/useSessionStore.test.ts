@@ -204,6 +204,7 @@ describe("useSessionStore", () => {
     const { result, client } = await renderStore();
     await act(() => result.current.reload(config.window));
     const projectDashboardKey = queryKeys.dashboard(config.window, {
+      kind: "project",
       projectKind: "path",
       projectKey: "p1",
     });

@@ -16,7 +16,7 @@ import { useScanStatus } from "./hooks/useScanStatus";
 import { useSessionDetail } from "./hooks/useSessionDetail";
 import { useSessionSearch } from "./hooks/useSessionSearch";
 import { useBookmarks } from "./hooks/useBookmarks";
-import { useDashboard } from "./hooks/useDashboard";
+import { type DashboardScope, useDashboard } from "./hooks/useDashboard";
 import { useSidebarModel } from "./hooks/useSidebarModel";
 import { useSessionStore } from "./hooks/useSessionStore";
 import { useSessionAliasMutations } from "./hooks/useSessionAliasMutations";
@@ -154,25 +154,45 @@ export default function App() {
   const activeProjectKind = viewState.mode === "project" ? viewState.activeProjectKind : null;
   const activeProjectKey = viewState.mode === "project" ? viewState.activeProjectKey : null;
 
-  const projectDashboardFilters = useMemo(
-    () => ({
-      projectKind: activeProjectKind ?? undefined,
-      projectKey: activeProjectKey ?? undefined,
-      identityKey:
-        activeProjectKind && activeProjectKey
-          ? getProjectIdentityKey({ kind: activeProjectKind, key: activeProjectKey })
-          : undefined,
-    }),
+  const activeProjectIdentityKey =
+    activeProjectKind && activeProjectKey
+      ? getProjectIdentityKey({ kind: activeProjectKind, key: activeProjectKey })
+      : null;
+
+  const projectDashboardScope = useMemo<DashboardScope>(
+    () =>
+      activeProjectKind && activeProjectKey
+        ? { kind: "project", projectKind: activeProjectKind, projectKey: activeProjectKey }
+        : { kind: "global" },
     [activeProjectKey, activeProjectKind],
   );
-  const projectController = useDashboard(loadedWindow, projectDashboardFilters);
+  const projectController = useDashboard(
+    projectDashboardScope.kind === "project" ? loadedWindow : null,
+    projectDashboardScope,
+  );
+  const [projectAgentFilter, setProjectAgentFilter] = useState<{
+    identityKey: string;
+    agentKey?: string;
+  } | null>(null);
+  const selectedProjectAgent =
+    projectAgentFilter?.identityKey === activeProjectIdentityKey
+      ? projectAgentFilter?.agentKey
+      : undefined;
+  const selectProjectAgent = useCallback(
+    (agentKey?: string) => {
+      setProjectAgentFilter(
+        activeProjectIdentityKey ? { identityKey: activeProjectIdentityKey, agentKey } : null,
+      );
+    },
+    [activeProjectIdentityKey],
+  );
   const sidebar = useSidebarModel({
     viewState,
     sessionIndexes,
     session,
     agents: activeAgents,
     projects,
-    selectedProjectAgent: projectController.selectedAgent,
+    selectedProjectAgent,
     isSessionBookmarked,
   });
   const {
@@ -352,8 +372,8 @@ export default function App() {
         dashboard: projectController.dashboard,
         loading: projectController.loading,
         error: projectController.error,
-        selectedAgent: projectController.selectedAgent,
-        onChangeAgent: projectController.setSelectedAgent,
+        selectedAgent: selectedProjectAgent,
+        onChangeAgent: selectProjectAgent,
       }}
       search={{
         active: search.searchMode,
