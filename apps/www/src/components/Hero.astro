@@ -2,6 +2,7 @@
 import { copy, type Locale } from "../data/landing";
 import HeadingText from "./HeadingText.astro";
 import Icon from "./Icon.astro";
+import ProductDemo from "./ProductDemo.astro";
 
 interface Props {
   locale: Locale;
@@ -46,20 +47,7 @@ const t = copy[locale].hero;
     </div>
 
     <div class="hero-visual min-w-0">
-      <div class="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-2 shadow-[var(--shadow-raised)]">
-        <div class="overflow-hidden rounded-md border border-[var(--console-border)] bg-[var(--console-surface-sunken)]">
-          <img
-            src="/demo/dashboard.webp"
-            alt={copy[locale].scenes[0]?.description ?? "CodeSesh dashboard"}
-            width="1280"
-            height="720"
-            class="h-auto w-full object-cover object-top"
-            loading="eager"
-            decoding="sync"
-            fetchpriority="high"
-          />
-        </div>
-      </div>
+      <ProductDemo id={`hero-demo-${locale}`} locale={locale} compact />
     </div>
   </div>
 </section>

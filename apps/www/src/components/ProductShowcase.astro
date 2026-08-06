@@ -1,7 +1,7 @@
 ---
 import { copy, type Locale } from "../data/landing";
 import HeadingText from "./HeadingText.astro";
-import Icon from "./Icon.astro";
+import ProductDemo from "./ProductDemo.astro";
 
 interface Props {
   locale: Locale;
@@ -9,8 +9,6 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = copy[locale].tour;
-const scenes = copy[locale].scenes;
-const cardSpans = ["lg:col-span-8", "lg:col-span-4", "lg:col-span-4", "lg:col-span-8"];
 ---
 
 <section class="border-y border-[var(--console-border)] bg-[var(--console-surface)] px-4 py-20 sm:px-6 md:py-24">
@@ -23,174 +21,8 @@ const cardSpans = ["lg:col-span-8", "lg:col-span-4", "lg:col-span-4", "lg:col-sp
     </h2>
     <p class="mt-4 max-w-2xl text-base leading-7 text-[var(--console-text-secondary)]">{t.body}</p>
 
-    <div class="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-12">
-      {
-        scenes.map((scene, index) => (
-          <article
-            class:list={[
-              "product-showcase-card card-lift group relative overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] text-left shadow-[var(--shadow-raised)]",
-              cardSpans[index],
-            ]}
-          >
-            <div class="border-b border-[var(--console-border)] px-5 py-4">
-              <h3 class="console-display text-[15px] font-semibold text-[var(--console-text)]">
-                {scene.title}
-              </h3>
-              <p class="mt-1.5 max-w-2xl text-sm leading-6 text-[var(--console-muted)]">
-                {scene.description}
-              </p>
-            </div>
-
-            <div class="bg-[var(--console-surface-sunken)] p-2.5">
-              <div class="overflow-hidden rounded-md border border-[var(--console-border)] bg-[var(--console-surface)]">
-                <img
-                  src={scene.image}
-                  alt={scene.description}
-                  width="1280"
-                  height="720"
-                  class:list={[
-                    "h-full w-full object-cover object-top",
-                    index === 0 || index === 3 ? "aspect-video" : "aspect-[4/3]",
-                  ]}
-                  loading="lazy"
-                  decoding="async"
-                />
-              </div>
-            </div>
-
-            <button
-              type="button"
-              data-scene-open={String(index)}
-              class="product-showcase-expand pressable motion-hover absolute right-4 bottom-4 inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]/94 px-3 py-2 text-xs font-medium text-[var(--console-text)] shadow-[var(--shadow-raised)] hover:border-[var(--brand-line)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-              aria-label={`${t.expand} ${scene.title}`}
-            >
-              <Icon name="expand" class="size-3.5" />
-              {t.expand}
-            </button>
-          </article>
-        ))
-      }
+    <div class="mt-12">
+      <ProductDemo id={`tour-demo-${locale}`} locale={locale} />
     </div>
   </div>
 </section>
-
-{
-  scenes.map((scene, index) => (
-    <dialog
-      id={`scene-dialog-${locale}-${index}`}
-      data-scene-dialog
-      data-scene-index={String(index)}
-      class="scene-dialog m-0 h-dvh max-h-none w-screen max-w-none bg-transparent p-0 backdrop:bg-[var(--scrim)] backdrop:backdrop-blur-sm"
-      aria-label={`${scene.title} preview`}
-    >
-      <div class="flex min-h-dvh items-center justify-center p-4" data-scene-backdrop>
-        <div class="relative flex max-h-[92dvh] w-full max-w-7xl flex-col overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-bg)] shadow-[var(--shadow-overlay)]">
-          <div class="flex items-start justify-between gap-4 border-b border-[var(--console-border)] bg-[var(--console-surface)] px-5 py-4">
-            <div>
-              <p class="text-sm font-semibold text-[var(--console-text)]">
-                {scene.title}
-              </p>
-              <p class="mt-2 max-w-2xl text-sm leading-6 text-[var(--console-text)]">
-                {scene.description}
-              </p>
-            </div>
-            <button
-              type="button"
-              data-scene-close
-              class="pressable motion-hover rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--console-text)] hover:border-[var(--brand-line)] hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-            >
-              {t.close}
-            </button>
-          </div>
-
-          <div class="flex items-center justify-between gap-3 border-b border-[var(--console-border)] bg-[var(--console-surface)]/82 px-4 py-3">
-            <button
-              type="button"
-              data-scene-prev
-              class="pressable motion-hover inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 py-2 text-xs font-medium text-[var(--console-text)] hover:border-[var(--brand-line)] hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-            >
-              <Icon name="chevron-left" class="size-4" />
-              {t.previous}
-            </button>
-            <p class="text-xs text-[var(--console-muted)]">
-              {t.closeHint}
-            </p>
-            <button
-              type="button"
-              data-scene-next
-              class="pressable motion-hover inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 py-2 text-xs font-medium text-[var(--console-text)] hover:border-[var(--brand-line)] hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-            >
-              {t.next}
-              <Icon name="chevron-right" class="size-4" />
-            </button>
-          </div>
-
-          <div
-            class="overflow-auto bg-[var(--console-surface-muted)] p-4 [overscroll-behavior:contain]"
-            tabindex="0"
-            aria-label={scene.title}
-          >
-            <div class="mx-auto min-w-[56rem] overflow-hidden rounded-md border border-[var(--console-border)] bg-white dark:border-[var(--console-border-strong)]">
-              <img
-                src={scene.image}
-                alt={scene.title}
-                width="1280"
-                height="720"
-                class="h-auto w-full object-cover object-top"
-                loading="lazy"
-                decoding="async"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    </dialog>
-  ))
-}
-
-<script>
-  const dialogs = Array.from(document.querySelectorAll<HTMLDialogElement>("[data-scene-dialog]"));
-
-  function openScene(index: number, instant = false) {
-    const dialog = dialogs[index];
-    if (!dialog) return;
-
-    dialogs.forEach((item) => {
-      if (item !== dialog && item.open) item.close();
-    });
-
-    if (instant) {
-      // Suppress the enter transition when navigating between scenes so the
-      // backdrop doesn't flash transparent->opaque on rapid prev/next clicks.
-      dialog.setAttribute("data-instant", "");
-      dialog.showModal();
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => dialog.removeAttribute("data-instant"));
-      });
-    } else {
-      dialog.showModal();
-    }
-  }
-
-  document.querySelectorAll<HTMLButtonElement>("[data-scene-open]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const index = Number(button.dataset.sceneOpen);
-      openScene(index);
-    });
-  });
-
-  dialogs.forEach((dialog, index) => {
-    dialog.querySelector("[data-scene-close]")?.addEventListener("click", () => dialog.close());
-    dialog.querySelector("[data-scene-backdrop]")?.addEventListener("click", (event) => {
-      if (event.target === event.currentTarget) dialog.close();
-    });
-    dialog.querySelector("[data-scene-prev]")?.addEventListener("click", () => {
-      dialog.close();
-      openScene((index - 1 + dialogs.length) % dialogs.length, true);
-    });
-    dialog.querySelector("[data-scene-next]")?.addEventListener("click", () => {
-      dialog.close();
-      openScene((index + 1) % dialogs.length, true);
-    });
-  });
-</script>

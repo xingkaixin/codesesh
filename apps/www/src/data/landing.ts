@@ -17,7 +17,6 @@ export type IconName =
   | "timer";
 
 export interface ProductScene {
-  image: string;
   title: string;
   description: string;
 }
@@ -65,11 +64,10 @@ interface LandingCopy {
     label: string;
     title: HeadingCopy;
     body: string;
-    expand: string;
-    close: string;
-    previous: string;
-    next: string;
-    closeHint: string;
+    previewLabel: string;
+    viewLabel: string;
+    sampleLabel: string;
+    shortcutClose: string;
   };
   scenes: ProductScene[];
   features: {
@@ -135,31 +133,26 @@ export const copy = {
       label: "Product Tour",
       title: ["工程记忆", "如何在日常里生长"],
       body: "从全局概览到会话回放，从项目浏览到结构化搜索，CodeSesh 让散落在不同 Agent 里的编码过程重新变得可见。",
-      expand: "展开",
-      close: "关闭",
-      previous: "上一张",
-      next: "下一张",
-      closeHint: "点击外部关闭",
+      previewLabel: "CodeSesh 交互式产品预览",
+      viewLabel: "选择预览视图",
+      sampleLabel: "示例工作区",
+      shortcutClose: "关闭",
     },
     scenes: [
       {
-        image: "/demo/dashboard.webp",
         title: "工程记忆概览",
         description: "从 Agent 活跃度、Token 趋势、智能标签和收藏会话里看见协作脉络。",
       },
       {
-        image: "/demo/search.webp",
         title: "结构化全局搜索",
         description:
           "按标题、消息、工具输出和文件路径检索，并用项目、标签、工具、文件活动和成本缩小范围。",
       },
       {
-        image: "/demo/session-detail.webp",
         title: "会话回放",
         description: "按时间线回看消息、工具调用和文件变更，复盘一次功能或 bug 的完整路径。",
       },
       {
-        image: "/demo/shortcuts.webp",
         title: "键盘导航",
         description: "在项目、会话和搜索结果之间高效移动，让历史浏览进入日常工作流。",
       },
@@ -326,33 +319,28 @@ export const copy = {
       label: "Product Tour",
       title: "How engineering memory compounds in daily work",
       body: "From overview to replay, from project browsing to structured search, CodeSesh makes coding history across agents visible again.",
-      expand: "Expand",
-      close: "Close",
-      previous: "Previous",
-      next: "Next",
-      closeHint: "Click outside to close",
+      previewLabel: "Interactive CodeSesh product preview",
+      viewLabel: "Choose a preview view",
+      sampleLabel: "Sample workspace",
+      shortcutClose: "Close",
     },
     scenes: [
       {
-        image: "/demo/dashboard.webp",
         title: "Engineering Memory Overview",
         description:
           "See collaboration patterns through agent activity, token trends, smart tags, and bookmarked sessions.",
       },
       {
-        image: "/demo/search.webp",
         title: "Structured Global Search",
         description:
           "Search titles, messages, tool output, and file paths, then filter by project, tag, tool, file activity, and cost.",
       },
       {
-        image: "/demo/session-detail.webp",
         title: "Session Replay",
         description:
           "Replay messages, tool calls, and file changes in the order a feature or bug fix unfolded.",
       },
       {
-        image: "/demo/shortcuts.webp",
         title: "Keyboard Navigation",
         description:
           "Move through projects, sessions, and results efficiently so browsing history fits daily work.",
