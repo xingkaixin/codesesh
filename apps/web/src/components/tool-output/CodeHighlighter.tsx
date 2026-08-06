@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { ErrorBoundary } from "../ErrorBoundary";
+import { CODE_METRICS } from "../../styles/prism-theme";
 
 export interface CodeHighlighterProps {
   language: string;
@@ -16,8 +17,8 @@ const PrismHighlighter = lazy(() =>
 function PlainCode({ text }: { text: string }) {
   return (
     <pre
-      className="console-mono m-0 overflow-x-auto whitespace-pre-wrap break-words p-3 text-xs leading-relaxed"
-      style={{ background: "transparent" }}
+      className="console-mono m-0 overflow-x-auto whitespace-pre-wrap break-words p-3 text-[var(--code-fg)]"
+      style={{ background: "transparent", ...CODE_METRICS }}
     >
       {text}
     </pre>
