@@ -54,4 +54,17 @@ describe("buildProjectGroups", () => {
     expect(groups[0]?.sessionCount).toBe(1);
     expect(groups[0]?.lastActivity).toBe(200);
   });
+
+  it("counts a sub-session whose parent is absent", () => {
+    const groups = buildProjectGroups([
+      makeSession("root", "codex", 200),
+      {
+        ...makeSession("orphan", "codex", 300),
+        parent_reference: { agentName: "codex", sessionId: "gone" },
+      },
+    ]);
+
+    expect(groups[0]?.sessionCount).toBe(2);
+    expect(groups[0]?.lastActivity).toBe(300);
+  });
 });

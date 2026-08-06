@@ -2,14 +2,19 @@
  * Project analytics — pure aggregation over SessionHead[], the project-level
  * counterpart to dashboard.ts. No HTTP, no DB: the caller supplies the groups
  * and the sessions, this module owns the arithmetic.
+ *
+ * Metrics are inclusive of sub-sessions and `sessionCount` is recomputed from
+ * the sessions actually handed in, so a windowed caller gets windowed counts
+ * instead of the cache-wide count carried by ProjectGroup.
  */
 import type { ProjectGroup, SessionHead } from "../types/index.js";
 import type { ApiProjectAgentStat, ApiProjectGroup } from "../contract/index.js";
 import { getProjectIdentityKey } from "../contract/project-identity.js";
-import { isChildSession } from "../contract/session-tree.js";
-import { getSessionAgentName, getTotalTokens } from "./dashboard.js";
+import { buildSessionTree } from "../contract/session-tree.js";
+import { getSessionAgentName } from "./dashboard.js";
 
 interface ProjectMetrics {
+  sessions: number;
   messages: number;
   tokens: number;
   cost: number;
@@ -18,7 +23,14 @@ interface ProjectMetrics {
 }
 
 function emptyMetrics(): ProjectMetrics {
-  return { messages: 0, tokens: 0, cost: 0, hasEstimatedCost: false, agentStats: new Map() };
+  return {
+    sessions: 0,
+    messages: 0,
+    tokens: 0,
+    cost: 0,
+    hasEstimatedCost: false,
+    agentStats: new Map(),
+  };
 }
 
 /**
@@ -31,9 +43,8 @@ export function attachProjectMetrics(
 ): ApiProjectGroup[] {
   const metrics = new Map<string, ProjectMetrics>();
 
-  for (const session of sessions) {
-    if (isChildSession(session)) continue;
-    const identity = session.project_identity;
+  for (const node of buildSessionTree(sessions).entries) {
+    const identity = node.session.project_identity;
     if (!identity) continue;
 
     const key = getProjectIdentityKey(identity);
@@ -43,27 +54,27 @@ export function attachProjectMetrics(
       metrics.set(key, current);
     }
 
-    const tokens = getTotalTokens(session.stats);
-    const cost = session.stats.total_cost ?? 0;
-    current.messages += session.stats.message_count;
-    current.tokens += tokens;
-    current.cost += cost;
-    if (session.stats.cost_source === "estimated") current.hasEstimatedCost = true;
+    const stats = node.inclusiveStats;
+    current.sessions += 1;
+    current.messages += stats.messageCount;
+    current.tokens += stats.totalTokens;
+    current.cost += stats.cost;
+    if (stats.costSource === "estimated") current.hasEstimatedCost = true;
 
-    const agentName = getSessionAgentName(session);
+    const agentName = getSessionAgentName(node.session);
     const agent = current.agentStats.get(agentName);
     if (agent) {
       agent.sessions += 1;
-      agent.messages += session.stats.message_count;
-      agent.tokens += tokens;
-      agent.cost += cost;
+      agent.messages += stats.messageCount;
+      agent.tokens += stats.totalTokens;
+      agent.cost += stats.cost;
     } else {
       current.agentStats.set(agentName, {
         name: agentName,
         sessions: 1,
-        messages: session.stats.message_count,
-        tokens,
-        cost,
+        messages: stats.messageCount,
+        tokens: stats.totalTokens,
+        cost: stats.cost,
       });
     }
   }
@@ -74,6 +85,7 @@ export function attachProjectMetrics(
     );
     return {
       ...project,
+      sessionCount: metric?.sessions ?? 0,
       messages: metric?.messages ?? 0,
       tokens: metric?.tokens ?? 0,
       cost: metric?.cost ?? 0,

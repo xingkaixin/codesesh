@@ -79,9 +79,9 @@ describe("attachProjectMetrics", () => {
     expect(project?.tokens).toBe(999);
   });
 
-  it("does not add child rows to parent project metrics", () => {
+  it("rolls child rows into the parent without counting them as sessions", () => {
     const [project] = attachProjectMetrics(
-      [makeGroup("repo-a")],
+      [makeGroup("repo-a", { sessionCount: 99 })],
       [
         makeSession("parent", {
           stats: {
@@ -103,7 +103,33 @@ describe("attachProjectMetrics", () => {
       ],
     );
 
-    expect(project).toMatchObject({ messages: 1, tokens: 50 });
+    expect(project).toMatchObject({ messages: 2, tokens: 70, sessionCount: 1 });
+    expect(project?.agentStats).toEqual([
+      { name: "claudecode", sessions: 1, messages: 2, tokens: 70, cost: 0 },
+    ]);
+  });
+
+  it("counts an orphaned sub-session as its own session", () => {
+    const [project] = attachProjectMetrics(
+      [makeGroup("repo-a")],
+      [
+        makeSession("parent"),
+        makeSession("orphan", {
+          parent_reference: { agentName: "claudecode", sessionId: "missing" },
+        }),
+      ],
+    );
+
+    expect(project).toMatchObject({ sessionCount: 2, messages: 2 });
+  });
+
+  it("recomputes sessionCount from the sessions handed in, not the cached group", () => {
+    const [project] = attachProjectMetrics(
+      [makeGroup("repo-a", { sessionCount: 42 })],
+      [makeSession("a")],
+    );
+
+    expect(project?.sessionCount).toBe(1);
   });
 
   it("marks the project cost estimated when any session's cost is estimated", () => {

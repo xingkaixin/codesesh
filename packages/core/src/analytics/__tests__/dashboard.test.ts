@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildDashboard,
+  DASHBOARD_PROJECT_LIMIT,
   getSessionActivityTime,
   getSessionAgentName,
   getTotalTokens,
+  PROJECT_SPARKLINE_DAYS,
 } from "../dashboard.js";
-import { startOfCalendarDay } from "../../contract/calendar-day.js";
+import { addCalendarDays, startOfCalendarDay } from "../../contract/calendar-day.js";
 import type { SessionHead } from "../../types/session.js";
 
 function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
@@ -197,7 +199,7 @@ describe("buildDashboard", () => {
     expect(result.totals.sessions).toBe(1);
   });
 
-  it("does not double-count child tokens already folded into the parent", () => {
+  it("rolls child stats into the parent entry without counting it as a session", () => {
     const result = buildDashboard(
       [
         makeSession("parent", {
@@ -207,7 +209,7 @@ describe("buildDashboard", () => {
             message_count: 1,
             total_input_tokens: 50,
             total_output_tokens: 0,
-            total_cost: 0,
+            total_cost: 0.1,
           },
         }),
         makeSession("child", {
@@ -215,17 +217,93 @@ describe("buildDashboard", () => {
           time_updated: 1,
           parent_reference: { agentName: "claudecode", sessionId: "parent" },
           stats: {
-            message_count: 1,
+            message_count: 3,
             total_input_tokens: 20,
             total_output_tokens: 0,
-            total_cost: 0,
+            total_cost: 0.2,
           },
         }),
       ],
       opts({ from: 900, to: 1100 }),
     );
 
-    expect(result.totals).toMatchObject({ sessions: 1, tokens: 50 });
+    expect(result.totals).toMatchObject({ sessions: 1, messages: 4, tokens: 70 });
+    expect(result.totals.cost).toBeCloseTo(0.3);
+  });
+
+  it("counts an orphaned sub-session as a top-level entry", () => {
+    const result = buildDashboard(
+      [
+        makeSession("root", { time_created: 1000, time_updated: 1000 }),
+        makeSession("orphan", {
+          time_created: 1000,
+          time_updated: 1000,
+          parent_reference: { agentName: "claudecode", sessionId: "missing" },
+        }),
+      ],
+      opts({ from: 900, to: 1100 }),
+    );
+
+    expect(result.totals).toMatchObject({ sessions: 2, messages: 2 });
+  });
+
+  it("splits cost into recorded and estimated buckets that sum to the total", () => {
+    const result = buildDashboard(
+      [
+        makeSession("recorded", {
+          stats: {
+            message_count: 1,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            total_cost: 1,
+            cost_source: "recorded",
+          },
+        }),
+        makeSession("estimated", {
+          stats: {
+            message_count: 1,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            total_cost: 3,
+            cost_source: "estimated",
+          },
+        }),
+      ],
+      opts(),
+    );
+
+    expect(result.totals.costRecorded).toBeCloseTo(1);
+    expect(result.totals.costEstimated).toBeCloseTo(3);
+    expect(result.totals.costRecorded + result.totals.costEstimated).toBeCloseTo(
+      result.totals.cost,
+    );
+  });
+
+  it("sums cache reads and reports the latest entry's project and agent", () => {
+    const result = buildDashboard(
+      [
+        makeSession("old", { time_created: 1000, time_updated: 1000 }),
+        makeSession("latest", {
+          slug: "codex/latest",
+          time_created: 5000,
+          time_updated: 5000,
+          project_identity: { kind: "git_remote", key: "repo-a", displayName: "Repo A" },
+          stats: {
+            message_count: 1,
+            total_input_tokens: 100,
+            total_output_tokens: 0,
+            total_cache_read_tokens: 40,
+            total_cost: 0,
+          },
+        }),
+      ],
+      opts({ byAgentNames: ["claudecode", "codex"] }),
+    );
+
+    expect(result.totals.cacheReadTokens).toBe(40);
+    expect(result.totals.latestActivityProject).toBe("Repo A");
+    expect(result.totals.latestActivityAgent).toBe("codex");
+    expect(result.scopeCounts).toEqual({ projects: 1, agents: 2 });
   });
 
   it("buckets token activity including cache split", () => {
@@ -254,6 +332,15 @@ describe("buildDashboard", () => {
     // pure input = 100 - 20 - 10 = 70
     expect(bucket.input).toBe(70);
     expect(bucket.output).toBe(50);
+    expect(result.dailyActivity[0]).toMatchObject({
+      sessions: 1,
+      messages: 1,
+      cost: 0,
+      input: 70,
+      output: 50,
+      cache_read: 20,
+      cache_create: 10,
+    });
   });
 
   it("aggregates model distribution sorted by tokens desc", () => {
@@ -287,6 +374,111 @@ describe("buildDashboard", () => {
     expect(result.totals.sessions).toBe(0);
     expect(result.perAgent).toEqual([]);
     expect(result.recentSessions).toEqual([]);
+  });
+});
+
+describe("buildDashboard project ranking", () => {
+  const to = startOfCalendarDay(Date.now()) + 12 * 3_600_000;
+
+  function projectSession(id: string, key: string, cost: number, activity: number): SessionHead {
+    return makeSession(id, {
+      time_created: activity,
+      time_updated: activity,
+      project_identity: { kind: "git_remote", key, displayName: key },
+      stats: {
+        message_count: 1,
+        total_input_tokens: 10,
+        total_output_tokens: 0,
+        total_cost: cost,
+      },
+    });
+  }
+
+  it("ranks projects by cost and rolls the tail beyond the limit up", () => {
+    const sessions = Array.from({ length: DASHBOARD_PROJECT_LIMIT + 2 }, (_, i) =>
+      projectSession(`s${i}`, `repo-${i}`, i + 1, to),
+    );
+    const result = buildDashboard(sessions, opts({ from: addCalendarDays(to, -13), to }));
+
+    expect(result.perProject).toHaveLength(DASHBOARD_PROJECT_LIMIT);
+    expect(result.perProject[0]!.identityKey).toBe(`repo-${DASHBOARD_PROJECT_LIMIT + 1}`);
+    const costs = result.perProject.map((project) => project.cost);
+    expect(costs).toEqual([...costs].sort((a, b) => b - a));
+    expect(result.scopeCounts.projects).toBe(DASHBOARD_PROJECT_LIMIT + 2);
+
+    const ranked = result.perProject.reduce((sum, project) => sum + project.cost, 0);
+    expect(result.projectRollup.projects).toBe(2);
+    expect(result.projectRollup.sessions).toBe(2);
+    expect(result.projectRollup.cost).toBeCloseTo(result.totals.cost - ranked);
+  });
+
+  it("aligns the sparkline to the last calendar day of the window", () => {
+    const result = buildDashboard(
+      [
+        projectSession("today", "repo-a", 2, to),
+        projectSession("recent", "repo-a", 5, addCalendarDays(to, -3) + 3_600_000),
+        projectSession("older", "repo-a", 9, addCalendarDays(to, -20)),
+      ],
+      opts({ from: addCalendarDays(to, -30), to }),
+    );
+
+    const project = result.perProject[0]!;
+    expect(project.sparkline).toHaveLength(PROJECT_SPARKLINE_DAYS);
+    expect(project.sparkline[PROJECT_SPARKLINE_DAYS - 1]).toBeCloseTo(2);
+    expect(project.sparkline[PROJECT_SPARKLINE_DAYS - 4]).toBeCloseTo(5);
+    expect(project.sparkline.filter((value) => value > 0)).toHaveLength(2);
+    expect(project.cost).toBeCloseTo(16);
+  });
+
+  it("lists a project's agents by session count desc", () => {
+    const result = buildDashboard(
+      [
+        { ...projectSession("a", "repo-a", 0, to), slug: "codex/a" },
+        { ...projectSession("b", "repo-a", 0, to), slug: "claudecode/b" },
+        { ...projectSession("c", "repo-a", 0, to), slug: "claudecode/c" },
+      ],
+      opts({ byAgentNames: ["claudecode", "codex"], to }),
+    );
+
+    expect(result.perProject[0]!.agents).toEqual(["claudecode", "codex"]);
+  });
+});
+
+describe("buildDashboard compare window", () => {
+  it("reports previous totals over the compare window", () => {
+    const result = buildDashboard(
+      [
+        makeSession("now", {
+          time_created: 6000,
+          time_updated: 6000,
+          stats: {
+            message_count: 2,
+            total_input_tokens: 10,
+            total_output_tokens: 0,
+            total_cost: 0.5,
+          },
+        }),
+        makeSession("before", {
+          time_created: 2000,
+          time_updated: 2000,
+          stats: {
+            message_count: 5,
+            total_input_tokens: 4,
+            total_output_tokens: 1,
+            total_cost: 0.25,
+          },
+        }),
+      ],
+      opts({ from: 5000, to: 10000, compare: { from: 0, to: 4999 } }),
+    );
+
+    expect(result.totals).toMatchObject({ sessions: 1, messages: 2 });
+    expect(result.totals.previous).toEqual({ sessions: 1, messages: 5, tokens: 5, cost: 0.25 });
+  });
+
+  it("omits previous totals when no compare window is given", () => {
+    const result = buildDashboard([makeSession("a")], opts());
+    expect(result.totals.previous).toBeUndefined();
   });
 });
 
