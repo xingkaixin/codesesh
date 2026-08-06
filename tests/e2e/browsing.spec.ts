@@ -45,15 +45,18 @@ test("browses the dashboard and project tree with a keyboard", async ({ page }) 
   await expect(activityChart.getByRole("table", { name: "按天用量数据" })).toBeAttached();
 
   await page
-    .getByRole("link", { name: /Claude Code/ })
+    .locator("aside")
+    .getByRole("link", { name: /codesesh-e2e/ })
     .first()
     .click();
-  await expect(page.getByRole("heading", { level: 1, name: "Claude Code" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "codesesh-e2e" })).toBeVisible();
+
   const projectTreeItem = page.getByRole("treeitem", { name: /codesesh-e2e/ });
   await expect(projectTreeItem).toBeVisible();
   await projectTreeItem.click();
 
   const treeSession = page.getByRole("treeitem", { name: /Core browsing smoke session/ });
+  await expect(treeSession).toBeVisible();
   await treeSession.focus();
   await treeSession.press("Shift+F10");
   await expect(page.getByRole("menuitem", { name: "Rename" })).toBeVisible();
