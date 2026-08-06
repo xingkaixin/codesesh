@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SAMPLE_DASHBOARD_DATA } from "@codesesh/core/contract";
+import type { DashboardScope } from "./api";
 import {
   fetchAgents,
   fetchConfig,
@@ -59,7 +60,7 @@ describe("remote access", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await fetchDashboard();
+    await fetchDashboard(undefined, { kind: "global" });
 
     expect(window.location.search).toBe("");
     expect(window.sessionStorage.getItem("codesesh:remote-access-token")).toBe("remote-secret");
@@ -91,7 +92,7 @@ describe("fetchDashboard", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await fetchDashboard();
+    const result = await fetchDashboard(undefined, { kind: "global" });
 
     expect(result).toEqual(SAMPLE_DASHBOARD_DATA);
   });
@@ -103,9 +104,29 @@ describe("fetchDashboard", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await fetchDashboard({ from: 0, days: 0 });
+    await fetchDashboard({ from: 0, days: 0 }, { kind: "global" });
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/dashboard?days=0");
+  });
+
+  it.each<[string, DashboardScope, string]>([
+    ["global", { kind: "global" }, "/api/dashboard?days=7"],
+    [
+      "project",
+      { kind: "project", projectKind: "path", projectKey: "/a/b" },
+      "/api/dashboard?days=7&projectKind=path&projectKey=%2Fa%2Fb",
+    ],
+    ["agent", { kind: "agent", agentKey: "codex" }, "/api/dashboard?days=7&agent=codex"],
+  ])("builds the %s scope query string", async (_name, scope, expected) => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(SAMPLE_DASHBOARD_DATA),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchDashboard({ days: 7 }, scope);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(expected);
   });
 });
 
