@@ -9,53 +9,59 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = copy[locale].features;
-
-// 阶段色按序列语义映射：发现=读、组织=写、找回=用户、复盘=Agent
-const stageColors = ["--timeline-tool-read", "--timeline-tool-write", "--timeline-user", "--timeline-agent"];
+const groupStyles = [
+  "bg-[var(--console-surface)]",
+  "bg-[var(--console-surface-muted)]",
+  "bg-[var(--brand-soft)] border-[var(--brand-line)]",
+  "bg-grid bg-[var(--console-surface)]",
+];
 ---
 
-<section class="px-6 py-24" aria-labelledby="features-heading">
-  <div class="mx-auto max-w-6xl">
+<section class="px-4 py-20 sm:px-6 md:py-24" aria-labelledby="features-heading">
+  <div class="mx-auto max-w-7xl">
     <h2
       id="features-heading"
-      class="landing-heading max-w-2xl text-3xl font-semibold leading-tight tracking-tight text-[var(--console-accent-strong)] md:text-4xl"
+      class="console-display landing-heading max-w-2xl text-3xl font-semibold leading-tight text-[var(--console-text)] md:text-4xl"
     >
       <HeadingText value={t.title} />
     </h2>
-    <p class="mt-4 max-w-2xl text-base leading-7 text-[var(--console-muted)]">{t.body}</p>
+    <p class="mt-4 max-w-2xl text-base leading-7 text-[var(--console-text-secondary)]">{t.body}</p>
 
-    <div class="mt-14 space-y-12">
+    <div class="mt-12 grid gap-4 lg:grid-cols-2">
       {
         t.groups.map((group, index) => (
-          <article class="border-l-2 pl-6 md:pl-8" style={`border-color: var(${stageColors[index]})`}>
-            <div class="grid gap-6 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-10">
-              <div>
-                <h3 class="text-xl font-semibold tracking-tight text-[var(--console-text)]">
-                  {group.title}
-                </h3>
-                <p class="mt-2 text-sm leading-6 text-[var(--console-muted)]">
-                  {group.description}
-                </p>
-              </div>
-
-              <ul class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
-                {group.items.map((item) => (
-                  <li class="grid grid-cols-[2rem_1fr] gap-3">
-                    <div class="flex size-8 items-center justify-center rounded-[2px] border border-[var(--console-border)] bg-[var(--console-surface-muted)]">
-                      <Icon name={item.icon} class="size-4 text-[var(--console-accent)]" />
-                    </div>
-                    <div>
-                      <h4 class="text-sm font-semibold text-[var(--console-text)]">
-                        {item.title}
-                      </h4>
-                      <p class="mt-1 text-sm leading-6 text-[var(--console-muted)]">
-                        {item.description}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+          <article
+            class:list={[
+              "overflow-hidden rounded-lg border border-[var(--console-border)] shadow-[var(--shadow-raised)]",
+              groupStyles[index],
+            ]}
+          >
+            <div class="border-b border-[var(--console-border)] px-5 py-5 sm:px-6">
+              <h3 class="console-display text-xl font-semibold text-[var(--console-text)]">
+                {group.title}
+              </h3>
+              <p class="mt-2 text-sm leading-6 text-[var(--console-text-secondary)]">
+                {group.description}
+              </p>
             </div>
+
+            <ul class="grid gap-x-6 px-5 py-2 sm:grid-cols-2 sm:px-6">
+              {group.items.map((item) => (
+                <li class="grid grid-cols-[2rem_1fr] gap-3 py-4">
+                  <div class="flex size-8 items-center justify-center rounded-sm border border-[var(--brand-line)] bg-[var(--brand-soft)] text-[var(--brand)]">
+                    <Icon name={item.icon} class="size-4" />
+                  </div>
+                  <div>
+                    <h4 class="text-sm font-semibold text-[var(--console-text)]">
+                      {item.title}
+                    </h4>
+                    <p class="mt-1 text-sm leading-6 text-[var(--console-muted)]">
+                      {item.description}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </article>
         ))
       }

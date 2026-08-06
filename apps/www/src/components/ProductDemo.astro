@@ -1,0 +1,1339 @@
+---
+import { copy, type Locale } from "../data/landing";
+import Icon from "./Icon.astro";
+
+interface Props {
+  locale: Locale;
+  id: string;
+  compact?: boolean;
+}
+
+const { locale, id, compact = false } = Astro.props;
+const t = copy[locale].tour;
+const scenes = copy[locale].scenes;
+const views = ["overview", "search", "replay", "shortcuts"] as const;
+---
+
+<div
+  id={id}
+  class="product-demo"
+  data-product-demo
+  data-active-view="overview"
+  data-active-message="user"
+  data-compact={String(compact)}
+  role="group"
+  aria-label={t.previewLabel}
+>
+  <div class="demo-guide">
+    <div class="demo-tabs" role="tablist" aria-label={t.viewLabel}>
+      {
+        views.map((view, index) => (
+          <button
+            id={`${id}-tab-${view}`}
+            type="button"
+            role="tab"
+            aria-selected={index === 0 ? "true" : "false"}
+            aria-controls={`${id}-panel-${view}`}
+            tabindex={index === 0 ? "0" : "-1"}
+            data-demo-view-target={view}
+            data-demo-scene-title={scenes[index]?.title}
+            data-demo-scene-description={scenes[index]?.description}
+          >
+            {scenes[index]?.title}
+          </button>
+        ))
+      }
+    </div>
+    <div class="demo-guide-copy" aria-live="polite">
+      <div>
+        <p data-demo-active-title>{scenes[0]?.title}</p>
+        <p data-demo-active-description>{scenes[0]?.description}</p>
+      </div>
+      <span>{t.sampleLabel}</span>
+    </div>
+  </div>
+
+  <div class="demo-shell">
+    <header class="demo-topbar">
+      <div class="demo-brand">
+        <img src="/logo.svg?v=3" alt="" />
+        <span>CodeSesh</span>
+      </div>
+      <form class="demo-search" data-demo-search-form>
+        <Icon name="search" class="size-3.5" />
+        <label class="sr-only" for={`${id}-search`}>Search sample sessions</label>
+        <input id={`${id}-search`} name="query" value="sidebar" autocomplete="off" />
+        <button type="submit">Search</button>
+      </form>
+      <button
+        type="button"
+        class="demo-shortcut-button"
+        aria-label="Open keyboard shortcuts"
+        aria-controls={`${id}-panel-shortcuts`}
+        aria-expanded="false"
+        data-demo-shortcuts-open
+      >
+        <span>?</span>
+        <span>Shortcuts</span>
+      </button>
+      <span class="demo-range">Last 7 days</span>
+    </header>
+
+    <div class="demo-workspace">
+      <aside class="demo-sidebar" aria-label="Sample workspace navigation">
+        <button type="button" aria-current="page" data-demo-view-target="overview">
+          <Icon name="bar-chart-3" class="size-3.5" />
+          <span>Dashboard</span>
+        </button>
+        <p>PROJECTS</p>
+        <button type="button" data-demo-view-target="search">
+          <Icon name="search" class="size-3.5" />
+          <span>codesesh</span>
+          <small>12</small>
+        </button>
+        <button type="button" data-demo-view-target="search">
+          <Icon name="search" class="size-3.5" />
+          <span>atlas-api</span>
+          <small>6</small>
+        </button>
+        <p>SESSIONS</p>
+        <button type="button" data-demo-view-target="replay">
+          <Icon name="list-tree" class="size-3.5" />
+          <span>Refine sidebar navigation</span>
+        </button>
+        <button type="button" data-demo-view-target="replay">
+          <Icon name="list-tree" class="size-3.5" />
+          <span>Trace search indexing</span>
+        </button>
+      </aside>
+
+      <div class="demo-main">
+        <section
+          id={`${id}-panel-overview`}
+          role="tabpanel"
+          aria-labelledby={`${id}-tab-overview`}
+          data-demo-panel="overview"
+        >
+          <div class="demo-page-heading">
+            <div>
+              <span>Dashboard</span>
+              <h3>Engineering memory</h3>
+              <p>18 sessions · 2 agents</p>
+            </div>
+            <div class="demo-range-pills" aria-label="Sample time range">
+              <button type="button" aria-pressed="true">7d</button>
+              <button type="button" aria-pressed="false">30d</button>
+              <button type="button" aria-pressed="false">All</button>
+            </div>
+          </div>
+
+          <div class="demo-scope-row">
+            <button type="button">All agents</button>
+            <span>2 projects · 2 agents in scope</span>
+          </div>
+
+          <div class="demo-kpis">
+            <article>
+              <span>SESSIONS</span>
+              <strong>18</strong>
+              <small>2.6/day</small>
+            </article>
+            <article>
+              <span>MESSAGES</span>
+              <strong>142</strong>
+              <small>7.9/session</small>
+            </article>
+            <article>
+              <span>TOKENS</span>
+              <strong>486K</strong>
+              <small>Cache hit 68%</small>
+            </article>
+            <article class="demo-kpi-cost">
+              <span>COST</span>
+              <strong>$4.28</strong>
+              <small>Sample estimate</small>
+            </article>
+            <article>
+              <span>LAST ACTIVITY</span>
+              <strong>Now</strong>
+              <small>codesesh · Codex</small>
+            </article>
+          </div>
+
+          <article class="demo-usage-panel">
+            <div>
+              <h4>Daily usage</h4>
+              <span>Tokens</span>
+            </div>
+            <p>Bars show how local coding context accumulates across the week.</p>
+            <div class="demo-chart" aria-label="Sample daily token usage chart">
+              <span style="--input: 18%; --output: 7%; --cache: 12%"></span>
+              <span style="--input: 27%; --output: 9%; --cache: 18%"></span>
+              <span style="--input: 20%; --output: 8%; --cache: 28%"></span>
+              <span style="--input: 39%; --output: 12%; --cache: 24%"></span>
+              <span style="--input: 31%; --output: 10%; --cache: 35%"></span>
+              <span style="--input: 46%; --output: 14%; --cache: 30%"></span>
+              <span style="--input: 40%; --output: 13%; --cache: 42%"></span>
+            </div>
+          </article>
+        </section>
+
+        <section
+          id={`${id}-panel-search`}
+          role="tabpanel"
+          aria-labelledby={`${id}-tab-search`}
+          data-demo-panel="search"
+          hidden
+        >
+          <div class="demo-page-heading">
+            <div>
+              <span>Search</span>
+              <h3>Find the decision, not just the file</h3>
+              <p>3 matches for “<b data-demo-query-label>sidebar</b>”</p>
+            </div>
+          </div>
+          <div class="demo-filters" aria-label="Sample search filters">
+            <button type="button" aria-pressed="true">All</button>
+            <button type="button" aria-pressed="false">codesesh</button>
+            <button type="button" aria-pressed="false">Claude Code</button>
+            <button type="button" aria-pressed="false">Codex</button>
+            <button type="button" aria-pressed="false">feature-dev</button>
+            <button type="button" aria-pressed="false">tool:apply_patch</button>
+          </div>
+          <div class="demo-results">
+            <article>
+              <div>
+                <span>Codex</span>
+                <small>Assistant reply</small>
+              </div>
+              <h4>Move collapse control beside Dashboard</h4>
+              <p>The <mark data-demo-query-mark>sidebar</mark> header now keeps navigation and its control on one row.</p>
+              <footer>codesesh / app shell</footer>
+            </article>
+            <article>
+              <div>
+                <span>Claude Code</span>
+                <small>Tool result</small>
+              </div>
+              <h4>Unify session action menus</h4>
+              <p>Reused the bookmark menu treatment for the <mark data-demo-query-mark>sidebar</mark> session tree.</p>
+              <footer>codesesh / navigation</footer>
+            </article>
+            <article>
+              <div>
+                <span>Codex</span>
+                <small>User message</small>
+              </div>
+              <h4>Review responsive navigation</h4>
+              <p>Verify the <mark data-demo-query-mark>sidebar</mark> state survives reload and keyboard navigation.</p>
+              <footer>atlas-api / usability</footer>
+            </article>
+          </div>
+        </section>
+
+        <section
+          id={`${id}-panel-replay`}
+          role="tabpanel"
+          aria-labelledby={`${id}-tab-replay`}
+          data-demo-panel="replay"
+          hidden
+        >
+          <div class="demo-page-heading demo-replay-heading">
+            <div>
+              <span>Session</span>
+              <h3>Refine sidebar navigation</h3>
+              <p>Replay the work in the order it happened.</p>
+            </div>
+            <button type="button">Copy resume</button>
+          </div>
+          <div class="demo-replay-layout">
+            <nav aria-label="Sample session timeline">
+              <button type="button" aria-current="true" data-demo-message-target="user">
+                <span>USER</span>
+                <small>Move the toggle beside Dashboard</small>
+              </button>
+              <button type="button" aria-current="false" data-demo-message-target="agent">
+                <span>AGENT</span>
+                <small>Found the shared sidebar header</small>
+              </button>
+              <button type="button" aria-current="false" data-demo-message-target="tool">
+                <span>TOOL</span>
+                <small>apply_patch</small>
+              </button>
+            </nav>
+            <div class="demo-messages">
+              <article data-demo-message="user">
+                <header><strong>USER</strong><time>10:14</time></header>
+                <p>Put the collapse control beside Dashboard so it does not take a separate row.</p>
+              </article>
+              <article data-demo-message="agent">
+                <header><strong>AGENT</strong><time>10:15</time></header>
+                <p>The control and destination share one navigation header. The collapsed state remains keyboard accessible.</p>
+              </article>
+              <article data-demo-message="tool">
+                <header><strong>TOOL · apply_patch</strong><time>10:16</time></header>
+                <pre><code>- flex-col
++ flex items-center justify-between</code></pre>
+              </article>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <section
+      id={`${id}-panel-shortcuts`}
+      role="tabpanel"
+      aria-labelledby={`${id}-tab-shortcuts`}
+      class="demo-shortcuts"
+      data-demo-shortcuts
+      hidden
+    >
+      <div role="dialog" aria-label="Keyboard shortcuts preview">
+        <header>
+          <div>
+            <span>Keyboard shortcuts</span>
+            <h3>Navigate without leaving the keyboard</h3>
+          </div>
+          <button type="button" data-demo-shortcuts-close>{t.shortcutClose}</button>
+        </header>
+        <div class="demo-shortcut-grid">
+          <section>
+            <h4>Navigation</h4>
+            <p><kbd>J</kbd><kbd>K</kbd><span>Move through sessions</span></p>
+            <p><kbd>Enter</kbd><span>Open the current selection</span></p>
+            <p><kbd>G</kbd><span>Jump to the first item</span></p>
+          </section>
+          <section>
+            <h4>Search and help</h4>
+            <p><kbd>⌘ K</kbd><span>Open global search</span></p>
+            <p><kbd>/</kbd><span>Focus the search box</span></p>
+            <p><kbd>Esc</kbd><span>Close the current view</span></p>
+          </section>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+  type DemoView = "overview" | "search" | "replay" | "shortcuts";
+
+  document.querySelectorAll<HTMLElement>("[data-product-demo]").forEach((root) => {
+    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    const viewTargets = Array.from(
+      root.querySelectorAll<HTMLButtonElement>("[data-demo-view-target]"),
+    );
+    const panels = Array.from(root.querySelectorAll<HTMLElement>("[data-demo-panel]"));
+    const shortcuts = root.querySelector<HTMLElement>("[data-demo-shortcuts]");
+    const shortcutButton = root.querySelector<HTMLButtonElement>("[data-demo-shortcuts-open]");
+    const activeTitle = root.querySelector<HTMLElement>("[data-demo-active-title]");
+    const activeDescription = root.querySelector<HTMLElement>(
+      "[data-demo-active-description]",
+    );
+    let previousView: DemoView = "overview";
+
+    function isDemoView(value: string | undefined): value is DemoView {
+      return (
+        value === "overview" || value === "search" || value === "replay" || value === "shortcuts"
+      );
+    }
+
+    function activate(view: DemoView, focusTab = false, source?: HTMLButtonElement) {
+      if (view !== "shortcuts") previousView = view;
+      root.dataset.activeView = view;
+      panels.forEach((panel) => {
+        panel.hidden = view === "shortcuts" || panel.dataset.demoPanel !== view;
+      });
+      if (shortcuts) shortcuts.hidden = view !== "shortcuts";
+      if (shortcutButton) shortcutButton.setAttribute("aria-expanded", String(view === "shortcuts"));
+
+      const sidebarTarget =
+        source && source.getAttribute("role") !== "tab"
+          ? source
+          : viewTargets.find(
+              (target) =>
+                target.getAttribute("role") !== "tab" && target.dataset.demoViewTarget === view,
+            );
+
+      viewTargets.forEach((target) => {
+        const selected = target.dataset.demoViewTarget === view;
+        if (target.getAttribute("role") === "tab") {
+          target.setAttribute("aria-selected", String(selected));
+          target.tabIndex = selected ? 0 : -1;
+        } else if (target === sidebarTarget) {
+          target.setAttribute("aria-current", "page");
+        } else {
+          target.removeAttribute("aria-current");
+        }
+      });
+
+      const activeTab = tabs.find((tab) => tab.dataset.demoViewTarget === view);
+      if (activeTitle && activeTab?.dataset.demoSceneTitle) {
+        activeTitle.textContent = activeTab.dataset.demoSceneTitle;
+      }
+      if (activeDescription && activeTab?.dataset.demoSceneDescription) {
+        activeDescription.textContent = activeTab.dataset.demoSceneDescription;
+      }
+      if (focusTab) activeTab?.focus();
+    }
+
+    viewTargets.forEach((target) => {
+      target.addEventListener("click", () => {
+        const view = target.dataset.demoViewTarget;
+        if (isDemoView(view)) activate(view, false, target);
+      });
+    });
+
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("keydown", (event) => {
+        const last = tabs.length - 1;
+        const nextIndex =
+          event.key === "ArrowRight"
+            ? index === last
+              ? 0
+              : index + 1
+            : event.key === "ArrowLeft"
+              ? index === 0
+                ? last
+                : index - 1
+              : event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? last
+                  : -1;
+        if (nextIndex < 0) return;
+        event.preventDefault();
+        const view = tabs[nextIndex]?.dataset.demoViewTarget;
+        if (isDemoView(view)) activate(view, true);
+      });
+    });
+
+    root.querySelector("[data-demo-search-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const input = root.querySelector<HTMLInputElement>("[data-demo-search-form] input");
+      const query = input?.value.trim() || "sidebar";
+      root.querySelectorAll<HTMLElement>("[data-demo-query-label]").forEach((label) => {
+        label.textContent = query;
+      });
+      root.querySelectorAll<HTMLElement>("[data-demo-query-mark]").forEach((mark) => {
+        mark.textContent = query;
+      });
+      activate("search");
+    });
+
+    root.querySelectorAll<HTMLButtonElement>(".demo-filters button").forEach((button) => {
+      button.addEventListener("click", () => {
+        button.setAttribute("aria-pressed", String(button.getAttribute("aria-pressed") !== "true"));
+      });
+    });
+
+    root.querySelectorAll<HTMLButtonElement>(".demo-range-pills button").forEach((button) => {
+      button.addEventListener("click", () => {
+        root.querySelectorAll<HTMLButtonElement>(".demo-range-pills button").forEach((item) => {
+          item.setAttribute("aria-pressed", String(item === button));
+        });
+      });
+    });
+
+    root.querySelectorAll<HTMLButtonElement>("[data-demo-message-target]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const message = button.dataset.demoMessageTarget;
+        if (!message) return;
+        root.dataset.activeMessage = message;
+        root.querySelectorAll<HTMLButtonElement>("[data-demo-message-target]").forEach((item) => {
+          item.setAttribute("aria-current", String(item === button));
+        });
+      });
+    });
+
+    shortcutButton?.addEventListener("click", () => activate("shortcuts"));
+    root.querySelector("[data-demo-shortcuts-close]")?.addEventListener("click", () => {
+      activate(previousView);
+    });
+    root.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && root.dataset.activeView === "shortcuts") {
+        activate(previousView, true);
+      }
+    });
+  });
+</script>
+
+<style>
+  .product-demo {
+    container: product-demo / inline-size;
+    min-width: 0;
+  }
+
+  .demo-guide {
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(16rem, 1fr);
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .demo-tabs {
+    display: inline-flex;
+    min-width: 0;
+    padding: 0.2rem;
+    overflow-x: auto;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-md);
+    background: var(--console-surface);
+    scrollbar-width: none;
+  }
+
+  .demo-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .demo-tabs button {
+    flex: none;
+    padding: 0.45rem 0.7rem;
+    border-radius: var(--radius-sm);
+    color: var(--console-muted);
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    white-space: nowrap;
+    transition:
+      color var(--dur-fast) var(--ease-out),
+      background-color var(--dur-fast) var(--ease-out);
+  }
+
+  .demo-tabs button[aria-selected="true"] {
+    color: var(--brand-fg);
+    background: var(--brand);
+  }
+
+  .demo-tabs button:focus-visible,
+  .demo-shell button:focus-visible,
+  .demo-shell input:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+
+  .demo-guide-copy {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .demo-guide-copy > div {
+    min-width: 0;
+  }
+
+  .demo-guide-copy p {
+    margin: 0;
+  }
+
+  .demo-guide-copy p:first-child {
+    color: var(--console-text);
+    font-family: var(--font-display);
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .demo-guide-copy p:last-child {
+    margin-top: 0.15rem;
+    overflow: hidden;
+    color: var(--console-muted);
+    font-size: 0.72rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .demo-guide-copy > span {
+    flex: none;
+    margin-left: auto;
+    color: var(--brand);
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+  }
+
+  .demo-shell {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-lg);
+    background: var(--console-bg);
+    box-shadow: var(--elevation-overlay);
+  }
+
+  .demo-topbar {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: auto minmax(10rem, 1fr) auto auto;
+    gap: 0.6rem;
+    align-items: center;
+    min-height: 2.7rem;
+    padding: 0.45rem 0.55rem;
+    border-bottom: 1px solid var(--console-border);
+    background: var(--console-surface);
+  }
+
+  .demo-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--console-text);
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    font-weight: 650;
+  }
+
+  .demo-brand img {
+    width: 1rem;
+    height: 1rem;
+    border-radius: var(--radius-xs);
+  }
+
+  .demo-search {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.4rem;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    max-width: 28rem;
+    margin-inline: auto;
+    padding-left: 0.55rem;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-sm);
+    color: var(--console-muted);
+    background: var(--console-surface-muted);
+  }
+
+  .demo-search input {
+    min-width: 0;
+    padding: 0.36rem 0;
+    border: 0;
+    outline: 0;
+    color: var(--console-text);
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+  }
+
+  .demo-search button,
+  .demo-shortcut-button,
+  .demo-range {
+    padding: 0.35rem 0.55rem;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-sm);
+    color: var(--console-muted);
+    background: var(--console-surface);
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    white-space: nowrap;
+  }
+
+  .demo-search button {
+    margin: -1px;
+    color: var(--console-text);
+  }
+
+  .demo-shortcut-button {
+    display: flex;
+    gap: 0.3rem;
+    align-items: center;
+  }
+
+  .demo-workspace {
+    display: grid;
+    grid-template-columns: 9.2rem minmax(0, 1fr);
+    min-height: 32rem;
+  }
+
+  .demo-sidebar {
+    padding: 0.65rem;
+    border-right: 1px solid var(--console-border);
+    background: var(--console-sidebar-bg);
+  }
+
+  .demo-sidebar > p {
+    margin: 0.85rem 0 0.35rem 0.4rem;
+    color: var(--console-muted);
+    font-family: var(--font-mono);
+    font-size: 0.5rem;
+    letter-spacing: 0.08em;
+  }
+
+  .demo-sidebar button {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.4rem;
+    align-items: center;
+    width: 100%;
+    padding: 0.42rem;
+    border-radius: var(--radius-sm);
+    color: var(--console-muted);
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 0.56rem;
+  }
+
+  .demo-sidebar button span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .demo-sidebar button small {
+    font-size: 0.5rem;
+  }
+
+  .demo-sidebar button[aria-current="page"] {
+    color: var(--brand-hover);
+    background: var(--brand-soft);
+  }
+
+  .demo-main {
+    min-width: 0;
+    padding: 1rem;
+    background-image:
+      linear-gradient(
+        to right,
+        color-mix(in oklab, var(--console-text) 4%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in oklab, var(--console-text) 4%, transparent) 1px,
+        transparent 1px
+      );
+    background-size: 2rem 2rem;
+  }
+
+  [data-demo-panel]:not([hidden]) {
+    animation: demo-panel-in var(--dur-base) var(--ease-out) both;
+  }
+
+  .demo-page-heading {
+    display: flex;
+    align-items: end;
+    gap: 1rem;
+  }
+
+  .demo-page-heading > div:first-child {
+    min-width: 0;
+  }
+
+  .demo-page-heading span {
+    color: var(--console-muted);
+    font-family: var(--font-mono);
+    font-size: 0.54rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .demo-page-heading h3 {
+    margin: 0.2rem 0 0;
+    color: var(--console-text);
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+  }
+
+  .demo-page-heading p {
+    margin: 0.2rem 0 0;
+    color: var(--console-muted);
+    font-family: var(--font-mono);
+    font-size: 0.57rem;
+  }
+
+  .demo-range-pills {
+    display: flex;
+    gap: 0.3rem;
+    margin-left: auto;
+  }
+
+  .demo-range-pills button,
+  .demo-scope-row button,
+  .demo-filters button,
+  .demo-replay-heading > button {
+    padding: 0.3rem 0.55rem;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-pill);
+    color: var(--console-muted);
+    background: var(--console-surface);
+    font-family: var(--font-mono);
+    font-size: 0.54rem;
+  }
+
+  .demo-range-pills button[aria-pressed="true"],
+  .demo-filters button[aria-pressed="true"] {
+    border-color: var(--brand);
+    color: var(--brand-fg);
+    background: var(--brand);
+  }
+
+  .demo-scope-row {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    margin-top: 0.8rem;
+  }
+
+  .demo-scope-row span {
+    color: var(--console-muted);
+    font-family: var(--font-mono);
+    font-size: 0.52rem;
+  }
+
+  .demo-kpis {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.55rem;
+    margin-top: 0.75rem;
+  }
+
+  .demo-kpis article,
+  .demo-usage-panel,
+  .demo-results article,
+  .demo-messages article {
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-md);
+    background: var(--console-surface);
+    box-shadow: var(--elevation-raised);
+  }
+
+  .demo-kpis article {
+    min-width: 0;
+    padding: 0.65rem;
+  }
+
+  .demo-kpis span,
+  .demo-kpis small {
+    display: block;
+    overflow: hidden;
+    color: var(--console-muted);
+    font-family: var(--font-mono);
+    font-size: 0.48rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .demo-kpis strong {
+    display: block;
+    margin: 0.45rem 0 0.35rem;
+    color: var(--console-text);
+    font-family: var(--font-mono);
+    font-size: 1rem;
+  }
+
+  .demo-kpis .demo-kpi-cost {
+    border-color: var(--brand-line);
+  }
+
+  .demo-kpis .demo-kpi-cost strong {
+    color: var(--brand);
+  }
+
+  .demo-usage-panel {
+    margin-top: 0.65rem;
+    padding: 0.75rem;
+  }
+
+  .demo-usage-panel > div:first-child {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .demo-usage-panel h4,
+  .demo-results h4,
+  .demo-shortcuts h3,
+  .demo-shortcuts h4 {
+    margin: 0;
+    color: var(--console-text);
+    font-family: var(--font-display);
+    font-weight: 650;
+  }
+
+  .demo-usage-panel h4 {
+    font-size: 0.72rem;
+  }
+
+  .demo-usage-panel > div:first-child span {
+    margin-left: auto;
+    padding: 0.24rem 0.45rem;
+    border-radius: var(--radius-sm);
+    color: var(--brand-fg);
+    background: var(--brand);
+    font-family: var(--font-mono);
+    font-size: 0.48rem;
+  }
+
+  .demo-usage-panel > p {
+    margin: 0.25rem 0 0;
+    color: var(--console-muted);
+    font-size: 0.55rem;
+  }
+
+  .demo-chart {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.55rem;
+    align-items: end;
+    height: 7.4rem;
+    margin-top: 0.55rem;
+    padding: 0.5rem 0.6rem 0;
+    border-bottom: 1px solid var(--console-border);
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent calc(33.33% - 1px),
+      var(--console-border) 33.33%
+    );
+  }
+
+  .demo-chart > span {
+    position: relative;
+    display: block;
+    height: calc(var(--input) + var(--output) + var(--cache));
+    min-height: 0.4rem;
+    overflow: hidden;
+    border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+    background: linear-gradient(
+      to top,
+      #4a9af5 0 var(--input),
+      #7758ef var(--input) calc(var(--input) + var(--output)),
+      #42b58c calc(var(--input) + var(--output)) 100%
+    );
+  }
+
+  .demo-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.8rem;
+    padding: 0.55rem;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-md);
+    background: var(--console-surface);
+  }
+
+  .demo-results {
+    display: grid;
+    gap: 0.55rem;
+    margin-top: 0.65rem;
+  }
+
+  .demo-results article {
+    padding: 0.65rem 0.75rem;
+  }
+
+  .demo-results article > div {
+    display: flex;
+    gap: 0.45rem;
+    align-items: center;
+  }
+
+  .demo-results article > div span,
+  .demo-results article > div small,
+  .demo-results footer {
+    color: var(--console-muted);
+    font-family: var(--font-mono);
+    font-size: 0.49rem;
+  }
+
+  .demo-results article > div span {
+    color: var(--brand);
+  }
+
+  .demo-results h4 {
+    margin-top: 0.32rem;
+    font-size: 0.72rem;
+  }
+
+  .demo-results p,
+  .demo-messages p {
+    margin: 0.28rem 0 0;
+    color: var(--console-text-secondary);
+    font-size: 0.58rem;
+    line-height: 1.55;
+  }
+
+  .demo-results mark {
+    padding: 0 0.1rem;
+    color: var(--brand-hover);
+    background: var(--brand-soft);
+  }
+
+  .demo-results footer {
+    margin-top: 0.45rem;
+  }
+
+  .demo-replay-heading > button {
+    margin-left: auto;
+    border-radius: var(--radius-sm);
+    color: var(--console-text);
+  }
+
+  .demo-replay-layout {
+    display: grid;
+    grid-template-columns: 10rem minmax(0, 1fr);
+    gap: 0.65rem;
+    margin-top: 0.8rem;
+  }
+
+  .demo-replay-layout > nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .demo-replay-layout > nav button {
+    padding: 0.55rem;
+    border-left: 2px solid var(--console-border);
+    color: var(--console-muted);
+    text-align: left;
+  }
+
+  .demo-replay-layout > nav button[aria-current="true"] {
+    border-color: var(--brand);
+    color: var(--console-text);
+    background: var(--brand-soft);
+  }
+
+  .demo-replay-layout > nav span,
+  .demo-replay-layout > nav small {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.49rem;
+  }
+
+  .demo-replay-layout > nav small {
+    margin-top: 0.25rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .demo-messages {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .demo-messages article {
+    padding: 0.65rem 0.75rem;
+    opacity: 0.68;
+    transition:
+      opacity var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out);
+  }
+
+  [data-active-message="user"] [data-demo-message="user"],
+  [data-active-message="agent"] [data-demo-message="agent"],
+  [data-active-message="tool"] [data-demo-message="tool"] {
+    border-color: var(--brand-line);
+    opacity: 1;
+  }
+
+  .demo-messages header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--console-muted);
+    font-family: var(--font-mono);
+    font-size: 0.48rem;
+  }
+
+  .demo-messages header strong {
+    color: var(--console-text);
+  }
+
+  .demo-messages time {
+    margin-left: auto;
+  }
+
+  .demo-messages pre {
+    margin: 0.4rem 0 0;
+    overflow: hidden;
+    color: var(--console-text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.52rem;
+    line-height: 1.55;
+  }
+
+  .demo-shortcuts {
+    position: absolute;
+    z-index: 1;
+    inset: 2.7rem 0 0;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: var(--scrim);
+    backdrop-filter: blur(3px);
+    animation: demo-overlay-in var(--dur-base) var(--ease-out) both;
+  }
+
+  .demo-shortcuts[hidden] {
+    display: none;
+  }
+
+  .demo-shortcuts > div {
+    width: min(30rem, 94%);
+    overflow: hidden;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-lg);
+    background: var(--console-surface);
+    box-shadow: var(--elevation-overlay);
+    animation: demo-dialog-in var(--dur-base) var(--ease-out) both;
+  }
+
+  .demo-shortcuts header {
+    display: flex;
+    gap: 1rem;
+    align-items: start;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--console-border);
+  }
+
+  .demo-shortcuts header span {
+    color: var(--brand);
+    font-family: var(--font-mono);
+    font-size: 0.52rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .demo-shortcuts h3 {
+    margin-top: 0.25rem;
+    font-size: 0.9rem;
+  }
+
+  .demo-shortcuts header button {
+    margin-left: auto;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-sm);
+    color: var(--console-muted);
+    font-family: var(--font-mono);
+    font-size: 0.52rem;
+  }
+
+  .demo-shortcut-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    padding: 1rem;
+  }
+
+  .demo-shortcuts h4 {
+    font-size: 0.65rem;
+  }
+
+  .demo-shortcuts section p {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.3rem;
+    align-items: center;
+    margin: 0.5rem 0 0;
+    color: var(--console-muted);
+    font-size: 0.55rem;
+  }
+
+  .demo-shortcuts kbd {
+    min-width: 1.6rem;
+    padding: 0.2rem 0.35rem;
+    border: 1px solid var(--console-border-strong);
+    border-radius: var(--radius-xs);
+    color: var(--console-text);
+    background: var(--console-surface-muted);
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 0.48rem;
+    box-shadow: 0 1px 0 var(--console-border-strong);
+  }
+
+  .product-demo[data-compact="true"] .demo-guide {
+    display: block;
+  }
+
+  .product-demo[data-compact="true"] .demo-guide-copy {
+    display: none;
+  }
+
+  .product-demo[data-compact="true"] .demo-workspace {
+    min-height: 20rem;
+  }
+
+  .product-demo[data-compact="true"] .demo-main {
+    padding: 0.7rem;
+  }
+
+  .product-demo[data-compact="true"] .demo-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .product-demo[data-compact="true"] .demo-kpis article:nth-child(n + 4) {
+    display: none;
+  }
+
+  .product-demo[data-compact="true"] .demo-chart {
+    height: 4.5rem;
+  }
+
+  .product-demo[data-compact="true"] .demo-replay-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .product-demo[data-compact="true"] .demo-replay-layout > nav {
+    display: none;
+  }
+
+  .product-demo[data-compact="true"] .demo-results article:nth-child(3) {
+    display: none;
+  }
+
+  @container product-demo (max-width: 44rem) {
+    .demo-topbar {
+      grid-template-columns: auto minmax(7rem, 1fr) auto;
+    }
+
+    .demo-range {
+      display: none;
+    }
+
+    .demo-shortcut-button span:last-child {
+      display: none;
+    }
+
+    .demo-workspace {
+      grid-template-columns: 1fr;
+    }
+
+    .demo-sidebar {
+      display: none;
+    }
+
+    .demo-kpis {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .demo-kpis article:nth-child(n + 4) {
+      display: none;
+    }
+
+    .demo-replay-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .demo-replay-layout > nav {
+      display: none;
+    }
+  }
+
+  @container product-demo (max-width: 32rem) {
+    .demo-guide {
+      display: block;
+    }
+
+    .demo-guide-copy {
+      display: none;
+    }
+
+    .demo-topbar {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+
+    .demo-brand span {
+      display: none;
+    }
+
+    .demo-search {
+      padding-left: 0.4rem;
+    }
+
+    .demo-page-heading {
+      align-items: start;
+    }
+
+    .demo-page-heading h3 {
+      font-size: 0.9rem;
+    }
+
+    .demo-range-pills {
+      display: none;
+    }
+
+    .demo-scope-row span {
+      display: none;
+    }
+
+    .demo-kpis {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .demo-kpis article:nth-child(3) {
+      display: none;
+    }
+
+    .demo-chart {
+      height: 5.5rem;
+      gap: 0.3rem;
+    }
+
+    .demo-filters button:nth-child(n + 5) {
+      display: none;
+    }
+
+    .demo-results article:nth-child(3) {
+      display: none;
+    }
+
+    .demo-shortcut-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @keyframes demo-panel-in {
+    from {
+      opacity: 0;
+      transform: translateY(0.35rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes demo-overlay-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes demo-dialog-in {
+    from {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-demo-panel]:not([hidden]),
+    .demo-shortcuts,
+    .demo-shortcuts > div {
+      animation: none;
+    }
+
+    .demo-messages article,
+    .demo-tabs button {
+      transition: none;
+    }
+  }
+</style>

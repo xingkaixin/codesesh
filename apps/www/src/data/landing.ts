@@ -17,7 +17,6 @@ export type IconName =
   | "timer";
 
 export interface ProductScene {
-  image: string;
   title: string;
   description: string;
 }
@@ -55,39 +54,32 @@ interface LandingCopy {
   };
   hero: {
     title: HeadingCopy;
-    latest: string;
     body: string;
-    commandTitle: string;
     command: string;
     copied: string;
     copyFailed: string;
     copyCommand: string;
-    runtime: string;
   };
   tour: {
     label: string;
     title: HeadingCopy;
     body: string;
-    expand: string;
-    close: string;
-    previous: string;
-    next: string;
-    closeHint: string;
+    previewLabel: string;
+    viewLabel: string;
+    sampleLabel: string;
+    shortcutClose: string;
   };
   scenes: ProductScene[];
   features: {
-    label: string;
     title: HeadingCopy;
     body: string;
     groups: FeatureGroup[];
   };
   agents: {
-    label: string;
     title: HeadingCopy;
     body: string;
   };
   faq: {
-    label: string;
     title: HeadingCopy;
     body: string;
     items: FAQItem[];
@@ -130,51 +122,42 @@ export const copy = {
       themeSwitchTo: "，点击切换到{next}",
     },
     hero: {
-      title: ["把 AI 编码历史，", "变成可复用的工程记忆。"],
-      latest: "最新版",
-      body: "CodeSesh 自动发现 Claude Code、Cursor、Kimi、Kimi-Code、Codex、Grok、Pi、OpenCode 和 ZCode 的本地会话，把问题、推理、尝试、文件活动和结果沉淀成按项目组织、可结构化检索、可复盘的工程记忆。",
-      commandTitle: "从本地开始积累",
+      title: ["AI 编码历史，", "随时可复用。"],
+      body: "统一发现、搜索和回放本地 AI 编码会话，让跨 Agent 的工程上下文长期可追溯。",
       command: "npx codesesh",
       copied: "已复制",
       copyFailed: "复制失败，请手动复制命令",
       copyCommand: "复制命令",
-      runtime: "需要 Node.js 22+ · 从终端本地运行",
     },
     tour: {
       label: "Product Tour",
       title: ["工程记忆", "如何在日常里生长"],
       body: "从全局概览到会话回放，从项目浏览到结构化搜索，CodeSesh 让散落在不同 Agent 里的编码过程重新变得可见。",
-      expand: "展开",
-      close: "关闭",
-      previous: "上一张",
-      next: "下一张",
-      closeHint: "点击外部关闭",
+      previewLabel: "CodeSesh 交互式产品预览",
+      viewLabel: "选择预览视图",
+      sampleLabel: "示例工作区",
+      shortcutClose: "关闭",
     },
     scenes: [
       {
-        image: "/demo/dashboard.webp",
         title: "工程记忆概览",
         description: "从 Agent 活跃度、Token 趋势、智能标签和收藏会话里看见协作脉络。",
       },
       {
-        image: "/demo/search.webp",
         title: "结构化全局搜索",
         description:
           "按标题、消息、工具输出和文件路径检索，并用项目、标签、工具、文件活动和成本缩小范围。",
       },
       {
-        image: "/demo/session-detail.webp",
         title: "会话回放",
         description: "按时间线回看消息、工具调用和文件变更，复盘一次功能或 bug 的完整路径。",
       },
       {
-        image: "/demo/shortcuts.webp",
         title: "键盘导航",
         description: "在项目、会话和搜索结果之间高效移动，让历史浏览进入日常工作流。",
       },
     ],
     features: {
-      label: "Features",
       title: ["围绕长期积累", "设计产品结构"],
       body: "CodeSesh 围绕真实的 AI 协作循环设计：发现、组织、找回、复盘。",
       groups: [
@@ -279,12 +262,10 @@ export const copy = {
       ],
     },
     agents: {
-      label: "Supported Agents",
       title: ["覆盖主流本地", "AI 编码工具"],
       body: "把多 Agent 工作流收束到同一个工程记忆层。",
     },
     faq: {
-      label: "FAQ",
       title: "常见问题",
       body: "关于 CodeSesh 的定位、支持范围、安装方式和数据边界的简短回答。",
       items: [
@@ -327,54 +308,45 @@ export const copy = {
       themeSwitchTo: ". Switch to {next}.",
     },
     hero: {
-      title: ["Turn AI coding history", "into reusable engineering memory."],
-      latest: "Latest",
-      body: "CodeSesh discovers local sessions from Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, and ZCode, then preserves problems, reasoning, attempts, file activity, and outcomes in one project-aware searchable memory layer.",
-      commandTitle: "Start from your machine",
+      title: ["AI coding history,", "ready to reuse."],
+      body: "Find, search, and replay local AI coding sessions across agents, projects, messages, tools, and files.",
       command: "npx codesesh",
       copied: "Copied",
       copyFailed: "Copy failed. Copy the command manually.",
       copyCommand: "Copy command",
-      runtime: "Requires Node.js 22+ · Runs locally from your terminal",
     },
     tour: {
       label: "Product Tour",
       title: "How engineering memory compounds in daily work",
       body: "From overview to replay, from project browsing to structured search, CodeSesh makes coding history across agents visible again.",
-      expand: "Expand",
-      close: "Close",
-      previous: "Previous",
-      next: "Next",
-      closeHint: "Click outside to close",
+      previewLabel: "Interactive CodeSesh product preview",
+      viewLabel: "Choose a preview view",
+      sampleLabel: "Sample workspace",
+      shortcutClose: "Close",
     },
     scenes: [
       {
-        image: "/demo/dashboard.webp",
         title: "Engineering Memory Overview",
         description:
           "See collaboration patterns through agent activity, token trends, smart tags, and bookmarked sessions.",
       },
       {
-        image: "/demo/search.webp",
         title: "Structured Global Search",
         description:
           "Search titles, messages, tool output, and file paths, then filter by project, tag, tool, file activity, and cost.",
       },
       {
-        image: "/demo/session-detail.webp",
         title: "Session Replay",
         description:
           "Replay messages, tool calls, and file changes in the order a feature or bug fix unfolded.",
       },
       {
-        image: "/demo/shortcuts.webp",
         title: "Keyboard Navigation",
         description:
           "Move through projects, sessions, and results efficiently so browsing history fits daily work.",
       },
     ],
     features: {
-      label: "Features",
       title: "Designed for long-term accumulation",
       body: "CodeSesh follows the real loop of AI-assisted engineering: discover, organize, recover, and replay.",
       groups: [
@@ -487,12 +459,10 @@ export const copy = {
       ],
     },
     agents: {
-      label: "Supported Agents",
       title: "Built for the local AI coding stack",
       body: "Unify multi-agent workflows into one engineering memory layer.",
     },
     faq: {
-      label: "FAQ",
       title: "Frequently asked questions",
       body: "Short answers about what CodeSesh is, what it supports, and where your data stays.",
       items: [

@@ -62,33 +62,35 @@ test("falls back when the clipboard API rejects", async ({ page }) => {
   await expect(copy).toContainText("Copied");
 });
 
-test("navigates showcase dialogs", async ({ page }) => {
+test("explores the interactive product preview", async ({ page }) => {
   await page.goto("/");
-  const expand = page.getByRole("button", { name: "Expand Engineering Memory Overview" });
-  await expand.locator("xpath=ancestor::article").hover();
-  await expect(expand).toHaveCSS("opacity", "1");
-  await expand.focus();
-  await expect(expand).toBeFocused();
-  await expect(expand).toHaveCSS("opacity", "1");
-  await expand.click();
-  const first = page.getByRole("dialog", {
-    name: "Engineering Memory Overview preview",
-  });
-  await expect(first).toBeVisible();
+  const preview = page.locator("[data-product-demo]").last();
+  const searchTab = preview.getByRole("tab", { name: "Structured Global Search" });
+  const searchPanel = preview.getByRole("tabpanel", { name: "Structured Global Search" });
 
-  await first.getByRole("button", { name: "Next" }).click();
-  const next = page.getByRole("dialog", {
-    name: "Structured Global Search preview",
-  });
-  await expect(next).toBeVisible();
+  await expect(preview.locator('img[src^="/demo/"]')).toHaveCount(0);
+  await expect(preview).not.toContainText(/\bv\d+\.\d+\.\d+\b/);
+  await searchTab.click();
+  await expect(searchTab).toHaveAttribute("aria-selected", "true");
+  await expect(searchPanel).toBeVisible();
 
-  await next.getByRole("button", { name: "Previous" }).click();
-  await expect(first).toBeVisible();
-  await first.getByRole("button", { name: "Close" }).click();
-  await expect(first).toBeHidden();
+  await preview.getByRole("textbox", { name: "Search sample sessions" }).fill("token budget");
+  await preview.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(searchPanel).toContainText("3 matches for “token budget”");
+
+  const replayTab = preview.getByRole("tab", { name: "Session Replay" });
+  await replayTab.click();
+  const toolStep = preview.getByRole("button", { name: "TOOL apply_patch" });
+  await toolStep.click();
+  await expect(toolStep).toHaveAttribute("aria-current", "true");
+
+  await preview.getByRole("tab", { name: "Keyboard Navigation" }).click();
+  await expect(preview.getByRole("dialog", { name: "Keyboard shortcuts preview" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(replayTab).toHaveAttribute("aria-selected", "true");
 });
 
-test("keeps showcase actions visible on touch", async ({ browser }, testInfo) => {
+test("keeps the product preview usable on touch", async ({ browser }, testInfo) => {
   const context = await browser.newContext({
     baseURL: String(testInfo.project.use.baseURL),
     hasTouch: true,
@@ -99,21 +101,25 @@ test("keeps showcase actions visible on touch", async ({ browser }, testInfo) =>
   const browserErrors = monitorBrowserErrors(page);
   await page.goto("/");
 
-  const expand = page.getByRole("button", { name: "Expand Engineering Memory Overview" });
-  await expect(expand).toHaveCSS("opacity", "1");
-  await expand.tap();
-  await expect(
-    page.getByRole("dialog", { name: "Engineering Memory Overview preview" }),
-  ).toBeVisible();
+  const preview = page.locator("[data-product-demo]").last();
+  const searchTab = preview.getByRole("tab", { name: "Structured Global Search" });
+  await searchTab.tap();
+  await expect(preview.getByRole("tabpanel", { name: "Structured Global Search" })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+    .toBe(true);
   await context.close();
   expect(browserErrors, "unexpected browser errors").toEqual([]);
 });
 
-test("removes showcase transforms for reduced motion", async ({ page }) => {
+test("removes product preview animation for reduced motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
 
-  const expand = page.getByRole("button", { name: "Expand Engineering Memory Overview" });
-  await expand.hover();
-  await expect(expand).toHaveCSS("transform", "none");
+  const preview = page.locator("[data-product-demo]").last();
+  await preview.getByRole("tab", { name: "Structured Global Search" }).click();
+  await expect(preview.getByRole("tabpanel", { name: "Structured Global Search" })).toHaveCSS(
+    "animation-name",
+    "none",
+  );
 });
