@@ -201,26 +201,15 @@ function ProjectAgentFilter({
   );
 }
 
-function ProjectHeader({
-  project,
-  agentCatalog,
-}: {
-  project: ApiProjectGroup;
-  agentCatalog: AgentCatalog;
-}) {
+function ProjectHeader({ project }: { project: ApiProjectGroup }) {
   return (
     <Panel className="p-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0">
-          <h2 className="console-display text-[19px] font-semibold text-[var(--console-text)]">
-            {project.displayName}
-          </h2>
-          <p className="console-mono mt-1 break-all text-[10.5px] text-[var(--console-muted)]">
-            {project.identityKind}: {project.identityKey}
-          </p>
-        </div>
-        <AgentPills agents={project.agentStats} agentCatalog={agentCatalog} />
-      </div>
+      <h2 className="console-display text-[19px] font-semibold text-[var(--console-text)]">
+        {project.displayName}
+      </h2>
+      <p className="console-mono mt-1 break-all text-[10.5px] text-[var(--console-muted)]">
+        {project.identityKind}: {project.identityKey}
+      </p>
     </Panel>
   );
 }
@@ -275,7 +264,7 @@ export function ProjectDashboardView({
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
-      <ProjectHeader project={project} agentCatalog={agentCatalog} />
+      <ProjectHeader project={project} />
       <ProjectAgentFilter
         agents={project.agentStats}
         agentCatalog={agentCatalog}

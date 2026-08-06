@@ -119,6 +119,10 @@ describe("AppRouteContent", () => {
   // The default 1s query timeout is tight when the suite runs under load.
   it("renders a project from the resolved project model", async () => {
     const props = makeProps();
+    const activeProject = {
+      ...project,
+      agentStats: [{ name: "claudecode", sessions: 1, messages: 2, tokens: 3, cost: 0.1 }],
+    } satisfies ApiProjectGroup;
     props.viewState = {
       mode: "project",
       activeAgentKey: null,
@@ -126,17 +130,18 @@ describe("AppRouteContent", () => {
       activeProjectKind: "git_remote",
       activeProjectKey: project.identityKey,
     };
-    props.activeProject = project;
+    props.activeProject = activeProject;
 
     renderContent(props);
 
-    expect(
-      await screen.findByRole(
-        "heading",
-        { name: "acme/app" },
-        { timeout: LAZY_SURFACE_TIMEOUT_MS },
-      ),
-    ).toBeTruthy();
+    const heading = await screen.findByRole(
+      "heading",
+      { name: "acme/app" },
+      { timeout: LAZY_SURFACE_TIMEOUT_MS },
+    );
+
+    expect(heading.closest("section")?.textContent).not.toContain("claudecode · 1");
+    expect(screen.getByRole("button", { name: "claudecode · 1" })).toBeTruthy();
   });
 
   it("renders search content from the explicit search contract", async () => {
