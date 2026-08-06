@@ -4,7 +4,7 @@
  * display name).
  */
 import type { AgentCatalog } from "../../lib/agents";
-import type { DashboardScope } from "../../lib/api";
+import type { DashboardFilters } from "../../lib/api";
 import type { TimeWindowPreset } from "../../lib/time-window";
 
 export type OverviewMetric = "tokens" | "sessions" | "messages";
@@ -24,11 +24,12 @@ export const OVERVIEW_RANGE_PRESETS: readonly { value: TimeWindowPreset; label: 
   { value: "custom", label: "自定义" },
 ];
 
-/** Identity of a scope, so a caller-provided scope can be compared by value. */
-export function scopeKey(scope: DashboardScope): string {
-  if (scope.kind === "project") return `project:${scope.projectKind}:${scope.projectKey}`;
-  if (scope.kind === "agent") return `agent:${scope.agentKey}`;
-  return "global";
+/** Identity of a filter set, so a caller-provided one can be compared by value. */
+export function scopeKey(filters: DashboardFilters): string {
+  const project = filters.project
+    ? `project:${filters.project.kind}:${filters.project.key}`
+    : "global";
+  return filters.agent ? `${project}|agent:${filters.agent}` : project;
 }
 
 export function agentDisplayName(catalog: AgentCatalog, agentKey: string): string {

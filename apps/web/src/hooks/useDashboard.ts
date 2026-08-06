@@ -2,26 +2,26 @@ import { useQuery } from "@tanstack/react-query";
 import {
   type AppConfig,
   type DashboardData,
-  type DashboardScope,
+  type DashboardFilters,
   fetchDashboard,
 } from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
 
-export type { DashboardScope };
+export type { DashboardFilters };
 
 export function useDashboard(
   window: AppConfig["window"] | null,
-  scope: DashboardScope,
+  filters: DashboardFilters,
 ): { dashboard: DashboardData | null; loading: boolean; error: string | null } {
   const isEnabled = window !== null;
 
   const query = useQuery({
-    queryKey: queryKeys.dashboard(window ?? {}, scope),
+    queryKey: queryKeys.dashboard(window ?? {}, filters),
     enabled: isEnabled,
     queryFn: async ({ signal }) => {
       if (!window) throw new Error("Dashboard window is required");
       try {
-        return await fetchDashboard(window, scope, { signal });
+        return await fetchDashboard(window, filters, { signal });
       } catch (error) {
         if (!signal.aborted) console.error("Failed to load dashboard:", error);
         throw error;

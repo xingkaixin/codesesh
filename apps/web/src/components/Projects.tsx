@@ -229,7 +229,6 @@ export function ProjectDashboardView({
   project,
   agentCatalog,
   projectKey,
-  projects,
   sessions,
   activeAgent,
   onChangeAgent,
@@ -240,7 +239,6 @@ export function ProjectDashboardView({
   project: ApiProjectGroup | null;
   agentCatalog: AgentCatalog;
   projectKey: string;
-  projects: ApiProjectGroup[];
   sessions: LandingSession[];
   activeAgent?: string;
   onChangeAgent: (agent?: string) => void;
@@ -285,13 +283,10 @@ export function ProjectDashboardView({
 
       <OverviewScreen
         key={`${project.identityKind}:${project.identityKey}`}
-        scope={{
-          kind: "project",
-          projectKind: project.identityKind,
-          projectKey: project.identityKey,
-        }}
+        project={{ kind: project.identityKind, key: project.identityKey }}
+        agent={activeAgent}
+        onAgentChange={onChangeAgent}
         window={timeWindow}
-        projects={projects}
         agentCatalog={agentCatalog}
         rangePreset={rangePreset}
         onRangeChange={onRangeChange}

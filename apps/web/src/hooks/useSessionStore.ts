@@ -58,7 +58,7 @@ async function fetchSnapshotAggregates(
   const [agents, projects, dashboard] = await Promise.all([
     fetchAgents(window, { signal }),
     loadProjects(window, signal),
-    fetchDashboard(window, { kind: "global" }, { signal }),
+    fetchDashboard(window, {}, { signal }),
   ]);
   return { agents, projects, dashboard };
 }

@@ -165,9 +165,7 @@ export function AppRouteContent({
       <RenderProfiler id="OverviewScreen" detail={{ projects: projects.length }}>
         <LazySurface>
           <OverviewScreen
-            scope={{ kind: "global" }}
             window={overview.window}
-            projects={projects}
             agentCatalog={agentCatalog}
             rangePreset={overview.rangePreset}
             onRangeChange={overview.onRangeChange}
@@ -190,7 +188,6 @@ export function AppRouteContent({
           project={activeProject}
           agentCatalog={agentCatalog}
           projectKey={viewState.activeProjectKey}
-          projects={projects}
           sessions={activeProjectSessions}
           activeAgent={projectAgentFilter.selectedAgent}
           onChangeAgent={projectAgentFilter.onChangeAgent}

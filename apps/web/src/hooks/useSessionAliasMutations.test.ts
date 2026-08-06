@@ -21,7 +21,7 @@ describe("useSessionAliasMutations", () => {
     const refreshSnapshot = vi.fn().mockResolvedValue(undefined);
     const { client, Wrapper } = createQueryWrapper();
     const detailKey = queryKeys.sessionDetail("codex", "session-1");
-    const dashboardKey = queryKeys.dashboard({}, { kind: "global" });
+    const dashboardKey = queryKeys.dashboard({}, {});
     const searchKey = queryKeys.search("query", {});
     client.setQueryData(detailKey, { id: "session-1" });
     client.setQueryData(dashboardKey, { totals: {} });

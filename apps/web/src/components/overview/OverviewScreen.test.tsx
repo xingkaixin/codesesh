@@ -1,8 +1,9 @@
+import type { ComponentProps } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAgentCatalog } from "../../lib/agents";
-import type { AgentInfo, ApiProjectGroup, AppConfig, DashboardData } from "../../lib/api";
+import type { AgentInfo, AppConfig, DashboardData } from "../../lib/api";
 import * as api from "../../lib/api";
 import { createQueryWrapper } from "../../test/query-wrapper";
 import { OverviewScreen } from "./OverviewScreen";
@@ -25,21 +26,6 @@ const agents: AgentInfo[] = [
     count: 2,
     icon: "/icon/agent/claudecode.svg",
     resumeCommandPrefix: null,
-  },
-];
-
-const projects: ApiProjectGroup[] = [
-  {
-    identityKind: "path",
-    identityKey: "/repo/codesesh",
-    displayName: "codesesh",
-    sources: ["codex"],
-    sessionCount: 3,
-    lastActivity: 2,
-    messages: 30,
-    tokens: 3000,
-    cost: 3,
-    agentStats: [],
   },
 ];
 
@@ -98,15 +84,14 @@ const dashboard = {
   window: { from: 1, to: 2, days: 7 },
 } as unknown as DashboardData;
 
-function renderScreen() {
+function renderScreen(props: Partial<ComponentProps<typeof OverviewScreen>> = {}) {
   const { Wrapper } = createQueryWrapper();
   return render(
     <Wrapper>
       <MemoryRouter>
         <OverviewScreen
-          scope={{ kind: "global" }}
           window={timeWindow}
-          projects={projects}
+          {...props}
           agentCatalog={createAgentCatalog(agents)}
           rangePreset="7d"
           onRangeChange={vi.fn()}
@@ -146,32 +131,48 @@ describe("OverviewScreen", () => {
     expect(screen.getAllByTestId("overview-agent-row")).toHaveLength(1);
   });
 
-  it("issues exactly one new request when the scope switches to an agent", async () => {
+  it("issues exactly one new request when the agent filter changes", async () => {
     renderScreen();
     await screen.findByRole("heading", { name: "项目排行" });
     expect(api.fetchDashboard).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("radio", { name: "按 Agent" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "按 Agent 筛选" }), {
+      target: { value: "codex" },
+    });
 
     await waitFor(() => expect(api.fetchDashboard).toHaveBeenCalledTimes(2));
     expect(api.fetchDashboard).toHaveBeenLastCalledWith(
       timeWindow,
-      { kind: "agent", agentKey: "codex" },
+      { project: undefined, agent: "codex" },
       { signal: expect.any(AbortSignal) },
     );
-    await screen.findByRole("heading", { name: "项目排行" });
-    expect(screen.getByRole("heading", { name: "Agent 分布" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "按天用量" })).toBeTruthy();
   });
 
-  it("ranks agents instead of projects inside a project scope", async () => {
-    renderScreen();
-    await screen.findByRole("heading", { name: "项目排行" });
-
-    fireEvent.click(screen.getByRole("radio", { name: "按项目" }));
+  it("ranks agents instead of projects when mounted for a project", async () => {
+    renderScreen({ project: { kind: "path", key: "/repo/codesesh" } });
 
     await screen.findByRole("heading", { name: "Agent 排行" });
-    expect(screen.getByRole("combobox", { name: "选择项目" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "项目排行" })).toBeNull();
+    expect(api.fetchDashboard).toHaveBeenLastCalledWith(
+      timeWindow,
+      { project: { kind: "path", key: "/repo/codesesh" }, agent: undefined },
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+
+  it("hides its own agent picker when the page drives the filter", async () => {
+    renderScreen({
+      project: { kind: "path", key: "/repo/codesesh" },
+      agent: "codex",
+      onAgentChange: vi.fn(),
+    });
+
+    await screen.findByRole("heading", { name: "Agent 排行" });
+    expect(screen.queryByRole("combobox", { name: "按 Agent 筛选" })).toBeNull();
+    expect(api.fetchDashboard).toHaveBeenLastCalledWith(
+      timeWindow,
+      { project: { kind: "path", key: "/repo/codesesh" }, agent: "codex" },
+      { signal: expect.any(AbortSignal) },
+    );
   });
 });

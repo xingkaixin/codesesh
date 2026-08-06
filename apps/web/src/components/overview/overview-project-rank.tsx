@@ -7,7 +7,7 @@ import type { DashboardProjectRollup } from "@codesesh/core/contract";
 import { Link } from "react-router-dom";
 
 import type { AgentCatalog } from "../../lib/agents";
-import type { DashboardAgentStat, DashboardProjectStat, DashboardScope } from "../../lib/api";
+import type { DashboardAgentStat, DashboardFilters, DashboardProjectStat } from "../../lib/api";
 import { formatCompact, formatInt, formatUsd } from "../../lib/format";
 import { Panel, PanelHeader } from "../ui/panel";
 import { ShareBar } from "../ui/share-bar";
@@ -50,21 +50,21 @@ function toAgentRow(agent: DashboardAgentStat): RankRow {
 }
 
 export function OverviewProjectRank({
-  scope,
+  filters,
   projects,
   perAgent,
   rollup,
   scopeCounts,
   agentCatalog,
 }: {
-  scope: DashboardScope;
+  filters: DashboardFilters;
   projects: DashboardProjectStat[];
   perAgent: DashboardAgentStat[];
   rollup: DashboardProjectRollup;
   scopeCounts: { projects: number; agents: number };
   agentCatalog: AgentCatalog;
 }) {
-  const rankAgents = scope.kind === "project";
+  const rankAgents = filters.project !== undefined;
   const rows = rankAgents
     ? perAgent.map(toAgentRow)
     : projects.map((project) => toProjectRow(project, agentCatalog));

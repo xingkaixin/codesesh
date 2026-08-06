@@ -121,11 +121,15 @@ export interface FetchOptions {
   signal?: AbortSignal;
 }
 
-/** Which slice of the snapshot a dashboard request covers. Owned by the caller. */
-export type DashboardScope =
-  | { kind: "global" }
-  | { kind: "project"; projectKind: ProjectIdentityKind; projectKey: string }
-  | { kind: "agent"; agentKey: string };
+/**
+ * Which slice of the snapshot a dashboard request covers. Project and agent are
+ * independent and either may be absent: no project means every project, no agent
+ * means every agent. A project dashboard is the global one with `project` set.
+ */
+export interface DashboardFilters {
+  project?: { kind: ProjectIdentityKind; key: string };
+  agent?: string;
+}
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, withRemoteAccess(init));
@@ -195,18 +199,17 @@ export async function fetchSessionData(
 
 export async function fetchDashboard(
   window: AppConfig["window"] | undefined,
-  scope: DashboardScope,
+  filters: DashboardFilters,
   options?: FetchOptions,
 ): Promise<DashboardData> {
   const params = new URLSearchParams();
   if (window?.days !== 0) appendTimeWindow(params, window);
   if (window?.days != null) params.set("days", String(window.days));
-  if (scope.kind === "project") {
-    params.set("projectKind", scope.projectKind);
-    params.set("projectKey", scope.projectKey);
-  } else if (scope.kind === "agent") {
-    params.set("agent", scope.agentKey);
+  if (filters.project) {
+    params.set("projectKind", filters.project.kind);
+    params.set("projectKey", filters.project.key);
   }
+  if (filters.agent) params.set("agent", filters.agent);
   const suffix = params.toString();
   return fetchJson(suffix ? `/api/dashboard?${suffix}` : "/api/dashboard", options);
 }

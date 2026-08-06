@@ -1,110 +1,48 @@
 /**
- * Scope switcher + entity picker + range pills. Purely presentational: the scope
- * lives in OverviewScreen, the time window lives in App's time-window controller.
+ * Agent filter + range pills for 统计总览.
+ *
+ * Which project the dashboard covers is decided by navigation (the sidebar),
+ * not by a control inside the page — so there is no scope switcher here. The
+ * project dashboard mounts this bar without the agent picker, because the
+ * project page already owns one that also filters its timeline.
  */
 import type { AgentCatalog } from "../../lib/agents";
-import type { ApiProjectGroup, DashboardScope } from "../../lib/api";
 import type { TimeWindowPreset } from "../../lib/time-window";
 import { cn } from "../../lib/utils";
-import { SegmentedControl } from "../ui/segmented-control";
 import { OVERVIEW_RANGE_PRESETS } from "./types";
 
-const SCOPE_OPTIONS = [
-  { value: "global", label: "全局" },
-  { value: "project", label: "按项目" },
-  { value: "agent", label: "按 Agent" },
-] as const;
-
-function projectOptionValue(project: { identityKind: string; identityKey: string }): string {
-  return `${project.identityKind}:${project.identityKey}`;
-}
+const ALL_AGENTS = "__all__";
 
 export function OverviewFilterBar({
-  scope,
-  onScopeChange,
-  projects,
+  agent,
+  onAgentChange,
   agentCatalog,
   scopeCounts,
   rangePreset,
   onRangeChange,
 }: {
-  scope: DashboardScope;
-  onScopeChange: (scope: DashboardScope) => void;
-  projects: ApiProjectGroup[];
+  agent?: string;
+  onAgentChange?: (agent?: string) => void;
   agentCatalog: AgentCatalog;
   scopeCounts?: { projects: number; agents: number };
   rangePreset: TimeWindowPreset | null;
   onRangeChange: (preset: TimeWindowPreset) => void;
 }) {
-  const agents = agentCatalog.active;
-
-  const selectScopeKind = (kind: (typeof SCOPE_OPTIONS)[number]["value"]) => {
-    if (kind === scope.kind) return;
-    if (kind === "global") {
-      onScopeChange({ kind: "global" });
-      return;
-    }
-    if (kind === "project") {
-      const first = projects[0];
-      if (first) {
-        onScopeChange({
-          kind: "project",
-          projectKind: first.identityKind,
-          projectKey: first.identityKey,
-        });
-      }
-      return;
-    }
-    const firstAgent = agents[0];
-    if (firstAgent) onScopeChange({ kind: "agent", agentKey: firstAgent.name.toLowerCase() });
-  };
-
-  const selectProject = (value: string) => {
-    const project = projects.find((candidate) => projectOptionValue(candidate) === value);
-    if (project) {
-      onScopeChange({
-        kind: "project",
-        projectKind: project.identityKind,
-        projectKey: project.identityKey,
-      });
-    }
-  };
-
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <SegmentedControl
-        options={SCOPE_OPTIONS}
-        value={scope.kind}
-        onChange={selectScopeKind}
-        size="md"
-        ariaLabel="统计范围"
-      />
-
-      {scope.kind === "project" ? (
+      {onAgentChange ? (
         <select
-          aria-label="选择项目"
-          value={`${scope.projectKind}:${scope.projectKey}`}
-          onChange={(event) => selectProject(event.target.value)}
+          aria-label="按 Agent 筛选"
+          value={agent ?? ALL_AGENTS}
+          onChange={(event) =>
+            onAgentChange(event.target.value === ALL_AGENTS ? undefined : event.target.value)
+          }
           className="console-mono max-w-[220px] rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1.5 text-xs text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
         >
-          {projects.map((project) => (
-            <option key={projectOptionValue(project)} value={projectOptionValue(project)}>
-              {project.displayName}
-            </option>
-          ))}
-        </select>
-      ) : null}
-
-      {scope.kind === "agent" ? (
-        <select
-          aria-label="选择 Agent"
-          value={scope.agentKey}
-          onChange={(event) => onScopeChange({ kind: "agent", agentKey: event.target.value })}
-          className="console-mono max-w-[220px] rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1.5 text-xs text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-        >
-          {agents.map((agent) => (
-            <option key={agent.name} value={agent.name.toLowerCase()}>
-              {agent.displayName}
+          <option value={ALL_AGENTS}>全部 Agent</option>
+          {agentCatalog.active.map((entry) => (
+            <option key={entry.name} value={entry.name.toLowerCase()}>
+              {entry.displayName}
             </option>
           ))}
         </select>

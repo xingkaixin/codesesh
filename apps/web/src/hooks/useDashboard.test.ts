@@ -1,6 +1,6 @@
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppConfig, DashboardData, DashboardScope } from "../lib/api";
+import type { AppConfig, DashboardData, DashboardFilters } from "../lib/api";
 import * as api from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
 import { createQueryWrapper } from "../test/query-wrapper";
@@ -11,9 +11,9 @@ vi.mock("../lib/api", () => ({ fetchDashboard: vi.fn() }));
 const window = { from: 1, to: 2 } as AppConfig["window"];
 const data = { totals: { sessions: 3 }, perAgent: [] } as unknown as DashboardData;
 
-const globalScope: DashboardScope = { kind: "global" };
-const projectScope: DashboardScope = { kind: "project", projectKind: "path", projectKey: "pk" };
-const agentScope: DashboardScope = { kind: "agent", agentKey: "codex" };
+const globalScope: DashboardFilters = {};
+const projectScope: DashboardFilters = { project: { kind: "path", key: "pk" } };
+const agentScope: DashboardFilters = { agent: "codex" };
 
 beforeEach(() => {
   vi.mocked(api.fetchDashboard).mockResolvedValue(data);
@@ -54,7 +54,7 @@ describe("useDashboard", () => {
     const { Wrapper } = createQueryWrapper();
     const { result, rerender } = renderHook<
       ReturnType<typeof useDashboard>,
-      { scope: DashboardScope }
+      { scope: DashboardFilters }
     >(({ scope }) => useDashboard(window, scope), {
       initialProps: { scope: projectScope },
       wrapper: Wrapper,
@@ -86,8 +86,7 @@ describe("useDashboard", () => {
     vi.mocked(api.fetchDashboard).mockReturnValueOnce(first).mockResolvedValueOnce(latest);
     const { Wrapper } = createQueryWrapper();
     const { result, rerender } = renderHook(
-      ({ projectKey }) =>
-        useDashboard(window, { kind: "project", projectKind: "path", projectKey }),
+      ({ projectKey }) => useDashboard(window, { project: { kind: "path", key: projectKey } }),
       { initialProps: { projectKey: "first" }, wrapper: Wrapper },
     );
 
