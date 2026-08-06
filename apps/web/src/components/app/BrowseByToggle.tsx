@@ -27,12 +27,12 @@ export function BrowseByToggle({
             aria-checked={active}
             disabled={disabled}
             onClick={() => onChange(option.value)}
-            className={`console-mono flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left text-xs motion-hover ${
+            className={`console-mono flex items-center gap-2 rounded-sm px-3 py-1.5 text-left text-xs motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
               disabled
-                ? "cursor-not-allowed border-transparent text-[var(--console-muted)] opacity-45"
+                ? "cursor-not-allowed text-[var(--console-muted)] opacity-45"
                 : active
-                  ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
-                  : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+                  ? "bg-[var(--brand-soft)] text-[var(--brand)]"
+                  : "text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)]"
             }`}
             title={
               disabled ? "Project grouping is available after the current scan finishes" : undefined
@@ -40,12 +40,10 @@ export function BrowseByToggle({
           >
             <span
               className={`flex size-3 shrink-0 items-center justify-center rounded-full border ${
-                active ? "border-[var(--console-accent)]" : "border-[var(--console-border-strong)]"
+                active ? "border-[var(--brand)]" : "border-[var(--console-border-strong)]"
               }`}
             >
-              {active ? (
-                <span className="size-1.5 rounded-full bg-[var(--console-accent)]" />
-              ) : null}
+              {active ? <span className="size-1.5 rounded-full bg-[var(--brand)]" /> : null}
             </span>
             <span>{option.label}</span>
           </button>

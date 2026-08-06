@@ -1,11 +1,15 @@
 import type { ReactNode } from "react";
 import type { AgentInfo, DashboardData, ApiProjectGroup, SessionDetail } from "../lib/api";
-import { formatRelativeTime } from "../lib/format";
+import { formatInt, formatRelativeTime } from "../lib/format";
 import { getProjectPath, type ProjectRouteIdentity } from "../lib/projects";
 import { getSessionDisplayTitle } from "./session-title";
 import type { ViewState } from "../lib/view-state";
 import { SmartTagChips } from "../components/SmartTagChips";
 import type { BrowseBy } from "../components/app/types";
+
+function Count({ value }: { value: number }) {
+  return <span className="console-mono">{formatInt(value)}</span>;
+}
 
 export interface BreadcrumbItem {
   label: string;
@@ -67,31 +71,52 @@ function routeTitleAndSubtitle(input: RouteHeaderInput): {
   const { viewState } = input;
   if (input.isSearchMode) return { title: "Search", subtitle: input.searchSubtitle };
   if (viewState.mode === "root") {
+    const dashboard = input.dashboard;
     return {
       title: "Dashboard",
-      subtitle: input.dashboard
-        ? `${input.dashboard.totals.sessions.toLocaleString("en-US")} total sessions across ${input.dashboard.perAgent.length} agents`
-        : "Aggregated view across all agents",
+      subtitle: dashboard ? (
+        <span>
+          <Count value={dashboard.totals.sessions} /> total sessions across{" "}
+          <Count value={dashboard.perAgent.length} /> agents
+        </span>
+      ) : (
+        "Aggregated view across all agents"
+      ),
     };
   }
   if (viewState.mode === "projects") {
     return {
       title: "Projects",
-      subtitle: `${input.projects.length.toLocaleString("en-US")} projects across ${input.sessionCount.toLocaleString("en-US")} sessions`,
+      subtitle: (
+        <span>
+          <Count value={input.projects.length} /> projects across{" "}
+          <Count value={input.sessionCount} /> sessions
+        </span>
+      ),
     };
   }
   if (viewState.mode === "project") {
+    const activeProject = input.activeProject;
     return {
-      title: input.activeProject?.displayName ?? "Project",
-      subtitle: input.activeProject
-        ? `${input.activeProject.sessionCount.toLocaleString("en-US")} sessions · ${input.activeProject.agentStats.length} agents`
-        : viewState.activeProjectKey,
+      title: activeProject?.displayName ?? "Project",
+      subtitle: activeProject ? (
+        <span>
+          <Count value={activeProject.sessionCount} /> sessions ·{" "}
+          <Count value={activeProject.agentStats.length} /> agents
+        </span>
+      ) : (
+        viewState.activeProjectKey
+      ),
     };
   }
   if (viewState.mode === "agent") {
     return {
       title: input.activeAgent?.displayName ?? viewState.activeAgentKey,
-      subtitle: `${input.sidebarSessionCount} sessions`,
+      subtitle: (
+        <span>
+          <Count value={input.sidebarSessionCount} /> sessions
+        </span>
+      ),
     };
   }
   if (viewState.mode === "session") {
@@ -107,9 +132,9 @@ function routeTitleAndSubtitle(input: RouteHeaderInput): {
         title: getSessionDisplayTitle(input.session) || "Session",
         subtitle: (
           <>
-            <span>ID: #{input.session.id.slice(0, 8)}</span>
+            <span className="console-mono">ID: #{input.session.id.slice(0, 8)}</span>
             <span>·</span>
-            <span>Updated {formatRelativeTime(updated)}</span>
+            <span className="console-mono">Updated {formatRelativeTime(updated)}</span>
             <SmartTagChips tags={input.session.smart_tags} limit={9} className="inline-flex" />
           </>
         ),

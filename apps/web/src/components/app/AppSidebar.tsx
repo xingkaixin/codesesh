@@ -21,6 +21,14 @@ import { Link } from "react-router-dom";
 import { BrowseByToggle } from "./BrowseByToggle";
 import type { BrowseBy } from "./types";
 
+function navItemClass(isSelected: boolean): string {
+  return `flex items-center gap-2 rounded-sm border-l-2 px-3 py-1.5 text-left motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
+    isSelected
+      ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]"
+      : "border-transparent text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)]"
+  }`;
+}
+
 function agentProgressPercent(status: AgentScanStatus | undefined): number | null {
   if (
     (status?.status !== "scanning" && status?.status !== "finalizing") ||
@@ -52,11 +60,7 @@ function AgentNavList({
         const agentStatus = scanStatus?.agentStatuses[agent.name];
         const agentProgress = formatAgentScanProgress(scanStatus, agent.name);
         const progressPercent = agentProgressPercent(agentStatus);
-        const className = `ml-4 flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left motion-hover ${
-          isSelected
-            ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
-            : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
-        }`;
+        const className = `ml-4 ${navItemClass(isSelected)}`;
         const content = (
           <>
             {agent.icon && (
@@ -80,12 +84,16 @@ function AgentNavList({
         );
         return (
           <li key={agent.name}>
-            <Link to={agentRoutePath(key)} className={className}>
+            <Link
+              to={agentRoutePath(key)}
+              className={className}
+              data-active={isSelected ? "true" : undefined}
+            >
               {content}
             </Link>
             {agentProgress ? (
               <span
-                className="ml-4 mt-1 block h-1 overflow-hidden rounded-sm bg-[var(--console-surface-muted)]"
+                className="ml-4 mt-1 block h-1 overflow-hidden rounded-full bg-[var(--console-surface-sunken)]"
                 role="progressbar"
                 aria-label={`${agent.displayName} ${
                   agentStatus?.status === "indexing"
@@ -100,7 +108,7 @@ function AgentNavList({
                 aria-valuetext={progressPercent == null ? agentProgress : undefined}
               >
                 <span
-                  className={`block h-full bg-[var(--console-accent)] ${
+                  className={`block h-full bg-[var(--brand)] ${
                     progressPercent == null ? "scan-progress-indeterminate" : ""
                   }`}
                   style={progressPercent == null ? undefined : { width: `${progressPercent}%` }}
@@ -133,11 +141,8 @@ function ProjectNavList({
             <Link
               to={getProjectPath(projectIdentity)}
               onClick={() => onSelectProject(projectIdentity)}
-              className={`ml-4 flex min-w-0 items-center gap-2 rounded-sm border px-3 py-1.5 text-left motion-hover ${
-                isSelected
-                  ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
-                  : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
-              }`}
+              data-active={isSelected ? "true" : undefined}
+              className={`ml-4 min-w-0 ${navItemClass(isSelected)}`}
             >
               <span className="console-mono min-w-0 flex-1 truncate text-xs">
                 {project.displayName}
@@ -218,6 +223,9 @@ export function AppSidebar({
     viewState.mode === "session"
       ? getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionId)
       : null;
+  const isOverviewSelected =
+    (browseBy === "agents" && viewState.mode === "root") ||
+    (browseBy === "projects" && viewState.mode === "projects");
 
   return (
     <aside
@@ -227,9 +235,7 @@ export function AppSidebar({
     >
       <div className="console-scrollbar flex-1 space-y-8 overflow-y-auto px-4 py-6">
         <section>
-          <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
-            BROWSE BY
-          </h3>
+          <h3 className="console-eyebrow mb-3">BROWSE BY</h3>
           <BrowseByToggle
             value={browseBy}
             onChange={onChangeBrowseBy}
@@ -238,9 +244,7 @@ export function AppSidebar({
         </section>
 
         <section>
-          <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
-            NAVIGATION
-          </h3>
+          <h3 className="console-eyebrow mb-3">NAVIGATION</h3>
           <ul
             className={`space-y-1 ${
               browseBy === "projects"
@@ -251,12 +255,8 @@ export function AppSidebar({
             <li>
               <Link
                 to={browseBy === "projects" ? "/projects" : "/"}
-                className={`flex items-center gap-2 rounded-sm border px-3 py-1.5 text-left motion-hover ${
-                  (browseBy === "agents" && viewState.mode === "root") ||
-                  (browseBy === "projects" && viewState.mode === "projects")
-                    ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
-                    : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
-                }`}
+                data-active={isOverviewSelected ? "true" : undefined}
+                className={navItemClass(isOverviewSelected)}
               >
                 <img src="/logo.svg?v=3" alt="Dashboard" className="size-3.5 rounded-[2px]" />
                 <span className="console-mono line-clamp-1 flex-1 text-xs">Dashboard</span>
@@ -293,9 +293,7 @@ export function AppSidebar({
         </section>
 
         <section>
-          <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
-            BOOKMARKS
-          </h3>
+          <h3 className="console-eyebrow mb-3">BOOKMARKS</h3>
           {bookmarkedSessions.length === 0 ? (
             <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
               No bookmarks yet
@@ -312,10 +310,11 @@ export function AppSidebar({
                 return (
                   <li key={getSessionBookmarkKey(reference)}>
                     <div
-                      className={`flex items-start gap-2 rounded-sm border px-2 py-1.5 motion-hover ${
+                      data-active={isActive ? "true" : undefined}
+                      className={`flex items-start gap-2 rounded-sm border-l-2 px-2 py-1.5 motion-hover ${
                         isActive
-                          ? "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)]"
-                          : "border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
+                          ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]"
+                          : "border-transparent text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)]"
                       }`}
                     >
                       <Link
@@ -353,7 +352,7 @@ export function AppSidebar({
         </section>
 
         <section>
-          <h3 className="console-mono mb-3 text-xs font-bold uppercase text-[var(--console-text)]">
+          <h3 className="console-eyebrow mb-3">
             SESSIONS
             {sidebarSessions.length > 0 ? (
               <span className="ml-2 text-[10px] font-normal text-[var(--console-muted)]">
