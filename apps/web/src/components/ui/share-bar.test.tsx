@@ -38,7 +38,7 @@ describe("StackedShareBar", () => {
   it("splits the track proportionally", () => {
     render(
       <StackedShareBar
-        label="花费构成"
+        label="Cost by Model"
         segments={[
           { key: "a", value: 75, color: "var(--chart-1)" },
           { key: "b", value: 25, color: "var(--chart-2)" },
@@ -46,7 +46,7 @@ describe("StackedShareBar", () => {
       />,
     );
 
-    expect(segmentWidths("花费构成")).toEqual([75, 25]);
+    expect(segmentWidths("Cost by Model")).toEqual([75, 25]);
   });
 
   it("lets the last segment absorb rounding so the widths sum to 100", () => {

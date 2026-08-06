@@ -35,7 +35,7 @@ function costEntries(modelCost: ModelCostEntry[], totalCost: number): BreakdownE
   if (totalCost > 0 && remainder > totalCost * REMAINDER_THRESHOLD) {
     entries.push({
       key: "__remainder",
-      label: "其他",
+      label: "Other",
       value: remainder,
       color: "var(--console-border-strong)",
       display: formatUsd(remainder),
@@ -68,14 +68,14 @@ export function OverviewCostBreakdown({
 }) {
   const byCost = hasCost(modelCost);
   const entries = byCost ? costEntries(modelCost, totals.cost) : tokenEntries(modelDistribution);
-  const title = byCost ? "花费构成" : "模型构成";
+  const title = byCost ? "Cost by Model" : "Models";
 
   return (
     <Panel className="p-4">
-      <PanelHeader title={title} meta={byCost ? "按模型" : "按 Token"} />
+      <PanelHeader title={title} meta={byCost ? "by cost" : "by tokens"} />
 
       {entries.length === 0 ? (
-        <p className="console-mono mt-3 text-[11px] text-[var(--console-muted)]">暂无模型数据</p>
+        <p className="console-mono mt-3 text-[11px] text-[var(--console-muted)]">No model data</p>
       ) : (
         <>
           <div className="mt-3">
@@ -105,13 +105,13 @@ export function OverviewCostBreakdown({
         {byCost ? (
           <>
             <span className="mr-1.5 rounded-sm bg-[var(--brand-soft)] px-1.5 py-0.5 text-[var(--brand)]">
-              估算
+              Estimated
             </span>
-            {formatUsd(totals.costEstimated)} 由模型单价推算，{formatUsd(totals.costRecorded)} 来自
-            agent 自带记录
+            {formatUsd(totals.costEstimated)} from model unit price,{" "}
+            {formatUsd(totals.costRecorded)} from agent records
           </>
         ) : (
-          "按模型的花费需要消息缓存，当前不可用；此处按 Token 占比展示。"
+          "Per-model cost needs the message cache, which is unavailable here; showing token share instead."
         )}
       </p>
     </Panel>

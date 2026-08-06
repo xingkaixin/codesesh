@@ -32,14 +32,14 @@ export function OverviewFilterBar({
     <div className="flex flex-wrap items-center gap-3">
       {onAgentChange ? (
         <select
-          aria-label="按 Agent 筛选"
+          aria-label="Filter by agent"
           value={agent ?? ALL_AGENTS}
           onChange={(event) =>
             onAgentChange(event.target.value === ALL_AGENTS ? undefined : event.target.value)
           }
           className="console-mono max-w-[220px] rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1.5 text-xs text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
         >
-          <option value={ALL_AGENTS}>全部 Agent</option>
+          <option value={ALL_AGENTS}>All agents</option>
           {agentCatalog.active.map((entry) => (
             <option key={entry.name} value={entry.name.toLowerCase()}>
               {entry.displayName}
@@ -50,14 +50,14 @@ export function OverviewFilterBar({
 
       {scopeCounts ? (
         <span className="console-mono text-[11px] text-[var(--console-muted)]">
-          范围内 {scopeCounts.projects} 项目 · {scopeCounts.agents} agent
+          {scopeCounts.projects} projects · {scopeCounts.agents} agents in scope
         </span>
       ) : null}
 
       <div className="ml-auto flex items-center gap-1.5">
         {OVERVIEW_RANGE_PRESETS.map((preset) => {
           const selected = preset.value === rangePreset;
-          // 自定义 needs the TimeWindowControl dialog, which this screen does not own.
+          // Custom needs the TimeWindowControl dialog, which this screen does not own.
           const disabled = preset.value === "custom";
           return (
             <button

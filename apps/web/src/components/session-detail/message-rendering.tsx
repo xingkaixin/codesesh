@@ -177,7 +177,7 @@ export const MessageItem = memo(function MessageItem({
                 to={getSessionRoutePath(childSession)}
                 className="console-mono rounded-full border border-[var(--brand-line)] px-1.5 py-0.5 text-[10px] text-[var(--brand)] hover:bg-[var(--brand-soft)] hover:text-[var(--brand-hover)]"
               >
-                打开子会话 ↗
+                Open sub-session ↗
               </Link>
             ) : null}
           </div>

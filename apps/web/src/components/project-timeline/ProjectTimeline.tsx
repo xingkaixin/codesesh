@@ -26,7 +26,7 @@ export function ProjectTimeline({
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
   const timeline = useMemo(() => buildProjectTimeline(sessions), [sessions]);
 
-  // Mode changes deliberately leave openIds alone: 折叠 → 全部展开 → 折叠
+  // Mode changes deliberately leave openIds alone: collapsed -> expanded -> collapsed
   // must restore the rows the user had opened.
   const toggleRow = useCallback((routeKey: string) => {
     setOpenIds((current) => {
@@ -37,10 +37,10 @@ export function ProjectTimeline({
   }, []);
 
   return (
-    <section aria-label={`${projectName} 时间线`} className="flex flex-col gap-4">
+    <section aria-label={`${projectName} timeline`} className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <span className="console-mono text-[11px] text-[var(--console-muted)]">
-          {`${timeline.mainCount} 主会话 · ${timeline.subCount} 子会话 · ${formatCompact(timeline.totalTokens)} tokens`}
+          {`${timeline.mainCount} sessions · ${timeline.subCount} sub-sessions · ${formatCompact(timeline.totalTokens)} tokens`}
         </span>
         <div className="ml-auto">
           <SubSessionModeSwitch mode={mode} onChange={setMode} />
@@ -63,7 +63,7 @@ export function ProjectTimeline({
 
       {timeline.orphanCount > 0 ? (
         <p className="console-mono text-[10.5px] text-[var(--console-muted)]">
-          未挂载子会话 {timeline.orphanCount} · 父会话文件已不存在
+          {timeline.orphanCount} unmounted sub-sessions · parent file is gone
         </p>
       ) : null}
     </section>

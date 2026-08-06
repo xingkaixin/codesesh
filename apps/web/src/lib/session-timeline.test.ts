@@ -38,7 +38,7 @@ describe("buildProjectTimeline", () => {
       { now: NOW },
     );
 
-    expect(timeline.days.map((day) => day.label)).toEqual(["今天", "昨天", "8月4日"]);
+    expect(timeline.days.map((day) => day.label)).toEqual(["Today", "Yesterday", "08-04"]);
     expect(timeline.days.map((day) => day.dayKey)).toEqual([
       "2026-08-06",
       "2026-08-05",

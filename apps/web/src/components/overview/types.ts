@@ -10,18 +10,18 @@ import type { TimeWindowPreset } from "../../lib/time-window";
 export type OverviewMetric = "tokens" | "sessions" | "messages";
 
 export const OVERVIEW_METRIC_LABEL: Record<OverviewMetric, string> = {
-  tokens: "Token",
-  sessions: "会话数",
-  messages: "消息数",
+  tokens: "Tokens",
+  sessions: "Sessions",
+  messages: "Messages",
 };
 
 /** The range pills 3a exposes; a second view of the app's time-window presets. */
 export const OVERVIEW_RANGE_PRESETS: readonly { value: TimeWindowPreset; label: string }[] = [
-  { value: "7d", label: "7 天" },
-  { value: "30d", label: "30 天" },
-  { value: "90d", label: "90 天" },
-  { value: "all", label: "全部" },
-  { value: "custom", label: "自定义" },
+  { value: "7d", label: "7d" },
+  { value: "30d", label: "30d" },
+  { value: "90d", label: "90d" },
+  { value: "all", label: "All" },
+  { value: "custom", label: "Custom" },
 ];
 
 /** Identity of a filter set, so a caller-provided one can be compared by value. */

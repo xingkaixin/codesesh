@@ -20,10 +20,10 @@ const METRIC_OPTIONS = [
 ] as const;
 
 const TOKEN_SERIES = [
-  { key: "cache_create", label: "缓存写", color: "var(--chart-4)" },
-  { key: "cache_read", label: "缓存读", color: "var(--chart-3)" },
-  { key: "output", label: "输出", color: "var(--chart-2)" },
-  { key: "input", label: "输入", color: "var(--chart-1)" },
+  { key: "cache_create", label: "Cache write", color: "var(--chart-4)" },
+  { key: "cache_read", label: "Cache read", color: "var(--chart-3)" },
+  { key: "output", label: "Output", color: "var(--chart-2)" },
+  { key: "input", label: "Input", color: "var(--chart-1)" },
 ] as const;
 
 function bucketTokens(bucket: DashboardDailyBucket): number {
@@ -83,21 +83,21 @@ export function OverviewUsageChart({
     first && last ? ` · ${formatMonthDay(first.date)} → ${formatMonthDay(last.date)}` : "";
 
   return (
-    <Panel role="region" aria-label="按天用量" className="p-4">
+    <Panel role="region" aria-label="Daily usage" className="p-4">
       <PanelHeader
-        title="按天用量"
+        title="Daily usage"
         action={
           <SegmentedControl
             options={METRIC_OPTIONS}
             value={metric}
             onChange={onMetricChange}
             size="sm"
-            ariaLabel="用量指标"
+            ariaLabel="Usage metric"
           />
         }
       />
       <p className="console-mono mt-1 text-[10.5px] text-[var(--console-muted)]">
-        柱={OVERVIEW_METRIC_LABEL[metric]} 构成 · 线=当日花费{range}
+        Bars = {OVERVIEW_METRIC_LABEL[metric]} · Line = daily cost{range}
       </p>
 
       <div className="console-mono mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-[var(--console-muted)]">
@@ -120,14 +120,14 @@ export function OverviewUsageChart({
         {maxCost > 0 ? (
           <span className="flex items-center gap-1">
             <span className="h-px w-3 bg-[var(--brand)]" aria-hidden />
-            花费
+            Cost
           </span>
         ) : null}
       </div>
 
       {daily.length === 0 ? (
         <p className="console-mono mt-[14px] text-[11px] text-[var(--console-muted)]">
-          暂无用量数据
+          No usage data
         </p>
       ) : (
         <>
@@ -147,7 +147,7 @@ export function OverviewUsageChart({
                   <button
                     key={bucket.date}
                     type="button"
-                    aria-label={`${formatMonthDay(bucket.date)} 用量`}
+                    aria-label={`${formatMonthDay(bucket.date)} usage`}
                     onMouseEnter={() => onHoverDayChange(index)}
                     onMouseLeave={() => onHoverDayChange(null)}
                     onFocus={() => onHoverDayChange(index)}
@@ -211,11 +211,11 @@ export function OverviewUsageChart({
                   <span className="text-[var(--brand)]">{formatUsd(hovered.cost)}</span>
                 </div>
                 <div>
-                  {formatInt(hovered.sessions)} 会话 · {formatInt(hovered.messages)} 消息
+                  {formatInt(hovered.sessions)} sessions · {formatInt(hovered.messages)} messages
                 </div>
                 <div className="text-[var(--console-muted)]">
-                  入 {formatCompact(hovered.input)} · 出 {formatCompact(hovered.output)} · 读{" "}
-                  {formatCompact(hovered.cache_read)} · 写 {formatCompact(hovered.cache_create)}
+                  In {formatCompact(hovered.input)} · Out {formatCompact(hovered.output)} · Read{" "}
+                  {formatCompact(hovered.cache_read)} · Write {formatCompact(hovered.cache_create)}
                 </div>
               </div>
             ) : null}
@@ -233,14 +233,14 @@ export function OverviewUsageChart({
         </>
       )}
 
-      <table className="sr-only" aria-label="按天用量数据">
+      <table className="sr-only" aria-label="Daily usage data">
         <thead>
           <tr>
-            <th>日期</th>
-            <th>会话</th>
-            <th>消息</th>
+            <th>Date</th>
+            <th>Sessions</th>
+            <th>Messages</th>
             <th>Tokens</th>
-            <th>花费</th>
+            <th>Cost</th>
           </tr>
         </thead>
         <tbody>

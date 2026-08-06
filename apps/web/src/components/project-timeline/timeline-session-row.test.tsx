@@ -112,16 +112,16 @@ describe("TimelineSessionRow", () => {
     expect(onOpen).toHaveBeenCalledWith({ agentName: "codex", sessionId: "child" });
   });
 
-  it("marks an orphan row as 未挂载", () => {
+  it("marks an orphan row as Unmounted", () => {
     renderRow({ row: createRow({ isOrphan: true }) });
 
-    expect(screen.getByText("未挂载")).not.toBeNull();
+    expect(screen.getByText("Unmounted")).not.toBeNull();
   });
 
-  it("omits the 未挂载 badge for a mounted row", () => {
+  it("omits the Unmounted badge for a mounted row", () => {
     renderRow();
 
-    expect(screen.queryByText("未挂载")).toBeNull();
+    expect(screen.queryByText("Unmounted")).toBeNull();
   });
 
   it("omits a kind badge when the adapter reports none", () => {

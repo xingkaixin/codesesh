@@ -12,9 +12,9 @@ function barHeights(label: string): string[] {
 
 describe("Sparkline", () => {
   it("scales bars against the peak value", () => {
-    render(<Sparkline values={[0, 5, 10]} height={20} label="近 14 天花费" />);
+    render(<Sparkline values={[0, 5, 10]} height={20} label="14-day cost" />);
 
-    expect(barHeights("近 14 天花费")).toEqual(["2px", "10px", "20px"]);
+    expect(barHeights("14-day cost")).toEqual(["2px", "10px", "20px"]);
   });
 
   it("keeps empty days visible with a 2px floor", () => {

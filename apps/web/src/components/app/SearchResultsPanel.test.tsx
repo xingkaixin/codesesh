@@ -170,7 +170,7 @@ describe("SearchResultsPanel", () => {
 
     expect(screen.getByText("Parent work")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Child work" })).toBeTruthy();
-    expect(screen.queryByText("未挂载")).toBeNull();
+    expect(screen.queryByText("Unmounted")).toBeNull();
   });
 
   it("labels a sub-session hit whose parent is missing from the snapshot", () => {
@@ -188,6 +188,6 @@ describe("SearchResultsPanel", () => {
 
     renderPanel({ status: "loaded", results });
 
-    expect(screen.getByText("未挂载")).toBeTruthy();
+    expect(screen.getByText("Unmounted")).toBeTruthy();
   });
 });

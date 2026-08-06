@@ -6,9 +6,9 @@ import type { SubSessionMode } from "../../lib/session-timeline";
 import { SegmentedControl } from "../ui/segmented-control";
 
 const MODE_OPTIONS = [
-  { value: "collapsed", label: "折叠" },
-  { value: "expanded", label: "全部展开" },
-  { value: "hidden", label: "隐藏" },
+  { value: "collapsed", label: "Collapsed" },
+  { value: "expanded", label: "Expand all" },
+  { value: "hidden", label: "Hidden" },
 ] as const satisfies readonly { value: SubSessionMode; label: string }[];
 
 export function SubSessionModeSwitch({
@@ -20,13 +20,13 @@ export function SubSessionModeSwitch({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="console-eyebrow">子会话</span>
+      <span className="console-eyebrow">Sub-sessions</span>
       <SegmentedControl
         options={MODE_OPTIONS}
         value={mode}
         onChange={onChange}
         size="sm"
-        ariaLabel="子会话显示方式"
+        ariaLabel="Sub-session display"
       />
     </div>
   );

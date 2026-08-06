@@ -163,7 +163,7 @@ export function SearchResultsPanel({
               </span>
               {isUnmountedChild ? (
                 <span className="console-mono rounded-sm border border-[var(--console-border-strong)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]">
-                  未挂载
+                  Unmounted
                 </span>
               ) : null}
               <span className="console-mono text-[11px] text-[var(--console-muted)]">

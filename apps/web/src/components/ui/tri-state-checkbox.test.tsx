@@ -6,8 +6,8 @@ afterEach(cleanup);
 
 describe("TriStateCheckbox", () => {
   it("reports a mixed selection", () => {
-    render(<TriStateCheckbox state="indeterminate" onToggle={vi.fn()} label="工具" />);
-    const checkbox = screen.getByRole("checkbox", { name: "工具" }) as HTMLInputElement;
+    render(<TriStateCheckbox state="indeterminate" onToggle={vi.fn()} label="Tools" />);
+    const checkbox = screen.getByRole("checkbox", { name: "Tools" }) as HTMLInputElement;
 
     expect(checkbox.getAttribute("aria-checked")).toBe("mixed");
     expect(checkbox.indeterminate).toBe(true);
@@ -16,14 +16,14 @@ describe("TriStateCheckbox", () => {
 
   it("reports checked and unchecked states", () => {
     const { rerender } = render(
-      <TriStateCheckbox state="checked" onToggle={vi.fn()} label="工具" />,
+      <TriStateCheckbox state="checked" onToggle={vi.fn()} label="Tools" />,
     );
-    const checkbox = screen.getByRole("checkbox", { name: "工具" }) as HTMLInputElement;
+    const checkbox = screen.getByRole("checkbox", { name: "Tools" }) as HTMLInputElement;
 
     expect(checkbox.checked).toBe(true);
     expect(checkbox.indeterminate).toBe(false);
 
-    rerender(<TriStateCheckbox state="unchecked" onToggle={vi.fn()} label="工具" />);
+    rerender(<TriStateCheckbox state="unchecked" onToggle={vi.fn()} label="Tools" />);
 
     expect(checkbox.checked).toBe(false);
     expect(checkbox.getAttribute("aria-checked")).toBe("false");
@@ -31,9 +31,9 @@ describe("TriStateCheckbox", () => {
 
   it("calls onToggle when clicked", () => {
     const onToggle = vi.fn();
-    render(<TriStateCheckbox state="indeterminate" onToggle={onToggle} label="工具" />);
+    render(<TriStateCheckbox state="indeterminate" onToggle={onToggle} label="Tools" />);
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "工具" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Tools" }));
 
     expect(onToggle).toHaveBeenCalledOnce();
   });

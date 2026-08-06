@@ -8,10 +8,10 @@ import { TOC_CONTENT_FILTER_IDS, type SessionDetailToc, type TocContentFilterId 
 import type { SessionFilterActions } from "./use-session-filters";
 
 const CONTENT_SHORT_LABEL: Record<TocContentFilterId, string> = {
-  user: "你",
-  agent_message: "回复",
-  thinking: "思考",
-  plan: "计划",
+  user: "You",
+  agent_message: "Reply",
+  thinking: "Thinking",
+  plan: "Plan",
 };
 
 export function countActiveFilterChips(toc: SessionDetailToc, state: SessionFilterState) {
@@ -41,10 +41,10 @@ export function SessionFilterChips({
           key={chip.id}
           className="console-mono inline-flex items-center gap-1 rounded-full bg-[var(--brand)] px-2.5 py-[3px] text-[10.5px] text-[var(--brand-fg)]"
         >
-          工具 · {chip.label}
+          Tool · {chip.label}
           <button
             type="button"
-            aria-label={`移除筛选 ${chip.label}`}
+            aria-label={`Remove filter ${chip.label}`}
             onClick={() => actions.toggleTool(chip.id)}
             className="motion-hover -mr-1 rounded-full p-0.5 opacity-80 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--brand-fg)] focus-visible:outline-none"
           >

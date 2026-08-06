@@ -38,12 +38,12 @@ describe("OverviewCostBreakdown", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "花费构成" })).toBeTruthy();
-    expect(screen.getByText("按模型")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Cost by Model" })).toBeTruthy();
+    expect(screen.getByText("by cost")).toBeTruthy();
     expect(screen.getByText("$8.00")).toBeTruthy();
     expect(screen.getByText("$2.00")).toBeTruthy();
-    expect(screen.getByText(/由模型单价推算/)).toBeTruthy();
-    expect(screen.queryByText("其他")).toBeNull();
+    expect(screen.getByText(/from model unit price/)).toBeTruthy();
+    expect(screen.queryByText("Other")).toBeNull();
   });
 
   it("adds a remainder segment when the cache lags behind the snapshot", () => {
@@ -55,7 +55,7 @@ describe("OverviewCostBreakdown", () => {
       />,
     );
 
-    expect(screen.getByText("其他")).toBeTruthy();
+    expect(screen.getByText("Other")).toBeTruthy();
     expect(screen.getByText("$4.00")).toBeTruthy();
   });
 
@@ -71,18 +71,20 @@ describe("OverviewCostBreakdown", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "模型构成" })).toBeTruthy();
-    expect(screen.getByText("按 Token")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Models" })).toBeTruthy();
+    expect(screen.getByText("by tokens")).toBeTruthy();
     expect(screen.getByText("30.0k")).toBeTruthy();
     expect(screen.getByText("10.0k")).toBeTruthy();
     expect(
-      screen.getByText("按模型的花费需要消息缓存，当前不可用；此处按 Token 占比展示。"),
+      screen.getByText(
+        "Per-model cost needs the message cache, which is unavailable here; showing token share instead.",
+      ),
     ).toBeTruthy();
   });
 
   it("says so when there is nothing to break down", () => {
     render(<OverviewCostBreakdown modelCost={null} modelDistribution={[]} totals={totals()} />);
 
-    expect(screen.getByText("暂无模型数据")).toBeTruthy();
+    expect(screen.getByText("No model data")).toBeTruthy();
   });
 });

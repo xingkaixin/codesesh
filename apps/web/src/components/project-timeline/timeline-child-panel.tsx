@@ -21,7 +21,7 @@ export function TimelineChildPanel({
       // The 66px inset lines the child list up with the parent's title column.
       className="border-t border-dashed border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] p-[10px_16px_12px_66px]"
     >
-      <span className="console-eyebrow">子会话 · 由本会话派生</span>
+      <span className="console-eyebrow">Sub-sessions · derived from this session</span>
       <div className="mt-2 flex flex-col gap-1.5 border-l border-dashed border-[var(--console-border-strong)] pl-[14px]">
         {rows.map((child) => (
           <button

@@ -30,7 +30,7 @@ export function TimelineDayGroup({
           {day.label}
         </div>
         <div className="console-mono mt-0.5 text-[10px] text-[var(--console-muted)]">
-          {day.mainCount} 主 · {day.subCount} 子
+          {day.mainCount} main · {day.subCount} sub
         </div>
       </div>
       <div className="relative flex min-w-0 flex-1 flex-col gap-2.5 border-l border-[var(--console-border)] py-2.5 pr-0 pl-[22px]">

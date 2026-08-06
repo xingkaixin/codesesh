@@ -26,7 +26,7 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
     try {
       const snapshot = await applyLiveEvent(event);
       if (snapshot && event.newSessions > 0) {
-        setLiveNotice(`发现 ${event.newSessions} 个新会话，列表已自动刷新`);
+        setLiveNotice(`${event.newSessions} new sessions found; the list refreshed automatically`);
       }
     } catch (error) {
       console.error("Failed to sync live session update:", error);
@@ -73,7 +73,7 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
       setScanStatus,
       () => void handleReconnect(),
       () => {
-        setConnectionNotice("实时更新已断开，重连中…");
+        setConnectionNotice("Live updates disconnected; reconnecting…");
       },
     );
   }, [setScanStatus]);

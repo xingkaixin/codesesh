@@ -74,29 +74,29 @@ describe("ProjectTimeline", () => {
   it("summarises main and sub sessions in the header", () => {
     renderTimeline([PARENT, CHILD, SOLO]);
 
-    expect(screen.getByText("2 主会话 · 1 子会话 · 450 tokens")).not.toBeNull();
-    expect(screen.getByRole("region", { name: "workspace-a 时间线" })).not.toBeNull();
+    expect(screen.getByText("2 sessions · 1 sub-sessions · 450 tokens")).not.toBeNull();
+    expect(screen.getByRole("region", { name: "workspace-a timeline" })).not.toBeNull();
   });
 
   it("keeps a mounted child off the main axis and marks the parent as inclusive", () => {
     renderTimeline([PARENT, CHILD, SOLO]);
 
     const parent = screen.getByRole("button", { name: /Refactor the scanner/ });
-    expect(parent.textContent).toContain("含 1 子会话");
+    expect(parent.textContent).toContain("1 sub-sessions");
     expect(parent.textContent).toContain("8 msgs");
-    expect(screen.getByText(/含子/)).not.toBeNull();
+    expect(screen.getByText(/incl. sub/)).not.toBeNull();
     expect(screen.queryByRole("button", { name: /Probe the cache/ })).toBeNull();
   });
 
-  it("omits the 含子 suffixes for a childless session", () => {
+  it("omits the incl. sub suffixes for a childless session", () => {
     renderTimeline([SOLO]);
 
     const row = screen.getByRole("button", { name: /Tidy the docs/ });
-    expect(row.textContent).not.toContain("含");
-    expect(screen.queryByText(/含子/)).toBeNull();
+    expect(row.textContent).not.toContain("incl. sub");
+    expect(screen.queryByText(/incl. sub/)).toBeNull();
   });
 
-  it("expands one row at a time in 折叠 mode without navigating", () => {
+  it("expands one row at a time in Collapsed mode without navigating", () => {
     renderTimeline([PARENT, CHILD, SOLO]);
 
     fireEvent.click(screen.getByRole("button", { name: /⑂/ }));
@@ -105,36 +105,36 @@ describe("ProjectTimeline", () => {
     expect(screen.getByTestId("location").textContent).toBe("/projects/a");
   });
 
-  it("expands every row in 全部展开 mode and restores per-row state when returning to 折叠", () => {
+  it("expands every row in Expand all mode and restores per-row state when returning to Collapsed", () => {
     renderTimeline([PARENT, CHILD, SOLO]);
 
-    fireEvent.click(screen.getByRole("radio", { name: "全部展开" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Expand all" }));
     expect(screen.getByRole("button", { name: /Probe the cache/ })).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("radio", { name: "折叠" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Collapsed" }));
     expect(screen.queryByRole("button", { name: /Probe the cache/ })).toBeNull();
   });
 
-  it("keeps a row opened in 折叠 mode open after a round trip through 全部展开", () => {
+  it("keeps a row opened in Collapsed mode open after a round trip through Expand all", () => {
     renderTimeline([PARENT, CHILD, SOLO]);
 
     fireEvent.click(screen.getByRole("button", { name: /⑂/ }));
-    fireEvent.click(screen.getByRole("radio", { name: "全部展开" }));
-    fireEvent.click(screen.getByRole("radio", { name: "折叠" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Expand all" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Collapsed" }));
 
     expect(screen.getByRole("button", { name: /Probe the cache/ })).not.toBeNull();
   });
 
-  it("hides the pill and panel in 隐藏 mode without changing the parent's numbers", () => {
+  it("hides the pill and panel in Hidden mode without changing the parent's numbers", () => {
     renderTimeline([PARENT, CHILD, SOLO]);
 
     fireEvent.click(screen.getByRole("button", { name: /⑂/ }));
-    fireEvent.click(screen.getByRole("radio", { name: "隐藏" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Hidden" }));
 
     expect(screen.queryByRole("button", { name: /⑂/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Probe the cache/ })).toBeNull();
     const parent = screen.getByRole("button", { name: /Refactor the scanner/ });
-    expect(parent.textContent).toContain("含 1 子会话");
+    expect(parent.textContent).toContain("1 sub-sessions");
     expect(parent.textContent).toContain("8 msgs");
   });
 
@@ -158,13 +158,13 @@ describe("ProjectTimeline", () => {
     ]);
 
     expect(screen.getByRole("button", { name: /Lost thread/ })).not.toBeNull();
-    expect(screen.getByText("未挂载")).not.toBeNull();
-    expect(screen.getByText("未挂载子会话 1 · 父会话文件已不存在")).not.toBeNull();
+    expect(screen.getByText("Unmounted")).not.toBeNull();
+    expect(screen.getByText("1 unmounted sub-sessions · parent file is gone")).not.toBeNull();
   });
 
   it("omits the orphan note when everything is mounted", () => {
     renderTimeline([PARENT, CHILD]);
 
-    expect(screen.queryByText(/未挂载子会话/)).toBeNull();
+    expect(screen.queryByText(/unmounted sub-sessions/)).toBeNull();
   });
 });

@@ -63,18 +63,18 @@ export function formatDelta(current: number, previous: number): string | null {
   return `${change < 0 ? "▼" : "▲"} ${Math.round(Math.abs(change) * 100)}%`;
 }
 
-export function formatRelativeCn(timestamp: number, now: number = Date.now()): string {
+export function formatRelativeShort(timestamp: number, now: number = Date.now()): string {
   const diff = now - timestamp;
-  if (diff < 60_000) return "刚刚";
+  if (diff < 60_000) return "just now";
   const minutes = Math.floor(diff / 60_000);
-  if (minutes < 60) return `${minutes} 分`;
+  if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时`;
+  if (hours < 24) return `${hours}h ago`;
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
   const date = new Date(timestamp);
-  if (isSameCalendarDay(date, yesterday)) return "昨天";
-  return `${date.getMonth() + 1}月${date.getDate()}日`;
+  if (isSameCalendarDay(date, yesterday)) return "Yesterday";
+  return formatMonthDay(date.getTime());
 }
 
 export function formatMonthDay(date: string | number): string {

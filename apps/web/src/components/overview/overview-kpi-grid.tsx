@@ -9,7 +9,7 @@ import {
   formatDelta,
   formatInt,
   formatPercent,
-  formatRelativeCn,
+  formatRelativeShort,
   formatUsd,
 } from "../../lib/format";
 import { cn } from "../../lib/utils";
@@ -74,9 +74,10 @@ function KpiCard({
 }
 
 function costHint(totals: DashboardTotals): string {
-  if (totals.costEstimated === 0) return "全部来自 agent 记录";
-  if (totals.costEstimated === totals.cost && totals.cost > 0) return "全部为单价估算";
-  return `含 ${formatUsd(totals.costEstimated)} 估算`;
+  if (totals.costEstimated === 0) return "All recorded by agents";
+  if (totals.costEstimated === totals.cost && totals.cost > 0)
+    return "All estimated from unit price";
+  return `${formatUsd(totals.costEstimated)} estimated`;
 }
 
 function latestActivityHint(totals: DashboardTotals): string | undefined {
@@ -106,18 +107,18 @@ export function OverviewKpiGrid({
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
       <KpiCard
-        label="会话"
+        label="Sessions"
         value={formatInt(totals.sessions)}
         trend={sessionsTrend ?? undefined}
-        hint={rangeDays ? `日均 ${oneDecimal(totals.sessions / rangeDays)}` : undefined}
+        hint={rangeDays ? `${oneDecimal(totals.sessions / rangeDays)}/day` : undefined}
       />
       <KpiCard
-        label="消息"
+        label="Messages"
         value={formatInt(totals.messages)}
         trend={messagesTrend ?? undefined}
         hint={
           totals.sessions > 0
-            ? `均 ${oneDecimal(totals.messages / totals.sessions)} / 会话`
+            ? `${oneDecimal(totals.messages / totals.sessions)}/session`
             : undefined
         }
       />
@@ -125,10 +126,10 @@ export function OverviewKpiGrid({
         label="Tokens"
         value={formatCompact(totals.tokens)}
         trend={tokensTrend ?? undefined}
-        hint={`Cache 命中 ${formatPercent(totals.cacheReadTokens / totals.tokens)}`}
+        hint={`Cache hit ${formatPercent(totals.cacheReadTokens / totals.tokens)}`}
       />
       <KpiCard
-        label="花费"
+        label="Cost"
         value={formatUsd(totals.cost)}
         trend={costTrend ?? undefined}
         trendTone={costRising ? "warning" : "positive"}
@@ -136,9 +137,11 @@ export function OverviewKpiGrid({
         emphasis
       />
       <KpiCard
-        label="最近活动"
+        label="Last activity"
         value={
-          totals.latestActivity === undefined ? "暂无活动" : formatRelativeCn(totals.latestActivity)
+          totals.latestActivity === undefined
+            ? "No activity"
+            : formatRelativeShort(totals.latestActivity)
         }
         trend={totals.latestActivity === undefined ? undefined : "●"}
         trendTone="positive"

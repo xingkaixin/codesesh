@@ -26,9 +26,9 @@ describe("OverviewKpiGrid", () => {
     expect(screen.getByText("400")).toBeTruthy();
     expect(screen.getByText("1.0M")).toBeTruthy();
     expect(screen.getByText("$12.00")).toBeTruthy();
-    expect(screen.getByText("Cache 命中 25%")).toBeTruthy();
-    expect(screen.getByText("日均 2.0")).toBeTruthy();
-    expect(screen.getByText("均 20.0 / 会话")).toBeTruthy();
+    expect(screen.getByText("Cache hit 25%")).toBeTruthy();
+    expect(screen.getByText("2.0/day")).toBeTruthy();
+    expect(screen.getByText("20.0/session")).toBeTruthy();
   });
 
   it("omits every trend when there is no previous period", () => {
@@ -54,13 +54,13 @@ describe("OverviewKpiGrid", () => {
   it("omits the daily average when the range is unbounded", () => {
     render(<OverviewKpiGrid totals={totals()} />);
 
-    expect(screen.queryByText(/日均/)).toBeNull();
+    expect(screen.queryByText(/\/day/)).toBeNull();
   });
 
   it("omits the per-session average when there are no sessions", () => {
     render(<OverviewKpiGrid totals={totals({ sessions: 0, messages: 0 })} rangeDays={10} />);
 
-    expect(screen.queryByText(/\/ 会话/)).toBeNull();
+    expect(screen.queryByText(/\/session/)).toBeNull();
   });
 
   it("reports no activity without a latest timestamp", () => {
@@ -71,7 +71,7 @@ describe("OverviewKpiGrid", () => {
       />,
     );
 
-    expect(screen.getByText("暂无活动")).toBeTruthy();
+    expect(screen.getByText("No activity")).toBeTruthy();
     expect(screen.queryByText(/codesesh/)).toBeNull();
   });
 
@@ -87,14 +87,14 @@ describe("OverviewKpiGrid", () => {
       />,
     );
 
-    expect(screen.getByText("刚刚")).toBeTruthy();
+    expect(screen.getByText("just now")).toBeTruthy();
     expect(screen.getByText("codesesh · codex")).toBeTruthy();
   });
 
   it.each([
-    [{ costEstimated: 0, costRecorded: 12 }, "全部来自 agent 记录"],
-    [{ costEstimated: 12, costRecorded: 0 }, "全部为单价估算"],
-    [{ costEstimated: 8, costRecorded: 4 }, "含 $8.00 估算"],
+    [{ costEstimated: 0, costRecorded: 12 }, "All recorded by agents"],
+    [{ costEstimated: 12, costRecorded: 0 }, "All estimated from unit price"],
+    [{ costEstimated: 8, costRecorded: 4 }, "$8.00 estimated"],
   ])("describes the cost split as %o", (split, hint) => {
     render(<OverviewKpiGrid totals={totals(split)} rangeDays={10} />);
 

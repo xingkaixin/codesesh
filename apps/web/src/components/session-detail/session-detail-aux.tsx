@@ -113,7 +113,7 @@ export function SessionDetailAuxControls({
     <div className="flex flex-wrap gap-2 min-[1025px]:hidden">
       <button type="button" onClick={() => onOpen("toc")} className={AUX_BUTTON_CLASS}>
         <Funnel className="size-3.5 text-[var(--brand)]" />
-        {chipCount > 0 ? `${chipCount} 项筛选` : "内容筛选"}
+        {chipCount > 0 ? `${chipCount} filters` : "Content filters"}
       </button>
       {fileCount > 0 ? (
         <button type="button" onClick={() => onOpen("files")} className={AUX_BUTTON_CLASS}>
@@ -159,7 +159,7 @@ export function SessionDetailAuxOverlay({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title={openPanel === "files" ? "File Tracker" : "内容筛选"}
+      title={openPanel === "files" ? "File Tracker" : "Content filters"}
       variant="mobile"
     >
       {openPanel ? (

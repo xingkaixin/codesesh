@@ -10,7 +10,7 @@ import {
   formatMoney,
   formatNumber,
   formatPercent,
-  formatRelativeCn,
+  formatRelativeShort,
   formatRelativeTime,
   formatTokens,
   formatUsd,
@@ -218,30 +218,30 @@ describe("formatDelta", () => {
   });
 });
 
-describe("formatRelativeCn", () => {
+describe("formatRelativeShort", () => {
   const now = new Date(2025, 7, 3, 9, 12).getTime();
 
-  it("returns 刚刚 under a minute and for future timestamps", () => {
-    expect(formatRelativeCn(now - 30_000, now)).toBe("刚刚");
-    expect(formatRelativeCn(now + 10_000, now)).toBe("刚刚");
+  it("returns just now under a minute and for future timestamps", () => {
+    expect(formatRelativeShort(now - 30_000, now)).toBe("just now");
+    expect(formatRelativeShort(now + 10_000, now)).toBe("just now");
   });
 
   it("returns minutes under an hour", () => {
-    expect(formatRelativeCn(now - 12 * 60_000, now)).toBe("12 分");
-    expect(formatRelativeCn(now - 59 * 60_000, now)).toBe("59 分");
+    expect(formatRelativeShort(now - 12 * 60_000, now)).toBe("12m ago");
+    expect(formatRelativeShort(now - 59 * 60_000, now)).toBe("59m ago");
   });
 
   it("returns hours under a day", () => {
-    expect(formatRelativeCn(now - 3 * 3600_000, now)).toBe("3 小时");
-    expect(formatRelativeCn(now - 23 * 3600_000, now)).toBe("23 小时");
+    expect(formatRelativeShort(now - 3 * 3600_000, now)).toBe("3h ago");
+    expect(formatRelativeShort(now - 23 * 3600_000, now)).toBe("23h ago");
   });
 
-  it("returns 昨天 for the previous calendar day", () => {
-    expect(formatRelativeCn(new Date(2025, 7, 2, 4, 0).getTime(), now)).toBe("昨天");
+  it("returns Yesterday for the previous calendar day", () => {
+    expect(formatRelativeShort(new Date(2025, 7, 2, 4, 0).getTime(), now)).toBe("Yesterday");
   });
 
   it("returns a month-day label further back", () => {
-    expect(formatRelativeCn(new Date(2025, 6, 28, 4, 0).getTime(), now)).toBe("7月28日");
+    expect(formatRelativeShort(new Date(2025, 6, 28, 4, 0).getTime(), now)).toBe("07-28");
   });
 });
 

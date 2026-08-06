@@ -101,7 +101,7 @@ describe("useLiveSync", () => {
   it("shows a persistent connection notice on disconnect", () => {
     const { result } = renderHook(() => useLiveSync(makeDeps()));
     act(() => disconnectCallback?.());
-    expect(result.current.liveNotice).toBe("实时更新已断开，重连中…");
+    expect(result.current.liveNotice).toBe("Live updates disconnected; reconnecting…");
   });
 
   it("clears the notice and explicitly resyncs the store on reconnect", async () => {

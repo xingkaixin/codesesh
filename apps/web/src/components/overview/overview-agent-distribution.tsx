@@ -20,10 +20,10 @@ export function OverviewAgentDistribution({ perAgent }: { perAgent: DashboardAge
 
   return (
     <Panel className="p-4">
-      <PanelHeader title="Agent 分布" meta={`${perAgent.length} 个`} />
+      <PanelHeader title="Agents" meta={`${perAgent.length} total`} />
 
       {visible.length === 0 ? (
-        <p className="console-mono mt-3 text-[11px] text-[var(--console-muted)]">暂无数据</p>
+        <p className="console-mono mt-3 text-[11px] text-[var(--console-muted)]">No data</p>
       ) : (
         <ul className="mt-3 space-y-[10px]">
           {visible.map((agent, index) => (
@@ -43,7 +43,7 @@ export function OverviewAgentDistribution({ perAgent }: { perAgent: DashboardAge
                 <span className="console-mono shrink-0 text-[10.5px] text-[var(--console-muted)]">
                   {byCost
                     ? `${formatInt(agent.sessions)} · ${formatUsd(agent.cost)}`
-                    : `${formatInt(agent.sessions)} 会话`}
+                    : `${formatInt(agent.sessions)} sessions`}
                 </span>
               </div>
               <div className="mt-[6px] flex" style={{ opacity: Math.max(0.4, 1 - index * 0.15) }}>
@@ -56,7 +56,7 @@ export function OverviewAgentDistribution({ perAgent }: { perAgent: DashboardAge
 
       {perAgent.length > AGENT_LIMIT ? (
         <p className="console-mono mt-3 text-[10.5px] text-[var(--console-muted)]">
-          + 其他 {perAgent.length - AGENT_LIMIT} 个 agent
+          + {perAgent.length - AGENT_LIMIT} more
         </p>
       ) : null}
     </Panel>

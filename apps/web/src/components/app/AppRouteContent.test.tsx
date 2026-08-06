@@ -107,7 +107,7 @@ describe("AppRouteContent", () => {
     expect(
       await screen.findByTestId("dashboard", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS }),
     ).toBeTruthy();
-    expect(screen.getByRole("combobox", { name: "按 Agent 筛选" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Filter by agent" })).toBeTruthy();
   });
 
   // The route surfaces load on demand, so these assertions wait for the chunk.

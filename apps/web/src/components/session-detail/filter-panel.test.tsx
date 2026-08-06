@@ -47,23 +47,23 @@ describe("SessionFilterPanel", () => {
   it("renders every content kind and tool with its count", () => {
     render(<Harness />);
 
-    expect(checkbox("你的消息").getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByText("Agent 回复")).toBeTruthy();
+    expect(checkbox("Your messages").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText("Agent replies")).toBeTruthy();
     expect(toolCheckboxNames()).toEqual(["Bash", "Edit", "Grep", "Read", "Write"]);
-    expect(screen.getByText("5 / 5 选中")).toBeTruthy();
+    expect(screen.getByText("5 / 5 selected")).toBeTruthy();
     expect(screen.getByText("20")).toBeTruthy();
   });
 
   it("reports the tool parent as mixed once part of the subset is off", () => {
     render(<Harness />);
-    const parent = checkbox("全部工具");
+    const parent = checkbox("All tools");
     expect(parent.getAttribute("aria-checked")).toBe("true");
 
     fireEvent.click(checkbox("Grep"));
     fireEvent.click(checkbox("Bash"));
 
     expect(parent.getAttribute("aria-checked")).toBe("mixed");
-    expect(screen.getByText("3 / 5 选中")).toBeTruthy();
+    expect(screen.getByText("3 / 5 selected")).toBeTruthy();
 
     fireEvent.click(parent);
     expect(parent.getAttribute("aria-checked")).toBe("true");
@@ -75,37 +75,37 @@ describe("SessionFilterPanel", () => {
     render(<Harness />);
     fireEvent.click(checkbox("Grep"));
 
-    fireEvent.change(screen.getByRole("searchbox", { name: "过滤工具名" }), {
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter tool names" }), {
       target: { value: "re" },
     });
 
     expect(toolCheckboxNames()).toEqual(["Grep", "Read"]);
     expect(checkbox("Grep").getAttribute("aria-checked")).toBe("false");
     expect(checkbox("Read").getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByText("4 / 5 选中")).toBeTruthy();
+    expect(screen.getByText("4 / 5 selected")).toBeTruthy();
   });
 
   it("scopes the quick actions to the queried subset", () => {
     render(<Harness />);
-    fireEvent.change(screen.getByRole("searchbox", { name: "过滤工具名" }), {
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter tool names" }), {
       target: { value: "re" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "全不选（当前 2 项）" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear all (2)" }));
 
-    expect(screen.getByText("3 / 5 选中")).toBeTruthy();
+    expect(screen.getByText("3 / 5 selected")).toBeTruthy();
     expect(checkbox("Grep").getAttribute("aria-checked")).toBe("false");
     expect(checkbox("Read").getAttribute("aria-checked")).toBe("false");
   });
 
-  it("keeps only the write tools behind 只看写操作", () => {
+  it("keeps only the write tools behind Writes only", () => {
     render(<Harness />);
-    fireEvent.click(screen.getByRole("button", { name: "只看写操作" }));
+    fireEvent.click(screen.getByRole("button", { name: "Writes only" }));
 
     expect(checkbox("Edit").getAttribute("aria-checked")).toBe("true");
     expect(checkbox("Write").getAttribute("aria-checked")).toBe("true");
     expect(checkbox("Bash").getAttribute("aria-checked")).toBe("false");
-    expect(checkbox("你的消息").getAttribute("aria-checked")).toBe("true");
+    expect(checkbox("Your messages").getAttribute("aria-checked")).toBe("true");
   });
 
   it("collapses the tool group without losing the selection", () => {
@@ -114,24 +114,24 @@ describe("SessionFilterPanel", () => {
     const header = screen.getByRole("button", { expanded: true });
 
     fireEvent.click(header);
-    expect(screen.queryByRole("searchbox", { name: "过滤工具名" })).toBeNull();
+    expect(screen.queryByRole("searchbox", { name: "Filter tool names" })).toBeNull();
 
     fireEvent.click(header);
     expect(checkbox("Grep").getAttribute("aria-checked")).toBe("false");
   });
 
-  it("restores every filter and clears the query on 重置", () => {
+  it("restores every filter and clears the query on Reset", () => {
     render(<Harness />);
-    fireEvent.click(checkbox("思考过程"));
-    fireEvent.click(screen.getByRole("button", { name: "只看写操作" }));
-    fireEvent.change(screen.getByRole("searchbox", { name: "过滤工具名" }), {
+    fireEvent.click(checkbox("Thinking"));
+    fireEvent.click(screen.getByRole("button", { name: "Writes only" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter tool names" }), {
       target: { value: "wr" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "重置" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
 
-    expect(checkbox("思考过程").getAttribute("aria-checked")).toBe("true");
-    expect(checkbox("全部工具").getAttribute("aria-checked")).toBe("true");
+    expect(checkbox("Thinking").getAttribute("aria-checked")).toBe("true");
+    expect(checkbox("All tools").getAttribute("aria-checked")).toBe("true");
     expect(toolCheckboxNames()).toEqual(["Bash", "Edit", "Grep", "Read", "Write"]);
   });
 
@@ -140,7 +140,7 @@ describe("SessionFilterPanel", () => {
     fireEvent.click(checkbox("Grep"));
     fireEvent.click(checkbox("Bash"));
 
-    expect(screen.getByText(/隐藏了 Bash、Grep/)).toBeTruthy();
+    expect(screen.getByText(/hiding Bash, Grep/)).toBeTruthy();
   });
 
   it("rebuilds the filter set when the session changes", () => {

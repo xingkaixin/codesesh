@@ -20,10 +20,10 @@ import { TOC_CONTENT_FILTER_IDS, type SessionDetailToc, type TocContentFilterId 
 import type { SessionFilterActions } from "./use-session-filters";
 
 const CONTENT_LABEL: Record<TocContentFilterId, string> = {
-  user: "你的消息",
-  agent_message: "Agent 回复",
-  thinking: "思考过程",
-  plan: "计划 Plan",
+  user: "Your messages",
+  agent_message: "Agent replies",
+  thinking: "Thinking",
+  plan: "Plans",
 };
 
 const PARENT_CHECK_STATE: Record<ReturnType<typeof deriveToolsParentState>, CheckState> = {
@@ -49,17 +49,17 @@ export function SessionFilterPanel({
 
   return (
     <section
-      aria-label="内容筛选"
+      aria-label="Content filters"
       className="flex flex-col rounded-lg border border-[var(--console-border)] bg-[var(--console-surface-muted)]"
     >
       <div className="flex items-center gap-3 border-b border-[var(--console-border)] px-3 py-2.5">
-        <span className="console-eyebrow">内容筛选</span>
+        <span className="console-eyebrow">Content filters</span>
         <button
           type="button"
           onClick={actions.resetAll}
           className="console-mono motion-hover ml-auto rounded-sm px-1 text-[10.5px] text-[var(--brand)] hover:text-[var(--brand-hover)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
         >
-          重置
+          Reset
         </button>
       </div>
 
@@ -86,12 +86,12 @@ export function SessionFilterPanel({
         {toc.tools.length > 0 ? <ToolGroup toc={toc} state={state} actions={actions} /> : null}
 
         <div className="mt-auto rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] p-2.5">
-          <span className="console-eyebrow">当前视图</span>
+          <span className="console-eyebrow">Current view</span>
           <p className="mt-1 text-[11px] leading-relaxed text-[var(--console-text-secondary)]">
-            显示 <b className="console-mono text-[var(--console-text)]">{visibleUnitCount}</b> /{" "}
-            <span className="console-mono">{toc.totalUnitCount}</span> 条
+            Showing <b className="console-mono text-[var(--console-text)]">{visibleUnitCount}</b> /{" "}
+            <span className="console-mono">{toc.totalUnitCount}</span>
             {hiddenTools.length > 0
-              ? ` · 隐藏了 ${hiddenTools.map((tool) => tool.label).join("、")}`
+              ? ` · hiding ${hiddenTools.map((tool) => tool.label).join(", ")}`
               : null}
           </p>
         </div>
@@ -118,7 +118,7 @@ function ToolGroup({
       <div className="flex items-center gap-2.5 bg-[var(--brand-soft)] px-2.5 py-2">
         <TriStateCheckbox
           size={15}
-          label="全部工具"
+          label="All tools"
           state={PARENT_CHECK_STATE[parentState]}
           onToggle={() => actions.setAllTools(parentState !== "all")}
         />
@@ -128,9 +128,9 @@ function ToolGroup({
           onClick={actions.toggleToolsExpanded}
           className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
         >
-          <span className="text-[13px] text-[var(--console-text)]">工具</span>
+          <span className="text-[13px] text-[var(--console-text)]">Tools</span>
           <span className="console-mono ml-auto text-[10.5px] text-[var(--console-muted)]">
-            {countSelectedTools(toc, state)} / {toc.tools.length} 选中
+            {countSelectedTools(toc, state)} / {toc.tools.length} selected
           </span>
           <Caret className="size-3.5 shrink-0 text-[var(--console-muted)]" />
         </button>
@@ -141,8 +141,8 @@ function ToolGroup({
           <input
             type="search"
             value={state.toolQuery}
-            aria-label="过滤工具名"
-            placeholder="过滤工具名…"
+            aria-label="Filter tool names"
+            placeholder="Filter tools…"
             onChange={(event) => actions.setToolQuery(event.target.value)}
             className="console-mono w-full rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
           />
@@ -173,12 +173,12 @@ function ToolGroup({
           ))}
           <div className="flex flex-wrap gap-1.5 pt-0.5">
             <QuickAction onClick={() => actions.setAllTools(true)}>
-              全选（当前 {visibleTools.length} 项）
+              Select all ({visibleTools.length})
             </QuickAction>
             <QuickAction onClick={() => actions.setAllTools(false)}>
-              全不选（当前 {visibleTools.length} 项）
+              Clear all ({visibleTools.length})
             </QuickAction>
-            <QuickAction onClick={actions.selectWriteToolsOnly}>只看写操作</QuickAction>
+            <QuickAction onClick={actions.selectWriteToolsOnly}>Writes only</QuickAction>
           </div>
         </div>
       ) : null}

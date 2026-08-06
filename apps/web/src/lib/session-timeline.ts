@@ -12,6 +12,7 @@ import {
   groupSessionsByCalendarDay,
   startOfCalendarDay,
 } from "@codesesh/core/contract";
+import { formatMonthDay } from "./format";
 import { getSessionDisplayTitle } from "./session-title";
 
 export type SubSessionMode = "collapsed" | "expanded" | "hidden";
@@ -52,7 +53,7 @@ export interface TimelineRow {
 export interface TimelineDay {
   dayKey: string;
   dayStart: number;
-  /** "今天" | "昨天" | "8月4日" */
+  /** "Today" | "Yesterday" | "08-04" */
   label: string;
   mainCount: number;
   subCount: number;
@@ -77,10 +78,10 @@ function referenceOf(session: SessionHead): SessionReference {
 
 function formatDayLabel(dayStart: number, now: number): string {
   const today = startOfCalendarDay(now);
-  if (dayStart === today) return "今天";
-  if (dayStart === addCalendarDays(today, -1)) return "昨天";
+  if (dayStart === today) return "Today";
+  if (dayStart === addCalendarDays(today, -1)) return "Yesterday";
   const date = new Date(dayStart);
-  return `${date.getMonth() + 1}月${date.getDate()}日`;
+  return formatMonthDay(date.getTime());
 }
 
 function toChildRow(node: SessionTreeNode): TimelineChildRow {

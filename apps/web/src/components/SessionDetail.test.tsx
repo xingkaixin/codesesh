@@ -148,31 +148,31 @@ describe("SessionDetail content filtering", () => {
   it("renders the filter aside with the tool group", () => {
     renderFiltered();
 
-    expect(screen.getByRole("checkbox", { name: "全部工具" })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "All tools" })).toBeTruthy();
     expect(screen.getByRole("checkbox", { name: "Read" }).getAttribute("aria-checked")).toBe(
       "true",
     );
-    expect(screen.queryByRole("button", { name: "全部显示" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show all" })).toBeNull();
   });
 
   it("surfaces a removable chip and the hidden-count footer once a tool is filtered out", () => {
     renderFiltered();
     fireEvent.click(screen.getByRole("checkbox", { name: "Bash" }));
 
-    expect(screen.getByRole("button", { name: "移除筛选 Read" })).toBeTruthy();
-    expect(screen.getByText(/当前筛选隐藏了 2 条（Bash 2）/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove filter Read" })).toBeTruthy();
+    expect(screen.getByText(/2 hidden by filters \(Bash 2\)/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "移除筛选 Read" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove filter Read" }));
     expect(screen.getByRole("checkbox", { name: "Read" }).getAttribute("aria-checked")).toBe(
       "false",
     );
-    expect(screen.getByText(/当前筛选隐藏了 8 条/)).toBeTruthy();
+    expect(screen.getByText(/8 hidden by filters/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "全部显示" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show all" }));
 
     expect(screen.getByRole("checkbox", { name: "Read" }).getAttribute("aria-checked")).toBe(
       "true",
     );
-    expect(screen.queryByRole("button", { name: "全部显示" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show all" })).toBeNull();
   });
 });

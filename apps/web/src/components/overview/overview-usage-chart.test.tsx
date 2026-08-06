@@ -44,7 +44,7 @@ describe("OverviewUsageChart", () => {
   it("mirrors every bucket in the accessible table", () => {
     renderChart();
 
-    const table = screen.getByRole("table", { name: "按天用量数据" });
+    const table = screen.getByRole("table", { name: "Daily usage data" });
     const rows = within(table).getAllByRole("row");
     expect(rows).toHaveLength(daily.length + 1);
 
@@ -74,7 +74,7 @@ describe("OverviewUsageChart", () => {
   it("reports the selected metric upwards", () => {
     const { props } = renderChart();
 
-    fireEvent.click(screen.getByRole("radio", { name: "会话数" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Sessions" }));
 
     expect(props.onMetricChange).toHaveBeenCalledWith("sessions");
   });
@@ -82,18 +82,18 @@ describe("OverviewUsageChart", () => {
   it("reports the hovered day and renders its tooltip", () => {
     const { props } = renderChart();
 
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "01-02 用量" }));
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "01-02 usage" }));
     expect(props.onHoverDayChange).toHaveBeenCalledWith(1);
 
     cleanup();
     renderChart({ hoverDayIndex: 1 });
-    expect(screen.getByText(/入 10 · 出 20 · 读 30 · 写 40/)).toBeTruthy();
+    expect(screen.getByText(/In 10 · Out 20 · Read 30 · Write 40/)).toBeTruthy();
   });
 
   it("degrades to an empty state without buckets", () => {
     renderChart({ daily: [] });
 
-    expect(screen.getByText("暂无用量数据")).toBeTruthy();
+    expect(screen.getByText("No usage data")).toBeTruthy();
     expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
 });

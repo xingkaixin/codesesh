@@ -73,7 +73,7 @@ describe("reducers", () => {
     expect(toggleTool(off, "tool:grep").selected.has("tool:grep")).toBe(true);
   });
 
-  it("scopes 全选 / 全不选 to the queried tool subset", () => {
+  it("scopes select-all / clear-all to the queried tool subset", () => {
     const none = setAllTools(createFilterState(toc), toc, false);
     expect(countSelectedTools(toc, none)).toBe(0);
 
@@ -90,7 +90,7 @@ describe("reducers", () => {
     expect(countSelectedTools(toc, cleared)).toBe(0);
   });
 
-  it("applies 全选 to every tool when the query is empty", () => {
+  it("applies select-all to every tool when the query is empty", () => {
     const none = setAllTools(createFilterState(toc), toc, false);
     expect(countSelectedTools(toc, setAllTools(none, toc, true))).toBe(TOOLS.length);
   });

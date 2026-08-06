@@ -43,7 +43,7 @@ export function TimelineSessionRow({
         </span>
         {row.isOrphan ? (
           <span className="console-mono shrink-0 rounded-sm border border-[var(--console-border-strong)] px-1.5 text-[9.5px] text-[var(--console-muted)]">
-            未挂载
+            Unmounted
           </span>
         ) : null}
         <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)]">
@@ -66,7 +66,7 @@ export function TimelineSessionRow({
           </span>
           <span className="console-mono mt-[3px] block truncate text-[10.5px] text-[var(--console-muted)]">
             {agentName} · {formatInt(row.messageCount)} msgs · {formatCompact(row.tokens)} tok
-            {hasChildren ? ` · 含 ${row.childCount} 子会话` : ""}
+            {hasChildren ? ` · ${row.childCount} sub-sessions` : ""}
           </span>
         </button>
         {hasChildren && mode !== "hidden" ? (
@@ -78,13 +78,13 @@ export function TimelineSessionRow({
             className="console-mono motion-hover inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--brand-line)] bg-[var(--brand-soft)] px-2.5 py-[3px] text-[10.5px] text-[var(--brand)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
           >
             <span className="text-[11px]">⑂</span>
-            {row.childCount} 子会话
+            {row.childCount} sub
             <span className="opacity-70">{expanded ? "▾" : "▸"}</span>
           </button>
         ) : null}
         <span className="console-mono w-[76px] shrink-0 text-right text-[11px] text-[var(--console-muted)]">
           {formatUsd(row.cost)}
-          {hasChildren ? " 含子" : ""}
+          {hasChildren ? " incl. sub" : ""}
         </span>
       </div>
       {expanded ? <TimelineChildPanel id={panelId} rows={row.children} onOpen={onOpen} /> : null}

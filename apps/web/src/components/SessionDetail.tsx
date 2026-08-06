@@ -169,7 +169,7 @@ export function SessionDetail({
         data-testid="session-detail"
         className="mx-auto max-w-4xl rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]"
       >
-        当前会话暂无可展示的消息内容。
+        This session has no displayable messages.
       </div>
     );
   }
@@ -243,7 +243,7 @@ export function SessionDetail({
             </>
           ) : (
             <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]">
-              当前筛选条件下暂无可展示的消息内容。
+              No messages match the current filters.
             </div>
           )}
           <HiddenToolsFooter
