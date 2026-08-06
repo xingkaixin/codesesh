@@ -27,7 +27,6 @@ export type {
   AgentScanStatus,
   DashboardAgentStat,
   DashboardDailyBucket,
-  DailyTokenBucket,
   ModelDistributionEntry,
   ModelCostEntry,
   DashboardTotals,

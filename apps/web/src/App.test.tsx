@@ -26,7 +26,6 @@ const emptyDashboard: DashboardData = {
   scopeCounts: { projects: 0, agents: 0 },
   perAgent: [],
   dailyActivity: [],
-  dailyTokenActivity: [],
   modelDistribution: [],
   modelCost: null,
   perProject: [],

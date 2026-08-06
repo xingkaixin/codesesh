@@ -77,7 +77,6 @@ const dashboard = {
       cache_create: 1000,
     },
   ],
-  dailyTokenActivity: [],
   modelDistribution: [{ model: "sonnet", tokens: 5000, sessions: 5 }],
   perProject: [
     {
