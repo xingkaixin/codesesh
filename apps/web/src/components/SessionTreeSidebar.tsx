@@ -25,6 +25,8 @@ interface SessionTreeSidebarProps {
   bookmarkedSessionReferences: Set<string>;
   onToggleBookmark: (session: SessionHead) => void;
   onRenameSession: (session: SessionHead) => void;
+  /** False when the listing already covers one project. */
+  groupByProject?: boolean;
 }
 
 interface SessionTreeModel {
@@ -216,9 +218,17 @@ function createPathAllocator() {
 
 /** Sub-sessions whose parent is missing from the current listing still have to
  *  reach the user, so they hang off a dedicated top-level group. */
-const UNMOUNTED_GROUP_LABEL = "未挂载";
+const UNMOUNTED_GROUP_LABEL = "Unmounted";
 
-export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel {
+/**
+ * `groupByProject: false` drops the project layer, for listings that already
+ * cover exactly one project — a lone group node there carries no information.
+ * Orphans keep their own group either way, because that one does.
+ */
+export function buildSessionTreeModel(
+  sessions: SessionHead[],
+  { groupByProject = true }: { groupByProject?: boolean } = {},
+): SessionTreeModel {
   const sortOrderByPath = new Map<string, number>();
   const pathBySessionReference = new Map<string, string>();
   const groupPathBySessionReference = new Map<string, string>();
@@ -260,13 +270,13 @@ export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel
     }
   }
 
-  const orderedGroups: Array<{ label: string; sessions: SessionHead[] }> = [
-    ...groups.values(),
-  ].sort((a, b) => {
-    if (a.label === "(unknown)") return 1;
-    if (b.label === "(unknown)") return -1;
-    return b.maxTime - a.maxTime;
-  });
+  const orderedGroups: Array<{ label: string | null; sessions: SessionHead[] }> = groupByProject
+    ? [...groups.values()].sort((a, b) => {
+        if (a.label === "(unknown)") return 1;
+        if (b.label === "(unknown)") return -1;
+        return b.maxTime - a.maxTime;
+      })
+    : [{ label: null, sessions: roots }];
   if (orphans.length > 0) {
     orderedGroups.push({ label: UNMOUNTED_GROUP_LABEL, sessions: orphans });
   }
@@ -274,13 +284,16 @@ export function buildSessionTreeModel(sessions: SessionHead[]): SessionTreeModel
   let order = 0;
   const allocateGroupPath = createPathAllocator();
   for (const group of orderedGroups) {
-    const bareGroupPath = allocateGroupPath(sanitizeSegment(group.label));
-    const groupPath = `${bareGroupPath}/`;
-    sortOrderByPath.set(groupPath, order);
-    sortOrderByPath.set(bareGroupPath, order);
-    order += 1;
-    groupCountByPath.set(groupPath, `${group.sessions.length}`);
-    groupCountByPath.set(bareGroupPath, `${group.sessions.length}`);
+    let groupPath = "";
+    if (group.label !== null) {
+      const bareGroupPath = allocateGroupPath(sanitizeSegment(group.label));
+      groupPath = `${bareGroupPath}/`;
+      sortOrderByPath.set(groupPath, order);
+      sortOrderByPath.set(bareGroupPath, order);
+      order += 1;
+      groupCountByPath.set(groupPath, `${group.sessions.length}`);
+      groupCountByPath.set(bareGroupPath, `${group.sessions.length}`);
+    }
 
     const appendSession = (
       session: SessionHead,
@@ -493,6 +506,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   bookmarkedSessionReferences,
   onToggleBookmark,
   onRenameSession,
+  groupByProject = true,
 }: SessionTreeSidebarProps) {
   const [menuSession, setMenuSession] = useState<SessionHead | null>(null);
   const menuAnchorRef = useRef<HTMLElement | null>(null);
@@ -501,9 +515,9 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   const modelData = useMemo(
     () =>
       measureSessionTreeWork("SessionTreeSidebar:buildTreeModel", () =>
-        buildSessionTreeModel(sessions),
+        buildSessionTreeModel(sessions, { groupByProject }),
       ),
-    [sessions],
+    [sessions, groupByProject],
   );
   const sortOrderRef = useRef(modelData.sortOrderByPath);
   const groupCountByPathRef = useRef(modelData.groupCountByPath);

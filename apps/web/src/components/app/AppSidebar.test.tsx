@@ -105,9 +105,9 @@ describe("AppSidebar", () => {
     expect(screen.getByText("Scanning projects...")).toBeTruthy();
   });
 
-  it("asks for a project before it can list sessions", () => {
+  it("omits the sessions section until a project is selected", () => {
     renderSidebar();
 
-    expect(screen.getByText("Select a project")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: /SESSIONS/ })).toBeNull();
   });
 });

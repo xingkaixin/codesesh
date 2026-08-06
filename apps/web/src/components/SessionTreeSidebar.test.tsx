@@ -121,7 +121,7 @@ describe("buildSessionTreeModel group sorting", () => {
     expect(model.sessionByPath.get(childPath)).toBe(child);
   });
 
-  it("renders a child without its parent under the 未挂载 group", () => {
+  it("renders a child without its parent under the Unmounted group", () => {
     const rooted = makeSession({ id: "rooted", directory: "/repo/known" });
     const child = makeSession({
       id: "orphan",
@@ -131,10 +131,10 @@ describe("buildSessionTreeModel group sorting", () => {
     const model = buildSessionTreeModel([rooted, child]);
     const childPath = model.pathBySessionReference.get(getSessionReferenceKey(child))!;
 
-    expect(childPath.startsWith("未挂载/")).toBe(true);
+    expect(childPath.startsWith("Unmounted/")).toBe(true);
     expect(model.paths).toContain(childPath);
     expect(model.sessionByPath.get(childPath)).toBe(child);
-    expect(groupOrderOf(model.paths)).toEqual(["known", "未挂载"]);
+    expect(groupOrderOf(model.paths)).toEqual(["known", "Unmounted"]);
   });
 
   it("keeps a grandchild mounted under its orphaned parent", () => {

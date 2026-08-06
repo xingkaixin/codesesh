@@ -7,6 +7,7 @@ import type { DashboardProjectRollup } from "@codesesh/core/contract";
 import { Link } from "react-router-dom";
 
 import type { AgentCatalog } from "../../lib/agents";
+import { AgentIcon } from "../AgentIcon";
 import type { DashboardAgentStat, DashboardFilters, DashboardProjectStat } from "../../lib/api";
 import { formatCompact, formatInt, formatUsd } from "../../lib/format";
 import { Panel, PanelHeader } from "../ui/panel";
@@ -24,6 +25,8 @@ interface RankRow {
   tokens: number;
   cost: number;
   sparkline?: number[];
+  icon?: string;
+  iconColored?: boolean;
 }
 
 function toProjectRow(project: DashboardProjectStat, catalog: AgentCatalog): RankRow {
@@ -46,6 +49,8 @@ function toAgentRow(agent: DashboardAgentStat): RankRow {
     sessions: agent.sessions,
     tokens: agent.tokens,
     cost: agent.cost,
+    icon: agent.icon,
+    iconColored: agent.iconColored,
   };
 }
 
@@ -75,20 +80,20 @@ export function OverviewProjectRank({
   return (
     <Panel className="p-4">
       <PanelHeader
-        title={rankAgents ? "Agent 排行" : "项目排行"}
-        meta={`按花费 · 共 ${rankAgents ? scopeCounts.agents : scopeCounts.projects} 个`}
+        title={rankAgents ? "Agents" : "Projects"}
+        meta={`by cost · ${rankAgents ? scopeCounts.agents : scopeCounts.projects} total`}
       />
 
       <div className="console-eyebrow mt-3 flex items-center gap-3 border-b border-[var(--console-border)] pb-2">
-        <span className="min-w-0 flex-1">{rankAgents ? "Agent" : "项目"}</span>
-        <span className="w-[52px] text-right">会话</span>
+        <span className="min-w-0 flex-1">{rankAgents ? "Agent" : "Project"}</span>
+        <span className="w-[52px] text-right">Sessions</span>
         <span className="w-[60px] text-right">Tokens</span>
-        <span className="w-[66px] text-right">花费</span>
-        {rankAgents ? null : <span className="w-[74px]">近 14 天</span>}
+        <span className="w-[66px] text-right">Cost</span>
+        {rankAgents ? null : <span className="w-[74px]">14d</span>}
       </div>
 
       {visible.length === 0 ? (
-        <p className="console-mono mt-3 text-[11px] text-[var(--console-muted)]">暂无数据</p>
+        <p className="console-mono mt-3 text-[11px] text-[var(--console-muted)]">No data</p>
       ) : (
         <ul>
           {visible.map((row) => (
@@ -97,6 +102,16 @@ export function OverviewProjectRank({
               data-testid="overview-project-row"
               className="flex items-center gap-3 border-b border-[var(--console-border)] py-[10px] last:border-b-0"
             >
+              {row.icon ? (
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)]">
+                  <AgentIcon
+                    icon={row.icon}
+                    iconColored={row.iconColored}
+                    alt={row.name}
+                    className="size-3"
+                  />
+                </span>
+              ) : null}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13px] font-medium text-[var(--console-text)]">
                   {row.name}
@@ -121,7 +136,7 @@ export function OverviewProjectRank({
               </span>
               {row.sparkline ? (
                 <span className="w-[74px] shrink-0">
-                  <Sparkline values={row.sparkline} label={`${row.name} 近 14 天花费`} />
+                  <Sparkline values={row.sparkline} label={`${row.name} 14-day cost`} />
                 </span>
               ) : null}
             </li>
@@ -132,14 +147,14 @@ export function OverviewProjectRank({
       {showFooter ? (
         <div className="console-mono mt-3 flex items-center gap-3 border-t border-[var(--console-border)] pt-3 text-[10.5px] text-[var(--console-muted)]">
           <span className="min-w-0 truncate">
-            其余 {rollup.projects} 个项目 · {formatInt(rollup.sessions)} 会话 ·{" "}
+            {rollup.projects} more projects · {formatInt(rollup.sessions)} sessions ·{" "}
             {formatUsd(rollup.cost)}
           </span>
           <Link
             to="/projects"
             className="ml-auto shrink-0 text-[var(--brand)] hover:text-[var(--brand-hover)]"
           >
-            查看全部 {scopeCounts.projects} 个 →
+            View all {scopeCounts.projects} →
           </Link>
         </div>
       ) : null}

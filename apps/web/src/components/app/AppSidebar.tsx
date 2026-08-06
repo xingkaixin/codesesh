@@ -13,10 +13,10 @@ import { PanelLeftClose } from "../ui/icons";
 import { Link } from "react-router-dom";
 
 function navItemClass(isSelected: boolean): string {
-  return `flex items-center gap-2 rounded-sm border-l-2 px-3 py-1.5 text-left motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
+  return `flex items-center gap-2 rounded-sm px-3 py-1.5 text-left motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
     isSelected
-      ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]"
-      : "border-transparent text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)]"
+      ? "bg-[var(--brand-soft)] text-[var(--brand)]"
+      : "text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)]"
   }`;
 }
 
@@ -40,7 +40,7 @@ function ProjectNavList({
               to={getProjectPath(projectIdentity)}
               onClick={() => onSelectProject(projectIdentity)}
               data-active={isSelected ? "true" : undefined}
-              className={`ml-4 min-w-0 ${navItemClass(isSelected)}`}
+              className={`min-w-0 ${navItemClass(isSelected)}`}
             >
               <span className="console-mono min-w-0 flex-1 truncate text-xs">
                 {project.displayName}
@@ -121,8 +121,7 @@ export function AppSidebar({
         sidebarCollapsed ? "hidden" : "hidden lg:flex"
       }`}
     >
-      <div className="flex items-center justify-between gap-2 px-4 pt-4">
-        <h2 className="console-eyebrow">PROJECTS</h2>
+      <div className="flex items-center justify-end px-4 pt-4">
         <button
           type="button"
           aria-expanded="true"
@@ -183,10 +182,10 @@ export function AppSidebar({
                   <li key={getSessionBookmarkKey(reference)}>
                     <div
                       data-active={isActive ? "true" : undefined}
-                      className={`flex items-start gap-2 rounded-sm border-l-2 px-2 py-1.5 motion-hover ${
+                      className={`flex items-start gap-2 rounded-sm px-2 py-1.5 motion-hover ${
                         isActive
-                          ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]"
-                          : "border-transparent text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)]"
+                          ? "bg-[var(--brand-soft)] text-[var(--brand)]"
+                          : "text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)]"
                       }`}
                     >
                       <Link
@@ -223,37 +222,37 @@ export function AppSidebar({
           )}
         </section>
 
-        <section>
-          <h3 className="console-eyebrow mb-3">
-            SESSIONS
-            {sidebarSessions.length > 0 ? (
-              <span className="ml-2 text-[10px] font-normal text-[var(--console-muted)]">
-                Navigate j k · Open Enter
+        {/* Sessions belong to a project; without one there is nothing to list. */}
+        {selectedProjectNavigationId ? (
+          <section>
+            <h3 className="console-eyebrow mb-3">
+              SESSIONS
+              {sidebarSessions.length > 0 ? (
+                <span className="ml-2 text-[10px] font-normal text-[var(--console-muted)]">
+                  Navigate j k · Open Enter
+                </span>
+              ) : null}
+            </h3>
+            {sidebarSessions.length === 0 ? (
+              <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
+                {scanStatus?.active ? "Scanning sessions..." : "No sessions yet"}
               </span>
-            ) : null}
-          </h3>
-          {!selectedProjectNavigationId ? (
-            <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-              Select a project
-            </span>
-          ) : sidebarSessions.length === 0 ? (
-            <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-              {scanStatus?.active ? "Scanning sessions..." : "No sessions yet"}
-            </span>
-          ) : (
-            <RenderProfiler id="SessionTreeSidebar" detail={{ sessions: sidebarSessions.length }}>
-              <SessionTreeSidebar
-                sessions={sidebarSessions}
-                activeSessionReference={activeSessionReference}
-                selectedSessionReference={selectedSidebarSessionReference}
-                onSelectSession={onSelectFlatSidebarSession}
-                bookmarkedSessionReferences={bookmarkedSidebarSessionReferences}
-                onToggleBookmark={onToggleSidebarSessionBookmark}
-                onRenameSession={onRenameSession}
-              />
-            </RenderProfiler>
-          )}
-        </section>
+            ) : (
+              <RenderProfiler id="SessionTreeSidebar" detail={{ sessions: sidebarSessions.length }}>
+                <SessionTreeSidebar
+                  sessions={sidebarSessions}
+                  activeSessionReference={activeSessionReference}
+                  selectedSessionReference={selectedSidebarSessionReference}
+                  onSelectSession={onSelectFlatSidebarSession}
+                  bookmarkedSessionReferences={bookmarkedSidebarSessionReferences}
+                  onToggleBookmark={onToggleSidebarSessionBookmark}
+                  onRenameSession={onRenameSession}
+                  groupByProject={false}
+                />
+              </RenderProfiler>
+            )}
+          </section>
+        ) : null}
       </div>
     </aside>
   );

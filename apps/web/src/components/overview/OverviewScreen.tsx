@@ -89,7 +89,8 @@ export function OverviewScreen({
               agentCatalog={agentCatalog}
             />
             <div className="grid content-start gap-4">
-              <OverviewAgentDistribution perAgent={dashboard.perAgent} />
+              {/* Inside a project the ranking card already ranks agents. */}
+              {project ? null : <OverviewAgentDistribution perAgent={dashboard.perAgent} />}
               <OverviewCostBreakdown
                 modelCost={dashboard.modelCost}
                 modelDistribution={dashboard.modelDistribution}

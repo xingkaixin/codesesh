@@ -121,22 +121,22 @@ describe("OverviewScreen", () => {
   it("renders the full card set for the global scope", async () => {
     renderScreen();
 
-    await screen.findByRole("heading", { name: "项目排行" });
+    await screen.findByRole("heading", { name: "Projects" });
     expect(screen.getByTestId("dashboard")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "按天用量" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Agent 分布" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "花费构成" })).toBeTruthy();
-    expect(screen.getByText("范围内 1 项目 · 2 agent")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Daily usage" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Agents" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Cost by Model" })).toBeTruthy();
+    expect(screen.getByText("1 projects · 2 agents in scope")).toBeTruthy();
     expect(screen.getAllByTestId("overview-project-row")).toHaveLength(1);
     expect(screen.getAllByTestId("overview-agent-row")).toHaveLength(1);
   });
 
   it("issues exactly one new request when the agent filter changes", async () => {
     renderScreen();
-    await screen.findByRole("heading", { name: "项目排行" });
+    await screen.findByRole("heading", { name: "Projects" });
     expect(api.fetchDashboard).toHaveBeenCalledTimes(1);
 
-    fireEvent.change(screen.getByRole("combobox", { name: "按 Agent 筛选" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter by agent" }), {
       target: { value: "codex" },
     });
 
@@ -151,8 +151,8 @@ describe("OverviewScreen", () => {
   it("ranks agents instead of projects when mounted for a project", async () => {
     renderScreen({ project: { kind: "path", key: "/repo/codesesh" } });
 
-    await screen.findByRole("heading", { name: "Agent 排行" });
-    expect(screen.queryByRole("heading", { name: "项目排行" })).toBeNull();
+    await screen.findByRole("heading", { name: "Agents" });
+    expect(screen.queryByRole("heading", { name: "Projects" })).toBeNull();
     expect(api.fetchDashboard).toHaveBeenLastCalledWith(
       timeWindow,
       { project: { kind: "path", key: "/repo/codesesh" }, agent: undefined },
@@ -167,8 +167,8 @@ describe("OverviewScreen", () => {
       onAgentChange: vi.fn(),
     });
 
-    await screen.findByRole("heading", { name: "Agent 排行" });
-    expect(screen.queryByRole("combobox", { name: "按 Agent 筛选" })).toBeNull();
+    await screen.findByRole("heading", { name: "Agents" });
+    expect(screen.queryByRole("combobox", { name: "Filter by agent" })).toBeNull();
     expect(api.fetchDashboard).toHaveBeenLastCalledWith(
       timeWindow,
       { project: { kind: "path", key: "/repo/codesesh" }, agent: "codex" },
