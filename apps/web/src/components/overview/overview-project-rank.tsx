@@ -6,21 +6,20 @@
 import type { DashboardProjectRollup } from "@codesesh/core/contract";
 import { Link } from "react-router-dom";
 
-import type { AgentCatalog } from "../../lib/agents";
+import { findAgent, type AgentCatalog } from "../../lib/agents";
 import { AgentIcon } from "../AgentIcon";
 import type { DashboardAgentStat, DashboardFilters, DashboardProjectStat } from "../../lib/api";
 import { formatCompact, formatInt, formatUsd } from "../../lib/format";
 import { Panel, PanelHeader } from "../ui/panel";
 import { ShareBar } from "../ui/share-bar";
 import { Sparkline } from "../ui/sparkline";
-import { agentDisplayName } from "./types";
 
 const RANK_LIMIT = 6;
 
 interface RankRow {
   key: string;
   name: string;
-  detail: string;
+  agentKeys?: string[];
   sessions: number;
   tokens: number;
   cost: number;
@@ -29,11 +28,11 @@ interface RankRow {
   iconColored?: boolean;
 }
 
-function toProjectRow(project: DashboardProjectStat, catalog: AgentCatalog): RankRow {
+function toProjectRow(project: DashboardProjectStat): RankRow {
   return {
     key: `${project.identityKind}:${project.identityKey}`,
     name: project.displayName,
-    detail: project.agents.map((agent) => agentDisplayName(catalog, agent)).join(" · "),
+    agentKeys: project.agents,
     sessions: project.sessions,
     tokens: project.tokens,
     cost: project.cost,
@@ -45,13 +44,39 @@ function toAgentRow(agent: DashboardAgentStat): RankRow {
   return {
     key: agent.name,
     name: agent.displayName,
-    detail: "",
     sessions: agent.sessions,
     tokens: agent.tokens,
     cost: agent.cost,
     icon: agent.icon,
     iconColored: agent.iconColored,
   };
+}
+
+function ProjectAgentLogos({
+  agentKeys,
+  agentCatalog,
+}: {
+  agentKeys: string[];
+  agentCatalog: AgentCatalog;
+}) {
+  return (
+    <span className="flex min-w-0 shrink-0 items-center gap-1">
+      {agentKeys.map((agentKey) => {
+        const agent = findAgent(agentCatalog, agentKey);
+        if (!agent?.icon) return null;
+
+        return (
+          <AgentIcon
+            key={agentKey}
+            icon={agent.icon}
+            iconColored={agent.iconColored}
+            alt={agent.displayName}
+            className="size-3 shrink-0 object-contain text-[var(--console-text)]"
+          />
+        );
+      })}
+    </span>
+  );
 }
 
 export function OverviewProjectRank({
@@ -70,9 +95,7 @@ export function OverviewProjectRank({
   agentCatalog: AgentCatalog;
 }) {
   const rankAgents = filters.project !== undefined;
-  const rows = rankAgents
-    ? perAgent.map(toAgentRow)
-    : projects.map((project) => toProjectRow(project, agentCatalog));
+  const rows = rankAgents ? perAgent.map(toAgentRow) : projects.map(toProjectRow);
   const visible = rows.slice(0, RANK_LIMIT);
   const topCost = visible.reduce((peak, row) => Math.max(peak, row.cost), 0);
   const showFooter = !rankAgents && rollup.projects > 0;
@@ -118,10 +141,8 @@ export function OverviewProjectRank({
                 </p>
                 <div className="mt-[5px] flex items-center gap-[6px]">
                   <ShareBar ratio={row.cost / topCost} className="h-1 max-w-[180px]" />
-                  {row.detail ? (
-                    <span className="console-mono truncate text-[9.5px] text-[var(--console-muted)]">
-                      {row.detail}
-                    </span>
+                  {row.agentKeys?.length ? (
+                    <ProjectAgentLogos agentKeys={row.agentKeys} agentCatalog={agentCatalog} />
                   ) : null}
                 </div>
               </div>
