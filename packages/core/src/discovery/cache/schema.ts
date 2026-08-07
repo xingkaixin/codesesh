@@ -83,6 +83,8 @@ export function withCacheDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
   } catch (error) {
     getCoreDiagnostics()?.warn("cache.write_failed", {
       message: error instanceof Error ? error.message : String(error),
+      code: (error as { code?: string })?.code,
+      stack: error instanceof Error ? error.stack : undefined,
     });
     return null;
   } finally {
