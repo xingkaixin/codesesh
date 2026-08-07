@@ -78,6 +78,9 @@ export default defineConfig({
       url: `http://127.0.0.1:${wwwPort}`,
       reuseExistingServer: false,
       timeout: 60_000,
+      env: {
+        ASTRO_DEV_BACKGROUND: "0",
+      },
     },
   ],
   projects: [

@@ -50,18 +50,18 @@
   },
   "dependencies": {
     "@codesesh/core": "workspace:*",
-    "@hono/node-server": "^2.0.12",
-    "better-sqlite3": "^12.11.1",
-    "citty": "^0.1.6",
+    "@hono/node-server": "^2.1.0",
+    "better-sqlite3": "^13.0.3",
+    "citty": "^0.2.2",
     "consola": "^3.4.2",
-    "hono": "^4.12.29",
-    "open": "^10.1.2"
+    "hono": "^4.13.0",
+    "open": "^11.0.0"
   },
   "devDependencies": {
     "@codesesh/web": "workspace:*",
-    "@types/node": "^22.20.1",
+    "@types/node": "^26.1.2",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "tsup": "^8.4.0",
+    "tsup": "^8.5.1",
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   },
   "engines": {

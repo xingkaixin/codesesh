@@ -12,6 +12,7 @@ import type {
   ScanRefreshWorkerMessage,
   ScanRefreshWorkerRequest,
 } from "./scan-refresh-worker.js";
+import { toError } from "./errors.js";
 
 export interface WorkerPayload {
   previousSessions: SessionHead[];
@@ -130,7 +131,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
         try {
           slot = this.createWorker(agentName, request);
         } catch (error) {
-          reject(error instanceof Error ? error : new Error(String(error)));
+          reject(toError(error));
           return;
         }
       }
@@ -148,7 +149,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
           slot.worker.postMessage(request);
         } catch (error) {
           slot.pending.delete(request.requestId);
-          reject(error instanceof Error ? error : new Error(String(error)));
+          reject(toError(error));
         }
       }
     });
@@ -176,7 +177,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
       this.handleMessage(slot, message);
     });
     worker.on("error", (error) => {
-      this.closeWorker(agentName, slot, error);
+      this.closeWorker(agentName, slot, toError(error));
     });
     worker.on("exit", (code) => {
       if (slot.closed) return;
@@ -220,7 +221,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
         changedIds: pending.payload.sourceSync ? replacedSessionIds : undefined,
       });
     } catch (error) {
-      pending.reject(error instanceof Error ? error : new Error(String(error)));
+      pending.reject(toError(error));
     }
   }
 
