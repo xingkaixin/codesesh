@@ -1,6 +1,7 @@
 ---
 import { copy, type Locale } from "../data/landing";
 import HeadingText from "./HeadingText.astro";
+import Icon from "./Icon.astro";
 
 interface Props {
   locale: Locale;
@@ -10,27 +11,43 @@ const { locale } = Astro.props;
 const t = copy[locale].faq;
 ---
 
-<section class="border-t border-[var(--console-border)] px-4 py-20 sm:px-6 md:py-24" aria-labelledby="faq-heading">
-  <div class="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.72fr_1.28fr] lg:gap-14">
-    <div class="lg:sticky lg:top-28 lg:self-start">
+<section
+  id="faq"
+  class="scroll-mt-20 px-4 pb-4 pt-24 sm:px-6 lg:px-7"
+  aria-labelledby="faq-heading"
+>
+  <div class="mx-auto grid max-w-[1180px] gap-8 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:gap-[52px]">
+    <div class="lg:sticky lg:top-24 lg:self-start">
       <h2
         id="faq-heading"
-        class="console-display landing-heading max-w-lg text-3xl font-semibold leading-tight text-[var(--console-text)] md:text-4xl"
+        class="console-display landing-heading text-3xl font-semibold leading-[1.2] text-[var(--console-text)]"
       >
         <HeadingText value={t.title} />
       </h2>
-      <p class="mt-5 max-w-md text-base leading-8 text-[var(--console-text-secondary)]">{t.body}</p>
+      <p class="mt-4 max-w-sm text-sm leading-7 text-[var(--console-text-secondary)]">{t.body}</p>
     </div>
 
-    <div class="divide-y divide-[var(--console-border)] overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[var(--shadow-raised)]">
+    <div>
       {
-        t.items.map((item) => (
-          <article class="px-5 py-6 sm:px-6">
-            <h3 class="console-display text-lg font-semibold text-[var(--console-text)]">
-              {item.question}
-            </h3>
-            <p class="mt-3 text-sm leading-7 text-[var(--console-muted)]">{item.answer}</p>
-          </article>
+        t.items.map((item, index) => (
+          <details
+            class:list={[
+              "group border-t border-[var(--console-border)]",
+              index === t.items.length - 1 && "border-b",
+            ]}
+          >
+            <summary class="flex min-h-16 cursor-pointer list-none items-center gap-4 py-4 focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+              <h3 class="flex-1 text-[15px] font-semibold text-[var(--console-text)]">
+                {item.question}
+              </h3>
+              <span class="faq-chevron text-[var(--console-muted)]" aria-hidden="true">
+                <Icon name="chevron-right" class="size-4" />
+              </span>
+            </summary>
+            <p class="max-w-[64ch] pb-5 pr-8 text-sm leading-7 text-[var(--console-text-secondary)]">
+              {item.answer}
+            </p>
+          </details>
         ))
       }
     </div>

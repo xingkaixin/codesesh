@@ -1,0 +1,100 @@
+---
+import { copy, type Locale } from "../data/landing";
+import Icon from "./Icon.astro";
+
+interface Props {
+  locale: Locale;
+  showEndpoint?: boolean;
+}
+
+const { locale, showEndpoint = false } = Astro.props;
+const t = copy[locale].hero;
+---
+
+<div class="install-command" data-copy-group>
+  <div class="install-command__box">
+    <span class="console-mono text-sm text-[var(--console-muted)]" aria-hidden="true">$</span>
+    <code class="console-mono text-sm text-[var(--console-text)]">{t.command}</code>
+    <button
+      type="button"
+      data-copy-command={t.command}
+      data-copy-label={t.copyCommand}
+      data-copied-label={t.copied}
+      data-copy-failed-label={t.copyFailed}
+      class="pressable motion-hover console-mono inline-flex min-h-8 min-w-[4.25rem] items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2.5 text-[10px] font-medium text-[var(--console-text-secondary)] hover:border-[var(--brand-line)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+    >
+      <span class="copy-icon-stack inline-grid">
+        <span data-copy-icon="idle" data-active="true"><Icon name="copy" class="size-3.5" /></span>
+        <span data-copy-icon="done"><Icon name="check" class="size-3.5" /></span>
+      </span>
+      <span data-copy-text>{t.copyCommand}</span>
+    </button>
+  </div>
+  {
+    showEndpoint && (
+      <span class="console-mono text-[11px] text-[var(--console-muted)]">
+        <span aria-hidden="true">→ </span>
+        {t.endpoint}
+      </span>
+    )
+  }
+  <span class="sr-only" aria-live="polite" data-copy-status></span>
+</div>
+
+<script>
+  async function copyText(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = value;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.top = "-9999px";
+        document.body.append(textarea);
+        textarea.select();
+        const execCommand = Reflect.get(document, "execCommand");
+        const copied =
+          typeof execCommand === "function" && execCommand.call(document, "copy") === true;
+        textarea.remove();
+        return copied;
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  document.querySelectorAll<HTMLElement>("[data-copy-group]").forEach((group) => {
+    const button = group.querySelector<HTMLButtonElement>("[data-copy-command]");
+    const command = button?.dataset.copyCommand;
+    const text = button?.querySelector<HTMLElement>("[data-copy-text]");
+    const idleIcon = button?.querySelector<HTMLElement>('[data-copy-icon="idle"]');
+    const doneIcon = button?.querySelector<HTMLElement>('[data-copy-icon="done"]');
+    const status = group.querySelector<HTMLElement>("[data-copy-status]");
+
+    if (!button || !command || !text || !idleIcon || !doneIcon) return;
+
+    const copyLabel = button.dataset.copyLabel ?? "";
+    const copiedLabel = button.dataset.copiedLabel ?? "";
+    const copyFailedLabel = button.dataset.copyFailedLabel ?? "";
+    let timer: number;
+
+    button.addEventListener("click", async () => {
+      const copied = await copyText(command);
+      const feedback = copied ? copiedLabel : copyFailedLabel;
+      text.textContent = feedback;
+      if (status) status.textContent = feedback;
+      idleIcon.dataset.active = String(!copied);
+      doneIcon.dataset.active = String(copied);
+
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        text.textContent = copyLabel;
+        idleIcon.dataset.active = "true";
+        doneIcon.dataset.active = "false";
+      }, 2000);
+    });
+  });
+</script>

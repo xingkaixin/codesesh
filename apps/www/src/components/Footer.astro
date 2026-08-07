@@ -1,10 +1,30 @@
 ---
-const year = new Date().getFullYear();
+import { copy, type Locale } from "../data/landing";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = copy[locale].footer;
 ---
 
-<footer class="border-t border-[var(--console-border)] bg-[var(--console-surface)] px-4 py-8 sm:px-6">
-  <div class="mx-auto flex max-w-7xl items-center justify-between">
-    <span class="console-display text-sm font-semibold text-[var(--console-text)]">CodeSesh</span>
-    <span class="console-mono text-xs text-[var(--console-muted)]">&copy; {year}</span>
+<footer class="px-4 pb-12 pt-14 sm:px-6 lg:px-7">
+  <div
+    class="mx-auto flex max-w-[1180px] flex-col gap-5 border-t border-[var(--console-border)] pt-6 sm:flex-row sm:items-center"
+  >
+    <a
+      href={locale === "zh" ? "/zh/" : "/"}
+      class="flex items-center gap-2.5 rounded-sm text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+    >
+      <img src="/logo.svg?v=3" alt="CodeSesh" width="20" height="20" class="size-5 rounded-xs" />
+      <span class="console-display text-xs font-bold tracking-[0.06em]">CODESESH</span>
+    </a>
+    <span class="console-mono text-[10px] leading-5 text-[var(--console-muted)]">{t.note}</span>
+    <nav class="flex gap-5 sm:ml-auto" aria-label="Footer navigation">
+      <a class="footer-link" href="https://github.com/xingkaixin/codesesh">GitHub</a>
+      <a class="footer-link" href="https://github.com/xingkaixin/codesesh#readme">{t.docs}</a>
+      <a class="footer-link" href="https://github.com/xingkaixin/codesesh/issues">{t.issues}</a>
+    </nav>
   </div>
 </footer>

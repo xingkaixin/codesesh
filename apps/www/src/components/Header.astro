@@ -16,26 +16,36 @@ const themes = [
 ] as const;
 ---
 
-<header class="sticky top-0 z-50 border-b border-[var(--console-border)] bg-[var(--console-surface)]/88 backdrop-blur-md">
-  <div class="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
+<header
+  class="sticky top-0 z-50 border-b border-[var(--console-border)] bg-[var(--console-bg)]/88 backdrop-blur-md"
+>
+  <div class="mx-auto flex h-[60px] max-w-[1180px] items-center px-4 sm:px-6 lg:px-7">
     <a
       href={localeRoutes[locale]}
-      class="motion-hover flex items-center gap-2 rounded-sm text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+      class="motion-hover flex shrink-0 items-center gap-2.5 rounded-sm text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
     >
       <img src="/logo.svg?v=3" alt="CodeSesh" class="size-6 rounded-sm" />
-      <span class="console-display text-sm font-semibold">CodeSesh</span>
+      <span class="console-display hidden text-sm font-bold tracking-[0.06em] min-[360px]:inline">
+        CODESESH
+      </span>
     </a>
-    <nav class="flex items-center gap-2">
-      <a
-        href="https://github.com/xingkaixin/codesesh"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="motion-hover console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-1.5 text-[11px] text-[var(--console-muted)] hover:border-[var(--brand-line)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-      >
-        {t.github}
-      </a>
+
+    <nav
+      class="ml-8 hidden items-center gap-6 md:flex"
+      aria-label={locale === "zh" ? "主导航" : "Primary navigation"}
+    >
+      <a class="landing-nav-link" href="#tour">{t.tour}</a>
+      <a class="landing-nav-link" href="#capabilities">{t.capabilities}</a>
+      <a class="landing-nav-link" href="#agents">{t.agents}</a>
+      <a class="landing-nav-link" href="#faq">{t.faq}</a>
+    </nav>
+
+    <nav
+      class="ml-auto flex items-center gap-1.5 sm:gap-2"
+      aria-label={locale === "zh" ? "站点控制" : "Site controls"}
+    >
       <div
-        class="flex items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-0.5"
+        class="flex min-h-9 items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-0.5"
         role="group"
         aria-label={t.languageLabel}
       >
@@ -44,9 +54,9 @@ const themes = [
             <a
               href={localeRoutes[item]}
               class:list={[
-                "motion-hover console-mono rounded-sm px-2 py-1 text-[10px] font-medium focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
+                "motion-hover console-mono inline-flex min-h-8 items-center rounded-sm px-2 text-[10px] font-medium focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
                 locale === item
-                  ? "bg-[var(--brand)] text-[var(--brand-fg)]"
+                  ? "bg-[var(--console-text)] text-[var(--console-bg)]"
                   : "text-[var(--console-muted)] hover:text-[var(--console-text)]",
               ]}
               aria-current={locale === item ? "page" : undefined}
@@ -61,7 +71,7 @@ const themes = [
         data-theme-toggle
         data-theme-label={t.themeLabel}
         data-theme-switch-to={t.themeSwitchTo}
-        class="motion-hover console-mono inline-flex items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1.5 text-[var(--console-muted)] hover:border-[var(--brand-line)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+        class="motion-hover console-mono inline-flex size-9 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] text-[var(--console-muted)] hover:border-[var(--brand-line)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
       >
         <span class="copy-icon-stack inline-grid">
           {
@@ -74,6 +84,14 @@ const themes = [
         </span>
         <span class="sr-only" aria-live="polite" data-theme-status>{`${t.themeLabel}: ${t.themeSystem}${t.themeSwitchTo.replace("{next}", t.themeLight)}`}</span>
       </button>
+      <a
+        href="https://github.com/xingkaixin/codesesh"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="pressable console-mono inline-flex min-h-9 items-center rounded-sm border border-[var(--console-text)] bg-[var(--console-text)] px-3 text-[10px] font-semibold text-[var(--console-bg)] hover:bg-[var(--console-text-secondary)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
+      >
+        <span aria-hidden="true">★&nbsp;</span>{t.github}
+      </a>
     </nav>
   </div>
 </header>

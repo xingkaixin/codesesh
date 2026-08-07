@@ -11,42 +11,37 @@ const t = copy[locale].agents;
 ---
 
 <section
-  class="border-t border-[var(--console-border)] bg-[var(--console-surface)] px-4 py-20 sm:px-6"
+  id="agents"
+  class="scroll-mt-20 px-4 pb-4 pt-24 sm:px-6 lg:px-7"
   aria-labelledby="agents-heading"
 >
-  <div class="mx-auto max-w-7xl">
-    <h2
-      id="agents-heading"
-      class="console-display landing-heading max-w-2xl text-3xl font-semibold leading-tight text-[var(--console-text)] md:text-4xl"
-    >
-      <HeadingText value={t.title} />
-    </h2>
-    <p class="mt-4 max-w-2xl text-base leading-7 text-[var(--console-text-secondary)]">{t.body}</p>
+  <div class="mx-auto grid max-w-[1180px] gap-8 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:gap-[52px]">
+    <div>
+      <h2
+        id="agents-heading"
+        class="console-display landing-heading text-3xl font-semibold leading-[1.2] text-[var(--console-text)]"
+      >
+        <HeadingText value={t.title} />
+      </h2>
+      <p class="mt-4 text-sm leading-7 text-[var(--console-text-secondary)]">{t.body}</p>
+    </div>
 
-    <ul class="mt-10 flex flex-wrap gap-2.5">
+    <ul
+      class="grid gap-px overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-border)] sm:grid-cols-2 lg:grid-cols-3"
+    >
       {
         agents.map((agent) => (
-          <li class="motion-hover flex items-center gap-2 rounded-full border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3.5 py-2 hover:border-[var(--brand-line)] hover:bg-[var(--brand-soft)]">
-            {
-              "iconColored" in agent && agent.iconColored ? (
-                <img
-                  src={agent.icon}
-                  alt={agent.name}
-                  width="16"
-                  height="16"
-                  class="size-4 object-contain"
-                  loading="lazy"
-                />
-              ) : (
-                <span
-                  role="img"
-                  aria-label={agent.name}
-                  class="inline-block size-4 bg-[var(--console-text)]"
-                  style={`mask: url("${agent.icon}") center / contain no-repeat; -webkit-mask: url("${agent.icon}") center / contain no-repeat;`}
-                />
-              )
-            }
-            <span class="console-mono text-[11px] font-medium text-[var(--console-text)]">
+          <li class="flex min-h-14 items-center gap-3 bg-[var(--console-bg)] px-4 py-3">
+            {"iconColored" in agent && agent.iconColored ? (
+              <img src={agent.icon} alt="" width="18" height="18" class="size-[18px]" loading="lazy" />
+            ) : (
+              <span
+                aria-hidden="true"
+                class="inline-block size-[18px] bg-[var(--console-text)] opacity-80"
+                style={`mask: url("${agent.icon}") center / contain no-repeat; -webkit-mask: url("${agent.icon}") center / contain no-repeat;`}
+              />
+            )}
+            <span class="console-mono text-xs font-medium text-[var(--console-text)]">
               {agent.name}
             </span>
           </li>
