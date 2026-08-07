@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
+import { toError } from "./errors.js";
 import { appLogger, logSearchIndexSync } from "./logging.js";
 import { PendingSearchIndexJobs, type SearchIndexJobBatch } from "./pending-search-index-jobs.js";
 import type { SearchIndexWorkerJob, SearchIndexWorkerMessage } from "./search-index-worker.js";
@@ -140,7 +141,7 @@ export class SearchIndexJobRunner {
     });
     worker.on("error", (error) => {
       appLogger.error("search_index.worker_error", { context: batch.context, error });
-      this.settle(batch, error);
+      this.settle(batch, toError(error));
     });
     worker.on("exit", (code) => this.finishWorker(worker, batch, code));
   }
