@@ -89,8 +89,10 @@ export const Monitor = toIcon(ComputerIcon);
 export const Moon = toIcon(MoonIcon);
 export const MoreHorizontal = toIcon(MoreHorizontalIcon);
 export const NotebookPen = toIcon(NoteEditIcon);
-export const PanelLeftClose = toIcon(PanelLeftCloseIcon);
-export const PanelLeftOpen = toIcon(PanelLeftOpenIcon);
+// Hugeicons draws these arrows opposite to their names (Close points right,
+// Open points left), so the mapping is swapped to keep the visual direction correct.
+export const PanelLeftClose = toIcon(PanelLeftOpenIcon);
+export const PanelLeftOpen = toIcon(PanelLeftCloseIcon);
 export const PanelsTopLeft = toIcon(BrowserIcon);
 export const Pencil = toIcon(PencilIcon);
 export const Plug = toIcon(Plug01Icon);

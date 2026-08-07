@@ -37,7 +37,12 @@ describe("withCacheDb diagnostics", () => {
     });
 
     expect(result).toBeNull();
-    expect(events).toEqual([{ event: "cache.write_failed", detail: { message: "disk full" } }]);
+    expect(events).toEqual([
+      {
+        event: "cache.write_failed",
+        detail: { message: "disk full", code: undefined, stack: expect.any(String) },
+      },
+    ]);
   });
 
   it("stays silent when no diagnostics sink is injected", () => {

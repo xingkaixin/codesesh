@@ -24,6 +24,16 @@ interface SQLiteTransaction {
   (...params: unknown[]): unknown;
 }
 
+export interface SQLiteTransactionRunner<T extends SQLiteTransaction> {
+  (...params: Parameters<T>): ReturnType<T>;
+  /**
+   * BEGIN IMMEDIATE: takes the write lock up front so busy_timeout governs the
+   * wait. A deferred write transaction that reads first can die instantly with
+   * SQLITE_BUSY_SNAPSHOT when another connection commits in between.
+   */
+  immediate(...params: Parameters<T>): ReturnType<T>;
+}
+
 interface SQLitePragmaCapable {
   pragma(sql: string): unknown;
 }
@@ -66,7 +76,7 @@ export interface DatabaseRow {
 export interface SQLiteDatabase {
   prepare(sql: string): SQLiteStatement;
   exec(sql: string): void;
-  transaction<T extends SQLiteTransaction>(fn: T): T;
+  transaction<T extends SQLiteTransaction>(fn: T): SQLiteTransactionRunner<T>;
   close(): void;
 }
 
@@ -214,7 +224,7 @@ export function runSchemaMigrations(
         migration.migrate(db);
         setUserVersion(db, migration.version);
       });
-      apply();
+      apply.immediate();
       currentVersion = migration.version;
       getCoreDiagnostics()?.info?.("sqlite.migration.completed", {
         label: options.backupLabel,
@@ -277,10 +287,12 @@ export function openDb(dbPath: string): SQLiteDatabase | null {
     // The sidecars only exist once the connection is established.
     restrictPrivateDatabase(dbPath);
     try {
+      // busy_timeout first: if a later pragma throws, writes must still wait for
+      // concurrent writers instead of failing instantly with SQLITE_BUSY.
+      db.pragma("busy_timeout = 5000");
       db.pragma("journal_mode = WAL");
       db.pragma("synchronous = NORMAL");
       db.pragma("foreign_keys = ON");
-      db.pragma("busy_timeout = 5000");
     } catch {
       // The database remains usable when SQLite rejects connection-level tuning.
     }
