@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.0.0] - 2026-08-07
+
+This major release rebuilds the CodeSesh console and product experience, adds Grok session support, and hardens concurrent indexing as the project reaches 1.0.
+
+### Features
+
+- Added Grok session discovery, ACP transcript reconstruction, recorded usage and cost, resume support, and semantic rendering for file, terminal, and web tools. (#265)
+- Rebuilt the console around global and project dashboards with comparable and custom date ranges, inclusive session-tree metrics, per-model costs, project rankings, and trends. (#266)
+- Added project-first navigation, in-place sub-session timelines, and two-level content and tool filtering in the session reader. (#266)
+- Redesigned the bilingual product site with the console's visual system, responsive interactive product demos, and refreshed SEO, AEO, social, and AI-readable metadata. (#267, #269)
+- Replaced project-ranking Agent names with compact, accessible Agent logos. (#272)
+
+### Breaking Changes
+
+- Removed `DashboardAggregate.dailyTokenActivity` and `DailyTokenBucket`; token details now live in `DashboardAggregate.dailyActivity` through `DashboardDailyBucket`. Dashboard totals now include descendant sessions, while session counts represent top-level trees without double-counting mounted children. (#266)
+
+### Bug Fixes
+
+- Kept sidebar selection exclusive and synchronized with the active route, preventing keyboard navigation from retaining or reopening stale sessions. (#268)
+- Prevented SQLite lock and snapshot failures during concurrent cache writes by avoiding redundant schema writes, acquiring write transactions immediately, and applying the busy timeout first. (#270)
+- Corrected the sidebar collapse and expand icon directions. (#270)
+
+### Build
+
+- Updated workspace dependencies and adapted the build, worker, and end-to-end configuration for the current pnpm, Astro, Vite, SQLite, Hono, and Playwright releases. (#271)
+
+### Changelog Detail
+
+- #272 feat(web): show only project agent logos @xingkaixin
+- #271 chore(deps): update workspace dependencies @xingkaixin
+- #270 fix: eliminate SQLite busy failures and swap sidebar toggle icons @xingkaixin
+- #269 feat(www): redesign product landing page @xingkaixin
+- #268 fix(web): prevent duplicate session selection @xingkaixin
+- #267 feat(www): align landing with interactive console UI @xingkaixin
+- #266 feat(web): rebuild the UI against the redesign prototype @xingkaixin
+- fix: relocate agent-skills ignore entries to standard section @xingkaixin
+- #265 feat(core): support Grok sessions @xingkaixin
+
 ## [0.19.0] - 2026-08-02
 
 This release brings nested subagent sessions into one session tree, adds Kimi-Code support, and makes large or interrupted scans resumable while improving long-title navigation and subagent details.

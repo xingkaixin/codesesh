@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.0.0] - 2026-08-07
+
+本次大版本重建 CodeSesh 控制台与产品体验，新增 Grok 会话支持，并强化并发索引稳定性，推动项目进入 1.0 阶段。
+
+### 新功能
+
+- 新增 Grok 会话发现、ACP 转录重建、用量与成本记录、恢复命令，以及文件、终端和网页工具的语义化展示。 (#265)
+- 围绕全局与项目 Dashboard 重建控制台，支持可比较与自定义日期范围、包含子会话的会话树指标、按模型成本、项目排行和趋势。 (#266)
+- 新增以项目为中心的导航、原位展开的子会话时间线，以及会话阅读器中的两级内容与工具筛选。 (#266)
+- 使用与控制台一致的视觉系统重设计双语产品站，新增响应式交互产品演示，并刷新 SEO、AEO、社交分享及面向 AI 的元数据。 (#267, #269)
+- 在项目排行中以紧凑且无障碍的 Agent 图标替代 Agent 名称。 (#272)
+
+### 破坏性变更
+
+- 移除 `DashboardAggregate.dailyTokenActivity` 与 `DailyTokenBucket`；Token 明细现通过 `DashboardDailyBucket` 并入 `DashboardAggregate.dailyActivity`。Dashboard 总量现包含所有后代会话，而会话数仅统计顶层会话树，不再重复计算已挂载的子会话。 (#266)
+
+### 问题修复
+
+- 让侧栏选择保持唯一并与当前路由同步，避免键盘导航保留或重新打开过期选择。 (#268)
+- 通过避免重复写入 schema、立即获取写事务并优先设置 busy timeout，消除并发缓存写入时的 SQLite 锁与快照失败。 (#270)
+- 修正侧栏折叠与展开图标的方向。 (#270)
+
+### 构建
+
+- 更新工作区依赖，并调整构建、worker 与端到端配置，以适配当前 pnpm、Astro、Vite、SQLite、Hono 和 Playwright 版本。 (#271)
+
+### Changelog Detail
+
+- #272 feat(web): show only project agent logos @xingkaixin
+- #271 chore(deps): update workspace dependencies @xingkaixin
+- #270 fix: eliminate SQLite busy failures and swap sidebar toggle icons @xingkaixin
+- #269 feat(www): redesign product landing page @xingkaixin
+- #268 fix(web): prevent duplicate session selection @xingkaixin
+- #267 feat(www): align landing with interactive console UI @xingkaixin
+- #266 feat(web): rebuild the UI against the redesign prototype @xingkaixin
+- fix: relocate agent-skills ignore entries to standard section @xingkaixin
+- #265 feat(core): support Grok sessions @xingkaixin
+
 ## [0.19.0] - 2026-08-02
 
 本版本将子 Agent 会话纳入嵌套会话树，新增 Kimi-Code 支持，并让大规模或中断的扫描能够续跑，同时改善长标题浏览与子 Agent 详情展示。
