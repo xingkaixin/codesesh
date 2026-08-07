@@ -123,26 +123,28 @@ export function runSearchIndexWrite<T>(
   rebuild: boolean,
   write: () => T,
 ): SearchIndexWriteResult<T> {
-  return db.transaction(() => {
-    if (rebuild) {
-      dropSearchTriggers(db);
-      dropMessageSearchTriggers(db);
-    }
+  return db
+    .transaction(() => {
+      if (rebuild) {
+        dropSearchTriggers(db);
+        dropMessageSearchTriggers(db);
+      }
 
-    const value = write();
-    let rebuildDurationMs: number | undefined;
+      const value = write();
+      let rebuildDurationMs: number | undefined;
 
-    if (rebuild) {
-      const rebuildStartedAt = performance.now();
-      rebuildSearchIndex(db);
-      rebuildMessageSearchIndex(db);
-      rebuildDurationMs = performance.now() - rebuildStartedAt;
-      createSearchTriggers(db);
-      createMessageSearchTriggers(db);
-    }
+      if (rebuild) {
+        const rebuildStartedAt = performance.now();
+        rebuildSearchIndex(db);
+        rebuildMessageSearchIndex(db);
+        rebuildDurationMs = performance.now() - rebuildStartedAt;
+        createSearchTriggers(db);
+        createMessageSearchTriggers(db);
+      }
 
-    return { value, rebuildDurationMs };
-  })();
+      return { value, rebuildDurationMs };
+    })
+    .immediate();
 }
 
 function createCacheTables(db: SQLiteDatabase): void {
@@ -1339,7 +1341,10 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
 
   createLatestCacheSchema(db);
 
-  if (getUserVersion(db) <= CACHE_SCHEMA_VERSION) {
+  // Only stamp when behind: every thread's first connection runs ensureSchema,
+  // and an unconditional PRAGMA user_version write would contend for the write
+  // lock against concurrent checkpoint/index writers on every startup.
+  if (getUserVersion(db) < CACHE_SCHEMA_VERSION) {
     setCacheSchemaVersion(db);
   }
 

@@ -460,7 +460,7 @@ export function saveCachedSessions(
       });
     });
 
-    write();
+    write.immediate();
     deleteLegacyCacheFile();
     return true;
   });
@@ -523,7 +523,7 @@ export function saveCachedSessionChanges(
       }
     });
 
-    write();
+    write.immediate();
     deleteLegacyCacheFile();
     return true;
   });

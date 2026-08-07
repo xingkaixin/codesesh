@@ -239,7 +239,7 @@ export function importBookmarks(
       }
     });
 
-    write();
+    write.immediate();
     const rows = db
       .prepare(
         `
