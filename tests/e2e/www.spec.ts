@@ -1,4 +1,36 @@
-import { expect, monitorBrowserErrors, test } from "./test-fixtures.js";
+import { expect, test } from "./test-fixtures.js";
+
+const siteUrl = "https://codesesh.xingkaixin.me";
+const supportedAgents = [
+  "Claude Code",
+  "Cursor",
+  "Kimi",
+  "Kimi-Code",
+  "Codex",
+  "Grok",
+  "Pi",
+  "OpenCode",
+  "ZCode",
+] as const;
+
+const locales = [
+  { route: "/", language: "en", canonical: `${siteUrl}/` },
+  { route: "/zh/", language: "zh-CN", canonical: `${siteUrl}/zh/` },
+] as const;
+
+interface JsonLdNode {
+  "@id"?: string;
+  "@type"?: string;
+  downloadUrl?: string;
+  inLanguage?: string;
+  isAccessibleForFree?: boolean;
+  license?: string;
+  url?: string;
+  mainEntity?: Array<{
+    name?: string;
+    acceptedAnswer?: { text?: string };
+  }>;
+}
 
 test("keeps production analytics out of development", async ({ page }) => {
   await page.goto("/");
@@ -6,19 +38,99 @@ test("keeps production analytics out of development", async ({ page }) => {
   await expect(page.locator('script[src*="cloudflareinsights.com"]')).toHaveCount(0);
 });
 
+for (const locale of locales) {
+  test(`${locale.language} metadata and structured content match the page`, async ({ page }) => {
+    await page.goto(locale.route);
+
+    await expect(page.locator("html")).toHaveAttribute("lang", locale.language);
+    expect(await page.evaluate(() => document.querySelectorAll("h1").length)).toBe(1);
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", locale.canonical);
+    await expect(page.locator('link[rel="alternate"][hreflang="en"]')).toHaveAttribute(
+      "href",
+      `${siteUrl}/`,
+    );
+    await expect(page.locator('link[rel="alternate"][hreflang="zh-CN"]')).toHaveAttribute(
+      "href",
+      `${siteUrl}/zh/`,
+    );
+    await expect(page.locator('link[rel="alternate"][hreflang="x-default"]')).toHaveAttribute(
+      "href",
+      `${siteUrl}/`,
+    );
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute(
+      "content",
+      "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1",
+    );
+    await expect(page.locator('meta[name="twitter:image:alt"]')).toHaveAttribute(
+      "content",
+      await page.title(),
+    );
+
+    const faqItems = page.locator("#faq details");
+    const visibleFaq = [];
+    for (let index = 0; index < (await faqItems.count()); index += 1) {
+      const item = faqItems.nth(index);
+      await item.locator("summary").click();
+      await expect(item.locator("p")).toBeVisible();
+      visibleFaq.push({
+        name: (await item.locator("h3").innerText()).trim(),
+        text: (await item.locator("p").innerText()).trim(),
+      });
+    }
+
+    const jsonLdSource = await page.locator('script[type="application/ld+json"]').textContent();
+    expect(jsonLdSource).not.toBeNull();
+    const jsonLd = JSON.parse(jsonLdSource ?? "") as { "@graph"?: JsonLdNode[] };
+    expect(jsonLd["@graph"]).toBeInstanceOf(Array);
+    const software = jsonLd["@graph"]?.find((node) => node["@type"] === "SoftwareApplication");
+    expect(software).toMatchObject({
+      downloadUrl: "https://www.npmjs.com/package/codesesh",
+      isAccessibleForFree: true,
+      license: "https://opensource.org/license/mit",
+    });
+
+    const webPage = jsonLd["@graph"]?.find((node) => node["@type"] === "WebPage");
+    expect(webPage).toMatchObject({
+      inLanguage: locale.language,
+      url: locale.canonical,
+    });
+
+    const faqPage = jsonLd["@graph"]?.find((node) => node["@type"] === "FAQPage");
+    expect(faqPage).toBeDefined();
+    expect(
+      faqPage?.mainEntity?.map((question) => ({
+        name: question.name,
+        text: question.acceptedAnswer?.text,
+      })),
+    ).toEqual(visibleFaq);
+
+    const agentNames = await page.locator("#agents ul > li").allInnerTexts();
+    expect(agentNames.map((name) => name.trim())).toEqual(supportedAgents);
+    await expect(page.getByText("Antigravity", { exact: true })).toHaveCount(0);
+  });
+}
+
 test("copies the install command with the clipboard API", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
-      value: { writeText: () => Promise.resolve() },
+      value: {
+        writeText: (value: string) => {
+          Reflect.set(window, "__copiedCommand", value);
+          return Promise.resolve();
+        },
+      },
     });
   });
   await page.goto("/");
 
-  const copy = page.locator("[data-copy-command]");
+  const copy = page.locator("[data-copy-command]").first();
   await copy.click();
 
   await expect(copy).toContainText("Copied");
+  await expect
+    .poll(() => page.evaluate(() => Reflect.get(window, "__copiedCommand")))
+    .toBe("npx codesesh");
 });
 
 test("reports copy failure without an unhandled rejection", async ({ page }) => {
@@ -34,11 +146,12 @@ test("reports copy failure without an unhandled rejection", async ({ page }) => 
   });
   await page.goto("/");
 
-  const copy = page.locator("[data-copy-command]");
+  const group = page.locator("[data-copy-group]").first();
+  const copy = group.locator("[data-copy-command]");
   await copy.click();
 
   await expect(copy).toContainText("Copy failed");
-  await expect(page.locator("[data-copy-status]")).toHaveText(
+  await expect(group.locator("[data-copy-status]")).toHaveText(
     "Copy failed. Copy the command manually.",
   );
 });
@@ -56,70 +169,61 @@ test("falls back when the clipboard API rejects", async ({ page }) => {
   });
   await page.goto("/");
 
-  const copy = page.locator("[data-copy-command]");
+  const copy = page.locator("[data-copy-command]").first();
   await copy.click();
 
   await expect(copy).toContainText("Copied");
 });
 
-test("explores the interactive product preview", async ({ page }) => {
+test("explores each interactive product preview", async ({ page }) => {
   await page.goto("/");
-  const preview = page.locator("[data-product-demo]").last();
-  const searchTab = preview.getByRole("tab", { name: "Structured Global Search" });
-  const searchPanel = preview.getByRole("tabpanel", { name: "Structured Global Search" });
 
-  await expect(preview.locator('img[src^="/demo/"]')).toHaveCount(0);
-  await expect(preview).not.toContainText(/\bv\d+\.\d+\.\d+\b/);
-  await searchTab.click();
-  await expect(searchTab).toHaveAttribute("aria-selected", "true");
-  await expect(searchPanel).toBeVisible();
+  const overview = page.locator('[data-product-demo="overview"]');
+  const thirtyDays = overview.locator('[data-demo-range="30d"]');
+  await expect(overview.locator('[data-demo-kpi="0"] [data-demo-kpi-value]')).toHaveText("212");
+  await thirtyDays.click();
+  await expect(thirtyDays).toHaveAttribute("aria-pressed", "true");
+  await expect(overview.locator('[data-demo-kpi="0"] [data-demo-kpi-value]')).toHaveText("863");
+  await expect(overview.locator("[data-demo-range-chip]")).toContainText("Last 30d");
 
-  await preview.getByRole("textbox", { name: "Search sample sessions" }).fill("token budget");
-  await preview.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(searchPanel).toContainText("3 matches for “token budget”");
+  const project = page.locator('[data-product-demo="projects"]');
+  const subsession = project.locator("details[data-demo-subsession]").first();
+  await subsession.locator("summary").click();
+  await expect(subsession).toHaveAttribute("open", "");
+  await expect(subsession).toContainText("Generate step validation schema");
 
-  const replayTab = preview.getByRole("tab", { name: "Session Replay" });
-  await replayTab.click();
-  const toolStep = preview.getByRole("button", { name: "TOOL apply_patch" });
-  await toolStep.click();
-  await expect(toolStep).toHaveAttribute("aria-current", "true");
-
-  await preview.getByRole("tab", { name: "Keyboard Navigation" }).click();
-  await expect(preview.getByRole("dialog", { name: "Keyboard shortcuts preview" })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(replayTab).toHaveAttribute("aria-selected", "true");
+  const replay = page.locator('[data-product-demo="replay"]');
+  const tool = replay.locator('details[data-demo-tool="edit_file"]');
+  await tool.locator("summary").click();
+  await expect(tool).toHaveAttribute("open", "");
+  await expect(tool).toContainText("buildClauses(filters)");
 });
 
-test("keeps the product preview usable on touch", async ({ browser }, testInfo) => {
-  const context = await browser.newContext({
-    baseURL: String(testInfo.project.use.baseURL),
-    hasTouch: true,
-    isMobile: true,
-    viewport: { width: 390, height: 844 },
+test("keeps the landing page within a 390px mobile viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.evaluate(async () => {
+    await document.fonts.ready;
   });
-  const page = await context.newPage();
-  const browserErrors = monitorBrowserErrors(page);
-  await page.goto("/");
 
-  const preview = page.locator("[data-product-demo]").last();
-  const searchTab = preview.getByRole("tab", { name: "Structured Global Search" });
-  await searchTab.tap();
-  await expect(preview.getByRole("tabpanel", { name: "Structured Global Search" })).toBeVisible();
   await expect
-    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    )
     .toBe(true);
-  await context.close();
-  expect(browserErrors, "unexpected browser errors").toEqual([]);
 });
 
-test("removes product preview animation for reduced motion", async ({ page }) => {
+test("removes landing and product preview motion when reduced motion is requested", async ({
+  page,
+}) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
 
-  const preview = page.locator("[data-product-demo]").last();
-  await preview.getByRole("tab", { name: "Structured Global Search" }).click();
-  await expect(preview.getByRole("tabpanel", { name: "Structured Global Search" })).toHaveCSS(
-    "animation-name",
-    "none",
+  await expect(page.locator(".hero-copy")).toHaveCSS("animation-name", "none");
+  await expect(page.locator('[data-product-demo="overview"] .demo-bar-fill').first()).toHaveCSS(
+    "transition-duration",
+    "0s",
   );
 });

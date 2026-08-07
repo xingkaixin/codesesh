@@ -1,8 +1,7 @@
 ---
-import { copy, type Locale } from "../data/landing";
+import { agents, copy, type Locale } from "../data/landing";
 import HeadingText from "./HeadingText.astro";
-import Icon from "./Icon.astro";
-import ProductDemo from "./ProductDemo.astro";
+import InstallCommand from "./InstallCommand.astro";
 
 interface Props {
   locale: Locale;
@@ -12,99 +11,48 @@ const { locale } = Astro.props;
 const t = copy[locale].hero;
 ---
 
-<section class="bg-grid px-4 sm:px-6">
-  <div
-    class="mx-auto grid min-h-[calc(100dvh-3.5rem)] max-w-7xl min-w-0 items-center gap-10 py-12 lg:grid-cols-[minmax(0,0.95fr)_minmax(30rem,1.05fr)] lg:gap-12 lg:py-16"
-  >
-    <div class="hero-copy min-w-0 text-left">
-      <h1 class="console-display landing-heading max-w-2xl text-[2.1rem] font-semibold leading-[1.08] text-[var(--console-text)] sm:text-4xl md:text-5xl lg:text-[3.25rem]">
+<section class="px-4 sm:px-6 lg:px-7" aria-labelledby="hero-heading">
+  <div class="mx-auto max-w-[1180px] pb-20 pt-20 sm:pb-24 sm:pt-24">
+    <div class="hero-copy max-w-[54rem]">
+      <p class="console-eyebrow mb-5">{t.eyebrow}</p>
+      <h1
+        id="hero-heading"
+        class="console-display landing-heading max-w-[15em] text-[clamp(2.4rem,5.4vw,4.25rem)] font-bold leading-[1.06] text-[var(--console-text)]"
+      >
         <HeadingText value={t.title} />
       </h1>
-      <p class="mt-5 max-w-xl text-base leading-7 text-[var(--console-text-secondary)] md:text-lg md:leading-8">
-        {t.body}
+      <p class="mt-6 max-w-[42rem] text-[1.05rem] leading-8 text-[var(--console-text-secondary)]">
+        {t.body} {t.privacy}
       </p>
 
-      <div class="mt-8 flex max-w-lg flex-col gap-3 sm:flex-row sm:items-stretch">
-        <code class="console-mono flex min-h-12 flex-1 items-center rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-4 py-3 text-sm text-[var(--console-text)] shadow-[var(--shadow-raised)]">
-            $ {t.command}
-        </code>
-        <button
-          type="button"
-          data-copy-command={t.command}
-          data-copy-label={t.copyCommand}
-          data-copied-label={t.copied}
-          data-copy-failed-label={t.copyFailed}
-          class="pressable console-mono inline-flex min-h-12 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-sm border border-[var(--brand)] bg-[var(--brand)] px-4 py-3 text-xs font-semibold text-[var(--brand-fg)] hover:border-[var(--brand-hover)] hover:bg-[var(--brand-hover)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
-        >
-          <span class="copy-icon-stack inline-grid">
-            <span data-copy-icon="idle" data-active="true"><Icon name="copy" class="size-4" /></span>
-            <span data-copy-icon="done"><Icon name="check" class="size-4" /></span>
-          </span>
-          <span data-copy-text>{t.copyCommand}</span>
-        </button>
+      <div class="mt-8">
+        <InstallCommand locale={locale} showEndpoint />
       </div>
-      <span class="sr-only" aria-live="polite" data-copy-status></span>
-    </div>
 
-    <div class="hero-visual min-w-0">
-      <ProductDemo id={`hero-demo-${locale}`} locale={locale} compact />
+      <div class="mt-7 flex flex-wrap items-center gap-2.5" aria-label={t.agentsLabel}>
+        <span class="console-eyebrow mr-1">{t.agentsLabel}</span>
+        <ul class="flex flex-wrap items-center gap-2.5">
+          {
+            agents.map((agent) => (
+              <li
+                class="flex size-6 items-center justify-center rounded-xs"
+                aria-label={agent.name}
+                title={agent.name}
+              >
+                {"iconColored" in agent && agent.iconColored ? (
+                  <img src={agent.icon} alt="" width="17" height="17" class="size-[17px]" />
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    class="inline-block size-[17px] bg-[var(--console-text)] opacity-80"
+                    style={`mask: url("${agent.icon}") center / contain no-repeat; -webkit-mask: url("${agent.icon}") center / contain no-repeat;`}
+                  />
+                )}
+              </li>
+            ))
+          }
+        </ul>
+      </div>
     </div>
   </div>
 </section>
-
-<script>
-  async function copyText(value: string) {
-    try {
-      await navigator.clipboard.writeText(value);
-      return true;
-    } catch {
-      try {
-        const textarea = document.createElement("textarea");
-        textarea.value = value;
-        textarea.setAttribute("readonly", "");
-        textarea.style.position = "fixed";
-        textarea.style.top = "-9999px";
-        document.body.append(textarea);
-        textarea.select();
-        const execCommand = Reflect.get(document, "execCommand");
-        const copied =
-          typeof execCommand === "function" && execCommand.call(document, "copy") === true;
-        textarea.remove();
-        return copied;
-      } catch {
-        return false;
-      }
-    }
-  }
-
-  document.querySelectorAll<HTMLButtonElement>("[data-copy-command]").forEach((button) => {
-    const command = button.dataset.copyCommand;
-    const copyLabel = button.dataset.copyLabel ?? "";
-    const copiedLabel = button.dataset.copiedLabel ?? "";
-    const copyFailedLabel = button.dataset.copyFailedLabel ?? "";
-    const text = button.querySelector("[data-copy-text]");
-    const status = button.parentElement?.parentElement?.querySelector("[data-copy-status]");
-    const idleIcon = button.querySelector<HTMLElement>('[data-copy-icon="idle"]');
-    const doneIcon = button.querySelector<HTMLElement>('[data-copy-icon="done"]');
-
-    if (!command || !text || !idleIcon || !doneIcon) return;
-
-    let timer: number;
-
-    button.addEventListener("click", async () => {
-      const copied = await copyText(command);
-      const feedback = copied ? copiedLabel : copyFailedLabel;
-      text.textContent = feedback;
-      if (status) status.textContent = feedback;
-      idleIcon.dataset.active = String(!copied);
-      doneIcon.dataset.active = String(copied);
-
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        text.textContent = copyLabel;
-        idleIcon.dataset.active = "true";
-        doneIcon.dataset.active = "false";
-      }, 2000);
-    });
-  });
-</script>

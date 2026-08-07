@@ -44,6 +44,10 @@ interface LandingCopy {
     description: string;
   };
   header: {
+    tour: string;
+    capabilities: string;
+    agents: string;
+    faq: string;
     github: string;
     languageLabel: string;
     themeLabel: string;
@@ -53,21 +57,20 @@ interface LandingCopy {
     themeSwitchTo: string;
   };
   hero: {
+    eyebrow: string;
     title: HeadingCopy;
     body: string;
+    privacy: string;
     command: string;
+    endpoint: string;
+    agentsLabel: string;
     copied: string;
     copyFailed: string;
     copyCommand: string;
   };
   tour: {
-    label: string;
-    title: HeadingCopy;
-    body: string;
     previewLabel: string;
-    viewLabel: string;
     sampleLabel: string;
-    shortcutClose: string;
   };
   scenes: ProductScene[];
   features: {
@@ -83,6 +86,16 @@ interface LandingCopy {
     title: HeadingCopy;
     body: string;
     items: FAQItem[];
+  };
+  cta: {
+    title: HeadingCopy;
+    body: string;
+    github: string;
+  };
+  footer: {
+    note: string;
+    docs: string;
+    issues: string;
   };
 }
 
@@ -108,11 +121,15 @@ export const agents = [
 export const copy = {
   zh: {
     meta: {
-      title: "CodeSesh：可复用的 AI 编码工程记忆",
+      title: "CodeSesh：搜索与回放本地 AI 编码历史",
       description:
-        "CodeSesh 把 Claude Code、Cursor、Kimi、Kimi-Code、Codex、Grok、Pi、OpenCode 和 ZCode 的本地 AI 编码历史，沉淀成按项目组织、可结构化检索、可复盘的工程记忆。",
+        "CodeSesh 把九种 AI 编码 Agent 的本地会话按项目组织，提供结构化搜索、完整回放与本地 SQLite 索引，让工程上下文可查、可追溯。",
     },
     header: {
+      tour: "产品导览",
+      capabilities: "能力",
+      agents: "支持的 Agent",
+      faq: "FAQ",
       github: "GitHub",
       languageLabel: "语言",
       themeLabel: "主题",
@@ -122,44 +139,41 @@ export const copy = {
       themeSwitchTo: "，点击切换到{next}",
     },
     hero: {
-      title: ["AI 编码历史，", "随时可复用。"],
-      body: "统一发现、搜索和回放本地 AI 编码会话，让跨 Agent 的工程上下文长期可追溯。",
+      eyebrow: "本地运行 / 零配置 / 9 个 Agent",
+      title: ["你和 AI 写过的", "每一次对话，都还在。"],
+      body: "CodeSesh 扫描九种 AI 编码 Agent 的本地会话，把分散的历史收进同一个索引：按项目组织、结构化搜索、逐条回放。",
+      privacy: "会话内容与索引留在本机，无需账号、云同步或会话遥测。",
       command: "npx codesesh",
+      endpoint: "http://localhost:4521",
+      agentsLabel: "读取会话",
       copied: "已复制",
       copyFailed: "复制失败，请手动复制命令",
-      copyCommand: "复制命令",
+      copyCommand: "复制",
     },
     tour: {
-      label: "Product Tour",
-      title: ["工程记忆", "如何在日常里生长"],
-      body: "从全局概览到会话回放，从项目浏览到结构化搜索，CodeSesh 让散落在不同 Agent 里的编码过程重新变得可见。",
-      previewLabel: "CodeSesh 交互式产品预览",
-      viewLabel: "选择预览视图",
-      sampleLabel: "示例工作区",
-      shortcutClose: "关闭",
+      previewLabel: "CodeSesh 交互式产品示例",
+      sampleLabel: "示例数据",
     },
     scenes: [
       {
-        title: "工程记忆概览",
-        description: "从 Agent 活跃度、Token 趋势、智能标签和收藏会话里看见协作脉络。",
-      },
-      {
-        title: "结构化全局搜索",
+        title: "打开就知道这周花在哪儿了",
         description:
-          "按标题、消息、工具输出和文件路径检索，并用项目、标签、工具、文件活动和成本缩小范围。",
+          "会话、消息、Token、成本与最近活跃都来自同一个本地索引。切换时间窗口，概览同步重算。",
       },
       {
-        title: "会话回放",
-        description: "按时间线回看消息、工具调用和文件变更，复盘一次功能或 bug 的完整路径。",
+        title: "会话回到它该在的项目里",
+        description:
+          "按仓库和项目身份归组，子 Agent 会话保留在父会话下，消息、Token 与成本按层级汇总。",
       },
       {
-        title: "键盘导航",
-        description: "在项目、会话和搜索结果之间高效移动，让历史浏览进入日常工作流。",
+        title: "一次任务的完整路径逐条还原",
+        description:
+          "消息、工具调用和文件变更按发生顺序呈现，类型过滤与文件追踪帮助你快速定位关键上下文。",
       },
     ],
     features: {
-      title: ["围绕长期积累", "设计产品结构"],
-      body: "CodeSesh 围绕真实的 AI 协作循环设计：发现、组织、找回、复盘。",
+      title: ["发现、组织、找回、复盘。", "四步之后，历史才真正能用。"],
+      body: "CodeSesh 围绕真实的 AI 编码协作循环组织能力。",
       groups: [
         {
           title: "发现",
@@ -171,15 +185,14 @@ export const copy = {
               description: "运行一条命令，自动扫描文件系统里的受支持 Agent 会话。",
             },
             {
-              icon: "timer",
-              title: "实时刷新",
-              description: "本地会话变更自动进入界面，新的协作记录持续写入工程记忆。",
-            },
-            {
               icon: "eye",
               title: "统一时间线",
-              description:
-                "在一个界面里浏览 Claude Code、Cursor、Kimi、Kimi-Code、Codex、Grok、Pi、OpenCode 和 ZCode 的历史会话。",
+              description: "九种 Agent 的历史会话进入同一个界面。",
+            },
+            {
+              icon: "timer",
+              title: "实时刷新",
+              description: "本地会话变更自动进入索引，界面无需重启。",
             },
           ],
         },
@@ -188,42 +201,40 @@ export const copy = {
           description: "让会话回到项目、任务和工程语境里。",
           items: [
             {
-              icon: "bar-chart-3",
-              title: "工程记忆概览",
-              description: "跨 Agent 活跃度、模型、Token、智能标签和收藏会话集中呈现。",
-            },
-            {
               icon: "list-tree",
               title: "项目与嵌套会话树",
-              description: "按仓库和项目身份组织会话，并将子 Agent 会话保留在父会话下。",
+              description: "按仓库归组，并将子 Agent 会话保留在父会话下。",
             },
             {
               icon: "tags",
               title: "智能标签",
-              description:
-                "自动识别 bug 修复、重构、功能开发、测试、文档、规划、Git、构建和探索类工作。",
+              description: "自动识别修复、重构、功能、测试、文档与规划等工作。",
+            },
+            {
+              icon: "bookmark",
+              title: "会话别名",
+              description: "给重要会话一个易记名称，并在搜索与收藏中沿用。",
             },
           ],
         },
         {
           title: "找回",
-          description: "把过去的判断、路径和上下文重新带回当前任务。",
+          description: "把过去的判断、路径和上下文带回当前任务。",
           items: [
             {
               icon: "search",
               title: "结构化全局搜索",
-              description:
-                "搜索标题、消息、工具输出和文件路径，并按项目、标签、工具、文件活动和成本筛选。",
+              description: "搜索标题、消息、工具输出和文件路径，再按项目、标签与工具筛选。",
             },
             {
-              icon: "bookmark",
-              title: "关键会话收藏",
-              description: "保存重要协作记录，让方案、排障路径和关键判断长期可追溯。",
+              icon: "list-tree",
+              title: "文件活动索引",
+              description: "从一个文件反查读取或修改过它的相关会话。",
             },
             {
               icon: "keyboard",
               title: "键盘导航",
-              description: "用快捷键切换视图、聚焦搜索、移动分组，让复盘和查找保持流畅。",
+              description: "切换视图、聚焦搜索和移动分组，全程不离键盘。",
             },
           ],
         },
@@ -234,71 +245,74 @@ export const copy = {
             {
               icon: "terminal",
               title: "完整会话回放",
-              description: "回看每条消息、工具调用和推理步骤，还原一次任务的推进过程。",
-            },
-            {
-              icon: "list-tree",
-              title: "文件活动索引",
-              description: "跳转到被读取、编辑、创建、删除或移动的文件，并按文件活动找回相关会话。",
+              description: "消息、工具调用和推理步骤按发生顺序保留。",
             },
             {
               icon: "bar-chart-3",
               title: "成本与 Token 可见",
-              description:
-                "查看 Token 总量、缓存 Token、记录成本和基于模型的估算，理解 AI 协作投入。",
+              description: "并列查看 Token、缓存命中、记录成本与按模型估算。",
             },
             {
               icon: "database",
-              title: "SQLite 迁移与本地索引",
-              description: "用本地数据库支撑快速恢复、结构化检索、文件活动索引和 schema 迁移。",
-            },
-            {
-              icon: "shield",
-              title: "本地私有",
-              description: "会话数据留在你的机器上，免账号、免云端同步、免云端遥测。",
+              title: "本地 SQLite 索引",
+              description: "一个本地数据库支撑快速恢复、检索与 schema 迁移。",
             },
           ],
         },
       ],
     },
     agents: {
-      title: ["覆盖主流本地", "AI 编码工具"],
-      body: "把多 Agent 工作流收束到同一个工程记忆层。",
+      title: ["覆盖本地", "AI 编码工具链"],
+      body: "每种 Agent 通过 core 适配器接入同一个会话、项目、搜索和文件活动索引。",
     },
     faq: {
       title: "常见问题",
-      body: "关于 CodeSesh 的定位、支持范围、安装方式和数据边界的简短回答。",
+      body: "关于 CodeSesh 的定位、安装方式、数据边界和大型历史。",
       items: [
         {
           question: "CodeSesh 是什么？",
           answer:
-            "CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放 AI 编码会话历史。它把 Claude Code、Cursor、Kimi、Kimi-Code、Codex、Grok、Pi、OpenCode 和 ZCode 的本地记录整理成一个按项目组织的工程记忆层，帮助开发者找回历史决策、文件活动和完整协作过程。",
-        },
-        {
-          question: "CodeSesh 支持哪些 AI 编码工具？",
-          answer:
-            "CodeSesh 当前支持 Claude Code、Cursor、Kimi、Kimi-Code、Codex、Grok、Pi、OpenCode 和 ZCode。每个工具通过 core 包里的 Agent 适配器接入，扫描本地会话存储后统一生成会话列表、项目浏览、结构化搜索索引、文件活动、标签、Token 统计和会话详情。",
+            "CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放 AI 编码会话历史。它把 Claude Code、Cursor、Kimi、Kimi-Code、Codex、Grok、Pi、OpenCode 和 ZCode 的本地记录整理成按项目组织的工程记忆层。",
         },
         {
           question: "CodeSesh 会上传本地 AI 会话数据吗？",
           answer:
-            "CodeSesh 运行在用户自己的机器上，使用本地 SQLite 索引和本地 Web UI 浏览会话历史。会话内容、文件路径、Token 统计和成本估算保留在本机，适合希望保留 AI 编码上下文所有权的开发者。",
+            "不会上传会话数据。CodeSesh 在本机使用 SQLite 索引，并通过 localhost 上的 Web UI 浏览历史。会话内容、文件路径、Token 统计和成本记录留在本机；产品不要求账号、云同步或会话遥测。",
         },
         {
           question: "如何安装和启动 CodeSesh？",
           answer:
-            "最快的启动方式是在终端运行 npx codesesh。CodeSesh 会扫描受支持的本地 AI 编码会话，并在 http://localhost:4521 打开 Web UI；如果默认端口被占用，会自动尝试下一个可用端口。发布版需要 Node.js 22+，源码开发环境使用 Node.js 24 和 pnpm 11.11.0。",
+            "在终端运行 npx codesesh。CodeSesh 会扫描受支持的本地 AI 编码会话，并在 http://localhost:4521 打开 Web UI；如果默认端口被占用，它会尝试下一个可用端口。发布版需要 Node.js 22 或更高版本。",
+        },
+        {
+          question: "历史会话很多时，CodeSesh 如何保持流畅？",
+          answer:
+            "首次扫描会持久化回填进度，中断后可以继续。后续启动从本地 SQLite 缓存恢复，文件监听只增量更新发生变化的会话；长会话的消息列表按视口虚拟化，避免一次渲染全部内容。",
         },
       ],
+    },
+    cta: {
+      title: "现在就把历史找回来",
+      body: "开源、免费，会话数据留在本机。一条命令即可开始建立可搜索的 AI 编码工程记忆。",
+      github: "在 GitHub 上查看",
+    },
+    footer: {
+      note: "MIT 许可，会话数据与索引保留在本机",
+      docs: "文档",
+      issues: "问题反馈",
     },
   },
   en: {
     meta: {
-      title: "CodeSesh: Reusable Engineering Memory for AI Coding",
+      title: "CodeSesh: Search and Replay Local AI Coding History",
       description:
-        "CodeSesh turns local AI coding history from Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, and ZCode into project-aware, structurally searchable, replayable engineering memory.",
+        "CodeSesh organizes local sessions from nine AI coding agents by project, with structured search, full replay, and a local SQLite index.",
     },
     header: {
+      tour: "Tour",
+      capabilities: "Capabilities",
+      agents: "Agents",
+      faq: "FAQ",
       github: "GitHub",
       languageLabel: "Language",
       themeLabel: "Theme",
@@ -308,47 +322,42 @@ export const copy = {
       themeSwitchTo: ". Switch to {next}.",
     },
     hero: {
-      title: ["AI coding history,", "ready to reuse."],
-      body: "Find, search, and replay local AI coding sessions across agents, projects, messages, tools, and files.",
+      eyebrow: "Local / Zero config / 9 agents",
+      title: ["Every AI coding session", "is still here."],
+      body: "CodeSesh scans local histories from nine AI coding agents and puts them in one index: organized by project, structurally searchable, and replayable message by message.",
+      privacy:
+        "Session content and indexes stay local. No account, cloud sync, or session telemetry.",
       command: "npx codesesh",
+      endpoint: "http://localhost:4521",
+      agentsLabel: "Reads sessions from",
       copied: "Copied",
       copyFailed: "Copy failed. Copy the command manually.",
-      copyCommand: "Copy command",
+      copyCommand: "Copy",
     },
     tour: {
-      label: "Product Tour",
-      title: "How engineering memory compounds in daily work",
-      body: "From overview to replay, from project browsing to structured search, CodeSesh makes coding history across agents visible again.",
-      previewLabel: "Interactive CodeSesh product preview",
-      viewLabel: "Choose a preview view",
-      sampleLabel: "Sample workspace",
-      shortcutClose: "Close",
+      previewLabel: "Interactive CodeSesh product sample",
+      sampleLabel: "Sample data",
     },
     scenes: [
       {
-        title: "Engineering Memory Overview",
+        title: "Open it and see where the week went",
         description:
-          "See collaboration patterns through agent activity, token trends, smart tags, and bookmarked sessions.",
+          "Sessions, messages, tokens, cost, and recent activity come from one local index. Change the time window and the overview recomputes.",
       },
       {
-        title: "Structured Global Search",
+        title: "Sessions go back where they belong",
         description:
-          "Search titles, messages, tool output, and file paths, then filter by project, tag, tool, file activity, and cost.",
+          "Group history by repository and project, keep subagent sessions under their parent, and aggregate messages, tokens, and cost by hierarchy.",
       },
       {
-        title: "Session Replay",
+        title: "Replay the complete path of a task",
         description:
-          "Replay messages, tool calls, and file changes in the order a feature or bug fix unfolded.",
-      },
-      {
-        title: "Keyboard Navigation",
-        description:
-          "Move through projects, sessions, and results efficiently so browsing history fits daily work.",
+          "Read messages, tool calls, and file changes in sequence, then use type filters and file tracking to find the context that matters.",
       },
     ],
     features: {
-      title: "Designed for long-term accumulation",
-      body: "CodeSesh follows the real loop of AI-assisted engineering: discover, organize, recover, and replay.",
+      title: ["Discover, organize, recover, replay.", "History becomes useful after all four."],
+      body: "CodeSesh follows the real loop of AI-assisted engineering work.",
       groups: [
         {
           title: "Discover",
@@ -356,20 +365,18 @@ export const copy = {
           items: [
             {
               icon: "settings",
-              title: "Zero Configuration",
+              title: "Zero configuration",
               description: "Run one command and scan supported agent sessions on your filesystem.",
             },
             {
-              icon: "timer",
-              title: "Live Refresh",
-              description:
-                "Local session changes appear automatically as new collaboration records are written.",
+              icon: "eye",
+              title: "Unified timeline",
+              description: "Browse histories from nine AI coding agents in one interface.",
             },
             {
-              icon: "eye",
-              title: "Unified Timeline",
-              description:
-                "Browse Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, and ZCode sessions in one interface.",
+              icon: "timer",
+              title: "Live refresh",
+              description: "Add local session changes to the index without restarting the UI.",
             },
           ],
         },
@@ -378,22 +385,20 @@ export const copy = {
           description: "Put sessions back into project, task, and engineering context.",
           items: [
             {
-              icon: "bar-chart-3",
-              title: "Engineering Memory Overview",
-              description:
-                "See cross-agent activity, models, tokens, smart tags, and bookmarked sessions together.",
-            },
-            {
               icon: "list-tree",
-              title: "Project & Nested Session Tree",
-              description:
-                "Group sessions by repository and project identity while keeping subagent sessions under their parent.",
+              title: "Project and session tree",
+              description: "Group by repository and keep subagent sessions under their parent.",
             },
             {
               icon: "tags",
-              title: "Smart Tags",
+              title: "Smart tags",
+              description: "Label fixes, refactors, features, tests, docs, planning, and more.",
+            },
+            {
+              icon: "bookmark",
+              title: "Session aliases",
               description:
-                "Label bugfix, refactor, feature, testing, docs, planning, Git, build, and exploration work.",
+                "Give key sessions memorable names that persist in search and bookmarks.",
             },
           ],
         },
@@ -403,21 +408,19 @@ export const copy = {
           items: [
             {
               icon: "search",
-              title: "Structured Global Search",
+              title: "Structured global search",
               description:
-                "Search titles, messages, tool output, and file paths with project, tag, tool, file activity, and cost filters.",
+                "Search titles, messages, tool output, and paths, then filter the results.",
             },
             {
-              icon: "bookmark",
-              title: "Session Bookmarks",
-              description:
-                "Save important records so solutions, debugging paths, and key decisions stay traceable.",
+              icon: "list-tree",
+              title: "File activity index",
+              description: "Start with a file and find sessions that read or changed it.",
             },
             {
               icon: "keyboard",
-              title: "Keyboard Navigation",
-              description:
-                "Move across views, focus search, and navigate groups from the keyboard.",
+              title: "Keyboard navigation",
+              description: "Switch views, focus search, and move through groups from the keyboard.",
             },
           ],
         },
@@ -427,32 +430,19 @@ export const copy = {
           items: [
             {
               icon: "terminal",
-              title: "Full Conversation Replay",
-              description: "Read every message, tool call, and reasoning step in sequence.",
-            },
-            {
-              icon: "list-tree",
-              title: "File Activity Index",
-              description:
-                "Jump to files that were read, edited, created, deleted, or moved, and recover sessions by file activity.",
+              title: "Full conversation replay",
+              description: "Keep messages, tool calls, and reasoning steps in sequence.",
             },
             {
               icon: "bar-chart-3",
-              title: "Cost & Token Visibility",
-              description:
-                "See token totals, cache tokens, recorded costs, and model-based estimates.",
+              title: "Cost and token visibility",
+              description: "Compare tokens, cache hits, recorded cost, and model estimates.",
             },
             {
               icon: "database",
-              title: "SQLite Migrations & Local Index",
+              title: "Local SQLite index",
               description:
-                "Use one local database for fast restore, structured search, file activity indexing, and schema migrations.",
-            },
-            {
-              icon: "shield",
-              title: "Local & Private",
-              description:
-                "Your data stays on your machine. No accounts, cloud sync, or telemetry.",
+                "Use one local database for fast restore, search, and schema migrations.",
             },
           ],
         },
@@ -460,33 +450,43 @@ export const copy = {
     },
     agents: {
       title: "Built for the local AI coding stack",
-      body: "Unify multi-agent workflows into one engineering memory layer.",
+      body: "Each agent connects through a core adapter and contributes to one index of sessions, projects, search, and file activity.",
     },
     faq: {
       title: "Frequently asked questions",
-      body: "Short answers about what CodeSesh is, what it supports, and where your data stays.",
+      body: "Answers about CodeSesh, installation, data boundaries, and large histories.",
       items: [
         {
           question: "What is CodeSesh?",
           answer:
-            "CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, and ZCode into a project-aware engineering memory layer for recovering decisions, file activity, and complete collaboration paths.",
-        },
-        {
-          question: "Which AI coding tools does CodeSesh support?",
-          answer:
-            "CodeSesh currently supports Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, and ZCode. Each tool connects through an agent adapter in the core package, then contributes sessions to unified lists, project browsing, structured search indexes, file activity, smart tags, token statistics, and full replay views.",
+            "CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, and ZCode into a project-aware engineering memory layer.",
         },
         {
           question: "Does CodeSesh upload local AI session data?",
           answer:
-            "CodeSesh runs on the user's machine and uses a local SQLite index with a local Web UI. Session content, file paths, token statistics, and cost estimates stay on the local computer, which suits developers who want ownership of AI coding context.",
+            "No session data is uploaded. CodeSesh uses a local SQLite index and a Web UI served on localhost. Session content, file paths, token statistics, and recorded costs remain on the computer. The product requires no account, cloud sync, or session telemetry.",
         },
         {
-          question: "How do you install and start CodeSesh?",
+          question: "How do I install and start CodeSesh?",
           answer:
-            "The fastest way to start CodeSesh is running npx codesesh. CodeSesh scans supported local AI coding sessions and opens the Web UI at http://localhost:4521; if that default port is busy, it automatically tries the next available port. The published CLI requires Node.js 22+; source development uses Node.js 24 and pnpm 11.11.0.",
+            "Run npx codesesh in a terminal. CodeSesh scans supported local AI coding sessions and opens its Web UI at http://localhost:4521. If the default port is busy, it tries the next available port. The published CLI requires Node.js 22 or later.",
+        },
+        {
+          question: "How does CodeSesh stay responsive with a large history?",
+          answer:
+            "The first scan persists backfill progress and can resume after interruption. Later starts restore from the local SQLite cache, while file watchers incrementally update changed sessions. Long conversation timelines use viewport virtualization instead of rendering every message at once.",
         },
       ],
+    },
+    cta: {
+      title: "Bring your coding history back",
+      body: "Open source and free, with session data kept locally. One command starts a searchable engineering memory for your AI coding work.",
+      github: "View on GitHub",
+    },
+    footer: {
+      note: "MIT licensed, with session data and indexes kept local",
+      docs: "Docs",
+      issues: "Issues",
     },
   },
 } satisfies Record<Locale, LandingCopy>;

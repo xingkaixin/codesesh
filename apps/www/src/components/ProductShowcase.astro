@@ -1,6 +1,5 @@
 ---
 import { copy, type Locale } from "../data/landing";
-import HeadingText from "./HeadingText.astro";
 import ProductDemo from "./ProductDemo.astro";
 
 interface Props {
@@ -8,21 +7,241 @@ interface Props {
 }
 
 const { locale } = Astro.props;
-const t = copy[locale].tour;
+const metadata = {
+  zh: [
+    {
+      number: "01 / Overview",
+      path: "apps/web / dashboard",
+      hint: "切换时间范围，观察整块面板同步重算",
+    },
+    {
+      number: "02 / Project tree",
+      path: "apps/web / project timeline",
+      hint: "展开带有 sub 标记的会话，查看子 Agent 记录",
+    },
+    {
+      number: "03 / Replay",
+      path: "apps/web / session detail",
+      hint: "展开工具调用查看输出，也可以从 TOC 隐藏消息类型",
+    },
+  ],
+  en: [
+    {
+      number: "01 / Overview",
+      path: "apps/web / dashboard",
+      hint: "Switch the time range and watch the whole panel recompute",
+    },
+    {
+      number: "02 / Project tree",
+      path: "apps/web / project timeline",
+      hint: "Expand a session marked sub to inspect its child agent work",
+    },
+    {
+      number: "03 / Replay",
+      path: "apps/web / session detail",
+      hint: "Expand tool calls for output, or use the TOC to hide message types",
+    },
+  ],
+} as const;
+
+const sceneTypes = ["overview", "projects", "replay"] as const;
+const sceneCopy = copy[locale].scenes;
+const sceneMetadata = metadata[locale];
+const scenes = [
+  { scene: sceneTypes[0], copy: sceneCopy[0], meta: sceneMetadata[0] },
+  { scene: sceneTypes[1], copy: sceneCopy[1], meta: sceneMetadata[1] },
+  { scene: sceneTypes[2], copy: sceneCopy[2], meta: sceneMetadata[2] },
+] as const;
 ---
 
-<section class="border-y border-[var(--console-border)] bg-[var(--console-surface)] px-4 py-20 sm:px-6 md:py-24">
-  <div class="mx-auto max-w-7xl">
-    <p class="console-eyebrow text-[var(--brand)]">
-      {t.label}
-    </p>
-    <h2 class="console-display landing-heading mt-3 max-w-2xl text-3xl font-semibold leading-tight text-[var(--console-text)] md:text-4xl">
-      <HeadingText value={t.title} />
-    </h2>
-    <p class="mt-4 max-w-2xl text-base leading-7 text-[var(--console-text-secondary)]">{t.body}</p>
+<div class="product-showcase">
+  {
+    scenes.map(({ scene, copy: sceneCopy, meta }, index) => {
+      const sectionId = index === 0 ? "tour" : `tour-${scene}`;
+      const headingId = `${sectionId}-heading`;
+      const descriptionId = `${sectionId}-description`;
 
-    <div class="mt-12">
-      <ProductDemo id={`tour-demo-${locale}`} locale={locale} />
-    </div>
-  </div>
-</section>
+      return (
+        <section
+          id={sectionId}
+          class="showcase-section"
+          aria-labelledby={headingId}
+          aria-describedby={descriptionId}
+        >
+          <div class="showcase-inner">
+            <header class="showcase-meta">
+              <span>{meta.number}</span>
+              <small>{meta.path}</small>
+            </header>
+
+            <div class="showcase-grid">
+              <div class="showcase-copy">
+                <h2 id={headingId}>{sceneCopy?.title}</h2>
+                <p id={descriptionId}>{sceneCopy?.description}</p>
+                <p class="showcase-hint">
+                  <span aria-hidden="true">↓</span>
+                  {meta.hint}
+                </p>
+              </div>
+
+              <div class="showcase-preview">
+                <ProductDemo id={`tour-demo-${locale}-${scene}`} locale={locale} scene={scene} />
+              </div>
+            </div>
+          </div>
+        </section>
+      );
+    })
+  }
+</div>
+
+<style>
+  .product-showcase {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: clip;
+    border-top: 1px solid var(--console-border);
+    background: var(--console-bg);
+  }
+
+  .showcase-section {
+    scroll-margin-top: 5rem;
+    padding: 5.75rem 1.75rem 0;
+  }
+
+  .showcase-section:last-child {
+    padding-bottom: 6.75rem;
+  }
+
+  .showcase-inner {
+    width: 100%;
+    max-width: 73.75rem;
+    min-width: 0;
+    margin: 0 auto;
+  }
+
+  .showcase-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 0.85rem;
+    padding-bottom: 0.85rem;
+    border-bottom: 1px solid var(--console-border);
+    font-family: var(--font-mono);
+  }
+
+  .showcase-meta span {
+    color: var(--brand-text);
+    font-size: 0.63rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .showcase-meta small {
+    color: var(--console-muted);
+    font-size: 0.65rem;
+  }
+
+  .showcase-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 21.25rem) minmax(0, 1fr);
+    gap: 3.25rem;
+    align-items: start;
+    margin-top: 2.1rem;
+  }
+
+  .showcase-copy {
+    position: sticky;
+    top: 6rem;
+    min-width: 0;
+  }
+
+  .showcase-copy h2 {
+    max-width: 12em;
+    margin: 0;
+    color: var(--console-text);
+    font-family: var(--font-display);
+    font-size: clamp(1.65rem, 2.4vw, 1.9rem);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    text-wrap: balance;
+  }
+
+  .showcase-copy > p:not(.showcase-hint) {
+    max-width: 39ch;
+    margin: 1rem 0 0;
+    color: var(--console-text-secondary);
+    font-size: 0.91rem;
+    line-height: 1.7;
+    text-wrap: pretty;
+  }
+
+  .showcase-hint {
+    display: flex;
+    gap: 0.45rem;
+    align-items: baseline;
+    max-width: 38ch;
+    margin: 1.1rem 0 0;
+    color: var(--console-muted);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    line-height: 1.6;
+  }
+
+  .showcase-hint span {
+    flex: none;
+    color: var(--brand-text);
+  }
+
+  .showcase-preview {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  @media (max-width: 1180px) {
+    .showcase-grid {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 1.65rem;
+    }
+
+    .showcase-copy {
+      position: static;
+    }
+
+    .showcase-copy h2,
+    .showcase-copy > p:not(.showcase-hint),
+    .showcase-hint {
+      max-width: 42rem;
+    }
+  }
+
+  @media (max-width: 820px) {
+    .showcase-section {
+      padding: 4.5rem 1rem 0;
+    }
+
+    .showcase-section:last-child {
+      padding-bottom: 5rem;
+    }
+
+    .showcase-meta {
+      align-items: start;
+    }
+
+    .showcase-meta small {
+      margin-left: auto;
+      text-align: right;
+    }
+
+    .showcase-grid {
+      margin-top: 1.6rem;
+    }
+
+    .showcase-copy h2 {
+      font-size: 1.65rem;
+    }
+  }
+</style>

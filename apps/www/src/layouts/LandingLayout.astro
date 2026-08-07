@@ -20,6 +20,11 @@ const ogLocaleAlternate = locale === "zh" ? "en_US" : "zh_CN";
 const analyticsEnabled = import.meta.env.PROD;
 const analyticsHost = new URL(siteUrl).hostname;
 const featureList = t.features.groups.flatMap((group) => group.items.map((item) => item.title));
+const ogImageUrl = `${siteUrl}/og-image.png`;
+const websiteId = `${siteUrl}/#website`;
+const softwareId = `${siteUrl}/#software`;
+const webpageId = `${canonicalUrl}#webpage`;
+const faqId = `${canonicalUrl}#faq`;
 const jsonLd = {
   "@context": "https://schema.org",
   "@graph": [
@@ -33,7 +38,7 @@ const jsonLd = {
     },
     {
       "@type": "WebSite",
-      "@id": `${siteUrl}/#website`,
+      "@id": websiteId,
       name: "CodeSesh",
       url: siteUrl,
       publisher: {
@@ -42,8 +47,35 @@ const jsonLd = {
       inLanguage: ["en", "zh-CN"],
     },
     {
+      "@type": "ImageObject",
+      "@id": `${siteUrl}/#primaryimage`,
+      url: ogImageUrl,
+      contentUrl: ogImageUrl,
+      width: 1200,
+      height: 630,
+      caption: t.meta.title,
+    },
+    {
+      "@type": "WebPage",
+      "@id": webpageId,
+      url: canonicalUrl,
+      name: t.meta.title,
+      description: t.meta.description,
+      inLanguage: language,
+      isPartOf: {
+        "@id": websiteId,
+      },
+      about: {
+        "@id": softwareId,
+      },
+      primaryImageOfPage: {
+        "@id": `${siteUrl}/#primaryimage`,
+      },
+      mainEntity: [{ "@id": softwareId }, { "@id": faqId }],
+    },
+    {
       "@type": "SoftwareApplication",
-      "@id": `${siteUrl}/#software`,
+      "@id": softwareId,
       name: "CodeSesh",
       applicationCategory: "DeveloperApplication",
       operatingSystem: "Windows, macOS, Linux",
@@ -51,6 +83,9 @@ const jsonLd = {
       url: canonicalUrl,
       codeRepository: "https://github.com/xingkaixin/codesesh",
       installUrl: "https://www.npmjs.com/package/codesesh",
+      downloadUrl: "https://www.npmjs.com/package/codesesh",
+      license: "https://opensource.org/license/mit",
+      isAccessibleForFree: true,
       author: {
         "@id": `${siteUrl}/#organization`,
       },
@@ -66,7 +101,10 @@ const jsonLd = {
     },
     {
       "@type": "FAQPage",
-      "@id": `${canonicalUrl}#faq`,
+      "@id": faqId,
+      isPartOf: {
+        "@id": webpageId,
+      },
       mainEntity: t.faq.items.map((item) => ({
         "@type": "Question",
         name: item.question,
@@ -156,10 +194,12 @@ const jsonLd = {
             --console-accent-strong: #ffffff;
             --console-accent-fg: #101012;
             --brand: #ff7a45;
+            --brand-text: #ff9a73;
             --brand-hover: #ff9166;
             --brand-soft: #2a1710;
             --brand-line: #5a2e19;
             --brand-fg: #101012;
+            --success-text: #56d89d;
           }
 
           [data-copy-command] {
@@ -180,12 +220,11 @@ const jsonLd = {
     </noscript>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={t.meta.description} />
-    <meta
-      name="keywords"
-      content="AI coding, Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, ZCode, engineering memory, session history, developer tools, AI pair programming"
-    />
     <meta name="author" content="XingKaiXin" />
-    <meta name="robots" content="index, follow" />
+    <meta
+      name="robots"
+      content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
+    />
     <link rel="canonical" href={canonicalUrl} />
     <link rel="alternate" hreflang="en" href={englishUrl} />
     <link rel="alternate" hreflang="zh-CN" href={chineseUrl} />
@@ -198,7 +237,9 @@ const jsonLd = {
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:title" content={t.meta.title} />
     <meta property="og:description" content={t.meta.description} />
-    <meta property="og:image" content={`${siteUrl}/og-image.png`} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:image:secure_url" content={ogImageUrl} />
+    <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content={t.meta.title} />
@@ -209,7 +250,8 @@ const jsonLd = {
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={t.meta.title} />
     <meta name="twitter:description" content={t.meta.description} />
-    <meta name="twitter:image" content={`${siteUrl}/og-image.png`} />
+    <meta name="twitter:image" content={ogImageUrl} />
+    <meta name="twitter:image:alt" content={t.meta.title} />
 
     <link rel="icon" type="image/svg+xml" href="/logo.svg?v=2" />
     <link rel="apple-touch-icon" href="/logo.svg?v=2" />

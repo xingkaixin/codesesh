@@ -10,7 +10,7 @@ CodeSesh is best described as a local engineering memory layer for AI coding wor
 
 It is for developers who use multiple AI coding agents and want one place to inspect what happened across those tools. It focuses on session discovery, structured global search, project-aware organization, complete replay, file activity indexing, token visibility, and local privacy.
 
-CodeSesh runs on the developer's machine. It does not require an account, cloud sync, or cloud telemetry. The user's session data stays local.
+CodeSesh runs on the developer's machine. It does not require an account, cloud sync, or session telemetry. The user's session data stays local. CodeSesh may fetch public model pricing metadata for cost estimation; that request does not contain session content.
 
 ## One-Line Description
 
@@ -226,13 +226,13 @@ CodeSesh surfaces token totals, cache tokens, recorded costs, and model-based co
 
 CodeSesh uses a local SQLite-backed cache and search index to restore session lists quickly, support structured lookup, store file activity, and run schema migrations with backups.
 
-### Claude Code Resume Commands
+### Agent Resume Commands
 
-Claude Code session details can copy worktree-aware `claude --resume` commands for returning to a previous local session context.
+When an agent declares a resume capability, session details can copy a worktree-aware command for returning to that local context. CodeSesh currently declares resume commands for Claude Code, OpenCode, Kimi, Kimi-Code, Codex, Grok, and Pi. Cursor and ZCode explicitly declare no resume command.
 
-### Local and Private
+### Local Session Ownership
 
-CodeSesh is designed around local ownership. It runs on the user's machine and keeps session data there.
+CodeSesh is designed around local ownership. It runs on the user's machine and keeps session content and indexes there.
 
 ### Live Refresh
 
@@ -248,7 +248,7 @@ After CodeSesh starts, users can navigate these main areas:
 4. Session Tree Sidebar: project-aware browsing with nested subagent sessions and agent or smart tag filters.
 5. Session List: recent sessions with title, working directory, message count, and cost details.
 6. Smart Tags and Bookmarks: quick access to important or categorized sessions.
-7. Session Detail: full replay with messages, assistant responses, tool calls, reasoning steps, model labels, file activity, and Claude Code resume command copy.
+7. Session Detail: full replay with messages, assistant responses, tool calls, reasoning steps, model labels, file activity, and agent-specific resume command copy when supported.
 8. Keyboard Shortcuts: faster navigation through views, global search, and grouped content.
 9. Live Updates: newly written local session data appears while the server is active.
 
@@ -278,7 +278,7 @@ CodeSesh uses:
 - React
 - React Router
 - Tailwind CSS
-- Radix UI in the app UI
+- Base UI in the app UI
 - SQLite for local indexing
 - Vitest for tests
 - oxlint and oxfmt for linting and formatting
@@ -302,6 +302,8 @@ The product is useful when a developer remembers that a decision happened somewh
 ## Privacy Model
 
 CodeSesh keeps the user's AI coding history on the local machine. Its primary flow is local scanning plus a local Web UI. It does not require account creation or cloud sync.
+
+CodeSesh may request public model pricing metadata to estimate costs. The pricing request does not include session content, file paths, prompts, or tool output.
 
 This is important because AI coding sessions may include private code, file paths, project names, errors, internal decisions, and sensitive implementation context.
 

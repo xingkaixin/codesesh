@@ -1,6 +1,7 @@
 ---
 import type { Locale } from "../data/landing";
 import Agents from "./Agents.astro";
+import CallToAction from "./CallToAction.astro";
 import FAQ from "./FAQ.astro";
 import Features from "./Features.astro";
 import Footer from "./Footer.astro";
@@ -23,6 +24,7 @@ const { locale } = Astro.props;
     <Features locale={locale} />
     <Agents locale={locale} />
     <FAQ locale={locale} />
+    <CallToAction locale={locale} />
   </main>
-  <Footer />
+  <Footer locale={locale} />
 </div>

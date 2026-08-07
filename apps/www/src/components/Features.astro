@@ -1,7 +1,6 @@
 ---
 import { copy, type Locale } from "../data/landing";
 import HeadingText from "./HeadingText.astro";
-import Icon from "./Icon.astro";
 
 interface Props {
   locale: Locale;
@@ -9,56 +8,43 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = copy[locale].features;
-const groupStyles = [
-  "bg-[var(--console-surface)]",
-  "bg-[var(--console-surface-muted)]",
-  "bg-[var(--brand-soft)] border-[var(--brand-line)]",
-  "bg-grid bg-[var(--console-surface)]",
-];
 ---
 
-<section class="px-4 py-20 sm:px-6 md:py-24" aria-labelledby="features-heading">
-  <div class="mx-auto max-w-7xl">
+<section
+  id="capabilities"
+  class="scroll-mt-20 px-4 pb-4 pt-24 sm:px-6 sm:pt-28 lg:px-7"
+  aria-labelledby="capabilities-heading"
+>
+  <div class="mx-auto max-w-[1180px]">
     <h2
-      id="features-heading"
-      class="console-display landing-heading max-w-2xl text-3xl font-semibold leading-tight text-[var(--console-text)] md:text-4xl"
+      id="capabilities-heading"
+      class="console-display landing-heading max-w-[20em] text-3xl font-semibold leading-[1.16] text-[var(--console-text)] sm:text-[2.15rem]"
     >
       <HeadingText value={t.title} />
     </h2>
-    <p class="mt-4 max-w-2xl text-base leading-7 text-[var(--console-text-secondary)]">{t.body}</p>
+    <p class="mt-4 max-w-2xl text-sm leading-7 text-[var(--console-text-secondary)]">
+      {t.body}
+    </p>
 
-    <div class="mt-12 grid gap-4 lg:grid-cols-2">
+    <div
+      class="mt-9 grid gap-px overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-border)] sm:grid-cols-2 lg:grid-cols-4"
+    >
       {
-        t.groups.map((group, index) => (
-          <article
-            class:list={[
-              "overflow-hidden rounded-lg border border-[var(--console-border)] shadow-[var(--shadow-raised)]",
-              groupStyles[index],
-            ]}
-          >
-            <div class="border-b border-[var(--console-border)] px-5 py-5 sm:px-6">
-              <h3 class="console-display text-xl font-semibold text-[var(--console-text)]">
-                {group.title}
-              </h3>
-              <p class="mt-2 text-sm leading-6 text-[var(--console-text-secondary)]">
-                {group.description}
-              </p>
-            </div>
-
-            <ul class="grid gap-x-6 px-5 py-2 sm:grid-cols-2 sm:px-6">
+        t.groups.map((group) => (
+          <article class="bg-[var(--console-bg)] px-5 py-6 sm:px-6">
+            <h3 class="console-display text-xl font-semibold text-[var(--console-text)]">
+              {group.title}
+            </h3>
+            <p class="mt-2 min-h-12 text-xs leading-5 text-[var(--console-muted)]">
+              {group.description}
+            </p>
+            <ul class="mt-5 space-y-4">
               {group.items.map((item) => (
-                <li class="grid grid-cols-[2rem_1fr] gap-3 py-4">
-                  <div class="flex size-8 items-center justify-center rounded-sm border border-[var(--brand-line)] bg-[var(--brand-soft)] text-[var(--brand)]">
-                    <Icon name={item.icon} class="size-4" />
-                  </div>
-                  <div>
-                    <h4 class="text-sm font-semibold text-[var(--console-text)]">
-                      {item.title}
-                    </h4>
-                    <p class="mt-1 text-sm leading-6 text-[var(--console-muted)]">
-                      {item.description}
-                    </p>
-                  </div>
+                <li>
+                  <p class="text-[13px] font-semibold text-[var(--console-text)]">{item.title}</p>
+                  <p class="mt-1 text-xs leading-5 text-[var(--console-text-secondary)]">
+                    {item.description}
+                  </p>
                 </li>
               ))}
             </ul>
