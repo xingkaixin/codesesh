@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAgentCatalog } from "../../lib/agents";
@@ -130,6 +130,16 @@ describe("OverviewScreen", () => {
     expect(screen.getByText("1 projects · 2 agents in scope")).toBeTruthy();
     expect(screen.getAllByTestId("overview-project-row")).toHaveLength(1);
     expect(screen.getAllByTestId("overview-agent-row")).toHaveLength(1);
+  });
+
+  it("renders project agents as logos without visible names", async () => {
+    renderScreen();
+
+    await screen.findByRole("heading", { name: "Projects" });
+    const projectRow = within(screen.getByTestId("overview-project-row"));
+
+    expect(projectRow.getByRole("img", { name: "Codex" })).toBeTruthy();
+    expect(projectRow.queryByText("Codex")).toBeNull();
   });
 
   it("issues exactly one new request when the agent filter changes", async () => {
