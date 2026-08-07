@@ -22,7 +22,10 @@ test("aggregates Claude and Codex sessions under one project", async ({ page }) 
   const projectRow = dashboard.getByTestId("overview-project-row");
   await expect(projectRow).toHaveCount(1);
   await expect(projectRow).toContainText("codesesh-e2e");
-  await expect(projectRow).toContainText("Codex · Claude Code");
+  await expect(projectRow.getByRole("img", { name: "Codex", exact: true })).toBeVisible();
+  await expect(projectRow.getByRole("img", { name: "Claude Code", exact: true })).toBeVisible();
+  await expect(projectRow).not.toContainText("Codex");
+  await expect(projectRow).not.toContainText("Claude Code");
 
   await page.goto("/projects");
   const project = page.locator("main").getByRole("link", { name: /codesesh-e2e/ });
