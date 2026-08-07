@@ -257,10 +257,10 @@ const replayFilters = [
                     <div class:list={["demo-kpi", kpi.emphasis && "is-emphasis"]} data-demo-kpi={index}>
                       <dt>{kpi.label}</dt>
                       <dd data-demo-kpi-value>{kpi.value}</dd>
-                      <small>
+                      <dd class="demo-kpi-meta">
                         <span data-demo-kpi-trend>{kpi.trend}</span>{" "}
                         <span data-demo-kpi-hint>{kpi.hint}</span>
-                      </small>
+                      </dd>
                     </div>
                   ))}
                 </dl>
@@ -861,7 +861,7 @@ const replayFilters = [
   }
 
   .demo-sample-label {
-    color: var(--brand);
+    color: var(--brand-text);
     font-weight: 600;
     letter-spacing: 0.04em;
   }
@@ -920,7 +920,7 @@ const replayFilters = [
   }
 
   .demo-nav-list li.is-active {
-    color: var(--brand);
+    color: var(--brand-text);
     background: var(--brand-soft);
   }
 
@@ -1053,7 +1053,8 @@ const replayFilters = [
   }
 
   .demo-kpi dt,
-  .demo-kpi small {
+  .demo-kpi-meta {
+    margin: 0;
     overflow: hidden;
     color: var(--console-muted);
     font-family: var(--font-mono);
@@ -1062,7 +1063,7 @@ const replayFilters = [
     white-space: nowrap;
   }
 
-  .demo-kpi dd {
+  .demo-kpi [data-demo-kpi-value] {
     margin: 0.38rem 0 0.32rem;
     color: var(--console-text);
     font-family: var(--font-mono);
@@ -1070,9 +1071,9 @@ const replayFilters = [
     font-weight: 600;
   }
 
-  .demo-kpi.is-emphasis dd,
+  .demo-kpi.is-emphasis [data-demo-kpi-value],
   .demo-kpi.is-emphasis [data-demo-kpi-trend] {
-    color: var(--brand);
+    color: var(--brand-text);
   }
 
   .demo-panel {
@@ -1333,7 +1334,7 @@ const replayFilters = [
     padding: 0.2rem 0.45rem;
     border: 1px solid var(--brand-line);
     border-radius: var(--radius-pill);
-    color: var(--brand);
+    color: var(--brand-text);
     background: var(--brand-soft);
   }
 
@@ -1642,11 +1643,11 @@ const replayFilters = [
   .demo-write-row strong,
   .demo-tool-result strong,
   .demo-tool-call ins {
-    color: #1f9d65;
+    color: var(--success-text);
   }
 
   .demo-tool-call del {
-    color: var(--brand);
+    color: var(--brand-text);
   }
 
   .demo-tool-call pre {

@@ -65,10 +65,12 @@
     --console-accent-strong: #09090b;
     --console-accent-fg: #fbfaf8;
     --brand: #e8622e;
+    --brand-text: #a33c18;
     --brand-hover: #c94e1f;
     --brand-soft: #fdede5;
     --brand-line: #f6c7ae;
     --brand-fg: #fbfaf8;
+    --success-text: #087747;
     --elevation-raised: 0 1px 2px rgba(20, 20, 25, 0.05), 0 8px 24px -12px rgba(20, 20, 25, 0.12);
     --elevation-overlay:
       0 4px 12px rgba(20, 20, 25, 0.08), 0 24px 48px -24px rgba(20, 20, 25, 0.24);
@@ -93,10 +95,12 @@
     --console-accent-strong: #fbfaf8;
     --console-accent-fg: #101012;
     --brand: #ff7a45;
+    --brand-text: #ff9a73;
     --brand-hover: #ff9166;
     --brand-soft: #2a1710;
     --brand-line: #5a2e19;
     --brand-fg: #101012;
+    --success-text: #56d89d;
     --elevation-raised: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px -16px rgba(0, 0, 0, 0.7);
     --elevation-overlay: 0 4px 16px rgba(0, 0, 0, 0.5), 0 24px 56px -24px rgba(0, 0, 0, 0.8);
     --scrim: rgba(0, 0, 0, 0.55);

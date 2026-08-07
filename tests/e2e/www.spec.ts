@@ -19,7 +19,13 @@ const locales = [
 ] as const;
 
 interface JsonLdNode {
+  "@id"?: string;
   "@type"?: string;
+  downloadUrl?: string;
+  inLanguage?: string;
+  isAccessibleForFree?: boolean;
+  license?: string;
+  url?: string;
   mainEntity?: Array<{
     name?: string;
     acceptedAnswer?: { text?: string };
@@ -51,6 +57,14 @@ for (const locale of locales) {
       "href",
       `${siteUrl}/`,
     );
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute(
+      "content",
+      "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1",
+    );
+    await expect(page.locator('meta[name="twitter:image:alt"]')).toHaveAttribute(
+      "content",
+      await page.title(),
+    );
 
     const faqItems = page.locator("#faq details");
     const visibleFaq = [];
@@ -68,7 +82,18 @@ for (const locale of locales) {
     expect(jsonLdSource).not.toBeNull();
     const jsonLd = JSON.parse(jsonLdSource ?? "") as { "@graph"?: JsonLdNode[] };
     expect(jsonLd["@graph"]).toBeInstanceOf(Array);
-    expect(jsonLd["@graph"]?.some((node) => node["@type"] === "SoftwareApplication")).toBe(true);
+    const software = jsonLd["@graph"]?.find((node) => node["@type"] === "SoftwareApplication");
+    expect(software).toMatchObject({
+      downloadUrl: "https://www.npmjs.com/package/codesesh",
+      isAccessibleForFree: true,
+      license: "https://opensource.org/license/mit",
+    });
+
+    const webPage = jsonLd["@graph"]?.find((node) => node["@type"] === "WebPage");
+    expect(webPage).toMatchObject({
+      inLanguage: locale.language,
+      url: locale.canonical,
+    });
 
     const faqPage = jsonLd["@graph"]?.find((node) => node["@type"] === "FAQPage");
     expect(faqPage).toBeDefined();
