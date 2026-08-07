@@ -72,15 +72,13 @@ const startedAt = performance.now();
 const agents = createRegisteredAgents();
 const jobs =
   data.jobs ??
-  data.agentNames.map(
-    (agentName): SearchIndexWorkerJob => ({
-      kind: "full",
-      context: data.context,
-      agentName,
-      sessions: data.sessionsByAgent[agentName] ?? [],
-      meta: data.metaByAgent[agentName] ?? {},
-    }),
-  );
+  data.agentNames.map((agentName): SearchIndexWorkerJob => ({
+    kind: "full",
+    context: data.context,
+    agentName,
+    sessions: data.sessionsByAgent[agentName] ?? [],
+    meta: data.metaByAgent[agentName] ?? {},
+  }));
 
 function jobSessionCount(job: SearchIndexWorkerJob): number {
   return job.kind === "full" ? job.sessions.length : job.changes.length;
