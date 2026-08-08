@@ -51,7 +51,8 @@ export function mergeSessionsUpdatedEvents(
 
 export interface AgentScanStatus {
   agentName: string;
-  status: "pending" | "scanning" | "finalizing" | "indexing" | "complete";
+  status: "pending" | "scanning" | "finalizing" | "indexing" | "complete" | "failed";
+  error?: string;
   total?: number;
   processed?: number;
   sessions?: number;

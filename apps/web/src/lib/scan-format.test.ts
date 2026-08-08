@@ -53,6 +53,21 @@ describe("formatScanStatusLabel", () => {
     ).toBe("Preparing local session index");
   });
 
+  it("surfaces an inactive refresh failure", () => {
+    const status = {
+      active: false,
+      backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
+      agentStatuses: {
+        codex: { agentName: "codex", status: "failed", error: "cache is read-only" },
+      },
+    } as unknown as ScanStatusEvent;
+
+    expect(formatScanStatusLabel(status)).toBe(
+      "Session refresh failed · codex · cache is read-only",
+    );
+    expect(formatAgentScanProgress(status, "codex")).toBe("Failed");
+  });
+
   it("shows full-history backfill progress after the main scan finishes", () => {
     expect(
       formatScanStatusLabel({

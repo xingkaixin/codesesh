@@ -35,6 +35,7 @@ import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 import { ScanStatusModel } from "./scan-status-model.js";
 import type { ScanRefreshWorkerCheckpoint } from "./scan-refresh-worker.js";
 import type { WorkerRunner } from "./worker-runner.js";
+import { toError } from "./errors.js";
 
 export type { AgentOperationResult } from "./agent-operation-scheduler.js";
 
@@ -293,14 +294,18 @@ export class AgentSyncEngine {
 
   private async performRefresh(agentName: string): Promise<AgentOperationResult> {
     this.beginAgentScan(agentName);
+    let failed = false;
     try {
       return await this.runRefresh(agentName);
     } catch (error) {
+      failed = true;
+      const failure = toError(error);
       appLogger.error("scan.refresh.error", { agent: agentName, error });
       console.error(`[${agentName}] Session refresh failed:`, error);
+      this.publishStatus(this.scanStatus.failAgent(agentName, failure.message));
       return "failed";
     } finally {
-      this.finishAgentScan(agentName);
+      if (!failed) this.finishAgentScan(agentName);
       const agent = this.findAgent(agentName);
       if (agent && this.needsBackfill(agent)) this.enqueueBackfill(agentName);
     }
@@ -569,17 +574,20 @@ export class AgentSyncEngine {
     if (this.isShuttingDown) return;
 
     if (checkpoint.stage === "scanned") {
-      let persisted = false;
       try {
-        persisted = saveCachedSessions(agent.name, checkpoint.sessions, checkpoint.meta);
-        if (persisted) markAgentCacheInitialized(agent.name);
+        if (!saveCachedSessions(agent.name, checkpoint.sessions, checkpoint.meta)) {
+          throw new Error(`Failed to persist scanned checkpoint for ${agent.name}`);
+        }
       } catch (error) {
         appLogger.error("scan.checkpoint.failed", {
           agent: agent.name,
           stage: checkpoint.stage,
+          sessions: checkpoint.sessions.length,
           error,
         });
+        throw error;
       }
+      markAgentCacheInitialized(agent.name);
       agent.setSessionMetaMap(new Map(Object.entries(checkpoint.meta)));
 
       const event = this.sessionIndex.commitAgentSessions(agent.name, checkpoint.sessions);
@@ -592,14 +600,14 @@ export class AgentSyncEngine {
         agent: agent.name,
         stage: checkpoint.stage,
         sessions: checkpoint.sessions.length,
-        persisted,
       });
       return;
     }
 
-    let persisted = false;
     try {
-      persisted = saveCachedSessionChanges(agent.name, checkpoint.changes, [], checkpoint.meta);
+      if (!saveCachedSessionChanges(agent.name, checkpoint.changes, [], checkpoint.meta)) {
+        throw new Error(`Failed to persist finalizing checkpoint for ${agent.name}`);
+      }
     } catch (error) {
       appLogger.error("scan.checkpoint.failed", {
         agent: agent.name,
@@ -607,8 +615,9 @@ export class AgentSyncEngine {
         sessions: checkpoint.changes.length,
         error,
       });
+      throw error;
     }
-    if (persisted && checkpoint.backfillCursor) {
+    if (checkpoint.backfillCursor) {
       markAgentFullSyncProgress(agent.name, checkpoint.backfillCursor);
     }
     appLogger.debug("scan.checkpoint.persisted", {
@@ -616,7 +625,6 @@ export class AgentSyncEngine {
       stage: checkpoint.stage,
       sessions: checkpoint.changes.length,
       backfill_cursor: checkpoint.backfillCursor,
-      persisted,
     });
   }
 

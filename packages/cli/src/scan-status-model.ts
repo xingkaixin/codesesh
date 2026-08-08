@@ -207,6 +207,41 @@ export class ScanStatusModel {
     });
   }
 
+  failAgent(agentName: string, error: string): ScanStatusEvent {
+    const pendingAgents = this.status.pendingAgents.filter((agent) => agent !== agentName);
+    const scanningAgents = this.status.scanningAgents.filter((agent) => agent !== agentName);
+    const completedAgents = this.status.completedAgents.filter((agent) => agent !== agentName);
+    const isActive = pendingAgents.length > 0 || scanningAgents.length > 0;
+    const now = Date.now();
+    const previousStatus = this.status.agentStatuses[agentName];
+    return this.set({
+      ...this.status,
+      active: isActive,
+      phase: isActive
+        ? this.activePhase(pendingAgents, scanningAgents, this.status.agentStatuses)
+        : "idle",
+      pendingAgents,
+      scanningAgents,
+      completedAgents,
+      agentStatuses: {
+        ...this.status.agentStatuses,
+        [agentName]: {
+          agentName,
+          status: "failed",
+          error,
+          total: previousStatus?.total,
+          processed: previousStatus?.processed,
+          sessions: previousStatus?.sessions ?? 0,
+          startedAt: previousStatus?.startedAt,
+          updatedAt: now,
+          completedAt: now,
+        },
+      },
+      updatedAt: now,
+      completedAt: isActive ? undefined : now,
+    });
+  }
+
   finishBatch(): ScanStatusEvent {
     const now = Date.now();
     return this.set({
@@ -218,7 +253,14 @@ export class ScanStatusModel {
       agentStatuses: Object.fromEntries(
         Object.entries(this.status.agentStatuses).map(([agentName, status]) => [
           agentName,
-          { ...status, status: "complete", completedAt: status.completedAt ?? now, updatedAt: now },
+          status.status === "failed"
+            ? { ...status, completedAt: status.completedAt ?? now, updatedAt: now }
+            : {
+                ...status,
+                status: "complete",
+                completedAt: status.completedAt ?? now,
+                updatedAt: now,
+              },
         ]),
       ),
       updatedAt: now,

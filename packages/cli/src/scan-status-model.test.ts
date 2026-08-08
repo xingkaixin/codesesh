@@ -172,6 +172,26 @@ describe("ScanStatusModel", () => {
     );
   });
 
+  it("retains an actionable failure until the next scan starts", () => {
+    const model = new ScanStatusModel();
+    model.startBatch(["codex"], "scanning", { codex: 2 });
+    model.beginAgent("codex", 2);
+
+    const failed = model.failAgent("codex", "cache is read-only");
+
+    expect(failed).toEqual(
+      expect.objectContaining({ active: false, phase: "idle", completedAgents: [] }),
+    );
+    expect(failed.agentStatuses.codex).toEqual(
+      expect.objectContaining({ status: "failed", error: "cache is read-only" }),
+    );
+    expect(model.finishBatch().agentStatuses.codex?.status).toBe("failed");
+
+    const retry = model.beginAgent("codex", 2);
+    expect(retry.agentStatuses.codex).toEqual(expect.objectContaining({ status: "scanning" }));
+    expect(retry.agentStatuses.codex).not.toHaveProperty("error");
+  });
+
   it("models a complete multi-agent scan lifecycle", () => {
     const model = new ScanStatusModel();
 

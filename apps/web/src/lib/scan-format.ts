@@ -47,6 +47,12 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
   if (status.backfill?.failedAgents.length) {
     return `History indexing failed · ${status.backfill.failedAgents.join(", ")}`;
   }
+  const failedAgent = Object.values(status.agentStatuses ?? {}).find(
+    (agentStatus) => agentStatus.status === "failed",
+  );
+  if (failedAgent) {
+    return `Session refresh failed · ${failedAgent.agentName}${failedAgent.error ? ` · ${failedAgent.error}` : ""}`;
+  }
   if (!status.active) return null;
 
   const completed = status.completedAgents.length;
@@ -93,6 +99,7 @@ export function formatAgentScanProgress(
 ): string | null {
   const agentStatus = status?.agentStatuses[agentName];
   if (!agentStatus || agentStatus.status === "complete") return null;
+  if (agentStatus.status === "failed") return "Failed";
   if (agentStatus.status === "finalizing") {
     if (agentStatus.total && agentStatus.processed != null) {
       return `${agentStatus.processed}/${agentStatus.total}`;

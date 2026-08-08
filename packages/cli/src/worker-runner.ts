@@ -198,7 +198,12 @@ export class ThreadWorkerRunner implements WorkerRunner {
       return;
     }
     if (message.type === "checkpoint") {
-      pending.onCheckpoint?.(message.checkpoint);
+      try {
+        pending.onCheckpoint?.(message.checkpoint);
+      } catch (error) {
+        slot.pending.delete(message.requestId);
+        pending.reject(toError(error));
+      }
       return;
     }
 
