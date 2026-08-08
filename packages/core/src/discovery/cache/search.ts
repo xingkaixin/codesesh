@@ -356,16 +356,38 @@ function fetchMessageSearchMatches(
     return new Map();
   }
 
-  const clauses: string[] = [];
-  const params: unknown[] = [ftsQuery];
-  for (const row of candidates) {
-    clauses.push("(m.agent_name = ? AND m.session_id = ?)");
-    params.push(String(row.agent_name), String(row.session_id));
-  }
+  const candidateValues = candidates.map(() => "(?, ?)").join(", ");
+  const candidateParams = candidates.flatMap((row) => [
+    String(row.agent_name),
+    String(row.session_id),
+  ]);
+  db.function("codesesh_message_matches_terms", { deterministic: true }, (text) =>
+    textMatchesTerms(String(text ?? ""), terms) ? 1 : 0,
+  );
 
   const messageRows = db
     .prepare(
       `
+        WITH candidate_sessions(agent_name, session_id) AS (
+          VALUES ${candidateValues}
+        ),
+        first_message_matches AS MATERIALIZED (
+          SELECT
+            c.agent_name,
+            c.session_id,
+            (
+              SELECT m.rowid
+              FROM messages m INDEXED BY idx_messages_session
+              JOIN messages_fts ON messages_fts.rowid = m.rowid
+              WHERE m.agent_name = c.agent_name
+                AND m.session_id = c.session_id
+                AND messages_fts MATCH ?
+                AND codesesh_message_matches_terms(m.content_text)
+              ORDER BY m.message_index
+              LIMIT 1
+            ) AS message_rowid
+          FROM candidate_sessions c
+        )
         SELECT
           m.agent_name,
           m.session_id,
@@ -374,14 +396,11 @@ function fetchMessageSearchMatches(
           m.mode,
           m.content_text,
           m.tool_metadata_json
-        FROM messages_fts
-        JOIN messages m ON m.rowid = messages_fts.rowid
-        WHERE messages_fts MATCH ?
-          AND (${clauses.join(" OR ")})
-        ORDER BY m.message_index
+        FROM first_message_matches f
+        JOIN messages m ON m.rowid = f.message_rowid
       `,
     )
-    .all(...params) as MessageSearchRow[];
+    .all(...candidateParams, ftsQuery) as MessageSearchRow[];
   const matches = new Map<string, { snippet: string; matchType: SearchMatchType }>();
 
   for (const message of messageRows) {

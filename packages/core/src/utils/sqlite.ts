@@ -75,6 +75,11 @@ export interface DatabaseRow {
 
 export interface SQLiteDatabase {
   prepare(sql: string): SQLiteStatement;
+  function(
+    name: string,
+    options: { deterministic?: boolean },
+    callback: (...params: unknown[]) => unknown,
+  ): void;
   exec(sql: string): void;
   transaction<T extends SQLiteTransaction>(fn: T): SQLiteTransactionRunner<T>;
   close(): void;
