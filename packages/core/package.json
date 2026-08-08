@@ -21,18 +21,19 @@
     }
   },
   "scripts": {
-    "build": "tsup && tsc6 --emitDeclarationOnly",
+    "build": "pnpm run typecheck && tsup && tsc6 --emitDeclarationOnly",
     "dev": "tsup --watch",
     "clean": "node ../../scripts/clean.mjs",
     "lint": "oxlint src/",
     "lint:fix": "oxlint src/ --fix",
     "format": "oxfmt --write src/",
     "format:check": "oxfmt --check src/",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.node22.json"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
-    "@types/node": "^26.1.2",
+    "@types/node": "22.20.1",
     "@typescript/native": "npm:typescript@^7.0.2",
     "node-gyp": "^13.0.1",
     "tsup": "^8.5.1",
