@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  attachMissingProjectIdentities,
   FileSystemSessionSource,
   type AgentScanOptions,
   type ChangeCheckResult,
@@ -188,7 +189,13 @@ const workerThreads = vi.hoisted(() => ({
               let sessions: SessionHead[] = [];
               let changedIds: string[] | undefined;
               if (agent?.isAvailable?.() !== false) {
-                if (data.sourceSync && agent?.listSessionSources && agent?.scanSessionSource) {
+                if (data.derivedOnly) {
+                  sessions = data.previousSessions;
+                } else if (
+                  data.sourceSync &&
+                  agent?.listSessionSources &&
+                  agent?.scanSessionSource
+                ) {
                   const result = runSourceSync(data, agent);
                   sessions = result.sessions as SessionHead[];
                   changedIds = result.changedIds;
@@ -402,7 +409,7 @@ function registerMockWatcher(
 }
 
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
-  return {
+  const session: SessionHead = {
     id,
     slug: `codex/${id}`,
     title: id,
@@ -417,6 +424,7 @@ function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionH
     },
     ...overrides,
   };
+  return attachMissingProjectIdentities([session])[0]!;
 }
 
 const projectIdentity = {
@@ -738,7 +746,11 @@ describe("LiveScanStore", () => {
     expect(codex.scan).not.toHaveBeenCalled();
     expect(codex.incrementalScan).not.toHaveBeenCalled();
     expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent"]);
-    expect(workerThreads.workers).toHaveLength(0);
+    expect(workerThreads.workers).toHaveLength(1);
+    expect(workerThreads.workers[0]?.workerData).toMatchObject({
+      derivedOnly: true,
+      changedIds: [],
+    });
   });
 
   it("publishes the startup window before backfilling a database agent", async () => {

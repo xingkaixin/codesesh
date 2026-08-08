@@ -19,6 +19,7 @@ export interface WorkerPayload {
   previousSessions: SessionHead[];
   changedIds: string[] | null;
   sourceSync?: boolean;
+  derivedOnly?: boolean;
   backfill?: boolean;
   backfillCursor?: string | null;
   checkpoint?: boolean;
@@ -119,6 +120,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
       previousSessions: payload.previousSessions,
       changedIds: payload.changedIds,
       sourceSync: payload.sourceSync,
+      derivedOnly: payload.derivedOnly,
       backfill: payload.backfill,
       backfillCursor: payload.backfillCursor,
       checkpoint: payload.checkpoint,

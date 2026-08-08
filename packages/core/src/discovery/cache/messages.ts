@@ -32,6 +32,8 @@ export interface SessionRow extends DatabaseRow {
   project_identity_kind?: ProjectIdentityKind;
   project_identity_key?: string;
   project_display_name?: string;
+  project_identity_resolver_revision?: string | null;
+  project_identity_input_signature?: string | null;
   time_created?: number;
   time_updated?: number | null;
   activity_time?: number;
@@ -46,6 +48,7 @@ export interface SessionRow extends DatabaseRow {
   model_usage_json?: string | null;
   smart_tags_json?: string | null;
   smart_tags_source_updated_at?: number | null;
+  smart_tags_classifier_revision?: string | null;
   meta_json?: string | null;
 }
 
@@ -124,6 +127,8 @@ export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
       project_identity_kind,
       project_identity_key,
       project_display_name,
+      project_identity_resolver_revision,
+      project_identity_input_signature,
       time_created,
       time_updated,
       activity_time,
@@ -138,8 +143,9 @@ export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
       model_usage_json,
       smart_tags_json,
       smart_tags_source_updated_at,
+      smart_tags_classifier_revision,
       meta_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(agent_name, session_id) DO UPDATE SET
       sort_index = excluded.sort_index,
       slug = excluded.slug,
@@ -151,6 +157,8 @@ export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
       project_identity_kind = excluded.project_identity_kind,
       project_identity_key = excluded.project_identity_key,
       project_display_name = excluded.project_display_name,
+      project_identity_resolver_revision = excluded.project_identity_resolver_revision,
+      project_identity_input_signature = excluded.project_identity_input_signature,
       time_created = excluded.time_created,
       time_updated = excluded.time_updated,
       activity_time = excluded.activity_time,
@@ -165,6 +173,7 @@ export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
       model_usage_json = excluded.model_usage_json,
       smart_tags_json = excluded.smart_tags_json,
       smart_tags_source_updated_at = excluded.smart_tags_source_updated_at,
+      smart_tags_classifier_revision = excluded.smart_tags_classifier_revision,
       meta_json = excluded.meta_json
   `);
 }
@@ -184,6 +193,8 @@ export function prepareUpsertIndexedSession(db: SQLiteDatabase): SQLiteStatement
       project_identity_kind,
       project_identity_key,
       project_display_name,
+      project_identity_resolver_revision,
+      project_identity_input_signature,
       time_created,
       time_updated,
       activity_time,
@@ -198,8 +209,9 @@ export function prepareUpsertIndexedSession(db: SQLiteDatabase): SQLiteStatement
       model_usage_json,
       smart_tags_json,
       smart_tags_source_updated_at,
+      smart_tags_classifier_revision,
       meta_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(agent_name, session_id) DO UPDATE SET
       slug = excluded.slug,
       title = excluded.title,
@@ -209,6 +221,8 @@ export function prepareUpsertIndexedSession(db: SQLiteDatabase): SQLiteStatement
       project_identity_kind = excluded.project_identity_kind,
       project_identity_key = excluded.project_identity_key,
       project_display_name = excluded.project_display_name,
+      project_identity_resolver_revision = excluded.project_identity_resolver_revision,
+      project_identity_input_signature = excluded.project_identity_input_signature,
       time_created = excluded.time_created,
       time_updated = excluded.time_updated,
       activity_time = excluded.activity_time,
@@ -222,7 +236,8 @@ export function prepareUpsertIndexedSession(db: SQLiteDatabase): SQLiteStatement
       total_tokens = excluded.total_tokens,
       model_usage_json = excluded.model_usage_json,
       smart_tags_json = excluded.smart_tags_json,
-      smart_tags_source_updated_at = excluded.smart_tags_source_updated_at
+      smart_tags_source_updated_at = excluded.smart_tags_source_updated_at,
+      smart_tags_classifier_revision = excluded.smart_tags_classifier_revision
   `);
 }
 
@@ -249,6 +264,8 @@ export function upsertSessionRow(
     identity.kind,
     identity.key,
     identity.displayName,
+    session.project_identity_resolver_revision ?? null,
+    session.project_identity_input_signature ?? null,
     session.time_created,
     session.time_updated ?? null,
     activityTime,
@@ -263,6 +280,7 @@ export function upsertSessionRow(
     stringifyOptionalJson(session.model_usage),
     stringifyOptionalJson(session.smart_tags),
     session.smart_tags_source_updated_at ?? null,
+    session.smart_tags_classifier_revision ?? null,
     metaJson,
   );
 }
@@ -331,6 +349,12 @@ export function sessionFromRow(row: SessionRow): SessionHead {
       displayName: String(row.project_display_name ?? ""),
     };
   }
+  if (row.project_identity_resolver_revision) {
+    session.project_identity_resolver_revision = String(row.project_identity_resolver_revision);
+  }
+  if (row.project_identity_input_signature) {
+    session.project_identity_input_signature = String(row.project_identity_input_signature);
+  }
   if (row.parent_agent_name && row.parent_session_id) {
     session.parent_reference = {
       agentName: String(row.parent_agent_name),
@@ -364,6 +388,9 @@ export function sessionFromRow(row: SessionRow): SessionHead {
   }
   if (row.smart_tags_source_updated_at != null) {
     session.smart_tags_source_updated_at = Number(row.smart_tags_source_updated_at);
+  }
+  if (row.smart_tags_classifier_revision) {
+    session.smart_tags_classifier_revision = String(row.smart_tags_classifier_revision);
   }
 
   return session;

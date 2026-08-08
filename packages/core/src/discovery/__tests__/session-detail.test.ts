@@ -9,6 +9,7 @@ import { materializeSessionDetail, materializeSessionDetailResponse } from "../s
 import type { LiveSnapshot } from "../scanner.js";
 import { setSchemaEnsuredPath } from "../cache/db.js";
 import { setCoreDiagnostics } from "../../utils/diagnostics.js";
+import { SMART_TAG_CLASSIFIER_REVISION } from "../../utils/smart-tags.js";
 
 const { testHomeDir } = vi.hoisted(() => ({
   testHomeDir: `/tmp/codesesh-session-detail-test-${process.pid}`,
@@ -285,8 +286,15 @@ describe("materializeSessionDetail", () => {
   });
 
   it("returns cached messages as lazy JSON without reading the source", () => {
-    const head = makeHead({ smart_tags: [] });
-    const detail = { ...makeDetail("Cached Session"), smart_tags: [] };
+    const head = makeHead({
+      smart_tags: [],
+      smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+    });
+    const detail = {
+      ...makeDetail("Cached Session"),
+      smart_tags: [],
+      smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+    };
     persistDetail(head, detail, "same");
     const agent = new TestAgent(makeDetail(), new Map([["s1", makeMeta("same")]]));
     const scanResult = makeScanResult(agent, head);

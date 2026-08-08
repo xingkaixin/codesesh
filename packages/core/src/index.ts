@@ -104,6 +104,7 @@ export {
   classifySessionTags,
   ensurePrivateDirectory,
   getSmartTagSourceTimestamp,
+  SMART_TAG_CLASSIFIER_REVISION,
   perf,
   restrictExistingPrivateFiles,
   restrictPrivateFile,

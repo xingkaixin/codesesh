@@ -1,5 +1,7 @@
 import type { MessagePart, SessionDetail, SmartTag, ToolPart } from "../types/index.js";
 
+export const SMART_TAG_CLASSIFIER_REVISION = "smart-tags-v1";
+
 const TAG_ORDER: SmartTag[] = [
   "bugfix",
   "refactoring",

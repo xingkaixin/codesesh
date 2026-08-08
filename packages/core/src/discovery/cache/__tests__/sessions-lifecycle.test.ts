@@ -196,7 +196,7 @@ describe("withCacheDb schema memo", () => {
   it("runs ensureSchema on the first open but skips it on later opens for the same path", () => {
     withCacheDb(() => undefined);
     expect(getSchemaEnsuredPath()).toBe(getCachePath());
-    expect(getUserVersion(getCachePath())).toBe(19);
+    expect(getUserVersion(getCachePath())).toBe(20);
 
     const db = new Database(getCachePath());
     db.pragma("user_version = 14");
@@ -207,7 +207,7 @@ describe("withCacheDb schema memo", () => {
 
     setSchemaEnsuredPath(null);
     withCacheDb(() => undefined);
-    expect(getUserVersion(getCachePath())).toBe(19);
+    expect(getUserVersion(getCachePath())).toBe(20);
   });
 });
 
@@ -215,7 +215,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(19);
+    expect(getUserVersion(getCachePath())).toBe(20);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -230,8 +230,11 @@ describe("saveCachedSessions", () => {
         total_cache_read_tokens: 2,
       },
       model_usage: { "claude-sonnet": 20 },
+      project_identity_resolver_revision: "resolver-v1",
+      project_identity_input_signature: "identity-input-v1",
       smart_tags: ["feature-dev" as const],
       smart_tags_source_updated_at: now,
+      smart_tags_classifier_revision: "smart-tags-v1",
     };
 
     saveCachedSessions("claudecode", [session], {
@@ -247,6 +250,9 @@ describe("saveCachedSessions", () => {
         total_tokens?: number;
         model_usage_json?: string;
         smart_tags_json?: string;
+        smart_tags_classifier_revision?: string;
+        project_identity_resolver_revision?: string;
+        project_identity_input_signature?: string;
       };
 
       expect(row.session_id).toBe("s1");
@@ -255,6 +261,14 @@ describe("saveCachedSessions", () => {
       expect(row.total_tokens).toBe(20);
       expect(JSON.parse(row.model_usage_json ?? "{}")).toEqual({ "claude-sonnet": 20 });
       expect(JSON.parse(row.smart_tags_json ?? "[]")).toEqual(["feature-dev"]);
+      expect(row.smart_tags_classifier_revision).toBe("smart-tags-v1");
+      expect(row.project_identity_resolver_revision).toBe("resolver-v1");
+      expect(row.project_identity_input_signature).toBe("identity-input-v1");
+      expect(loadCachedSessions("claudecode")?.sessions[0]).toMatchObject({
+        project_identity_resolver_revision: "resolver-v1",
+        project_identity_input_signature: "identity-input-v1",
+        smart_tags_classifier_revision: "smart-tags-v1",
+      });
     } finally {
       db.close();
     }
@@ -413,7 +427,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(19);
+    expect(getUserVersion(getCachePath())).toBe(20);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",

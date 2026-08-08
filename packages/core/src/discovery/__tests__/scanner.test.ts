@@ -8,6 +8,7 @@ import {
   type SessionSourceRef,
 } from "../../agents/base.js";
 import { filterSessions } from "../scanner.js";
+import { computeIdentityProjection, realFs } from "../../projects/index.js";
 
 // --- filterSessions tests (pure function) ---
 
@@ -27,6 +28,16 @@ function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead 
       total_cost: 0,
     },
     ...overrides,
+  };
+}
+
+function withCurrentIdentity(session: SessionHead): SessionHead {
+  const projection = computeIdentityProjection(session.directory, realFs);
+  return {
+    ...session,
+    project_identity: projection.identity,
+    project_identity_resolver_revision: projection.resolverRevision,
+    project_identity_input_signature: projection.inputSignature,
   };
 }
 
@@ -196,6 +207,7 @@ vi.mock("../cache/sessions.js", () => ({
 vi.mock("../../utils/index.js", () => ({
   classifySessionTags: vi.fn(() => []),
   getSmartTagSourceTimestamp: vi.fn(() => 1000),
+  SMART_TAG_CLASSIFIER_REVISION: "smart-tags-v1",
   perf: {
     start: vi.fn(() => ({ name: "test", startTime: 0, children: [] })),
     end: vi.fn(),
@@ -271,6 +283,7 @@ describe("ensureSessionTagsSync", () => {
     const cached = makeSession("cached", {
       smart_tags: [],
       smart_tags_source_updated_at: 1000,
+      smart_tags_classifier_revision: "smart-tags-v1",
     });
     const stale = makeSession("stale", { time_updated: 2000 });
     const agent = createTestAgent({ name: "test", available: true, sessions: [cached, stale] });
@@ -288,13 +301,32 @@ describe("ensureSessionTagsSync", () => {
     expect(result.timing.getSessionDataMs).toBeGreaterThanOrEqual(0);
     expect(result.timing.classifySessionTagsMs).toBeGreaterThanOrEqual(0);
   });
+
+  it("reclassifies unchanged sources produced by an older classifier", () => {
+    const cached = makeSession("cached", {
+      smart_tags: ["bugfix"],
+      smart_tags_source_updated_at: 1000,
+      smart_tags_classifier_revision: "smart-tags-v0",
+    });
+    const agent = createTestAgent({ name: "test", available: true, sessions: [cached] });
+
+    const result = ensureSessionTagsSync(agent, [cached]);
+
+    expect(result.changed).toBe(true);
+    expect(result.timing).toMatchObject({ cacheHits: 0, staleSessions: 1 });
+    expect(result.sessions[0]).toMatchObject({
+      smart_tags: [],
+      smart_tags_source_updated_at: 1000,
+      smart_tags_classifier_revision: "smart-tags-v1",
+    });
+  });
 });
 
 describe("finalizeAgentScan", () => {
   it("finalizes cache-only sessions without classifying or writing", async () => {
     const sessions = [
-      makeSession("old", { time_created: 100 }),
-      makeSession("current", { time_created: 300 }),
+      withCurrentIdentity(makeSession("old", { time_created: 100 })),
+      withCurrentIdentity(makeSession("current", { time_created: 300 })),
     ];
     const agent = createTestAgent({ name: "test", available: true, sessions });
     agent.getSessionData = vi.fn();
@@ -356,7 +388,7 @@ describe("finalizeAgentScan", () => {
   });
 
   it("does not rewrite an unchanged cache when tag maintenance is disabled", async () => {
-    const sessions = [makeSession("cached")];
+    const sessions = [withCurrentIdentity(makeSession("cached"))];
     const agent = createTestAgent({ name: "test", available: true, sessions });
 
     const result = await finalizeAgentScan(agent, sessions, {
@@ -372,6 +404,37 @@ describe("finalizeAgentScan", () => {
     expect(result.refreshed).toBeUndefined();
     expect(result.cacheTimestamp).toBe(123);
     expect(mockedSaveCachedSessionChanges).not.toHaveBeenCalled();
+  });
+
+  it("persists refreshed identity provenance for an otherwise unchanged cache", async () => {
+    const sessions = [makeSession("cached")];
+    const agent = createTestAgent({ name: "test", available: true, sessions });
+
+    await finalizeAgentScan(agent, sessions, {
+      finalization: {
+        kind: "unchanged",
+        cached: { sessions, meta: {}, timestamp: 123 },
+      },
+      options: { includeSmartTags: false },
+      timing: { total: 0 },
+      agentStart: performance.now(),
+    });
+
+    expect(mockedSaveCachedSessionChanges).toHaveBeenCalledWith(
+      "test",
+      [
+        {
+          session: expect.objectContaining({
+            id: "cached",
+            project_identity_resolver_revision: expect.any(String),
+            project_identity_input_signature: expect.any(String),
+          }),
+          sortIndex: 0,
+        },
+      ],
+      [],
+      {},
+    );
   });
 
   it("persists tag maintenance for an otherwise unchanged cache", async () => {
@@ -551,7 +614,7 @@ describe("scanSessions", () => {
   });
 
   it("uses cache when available", async () => {
-    const cachedSessions = [makeSession("cached")];
+    const cachedSessions = [withCurrentIdentity(makeSession("cached"))];
     mockedLoadCachedSessions.mockReturnValue({
       sessions: cachedSessions,
       meta: {},
@@ -571,7 +634,7 @@ describe("scanSessions", () => {
   });
 
   it("can return cached sessions without validating agent availability", async () => {
-    const cachedSessions = [makeSession("cached")];
+    const cachedSessions = [withCurrentIdentity(makeSession("cached"))];
     mockedLoadCachedSessions.mockReturnValue({
       sessions: cachedSessions,
       meta: {},
@@ -705,7 +768,7 @@ describe("scanSessions", () => {
       key: "/home/user/project",
       displayName: "project",
     };
-    const keep = makeSession("keep", { project_identity: projectIdentity });
+    const keep = withCurrentIdentity(makeSession("keep", { project_identity: projectIdentity }));
     const changed = makeSession("changed");
     const removed = makeSession("removed");
     const updatedChanged = makeSession("changed", { title: "Updated changed" });

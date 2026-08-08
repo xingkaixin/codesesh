@@ -11,13 +11,47 @@ import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import { sortSessionsByActivity } from "../contract/session-index.js";
 import type { SessionHead } from "../types/index.js";
 import type { SessionHeadChange } from "./cache/db.js";
-import { computeIdentity, realFs } from "../projects/index.js";
+import {
+  computeIdentityProjection,
+  normalizeProjectDirectory,
+  realFs,
+  type ProjectIdentityProjection,
+} from "../projects/index.js";
 
-/** Attach a project identity to sessions that don't already have one. */
-export function attachMissingProjectIdentities(sessions: SessionHead[]): SessionHead[] {
+type ProjectIdentityResolver = (directory: string) => ProjectIdentityProjection;
+
+/** Attach or refresh project identities once per normalized directory. */
+export function attachMissingProjectIdentities(
+  sessions: SessionHead[],
+  resolve: ProjectIdentityResolver = (directory) => computeIdentityProjection(directory, realFs),
+): SessionHead[] {
+  const projections = new Map<string, ProjectIdentityProjection>();
+
   return sessions.map((session) => {
-    if (session.project_identity) return session;
-    return { ...session, project_identity: computeIdentity(session.directory, realFs) };
+    const directory = normalizeProjectDirectory(session.directory);
+    let projection = projections.get(directory);
+    if (!projection) {
+      projection = resolve(directory);
+      projections.set(directory, projection);
+    }
+
+    const identity = session.project_identity;
+    if (
+      identity?.kind === projection.identity.kind &&
+      identity.key === projection.identity.key &&
+      identity.displayName === projection.identity.displayName &&
+      session.project_identity_resolver_revision === projection.resolverRevision &&
+      session.project_identity_input_signature === projection.inputSignature
+    ) {
+      return session;
+    }
+
+    return {
+      ...session,
+      project_identity: projection.identity,
+      project_identity_resolver_revision: projection.resolverRevision,
+      project_identity_input_signature: projection.inputSignature,
+    };
   });
 }
 
@@ -60,8 +94,11 @@ export function sessionSignature(session: SessionHead): string {
     session.project_identity?.kind ?? null,
     session.project_identity?.key ?? null,
     session.project_identity?.displayName ?? null,
+    session.project_identity_resolver_revision ?? null,
+    session.project_identity_input_signature ?? null,
     session.smart_tags ? [...session.smart_tags].sort() : null,
     session.smart_tags_source_updated_at ?? null,
+    session.smart_tags_classifier_revision ?? null,
   ]);
 }
 

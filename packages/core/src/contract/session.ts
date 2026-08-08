@@ -154,12 +154,15 @@ export interface SessionHead {
   directory: string;
   parent_reference?: SessionReference;
   project_identity?: ProjectIdentity;
+  project_identity_resolver_revision?: string;
+  project_identity_input_signature?: string;
   time_created: number;
   time_updated?: number;
   stats: SessionStats;
   model_usage?: Record<string, number>;
   smart_tags?: SmartTag[];
   smart_tags_source_updated_at?: number;
+  smart_tags_classifier_revision?: string;
 }
 
 export interface ReferencedSessionHead {
@@ -177,6 +180,8 @@ export interface SessionDetail {
   directory: string;
   parent_reference?: SessionReference;
   project_identity?: ProjectIdentity;
+  project_identity_resolver_revision?: string;
+  project_identity_input_signature?: string;
   version?: string | null;
   detail_freshness?: "fresh" | "stale";
   time_created: number;
@@ -186,5 +191,6 @@ export interface SessionDetail {
   messages: Message[];
   smart_tags?: SmartTag[];
   smart_tags_source_updated_at?: number;
+  smart_tags_classifier_revision?: string;
   file_activity?: SessionFileActivity[];
 }

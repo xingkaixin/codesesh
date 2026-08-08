@@ -31,7 +31,7 @@ import {
   type SessionRow,
 } from "./messages.js";
 
-const CACHE_SCHEMA_VERSION = 19;
+const CACHE_SCHEMA_VERSION = 20;
 interface MessageToolBackfillRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
@@ -197,6 +197,8 @@ function createSessionTables(db: SQLiteDatabase): void {
       project_identity_kind TEXT NOT NULL,
       project_identity_key TEXT NOT NULL,
       project_display_name TEXT NOT NULL,
+      project_identity_resolver_revision TEXT,
+      project_identity_input_signature TEXT,
       time_created INTEGER NOT NULL,
       time_updated INTEGER,
       activity_time INTEGER NOT NULL,
@@ -211,6 +213,7 @@ function createSessionTables(db: SQLiteDatabase): void {
       model_usage_json TEXT,
       smart_tags_json TEXT,
       smart_tags_source_updated_at INTEGER,
+      smart_tags_classifier_revision TEXT,
       meta_json TEXT,
       PRIMARY KEY (agent_name, session_id)
     );
@@ -483,6 +486,19 @@ function addDetailVersion(db: SQLiteDatabase): void {
       INSERT OR IGNORE INTO pending_reindex(agent_name, session_id)
       SELECT agent_name, session_id FROM sessions
     `);
+  }
+}
+
+function addProjectIdentityProvenance(db: SQLiteDatabase): void {
+  if (!tableExists(db, "sessions")) return;
+  if (!columnExists(db, "sessions", "project_identity_resolver_revision")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN project_identity_resolver_revision TEXT");
+  }
+  if (!columnExists(db, "sessions", "project_identity_input_signature")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN project_identity_input_signature TEXT");
+  }
+  if (!columnExists(db, "sessions", "smart_tags_classifier_revision")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN smart_tags_classifier_revision TEXT");
   }
 }
 
@@ -1351,6 +1367,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 17, migrate: addMessagePartsFormatVersion },
       { version: 18, migrate: addSessionParentReference },
       { version: 19, migrate: addDetailVersion },
+      { version: 20, migrate: addProjectIdentityProvenance },
     ],
   });
 

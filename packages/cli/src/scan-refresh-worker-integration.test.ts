@@ -80,6 +80,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     buildAgentCacheMeta: actual.buildAgentCacheMeta,
     computeSessionDiff: actual.computeSessionDiff,
     sessionSignature: actual.sessionSignature,
+    SMART_TAG_CLASSIFIER_REVISION: "smart-tags-v1",
     sortSessions: actual.sortSessions,
     // The change decision is shared with FileSystemSessionSource.checkForChanges;
     // stubbing it would stop this suite from covering the wiring it exists to test.
@@ -430,12 +431,14 @@ describe("scan refresh worker entry", () => {
       time_updated: 3_000,
       smart_tags: [],
       smart_tags_source_updated_at: 3_000,
+      smart_tags_classifier_revision: "smart-tags-v1",
     });
     const cursor = makeSession("cursor", {
       time_created: 2_000,
       time_updated: 2_000,
       smart_tags: [],
       smart_tags_source_updated_at: 2_000,
+      smart_tags_classifier_revision: "smart-tags-v1",
     });
     const next = makeSession("next", { time_created: 1_000, time_updated: 1_000 });
     const agent = makeAgent({

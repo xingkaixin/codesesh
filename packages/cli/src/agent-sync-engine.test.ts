@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FileSystemSessionSource } from "@codesesh/core";
+import {
+  attachMissingProjectIdentities,
+  FileSystemSessionSource,
+  SMART_TAG_CLASSIFIER_REVISION,
+} from "@codesesh/core";
 import type {
   BaseAgent,
   loadCachedSessions,
@@ -48,6 +52,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     saveCachedSessionChanges: core.saveCachedSessionChanges,
     saveCachedSessions: core.saveCachedSessions,
     sessionSignature: core.sessionSignature,
+    SMART_TAG_CLASSIFIER_REVISION: "smart-tags-v1",
   };
 });
 
@@ -62,7 +67,7 @@ vi.mock("./search-index-job-runner.js", () => ({
 import { AgentSyncEngine } from "./agent-sync-engine.js";
 
 function makeSession(id: string, title = id): SessionHead {
-  return {
+  const session: SessionHead = {
     id,
     slug: `codex/${id}`,
     title,
@@ -76,6 +81,7 @@ function makeSession(id: string, title = id): SessionHead {
       total_cost: 0,
     },
   };
+  return attachMissingProjectIdentities([session])[0]!;
 }
 
 function makeAgent(overrides: Partial<BaseAgent> = {}): BaseAgent {
@@ -121,7 +127,10 @@ class FakeSyncAgent extends FileSystemSessionSource {
 function makeWorkerRunner(): WorkerRunner {
   return {
     activeCount: 0,
-    run: vi.fn(async () => ({ sessions: [], meta: {} })),
+    run: vi.fn(async (_agentName, payload) => ({
+      sessions: payload.derivedOnly ? payload.previousSessions : [],
+      meta: payload.meta,
+    })),
     shutdown: vi.fn(async () => undefined),
   };
 }
@@ -221,6 +230,57 @@ describe("AgentSyncEngine", () => {
     );
     expect(statusChanges).toHaveBeenCalledWith(
       expect.objectContaining({ type: "scan-status", active: false }),
+    );
+  });
+
+  it("publishes a classifier revision refresh when the source is unchanged", async () => {
+    const resolved = attachMissingProjectIdentities([makeSession("session")])[0]!;
+    const previous = {
+      ...resolved,
+      smart_tags: ["bugfix" as const],
+      smart_tags_source_updated_at: resolved.time_updated,
+      smart_tags_classifier_revision: "smart-tags-v0",
+    };
+    const updated = {
+      ...previous,
+      smart_tags: ["docs" as const],
+      smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+    };
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async () => ({ sessions: [updated], meta: {} })),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const { engine } = makeEngine(
+      makeAgent({ checkForChanges: () => ({ hasChanges: false, timestamp: 2 }) }),
+      [previous],
+      workerRunner,
+    );
+    const sessionChanges = vi.fn();
+    engine.subscribeSessionsChanged(sessionChanges);
+
+    await engine.refresh("codex");
+
+    expect(workerRunner.run).toHaveBeenCalledWith(
+      "codex",
+      expect.objectContaining({ derivedOnly: true, changedIds: [] }),
+    );
+    expect(engine.snapshot().sessions[0]).toMatchObject({
+      smart_tags: ["docs"],
+      smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+    });
+    expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
+      expect.objectContaining({
+        kind: "changes",
+        changes: [
+          expect.objectContaining({
+            session: expect.objectContaining({ smart_tags: ["docs"] }),
+          }),
+        ],
+      }),
+    ]);
+    expect(sessionChanges).toHaveBeenCalledWith(
+      expect.objectContaining({ event: expect.objectContaining({ updatedSessions: 1 }) }),
     );
   });
 
@@ -866,6 +926,10 @@ describe("AgentSyncEngine", () => {
     // The second refresh takes the incremental path (checkForChanges), not
     // another windowed initializeAgent full scan.
     expect(checkForChanges).toHaveBeenCalledTimes(1);
-    expect(workerRunner.run).toHaveBeenCalledTimes(1);
+    expect(workerRunner.run).toHaveBeenCalledTimes(2);
+    expect(workerRunner.run).toHaveBeenLastCalledWith(
+      "codex",
+      expect.objectContaining({ derivedOnly: true, changedIds: [] }),
+    );
   });
 });
