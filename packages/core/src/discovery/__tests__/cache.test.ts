@@ -2,7 +2,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { clearCache, loadCachedSessionData, saveCachedSessions } from "../cache/sessions.js";
+import {
+  clearCache,
+  loadCachedSessionData,
+  loadCachedSessions,
+  saveCachedSessions,
+} from "../cache/sessions.js";
 import { searchSessions, syncSessionSearchIndex } from "../cache/search.js";
 import { setSchemaEnsuredPath } from "../cache/db.js";
 import type { SessionDetail, SessionHead } from "../../types/index.js";
@@ -66,5 +71,85 @@ describe("session cache integration", () => {
       id: "smoke",
       messages: [{ id: "message" }],
     });
+  });
+
+  it("merges a partial snapshot without deleting data outside its window", () => {
+    const old: SessionHead = {
+      id: "old",
+      slug: "codex/old",
+      title: "Old session",
+      directory: "/workspace/project",
+      time_created: 1,
+      time_updated: 1,
+      stats: {
+        message_count: 2,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 0,
+      },
+    };
+    const recent: SessionHead = {
+      ...old,
+      id: "recent",
+      slug: "codex/recent",
+      title: "Recent session",
+      time_created: 2,
+      time_updated: 2,
+    };
+    saveCachedSessions("codex", [recent, old], {
+      old: { id: "old", sourcePath: "/sessions/old.jsonl" },
+      recent: { id: "recent", sourcePath: "/sessions/recent.jsonl" },
+    });
+    syncSessionSearchIndex("codex", [recent, old], (sessionId) => {
+      const head = sessionId === "old" ? old : recent;
+      return {
+        ...head,
+        reference: { agentName: "codex", sessionId },
+        messages:
+          sessionId === "old"
+            ? [
+                {
+                  id: "old-user",
+                  role: "user",
+                  time_created: 1,
+                  parts: [{ type: "text", text: "historical-window-needle" }],
+                },
+                {
+                  id: "old-tool",
+                  role: "assistant",
+                  time_created: 2,
+                  parts: [
+                    {
+                      type: "tool",
+                      tool: "apply_patch",
+                      state: {
+                        status: "completed",
+                        input: { path: "src/legacy.ts" },
+                      },
+                    },
+                  ],
+                },
+              ]
+            : [],
+      } as SessionDetail;
+    });
+
+    const updatedRecent = { ...recent, title: "Updated recent", time_updated: 3 };
+    saveCachedSessions("codex", [updatedRecent], {}, { completeness: "partial" });
+
+    expect(loadCachedSessions("codex")).toMatchObject({
+      sessions: [{ id: "recent", title: "Updated recent" }, { id: "old" }],
+      meta: { old: { sourcePath: "/sessions/old.jsonl" } },
+    });
+    expect(loadCachedSessionData("codex", "old")).toMatchObject({
+      messages: [{ id: "old-user" }, { id: "old-tool" }],
+      file_activity: [{ path: "src/legacy.ts" }],
+    });
+    expect(searchSessions("historical-window-needle")[0]?.session.id).toBe("old");
+
+    saveCachedSessions("codex", [updatedRecent]);
+
+    expect(loadCachedSessionData("codex", "old")).toBeNull();
+    expect(searchSessions("historical-window-needle")).toEqual([]);
   });
 });

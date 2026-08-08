@@ -191,11 +191,33 @@ describe("scan refresh worker entry", () => {
         checkpoint: expect.objectContaining({
           stage: "scanned",
           sessions: [session],
+          completeness: "complete",
         }),
       }),
     );
     expect(mocks.postMessage.mock.calls.at(-1)?.[0]).toEqual(
       expect.objectContaining({ type: "done" }),
+    );
+  });
+
+  it("marks a windowed head checkpoint as partial", async () => {
+    const agent = makeAgent({ scan: vi.fn(() => []) });
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    setWorkerData({
+      checkpoint: true,
+      scanOptions: { fast: true, from: 1 },
+    });
+
+    await runWorker();
+
+    expect(mocks.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "checkpoint",
+        checkpoint: expect.objectContaining({
+          stage: "scanned",
+          completeness: "partial",
+        }),
+      }),
     );
   });
 

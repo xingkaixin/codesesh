@@ -470,6 +470,27 @@ describe("scanSessions", () => {
     expect(result.sessions[0]!.id).toBe("new");
   });
 
+  it("persists a windowed scan as a partial snapshot", async () => {
+    const recent = makeSession("recent", { time_created: 500 });
+    mockedSaveCachedSessions.mockReturnValue(true);
+    mockedCreateRegisteredAgents.mockReturnValue([
+      createTestAgent({
+        name: "test",
+        available: true,
+        sessions: [recent],
+      }),
+    ]);
+
+    await scanSessions({ from: 200, includeSmartTags: false });
+
+    expect(mockedSaveCachedSessions).toHaveBeenCalledWith(
+      "test",
+      [expect.objectContaining({ id: "recent" })],
+      {},
+      { completeness: "partial" },
+    );
+  });
+
   it("uses cache when available", async () => {
     const cachedSessions = [makeSession("cached")];
     mockedLoadCachedSessions.mockReturnValue({

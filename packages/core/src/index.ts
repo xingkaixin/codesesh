@@ -65,7 +65,9 @@ export {
 export type {
   FileActivityResult,
   LiveSnapshot,
+  SaveCachedSessionsOptions,
   ScanOptions,
+  SessionSnapshotCompleteness,
   SearchIndexSyncOptions,
   SearchIndexSyncFailure,
   SearchIndexSyncResult,

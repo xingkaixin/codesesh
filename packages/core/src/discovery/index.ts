@@ -32,7 +32,11 @@ export {
   saveCachedSessionChanges,
   saveCachedSessions,
 } from "./cache/sessions.js";
-export type { CachedSessionDataEntry } from "./cache/sessions.js";
+export type {
+  CachedSessionDataEntry,
+  SaveCachedSessionsOptions,
+  SessionSnapshotCompleteness,
+} from "./cache/sessions.js";
 export { getCachePath } from "./cache/db.js";
 export type { SessionHeadChange } from "./cache/db.js";
 export { listCachedProjectGroups } from "./cache/project-groups.js";

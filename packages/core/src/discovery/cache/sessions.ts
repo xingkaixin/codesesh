@@ -46,6 +46,12 @@ export interface CachedSessionRawEntry {
   pendingReindex: boolean;
 }
 
+export type SessionSnapshotCompleteness = "complete" | "partial";
+
+export interface SaveCachedSessionsOptions {
+  completeness?: SessionSnapshotCompleteness;
+}
+
 function parseCachedSessionMeta(value: string | null | undefined): SessionCacheMeta | null {
   if (!value) return null;
   try {
@@ -383,7 +389,9 @@ export function saveCachedSessions(
   agentName: string,
   sessions: SessionHead[],
   meta: Record<string, SessionCacheMeta> = {},
+  options: SaveCachedSessionsOptions = {},
 ): boolean {
+  const completeness = options.completeness ?? "complete";
   const persisted = withCacheDb((db) => {
     const deleteSession = db.prepare(
       "DELETE FROM sessions WHERE agent_name = ? AND session_id = ?",
@@ -406,6 +414,9 @@ export function saveCachedSessions(
       ON CONFLICT(agent_name) DO UPDATE SET timestamp = excluded.timestamp
     `);
     const upsertSession = prepareUpsertSession(db);
+    const updateSortIndex = db.prepare(
+      "UPDATE sessions SET sort_index = ? WHERE agent_name = ? AND session_id = ?",
+    );
 
     const write = db.transaction(() => {
       const timestamp = Date.now();
@@ -415,14 +426,16 @@ export function saveCachedSessions(
         .all(agentName) as SessionRow[];
       upsertAgent.run(agentName, timestamp);
 
-      for (const row of existingSessionIds) {
-        const sessionId = String(row.session_id);
-        if (!sessionIds.has(sessionId)) {
-          deleteSearchDocument.run(agentName, sessionId);
-          deleteMessageTools.run(agentName, sessionId);
-          deleteMessages.run(agentName, sessionId);
-          deleteFileActivity.run(agentName, sessionId);
-          deleteSession.run(agentName, sessionId);
+      if (completeness === "complete") {
+        for (const row of existingSessionIds) {
+          const sessionId = String(row.session_id);
+          if (!sessionIds.has(sessionId)) {
+            deleteSearchDocument.run(agentName, sessionId);
+            deleteMessageTools.run(agentName, sessionId);
+            deleteMessages.run(agentName, sessionId);
+            deleteFileActivity.run(agentName, sessionId);
+            deleteSession.run(agentName, sessionId);
+          }
         }
       }
 
@@ -438,6 +451,22 @@ export function saveCachedSessions(
           sourcePathFromMeta(sessionMeta),
         );
       });
+
+      if (completeness === "partial" && sessions.length > 0) {
+        const mergedRows = db
+          .prepare(
+            `
+              SELECT session_id
+              FROM sessions
+              WHERE agent_name = ?
+              ORDER BY activity_time DESC, sort_index, session_id
+            `,
+          )
+          .all(agentName) as SessionRow[];
+        mergedRows.forEach((row, index) => {
+          updateSortIndex.run(index, agentName, String(row.session_id));
+        });
+      }
     });
 
     write.immediate();
