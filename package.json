@@ -17,7 +17,7 @@
     "test": "turbo run test",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:migration": "vitest run packages/core/src/discovery/__tests__/migration-smoke.test.ts",
+    "test:migration": "vitest run --reporter=verbose packages/core/src/discovery/__tests__/migration-smoke.test.ts",
     "package:artifact": "node scripts/package-artifact.mjs",
     "package:artifact:test": "node --test scripts/package-artifact-checks.mjs",
     "package:smoke": "node scripts/smoke-package-artifact.mjs",
