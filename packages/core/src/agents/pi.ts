@@ -228,10 +228,10 @@ export class PiAgent extends SingleFileSessionSource<SessionMeta> {
   }
 
   protected parseFileSessionHead(filePath: string): SessionHead | null {
-    return getParsedSession(this.parseSessionHeadResult(filePath));
+    return getParsedSession(this.parseFileSessionHeadResult(filePath));
   }
 
-  private parseSessionHeadResult(filePath: string): ParseSessionResult<SessionHead> {
+  protected override parseFileSessionHeadResult(filePath: string): ParseSessionResult<SessionHead> {
     const parsed = this.parsePiFile(filePath);
     const state = this.convertEntries(parsed.pathEntries);
     const messageCount = state.messages.length;

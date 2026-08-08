@@ -2,8 +2,18 @@ import { availableParallelism } from "node:os";
 import { Worker } from "node:worker_threads";
 import type { SessionDetail, SessionHead, SmartTag } from "../types/index.js";
 import { filterSessionTreeByActivityWindow } from "../contract/session-tree.js";
-import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
-import { createRegisteredAgents } from "../agents/index.js";
+import type {
+  AgentScanOptions,
+  BaseAgent,
+  SessionCacheMeta,
+  SessionSourceFailure,
+} from "../agents/index.js";
+import {
+  createRegisteredAgents,
+  diffSessionSources,
+  FileSystemSessionSource,
+  reportSessionSourceOutcome,
+} from "../agents/index.js";
 import { filterSessionsByProjectScope } from "../projects/index.js";
 import { classifySessionTags, getSmartTagSourceTimestamp, perf } from "../utils/index.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
@@ -481,7 +491,7 @@ async function scanAgentFull(
   try {
     const scanMarker = perf.start(`agent:${agent.name}:scan`);
     const t0 = performance.now();
-    const heads = agent.scan({
+    const agentScanOptions: AgentScanOptions = {
       from: options.from,
       to: options.to,
       fast: options.fast,
@@ -495,7 +505,48 @@ async function scanAgentFull(
           changedCount: progress.processed,
         });
       },
-    });
+    };
+    let heads: SessionHead[];
+    let sourceFailures: SessionSourceFailure[] = [];
+    if (agent instanceof FileSystemSessionSource) {
+      const cached = loadCachedSessions(agent.name);
+      if (cached) {
+        agent.setSessionMetaMap(new Map(Object.entries(cached.meta)));
+      }
+      const batch = agent.scanSessionSources(agentScanOptions);
+      const sessionMap = new Map(cached?.sessions.map((session) => [session.id, session]) ?? []);
+      for (const outcome of batch.outcomes) {
+        if (outcome.status === "parsed") {
+          sessionMap.delete(outcome.source.sessionId);
+          sessionMap.set(outcome.session.id, outcome.session);
+        } else if (outcome.status === "filtered" || outcome.status === "missing") {
+          sessionMap.delete(outcome.source.sessionId);
+          agent.getSessionMetaMap().delete(outcome.source.sessionId);
+        } else {
+          sourceFailures.push(outcome.failure);
+        }
+      }
+      if (cached) {
+        const diff = diffSessionSources(
+          batch.sources,
+          cached.sessions,
+          cached.meta,
+          agentScanOptions,
+        );
+        for (const outcome of diff.sourceOutcomes) {
+          reportSessionSourceOutcome(agent.name, outcome);
+          if (outcome.status === "missing") {
+            sessionMap.delete(outcome.source.sessionId);
+            agent.getSessionMetaMap().delete(outcome.source.sessionId);
+          } else {
+            sourceFailures.push(outcome.failure);
+          }
+        }
+      }
+      heads = [...sessionMap.values()];
+    } else {
+      heads = agent.scan(agentScanOptions);
+    }
     perf.end(scanMarker);
     timing.scan = performance.now() - t0;
 
@@ -516,10 +567,10 @@ async function scanAgentFull(
     if (options.writeCache !== false) {
       const isFullWindow = options.from == null && options.to == null;
       const persisted = saveCachedSessions(agent.name, tagged.sessions, meta, {
-        completeness: isFullWindow ? "complete" : "partial",
+        completeness: isFullWindow && sourceFailures.length === 0 ? "complete" : "partial",
       });
       if (persisted) {
-        if (isFullWindow) markAgentFullSyncCompleted(agent.name);
+        if (isFullWindow && sourceFailures.length === 0) markAgentFullSyncCompleted(agent.name);
         markAgentCacheInitialized(agent.name);
       } else {
         getCoreDiagnostics()?.warn("cache.save_failed", {

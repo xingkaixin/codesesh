@@ -354,12 +354,23 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
   }
 
   scanSessionSource(sourcePath: string): SessionHead | null {
-    const meta = getParsedSession(this.parseSessionDirResult(sourcePath));
-    if (!meta) return null;
+    return getParsedSession(this.parseSessionHeadResult(sourcePath));
+  }
+
+  protected override scanSessionSourceResult(
+    source: SessionSourceRef,
+  ): ParseSessionResult<SessionHead> {
+    return this.parseSessionHeadResult(source.sourcePath);
+  }
+
+  private parseSessionHeadResult(sourcePath: string): ParseSessionResult<SessionHead> {
+    const result = this.parseSessionDirResult(sourcePath);
+    if (result.status !== "parsed") return result;
+    const meta = result.data;
     meta.sourceFingerprint = this.sourceFingerprint(meta);
     this.sessionMetaMap.set(meta.id, meta);
     const stats = this.extractStats(meta.sourcePath);
-    return {
+    return parsedSession({
       id: meta.id,
       slug: `kimi/${meta.id}`,
       title: meta.title,
@@ -367,7 +378,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       time_created: meta.createdAt,
       time_updated: meta.createdAt,
       stats,
-    };
+    });
   }
 
   getSessionData(sessionId: string): SessionDetail {

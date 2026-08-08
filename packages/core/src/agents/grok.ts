@@ -2,9 +2,14 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   FileSystemSessionSource,
+  filteredSession,
+  getParsedSession,
   matchesScanWindow,
+  parsedSession,
+  skippedSession,
   type AgentScanOptions,
   type FileSessionMeta,
+  type ParseSessionResult,
   type SessionSourceFile,
   type SessionSourceRef,
 } from "./base.js";
@@ -856,16 +861,26 @@ export class GrokAgent extends FileSystemSessionSource<GrokSessionMeta> {
   }
 
   scanSessionSource(sourcePath: string): SessionHead | null {
+    return getParsedSession(this.parseSessionHeadResult(sourcePath));
+  }
+
+  protected override scanSessionSourceResult(
+    source: SessionSourceRef,
+  ): ParseSessionResult<SessionHead> {
+    return this.parseSessionHeadResult(source.sourcePath);
+  }
+
+  private parseSessionHeadResult(sourcePath: string): ParseSessionResult<SessionHead> {
     const source = this.sessionSourceFile(sourcePath);
     const summary = parseSummary(source);
-    if (!summary) return null;
+    if (!summary) return skippedSession("malformed summary");
 
     const sessionDir = dirname(source.file);
     const updatesPath = join(sessionDir, UPDATES_FILE);
     const existingUpdatesPath = existsSync(updatesPath) ? updatesPath : null;
     const headData = scanHeadData(existingUpdatesPath, summary.createdAt);
     const messageCount = headData.visibleMessageCount || summary.messageCount;
-    if (messageCount === 0) return null;
+    if (messageCount === 0) return filteredSession("no visible messages");
 
     const title = resolveSessionTitle(
       summary.title,
@@ -903,7 +918,7 @@ export class GrokAgent extends FileSystemSessionSource<GrokSessionMeta> {
       updatesPath: existingUpdatesPath,
       stats,
     });
-    return head;
+    return parsedSession(head);
   }
 
   getSessionData(sessionId: string): SessionDetail {

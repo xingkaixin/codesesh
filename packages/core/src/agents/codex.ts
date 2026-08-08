@@ -955,18 +955,18 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   }
 
   protected parseFileSessionHead(filePath: string, options?: AgentScanOptions): SessionHead | null {
-    this.loadSessionIndex();
     return this.parseSessionHead(filePath, options);
   }
 
   private parseSessionHead(filePath: string, options?: AgentScanOptions): SessionHead | null {
-    return getParsedSession(this.parseSessionHeadResult(filePath, options));
+    return getParsedSession(this.parseFileSessionHeadResult(filePath, options));
   }
 
-  private parseSessionHeadResult(
+  protected override parseFileSessionHeadResult(
     filePath: string,
     options?: AgentScanOptions,
   ): ParseSessionResult<SessionHead> {
+    this.loadSessionIndex();
     if (options?.fast) {
       return this.parseFastSessionHeadResult(filePath);
     }

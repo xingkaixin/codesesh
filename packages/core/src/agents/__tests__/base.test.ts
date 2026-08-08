@@ -1,9 +1,14 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DatabaseSessionSource, diffSessionSources, FileSystemSessionSource } from "../base.js";
+import {
+  DatabaseSessionSource,
+  diffSessionSources,
+  FileSystemSessionSource,
+  filteredSession,
+} from "../base.js";
 import type { AgentScanOptions, SessionCacheMeta, SessionSourceRef } from "../base.js";
 import type { SessionDetail, SessionHead } from "../../types/index.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
@@ -14,6 +19,8 @@ interface FakeSource {
   fingerprint: string;
   head: SessionHead | null;
   throws?: boolean;
+  error?: Error;
+  filtered?: boolean;
 }
 
 /**
@@ -56,6 +63,7 @@ class FakeFileSystemSource extends FileSystemSessionSource {
   scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null {
     this.lastScanOptions = options;
     const found = this.sources.find((s) => s.sourcePath === sourcePath);
+    if (found?.error) throw found.error;
     if (found?.throws) throw new Error("parse failed");
     if (!found || !found.head) return null;
     this.sessionMetaMap.set(found.sessionId, {
@@ -64,6 +72,12 @@ class FakeFileSystemSource extends FileSystemSessionSource {
       sourceFingerprint: found.fingerprint,
     });
     return found.head;
+  }
+
+  protected override scanSessionSourceResult(ref: SessionSourceRef, options?: AgentScanOptions) {
+    const found = this.sources.find((item) => item.sourcePath === ref.sourcePath);
+    if (found?.filtered) return filteredSession<SessionHead>("no visible messages");
+    return super.scanSessionSourceResult(ref, options);
   }
 }
 
@@ -126,7 +140,7 @@ describe("FileSystemSessionSource.scan", () => {
     ]);
   });
 
-  it("reports agent.session_parse_failed via diagnostics when a source throws", () => {
+  it("reports a failed source outcome via diagnostics when parsing throws", () => {
     const agent = new FakeFileSystemSource([
       source("a"),
       source("broken", "fp-1", { throws: true }),
@@ -142,8 +156,16 @@ describe("FileSystemSessionSource.scan", () => {
       expect(sessions.map((session) => session.id)).toEqual(["a"]);
       expect(events).toEqual([
         {
-          event: "agent.session_parse_failed",
-          detail: { agentName: "fake", sourcePath: "/tmp/broken.jsonl", message: "parse failed" },
+          event: "agent.session_source_outcome",
+          detail: {
+            agent: "fake",
+            session_id: "broken",
+            source_path: "/tmp/broken.jsonl",
+            outcome: "failed",
+            stage: "parsing",
+            error_class: "Error",
+            message: "parse failed",
+          },
         },
       ]);
     } finally {
@@ -173,7 +195,12 @@ describe("diffSessionSources", () => {
     const fromObject = diffSessionSources(refs, cached, entries);
     const fromMap = diffSessionSources(refs, cached, new Map(Object.entries(entries)));
 
-    expect(fromObject).toEqual({ changedIds: ["b"], removedIds: [] });
+    expect(fromObject).toEqual({
+      changedIds: ["b"],
+      removedIds: [],
+      failedIds: [],
+      sourceOutcomes: [],
+    });
     expect(fromMap).toEqual(fromObject);
   });
 
@@ -188,12 +215,22 @@ describe("diffSessionSources", () => {
       },
     );
 
-    expect(diff).toEqual({ changedIds: ["a"], removedIds: [] });
+    expect(diff).toEqual({
+      changedIds: ["a"],
+      removedIds: [],
+      failedIds: [],
+      sourceOutcomes: [],
+    });
   });
 
   it("treats a ref with no cached session as changed even when its meta matches", () => {
     const diff = diffSessionSources([ref("a")], [], { a: meta("a") });
-    expect(diff).toEqual({ changedIds: ["a"], removedIds: [] });
+    expect(diff).toEqual({
+      changedIds: ["a"],
+      removedIds: [],
+      failedIds: [],
+      sourceOutcomes: [],
+    });
   });
 
   it("separates removed sessions from changed ones", () => {
@@ -202,7 +239,69 @@ describe("diffSessionSources", () => {
       gone: meta("gone"),
     });
 
-    expect(diff).toEqual({ changedIds: [], removedIds: ["gone"] });
+    expect(diff).toEqual({
+      changedIds: [],
+      removedIds: ["gone"],
+      failedIds: [],
+      sourceOutcomes: [
+        {
+          status: "missing",
+          source: ref("gone"),
+        },
+      ],
+    });
+  });
+
+  it("treats an existing cached path omitted by enumeration as failed, not removed", () => {
+    const directory = mkdtempSync(join(tmpdir(), "codesesh-source-outcome-"));
+    const sourcePath = join(directory, "half-written.jsonl");
+    writeFileSync(sourcePath, "{");
+    try {
+      const diff = diffSessionSources([], [makeSession("cached")], {
+        cached: meta("cached", { sourcePath }),
+      });
+
+      expect(diff).toMatchObject({
+        changedIds: [],
+        removedIds: [],
+        failedIds: ["cached"],
+        sourceOutcomes: [
+          {
+            status: "failed",
+            failure: {
+              sessionId: "cached",
+              sourcePath,
+              stage: "enumeration",
+              errorClass: "Error",
+            },
+          },
+        ],
+      });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("treats an inaccessible cached path as failed, not missing", () => {
+    const directory = mkdtempSync(join(tmpdir(), "codesesh-source-permission-"));
+    const sourcePath = join(directory, "session.jsonl");
+    writeFileSync(sourcePath, "{}\n");
+    chmodSync(directory, 0o000);
+    try {
+      const diff = diffSessionSources([], [makeSession("cached")], {
+        cached: meta("cached", { sourcePath }),
+      });
+
+      expect(diff.removedIds).toEqual([]);
+      expect(diff.failedIds).toEqual(["cached"]);
+      expect(diff.sourceOutcomes[0]).toMatchObject({
+        status: "failed",
+        failure: { errorClass: "EACCES" },
+      });
+    } finally {
+      chmodSync(directory, 0o700);
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("keeps sessions whose mtime falls outside the scan window", () => {
@@ -249,6 +348,10 @@ describe("FileSystemSessionSource.checkForChanges", () => {
   it("detects removed sources", () => {
     const agent = new FakeFileSystemSource([source("a")]);
     agent.scanSessionSource("/tmp/a.jsonl");
+    agent.getSessionMetaMap().set("ghost", {
+      id: "ghost",
+      sourcePath: "/tmp/ghost-does-not-exist.jsonl",
+    });
 
     const result = agent.checkForChanges(Date.now(), [makeSession("a"), makeSession("ghost")]);
     expect(result.hasChanges).toBe(true);
@@ -319,11 +422,58 @@ describe("FileSystemSessionSource.incrementalScan", () => {
     expect(updated.map((s) => s.id).sort()).toEqual(["a", "b"]);
   });
 
-  it("drops sources that no longer parse", () => {
+  it("retains the last-known-good session when a source no longer parses", () => {
     const agent = new FakeFileSystemSource([source("a"), source("b", "fp-1", { head: null })]);
     const updated = agent.incrementalScan([makeSession("a"), makeSession("b")], ["b"]);
-    expect(updated.map((s) => s.id)).toEqual(["a"]);
+    expect(updated.map((s) => s.id)).toEqual(["a", "b"]);
     expect(agent.getSessionMetaMap().has("b")).toBe(false);
+  });
+
+  it.each([
+    ["EACCES", Object.assign(new Error("permission denied"), { code: "EACCES" })],
+    ["truncated JSON", undefined],
+  ])("retains meta after %s and updates after the source recovers", (_label, error) => {
+    const before = makeSession("a");
+    const agent = new FakeFileSystemSource([source("a", "fp-old", { head: before })]);
+    agent.scanSessionSource("/tmp/a.jsonl");
+    agent.setSources([source("a", "fp-new", { head: null, error })]);
+
+    const retained = agent.incrementalScan([before], ["a"]);
+
+    expect(retained).toEqual([before]);
+    expect(agent.getSessionMetaMap().get("a")?.sourceFingerprint).toBe("fp-old");
+
+    const recovered = makeSession("a");
+    recovered.title = "recovered";
+    agent.setSources([source("a", "fp-new", { head: recovered })]);
+
+    expect(agent.incrementalScan(retained, ["a"])[0]?.title).toBe("recovered");
+    expect(agent.getSessionMetaMap().get("a")?.sourceFingerprint).toBe("fp-new");
+  });
+
+  it("removes a cached session only when the adapter explicitly filters it", () => {
+    const before = makeSession("a");
+    const agent = new FakeFileSystemSource([source("a", "fp-old", { head: before })]);
+    agent.scanSessionSource("/tmp/a.jsonl");
+    agent.setSources([source("a", "fp-new", { head: null, filtered: true })]);
+
+    const updated = agent.incrementalScan([before], ["a"]);
+
+    expect(updated).toEqual([]);
+    expect(agent.getSessionMetaMap().has("a")).toBe(false);
+  });
+
+  it("removes a cached session when its source disappears between enumeration and parsing", () => {
+    const before = makeSession("a");
+    const agent = new FakeFileSystemSource([source("a", "fp-old", { head: before })]);
+    agent.scanSessionSource("/tmp/a.jsonl");
+    const missingError = Object.assign(new Error("source disappeared"), { code: "ENOENT" });
+    agent.setSources([source("a", "fp-new", { head: null, error: missingError })]);
+
+    const updated = agent.incrementalScan([before], ["a"]);
+
+    expect(updated).toEqual([]);
+    expect(agent.getSessionMetaMap().has("a")).toBe(false);
   });
 
   it("skips listSessionSources when refs are passed explicitly, matching the fallback result", () => {

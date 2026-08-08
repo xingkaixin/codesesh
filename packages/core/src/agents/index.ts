@@ -6,11 +6,13 @@ export {
   SingleFileSessionSource,
 } from "./base.js";
 export {
+  createSessionSourceFailure,
   diffSessionSources,
   filteredSession,
   getParsedSession,
   matchesScanWindow,
   parsedSession,
+  reportSessionSourceOutcome,
   skippedSession,
 } from "./base.js";
 export type {
@@ -22,7 +24,11 @@ export type {
   FileWalkOptions,
   SessionCacheMeta,
   SessionSourceFile,
+  SessionSourceFailure,
+  SessionSourceAbsenceOutcome,
   SessionSourceDiff,
+  SessionSourceOutcome,
+  SessionSourceScanBatch,
   SessionSourceRef,
   SessionWatchPlan,
   SessionWatchTarget,

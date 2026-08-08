@@ -275,9 +275,15 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
   }
 
   protected parseFileSessionHead(sourcePath: string): SessionHead | null {
+    return getParsedSession(this.parseFileSessionHeadResult(sourcePath));
+  }
+
+  protected override parseFileSessionHeadResult(
+    sourcePath: string,
+  ): ParseSessionResult<SessionHead> {
     const child = this.getChildContext(sourcePath);
     const projectDir = child?.projectDir ?? dirname(sourcePath);
-    return getParsedSession(this.parseSessionHeadResult(sourcePath, projectDir, child));
+    return this.parseSessionHeadResult(sourcePath, projectDir, child);
   }
 
   getSessionData(sessionId: string): SessionDetail {
