@@ -355,9 +355,9 @@ function syncEngineOf(store: LiveScanStore): AgentSyncEngine {
 
 function runBackfill(store: LiveScanStore, agentName: string) {
   const engine = syncEngineOf(store) as unknown as {
-    runBackfill: (agentName: string) => Promise<unknown>;
+    runBackfill: (attempt: { agentName: string; attemptId: number }) => Promise<unknown>;
   };
-  return engine.runBackfill(agentName);
+  return engine.runBackfill({ agentName, attemptId: 0 });
 }
 
 function setRefreshDuration(store: LiveScanStore, agentName: string, durationMs: number): void {

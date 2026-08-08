@@ -268,10 +268,16 @@ export class ScanStatusModel {
     });
   }
 
-  updateBackfill(patch: Partial<BackfillStatus>): ScanStatusEvent {
+  updateBackfill(backfill: BackfillStatus): ScanStatusEvent {
     return this.set({
       ...this.status,
-      backfill: { ...this.status.backfill, ...patch },
+      backfill: {
+        ...backfill,
+        pendingAgents: [...backfill.pendingAgents],
+        completedAgents: [...backfill.completedAgents],
+        failedAgents: [...backfill.failedAgents],
+        progress: backfill.progress ? { ...backfill.progress } : undefined,
+      },
       updatedAt: Date.now(),
     });
   }

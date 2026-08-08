@@ -239,6 +239,8 @@ describe("ScanStatusModel", () => {
       active: true,
       currentAgent: "codex",
       pendingAgents: ["claude"],
+      completedAgents: [],
+      failedAgents: [],
     });
 
     expect(status.phase).toBe("idle");
@@ -257,7 +259,10 @@ describe("ScanStatusModel", () => {
     const status = model.updateBackfill({
       active: true,
       currentAgent: "codex",
+      pendingAgents: [],
       progress: { phase: "finalizing", total: 2107, processed: 68, sessions: 2108 },
+      completedAgents: [],
+      failedAgents: [],
     });
 
     expect(status.backfill.progress).toEqual({
@@ -267,5 +272,31 @@ describe("ScanStatusModel", () => {
       sessions: 2108,
     });
     expect(status.agentStatuses).toEqual({});
+  });
+
+  it("replaces the complete backfill snapshot and clears stale progress", () => {
+    const model = new ScanStatusModel();
+    model.updateBackfill({
+      active: true,
+      currentAgent: "codex",
+      pendingAgents: [],
+      progress: { phase: "indexing", sessions: 10 },
+      completedAgents: [],
+      failedAgents: [],
+    });
+
+    const status = model.updateBackfill({
+      active: false,
+      pendingAgents: [],
+      completedAgents: ["codex"],
+      failedAgents: [],
+    });
+
+    expect(status.backfill).toEqual({
+      active: false,
+      pendingAgents: [],
+      completedAgents: ["codex"],
+      failedAgents: [],
+    });
   });
 });

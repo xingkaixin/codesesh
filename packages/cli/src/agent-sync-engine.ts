@@ -22,13 +22,13 @@ import {
   type SessionHeadChange,
   type SessionSourceFailure,
 } from "@codesesh/core";
-import type {
-  BackfillProgress,
-  BackfillStatus,
-  ScanStatusEvent,
-  SessionsUpdatedEvent,
-} from "@codesesh/core/contract";
+import type { ScanStatusEvent, SessionsUpdatedEvent } from "@codesesh/core/contract";
 import { AgentOperationScheduler, type AgentOperationResult } from "./agent-operation-scheduler.js";
+import {
+  BackfillLifecycle,
+  type BackfillAttemptRef,
+  type BackfillTerminalStatus,
+} from "./backfill-lifecycle.js";
 import { LiveSessionIndex, type LiveSessionIndexOptions } from "./live-session-index.js";
 import { appLogger, logSearchIndexSync } from "./logging.js";
 import { SearchIndexJobRunner } from "./search-index-job-runner.js";
@@ -121,12 +121,8 @@ export class AgentSyncEngine {
   private lastRefreshAtByAgent = new Map<string, number>();
   private readonly scheduler: AgentOperationScheduler;
   private readonly sessionIndex = new LiveSessionIndex();
-  private backfillQueue: string[] = [];
-  private currentBackfillAgent: string | undefined;
-  private currentBackfillProgress: BackfillProgress | undefined;
+  private readonly backfills = new BackfillLifecycle();
   private cacheIntegrityCheckedAgents = new Set<string>();
-  private completedBackfillAgents: string[] = [];
-  private failedBackfillAgents: string[] = [];
   private sessionsChangedListeners = new Set<SessionsChangedListener>();
   private statusChangedListeners = new Set<StatusChangedListener>();
   private scanStatus = new ScanStatusModel();
@@ -208,7 +204,7 @@ export class AgentSyncEngine {
     const activeOperations = {
       agent_operations: schedulerSnapshot.activeOperations,
       refreshes: schedulerSnapshot.activeRefreshes,
-      backfill_running: this.currentBackfillAgent != null || undefined,
+      backfill_running: this.backfills.runningAttempt()?.agentName || undefined,
       scan_workers: this.options.workerRunner.activeCount,
     };
     if (activeOperations.agent_operations > 0 || activeOperations.scan_workers > 0) {
@@ -219,9 +215,7 @@ export class AgentSyncEngine {
       clearTimeout(this.backgroundRefreshTimer);
       this.backgroundRefreshTimer = null;
     }
-    this.backfillQueue.length = 0;
-    this.currentBackfillAgent = undefined;
-    this.currentBackfillProgress = undefined;
+    this.backfills.cancelAll();
     this.cacheIntegrityCheckedAgents.clear();
     const searchIndexSnapshot = this.searchIndexJobs.snapshot();
     appLogger.info("search_index.shutdown.started", {
@@ -258,15 +252,22 @@ export class AgentSyncEngine {
     );
   }
 
-  private updateAgentScanProgress(agentName: string, progress: AgentScanProgress): void {
-    if (this.currentBackfillAgent === agentName) {
-      this.currentBackfillProgress = {
-        phase: progress.phase,
-        total: progress.total,
-        processed: progress.processed,
-        sessions: progress.sessions,
-      };
-      this.publishBackfillStatus();
+  private updateAgentScanProgress(
+    agentName: string,
+    progress: AgentScanProgress,
+    backfillAttempt?: BackfillAttemptRef,
+  ): void {
+    if (backfillAttempt) {
+      if (
+        this.backfills.updateProgress(backfillAttempt, {
+          phase: progress.phase,
+          total: progress.total,
+          processed: progress.processed,
+          sessions: progress.sessions,
+        })
+      ) {
+        this.publishBackfillStatus();
+      }
       return;
     }
     this.publishStatus(this.scanStatus.updateAgent(agentName, progress));
@@ -286,7 +287,7 @@ export class AgentSyncEngine {
   }
 
   private publishBackfillStatus(): void {
-    this.publishStatus(this.scanStatus.updateBackfill(this.backfillStatus()));
+    this.publishStatus(this.scanStatus.updateBackfill(this.backfills.status()));
   }
 
   private publishStatus(event: ScanStatusEvent | null): void {
@@ -597,6 +598,7 @@ export class AgentSyncEngine {
       sourceSync?: boolean;
       derivedOnly?: boolean;
       backfill?: boolean;
+      backfillAttempt?: BackfillAttemptRef;
       backfillCursor?: string | null;
       checkpoint?: boolean;
       meta?: CachedSessions["meta"];
@@ -612,7 +614,8 @@ export class AgentSyncEngine {
       backfillCursor: workerOptions.backfillCursor,
       checkpoint: workerOptions.checkpoint,
       meta: workerOptions.meta ?? buildAgentCacheMeta(agent),
-      onProgress: (progress) => this.updateAgentScanProgress(agent.name, progress),
+      onProgress: (progress) =>
+        this.updateAgentScanProgress(agent.name, progress, workerOptions.backfillAttempt),
       onCheckpoint: (checkpoint) => this.handleWorkerCheckpoint(agent, checkpoint),
     });
   }
@@ -729,50 +732,31 @@ export class AgentSyncEngine {
   }
 
   private enqueueBackfill(agentName: string): void {
-    if (
-      this.isShuttingDown ||
-      this.currentBackfillAgent === agentName ||
-      this.backfillQueue.includes(agentName)
-    ) {
-      return;
-    }
-    this.backfillQueue.push(agentName);
+    if (this.isShuttingDown || !this.backfills.enqueue(agentName)) return;
     this.publishBackfillStatus();
     this.pumpBackfillQueue();
   }
 
   private pumpBackfillQueue(): void {
-    if (this.isShuttingDown || this.currentBackfillAgent) return;
-    const agentName = this.backfillQueue.shift();
-    if (!agentName) return;
-    this.currentBackfillAgent = agentName;
-    this.currentBackfillProgress = undefined;
+    if (this.isShuttingDown) return;
+    const attempt = this.backfills.startNext();
+    if (!attempt) return;
     this.publishBackfillStatus();
-    void this.runBackfill(agentName).then((result) => {
+    void this.runBackfill(attempt).then((result) => {
       if (this.isShuttingDown) return;
-      this.currentBackfillAgent = undefined;
-      this.currentBackfillProgress = undefined;
-      if (result === "committed") {
-        if (!this.completedBackfillAgents.includes(agentName)) {
-          this.completedBackfillAgents.push(agentName);
-        }
-        this.failedBackfillAgents = this.failedBackfillAgents.filter(
-          (failedAgent) => failedAgent !== agentName,
-        );
-      } else if (!this.failedBackfillAgents.includes(agentName)) {
-        this.failedBackfillAgents.push(agentName);
-        this.cacheIntegrityCheckedAgents.delete(agentName);
-      }
+      if (!this.backfills.complete(attempt, result)) return;
+      if (result === "failed") this.cacheIntegrityCheckedAgents.delete(attempt.agentName);
       this.publishBackfillStatus();
       this.pumpBackfillQueue();
     });
   }
 
-  private runBackfill(agentName: string): Promise<AgentOperationResult> {
-    return this.scheduler.run(agentName, "backfill", () => this.performBackfill(agentName));
+  private runBackfill(attempt: BackfillAttemptRef): Promise<BackfillTerminalStatus> {
+    return this.scheduler.run(attempt.agentName, "backfill", () => this.performBackfill(attempt));
   }
 
-  private async performBackfill(agentName: string): Promise<AgentOperationResult> {
+  private async performBackfill(attempt: BackfillAttemptRef): Promise<BackfillTerminalStatus> {
+    const { agentName } = attempt;
     const startedAt = performance.now();
     const agent = this.findAgent(agentName);
     if (!agent || !agent.isAvailable()) return "skipped";
@@ -792,6 +776,7 @@ export class AgentSyncEngine {
         {
           sourceSync: agent instanceof FileSystemSessionSource,
           backfill: true,
+          backfillAttempt: attempt,
           backfillCursor,
           meta,
           checkpoint: true,
@@ -799,8 +784,14 @@ export class AgentSyncEngine {
       );
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const fullSessions = attachMissingProjectIdentities(result.sessions);
-      this.currentBackfillProgress = { phase: "indexing", sessions: fullSessions.length };
-      this.publishBackfillStatus();
+      if (
+        this.backfills.updateProgress(attempt, {
+          phase: "indexing",
+          sessions: fullSessions.length,
+        })
+      ) {
+        this.publishBackfillStatus();
+      }
       await this.commitSessionPublication({
         context: "scan.backfill",
         agentName,
@@ -829,17 +820,6 @@ export class AgentSyncEngine {
       console.error(`[${agentName}] Backfill failed:`, error);
       return "failed";
     }
-  }
-
-  private backfillStatus(): BackfillStatus {
-    return {
-      active: this.currentBackfillAgent != null || this.backfillQueue.length > 0,
-      pendingAgents: [...this.backfillQueue],
-      currentAgent: this.currentBackfillAgent,
-      progress: this.currentBackfillProgress,
-      completedAgents: [...this.completedBackfillAgents],
-      failedAgents: [...this.failedBackfillAgents],
-    };
   }
 
   private buildFullSearchIndexJobs(context: string): SearchIndexWorkerJob[] {

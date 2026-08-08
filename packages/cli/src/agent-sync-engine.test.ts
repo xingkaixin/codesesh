@@ -150,6 +150,15 @@ function makeEngine(
   return { engine };
 }
 
+function expectValidBackfillStatus(status: ScanStatusEvent["backfill"]): void {
+  const terminalAgents = new Set([...status.completedAgents, ...status.failedAgents]);
+  expect(terminalAgents.size).toBe(status.completedAgents.length + status.failedAgents.length);
+  expect(status.progress == null || status.currentAgent != null).toBe(true);
+  expect(status.currentAgent == null || !status.pendingAgents.includes(status.currentAgent)).toBe(
+    true,
+  );
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
@@ -166,6 +175,60 @@ afterEach(() => {
 });
 
 describe("AgentSyncEngine", () => {
+  it("publishes only the latest backfill attempt terminal", async () => {
+    const { engine } = makeEngine(makeAgent());
+    const internal = engine as unknown as {
+      enqueueBackfill(agentName: string): void;
+      runBackfill(attempt: { agentName: string; attemptId: number }): Promise<unknown>;
+    };
+    vi.spyOn(internal, "runBackfill")
+      .mockResolvedValueOnce("committed")
+      .mockResolvedValueOnce("failed");
+    const statuses: ScanStatusEvent[] = [];
+    engine.subscribeStatusChanged((status) => statuses.push(status));
+
+    internal.enqueueBackfill("codex");
+    await vi.waitFor(() => expect(statuses.at(-1)?.backfill.completedAgents).toEqual(["codex"]));
+    internal.enqueueBackfill("codex");
+    await vi.waitFor(() => expect(statuses.at(-1)?.backfill.failedAgents).toEqual(["codex"]));
+
+    for (const status of statuses) expectValidBackfillStatus(status.backfill);
+    expect(statuses.at(-1)?.backfill).toEqual({
+      active: false,
+      pendingAgents: [],
+      completedAgents: [],
+      failedAgents: ["codex"],
+    });
+  });
+
+  it("cancels backfill lifecycle before awaiting shutdown", async () => {
+    let resolveBackfill!: (result: "committed") => void;
+    const { engine } = makeEngine(makeAgent());
+    const internal = engine as unknown as {
+      backfills: { stateFor(agentName: string): { status: string } | undefined };
+      enqueueBackfill(agentName: string): void;
+      runBackfill(attempt: { agentName: string; attemptId: number }): Promise<unknown>;
+    };
+    const runBackfill = vi.spyOn(internal, "runBackfill").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveBackfill = resolve as (result: "committed") => void;
+        }),
+    );
+    const statuses: ScanStatusEvent[] = [];
+    engine.subscribeStatusChanged((status) => statuses.push(status));
+    internal.enqueueBackfill("codex");
+    await vi.waitFor(() => expect(statuses.at(-1)?.backfill.currentAgent).toBe("codex"));
+
+    await engine.shutdown();
+    const statusCountAtShutdown = statuses.length;
+    resolveBackfill("committed");
+    await Promise.resolve();
+
+    expect(internal.backfills.stateFor("codex")?.status).toBe("cancelled");
+    expect(runBackfill).toHaveBeenCalledOnce();
+    expect(statuses).toHaveLength(statusCountAtShutdown);
+  });
   it("keeps the earliest refresh deadline", async () => {
     vi.useFakeTimers();
     const checkForChanges = vi.fn(() => ({ hasChanges: false, timestamp: Date.now() }));
