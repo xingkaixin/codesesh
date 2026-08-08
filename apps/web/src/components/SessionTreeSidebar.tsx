@@ -1,4 +1,5 @@
 import { Menu } from "@base-ui/react/menu";
+import { buildSessionTree, type SessionTreeNode } from "@codesesh/core/contract";
 import type { FileTreeSortEntry } from "@pierre/trees";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import {
@@ -13,7 +14,7 @@ import {
 } from "react";
 import type { SessionHead } from "../lib/api";
 import { getProjectIdentityKey } from "../lib/projects";
-import { getSessionReferenceKey, getSessionRouteKey } from "../lib/session-indexes";
+import { getSessionReferenceKey } from "../lib/session-indexes";
 import { getSessionDisplayTitle } from "../lib/session-title";
 import { isRenderProfilerEnabled, recordRenderProfileEntry } from "./RenderProfiler";
 import { SessionActionMenuItems } from "./SessionActionsMenu";
@@ -244,8 +245,7 @@ function createPathAllocator() {
   };
 }
 
-/** Sub-sessions whose parent is missing from the current listing still have to
- *  reach the user, so they hang off a dedicated top-level group. */
+/** Sessions the canonical hierarchy cannot mount still need a visible axis. */
 const UNMOUNTED_GROUP_LABEL = "Unmounted";
 
 /**
@@ -264,49 +264,31 @@ export function buildSessionTreeModel(
   const sessionByPath = new Map<string, SessionHead>();
   const allocateSessionPath = createPathAllocator();
   const paths: string[] = [];
-  const childrenByParent = new Map<string, SessionHead[]>();
-  const roots: SessionHead[] = [];
-  const orphans: SessionHead[] = [];
-  const presentReferences = new Set(sessions.map((session) => getSessionReferenceKey(session)));
-  for (const session of sessions) {
-    const parentReference = session.parent_reference;
-    if (!parentReference) {
-      roots.push(session);
-      continue;
-    }
-    const parentKey = getSessionRouteKey(parentReference.agentName, parentReference.sessionId);
-    if (!presentReferences.has(parentKey)) {
-      orphans.push(session);
-      continue;
-    }
-    const children = childrenByParent.get(parentKey);
-    if (children) children.push(session);
-    else childrenByParent.set(parentKey, [session]);
-  }
+  const tree = buildSessionTree(sessions);
+  const groups = new Map<string, { label: string; nodes: SessionTreeNode[]; maxTime: number }>();
 
-  const groups = new Map<string, { label: string; sessions: SessionHead[]; maxTime: number }>();
-
-  for (const session of roots) {
+  for (const node of tree.roots) {
+    const session = node.session;
     const { key, label } = getProjectGroup(session);
     const time = getSessionTime(session);
     const group = groups.get(key);
     if (group) {
-      group.sessions.push(session);
+      group.nodes.push(node);
       if (time > group.maxTime) group.maxTime = time;
     } else {
-      groups.set(key, { label, sessions: [session], maxTime: time });
+      groups.set(key, { label, nodes: [node], maxTime: time });
     }
   }
 
-  const orderedGroups: Array<{ label: string | null; sessions: SessionHead[] }> = groupByProject
+  const orderedGroups: Array<{ label: string | null; nodes: SessionTreeNode[] }> = groupByProject
     ? [...groups.values()].sort((a, b) => {
         if (a.label === "(unknown)") return 1;
         if (b.label === "(unknown)") return -1;
         return b.maxTime - a.maxTime;
       })
-    : [{ label: null, sessions: roots }];
-  if (orphans.length > 0) {
-    orderedGroups.push({ label: UNMOUNTED_GROUP_LABEL, sessions: orphans });
+    : [{ label: null, nodes: tree.roots }];
+  if (tree.orphans.length > 0) {
+    orderedGroups.push({ label: UNMOUNTED_GROUP_LABEL, nodes: tree.orphans });
   }
 
   let order = 0;
@@ -319,15 +301,16 @@ export function buildSessionTreeModel(
       sortOrderByPath.set(groupPath, order);
       sortOrderByPath.set(bareGroupPath, order);
       order += 1;
-      groupCountByPath.set(groupPath, `${group.sessions.length}`);
-      groupCountByPath.set(bareGroupPath, `${group.sessions.length}`);
+      groupCountByPath.set(groupPath, `${group.nodes.length}`);
+      groupCountByPath.set(bareGroupPath, `${group.nodes.length}`);
     }
 
     const appendSession = (
-      session: SessionHead,
+      node: SessionTreeNode,
       parentPath: string,
       siblingTitleCounts: Map<string, number>,
     ): void => {
+      const session = node.session;
       const title = getSessionDisplayTitle(session);
       siblingTitleCounts.set(title, (siblingTitleCounts.get(title) ?? 0) + 1);
       const siblingCount = siblingTitleCounts.get(title) ?? 1;
@@ -337,8 +320,7 @@ export function buildSessionTreeModel(
           : sanitizeSegment(title);
       const basePath = allocateSessionPath(`${parentPath}${leaf}`);
       const reference = getSessionReferenceKey(session);
-      const childSessions = childrenByParent.get(reference) ?? [];
-      const isDirectory = childSessions.length > 0;
+      const isDirectory = node.children.length > 0;
       const sessionPath = isDirectory ? `${basePath}/` : basePath;
 
       if (isDirectory) {
@@ -356,14 +338,14 @@ export function buildSessionTreeModel(
       groupPathBySessionReference.set(reference, groupPath);
 
       const childTitleCounts = new Map<string, number>();
-      for (const child of childSessions) {
+      for (const child of node.children) {
         appendSession(child, sessionPath, childTitleCounts);
       }
     };
 
     const rootTitleCounts = new Map<string, number>();
-    for (const session of group.sessions) {
-      appendSession(session, groupPath, rootTitleCounts);
+    for (const node of group.nodes) {
+      appendSession(node, groupPath, rootTitleCounts);
     }
   }
 
