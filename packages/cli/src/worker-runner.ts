@@ -5,6 +5,7 @@ import type {
   SessionCacheMeta,
   SessionHead,
   SessionHeadChange,
+  SessionSourceFailure,
 } from "@codesesh/core";
 import { appLogger } from "./logging.js";
 import type {
@@ -31,6 +32,7 @@ export interface WorkerResult {
   sessions: SessionHead[];
   meta: Record<string, SessionCacheMeta>;
   changedIds?: string[];
+  sourceFailures?: SessionSourceFailure[];
 }
 
 export interface WorkerRunner {
@@ -224,6 +226,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
         ),
         meta: applyMetaChanges(pending.payload.meta, message.meta, removedMetaIds),
         changedIds: pending.payload.sourceSync ? replacedSessionIds : undefined,
+        sourceFailures: message.sourceFailures,
       });
     } catch (error) {
       pending.reject(toError(error));

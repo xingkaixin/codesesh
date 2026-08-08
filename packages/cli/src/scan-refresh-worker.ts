@@ -17,6 +17,8 @@ import {
   type SessionCacheMeta,
   type SessionHead,
   type SessionHeadChange,
+  type SessionSourceAbsenceOutcome,
+  type SessionSourceFailure,
   type SessionSnapshotCompleteness,
   type SessionTagTiming,
 } from "@codesesh/core";
@@ -40,6 +42,7 @@ export type ScanRefreshWorkerMessage =
       removedSessionIds: string[];
       meta: Record<string, SessionCacheMeta>;
       removedMetaIds: string[];
+      sourceFailures: SessionSourceFailure[];
       durationMs: number;
     }
   | {
@@ -155,11 +158,12 @@ function syncAgentSources(
   finalizeSessionIds: string[];
   sourceCount: number;
   removedCount: number;
+  sourceFailures: SessionSourceFailure[];
 } {
   const sessionMap = new Map(cachedSessions.map((session) => [session.id, session]));
   const sourceRefs = agent.listSessionSources(windowOptions);
   const sourceById = new Map(sourceRefs.map((source) => [source.sessionId, source]));
-  const { changedIds, removedIds } = diffSessionSources(
+  const { changedIds, removedIds, sourceOutcomes } = diffSessionSources(
     sourceRefs,
     cachedSessions,
     cachedMeta,
@@ -173,31 +177,80 @@ function syncAgentSources(
     sourceRefs,
   ) ?? [...new Set([...changedIds, ...removedIds])];
   const isWindowed = windowOptions?.from != null || windowOptions?.to != null;
-  const finalizeSessionIds = isWindowed
-    ? [...rescanIds]
-    : sourceRefs.map((source) => source.sessionId);
+  const sourceFailures = sourceOutcomes.flatMap((outcome) =>
+    outcome.status === "failed" ? [outcome.failure] : [],
+  );
+  for (const outcome of sourceOutcomes) logAbsentSourceOutcome(agent.name, outcome);
+  const appliedIds = new Set(removedIds);
 
   rescanIds.forEach((sessionId, index) => {
     const source = sourceById.get(sessionId);
     if (!source) return;
-    const next = agent.scanSessionSource(source.sourcePath);
-    if (next) {
-      sessionMap.set(next.id, next);
-    } else {
+    const outcome = agent.scanSessionSourceOutcome(source);
+    if (outcome.status === "parsed") {
+      sessionMap.set(outcome.session.id, outcome.session);
+      appliedIds.add(sessionId);
+    } else if (outcome.status === "filtered" || outcome.status === "missing") {
       sessionMap.delete(sessionId);
+      agent.getSessionMetaMap().delete(sessionId);
+      appliedIds.add(sessionId);
+      appLogger.info("agent.session_source_outcome", {
+        agent: agent.name,
+        session_id: sessionId,
+        source_path: source.sourcePath,
+        outcome: outcome.status,
+        ...(outcome.status === "filtered" ? { reason: outcome.reason } : {}),
+      });
+    } else {
+      sourceFailures.push(outcome.failure);
+      appLogger.warn("agent.session_source_outcome", {
+        agent: agent.name,
+        session_id: outcome.failure.sessionId,
+        source_path: outcome.failure.sourcePath,
+        outcome: outcome.status,
+        stage: outcome.failure.stage,
+        error_class: outcome.failure.errorClass,
+        message: outcome.failure.message,
+      });
     }
     onProgress?.({ total: rescanIds.length, processed: index + 1, sessions: sessionMap.size });
   });
 
   for (const sessionId of removedIds) sessionMap.delete(sessionId);
+  const failedIdSet = new Set(sourceFailures.map((failure) => failure.sessionId));
+  const finalizeSessionIds = (
+    isWindowed ? [...appliedIds] : sourceRefs.map((source) => source.sessionId)
+  ).filter((sessionId) => !failedIdSet.has(sessionId));
 
   return {
     sessions: [...sessionMap.values()],
-    changedIds: rescanIds,
+    changedIds: [...appliedIds],
     finalizeSessionIds,
     sourceCount: sourceRefs.length,
     removedCount: removedIds.length,
+    sourceFailures,
   };
+}
+
+function logAbsentSourceOutcome(agentName: string, outcome: SessionSourceAbsenceOutcome): void {
+  if (outcome.status === "missing") {
+    appLogger.info("agent.session_source_outcome", {
+      agent: agentName,
+      session_id: outcome.source.sessionId,
+      source_path: outcome.source.sourcePath,
+      outcome: outcome.status,
+    });
+    return;
+  }
+  appLogger.warn("agent.session_source_outcome", {
+    agent: agentName,
+    session_id: outcome.failure.sessionId,
+    source_path: outcome.failure.sourcePath,
+    outcome: outcome.status,
+    stage: outcome.failure.stage,
+    error_class: outcome.failure.errorClass,
+    message: outcome.failure.message,
+  });
 }
 
 /**
@@ -332,6 +385,7 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
   const isAvailable = agent.isAvailable();
   let sessions: SessionHead[];
   let changedIds: string[] | undefined;
+  let sourceFailures: SessionSourceFailure[] = [];
   let finalizeSessionIds: ReadonlySet<string> | undefined;
   let backfillOrder: SessionHead[] | undefined;
   let backfillCursorIndex = -1;
@@ -344,7 +398,10 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
 
   if (!isAvailable) {
     sessions = [];
-  } else if (data.sourceSync && agent instanceof FileSystemSessionSource) {
+  } else if (
+    agent instanceof FileSystemSessionSource &&
+    (data.sourceSync === true || data.checkpoint === true)
+  ) {
     const result = syncAgentSources(
       agent,
       data.previousSessions,
@@ -356,6 +413,7 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
     changedIds = result.changedIds;
     finalizeSessionIds = new Set(result.finalizeSessionIds);
     sourceSyncDetails = result;
+    sourceFailures = result.sourceFailures;
   } else if (data.changedIds) {
     sessions = await Promise.resolve(agent.incrementalScan(data.previousSessions, data.changedIds));
   } else {
@@ -378,7 +436,11 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
         sessions: ordered,
         meta: buildAgentCacheMeta(agent, new Set(ordered.map((session) => session.id))),
         completeness:
-          data.scanOptions.from == null && data.scanOptions.to == null ? "complete" : "partial",
+          data.scanOptions.from == null &&
+          data.scanOptions.to == null &&
+          sourceFailures.length === 0
+            ? "complete"
+            : "partial",
       },
     } satisfies ScanRefreshWorkerMessage);
     sessions = ordered;
@@ -402,6 +464,7 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
     changed_ids: changedIds?.length ?? 0,
     source_count: sourceSyncDetails?.sourceCount,
     removed_count: sourceSyncDetails?.removedCount,
+    failed_sources: sourceFailures.length,
     duration_ms: Math.round(scanDuration),
   });
 
@@ -505,6 +568,7 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
     removedSessionIds: diff.removedSessionIds,
     meta: metaDiff.changes,
     removedMetaIds: metaDiff.removedIds,
+    sourceFailures,
     durationMs: performance.now() - startedAt,
   } satisfies ScanRefreshWorkerMessage);
 }
