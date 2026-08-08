@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { ZCodeAgent } from "../zcode.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
+import { buildSessionTree } from "../../contract/session-tree.js";
 
 let tempDirs: string[] = [];
 
@@ -322,12 +323,16 @@ describe("ZCodeAgent subagent folding", () => {
     const [head] = heads;
     expect(head.stats).toMatchObject({
       message_count: 1,
-      total_input_tokens: 50,
-      total_output_tokens: 60,
+      total_input_tokens: 10,
+      total_output_tokens: 0,
     });
     expect(head.parent_reference).toBeUndefined();
     expect(heads[1].parent_reference).toEqual({ agentName: "zcode", sessionId: "parent" });
     expect(heads[1].stats).toMatchObject({ message_count: 1, total_input_tokens: 40 });
+    expect(buildSessionTree(heads).roots[0]?.inclusiveStats).toMatchObject({
+      inputTokens: 50,
+      outputTokens: 60,
+    });
   });
 
   it("folds child tokens into getSessionData detail stats without surfacing child messages", () => {
@@ -481,8 +486,8 @@ describe("ZCodeAgent subagent folding", () => {
     const [head] = agent.scan({ from: 0 });
     expect(head.stats).toMatchObject({
       message_count: 1,
-      total_input_tokens: 55,
-      total_output_tokens: 35,
+      total_input_tokens: 5,
+      total_output_tokens: 5,
     });
 
     const data = agent.getSessionData("parent");

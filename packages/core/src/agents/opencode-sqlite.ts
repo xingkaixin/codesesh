@@ -6,7 +6,12 @@ import {
   parsedSession,
   skippedSession,
 } from "./base.js";
-import type { AgentScanOptions, ParseSessionResult, SessionWatchPlan } from "./base.js";
+import type {
+  AgentScanOptions,
+  ChangeCheckResult,
+  ParseSessionResult,
+  SessionWatchPlan,
+} from "./base.js";
 import type { SessionHead, SessionDetail, Message, MessagePart } from "../types/index.js";
 import { normalizeMessageParts } from "../contract/message-part.js";
 import { columnExists, openDbReadOnly, type SQLiteDatabase } from "../utils/sqlite.js";
@@ -25,7 +30,6 @@ interface OpenCodeMessageRow {
   session_id?: unknown;
   data?: string;
   time_created?: unknown;
-  parent_id?: unknown;
 }
 
 interface OpenCodePartRow {
@@ -48,6 +52,7 @@ interface OpenCodeSqliteAgentConfig {
 
 const MESSAGE_ROLES = new Set<Message["role"]>(["user", "assistant", "tool"]);
 const SESSION_ID_QUERY_CHUNK_SIZE = 500;
+const HEAD_PARSER_VERSION = "opencode-sqlite-head-v1";
 
 function compareSessionRowsByActivityDesc(
   left: Record<string, unknown>,
@@ -203,14 +208,8 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
 
       const headContexts = hasMessageTable
         ? this.buildHeadContexts(
-            this.readHeadMessageRows(
-              db,
-              cutoffTime,
-              hasParentId,
-              sessionIds.size > 0 ? sessionIds : undefined,
-            ),
+            this.readHeadMessageRows(db, cutoffTime, sessionIds.size > 0 ? sessionIds : undefined),
             this.readHeadPartRows(db, cutoffTime, sessionIds.size > 0 ? sessionIds : undefined),
-            hasParentId,
           )
         : new Map<string, OpenCodeHeadContext>();
       const heads: SessionHead[] = [];
@@ -228,6 +227,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
             this.sessionMetaMap.set(head.id, {
               id: head.id,
               sourcePath: this.dbPath,
+              headParserVersion: HEAD_PARSER_VERSION,
             });
           }
         }
@@ -282,16 +282,14 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
   private readHeadMessageRows(
     db: SQLiteDatabase,
     cutoffTime: number,
-    withParentId: boolean,
     sessionIds?: Set<string>,
   ): OpenCodeMessageRow[] {
-    const parentIdSelect = withParentId ? ", s.parent_id" : "";
     const ids = sessionIds ? [...sessionIds] : [];
     if (ids.length === 0) {
       return db
         .prepare(
           `
-            SELECT m.id, m.session_id, m.data, m.time_created${parentIdSelect}
+            SELECT m.id, m.session_id, m.data, m.time_created
             FROM message m
             JOIN session s ON s.id = m.session_id
             WHERE COALESCE(s.time_updated, s.time_created) >= ?
@@ -308,7 +306,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
         ...(db
           .prepare(
             `
-              SELECT m.id, m.session_id, m.data, m.time_created${parentIdSelect}
+              SELECT m.id, m.session_id, m.data, m.time_created
               FROM message m
               JOIN session s ON s.id = m.session_id
               WHERE s.id IN (${chunk.map(() => "?").join(",")})
@@ -454,7 +452,6 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
   private buildHeadContexts(
     messageRows: OpenCodeMessageRow[],
     partRows: OpenCodePartRow[],
-    withParentId: boolean,
   ): Map<string, OpenCodeHeadContext> {
     const partsByMessage = this.buildPartsByMessage(partRows);
     const contexts = new Map<string, OpenCodeHeadContext>();
@@ -481,32 +478,6 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
       if (!sessionId) continue;
       const msgData = parseJsonRecord(row.data, this.name, "message.data");
       if (isInternalEventType(msgData.type)) continue;
-
-      const parentId = withParentId ? String(row.parent_id ?? "") : "";
-      const isChild = parentId !== "";
-
-      if (isChild) {
-        const childContext = ensureContext(sessionId);
-        const parts = partsByMessage.get(String(row.id ?? "")) ?? [];
-        if (parts.length > 0) {
-          accumulateTokenStats(childContext.stats, msgData, this.name);
-          childContext.stats.message_count += 1;
-          if (!childContext.messageTitle && String(msgData.role ?? "") === "user") {
-            childContext.messageTitle = firstUserMessageTitle([
-              {
-                id: String(row.id ?? ""),
-                role: "user",
-                agent: null,
-                time_created: Number(row.time_created ?? 0),
-                parts,
-              },
-            ]);
-          }
-        }
-        const parentContext = ensureContext(parentId);
-        accumulateTokenStats(parentContext.stats, msgData, this.name);
-        continue;
-      }
 
       const parts = partsByMessage.get(String(row.id ?? "")) ?? [];
       if (parts.length === 0) continue;
@@ -535,6 +506,14 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
     }
 
     return contexts;
+  }
+
+  checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
+    const hasStaleHead = cachedSessions.some(
+      (session) => this.sessionMetaMap.get(session.id)?.headParserVersion !== HEAD_PARSER_VERSION,
+    );
+    if (hasStaleHead) return { hasChanges: true, timestamp: Date.now() };
+    return super.checkForChanges(sinceTimestamp, cachedSessions);
   }
 
   private sumChildTokenStats(db: SQLiteDatabase, parentSessionId: string): SessionHead["stats"][] {

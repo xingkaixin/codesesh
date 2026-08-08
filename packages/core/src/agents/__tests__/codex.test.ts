@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexAgent } from "../codex.js";
 import type { Message, MessagePart, SessionHead, ToolPart } from "../../types/index.js";
+import { buildSessionTree } from "../../contract/session-tree.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
 // Spies while delegating to the real implementation so regression tests can
@@ -254,7 +255,7 @@ describe("CodexAgent cache refresh", () => {
         sourcePath: sessionFile,
         fingerprint: JSON.stringify([
           "codex-head-v1",
-          "codex-parser-v6",
+          "codex-parser-v7",
           sessionTime.getTime(),
           statSync(sessionFile).size,
           "Indexed title",
@@ -1356,7 +1357,7 @@ describe("CodexAgent subagent folding", () => {
     tempDirs = [];
   });
 
-  it("returns subagent files and folds their tokens into the parent head", () => {
+  it("returns subagent files with node-local head stats", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
     tempDirs.push(tempDir);
 
@@ -1379,10 +1380,14 @@ describe("CodexAgent subagent folding", () => {
 
     const heads = agent.scan({ from: 0 });
     expect(heads.map((h: SessionHead) => h.id)).toEqual([PARENT_ID, CHILD_ID]);
-    expect(heads[0].stats.total_input_tokens).toBe(140);
-    expect(heads[0].stats.total_output_tokens).toBe(80);
+    expect(heads[0].stats.total_input_tokens).toBe(100);
+    expect(heads[0].stats.total_output_tokens).toBe(20);
     expect(heads[1].parent_reference).toEqual({ agentName: "codex", sessionId: PARENT_ID });
     expect(heads[1].stats.total_input_tokens).toBe(40);
+    expect(buildSessionTree(heads).roots[0]?.inclusiveStats).toMatchObject({
+      inputTokens: 140,
+      outputTokens: 80,
+    });
   });
 
   it("folds subagent tokens into getSessionData detail stats", () => {
@@ -1542,7 +1547,7 @@ describe("CodexAgent subagent folding", () => {
     expect(agent.expandChangedSessionIds([PARENT_ID], refs)).toEqual([PARENT_ID]);
   });
 
-  it("expands a removed child via cached metadata and re-aggregates the parent", () => {
+  it("expands a removed child via cached metadata to refresh the parent", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
     tempDirs.push(tempDir);
 
@@ -1560,7 +1565,7 @@ describe("CodexAgent subagent folding", () => {
     agent.basePath = tempDir;
     agent.sessionIndexCache = new Map();
     const [parentHead] = agent.scan({ from: 0 });
-    expect(parentHead.stats.total_input_tokens).toBe(140);
+    expect(parentHead.stats.total_input_tokens).toBe(100);
 
     const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
     rmSync(childFile);

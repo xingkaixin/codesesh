@@ -24,9 +24,17 @@ _Avoid_: Session slug, global session ID
 在 CodeSesh 中唯一标识 Session 的复合身份，由 Agent 与该 Agent 内不透明的 Session ID 共同构成；Session ID 本身不全局唯一，也不应被拆解解释。
 _Avoid_: Session slug, session path
 
+**Session Hierarchy**:
+由 Session Reference 与 `parent_reference` 表达的 Session 亲子关系；无法抵达根节点的缺父或成环 Session 仍作为未挂载条目保留。
+_Avoid_: Session Tree, parent-child graph
+
 **Session Head**:
-用于列表、分组、搜索和统计的轻量 Session 摘要，不包含完整消息正文。
+用于列表、分组、搜索和统计的轻量 Session 摘要，不包含完整消息正文；其中的统计只归属于该 Session，不包含 descendant Session 的汇总。
 _Avoid_: Session metadata
+
+**Inclusive Session Stats**:
+从 Session Hierarchy 派生的统计汇总，包含目标 Session 与每个可挂载 descendant Session 恰好一次。
+_Avoid_: Session stats, parent stats
 
 **Session Detail**:
 包含完整归一化消息与工具活动、可用于回放 Session 的详细内容。
