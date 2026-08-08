@@ -86,11 +86,11 @@ export class AgentOperationScheduler {
     }
   }
 
-  run(
+  run<Result extends AgentOperationResult>(
     agentName: string,
     kind: AgentOperationKind,
-    operation: () => Promise<AgentOperationResult>,
-  ): Promise<AgentOperationResult> {
+    operation: () => Promise<Result>,
+  ): Promise<Result | "skipped"> {
     const previous = this.operationTails.get(agentName) ?? Promise.resolve();
     const run = previous.then(async () => {
       if (this.isStopped) return "skipped";
