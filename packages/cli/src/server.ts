@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { compress } from "hono/compress";
 import { serve } from "@hono/node-server";
-import type { ServerType } from "@hono/node-server";
+import type { HttpBindings, ServerType } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { existsSync } from "node:fs";
 import { createServer as createHttpsServer } from "node:https";
@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import type { ScanResultSource } from "./api/handlers.js";
 import { createApiRoutes, type ApiRouteOptions } from "./api/routes.js";
 import { appLogger } from "./logging.js";
+import { validateLoopbackAuthority } from "./loopback-authority.js";
 import {
   createRemoteAccessToken,
   isLoopbackHostname,
@@ -101,7 +102,7 @@ export async function createServer(
   store: ScanResultSource & ScanEventSource & { shutdown(): Promise<void> },
   options: CreateServerOptions = {},
 ): Promise<{ url: string; shutdown: () => Promise<void> }> {
-  const app = new Hono();
+  const app = new Hono<{ Bindings: HttpBindings }>();
   const hostname = options.hostname ?? "127.0.0.1";
   const isLoopback = isLoopbackHostname(hostname);
   const transport: RemoteTransport =
@@ -109,11 +110,28 @@ export async function createServer(
   const remoteAccessToken = !isLoopback
     ? (options.remoteAccessToken ?? (options.remoteAccess ? createRemoteAccessToken() : null))
     : null;
+  let actualPort: number | null = null;
 
   if (!isLoopback && !remoteAccessToken) {
     throw new Error(
       `Refusing to expose CodeSesh on ${hostname} without authentication. Add --remote-access to continue.`,
     );
+  }
+
+  if (isLoopback) {
+    app.use("*", async (c, next) => {
+      const decision = validateLoopbackAuthority(c.env.incoming.rawHeaders, hostname, actualPort);
+      if (!decision.allowed) {
+        appLogger.warn("http.loopback_authority.rejected", {
+          method: c.req.method,
+          path: new URL(c.req.url).pathname,
+          reason: decision.reason,
+          authority: decision.authority,
+        });
+        return c.json({ error: "Loopback request authority rejected" }, 403);
+      }
+      await next();
+    });
   }
 
   app.use("*", async (c, next) => {
@@ -175,7 +193,6 @@ export async function createServer(
 
   const attempts = Math.max(1, options.portFallbackAttempts ?? 1);
   let server: ServerType | null = null;
-  let actualPort = port;
 
   for (let offset = 0; offset < attempts; offset += 1) {
     const candidatePort = port + offset;
