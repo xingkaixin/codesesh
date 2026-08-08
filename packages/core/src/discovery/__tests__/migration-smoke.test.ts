@@ -300,9 +300,10 @@ describe("sqlite migration smoke", () => {
       "content_text",
       "content_hash",
       "indexed_message_count",
+      "detail_version",
       "indexed_at",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(18);
+    expect(getUserVersion(getCachePath())).toBe(19);
     expect(getUserVersion(getStatePath())).toBe(2);
   }, 30_000);
 });

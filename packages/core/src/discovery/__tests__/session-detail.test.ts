@@ -8,6 +8,7 @@ import { syncSessionSearchIndex } from "../cache/search.js";
 import { materializeSessionDetail, materializeSessionDetailResponse } from "../session-detail.js";
 import type { LiveSnapshot } from "../scanner.js";
 import { setSchemaEnsuredPath } from "../cache/db.js";
+import { setCoreDiagnostics } from "../../utils/diagnostics.js";
 
 const { testHomeDir } = vi.hoisted(() => ({
   testHomeDir: `/tmp/codesesh-session-detail-test-${process.pid}`,
@@ -134,11 +135,71 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setCoreDiagnostics(null);
   rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
 });
 
 describe("materializeSessionDetail", () => {
+  it("does not treat an old detail as fresh after only its head advances", () => {
+    const head = makeHead();
+    const detailA = makeDetail("Detail A");
+    detailA.messages[0]!.id = "message-a";
+    const detailB = makeDetail("Detail B");
+    detailB.messages[0]!.id = "message-b";
+    persistDetail(head, detailA, "fingerprint-a");
+    saveCachedSessions("test", [head], { s1: makeMeta("fingerprint-b") });
+    const agent = new TestAgent(detailB, new Map([["s1", makeMeta("fingerprint-b")]]));
+
+    const result = materializeSessionDetail(makeScanResult(agent, head), {
+      agentName: "test",
+      sessionId: "s1",
+    });
+
+    expect(result).toMatchObject({
+      status: "found",
+      data: { detail_freshness: "fresh", messages: [{ id: "message-b" }] },
+    });
+    expect(agent.reads).toBe(1);
+  });
+
+  it("keeps the last detail explicitly stale when rebuilding it fails", () => {
+    const warnings: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    setCoreDiagnostics({
+      warn: (event, detail) => warnings.push({ event, detail }),
+    });
+    const head = makeHead();
+    const detailA = makeDetail("Detail A");
+    detailA.messages[0]!.id = "message-a";
+    persistDetail(head, detailA, "fingerprint-a");
+    saveCachedSessions("test", [head], { s1: makeMeta("fingerprint-b") });
+    const agent = new TestAgent(
+      makeDetail("Detail B"),
+      new Map([["s1", makeMeta("fingerprint-b")]]),
+    );
+    vi.spyOn(agent, "getSessionData").mockImplementation(() => {
+      throw new Error("source parse failed");
+    });
+
+    const result = materializeSessionDetail(makeScanResult(agent, head), {
+      agentName: "test",
+      sessionId: "s1",
+    });
+
+    expect(result).toMatchObject({
+      status: "found",
+      data: { detail_freshness: "stale", messages: [{ id: "message-a" }] },
+    });
+    expect(warnings).toContainEqual({
+      event: "session_detail.stale_fallback",
+      detail: expect.objectContaining({
+        agent: "test",
+        session_id: "s1",
+        error: "source parse failed",
+      }),
+    });
+  });
+
   it("returns a complete matching cache entry without reading the source", () => {
     const head = makeHead();
     persistDetail(head, makeDetail("Cached Session"), "same");

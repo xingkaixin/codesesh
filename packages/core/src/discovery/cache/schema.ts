@@ -31,7 +31,7 @@ import {
   type SessionRow,
 } from "./messages.js";
 
-const CACHE_SCHEMA_VERSION = 18;
+const CACHE_SCHEMA_VERSION = 19;
 interface MessageToolBackfillRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
@@ -415,6 +415,7 @@ function createSearchTables(db: SQLiteDatabase): void {
       content_text TEXT NOT NULL,
       content_hash TEXT NOT NULL,
       indexed_message_count INTEGER NOT NULL,
+      detail_version TEXT NOT NULL DEFAULT '',
       indexed_at INTEGER NOT NULL,
       UNIQUE(agent_name, session_id)
     );
@@ -470,6 +471,19 @@ function addIndexedMessageCount(db: SQLiteDatabase): void {
         AND messages.session_id = session_documents.session_id
     )
   `);
+}
+
+function addDetailVersion(db: SQLiteDatabase): void {
+  if (!tableExists(db, "session_documents")) return;
+  if (!columnExists(db, "session_documents", "detail_version")) {
+    db.exec("ALTER TABLE session_documents ADD COLUMN detail_version TEXT NOT NULL DEFAULT ''");
+  }
+  if (tableExists(db, "sessions") && tableExists(db, "pending_reindex")) {
+    db.exec(`
+      INSERT OR IGNORE INTO pending_reindex(agent_name, session_id)
+      SELECT agent_name, session_id FROM sessions
+    `);
+  }
 }
 
 function dropSearchTriggers(db: SQLiteDatabase): void {
@@ -1336,6 +1350,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 15, destructive: true, migrate: compactSessionDocuments },
       { version: 17, migrate: addMessagePartsFormatVersion },
       { version: 18, migrate: addSessionParentReference },
+      { version: 19, migrate: addDetailVersion },
     ],
   });
 

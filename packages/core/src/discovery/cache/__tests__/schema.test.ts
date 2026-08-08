@@ -5,6 +5,9 @@ import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCachePath, setSchemaEnsuredPath } from "../db.js";
 import * as schema from "../schema.js";
+import { saveCachedSessions } from "../sessions.js";
+import { syncSessionSearchIndex } from "../search-index-writer.js";
+import { makeSessionData, makeSessionHead } from "./fixtures.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-schema-test-"));
 
@@ -61,10 +64,11 @@ describe("cache schema boundary", () => {
       "content_text",
       "content_hash",
       "indexed_message_count",
+      "detail_version",
       "indexed_at",
     ]);
     expect(state?.messageColumns).toContain("parts_format_version");
-    expect(state?.version).toBe(18);
+    expect(state?.version).toBe(19);
   });
 
   it("exposes capabilities instead of migration steps", () => {
@@ -75,6 +79,40 @@ describe("cache schema boundary", () => {
       "withSearchDb",
       "withSearchIndexDb",
     ]);
+  });
+
+  it("marks existing details for validation when adding projection versions", () => {
+    const session = makeSessionHead("legacy-detail");
+    saveCachedSessions("codex", [session], {
+      [session.id]: { id: session.id, sourcePath: "/legacy", sourceFingerprint: "legacy" },
+    });
+    syncSessionSearchIndex("codex", [session], () => makeSessionData(session.id));
+
+    const legacyDb = new Database(getCachePath());
+    legacyDb.exec("ALTER TABLE session_documents DROP COLUMN detail_version");
+    legacyDb.pragma("user_version = 18");
+    legacyDb.prepare("UPDATE cache_meta SET value = '18' WHERE key = 'version'").run();
+    legacyDb.close();
+    setSchemaEnsuredPath(null);
+
+    const migrated = schema.withCacheDb((db) => ({
+      version: Number(
+        (db.prepare("PRAGMA user_version").get() as { user_version?: number }).user_version,
+      ),
+      detailVersion: (
+        db
+          .prepare(
+            "SELECT detail_version FROM session_documents WHERE agent_name = ? AND session_id = ?",
+          )
+          .get("codex", session.id) as { detail_version?: string }
+      ).detail_version,
+      pending:
+        db
+          .prepare("SELECT 1 FROM pending_reindex WHERE agent_name = ? AND session_id = ?")
+          .get("codex", session.id) != null,
+    }));
+
+    expect(migrated).toEqual({ version: 19, detailVersion: "", pending: true });
   });
 
   it.each([15, 16])(
@@ -140,7 +178,7 @@ describe("cache schema boundary", () => {
       });
 
       expect(migrated).toEqual({
-        version: 18,
+        version: 19,
         partsJson: legacyPartsJson,
         partsFormatVersion: 0,
       });

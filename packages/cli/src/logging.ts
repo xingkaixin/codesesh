@@ -178,6 +178,13 @@ export function logSearchIndexSync(
   result: SearchIndexSyncResult | null,
   data: Record<string, unknown> = {},
 ): void {
+  if (result?.failures?.length) {
+    appLogger.warn("search_index.sessions_skipped", {
+      context,
+      agent: result.agentName,
+      failures: result.failures,
+    });
+  }
   if (!result || result.mode !== "bulk" || result.rebuildDurationMs == null) {
     return;
   }

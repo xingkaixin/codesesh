@@ -28,11 +28,11 @@ const workerMocks = vi.hoisted(() => {
     }
   }
   const workers: FakeWorker[] = [];
-  return { workers, FakeWorker };
+  return { workers, FakeWorker, workerExists: true };
 });
 
 vi.mock("node:worker_threads", () => ({ Worker: workerMocks.FakeWorker }));
-vi.mock("node:fs", () => ({ existsSync: () => true }));
+vi.mock("node:fs", () => ({ existsSync: () => workerMocks.workerExists }));
 vi.mock("./logging.js", () => ({
   appLogger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   logSearchIndexSync: vi.fn(),
@@ -59,6 +59,7 @@ function startedWorker() {
 
 beforeEach(() => {
   workerMocks.workers.length = 0;
+  workerMocks.workerExists = true;
   vi.clearAllMocks();
 });
 
@@ -90,5 +91,15 @@ describe("SearchIndexJobRunner", () => {
     });
 
     await expect(completion).rejects.toThrow(/failed to persist cache for codex/);
+  });
+
+  it("rejects the batch when the search-index worker is unavailable", async () => {
+    workerMocks.workerExists = false;
+    const runner = new SearchIndexJobRunner();
+
+    const completion = runner.enqueue("scan.refresh", [makeJob()]);
+
+    await expect(completion).rejects.toThrow("Search index worker is unavailable");
+    expect(workerMocks.workers).toHaveLength(0);
   });
 });

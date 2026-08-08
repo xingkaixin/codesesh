@@ -48,12 +48,14 @@ export {
   mergeSearchQueryOptions,
   parseSearchQuery,
   searchSessions,
+  sessionDetailVersion,
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
 } from "./cache/search.js";
 export type {
   ParsedSearchQuery,
   SearchIndexSyncOptions,
+  SearchIndexSyncFailure,
   SearchIndexSyncResult,
   SearchMatchType,
   SearchOptions,

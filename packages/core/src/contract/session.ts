@@ -178,6 +178,7 @@ export interface SessionDetail {
   parent_reference?: SessionReference;
   project_identity?: ProjectIdentity;
   version?: string | null;
+  detail_freshness?: "fresh" | "stale";
   time_created: number;
   time_updated?: number;
   summary_files?: unknown;

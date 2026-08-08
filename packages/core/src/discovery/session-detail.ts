@@ -7,7 +7,9 @@ import {
   extractSessionFileActivity,
   getSmartTagSourceTimestamp,
 } from "../utils/index.js";
+import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import { listSessionFileActivity } from "./cache/file-activity.js";
+import { sessionDetailVersion } from "./cache/detail-version.js";
 import { loadCachedSessionRawEntry, type CachedSessionRawEntry } from "./cache/sessions.js";
 import { messageFromCachedRow, messageJsonFromCachedRow } from "./cache/messages.js";
 import type { LiveSnapshot } from "./scanner.js";
@@ -82,24 +84,22 @@ function getSessionDetailContext(
   };
 }
 
-function cacheMatchesCurrentSource(
-  cachedMeta: SessionCacheMeta | null,
-  currentMeta: SessionCacheMeta | undefined,
-): boolean {
-  const currentFingerprint = currentMeta?.sourceFingerprint;
-  if (typeof currentFingerprint !== "string") return true;
-  return cachedMeta?.sourceFingerprint === currentFingerprint;
-}
+type CachedDetailState = "fresh" | "stale" | "missing";
 
-function cacheHasCompleteDetail(
+function cachedDetailState(
   cachedEntry: CachedSessionRawEntry | null,
   currentMeta: SessionCacheMeta | undefined,
-): cachedEntry is CachedSessionRawEntry {
-  if (!cachedEntry || !cacheMatchesCurrentSource(cachedEntry.meta, currentMeta)) {
-    return false;
+): CachedDetailState {
+  if (
+    !cachedEntry ||
+    (cachedEntry.messageRows.length === 0 && cachedEntry.data.stats.message_count > 0)
+  ) {
+    return "missing";
   }
-
-  return cachedEntry.messageRows.length > 0 || cachedEntry.data.stats.message_count === 0;
+  return !cachedEntry.pendingReindex &&
+    cachedEntry.detailVersion === sessionDetailVersion(currentMeta)
+    ? "fresh"
+    : "stale";
 }
 
 function getProjectIdentity(
@@ -116,15 +116,40 @@ function materializeStructuredSessionDetail(
 ): SessionDetailResult {
   const { agent, head } = context;
   const currentMeta = head ? agent.getSessionMetaMap().get(reference.sessionId) : undefined;
-  const useCache = cacheHasCompleteDetail(cachedEntry, currentMeta);
-  const data = useCache
+  const cacheState = cachedDetailState(cachedEntry, currentMeta);
+  let useCache = cacheState === "fresh";
+  let freshness: SessionDetail["detail_freshness"] = useCache ? "fresh" : undefined;
+  let data: SessionDetail | null = useCache
     ? {
-        ...cachedEntry.data,
-        messages: cachedEntry.messageRows.map((messageRow) => messageFromCachedRow(messageRow)),
+        ...cachedEntry!.data,
+        messages: cachedEntry!.messageRows.map((messageRow) => messageFromCachedRow(messageRow)),
       }
-    : head
-      ? agent.getSessionData(reference.sessionId)
-      : null;
+    : null;
+  let sourceError: unknown;
+  if (!data && head) {
+    try {
+      data = agent.getSessionData(reference.sessionId);
+      if (data) freshness = "fresh";
+    } catch (error) {
+      sourceError = error;
+    }
+  }
+  if (!data && cacheState === "stale" && cachedEntry) {
+    useCache = true;
+    freshness = "stale";
+    data = {
+      ...cachedEntry.data,
+      messages: cachedEntry.messageRows.map((messageRow) => messageFromCachedRow(messageRow)),
+    };
+    getCoreDiagnostics()?.warn("session_detail.stale_fallback", {
+      agent: reference.agentName,
+      session_id: reference.sessionId,
+      stored_version: cachedEntry.detailVersion,
+      target_version: sessionDetailVersion(currentMeta),
+      error: sourceError instanceof Error ? sourceError.message : undefined,
+    });
+  }
+  if (sourceError && !data) throw sourceError;
 
   if (!data) {
     return { status: "not-ready" };
@@ -147,6 +172,7 @@ function materializeStructuredSessionDetail(
     data: {
       ...data,
       reference,
+      detail_freshness: freshness,
       project_identity: projectIdentity,
       smart_tags: data.smart_tags ?? classifySessionTags(data),
       smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
@@ -181,8 +207,8 @@ export function materializeSessionDetailResponse(
   const currentMeta = context.head
     ? context.agent.getSessionMetaMap().get(reference.sessionId)
     : undefined;
-  const useCache = cacheHasCompleteDetail(cachedEntry, currentMeta);
-  if (!useCache || cachedEntry.data.smart_tags == null) {
+  const cacheState = cachedDetailState(cachedEntry, currentMeta);
+  if (!cachedEntry || cacheState !== "fresh" || cachedEntry.data.smart_tags == null) {
     return materializeStructuredSessionDetail(context, reference, cachedEntry);
   }
 
@@ -192,6 +218,7 @@ export function materializeSessionDetailResponse(
     data: {
       ...data,
       reference,
+      detail_freshness: "fresh",
       project_identity: getProjectIdentity(data, context.head),
       smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
       file_activity:
