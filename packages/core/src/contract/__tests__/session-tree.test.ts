@@ -44,6 +44,49 @@ function ids(nodes: { session: SessionHead }[]): string[] {
 }
 
 describe("buildSessionTree", () => {
+  it.each([
+    {
+      name: "root tree",
+      sessions: [makeSession("root", 1), makeSession("child", 2, { parent: "root" })],
+    },
+    {
+      name: "missing parent",
+      sessions: [
+        makeSession("orphan", 1, { parent: "missing" }),
+        makeSession("below", 2, { parent: "orphan" }),
+      ],
+    },
+    {
+      name: "self-cycle",
+      sessions: [makeSession("self", 1, { parent: "self" })],
+    },
+    {
+      name: "two-node cycle",
+      sessions: [makeSession("a", 1, { parent: "b" }), makeSession("b", 2, { parent: "a" })],
+    },
+    {
+      name: "cycle with an outgoing child",
+      sessions: [
+        makeSession("a", 1, { parent: "b" }),
+        makeSession("b", 2, { parent: "a" }),
+        makeSession("below", 3, { parent: "a" }),
+      ],
+    },
+  ])("keeps every session exactly once for a $name", ({ sessions }) => {
+    const tree = buildSessionTree(sessions);
+    const pending = [...tree.entries];
+    const visible: string[] = [];
+
+    while (pending.length > 0) {
+      const node = pending.pop()!;
+      visible.push(node.session.id);
+      pending.push(...node.children);
+    }
+
+    expect([...visible].sort()).toEqual(sessions.map((session) => session.id).sort());
+    expect(new Set(visible).size).toBe(sessions.length);
+  });
+
   it("splits a mixed array into roots, children and orphans", () => {
     const sessions = [
       makeSession("child", 2, { parent: "root" }),
@@ -171,6 +214,14 @@ describe("groupSessionsByCalendarDay", () => {
 });
 
 describe("session tree window filtering", () => {
+  it("keeps an in-window cycle member as an unmounted entry", () => {
+    const sessions = [makeSession("a", 100, { parent: "b" }), makeSession("b", 1, { parent: "a" })];
+
+    expect(
+      filterSessionTreeByActivityWindow(sessions, 90, 110).map((session) => session.id),
+    ).toEqual(["a"]);
+  });
+
   it("filters roots by activity and includes descendants regardless of their activity", () => {
     const sessions = [
       makeSession("parent", 100),
@@ -205,5 +256,17 @@ describe("session tree window filtering", () => {
     expect(
       filterSessionTreeByActivityWindow(sessions, 90, 110).map((session) => session.id),
     ).toEqual(["orphan"]);
+  });
+
+  it("keeps mounted descendants below an in-window orphan", () => {
+    const sessions = [
+      makeSession("orphan", 100, { parent: "missing" }),
+      makeSession("child", 1, { parent: "orphan" }),
+      makeSession("grandchild", 1, { parent: "child" }),
+    ];
+
+    expect(
+      filterSessionTreeByActivityWindow(sessions, 90, 110).map((session) => session.id),
+    ).toEqual(["orphan", "child", "grandchild"]);
   });
 });
