@@ -7,7 +7,7 @@
 
 > **One place to see every AI coding session you've ever had.**
 
-You've been coding with AI agents — Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, ZCode — and the conversations are scattered everywhere on your filesystem. Context is lost. Cost is invisible. History is buried.
+You've been coding with AI agents — Claude Code, Cursor, Kimi-Cli, Kimi-Code, Codex, Grok, Pi, OpenCode, ZCode — and the conversations are scattered everywhere on your filesystem. Context is lost. Cost is invisible. History is buried.
 
 **CodeSesh** fixes that. It scans your local machine, finds every AI agent session, and surfaces them in a unified, beautiful Web UI. Think of it as a time machine for your AI-assisted development workflow.
 
@@ -46,17 +46,21 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 
 ## Supported Agents
 
-| Agent | Status |
-|-------|--------|
+<!-- repo-fact:agents:start -->
+
+| Agent       | Status    |
+| ----------- | --------- |
 | Claude Code | Supported |
-| Cursor | Supported |
-| Kimi | Supported |
-| Kimi-Code | Supported |
-| Codex | Supported |
-| Grok | Supported |
-| Pi | Supported |
-| OpenCode | Supported |
-| ZCode | Supported |
+| Cursor      | Supported |
+| Kimi-Cli    | Supported |
+| Kimi-Code   | Supported |
+| Codex       | Supported |
+| Grok        | Supported |
+| Pi          | Supported |
+| OpenCode    | Supported |
+| ZCode       | Supported |
+
+<!-- repo-fact:agents:end -->
 
 More agents coming soon. See the [extension checklist](#extending).
 
@@ -66,8 +70,12 @@ More agents coming soon. See the [extension checklist](#extending).
 
 ### Prerequisites
 
+<!-- repo-fact:pnpm-version:start -->
+
 - Node.js 22+ for the published CLI
-- Node.js 24 and pnpm 11.11.0 for building from source
+- Node.js 24 and pnpm 11.20.0 for building from source
+
+<!-- repo-fact:pnpm-version:end -->
 
 ### Install & Run
 

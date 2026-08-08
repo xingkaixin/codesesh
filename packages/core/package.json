@@ -18,6 +18,11 @@
       "types": "./dist/contract/index.d.ts",
       "import": "./dist/contract/index.mjs",
       "require": "./dist/contract/index.js"
+    },
+    "./repository-facts": {
+      "types": "./dist/repository-facts.d.ts",
+      "import": "./dist/repository-facts.mjs",
+      "require": "./dist/repository-facts.js"
     }
   },
   "scripts": {

@@ -30,8 +30,8 @@ import {
   type MessageBackfillRow,
   type SessionRow,
 } from "./messages.js";
+import { CACHE_SCHEMA_VERSION } from "./version.js";
 
-const CACHE_SCHEMA_VERSION = 20;
 interface MessageToolBackfillRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
