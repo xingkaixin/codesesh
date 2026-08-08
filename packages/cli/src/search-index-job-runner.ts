@@ -88,7 +88,7 @@ export class SearchIndexJobRunner {
     const workerUrl = this.workerUrl();
     if (!workerUrl) {
       appLogger.warn("search_index.worker_missing", { context: batch.context });
-      this.settle(batch);
+      this.settle(batch, new Error("Search index worker is unavailable"));
       return;
     }
     appLogger.info("search_index.worker_started", {
