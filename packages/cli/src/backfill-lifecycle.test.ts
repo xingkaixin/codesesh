@@ -23,6 +23,12 @@ describe("BackfillLifecycle", () => {
       const attempt = lifecycle.startNext()!;
       expect(lifecycle.status()).toMatchObject({ currentAgent: "codex", pendingAgents: [] });
       expect(lifecycle.updateProgress(attempt, { phase: "scanning", processed: 2 })).toBe(true);
+      expect(lifecycle.updateProgress(attempt, { phase: "indexing", sessions: 3 })).toBe(true);
+      expect(lifecycle.status().progress).toEqual({
+        phase: "indexing",
+        processed: 2,
+        sessions: 3,
+      });
       expect(lifecycle.complete(attempt, terminal)).toBe(true);
 
       expect(lifecycle.stateFor("codex")?.status).toBe(terminal);
