@@ -3,6 +3,7 @@ import "@fontsource-variable/ibm-plex-sans";
 import "@fontsource-variable/jetbrains-mono";
 import "@fontsource-variable/space-grotesk";
 import { copy, localeRoutes, siteUrl, type Locale } from "../data/landing";
+import analyticsLoader from "../scripts/analytics-loader.js?raw";
 import "../styles/global.css";
 
 interface Props {
@@ -19,7 +20,9 @@ const ogLocale = locale === "zh" ? "zh_CN" : "en_US";
 const ogLocaleAlternate = locale === "zh" ? "en_US" : "zh_CN";
 const analyticsEnabled = import.meta.env.PROD;
 const analyticsHost = new URL(siteUrl).hostname;
-const featureList = t.features.groups.flatMap((group) => group.items.map((item) => item.title));
+const featureList = t.features.groups.flatMap((group) =>
+  group.items.map((item) => item.title),
+);
 const ogImageUrl = `${siteUrl}/og-image.png`;
 const websiteId = `${siteUrl}/#website`;
 const softwareId = `${siteUrl}/#software`;
@@ -34,7 +37,10 @@ const jsonLd = {
       name: "CodeSesh",
       url: siteUrl,
       logo: `${siteUrl}/logo.svg`,
-      sameAs: ["https://github.com/xingkaixin/codesesh", "https://www.npmjs.com/package/codesesh"],
+      sameAs: [
+        "https://github.com/xingkaixin/codesesh",
+        "https://www.npmjs.com/package/codesesh",
+      ],
     },
     {
       "@type": "WebSite",
@@ -135,18 +141,24 @@ const jsonLd = {
         function getStored() {
           try {
             var value = window.localStorage.getItem(KEY);
-            return value === "light" || value === "dark" || value === "system" ? value : "system";
+            return value === "light" || value === "dark" || value === "system"
+              ? value
+              : "system";
           } catch (e) {
             return "system";
           }
         }
 
         function systemPrefersDark() {
-          return typeof window.matchMedia === "function" && window.matchMedia(MEDIA).matches;
+          return (
+            typeof window.matchMedia === "function" &&
+            window.matchMedia(MEDIA).matches
+          );
         }
 
         function apply(theme) {
-          var isDark = theme === "dark" || (theme === "system" && systemPrefersDark());
+          var isDark =
+            theme === "dark" || (theme === "system" && systemPrefersDark());
           document.documentElement.classList.toggle("dark", isDark);
         }
 
@@ -230,8 +242,18 @@ const jsonLd = {
     <link rel="alternate" hreflang="zh-CN" href={chineseUrl} />
     <link rel="alternate" hreflang="x-default" href={englishUrl} />
     <link rel="alternate" type="text/markdown" href="/index.md" />
-    <link rel="alternate" type="text/plain" href="/llms.txt" title="AI overview" />
-    <link rel="alternate" type="text/plain" href="/llms-full.txt" title="Full AI knowledge file" />
+    <link
+      rel="alternate"
+      type="text/plain"
+      href="/llms.txt"
+      title="AI overview"
+    />
+    <link
+      rel="alternate"
+      type="text/plain"
+      href="/llms-full.txt"
+      title="Full AI knowledge file"
+    />
 
     <meta property="og:type" content="website" />
     <meta property="og:url" content={canonicalUrl} />
@@ -258,37 +280,19 @@ const jsonLd = {
     <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
 
     <title>{t.meta.title}</title>
-    <script is:inline type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <script
+      is:inline
+      type="application/ld+json"
+      set:html={JSON.stringify(jsonLd)}
+    />
     {
       analyticsEnabled && (
         <script
           is:inline
           data-analytics-host={analyticsHost}
           data-analytics-token="c341768d21d44e19b5efbc18d4eb57c6"
-        >
-          (function () {
-            var loader = document.currentScript;
-            if (
-              !(loader instanceof HTMLScriptElement) ||
-              window.location.hostname !== loader.dataset.analyticsHost
-            )
-              return;
-
-            window.addEventListener(
-              "load",
-              function () {
-                var beacon = document.createElement("script");
-                beacon.async = true;
-                beacon.src = "https://static.cloudflareinsights.com/beacon.min.js";
-                beacon.dataset.cfBeacon = JSON.stringify({
-                  token: loader.dataset.analyticsToken,
-                });
-                document.head.append(beacon);
-              },
-              { once: true },
-            );
-          })();
-        </script>
+          set:html={analyticsLoader}
+        />
       )
     }
   </head>

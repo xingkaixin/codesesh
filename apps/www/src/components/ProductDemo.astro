@@ -243,15 +243,13 @@ const replayFilters = [
 ] as const;
 ---
 
-<div
-  id={id}
-  class="product-demo"
-  data-product-demo={scene}
-  data-scene={scene}
-  role="region"
-  aria-label={`${t.previewLabel}: ${previewLabel}`}
->
-  <div class="demo-viewport" tabindex="0">
+<div id={id} class="product-demo" data-product-demo={scene} data-scene={scene}>
+  <div
+    class="demo-viewport"
+    role="region"
+    aria-label={`${t.previewLabel}: ${previewLabel}`}
+    tabindex="0"
+  >
     <div class="demo-shell">
       {
         scene === "overview" && (
