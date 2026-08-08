@@ -40,6 +40,9 @@ describe("cache schema boundary", () => {
         messageColumns: (
           db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>
         ).map((row) => row.name),
+        sessionColumns: (
+          db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>
+        ).map((row) => row.name),
         version: Number(
           (db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined)
             ?.user_version ?? 0,
@@ -68,7 +71,14 @@ describe("cache schema boundary", () => {
       "indexed_at",
     ]);
     expect(state?.messageColumns).toContain("parts_format_version");
-    expect(state?.version).toBe(19);
+    expect(state?.sessionColumns).toEqual(
+      expect.arrayContaining([
+        "project_identity_resolver_revision",
+        "project_identity_input_signature",
+        "smart_tags_classifier_revision",
+      ]),
+    );
+    expect(state?.version).toBe(20);
   });
 
   it("exposes capabilities instead of migration steps", () => {
@@ -112,7 +122,50 @@ describe("cache schema boundary", () => {
           .get("codex", session.id) != null,
     }));
 
-    expect(migrated).toEqual({ version: 19, detailVersion: "", pending: true });
+    expect(migrated).toEqual({ version: 20, detailVersion: "", pending: true });
+  });
+
+  it("marks legacy project identities stale by leaving added provenance empty", () => {
+    const session = makeSessionHead("legacy-identity");
+    saveCachedSessions("codex", [session], {});
+
+    const legacyDb = new Database(getCachePath());
+    legacyDb.exec("ALTER TABLE sessions DROP COLUMN project_identity_resolver_revision");
+    legacyDb.exec("ALTER TABLE sessions DROP COLUMN project_identity_input_signature");
+    legacyDb.exec("ALTER TABLE sessions DROP COLUMN smart_tags_classifier_revision");
+    legacyDb.pragma("user_version = 19");
+    legacyDb.prepare("UPDATE cache_meta SET value = '19' WHERE key = 'version'").run();
+    legacyDb.close();
+    setSchemaEnsuredPath(null);
+
+    const migrated = schema.withCacheDb((db) => {
+      const row = db
+        .prepare(
+          `SELECT project_identity_resolver_revision, project_identity_input_signature,
+                  smart_tags_classifier_revision
+           FROM sessions WHERE session_id = ?`,
+        )
+        .get(session.id) as {
+        project_identity_resolver_revision?: string | null;
+        project_identity_input_signature?: string | null;
+        smart_tags_classifier_revision?: string | null;
+      };
+      return {
+        version: Number(
+          (db.prepare("PRAGMA user_version").get() as { user_version?: number }).user_version,
+        ),
+        resolverRevision: row.project_identity_resolver_revision,
+        inputSignature: row.project_identity_input_signature,
+        classifierRevision: row.smart_tags_classifier_revision,
+      };
+    });
+
+    expect(migrated).toEqual({
+      version: 20,
+      resolverRevision: null,
+      inputSignature: null,
+      classifierRevision: null,
+    });
   });
 
   it.each([15, 16])(
@@ -178,7 +231,7 @@ describe("cache schema boundary", () => {
       });
 
       expect(migrated).toEqual({
-        version: 19,
+        version: 20,
         partsJson: legacyPartsJson,
         partsFormatVersion: 0,
       });

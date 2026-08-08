@@ -10,6 +10,7 @@ import {
   ensureSessionTagsSync,
   FileSystemSessionSource,
   sessionSignature,
+  SMART_TAG_CLASSIFIER_REVISION,
   sortSessions,
   type AgentScanProgress,
   type BaseAgent,
@@ -73,6 +74,7 @@ export interface ScanRefreshWorkerRequest {
   previousSessions: SessionHead[];
   changedIds: string[] | null;
   sourceSync?: boolean;
+  derivedOnly?: boolean;
   backfill?: boolean;
   backfillCursor?: string | null;
   checkpoint?: boolean;
@@ -103,7 +105,9 @@ function computeCacheMetaDiff(
 function hasStaleSmartTags(session: SessionHead): boolean {
   const sourceUpdatedAt = session.time_updated ?? session.time_created;
   return (
-    !Array.isArray(session.smart_tags) || session.smart_tags_source_updated_at !== sourceUpdatedAt
+    !Array.isArray(session.smart_tags) ||
+    session.smart_tags_source_updated_at !== sourceUpdatedAt ||
+    session.smart_tags_classifier_revision !== SMART_TAG_CLASSIFIER_REVISION
   );
 }
 
@@ -398,6 +402,8 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
 
   if (!isAvailable) {
     sessions = [];
+  } else if (data.derivedOnly) {
+    sessions = data.previousSessions;
   } else if (
     agent instanceof FileSystemSessionSource &&
     (data.sourceSync === true || data.checkpoint === true)

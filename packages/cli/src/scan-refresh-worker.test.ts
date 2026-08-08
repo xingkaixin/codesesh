@@ -139,6 +139,7 @@ describe("finalizeSessions", () => {
     const session = makeSession("s1", {
       smart_tags: ["bugfix"],
       smart_tags_source_updated_at: 1000,
+      smart_tags_classifier_revision: "smart-tags-v1",
     });
 
     const [result] = finalizeSessions(agent, [session]);

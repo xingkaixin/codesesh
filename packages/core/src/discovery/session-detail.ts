@@ -6,6 +6,7 @@ import {
   classifySessionTags,
   extractSessionFileActivity,
   getSmartTagSourceTimestamp,
+  SMART_TAG_CLASSIFIER_REVISION,
 } from "../utils/index.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import { listSessionFileActivity } from "./cache/file-activity.js";
@@ -106,7 +107,17 @@ function getProjectIdentity(
   data: Pick<SessionDetail, "directory" | "project_identity">,
   head: SessionHead | undefined,
 ) {
-  return data.project_identity ?? head?.project_identity ?? computeIdentity(data.directory, realFs);
+  return head?.project_identity ?? data.project_identity ?? computeIdentity(data.directory, realFs);
+}
+
+function getSmartTags(data: SessionDetail) {
+  if (
+    Array.isArray(data.smart_tags) &&
+    data.smart_tags_classifier_revision === SMART_TAG_CLASSIFIER_REVISION
+  ) {
+    return data.smart_tags;
+  }
+  return classifySessionTags(data);
 }
 
 function materializeStructuredSessionDetail(
@@ -174,8 +185,13 @@ function materializeStructuredSessionDetail(
       reference,
       detail_freshness: freshness,
       project_identity: projectIdentity,
-      smart_tags: data.smart_tags ?? classifySessionTags(data),
+      project_identity_resolver_revision:
+        head?.project_identity_resolver_revision ?? data.project_identity_resolver_revision,
+      project_identity_input_signature:
+        head?.project_identity_input_signature ?? data.project_identity_input_signature,
+      smart_tags: getSmartTags(data),
       smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
+      smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
       file_activity: fileActivity,
     },
   };
@@ -208,7 +224,12 @@ export function materializeSessionDetailResponse(
     ? context.agent.getSessionMetaMap().get(reference.sessionId)
     : undefined;
   const cacheState = cachedDetailState(cachedEntry, currentMeta);
-  if (!cachedEntry || cacheState !== "fresh" || cachedEntry.data.smart_tags == null) {
+  if (
+    !cachedEntry ||
+    cacheState !== "fresh" ||
+    cachedEntry.data.smart_tags == null ||
+    cachedEntry.data.smart_tags_classifier_revision !== SMART_TAG_CLASSIFIER_REVISION
+  ) {
     return materializeStructuredSessionDetail(context, reference, cachedEntry);
   }
 

@@ -1,5 +1,6 @@
 import * as os from "node:os";
 import * as path from "node:path";
+import { createHash } from "node:crypto";
 import type { ProjectIdentity, ProjectIdentityKind } from "../types/index.js";
 import { fallbackDisplayName } from "./display-name.js";
 import { realFs } from "./fs.js";
@@ -8,6 +9,14 @@ export interface IdentityFs {
   exists(path: string): boolean;
   readText(path: string): string | null;
   spawn(cmd: string, args: string[], opts: { cwd: string }): { stdout: string; exitCode: number };
+}
+
+export const PROJECT_IDENTITY_RESOLVER_REVISION = "project-identity-v1";
+
+export interface ProjectIdentityProjection {
+  identity: ProjectIdentity;
+  resolverRevision: string;
+  inputSignature: string;
 }
 
 const MANIFESTS = [
@@ -54,7 +63,7 @@ export function normalizeGitRemote(url: string): string | null {
 const IDENTITY_CACHE_TTL_MS = 10 * 60 * 1000;
 
 interface IdentityCacheEntry {
-  identity: ProjectIdentity;
+  projection: ProjectIdentityProjection;
   resolvedAt: number;
 }
 
@@ -66,32 +75,55 @@ export function clearIdentityCache(): void {
 }
 
 export function computeIdentity(cwd: string | null | undefined, fs: IdentityFs): ProjectIdentity {
-  if (fs !== realFs) return resolveIdentity(cwd, fs);
-
-  const key = cwd ?? "";
-  const cached = identityCache.get(key);
-  if (cached && Date.now() - cached.resolvedAt < IDENTITY_CACHE_TTL_MS) {
-    return cached.identity;
-  }
-  const identity = resolveIdentity(cwd, fs);
-  identityCache.set(key, { identity, resolvedAt: Date.now() });
-  return identity;
+  return computeIdentityProjection(cwd, fs).identity;
 }
 
-function resolveIdentity(cwd: string | null | undefined, fs: IdentityFs): ProjectIdentity {
-  if (!cwd) return loose();
+export function normalizeProjectDirectory(cwd: string | null | undefined): string {
+  if (!cwd) return "";
+  return getPathOps(cwd).resolve(cwd);
+}
+
+export function computeIdentityProjection(
+  cwd: string | null | undefined,
+  fs: IdentityFs,
+  resolverRevision = PROJECT_IDENTITY_RESOLVER_REVISION,
+): ProjectIdentityProjection {
+  if (fs !== realFs) return resolveIdentityProjection(cwd, fs, resolverRevision);
+
+  const key = normalizeProjectDirectory(cwd);
+  const cached = identityCache.get(key);
+  if (
+    cached &&
+    cached.projection.resolverRevision === resolverRevision &&
+    Date.now() - cached.resolvedAt < IDENTITY_CACHE_TTL_MS
+  ) {
+    return cached.projection;
+  }
+  const projection = resolveIdentityProjection(cwd, fs, resolverRevision);
+  identityCache.set(key, { projection, resolvedAt: Date.now() });
+  return projection;
+}
+
+function resolveIdentityProjection(
+  cwd: string | null | undefined,
+  fs: IdentityFs,
+  resolverRevision: string,
+): ProjectIdentityProjection {
+  if (!cwd) return projectIdentityProjection(loose(), resolverRevision, ["loose", "missing"]);
 
   const pathOps = getPathOps(cwd);
   const absoluteCwd = pathOps.resolve(cwd);
   const homeDir = os.homedir();
   const homePathOps = getPathOps(homeDir);
   const home = homePathOps === pathOps ? pathOps.resolve(homeDir) : homeDir;
-  if (absoluteCwd === home || LOOSE_DIRS.has(absoluteCwd)) return loose();
+  if (absoluteCwd === home || LOOSE_DIRS.has(absoluteCwd)) {
+    return projectIdentityProjection(loose(), resolverRevision, ["loose", absoluteCwd]);
+  }
   if (
     homePathOps === pathOps &&
     LOOSE_HOME_DIRS.some((dir) => absoluteCwd === pathOps.join(home, dir))
   ) {
-    return loose();
+    return projectIdentityProjection(loose(), resolverRevision, ["loose", absoluteCwd]);
   }
 
   const gitRoot = findGitRoot(absoluteCwd, fs, pathOps);
@@ -100,11 +132,17 @@ function resolveIdentity(cwd: string | null | undefined, fs: IdentityFs): Projec
     if (remote.exitCode === 0) {
       const normalized = normalizeGitRemote(remote.stdout.trim());
       if (normalized) {
-        return {
+        const identity: ProjectIdentity = {
           kind: "git_remote",
           key: normalized,
           displayName: deriveDisplayName({ kind: "git_remote", key: normalized, gitRoot, fs }),
         };
+        return projectIdentityProjection(identity, resolverRevision, [
+          "git_remote",
+          gitRoot,
+          normalized,
+          identity.displayName,
+        ]);
       }
     }
 
@@ -113,33 +151,59 @@ function resolveIdentity(cwd: string | null | undefined, fs: IdentityFs): Projec
       const raw = common.stdout.trim();
       if (raw) {
         const key = pathOps.isAbsolute(raw) ? raw : pathOps.resolve(gitRoot, raw);
-        return {
+        const identity: ProjectIdentity = {
           kind: "git_common_dir",
           key,
           displayName: deriveDisplayName({ kind: "git_common_dir", key, gitRoot, fs }),
         };
+        return projectIdentityProjection(identity, resolverRevision, [
+          "git_common_dir",
+          gitRoot,
+          key,
+          identity.displayName,
+        ]);
       }
     }
   }
 
   const manifestDir = findManifestDir(absoluteCwd, fs, pathOps);
   if (manifestDir) {
-    return {
+    const identity: ProjectIdentity = {
       kind: "manifest_path",
       key: manifestDir,
       displayName: deriveDisplayName({ kind: "manifest_path", key: manifestDir, fs }),
     };
+    return projectIdentityProjection(identity, resolverRevision, [
+      "manifest_path",
+      manifestDir,
+      identity.displayName,
+    ]);
   }
 
   if (homePathOps === pathOps) {
     const synthetic = synthesizeCodexScratchIdentity(absoluteCwd, home, pathOps);
-    if (synthetic) return synthetic;
+    if (synthetic) {
+      return projectIdentityProjection(synthetic, resolverRevision, ["synthetic", synthetic.key]);
+    }
   }
 
-  return {
+  const identity: ProjectIdentity = {
     kind: "path",
     key: absoluteCwd,
     displayName: fallbackDisplayName(absoluteCwd),
+  };
+  return projectIdentityProjection(identity, resolverRevision, ["path", absoluteCwd]);
+}
+
+function projectIdentityProjection(
+  identity: ProjectIdentity,
+  resolverRevision: string,
+  inputs: readonly string[],
+): ProjectIdentityProjection {
+  return {
+    identity,
+    resolverRevision,
+    inputSignature: createHash("sha256").update(JSON.stringify(inputs)).digest("hex"),
   };
 }
 

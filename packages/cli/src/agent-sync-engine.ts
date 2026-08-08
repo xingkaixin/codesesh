@@ -507,8 +507,28 @@ export class AgentSyncEngine {
     const checkDuration = performance.now() - checkStartedAt;
     this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
     if (!checkResult.hasChanges) {
-      this.logUnchangedRefresh(agent.name, refreshStartedAt);
-      return this.refreshStrategyResult(baseline, { status: "unchanged", checkDuration });
+      const scanStartedAt = performance.now();
+      const result = await this.runWorker(agent, baseline, [], {}, { derivedOnly: true });
+      agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
+      const sessions = attachMissingProjectIdentities(result.sessions);
+      const persistenceDiff = buildPersistenceDiff(baseline, sessions);
+      if (
+        persistenceDiff.changedSessions.length === 0 &&
+        persistenceDiff.removedSessionIds.length === 0
+      ) {
+        this.logUnchangedRefresh(agent.name, refreshStartedAt);
+        return this.refreshStrategyResult(sessions, {
+          status: "unchanged",
+          checkDuration,
+          scanDuration: performance.now() - scanStartedAt,
+        });
+      }
+      return this.refreshStrategyResult(sessions, {
+        persistenceDiff,
+        checkDuration,
+        scanDuration: performance.now() - scanStartedAt,
+        sourceFailures: result.sourceFailures ?? [],
+      });
     }
     const preciseChangedIds = checkResult.changedIds ?? null;
     const scanStartedAt = performance.now();
@@ -575,6 +595,7 @@ export class AgentSyncEngine {
     scanOptions: Pick<ScanOptions, "from" | "to" | "fast">,
     workerOptions: {
       sourceSync?: boolean;
+      derivedOnly?: boolean;
       backfill?: boolean;
       backfillCursor?: string | null;
       checkpoint?: boolean;
@@ -586,6 +607,7 @@ export class AgentSyncEngine {
       changedIds,
       scanOptions,
       sourceSync: workerOptions.sourceSync,
+      derivedOnly: workerOptions.derivedOnly,
       backfill: workerOptions.backfill,
       backfillCursor: workerOptions.backfillCursor,
       checkpoint: workerOptions.checkpoint,

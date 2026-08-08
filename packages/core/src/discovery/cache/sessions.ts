@@ -104,6 +104,8 @@ export function loadCachedSessions(agentName: string): CachedResult | null {
             project_identity_kind,
             project_identity_key,
             project_display_name,
+            project_identity_resolver_revision,
+            project_identity_input_signature,
             time_created,
             time_updated,
             message_count,
@@ -117,6 +119,7 @@ export function loadCachedSessions(agentName: string): CachedResult | null {
             model_usage_json,
             smart_tags_json,
             smart_tags_source_updated_at,
+            smart_tags_classifier_revision,
             meta_json
           FROM sessions
           WHERE agent_name = ?

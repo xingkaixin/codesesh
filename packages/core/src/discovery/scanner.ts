@@ -15,7 +15,12 @@ import {
   reportSessionSourceOutcome,
 } from "../agents/index.js";
 import { filterSessionsByProjectScope } from "../projects/index.js";
-import { classifySessionTags, getSmartTagSourceTimestamp, perf } from "../utils/index.js";
+import {
+  classifySessionTags,
+  getSmartTagSourceTimestamp,
+  perf,
+  SMART_TAG_CLASSIFIER_REVISION,
+} from "../utils/index.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import {
   loadCachedSessions,
@@ -170,6 +175,7 @@ export function ensureSessionTagsSync(
   agent: BaseAgent,
   sessions: SessionHead[],
   onProgress?: (processed: number, total: number) => void,
+  classifierRevision = SMART_TAG_CLASSIFIER_REVISION,
 ): { sessions: SessionHead[]; changed: boolean; timing: SessionTagTiming } {
   let changed = false;
   let processed = 0;
@@ -188,7 +194,11 @@ export function ensureSessionTagsSync(
   const tagged = sessions.map((session) => {
     const sourceUpdatedAt = session.time_updated ?? session.time_created;
     const currentTags = Array.isArray(session.smart_tags) ? session.smart_tags : null;
-    if (currentTags && session.smart_tags_source_updated_at === sourceUpdatedAt) {
+    if (
+      currentTags &&
+      session.smart_tags_source_updated_at === sourceUpdatedAt &&
+      session.smart_tags_classifier_revision === classifierRevision
+    ) {
       timing.cacheHits += 1;
       processed += 1;
       onProgress?.(processed, total);
@@ -220,6 +230,7 @@ export function ensureSessionTagsSync(
         ...session,
         smart_tags: tags,
         smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
+        smart_tags_classifier_revision: classifierRevision,
       };
     } catch {
       timing.failedSessions += 1;
@@ -261,7 +272,11 @@ async function ensureSessionTags(
   const staleSessions = sessions.filter((session) => {
     const sourceUpdatedAt = session.time_updated ?? session.time_created;
     const currentTags = Array.isArray(session.smart_tags) ? session.smart_tags : null;
-    return !currentTags || session.smart_tags_source_updated_at !== sourceUpdatedAt;
+    return (
+      !currentTags ||
+      session.smart_tags_source_updated_at !== sourceUpdatedAt ||
+      session.smart_tags_classifier_revision !== SMART_TAG_CLASSIFIER_REVISION
+    );
   });
 
   if (staleSessions.length === 0) {
@@ -296,6 +311,7 @@ async function ensureSessionTags(
           ...session,
           smart_tags: result.tags,
           smart_tags_source_updated_at: result.sourceUpdatedAt,
+          smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
         };
       }),
     };
@@ -317,7 +333,11 @@ export async function finalizeAgentScan(
   }
 
   const identityStart = performance.now();
-  const sessionsWithIdentity = attachMissingProjectIdentities(sessions);
+  const sessionsWithIdentity =
+    finalization.kind === "cache-only" ? sessions : attachMissingProjectIdentities(sessions);
+  const identityChanged = sessionsWithIdentity.some(
+    (session, index) => session !== sessions[index],
+  );
   timing.identity = performance.now() - identityStart;
 
   let tagged = { sessions: sessionsWithIdentity, changed: false };
@@ -338,7 +358,7 @@ export async function finalizeAgentScan(
         tagged.sessions,
         finalization.changedIds,
       );
-    } else if (finalization.kind === "unchanged" && tagged.changed) {
+    } else if (finalization.kind === "unchanged" && (identityChanged || tagged.changed)) {
       saveCachedSessionDiff(agent, finalization.cached.sessions, tagged.sessions);
     }
   }

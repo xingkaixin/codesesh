@@ -38,11 +38,20 @@ function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead 
 }
 
 describe("attachMissingProjectIdentities", () => {
-  it("leaves sessions that already have an identity untouched", () => {
+  it("leaves a session untouched when its identity provenance is current", () => {
     const existing = { kind: "path" as const, displayName: "proj", key: "/p" };
-    const sessions = [makeSession("a", { project_identity: existing })];
-    const result = attachMissingProjectIdentities(sessions);
-    expect(result[0]!.project_identity).toBe(existing);
+    const projection = {
+      identity: existing,
+      resolverRevision: "resolver-v1",
+      inputSignature: "input-v1",
+    };
+    const session = makeSession("a", {
+      project_identity: existing,
+      project_identity_resolver_revision: projection.resolverRevision,
+      project_identity_input_signature: projection.inputSignature,
+    });
+    const result = attachMissingProjectIdentities([session], () => projection);
+    expect(result[0]).toBe(session);
   });
 
   it("computes an identity for sessions missing one", () => {
@@ -50,15 +59,68 @@ describe("attachMissingProjectIdentities", () => {
     const result = attachMissingProjectIdentities(sessions);
     expect(result[0]!.project_identity).toBeDefined();
     expect(result[0]!.project_identity?.displayName).toBeTruthy();
+    expect(result[0]!.project_identity_resolver_revision).toBeTruthy();
+    expect(result[0]!.project_identity_input_signature).toBeTruthy();
   });
 
-  it("dedupes identity computation by directory", () => {
+  it("dedupes identity resolution by normalized directory", () => {
     const sessions = [
-      makeSession("a", { directory: "/tmp/shared" }),
-      makeSession("b", { directory: "/tmp/shared" }),
+      makeSession("a", { directory: "/workspace/shared" }),
+      makeSession("b", { directory: "/workspace/shared/." }),
     ];
-    const result = attachMissingProjectIdentities(sessions);
+    const resolve = vi.fn(() => ({
+      identity: { kind: "path" as const, key: "/workspace/shared", displayName: "shared" },
+      resolverRevision: "resolver-v1",
+      inputSignature: "input-v1",
+    }));
+    const result = attachMissingProjectIdentities(sessions, resolve);
     expect(result[0]!.project_identity).toEqual(result[1]!.project_identity);
+    expect(resolve).toHaveBeenCalledOnce();
+  });
+
+  it("refreshes all sessions when a directory's identity input changes", () => {
+    const oldIdentity = { kind: "git_remote" as const, key: "github.com/acme/a", displayName: "a" };
+    const sessions = ["a", "b"].map((id) =>
+      makeSession(id, {
+        project_identity: oldIdentity,
+        project_identity_resolver_revision: "resolver-v1",
+        project_identity_input_signature: "remote-a",
+      }),
+    );
+    const resolve = vi.fn(() => ({
+      identity: { kind: "git_remote" as const, key: "github.com/acme/b", displayName: "b" },
+      resolverRevision: "resolver-v1",
+      inputSignature: "remote-b",
+    }));
+
+    const result = attachMissingProjectIdentities(sessions, resolve);
+
+    expect(result.map((session) => session.project_identity?.key)).toEqual([
+      "github.com/acme/b",
+      "github.com/acme/b",
+    ]);
+    expect(resolve).toHaveBeenCalledOnce();
+  });
+
+  it("revalidates legacy and older-revision identities", () => {
+    const identity = { kind: "path" as const, key: "/workspace/app", displayName: "app" };
+    const projection = {
+      identity,
+      resolverRevision: "resolver-v2",
+      inputSignature: "same-input",
+    };
+    const legacy = makeSession("legacy", { project_identity: identity });
+    const oldRevision = makeSession("old", {
+      project_identity: identity,
+      project_identity_resolver_revision: "resolver-v1",
+      project_identity_input_signature: "same-input",
+    });
+
+    const result = attachMissingProjectIdentities([legacy, oldRevision], () => projection);
+
+    expect(
+      result.every((session) => session.project_identity_resolver_revision === "resolver-v2"),
+    ).toBe(true);
   });
 });
 
@@ -115,6 +177,60 @@ describe("sessionSignature", () => {
     const base = makeSession("a");
     const retagged = { ...base, smart_tags_source_updated_at: 9999 };
     expect(sessionSignature(base)).not.toBe(sessionSignature(retagged));
+  });
+
+  it("changes when the project identity changes", () => {
+    const base = makeSession("a", {
+      project_identity: { kind: "path", key: "/old", displayName: "old" },
+    });
+    const resolved = {
+      ...base,
+      project_identity: {
+        kind: "git_remote" as const,
+        key: "github.com/acme/new",
+        displayName: "new",
+      },
+    };
+    expect(sessionSignature(base)).not.toBe(sessionSignature(resolved));
+  });
+
+  it("changes when project identity provenance changes", () => {
+    const identity = { kind: "path" as const, key: "/app", displayName: "app" };
+    const base = makeSession("a", {
+      project_identity: identity,
+      project_identity_resolver_revision: "resolver-v1",
+      project_identity_input_signature: "input-v1",
+    });
+    const revised = { ...base, project_identity_resolver_revision: "resolver-v2" };
+    const changedInput = { ...base, project_identity_input_signature: "input-v2" };
+
+    expect(sessionSignature(base)).not.toBe(sessionSignature(revised));
+    expect(sessionSignature(base)).not.toBe(sessionSignature(changedInput));
+  });
+
+  it("changes when smart tags change without a source timestamp change", () => {
+    const base = makeSession("a", {
+      smart_tags: ["bugfix"],
+      smart_tags_source_updated_at: 9999,
+    });
+    const retagged = { ...base, smart_tags: ["feature-dev" as const] };
+    expect(sessionSignature(base)).not.toBe(sessionSignature(retagged));
+  });
+
+  it("changes when the smart tag classifier revision changes", () => {
+    const base = makeSession("a", {
+      smart_tags: ["bugfix"],
+      smart_tags_source_updated_at: 9999,
+      smart_tags_classifier_revision: "smart-tags-v1",
+    });
+    const revised = { ...base, smart_tags_classifier_revision: "smart-tags-v2" };
+    expect(sessionSignature(base)).not.toBe(sessionSignature(revised));
+  });
+
+  it("ignores smart tag ordering", () => {
+    const base = makeSession("a", { smart_tags: ["bugfix", "feature-dev"] });
+    const reordered = { ...base, smart_tags: ["feature-dev" as const, "bugfix" as const] };
+    expect(sessionSignature(base)).toBe(sessionSignature(reordered));
   });
 
   it("changes when a stat field changes", () => {

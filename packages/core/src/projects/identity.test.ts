@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearIdentityCache,
   computeIdentity,
+  computeIdentityProjection,
   getProjectIdentityKey,
   matchesProjectIdentity,
   normalizeGitRemote,
@@ -87,6 +88,29 @@ describe("computeIdentity", () => {
       key: "github.com/xingkaixin/codesesh",
       displayName: "codesesh",
     });
+  });
+
+  it("versions a projection independently from its input signature", () => {
+    const fs = createFs({ "/repo/.git": true }, { "/repo": "git@github.com:acme/app.git" });
+
+    const first = computeIdentityProjection("/repo/src", fs, "resolver-v1");
+    const revised = computeIdentityProjection("/repo/src", fs, "resolver-v2");
+
+    expect(revised.identity).toEqual(first.identity);
+    expect(revised.inputSignature).toBe(first.inputSignature);
+    expect(revised.resolverRevision).not.toBe(first.resolverRevision);
+  });
+
+  it("changes the input signature when the git remote changes", () => {
+    const paths: Record<string, string | true> = { "/repo/.git": true };
+    const remoteA = createFs(paths, { "/repo": "git@github.com:acme/a.git" });
+    const remoteB = createFs(paths, { "/repo": "git@github.com:acme/b.git" });
+
+    const first = computeIdentityProjection("/repo/src", remoteA);
+    const changed = computeIdentityProjection("/repo/src", remoteB);
+
+    expect(changed.identity.key).toBe("github.com/acme/b");
+    expect(changed.inputSignature).not.toBe(first.inputSignature);
   });
 
   it("uses manifest path when git metadata is absent", () => {

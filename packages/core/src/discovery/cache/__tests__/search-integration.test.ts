@@ -680,7 +680,7 @@ describe("searchSessions", () => {
     } finally {
       migratedDb.close();
     }
-    expect(getUserVersion(getCachePath())).toBe(19);
+    expect(getUserVersion(getCachePath())).toBe(20);
   });
 
   it("keeps small incremental updates searchable immediately", () => {
@@ -1468,7 +1468,7 @@ describe("searchSessions", () => {
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(19);
+    expect(getUserVersion(getCachePath())).toBe(20);
   });
 
   it("refreshes cached project identities when migrating to schema version 12", () => {
