@@ -1,10 +1,11 @@
 import Database from "better-sqlite3";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   backupDatabaseIfPopulated,
+  getUserVersion,
   openDb,
   openDbReadOnly,
   runSchemaMigrations,
@@ -128,6 +129,80 @@ describe("sqlite migration helpers", () => {
       );
     } finally {
       db.close();
+    }
+  });
+
+  it("keeps the source and backup recoverable when a destructive migration fails", () => {
+    const dir = mkdtempSync(join(tmpdir(), "codesesh-migration-recovery-"));
+    const dbPath = join(dir, "cache.db");
+    const db = new Database(dbPath) as unknown as SQLiteDatabase;
+    try {
+      db.exec("CREATE TABLE rows(id INTEGER PRIMARY KEY, value TEXT NOT NULL)");
+      db.prepare("INSERT INTO rows(id, value) VALUES (1, 'before')").run();
+
+      expect(() =>
+        runSchemaMigrations(db, {
+          dbPath,
+          currentVersion: 0,
+          targetVersion: 1,
+          migrations: [
+            {
+              version: 1,
+              destructive: true,
+              migrate(database) {
+                database.exec("ALTER TABLE rows ADD COLUMN migrated INTEGER NOT NULL DEFAULT 1");
+                database.exec("UPDATE rows SET value = 'during'");
+                throw new Error("migration interrupted");
+              },
+            },
+          ],
+          backupTables: ["rows"],
+          backupLabel: "recovery",
+        }),
+      ).toThrow("migration interrupted");
+
+      expect(getUserVersion(db)).toBe(0);
+      expect(db.prepare("SELECT * FROM rows").all()).toEqual([{ id: 1, value: "before" }]);
+      expect(
+        db
+          .prepare("PRAGMA table_info(rows)")
+          .all()
+          .map((row) => row.name),
+      ).toEqual(["id", "value"]);
+
+      const backupName = readdirSync(dir).find((name) => name.endsWith(".recovery.bak"));
+      expect(backupName).toBeDefined();
+      const backup = new Database(join(dir, backupName!), { readonly: true });
+      try {
+        expect(backup.prepare("SELECT * FROM rows").all()).toEqual([{ id: 1, value: "before" }]);
+      } finally {
+        backup.close();
+      }
+
+      runSchemaMigrations(db, {
+        dbPath,
+        currentVersion: 0,
+        targetVersion: 1,
+        migrations: [
+          {
+            version: 1,
+            destructive: true,
+            migrate(database) {
+              database.exec("ALTER TABLE rows ADD COLUMN migrated INTEGER NOT NULL DEFAULT 1");
+            },
+          },
+        ],
+        backupTables: ["rows"],
+        backupLabel: "recovery",
+      });
+
+      expect(getUserVersion(db)).toBe(1);
+      expect(db.prepare("SELECT * FROM rows").all()).toEqual([
+        { id: 1, value: "before", migrated: 1 },
+      ]);
+    } finally {
+      db.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

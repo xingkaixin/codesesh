@@ -478,6 +478,7 @@ function addIndexedMessageCount(db: SQLiteDatabase): void {
 
 function addDetailVersion(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents")) return;
+  createCacheTables(db);
   if (!columnExists(db, "session_documents", "detail_version")) {
     db.exec("ALTER TABLE session_documents ADD COLUMN detail_version TEXT NOT NULL DEFAULT ''");
   }
@@ -1275,9 +1276,8 @@ function runWithFtsRecovery<T>(db: SQLiteDatabase, fn: (db: SQLiteDatabase) => T
   }
 }
 
-function setCacheSchemaVersion(db: SQLiteDatabase): void {
+function setCacheMetaVersion(db: SQLiteDatabase): void {
   createCacheTables(db);
-  setUserVersion(db, CACHE_SCHEMA_VERSION);
   db.prepare(
     `
       INSERT INTO cache_meta(key, value)
@@ -1285,6 +1285,11 @@ function setCacheSchemaVersion(db: SQLiteDatabase): void {
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `,
   ).run(String(CACHE_SCHEMA_VERSION));
+}
+
+function setCacheSchemaVersion(db: SQLiteDatabase): void {
+  setUserVersion(db, CACHE_SCHEMA_VERSION);
+  setCacheMetaVersion(db);
 }
 
 function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
@@ -1376,8 +1381,14 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
   // Only stamp when behind: every thread's first connection runs ensureSchema,
   // and an unconditional PRAGMA user_version write would contend for the write
   // lock against concurrent checkpoint/index writers on every startup.
-  if (getUserVersion(db) < CACHE_SCHEMA_VERSION) {
+  const userVersion = getUserVersion(db);
+  if (userVersion < CACHE_SCHEMA_VERSION) {
     setCacheSchemaVersion(db);
+  } else if (
+    userVersion === CACHE_SCHEMA_VERSION &&
+    readLegacyCacheVersion(db) !== CACHE_SCHEMA_VERSION
+  ) {
+    setCacheMetaVersion(db);
   }
 
   migrateCodexExecDecode(db);

@@ -1,21 +1,35 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listBookmarks, type BookmarkRecord } from "../../state/bookmarks.js";
-import { listCachedProjectGroups } from "../cache/project-groups.js";
-import { loadCachedSessions } from "../cache/sessions.js";
-import { searchSessions } from "../cache/search.js";
 import type { SessionHead } from "../../types/index.js";
+import { setSchemaEnsuredPath } from "../cache/db.js";
+import { searchFileActivitySessions } from "../cache/file-activity.js";
+import { listCachedProjectGroups } from "../cache/project-groups.js";
+import {
+  loadCachedSessionData,
+  loadCachedSessionRawEntry,
+  loadCachedSessions,
+  saveCachedSessions,
+} from "../cache/sessions.js";
+import { searchSessions } from "../cache/search.js";
+import {
+  createReleaseCacheFixture,
+  EXPECTED_CACHE_SCHEMA_VERSION,
+  expectedBackupCount,
+  hasStructuredMessages,
+  RELEASE_CACHE_FIXTURES,
+  type MigrationFixtureSeed,
+  type ReleaseCacheFixture,
+} from "./migration-fixtures.js";
 
-// Isolated temp directory so computeIdentity resolves to a deterministic
-// "path" identity regardless of manifests in /tmp.
 const FIXTURE_DIR = mkdtempSync(join(tmpdir(), "codesesh-smoke-"));
 const FIXTURE_DIR_NAME = FIXTURE_DIR.split(/[\\/]/).pop()!;
-
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-migration-smoke-"));
 const now = 1_700_000_000_000;
+const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
 
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
@@ -26,14 +40,16 @@ vi.mock("node:os", async (importOriginal) => {
   };
 });
 
-vi.spyOn(Date, "now").mockReturnValue(now);
-
 function getCacheDir(): string {
   return join(testHomeDir, ".cache", "codesesh");
 }
 
 function getCachePath(): string {
   return join(getCacheDir(), "codesesh.db");
+}
+
+function getLegacyCachePath(): string {
+  return join(getCacheDir(), "scan-cache.json");
 }
 
 function getStateDir(): string {
@@ -58,7 +74,7 @@ function makeSession(): SessionHead {
     time_created: now - 1_000,
     time_updated: now,
     stats: {
-      message_count: 2,
+      message_count: 1,
       total_input_tokens: 10,
       total_output_tokens: 5,
       total_cost: 0,
@@ -67,97 +83,23 @@ function makeSession(): SessionHead {
   };
 }
 
-function createLegacyCacheFixture(): void {
+function makeSeed(): MigrationFixtureSeed {
+  return {
+    agentName: "claudecode",
+    session: makeSession(),
+    sourcePath: join(FIXTURE_DIR, "session.jsonl"),
+    searchContent: "legacy migration smoke needle content",
+    messageText: "structured detail survived migration",
+    filePath: join(FIXTURE_DIR, "src", "legacy.ts"),
+    now,
+  };
+}
+
+function createCacheFixture(fixture: ReleaseCacheFixture, populated = true): void {
   mkdirSync(getCacheDir(), { recursive: true });
   const db = new Database(getCachePath());
-  const session = makeSession();
-
   try {
-    db.exec(`
-      PRAGMA user_version = 0;
-
-      CREATE TABLE cache_meta (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      );
-
-      CREATE TABLE agent_cache (
-        agent_name TEXT PRIMARY KEY,
-        timestamp INTEGER NOT NULL
-      );
-
-      CREATE TABLE cached_sessions (
-        agent_name TEXT NOT NULL,
-        session_id TEXT NOT NULL,
-        session_json TEXT NOT NULL,
-        meta_json TEXT,
-        PRIMARY KEY (agent_name, session_id)
-      );
-
-      CREATE TABLE session_documents (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        agent_name TEXT NOT NULL,
-        session_id TEXT NOT NULL,
-        slug TEXT NOT NULL,
-        title TEXT NOT NULL,
-        directory TEXT NOT NULL,
-        time_created INTEGER NOT NULL,
-        time_updated INTEGER,
-        activity_time INTEGER NOT NULL,
-        content_text TEXT NOT NULL,
-        content_hash TEXT NOT NULL,
-        indexed_at INTEGER NOT NULL,
-        UNIQUE(agent_name, session_id)
-      );
-
-      CREATE VIRTUAL TABLE session_documents_fts USING fts5(
-        title,
-        content_text,
-        content='session_documents',
-        content_rowid='id'
-      );
-    `);
-
-    db.prepare("INSERT INTO cache_meta(key, value) VALUES ('version', '4')").run();
-    db.prepare("INSERT INTO agent_cache(agent_name, timestamp) VALUES (?, ?)").run(
-      "claudecode",
-      now,
-    );
-    db.prepare(
-      `
-        INSERT INTO cached_sessions(agent_name, session_id, session_json, meta_json)
-        VALUES (?, ?, ?, ?)
-      `,
-    ).run("claudecode", session.id, JSON.stringify(session), null);
-    db.prepare(
-      `
-        INSERT INTO session_documents(
-          agent_name,
-          session_id,
-          slug,
-          title,
-          directory,
-          time_created,
-          time_updated,
-          activity_time,
-          content_text,
-          content_hash,
-          indexed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-    ).run(
-      "claudecode",
-      session.id,
-      session.slug,
-      session.title,
-      session.directory,
-      session.time_created,
-      session.time_updated,
-      session.time_updated,
-      "legacy migration smoke needle content",
-      "old-hash",
-      now,
-    );
+    createReleaseCacheFixture(db, fixture, populated ? makeSeed() : undefined);
   } finally {
     db.close();
   }
@@ -190,20 +132,12 @@ function createLegacyStateFixture(): void {
         PRIMARY KEY (agent_name, session_id)
       );
     `);
-
     db.prepare("INSERT INTO state_meta(key, value) VALUES ('version', '1')").run();
     db.prepare(
       `
         INSERT INTO bookmarks(
-          agent_name,
-          session_id,
-          slug,
-          title,
-          directory,
-          time_created,
-          time_updated,
-          stats_json,
-          bookmarked_at
+          agent_name, session_id, slug, title, directory, time_created,
+          time_updated, stats_json, bookmarked_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
     ).run(
@@ -231,41 +165,214 @@ function getUserVersion(dbPath: string): number {
   }
 }
 
+function getMigrationBackups(): string[] {
+  if (!existsSync(getCacheDir())) return [];
+  return readdirSync(getCacheDir())
+    .filter((name) => name.startsWith("codesesh.db.") && name.endsWith(".bak"))
+    .sort();
+}
+
+function readMigratedFacts(): Record<string, unknown> {
+  const db = new Database(getCachePath(), { readonly: true });
+  try {
+    const scalar = (sql: string): number => {
+      const row = db.prepare(sql).get() as { value?: number } | undefined;
+      return Number(row?.value ?? 0);
+    };
+    return {
+      userVersion: Number(db.pragma("user_version", { simple: true })),
+      cacheVersion: (
+        db.prepare("SELECT value FROM cache_meta WHERE key = 'version'").get() as {
+          value?: string;
+        }
+      ).value,
+      integrity: (
+        db.prepare("PRAGMA integrity_check").get() as { integrity_check?: string } | undefined
+      )?.integrity_check,
+      foreignKeyViolations: db.prepare("PRAGMA foreign_key_check").all(),
+      cachedSessions: scalar("SELECT COUNT(*) AS value FROM cached_sessions"),
+      sessions: scalar("SELECT COUNT(*) AS value FROM sessions"),
+      messages: scalar("SELECT COUNT(*) AS value FROM messages"),
+      messageTools: scalar("SELECT COUNT(*) AS value FROM message_tools"),
+      fileActivity: scalar("SELECT COUNT(*) AS value FROM session_file_activity"),
+      searchDocuments: scalar("SELECT COUNT(*) AS value FROM session_documents"),
+      projects: scalar("SELECT COUNT(*) AS value FROM project_sessions"),
+      pendingReindex: scalar("SELECT COUNT(*) AS value FROM pending_reindex"),
+      documentColumns: (
+        db.prepare("PRAGMA table_info(session_documents)").all() as Array<{ name: string }>
+      )
+        .map((row) => row.name)
+        .sort(),
+    };
+  } finally {
+    db.close();
+  }
+}
+
+function expectMigratedBehavior(structured: boolean): void {
+  const cached = loadCachedSessions("claudecode");
+  const detail = loadCachedSessionData("claudecode", "legacy-smoke");
+  const rawDetail = loadCachedSessionRawEntry("claudecode", "legacy-smoke");
+  const projects = listCachedProjectGroups();
+  const results = searchSessions("needle");
+
+  expect(cached?.sessions.map((session) => session.id)).toEqual(["legacy-smoke"]);
+  expect(cached?.sessions[0]?.stats).toMatchObject({
+    message_count: 1,
+    total_input_tokens: 10,
+    total_output_tokens: 5,
+    total_tokens: 15,
+  });
+  expect(detail?.id).toBe("legacy-smoke");
+  expect(detail?.messages).toEqual([]);
+  expect(rawDetail?.pendingReindex).toBe(true);
+  expect(rawDetail?.messageRows).toHaveLength(structured ? 1 : 0);
+  if (structured) {
+    expect(JSON.parse(String(rawDetail?.messageRows[0]?.parts_json))).toEqual([
+      { type: "text", text: "structured detail survived migration" },
+    ]);
+  }
+  expect(projects).toEqual([
+    {
+      identityKind: "path",
+      identityKey: FIXTURE_DIR,
+      displayName: FIXTURE_DIR_NAME,
+      sources: ["claudecode"],
+      sessionCount: 1,
+      lastActivity: now,
+    },
+  ]);
+  expect(results).toHaveLength(1);
+  expect(results[0]?.session.id).toBe("legacy-smoke");
+  expect(results[0]?.snippet).toContain("<mark>needle</mark>");
+
+  if (structured) {
+    const toolResults = searchSessions("tool:read");
+    const fileResults = searchFileActivitySessions("legacy.ts");
+    expect(toolResults.map((result) => result.session.id)).toEqual(["legacy-smoke"]);
+    expect(fileResults.map((result) => result.session.id)).toEqual(["legacy-smoke"]);
+    expect(fileResults[0]?.snippet).toContain("<mark>legacy.ts</mark>");
+  }
+}
+
 beforeEach(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
   rmSync(getStateDir(), { recursive: true, force: true });
+  setSchemaEnsuredPath(null);
 });
 
 afterEach(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
   rmSync(getStateDir(), { recursive: true, force: true });
+  setSchemaEnsuredPath(null);
 });
 
-describe("sqlite migration smoke", () => {
-  it("migrates old cache and state fixtures for browsing data", () => {
-    createLegacyCacheFixture();
+afterAll(() => {
+  dateNowSpy.mockRestore();
+  rmSync(FIXTURE_DIR, { recursive: true, force: true });
+  rmSync(testHomeDir, { recursive: true, force: true });
+});
+
+describe("sqlite migration release gate", () => {
+  it("registers every released SQLite schema epoch", () => {
+    expect(RELEASE_CACHE_FIXTURES).toEqual([
+      { version: 3, sourceTag: "v0.3.0" },
+      { version: 4, sourceTag: "v0.4.0" },
+      { version: 6, sourceTag: "v0.5.0" },
+      { version: 8, sourceTag: "v0.6.0" },
+      { version: 13, sourceTag: "v0.7.0" },
+      { version: 14, sourceTag: "v0.14.0" },
+      { version: 17, sourceTag: "v0.17.0" },
+      { version: 18, sourceTag: "v1.0.0" },
+    ]);
+  });
+
+  it.each(RELEASE_CACHE_FIXTURES)(
+    "migrates schema v$version from $sourceTag through public storage APIs",
+    (fixture) => {
+      createCacheFixture(fixture);
+      const structured = hasStructuredMessages(fixture);
+
+      expectMigratedBehavior(structured);
+      const migratedFacts = readMigratedFacts();
+      expect(migratedFacts).toEqual({
+        userVersion: EXPECTED_CACHE_SCHEMA_VERSION,
+        cacheVersion: String(EXPECTED_CACHE_SCHEMA_VERSION),
+        integrity: "ok",
+        foreignKeyViolations: [],
+        cachedSessions: 1,
+        sessions: 1,
+        messages: structured ? 1 : 0,
+        messageTools: structured ? 1 : 0,
+        fileActivity: structured ? 1 : 0,
+        searchDocuments: 1,
+        projects: 1,
+        pendingReindex: 1,
+        documentColumns: [
+          "agent_name",
+          "content_hash",
+          "content_text",
+          "detail_version",
+          "id",
+          "indexed_at",
+          "indexed_message_count",
+          "session_id",
+          "title",
+        ],
+      });
+      const backups = getMigrationBackups();
+      expect(backups).toHaveLength(expectedBackupCount(fixture));
+
+      setSchemaEnsuredPath(null);
+      expectMigratedBehavior(structured);
+      expect(readMigratedFacts()).toEqual(migratedFacts);
+      expect(getMigrationBackups()).toEqual(backups);
+    },
+    30_000,
+  );
+
+  it("upgrades an empty pre-compaction cache without a meaningless backup", () => {
+    const fixture = RELEASE_CACHE_FIXTURES.find(({ version }) => version === 14)!;
+    createCacheFixture(fixture, false);
+
+    expect(loadCachedSessions("claudecode")).toBeNull();
+    expect(getUserVersion(getCachePath())).toBe(EXPECTED_CACHE_SCHEMA_VERSION);
+    expect(getMigrationBackups()).toEqual([]);
+  });
+
+  it("replaces the released v2 JSON cache on the first SQLite write", () => {
+    const session = makeSession();
+    mkdirSync(getCacheDir(), { recursive: true });
+    writeFileSync(
+      getLegacyCachePath(),
+      JSON.stringify({
+        version: 2,
+        entries: {
+          claudecode: {
+            sessions: [session],
+            meta: { [session.id]: { id: session.id, sourcePath: "legacy.jsonl" } },
+            timestamp: now,
+            version: 2,
+          },
+        },
+        lastScanTime: now,
+      }),
+    );
+
+    expect(loadCachedSessions("claudecode")).toBeNull();
+    expect(saveCachedSessions("claudecode", [session])).toBe(true);
+    expect(existsSync(getLegacyCachePath())).toBe(false);
+    expect(loadCachedSessions("claudecode")?.sessions.map(({ id }) => id)).toEqual([
+      "legacy-smoke",
+    ]);
+    expect(getUserVersion(getCachePath())).toBe(EXPECTED_CACHE_SCHEMA_VERSION);
+  });
+
+  it("migrates the released state v1 bookmark schema", () => {
     createLegacyStateFixture();
 
-    const cached = loadCachedSessions("claudecode");
-    const projects = listCachedProjectGroups();
-    const results = searchSessions("needle");
     const bookmarks: BookmarkRecord[] = listBookmarks();
 
-    expect(cached?.sessions.map((session) => session.id)).toEqual(["legacy-smoke"]);
-    expect(cached?.sessions[0]?.stats.total_tokens).toBe(15);
-    expect(projects).toEqual([
-      {
-        identityKind: "path",
-        identityKey: FIXTURE_DIR,
-        displayName: FIXTURE_DIR_NAME,
-        sources: ["claudecode"],
-        sessionCount: 1,
-        lastActivity: now,
-      },
-    ]);
-    expect(results).toHaveLength(1);
-    expect(results[0]?.session.id).toBe("legacy-smoke");
-    expect(results[0]?.snippet).toContain("<mark>needle</mark>");
     expect(bookmarks).toEqual([
       {
         reference: { agentName: "claudecode", sessionId: "legacy-smoke" },
@@ -277,7 +384,7 @@ describe("sqlite migration smoke", () => {
           time_created: now - 1_000,
           time_updated: now,
           stats: {
-            message_count: 2,
+            message_count: 1,
             total_input_tokens: 10,
             total_output_tokens: 5,
             total_cost: 0,
@@ -287,23 +394,6 @@ describe("sqlite migration smoke", () => {
         bookmarkedAt: now - 500,
       },
     ]);
-    const migratedCache = new Database(getCachePath(), { readonly: true });
-    const documentColumns = (
-      migratedCache.prepare("PRAGMA table_info(session_documents)").all() as Array<{ name: string }>
-    ).map((row) => row.name);
-    migratedCache.close();
-    expect(documentColumns).toEqual([
-      "id",
-      "agent_name",
-      "session_id",
-      "title",
-      "content_text",
-      "content_hash",
-      "indexed_message_count",
-      "detail_version",
-      "indexed_at",
-    ]);
-    expect(getUserVersion(getCachePath())).toBe(20);
     expect(getUserVersion(getStatePath())).toBe(2);
-  }, 30_000);
+  });
 });
