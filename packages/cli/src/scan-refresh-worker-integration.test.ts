@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => {
 
   return {
     workerData: {} as Record<string, unknown>,
+    workerMessageHandler: undefined as ((message: unknown) => void) | undefined,
     postMessage: vi.fn(),
     attachMissingProjectIdentities: vi.fn((sessions: SessionHead[]) => sessions),
     createRegisteredAgents: vi.fn(),
@@ -62,7 +63,12 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("node:worker_threads", () => ({
-  parentPort: { postMessage: mocks.postMessage, on: vi.fn() },
+  parentPort: {
+    postMessage: mocks.postMessage,
+    on: vi.fn((event: string, handler: (message: unknown) => void) => {
+      if (event === "message") mocks.workerMessageHandler = handler;
+    }),
+  },
   get workerData() {
     return mocks.workerData;
   },
@@ -146,6 +152,7 @@ async function runWorker() {
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
+  mocks.workerMessageHandler = undefined;
   mocks.attachMissingProjectIdentities.mockImplementation((sessions) => sessions);
   mocks.ensureSessionTagsSync.mockImplementation((_agent, sessions, onProgress) => {
     onProgress?.(sessions.length, sessions.length);
@@ -202,6 +209,7 @@ describe("scan refresh worker entry", () => {
     expect(mocks.postMessage).toHaveBeenNthCalledWith(1, {
       type: "progress",
       requestId: 1,
+      generation: 0,
       progress: { agent: "codex", current: 1 },
     });
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
@@ -240,6 +248,78 @@ describe("scan refresh worker entry", () => {
     ]);
     expect(mocks.postMessage.mock.calls.at(-1)?.[0]).toEqual(
       expect.objectContaining({ type: "done" }),
+    );
+  });
+
+  it("reuses a committed baseline without receiving the full history again", async () => {
+    const session = makeSession("stateful");
+    const scan = vi.fn(() => [session]);
+    mocks.createRegisteredAgents.mockReturnValue([makeAgent({ scan })]);
+    setWorkerData({ generation: 4 });
+
+    await runWorker();
+    await vi.waitFor(() =>
+      expect(mocks.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "done", requestId: 1, generation: 4 }),
+      ),
+    );
+
+    mocks.workerMessageHandler?.({ type: "commit", requestId: 1, generation: 4 });
+    mocks.workerMessageHandler?.({
+      type: "run",
+      requestId: 2,
+      agentName: "codex",
+      generation: 5,
+      changedIds: [],
+      derivedOnly: true,
+      scanOptions: {},
+    });
+
+    await vi.waitFor(() =>
+      expect(mocks.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "done",
+          requestId: 2,
+          generation: 5,
+          changes: [],
+          removedSessionIds: [],
+        }),
+      ),
+    );
+    expect(scan).toHaveBeenCalledTimes(1);
+    expect(mocks.createRegisteredAgents).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when an operation skips the committed generation", async () => {
+    mocks.createRegisteredAgents.mockReturnValue([makeAgent({ scan: vi.fn(() => []) })]);
+    setWorkerData({ generation: 2 });
+
+    await runWorker();
+    await vi.waitFor(() =>
+      expect(mocks.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "done", requestId: 1, generation: 2 }),
+      ),
+    );
+    mocks.workerMessageHandler?.({ type: "commit", requestId: 1, generation: 2 });
+    mocks.workerMessageHandler?.({
+      type: "run",
+      requestId: 2,
+      agentName: "codex",
+      generation: 4,
+      changedIds: [],
+      derivedOnly: true,
+      scanOptions: {},
+    });
+
+    await vi.waitFor(() =>
+      expect(mocks.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "error",
+          requestId: 2,
+          generation: 4,
+          error: "Worker generation mismatch: expected 3, received 4",
+        }),
+      ),
     );
   });
 
