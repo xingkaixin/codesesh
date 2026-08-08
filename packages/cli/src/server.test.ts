@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { get as httpGet } from "node:http";
 import { get as httpsGet } from "node:https";
 import { createServer as createNodeServer, type Server as NodeServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -12,6 +13,23 @@ import { resolveRemoteTransport } from "./remote-access.js";
 const serveOptionsLog = vi.hoisted(
   () => [] as { hostname?: string; port?: number; hasCreateServer: boolean }[],
 );
+
+function httpRequest(
+  url: string,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; contentType: string | undefined }> {
+  return new Promise((resolvePromise, reject) => {
+    const request = httpGet(url, { headers, agent: false }, (response) => {
+      resolvePromise({
+        status: response.statusCode ?? 0,
+        contentType: response.headers["content-type"],
+      });
+      response.destroy();
+      request.destroy();
+    });
+    request.on("error", reject);
+  });
+}
 
 vi.mock("@hono/node-server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@hono/node-server")>();
@@ -189,6 +207,41 @@ describe("createServer", () => {
     expect(app.url).toMatch(/^http:\/\/localhost:\d+$/);
 
     await app.shutdown();
+  });
+
+  it("CS-160: enforces loopback authority before API, SSE, and static routes", async () => {
+    const webDist = mkdtempSync(join(tmpdir(), "codesesh-authority-web-"));
+    writeFileSync(join(webDist, "index.html"), "<html>app shell</html>");
+    writeFileSync(join(webDist, "app.js"), "console.log('bundle')");
+    const app = await createServer(0, createStore(), { webDistPath: webDist });
+    const port = new URL(app.url).port;
+
+    try {
+      for (const authority of [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`]) {
+        expect((await httpRequest(`${app.url}/api/agents`, { Host: authority })).status).toBe(200);
+      }
+      expect(
+        (
+          await httpRequest(`${app.url}/api/agents`, {
+            Host: `localhost:${port}`,
+            Origin: "https://attacker.example",
+          })
+        ).status,
+      ).toBe(200);
+
+      for (const path of ["/api/agents", "/api/events", "/app.js"]) {
+        expect(
+          (
+            await httpRequest(`${app.url}${path}`, {
+              Host: `attacker.example:${port}`,
+            })
+          ).status,
+        ).toBe(403);
+      }
+    } finally {
+      await app.shutdown();
+      rmSync(webDist, { recursive: true, force: true });
+    }
   });
 
   it("refuses a non-loopback hostname without remote access", async () => {
