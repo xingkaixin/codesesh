@@ -689,12 +689,12 @@ describe("scan refresh worker entry", () => {
   });
 
   it("synchronizes parsed, failed, removed, and out-of-window sources", async () => {
-    const unchanged = makeSession("unchanged");
-    const changed = makeSession("changed", { title: "old" });
-    const removed = makeSession("removed");
-    const outsideWindow = makeSession("outside");
-    const moved = makeSession("moved");
-    const updated = makeSession("changed", { title: "new" });
+    const unchanged = makeSession("unchanged", { time_updated: 500 });
+    const changed = makeSession("changed", { title: "old", time_updated: 400 });
+    const removed = makeSession("removed", { time_updated: 300 });
+    const outsideWindow = makeSession("outside", { time_updated: 200 });
+    const moved = makeSession("moved", { time_updated: 100 });
+    const updated = makeSession("changed", { title: "new", time_updated: 400 });
     const refs: SessionSourceRef[] = [
       {
         sessionId: "unchanged",
