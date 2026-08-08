@@ -99,3 +99,53 @@ jobs:
             test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+  package-artifact:
+    name: Package artifact
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm package:artifact:test
+
+      - run: pnpm package:artifact
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: artifacts/npm/
+          if-no-files-found: error
+          retention-days: 1
+
+  package-smoke:
+    name: Package smoke (Node ${{ matrix.node-version }})
+    needs: package-artifact
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22, 24]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+          path: artifacts/npm
+
+      - run: node scripts/smoke-package-artifact.mjs artifacts/npm/codesesh-*.tgz
