@@ -37,8 +37,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc --noEmit && tsup && node scripts/copy-web-dist.js",
-    "release": "tsc --noEmit && tsup && node scripts/copy-web-dist.js",
+    "build": "pnpm run typecheck && tsup && node scripts/copy-web-dist.js",
+    "release": "pnpm run typecheck && tsup && node scripts/copy-web-dist.js",
     "dev": "tsup --watch",
     "clean": "node ../../scripts/clean.mjs",
     "start": "node dist/index.js",
@@ -46,7 +46,8 @@
     "lint:fix": "oxlint src/ --fix",
     "format": "oxfmt --write src/",
     "format:check": "oxfmt --check src/",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.node22.json"
   },
   "dependencies": {
     "@codesesh/core": "workspace:*",
@@ -59,7 +60,7 @@
   },
   "devDependencies": {
     "@codesesh/web": "workspace:*",
-    "@types/node": "^26.1.2",
+    "@types/node": "22.20.1",
     "@typescript/native": "npm:typescript@^7.0.2",
     "tsup": "^8.5.1",
     "typescript": "npm:@typescript/typescript6@^6.0.2"
