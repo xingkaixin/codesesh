@@ -1,4 +1,12 @@
-import { appendFileSync, mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -47,6 +55,97 @@ afterEach(() => {
 });
 
 describe("KimiCodeAgent", () => {
+  it("enumerates an old session by recent wire activity", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "codesesh-kimi-code-test-"));
+    tempDirs.push(dataRoot);
+    const sessionDir = createSession(dataRoot, [
+      { type: "context.append_message", message: { role: "user", content: "Continue" } },
+    ]);
+    const recentActivity = Date.parse("2026-02-01T00:00:00.000Z");
+    const wireFile = join(sessionDir, "agents", "main", "wire.jsonl");
+    utimesSync(wireFile, recentActivity / 1000, recentActivity / 1000);
+    const agent = createAgent(dataRoot);
+    const from = Date.parse("2026-01-25T00:00:00.000Z");
+
+    const refs = agent.listSessionSources({ from });
+    const [head] = agent.scan({ from });
+    const meta = agent.getSessionMetaMap().get(SESSION_ID);
+
+    expect(refs).toHaveLength(1);
+    expect(head).toMatchObject({
+      time_created: Date.parse("2026-01-01T00:00:00.000Z"),
+      time_updated: recentActivity,
+    });
+    expect(meta?.sourceMtimeMs).toBe(recentActivity);
+    expect(meta?.sourceMtimeMs).toBe(head?.time_updated);
+    expect(meta?.sourceFingerprint).toBe(refs[0]?.fingerprint);
+  });
+
+  it("changes the source fingerprint when the wire grows with a preserved mtime", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "codesesh-kimi-code-test-"));
+    tempDirs.push(dataRoot);
+    const sessionDir = createSession(dataRoot, [
+      { type: "context.append_message", message: { role: "user", content: "First" } },
+    ]);
+    const wireFile = join(sessionDir, "agents", "main", "wire.jsonl");
+    const pinnedMtime = statSync(wireFile).mtimeMs;
+    const agent = createAgent(dataRoot);
+    const before = agent.listSessionSources()[0]?.fingerprint;
+
+    appendFileSync(
+      wireFile,
+      `${JSON.stringify({
+        type: "context.append_message",
+        message: { role: "assistant", content: "Second" },
+      })}\n`,
+    );
+    utimesSync(wireFile, pinnedMtime / 1000, pinnedMtime / 1000);
+
+    expect(statSync(wireFile).mtimeMs).toBe(pinnedMtime);
+    expect(agent.listSessionSources()[0]?.fingerprint).not.toBe(before);
+  });
+
+  it("invalidates a cached head from an older parser revision", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "codesesh-kimi-code-test-"));
+    tempDirs.push(dataRoot);
+    const sessionDir = createSession(dataRoot, [
+      { type: "context.append_message", message: { role: "user", content: "Refresh me" } },
+    ]);
+    const agent = createAgent(dataRoot);
+    const heads = agent.scan();
+    const currentMeta = agent.getSessionMetaMap().get(SESSION_ID)!;
+    if (typeof currentMeta.sourceFingerprint !== "string") {
+      throw new TypeError("Expected Kimi-Code source fingerprint");
+    }
+    const fingerprint = JSON.parse(currentMeta.sourceFingerprint) as unknown[];
+    expect(fingerprint[0]).toBe("kimi-code-parser-v1");
+    expect(fingerprint[2]).toBe(statSync(join(sessionDir, "state.json")).size);
+    expect(fingerprint[4]).toBe(statSync(join(sessionDir, "agents", "main", "wire.jsonl")).size);
+    agent.setSessionMetaMap(
+      new Map([
+        [
+          SESSION_ID,
+          {
+            ...currentMeta,
+            sourceFingerprint: JSON.stringify(["kimi-code-parser-v0", ...fingerprint.slice(1)]),
+          },
+        ],
+      ]),
+    );
+
+    const changes = agent.checkForChanges(0, heads);
+    expect(changes.changedIds).toContain(SESSION_ID);
+    const refreshed = agent.incrementalScan(heads, changes.changedIds ?? [], changes.refs);
+    expect(refreshed).toMatchObject([{ id: SESSION_ID, title: "Refresh me" }]);
+    expect(agent.getSessionMetaMap().get(SESSION_ID)?.sourceFingerprint).toBe(
+      changes.refs?.[0]?.fingerprint,
+    );
+    expect(agent.getSessionData(SESSION_ID).messages[0]).toMatchObject({
+      role: "user",
+      parts: [{ type: "text", text: "Refresh me" }],
+    });
+  });
+
   it("discovers workdir-keyed sessions and rebuilds loop events", () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "codesesh-kimi-code-test-"));
     tempDirs.push(dataRoot);
@@ -144,6 +243,7 @@ describe("KimiCodeAgent", () => {
     const refs = agent.listSessionSources();
     expect(refs).toHaveLength(1);
     expect(refs[0]?.sourcePath).toBe(sessionDir);
+    expect(agent.listSessionSources({ from: 1767225599000, to: 1767225661000 })).toHaveLength(1);
 
     writeFileSync(
       join(dataRoot, "session_index.jsonl"),
