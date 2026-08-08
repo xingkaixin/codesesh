@@ -111,6 +111,38 @@ describe("buildProjectTimeline", () => {
     expect(timeline.orphanCount).toBe(1);
   });
 
+  it("keeps every cycle member once on the unmounted axis", () => {
+    const timeline = buildProjectTimeline(
+      [
+        createSession({
+          id: "a",
+          time_updated: at(6, 9),
+          parent_reference: { agentName: "codex", sessionId: "b" },
+        }),
+        createSession({
+          id: "b",
+          time_updated: at(6, 10),
+          parent_reference: { agentName: "codex", sessionId: "a" },
+        }),
+        createSession({
+          id: "below",
+          time_updated: at(6, 11),
+          parent_reference: { agentName: "codex", sessionId: "a" },
+        }),
+      ],
+      { now: NOW },
+    );
+
+    const rows = timeline.days.flatMap((day) => day.rows);
+    expect(rows.map((row) => row.routeKey).toSorted()).toEqual([
+      "codex/a",
+      "codex/b",
+      "codex/below",
+    ]);
+    expect(rows.every((row) => row.isOrphan)).toBe(true);
+    expect(timeline.orphanCount).toBe(3);
+  });
+
   it("reports main and sub counts per day and across the timeline", () => {
     const timeline = buildProjectTimeline(
       [

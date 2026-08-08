@@ -248,8 +248,8 @@ export function groupSessionsByCalendarDay(nodes: SessionTreeNode[]): SessionDay
 }
 
 /**
- * Filters unmounted sessions (roots and orphans alike) by activity and keeps
- * every descendant of a match. The input order is preserved so callers keep
+ * Filters main-axis sessions (roots and orphans) by activity and keeps every
+ * mounted descendant of a match. The input order is preserved so callers keep
  * their existing sort behavior.
  */
 export function filterSessionTreeByActivityWindow(
@@ -259,27 +259,16 @@ export function filterSessionTreeByActivityWindow(
 ): SessionHead[] {
   if (from == null && to == null) return sessions;
 
-  const available = new Set(sessions.map(sessionKey));
-  const childrenByParent = new Map<string, string[]>();
-  const pending: string[] = [];
-
-  for (const session of sessions) {
-    const parent = parentKey(session);
-    if (parent != null && available.has(parent)) {
-      const children = childrenByParent.get(parent);
-      if (children) children.push(sessionKey(session));
-      else childrenByParent.set(parent, [sessionKey(session)]);
-      continue;
-    }
-    if (hasActivityInWindow(session, from, to)) pending.push(sessionKey(session));
-  }
+  const tree = buildSessionTree(sessions);
+  const pending = tree.entries.filter((node) => hasActivityInWindow(node.session, from, to));
 
   const visible = new Set<string>();
   while (pending.length > 0) {
-    const key = pending.pop()!;
+    const node = pending.pop()!;
+    const key = sessionKey(node.session);
     if (visible.has(key)) continue;
     visible.add(key);
-    for (const childKey of childrenByParent.get(key) ?? []) pending.push(childKey);
+    for (const child of node.children) pending.push(child);
   }
 
   return sessions.filter((session) => visible.has(sessionKey(session)));

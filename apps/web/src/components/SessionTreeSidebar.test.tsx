@@ -30,6 +30,26 @@ function groupOrderOf(paths: string[]) {
 }
 
 describe("buildSessionTreeModel group sorting", () => {
+  it("renders every cycle member once under the Unmounted group", () => {
+    const a = makeSession({
+      id: "a",
+      parent_reference: { agentName: "codex", sessionId: "b" },
+    });
+    const b = makeSession({
+      id: "b",
+      parent_reference: { agentName: "codex", sessionId: "a" },
+    });
+
+    const model = buildSessionTreeModel([a, b]);
+    const references = [a, b].map((session) => getSessionReferenceKey(session));
+
+    expect(model.paths).toHaveLength(2);
+    expect(new Set(model.paths).size).toBe(2);
+    for (const reference of references) {
+      expect(model.pathBySessionReference.get(reference)).toMatch(/^Unmounted\//);
+    }
+  });
+
   it("orders groups by most recent session time, descending", () => {
     const sessions = [
       makeSession({
