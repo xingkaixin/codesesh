@@ -21,15 +21,21 @@ const t = copy[locale].hero;
       >
         <HeadingText value={t.title} />
       </h1>
-      <p class="mt-6 max-w-[42rem] text-[1.05rem] leading-8 text-[var(--console-text-secondary)]">
-        {t.body} {t.privacy}
+      <p
+        class="mt-6 max-w-[42rem] text-[1.05rem] leading-8 text-[var(--console-text-secondary)]"
+      >
+        {t.body}
+        {t.privacy}
       </p>
 
       <div class="mt-8">
         <InstallCommand locale={locale} showEndpoint />
       </div>
 
-      <div class="mt-7 flex flex-wrap items-center gap-2.5" aria-label={t.agentsLabel}>
+      <div
+        class="mt-7 flex flex-wrap items-center gap-2.5"
+        aria-label={t.agentsLabel}
+      >
         <span class="console-eyebrow mr-1">{t.agentsLabel}</span>
         <ul class="flex flex-wrap items-center gap-2.5">
           {
@@ -40,7 +46,13 @@ const t = copy[locale].hero;
                 title={agent.name}
               >
                 {"iconColored" in agent && agent.iconColored ? (
-                  <img src={agent.icon} alt="" width="17" height="17" class="size-[17px]" />
+                  <img
+                    src={agent.icon}
+                    alt=""
+                    width="17"
+                    height="17"
+                    class="size-[17px]"
+                  />
                 ) : (
                   <span
                     aria-hidden="true"

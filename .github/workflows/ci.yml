@@ -29,6 +29,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Verify quality task coverage
+        run: node scripts/check-quality-task-coverage.mjs
+
       - run: pnpm lint
 
       - run: pnpm format:check

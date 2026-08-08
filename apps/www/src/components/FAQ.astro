@@ -16,7 +16,9 @@ const t = copy[locale].faq;
   class="scroll-mt-20 px-4 pb-4 pt-24 sm:px-6 lg:px-7"
   aria-labelledby="faq-heading"
 >
-  <div class="mx-auto grid max-w-[1180px] gap-8 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:gap-[52px]">
+  <div
+    class="mx-auto grid max-w-[1180px] gap-8 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:gap-[52px]"
+  >
     <div class="lg:sticky lg:top-24 lg:self-start">
       <h2
         id="faq-heading"
@@ -24,7 +26,11 @@ const t = copy[locale].faq;
       >
         <HeadingText value={t.title} />
       </h2>
-      <p class="mt-4 max-w-sm text-sm leading-7 text-[var(--console-text-secondary)]">{t.body}</p>
+      <p
+        class="mt-4 max-w-sm text-sm leading-7 text-[var(--console-text-secondary)]"
+      >
+        {t.body}
+      </p>
     </div>
 
     <div>
@@ -40,7 +46,10 @@ const t = copy[locale].faq;
               <h3 class="flex-1 text-[15px] font-semibold text-[var(--console-text)]">
                 {item.question}
               </h3>
-              <span class="faq-chevron text-[var(--console-muted)]" aria-hidden="true">
+              <span
+                class="faq-chevron text-[var(--console-muted)]"
+                aria-hidden="true"
+              >
                 <Icon name="chevron-right" class="size-4" />
               </span>
             </summary>

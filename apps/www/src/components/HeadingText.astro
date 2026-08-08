@@ -10,10 +10,6 @@ const { value } = Astro.props;
 
 {
   Array.isArray(value)
-    ? value.map((line) => (
-        <span class="block">
-          {line}
-        </span>
-      ))
+    ? value.map((line) => <span class="block">{line}</span>)
     : value
 }

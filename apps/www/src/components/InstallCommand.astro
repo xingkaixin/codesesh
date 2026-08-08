@@ -13,8 +13,13 @@ const t = copy[locale].hero;
 
 <div class="install-command" data-copy-group>
   <div class="install-command__box">
-    <span class="console-mono text-sm text-[var(--console-muted)]" aria-hidden="true">$</span>
-    <code class="console-mono text-sm text-[var(--console-text)]">{t.command}</code>
+    <span
+      class="console-mono text-sm text-[var(--console-muted)]"
+      aria-hidden="true">$</span
+    >
+    <code class="console-mono text-sm text-[var(--console-text)]"
+      >{t.command}</code
+    >
     <button
       type="button"
       data-copy-command={t.command}
@@ -24,8 +29,11 @@ const t = copy[locale].hero;
       class="pressable motion-hover console-mono inline-flex min-h-8 min-w-[4.25rem] items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2.5 text-[10px] font-medium text-[var(--console-text-secondary)] hover:border-[var(--brand-line)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
     >
       <span class="copy-icon-stack inline-grid">
-        <span data-copy-icon="idle" data-active="true"><Icon name="copy" class="size-3.5" /></span>
-        <span data-copy-icon="done"><Icon name="check" class="size-3.5" /></span>
+        <span data-copy-icon="idle" data-active="true"
+          ><Icon name="copy" class="size-3.5" /></span
+        >
+        <span data-copy-icon="done"><Icon name="check" class="size-3.5" /></span
+        >
       </span>
       <span data-copy-text>{t.copyCommand}</span>
     </button>
@@ -57,7 +65,8 @@ const t = copy[locale].hero;
         textarea.select();
         const execCommand = Reflect.get(document, "execCommand");
         const copied =
-          typeof execCommand === "function" && execCommand.call(document, "copy") === true;
+          typeof execCommand === "function" &&
+          execCommand.call(document, "copy") === true;
         textarea.remove();
         return copied;
       } catch {
@@ -66,35 +75,43 @@ const t = copy[locale].hero;
     }
   }
 
-  document.querySelectorAll<HTMLElement>("[data-copy-group]").forEach((group) => {
-    const button = group.querySelector<HTMLButtonElement>("[data-copy-command]");
-    const command = button?.dataset.copyCommand;
-    const text = button?.querySelector<HTMLElement>("[data-copy-text]");
-    const idleIcon = button?.querySelector<HTMLElement>('[data-copy-icon="idle"]');
-    const doneIcon = button?.querySelector<HTMLElement>('[data-copy-icon="done"]');
-    const status = group.querySelector<HTMLElement>("[data-copy-status]");
+  document
+    .querySelectorAll<HTMLElement>("[data-copy-group]")
+    .forEach((group) => {
+      const button = group.querySelector<HTMLButtonElement>(
+        "[data-copy-command]",
+      );
+      const command = button?.dataset.copyCommand;
+      const text = button?.querySelector<HTMLElement>("[data-copy-text]");
+      const idleIcon = button?.querySelector<HTMLElement>(
+        '[data-copy-icon="idle"]',
+      );
+      const doneIcon = button?.querySelector<HTMLElement>(
+        '[data-copy-icon="done"]',
+      );
+      const status = group.querySelector<HTMLElement>("[data-copy-status]");
 
-    if (!button || !command || !text || !idleIcon || !doneIcon) return;
+      if (!button || !command || !text || !idleIcon || !doneIcon) return;
 
-    const copyLabel = button.dataset.copyLabel ?? "";
-    const copiedLabel = button.dataset.copiedLabel ?? "";
-    const copyFailedLabel = button.dataset.copyFailedLabel ?? "";
-    let timer: number;
+      const copyLabel = button.dataset.copyLabel ?? "";
+      const copiedLabel = button.dataset.copiedLabel ?? "";
+      const copyFailedLabel = button.dataset.copyFailedLabel ?? "";
+      let timer: number;
 
-    button.addEventListener("click", async () => {
-      const copied = await copyText(command);
-      const feedback = copied ? copiedLabel : copyFailedLabel;
-      text.textContent = feedback;
-      if (status) status.textContent = feedback;
-      idleIcon.dataset.active = String(!copied);
-      doneIcon.dataset.active = String(copied);
+      button.addEventListener("click", async () => {
+        const copied = await copyText(command);
+        const feedback = copied ? copiedLabel : copyFailedLabel;
+        text.textContent = feedback;
+        if (status) status.textContent = feedback;
+        idleIcon.dataset.active = String(!copied);
+        doneIcon.dataset.active = String(copied);
 
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        text.textContent = copyLabel;
-        idleIcon.dataset.active = "true";
-        doneIcon.dataset.active = "false";
-      }, 2000);
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          text.textContent = copyLabel;
+          idleIcon.dataset.active = "true";
+          doneIcon.dataset.active = "false";
+        }, 2000);
+      });
     });
-  });
 </script>
