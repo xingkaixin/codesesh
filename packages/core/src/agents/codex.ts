@@ -43,7 +43,7 @@ const PLAN_APPROVAL_PREFIX = "PLEASE IMPLEMENT THIS PLAN";
 const SUBAGENT_NOTIFICATION_PATTERN =
   /<subagent_notification>\s*([\s\S]*?)\s*<\/subagent_notification>/;
 const HEAD_INDEX_VERSION = "codex-head-v1";
-const PARSER_VERSION = "codex-parser-v6";
+const PARSER_VERSION = "codex-parser-v7";
 
 export function resolveCodexDataRoot(): string {
   return resolveHomePath("CODEX_HOME", ".codex");
@@ -956,9 +956,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
 
   protected parseFileSessionHead(filePath: string, options?: AgentScanOptions): SessionHead | null {
     this.loadSessionIndex();
-    const head = this.parseSessionHead(filePath, options);
-    if (head) this.applyChildStats(head.stats, head.id);
-    return head;
+    return this.parseSessionHead(filePath, options);
   }
 
   private parseSessionHead(filePath: string, options?: AgentScanOptions): SessionHead | null {

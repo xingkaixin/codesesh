@@ -156,6 +156,28 @@ describe("OpenCodeSqliteAgent", () => {
     });
   });
 
+  it("invalidates cached heads from an older parser revision", () => {
+    const dbPath = createDatabase();
+    const agent = new OpenCodeSqliteAgent({
+      name: "test-agent",
+      displayName: "Test Agent",
+      findDbPath: () => dbPath,
+      getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
+    });
+    agent.isAvailable();
+    const heads = agent.scan({ from: 0 });
+
+    expect(agent.getSessionMetaMap().get("s1")).toMatchObject({
+      headParserVersion: "opencode-sqlite-head-v1",
+    });
+    expect(agent.checkForChanges(Number.MAX_SAFE_INTEGER, heads).hasChanges).toBe(false);
+
+    agent.setSessionMetaMap(
+      new Map([["s1", { id: "s1", sourcePath: dbPath, headParserVersion: "legacy" }]]),
+    );
+    expect(agent.checkForChanges(Number.MAX_SAFE_INTEGER, heads).hasChanges).toBe(true);
+  });
+
   it("falls back to an empty message record and reports drift when message data isn't a JSON object", () => {
     const dbPath = createDatabaseWithMessageData("null");
     const calls: Array<{ event: string; detail?: Record<string, unknown> }> = [];
