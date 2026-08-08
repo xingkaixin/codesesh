@@ -69,7 +69,10 @@ const body = icons[name]
   .map(([tag, attrs]) => {
     const rendered = Object.entries(attrs)
       .filter(([key]) => key !== "key")
-      .map(([key, value]) => `${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${value}"`)
+      .map(
+        ([key, value]) =>
+          `${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${value}"`,
+      )
       .join(" ");
     return `<${tag} ${rendered}/>`;
   })

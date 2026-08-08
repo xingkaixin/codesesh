@@ -58,8 +58,18 @@ const overviewRanges = {
     meta: "212 sessions / last 7 days",
     kpis: [
       { label: "Sessions", value: "212", trend: "+18.4%", hint: "30.3/day" },
-      { label: "Messages", value: "32,764", trend: "+12.1%", hint: "154.5/session" },
-      { label: "Tokens", value: "1.58B", trend: "+9.7%", hint: "Cache hit 61%" },
+      {
+        label: "Messages",
+        value: "32,764",
+        trend: "+12.1%",
+        hint: "154.5/session",
+      },
+      {
+        label: "Tokens",
+        value: "1.58B",
+        trend: "+9.7%",
+        hint: "Cache hit 61%",
+      },
       {
         label: "Cost",
         value: "$84.20",
@@ -67,7 +77,12 @@ const overviewRanges = {
         hint: "$18.40 estimated",
         emphasis: true,
       },
-      { label: "Last activity", value: "2h", trend: "", hint: "webapp / Claude Code" },
+      {
+        label: "Last activity",
+        value: "2h",
+        trend: "",
+        hint: "webapp / Claude Code",
+      },
     ],
     bars: [
       { label: "Apr 17", value: 62 },
@@ -86,7 +101,12 @@ const overviewRanges = {
         pct: 67,
       },
       { name: "Codex", icon: "/icon/agent/codex.svg", count: 39, pct: 18.4 },
-      { name: "OpenCode", icon: "/icon/agent/opencode.svg", count: 18, pct: 8.5 },
+      {
+        name: "OpenCode",
+        icon: "/icon/agent/opencode.svg",
+        count: 18,
+        pct: 8.5,
+      },
       { name: "Kimi", icon: "/icon/agent/kimi.svg", count: 11, pct: 5.2 },
       { name: "Cursor", icon: "/icon/agent/cursor.svg", count: 2, pct: 0.9 },
     ],
@@ -96,8 +116,18 @@ const overviewRanges = {
     meta: "863 sessions / last 30 days",
     kpis: [
       { label: "Sessions", value: "863", trend: "+24.0%", hint: "28.8/day" },
-      { label: "Messages", value: "128,410", trend: "+21.6%", hint: "148.8/session" },
-      { label: "Tokens", value: "6.42B", trend: "+16.3%", hint: "Cache hit 58%" },
+      {
+        label: "Messages",
+        value: "128,410",
+        trend: "+21.6%",
+        hint: "148.8/session",
+      },
+      {
+        label: "Tokens",
+        value: "6.42B",
+        trend: "+16.3%",
+        hint: "Cache hit 58%",
+      },
       {
         label: "Cost",
         value: "$341.90",
@@ -105,7 +135,12 @@ const overviewRanges = {
         hint: "$71.20 estimated",
         emphasis: true,
       },
-      { label: "Last activity", value: "2h", trend: "", hint: "webapp / Claude Code" },
+      {
+        label: "Last activity",
+        value: "2h",
+        trend: "",
+        hint: "webapp / Claude Code",
+      },
     ],
     bars: [
       { label: "W13", value: 38 },
@@ -124,7 +159,12 @@ const overviewRanges = {
         pct: 58.2,
       },
       { name: "Codex", icon: "/icon/agent/codex.svg", count: 173, pct: 20.1 },
-      { name: "OpenCode", icon: "/icon/agent/opencode.svg", count: 90, pct: 10.4 },
+      {
+        name: "OpenCode",
+        icon: "/icon/agent/opencode.svg",
+        count: 90,
+        pct: 10.4,
+      },
       { name: "Kimi", icon: "/icon/agent/kimi.svg", count: 59, pct: 6.8 },
       { name: "Cursor", icon: "/icon/agent/cursor.svg", count: 39, pct: 4.5 },
     ],
@@ -143,7 +183,12 @@ const overviewRanges = {
         hint: "$204.80 estimated",
         emphasis: true,
       },
-      { label: "Last activity", value: "2h", trend: "", hint: "webapp / Claude Code" },
+      {
+        label: "Last activity",
+        value: "2h",
+        trend: "",
+        hint: "webapp / Claude Code",
+      },
     ],
     bars: [
       { label: "Sep", value: 24 },
@@ -162,7 +207,12 @@ const overviewRanges = {
         pct: 51.4,
       },
       { name: "Codex", icon: "/icon/agent/codex.svg", count: 524, pct: 21.7 },
-      { name: "OpenCode", icon: "/icon/agent/opencode.svg", count: 295, pct: 12.2 },
+      {
+        name: "OpenCode",
+        icon: "/icon/agent/opencode.svg",
+        count: 295,
+        pct: 12.2,
+      },
       { name: "Kimi", icon: "/icon/agent/kimi.svg", count: 215, pct: 8.9 },
       { name: "Cursor", icon: "/icon/agent/cursor.svg", count: 141, pct: 5.8 },
     ],
@@ -173,12 +223,20 @@ const defaultRange = overviewRanges["7d"];
 const defaultBarMax = Math.max(...defaultRange.bars.map((bar) => bar.value));
 const rangePayload = JSON.stringify(overviewRanges).replaceAll("<", "\\u003c");
 const previewLabel =
-  scene === "overview" ? labels.overview : scene === "projects" ? labels.projects : labels.replay;
+  scene === "overview"
+    ? labels.overview
+    : scene === "projects"
+      ? labels.projects
+      : labels.replay;
 const sampleLabel = `${t.sampleLabel} / DEMO`;
 
 const replayFilters = [
   { key: "user", label: locale === "zh" ? "用户消息" : "User", count: 4 },
-  { key: "agent", label: locale === "zh" ? "Agent 回复" : "Agent responses", count: 15 },
+  {
+    key: "agent",
+    label: locale === "zh" ? "Agent 回复" : "Agent responses",
+    count: 15,
+  },
   { key: "tools", label: locale === "zh" ? "工具调用" : "Tools", count: 22 },
   { key: "bash", label: "bash", count: 8 },
   { key: "edit-file", label: "edit_file", count: 6 },
@@ -205,11 +263,17 @@ const replayFilters = [
               </div>
               <label class="demo-search">
                 <span class="sr-only">{labels.search}</span>
-                <input type="search" placeholder="Search sessions" aria-label={labels.search} />
+                <input
+                  type="search"
+                  placeholder="Search sessions"
+                  aria-label={labels.search}
+                />
                 <kbd>/</kbd>
               </label>
               <kbd class="demo-shortcut">? Shortcuts</kbd>
-              <span class="demo-range-chip" data-demo-range-chip>{defaultRange.chip}</span>
+              <span class="demo-range-chip" data-demo-range-chip>
+                {defaultRange.chip}
+              </span>
               <span class="demo-sample-label">{sampleLabel}</span>
             </header>
 
@@ -221,14 +285,36 @@ const replayFilters = [
                       <img src="/logo.svg?v=3" alt="" width="13" height="13" />
                       <span>Dashboard</span>
                     </li>
-                    <li><span>webapp</span><small>96</small></li>
-                    <li><span>data-pipeline</span><small>54</small></li>
-                    <li><span>integration-svc</span><small>38</small></li>
-                    <li><span>internal-tools</span><small>24</small></li>
+                    <li>
+                      <>
+                        <span>webapp</span>
+                        <small>96</small>
+                      </>
+                    </li>
+                    <li>
+                      <>
+                        <span>data-pipeline</span>
+                        <small>54</small>
+                      </>
+                    </li>
+                    <li>
+                      <>
+                        <span>integration-svc</span>
+                        <small>38</small>
+                      </>
+                    </li>
+                    <li>
+                      <>
+                        <span>internal-tools</span>
+                        <small>24</small>
+                      </>
+                    </li>
                   </ul>
                 </nav>
                 <section aria-labelledby={`${id}-bookmarks`}>
-                  <p id={`${id}-bookmarks`} class="demo-mini-heading">Bookmarks</p>
+                  <p id={`${id}-bookmarks`} class="demo-mini-heading">
+                    Bookmarks
+                  </p>
                   <ul class="demo-bookmarks">
                     <li>
                       <span>Refactor data ingestion pipeline</span>
@@ -245,16 +331,41 @@ const replayFilters = [
               <div class="demo-main">
                 <header class="demo-panel-heading">
                   <span class="demo-context-label">Dashboard</span>
-                  <div class="demo-range-tabs" role="group" aria-label={labels.range}>
-                    <button type="button" data-demo-range="7d" aria-pressed="true">Last 7d</button>
-                    <button type="button" data-demo-range="30d" aria-pressed="false">Last 30d</button>
-                    <button type="button" data-demo-range="all" aria-pressed="false">All time</button>
+                  <div
+                    class="demo-range-tabs"
+                    role="group"
+                    aria-label={labels.range}
+                  >
+                    <button
+                      type="button"
+                      data-demo-range="7d"
+                      aria-pressed="true"
+                    >
+                      Last 7d
+                    </button>
+                    <button
+                      type="button"
+                      data-demo-range="30d"
+                      aria-pressed="false"
+                    >
+                      Last 30d
+                    </button>
+                    <button
+                      type="button"
+                      data-demo-range="all"
+                      aria-pressed="false"
+                    >
+                      All time
+                    </button>
                   </div>
                 </header>
 
                 <dl class="demo-kpis">
                   {defaultRange.kpis.map((kpi, index) => (
-                    <div class:list={["demo-kpi", kpi.emphasis && "is-emphasis"]} data-demo-kpi={index}>
+                    <div
+                      class:list={["demo-kpi", kpi.emphasis && "is-emphasis"]}
+                      data-demo-kpi={index}
+                    >
                       <dt>{kpi.label}</dt>
                       <dd data-demo-kpi-value>{kpi.value}</dd>
                       <dd class="demo-kpi-meta">
@@ -288,7 +399,10 @@ const replayFilters = [
                   </ol>
                 </figure>
 
-                <section class="demo-panel demo-distribution" aria-labelledby={`${id}-distribution`}>
+                <section
+                  class="demo-panel demo-distribution"
+                  aria-labelledby={`${id}-distribution`}
+                >
                   <header>
                     <p id={`${id}-distribution`} role="heading" aria-level="3">
                       Agent Distribution
@@ -305,21 +419,35 @@ const replayFilters = [
                           width="14"
                           height="14"
                           loading="lazy"
-                          data-monochrome={agent.name === "Claude Code" ? undefined : ""}
+                          data-monochrome={
+                            agent.name === "Claude Code" ? undefined : ""
+                          }
                         />
                         <span data-demo-agent-name>{agent.name}</span>
                         <span class="demo-agent-meter" aria-hidden="true">
-                          <span style={`--agent-scale:${agent.pct / 100}`} data-demo-agent-fill />
+                          <span
+                            style={`--agent-scale:${agent.pct / 100}`}
+                            data-demo-agent-fill
+                          />
                         </span>
-                        <progress value={agent.pct} max={100}>{agent.pct}%</progress>
-                        <small data-demo-agent-stat>{`${agent.count} / ${agent.pct.toFixed(1)}%`}</small>
+                        <progress value={agent.pct} max={100}>
+                          {agent.pct}%
+                        </progress>
+                        <small
+                          data-demo-agent-stat
+                        >{`${agent.count} / ${agent.pct.toFixed(1)}%`}</small>
                       </li>
                     ))}
                   </ul>
                 </section>
               </div>
             </div>
-            <script is:inline type="application/json" data-demo-ranges set:html={rangePayload} />
+            <script
+              is:inline
+              type="application/json"
+              data-demo-ranges
+              set:html={rangePayload}
+            />
           </>
         )
       }
@@ -345,16 +473,33 @@ const replayFilters = [
                       <img src="/logo.svg?v=3" alt="" width="13" height="13" />
                       <span>Dashboard</span>
                     </li>
-                    <li aria-current="page" class="is-active"><span>webapp</span><small>96</small></li>
-                    <li><span>data-pipeline</span><small>54</small></li>
-                    <li><span>integration-svc</span><small>38</small></li>
+                    <li aria-current="page" class="is-active">
+                      <>
+                        <span>webapp</span>
+                        <small>96</small>
+                      </>
+                    </li>
+                    <li>
+                      <>
+                        <span>data-pipeline</span>
+                        <small>54</small>
+                      </>
+                    </li>
+                    <li>
+                      <>
+                        <span>integration-svc</span>
+                        <small>38</small>
+                      </>
+                    </li>
                   </ul>
                 </nav>
               </aside>
 
               <div class="demo-main demo-project-main">
                 <header class="demo-project-heading">
-                  <p role="heading" aria-level="3">webapp</p>
+                  <p role="heading" aria-level="3">
+                    webapp
+                  </p>
                   <span>96 sessions / 4 agents / /projects/webapp</span>
                 </header>
                 <p class="demo-date">APR 23, 2026 / THURSDAY</p>
@@ -374,15 +519,35 @@ const replayFilters = [
                       </span>
                       <span class="demo-session-copy">
                         <strong>Implement onboarding wizard flow</strong>
-                        <small>Claude Code / 84 msgs / 412K tok / 3 sub-sessions</small>
+                        <small>
+                          Claude Code / 84 msgs / 412K tok / 3 sub-sessions
+                        </small>
                       </span>
                       <span class="demo-sub-count">3 sub</span>
                       <span class="demo-cost">$1.86 incl. sub</span>
                     </summary>
                     <ol class="demo-sub-sessions">
-                      <li><time>10:26</time><span>Generate step validation schema</span><small>22 msgs / 96K tok</small></li>
-                      <li><time>10:41</time><span>Write WelcomeStep component tests</span><small>17 msgs / 71K tok</small></li>
-                      <li><time>11:03</time><span>Audit a11y on the wizard stepper</span><small>9 msgs / 38K tok</small></li>
+                      <li>
+                        <>
+                          <time>10:26</time>
+                          <span>Generate step validation schema</span>
+                          <small>22 msgs / 96K tok</small>
+                        </>
+                      </li>
+                      <li>
+                        <>
+                          <time>10:41</time>
+                          <span>Write WelcomeStep component tests</span>
+                          <small>17 msgs / 71K tok</small>
+                        </>
+                      </li>
+                      <li>
+                        <>
+                          <time>11:03</time>
+                          <span>Audit a11y on the wizard stepper</span>
+                          <small>9 msgs / 38K tok</small>
+                        </>
+                      </li>
                     </ol>
                   </details>
 
@@ -422,13 +587,21 @@ const replayFilters = [
                       </span>
                       <span class="demo-session-copy">
                         <strong>Fix webhook signature verification bug</strong>
-                        <small>OpenCode / 29 msgs / 104K tok / 1 sub-session</small>
+                        <small>
+                          OpenCode / 29 msgs / 104K tok / 1 sub-session
+                        </small>
                       </span>
                       <span class="demo-sub-count">1 sub</span>
                       <span class="demo-cost">$0.41 incl. sub</span>
                     </summary>
                     <ol class="demo-sub-sessions">
-                      <li><time>08:31</time><span>Reproduce the HMAC mismatch locally</span><small>11 msgs / 34K tok</small></li>
+                      <li>
+                        <>
+                          <time>08:31</time>
+                          <span>Reproduce the HMAC mismatch locally</span>
+                          <small>11 msgs / 34K tok</small>
+                        </>
+                      </li>
                     </ol>
                   </details>
 
@@ -491,27 +664,56 @@ const replayFilters = [
                   </div>
                 </fieldset>
 
-                <section class="demo-file-tracker" aria-labelledby={`${id}-files`}>
-                  <p id={`${id}-files`} role="heading" aria-level="3">File Tracker</p>
+                <section
+                  class="demo-file-tracker"
+                  aria-labelledby={`${id}-files`}
+                >
+                  <p id={`${id}-files`} role="heading" aria-level="3">
+                    File Tracker
+                  </p>
                   <dl>
-                    <div><dt>EDIT</dt><dd>2</dd></div>
-                    <div><dt>WRITE</dt><dd>8</dd></div>
+                    <div>
+                      <>
+                        <dt>EDIT</dt>
+                        <dd>2</dd>
+                      </>
+                    </div>
+                    <div>
+                      <>
+                        <dt>WRITE</dt>
+                        <dd>8</dd>
+                      </>
+                    </div>
                   </dl>
                 </section>
               </aside>
 
               <div class="demo-message-main">
-                <span class="sr-only" aria-live="polite" data-replay-status data-status-template={labels.visibleStatus}>
+                <span
+                  class="sr-only"
+                  aria-live="polite"
+                  data-replay-status
+                  data-status-template={labels.visibleStatus}
+                >
                   {labels.visibleStatus.replace("{count}", "3")}
                 </span>
                 <ol id={`${id}-messages`} class="demo-message-list">
                   <li data-replay-item="user" data-replay-message>
                     <article class="demo-message">
-                      <span class="demo-avatar" aria-hidden="true">U</span>
+                      <span class="demo-avatar" aria-hidden="true">
+                        U
+                      </span>
                       <div>
-                        <header><strong>USER</strong><time>10:22:13</time></header>
+                        <header>
+                          <>
+                            <strong>USER</strong>
+                            <time>10:22:13</time>
+                          </>
+                        </header>
                         <p class="demo-message-box">
-                          The current query builder is hard to follow. Refactor it into composable helpers and document the intent of each step.
+                          The current query builder is hard to follow. Refactor
+                          it into composable helpers and document the intent of
+                          each step.
                         </p>
                       </div>
                     </article>
@@ -531,9 +733,18 @@ const replayFilters = [
                         />
                       </span>
                       <div>
-                        <header><strong>AGENT</strong><time>10:22:18</time><small>gpt-5.4</small></header>
+                        <header>
+                          <>
+                            <strong>AGENT</strong>
+                            <time>10:22:18</time>
+                            <small>gpt-5.4</small>
+                          </>
+                        </header>
                         <div class="demo-agent-response">
-                          <p>I will split the builder into focused functions and keep its behavior intact.</p>
+                          <p>
+                            I will split the builder into focused functions and
+                            keep its behavior intact.
+                          </p>
 
                           <details
                             class="demo-tool-call"
@@ -544,13 +755,26 @@ const replayFilters = [
                               <span>edit_file</span>
                               <code>src/db/queryBuilder.ts</code>
                               <strong>EDITED</strong>
-                              <small><ins>+128</ins> <del>-46</del></small>
+                              <small>
+                                <ins>+128</ins> <del>-46</del>
+                              </small>
                             </summary>
-                            <pre><code><span>@@ buildQuery()</span>
-<del>- const parts = [];</del>
-<del>- return appendFilters(parts, filters);</del>
-<ins>+ const clauses = buildClauses(filters);</ins>
-<ins>+ return clauses.filter(Boolean).join(" AND ");</ins></code></pre>
+                            <pre>
+                              <code>
+                                <span>@@ buildQuery()</span>
+                                <del>- const parts = [];</del>
+                                <del>
+                                  - return appendFilters(parts, filters);
+                                </del>
+                                <ins>
+                                  + const clauses = buildClauses(filters);
+                                </ins>
+                                <ins>
+                                  + return clauses.filter(Boolean).join(" AND
+                                  ");
+                                </ins>
+                              </code>
+                            </pre>
                           </details>
 
                           <details
@@ -563,7 +787,12 @@ const replayFilters = [
                               <code>pnpm test:unit</code>
                               <strong class="is-success">SUCCESS</strong>
                             </summary>
-                            <p class="demo-tool-result"><strong>148 passed</strong><span>0 failed / 2.34s</span></p>
+                            <p class="demo-tool-result">
+                              <>
+                                <strong>148 passed</strong>
+                                <span>0 failed / 2.34s</span>
+                              </>
+                            </p>
                           </details>
                         </div>
                       </div>
@@ -584,9 +813,17 @@ const replayFilters = [
                         />
                       </span>
                       <div>
-                        <header><strong>AGENT</strong><time>10:24:31</time></header>
+                        <header>
+                          <>
+                            <strong>AGENT</strong>
+                            <time>10:24:31</time>
+                          </>
+                        </header>
                         <div class="demo-agent-response">
-                          <p>Updated the builder, added types and focused comments, and kept behavior intact.</p>
+                          <p>
+                            Updated the builder, added types and focused
+                            comments, and kept behavior intact.
+                          </p>
                           <div class="demo-write-row">
                             <span>write</span>
                             <code>src/db/queryBuilder.spec.ts</code>
@@ -642,7 +879,9 @@ const replayFilters = [
       return;
     }
 
-    const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>("[data-demo-range]"));
+    const buttons = Array.from(
+      root.querySelectorAll<HTMLButtonElement>("[data-demo-range]"),
+    );
     const chip = root.querySelector<HTMLElement>("[data-demo-range-chip]");
     const meta = root.querySelector<HTMLElement>("[data-demo-chart-meta]");
 
@@ -651,7 +890,10 @@ const replayFilters = [
       if (!range) return;
 
       buttons.forEach((button) => {
-        button.setAttribute("aria-pressed", String(button.dataset.demoRange === key));
+        button.setAttribute(
+          "aria-pressed",
+          String(button.dataset.demoRange === key),
+        );
       });
       if (chip) chip.textContent = range.chip;
       if (meta) meta.textContent = range.meta;
@@ -677,24 +919,40 @@ const replayFilters = [
         const label = item.querySelector<HTMLElement>("[data-demo-bar-label]");
         fill?.style.setProperty("--bar-scale", String(bar.value / barMax));
         if (label) label.textContent = bar.label;
-        item.setAttribute("aria-label", `${bar.label}: ${bar.value} sample sessions`);
+        item.setAttribute(
+          "aria-label",
+          `${bar.label}: ${bar.value} sample sessions`,
+        );
       });
 
-      root.querySelectorAll<HTMLElement>("[data-demo-agent]").forEach((item) => {
-        const index = Number(item.dataset.demoAgent);
-        const agent = range.distribution[index];
-        if (!agent) return;
-        const fill = item.querySelector<HTMLElement>("[data-demo-agent-fill]");
-        const progress = item.querySelector<HTMLProgressElement>("progress");
-        const stat = item.querySelector<HTMLElement>("[data-demo-agent-stat]");
-        fill?.style.setProperty("--agent-scale", String(agent.pct / 100));
-        if (progress) progress.value = agent.pct;
-        if (stat) stat.textContent = `${agent.count.toLocaleString()} / ${agent.pct.toFixed(1)}%`;
-      });
+      root
+        .querySelectorAll<HTMLElement>("[data-demo-agent]")
+        .forEach((item) => {
+          const index = Number(item.dataset.demoAgent);
+          const agent = range.distribution[index];
+          if (!agent) return;
+          const fill = item.querySelector<HTMLElement>(
+            "[data-demo-agent-fill]",
+          );
+          const progress = item.querySelector<HTMLProgressElement>("progress");
+          const stat = item.querySelector<HTMLElement>(
+            "[data-demo-agent-stat]",
+          );
+          fill?.style.setProperty("--agent-scale", String(agent.pct / 100));
+          if (progress) progress.value = agent.pct;
+          if (stat)
+            stat.textContent = `${agent.count.toLocaleString()} / ${agent.pct.toFixed(1)}%`;
+        });
 
-      const total = range.distribution.reduce((sum, agent) => sum + agent.count, 0);
-      const distributionMeta = root.querySelector<HTMLElement>(".demo-distribution header > span");
-      if (distributionMeta) distributionMeta.textContent = `5 agents / ${total.toLocaleString()} sessions`;
+      const total = range.distribution.reduce(
+        (sum, agent) => sum + agent.count,
+        0,
+      );
+      const distributionMeta = root.querySelector<HTMLElement>(
+        ".demo-distribution header > span",
+      );
+      if (distributionMeta)
+        distributionMeta.textContent = `5 agents / ${total.toLocaleString()} sessions`;
     }
 
     buttons.forEach((button) => {
@@ -709,12 +967,16 @@ const replayFilters = [
     const filters = Array.from(
       root.querySelectorAll<HTMLInputElement>("[data-replay-filter]"),
     );
-    const items = Array.from(root.querySelectorAll<HTMLElement>("[data-replay-item]"));
+    const items = Array.from(
+      root.querySelectorAll<HTMLElement>("[data-replay-item]"),
+    );
     const status = root.querySelector<HTMLElement>("[data-replay-status]");
 
     function renderFilters() {
       const disabled = new Set(
-        filters.filter((filter) => !filter.checked).map((filter) => filter.dataset.replayFilter),
+        filters
+          .filter((filter) => !filter.checked)
+          .map((filter) => filter.dataset.replayFilter),
       );
       items.forEach((item) => {
         const types = item.dataset.replayItem?.split(" ") ?? [];
@@ -725,20 +987,23 @@ const replayFilters = [
         "[data-replay-message]:not([hidden])",
       ).length;
       if (status) {
-        status.textContent = (status.dataset.statusTemplate ?? "{count}").replace(
-          "{count}",
-          String(visibleCount),
-        );
+        status.textContent = (
+          status.dataset.statusTemplate ?? "{count}"
+        ).replace("{count}", String(visibleCount));
       }
     }
 
-    filters.forEach((filter) => filter.addEventListener("change", renderFilters));
+    filters.forEach((filter) =>
+      filter.addEventListener("change", renderFilters),
+    );
   }
 
-  document.querySelectorAll<HTMLElement>("[data-product-demo]").forEach((root) => {
-    if (root.dataset.scene === "overview") initializeOverviewDemo(root);
-    if (root.dataset.scene === "replay") initializeReplayDemo(root);
-  });
+  document
+    .querySelectorAll<HTMLElement>("[data-product-demo]")
+    .forEach((root) => {
+      if (root.dataset.scene === "overview") initializeOverviewDemo(root);
+      if (root.dataset.scene === "replay") initializeReplayDemo(root);
+    });
 </script>
 
 <style>

@@ -19,13 +19,17 @@ const themes = [
 <header
   class="sticky top-0 z-50 border-b border-[var(--console-border)] bg-[var(--console-bg)]/88 backdrop-blur-md"
 >
-  <div class="mx-auto flex h-[60px] max-w-[1180px] items-center px-4 sm:px-6 lg:px-7">
+  <div
+    class="mx-auto flex h-[60px] max-w-[1180px] items-center px-4 sm:px-6 lg:px-7"
+  >
     <a
       href={localeRoutes[locale]}
       class="motion-hover flex shrink-0 items-center gap-2.5 rounded-sm text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
     >
       <img src="/logo.svg?v=3" alt="CodeSesh" class="size-6 rounded-sm" />
-      <span class="console-display hidden text-sm font-bold tracking-[0.06em] min-[360px]:inline">
+      <span
+        class="console-display hidden text-sm font-bold tracking-[0.06em] min-[360px]:inline"
+      >
         CODESESH
       </span>
     </a>
@@ -76,13 +80,21 @@ const themes = [
         <span class="copy-icon-stack inline-grid">
           {
             themes.map((theme) => (
-              <span data-theme-icon={theme.key} data-theme-text={theme.label} data-active={theme.key === "system" ? "true" : undefined}>
+              <span
+                data-theme-icon={theme.key}
+                data-theme-text={theme.label}
+                data-active={theme.key === "system" ? "true" : undefined}
+              >
                 <Icon name={theme.icon} class="size-4" />
               </span>
             ))
           }
         </span>
-        <span class="sr-only" aria-live="polite" data-theme-status>{`${t.themeLabel}: ${t.themeSystem}${t.themeSwitchTo.replace("{next}", t.themeLight)}`}</span>
+        <span class="sr-only" aria-live="polite" data-theme-status
+          >{
+            `${t.themeLabel}: ${t.themeSystem}${t.themeSwitchTo.replace("{next}", t.themeLight)}`
+          }</span
+        >
       </button>
       <a
         href="https://github.com/xingkaixin/codesesh"
@@ -99,7 +111,11 @@ const themes = [
 <script>
   const THEMES = ["light", "dark", "system"] as const;
   type Theme = (typeof THEMES)[number];
-  const NEXT_THEME: Record<Theme, Theme> = { light: "dark", dark: "system", system: "light" };
+  const NEXT_THEME: Record<Theme, Theme> = {
+    light: "dark",
+    dark: "system",
+    system: "light",
+  };
 
   function isTheme(value: string | undefined): value is Theme {
     return !!value && (THEMES as readonly string[]).includes(value as Theme);
@@ -111,33 +127,38 @@ const themes = [
     }
   }
 
-  document.querySelectorAll<HTMLButtonElement>("[data-theme-toggle]").forEach((button) => {
-    const label = button.dataset.themeLabel ?? "";
-    const switchToTemplate = button.dataset.themeSwitchTo ?? "";
-    const status = button.querySelector<HTMLElement>("[data-theme-status]");
-    const icons = new Map<Theme, HTMLElement>();
-    button.querySelectorAll<HTMLElement>("[data-theme-icon]").forEach((el) => {
-      const key = el.dataset.themeIcon;
-      if (isTheme(key)) icons.set(key, el);
-    });
+  document
+    .querySelectorAll<HTMLButtonElement>("[data-theme-toggle]")
+    .forEach((button) => {
+      const label = button.dataset.themeLabel ?? "";
+      const switchToTemplate = button.dataset.themeSwitchTo ?? "";
+      const status = button.querySelector<HTMLElement>("[data-theme-status]");
+      const icons = new Map<Theme, HTMLElement>();
+      button
+        .querySelectorAll<HTMLElement>("[data-theme-icon]")
+        .forEach((el) => {
+          const key = el.dataset.themeIcon;
+          if (isTheme(key)) icons.set(key, el);
+        });
 
-    function render(theme: Theme) {
-      icons.forEach((el, key) => {
-        el.dataset.active = String(key === theme);
+      function render(theme: Theme) {
+        icons.forEach((el, key) => {
+          el.dataset.active = String(key === theme);
+        });
+        const currentText = icons.get(theme)?.dataset.themeText ?? "";
+        const nextText = icons.get(NEXT_THEME[theme])?.dataset.themeText ?? "";
+        const switchToText = switchToTemplate.replace("{next}", nextText);
+        if (status)
+          status.textContent = `${label}: ${currentText}${switchToText}`;
+      }
+
+      render(window.__wwwTheme?.get() ?? "system");
+
+      button.addEventListener("click", () => {
+        const current = window.__wwwTheme?.get() ?? "system";
+        const nextTheme = NEXT_THEME[current];
+        window.__wwwTheme?.set(nextTheme);
+        render(nextTheme);
       });
-      const currentText = icons.get(theme)?.dataset.themeText ?? "";
-      const nextText = icons.get(NEXT_THEME[theme])?.dataset.themeText ?? "";
-      const switchToText = switchToTemplate.replace("{next}", nextText);
-      if (status) status.textContent = `${label}: ${currentText}${switchToText}`;
-    }
-
-    render(window.__wwwTheme?.get() ?? "system");
-
-    button.addEventListener("click", () => {
-      const current = window.__wwwTheme?.get() ?? "system";
-      const nextTheme = NEXT_THEME[current];
-      window.__wwwTheme?.set(nextTheme);
-      render(nextTheme);
     });
-  });
 </script>

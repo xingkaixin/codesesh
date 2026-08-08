@@ -17,14 +17,32 @@ const t = copy[locale].footer;
       href={locale === "zh" ? "/zh/" : "/"}
       class="flex items-center gap-2.5 rounded-sm text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
     >
-      <img src="/logo.svg?v=3" alt="CodeSesh" width="20" height="20" class="size-5 rounded-xs" />
-      <span class="console-display text-xs font-bold tracking-[0.06em]">CODESESH</span>
+      <img
+        src="/logo.svg?v=3"
+        alt="CodeSesh"
+        width="20"
+        height="20"
+        class="size-5 rounded-xs"
+      />
+      <span class="console-display text-xs font-bold tracking-[0.06em]"
+        >CODESESH</span
+      >
     </a>
-    <span class="console-mono text-[10px] leading-5 text-[var(--console-muted)]">{t.note}</span>
+    <span class="console-mono text-[10px] leading-5 text-[var(--console-muted)]"
+      >{t.note}</span
+    >
     <nav class="flex gap-5 sm:ml-auto" aria-label="Footer navigation">
-      <a class="footer-link" href="https://github.com/xingkaixin/codesesh">GitHub</a>
-      <a class="footer-link" href="https://github.com/xingkaixin/codesesh#readme">{t.docs}</a>
-      <a class="footer-link" href="https://github.com/xingkaixin/codesesh/issues">{t.issues}</a>
+      <a class="footer-link" href="https://github.com/xingkaixin/codesesh"
+        >GitHub</a
+      >
+      <a
+        class="footer-link"
+        href="https://github.com/xingkaixin/codesesh#readme">{t.docs}</a
+      >
+      <a
+        class="footer-link"
+        href="https://github.com/xingkaixin/codesesh/issues">{t.issues}</a
+      >
     </nav>
   </div>
 </footer>

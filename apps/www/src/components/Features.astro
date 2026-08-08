@@ -22,7 +22,9 @@ const t = copy[locale].features;
     >
       <HeadingText value={t.title} />
     </h2>
-    <p class="mt-4 max-w-2xl text-sm leading-7 text-[var(--console-text-secondary)]">
+    <p
+      class="mt-4 max-w-2xl text-sm leading-7 text-[var(--console-text-secondary)]"
+    >
       {t.body}
     </p>
 
@@ -41,7 +43,9 @@ const t = copy[locale].features;
             <ul class="mt-5 space-y-4">
               {group.items.map((item) => (
                 <li>
-                  <p class="text-[13px] font-semibold text-[var(--console-text)]">{item.title}</p>
+                  <p class="text-[13px] font-semibold text-[var(--console-text)]">
+                    {item.title}
+                  </p>
                   <p class="mt-1 text-xs leading-5 text-[var(--console-text-secondary)]">
                     {item.description}
                   </p>
