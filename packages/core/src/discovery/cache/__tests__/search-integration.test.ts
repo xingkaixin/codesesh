@@ -366,7 +366,11 @@ describe("searchSessions", () => {
       ...makeSession("or-first"),
       stats: { ...makeSession("or-first").stats, message_count: 2 },
     };
-    const sessions = [title, user, assistant, tool, quoted, orFirst];
+    const punctuated = {
+      ...makeSession("punctuated"),
+      stats: { ...makeSession("punctuated").stats, message_count: 2 },
+    };
+    const sessions = [title, user, assistant, tool, quoted, orFirst, punctuated];
     const dataById = new Map<string, SessionDetail>([
       [
         "title",
@@ -465,6 +469,26 @@ describe("searchSessions", () => {
           ],
         },
       ],
+      [
+        "punctuated",
+        {
+          ...punctuated,
+          messages: [
+            {
+              id: "punctuated-m1",
+              role: "assistant",
+              time_created: now,
+              parts: [{ type: "text", text: "ÉCOLE needle without punctuation" }],
+            },
+            {
+              id: "punctuated-m2",
+              role: "user",
+              time_created: now + 1,
+              parts: [{ type: "text", text: "exact ÉCOLE-needle match" }],
+            },
+          ],
+        },
+      ],
     ]);
 
     saveCachedSessions("claudecode", sessions);
@@ -476,13 +500,21 @@ describe("searchSessions", () => {
     expect(searchSessions("toolneedle")[0]?.matchType).toBe("tool_output");
     expect(searchSessions('"quoted phrase"')[0]?.snippet).toContain("<mark>quoted phrase</mark>");
 
+    const allTermResults = searchSessions("assistantneedle reply");
+    expect(allTermResults[0]?.session.id).toBe("assistant");
+    expect(allTermResults[0]?.matchType).toBe("assistant_reply");
+
     const orResults = searchSessions("alphaneedle OR betaneedle");
     expect(orResults[0]?.session.id).toBe("or-first");
     expect(orResults[0]?.matchType).toBe("assistant_reply");
     expect(orResults[0]?.snippet).toContain("<mark>betaneedle</mark>");
+
+    const punctuatedResults = searchSessions('"école-needle"');
+    expect(punctuatedResults[0]?.matchType).toBe("user_message");
+    expect(punctuatedResults[0]?.snippet).toContain("<mark>ÉCOLE-needle</mark>");
   });
 
-  it("uses a single message FTS lookup for result match metadata", () => {
+  it("bounds a single message FTS lookup to one row per candidate", () => {
     const sessions = Array.from({ length: 3 }, (_, sessionIndex) => ({
       ...makeSession(`bulk-match-${sessionIndex}`),
       stats: { ...makeSession(`bulk-match-${sessionIndex}`).stats, message_count: 30 },
@@ -498,20 +530,30 @@ describe("searchSessions", () => {
         parts: [
           {
             type: "text" as const,
-            text: messageIndex === 29 ? `bulkneedle ${sessionId}` : `filler ${messageIndex}`,
+            text: `bulkneedle ${sessionId} ${messageIndex}`,
           },
         ],
       })),
     }));
 
     const preparedSql: string[] = [];
+    let returnedMessageRows: number | undefined;
     const originalPrepare = Database.prototype.prepare;
     const prepareSpy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
       this: Database.Database,
       source: string,
     ) {
       preparedSql.push(source);
-      return originalPrepare.call(this, source);
+      const statement = originalPrepare.call(this, source);
+      if (!source.includes("first_message_matches")) return statement;
+
+      const originalAll = statement.all.bind(statement);
+      statement.all = (...params: unknown[]) => {
+        const result = (originalAll as (...boundParams: unknown[]) => unknown[])(...params);
+        returnedMessageRows = result.length;
+        return result;
+      };
+      return statement;
     });
 
     try {
@@ -521,7 +563,11 @@ describe("searchSessions", () => {
     }
 
     const normalizedSql = preparedSql.map((sql) => sql.replace(/\s+/g, " ").trim());
-    expect(normalizedSql.filter((sql) => sql.includes("FROM messages_fts"))).toHaveLength(1);
+    const messageLookupSql = normalizedSql.filter((sql) => sql.includes("JOIN messages_fts"));
+    expect(messageLookupSql).toHaveLength(1);
+    expect(messageLookupSql[0]).toContain("INDEXED BY idx_messages_session");
+    expect(messageLookupSql[0]).toContain("ORDER BY m.message_index LIMIT 1");
+    expect(returnedMessageRows).toBe(sessions.length);
     expect(
       normalizedSql.some((sql) =>
         /FROM messages WHERE agent_name = \? AND session_id = \? ORDER BY message_index/.test(sql),
