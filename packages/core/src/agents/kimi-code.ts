@@ -47,6 +47,7 @@ const KIMI_CODE_TOOL_TITLE_MAP: Record<string, string> = {
 };
 
 const KIMI_CODE_IGNORED_TOOLS = new Set(["SetTodoList"]);
+const KIMI_CODE_PARSER_REVISION = "kimi-code-parser-v1";
 
 export function resolveKimiCodeDataRoot(): string {
   return resolveHomePath("KIMI_CODE_HOME", ".kimi-code");
@@ -59,11 +60,19 @@ interface SessionSource {
   wireFile: string;
   workDir: string;
   createdAt: number;
-  updatedAt: number;
+  activityAt: number;
+  stateMtimeMs: number;
+  stateSize: number;
+  wireMtimeMs: number;
+  wireSize: number;
   explicitTitle: string;
 }
 
-interface SessionMeta extends SessionCacheMeta, SessionSource {
+interface SessionMeta extends SessionCacheMeta {
+  wireFile: string;
+  workDir: string;
+  createdAt: number;
+  activityAt: number;
   title: string;
   sourceMtimeMs: number;
 }
@@ -421,13 +430,13 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
       const state = readState(stateFile);
       if (!state) return skippedSession("malformed state");
 
-      const stateMtime = statSync(stateFile).mtimeMs;
-      const wireMtime = statSync(wireFile).mtimeMs;
+      const stateStat = statSync(stateFile);
+      const wireStat = statSync(wireFile);
       const createdAt =
-        parseTimestamp(state.createdAt) ?? parseTimestamp(state.created_at) ?? stateMtime;
-      const updatedAt = Math.max(
+        parseTimestamp(state.createdAt) ?? parseTimestamp(state.created_at) ?? stateStat.mtimeMs;
+      const activityAt = Math.max(
         parseTimestamp(state.updatedAt) ?? parseTimestamp(state.updated_at) ?? createdAt,
-        wireMtime,
+        wireStat.mtimeMs,
       );
       const custom = asRecord(state.custom);
       const workDir =
@@ -444,7 +453,11 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
         wireFile,
         workDir,
         createdAt,
-        updatedAt,
+        activityAt,
+        stateMtimeMs: stateStat.mtimeMs,
+        stateSize: stateStat.size,
+        wireMtimeMs: wireStat.mtimeMs,
+        wireSize: wireStat.size,
         explicitTitle,
       });
     } catch {
@@ -452,13 +465,17 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
     }
   }
 
-  private sourceFingerprint(
-    source: Pick<SessionSource, "stateFile" | "wireFile" | "workDir">,
-  ): string {
+  private sourceFingerprint(source: SessionSource): string {
     return JSON.stringify([
-      this.readFileMtimeMs(source.stateFile),
-      this.readFileMtimeMs(source.wireFile),
+      KIMI_CODE_PARSER_REVISION,
+      source.stateMtimeMs,
+      source.stateSize,
+      source.wireMtimeMs,
+      source.wireSize,
+      source.createdAt,
+      source.activityAt,
       source.workDir,
+      source.explicitTitle,
     ]);
   }
 
@@ -469,7 +486,7 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
 
     for (const sessionDir of this.listSessionDirs()) {
       const source = getParsedSession(this.resolveSessionSourceResult(sessionDir));
-      if (!source || !matchesScanWindow(source.createdAt, options)) continue;
+      if (!source || !matchesScanWindow(source.activityAt, options)) continue;
       refs.push({
         sessionId: source.id,
         sourcePath: source.sourcePath,
@@ -544,9 +561,14 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
 
     const title = resolveSessionTitle(source.explicitTitle, parsed.firstUserTitle, null);
     const meta: SessionMeta = {
-      ...source,
+      id: source.id,
+      sourcePath: source.sourcePath,
+      wireFile: source.wireFile,
+      workDir: source.workDir,
+      createdAt: source.createdAt,
+      activityAt: source.activityAt,
       title,
-      sourceMtimeMs: source.createdAt,
+      sourceMtimeMs: source.activityAt,
       sourceFingerprint: this.sourceFingerprint(source),
     };
     this.sessionMetaMap.set(meta.id, meta);
@@ -556,7 +578,7 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
       title: meta.title,
       directory: meta.workDir,
       time_created: meta.createdAt,
-      time_updated: meta.updatedAt,
+      time_updated: meta.activityAt,
       stats: transcript.stats,
       ...(Object.keys(parsed.modelUsage).length > 0 ? { model_usage: parsed.modelUsage } : {}),
     });
@@ -575,13 +597,13 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
       slug: `${this.name}/${meta.id}`,
       directory: meta.workDir,
       time_created: meta.createdAt,
-      time_updated: meta.updatedAt,
+      time_updated: meta.activityAt,
       stats: transcript.stats,
       messages: transcript.messages,
     };
   }
 
-  private parseWire(source: SessionSource): ParsedWire {
+  private parseWire(source: Pick<SessionSource, "wireFile">): ParsedWire {
     const builder = new TranscriptBuilder();
     const totals = buildUsageTotals();
     const ignoredToolCallIds = new Set<string>();
