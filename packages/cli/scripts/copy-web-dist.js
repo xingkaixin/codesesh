@@ -13,11 +13,12 @@ const cliDir = resolve(__dirname, "..");
 
 const webDistSource = resolve(rootDir, "apps", "web", "dist");
 const webDistTarget = resolve(cliDir, "dist/web");
+const artifactMode = process.env.CODESESH_ARTIFACT_MODE === "true";
 
 if (!existsSync(webDistSource)) {
   console.warn("⚠️  Web dist not found at:", webDistSource);
   console.warn("   Run 'pnpm --filter @codesesh/web build' first");
-  process.exit(0);
+  process.exit(artifactMode ? 1 : 0);
 }
 
 // Ensure target directory exists, purging any stale hashed assets from prior builds

@@ -14,7 +14,7 @@ export default defineConfig({
   dts: false,
   clean: !isWatch,
   sourcemap: true,
-  noExternal: bundleCore ? ["@codesesh/core"] : [],
+  noExternal: bundleCore ? [/^@codesesh\/core(?:\/.*)?$/] : [],
   banner: {
     js: "#!/usr/bin/env node",
   },
