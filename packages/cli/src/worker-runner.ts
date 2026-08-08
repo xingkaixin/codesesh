@@ -9,9 +9,10 @@ import type {
 } from "@codesesh/core";
 import { appLogger } from "./logging.js";
 import type {
+  ScanRefreshWorkerCommitRequest,
   ScanRefreshWorkerCheckpoint,
   ScanRefreshWorkerMessage,
-  ScanRefreshWorkerRequest,
+  ScanRefreshWorkerRunRequest,
 } from "./scan-refresh-worker.js";
 import { toError } from "./errors.js";
 
@@ -39,6 +40,8 @@ export interface WorkerResult {
 export interface WorkerRunner {
   readonly activeCount: number;
   run(agentName: string, payload: WorkerPayload): Promise<WorkerResult>;
+  commit?(agentName: string): void;
+  discard?(agentName: string): void;
   shutdown(): Promise<void>;
 }
 
@@ -46,13 +49,17 @@ interface PendingRequest {
   resolve: (result: WorkerResult) => void;
   reject: (error: Error) => void;
   payload: WorkerPayload;
+  generation: number;
   onProgress?: (progress: AgentScanProgress) => void;
   onCheckpoint?: (checkpoint: ScanRefreshWorkerCheckpoint) => void;
 }
 
 interface WorkerSlot {
+  agentName: string;
   worker: Worker;
   pending: Map<number, PendingRequest>;
+  generation: number;
+  awaitingCommit: { requestId: number; generation: number } | null;
   closed: boolean;
 }
 
@@ -63,6 +70,7 @@ function applySessionChanges(
   changes: SessionHeadChange[],
   removedSessionIds: string[],
 ): SessionHead[] {
+  if (changes.length === 0 && removedSessionIds.length === 0) return previousSessions;
   const replacedIds = new Set(removedSessionIds);
   for (const { session } of changes) replacedIds.add(session.id);
   const retained = previousSessions.filter((session) => !replacedIds.has(session.id));
@@ -92,8 +100,10 @@ function applyMetaChanges(
   changed: Record<string, SessionCacheMeta>,
   replacedSessionIds: Iterable<string>,
 ): Record<string, SessionCacheMeta> {
+  const replacedIds = [...replacedSessionIds];
+  if (Object.keys(changed).length === 0 && replacedIds.length === 0) return previous;
   const next = { ...previous };
-  for (const id of replacedSessionIds) delete next[id];
+  for (const id of replacedIds) delete next[id];
   return Object.assign(next, changed);
 }
 
@@ -106,18 +116,25 @@ export class ThreadWorkerRunner implements WorkerRunner {
 
   get activeCount(): number {
     let count = 0;
-    for (const slot of this.workers.values()) count += slot.pending.size;
+    for (const slot of this.workers.values()) {
+      count += slot.pending.size + Number(slot.awaitingCommit != null);
+    }
     return count;
   }
 
   run(agentName: string, payload: WorkerPayload): Promise<WorkerResult> {
     if (this.isShuttingDown) return Promise.reject(new Error(SHUTDOWN_ERROR_MESSAGE));
 
-    const request: ScanRefreshWorkerRequest = {
+    const existingSlot = this.workers.get(agentName);
+    if (existingSlot && (existingSlot.pending.size > 0 || existingSlot.awaitingCommit)) {
+      return Promise.reject(new Error(`Scan refresh worker for ${agentName} is busy`));
+    }
+    const generation = existingSlot?.generation ?? 0;
+    const request: ScanRefreshWorkerRunRequest = {
       type: "run",
       requestId: this.nextRequestId++,
       agentName,
-      previousSessions: payload.previousSessions,
+      generation,
       changedIds: payload.changedIds,
       sourceSync: payload.sourceSync,
       derivedOnly: payload.derivedOnly,
@@ -125,7 +142,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
       backfillCursor: payload.backfillCursor,
       checkpoint: payload.checkpoint,
       scanOptions: payload.scanOptions,
-      meta: payload.meta,
+      ...(existingSlot ? {} : { previousSessions: payload.previousSessions, meta: payload.meta }),
     };
 
     return new Promise((resolve, reject) => {
@@ -144,6 +161,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
         resolve,
         reject,
         payload,
+        generation,
         onProgress: payload.onProgress,
         onCheckpoint: payload.onCheckpoint,
       });
@@ -154,9 +172,33 @@ export class ThreadWorkerRunner implements WorkerRunner {
         } catch (error) {
           slot.pending.delete(request.requestId);
           reject(toError(error));
+          this.invalidateWorker(agentName, slot);
         }
       }
     });
+  }
+
+  commit(agentName: string): void {
+    const slot = this.workers.get(agentName);
+    const awaiting = slot?.awaitingCommit;
+    if (!slot || !awaiting) return;
+    const request: ScanRefreshWorkerCommitRequest = {
+      type: "commit",
+      requestId: awaiting.requestId,
+      generation: awaiting.generation,
+    };
+    try {
+      slot.worker.postMessage(request);
+      slot.awaitingCommit = null;
+      slot.generation += 1;
+    } catch {
+      this.invalidateWorker(agentName, slot);
+    }
+  }
+
+  discard(agentName: string): void {
+    const slot = this.workers.get(agentName);
+    if (slot) this.invalidateWorker(agentName, slot);
   }
 
   async shutdown(): Promise<void> {
@@ -172,9 +214,16 @@ export class ThreadWorkerRunner implements WorkerRunner {
     await Promise.allSettled(slots.map((slot) => slot.worker.terminate()));
   }
 
-  private createWorker(agentName: string, request: ScanRefreshWorkerRequest): WorkerSlot {
+  private createWorker(agentName: string, request: ScanRefreshWorkerRunRequest): WorkerSlot {
     const worker = new Worker(this.workerUrl, { workerData: request });
-    const slot: WorkerSlot = { worker, pending: new Map(), closed: false };
+    const slot: WorkerSlot = {
+      agentName,
+      worker,
+      pending: new Map(),
+      generation: request.generation,
+      awaitingCommit: null,
+      closed: false,
+    };
     worker.unref();
     this.workers.set(agentName, slot);
     worker.on("message", (message: ScanRefreshWorkerMessage) => {
@@ -197,6 +246,15 @@ export class ThreadWorkerRunner implements WorkerRunner {
   private handleMessage(slot: WorkerSlot, message: ScanRefreshWorkerMessage): void {
     const pending = slot.pending.get(message.requestId);
     if (!pending) return;
+    if (message.generation !== pending.generation) {
+      const error = new Error(
+        `Scan refresh generation mismatch: expected ${pending.generation}, received ${message.generation}`,
+      );
+      slot.pending.delete(message.requestId);
+      pending.reject(error);
+      this.invalidateWorker(slot.agentName, slot);
+      return;
+    }
     if (message.type === "progress") {
       pending.onProgress?.(message.progress);
       return;
@@ -207,6 +265,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
       } catch (error) {
         slot.pending.delete(message.requestId);
         pending.reject(toError(error));
+        this.invalidateWorker(slot.agentName, slot);
       }
       return;
     }
@@ -214,13 +273,14 @@ export class ThreadWorkerRunner implements WorkerRunner {
     slot.pending.delete(message.requestId);
     if (message.type === "error") {
       pending.reject(new Error(message.error));
+      this.invalidateWorker(slot.agentName, slot);
       return;
     }
     const changedIds = message.changes.map(({ session }) => session.id);
     const replacedSessionIds = [...changedIds, ...message.removedSessionIds];
     const removedMetaIds = [...message.removedSessionIds, ...message.removedMetaIds];
     try {
-      pending.resolve({
+      const result = {
         sessions: applySessionChanges(
           pending.payload.previousSessions,
           message.changes,
@@ -229,9 +289,15 @@ export class ThreadWorkerRunner implements WorkerRunner {
         meta: applyMetaChanges(pending.payload.meta, message.meta, removedMetaIds),
         changedIds: pending.payload.sourceSync ? replacedSessionIds : undefined,
         sourceFailures: message.sourceFailures,
-      });
+      };
+      slot.awaitingCommit = {
+        requestId: message.requestId,
+        generation: message.generation,
+      };
+      pending.resolve(result);
     } catch (error) {
       pending.reject(toError(error));
+      this.invalidateWorker(slot.agentName, slot);
     }
   }
 
@@ -241,5 +307,15 @@ export class ThreadWorkerRunner implements WorkerRunner {
     if (this.workers.get(agentName) === slot) this.workers.delete(agentName);
     for (const pending of slot.pending.values()) pending.reject(error);
     slot.pending.clear();
+    slot.awaitingCommit = null;
+  }
+
+  private invalidateWorker(agentName: string, slot: WorkerSlot): void {
+    this.closeWorker(
+      agentName,
+      slot,
+      new Error(`Scan refresh worker state discarded for ${agentName}`),
+    );
+    void slot.worker.terminate().catch(() => undefined);
   }
 }

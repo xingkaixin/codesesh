@@ -85,6 +85,20 @@ const workerThreads = vi.hoisted(() => ({
     const messageHandlers: Array<(message: unknown) => void> = [];
     const exitHandlers: Array<(code: number) => void> = [];
     const errorHandlers: Array<(error: Error) => void> = [];
+    let scanBaseline = isScanWorker
+      ? {
+          sessions: workerData.previousSessions ?? [],
+          meta: workerData.meta ?? {},
+          generation: workerData.generation ?? 0,
+        }
+      : null;
+    let stagedScanBaseline: {
+      requestId: number;
+      sessions: SessionHead[];
+      meta: Record<string, SessionCacheMeta>;
+      generation: number;
+    } | null = null;
+    let scanAgent: any;
     const runSourceSync = (data: any, agent: any) => {
       const parseSourceFingerprint = (fingerprint: string) => {
         try {
@@ -179,39 +193,77 @@ const workerThreads = vi.hoisted(() => ({
     };
     const dispatch = (data: any) => {
       queueMicrotask(() => {
+        if (data?.type === "commit") {
+          const staged = stagedScanBaseline;
+          if (
+            scanBaseline &&
+            staged &&
+            staged.requestId === data.requestId &&
+            staged.generation === data.generation &&
+            scanBaseline.generation === data.generation
+          ) {
+            scanBaseline = {
+              sessions: staged.sessions,
+              meta: staged.meta,
+              generation: data.generation + 1,
+            };
+            stagedScanBaseline = null;
+          }
+          return;
+        }
         for (const handler of messageHandlers) {
           try {
             if (data?.agentName) {
-              const agent = core
+              if (!scanBaseline || scanBaseline.generation !== (data.generation ?? 0)) {
+                throw new Error("worker generation mismatch");
+              }
+              if (stagedScanBaseline) throw new Error("worker result is awaiting commit");
+              const runData = {
+                ...data,
+                previousSessions: data.previousSessions ?? scanBaseline.sessions,
+                meta: data.meta ?? scanBaseline.meta,
+              };
+              const agent = (scanAgent ??= core
                 .createRegisteredAgents()
-                .find((item: any) => item.name === data.agentName);
-              agent?.setSessionMetaMap?.(new Map(Object.entries(data.meta ?? {})));
+                .find((item: any) => item.name === runData.agentName));
+              agent?.setSessionMetaMap?.(new Map(Object.entries(runData.meta)));
               let sessions: SessionHead[] = [];
               let changedIds: string[] | undefined;
               if (agent?.isAvailable?.() !== false) {
-                if (data.derivedOnly) {
-                  sessions = data.previousSessions;
+                if (runData.derivedOnly) {
+                  sessions = runData.previousSessions;
                 } else if (
-                  data.sourceSync &&
+                  runData.sourceSync &&
                   agent?.listSessionSources &&
                   agent?.scanSessionSource
                 ) {
-                  const result = runSourceSync(data, agent);
+                  const result = runSourceSync(runData, agent);
                   sessions = result.sessions as SessionHead[];
                   changedIds = result.changedIds;
-                } else if (data.changedIds && agent?.incrementalScan) {
-                  sessions = agent.incrementalScan(data.previousSessions, data.changedIds);
+                } else if (runData.changedIds && agent?.incrementalScan) {
+                  sessions = agent.incrementalScan(runData.previousSessions, runData.changedIds);
                 } else {
                   sessions = agent?.scan?.({
-                    ...data.scanOptions,
+                    ...runData.scanOptions,
                     onProgress: () => undefined,
                   });
                 }
               }
-              const delta = computeDelta(data, sessions, changedIds, serializeMeta(agent));
+              const serializedMeta = serializeMeta(agent);
+              const delta = computeDelta(runData, sessions, changedIds, serializedMeta);
+              const sessionIds = new Set(sessions.map((session) => session.id));
+              stagedScanBaseline = {
+                requestId: runData.requestId,
+                sessions,
+                meta: Object.fromEntries(
+                  Object.entries(serializedMeta).filter(([sessionId]) => sessionIds.has(sessionId)),
+                ),
+                generation: runData.generation ?? 0,
+              };
               handler({
                 type: "done",
-                requestId: data.requestId,
+                requestId: runData.requestId,
+                generation: runData.generation ?? 0,
                 ...delta,
                 durationMs: 0,
               });
@@ -221,6 +273,7 @@ const workerThreads = vi.hoisted(() => ({
             handler({
               type: "error",
               requestId: data.requestId,
+              generation: data.generation ?? 0,
               error: error instanceof Error ? error.message : String(error),
               durationMs: 0,
             });
@@ -263,8 +316,7 @@ const workerThreads = vi.hoisted(() => ({
         return worker;
       }),
       postMessage: vi.fn((data: unknown) => {
-        Object.assign(workerData, data);
-        if (!workerThreads.deferScanRefreshWorkers) dispatch(workerData);
+        if (!workerThreads.deferScanRefreshWorkers) dispatch(data);
       }),
       unref: vi.fn(),
       terminate: vi.fn(async () => {
@@ -345,6 +397,8 @@ function makeWorkerRunner() {
   return {
     activeCount: 0,
     run: vi.fn<WorkerRunner["run"]>(),
+    commit: vi.fn<NonNullable<WorkerRunner["commit"]>>(),
+    discard: vi.fn<NonNullable<WorkerRunner["discard"]>>(),
     shutdown: vi.fn<WorkerRunner["shutdown"]>(async () => undefined),
   } satisfies WorkerRunner;
 }
@@ -824,7 +878,13 @@ describe("LiveScanStore", () => {
       (worker) => worker.workerData.agentName === "codex",
     );
     expect(scanWorkers).toHaveLength(1);
-    expect(scanWorkers[0]?.postMessage).toHaveBeenCalledTimes(1);
+    const reusedRunRequests = scanWorkers[0]!.postMessage.mock.calls
+      .map(([request]) => request)
+      .filter((request) => request.type === "run");
+    expect(reusedRunRequests).toHaveLength(1);
+    expect(reusedRunRequests[0]).not.toHaveProperty("previousSessions");
+    expect(reusedRunRequests[0]).not.toHaveProperty("meta");
+    expect(JSON.stringify(reusedRunRequests[0]).length).toBeLessThan(512);
     expect(core.markAgentFullSyncStarted).toHaveBeenCalledWith("codex");
   });
 
@@ -1118,6 +1178,7 @@ describe("LiveScanStore", () => {
     worker.emitMessage({
       type: "checkpoint",
       requestId: worker.workerData.requestId,
+      generation: worker.workerData.generation,
       checkpoint: { stage: "scanned", sessions: [], meta: {}, completeness: "complete" },
     });
 
@@ -1166,7 +1227,139 @@ describe("LiveScanStore", () => {
       },
       changedIds: undefined,
     });
+    expect(runner.activeCount).toBe(1);
+    runner.commit("codex");
     expect(runner.activeCount).toBe(0);
+    await runner.shutdown();
+  });
+
+  it("sends only operation fields after committing an Agent baseline", async () => {
+    const session = makeSession("stateful");
+    const agent = makeAgent("codex", { scan: vi.fn(() => [session]) });
+    core.createRegisteredAgents.mockReturnValue([agent]);
+    const runner = new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
+
+    const first = await runner.run("codex", {
+      previousSessions: [],
+      changedIds: null,
+      scanOptions: {},
+      meta: {},
+    });
+    await expect(
+      runner.run("codex", {
+        previousSessions: first.sessions,
+        changedIds: [],
+        derivedOnly: true,
+        scanOptions: {},
+        meta: first.meta,
+      }),
+    ).rejects.toThrow("Scan refresh worker for codex is busy");
+    runner.commit("codex");
+    const worker = workerThreads.workers.at(-1)!;
+
+    const second = await runner.run("codex", {
+      previousSessions: first.sessions,
+      changedIds: [],
+      derivedOnly: true,
+      scanOptions: {},
+      meta: first.meta,
+    });
+    const runRequest = worker.postMessage.mock.calls
+      .map(([request]) => request)
+      .find((request) => request.type === "run");
+
+    expect(runRequest).toMatchObject({ type: "run", generation: 1, changedIds: [] });
+    expect(runRequest).not.toHaveProperty("previousSessions");
+    expect(runRequest).not.toHaveProperty("meta");
+    expect(second.sessions).toEqual([session]);
+    expect(core.createRegisteredAgents).toHaveBeenCalledTimes(1);
+
+    runner.commit("codex");
+    worker.emitExit(1);
+    await runner.run("codex", {
+      previousSessions: second.sessions,
+      changedIds: null,
+      scanOptions: {},
+      meta: second.meta,
+    });
+    const replacementWorker = workerThreads.workers.at(-1)!;
+    expect(replacementWorker).not.toBe(worker);
+    expect(replacementWorker.workerData.previousSessions).toEqual(second.sessions);
+    runner.commit("codex");
+    await runner.shutdown();
+  });
+
+  it("discards an uncommitted result and restores from the next main-thread baseline", async () => {
+    const lastKnownGood = makeSession("last-known-good");
+    const candidate = makeSession("candidate");
+    const agent = makeAgent("codex", { scan: vi.fn(() => [candidate]) });
+    core.createRegisteredAgents.mockReturnValue([agent]);
+    const runner = new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
+
+    await runner.run("codex", {
+      previousSessions: [lastKnownGood],
+      changedIds: null,
+      scanOptions: {},
+      meta: {},
+    });
+    const discardedWorker = workerThreads.workers.at(-1)!;
+    runner.discard("codex");
+
+    expect(discardedWorker.terminate).toHaveBeenCalledTimes(1);
+    await runner.run("codex", {
+      previousSessions: [lastKnownGood],
+      changedIds: null,
+      scanOptions: {},
+      meta: {},
+    });
+    const replacementWorker = workerThreads.workers.at(-1)!;
+    expect(replacementWorker).not.toBe(discardedWorker);
+    expect(replacementWorker.workerData.previousSessions).toEqual([lastKnownGood]);
+    expect(replacementWorker.workerData.generation).toBe(0);
+
+    runner.commit("codex");
+    await runner.shutdown();
+  });
+
+  it("rejects a stale generation result and recreates the worker", async () => {
+    workerThreads.deferScanRefreshWorkers = true;
+    const agent = makeAgent("codex", { scan: vi.fn(() => []) });
+    core.createRegisteredAgents.mockReturnValue([agent]);
+    const runner = new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
+
+    const refresh = runner.run("codex", {
+      previousSessions: [],
+      changedIds: null,
+      scanOptions: {},
+      meta: {},
+    });
+    const staleWorker = workerThreads.workers.at(-1)!;
+    staleWorker.emitMessage({
+      type: "done",
+      requestId: staleWorker.workerData.requestId,
+      generation: 1,
+      changes: [],
+      removedSessionIds: [],
+      meta: {},
+      removedMetaIds: [],
+      sourceFailures: [],
+      durationMs: 0,
+    });
+
+    await expect(refresh).rejects.toThrow(
+      "Scan refresh generation mismatch: expected 0, received 1",
+    );
+    expect(staleWorker.terminate).toHaveBeenCalledTimes(1);
+
+    workerThreads.deferScanRefreshWorkers = false;
+    await runner.run("codex", {
+      previousSessions: [],
+      changedIds: null,
+      scanOptions: {},
+      meta: {},
+    });
+    expect(workerThreads.workers.at(-1)).not.toBe(staleWorker);
+    runner.commit("codex");
     await runner.shutdown();
   });
 

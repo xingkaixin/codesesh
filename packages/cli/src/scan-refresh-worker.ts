@@ -30,16 +30,19 @@ export type ScanRefreshWorkerMessage =
   | {
       type: "progress";
       requestId: number;
+      generation: number;
       progress: AgentScanProgress;
     }
   | {
       type: "checkpoint";
       requestId: number;
+      generation: number;
       checkpoint: ScanRefreshWorkerCheckpoint;
     }
   | {
       type: "done";
       requestId: number;
+      generation: number;
       changes: SessionHeadChange[];
       removedSessionIds: string[];
       meta: Record<string, SessionCacheMeta>;
@@ -50,6 +53,7 @@ export type ScanRefreshWorkerMessage =
   | {
       type: "error";
       requestId: number;
+      generation: number;
       error: string;
       durationMs: number;
     };
@@ -68,11 +72,12 @@ export type ScanRefreshWorkerCheckpoint =
       backfillCursor?: string;
     };
 
-export interface ScanRefreshWorkerRequest {
+export interface ScanRefreshWorkerRunRequest {
   type: "run";
   requestId: number;
   agentName: string;
-  previousSessions: SessionHead[];
+  generation: number;
+  previousSessions?: SessionHead[];
   changedIds: string[] | null;
   sourceSync?: boolean;
   derivedOnly?: boolean;
@@ -80,7 +85,31 @@ export interface ScanRefreshWorkerRequest {
   backfillCursor?: string | null;
   checkpoint?: boolean;
   scanOptions: Pick<ScanOptions, "from" | "to" | "fast">;
+  meta?: Record<string, SessionCacheMeta>;
+}
+
+export interface ScanRefreshWorkerCommitRequest {
+  type: "commit";
+  requestId: number;
+  generation: number;
+}
+
+export type ScanRefreshWorkerRequest = ScanRefreshWorkerRunRequest | ScanRefreshWorkerCommitRequest;
+
+interface StagedWorkerBaseline {
+  requestId: number;
+  generation: number;
+  sessions: SessionHead[];
   meta: Record<string, SessionCacheMeta>;
+}
+
+interface WorkerBaseline {
+  agentName: string;
+  agent: BaseAgent;
+  generation: number;
+  sessions: SessionHead[];
+  meta: Record<string, SessionCacheMeta>;
+  staged: StagedWorkerBaseline | null;
 }
 
 interface CacheMetaDiff {
@@ -362,15 +391,55 @@ export function finalizeSessions(
   return ordered.map((session) => taggedById.get(session.id) ?? session);
 }
 
+let workerBaseline: WorkerBaseline | null = null;
+
+function baselineFor(data: ScanRefreshWorkerRunRequest): WorkerBaseline {
+  const generation = data.generation ?? 0;
+  const hasSessions = Array.isArray(data.previousSessions);
+  const hasMeta = data.meta != null;
+  if (hasSessions !== hasMeta)
+    throw new Error("Worker baseline requires sessions and meta together");
+
+  if (hasSessions && hasMeta) {
+    if (workerBaseline) throw new Error("Scan refresh worker baseline is already initialized");
+    const agent = createRegisteredAgents().find((item) => item.name === data.agentName);
+    if (!agent) throw new Error(`Unknown agent: ${data.agentName}`);
+    workerBaseline = {
+      agentName: data.agentName,
+      agent,
+      generation,
+      sessions: data.previousSessions!,
+      meta: data.meta!,
+      staged: null,
+    };
+  }
+
+  if (!workerBaseline) throw new Error("Scan refresh worker baseline is not initialized");
+  if (workerBaseline.agentName !== data.agentName) {
+    throw new Error(`Worker Agent mismatch: expected ${workerBaseline.agentName}`);
+  }
+  if (workerBaseline.generation !== generation) {
+    throw new Error(
+      `Worker generation mismatch: expected ${workerBaseline.generation}, received ${generation}`,
+    );
+  }
+  if (workerBaseline.staged) {
+    throw new Error(`Worker result ${workerBaseline.staged.requestId} is awaiting commit`);
+  }
+
+  workerBaseline.agent.setSessionMetaMap(new Map(Object.entries(workerBaseline.meta)));
+  return workerBaseline;
+}
+
 async function run(
-  data: ScanRefreshWorkerRequest,
+  data: ScanRefreshWorkerRunRequest,
   progressEmitter: MonotonicValueSampler<AgentScanProgress>,
 ): Promise<void> {
   const startedAt = performance.now();
-  const agent = createRegisteredAgents().find((item) => item.name === data.agentName);
-  if (!agent) {
-    throw new Error(`Unknown agent: ${data.agentName}`);
-  }
+  const baseline = baselineFor(data);
+  const { agent } = baseline;
+  const previousSessions = baseline.sessions;
+  const previousMeta = baseline.meta;
 
   appLogger.debug("scan.refresh_worker.started", {
     agent: data.agentName,
@@ -378,14 +447,12 @@ async function run(
     backfill: data.backfill ?? false,
     backfill_cursor: data.backfillCursor ?? undefined,
     changed_ids: data.changedIds?.length ?? 0,
-    previous_sessions: data.previousSessions.length,
+    previous_sessions: previousSessions.length,
   });
 
   const reportProgress = (progress: AgentScanProgress): void => {
     progressEmitter.push(progress, progress.phase ?? "scanning");
   };
-
-  agent.setSessionMetaMap(new Map(Object.entries(data.meta)));
 
   const isAvailable = agent.isAvailable();
   let sessions: SessionHead[];
@@ -404,15 +471,15 @@ async function run(
   if (!isAvailable) {
     sessions = [];
   } else if (data.derivedOnly) {
-    sessions = data.previousSessions;
+    sessions = previousSessions;
   } else if (
     agent instanceof FileSystemSessionSource &&
     (data.sourceSync === true || data.checkpoint === true)
   ) {
     const result = syncAgentSources(
       agent,
-      data.previousSessions,
-      data.meta,
+      previousSessions,
+      previousMeta,
       data.scanOptions,
       reportProgress,
     );
@@ -422,7 +489,7 @@ async function run(
     sourceSyncDetails = result;
     sourceFailures = result.sourceFailures;
   } else if (data.changedIds) {
-    sessions = await Promise.resolve(agent.incrementalScan(data.previousSessions, data.changedIds));
+    sessions = await Promise.resolve(agent.incrementalScan(previousSessions, data.changedIds));
   } else {
     sessions = await Promise.resolve(
       agent.scan({
@@ -438,6 +505,7 @@ async function run(
     parentPort?.postMessage({
       type: "checkpoint",
       requestId: data.requestId,
+      generation: baseline.generation,
       checkpoint: {
         stage: "scanned",
         sessions: ordered,
@@ -503,6 +571,7 @@ async function run(
       parentPort?.postMessage({
         type: "checkpoint",
         requestId: data.requestId,
+        generation: baseline.generation,
         checkpoint: nextCheckpoint,
       } satisfies ScanRefreshWorkerMessage);
     },
@@ -560,18 +629,25 @@ async function run(
     total_duration_ms: Math.round(performance.now() - startedAt),
   });
   const nextMeta = buildAgentCacheMeta(agent, new Set(sessions.map((session) => session.id)));
-  const metaDiff = computeCacheMetaDiff(data.meta, nextMeta);
+  const metaDiff = computeCacheMetaDiff(previousMeta, nextMeta);
   const diff = computeSessionDiff(
-    data.previousSessions,
+    previousSessions,
     sessions,
     [...(changedIds ?? []), ...Object.keys(metaDiff.changes), ...metaDiff.removedIds],
     sessionSignature,
   );
 
+  baseline.staged = {
+    requestId: data.requestId,
+    generation: baseline.generation,
+    sessions,
+    meta: nextMeta,
+  };
   progressEmitter.flush();
   parentPort?.postMessage({
     type: "done",
     requestId: data.requestId,
+    generation: baseline.generation,
     changes: diff.changes,
     removedSessionIds: diff.removedSessionIds,
     meta: metaDiff.changes,
@@ -581,7 +657,7 @@ async function run(
   } satisfies ScanRefreshWorkerMessage);
 }
 
-async function handleRequest(data: ScanRefreshWorkerRequest): Promise<void> {
+async function handleRequest(data: ScanRefreshWorkerRunRequest): Promise<void> {
   const startedAt = performance.now();
   const progressEmitter = new MonotonicValueSampler<AgentScanProgress>(
     PROGRESS_INTERVAL_MS,
@@ -589,6 +665,7 @@ async function handleRequest(data: ScanRefreshWorkerRequest): Promise<void> {
       parentPort?.postMessage({
         type: "progress",
         requestId: data.requestId,
+        generation: data.generation ?? 0,
         progress,
       } satisfies ScanRefreshWorkerMessage);
     },
@@ -600,6 +677,7 @@ async function handleRequest(data: ScanRefreshWorkerRequest): Promise<void> {
     parentPort?.postMessage({
       type: "error",
       requestId: data.requestId,
+      generation: data.generation ?? 0,
       error: error instanceof Error ? error.message : String(error),
       durationMs: performance.now() - startedAt,
     } satisfies ScanRefreshWorkerMessage);
@@ -610,8 +688,27 @@ async function handleRequest(data: ScanRefreshWorkerRequest): Promise<void> {
 
 let requestTail = Promise.resolve();
 
+function commitBaseline(data: ScanRefreshWorkerCommitRequest): void {
+  if (!workerBaseline) throw new Error("Cannot commit an uninitialized worker baseline");
+  const staged = workerBaseline.staged;
+  if (!staged || staged.requestId !== data.requestId) {
+    throw new Error(`Worker result ${data.requestId} is not awaiting commit`);
+  }
+  if (workerBaseline.generation !== data.generation || staged.generation !== data.generation) {
+    throw new Error(
+      `Worker commit generation mismatch: expected ${workerBaseline.generation}, received ${data.generation}`,
+    );
+  }
+  workerBaseline.sessions = staged.sessions;
+  workerBaseline.meta = staged.meta;
+  workerBaseline.generation += 1;
+  workerBaseline.staged = null;
+}
+
 function enqueueRequest(data: ScanRefreshWorkerRequest): void {
-  requestTail = requestTail.then(() => handleRequest(data));
+  requestTail = requestTail.then(() =>
+    data.type === "commit" ? commitBaseline(data) : handleRequest(data),
+  );
 }
 
 const initialRequest = workerData as Partial<ScanRefreshWorkerRequest> | undefined;
@@ -619,11 +716,12 @@ if (
   initialRequest?.type === "run" &&
   typeof initialRequest.requestId === "number" &&
   typeof initialRequest.agentName === "string" &&
-  Array.isArray(initialRequest.previousSessions)
+  Array.isArray(initialRequest.previousSessions) &&
+  initialRequest.meta != null
 ) {
-  enqueueRequest(initialRequest as ScanRefreshWorkerRequest);
+  enqueueRequest(initialRequest as ScanRefreshWorkerRunRequest);
 }
 
 parentPort?.on("message", (message: ScanRefreshWorkerRequest) => {
-  if (message.type === "run") enqueueRequest(message);
+  enqueueRequest(message);
 });

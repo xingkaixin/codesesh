@@ -131,6 +131,8 @@ function makeWorkerRunner(): WorkerRunner {
       sessions: payload.derivedOnly ? payload.previousSessions : [],
       meta: payload.meta,
     })),
+    commit: vi.fn(),
+    discard: vi.fn(),
     shutdown: vi.fn(async () => undefined),
   };
 }
@@ -311,11 +313,12 @@ describe("AgentSyncEngine", () => {
   it("publishes session and status changes through its interface", async () => {
     const previous = makeSession("session", "before");
     const updated = makeSession("session", "after");
+    const workerRunner = makeWorkerRunner();
     const agent = makeAgent({
       checkForChanges: () => ({ hasChanges: true, changedIds: [updated.id], timestamp: 2 }),
       incrementalScan: () => [updated],
     });
-    const { engine } = makeEngine(agent, [previous]);
+    const { engine } = makeEngine(agent, [previous], workerRunner);
     const sessionChanges = vi.fn();
     const statusChanges = vi.fn();
     engine.subscribeSessionsChanged(sessionChanges);
@@ -333,6 +336,7 @@ describe("AgentSyncEngine", () => {
     expect(statusChanges).toHaveBeenCalledWith(
       expect.objectContaining({ type: "scan-status", active: false }),
     );
+    expect(workerRunner.discard).toHaveBeenCalledWith("codex");
   });
 
   it("bounds progress broadcasts while preserving phase and completion", async () => {
@@ -990,6 +994,8 @@ describe("AgentSyncEngine", () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async () => ({ sessions: [newSession], meta: {}, changedIds: [] })),
+      commit: vi.fn(),
+      discard: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const engine = new AgentSyncEngine({ workerRunner });
@@ -1010,6 +1016,8 @@ describe("AgentSyncEngine", () => {
 
     expect(engine.snapshot().sessions).toEqual([oldSession]);
     expect(sessionChanges).not.toHaveBeenCalled();
+    expect(workerRunner.commit).not.toHaveBeenCalled();
+    expect(workerRunner.discard).toHaveBeenCalledTimes(1);
 
     await engine.refresh("codex");
 
@@ -1024,6 +1032,7 @@ describe("AgentSyncEngine", () => {
         event: expect.objectContaining({ updatedSessions: 1 }),
       }),
     );
+    expect(workerRunner.commit).toHaveBeenCalledTimes(1);
   });
 
   it("CS-73 regression: a windowed startup scan with one unindexed session still switches to the incremental refresh path", async () => {

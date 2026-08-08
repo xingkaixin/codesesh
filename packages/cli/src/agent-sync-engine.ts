@@ -369,6 +369,7 @@ export class AgentSyncEngine {
     try {
       return await this.runRefresh(agentName);
     } catch (error) {
+      this.options.workerRunner.discard?.(agentName);
       failed = true;
       const failure = toError(error);
       appLogger.error("scan.refresh.error", { agent: agentName, error });
@@ -417,7 +418,10 @@ export class AgentSyncEngine {
     } else {
       strategyResult = await this.scanAgentFully(agent, previousSessions);
     }
-    if (strategyResult.status === "unchanged") return "unchanged";
+    if (strategyResult.status === "unchanged") {
+      this.options.workerRunner.commit?.(agentName);
+      return "unchanged";
+    }
 
     const nextSessions = attachMissingProjectIdentities(strategyResult.nextSessions);
     const searchIndexOptions =
@@ -454,6 +458,7 @@ export class AgentSyncEngine {
       candidateChangedIds: strategyResult.preciseChangedIds ?? [],
       indexJob: persistentJob,
     });
+    this.options.workerRunner.commit?.(agentName);
     const persistDuration = performance.now() - persistStartedAt;
     logSearchIndexSync("scan.refresh", null, { pending_paths: pendingPathCount });
 
@@ -608,6 +613,7 @@ export class AgentSyncEngine {
         sourceFailures: result.sourceFailures ?? [],
       });
     }
+    this.options.workerRunner.discard?.(agent.name);
     const sessions = attachMissingProjectIdentities(
       await Promise.resolve(agent.incrementalScan(baseline, preciseChangedIds, checkResult.refs)),
     );
@@ -878,6 +884,7 @@ export class AgentSyncEngine {
           saveCache: true,
         },
       });
+      this.options.workerRunner.commit?.(agentName);
       if (result.sourceFailures?.length) throw sourceFailureError(result.sourceFailures);
       markAgentFullSyncCompleted(agentName);
       appLogger.info("scan.backfill.done", {
@@ -888,6 +895,7 @@ export class AgentSyncEngine {
       });
       return "committed";
     } catch (error) {
+      this.options.workerRunner.discard?.(agentName);
       appLogger.error("scan.backfill.error", { agent: agentName, error });
       console.error(`[${agentName}] Backfill failed:`, error);
       return "failed";
