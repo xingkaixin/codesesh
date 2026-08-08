@@ -24,6 +24,7 @@ import {
   type SessionTagTiming,
 } from "@codesesh/core";
 import { appLogger } from "./logging.js";
+import { MonotonicValueSampler } from "./monotonic-value-sampler.js";
 
 export type ScanRefreshWorkerMessage =
   | {
@@ -264,6 +265,7 @@ function logAbsentSourceOutcome(agentName: string, outcome: SessionSourceAbsence
  */
 const TAG_SETTLE_MS = 60_000;
 const TAG_CHECKPOINT_SIZE = 32;
+const PROGRESS_INTERVAL_MS = 100;
 
 interface SessionFinalizationTiming extends SessionTagTiming {
   batches: number;
@@ -360,7 +362,10 @@ export function finalizeSessions(
   return ordered.map((session) => taggedById.get(session.id) ?? session);
 }
 
-async function run(data: ScanRefreshWorkerRequest): Promise<void> {
+async function run(
+  data: ScanRefreshWorkerRequest,
+  progressEmitter: MonotonicValueSampler<AgentScanProgress>,
+): Promise<void> {
   const startedAt = performance.now();
   const agent = createRegisteredAgents().find((item) => item.name === data.agentName);
   if (!agent) {
@@ -377,11 +382,7 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
   });
 
   const reportProgress = (progress: AgentScanProgress): void => {
-    parentPort?.postMessage({
-      type: "progress",
-      requestId: data.requestId,
-      progress,
-    } satisfies ScanRefreshWorkerMessage);
+    progressEmitter.push(progress, progress.phase ?? "scanning");
   };
 
   agent.setSessionMetaMap(new Map(Object.entries(data.meta)));
@@ -567,6 +568,7 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
     sessionSignature,
   );
 
+  progressEmitter.flush();
   parentPort?.postMessage({
     type: "done",
     requestId: data.requestId,
@@ -581,15 +583,28 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
 
 async function handleRequest(data: ScanRefreshWorkerRequest): Promise<void> {
   const startedAt = performance.now();
+  const progressEmitter = new MonotonicValueSampler<AgentScanProgress>(
+    PROGRESS_INTERVAL_MS,
+    (progress) => {
+      parentPort?.postMessage({
+        type: "progress",
+        requestId: data.requestId,
+        progress,
+      } satisfies ScanRefreshWorkerMessage);
+    },
+  );
   try {
-    await run(data);
+    await run(data, progressEmitter);
   } catch (error) {
+    progressEmitter.flush();
     parentPort?.postMessage({
       type: "error",
       requestId: data.requestId,
       error: error instanceof Error ? error.message : String(error),
       durationMs: performance.now() - startedAt,
     } satisfies ScanRefreshWorkerMessage);
+  } finally {
+    progressEmitter.cancel();
   }
 }
 

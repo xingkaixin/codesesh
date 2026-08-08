@@ -38,8 +38,7 @@ describe("cli routes stay wire-compatible with @codesesh/core/contract", () => {
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let text = "";
-    // "connected" then "scan-status" are each written as an "event:" line + a "data:" line.
-    for (let i = 0; i < 4; i++) {
+    while (!text.includes("event: scan-status")) {
       const { value } = await reader.read();
       text += decoder.decode(value);
     }

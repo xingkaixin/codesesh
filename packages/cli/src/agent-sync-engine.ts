@@ -30,6 +30,7 @@ import {
   type BackfillTerminalStatus,
 } from "./backfill-lifecycle.js";
 import { LiveSessionIndex, type LiveSessionIndexOptions } from "./live-session-index.js";
+import { LatestValueThrottle } from "./latest-value-throttle.js";
 import { appLogger, logSearchIndexSync } from "./logging.js";
 import { SearchIndexJobRunner } from "./search-index-job-runner.js";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
@@ -93,6 +94,7 @@ const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
 const SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD = 100;
 const BACKFILL_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const CACHE_TRUNCATION_COVERAGE = 0.5;
+const STATUS_PROGRESS_INTERVAL_MS = 100;
 
 function buildPersistenceDiff(
   previousSessions: SessionHead[],
@@ -125,6 +127,7 @@ export class AgentSyncEngine {
   private cacheIntegrityCheckedAgents = new Set<string>();
   private sessionsChangedListeners = new Set<SessionsChangedListener>();
   private statusChangedListeners = new Set<StatusChangedListener>();
+  private statusProgressThrottles = new Map<string, LatestValueThrottle<void>>();
   private scanStatus = new ScanStatusModel();
   private searchIndexJobs = new SearchIndexJobRunner();
   private nextPublicationId = 1;
@@ -216,6 +219,7 @@ export class AgentSyncEngine {
       this.backgroundRefreshTimer = null;
     }
     this.backfills.cancelAll();
+    this.cancelProgressStatuses();
     this.cacheIntegrityCheckedAgents.clear();
     const searchIndexSnapshot = this.searchIndexJobs.snapshot();
     appLogger.info("search_index.shutdown.started", {
@@ -245,6 +249,7 @@ export class AgentSyncEngine {
   }
 
   private beginAgentScan(agentName: string): void {
+    this.cancelProgressStatus(`scan:${agentName}`);
     const snapshot = this.sessionIndex.snapshot();
     if (!this.scanStatus.snapshot().active) this.startScanBatch([agentName], "scanning");
     this.publishStatus(
@@ -258,6 +263,14 @@ export class AgentSyncEngine {
     backfillAttempt?: BackfillAttemptRef,
   ): void {
     if (backfillAttempt) {
+      const key = `backfill:${agentName}`;
+      const current = this.backfills.stateFor(agentName);
+      if (current?.status !== "running" || current.attemptId !== backfillAttempt.attemptId) {
+        return;
+      }
+      const currentPhase = current.progress?.phase ?? "scanning";
+      const nextPhase = progress.phase ?? "scanning";
+      if (currentPhase && currentPhase !== nextPhase) this.flushProgressStatus(key);
       if (
         this.backfills.updateProgress(backfillAttempt, {
           phase: progress.phase,
@@ -266,23 +279,35 @@ export class AgentSyncEngine {
           sessions: progress.sessions,
         })
       ) {
-        this.publishBackfillStatus();
+        this.publishProgressStatus(
+          key,
+          nextPhase,
+          this.scanStatus.updateBackfill(this.backfills.status()),
+        );
       }
       return;
     }
-    this.publishStatus(this.scanStatus.updateAgent(agentName, progress));
+    const key = `scan:${agentName}`;
+    const currentPhase = this.scanStatus.snapshot().agentStatuses[agentName]?.status;
+    const nextPhase = progress.phase === "finalizing" ? "finalizing" : "scanning";
+    if (currentPhase && currentPhase !== nextPhase) this.flushProgressStatus(key);
+    const status = this.scanStatus.updateAgent(agentName, progress);
+    this.publishProgressStatus(key, status?.agentStatuses[agentName]?.status ?? nextPhase, status);
   }
 
   private beginAgentIndexing(agentName: string): void {
+    this.flushProgressStatus(`scan:${agentName}`);
     this.publishStatus(this.scanStatus.indexAgent(agentName));
   }
 
   private finishAgentScan(agentName: string): void {
+    this.flushProgressStatus(`scan:${agentName}`);
     const count = this.sessionIndex.snapshot().byAgent[agentName]?.length;
     this.publishStatus(this.scanStatus.finishAgent(agentName, count));
   }
 
   private finishScanBatch(): void {
+    this.flushProgressStatuses("scan:");
     this.publishStatus(this.scanStatus.finishBatch());
   }
 
@@ -293,6 +318,44 @@ export class AgentSyncEngine {
   private publishStatus(event: ScanStatusEvent | null): void {
     if (!event || this.isShuttingDown) return;
     for (const listener of this.statusChangedListeners) listener(event);
+  }
+
+  private publishProgressStatus(key: string, phase: string, event: ScanStatusEvent | null): void {
+    if (!event) return;
+    let throttle = this.statusProgressThrottles.get(key);
+    if (!throttle) {
+      throttle = new LatestValueThrottle<void>(STATUS_PROGRESS_INTERVAL_MS, () => {
+        this.publishStatus(this.scanStatus.snapshot());
+      });
+      this.statusProgressThrottles.set(key, throttle);
+    }
+    throttle.push(undefined, phase);
+  }
+
+  private flushProgressStatus(key: string): void {
+    const throttle = this.statusProgressThrottles.get(key);
+    if (!throttle) return;
+    throttle.flush();
+    throttle.cancel();
+    this.statusProgressThrottles.delete(key);
+  }
+
+  private cancelProgressStatus(key: string): void {
+    const throttle = this.statusProgressThrottles.get(key);
+    if (!throttle) return;
+    throttle.cancel();
+    this.statusProgressThrottles.delete(key);
+  }
+
+  private flushProgressStatuses(prefix: string): void {
+    for (const key of this.statusProgressThrottles.keys()) {
+      if (key.startsWith(prefix)) this.flushProgressStatus(key);
+    }
+  }
+
+  private cancelProgressStatuses(): void {
+    for (const throttle of this.statusProgressThrottles.values()) throttle.cancel();
+    this.statusProgressThrottles.clear();
   }
 
   private emitSessionsChanged(change: AgentSessionsChanged): void {
@@ -310,6 +373,7 @@ export class AgentSyncEngine {
       const failure = toError(error);
       appLogger.error("scan.refresh.error", { agent: agentName, error });
       console.error(`[${agentName}] Session refresh failed:`, error);
+      this.flushProgressStatus(`scan:${agentName}`);
       this.publishStatus(this.scanStatus.failAgent(agentName, failure.message));
       return "failed";
     } finally {
@@ -744,6 +808,9 @@ export class AgentSyncEngine {
     this.publishBackfillStatus();
     void this.runBackfill(attempt).then((result) => {
       if (this.isShuttingDown) return;
+      const current = this.backfills.stateFor(attempt.agentName);
+      if (current?.status !== "running" || current.attemptId !== attempt.attemptId) return;
+      this.flushProgressStatus(`backfill:${attempt.agentName}`);
       if (!this.backfills.complete(attempt, result)) return;
       if (result === "failed") this.cacheIntegrityCheckedAgents.delete(attempt.agentName);
       this.publishBackfillStatus();
@@ -784,13 +851,18 @@ export class AgentSyncEngine {
       );
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const fullSessions = attachMissingProjectIdentities(result.sessions);
+      this.flushProgressStatus(`backfill:${agentName}`);
       if (
         this.backfills.updateProgress(attempt, {
           phase: "indexing",
           sessions: fullSessions.length,
         })
       ) {
-        this.publishBackfillStatus();
+        this.publishProgressStatus(
+          `backfill:${agentName}`,
+          "indexing",
+          this.scanStatus.updateBackfill(this.backfills.status()),
+        );
       }
       await this.commitSessionPublication({
         context: "scan.backfill",

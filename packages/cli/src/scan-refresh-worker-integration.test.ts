@@ -215,6 +215,34 @@ describe("scan refresh worker entry", () => {
     );
   });
 
+  it("coalesces a synchronous progress burst and flushes its latest value", async () => {
+    const nowSpy = vi.spyOn(performance, "now").mockReturnValue(0);
+    const scan = vi.fn((options: { onProgress: (progress: object) => void }) => {
+      for (let processed = 1; processed <= 10_000; processed += 1) {
+        options.onProgress({ phase: "scanning", total: 10_000, processed });
+      }
+      return [];
+    });
+    mocks.createRegisteredAgents.mockReturnValue([makeAgent({ scan })]);
+
+    try {
+      await runWorker();
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    const progressMessages = mocks.postMessage.mock.calls
+      .map(([message]) => message)
+      .filter((message) => message.type === "progress");
+    expect(progressMessages).toEqual([
+      expect.objectContaining({ progress: expect.objectContaining({ processed: 1 }) }),
+      expect.objectContaining({ progress: expect.objectContaining({ processed: 10_000 }) }),
+    ]);
+    expect(mocks.postMessage.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ type: "done" }),
+    );
+  });
+
   it("emits a durable head checkpoint before metadata finalization", async () => {
     const session = makeSession("fresh", { time_updated: 1 });
     const agent = makeAgent({
@@ -661,12 +689,12 @@ describe("scan refresh worker entry", () => {
   });
 
   it("synchronizes parsed, failed, removed, and out-of-window sources", async () => {
-    const unchanged = makeSession("unchanged");
-    const changed = makeSession("changed", { title: "old" });
-    const removed = makeSession("removed");
-    const outsideWindow = makeSession("outside");
-    const moved = makeSession("moved");
-    const updated = makeSession("changed", { title: "new" });
+    const unchanged = makeSession("unchanged", { time_updated: 500 });
+    const changed = makeSession("changed", { title: "old", time_updated: 400 });
+    const removed = makeSession("removed", { time_updated: 300 });
+    const outsideWindow = makeSession("outside", { time_updated: 200 });
+    const moved = makeSession("moved", { time_updated: 100 });
+    const updated = makeSession("changed", { title: "new", time_updated: 400 });
     const refs: SessionSourceRef[] = [
       {
         sessionId: "unchanged",

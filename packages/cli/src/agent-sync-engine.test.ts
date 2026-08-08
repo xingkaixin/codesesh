@@ -201,6 +201,45 @@ describe("AgentSyncEngine", () => {
     });
   });
 
+  it("bounds backfill progress and publishes its terminal immediately", async () => {
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async (_agentName, payload) => {
+        for (let processed = 1; processed <= 10_000; processed += 1) {
+          payload.onProgress?.({ phase: "scanning", total: 10_000, processed });
+        }
+        payload.onProgress?.({ phase: "finalizing", total: 10_000, processed: 10_000 });
+        return { sessions: [], meta: {} };
+      }),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const { engine } = makeEngine(makeAgent(), [], workerRunner);
+    const internal = engine as unknown as { enqueueBackfill(agentName: string): void };
+    const statuses: ScanStatusEvent[] = [];
+    engine.subscribeStatusChanged((status) => statuses.push(status));
+
+    internal.enqueueBackfill("codex");
+    await vi.waitFor(() => expect(statuses.at(-1)?.backfill.completedAgents).toEqual(["codex"]));
+
+    const progress = statuses.flatMap((status) =>
+      status.backfill.progress ? [status.backfill.progress] : [],
+    );
+    expect(progress).toHaveLength(4);
+    expect(progress.map((item) => item.processed)).toEqual([1, 10_000, 10_000, 10_000]);
+    expect(progress.map((item) => item.phase)).toEqual([
+      "scanning",
+      "scanning",
+      "finalizing",
+      "indexing",
+    ]);
+    expect(statuses.at(-1)?.backfill).toEqual({
+      active: false,
+      pendingAgents: [],
+      completedAgents: ["codex"],
+      failedAgents: [],
+    });
+  });
+
   it("cancels backfill lifecycle before awaiting shutdown", async () => {
     let resolveBackfill!: (result: "committed") => void;
     const { engine } = makeEngine(makeAgent());
@@ -293,6 +332,46 @@ describe("AgentSyncEngine", () => {
     );
     expect(statusChanges).toHaveBeenCalledWith(
       expect.objectContaining({ type: "scan-status", active: false }),
+    );
+  });
+
+  it("bounds progress broadcasts while preserving phase and completion", async () => {
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async (_agentName, payload) => {
+        for (let processed = 1; processed <= 10_000; processed += 1) {
+          payload.onProgress?.({ phase: "scanning", total: 10_000, processed });
+        }
+        payload.onProgress?.({ phase: "finalizing", total: 10_000, processed: 10_000 });
+        return { sessions: [], meta: {} };
+      }),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const { engine } = makeEngine(makeAgent(), [], workerRunner);
+    const statuses: ScanStatusEvent[] = [];
+    engine.subscribeStatusChanged((status) => statuses.push(status));
+
+    await engine.refresh("codex");
+
+    const progressStatuses = statuses.filter((status) => {
+      const agentStatus = status.agentStatuses.codex;
+      return (
+        (agentStatus?.status === "scanning" || agentStatus?.status === "finalizing") &&
+        (agentStatus.processed ?? 0) > 0
+      );
+    });
+    expect(progressStatuses).toHaveLength(3);
+    expect(progressStatuses.map((status) => status.agentStatuses.codex?.processed)).toEqual([
+      1, 10_000, 10_000,
+    ]);
+    expect(progressStatuses.at(-1)?.agentStatuses.codex?.status).toBe("finalizing");
+    expect(statuses.at(-1)).toEqual(
+      expect.objectContaining({
+        active: false,
+        agentStatuses: {
+          codex: expect.objectContaining({ status: "complete", processed: 10_000 }),
+        },
+      }),
     );
   });
 

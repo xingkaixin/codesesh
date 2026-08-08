@@ -6,6 +6,7 @@ import type { ApiProjectGroup, DashboardData } from "./lib/api";
 import App from "./App";
 import { appRouteChildren } from "./lib/app-routes";
 import { createQueryClient } from "./lib/query-client";
+import { ScanStatusProvider } from "./hooks/useScanStatus";
 
 vi.mock("./lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./lib/api")>()),
@@ -96,7 +97,9 @@ function renderAppAt(path: string) {
   );
   return render(
     <QueryClientProvider client={createQueryClient()}>
-      <RouterProvider router={router} />
+      <ScanStatusProvider>
+        <RouterProvider router={router} />
+      </ScanStatusProvider>
     </QueryClientProvider>,
   );
 }

@@ -5,6 +5,7 @@ import { RenderProfiler } from "./components/RenderProfiler.tsx";
 import { initializeRemoteAccess } from "./lib/api.ts";
 import { queryClient } from "./lib/query-client.ts";
 import { AppRouter } from "./router.tsx";
+import { ScanStatusProvider } from "./hooks/useScanStatus.tsx";
 import "@fontsource-variable/space-grotesk";
 import "@fontsource-variable/jetbrains-mono";
 import "@fontsource-variable/ibm-plex-sans";
@@ -15,9 +16,11 @@ initializeRemoteAccess();
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RenderProfiler id="App">
-        <AppRouter />
-      </RenderProfiler>
+      <ScanStatusProvider>
+        <RenderProfiler id="App">
+          <AppRouter />
+        </RenderProfiler>
+      </ScanStatusProvider>
     </QueryClientProvider>
   </React.StrictMode>,
 );

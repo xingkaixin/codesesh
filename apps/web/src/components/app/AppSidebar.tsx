@@ -1,4 +1,5 @@
-import type { BookmarkRecord, ApiProjectGroup, ScanStatusEvent, SessionHead } from "../../lib/api";
+import type { BookmarkRecord, ApiProjectGroup, SessionHead } from "../../lib/api";
+import { useScanStatus } from "../../hooks/useScanStatus";
 import { findAgent, type AgentCatalog } from "../../lib/agents";
 import { getSessionBookmarkKey } from "../../lib/bookmarks";
 import { getSessionRoutePath, getSessionRouteKey } from "../../lib/session-indexes";
@@ -18,6 +19,15 @@ function navItemClass(isSelected: boolean): string {
       ? "bg-[var(--brand-soft)] text-[var(--brand)]"
       : "text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)]"
   }`;
+}
+
+function ScanAwareEmptyState({ scanning, empty }: { scanning: string; empty: string }) {
+  const scanStatus = useScanStatus();
+  return (
+    <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
+      {scanStatus?.active ? scanning : empty}
+    </span>
+  );
 }
 
 function ProjectNavList({
@@ -58,10 +68,8 @@ function ProjectNavList({
 
 export interface AppSidebarViewModel {
   sidebarCollapsed: boolean;
-  isScanActive: boolean;
   viewState: ViewState;
   agentCatalog: AgentCatalog;
-  scanStatus: ScanStatusEvent | null;
   projects: ApiProjectGroup[];
   selectedProjectNavigationId: string | null;
   loading: boolean;
@@ -84,10 +92,8 @@ export interface AppSidebarActions {
 export function AppSidebar({
   model: {
     sidebarCollapsed,
-    isScanActive,
     viewState,
     agentCatalog,
-    scanStatus,
     projects,
     selectedProjectNavigationId,
     loading,
@@ -151,11 +157,7 @@ export function AppSidebar({
             />
             {projects.length === 0 && !loading ? (
               <li>
-                <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-                  {isScanActive || scanStatus?.active
-                    ? "Scanning projects..."
-                    : "No projects found"}
-                </span>
+                <ScanAwareEmptyState scanning="Scanning projects..." empty="No projects found" />
               </li>
             ) : null}
           </ul>
@@ -232,9 +234,7 @@ export function AppSidebar({
               ) : null}
             </h3>
             {sidebarSessions.length === 0 ? (
-              <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-                {scanStatus?.active ? "Scanning sessions..." : "No sessions yet"}
-              </span>
+              <ScanAwareEmptyState scanning="Scanning sessions..." empty="No sessions yet" />
             ) : (
               <RenderProfiler id="SessionTreeSidebar" detail={{ sessions: sidebarSessions.length }}>
                 <SessionTreeSidebar
