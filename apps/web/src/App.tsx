@@ -12,7 +12,7 @@ import { SessionAliasDialog, type SessionAliasTarget } from "./components/Sessio
 import { TimeWindowControl } from "./components/TimeWindowControl";
 import { RenderProfiler } from "./components/RenderProfiler";
 import { viewStateFromRouteMatches } from "./lib/view-state";
-import { useScanStatus } from "./hooks/useScanStatus";
+import { useScanStatusPublisher } from "./hooks/useScanStatus";
 import { useSessionDetail } from "./hooks/useSessionDetail";
 import { useSessionSearch } from "./hooks/useSessionSearch";
 import { useBookmarks } from "./hooks/useBookmarks";
@@ -30,7 +30,8 @@ import { AppSidebar } from "./components/app/AppSidebar";
 import { ShortcutHelpDialog } from "./components/app/ShortcutHelpDialog";
 import { ThemeToggle } from "./components/app/ThemeToggle";
 import { AppRouteContent } from "./components/app/AppRouteContent";
-import { formatScanStatusLabel, formatSearchSubtitle } from "./lib/scan-format";
+import { ScanStatusNotice } from "./components/app/ScanStatusNotice";
+import { formatSearchSubtitle } from "./lib/scan-format";
 import { findAgent } from "./lib/agents";
 import { getProjectIdentityKey, type ProjectRouteIdentity } from "./lib/projects";
 import {
@@ -66,7 +67,7 @@ export default function App() {
   });
 
   const [, setSelectedProjectIdentity] = useState<ProjectRouteIdentity | null>(null);
-  const { scanStatus, setScanStatus } = useScanStatus();
+  const setScanStatus = useScanStatusPublisher();
   const [selectedSidebarSessionReference, setSelectedSidebarSessionReference] = useState<
     string | null
   >(null);
@@ -225,31 +226,6 @@ export default function App() {
       displayTitle: bookmark.session.display_title,
     });
   }, []);
-
-  // 可见标签每次渲染直接计算，保证 processed/total 计数实时更新。
-  const scanStatusLabel = formatScanStatusLabel(scanStatus);
-
-  // 播报文本节流：processed/total 逐条 tick 高频变化，仅当 phase/当前 agent/完成数
-  // 等里程碑信息变化时才重算，避免 aria-live 区域被逐条计数刷屏。
-  const scanStatusMilestoneKey = scanStatus
-    ? [
-        scanStatus.phase,
-        scanStatus.scanningAgents[0] ?? "",
-        scanStatus.completedAgents.length,
-        scanStatus.totalAgents,
-        scanStatus.backfill.active,
-        scanStatus.backfill.currentAgent ?? "",
-        scanStatus.backfill.pendingAgents.length,
-        scanStatus.backfill.failedAgents.length,
-      ].join("|")
-    : null;
-  const [announcedScanKey, setAnnouncedScanKey] = useState(scanStatusMilestoneKey);
-  const [announcedScanLabel, setAnnouncedScanLabel] = useState(scanStatusLabel);
-  if (scanStatusMilestoneKey !== announcedScanKey) {
-    setAnnouncedScanKey(scanStatusMilestoneKey);
-    setAnnouncedScanLabel(scanStatusLabel);
-  }
-  const isScanActive = scanStatus?.active === true;
 
   const { liveNotice } = useLiveSync({
     applyLiveEvent,
@@ -472,10 +448,8 @@ export default function App() {
           <AppSidebar
             model={{
               sidebarCollapsed,
-              isScanActive,
               viewState,
               agentCatalog,
-              scanStatus,
               projects,
               selectedProjectNavigationId,
               loading,
@@ -581,16 +555,7 @@ export default function App() {
                     </p>
                   ) : null}
                 </div>
-                <div>
-                  {scanStatusLabel && viewState.mode === "root" ? (
-                    <p className="console-mono mt-2 inline-flex max-w-4xl rounded-sm border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-2 py-1 text-[11px] leading-relaxed text-[var(--console-warning)]">
-                      {scanStatusLabel}
-                    </p>
-                  ) : null}
-                </div>
-                <div className="sr-only" aria-live="polite" aria-atomic="true">
-                  {viewState.mode === "root" ? announcedScanLabel : null}
-                </div>
+                <ScanStatusNotice visible={viewState.mode === "root"} />
               </div>
             </section>
 

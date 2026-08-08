@@ -1,8 +1,10 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/core/contract";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { AgentInfo, ApiProjectGroup, ScanStatusEvent } from "../../lib/api";
 import { createAgentCatalog } from "../../lib/agents";
+import { ScanStatusProvider } from "../../hooks/useScanStatus";
 import { AppSidebar, type AppSidebarActions, type AppSidebarViewModel } from "./AppSidebar";
 
 afterEach(cleanup);
@@ -34,28 +36,29 @@ function createActions(overrides: Partial<AppSidebarActions> = {}): AppSidebarAc
 function renderSidebar(
   model: Partial<AppSidebarViewModel> = {},
   actions: AppSidebarActions = createActions(),
+  scanStatus: ScanStatusEvent = SAMPLE_SCAN_STATUS_EVENT,
 ) {
   return render(
-    <MemoryRouter>
-      <AppSidebar
-        model={{
-          sidebarCollapsed: false,
-          isScanActive: false,
-          viewState: { mode: "root", activeAgentKey: null, activeSessionId: null },
-          agentCatalog: createAgentCatalog(agents),
-          scanStatus: null,
-          projects,
-          selectedProjectNavigationId: null,
-          loading: false,
-          bookmarkedSessions: [],
-          sidebarSessions: [],
-          selectedSidebarSessionReference: null,
-          bookmarkedSidebarSessionReferences: new Set(),
-          ...model,
-        }}
-        actions={actions}
-      />
-    </MemoryRouter>,
+    <ScanStatusProvider initialStatus={scanStatus}>
+      <MemoryRouter>
+        <AppSidebar
+          model={{
+            sidebarCollapsed: false,
+            viewState: { mode: "root", activeAgentKey: null, activeSessionId: null },
+            agentCatalog: createAgentCatalog(agents),
+            projects,
+            selectedProjectNavigationId: null,
+            loading: false,
+            bookmarkedSessions: [],
+            sidebarSessions: [],
+            selectedSidebarSessionReference: null,
+            bookmarkedSidebarSessionReferences: new Set(),
+            ...model,
+          }}
+          actions={actions}
+        />
+      </MemoryRouter>
+    </ScanStatusProvider>,
   );
 }
 
@@ -100,10 +103,10 @@ describe("AppSidebar", () => {
   });
 
   it("reports scanning while no projects have been discovered yet", () => {
-    renderSidebar({
-      projects: [],
-      isScanActive: true,
-      scanStatus: { active: true } as ScanStatusEvent,
+    renderSidebar({ projects: [] }, createActions(), {
+      ...SAMPLE_SCAN_STATUS_EVENT,
+      active: true,
+      phase: "scanning",
     });
 
     expect(screen.getByText("Scanning projects...")).toBeTruthy();

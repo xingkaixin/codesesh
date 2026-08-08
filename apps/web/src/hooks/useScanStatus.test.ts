@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, renderHook, waitFor } from "@testing-library/react";
+import { cleanup, render, renderHook, waitFor } from "@testing-library/react";
+import { createElement, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import type { ScanStatusEvent } from "../lib/api";
 import * as api from "../lib/api";
-import { useScanStatus } from "./useScanStatus";
+import { ScanStatusProvider, useScanStatus, useScanStatusPublisher } from "./useScanStatus";
 
 vi.mock("../lib/api", () => ({
   fetchScanStatus: vi.fn(),
@@ -26,10 +28,21 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+function wrapper({ children }: { children: ReactNode }) {
+  return createElement(ScanStatusProvider, null, children);
+}
+
+function useScanStatusSubject() {
+  return {
+    scanStatus: useScanStatus(),
+    setScanStatus: useScanStatusPublisher(),
+  };
+}
+
 describe("useScanStatus", () => {
   it("fetches the scan-status snapshot on mount", async () => {
     vi.mocked(api.fetchScanStatus).mockResolvedValue(sample);
-    const { result } = renderHook(() => useScanStatus());
+    const { result } = renderHook(useScanStatusSubject, { wrapper });
 
     expect(result.current.scanStatus).toBeNull();
     await waitFor(() => expect(result.current.scanStatus).toEqual(sample));
@@ -37,7 +50,7 @@ describe("useScanStatus", () => {
 
   it("ignores events older than the current status", async () => {
     vi.mocked(api.fetchScanStatus).mockResolvedValue(sample);
-    const { result } = renderHook(() => useScanStatus());
+    const { result } = renderHook(useScanStatusSubject, { wrapper });
     await waitFor(() => expect(result.current.scanStatus).toEqual(sample));
 
     const newer: ScanStatusEvent = {
@@ -59,7 +72,7 @@ describe("useScanStatus", () => {
     vi.mocked(api.fetchScanStatus).mockImplementation(
       () => new Promise((resolve) => (resolveFetch = resolve)),
     );
-    const { result } = renderHook(() => useScanStatus());
+    const { result } = renderHook(useScanStatusSubject, { wrapper });
 
     const fresh: ScanStatusEvent = {
       ...sample,
@@ -79,10 +92,47 @@ describe("useScanStatus", () => {
   it("stays null when the fetch fails", async () => {
     vi.mocked(api.fetchScanStatus).mockRejectedValue(new Error("boom"));
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const { result } = renderHook(() => useScanStatus());
+    const { result } = renderHook(useScanStatusSubject, { wrapper });
 
     await waitFor(() => expect(api.fetchScanStatus).toHaveBeenCalledTimes(1));
     expect(result.current.scanStatus).toBeNull();
     errorSpy.mockRestore();
+  });
+
+  it("does not rerender unrelated siblings for 10,000 status updates", () => {
+    let publish: (status: ScanStatusEvent) => void = () => {};
+    let statusRenders = 0;
+    let unrelatedRenders = 0;
+
+    function Publisher() {
+      publish = useScanStatusPublisher();
+      return null;
+    }
+    function StatusConsumer() {
+      useScanStatus();
+      statusRenders += 1;
+      return null;
+    }
+    function UnrelatedSurface() {
+      unrelatedRenders += 1;
+      return null;
+    }
+
+    render(
+      createElement(
+        ScanStatusProvider,
+        { initialStatus: sample },
+        createElement(Publisher, { key: "publisher" }),
+        createElement(StatusConsumer, { key: "consumer" }),
+        createElement(UnrelatedSurface, { key: "unrelated" }),
+      ),
+    );
+
+    for (let index = 1; index <= 10_000; index += 1) {
+      flushSync(() => publish({ ...sample, updatedAt: sample.updatedAt + index }));
+    }
+
+    expect(statusRenders).toBe(10_001);
+    expect(unrelatedRenders).toBe(1);
   });
 });
