@@ -313,6 +313,16 @@ describe("saveCachedSessions", () => {
     expect(result?.sessions.map((session) => session.id)).toEqual(["new"]);
   });
 
+  it("preserves cached rows for an empty partial snapshot", () => {
+    saveCachedSessions("claudecode", [makeSession("existing")]);
+
+    saveCachedSessions("claudecode", [], {}, { completeness: "partial" });
+
+    expect(loadCachedSessions("claudecode")?.sessions.map((session) => session.id)).toEqual([
+      "existing",
+    ]);
+  });
+
   it("preserves other agents", () => {
     saveCachedSessions("cursor", [makeSession("cursor-1")]);
     saveCachedSessions("claudecode", [makeSession("claude-1")]);
