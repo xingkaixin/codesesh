@@ -5,7 +5,7 @@
  * paths), and cross-source result merging.
  */
 import type { SessionHead } from "../types/index.js";
-import type { SearchResult } from "../contract/index.js";
+import { getSessionAgentKey, type SearchResult } from "../contract/index.js";
 import {
   filterIndexedSessionReferences,
   mergeSearchQueryOptions,
@@ -24,7 +24,9 @@ import { matchesProjectIdentity } from "../projects/identity.js";
 import { getSessionActivityTime } from "../analytics/dashboard.js";
 
 export interface SessionSearchSnapshot {
+  /** Globally sorted by activity descending; ties preserve the canonical live-index order. */
   sessions: SessionHead[];
+  /** Each shard follows the same activity ordering as `sessions`. */
   byAgent: Record<string, SessionHead[]>;
 }
 
@@ -142,32 +144,26 @@ function searchRecentSessions(
   snapshot: SessionSearchSnapshot,
   options: SearchOptions,
 ): SearchResult[] {
-  const projectScope = options.cwd ? createProjectScopeMatcher(options.cwd) : null;
-  const entries = options.agent
-    ? ([[options.agent, snapshot.byAgent[options.agent] ?? []]] as Array<[string, SessionHead[]]>)
-    : Object.entries(snapshot.byAgent);
+  const limit = Math.max(0, Math.trunc(options.limit ?? 50));
+  if (limit === 0) return [];
 
-  return entries
-    .flatMap(([agentName, sessions]) =>
-      sessions
-        .filter((session) => matchesSessionSearchFilters(agentName, session, options, projectScope))
-        .map((session) => ({
-          reference: { agentName, sessionId: session.id },
-          session,
-        })),
-    )
-    .sort(
-      (a, b) =>
-        (b.session.time_updated ?? b.session.time_created) -
-        (a.session.time_updated ?? a.session.time_created),
-    )
-    .slice(0, options.limit ?? 50)
-    .map(({ reference, session }) => ({
-      reference,
+  const projectScope = options.cwd ? createProjectScopeMatcher(options.cwd) : null;
+  const sessions = options.agent ? (snapshot.byAgent[options.agent] ?? []) : snapshot.sessions;
+  const results: SearchResult[] = [];
+
+  for (const session of sessions) {
+    const agentName = options.agent ?? getSessionAgentKey(session);
+    if (!matchesSessionSearchFilters(agentName, session, options, projectScope)) continue;
+    results.push({
+      reference: { agentName, sessionId: session.id },
       session,
       snippet: `Recent session · ${session.directory}`,
       matchType: "recent",
-    }));
+    });
+    if (results.length >= limit) break;
+  }
+
+  return results;
 }
 
 // `options.file` already carries the qualifier's `file:`/`path:` value once

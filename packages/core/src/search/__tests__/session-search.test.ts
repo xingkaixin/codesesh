@@ -26,9 +26,11 @@ import type {
 } from "../../types/index.js";
 import type { SearchOptions } from "../../discovery/cache/search.js";
 import { searchSessions, syncSessionSearchIndex } from "../../discovery/cache/search.js";
+import { compareSessionActivityDesc, mergeSortedSessions } from "../../contract/session-index.js";
 import {
   executeSessionSearch,
   filterSessionSearchCandidates,
+  matchesSessionSearchFilters,
   type SessionSearchSnapshot,
 } from "../session-search.js";
 
@@ -354,8 +356,9 @@ function makeSnapshot(): SessionSearchSnapshot {
     const head = makeSessionHead(spec);
     (byAgent[spec.agent] ??= []).push(head);
   }
+  for (const sessions of Object.values(byAgent)) sessions.sort(compareSessionActivityDesc);
   return {
-    sessions: allFixtures.map((spec) => makeSessionHead(spec)),
+    sessions: mergeSortedSessions(Object.values(byAgent)),
     byAgent,
   };
 }
@@ -376,6 +379,71 @@ function syncFixturesToSqlite(): void {
 
 function search(query: string, options: SearchOptions = {}) {
   return executeSessionSearch(query, options, makeSnapshot());
+}
+
+function legacyRecentResultKeys(snapshot: SessionSearchSnapshot, options: SearchOptions): string[] {
+  const limit = Math.max(0, Math.trunc(options.limit ?? 50));
+  const entries = options.agent
+    ? ([[options.agent, snapshot.byAgent[options.agent] ?? []]] as const)
+    : Object.entries(snapshot.byAgent);
+
+  return entries
+    .flatMap(([agentName, sessions]) =>
+      sessions
+        .filter((session) => matchesSessionSearchFilters(agentName, session, options))
+        .map((session) => ({ agentName, session })),
+    )
+    .sort((left, right) => compareSessionActivityDesc(left.session, right.session))
+    .slice(0, limit)
+    .map(({ agentName, session }) => `${agentName}/${session.id}`);
+}
+
+function makeRandomSnapshot(seed: number): SessionSearchSnapshot {
+  let state = seed >>> 0;
+  const random = () => {
+    state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
+    return state / 0x1_0000_0000;
+  };
+  const byAgent: Record<string, SessionHead[]> = {};
+
+  for (const agentName of ["claudecode", "codex", "cursor"]) {
+    byAgent[agentName] = Array.from({ length: 20 }, (_, index) => {
+      const activity = now - Math.floor(random() * 8) * 1_000;
+      return {
+        id: `${agentName}-${index}`,
+        slug: `${agentName}/${agentName}-${index}`,
+        title: `${agentName}-${index}`,
+        directory: `/fixtures/${agentName}`,
+        time_created: activity,
+        time_updated: activity,
+        smart_tags: random() < 0.45 ? (["bugfix"] as SmartTag[]) : undefined,
+        stats: {
+          message_count: 0,
+          total_input_tokens: 0,
+          total_output_tokens: 0,
+          total_cost: Math.floor(random() * 5),
+        },
+      };
+    }).sort(compareSessionActivityDesc);
+  }
+
+  return {
+    byAgent,
+    sessions: mergeSortedSessions(Object.values(byAgent)),
+  };
+}
+
+function trackedSessions(sessions: SessionHead[]) {
+  let reads = 0;
+  return {
+    sessions: new Proxy(sessions, {
+      get(target, property, receiver) {
+        if (typeof property === "string" && /^\d+$/.test(property)) reads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    }),
+    readCount: () => reads,
+  };
 }
 
 // Sync once for the whole file rather than per-test: core memoizes "schema
@@ -471,6 +539,99 @@ describe("search characterization: recent (empty-query) path", () => {
     expect(results.map((r) => r.session.id).sort()).toEqual(
       ["recent-mid", "lagging-session", "file-qualifier-match"].sort(),
     );
+  });
+
+  it("reads the global ordered snapshot only until the result limit", () => {
+    const ordered = Array.from({ length: 100 }, (_, index) =>
+      makeSessionHead({
+        id: `bounded-${index}`,
+        agent: "codex",
+        timeUpdated: now - index,
+        messages: [],
+      }),
+    );
+    const tracked = trackedSessions(ordered);
+    const inaccessibleShards = new Proxy({} as Record<string, SessionHead[]>, {
+      get() {
+        throw new Error("global recent search must not read agent shards");
+      },
+      ownKeys() {
+        throw new Error("global recent search must not enumerate agent shards");
+      },
+    });
+
+    const results = executeSessionSearch(
+      "",
+      { limit: 3 },
+      { sessions: tracked.sessions, byAgent: inaccessibleShards },
+    );
+
+    expect(results.map((result) => result.session.id)).toEqual([
+      "bounded-0",
+      "bounded-1",
+      "bounded-2",
+    ]);
+    expect(tracked.readCount()).toBe(3);
+  });
+
+  it("reads only the selected ordered Agent shard", () => {
+    const shard = Array.from({ length: 100 }, (_, index) =>
+      makeSessionHead({
+        id: `agent-bounded-${index}`,
+        agent: "codex",
+        timeUpdated: now - index,
+        messages: [],
+      }),
+    );
+    const tracked = trackedSessions(shard);
+    const inaccessibleGlobal = new Proxy([] as SessionHead[], {
+      get() {
+        throw new Error("Agent recent search must not read the global snapshot");
+      },
+    });
+
+    const results = executeSessionSearch(
+      "",
+      { agent: "codex", limit: 2 },
+      { sessions: inaccessibleGlobal, byAgent: { codex: tracked.sessions } },
+    );
+
+    expect(results.map((result) => result.session.id)).toEqual([
+      "agent-bounded-0",
+      "agent-bounded-1",
+    ]);
+    expect(tracked.readCount()).toBe(2);
+  });
+
+  it("matches the legacy result order across randomized sorted shards and ties", () => {
+    for (let caseIndex = 0; caseIndex < 80; caseIndex += 1) {
+      const snapshot = makeRandomSnapshot(caseIndex + 1);
+      const options: SearchOptions = {
+        limit: caseIndex % 11,
+        agent:
+          caseIndex % 13 === 0
+            ? "missing"
+            : caseIndex % 4 === 0
+              ? ["claudecode", "codex", "cursor"][caseIndex % 3]
+              : undefined,
+        tags: caseIndex % 3 === 0 ? ["bugfix"] : undefined,
+        costMin: caseIndex % 5 === 0 ? 2 : undefined,
+        costMax: caseIndex % 7 === 0 ? 3 : undefined,
+        from: caseIndex % 8 === 0 ? now - 5_000 : undefined,
+        to: caseIndex % 9 === 0 ? now - 2_000 : undefined,
+      };
+
+      const actual = executeSessionSearch("", options, snapshot).map(
+        (result) => `${result.reference.agentName}/${result.reference.sessionId}`,
+      );
+      expect(actual).toEqual(legacyRecentResultKeys(snapshot, options));
+    }
+  });
+
+  it("short-circuits zero limits and missing Agent shards", () => {
+    expect(search("", { limit: 0 })).toEqual([]);
+    expect(search("", { agent: "missing", limit: 10 })).toEqual([]);
+    expect(search("", { limit: 2.9 })).toHaveLength(2);
   });
 });
 
