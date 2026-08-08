@@ -69,6 +69,7 @@ const workerThreads = vi.hoisted(() => ({
     postMessage: ReturnType<typeof vi.fn>;
     unref: ReturnType<typeof vi.fn>;
     terminate: ReturnType<typeof vi.fn>;
+    emitMessage: (message: unknown) => void;
     emitDone: () => void;
     emitError: (error: Error) => void;
     emitExit: (code: number) => void;
@@ -262,6 +263,9 @@ const workerThreads = vi.hoisted(() => ({
       terminate: vi.fn(async () => {
         for (const handler of exitHandlers) handler(0);
       }),
+      emitMessage: (message: unknown) => {
+        for (const handler of messageHandlers) handler(message);
+      },
       emitDone: () => {
         for (const handler of messageHandlers) {
           handler({
@@ -1081,6 +1085,34 @@ describe("LiveScanStore", () => {
       meta: {},
       changedIds: undefined,
     });
+  });
+
+  it("rejects a scan worker request when its checkpoint cannot commit", async () => {
+    workerThreads.deferScanRefreshWorkers = true;
+    const agent = makeFileSystemAgent("codex");
+    core.createRegisteredAgents.mockReturnValue([agent]);
+    const runner = new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
+
+    const refresh = runner.run(agent.name, {
+      previousSessions: [],
+      changedIds: null,
+      scanOptions: {},
+      meta: {},
+      onCheckpoint: () => {
+        throw new Error("checkpoint rejected");
+      },
+    });
+    const worker = workerThreads.workers.at(-1)!;
+    worker.emitMessage({
+      type: "checkpoint",
+      requestId: worker.workerData.requestId,
+      checkpoint: { stage: "scanned", sessions: [], meta: {} },
+    });
+
+    await expect(refresh).rejects.toThrow("checkpoint rejected");
+    expect(runner.activeCount).toBe(0);
+    await runner.shutdown();
+    workerThreads.deferScanRefreshWorkers = false;
   });
 
   it("reconstructs an ordered snapshot from a scan worker delta", async () => {

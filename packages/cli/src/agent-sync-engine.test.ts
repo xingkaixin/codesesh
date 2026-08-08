@@ -3,6 +3,7 @@ import { FileSystemSessionSource } from "@codesesh/core";
 import type { BaseAgent, loadCachedSessions, LiveSnapshot, SessionHead } from "@codesesh/core";
 import type { ScanStatusEvent } from "@codesesh/core/contract";
 import type { WorkerRunner } from "./worker-runner.js";
+import { appLogger } from "./logging.js";
 
 const core = vi.hoisted(() => ({
   getAgentFullSyncCursor: vi.fn(() => null as string | null),
@@ -144,6 +145,8 @@ afterEach(() => {
   core.markAgentFullSyncStarted.mockClear();
   core.saveCachedSessionChanges.mockClear();
   core.saveCachedSessions.mockClear();
+  core.saveCachedSessionChanges.mockReturnValue(true);
+  core.saveCachedSessions.mockReturnValue(true);
   searchIndex.enqueue.mockImplementation(async () => undefined);
 });
 
@@ -288,6 +291,84 @@ describe("AgentSyncEngine", () => {
       meta,
     );
     expect(engine.snapshot().sessions[0]?.smart_tags).toEqual(["feature-dev"]);
+  });
+
+  it("keeps the last durable snapshot when a head checkpoint is rejected", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logError = vi.spyOn(appLogger, "error").mockImplementation(() => undefined);
+    core.isAgentCacheInitialized.mockReturnValue(false);
+    core.saveCachedSessions.mockReturnValue(false);
+    const previous = makeSession("head", "before");
+    const head = makeSession("head", "after");
+    const meta = { head: { id: "head", sourcePath: "/head" } };
+    const setSessionMetaMap = vi.fn();
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async (_agentName, payload) => {
+        payload.onCheckpoint?.({ stage: "scanned", sessions: [head], meta });
+        return { sessions: [head], meta };
+      }),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const { engine } = makeEngine(makeAgent({ setSessionMetaMap }), [previous], workerRunner);
+    const sessionChanges = vi.fn();
+    engine.subscribeSessionsChanged(sessionChanges);
+
+    await engine.refresh("codex");
+
+    expect(engine.snapshot().sessions).toEqual([previous]);
+    expect(setSessionMetaMap).not.toHaveBeenCalled();
+    expect(sessionChanges).not.toHaveBeenCalled();
+    expect(searchIndex.enqueue).not.toHaveBeenCalled();
+    expect(engine.status().agentStatuses.codex).toEqual(
+      expect.objectContaining({
+        status: "failed",
+        error: "Failed to persist scanned checkpoint for codex",
+      }),
+    );
+    expect(logError).toHaveBeenCalledWith(
+      "scan.checkpoint.failed",
+      expect.objectContaining({ agent: "codex", stage: "scanned", sessions: 1 }),
+    );
+
+    core.saveCachedSessions.mockReturnValue(true);
+    await engine.refresh("codex");
+
+    expect(engine.snapshot().sessions).toEqual([
+      expect.objectContaining({ id: head.id, title: head.title }),
+    ]);
+    expect(sessionChanges.mock.calls.filter(([change]) => change.event != null)).toHaveLength(1);
+    expect(core.markAgentCacheInitialized).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the last durable snapshot when head persistence throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    core.isAgentCacheInitialized.mockReturnValue(false);
+    core.saveCachedSessions.mockImplementation(() => {
+      throw new Error("database is read-only");
+    });
+    const previous = makeSession("head", "before");
+    const head = makeSession("head", "after");
+    const meta = { head: { id: "head", sourcePath: "/head" } };
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async (_agentName, payload) => {
+        payload.onCheckpoint?.({ stage: "scanned", sessions: [head], meta });
+        return { sessions: [head], meta };
+      }),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const { engine } = makeEngine(makeAgent(), [previous], workerRunner);
+    const sessionChanges = vi.fn();
+    engine.subscribeSessionsChanged(sessionChanges);
+
+    await engine.refresh("codex");
+
+    expect(engine.snapshot().sessions).toEqual([previous]);
+    expect(sessionChanges).not.toHaveBeenCalled();
+    expect(engine.status().agentStatuses.codex).toEqual(
+      expect.objectContaining({ status: "failed", error: "database is read-only" }),
+    );
   });
 
   it("waits for the initial search index commit", async () => {
