@@ -42,6 +42,8 @@ export interface CachedSessionRawEntry {
   data: Omit<SessionDetail, "messages">;
   messageRows: CachedMessageRow[];
   meta: SessionCacheMeta | null;
+  detailVersion: string | null;
+  pendingReindex: boolean;
 }
 
 function parseCachedSessionMeta(value: string | null | undefined): SessionCacheMeta | null {
@@ -282,33 +284,13 @@ export function loadCachedSessionRawEntry(
       .prepare(
         `
           SELECT
-            session_id,
-            sort_index,
-            slug,
-            title,
-            source_path,
-            directory,
-            parent_agent_name,
-            parent_session_id,
-            project_identity_kind,
-            project_identity_key,
-            project_display_name,
-            time_created,
-            time_updated,
-            message_count,
-            total_input_tokens,
-            total_output_tokens,
-            total_cache_read_tokens,
-            total_cache_create_tokens,
-            total_cost,
-            cost_source,
-            total_tokens,
-            model_usage_json,
-            smart_tags_json,
-            smart_tags_source_updated_at,
-            meta_json
+            sessions.*,
+            documents.detail_version AS detail_version
           FROM sessions
-          WHERE agent_name = ? AND session_id = ?
+          LEFT JOIN session_documents AS documents
+            ON documents.agent_name = sessions.agent_name
+            AND documents.session_id = sessions.session_id
+          WHERE sessions.agent_name = ? AND sessions.session_id = ?
         `,
       )
       .get(agentName, sessionId) as SessionRow | undefined;
@@ -317,20 +299,14 @@ export function loadCachedSessionRawEntry(
       return null;
     }
 
-    // A pending_reindex marker means the cached detail predates a parser change
-    // (e.g. the code-mode exec decode migration). Report no cached messages so
-    // the API re-parses it fresh rather than serving the stale cache; the search
-    // index drops the marker as it repopulates the session.
     const pendingReindex =
       db
         .prepare("SELECT 1 FROM pending_reindex WHERE agent_name = ? AND session_id = ?")
         .get(agentName, sessionId) != null;
 
-    const messageRows = pendingReindex
-      ? []
-      : (db
-          .prepare(
-            `
+    const messageRows = db
+      .prepare(
+        `
           SELECT
             message_id,
             role,
@@ -351,8 +327,8 @@ export function loadCachedSessionRawEntry(
           WHERE agent_name = ? AND session_id = ?
           ORDER BY message_index
         `,
-          )
-          .all(agentName, sessionId) as CachedMessageRow[]);
+      )
+      .all(agentName, sessionId) as CachedMessageRow[];
 
     const head = sessionFromRow(row);
     const fileActivityRows = db
@@ -375,6 +351,8 @@ export function loadCachedSessionRawEntry(
       },
       messageRows,
       meta: parseCachedSessionMeta(row.meta_json),
+      detailVersion: typeof row.detail_version === "string" ? row.detail_version : null,
+      pendingReindex,
     };
   });
 }
@@ -388,7 +366,9 @@ export function loadCachedSessionDataEntry(
   return {
     data: {
       ...entry.data,
-      messages: entry.messageRows.map((messageRow) => messageFromCachedRow(messageRow)),
+      messages: entry.pendingReindex
+        ? []
+        : entry.messageRows.map((messageRow) => messageFromCachedRow(messageRow)),
     },
     meta: entry.meta,
   };

@@ -25,6 +25,7 @@ vi.mock("@codesesh/core", () => ({
   markAgentCacheInitialized: mocks.markAgentCacheInitialized,
   saveCachedSessionChanges: mocks.saveCachedSessionChanges,
   saveCachedSessions: mocks.saveCachedSessions,
+  sessionDetailVersion: (meta: { id?: string }) => `detail:${meta.id ?? "none"}`,
   syncSessionSearchIndex: mocks.syncSessionSearchIndex,
   syncSessionSearchIndexChanges: mocks.syncSessionSearchIndexChanges,
   // diagnostics-bridge.js (imported by the worker for its side effect) needs this export.
@@ -121,7 +122,7 @@ describe("search index worker", () => {
       "codex",
       sessions,
       expect.any(Function),
-      { force: true },
+      { force: true, detailVersions: { s1: "detail:s1" } },
     );
     expect(mocks.markAgentCacheInitialized).toHaveBeenCalledWith("codex");
     expect(mocks.appLoggerWarn).not.toHaveBeenCalled();
@@ -209,7 +210,7 @@ describe("search index worker", () => {
       changes,
       removedSessionIds,
       expect.any(Function),
-      { force: true },
+      { force: true, detailVersions: {} },
     );
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({ type: "done", sessions: 1 }),

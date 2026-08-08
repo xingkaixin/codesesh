@@ -178,10 +178,11 @@ describe("session detail re-indexing", () => {
     setSchemaEnsuredPath(null);
     withCacheDb(() => undefined);
 
-    // Codex details read as pending (no messages) so the API re-parses them;
-    // other agents are untouched. No bulk deletion happens.
+    // Schema v19 cannot prove which parser/source version produced legacy
+    // projections, so all existing details remain readable as stale raw data
+    // but the legacy cache API reports them pending until rebuilt.
     expect(loadCachedSessionData("codex", "codex-1")?.messages).toHaveLength(0);
-    expect(loadCachedSessionData("claudecode", "cc-1")?.messages).toHaveLength(1);
+    expect(loadCachedSessionData("claudecode", "cc-1")?.messages).toHaveLength(0);
 
     // Idempotent: re-parsed rows survive a second run because the flag is set.
     syncSessionSearchIndex("codex", [makeSession("codex-1")], (id) => toolSessionData(id, "bash"));
@@ -679,7 +680,7 @@ describe("searchSessions", () => {
     } finally {
       migratedDb.close();
     }
-    expect(getUserVersion(getCachePath())).toBe(18);
+    expect(getUserVersion(getCachePath())).toBe(19);
   });
 
   it("keeps small incremental updates searchable immediately", () => {
@@ -1467,7 +1468,7 @@ describe("searchSessions", () => {
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(18);
+    expect(getUserVersion(getCachePath())).toBe(19);
   });
 
   it("refreshes cached project identities when migrating to schema version 12", () => {

@@ -1,6 +1,8 @@
+import type { SessionCacheMeta } from "../../agents/base.js";
 import type { SessionDetail, SessionFileActivity, SessionHead } from "../../types/index.js";
 import { computeIdentity, realFs } from "../../projects/index.js";
 import { extractSessionFileActivity } from "../../utils/file-activity.js";
+import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import type { SQLiteDatabase } from "../../utils/sqlite.js";
 import { SEARCH_INDEX_BULK_SYNC_THRESHOLD, type SessionHeadChange } from "./db.js";
 import {
@@ -15,10 +17,18 @@ import {
   type StructuredMessageRecord,
 } from "./messages.js";
 import { runSearchIndexWrite, withSearchIndexDb } from "./schema.js";
+import { sessionDetailVersion } from "./detail-version.js";
 
 export interface SearchIndexSyncOptions {
   isBulk?: boolean;
   bulkThreshold?: number;
+  detailVersions?: Readonly<Record<string, string>>;
+}
+
+export interface SearchIndexSyncFailure {
+  sessionId: string;
+  reason: "parse-failed" | "superseded";
+  message?: string;
 }
 
 export interface SearchIndexSyncResult {
@@ -29,6 +39,7 @@ export interface SearchIndexSyncResult {
   deleted: number;
   indexed: number;
   skipped: number;
+  failures?: SearchIndexSyncFailure[];
   durationMs: number;
   rebuildDurationMs?: number;
 }
@@ -37,6 +48,8 @@ interface SearchIndexState {
   contentHashBySessionId: Map<string, string>;
   indexedMessageCountBySessionId: Map<string, number>;
   messageCountBySessionId: Map<string, number>;
+  detailVersionBySessionId: Map<string, string>;
+  targetDetailVersionBySessionId: Map<string, string>;
   pendingReindexSessionIds: Set<string>;
 }
 
@@ -44,6 +57,8 @@ interface IndexedSearchRow {
   session_id?: string;
   content_hash?: string;
   indexed_message_count?: number;
+  detail_version?: string;
+  meta_json?: string | null;
 }
 
 interface MessageCountRow {
@@ -70,6 +85,7 @@ interface LoadedSearchIndexEntry {
   contentHash: string;
   fileActivity: SessionFileActivity[];
   sortIndex: number;
+  detailVersion: string;
 }
 
 function shouldBulkSyncSearchIndex(options: SearchIndexSyncOptions, changedCount: number): boolean {
@@ -99,6 +115,15 @@ function sessionContentHash(session: SessionHead): string {
   ]);
 }
 
+function detailVersionFromMetaJson(value: string | null | undefined): string {
+  if (!value) return sessionDetailVersion(null);
+  try {
+    return sessionDetailVersion(JSON.parse(value) as SessionCacheMeta);
+  } catch {
+    return sessionDetailVersion(null);
+  }
+}
+
 function searchIndexStateFromRows(
   indexedRows: IndexedSearchRow[],
   messageCountRows: MessageCountRow[],
@@ -113,6 +138,12 @@ function searchIndexStateFromRows(
     ),
     messageCountBySessionId: new Map(
       messageCountRows.map((row) => [String(row.session_id), Number(row.value ?? 0)]),
+    ),
+    detailVersionBySessionId: new Map(
+      indexedRows.map((row) => [String(row.session_id), String(row.detail_version ?? "")]),
+    ),
+    targetDetailVersionBySessionId: new Map(
+      indexedRows.map((row) => [String(row.session_id), detailVersionFromMetaJson(row.meta_json)]),
     ),
     pendingReindexSessionIds,
   };
@@ -137,29 +168,53 @@ function readSearchIndexState(
             requested.session_id,
             documents.content_hash,
             documents.indexed_message_count,
+            documents.detail_version,
+            sessions.meta_json,
             COUNT(messages.message_index) AS value
           FROM requested_session_ids AS requested
           LEFT JOIN session_documents AS documents
             ON documents.agent_name = ? AND documents.session_id = requested.session_id
           LEFT JOIN messages
             ON messages.agent_name = ? AND messages.session_id = requested.session_id
+          LEFT JOIN sessions
+            ON sessions.agent_name = ? AND sessions.session_id = requested.session_id
           GROUP BY
             requested.session_id,
             documents.content_hash,
-            documents.indexed_message_count
+            documents.indexed_message_count,
+            documents.detail_version,
+            sessions.meta_json
         `,
       )
-      .all(...batch, agentName, agentName) as SearchIndexStateRow[];
+      .all(...batch, agentName, agentName, agentName) as SearchIndexStateRow[];
     rows.push(...batchRows);
   }
 
   return searchIndexStateFromRows(rows, rows, readPendingReindexIds(db, agentName));
 }
 
-function searchIndexEntryNeedsUpdate(state: SearchIndexState, session: SessionHead): boolean {
+function targetDetailVersion(
+  state: SearchIndexState,
+  sessionId: string,
+  options: SearchIndexSyncOptions,
+): string {
+  return (
+    options.detailVersions?.[sessionId] ??
+    state.targetDetailVersionBySessionId.get(sessionId) ??
+    sessionDetailVersion(null)
+  );
+}
+
+function searchIndexEntryNeedsUpdate(
+  state: SearchIndexState,
+  session: SessionHead,
+  options: SearchIndexSyncOptions,
+): boolean {
   const sessionId = session.id;
   return (
     state.pendingReindexSessionIds.has(sessionId) ||
+    state.detailVersionBySessionId.get(sessionId) !==
+      targetDetailVersion(state, sessionId, options) ||
     state.contentHashBySessionId.get(sessionId) !== sessionContentHash(session) ||
     state.indexedMessageCountBySessionId.get(sessionId) !==
       (state.messageCountBySessionId.get(sessionId) ?? 0)
@@ -170,6 +225,8 @@ function loadSearchIndexEntry(
   agentName: string,
   change: SessionHeadChange,
   loadSessionData: (sessionId: string) => SessionDetail,
+  detailVersion: string,
+  failures: SearchIndexSyncFailure[],
 ): LoadedSearchIndexEntry | null {
   try {
     const data = loadSessionData(change.session.id);
@@ -190,8 +247,16 @@ function loadSearchIndexEntry(
         data.messages,
       ),
       sortIndex: change.sortIndex,
+      detailVersion,
     };
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    failures.push({ sessionId: change.session.id, reason: "parse-failed", message });
+    getCoreDiagnostics()?.warn("search_index.session_parse_failed", {
+      agent: agentName,
+      session_id: change.session.id,
+      message,
+    });
     return null;
   }
 }
@@ -200,9 +265,17 @@ function* loadSearchIndexEntries(
   agentName: string,
   changes: Iterable<SessionHeadChange>,
   loadSessionData: (sessionId: string) => SessionDetail,
+  detailVersionFor: (sessionId: string) => string,
+  failures: SearchIndexSyncFailure[],
 ): Generator<LoadedSearchIndexEntry> {
   for (const change of changes) {
-    const entry = loadSearchIndexEntry(agentName, change, loadSessionData);
+    const entry = loadSearchIndexEntry(
+      agentName,
+      change,
+      loadSessionData,
+      detailVersionFor(change.session.id),
+      failures,
+    );
     if (entry) yield entry;
   }
 }
@@ -212,6 +285,7 @@ function writeSearchIndexRows(
   agentName: string,
   removedSessionIds: string[],
   entries: Iterable<LoadedSearchIndexEntry>,
+  failures: SearchIndexSyncFailure[],
 ): number {
   const deleteRow = db.prepare(
     "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
@@ -278,15 +352,21 @@ function writeSearchIndexRows(
       content_text,
       content_hash,
       indexed_message_count,
+      detail_version,
       indexed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(agent_name, session_id) DO UPDATE SET
       title = excluded.title,
       content_text = excluded.content_text,
       content_hash = excluded.content_hash,
       indexed_message_count = excluded.indexed_message_count,
+      detail_version = excluded.detail_version,
       indexed_at = excluded.indexed_at
   `);
+
+  const readCurrentMeta = db.prepare(
+    "SELECT meta_json FROM sessions WHERE agent_name = ? AND session_id = ?",
+  );
 
   const clearPendingReindex = db.prepare(
     "DELETE FROM pending_reindex WHERE agent_name = ? AND session_id = ?",
@@ -302,6 +382,13 @@ function writeSearchIndexRows(
 
   let indexed = 0;
   for (const entry of entries) {
+    const current = readCurrentMeta.get(agentName, entry.session.id) as
+      | { meta_json?: string | null }
+      | undefined;
+    if (entry.detailVersion !== detailVersionFromMetaJson(current?.meta_json)) {
+      failures.push({ sessionId: entry.session.id, reason: "superseded" });
+      continue;
+    }
     upsertSessionRow(upsertIndexedSession, agentName, entry.session, null, entry.sortIndex, null);
     deleteFileActivity.run(agentName, entry.session.id);
     deleteMessageTools.run(agentName, entry.session.id, 0);
@@ -342,6 +429,7 @@ function writeSearchIndexRows(
       entry.contentText,
       entry.contentHash,
       entry.messages.length,
+      entry.detailVersion,
       Date.now(),
     );
     indexed += 1;
@@ -358,20 +446,13 @@ export function syncSessionSearchIndex(
   return withSearchIndexDb((db) => {
     const startedAt = performance.now();
     const existingRows = db
-      .prepare(
-        "SELECT session_id, content_hash, indexed_message_count FROM session_documents WHERE agent_name = ? ORDER BY id",
-      )
+      .prepare("SELECT session_id FROM session_documents WHERE agent_name = ? ORDER BY id")
       .all(agentName) as IndexedSearchRow[];
     const sessionSortIndexMap = new Map(sessions.map((session, index) => [session.id, index]));
-    const messageCountRows = db
-      .prepare(
-        "SELECT session_id, COUNT(*) AS value FROM messages WHERE agent_name = ? GROUP BY session_id",
-      )
-      .all(agentName) as MessageCountRow[];
-    const searchIndexState = searchIndexStateFromRows(
-      existingRows,
-      messageCountRows,
-      readPendingReindexIds(db, agentName),
+    const searchIndexState = readSearchIndexState(
+      db,
+      agentName,
+      sessions.map((session) => session.id),
     );
     const sessionMap = new Map(sessions.map((session) => [session.id, session]));
 
@@ -379,7 +460,7 @@ export function syncSessionSearchIndex(
       .map((row) => String(row.session_id))
       .filter((sessionId) => !sessionMap.has(sessionId));
     const toUpsert = sessions.filter((session) =>
-      searchIndexEntryNeedsUpdate(searchIndexState, session),
+      searchIndexEntryNeedsUpdate(searchIndexState, session, options),
     );
     const changedCount = toDelete.length + toUpsert.length;
     const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
@@ -388,6 +469,9 @@ export function syncSessionSearchIndex(
       sortIndex: sessionSortIndexMap.get(session.id) ?? 0,
     }));
     let indexed = 0;
+    const failures: SearchIndexSyncFailure[] = [];
+    const detailVersionFor = (sessionId: string) =>
+      targetDetailVersion(searchIndexState, sessionId, options);
 
     // A large backlog (e.g. the first full-history backfill) takes minutes to
     // parse; one transaction would roll all of it back on interrupt. Chunked
@@ -395,7 +479,7 @@ export function syncSessionSearchIndex(
     // restarted sync skips already-indexed sessions via their content hashes.
     if (changes.length > SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
       runSearchIndexWrite(db, false, () => {
-        indexed += writeSearchIndexRows(db, agentName, toDelete, []);
+        indexed += writeSearchIndexRows(db, agentName, toDelete, [], failures);
       });
       for (let offset = 0; offset < changes.length; offset += SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
         const chunk = changes.slice(offset, offset + SEARCH_INDEX_COMMIT_CHUNK_SIZE);
@@ -404,7 +488,8 @@ export function syncSessionSearchIndex(
             db,
             agentName,
             [],
-            loadSearchIndexEntries(agentName, chunk, loadSessionData),
+            loadSearchIndexEntries(agentName, chunk, loadSessionData, detailVersionFor, failures),
+            failures,
           );
         });
       }
@@ -416,6 +501,7 @@ export function syncSessionSearchIndex(
         deleted: toDelete.length,
         indexed,
         skipped: toUpsert.length - indexed,
+        failures: failures.length > 0 ? failures : undefined,
         durationMs: performance.now() - startedAt,
       };
     }
@@ -425,7 +511,8 @@ export function syncSessionSearchIndex(
         db,
         agentName,
         toDelete,
-        loadSearchIndexEntries(agentName, changes, loadSessionData),
+        loadSearchIndexEntries(agentName, changes, loadSessionData, detailVersionFor, failures),
+        failures,
       );
     };
 
@@ -440,6 +527,7 @@ export function syncSessionSearchIndex(
       deleted: toDelete.length,
       indexed,
       skipped: toUpsert.length - indexed,
+      failures: failures.length > 0 ? failures : undefined,
       durationMs: performance.now() - startedAt,
       rebuildDurationMs,
     };
@@ -474,18 +562,22 @@ export function syncSessionSearchIndexChanges(
       changes.map(({ session }) => session.id),
     );
     const toUpsert = changes.filter(({ session }) =>
-      searchIndexEntryNeedsUpdate(searchIndexState, session),
+      searchIndexEntryNeedsUpdate(searchIndexState, session, options),
     );
     const uniqueRemovedSessionIds = Array.from(new Set(removedSessionIds));
     const changedCount = uniqueRemovedSessionIds.length + toUpsert.length;
     const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
     let indexed = 0;
+    const failures: SearchIndexSyncFailure[] = [];
+    const detailVersionFor = (sessionId: string) =>
+      targetDetailVersion(searchIndexState, sessionId, options);
     const writeRows = () => {
       indexed = writeSearchIndexRows(
         db,
         agentName,
         uniqueRemovedSessionIds,
-        loadSearchIndexEntries(agentName, toUpsert, loadSessionData),
+        loadSearchIndexEntries(agentName, toUpsert, loadSessionData, detailVersionFor, failures),
+        failures,
       );
     };
 
@@ -500,6 +592,7 @@ export function syncSessionSearchIndexChanges(
       deleted: uniqueRemovedSessionIds.length,
       indexed,
       skipped: toUpsert.length - indexed,
+      failures: failures.length > 0 ? failures : undefined,
       durationMs: performance.now() - startedAt,
       rebuildDurationMs,
     };

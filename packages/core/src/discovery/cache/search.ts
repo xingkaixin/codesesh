@@ -85,8 +85,10 @@ export {
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
   type SearchIndexSyncOptions,
+  type SearchIndexSyncFailure,
   type SearchIndexSyncResult,
 } from "./search-index-writer.js";
+export { sessionDetailVersion } from "./detail-version.js";
 
 export function sessionHeadFromSearchRow(row: SearchResultRow): SessionHead {
   return sessionFromRow(row as SessionRow);

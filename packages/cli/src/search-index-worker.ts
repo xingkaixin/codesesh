@@ -5,6 +5,7 @@ import {
   markAgentCacheInitialized,
   saveCachedSessionChanges,
   saveCachedSessions,
+  sessionDetailVersion,
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
   type SearchIndexSyncResult,
@@ -84,6 +85,15 @@ function jobSessionCount(job: SearchIndexWorkerJob): number {
   return job.kind === "full" ? job.sessions.length : job.changes.length;
 }
 
+function searchIndexOptions(job: SearchIndexWorkerJob): SearchIndexSyncOptions {
+  return {
+    ...job.searchIndexOptions,
+    detailVersions: Object.fromEntries(
+      Object.entries(job.meta).map(([sessionId, meta]) => [sessionId, sessionDetailVersion(meta)]),
+    ),
+  };
+}
+
 /**
  * Reports a persistence failure so the batch is rejected instead of settling as
  * `done`; the caller keeps its previously published snapshot and can retry.
@@ -114,7 +124,7 @@ function runJob(job: SearchIndexWorkerJob, agent: WorkerAgent): SearchIndexPersi
       job.changes,
       job.removedSessionIds,
       (sessionId) => agent.getSessionData(sessionId),
-      job.searchIndexOptions,
+      searchIndexOptions(job),
     );
     if (!result) return "search_index";
     postSyncResult(job.context, result);
@@ -128,7 +138,7 @@ function runJob(job: SearchIndexWorkerJob, agent: WorkerAgent): SearchIndexPersi
     job.agentName,
     job.sessions,
     (sessionId) => agent.getSessionData(sessionId),
-    job.searchIndexOptions,
+    searchIndexOptions(job),
   );
   if (!result) return "search_index";
   // Head cache init is decoupled from search-index completeness (CS-73): a
