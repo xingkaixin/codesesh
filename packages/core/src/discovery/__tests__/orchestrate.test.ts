@@ -117,6 +117,32 @@ describe("sessionSignature", () => {
     expect(sessionSignature(base)).not.toBe(sessionSignature(retagged));
   });
 
+  it("changes when the project identity changes", () => {
+    const base = makeSession("a", {
+      project_identity: { kind: "path", key: "/old", displayName: "old" },
+    });
+    const resolved = {
+      ...base,
+      project_identity: { kind: "git" as const, key: "github.com/acme/new", displayName: "new" },
+    };
+    expect(sessionSignature(base)).not.toBe(sessionSignature(resolved));
+  });
+
+  it("changes when smart tags change without a source timestamp change", () => {
+    const base = makeSession("a", {
+      smart_tags: ["debugging"],
+      smart_tags_source_updated_at: 9999,
+    });
+    const retagged = { ...base, smart_tags: ["implementation" as const] };
+    expect(sessionSignature(base)).not.toBe(sessionSignature(retagged));
+  });
+
+  it("ignores smart tag ordering", () => {
+    const base = makeSession("a", { smart_tags: ["debugging", "implementation"] });
+    const reordered = { ...base, smart_tags: ["implementation" as const, "debugging" as const] };
+    expect(sessionSignature(base)).toBe(sessionSignature(reordered));
+  });
+
   it("changes when a stat field changes", () => {
     const base = makeSession("a");
     const grown = {

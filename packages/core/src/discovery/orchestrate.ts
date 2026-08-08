@@ -41,8 +41,8 @@ export function buildAgentCacheMeta(
 /**
  * Stable signature for the user-visible fields that define a session's identity.
  * Used by both orchestrators to decide whether a session "changed". Includes
- * smart_tags_source_updated_at so that smart-tag reclassification propagates to
- * the persistence diff even when the underlying message stats are unchanged.
+ * Derived values are part of the projection: changing an identity or tag must
+ * propagate even when the underlying source timestamp and statistics do not.
  */
 export function sessionSignature(session: SessionHead): string {
   return JSON.stringify([
@@ -57,6 +57,10 @@ export function sessionSignature(session: SessionHead): string {
     session.stats.total_output_tokens,
     session.stats.total_cost,
     session.stats.total_tokens ?? 0,
+    session.project_identity?.kind ?? null,
+    session.project_identity?.key ?? null,
+    session.project_identity?.displayName ?? null,
+    session.smart_tags ? [...session.smart_tags].sort() : null,
     session.smart_tags_source_updated_at ?? null,
   ]);
 }
