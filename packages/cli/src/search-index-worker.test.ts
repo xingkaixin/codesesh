@@ -117,7 +117,9 @@ describe("search index worker", () => {
 
     await runWorker();
 
-    expect(mocks.saveCachedSessions).toHaveBeenCalledWith("codex", sessions, meta);
+    expect(mocks.saveCachedSessions).toHaveBeenCalledWith("codex", sessions, meta, {
+      completeness: "complete",
+    });
     expect(mocks.syncSessionSearchIndex).toHaveBeenCalledWith(
       "codex",
       sessions,

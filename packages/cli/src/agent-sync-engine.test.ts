@@ -268,7 +268,12 @@ describe("AgentSyncEngine", () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async (_agentName, payload) => {
-        payload.onCheckpoint?.({ stage: "scanned", sessions: [head], meta });
+        payload.onCheckpoint?.({
+          stage: "scanned",
+          sessions: [head],
+          meta,
+          completeness: "complete",
+        });
         payload.onCheckpoint?.({
           stage: "finalizing",
           changes: [{ session: tagged, sortIndex: 0 }],
@@ -282,7 +287,9 @@ describe("AgentSyncEngine", () => {
 
     await engine.refresh("codex");
 
-    expect(core.saveCachedSessions).toHaveBeenCalledWith("codex", [head], meta);
+    expect(core.saveCachedSessions).toHaveBeenCalledWith("codex", [head], meta, {
+      completeness: "complete",
+    });
     expect(core.markAgentCacheInitialized).toHaveBeenCalledWith("codex");
     expect(core.saveCachedSessionChanges).toHaveBeenCalledWith(
       "codex",
@@ -291,6 +298,60 @@ describe("AgentSyncEngine", () => {
       meta,
     );
     expect(engine.snapshot().sessions[0]?.smart_tags).toEqual(["feature-dev"]);
+  });
+
+  it("persists a windowed initialization without authorizing cached session deletion", async () => {
+    core.isAgentCacheInitialized.mockReturnValue(false);
+    const old = makeSession("old");
+    const recent = makeSession("recent", "updated");
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [old, recent],
+      meta: {},
+      timestamp: Date.now(),
+    });
+    const logInfo = vi.spyOn(appLogger, "info");
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async (_agentName, payload) => {
+        payload.onCheckpoint?.({
+          stage: "scanned",
+          sessions: [recent],
+          meta: {},
+          completeness: "partial",
+        });
+        return { sessions: [recent], meta: {} };
+      }),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const state: LiveSnapshot = {
+      agents: [makeAgent()],
+      byAgent: { codex: [recent] },
+      sessions: [recent],
+    };
+    const engine = new AgentSyncEngine({
+      workerRunner,
+      startupScanOptions: { from: 2 },
+    });
+    engine.initialize(state);
+
+    await engine.refresh("codex");
+
+    expect(logInfo).toHaveBeenCalledWith("scan.checkpoint.replacement_candidate", {
+      agent: "codex",
+      completeness: "partial",
+      cached_sessions: 2,
+      checkpoint_sessions: 1,
+      missing_cached_sessions: 1,
+      delete_candidates: 0,
+    });
+    expect(core.saveCachedSessions).toHaveBeenCalledWith(
+      "codex",
+      [recent],
+      {},
+      {
+        completeness: "partial",
+      },
+    );
   });
 
   it("keeps the last durable snapshot when a head checkpoint is rejected", async () => {
@@ -305,7 +366,12 @@ describe("AgentSyncEngine", () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async (_agentName, payload) => {
-        payload.onCheckpoint?.({ stage: "scanned", sessions: [head], meta });
+        payload.onCheckpoint?.({
+          stage: "scanned",
+          sessions: [head],
+          meta,
+          completeness: "complete",
+        });
         return { sessions: [head], meta };
       }),
       shutdown: vi.fn(async () => undefined),
@@ -353,7 +419,12 @@ describe("AgentSyncEngine", () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async (_agentName, payload) => {
-        payload.onCheckpoint?.({ stage: "scanned", sessions: [head], meta });
+        payload.onCheckpoint?.({
+          stage: "scanned",
+          sessions: [head],
+          meta,
+          completeness: "complete",
+        });
         return { sessions: [head], meta };
       }),
       shutdown: vi.fn(async () => undefined),

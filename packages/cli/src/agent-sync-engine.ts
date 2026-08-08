@@ -574,8 +574,33 @@ export class AgentSyncEngine {
     if (this.isShuttingDown) return;
 
     if (checkpoint.stage === "scanned") {
+      const cachedSessions = loadCachedSessions(agent.name)?.sessions ?? [];
+      const checkpointSessionIds = new Set(checkpoint.sessions.map((session) => session.id));
+      const missingCachedSessionCount = cachedSessions.reduce(
+        (count, session) => count + Number(!checkpointSessionIds.has(session.id)),
+        0,
+      );
+      const cachedSessionIds = new Set(cachedSessions.map((session) => session.id));
+      const addedSessionCount = checkpoint.sessions.reduce(
+        (count, session) => count + Number(!cachedSessionIds.has(session.id)),
+        0,
+      );
+      const deleteCandidateCount =
+        checkpoint.completeness === "complete" ? missingCachedSessionCount : 0;
+      appLogger.info("scan.checkpoint.replacement_candidate", {
+        agent: agent.name,
+        completeness: checkpoint.completeness,
+        cached_sessions: cachedSessions.length,
+        checkpoint_sessions: checkpoint.sessions.length,
+        missing_cached_sessions: missingCachedSessionCount,
+        delete_candidates: deleteCandidateCount,
+      });
       try {
-        if (!saveCachedSessions(agent.name, checkpoint.sessions, checkpoint.meta)) {
+        if (
+          !saveCachedSessions(agent.name, checkpoint.sessions, checkpoint.meta, {
+            completeness: checkpoint.completeness,
+          })
+        ) {
           throw new Error(`Failed to persist scanned checkpoint for ${agent.name}`);
         }
       } catch (error) {
@@ -599,7 +624,10 @@ export class AgentSyncEngine {
       appLogger.info("scan.checkpoint.persisted", {
         agent: agent.name,
         stage: checkpoint.stage,
+        completeness: checkpoint.completeness,
         sessions: checkpoint.sessions.length,
+        cached_sessions_before: cachedSessions.length,
+        cached_sessions_after: cachedSessions.length - deleteCandidateCount + addedSessionCount,
       });
       return;
     }

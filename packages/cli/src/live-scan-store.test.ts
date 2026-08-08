@@ -1106,7 +1106,7 @@ describe("LiveScanStore", () => {
     worker.emitMessage({
       type: "checkpoint",
       requestId: worker.workerData.requestId,
-      checkpoint: { stage: "scanned", sessions: [], meta: {} },
+      checkpoint: { stage: "scanned", sessions: [], meta: {}, completeness: "complete" },
     });
 
     await expect(refresh).rejects.toThrow("checkpoint rejected");

@@ -17,6 +17,7 @@ import {
   type SessionCacheMeta,
   type SessionHead,
   type SessionHeadChange,
+  type SessionSnapshotCompleteness,
   type SessionTagTiming,
 } from "@codesesh/core";
 import { appLogger } from "./logging.js";
@@ -53,6 +54,7 @@ export type ScanRefreshWorkerCheckpoint =
       stage: "scanned";
       sessions: SessionHead[];
       meta: Record<string, SessionCacheMeta>;
+      completeness: SessionSnapshotCompleteness;
     }
   | {
       stage: "finalizing";
@@ -375,6 +377,8 @@ async function run(data: ScanRefreshWorkerRequest): Promise<void> {
         stage: "scanned",
         sessions: ordered,
         meta: buildAgentCacheMeta(agent, new Set(ordered.map((session) => session.id))),
+        completeness:
+          data.scanOptions.from == null && data.scanOptions.to == null ? "complete" : "partial",
       },
     } satisfies ScanRefreshWorkerMessage);
     sessions = ordered;

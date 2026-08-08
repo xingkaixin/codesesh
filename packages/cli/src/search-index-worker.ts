@@ -131,7 +131,10 @@ function runJob(job: SearchIndexWorkerJob, agent: WorkerAgent): SearchIndexPersi
     return null;
   }
 
-  if (job.saveCache && !saveCachedSessions(job.agentName, job.sessions, job.meta)) {
+  if (
+    job.saveCache &&
+    !saveCachedSessions(job.agentName, job.sessions, job.meta, { completeness: "complete" })
+  ) {
     return "cache";
   }
   const result = syncSessionSearchIndex(
