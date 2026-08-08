@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -282,26 +282,18 @@ describe("diffSessionSources", () => {
     }
   });
 
-  it("treats an inaccessible cached path as failed, not missing", () => {
-    const directory = mkdtempSync(join(tmpdir(), "codesesh-source-permission-"));
-    const sourcePath = join(directory, "session.jsonl");
-    writeFileSync(sourcePath, "{}\n");
-    chmodSync(directory, 0o000);
-    try {
-      const diff = diffSessionSources([], [makeSession("cached")], {
-        cached: meta("cached", { sourcePath }),
-      });
+  it("treats a cached path stat error as failed, not missing", () => {
+    const sourcePath = "invalid\0path";
+    const diff = diffSessionSources([], [makeSession("cached")], {
+      cached: meta("cached", { sourcePath }),
+    });
 
-      expect(diff.removedIds).toEqual([]);
-      expect(diff.failedIds).toEqual(["cached"]);
-      expect(diff.sourceOutcomes[0]).toMatchObject({
-        status: "failed",
-        failure: { errorClass: "EACCES" },
-      });
-    } finally {
-      chmodSync(directory, 0o700);
-      rmSync(directory, { recursive: true, force: true });
-    }
+    expect(diff.removedIds).toEqual([]);
+    expect(diff.failedIds).toEqual(["cached"]);
+    expect(diff.sourceOutcomes[0]).toMatchObject({
+      status: "failed",
+      failure: { errorClass: "ERR_INVALID_ARG_VALUE" },
+    });
   });
 
   it("keeps sessions whose mtime falls outside the scan window", () => {
