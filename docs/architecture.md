@@ -1,5 +1,6 @@
 # CodeSesh 扫描架构
 
+<!-- repo-fact:agent-source-kinds:start -->
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │                         CLI Entry                              │
@@ -39,7 +40,7 @@
 │                        Agent Registry                          │
 │              packages/core/src/agents/register.ts              │
 │                                                                │
-│  文件系统: Claude Code · Codex · Grok · Kimi-Cli · Pi          │
+│  文件系统: Claude Code · Codex · Grok · Kimi-Cli · Kimi-Code · Pi │
 │  SQLite:  OpenCode · Cursor · ZCode                            │
 │  扩展方式: 实现适配器 + 在 register.ts 声明完整能力             │
 └────────────────────────────────────────────────────────────────┘
@@ -54,6 +55,7 @@
 
 详细表结构和数据流见 [sqlite-storage.md](./sqlite-storage.md)。
 ```
+<!-- repo-fact:agent-source-kinds:end -->
 
 ## 性能说明
 

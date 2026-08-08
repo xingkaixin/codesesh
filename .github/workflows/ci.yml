@@ -46,6 +46,9 @@ jobs:
 
       - run: pnpm build
 
+      - name: Verify documented repository facts
+        run: node scripts/check-docs-facts.mjs
+
       - name: Smoke test CLI on minimum Node version
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == 22
         run: node packages/cli/dist/index.js --version
