@@ -2,7 +2,39 @@ import type { BaseAgent, SessionCacheMeta, SessionHead, SessionSourceRef } from 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
-  class FileSystemSessionSource {}
+  class FileSystemSessionSource {
+    scanSessionSourceOutcome(source: SessionSourceRef) {
+      try {
+        const session = (
+          this as unknown as { scanSessionSource(path: string): SessionHead | null }
+        ).scanSessionSource(source.sourcePath);
+        if (session) return { status: "parsed" as const, source, session };
+        return {
+          status: "failed" as const,
+          source,
+          failure: {
+            sessionId: source.sessionId,
+            sourcePath: source.sourcePath,
+            stage: "parsing" as const,
+            errorClass: "Error",
+            message: "source produced no session",
+          },
+        };
+      } catch (error) {
+        return {
+          status: "failed" as const,
+          source,
+          failure: {
+            sessionId: source.sessionId,
+            sourcePath: source.sourcePath,
+            stage: "parsing" as const,
+            errorClass: error instanceof Error ? error.name : typeof error,
+            message: error instanceof Error ? error.message : String(error),
+          },
+        };
+      }
+    }
+  }
 
   return {
     workerData: {} as Record<string, unknown>,
@@ -20,6 +52,12 @@ const mocks = vi.hoisted(() => {
       },
     ),
     FileSystemSessionSource,
+    appLogger: {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    },
   };
 });
 
@@ -29,6 +67,8 @@ vi.mock("node:worker_threads", () => ({
     return mocks.workerData;
   },
 }));
+
+vi.mock("./logging.js", () => ({ appLogger: mocks.appLogger }));
 
 vi.mock("@codesesh/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core")>();
@@ -177,7 +217,10 @@ describe("scan refresh worker entry", () => {
   it("emits a durable head checkpoint before metadata finalization", async () => {
     const session = makeSession("fresh", { time_updated: 1 });
     const agent = makeAgent({
-      scan: vi.fn(() => [session]),
+      listSessionSources: vi.fn(() => [
+        { sessionId: "fresh", sourcePath: "/fresh", fingerprint: "fresh" },
+      ]),
+      scanSessionSource: vi.fn(() => session),
       getSessionMetaMap: vi.fn(() => new Map([["fresh", { sourcePath: "/fresh" }]])),
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
@@ -217,6 +260,43 @@ describe("scan refresh worker entry", () => {
           stage: "scanned",
           completeness: "partial",
         }),
+      }),
+    );
+  });
+
+  it("keeps a failed cached source in a partial full-scan checkpoint", async () => {
+    const cached = makeSession("cached");
+    const agent = makeAgent({
+      listSessionSources: vi.fn(() => [
+        { sessionId: "cached", sourcePath: "/cached", fingerprint: "new" },
+      ]),
+      scanSessionSource: vi.fn(() => null),
+    });
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    setWorkerData({
+      checkpoint: true,
+      previousSessions: [cached],
+      meta: {
+        cached: { id: "cached", sourcePath: "/cached", sourceFingerprint: "old" },
+      },
+    });
+
+    await runWorker();
+
+    expect(mocks.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "checkpoint",
+        checkpoint: expect.objectContaining({
+          sessions: [cached],
+          completeness: "partial",
+        }),
+      }),
+    );
+    expect(mocks.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: "done",
+        removedSessionIds: [],
+        sourceFailures: [expect.objectContaining({ sessionId: "cached" })],
       }),
     );
   });
@@ -577,7 +657,7 @@ describe("scan refresh worker entry", () => {
     expect(mocks.ensureSessionTagsSync).not.toHaveBeenCalled();
   });
 
-  it("synchronizes changed, removed, and out-of-window sources", async () => {
+  it("synchronizes parsed, failed, removed, and out-of-window sources", async () => {
     const unchanged = makeSession("unchanged");
     const changed = makeSession("changed", { title: "old" });
     const removed = makeSession("removed");
@@ -640,8 +720,20 @@ describe("scan refresh worker entry", () => {
       expect.objectContaining({
         type: "done",
         changes: [{ session: updated, sortIndex: 1 }],
-        removedSessionIds: ["removed", "moved"],
-        removedMetaIds: ["removed", "moved"],
+        removedSessionIds: ["removed"],
+        removedMetaIds: ["removed"],
+        sourceFailures: [
+          expect.objectContaining({ sessionId: "moved", stage: "parsing" }),
+          expect.objectContaining({ sessionId: "missing", stage: "parsing" }),
+        ],
+      }),
+    );
+    expect(mocks.appLogger.warn).toHaveBeenCalledWith(
+      "agent.session_source_outcome",
+      expect.objectContaining({
+        session_id: "moved",
+        outcome: "failed",
+        error_class: "Error",
       }),
     );
   });

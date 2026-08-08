@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FileSystemSessionSource } from "@codesesh/core";
-import type { BaseAgent, loadCachedSessions, LiveSnapshot, SessionHead } from "@codesesh/core";
+import type {
+  BaseAgent,
+  loadCachedSessions,
+  LiveSnapshot,
+  SessionHead,
+  SessionSourceFailure,
+} from "@codesesh/core";
 import type { ScanStatusEvent } from "@codesesh/core/contract";
 import type { WorkerRunner } from "./worker-runner.js";
 import { appLogger } from "./logging.js";
@@ -512,6 +518,66 @@ describe("AgentSyncEngine", () => {
         removedSessionIds: [],
       }),
     ]);
+  });
+
+  it("commits successful source updates while reporting retained parse failures", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const changed = makeSession("changed", "before");
+    const updated = makeSession("changed", "after");
+    const retained = makeSession("retained");
+    const failure: SessionSourceFailure = {
+      sessionId: retained.id,
+      sourcePath: "/retained",
+      stage: "parsing",
+      errorClass: "SyntaxError",
+      message: "Unexpected end of JSON input",
+    };
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [changed, retained],
+      meta: {
+        changed: { id: "changed", sourcePath: "/changed", sourceFingerprint: "old" },
+        retained: { id: "retained", sourcePath: "/retained", sourceFingerprint: "old" },
+      },
+      timestamp: 1,
+    });
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async () => ({
+        sessions: [updated, retained],
+        meta: {
+          changed: { id: "changed", sourcePath: "/changed", sourceFingerprint: "new" },
+          retained: { id: "retained", sourcePath: "/retained", sourceFingerprint: "old" },
+        },
+        changedIds: [changed.id],
+        sourceFailures: [failure],
+      })),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const { engine } = makeEngine(new FakeSyncAgent(), [changed, retained], workerRunner);
+
+    await engine.refresh("codex");
+
+    expect(engine.snapshot().sessions).toEqual([
+      expect.objectContaining({ id: updated.id, title: updated.title }),
+      expect.objectContaining({ id: retained.id, title: retained.title }),
+    ]);
+    expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
+      expect.objectContaining({
+        kind: "changes",
+        changes: [
+          expect.objectContaining({
+            session: expect.objectContaining({ id: updated.id, title: updated.title }),
+          }),
+        ],
+        removedSessionIds: [],
+      }),
+    ]);
+    expect(engine.status().agentStatuses.codex).toEqual(
+      expect.objectContaining({
+        status: "failed",
+        error: "1 session source failed; last-known-good data retained",
+      }),
+    );
   });
 
   it("keeps the previous snapshot when search indexing fails", async () => {

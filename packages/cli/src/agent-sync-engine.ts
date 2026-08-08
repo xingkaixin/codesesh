@@ -20,6 +20,7 @@ import {
   type LiveSnapshot,
   type SessionHead,
   type SessionHeadChange,
+  type SessionSourceFailure,
 } from "@codesesh/core";
 import type {
   BackfillProgress,
@@ -84,6 +85,7 @@ interface RefreshStrategyResult {
   persistenceDiff: SessionPersistenceDiff | null;
   checkDuration: number;
   scanDuration: number;
+  sourceFailures: SessionSourceFailure[];
 }
 
 const REFRESH_DEBOUNCE_MS = 200;
@@ -104,6 +106,11 @@ function buildPersistenceDiff(
     sessionSignature,
   );
   return { changedSessions: changes, removedSessionIds };
+}
+
+function sourceFailureError(failures: SessionSourceFailure[]): Error {
+  const noun = failures.length === 1 ? "source" : "sources";
+  return new Error(`${failures.length} session ${noun} failed; last-known-good data retained`);
 }
 
 function restoreAgentCacheMeta(agent: BaseAgent, cached: CachedSessions): void {
@@ -387,22 +394,33 @@ export class AgentSyncEngine {
 
     const totalDurationMs = performance.now() - startedAt;
     this.scheduler.recordRefreshDuration(agentName, totalDurationMs);
-    appLogger.info("scan.refresh.done", {
-      agent: agentName,
-      duration_ms: Math.round(totalDurationMs),
-      sessions: nextSessions.length,
-      new_sessions: publication.event?.newSessions ?? 0,
-      updated_sessions: publication.event?.updatedSessions ?? 0,
-      removed_sessions: publication.event?.removedSessions ?? 0,
-      pending_paths: pendingPathCount,
-      availability_ms: Math.round(availabilityDuration),
-      check_ms: Math.round(strategyResult.checkDuration),
-      scan_ms: Math.round(strategyResult.scanDuration),
-      diff_ms: Math.round(publication.diffDuration),
-      persist_ms: Math.round(persistDuration),
-      search_index_ms: Math.round(persistDuration),
-      persistent_index_worker_job: persistentJob.kind,
-    });
+    appLogger.info(
+      strategyResult.sourceFailures.length > 0 ? "scan.refresh.partial" : "scan.refresh.done",
+      {
+        agent: agentName,
+        duration_ms: Math.round(totalDurationMs),
+        sessions: nextSessions.length,
+        new_sessions: publication.event?.newSessions ?? 0,
+        updated_sessions: publication.event?.updatedSessions ?? 0,
+        removed_sessions: publication.event?.removedSessions ?? 0,
+        pending_paths: pendingPathCount,
+        availability_ms: Math.round(availabilityDuration),
+        check_ms: Math.round(strategyResult.checkDuration),
+        scan_ms: Math.round(strategyResult.scanDuration),
+        diff_ms: Math.round(publication.diffDuration),
+        persist_ms: Math.round(persistDuration),
+        search_index_ms: Math.round(persistDuration),
+        persistent_index_worker_job: persistentJob.kind,
+        failed_sources: strategyResult.sourceFailures.length,
+      },
+    );
+    if (strategyResult.sourceFailures.length > 0) {
+      appLogger.warn("scan.refresh.source_failures", {
+        agent: agentName,
+        failures: strategyResult.sourceFailures,
+      });
+      throw sourceFailureError(strategyResult.sourceFailures);
+    }
     return "committed";
   }
 
@@ -440,6 +458,7 @@ export class AgentSyncEngine {
     return this.refreshStrategyResult(sessions, {
       fullScanSessions: sessions,
       scanDuration: performance.now() - scanStartedAt,
+      sourceFailures: result.sourceFailures ?? [],
     });
   }
 
@@ -460,7 +479,8 @@ export class AgentSyncEngine {
     this.lastRefreshAtByAgent.set(agent.name, Date.now());
     if (
       persistenceDiff.changedSessions.length === 0 &&
-      persistenceDiff.removedSessionIds.length === 0
+      persistenceDiff.removedSessionIds.length === 0 &&
+      (result.sourceFailures?.length ?? 0) === 0
     ) {
       this.logUnchangedRefresh(agent.name, refreshStartedAt);
       return this.refreshStrategyResult(sessions, {
@@ -472,6 +492,7 @@ export class AgentSyncEngine {
       preciseChangedIds,
       persistenceDiff,
       scanDuration: performance.now() - scanStartedAt,
+      sourceFailures: result.sourceFailures ?? [],
     });
   }
 
@@ -499,6 +520,7 @@ export class AgentSyncEngine {
         persistenceDiff: buildPersistenceDiff(baseline, sessions),
         checkDuration,
         scanDuration: performance.now() - scanStartedAt,
+        sourceFailures: result.sourceFailures ?? [],
       });
     }
     const sessions = attachMissingProjectIdentities(
@@ -509,6 +531,7 @@ export class AgentSyncEngine {
       persistenceDiff: buildPersistenceDiff(baseline, sessions, preciseChangedIds),
       checkDuration,
       scanDuration: performance.now() - scanStartedAt,
+      sourceFailures: checkResult.sourceFailures ?? [],
     });
   }
 
@@ -524,6 +547,7 @@ export class AgentSyncEngine {
     return this.refreshStrategyResult(sessions, {
       fullScanSessions: sessions,
       scanDuration: performance.now() - scanStartedAt,
+      sourceFailures: result.sourceFailures ?? [],
     });
   }
 
@@ -539,6 +563,7 @@ export class AgentSyncEngine {
       persistenceDiff: null,
       checkDuration: 0,
       scanDuration: 0,
+      sourceFailures: [],
       ...overrides,
     };
   }
@@ -768,6 +793,7 @@ export class AgentSyncEngine {
           saveCache: true,
         },
       });
+      if (result.sourceFailures?.length) throw sourceFailureError(result.sourceFailures);
       markAgentFullSyncCompleted(agentName);
       appLogger.info("scan.backfill.done", {
         agent: agentName,

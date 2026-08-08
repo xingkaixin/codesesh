@@ -63,12 +63,38 @@ export interface ChangeCheckResult {
   timestamp: number;
   /** 检测过程中已枚举的会话源（可选），供 incrementalScan 复用以避免二次枚举 */
   refs?: SessionSourceRef[];
+  sourceFailures?: SessionSourceFailure[];
 }
 
 export interface SessionSourceRef {
   sessionId: string;
   sourcePath: string;
   fingerprint: string;
+}
+
+export interface SessionSourceFailure {
+  sessionId: string;
+  sourcePath: string;
+  stage: "enumeration" | "parsing";
+  errorClass: string;
+  message: string;
+}
+
+export type SessionSourceOutcome =
+  | { status: "parsed"; session: SessionHead; source: SessionSourceRef }
+  | { status: "filtered"; reason: string; source: SessionSourceRef }
+  | { status: "missing"; source: SessionSourceRef }
+  | { status: "failed"; failure: SessionSourceFailure };
+
+export type SessionSourceAbsenceOutcome = Extract<
+  SessionSourceOutcome,
+  { status: "missing" | "failed" }
+>;
+
+export interface SessionSourceScanBatch {
+  sources: SessionSourceRef[];
+  outcomes: SessionSourceOutcome[];
+  sessions: SessionHead[];
 }
 
 export interface SessionSourceFile {
@@ -105,6 +131,8 @@ export type SessionWatchPlan =
 export interface SessionSourceDiff {
   changedIds: string[];
   removedIds: string[];
+  failedIds: string[];
+  sourceOutcomes: SessionSourceAbsenceOutcome[];
 }
 
 /**
@@ -182,13 +210,121 @@ export function diffSessionSources(
   }
 
   const removedIds: string[] = [];
+  const failedIds: string[] = [];
+  const sourceOutcomes: SessionSourceAbsenceOutcome[] = [];
   for (const session of cachedSessions) {
     if (enumeratedIds.has(session.id)) continue;
-    if (!wasEnumeratedThisPass(readCachedMeta(cachedMeta, session.id), options)) continue;
-    removedIds.push(session.id);
+    const meta = readCachedMeta(cachedMeta, session.id);
+    if (!wasEnumeratedThisPass(meta, options)) continue;
+    const source = {
+      sessionId: session.id,
+      sourcePath: typeof meta?.sourcePath === "string" ? meta.sourcePath : "",
+      fingerprint: typeof meta?.sourceFingerprint === "string" ? meta.sourceFingerprint : "",
+    };
+    if (!source.sourcePath) {
+      failedIds.push(session.id);
+      sourceOutcomes.push({
+        status: "failed",
+        failure: createSessionSourceFailure(
+          source,
+          "enumeration",
+          new Error("cached source path is missing"),
+        ),
+      });
+      continue;
+    }
+    try {
+      statSync(source.sourcePath);
+      failedIds.push(session.id);
+      sourceOutcomes.push({
+        status: "failed",
+        failure: createSessionSourceFailure(
+          source,
+          "enumeration",
+          new Error("cached source was not enumerated"),
+        ),
+      });
+    } catch (error) {
+      if (!isMissingSourceError(error)) {
+        failedIds.push(session.id);
+        sourceOutcomes.push({
+          status: "failed",
+          failure: createSessionSourceFailure(source, "enumeration", error),
+        });
+        continue;
+      }
+      removedIds.push(session.id);
+      sourceOutcomes.push({ status: "missing", source });
+    }
   }
 
-  return { changedIds, removedIds };
+  return { changedIds, removedIds, failedIds, sourceOutcomes };
+}
+
+function isMissingSourceError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  const code = (error as { code?: unknown }).code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+function failureClass(error: unknown): string {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string" && code) return code;
+  }
+  if (error instanceof Error && error.name) return error.name;
+  return typeof error;
+}
+
+function failureMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.slice(0, 500);
+}
+
+export function createSessionSourceFailure(
+  source: Pick<SessionSourceRef, "sessionId" | "sourcePath">,
+  stage: SessionSourceFailure["stage"],
+  error: unknown,
+): SessionSourceFailure {
+  return {
+    sessionId: source.sessionId,
+    sourcePath: source.sourcePath,
+    stage,
+    errorClass: failureClass(error),
+    message: failureMessage(error),
+  };
+}
+
+export function reportSessionSourceOutcome(agentName: string, outcome: SessionSourceOutcome): void {
+  if (outcome.status === "parsed") return;
+  if (outcome.status === "filtered") {
+    getCoreDiagnostics()?.info?.("agent.session_source_outcome", {
+      agent: agentName,
+      session_id: outcome.source.sessionId,
+      source_path: outcome.source.sourcePath,
+      outcome: outcome.status,
+      reason: outcome.reason,
+    });
+    return;
+  }
+  if (outcome.status === "missing") {
+    getCoreDiagnostics()?.info?.("agent.session_source_outcome", {
+      agent: agentName,
+      session_id: outcome.source.sessionId,
+      source_path: outcome.source.sourcePath,
+      outcome: outcome.status,
+    });
+    return;
+  }
+  getCoreDiagnostics()?.warn("agent.session_source_outcome", {
+    agent: agentName,
+    session_id: outcome.failure.sessionId,
+    source_path: outcome.failure.sourcePath,
+    outcome: outcome.status,
+    stage: outcome.failure.stage,
+    error_class: outcome.failure.errorClass,
+    message: outcome.failure.message,
+  });
 }
 
 export abstract class BaseAgent {
@@ -269,6 +405,47 @@ export abstract class FileSystemSessionSource<
   /** 解析单个源并写入 metaMap，返回会话 head（解析失败/不可见返回 null）。 */
   abstract scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null;
 
+  protected scanSessionSourceResult(
+    source: SessionSourceRef,
+    options?: AgentScanOptions,
+  ): ParseSessionResult<SessionHead> {
+    const session = this.scanSessionSource(source.sourcePath, options);
+    return session ? parsedSession(session) : skippedSession("source produced no session");
+  }
+
+  scanSessionSourceOutcome(
+    source: SessionSourceRef,
+    options?: AgentScanOptions,
+  ): SessionSourceOutcome {
+    const previousMeta = this.sessionMetaMap.get(source.sessionId);
+    let result: ParseSessionResult<SessionHead>;
+    try {
+      result = this.scanSessionSourceResult(source, options);
+    } catch (error) {
+      if (previousMeta) this.sessionMetaMap.set(source.sessionId, previousMeta);
+      else this.sessionMetaMap.delete(source.sessionId);
+      if (isMissingSourceError(error)) return { status: "missing", source };
+      return {
+        status: "failed",
+        failure: createSessionSourceFailure(source, "parsing", error),
+      };
+    }
+    if (result.status === "parsed") return { status: "parsed", source, session: result.data };
+    if (result.status === "filtered") {
+      return { status: "filtered", source, reason: result.reason ?? "filtered by agent" };
+    }
+    if (previousMeta) this.sessionMetaMap.set(source.sessionId, previousMeta);
+    else this.sessionMetaMap.delete(source.sessionId);
+    return {
+      status: "failed",
+      failure: createSessionSourceFailure(
+        source,
+        "parsing",
+        new Error(result.reason ?? "source parse skipped"),
+      ),
+    };
+  }
+
   /**
    * 变更集合扩展：当某些会话变更会影响其他会话的派生数据时
    * （如 subagent 文件变更需要父会话重新聚合 token 统计），
@@ -279,31 +456,28 @@ export abstract class FileSystemSessionSource<
   }
 
   scan(options?: AgentScanOptions): SessionHead[] {
+    return this.scanSessionSources(options).sessions;
+  }
+
+  scanSessionSources(options?: AgentScanOptions): SessionSourceScanBatch {
     const sources = this.listSessionSources(options);
     const sessions: SessionHead[] = [];
+    const outcomes: SessionSourceOutcome[] = [];
     options?.onProgress?.({ total: sources.length, processed: 0, sessions: 0 });
 
     for (const [index, source] of sources.entries()) {
-      try {
-        const session = this.scanSessionSource(source.sourcePath, options);
-        if (session) sessions.push(session);
-      } catch (error) {
-        getCoreDiagnostics()?.warn("agent.session_parse_failed", {
-          agentName: this.name,
-          sourcePath: source.sourcePath,
-          message: error instanceof Error ? error.message : String(error),
-        });
-        continue;
-      } finally {
-        options?.onProgress?.({
-          total: sources.length,
-          processed: index + 1,
-          sessions: sessions.length,
-        });
-      }
+      const outcome = this.scanSessionSourceOutcome(source, options);
+      outcomes.push(outcome);
+      if (outcome.status === "parsed") sessions.push(outcome.session);
+      else reportSessionSourceOutcome(this.name, outcome);
+      options?.onProgress?.({
+        total: sources.length,
+        processed: index + 1,
+        sessions: sessions.length,
+      });
     }
 
-    return sessions;
+    return { sources, outcomes, sessions };
   }
 
   getSessionMetaMap(): Map<string, SessionCacheMeta> {
@@ -379,12 +553,17 @@ export abstract class FileSystemSessionSource<
     const currentRefs = this.listSessionSources();
     const diff = diffSessionSources(currentRefs, cachedSessions, this.sessionMetaMap);
     const changedIds = [...new Set([...diff.changedIds, ...diff.removedIds])];
+    const sourceFailures = diff.sourceOutcomes.flatMap((outcome) =>
+      outcome.status === "failed" ? [outcome.failure] : [],
+    );
+    for (const outcome of diff.sourceOutcomes) reportSessionSourceOutcome(this.name, outcome);
 
     return {
-      hasChanges: changedIds.length > 0,
+      hasChanges: changedIds.length > 0 || sourceFailures.length > 0,
       changedIds,
       timestamp: Date.now(),
       refs: currentRefs,
+      sourceFailures,
     };
   }
 
@@ -406,12 +585,14 @@ export abstract class FileSystemSessionSource<
     for (const ref of sources) {
       currentIds.add(ref.sessionId);
       if (!changedSet.has(ref.sessionId)) continue;
-      const head = this.scanSessionSource(ref.sourcePath);
-      if (head) {
-        sessionMap.set(head.id, head);
-      } else {
+      const outcome = this.scanSessionSourceOutcome(ref);
+      if (outcome.status === "parsed") {
+        sessionMap.set(outcome.session.id, outcome.session);
+      } else if (outcome.status === "filtered" || outcome.status === "missing") {
         sessionMap.delete(ref.sessionId);
         this.sessionMetaMap.delete(ref.sessionId);
+      } else {
+        reportSessionSourceOutcome(this.name, outcome);
       }
     }
 
@@ -431,22 +612,53 @@ export abstract class FileSystemSessionSource<
 export abstract class SingleFileSessionSource<
   TMeta extends FileSessionMeta = FileSessionMeta,
 > extends FileSystemSessionSource<TMeta> {
+  private readonly pendingParseResults = new Map<
+    string,
+    ParseSessionResult<SessionHead> | undefined
+  >();
+
   protected abstract parseFileSessionHead(
     sourcePath: string,
     options?: AgentScanOptions,
   ): SessionHead | null;
 
+  protected parseFileSessionHeadResult(
+    sourcePath: string,
+    options?: AgentScanOptions,
+  ): ParseSessionResult<SessionHead> {
+    const head = this.parseFileSessionHead(sourcePath, options);
+    return head ? parsedSession(head) : skippedSession("source produced no session");
+  }
+
   protected abstract createFileSessionMeta(head: SessionHead, source: SessionSourceFile): TMeta;
 
   scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null {
-    const head = this.parseFileSessionHead(sourcePath, options);
-    if (head) {
+    const result = this.parseFileSessionHeadResult(sourcePath, options);
+    if (this.pendingParseResults.has(sourcePath)) {
+      this.pendingParseResults.set(sourcePath, result);
+    }
+    if (result.status === "parsed") {
       this.sessionMetaMap.set(
-        head.id,
-        this.createFileSessionMeta(head, this.sessionSourceFile(sourcePath)),
+        result.data.id,
+        this.createFileSessionMeta(result.data, this.sessionSourceFile(sourcePath)),
       );
     }
-    return head;
+    return getParsedSession(result);
+  }
+
+  protected override scanSessionSourceResult(
+    source: SessionSourceRef,
+    options?: AgentScanOptions,
+  ): ParseSessionResult<SessionHead> {
+    this.pendingParseResults.set(source.sourcePath, undefined);
+    try {
+      const head = this.scanSessionSource(source.sourcePath, options);
+      const result = this.pendingParseResults.get(source.sourcePath);
+      if (head) return result?.status === "parsed" ? result : parsedSession(head);
+      return result ?? skippedSession("source produced no session");
+    } finally {
+      this.pendingParseResults.delete(source.sourcePath);
+    }
   }
 
   protected buildFileSessionMeta<TExtra extends object>({

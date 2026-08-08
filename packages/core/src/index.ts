@@ -12,11 +12,13 @@ export type {
 export {
   BaseAgent,
   createRegisteredAgents,
+  createSessionSourceFailure,
   diffSessionSources,
   FileSystemSessionSource,
   getAgentInfoMap,
   getRegisteredAgents,
   registerAgent,
+  reportSessionSourceOutcome,
 } from "./agents/index.js";
 export type {
   AgentRoots,
@@ -24,6 +26,10 @@ export type {
   AgentScanProgress,
   ChangeCheckResult,
   SessionCacheMeta,
+  SessionSourceFailure,
+  SessionSourceAbsenceOutcome,
+  SessionSourceOutcome,
+  SessionSourceScanBatch,
   SessionSourceRef,
   SessionWatchPlan,
 } from "./agents/index.js";

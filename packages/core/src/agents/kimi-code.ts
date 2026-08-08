@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import {
   FileSystemSessionSource,
+  filteredSession,
   getParsedSession,
   matchesScanWindow,
   parsedSession,
@@ -519,15 +520,26 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
   }
 
   scanSessionSource(sourcePath: string): SessionHead | null {
+    return getParsedSession(this.parseSessionHeadResult(sourcePath));
+  }
+
+  protected override scanSessionSourceResult(
+    source: SessionSourceRef,
+  ): ParseSessionResult<SessionHead> {
+    return this.parseSessionHeadResult(source.sourcePath);
+  }
+
+  private parseSessionHeadResult(sourcePath: string): ParseSessionResult<SessionHead> {
     this.loadSessionIndex();
-    const source = getParsedSession(this.resolveSessionSourceResult(sourcePath));
-    if (!source) return null;
+    const result = this.resolveSessionSourceResult(sourcePath);
+    if (result.status !== "parsed") return result;
+    const source = result.data;
 
     const parsed = this.parseWire(source);
     const transcript = parsed.builder.finish(parsed.stats);
     if (transcript.messages.length === 0) {
       this.sessionMetaMap.delete(source.id);
-      return null;
+      return filteredSession("no visible messages");
     }
 
     const title = resolveSessionTitle(source.explicitTitle, parsed.firstUserTitle, null);
@@ -538,7 +550,7 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
       sourceFingerprint: this.sourceFingerprint(source),
     };
     this.sessionMetaMap.set(meta.id, meta);
-    return {
+    return parsedSession({
       id: meta.id,
       slug: `${this.name}/${meta.id}`,
       title: meta.title,
@@ -547,7 +559,7 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
       time_updated: meta.updatedAt,
       stats: transcript.stats,
       ...(Object.keys(parsed.modelUsage).length > 0 ? { model_usage: parsed.modelUsage } : {}),
-    };
+    });
   }
 
   getSessionData(sessionId: string): SessionDetail {

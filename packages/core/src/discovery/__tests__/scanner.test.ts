@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SessionHead, SessionDetail } from "../../types/index.js";
-import { BaseAgent, type SessionCacheMeta, type ChangeCheckResult } from "../../agents/base.js";
+import {
+  BaseAgent,
+  FileSystemSessionSource,
+  type ChangeCheckResult,
+  type SessionCacheMeta,
+  type SessionSourceRef,
+} from "../../agents/base.js";
 import { filterSessions } from "../scanner.js";
 
 // --- filterSessions tests (pure function) ---
@@ -58,6 +64,31 @@ class TestAgent extends BaseAgent {
 
   setSessionMetaMap(): void {
     // no-op
+  }
+}
+
+class FailingFileAgent extends FileSystemSessionSource {
+  readonly name = "files";
+  readonly displayName = "Files";
+
+  isAvailable(): boolean {
+    return true;
+  }
+
+  listSessionSources(): SessionSourceRef[] {
+    return [{ sessionId: "cached", sourcePath: "/cached.jsonl", fingerprint: "new" }];
+  }
+
+  scanSessionSource(): SessionHead | null {
+    throw new SyntaxError("Unexpected end of JSON input");
+  }
+
+  getSessionData(): SessionDetail {
+    return {} as SessionDetail;
+  }
+
+  getSessionWatchPlan() {
+    return { status: "not-needed" as const, reason: "scanner test adapter" };
   }
 }
 
@@ -172,10 +203,10 @@ vi.mock("../../utils/index.js", () => ({
 }));
 
 // Mock createRegisteredAgents to return controlled agents
-vi.mock("../../agents/index.js", () => ({
-  createRegisteredAgents: vi.fn(() => []),
-  BaseAgent: class {},
-}));
+vi.mock("../../agents/index.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../agents/index.js")>();
+  return { ...actual, createRegisteredAgents: vi.fn(() => []) };
+});
 
 import { ensureSessionTagsSync, finalizeAgentScan, scanSessions } from "../scanner.js";
 import { createRegisteredAgents } from "../../agents/index.js";
@@ -487,6 +518,34 @@ describe("scanSessions", () => {
       "test",
       [expect.objectContaining({ id: "recent" })],
       {},
+      { completeness: "partial" },
+    );
+  });
+
+  it("retains a cached head and writes a partial snapshot when full parsing fails", async () => {
+    const cached = makeSession("cached");
+    const meta = {
+      cached: {
+        id: "cached",
+        sourcePath: "/cached.jsonl",
+        sourceFingerprint: "old",
+      },
+    };
+    mockedLoadCachedSessions.mockReturnValue({
+      sessions: [cached],
+      meta,
+      timestamp: Date.now(),
+    });
+    mockedSaveCachedSessions.mockReturnValue(true);
+    mockedCreateRegisteredAgents.mockReturnValue([new FailingFileAgent()]);
+
+    const result = await scanSessions({ useCache: false, includeSmartTags: false });
+
+    expect(result.sessions).toEqual([expect.objectContaining({ id: "cached" })]);
+    expect(mockedSaveCachedSessions).toHaveBeenCalledWith(
+      "files",
+      [expect.objectContaining({ id: "cached" })],
+      meta,
       { completeness: "partial" },
     );
   });
