@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getPnpmInvocation } from "./lib/pnpm-process.mjs";
 
 export const QUALITY_TASKS = ["lint", "lint:fix", "format", "format:check"];
 export const QUALITY_PACKAGES = [
@@ -65,10 +66,11 @@ function listFiles(root, extension) {
 }
 
 function runPnpm(repoRoot, args) {
-  const executable = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+  const { executable, shell } = getPnpmInvocation();
   return execFileSync(executable, args, {
     cwd: repoRoot,
     encoding: "utf8",
+    shell,
     stdio: ["ignore", "pipe", "inherit"],
   });
 }

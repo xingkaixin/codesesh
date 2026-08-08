@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
+import { getPnpmInvocation } from "./lib/pnpm-process.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const wwwRoot = join(repoRoot, "apps/www");
@@ -13,10 +14,11 @@ afterEach(() => {
 });
 
 function runWwwTool(args) {
-  const executable = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+  const { executable, shell } = getPnpmInvocation();
   return spawnSync(executable, ["--dir", wwwRoot, "exec", ...args], {
     cwd: repoRoot,
     encoding: "utf8",
+    shell,
   });
 }
 

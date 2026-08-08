@@ -7,8 +7,14 @@ import {
   QUALITY_PACKAGES,
   QUALITY_TASKS,
 } from "./check-quality-task-coverage.mjs";
+import { getPnpmInvocation } from "./lib/pnpm-process.mjs";
 
 describe("CS-173: quality task coverage", () => {
+  it("runs pnpm command shims through the Windows shell", () => {
+    expect(getPnpmInvocation("win32")).toEqual({ executable: "pnpm.cmd", shell: true });
+    expect(getPnpmInvocation("linux")).toEqual({ executable: "pnpm", shell: false });
+  });
+
   it("requires every quality script in every critical package", () => {
     const complete = QUALITY_PACKAGES.map(({ name }) => ({
       name,
