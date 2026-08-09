@@ -40,6 +40,10 @@ class FakeFileSystemSource extends FileSystemSessionSource {
     this.sources = sources;
   }
 
+  walk(root: string) {
+    return this.walkFiles(root, () => true);
+  }
+
   isAvailable(): boolean {
     return true;
   }
@@ -116,6 +120,21 @@ describe("BaseAgent", () => {
 });
 
 describe("FileSystemSessionSource.scan", () => {
+  it("raises a root-level failure when source enumeration cannot complete", () => {
+    const agent = new FakeFileSystemSource();
+    try {
+      agent.walk("invalid\0root");
+      expect.unreachable("source enumeration should fail");
+    } catch (error) {
+      expect(error).toMatchObject({
+        name: "SessionScanError",
+        agentName: "fake",
+        stage: "enumerating session sources",
+        sourcePath: "invalid\0root",
+      });
+    }
+  });
+
   it("scans listed sources and reports progress while skipping invalid entries", () => {
     const agent = new FakeFileSystemSource([
       source("a"),

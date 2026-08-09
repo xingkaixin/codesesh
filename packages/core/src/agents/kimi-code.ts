@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import {
   FileSystemSessionSource,
@@ -374,11 +374,7 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
   isAvailable(): boolean {
     this.basePath = this.findBasePath();
     if (!this.basePath) return false;
-    try {
-      return this.listSessionDirs().length > 0;
-    } catch {
-      return false;
-    }
+    return this.listSessionDirs().length > 0;
   }
 
   private loadSessionIndex(): void {
@@ -399,23 +395,19 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
     if (!this.basePath) return [];
     const dirs: string[] = [];
 
-    try {
-      for (const bucket of readdirSync(this.basePath, { withFileTypes: true })) {
-        if (!bucket.isDirectory()) continue;
-        const bucketPath = join(this.basePath, bucket.name);
-        for (const session of readdirSync(bucketPath, { withFileTypes: true })) {
-          if (!session.isDirectory()) continue;
-          const sessionPath = join(bucketPath, session.name);
-          if (
-            existsSync(join(sessionPath, "state.json")) &&
-            existsSync(join(sessionPath, "agents", "main", "wire.jsonl"))
-          ) {
-            dirs.push(sessionPath);
-          }
+    for (const bucket of this.readSessionSourceDirectory(this.basePath)) {
+      if (!bucket.isDirectory()) continue;
+      const bucketPath = join(this.basePath, bucket.name);
+      for (const session of this.readSessionSourceDirectory(bucketPath)) {
+        if (!session.isDirectory()) continue;
+        const sessionPath = join(bucketPath, session.name);
+        if (
+          existsSync(join(sessionPath, "state.json")) &&
+          existsSync(join(sessionPath, "agents", "main", "wire.jsonl"))
+        ) {
+          dirs.push(sessionPath);
         }
       }
-    } catch {
-      return dirs;
     }
 
     return dirs;

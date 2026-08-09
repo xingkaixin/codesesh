@@ -3,12 +3,14 @@ import type { SessionHead, SessionDetail } from "../../types/index.js";
 import {
   BaseAgent,
   FileSystemSessionSource,
+  SessionScanError,
   type ChangeCheckResult,
   type SessionCacheMeta,
   type SessionSourceRef,
 } from "../../agents/base.js";
 import { filterSessions } from "../scanner.js";
 import { computeIdentityProjection, realFs } from "../../projects/index.js";
+import { setCoreDiagnostics } from "../../utils/diagnostics.js";
 
 // --- filterSessions tests (pure function) ---
 
@@ -235,6 +237,7 @@ const mockedSaveCachedSessions = vi.mocked(saveCachedSessions);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockedLoadCachedSessions.mockReturnValue(null);
 });
 
 function createTestAgent(overrides: {
@@ -340,6 +343,7 @@ describe("finalizeAgentScan", () => {
       options: { from: 200, includeSmartTags: true },
       timing: { total: 0 },
       agentStart: performance.now(),
+      completeness: "partial",
       onProgress,
     });
 
@@ -370,6 +374,7 @@ describe("finalizeAgentScan", () => {
       options: { includeSmartTags: false },
       timing: { total: 0 },
       agentStart: performance.now(),
+      completeness: "complete",
     });
 
     expect(result.refreshed).toBe(true);
@@ -399,6 +404,7 @@ describe("finalizeAgentScan", () => {
       options: { includeSmartTags: false },
       timing: { total: 0 },
       agentStart: performance.now(),
+      completeness: "complete",
     });
 
     expect(result.refreshed).toBeUndefined();
@@ -418,6 +424,7 @@ describe("finalizeAgentScan", () => {
       options: { includeSmartTags: false },
       timing: { total: 0 },
       agentStart: performance.now(),
+      completeness: "complete",
     });
 
     expect(mockedSaveCachedSessionChanges).toHaveBeenCalledWith(
@@ -449,6 +456,7 @@ describe("finalizeAgentScan", () => {
       options: {},
       timing: { total: 0 },
       agentStart: performance.now(),
+      completeness: "complete",
     });
 
     expect(result.heads[0]).toMatchObject({
@@ -502,6 +510,8 @@ describe("scanSessions", () => {
   });
 
   it("handles scan errors gracefully", async () => {
+    const events: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    setCoreDiagnostics({ warn: (event, detail) => events.push({ event, detail }) });
     mockedCreateRegisteredAgents.mockReturnValue([
       createTestAgent({
         name: "error",
@@ -510,9 +520,121 @@ describe("scanSessions", () => {
         shouldThrow: true,
       }),
     ]);
+    try {
+      const result = await scanSessions({});
+      expect(result.agents).toHaveLength(1);
+      expect(result.byAgent.error).toBeUndefined();
+      expect(result.scanFailures?.error).toEqual({
+        agentName: "error",
+        stage: "scanning sessions",
+        errorClass: "Error",
+        message: "scan failed",
+      });
+      expect(events).toContainEqual({
+        event: "agent.scan_failed",
+        detail: expect.objectContaining({
+          agent: "error",
+          stage: "scanning sessions",
+          error_class: "Error",
+          message: "scan failed",
+          baseline_retained: false,
+        }),
+      });
+    } finally {
+      setCoreDiagnostics(null);
+    }
+  });
+
+  it("keeps successful agents when another agent fails", async () => {
+    mockedCreateRegisteredAgents.mockReturnValue([
+      createTestAgent({ name: "failed", available: true, sessions: [], shouldThrow: true }),
+      createTestAgent({ name: "healthy", available: true, sessions: [makeSession("ok")] }),
+    ]);
+
     const result = await scanSessions({});
-    expect(result.agents).toHaveLength(1);
-    expect(result.byAgent.error).toEqual([]);
+
+    expect(result.sessions.map((session) => session.id)).toEqual(["ok"]);
+    expect(result.byAgent.healthy).toHaveLength(1);
+    expect(result.byAgent.failed).toBeUndefined();
+    expect(result.scanFailures?.failed).toBeDefined();
+  });
+
+  it("retains a cached baseline when source enumeration fails", async () => {
+    const cached = makeSession("cached");
+    mockedLoadCachedSessions.mockReturnValue({
+      sessions: [cached],
+      meta: { cached: { id: "cached", sourcePath: "/sessions/cached" } },
+      timestamp: 123,
+    });
+    const agent = createTestAgent({ name: "test", available: true, sessions: [] });
+    agent.checkForChanges = () => {
+      throw new SessionScanError("test", "enumerating session sources", {
+        cause: Object.assign(new Error("permission denied"), { code: "EACCES" }),
+        sourcePath: "/sessions",
+      });
+    };
+    mockedCreateRegisteredAgents.mockReturnValue([agent]);
+    const events: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    setCoreDiagnostics({ warn: (event, detail) => events.push({ event, detail }) });
+
+    try {
+      const result = await scanSessions({ useCache: true });
+
+      expect(result.sessions.map((session) => session.id)).toEqual(["cached"]);
+      expect(result.byAgent.test?.map((session) => session.id)).toEqual(["cached"]);
+      expect(result.scanFailures?.test).toEqual({
+        agentName: "test",
+        stage: "enumerating session sources",
+        sourcePath: "/sessions",
+        errorClass: "EACCES",
+        message: "permission denied",
+      });
+      expect(events).toContainEqual({
+        event: "agent.scan_failed",
+        detail: expect.objectContaining({
+          agent: "test",
+          source_path: "/sessions",
+          error_class: "EACCES",
+          baseline_retained: true,
+        }),
+      });
+    } finally {
+      setCoreDiagnostics(null);
+    }
+  });
+
+  it("does not publish a false empty baseline when a forced scan fails", async () => {
+    const cached = makeSession("cached");
+    mockedLoadCachedSessions.mockReturnValue({ sessions: [cached], meta: {}, timestamp: 123 });
+    mockedCreateRegisteredAgents.mockReturnValue([
+      createTestAgent({ name: "test", available: true, sessions: [], shouldThrow: true }),
+    ]);
+
+    const result = await scanSessions({ useCache: false });
+
+    expect(result.byAgent.test).toBeUndefined();
+    expect(result.scanFailures?.test).toEqual(
+      expect.objectContaining({ stage: "scanning sessions", message: "scan failed" }),
+    );
+  });
+
+  it("recovers from an agent-level failure in the same process", async () => {
+    const agent = createTestAgent({ name: "test", available: true, sessions: [] });
+    agent.scan = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new SessionScanError("test", "opening the database");
+      })
+      .mockReturnValue([makeSession("recovered")]);
+    mockedCreateRegisteredAgents.mockReturnValue([agent]);
+
+    const failed = await scanSessions({ useCache: false });
+    const recovered = await scanSessions({ useCache: false });
+
+    expect(failed.scanFailures?.test?.stage).toBe("opening the database");
+    expect(failed.byAgent.test).toBeUndefined();
+    expect(recovered.scanFailures).toBeUndefined();
+    expect(recovered.byAgent.test?.map((session) => session.id)).toEqual(["recovered"]);
   });
 
   it("calls onProgress for complete phase", async () => {

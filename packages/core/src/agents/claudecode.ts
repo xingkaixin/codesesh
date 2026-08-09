@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
 import {
   SingleFileSessionSource,
@@ -152,15 +152,16 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
   isAvailable(): boolean {
     this.basePath = this.findBasePath();
     if (!this.basePath) return false;
-    try {
-      for (const entry of readdirSync(this.basePath)) {
-        const dir = join(this.basePath, entry);
-        if (existsSync(dir) && readdirSync(dir).some((f) => f.endsWith(".jsonl"))) {
-          return true;
-        }
+    for (const entry of this.readSessionSourceDirectory(this.basePath)) {
+      if (!entry.isDirectory()) continue;
+      const directory = join(this.basePath, entry.name);
+      if (
+        this.readSessionSourceDirectory(directory).some(
+          (child) => child.isFile() && child.name.endsWith(".jsonl"),
+        )
+      ) {
+        return true;
       }
-    } catch {
-      // ignore
     }
     return false;
   }
@@ -337,13 +338,9 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
 
   private listProjectDirs(): string[] {
     if (!this.basePath) return [];
-    try {
-      return readdirSync(this.basePath)
-        .map((e) => join(this.basePath!, e))
-        .filter((p) => existsSync(p));
-    } catch {
-      return [];
-    }
+    return this.readSessionSourceDirectory(this.basePath)
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(this.basePath!, entry.name));
   }
 
   private ensureChildIndex(): void {

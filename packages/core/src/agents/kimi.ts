@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
 import {
   FileSystemSessionSource,
@@ -227,39 +227,26 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     this.basePath = this.findBasePath();
     if (!this.basePath) return false;
     this.loadKimiConfig();
-    try {
-      return this.listSessionDirs().length > 0;
-    } catch {
-      // ignore
-    }
-    return false;
+    return this.listSessionDirs().length > 0;
   }
 
   /** Walk sessions/{project_hash}/{session_id}/ and find valid session dirs */
   private listSessionDirs(): string[] {
     if (!this.basePath) return [];
     const dirs: string[] = [];
-    try {
-      for (const hashEntry of readdirSync(this.basePath, { withFileTypes: true })) {
-        if (!hashEntry.isDirectory()) continue;
-        const hashPath = join(this.basePath, hashEntry.name);
-        try {
-          for (const sessionEntry of readdirSync(hashPath, { withFileTypes: true })) {
-            if (!sessionEntry.isDirectory()) continue;
-            const sessionPath = join(hashPath, sessionEntry.name);
-            if (
-              existsSync(join(sessionPath, "metadata.json")) ||
-              existsSync(join(sessionPath, "state.json"))
-            ) {
-              dirs.push(sessionPath);
-            }
-          }
-        } catch {
-          // skip unreadable hash dirs
+    for (const hashEntry of this.readSessionSourceDirectory(this.basePath)) {
+      if (!hashEntry.isDirectory()) continue;
+      const hashPath = join(this.basePath, hashEntry.name);
+      for (const sessionEntry of this.readSessionSourceDirectory(hashPath)) {
+        if (!sessionEntry.isDirectory()) continue;
+        const sessionPath = join(hashPath, sessionEntry.name);
+        if (
+          existsSync(join(sessionPath, "metadata.json")) ||
+          existsSync(join(sessionPath, "state.json"))
+        ) {
+          dirs.push(sessionPath);
         }
       }
-    } catch {
-      // skip unreadable base
     }
     return dirs;
   }
