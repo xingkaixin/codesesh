@@ -48,6 +48,8 @@ export type ScanRefreshWorkerMessage =
       meta: Record<string, SessionCacheMeta>;
       removedMetaIds: string[];
       sourceFailures: SessionSourceFailure[];
+      completeness: SessionSnapshotCompleteness;
+      explicitRemovedSessionIds: string[];
       durationMs: number;
     }
   | {
@@ -192,6 +194,7 @@ function syncAgentSources(
   finalizeSessionIds: string[];
   sourceCount: number;
   removedCount: number;
+  explicitRemovedSessionIds: string[];
   sourceFailures: SessionSourceFailure[];
 } {
   const sessionMap = new Map(cachedSessions.map((session) => [session.id, session]));
@@ -216,6 +219,7 @@ function syncAgentSources(
   );
   for (const outcome of sourceOutcomes) logAbsentSourceOutcome(agent.name, outcome);
   const appliedIds = new Set(removedIds);
+  const explicitRemovedSessionIds = new Set(removedIds);
 
   rescanIds.forEach((sessionId, index) => {
     const source = sourceById.get(sessionId);
@@ -228,6 +232,7 @@ function syncAgentSources(
       sessionMap.delete(sessionId);
       agent.getSessionMetaMap().delete(sessionId);
       appliedIds.add(sessionId);
+      explicitRemovedSessionIds.add(sessionId);
       appLogger.info("agent.session_source_outcome", {
         agent: agent.name,
         session_id: sessionId,
@@ -262,6 +267,7 @@ function syncAgentSources(
     finalizeSessionIds,
     sourceCount: sourceRefs.length,
     removedCount: removedIds.length,
+    explicitRemovedSessionIds: [...explicitRemovedSessionIds],
     sourceFailures,
   };
 }
@@ -458,6 +464,7 @@ async function run(
   let sessions: SessionHead[];
   let changedIds: string[] | undefined;
   let sourceFailures: SessionSourceFailure[] = [];
+  let explicitRemovedSessionIds: string[] = [];
   let finalizeSessionIds: ReadonlySet<string> | undefined;
   let backfillOrder: SessionHead[] | undefined;
   let backfillCursorIndex = -1;
@@ -488,6 +495,7 @@ async function run(
     finalizeSessionIds = new Set(result.finalizeSessionIds);
     sourceSyncDetails = result;
     sourceFailures = result.sourceFailures;
+    explicitRemovedSessionIds = result.explicitRemovedSessionIds;
   } else if (data.changedIds) {
     sessions = await Promise.resolve(agent.incrementalScan(previousSessions, data.changedIds));
   } else {
@@ -500,6 +508,10 @@ async function run(
   }
 
   sessions = attachMissingProjectIdentities(sessions);
+  const completeness: SessionSnapshotCompleteness =
+    data.scanOptions.from == null && data.scanOptions.to == null && sourceFailures.length === 0
+      ? "complete"
+      : "partial";
   if (data.checkpoint) {
     const ordered = sortSessions(sessions);
     parentPort?.postMessage({
@@ -510,12 +522,7 @@ async function run(
         stage: "scanned",
         sessions: ordered,
         meta: buildAgentCacheMeta(agent, new Set(ordered.map((session) => session.id))),
-        completeness:
-          data.scanOptions.from == null &&
-          data.scanOptions.to == null &&
-          sourceFailures.length === 0
-            ? "complete"
-            : "partial",
+        completeness,
       },
     } satisfies ScanRefreshWorkerMessage);
     sessions = ordered;
@@ -653,6 +660,8 @@ async function run(
     meta: metaDiff.changes,
     removedMetaIds: metaDiff.removedIds,
     sourceFailures,
+    completeness,
+    explicitRemovedSessionIds,
     durationMs: performance.now() - startedAt,
   } satisfies ScanRefreshWorkerMessage);
 }

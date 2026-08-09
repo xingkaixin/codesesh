@@ -13,6 +13,7 @@ import {
   type SessionCacheMeta,
   type SessionHeadChange,
   type SessionHead,
+  type SessionSnapshotCompleteness,
 } from "@codesesh/core";
 import { appLogger } from "./logging.js";
 
@@ -45,6 +46,8 @@ export type SearchIndexWorkerJob =
       agentName: string;
       sessions: SessionHead[];
       meta: Record<string, SessionCacheMeta>;
+      completeness: SessionSnapshotCompleteness;
+      removedSessionIds: string[];
       saveCache?: boolean;
       searchIndexOptions?: SearchIndexSyncOptions;
     }
@@ -79,6 +82,8 @@ const jobs =
     agentName,
     sessions: data.sessionsByAgent[agentName] ?? [],
     meta: data.metaByAgent[agentName] ?? {},
+    completeness: "complete",
+    removedSessionIds: [],
   }));
 
 function jobSessionCount(job: SearchIndexWorkerJob): number {
@@ -88,6 +93,9 @@ function jobSessionCount(job: SearchIndexWorkerJob): number {
 function searchIndexOptions(job: SearchIndexWorkerJob): SearchIndexSyncOptions {
   return {
     ...job.searchIndexOptions,
+    ...(job.kind === "full"
+      ? { completeness: job.completeness, removedSessionIds: job.removedSessionIds }
+      : {}),
     detailVersions: Object.fromEntries(
       Object.entries(job.meta).map(([sessionId, meta]) => [sessionId, sessionDetailVersion(meta)]),
     ),
@@ -133,7 +141,10 @@ function runJob(job: SearchIndexWorkerJob, agent: WorkerAgent): SearchIndexPersi
 
   if (
     job.saveCache &&
-    !saveCachedSessions(job.agentName, job.sessions, job.meta, { completeness: "complete" })
+    !saveCachedSessions(job.agentName, job.sessions, job.meta, {
+      completeness: job.completeness,
+      removedSessionIds: job.removedSessionIds,
+    })
   ) {
     return "cache";
   }
