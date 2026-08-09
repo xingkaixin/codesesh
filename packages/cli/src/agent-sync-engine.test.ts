@@ -129,7 +129,7 @@ function makeWorkerRunner(): WorkerRunner {
     run: vi.fn(async (_agentName, payload) =>
       workerResult(
         {
-          sessions: payload.derivedOnly ? payload.previousSessions : [],
+          sessions: payload.operation.kind === "recompute-derived" ? payload.previousSessions : [],
           meta: payload.meta,
         },
         payload.scanOptions.from == null && payload.scanOptions.to == null ? "complete" : "partial",
@@ -408,7 +408,7 @@ describe("AgentSyncEngine", () => {
 
     expect(workerRunner.run).toHaveBeenCalledWith(
       "codex",
-      expect.objectContaining({ derivedOnly: true, changedIds: [] }),
+      expect.objectContaining({ operation: { kind: "recompute-derived" } }),
     );
     expect(engine.snapshot().sessions[0]).toMatchObject({
       smart_tags: ["docs"],
@@ -690,7 +690,7 @@ describe("AgentSyncEngine", () => {
       "codex",
       expect.objectContaining({
         previousSessions: [steady, previous],
-        changedIds: null,
+        operation: { kind: "full-scan" },
       }),
     );
     expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
@@ -1066,7 +1066,7 @@ describe("AgentSyncEngine", () => {
     expect(workerRunner.run).toHaveBeenCalledTimes(2);
     expect(workerRunner.run).toHaveBeenLastCalledWith(
       "codex",
-      expect.objectContaining({ derivedOnly: true, changedIds: [] }),
+      expect.objectContaining({ operation: { kind: "recompute-derived" } }),
     );
   });
 });
