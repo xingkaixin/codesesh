@@ -19,6 +19,11 @@ export type RemoteTransport =
   /** The operator accepted plaintext on an untrusted network. */
   | { kind: "plaintext" };
 
+export interface RemoteAccessPolicy {
+  bindCategory: "loopback" | "network";
+  authenticationRequired: boolean;
+}
+
 export interface RemoteTransportRequest {
   hostname: string;
   tlsCertPath?: string;
@@ -65,6 +70,17 @@ export function resolveRemoteTransport(request: RemoteTransportRequest): RemoteT
 /** Whether the transport keeps request and response bodies off the wire in the clear. */
 export function isConfidentialTransport(transport: RemoteTransport): boolean {
   return transport.kind !== "plaintext";
+}
+
+export function resolveRemoteAccessPolicy(
+  hostname: string,
+  transport: RemoteTransport,
+): RemoteAccessPolicy {
+  const bindCategory = isLoopbackHostname(hostname) ? "loopback" : "network";
+  return {
+    bindCategory,
+    authenticationRequired: bindCategory === "network" || transport.kind !== "loopback",
+  };
 }
 
 const FORWARDED_PROTO_HEADER = "X-Forwarded-Proto";

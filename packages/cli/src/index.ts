@@ -7,7 +7,7 @@ import { VERSION } from "./version.js";
 import { appLogger } from "./logging.js";
 import { buildSessionIndexOutput } from "./session-index-output.js";
 import {
-  isLoopbackHostname,
+  resolveRemoteAccessPolicy,
   resolveRemoteTransport,
   type RemoteTransport,
 } from "./remote-access.js";
@@ -129,13 +129,6 @@ const main = defineCommand({
     const hostname = args.host as string;
     const remoteAccess = args["remote-access"] as boolean;
 
-    if (!isLoopbackHostname(hostname) && !remoteAccess) {
-      console.error(
-        `Refusing to expose CodeSesh on ${hostname} without authentication. Add --remote-access to continue.`,
-      );
-      process.exit(1);
-    }
-
     let transport: RemoteTransport;
     try {
       transport = resolveRemoteTransport({
@@ -146,6 +139,13 @@ const main = defineCommand({
       });
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+
+    if (resolveRemoteAccessPolicy(hostname, transport).authenticationRequired && !remoteAccess) {
+      console.error(
+        `Refusing to expose CodeSesh on ${hostname} without authentication. Add --remote-access to continue.`,
+      );
       process.exit(1);
     }
 

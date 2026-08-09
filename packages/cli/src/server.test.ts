@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/core/contract";
+import { appLogger } from "./logging.js";
 import { createServer } from "./server.js";
 import { resolveRemoteTransport } from "./remote-access.js";
 
@@ -462,6 +463,62 @@ describe("createServer", () => {
       await app.shutdown();
       warnSpy.mockRestore();
     }
+  });
+
+  it("CS-174: authenticates a loopback listener behind a trusted proxy", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const logSpy = vi.spyOn(appLogger, "info");
+    const app = await createServer(0, createStore(), {
+      hostname: "127.0.0.1",
+      remoteAccess: true,
+      remoteAccessToken: "proxy-token",
+      transport: { kind: "trusted-proxy" },
+    });
+    const origin = `http://127.0.0.1:${new URL(app.url).port}`;
+    const proxyHeaders = { "X-Forwarded-Proto": "https" };
+
+    try {
+      expect(logSpy).toHaveBeenCalledWith("server.access_policy", {
+        bind_category: "loopback",
+        transport: "trusted-proxy",
+        authentication: "token",
+      });
+      expect((await fetch(`${origin}/api/agents`, { headers: proxyHeaders })).status).toBe(401);
+      expect(
+        (
+          await fetch(`${origin}/api/agents`, {
+            headers: { ...proxyHeaders, Authorization: "Bearer proxy-token" },
+          })
+        ).status,
+      ).toBe(200);
+      const events = await fetch(`${origin}/api/events?access_token=proxy-token`, {
+        headers: proxyHeaders,
+      });
+      expect(events.headers.get("Content-Type")).toContain("text/event-stream");
+      await events.body?.cancel();
+      expect(
+        (
+          await fetch(`${origin}/api/logs?access_token=proxy-token`, {
+            method: "POST",
+            headers: { ...proxyHeaders, "Content-Type": "application/json" },
+            body: JSON.stringify({ event: "test" }),
+          })
+        ).status,
+      ).toBe(401);
+    } finally {
+      await app.shutdown();
+      warnSpy.mockRestore();
+      logSpy.mockRestore();
+    }
+  });
+
+  it("CS-174: refuses an unauthenticated loopback trusted proxy", async () => {
+    await expect(
+      createServer(0, createStore(), {
+        hostname: "127.0.0.1",
+        transport: { kind: "trusted-proxy" },
+      }),
+    ).rejects.toThrow("Add --remote-access");
   });
 
   it("fails on an occupied port when fallback is disabled", async () => {

@@ -15,10 +15,11 @@ import { appLogger } from "./logging.js";
 import { validateLoopbackAuthority } from "./loopback-authority.js";
 import {
   createRemoteAccessToken,
-  isLoopbackHostname,
   REMOTE_ACCESS_QUERY_PARAM,
   remoteAccessAuth,
   requireProxyTls,
+  resolveRemoteAccessPolicy,
+  resolveRemoteTransport,
   type RemoteTransport,
 } from "./remote-access.js";
 import type { ScanEventSource } from "./scan-source.js";
@@ -104,21 +105,26 @@ export async function createServer(
 ): Promise<{ url: string; shutdown: () => Promise<void> }> {
   const app = new Hono<{ Bindings: HttpBindings }>();
   const hostname = options.hostname ?? "127.0.0.1";
-  const isLoopback = isLoopbackHostname(hostname);
-  const transport: RemoteTransport =
-    options.transport ?? (isLoopback ? { kind: "loopback" } : { kind: "plaintext" });
-  const remoteAccessToken = !isLoopback
+  const transport: RemoteTransport = options.transport ?? resolveRemoteTransport({ hostname });
+  const accessPolicy = resolveRemoteAccessPolicy(hostname, transport);
+  const remoteAccessToken = accessPolicy.authenticationRequired
     ? (options.remoteAccessToken ?? (options.remoteAccess ? createRemoteAccessToken() : null))
     : null;
   let actualPort: number | null = null;
 
-  if (!isLoopback && !remoteAccessToken) {
+  appLogger.info("server.access_policy", {
+    bind_category: accessPolicy.bindCategory,
+    transport: transport.kind,
+    authentication: remoteAccessToken ? "token" : "none",
+  });
+
+  if (accessPolicy.authenticationRequired && !remoteAccessToken) {
     throw new Error(
       `Refusing to expose CodeSesh on ${hostname} without authentication. Add --remote-access to continue.`,
     );
   }
 
-  if (isLoopback) {
+  if (accessPolicy.bindCategory === "loopback") {
     app.use("*", async (c, next) => {
       const decision = validateLoopbackAuthority(c.env.incoming.rawHeaders, hostname, actualPort);
       if (!decision.allowed) {
@@ -235,9 +241,10 @@ export async function createServer(
   // A trusted proxy publishes its own https origin, so only direct TLS changes
   // the scheme CodeSesh prints for itself.
   const scheme = transport.kind === "tls" ? "https" : "http";
-  const baseUrl = isLoopback
-    ? `${scheme}://localhost:${actualPort}`
-    : `${scheme}://${hostname}:${actualPort}`;
+  const baseUrl =
+    accessPolicy.bindCategory === "loopback"
+      ? `${scheme}://localhost:${actualPort}`
+      : `${scheme}://${hostname}:${actualPort}`;
   const url = remoteAccessToken
     ? `${baseUrl}/?${REMOTE_ACCESS_QUERY_PARAM}=${encodeURIComponent(remoteAccessToken)}`
     : baseUrl;
@@ -249,7 +256,7 @@ export async function createServer(
     transport: transport.kind,
   });
 
-  if (!isLoopback) {
+  if (accessPolicy.authenticationRequired) {
     appLogger.warn("server.listen.remote_access", {
       hostname,
       port: actualPort,
