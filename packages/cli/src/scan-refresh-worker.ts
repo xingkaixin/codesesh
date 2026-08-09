@@ -559,29 +559,31 @@ async function run(
     agent,
     sessions,
     reportProgress,
-    (checkpoint) => {
-      let nextCheckpoint = checkpoint;
-      if (checkpoint.stage === "finalizing" && backfillOrder && backfillPositionById) {
-        let nextCursorIndex = backfillCursorIndex;
-        for (const { session } of checkpoint.changes) {
-          const index = backfillPositionById.get(session.id);
-          if (index != null && index > nextCursorIndex) nextCursorIndex = index;
+    data.checkpoint
+      ? (checkpoint) => {
+          let nextCheckpoint = checkpoint;
+          if (checkpoint.stage === "finalizing" && backfillOrder && backfillPositionById) {
+            let nextCursorIndex = backfillCursorIndex;
+            for (const { session } of checkpoint.changes) {
+              const index = backfillPositionById.get(session.id);
+              if (index != null && index > nextCursorIndex) nextCursorIndex = index;
+            }
+            if (nextCursorIndex > backfillCursorIndex) {
+              backfillCursorIndex = nextCursorIndex;
+              nextCheckpoint = {
+                ...checkpoint,
+                backfillCursor: backfillOrder[nextCursorIndex]?.id,
+              };
+            }
+          }
+          parentPort?.postMessage({
+            type: "checkpoint",
+            requestId: data.requestId,
+            generation: baseline.generation,
+            checkpoint: nextCheckpoint,
+          } satisfies ScanRefreshWorkerMessage);
         }
-        if (nextCursorIndex > backfillCursorIndex) {
-          backfillCursorIndex = nextCursorIndex;
-          nextCheckpoint = {
-            ...checkpoint,
-            backfillCursor: backfillOrder[nextCursorIndex]?.id,
-          };
-        }
-      }
-      parentPort?.postMessage({
-        type: "checkpoint",
-        requestId: data.requestId,
-        generation: baseline.generation,
-        checkpoint: nextCheckpoint,
-      } satisfies ScanRefreshWorkerMessage);
-    },
+      : undefined,
     finalizeSessionIds,
     (batchTiming) => {
       finalizationTiming.batches += 1;

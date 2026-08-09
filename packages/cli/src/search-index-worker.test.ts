@@ -3,12 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   workerData: {} as Record<string, unknown>,
   postMessage: vi.fn(),
+  commitDurableSessionPublication: vi.fn(),
   createRegisteredAgents: vi.fn(),
   markAgentCacheInitialized: vi.fn(),
-  saveCachedSessionChanges: vi.fn(),
-  saveCachedSessions: vi.fn(),
   syncSessionSearchIndex: vi.fn(),
-  syncSessionSearchIndexChanges: vi.fn(),
+  appLoggerInfo: vi.fn(),
   appLoggerWarn: vi.fn(),
   appLoggerError: vi.fn(),
 }));
@@ -21,19 +20,21 @@ vi.mock("node:worker_threads", () => ({
 }));
 
 vi.mock("@codesesh/core", () => ({
+  commitDurableSessionPublication: mocks.commitDurableSessionPublication,
   createRegisteredAgents: mocks.createRegisteredAgents,
   markAgentCacheInitialized: mocks.markAgentCacheInitialized,
-  saveCachedSessionChanges: mocks.saveCachedSessionChanges,
-  saveCachedSessions: mocks.saveCachedSessions,
   sessionDetailVersion: (meta: { id?: string }) => `detail:${meta.id ?? "none"}`,
   syncSessionSearchIndex: mocks.syncSessionSearchIndex,
-  syncSessionSearchIndexChanges: mocks.syncSessionSearchIndexChanges,
   // diagnostics-bridge.js (imported by the worker for its side effect) needs this export.
   setCoreDiagnostics: vi.fn(),
 }));
 
 vi.mock("./logging.js", () => ({
-  appLogger: { warn: mocks.appLoggerWarn, error: mocks.appLoggerError },
+  appLogger: {
+    info: mocks.appLoggerInfo,
+    warn: mocks.appLoggerWarn,
+    error: mocks.appLoggerError,
+  },
 }));
 
 function makeAgent() {
@@ -51,8 +52,11 @@ async function runWorker() {
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
-  mocks.saveCachedSessions.mockReturnValue(true);
-  mocks.saveCachedSessionChanges.mockReturnValue(true);
+  mocks.commitDurableSessionPublication.mockReturnValue({
+    status: "committed",
+    publicationId: "publication-default",
+    searchIndex: { indexed: 0, skipped: 0 },
+  });
   mocks.workerData = {
     context: "refresh",
     agentNames: [],
@@ -96,7 +100,16 @@ describe("search index worker", () => {
     const sessions = [{ id: "s1" }, { id: "s2" }];
     const meta = { s1: { id: "s1" } };
     mocks.createRegisteredAgents.mockReturnValue([agent]);
-    mocks.syncSessionSearchIndex.mockReturnValue({ indexed: 2, skipped: 0 });
+    mocks.commitDurableSessionPublication.mockImplementation(
+      (_publication: unknown, readSession: (id: string) => unknown) => {
+        expect(readSession("s1")).toEqual({ id: "s1" });
+        return {
+          status: "committed",
+          publicationId: "publication-full",
+          searchIndex: { indexed: 2, skipped: 0 },
+        };
+      },
+    );
     mocks.workerData = {
       context: "refresh",
       agentNames: [],
@@ -111,6 +124,7 @@ describe("search index worker", () => {
           meta,
           completeness: "complete",
           removedSessionIds: [],
+          publicationId: "scan.refresh:codex:1",
           saveCache: true,
           searchIndexOptions: { force: true },
         },
@@ -119,20 +133,18 @@ describe("search index worker", () => {
 
     await runWorker();
 
-    expect(mocks.saveCachedSessions).toHaveBeenCalledWith("codex", sessions, meta, {
-      completeness: "complete",
-      removedSessionIds: [],
-    });
-    expect(mocks.syncSessionSearchIndex).toHaveBeenCalledWith(
-      "codex",
-      sessions,
-      expect.any(Function),
+    expect(mocks.commitDurableSessionPublication).toHaveBeenCalledWith(
       {
-        force: true,
+        kind: "snapshot",
+        agentName: "codex",
+        sessions,
+        meta,
         completeness: "complete",
         removedSessionIds: [],
-        detailVersions: { s1: "detail:s1" },
+        publicationId: "scan.refresh:codex:1",
       },
+      expect.any(Function),
+      { force: true },
     );
     expect(mocks.markAgentCacheInitialized).toHaveBeenCalledWith("codex");
     expect(mocks.appLoggerWarn).not.toHaveBeenCalled();
@@ -142,7 +154,11 @@ describe("search index worker", () => {
     const agent = makeAgent();
     const sessions = [{ id: "recent" }];
     mocks.createRegisteredAgents.mockReturnValue([agent]);
-    mocks.syncSessionSearchIndex.mockReturnValue({ indexed: 1, skipped: 0 });
+    mocks.commitDurableSessionPublication.mockReturnValue({
+      status: "committed",
+      publicationId: "publication-partial",
+      searchIndex: { indexed: 1, skipped: 0 },
+    });
     mocks.workerData = {
       context: "refresh",
       agentNames: [],
@@ -164,23 +180,17 @@ describe("search index worker", () => {
 
     await runWorker();
 
-    expect(mocks.saveCachedSessions).toHaveBeenCalledWith(
-      "codex",
-      sessions,
-      {},
+    expect(mocks.commitDurableSessionPublication).toHaveBeenCalledWith(
       {
+        kind: "snapshot",
+        agentName: "codex",
+        sessions,
+        meta: {},
         completeness: "partial",
         removedSessionIds: ["removed"],
       },
-    );
-    expect(mocks.syncSessionSearchIndex).toHaveBeenCalledWith(
-      "codex",
-      sessions,
       expect.any(Function),
-      expect.objectContaining({
-        completeness: "partial",
-        removedSessionIds: ["removed"],
-      }),
+      undefined,
     );
   });
 
@@ -190,7 +200,11 @@ describe("search index worker", () => {
     const meta = { s1: { id: "s1" } };
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     // One session (e.g. its data failed to load) is left unindexed.
-    mocks.syncSessionSearchIndex.mockReturnValue({ indexed: 1, skipped: 1 });
+    mocks.commitDurableSessionPublication.mockReturnValue({
+      status: "committed",
+      publicationId: "publication-incomplete",
+      searchIndex: { indexed: 1, skipped: 1 },
+    });
     mocks.workerData = {
       context: "refresh",
       agentNames: [],
@@ -226,15 +240,14 @@ describe("search index worker", () => {
     const changes = [{ id: "updated", session: { id: "updated" } }];
     const removedSessionIds = ["removed"];
     mocks.createRegisteredAgents.mockReturnValue([agent]);
-    mocks.syncSessionSearchIndexChanges.mockImplementation(
-      (
-        _name: string,
-        _changes: unknown[],
-        _removed: string[],
-        readSession: (id: string) => unknown,
-      ) => {
+    mocks.commitDurableSessionPublication.mockImplementation(
+      (_publication: unknown, readSession: (id: string) => unknown) => {
         expect(readSession("updated")).toEqual({ id: "updated" });
-        return { indexed: 1, skipped: 0 };
+        return {
+          status: "committed",
+          publicationId: "publication-changes",
+          searchIndex: { indexed: 1, skipped: 0 },
+        };
       },
     );
     mocks.workerData = {
@@ -257,18 +270,16 @@ describe("search index worker", () => {
 
     await runWorker();
 
-    expect(mocks.saveCachedSessionChanges).toHaveBeenCalledWith(
-      "codex",
-      changes,
-      removedSessionIds,
-      {},
-    );
-    expect(mocks.syncSessionSearchIndexChanges).toHaveBeenCalledWith(
-      "codex",
-      changes,
-      removedSessionIds,
+    expect(mocks.commitDurableSessionPublication).toHaveBeenCalledWith(
+      {
+        kind: "changes",
+        agentName: "codex",
+        changes,
+        removedSessionIds,
+        meta: {},
+      },
       expect.any(Function),
-      { force: true, detailVersions: {} },
+      { force: true },
     );
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({ type: "done", sessions: 1 }),
@@ -278,7 +289,11 @@ describe("search index worker", () => {
   it("CS-137: reports a failed cache write instead of settling the batch as done", async () => {
     const agent = makeAgent();
     mocks.createRegisteredAgents.mockReturnValue([agent]);
-    mocks.saveCachedSessionChanges.mockReturnValue(false);
+    mocks.commitDurableSessionPublication.mockReturnValue({
+      status: "rolled-back",
+      publicationId: "publication-cache-failure",
+      stage: "cache",
+    });
     mocks.workerData = {
       context: "scan.refresh",
       agentNames: [],
@@ -298,11 +313,11 @@ describe("search index worker", () => {
 
     await runWorker();
 
-    expect(mocks.syncSessionSearchIndexChanges).not.toHaveBeenCalled();
     expect(mocks.postMessage).toHaveBeenCalledExactlyOnceWith({
       type: "persist-failed",
       context: "scan.refresh",
       stage: "cache",
+      publicationId: "publication-cache-failure",
       agentName: "codex",
       sessions: 1,
     });
@@ -311,7 +326,11 @@ describe("search index worker", () => {
   it("CS-137: reports a failed index write and skips the remaining jobs", async () => {
     const agent = makeAgent();
     mocks.createRegisteredAgents.mockReturnValue([agent]);
-    mocks.syncSessionSearchIndex.mockReturnValue(null);
+    mocks.commitDurableSessionPublication.mockReturnValue({
+      status: "rolled-back",
+      publicationId: "publication-search-failure",
+      stage: "search_index",
+    });
     mocks.workerData = {
       context: "scan.refresh",
       agentNames: [],
@@ -344,13 +363,21 @@ describe("search index worker", () => {
     await runWorker();
 
     expect(mocks.markAgentCacheInitialized).not.toHaveBeenCalled();
-    expect(mocks.syncSessionSearchIndex).toHaveBeenCalledOnce();
+    expect(mocks.commitDurableSessionPublication).toHaveBeenCalledOnce();
     expect(mocks.postMessage).toHaveBeenCalledExactlyOnceWith({
       type: "persist-failed",
       context: "scan.refresh",
       stage: "search_index",
+      publicationId: "publication-search-failure",
       agentName: "codex",
       sessions: 2,
     });
+    expect(mocks.appLoggerError).toHaveBeenCalledWith(
+      "search_index.persist_failed",
+      expect.objectContaining({
+        stage: "search_index",
+        publication_id: "publication-search-failure",
+      }),
+    );
   });
 });

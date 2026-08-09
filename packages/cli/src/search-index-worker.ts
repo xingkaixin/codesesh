@@ -1,23 +1,23 @@
 import "./diagnostics-bridge.js";
+import { randomUUID } from "node:crypto";
 import { parentPort, workerData } from "node:worker_threads";
 import {
+  commitDurableSessionPublication,
   createRegisteredAgents,
   markAgentCacheInitialized,
-  saveCachedSessionChanges,
-  saveCachedSessions,
   sessionDetailVersion,
   syncSessionSearchIndex,
-  syncSessionSearchIndexChanges,
   type SearchIndexSyncResult,
   type SearchIndexSyncOptions,
   type SessionCacheMeta,
   type SessionHeadChange,
   type SessionHead,
   type SessionSnapshotCompleteness,
+  type DurableSessionPublicationFailureStage,
 } from "@codesesh/core";
 import { appLogger } from "./logging.js";
 
-export type SearchIndexPersistStage = "cache" | "search_index";
+export type SearchIndexPersistStage = DurableSessionPublicationFailureStage;
 
 export type SearchIndexWorkerMessage =
   | {
@@ -29,6 +29,7 @@ export type SearchIndexWorkerMessage =
       type: "persist-failed";
       context: string;
       stage: SearchIndexPersistStage;
+      publicationId: string;
       agentName: string;
       sessions: number;
     }
@@ -48,6 +49,7 @@ export type SearchIndexWorkerJob =
       meta: Record<string, SessionCacheMeta>;
       completeness: SessionSnapshotCompleteness;
       removedSessionIds: string[];
+      publicationId?: string;
       saveCache?: boolean;
       searchIndexOptions?: SearchIndexSyncOptions;
     }
@@ -58,6 +60,7 @@ export type SearchIndexWorkerJob =
       changes: SessionHeadChange[];
       removedSessionIds: string[];
       meta: Record<string, SessionCacheMeta>;
+      publicationId?: string;
       searchIndexOptions?: SearchIndexSyncOptions;
     };
 
@@ -106,60 +109,67 @@ function searchIndexOptions(job: SearchIndexWorkerJob): SearchIndexSyncOptions {
  * Reports a persistence failure so the batch is rejected instead of settling as
  * `done`; the caller keeps its previously published snapshot and can retry.
  */
-function reportPersistFailure(job: SearchIndexWorkerJob, stage: SearchIndexPersistStage): void {
+function reportPersistFailure(
+  job: SearchIndexWorkerJob,
+  failure: { stage: SearchIndexPersistStage; publicationId: string },
+): void {
   appLogger.error("search_index.persist_failed", {
     context: job.context,
-    stage,
+    stage: failure.stage,
     agent: job.agentName,
     sessions: jobSessionCount(job),
+    publication_id: failure.publicationId,
   });
   parentPort?.postMessage({
     type: "persist-failed",
     context: job.context,
-    stage,
+    stage: failure.stage,
+    publicationId: failure.publicationId,
     agentName: job.agentName,
     sessions: jobSessionCount(job),
   } satisfies SearchIndexWorkerMessage);
 }
 
-function runJob(job: SearchIndexWorkerJob, agent: WorkerAgent): SearchIndexPersistStage | null {
+function runJob(
+  job: SearchIndexWorkerJob,
+  agent: WorkerAgent,
+): { stage: SearchIndexPersistStage; publicationId: string } | null {
   if (job.kind === "changes") {
-    if (!saveCachedSessionChanges(job.agentName, job.changes, job.removedSessionIds, job.meta)) {
-      return "cache";
-    }
-    const result = syncSessionSearchIndexChanges(
-      job.agentName,
-      job.changes,
-      job.removedSessionIds,
+    const publication = commitDurableSessionPublication(
+      {
+        kind: "changes",
+        agentName: job.agentName,
+        changes: job.changes,
+        removedSessionIds: job.removedSessionIds,
+        meta: job.meta,
+        ...(job.publicationId ? { publicationId: job.publicationId } : {}),
+      },
       (sessionId) => agent.getSessionData(sessionId),
-      searchIndexOptions(job),
+      job.searchIndexOptions,
     );
-    if (!result) return "search_index";
-    postSyncResult(job.context, result);
+    if (publication.status === "rolled-back") return publication;
+    postSyncResult(job.context, publication.searchIndex);
     return null;
   }
 
-  if (
-    job.saveCache &&
-    !saveCachedSessions(job.agentName, job.sessions, job.meta, {
-      completeness: job.completeness,
-      removedSessionIds: job.removedSessionIds,
-    })
-  ) {
-    return "cache";
-  }
-  const result = syncSessionSearchIndex(
-    job.agentName,
-    job.sessions,
-    (sessionId) => agent.getSessionData(sessionId),
-    searchIndexOptions(job),
-  );
-  if (!result) return "search_index";
-  // Head cache init is decoupled from search-index completeness (CS-73): a
-  // session that fails to load must not permanently block markAgentCacheInitialized,
-  // or every future refresh would fall back to a full initializeAgent scan.
-  // The skip is still surfaced as a warning so it stays visible.
   if (job.saveCache) {
+    const publication = commitDurableSessionPublication(
+      {
+        kind: "snapshot",
+        agentName: job.agentName,
+        sessions: job.sessions,
+        meta: job.meta,
+        completeness: job.completeness,
+        removedSessionIds: job.removedSessionIds,
+        ...(job.publicationId ? { publicationId: job.publicationId } : {}),
+      },
+      (sessionId) => agent.getSessionData(sessionId),
+      job.searchIndexOptions,
+    );
+    if (publication.status === "rolled-back") return publication;
+    const result = publication.searchIndex;
+    // Head cache init is decoupled from search-index completeness (CS-73): a
+    // session that fails to load must not permanently block future incremental scans.
     markAgentCacheInitialized(job.agentName);
     if (result.skipped > 0) {
       appLogger.warn("search_index.sync_incomplete", {
@@ -167,7 +177,18 @@ function runJob(job: SearchIndexWorkerJob, agent: WorkerAgent): SearchIndexPersi
         skipped: result.skipped,
       });
     }
+    postSyncResult(job.context, result);
+    return null;
   }
+
+  const publicationId = job.publicationId ?? randomUUID();
+  const result = syncSessionSearchIndex(
+    job.agentName,
+    job.sessions,
+    (sessionId) => agent.getSessionData(sessionId),
+    searchIndexOptions(job),
+  );
+  if (!result) return { stage: "search_index", publicationId };
   postSyncResult(job.context, result);
   return null;
 }
@@ -189,9 +210,9 @@ for (const job of jobs) {
     agent.setSessionMetaMap(new Map(Object.entries(job.meta)));
   }
 
-  const failedStage = runJob(job, agent);
-  if (failedStage) {
-    reportPersistFailure(job, failedStage);
+  const failure = runJob(job, agent);
+  if (failure) {
+    reportPersistFailure(job, failure);
     persistFailed = true;
     break;
   }

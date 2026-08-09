@@ -86,6 +86,7 @@ describe("SearchIndexJobRunner", () => {
       type: "persist-failed",
       context: "scan.refresh",
       stage: "cache",
+      publicationId: "scan.refresh:codex:1",
       agentName: "codex",
       sessions: 1,
     });
