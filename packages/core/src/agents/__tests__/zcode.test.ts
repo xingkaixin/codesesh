@@ -313,8 +313,32 @@ describe("ZCodeAgent subagent folding", () => {
       1_200,
     );
     insertTextPart(db, "part_child", "msg_child", "child", "working", 1_200);
+    const insertHistoricalChild = db.prepare(
+      "INSERT INTO session (id, title, time_created, time_updated, directory, path, version, summary_files, task_type, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    );
+    db.transaction(() => {
+      for (let index = 0; index < 1_000; index += 1) {
+        insertHistoricalChild.run(
+          `historical-child-${index}`,
+          "Old child",
+          index,
+          index,
+          "/tmp/project",
+          "/tmp/project",
+          "0.14.8",
+          0,
+          "subagent_child",
+          "missing-historical-root",
+        );
+      }
+    })();
     db.close();
 
+    const diagnostics: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    setCoreDiagnostics({
+      info: (event, detail) => diagnostics.push({ event, detail }),
+      warn: () => {},
+    });
     const agent = new ZCodeAgent() as any;
     agent.dbPath = dbPath;
 
@@ -332,6 +356,15 @@ describe("ZCodeAgent subagent folding", () => {
     expect(buildSessionTree(heads).roots[0]?.inclusiveStats).toMatchObject({
       inputTokens: 50,
       outputTokens: 60,
+    });
+    expect(diagnostics).toContainEqual({
+      event: "agent.related_sessions.query",
+      detail: expect.objectContaining({
+        agent_name: "zcode",
+        root_count: 1,
+        candidate_rows: 1,
+        related_rows: 1,
+      }),
     });
   });
 

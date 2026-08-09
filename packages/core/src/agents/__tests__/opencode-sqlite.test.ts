@@ -110,6 +110,135 @@ function createDatabaseWithMessageData(messageData: string): string {
   return dbPath;
 }
 
+function createDatabaseWithRelatedHistory(unrelatedChildren: number): string {
+  const tempDir = mkdtempSync(join(tmpdir(), "codesesh-opencode-related-test-"));
+  tempDirs.push(tempDir);
+  const dbPath = join(tempDir, "agent.db");
+  const db = new Database(dbPath);
+  db.exec(`
+    CREATE TABLE session (
+      id TEXT PRIMARY KEY,
+      title TEXT,
+      time_created INTEGER,
+      time_updated INTEGER,
+      slug TEXT,
+      directory TEXT,
+      version TEXT,
+      summary_files TEXT,
+      parent_id TEXT
+    );
+    CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      data TEXT,
+      time_created INTEGER
+    );
+    CREATE TABLE part (
+      id TEXT PRIMARY KEY,
+      message_id TEXT,
+      data TEXT,
+      time_created INTEGER
+    );
+  `);
+  const insertSession = db.prepare(
+    "INSERT INTO session (id, title, time_created, time_updated, directory, parent_id) VALUES (?, ?, ?, ?, ?, ?)",
+  );
+  const insertMessage = db.prepare(
+    "INSERT INTO message (id, session_id, data, time_created) VALUES (?, ?, ?, ?)",
+  );
+  const insertPart = db.prepare(
+    "INSERT INTO part (id, message_id, data, time_created) VALUES (?, ?, ?, ?)",
+  );
+  db.transaction(() => {
+    insertSession.run("recent-root", "Root", 10_000, 20_000, "/workspace", null);
+    insertSession.run("child", "Child", 11_000, 14_000, "/workspace", "recent-root");
+    insertSession.run("grandchild", "Grandchild", 12_000, 13_000, "/workspace", "child");
+    insertSession.run(
+      "great-grandchild",
+      "Great grandchild",
+      13_000,
+      12_000,
+      "/workspace",
+      "grandchild",
+    );
+    insertSession.run("historical-root", "Old root", 1, 1, "/workspace", null);
+    insertSession.run("orphan", "Orphan", 2, 2, "/workspace", "missing");
+    insertSession.run("cycle-a", "Cycle A", 3, 3, "/workspace", "cycle-b");
+    insertSession.run("cycle-b", "Cycle B", 4, 4, "/workspace", "cycle-a");
+    for (let index = 0; index < unrelatedChildren; index += 1) {
+      insertSession.run(
+        `historical-child-${index}`,
+        "Old child",
+        index + 10,
+        index + 10,
+        "/workspace",
+        "historical-root",
+      );
+    }
+    for (const [index, sessionId] of [
+      "recent-root",
+      "child",
+      "grandchild",
+      "great-grandchild",
+    ].entries()) {
+      const messageId = `message-${sessionId}`;
+      insertMessage.run(
+        messageId,
+        sessionId,
+        JSON.stringify({ role: index === 0 ? "user" : "assistant" }),
+        10_000 + index,
+      );
+      insertPart.run(
+        `part-${sessionId}`,
+        messageId,
+        JSON.stringify({ type: "text", text: sessionId }),
+        10_000 + index,
+      );
+    }
+  })();
+  db.close();
+  return dbPath;
+}
+
+function createDatabaseWithRootChildren(rootCount: number): string {
+  const tempDir = mkdtempSync(join(tmpdir(), "codesesh-opencode-related-roots-test-"));
+  tempDirs.push(tempDir);
+  const dbPath = join(tempDir, "agent.db");
+  const db = new Database(dbPath);
+  db.exec(`
+    CREATE TABLE session (
+      id TEXT PRIMARY KEY,
+      title TEXT,
+      time_created INTEGER,
+      time_updated INTEGER,
+      slug TEXT,
+      directory TEXT,
+      version TEXT,
+      summary_files TEXT,
+      parent_id TEXT
+    );
+  `);
+  const insertSession = db.prepare(
+    "INSERT INTO session (id, title, time_created, time_updated, directory, parent_id) VALUES (?, ?, ?, ?, ?, ?)",
+  );
+  db.transaction(() => {
+    for (let index = 0; index < rootCount; index += 1) {
+      const rootId = `root-${index}`;
+      insertSession.run(rootId, "Root", 20_000 + index, 20_000 + index, "/workspace", null);
+      insertSession.run(
+        `child-${index}`,
+        "Child",
+        10_000 + index,
+        10_000 + index,
+        "/workspace",
+        rootId,
+      );
+    }
+  })();
+  db.close();
+  return dbPath;
+}
+
 afterEach(() => {
   for (const tempDir of tempDirs.splice(0)) {
     rmSync(tempDir, { recursive: true, force: true });
@@ -234,6 +363,122 @@ describe("OpenCodeSqliteAgent", () => {
         },
       ]),
     );
+  });
+});
+
+describe("CS-180: related session reads stay inside the selected roots", () => {
+  it("does not return unrelated historical child rows across the SQLite seam", () => {
+    const dbPath = createDatabaseWithRelatedHistory(10_000);
+    const diagnostics: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    setCoreDiagnostics({
+      info: (event, detail) => diagnostics.push({ event, detail }),
+      warn: vi.fn(),
+    });
+    const agent = new OpenCodeSqliteAgent({
+      name: "test-agent",
+      displayName: "Test Agent",
+      findDbPath: () => dbPath,
+      getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
+    });
+    agent.isAvailable();
+
+    const heads = agent.scan({ from: 15_000 });
+
+    expect(heads.map((head) => head.id)).toEqual([
+      "recent-root",
+      "child",
+      "grandchild",
+      "great-grandchild",
+    ]);
+    expect(diagnostics).toContainEqual({
+      event: "agent.related_sessions.query",
+      detail: expect.objectContaining({
+        agent_name: "test-agent",
+        root_count: 1,
+        candidate_rows: 3,
+        related_rows: 3,
+      }),
+    });
+  });
+
+  it("chunks seed bindings without losing or duplicating descendants", () => {
+    const dbPath = createDatabaseWithRootChildren(501);
+    const diagnostics: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    setCoreDiagnostics({
+      info: (event, detail) => diagnostics.push({ event, detail }),
+      warn: vi.fn(),
+    });
+    const agent = new OpenCodeSqliteAgent({
+      name: "test-agent",
+      displayName: "Test Agent",
+      findDbPath: () => dbPath,
+      getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
+    });
+    agent.isAvailable();
+
+    const heads = agent.scan({ from: 15_000 });
+    const ids = new Set(heads.map((head) => head.id));
+
+    expect(heads).toHaveLength(1_002);
+    expect(ids.size).toBe(1_002);
+    expect(["root-0", "child-0", "root-500", "child-500"].every((id) => ids.has(id))).toBe(true);
+    expect(diagnostics).toContainEqual({
+      event: "agent.related_sessions.query",
+      detail: expect.objectContaining({
+        root_count: 501,
+        query_count: 2,
+        candidate_rows: 501,
+        related_rows: 501,
+      }),
+    });
+  });
+
+  it("skips related queries when disabled or when no roots match", () => {
+    const dbPath = createDatabaseWithRootChildren(2);
+    const diagnostics: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    setCoreDiagnostics({
+      info: (event, detail) => diagnostics.push({ event, detail }),
+      warn: vi.fn(),
+    });
+    const agent = new OpenCodeSqliteAgent({
+      name: "test-agent",
+      displayName: "Test Agent",
+      findDbPath: () => dbPath,
+      getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
+    });
+    agent.isAvailable();
+
+    expect(
+      agent.scan({ from: 15_000, includeRelatedSessions: false }).map((head) => head.id),
+    ).toEqual(["root-1", "root-0"]);
+    expect(agent.scan({ from: 30_000 })).toEqual([]);
+    expect(diagnostics).toEqual([]);
+  });
+
+  it("terminates when malformed parent links form a cycle", () => {
+    const dbPath = createDatabaseWithRelatedHistory(0);
+    const agent = new OpenCodeSqliteAgent({
+      name: "test-agent",
+      displayName: "Test Agent",
+      findDbPath: () => dbPath,
+      getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
+    });
+    const db = new Database(dbPath, { readonly: true });
+
+    try {
+      const rows = (
+        agent as unknown as {
+          readRelatedSessionRows(
+            database: Database.Database,
+            rootIds: string[],
+          ): Record<string, unknown>[];
+        }
+      ).readRelatedSessionRows(db, ["cycle-a"]);
+
+      expect(rows.map((row) => row.id)).toEqual(["cycle-a", "cycle-b"]);
+    } finally {
+      db.close();
+    }
   });
 });
 
