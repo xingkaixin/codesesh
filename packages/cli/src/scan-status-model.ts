@@ -207,7 +207,7 @@ export class ScanStatusModel {
     });
   }
 
-  failAgent(agentName: string, error: string): ScanStatusEvent {
+  failAgent(agentName: string, error: string, sessionCount?: number): ScanStatusEvent {
     const pendingAgents = this.status.pendingAgents.filter((agent) => agent !== agentName);
     const scanningAgents = this.status.scanningAgents.filter((agent) => agent !== agentName);
     const completedAgents = this.status.completedAgents.filter((agent) => agent !== agentName);
@@ -231,7 +231,7 @@ export class ScanStatusModel {
           error,
           total: previousStatus?.total,
           processed: previousStatus?.processed,
-          sessions: previousStatus?.sessions ?? 0,
+          sessions: sessionCount ?? previousStatus?.sessions ?? 0,
           startedAt: previousStatus?.startedAt,
           updatedAt: now,
           completedAt: now,

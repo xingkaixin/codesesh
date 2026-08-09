@@ -5,7 +5,7 @@ import { LiveScanStore } from "./live-scan.js";
 import { printScanResults } from "./output.js";
 import { VERSION } from "./version.js";
 import { appLogger } from "./logging.js";
-import { buildSessionIndexOutput } from "./session-index-output.js";
+import { buildSessionIndexOutput, formatScanFailureDiagnostics } from "./session-index-output.js";
 import {
   resolveRemoteAccessPolicy,
   resolveRemoteTransport,
@@ -224,6 +224,13 @@ const main = defineCommand({
     if (jsonOnly) {
       // Nothing will consume a later generation, so stop waiting for it.
       await pricingRefresh.cancel();
+      const scanFailureDiagnostics = formatScanFailureDiagnostics(result);
+      if (scanFailureDiagnostics.length > 0) {
+        await store.shutdown();
+        for (const diagnostic of scanFailureDiagnostics) console.error(diagnostic);
+        process.exitCode = 1;
+        return;
+      }
       const output = buildSessionIndexOutput(result, { from: listDefaultFrom, to: listDefaultTo });
       appLogger.info("cli.json_output", {
         sessions: output.sessions.length,

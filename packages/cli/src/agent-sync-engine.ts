@@ -146,6 +146,13 @@ export class AgentSyncEngine {
         options.cacheTimestamps?.[agent.name] ?? Date.now(),
       );
     }
+    for (const [agentName, failure] of Object.entries(snapshot.scanFailures ?? {})) {
+      this.scanStatus.failAgent(
+        agentName,
+        `${failure.stage}: ${failure.message}`,
+        snapshot.byAgent[agentName]?.length ?? 0,
+      );
+    }
   }
 
   snapshot(): LiveSnapshot {
@@ -885,27 +892,30 @@ export class AgentSyncEngine {
 
   private buildFullSearchIndexJobs(context: string): SearchIndexWorkerJob[] {
     const snapshot = this.sessionIndex.snapshot();
-    return snapshot.agents.map((agent) => {
+    return snapshot.agents.flatMap((agent) => {
+      if (!(agent.name in snapshot.byAgent)) return [];
       const cached = loadCachedSessions(agent.name);
-      return cached
-        ? {
-            kind: "full",
-            context,
-            agentName: agent.name,
-            sessions: cached.sessions,
-            meta: cached.meta,
-            completeness: "partial",
-            removedSessionIds: [],
-          }
-        : {
-            kind: "full",
-            context,
-            agentName: agent.name,
-            sessions: snapshot.byAgent[agent.name] ?? [],
-            meta: buildAgentCacheMeta(agent),
-            completeness: "partial",
-            removedSessionIds: [],
-          };
+      return [
+        cached
+          ? {
+              kind: "full",
+              context,
+              agentName: agent.name,
+              sessions: cached.sessions,
+              meta: cached.meta,
+              completeness: "partial",
+              removedSessionIds: [],
+            }
+          : {
+              kind: "full",
+              context,
+              agentName: agent.name,
+              sessions: snapshot.byAgent[agent.name] ?? [],
+              meta: buildAgentCacheMeta(agent),
+              completeness: "partial",
+              removedSessionIds: [],
+            },
+      ];
     });
   }
 
