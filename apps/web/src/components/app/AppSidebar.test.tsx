@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/core/contract";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
-import type { AgentInfo, ApiProjectGroup, ScanStatusEvent } from "../../lib/api";
+import type { AgentInfo, ApiProjectGroup, BookmarkView, ScanStatusEvent } from "../../lib/api";
 import { createAgentCatalog } from "../../lib/agents";
 import { ScanStatusProvider } from "../../hooks/useScanStatus";
 import { AppSidebar, type AppSidebarActions, type AppSidebarViewModel } from "./AppSidebar";
@@ -116,5 +116,29 @@ describe("AppSidebar", () => {
     renderSidebar();
 
     expect(screen.queryByRole("heading", { name: /SESSIONS/ })).toBeNull();
+  });
+
+  it("renders unavailable bookmark facts without navigable stale session links", () => {
+    const bookmarkedSessions: BookmarkView[] = [
+      {
+        reference: { agentName: "codex", sessionId: "gone" },
+        bookmarkedAt: 2,
+        availability: "session-unavailable",
+        display_title: "Lost alias",
+      },
+      {
+        reference: { agentName: "removed-agent", sessionId: "orphan" },
+        bookmarkedAt: 1,
+        availability: "agent-unavailable",
+      },
+    ];
+
+    renderSidebar({ bookmarkedSessions });
+
+    expect(screen.getByText("Lost alias")).toBeTruthy();
+    expect(screen.getByText("Codex · gone · Session unavailable")).toBeTruthy();
+    expect(screen.getByText("removed-agent · Agent unavailable")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Lost alias/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /orphan/ })).toBeNull();
   });
 });

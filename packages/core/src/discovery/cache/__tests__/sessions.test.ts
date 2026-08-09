@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearCache,
   getCacheInfo,
+  loadCachedSessionHeads,
   loadCachedSessions,
   saveCachedSessionChanges,
   saveCachedSessions,
@@ -59,6 +60,43 @@ describe("cached sessions", () => {
       agentName: "codex",
       sessionId: "parent",
     });
+  });
+
+  it("loads only requested session heads by compound identity", () => {
+    saveCachedSessions("codex", [makeSessionHead("shared"), makeSessionHead("other")]);
+    saveCachedSessions("cursor", [
+      makeSessionHead("shared", { slug: "cursor/shared", title: "Cursor shared" }),
+    ]);
+
+    const sessions = loadCachedSessionHeads([
+      { agentName: " CoDeX ", sessionId: "shared" },
+      { agentName: "cursor", sessionId: "shared" },
+      { agentName: "codex", sessionId: "shared" },
+      { agentName: "codex", sessionId: "missing" },
+    ]);
+
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        reference: { agentName: "codex", sessionId: "shared" },
+        session: expect.objectContaining({ title: "Session shared" }),
+      }),
+      expect.objectContaining({
+        reference: { agentName: "cursor", sessionId: "shared" },
+        session: expect.objectContaining({ title: "Cursor shared" }),
+      }),
+    ]);
+  });
+
+  it("chunks large targeted session-head lookups", () => {
+    const sessions = Array.from({ length: 401 }, (_, index) => makeSessionHead(`session-${index}`));
+    saveCachedSessions("codex", sessions);
+
+    const resolved = loadCachedSessionHeads(
+      sessions.map(({ id }) => ({ agentName: "codex", sessionId: id })),
+    );
+
+    expect(resolved).toHaveLength(401);
+    expect(new Set(resolved.map(({ reference }) => reference.sessionId)).size).toBe(401);
   });
 
   it("CS-137: reports whether the write reached disk", () => {

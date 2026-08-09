@@ -24,6 +24,7 @@ export {
   isAgentCacheInitialized,
   loadCachedSessionData,
   loadCachedSessionDataEntry,
+  loadCachedSessionHeads,
   loadCachedSessions,
   markAgentCacheInitialized,
   markAgentFullSyncProgress,

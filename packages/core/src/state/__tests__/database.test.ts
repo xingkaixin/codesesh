@@ -61,10 +61,10 @@ describe("state database", () => {
   it("runs ensureSchema on the first open but skips it on later opens for the same path", () => {
     withStateDb(() => undefined);
     expect(getStateSchemaEnsuredPath()).toBe(getStatePath());
-    expect(getUserVersion(getStatePath())).toBe(2);
+    expect(getUserVersion(getStatePath())).toBe(3);
 
     // Downgrade the on-disk version to prove the next open leaves it alone:
-    // if ensureSchema ran, it would migrate this back up to 2.
+    // if ensureSchema ran, it would migrate this back up to 3.
     const db = new Database(getStatePath());
     db.pragma("user_version = 1");
     db.close();
@@ -74,6 +74,6 @@ describe("state database", () => {
 
     setStateSchemaEnsuredPath(null);
     withStateDb(() => undefined);
-    expect(getUserVersion(getStatePath())).toBe(2);
+    expect(getUserVersion(getStatePath())).toBe(3);
   });
 });

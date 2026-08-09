@@ -118,9 +118,9 @@ export function createApiRoutes(
   api.get("/file-activity", (c) => handleGetFileActivity(c, listDefaults));
   api.get("/sessions/:agent/:id", (c) => handleGetSessionData(c, scanSource));
   api.get("/dashboard", (c) => handleGetDashboard(c, scanSource, listDefaults));
-  api.get("/bookmarks", (c) => handleGetBookmarks(c));
+  api.get("/bookmarks", (c) => handleGetBookmarks(c, scanSource));
   api.put("/bookmarks", (c) => handlePutBookmark(c));
-  api.post("/bookmarks/import", (c) => handleImportBookmarks(c));
+  api.post("/bookmarks/import", (c) => handleImportBookmarks(c, scanSource));
   api.delete("/bookmarks/:agent/:id", (c) => handleDeleteBookmark(c));
   api.put("/session-aliases/:agent/:id", (c) => handlePutSessionAlias(c));
   api.delete("/session-aliases/:agent/:id", (c) => handleDeleteSessionAlias(c));

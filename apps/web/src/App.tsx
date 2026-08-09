@@ -3,7 +3,7 @@ declare const __APP_VERSION__: string;
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PanelLeftOpen } from "./components/ui/icons";
 import { Link, useLocation, useMatches, useNavigate } from "react-router-dom";
-import type { BookmarkRecord, SessionHead } from "./lib/api";
+import type { BookmarkView, SessionHead } from "./lib/api";
 import { logClientEvent } from "./lib/api";
 import { getSessionRoutePath } from "./lib/session-indexes";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -140,7 +140,7 @@ export default function App() {
       ? location.state.searchQuery
       : "";
 
-  const bookmarks = useBookmarks(sessions);
+  const bookmarks = useBookmarks();
   const {
     bookmarkedSessions,
     isSessionBookmarked,
@@ -218,12 +218,18 @@ export default function App() {
     });
   }, []);
 
-  const handleRenameBookmarkedSession = useCallback((bookmark: BookmarkRecord) => {
+  const handleRenameBookmarkedSession = useCallback((bookmark: BookmarkView) => {
     setAliasTarget({
       agentKey: bookmark.reference.agentName,
       sessionId: bookmark.reference.sessionId,
-      title: bookmark.session.title,
-      displayTitle: bookmark.session.display_title,
+      title:
+        bookmark.availability === "available"
+          ? bookmark.session.title
+          : bookmark.reference.sessionId,
+      displayTitle:
+        bookmark.availability === "available"
+          ? bookmark.session.display_title
+          : bookmark.display_title,
     });
   }, []);
 

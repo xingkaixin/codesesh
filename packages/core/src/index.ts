@@ -49,6 +49,7 @@ export {
   listFileActivity,
   listModelCostDistribution,
   loadCachedSessions,
+  loadCachedSessionHeads,
   markAgentCacheInitialized,
   markAgentFullSyncProgress,
   markAgentFullSyncStarted,
@@ -105,6 +106,16 @@ export {
   upsertSessionAlias,
 } from "./state/index.js";
 export type { BookmarkRecord, SessionAlias } from "./state/index.js";
+export type {
+  AvailableBookmarkView,
+  BookmarkView,
+  UnavailableBookmarkView,
+} from "./contract/index.js";
+export {
+  compareBookmarkViews,
+  materializeBookmarkViews,
+  type BookmarkMaterializationOptions,
+} from "./bookmarks/index.js";
 export {
   classifySessionTags,
   ensurePrivateDirectory,

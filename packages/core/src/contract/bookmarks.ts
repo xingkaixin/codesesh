@@ -1,5 +1,19 @@
-import type { ReferencedSessionHead } from "./session.js";
+import type { SessionHead } from "./session.js";
+import type { SessionReference } from "./session-reference.js";
 
-export interface BookmarkRecord extends ReferencedSessionHead {
+export interface BookmarkRecord {
+  reference: SessionReference;
   bookmarkedAt: number;
 }
+
+export interface AvailableBookmarkView extends BookmarkRecord {
+  availability: "available";
+  session: SessionHead;
+}
+
+export interface UnavailableBookmarkView extends BookmarkRecord {
+  availability: "session-unavailable" | "agent-unavailable";
+  display_title?: string;
+}
+
+export type BookmarkView = AvailableBookmarkView | UnavailableBookmarkView;

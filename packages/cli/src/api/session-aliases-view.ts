@@ -2,7 +2,7 @@
  * Session aliases as a read model for the HTTP layer: load the user's local
  * renames once, then decorate outgoing records with `display_title`.
  */
-import type { BookmarkRecord, SessionAlias, SessionHead } from "@codesesh/core";
+import type { BookmarkView, SessionAlias, SessionHead } from "@codesesh/core";
 import type { SearchResult, SessionReference } from "@codesesh/core/contract";
 import {
   filterSessionSearchCandidates,
@@ -74,11 +74,16 @@ export function invalidateAliasView(): void {
   cachedView = null;
 }
 
-export function decorateBookmark(bookmark: BookmarkRecord, aliases: AliasView): BookmarkRecord {
-  return {
-    ...bookmark,
-    session: aliases.decorate(bookmark.session, bookmark.reference),
-  };
+export function decorateBookmark(bookmark: BookmarkView, aliases: AliasView): BookmarkView {
+  if (bookmark.availability === "available") {
+    return {
+      ...bookmark,
+      session: aliases.decorate(bookmark.session, bookmark.reference),
+    };
+  }
+
+  const displayTitle = aliases.get(bookmark.reference);
+  return displayTitle ? { ...bookmark, display_title: displayTitle } : bookmark;
 }
 
 export function decorateFileActivity(

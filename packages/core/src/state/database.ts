@@ -12,7 +12,7 @@ import {
 } from "../utils/sqlite.js";
 
 const STATE_DB_FILENAME = "state.db";
-const STATE_SCHEMA_VERSION = 2;
+const STATE_SCHEMA_VERSION = 3;
 const MEMORY_STATE_STORE = "memory";
 
 // One-shot per-process ensureSchema guard, mirroring the cache side's
@@ -62,15 +62,21 @@ function createBookmarksTable(db: SQLiteDatabase): void {
     CREATE TABLE IF NOT EXISTS bookmarks (
       agent_name TEXT NOT NULL,
       session_id TEXT NOT NULL,
-      slug TEXT NOT NULL,
-      title TEXT NOT NULL,
-      directory TEXT NOT NULL,
-      time_created INTEGER NOT NULL,
-      time_updated INTEGER,
-      stats_json TEXT NOT NULL,
       bookmarked_at INTEGER NOT NULL,
       PRIMARY KEY (agent_name, session_id)
     );
+  `);
+}
+
+function migrateBookmarkFacts(db: SQLiteDatabase): void {
+  db.exec("ALTER TABLE bookmarks RENAME TO bookmarks_with_snapshots");
+  createBookmarksTable(db);
+  db.exec(`
+    INSERT INTO bookmarks(agent_name, session_id, bookmarked_at)
+    SELECT agent_name, session_id, bookmarked_at
+    FROM bookmarks_with_snapshots;
+
+    DROP TABLE bookmarks_with_snapshots;
   `);
 }
 
@@ -154,6 +160,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
     migrations: [
       { version: 1, migrate: createBookmarksTable },
       { version: 2, migrate: createSessionAliasesTable },
+      { version: 3, destructive: true, migrate: migrateBookmarkFacts },
     ],
   });
 

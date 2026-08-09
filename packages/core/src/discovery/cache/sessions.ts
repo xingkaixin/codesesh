@@ -3,6 +3,8 @@
  */
 import { existsSync, rmSync, unlinkSync } from "node:fs";
 import type { SessionCacheMeta } from "../../agents/base.js";
+import type { ReferencedSessionHead, SessionReference } from "../../contract/index.js";
+import { formatSessionReference, normalizeSessionReference } from "../../contract/index.js";
 import type { SessionDetail, SessionHead } from "../../types/index.js";
 import { tableExists, type SQLiteDatabase } from "../../utils/sqlite.js";
 import {
@@ -27,6 +29,38 @@ import { fileActivityFromRow, type FileActivityRow } from "./file-activity.js";
 
 export const CACHE_INITIALIZATION_VERSION = "session-cache-v2";
 const FULL_SYNC_CURSOR_PREFIX = "full_sync_cursor:";
+const SESSION_REFERENCE_QUERY_CHUNK_SIZE = 400;
+const SESSION_HEAD_SELECT_COLUMNS = `
+  s.agent_name,
+  s.session_id,
+  s.sort_index,
+  s.slug,
+  s.title,
+  s.source_path,
+  s.directory,
+  s.parent_agent_name,
+  s.parent_session_id,
+  s.project_identity_kind,
+  s.project_identity_key,
+  s.project_display_name,
+  s.project_identity_resolver_revision,
+  s.project_identity_input_signature,
+  s.time_created,
+  s.time_updated,
+  s.message_count,
+  s.total_input_tokens,
+  s.total_output_tokens,
+  s.total_cache_read_tokens,
+  s.total_cache_create_tokens,
+  s.total_cost,
+  s.cost_source,
+  s.total_tokens,
+  s.model_usage_json,
+  s.smart_tags_json,
+  s.smart_tags_source_updated_at,
+  s.smart_tags_classifier_revision,
+  s.meta_json
+`;
 export interface CachedResult {
   sessions: SessionHead[];
   meta: Record<string, SessionCacheMeta>;
@@ -93,38 +127,10 @@ export function loadCachedSessions(agentName: string): CachedResult | null {
     const rows = db
       .prepare(
         `
-          SELECT
-            session_id,
-            sort_index,
-            slug,
-            title,
-            source_path,
-            directory,
-            parent_agent_name,
-            parent_session_id,
-            project_identity_kind,
-            project_identity_key,
-            project_display_name,
-            project_identity_resolver_revision,
-            project_identity_input_signature,
-            time_created,
-            time_updated,
-            message_count,
-            total_input_tokens,
-            total_output_tokens,
-            total_cache_read_tokens,
-            total_cache_create_tokens,
-            total_cost,
-            cost_source,
-            total_tokens,
-            model_usage_json,
-            smart_tags_json,
-            smart_tags_source_updated_at,
-            smart_tags_classifier_revision,
-            meta_json
-          FROM sessions
-          WHERE agent_name = ?
-          ORDER BY sort_index, activity_time DESC
+          SELECT ${SESSION_HEAD_SELECT_COLUMNS}
+          FROM sessions s
+          WHERE s.agent_name = ?
+          ORDER BY s.sort_index, s.activity_time DESC
         `,
       )
       .all(agentName) as SessionRow[];
@@ -143,6 +149,60 @@ export function loadCachedSessions(agentName: string): CachedResult | null {
 
     return { sessions, meta, timestamp };
   });
+}
+
+export function loadCachedSessionHeads(
+  references: readonly SessionReference[],
+): ReferencedSessionHead[] {
+  if (references.length === 0 || !hasCacheStorage()) return [];
+
+  const unique = new Map<string, SessionReference>();
+  for (const reference of references) {
+    const normalized = normalizeSessionReference(reference);
+    const key = formatSessionReference(normalized);
+    if (!unique.has(key)) unique.set(key, normalized);
+  }
+
+  return (
+    withCacheDbReadOnly((db) => {
+      const resolved: ReferencedSessionHead[] = [];
+      const normalized = [...unique.values()];
+      for (
+        let offset = 0;
+        offset < normalized.length;
+        offset += SESSION_REFERENCE_QUERY_CHUNK_SIZE
+      ) {
+        const chunk = normalized.slice(offset, offset + SESSION_REFERENCE_QUERY_CHUNK_SIZE);
+        const values = chunk.map(() => "(?, ?)").join(", ");
+        const params = chunk.flatMap((reference) => [reference.agentName, reference.sessionId]);
+        const rows = db
+          .prepare(
+            `
+              WITH requested(agent_name, session_id) AS (
+                VALUES ${values}
+              )
+              SELECT ${SESSION_HEAD_SELECT_COLUMNS}
+              FROM requested r
+              JOIN sessions s
+                ON s.agent_name = r.agent_name
+                AND s.session_id = r.session_id
+            `,
+          )
+          .all(...params) as SessionRow[];
+
+        for (const row of rows) {
+          resolved.push({
+            reference: normalizeSessionReference({
+              agentName: String(row.agent_name ?? ""),
+              sessionId: String(row.session_id ?? ""),
+            }),
+            session: sessionFromRow(row),
+          });
+        }
+      }
+      return resolved;
+    }) ?? []
+  );
 }
 
 export function isAgentCacheInitialized(

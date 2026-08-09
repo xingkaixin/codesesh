@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -26,16 +26,6 @@ vi.mock("node:os", async (importOriginal) => {
 const now = 1_700_000_000_000;
 const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
 
-interface BookmarkOverrides {
-  agentName?: string;
-  sessionId?: string;
-  title?: string;
-  directory?: string;
-  timeCreated?: number;
-  timeUpdated?: number;
-  stats?: BookmarkRecord["session"]["stats"];
-}
-
 function getStateDir(): string {
   return join(testHomeDir, ".local", "share", "codesesh");
 }
@@ -53,27 +43,10 @@ function getUserVersion(dbPath: string): number {
   }
 }
 
-function makeBookmark(overrides: BookmarkOverrides = {}): Omit<BookmarkRecord, "bookmarkedAt"> {
-  const reference = {
-    agentName: overrides.agentName ?? "codex",
-    sessionId: overrides.sessionId ?? "s1",
-  };
+function makeBookmark(sessionId = "s1", agentName = "codex", bookmarkedAt = now): BookmarkRecord {
   return {
-    reference,
-    session: {
-      id: reference.sessionId,
-      slug: `${reference.agentName}/${reference.sessionId}`,
-      title: overrides.title ?? "Session 1",
-      directory: overrides.directory ?? "/tmp/project",
-      time_created: overrides.timeCreated ?? now - 1000,
-      time_updated: overrides.timeUpdated ?? now,
-      stats: overrides.stats ?? {
-        message_count: 1,
-        total_input_tokens: 2,
-        total_output_tokens: 3,
-        total_cost: 0,
-      },
-    },
+    reference: { agentName, sessionId },
+    bookmarkedAt,
   };
 }
 
@@ -91,68 +64,55 @@ afterEach(() => {
 });
 
 describe("bookmarks state storage", () => {
-  it("persists and lists bookmarks", () => {
-    upsertBookmark(makeBookmark());
+  it("persists only bookmark identity and timestamp facts", () => {
+    upsertBookmark(makeBookmark().reference);
 
-    expect(listBookmarks()).toEqual([
-      {
-        ...makeBookmark(),
-        bookmarkedAt: now,
-      },
-    ]);
-    expect(getUserVersion(getStatePath())).toBe(2);
-  });
+    expect(listBookmarks()).toEqual([makeBookmark()]);
+    expect(getUserVersion(getStatePath())).toBe(3);
 
-  it("derives canonical identity fields instead of trusting the legacy slug column", () => {
-    const bookmark = makeBookmark({ agentName: " CoDeX " });
-    bookmark.session.slug = "stale/route";
-    upsertBookmark(bookmark);
-
-    const db = new Database(getStatePath());
+    const db = new Database(getStatePath(), { readonly: true });
     try {
-      db.prepare("UPDATE bookmarks SET slug = 'another/stale-route'").run();
+      const columns = db.prepare("PRAGMA table_info(bookmarks)").all() as Array<{ name: string }>;
+      expect(columns.map(({ name }) => name)).toEqual([
+        "agent_name",
+        "session_id",
+        "bookmarked_at",
+      ]);
     } finally {
       db.close();
     }
-
-    expect(listBookmarks()[0]).toMatchObject({
-      reference: { agentName: "codex", sessionId: "s1" },
-      session: { id: "s1", slug: "codex/s1" },
-    });
   });
 
-  it("preserves bookmarkedAt when refreshing a snapshot", () => {
-    upsertBookmark(makeBookmark({ title: "Old title" }));
-    dateNowSpy.mockReturnValue(now + 5000);
+  it("normalizes identity without storing derived session fields", () => {
+    upsertBookmark({ agentName: " CoDeX ", sessionId: "s1" });
 
-    const updated = upsertBookmark(makeBookmark({ title: "New title" }));
-
-    expect(updated.bookmarkedAt).toBe(now);
-    expect(listBookmarks()[0]?.session.title).toBe("New title");
-    expect(listBookmarks()[0]?.bookmarkedAt).toBe(now);
+    expect(listBookmarks()).toEqual([makeBookmark()]);
   });
 
-  it("imports multiple bookmarks without duplicating existing rows", () => {
-    upsertBookmark(makeBookmark({ sessionId: "s1", title: "Before import" }));
+  it("preserves the original bookmarkedAt when upserting again", () => {
+    upsertBookmark(makeBookmark().reference);
+    dateNowSpy.mockReturnValue(now + 5_000);
+
+    const existing = upsertBookmark(makeBookmark().reference);
+
+    expect(existing.bookmarkedAt).toBe(now);
+    expect(listBookmarks()).toEqual([makeBookmark()]);
+  });
+
+  it("imports facts idempotently and preserves existing timestamps", () => {
+    upsertBookmark(makeBookmark("s1").reference);
 
     const imported = importBookmarks([
-      makeBookmark({ sessionId: "s1", title: "After import" }),
-      makeBookmark({
-        agentName: "cursor",
-        sessionId: "s2",
-        title: "Cursor session",
-      }),
+      makeBookmark("s1", "codex", now + 5_000),
+      makeBookmark("s2", "cursor", now - 500),
+      makeBookmark("s2", "cursor", now + 10_000),
     ]);
 
-    expect(imported).toHaveLength(2);
-    expect(imported.map((bookmark) => bookmark.session.title)).toEqual([
-      "After import",
-      "Cursor session",
-    ]);
+    expect(imported).toEqual([makeBookmark("s1"), makeBookmark("s2", "cursor", now - 500)]);
   });
 
   it("deletes a bookmark by normalized session reference", () => {
-    upsertBookmark(makeBookmark());
+    upsertBookmark(makeBookmark().reference);
     deleteBookmark({ agentName: " CoDeX ", sessionId: "s1" });
     expect(listBookmarks()).toEqual([]);
   });
@@ -161,24 +121,24 @@ describe("bookmarks state storage", () => {
     const stateDir = join(testHomeDir, "custom-state");
     vi.stubEnv("CODESESH_STATE_DIR", stateDir);
 
-    upsertBookmark(makeBookmark());
+    upsertBookmark(makeBookmark().reference);
 
-    expect(getUserVersion(join(stateDir, "state.db"))).toBe(2);
+    expect(getUserVersion(join(stateDir, "state.db"))).toBe(3);
   });
 
   it("uses memory state storage when configured", () => {
     vi.stubEnv("CODESESH_STATE_STORE", "memory");
 
-    expect(upsertBookmark(makeBookmark()).bookmarkedAt).toBe(now);
-    expect(listBookmarks()).toEqual([{ ...makeBookmark(), bookmarkedAt: now }]);
+    expect(upsertBookmark(makeBookmark().reference)).toEqual(makeBookmark());
+    expect(listBookmarks()).toEqual([makeBookmark()]);
     expect(existsSync(getStatePath())).toBe(false);
 
-    deleteBookmark({ agentName: "codex", sessionId: "s1" });
+    deleteBookmark(makeBookmark().reference);
     expect(listBookmarks()).toEqual([]);
   });
 
   it("migrates legacy state metadata to user_version", () => {
-    upsertBookmark(makeBookmark());
+    upsertBookmark(makeBookmark().reference);
     const db = new Database(getStatePath());
     try {
       db.exec("PRAGMA user_version = 0");
@@ -193,24 +153,22 @@ describe("bookmarks state storage", () => {
       db.close();
     }
 
-    // Force ensureSchema to re-run against the externally rewritten file,
-    // as a fresh process would on its first open.
     setStateSchemaEnsuredPath(null);
-    expect(listBookmarks()[0]?.reference.sessionId).toBe("s1");
-    expect(getUserVersion(getStatePath())).toBe(2);
+    expect(listBookmarks()).toEqual([makeBookmark()]);
+    expect(getUserVersion(getStatePath())).toBe(3);
   });
 
   it("does not downgrade a state database created by a newer version", () => {
-    upsertBookmark(makeBookmark());
+    upsertBookmark(makeBookmark().reference);
     const db = new Database(getStatePath());
     try {
-      db.exec("PRAGMA user_version = 3");
+      db.exec("PRAGMA user_version = 4");
     } finally {
       db.close();
     }
 
     setStateSchemaEnsuredPath(null);
-    expect(listBookmarks()[0]?.reference.sessionId).toBe("s1");
-    expect(getUserVersion(getStatePath())).toBe(3);
+    expect(listBookmarks()).toEqual([makeBookmark()]);
+    expect(getUserVersion(getStatePath())).toBe(4);
   });
 });

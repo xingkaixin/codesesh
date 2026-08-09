@@ -1,0 +1,94 @@
+import type {
+  BookmarkRecord,
+  BookmarkView,
+  ReferencedSessionHead,
+  SessionHead,
+  SessionReference,
+} from "../contract/index.js";
+import { formatSessionReference, normalizeSessionReference } from "../contract/index.js";
+
+export interface BookmarkMaterializationOptions {
+  liveSessionsByReference: ReadonlyMap<string, SessionHead>;
+  knownAgentNames: ReadonlySet<string>;
+  resolveCachedSessions?: (
+    references: readonly SessionReference[],
+  ) => readonly ReferencedSessionHead[];
+}
+
+function referenceKey(reference: SessionReference): string {
+  return formatSessionReference(normalizeSessionReference(reference));
+}
+
+function canonicalSession(reference: SessionReference, session: SessionHead): SessionHead {
+  return {
+    ...session,
+    id: reference.sessionId,
+    slug: formatSessionReference(reference),
+  };
+}
+
+function compareDescending(left: number, right: number): number {
+  if (left === right) return 0;
+  return left > right ? -1 : 1;
+}
+
+function getBookmarkViewTime(bookmark: BookmarkView): number {
+  return bookmark.availability === "available"
+    ? (bookmark.session.time_updated ?? bookmark.session.time_created)
+    : bookmark.bookmarkedAt;
+}
+
+export function compareBookmarkViews(left: BookmarkView, right: BookmarkView): number {
+  return (
+    compareDescending(getBookmarkViewTime(left), getBookmarkViewTime(right)) ||
+    compareDescending(left.bookmarkedAt, right.bookmarkedAt) ||
+    referenceKey(left.reference).localeCompare(referenceKey(right.reference))
+  );
+}
+
+export function materializeBookmarkViews(
+  bookmarks: readonly BookmarkRecord[],
+  options: BookmarkMaterializationOptions,
+): BookmarkView[] {
+  const liveByKey = new Map<string, SessionHead>();
+  const missingByKey = new Map<string, SessionReference>();
+  const normalizedBookmarks = bookmarks.map((bookmark) => {
+    const reference = normalizeSessionReference(bookmark.reference);
+    return {
+      bookmark: { reference, bookmarkedAt: bookmark.bookmarkedAt },
+      key: referenceKey(reference),
+    };
+  });
+
+  for (const { bookmark, key } of normalizedBookmarks) {
+    const { reference } = bookmark;
+    const live = options.liveSessionsByReference.get(key);
+    if (live) liveByKey.set(key, canonicalSession(reference, live));
+    else if (!missingByKey.has(key)) missingByKey.set(key, reference);
+  }
+
+  const cachedByKey = new Map<string, SessionHead>();
+  if (missingByKey.size > 0 && options.resolveCachedSessions) {
+    for (const cached of options.resolveCachedSessions([...missingByKey.values()])) {
+      const reference = normalizeSessionReference(cached.reference);
+      const key = referenceKey(reference);
+      if (missingByKey.has(key) && !cachedByKey.has(key)) {
+        cachedByKey.set(key, canonicalSession(reference, cached.session));
+      }
+    }
+  }
+
+  const views = normalizedBookmarks.map(({ bookmark, key }): BookmarkView => {
+    const session = liveByKey.get(key) ?? cachedByKey.get(key);
+    if (session) return { ...bookmark, availability: "available", session };
+
+    return {
+      ...bookmark,
+      availability: options.knownAgentNames.has(bookmark.reference.agentName)
+        ? "session-unavailable"
+        : "agent-unavailable",
+    };
+  });
+
+  return views.sort(compareBookmarkViews);
+}

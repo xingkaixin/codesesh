@@ -40,6 +40,7 @@ export type {
   ApiProjectGroup,
   ApiProjectAgentStat,
   BookmarkRecord,
+  BookmarkView,
 } from "@codesesh/core/contract";
 
 import { sessionRoutePath } from "@codesesh/core/contract";
@@ -48,6 +49,7 @@ import type {
   ApiProjectGroup,
   AppConfig,
   BookmarkRecord,
+  BookmarkView,
   DashboardData,
   FileActivityKind,
   ProjectIdentityKind,
@@ -235,23 +237,23 @@ export async function fetchSearchResults(
 
 export async function fetchBookmarks(
   options?: FetchOptions,
-): Promise<{ bookmarks: BookmarkRecord[] }> {
+): Promise<{ bookmarks: BookmarkView[] }> {
   return fetchJson("/api/bookmarks", options);
 }
 
 export async function upsertBookmark(
-  bookmark: Omit<BookmarkRecord, "bookmarkedAt">,
+  reference: SessionReference,
 ): Promise<{ bookmark: BookmarkRecord }> {
   return fetchJson("/api/bookmarks", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(bookmark),
+    body: JSON.stringify({ reference }),
   });
 }
 
 export async function importBookmarks(
-  bookmarks: Omit<BookmarkRecord, "bookmarkedAt">[],
-): Promise<{ bookmarks: BookmarkRecord[] }> {
+  bookmarks: BookmarkRecord[],
+): Promise<{ bookmarks: BookmarkView[] }> {
   return fetchJson("/api/bookmarks/import", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
