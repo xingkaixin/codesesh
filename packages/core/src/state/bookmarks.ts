@@ -1,12 +1,10 @@
-import type { SessionStats } from "../types/index.js";
 import {
-  formatSessionReference,
   normalizeSessionReference,
   type BookmarkRecord,
   type SessionReference,
 } from "../contract/index.js";
 import { StateStorageUnavailableError, useMemoryStateStore, withStateDb } from "./database.js";
-import type { DatabaseRow } from "../utils/sqlite.js";
+import type { DatabaseRow, SQLiteDatabase } from "../utils/sqlite.js";
 
 const memoryBookmarks = new Map<string, BookmarkRecord>();
 
@@ -17,11 +15,6 @@ export type { BookmarkRecord };
 interface BookmarkRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
-  title?: string;
-  directory?: string;
-  time_created?: number;
-  time_updated?: number | null;
-  stats_json?: string;
   bookmarked_at?: number;
 }
 
@@ -30,234 +23,119 @@ function getBookmarkKey(reference: SessionReference): string {
   return JSON.stringify([normalized.agentName, normalized.sessionId]);
 }
 
-function getActivityTime(bookmark: BookmarkRecord): number {
-  return bookmark.session.time_updated ?? bookmark.session.time_created;
+function compareBookmarks(left: BookmarkRecord, right: BookmarkRecord): number {
+  if (left.bookmarkedAt !== right.bookmarkedAt) {
+    return left.bookmarkedAt > right.bookmarkedAt ? -1 : 1;
+  }
+  return getBookmarkKey(left.reference).localeCompare(getBookmarkKey(right.reference));
 }
 
-function sortBookmarks(bookmarks: BookmarkRecord[]): BookmarkRecord[] {
-  return bookmarks.sort((a, b) => {
-    const activityDelta = getActivityTime(b) - getActivityTime(a);
-    return activityDelta || b.bookmarkedAt - a.bookmarkedAt;
-  });
-}
-
-function listMemoryBookmarks(): BookmarkRecord[] {
-  return sortBookmarks(Array.from(memoryBookmarks.values()));
-}
-
-function normalizeBookmark(
-  bookmark: Omit<BookmarkRecord, "bookmarkedAt">,
-): Omit<BookmarkRecord, "bookmarkedAt"> {
-  const reference = normalizeSessionReference(bookmark.reference);
+function normalizeBookmark(bookmark: BookmarkRecord): BookmarkRecord {
   return {
-    reference,
-    session: {
-      ...bookmark.session,
-      id: reference.sessionId,
-      slug: formatSessionReference(reference),
-    },
+    reference: normalizeSessionReference(bookmark.reference),
+    bookmarkedAt: bookmark.bookmarkedAt,
   };
-}
-
-function upsertMemoryBookmark(bookmark: Omit<BookmarkRecord, "bookmarkedAt">): BookmarkRecord {
-  const key = getBookmarkKey(bookmark.reference);
-  const saved = {
-    ...bookmark,
-    bookmarkedAt: memoryBookmarks.get(key)?.bookmarkedAt ?? Date.now(),
-  };
-  memoryBookmarks.set(key, saved);
-  return saved;
 }
 
 function toBookmarkRecord(row: BookmarkRow): BookmarkRecord {
-  const reference = normalizeSessionReference({
-    agentName: String(row.agent_name ?? ""),
-    sessionId: String(row.session_id ?? ""),
-  });
   return {
-    reference,
-    session: {
-      id: reference.sessionId,
-      slug: formatSessionReference(reference),
-      title: String(row.title ?? ""),
-      directory: String(row.directory ?? ""),
-      time_created: Number(row.time_created ?? 0),
-      time_updated: row.time_updated == null ? undefined : Number(row.time_updated),
-      stats: JSON.parse(String(row.stats_json ?? "{}")) as SessionStats,
-    },
+    reference: normalizeSessionReference({
+      agentName: String(row.agent_name ?? ""),
+      sessionId: String(row.session_id ?? ""),
+    }),
     bookmarkedAt: Number(row.bookmarked_at ?? 0),
   };
 }
 
-export function listBookmarks(): BookmarkRecord[] {
-  if (useMemoryStateStore()) {
-    return listMemoryBookmarks();
-  }
-
-  return withStateDb((db) => {
-    const rows = db
-      .prepare(
-        `
-          SELECT
-            agent_name,
-            session_id,
-            title,
-            directory,
-            time_created,
-            time_updated,
-            stats_json,
-            bookmarked_at
-          FROM bookmarks
-          ORDER BY COALESCE(time_updated, time_created) DESC, bookmarked_at DESC
-        `,
-      )
-      .all() as BookmarkRow[];
-
-    return rows.map(toBookmarkRecord);
-  });
+function readBookmarks(db: SQLiteDatabase): BookmarkRecord[] {
+  const rows = db
+    .prepare(
+      `
+        SELECT agent_name, session_id, bookmarked_at
+        FROM bookmarks
+        ORDER BY bookmarked_at DESC, agent_name ASC, session_id ASC
+      `,
+    )
+    .all() as BookmarkRow[];
+  return rows.map(toBookmarkRecord);
 }
 
-export function upsertBookmark(bookmark: Omit<BookmarkRecord, "bookmarkedAt">): BookmarkRecord {
-  const normalized = normalizeBookmark(bookmark);
+function listMemoryBookmarks(): BookmarkRecord[] {
+  return [...memoryBookmarks.values()].sort(compareBookmarks);
+}
+
+export function listBookmarks(): BookmarkRecord[] {
+  if (useMemoryStateStore()) return listMemoryBookmarks();
+  return withStateDb(readBookmarks);
+}
+
+export function upsertBookmark(reference: SessionReference): BookmarkRecord {
+  const normalized = normalizeSessionReference(reference);
+  const key = getBookmarkKey(normalized);
   if (useMemoryStateStore()) {
-    return upsertMemoryBookmark(normalized);
+    const bookmark = memoryBookmarks.get(key) ?? {
+      reference: normalized,
+      bookmarkedAt: Date.now(),
+    };
+    memoryBookmarks.set(key, bookmark);
+    return bookmark;
   }
 
   return withStateDb((db) => {
-    const existing = db
+    db.prepare(
+      `
+        INSERT INTO bookmarks(agent_name, session_id, bookmarked_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(agent_name, session_id) DO NOTHING
+      `,
+    ).run(normalized.agentName, normalized.sessionId, Date.now());
+    const row = db
       .prepare(
         `
-          SELECT bookmarked_at
+          SELECT agent_name, session_id, bookmarked_at
           FROM bookmarks
           WHERE agent_name = ? AND session_id = ?
         `,
       )
-      .get(normalized.reference.agentName, normalized.reference.sessionId) as
-      | DatabaseRow
-      | undefined;
-    const bookmarkedAt = Number(existing?.bookmarked_at ?? Date.now());
-
-    db.prepare(
-      `
-        INSERT INTO bookmarks(
-          agent_name,
-          session_id,
-          slug,
-          title,
-          directory,
-          time_created,
-          time_updated,
-          stats_json,
-          bookmarked_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(agent_name, session_id) DO UPDATE SET
-          slug = excluded.slug,
-          title = excluded.title,
-          directory = excluded.directory,
-          time_created = excluded.time_created,
-          time_updated = excluded.time_updated,
-          stats_json = excluded.stats_json
-      `,
-    ).run(
-      normalized.reference.agentName,
-      normalized.reference.sessionId,
-      formatSessionReference(normalized.reference),
-      normalized.session.title,
-      normalized.session.directory,
-      normalized.session.time_created,
-      normalized.session.time_updated ?? null,
-      JSON.stringify(normalized.session.stats),
-      bookmarkedAt,
-    );
-
-    return { ...normalized, bookmarkedAt };
+      .get(normalized.agentName, normalized.sessionId) as BookmarkRow;
+    return toBookmarkRecord(row);
   });
 }
 
-export function importBookmarks(
-  bookmarks: Omit<BookmarkRecord, "bookmarkedAt">[],
-): BookmarkRecord[] {
-  const normalizedBookmarks = bookmarks.map(normalizeBookmark);
+export function importBookmarks(bookmarks: readonly BookmarkRecord[]): BookmarkRecord[] {
+  const unique = new Map<string, BookmarkRecord>();
+  for (const bookmark of bookmarks) {
+    const normalized = normalizeBookmark(bookmark);
+    const key = getBookmarkKey(normalized.reference);
+    if (!unique.has(key)) unique.set(key, normalized);
+  }
+
   if (useMemoryStateStore()) {
-    for (const bookmark of normalizedBookmarks) {
-      upsertMemoryBookmark(bookmark);
+    for (const [key, bookmark] of unique) {
+      if (!memoryBookmarks.has(key)) memoryBookmarks.set(key, bookmark);
     }
     return listMemoryBookmarks();
   }
 
   return withStateDb((db) => {
-    const existingRows = db
-      .prepare("SELECT agent_name, session_id, bookmarked_at FROM bookmarks")
-      .all() as DatabaseRow[];
-    const existingTimes = new Map(
-      existingRows.map((row) => [
-        getBookmarkKey({
-          agentName: String(row.agent_name ?? ""),
-          sessionId: String(row.session_id ?? ""),
-        }),
-        Number(row.bookmarked_at ?? 0),
-      ]),
-    );
-
-    const upsert = db.prepare(
+    const insert = db.prepare(
       `
-        INSERT INTO bookmarks(
-          agent_name,
-          session_id,
-          slug,
-          title,
-          directory,
-          time_created,
-          time_updated,
-          stats_json,
-          bookmarked_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(agent_name, session_id) DO UPDATE SET
-          slug = excluded.slug,
-          title = excluded.title,
-          directory = excluded.directory,
-          time_created = excluded.time_created,
-          time_updated = excluded.time_updated,
-          stats_json = excluded.stats_json
+        INSERT INTO bookmarks(agent_name, session_id, bookmarked_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(agent_name, session_id) DO NOTHING
       `,
     );
-
     const write = db.transaction(() => {
-      for (const bookmark of normalizedBookmarks) {
-        const key = getBookmarkKey(bookmark.reference);
-        upsert.run(
+      for (const bookmark of unique.values()) {
+        insert.run(
           bookmark.reference.agentName,
           bookmark.reference.sessionId,
-          formatSessionReference(bookmark.reference),
-          bookmark.session.title,
-          bookmark.session.directory,
-          bookmark.session.time_created,
-          bookmark.session.time_updated ?? null,
-          JSON.stringify(bookmark.session.stats),
-          existingTimes.get(key) ?? Date.now(),
+          bookmark.bookmarkedAt,
         );
       }
     });
-
     write.immediate();
-    const rows = db
-      .prepare(
-        `
-          SELECT
-            agent_name,
-            session_id,
-            title,
-            directory,
-            time_created,
-            time_updated,
-            stats_json,
-            bookmarked_at
-          FROM bookmarks
-          ORDER BY COALESCE(time_updated, time_created) DESC, bookmarked_at DESC
-        `,
-      )
-      .all() as BookmarkRow[];
-    return rows.map(toBookmarkRecord);
+    return readBookmarks(db);
   });
 }
 

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listBookmarks, type BookmarkRecord } from "../../state/bookmarks.js";
+import { setStateSchemaEnsuredPath } from "../../state/database.js";
 import type { SessionHead } from "../../types/index.js";
 import { setSchemaEnsuredPath } from "../cache/db.js";
 import { searchFileActivitySessions } from "../cache/file-activity.js";
@@ -105,15 +106,13 @@ function createCacheFixture(fixture: ReleaseCacheFixture, populated = true): voi
   }
 }
 
-function createLegacyStateFixture(): void {
+function createLegacyStateFixture(version: 1 | 2): void {
   mkdirSync(getStateDir(), { recursive: true });
   const db = new Database(getStatePath());
   const session = makeSession();
 
   try {
     db.exec(`
-      PRAGMA user_version = 0;
-
       CREATE TABLE state_meta (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -132,7 +131,19 @@ function createLegacyStateFixture(): void {
         PRIMARY KEY (agent_name, session_id)
       );
     `);
-    db.prepare("INSERT INTO state_meta(key, value) VALUES ('version', '1')").run();
+    if (version === 2) {
+      db.exec(`
+        CREATE TABLE session_aliases (
+          agent_name TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          alias TEXT NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (agent_name, session_id)
+        );
+      `);
+    }
+    db.pragma(`user_version = ${version === 2 ? 2 : 0}`);
+    db.prepare("INSERT INTO state_meta(key, value) VALUES ('version', ?)").run(String(version));
     db.prepare(
       `
         INSERT INTO bookmarks(
@@ -170,6 +181,27 @@ function getMigrationBackups(): string[] {
   return readdirSync(getCacheDir())
     .filter((name) => name.startsWith("codesesh.db.") && name.endsWith(".bak"))
     .sort();
+}
+
+function getStateMigrationBackups(): string[] {
+  if (!existsSync(getStateDir())) return [];
+  return readdirSync(getStateDir())
+    .filter(
+      (name) =>
+        name.startsWith("state.db.") && name.includes(".state-migration") && name.endsWith(".bak"),
+    )
+    .sort();
+}
+
+function getBookmarkColumns(): string[] {
+  const db = new Database(getStatePath(), { readonly: true });
+  try {
+    return (db.prepare("PRAGMA table_info(bookmarks)").all() as Array<{ name: string }>).map(
+      ({ name }) => name,
+    );
+  } finally {
+    db.close();
+  }
 }
 
 function readMigratedFacts(): Record<string, unknown> {
@@ -259,12 +291,14 @@ beforeEach(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
   rmSync(getStateDir(), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
+  setStateSchemaEnsuredPath(null);
 });
 
 afterEach(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
   rmSync(getStateDir(), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
+  setStateSchemaEnsuredPath(null);
 });
 
 afterAll(() => {
@@ -368,32 +402,19 @@ describe("sqlite migration release gate", () => {
     expect(getUserVersion(getCachePath())).toBe(EXPECTED_CACHE_SCHEMA_VERSION);
   });
 
-  it("migrates the released state v1 bookmark schema", () => {
-    createLegacyStateFixture();
+  it.each([1, 2] as const)("migrates the released state v%s bookmark schema", (version) => {
+    createLegacyStateFixture(version);
 
     const bookmarks: BookmarkRecord[] = listBookmarks();
 
     expect(bookmarks).toEqual([
       {
         reference: { agentName: "claudecode", sessionId: "legacy-smoke" },
-        session: {
-          id: "legacy-smoke",
-          slug: "claudecode/legacy-smoke",
-          title: "Legacy smoke session",
-          directory: FIXTURE_DIR,
-          time_created: now - 1_000,
-          time_updated: now,
-          stats: {
-            message_count: 1,
-            total_input_tokens: 10,
-            total_output_tokens: 5,
-            total_cost: 0,
-            total_tokens: 15,
-          },
-        },
         bookmarkedAt: now - 500,
       },
     ]);
-    expect(getUserVersion(getStatePath())).toBe(2);
+    expect(getBookmarkColumns()).toEqual(["agent_name", "session_id", "bookmarked_at"]);
+    expect(getStateMigrationBackups()).toHaveLength(1);
+    expect(getUserVersion(getStatePath())).toBe(3);
   });
 });

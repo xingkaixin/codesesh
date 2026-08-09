@@ -1,4 +1,4 @@
-import type { BookmarkRecord, ApiProjectGroup, SessionHead } from "../../lib/api";
+import type { BookmarkView, ApiProjectGroup, SessionHead } from "../../lib/api";
 import { useScanStatus } from "../../hooks/useScanStatus";
 import { findAgent, type AgentCatalog } from "../../lib/agents";
 import { getSessionBookmarkKey } from "../../lib/bookmarks";
@@ -73,7 +73,7 @@ export interface AppSidebarViewModel {
   projects: ApiProjectGroup[];
   selectedProjectNavigationId: string | null;
   loading: boolean;
-  bookmarkedSessions: BookmarkRecord[];
+  bookmarkedSessions: BookmarkView[];
   sidebarSessions: SessionHead[];
   selectedSidebarSessionReference: string | null;
   bookmarkedSidebarSessionReferences: Set<string>;
@@ -82,11 +82,11 @@ export interface AppSidebarViewModel {
 export interface AppSidebarActions {
   onCollapse: () => void;
   onSelectProject: (identity: ReturnType<typeof getProjectGroupIdentity>) => void;
-  onToggleBookmark: (session: BookmarkRecord) => void;
+  onToggleBookmark: (session: BookmarkView) => void;
   onSelectFlatSidebarSession: (session: SessionHead) => void;
   onToggleSidebarSessionBookmark: (session: SessionHead) => void;
   onRenameSession: (session: SessionHead) => void;
-  onRenameBookmarkedSession: (session: BookmarkRecord) => void;
+  onRenameBookmarkedSession: (session: BookmarkView) => void;
 }
 
 export function AppSidebar({
@@ -172,12 +172,44 @@ export function AppSidebar({
           ) : (
             <ul className="space-y-1">
               {bookmarkedSessions.map((bookmark) => {
-                const { reference, session } = bookmark;
+                const { reference } = bookmark;
                 const isActive =
                   viewState.mode === "session" &&
                   viewState.activeAgentKey === reference.agentName &&
                   viewState.activeSessionId === reference.sessionId;
                 const agent = findAgent(agentCatalog, reference.agentName);
+                const available = bookmark.availability === "available";
+                const unavailableTitle = available ? undefined : bookmark.display_title;
+                const availabilityLabel =
+                  bookmark.availability === "agent-unavailable"
+                    ? "Agent unavailable"
+                    : "Session unavailable";
+                const title = available
+                  ? getSessionDisplayTitle(bookmark.session)
+                  : (unavailableTitle ?? reference.sessionId);
+                const unavailableDetail = unavailableTitle
+                  ? `${agent?.displayName ?? reference.agentName} · ${reference.sessionId} · ${availabilityLabel}`
+                  : `${agent?.displayName ?? reference.agentName} · ${availabilityLabel}`;
+                const label = (
+                  <>
+                    {agent?.icon ? (
+                      <AgentIcon
+                        icon={agent.icon}
+                        iconColored={agent.iconColored}
+                        alt={agent.displayName}
+                        className="mt-0.5 size-3.5 shrink-0 object-contain"
+                      />
+                    ) : null}
+                    <div className="min-w-0 flex-1">
+                      <span className="console-mono line-clamp-1 block text-xs">{title}</span>
+                      <span className="console-mono mt-0.5 line-clamp-1 block text-[10px] text-[var(--console-muted)]">
+                        {available
+                          ? (agent?.displayName ?? reference.agentName)
+                          : unavailableDetail}
+                      </span>
+                    </div>
+                  </>
+                );
                 return (
                   <li key={getSessionBookmarkKey(reference)}>
                     <div
@@ -188,27 +220,18 @@ export function AppSidebar({
                           : "text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)]"
                       }`}
                     >
-                      <Link
-                        to={getSessionRoutePath(session)}
-                        className="flex min-w-0 flex-1 items-start gap-2"
-                      >
-                        {agent?.icon ? (
-                          <AgentIcon
-                            icon={agent.icon}
-                            iconColored={agent.iconColored}
-                            alt={agent.displayName}
-                            className="mt-0.5 size-3.5 shrink-0 object-contain"
-                          />
-                        ) : null}
-                        <div className="min-w-0 flex-1">
-                          <span className="console-mono line-clamp-1 block text-xs">
-                            {getSessionDisplayTitle(session)}
-                          </span>
-                          <span className="console-mono mt-0.5 line-clamp-1 block text-[10px] text-[var(--console-muted)]">
-                            {agent?.displayName ?? reference.agentName}
-                          </span>
+                      {available ? (
+                        <Link
+                          to={getSessionRoutePath(bookmark.session)}
+                          className="flex min-w-0 flex-1 items-start gap-2"
+                        >
+                          {label}
+                        </Link>
+                      ) : (
+                        <div className="flex min-w-0 flex-1 items-start gap-2" aria-disabled="true">
+                          {label}
                         </div>
-                      </Link>
+                      )}
                       <SessionActionsMenu
                         bookmarked
                         onRename={() => onRenameBookmarkedSession(bookmark)}

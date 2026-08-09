@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import type {
   BookmarkRecord,
+  BookmarkView,
   LiveSnapshot,
   SessionDetail,
   SessionHead,
@@ -9,6 +10,7 @@ import type {
 import {
   addCalendarDays,
   countCalendarDays,
+  createSessionIndex,
   formatSessionReference,
   getSessionAgentKey,
   getSessionRouteKey,
@@ -30,10 +32,12 @@ import {
   importBookmarks,
   listFileActivity,
   listCachedProjectGroups,
+  loadCachedSessionHeads,
   listBookmarks,
   listModelCostDistribution,
   deleteSessionAlias,
   materializeSessionDetailResponse,
+  materializeBookmarkViews,
   upsertSessionAlias,
   upsertBookmark,
   matchesProjectScope as sessionMatchesProjectScope,
@@ -77,6 +81,7 @@ export interface ScanStatusSource {
 }
 
 const KNOWN_AGENT_NAMES = getAgentInfoMap({}).map((agent) => agent.name);
+const KNOWN_AGENT_NAME_SET = new Set(KNOWN_AGENT_NAMES);
 
 function reportInvalidQueryParameter(
   endpoint: string,
@@ -153,47 +158,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function isSessionStats(value: unknown): value is SessionHead["stats"] {
-  if (!isRecord(value)) return false;
-  return (
-    typeof value.message_count === "number" &&
-    typeof value.total_input_tokens === "number" &&
-    typeof value.total_output_tokens === "number" &&
-    typeof value.total_cost === "number" &&
-    (value.total_tokens == null || typeof value.total_tokens === "number")
-  );
-}
-
-type BookmarkInput = Omit<BookmarkRecord, "bookmarkedAt">;
-
-function parseBookmarkSession(
-  value: unknown,
-  reference: SessionReference,
-): BookmarkInput["session"] | null {
-  if (!isRecord(value)) return null;
-  if (
-    value.id !== reference.sessionId ||
-    typeof value.slug !== "string" ||
-    typeof value.title !== "string" ||
-    typeof value.directory !== "string" ||
-    typeof value.time_created !== "number" ||
-    (value.time_updated != null && typeof value.time_updated !== "number") ||
-    !isSessionStats(value.stats)
-  ) {
-    return null;
-  }
-
-  return {
-    id: reference.sessionId,
-    slug: formatSessionReference(reference),
-    title: value.title,
-    directory: value.directory,
-    time_created: value.time_created,
-    time_updated: value.time_updated ?? undefined,
-    stats: value.stats,
-  };
-}
-
 function parseSessionReferencePayload(value: unknown): SessionReference | null {
   if (
     !isRecord(value) ||
@@ -210,37 +174,39 @@ function parseSessionReferencePayload(value: unknown): SessionReference | null {
   });
 }
 
-function parseBookmarkPayload(value: unknown): BookmarkInput | null {
+function parseBookmarkReference(value: unknown): SessionReference | null {
   if (!isRecord(value)) return null;
 
   const reference = parseSessionReferencePayload(value.reference);
-  if (reference) {
-    const session = parseBookmarkSession(value.session, reference);
-    return session ? { reference, session } : null;
-  }
+  if (reference) return reference;
 
   if (
     typeof value.agentKey !== "string" ||
     typeof value.sessionId !== "string" ||
-    typeof value.fullPath !== "string" ||
     !value.agentKey.trim() ||
     !value.sessionId
   ) {
     return null;
   }
-  const legacyReference = normalizeSessionReference({
+  return normalizeSessionReference({
     agentName: value.agentKey.trim().toLowerCase(),
     sessionId: value.sessionId,
   });
-  const session = parseBookmarkSession(
-    {
-      ...value,
-      id: value.sessionId,
-      slug: value.fullPath,
-    },
-    legacyReference,
-  );
-  return session ? { reference: legacyReference, session } : null;
+}
+
+function parseBookmarkImport(value: unknown): BookmarkRecord | null {
+  if (!isRecord(value)) return null;
+  const reference = parseBookmarkReference(value);
+  if (!reference) return null;
+
+  const timestamp = value.bookmarkedAt ?? value.bookmarked_at;
+  if (timestamp != null && (typeof timestamp !== "number" || !Number.isFinite(timestamp))) {
+    return null;
+  }
+  return {
+    reference,
+    bookmarkedAt: typeof timestamp === "number" ? timestamp : Date.now(),
+  };
 }
 
 function sanitizeClientLogData(value: unknown): Record<string, unknown> {
@@ -634,12 +600,32 @@ export async function handlePostClientLog(c: Context) {
   return c.json({ ok: true });
 }
 
-export function handleGetBookmarks(c: Context) {
+function materializeStoredBookmarks(
+  scanSource: ScanResultSource,
+  bookmarks: readonly BookmarkRecord[],
+  aliases: AliasView,
+): BookmarkView[] {
+  const snapshot = scanSource.getSnapshot();
+  const sessionIndex = getSnapshotAggregation(
+    scanSource,
+    snapshot.sessions,
+    ["bookmark-session-index"],
+    () => createSessionIndex(snapshot.sessions),
+  );
+  return materializeBookmarkViews(bookmarks, {
+    liveSessionsByReference: sessionIndex.byRouteKey,
+    knownAgentNames: KNOWN_AGENT_NAME_SET,
+    resolveCachedSessions: loadCachedSessionHeads,
+  }).map((bookmark) => decorateBookmark(bookmark, aliases));
+}
+
+export function handleGetBookmarks(c: Context, scanSource: ScanResultSource) {
   return withStorageErrors(
     () => {
       const aliases = loadAliasView();
+      const bookmarks = materializeStoredBookmarks(scanSource, listBookmarks(), aliases);
       return c.json({
-        bookmarks: listBookmarks().map((bookmark) => decorateBookmark(bookmark, aliases)),
+        bookmarks,
         storageAvailable: true,
       });
     },
@@ -648,7 +634,7 @@ export function handleGetBookmarks(c: Context) {
 }
 
 export async function handlePutBookmark(c: Context) {
-  const payload = parseBookmarkPayload(await c.req.json().catch(() => null));
+  const payload = parseBookmarkReference(await c.req.json().catch(() => null));
   if (!payload) {
     return c.json({ error: "Invalid bookmark payload" }, 400);
   }
@@ -659,14 +645,14 @@ export async function handlePutBookmark(c: Context) {
   );
 }
 
-export async function handleImportBookmarks(c: Context) {
+export async function handleImportBookmarks(c: Context, scanSource: ScanResultSource) {
   const payload = await c.req.json().catch(() => null);
   if (!Array.isArray(payload)) {
     return c.json({ error: "Invalid bookmark payload" }, 400);
   }
 
   const bookmarks = payload
-    .map((entry) => parseBookmarkPayload(entry))
+    .map((entry) => parseBookmarkImport(entry))
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
   if (bookmarks.length !== payload.length) {
@@ -674,7 +660,11 @@ export async function handleImportBookmarks(c: Context) {
   }
 
   return withStorageErrors(
-    () => c.json({ bookmarks: importBookmarks(bookmarks), storageAvailable: true }),
+    () => {
+      const imported = importBookmarks(bookmarks);
+      const views = materializeStoredBookmarks(scanSource, imported, loadAliasView());
+      return c.json({ bookmarks: views, storageAvailable: true });
+    },
     () => c.json({ error: "Bookmark storage is unavailable" }, 503),
   );
 }
