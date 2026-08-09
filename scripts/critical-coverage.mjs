@@ -9,6 +9,10 @@ export const CRITICAL_COVERAGE_SCOPES = [
       { path: "packages/core/src/utils", kind: "directory" },
       { path: "packages/core/src/discovery", kind: "directory" },
       { path: "packages/core/src/agents/base.ts", kind: "file" },
+      {
+        path: "packages/core/src/agents/session-source-synchronization.ts",
+        kind: "file",
+      },
       { path: "packages/cli/src/api", kind: "directory" },
     ],
     thresholds: { lines: 90 },
@@ -22,6 +26,7 @@ export const CRITICAL_COVERAGE_SCOPES = [
       { path: "packages/cli/src/live-scan.ts", kind: "file" },
       { path: "packages/cli/src/live-session-index.ts", kind: "file" },
       { path: "packages/cli/src/pending-search-index-jobs.ts", kind: "file" },
+      { path: "packages/cli/src/scan-refresh-operation.ts", kind: "file" },
       { path: "packages/cli/src/scan-refresh-worker.ts", kind: "file" },
       { path: "packages/cli/src/scan-status-model.ts", kind: "file" },
       { path: "packages/cli/src/search-index-job-runner.ts", kind: "file" },
