@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { CostSource, SessionHead } from "../session.js";
 import {
+  applySessionWindowChanges,
   buildSessionTree,
+  createSessionProjectionContext,
   filterSessionTreeByActivityWindow,
   groupSessionsByCalendarDay,
 } from "../session-tree.js";
+import { sortSessionsByActivity } from "../session-index.js";
 
 interface SessionOverrides {
   parent?: string;
@@ -41,6 +44,13 @@ function makeSession(id: string, time: number, overrides: SessionOverrides = {})
 
 function ids(nodes: { session: SessionHead }[]): string[] {
   return nodes.map((node) => node.session.id);
+}
+
+function referenced(session: SessionHead) {
+  return {
+    reference: { agentName: "codex", sessionId: session.id },
+    session,
+  };
 }
 
 describe("buildSessionTree", () => {
@@ -268,5 +278,204 @@ describe("session tree window filtering", () => {
     expect(
       filterSessionTreeByActivityWindow(sessions, 90, 110).map((session) => session.id),
     ).toEqual(["orphan", "child", "grandchild"]);
+  });
+
+  it("collects unchanged hierarchy members around changes and removals", () => {
+    const oldRoot = makeSession("root", 1);
+    const recentRoot = makeSession("root", 100);
+    const child = makeSession("child", 1, { parent: "root" });
+    const grandchild = makeSession("grandchild", 1, { parent: "child" });
+    const unrelated = makeSession("unrelated", 1);
+
+    expect(
+      createSessionProjectionContext(
+        [oldRoot, child, grandchild, unrelated],
+        [recentRoot, child, grandchild, unrelated],
+        [referenced(recentRoot)],
+        [],
+      ).relatedSessionHeads.map(({ session }) => session.id),
+    ).toEqual(["child", "grandchild"]);
+    expect(
+      createSessionProjectionContext(
+        [oldRoot, child, grandchild],
+        [child, grandchild],
+        [],
+        [{ agentName: "codex", sessionId: "root" }],
+      ).relatedSessionHeads.map(({ session }) => session.id),
+    ).toEqual(["child", "grandchild"]);
+  });
+
+  it("does not copy unaffected sibling subtrees into a projection event", () => {
+    const root = makeSession("root", 100);
+    const child = makeSession("child", 1, { parent: "root" });
+    const changedChild = { ...child, title: "changed" };
+    const grandchild = makeSession("grandchild", 1, { parent: "child" });
+    const sibling = makeSession("sibling", 1, { parent: "root" });
+
+    expect(
+      createSessionProjectionContext(
+        [root, child, grandchild, sibling],
+        [root, changedChild, grandchild, sibling],
+        [referenced(changedChild)],
+        [],
+      ).relatedSessionHeads.map(({ session }) => session.id),
+    ).toEqual(["root", "grandchild"]);
+  });
+
+  it.each([
+    {
+      name: "window-external backfill",
+      previous: [makeSession("recent", 100)],
+      next: [makeSession("recent", 100), makeSession("historical", 1)],
+      changedIds: ["historical"],
+      removedIds: [],
+    },
+    {
+      name: "root entering the window",
+      previous: [makeSession("root", 1), makeSession("child", 1, { parent: "root" })],
+      next: [makeSession("root", 100), makeSession("child", 1, { parent: "root" })],
+      changedIds: ["root"],
+      removedIds: [],
+    },
+    {
+      name: "root leaving the window",
+      previous: [makeSession("root", 100), makeSession("child", 1, { parent: "root" })],
+      next: [makeSession("root", 1), makeSession("child", 1, { parent: "root" })],
+      changedIds: ["root"],
+      removedIds: [],
+    },
+    {
+      name: "parent removal revealing a recent orphan",
+      previous: [makeSession("root", 1), makeSession("child", 100, { parent: "root" })],
+      next: [makeSession("child", 100, { parent: "root" })],
+      changedIds: [],
+      removedIds: ["root"],
+    },
+    {
+      name: "root moving below a hidden parent",
+      previous: [makeSession("root", 100), makeSession("hidden", 1)],
+      next: [makeSession("root", 100, { parent: "hidden" }), makeSession("hidden", 1)],
+      changedIds: ["root"],
+      removedIds: [],
+    },
+    {
+      name: "cycle member leaving the window",
+      previous: [makeSession("a", 1, { parent: "b" }), makeSession("b", 100, { parent: "a" })],
+      next: [makeSession("a", 1, { parent: "b" }), makeSession("b", 1, { parent: "a" })],
+      changedIds: ["b"],
+      removedIds: [],
+    },
+  ])("matches a full reload after $name", ({ previous, next, changedIds, removedIds }) => {
+    const sortedPrevious = sortSessionsByActivity(previous);
+    const sortedNext = sortSessionsByActivity(next);
+    const previousProjection = filterSessionTreeByActivityWindow(sortedPrevious, 90, 110);
+    const changedSessionHeads = changedIds.map((id) =>
+      referenced(sortedNext.find((session) => session.id === id)!),
+    );
+    const removedSessionRefs = removedIds.map((sessionId) => ({
+      agentName: "codex",
+      sessionId,
+    }));
+    const projectionContext = createSessionProjectionContext(
+      sortedPrevious,
+      sortedNext,
+      changedSessionHeads,
+      removedSessionRefs,
+    );
+
+    const incremental = applySessionWindowChanges(previousProjection, {
+      changedSessionHeads,
+      projectionRelatedSessionHeads: projectionContext.relatedSessionHeads,
+      projectionSessionOrder: projectionContext.sessionOrder,
+      removedSessionRefs,
+      from: 90,
+      to: 110,
+    });
+    const reloaded = filterSessionTreeByActivityWindow(sortedNext, 90, 110);
+
+    expect(incremental.sessions).toEqual(reloaded);
+  });
+
+  it("stays equivalent to a full reload across a backfill and hierarchy transition sequence", () => {
+    const recentRoot = makeSession("recent-root", 100);
+    const recentChild = makeSession("recent-child", 1, { parent: "recent-root" });
+    const hiddenRoot = makeSession("hidden-root", 1);
+    const hiddenChild = makeSession("hidden-child", 100, { parent: "hidden-root" });
+    const historical = makeSession("historical", 1);
+    const initial = sortSessionsByActivity([recentRoot, recentChild, hiddenRoot, hiddenChild]);
+    const afterBackfill = sortSessionsByActivity([...initial, historical]);
+    const afterRecentRootLeaves = sortSessionsByActivity([
+      makeSession("recent-root", 1),
+      recentChild,
+      hiddenRoot,
+      hiddenChild,
+      historical,
+    ]);
+    const afterHiddenRootEnters = sortSessionsByActivity([
+      makeSession("recent-root", 1),
+      recentChild,
+      makeSession("hidden-root", 100),
+      hiddenChild,
+      historical,
+    ]);
+    const afterHiddenRootRemoval = afterHiddenRootEnters.filter(
+      (session) => session.id !== "hidden-root",
+    );
+    const transitions = [
+      { next: afterBackfill, changedIds: ["historical"], removedIds: [] },
+      { next: afterRecentRootLeaves, changedIds: ["recent-root"], removedIds: [] },
+      { next: afterHiddenRootEnters, changedIds: ["hidden-root"], removedIds: [] },
+      { next: afterHiddenRootRemoval, changedIds: [], removedIds: ["hidden-root"] },
+    ];
+    let globalSessions = initial;
+    let projectedSessions = filterSessionTreeByActivityWindow(initial, 90, 110);
+
+    for (const transition of transitions) {
+      const changedSessionHeads = transition.changedIds.map((id) =>
+        referenced(transition.next.find((session) => session.id === id)!),
+      );
+      const removedSessionRefs = transition.removedIds.map((sessionId) => ({
+        agentName: "codex",
+        sessionId,
+      }));
+      const projectionContext = createSessionProjectionContext(
+        globalSessions,
+        transition.next,
+        changedSessionHeads,
+        removedSessionRefs,
+      );
+
+      projectedSessions = applySessionWindowChanges(projectedSessions, {
+        changedSessionHeads,
+        projectionRelatedSessionHeads: projectionContext.relatedSessionHeads,
+        projectionSessionOrder: projectionContext.sessionOrder,
+        removedSessionRefs,
+        from: 90,
+        to: 110,
+      }).sessions;
+      globalSessions = transition.next;
+
+      expect(projectedSessions).toEqual(filterSessionTreeByActivityWindow(globalSessions, 90, 110));
+    }
+  });
+
+  it("preserves all-history behavior and treats a zero lower bound as present", () => {
+    const initial = [makeSession("zero", 0)];
+    const added = makeSession("added", 1);
+    const changedSessionHeads = [referenced(added)];
+
+    expect(
+      applySessionWindowChanges(initial, {
+        changedSessionHeads,
+        removedSessionRefs: [],
+      }).sessions,
+    ).toEqual([added, initial[0]]);
+    expect(
+      applySessionWindowChanges(initial, {
+        changedSessionHeads,
+        removedSessionRefs: [],
+        from: 0,
+      }).sessions,
+    ).toEqual([added, initial[0]]);
   });
 });

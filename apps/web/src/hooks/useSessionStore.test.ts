@@ -9,7 +9,11 @@ import type { AgentInfo, AppConfig, ApiProjectGroup } from "../lib/api";
 import * as api from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
 import { createQueryWrapper } from "../test/query-wrapper";
-import { useSessionStore, type SessionStoreSnapshot } from "./useSessionStore";
+import {
+  useSessionStore,
+  type LiveSessionApplyResult,
+  type SessionStoreSnapshot,
+} from "./useSessionStore";
 
 vi.mock("../lib/api", () => ({
   fetchAgents: vi.fn(),
@@ -19,7 +23,9 @@ vi.mock("../lib/api", () => ({
   fetchSessions: vi.fn(),
 }));
 
-const config = { window: { from: 1, to: 2, days: 7 } } as AppConfig;
+const config = {
+  window: { from: 1_700_000_000_000, to: 1_700_004_000_000, days: 7 },
+} as AppConfig;
 const agents = [
   { name: "ClaudeCode", displayName: "Claude Code", count: 1 },
   { name: "Codex", displayName: "Codex", count: 0 },
@@ -35,6 +41,7 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  vi.spyOn(console, "debug").mockImplementation(() => undefined);
   vi.mocked(api.fetchConfig).mockResolvedValue(config);
   vi.mocked(api.fetchAgents).mockResolvedValue(agents);
   vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [SAMPLE_SESSION_HEAD] });
@@ -45,6 +52,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 async function renderStore() {
@@ -98,13 +106,13 @@ describe("useSessionStore", () => {
       initialLoad = result.current.reload(config.window);
       liveUpdate = result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT);
     });
-    let snapshots!: [SessionStoreSnapshot | null, SessionStoreSnapshot | null];
+    let snapshots!: [LiveSessionApplyResult | null, SessionStoreSnapshot | null];
     await act(async () => {
       snapshots = await Promise.all([liveUpdate, initialLoad]);
     });
     const [liveSnapshot] = snapshots;
 
-    expect(liveSnapshot?.window).toEqual(config.window);
+    expect(liveSnapshot?.snapshot.window).toEqual(config.window);
     await waitFor(() => expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]));
   });
 
@@ -151,8 +159,8 @@ describe("useSessionStore", () => {
 
   it("applies live events to the latest window after a rapid switch", async () => {
     const { result, client } = await renderStore();
-    const firstWindow = { from: 1, to: 2 };
-    const latestWindow = { from: 3, to: 4 };
+    const firstWindow = { from: 1_700_000_000_000, to: 1_700_004_000_000 };
+    const latestWindow = { from: 1_699_999_000_000, to: 1_700_005_000_000 };
     await act(() => result.current.reload(firstWindow));
     await act(() => result.current.reload(latestWindow));
     const changedSession = { ...SAMPLE_SESSION_HEAD, display_title: "Latest window" };
@@ -200,6 +208,80 @@ describe("useSessionStore", () => {
     expect(result.current.version).toBeGreaterThan(0);
   });
 
+  it("keeps window-external backfill sessions out of the active snapshot", async () => {
+    const window = { from: 100, to: 200, days: 7 };
+    const recentSession = {
+      ...SAMPLE_SESSION_HEAD,
+      time_created: 150,
+      time_updated: 150,
+    };
+    const historicalSessions = Array.from({ length: 100 }, (_, index) => ({
+      ...SAMPLE_SESSION_HEAD,
+      id: `historical-${index}`,
+      slug: `claudecode/historical-${index}`,
+      time_created: 10,
+      time_updated: 10,
+    }));
+    vi.mocked(api.fetchSessions).mockResolvedValueOnce({ sessions: [recentSession] });
+    const { result } = await renderStore();
+    await act(() => result.current.reload(window));
+    let update!: LiveSessionApplyResult | null;
+
+    await act(async () => {
+      update = await result.current.applyLiveEvent({
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        newSessions: historicalSessions.length,
+        newSessionRefs: historicalSessions.map((session) => ({
+          agentName: "claudecode",
+          sessionId: session.id,
+        })),
+        totalSessions: historicalSessions.length + 1,
+        changedSessionHeads: historicalSessions.map((session) => ({
+          reference: { agentName: "claudecode", sessionId: session.id },
+          session,
+        })),
+      });
+    });
+
+    expect(result.current.sessions).toEqual([recentSession]);
+    expect(update?.visibleNewSessions).toBe(0);
+  });
+
+  it("reports only a newly visible session to the live notice boundary", async () => {
+    const window = { from: 100, to: 200, days: 7 };
+    const recentSession = {
+      ...SAMPLE_SESSION_HEAD,
+      time_created: 150,
+      time_updated: 150,
+    };
+    const addedSession = {
+      ...SAMPLE_SESSION_HEAD,
+      id: "new-visible",
+      slug: "claudecode/new-visible",
+      time_created: 160,
+      time_updated: 160,
+    };
+    vi.mocked(api.fetchSessions).mockResolvedValueOnce({ sessions: [recentSession] });
+    const { result } = await renderStore();
+    await act(() => result.current.reload(window));
+    let update!: LiveSessionApplyResult | null;
+
+    await act(async () => {
+      update = await result.current.applyLiveEvent({
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        newSessionRefs: [{ agentName: "claudecode", sessionId: addedSession.id }],
+        changedSessionHeads: [
+          {
+            reference: { agentName: "claudecode", sessionId: addedSession.id },
+            session: addedSession,
+          },
+        ],
+      });
+    });
+
+    expect(update?.visibleNewSessions).toBe(1);
+  });
+
   it("invalidates project dashboards, server searches, and inactive aggregate caches", async () => {
     const { result, client } = await renderStore();
     await act(() => result.current.reload(config.window));
@@ -228,13 +310,30 @@ describe("useSessionStore", () => {
     await act(() => result.current.reload(config.window));
     const changedDetailKey = queryKeys.sessionDetail("claudecode", SAMPLE_SESSION_HEAD.id);
     const unchangedDetailKey = queryKeys.sessionDetail("claudecode", "unchanged-session");
+    const relatedDetailKey = queryKeys.sessionDetail("claudecode", "related-session");
     client.setQueryData(changedDetailKey, { id: SAMPLE_SESSION_HEAD.id });
     client.setQueryData(unchangedDetailKey, { id: "unchanged-session" });
+    client.setQueryData(relatedDetailKey, { id: "related-session" });
 
-    await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
+    await act(() =>
+      result.current.applyLiveEvent({
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        projectionRelatedSessionHeads: [
+          {
+            reference: { agentName: "claudecode", sessionId: "related-session" },
+            session: {
+              ...SAMPLE_SESSION_HEAD,
+              id: "related-session",
+              slug: "claudecode/related-session",
+            },
+          },
+        ],
+      }),
+    );
 
     expect(client.getQueryState(changedDetailKey)?.isInvalidated).toBe(true);
     expect(client.getQueryState(unchangedDetailKey)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(relatedDetailKey)?.isInvalidated).toBe(false);
   });
 
   it("performs an explicit full reload when live state reconnects", async () => {

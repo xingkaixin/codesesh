@@ -8,7 +8,7 @@ import {
   type LiveSnapshot,
   type SessionHead,
 } from "@codesesh/core";
-import type { SessionsUpdatedEvent } from "@codesesh/core/contract";
+import { createSessionProjectionContext, type SessionsUpdatedEvent } from "@codesesh/core/contract";
 
 export interface LiveSessionIndexOptions {
   registeredAgents?: BaseAgent[];
@@ -65,6 +65,7 @@ export class LiveSessionIndex {
   ): SessionsUpdatedEvent | null {
     delete this.scanFailures[agentName];
     const previousSessions = this.byAgent[agentName] ?? [];
+    const previousGlobalSessions = this.sessions;
     const signatureCache = this.signatureCache(agentName);
     const { changes, removedSessionIds, counts } = computeSessionDiff(
       previousSessions,
@@ -79,19 +80,34 @@ export class LiveSessionIndex {
     this.sessions = mergeSortedSessions(Object.values(this.byAgent));
     if (counts.new === 0 && counts.updated === 0 && counts.removed === 0) return null;
 
+    const changedSessionHeads = changes.map(({ session }) => ({
+      reference: { agentName, sessionId: session.id },
+      session,
+    }));
+    const previousSessionIds = new Set(previousSessions.map((session) => session.id));
+    const newSessionRefs = changedSessionHeads.flatMap(({ reference }) =>
+      previousSessionIds.has(reference.sessionId) ? [] : [reference],
+    );
+    const removedSessionRefs = removedSessionIds.map((sessionId) => ({ agentName, sessionId }));
+    const projectionContext = createSessionProjectionContext(
+      previousGlobalSessions,
+      this.sessions,
+      changedSessionHeads,
+      removedSessionRefs,
+    );
     return {
       type: "sessions-updated",
       changedAgents: [agentName],
       newSessions: counts.new,
+      newSessionRefs,
       updatedSessions: counts.updated,
       removedSessions: counts.removed,
       totalSessions: this.sessions.length,
       timestamp: Date.now(),
-      changedSessionHeads: changes.map(({ session }) => ({
-        reference: { agentName, sessionId: session.id },
-        session,
-      })),
-      removedSessionRefs: removedSessionIds.map((sessionId) => ({ agentName, sessionId })),
+      changedSessionHeads,
+      projectionRelatedSessionHeads: projectionContext.relatedSessionHeads,
+      projectionSessionOrder: projectionContext.sessionOrder,
+      removedSessionRefs,
     };
   }
 
