@@ -98,6 +98,7 @@ describe("LiveSessionIndex", () => {
       type: "sessions-updated",
       changedAgents: ["codex"],
       newSessions: 1,
+      newSessionRefs: [{ agentName: "codex", sessionId: "added" }],
       updatedSessions: 1,
       removedSessions: 0,
       totalSessions: 3,
@@ -112,8 +113,54 @@ describe("LiveSessionIndex", () => {
           session: updated,
         },
       ],
+      projectionRelatedSessionHeads: [],
+      projectionSessionOrder: [
+        { agentName: "codex", sessionId: "previous" },
+        { agentName: "codex", sessionId: "added" },
+      ],
       removedSessionRefs: [],
     });
+  });
+
+  it("publishes unchanged hierarchy members needed to project a changed root", () => {
+    const codex = makeAgent("codex");
+    const root = makeSession("root", 1, "before");
+    const changedRoot = makeSession("root", 100, "after");
+    const child = {
+      ...makeSession("child", 1),
+      parent_reference: { agentName: "codex", sessionId: "root" },
+    };
+    const index = new LiveSessionIndex();
+    index.initialize(snapshot([codex], { codex: [root, child] }));
+
+    const event = index.commitAgentSessions("codex", [changedRoot, child], [changedRoot.id]);
+
+    expect(event?.projectionRelatedSessionHeads).toEqual([
+      {
+        reference: { agentName: "codex", sessionId: "child" },
+        session: child,
+      },
+    ]);
+  });
+
+  it("publishes surviving hierarchy members when their parent is removed", () => {
+    const codex = makeAgent("codex");
+    const root = makeSession("root", 1);
+    const child = {
+      ...makeSession("child", 100),
+      parent_reference: { agentName: "codex", sessionId: "root" },
+    };
+    const index = new LiveSessionIndex();
+    index.initialize(snapshot([codex], { codex: [root, child] }));
+
+    const event = index.commitAgentSessions("codex", [child]);
+
+    expect(event?.projectionRelatedSessionHeads).toEqual([
+      {
+        reference: { agentName: "codex", sessionId: "child" },
+        session: child,
+      },
+    ]);
   });
 
   it("updates the snapshot even when no event is needed", () => {
