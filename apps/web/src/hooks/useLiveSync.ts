@@ -5,10 +5,10 @@ import {
   type SessionsUpdatedEvent,
   subscribeSessionUpdates,
 } from "../lib/api";
-import type { SessionStoreSnapshot } from "./useSessionStore";
+import type { LiveSessionApplyResult, SessionStoreSnapshot } from "./useSessionStore";
 
 interface LiveSyncDeps {
-  applyLiveEvent: (event: SessionsUpdatedEvent) => Promise<SessionStoreSnapshot | null>;
+  applyLiveEvent: (event: SessionsUpdatedEvent) => Promise<LiveSessionApplyResult | null>;
   resyncLiveState: () => Promise<SessionStoreSnapshot | null>;
   setScanStatus: (event: ScanStatusEvent) => void;
 }
@@ -24,9 +24,11 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
 
   const syncLiveUpdate = useEffectEvent(async (event: SessionsUpdatedEvent) => {
     try {
-      const snapshot = await applyLiveEvent(event);
-      if (snapshot && event.newSessions > 0) {
-        setLiveNotice(`${event.newSessions} new sessions found; the list refreshed automatically`);
+      const result = await applyLiveEvent(event);
+      if (result && result.visibleNewSessions > 0) {
+        setLiveNotice(
+          `${result.visibleNewSessions} new sessions found; the list refreshed automatically`,
+        );
       }
     } catch (error) {
       console.error("Failed to sync live session update:", error);

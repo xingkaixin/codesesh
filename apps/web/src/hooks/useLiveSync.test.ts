@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionsUpdatedEvent } from "../lib/api";
 import * as api from "../lib/api";
 import { useLiveSync } from "./useLiveSync";
+import type { SessionStoreSnapshot } from "./useSessionStore";
 
 let sessionsCallback: ((event: SessionsUpdatedEvent) => void) | undefined;
 let reconnectCallback: (() => void) | undefined;
@@ -25,9 +26,12 @@ vi.mock("../lib/api", () => ({
   ),
 }));
 
-function makeDeps() {
+function makeDeps(visibleNewSessions = 0) {
   return {
-    applyLiveEvent: vi.fn().mockResolvedValue({}),
+    applyLiveEvent: vi.fn().mockResolvedValue({
+      snapshot: {} as SessionStoreSnapshot,
+      visibleNewSessions,
+    }),
     resyncLiveState: vi.fn().mockResolvedValue({}),
     setScanStatus: vi.fn(),
   };
@@ -64,7 +68,7 @@ describe("useLiveSync", () => {
 
   it("surfaces a notice when new sessions arrive", async () => {
     vi.useFakeTimers();
-    const { result } = renderHook(() => useLiveSync(makeDeps()));
+    const { result } = renderHook(() => useLiveSync(makeDeps(3)));
 
     await act(async () => {
       sessionsCallback?.({ ...SAMPLE_SESSIONS_UPDATED_EVENT, newSessions: 3 });
@@ -72,6 +76,18 @@ describe("useLiveSync", () => {
     });
 
     expect(result.current.liveNotice).toContain("3");
+  });
+
+  it("does not surface a notice when global additions stay outside the active window", async () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useLiveSync(makeDeps()));
+
+    await act(async () => {
+      sessionsCallback?.({ ...SAMPLE_SESSIONS_UPDATED_EVENT, newSessions: 3 });
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(result.current.liveNotice).toBeNull();
   });
 
   it("merges burst updates into one store refresh", async () => {

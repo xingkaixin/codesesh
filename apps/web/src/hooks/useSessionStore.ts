@@ -1,4 +1,8 @@
-import { applySessionChanges } from "@codesesh/core/contract";
+import {
+  applySessionWindowChanges,
+  formatSessionReference,
+  getSessionAgentKey,
+} from "@codesesh/core/contract";
 import { isCancelledError, queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
@@ -27,6 +31,11 @@ export interface SessionStoreSnapshot {
   sessions: SessionHead[];
   projects: ApiProjectGroup[];
   dashboard: DashboardData;
+}
+
+export interface LiveSessionApplyResult {
+  snapshot: SessionStoreSnapshot;
+  visibleNewSessions: number;
 }
 
 type SnapshotAggregates = Pick<SessionStoreSnapshot, "agents" | "projects" | "dashboard">;
@@ -131,7 +140,7 @@ export function useSessionStore() {
   );
 
   const applyLiveEvent = useCallback(
-    async (event: SessionsUpdatedEvent): Promise<SessionStoreSnapshot | null> => {
+    async (event: SessionsUpdatedEvent): Promise<LiveSessionApplyResult | null> => {
       const activeWindow = requestedWindowRef.current;
       if (!activeWindow) return null;
       const snapshotKey = queryKeys.sessionSnapshot(activeWindow);
@@ -139,16 +148,52 @@ export function useSessionStore() {
       if (!current) {
         const refreshed = await reload(activeWindow);
         await invalidateLiveSessionDerivedQueries(queryClient, event);
-        return refreshed;
+        return refreshed ? { snapshot: refreshed, visibleNewSessions: 0 } : null;
       }
 
+      const projection = applySessionWindowChanges(current.sessions, {
+        changedSessionHeads: event.changedSessionHeads,
+        projectionRelatedSessionHeads: event.projectionRelatedSessionHeads,
+        projectionSessionOrder: event.projectionSessionOrder,
+        removedSessionRefs: event.removedSessionRefs,
+        from: activeWindow.from,
+        to: activeWindow.to,
+      });
+      const visibleSessionKeys = new Set(
+        projection.sessions.map((session) =>
+          formatSessionReference({
+            agentName: getSessionAgentKey(session),
+            sessionId: session.id,
+          }),
+        ),
+      );
+      const previousSessionKeys = new Set(
+        current.sessions.map((session) =>
+          formatSessionReference({
+            agentName: getSessionAgentKey(session),
+            sessionId: session.id,
+          }),
+        ),
+      );
+      const visibleNewSessions = (event.newSessionRefs ?? []).filter((reference) => {
+        const key = formatSessionReference(reference);
+        return !previousSessionKeys.has(key) && visibleSessionKeys.has(key);
+      }).length;
+      console.debug("live.session_projection", {
+        window_from: activeWindow.from,
+        window_to: activeWindow.to,
+        before_sessions: current.sessions.length,
+        changed_sessions: event.changedSessionHeads.length,
+        projection_related_sessions: event.projectionRelatedSessionHeads?.length ?? 0,
+        removed_sessions: event.removedSessionRefs.length,
+        after_sessions: projection.sessions.length,
+        visible_added_sessions: projection.visibleAddedSessions,
+        visible_removed_sessions: projection.visibleRemovedSessions,
+        visible_new_sessions: visibleNewSessions,
+      });
       queryClient.setQueryData<SessionStoreSnapshot>(snapshotKey, {
         ...current,
-        sessions: applySessionChanges(
-          current.sessions,
-          event.changedSessionHeads,
-          event.removedSessionRefs,
-        ),
+        sessions: projection.sessions,
       });
       await invalidateLiveSessionDerivedQueries(queryClient, event);
       const aggregates = await queryClient.fetchQuery(snapshotAggregatesOptions(activeWindow));
@@ -156,7 +201,7 @@ export function useSessionStore() {
         queryClient.setQueryData<SessionStoreSnapshot>(snapshotKey, (latest) =>
           latest ? { ...latest, ...aggregates } : latest,
         ) ?? null;
-      return updated;
+      return updated ? { snapshot: updated, visibleNewSessions } : null;
     },
     [queryClient, reload],
   );
