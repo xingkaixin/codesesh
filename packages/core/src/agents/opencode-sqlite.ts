@@ -19,6 +19,7 @@ import { estimateTokenCost } from "../utils/cost.js";
 import { resolveSessionTitle } from "../utils/title-fallback.js";
 import { isInternalEventType } from "../utils/parse-cleanup.js";
 import { asRecord, asString, narrowField, reportFieldMismatch } from "../utils/narrow.js";
+import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import {
   cleanMessagePart,
   cleanParsedMessages,
@@ -364,40 +365,57 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
   private readRelatedSessionRows(db: SQLiteDatabase, rootIds: string[]): Record<string, unknown>[] {
     if (rootIds.length === 0) return [];
 
-    const rows = db
-      .prepare(
-        `
-          SELECT
-            s.id, s.title, s.time_created, s.time_updated, s.slug, s.directory,
-            s.version, s.summary_files, s.parent_id
-          FROM session s
-          WHERE s.parent_id IS NOT NULL
-          ORDER BY s.time_created ASC
-        `,
-      )
-      .all() as Record<string, unknown>[];
-    const childrenByParent = new Map<string, Record<string, unknown>[]>();
-    for (const row of rows) {
-      const parentId = String(row.parent_id ?? "");
-      if (!parentId) continue;
-      const children = childrenByParent.get(parentId);
-      if (children) children.push(row);
-      else childrenByParent.set(parentId, [row]);
-    }
+    const startedAt = performance.now();
+    const relatedById = new Map<string, Record<string, unknown>>();
+    let candidateRows = 0;
+    let queryCount = 0;
+    for (let offset = 0; offset < rootIds.length; offset += SESSION_ID_QUERY_CHUNK_SIZE) {
+      const chunk = rootIds.slice(offset, offset + SESSION_ID_QUERY_CHUNK_SIZE);
+      const rows = db
+        .prepare(
+          `
+            WITH RECURSIVE related_sessions(
+              id, title, time_created, time_updated, slug, directory,
+              version, summary_files, parent_id
+            ) AS (
+              SELECT
+                s.id, s.title, s.time_created, s.time_updated, s.slug, s.directory,
+                s.version, s.summary_files, s.parent_id
+              FROM session s
+              WHERE s.parent_id IN (${chunk.map(() => "?").join(",")})
 
-    const result: Record<string, unknown>[] = [];
-    const pending = [...rootIds];
-    const seen = new Set<string>();
-    while (pending.length > 0) {
-      const parentId = pending.pop()!;
-      for (const row of childrenByParent.get(parentId) ?? []) {
+              UNION
+
+              SELECT
+                child.id, child.title, child.time_created, child.time_updated,
+                child.slug, child.directory, child.version, child.summary_files, child.parent_id
+              FROM session child
+              JOIN related_sessions parent ON child.parent_id = parent.id
+            )
+            SELECT
+              id, title, time_created, time_updated, slug, directory,
+              version, summary_files, parent_id
+            FROM related_sessions
+            ORDER BY time_created ASC, id ASC
+          `,
+        )
+        .all(...chunk) as Record<string, unknown>[];
+      queryCount += 1;
+      candidateRows += rows.length;
+      for (const row of rows) {
         const id = String(row.id ?? "");
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
-        result.push(row);
-        pending.push(id);
+        if (id && !relatedById.has(id)) relatedById.set(id, row);
       }
     }
+    const result = [...relatedById.values()];
+    getCoreDiagnostics()?.info?.("agent.related_sessions.query", {
+      agent_name: this.name,
+      root_count: rootIds.length,
+      query_count: queryCount,
+      candidate_rows: candidateRows,
+      related_rows: result.length,
+      duration_ms: Number((performance.now() - startedAt).toFixed(2)),
+    });
     return result;
   }
 
