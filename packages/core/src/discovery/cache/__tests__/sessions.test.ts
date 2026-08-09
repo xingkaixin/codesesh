@@ -88,15 +88,19 @@ describe("cached sessions", () => {
   });
 
   it("chunks large targeted session-head lookups", () => {
-    const sessions = Array.from({ length: 401 }, (_, index) => makeSessionHead(`session-${index}`));
-    saveCachedSessions("codex", sessions);
+    saveCachedSessions("codex", [makeSessionHead("session-400")]);
+    const references = Array.from({ length: 401 }, (_, index) => ({
+      agentName: "codex",
+      sessionId: `session-${index}`,
+    }));
 
-    const resolved = loadCachedSessionHeads(
-      sessions.map(({ id }) => ({ agentName: "codex", sessionId: id })),
-    );
+    const resolved = loadCachedSessionHeads(references);
 
-    expect(resolved).toHaveLength(401);
-    expect(new Set(resolved.map(({ reference }) => reference.sessionId)).size).toBe(401);
+    expect(resolved).toEqual([
+      expect.objectContaining({
+        reference: { agentName: "codex", sessionId: "session-400" },
+      }),
+    ]);
   });
 
   it("CS-137: reports whether the write reached disk", () => {
