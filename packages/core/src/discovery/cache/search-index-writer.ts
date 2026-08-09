@@ -18,11 +18,14 @@ import {
 } from "./messages.js";
 import { runSearchIndexWrite, withSearchIndexDb } from "./schema.js";
 import { sessionDetailVersion } from "./detail-version.js";
+import type { SessionSnapshotCompleteness } from "./sessions.js";
 
 export interface SearchIndexSyncOptions {
   isBulk?: boolean;
   bulkThreshold?: number;
   detailVersions?: Readonly<Record<string, string>>;
+  completeness?: SessionSnapshotCompleteness;
+  removedSessionIds?: readonly string[];
 }
 
 export interface SearchIndexSyncFailure {
@@ -456,9 +459,15 @@ export function syncSessionSearchIndex(
     );
     const sessionMap = new Map(sessions.map((session) => [session.id, session]));
 
+    const explicitRemovedSessionIds = new Set(options.removedSessionIds ?? []);
+    const completeness = options.completeness ?? "complete";
     const toDelete = existingRows
       .map((row) => String(row.session_id))
-      .filter((sessionId) => !sessionMap.has(sessionId));
+      .filter(
+        (sessionId) =>
+          explicitRemovedSessionIds.has(sessionId) ||
+          (completeness === "complete" && !sessionMap.has(sessionId)),
+      );
     const toUpsert = sessions.filter((session) =>
       searchIndexEntryNeedsUpdate(searchIndexState, session, options),
     );
