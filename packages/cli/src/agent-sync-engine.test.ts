@@ -12,7 +12,7 @@ import type {
   SessionSourceFailure,
 } from "@codesesh/core";
 import type { ScanStatusEvent } from "@codesesh/core/contract";
-import type { WorkerRunner } from "./worker-runner.js";
+import type { WorkerResult, WorkerRunner } from "./worker-runner.js";
 import { appLogger } from "./logging.js";
 
 const core = vi.hoisted(() => ({
@@ -124,13 +124,25 @@ class FakeSyncAgent extends FileSystemSessionSource {
   }
 }
 
+function workerResult(
+  result: Omit<WorkerResult, "completeness" | "explicitRemovedSessionIds">,
+  completeness: WorkerResult["completeness"] = "complete",
+): WorkerResult {
+  return { ...result, completeness, explicitRemovedSessionIds: [] };
+}
+
 function makeWorkerRunner(): WorkerRunner {
   return {
     activeCount: 0,
-    run: vi.fn(async (_agentName, payload) => ({
-      sessions: payload.derivedOnly ? payload.previousSessions : [],
-      meta: payload.meta,
-    })),
+    run: vi.fn(async (_agentName, payload) =>
+      workerResult(
+        {
+          sessions: payload.derivedOnly ? payload.previousSessions : [],
+          meta: payload.meta,
+        },
+        payload.scanOptions.from == null && payload.scanOptions.to == null ? "complete" : "partial",
+      ),
+    ),
     commit: vi.fn(),
     discard: vi.fn(),
     shutdown: vi.fn(async () => undefined),
@@ -211,7 +223,7 @@ describe("AgentSyncEngine", () => {
           payload.onProgress?.({ phase: "scanning", total: 10_000, processed });
         }
         payload.onProgress?.({ phase: "finalizing", total: 10_000, processed: 10_000 });
-        return { sessions: [], meta: {} };
+        return workerResult({ sessions: [], meta: {} });
       }),
       shutdown: vi.fn(async () => undefined),
     };
@@ -347,7 +359,7 @@ describe("AgentSyncEngine", () => {
           payload.onProgress?.({ phase: "scanning", total: 10_000, processed });
         }
         payload.onProgress?.({ phase: "finalizing", total: 10_000, processed: 10_000 });
-        return { sessions: [], meta: {} };
+        return workerResult({ sessions: [], meta: {} });
       }),
       shutdown: vi.fn(async () => undefined),
     };
@@ -394,7 +406,7 @@ describe("AgentSyncEngine", () => {
     };
     const workerRunner: WorkerRunner = {
       activeCount: 0,
-      run: vi.fn(async () => ({ sessions: [updated], meta: {} })),
+      run: vi.fn(async () => workerResult({ sessions: [updated], meta: {} })),
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(
@@ -491,7 +503,7 @@ describe("AgentSyncEngine", () => {
           changes: [{ session: tagged, sortIndex: 0 }],
           meta,
         });
-        return { sessions: [tagged], meta };
+        return workerResult({ sessions: [tagged], meta });
       }),
       shutdown: vi.fn(async () => undefined),
     };
@@ -531,7 +543,7 @@ describe("AgentSyncEngine", () => {
           meta: {},
           completeness: "partial",
         });
-        return { sessions: [recent], meta: {} };
+        return workerResult({ sessions: [recent], meta: {} }, "partial");
       }),
       shutdown: vi.fn(async () => undefined),
     };
@@ -556,6 +568,15 @@ describe("AgentSyncEngine", () => {
       missing_cached_sessions: 1,
       delete_candidates: 0,
     });
+    expect(logInfo).toHaveBeenCalledWith("scan.refresh.persistence_candidate", {
+      agent: "codex",
+      scope_from: 2,
+      scope_to: undefined,
+      publication_completeness: "partial",
+      durable_baseline_sessions: 2,
+      payload_sessions: 1,
+      delete_candidates: 0,
+    });
     expect(core.saveCachedSessions).toHaveBeenCalledWith(
       "codex",
       [recent],
@@ -564,6 +585,9 @@ describe("AgentSyncEngine", () => {
         completeness: "partial",
       },
     );
+    expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
+      expect.objectContaining({ kind: "full", completeness: "partial" }),
+    ]);
   });
 
   it("keeps the last durable snapshot when a head checkpoint is rejected", async () => {
@@ -584,7 +608,7 @@ describe("AgentSyncEngine", () => {
           meta,
           completeness: "complete",
         });
-        return { sessions: [head], meta };
+        return workerResult({ sessions: [head], meta });
       }),
       shutdown: vi.fn(async () => undefined),
     };
@@ -637,7 +661,7 @@ describe("AgentSyncEngine", () => {
           meta,
           completeness: "complete",
         });
-        return { sessions: [head], meta };
+        return workerResult({ sessions: [head], meta });
       }),
       shutdown: vi.fn(async () => undefined),
     };
@@ -681,13 +705,15 @@ describe("AgentSyncEngine", () => {
     const previous = makeSession("changed", "before");
     const updated = makeSession("changed", "after");
     const incrementalScan = vi.fn(() => [updated]);
-    const runWorker = vi.fn(async () => ({
-      sessions: [steady, updated],
-      meta: {
-        steady: { id: "steady", sourcePath: "/database" },
-        changed: { id: "changed", sourcePath: "/database" },
-      },
-    }));
+    const runWorker = vi.fn(async () =>
+      workerResult({
+        sessions: [steady, updated],
+        meta: {
+          steady: { id: "steady", sourcePath: "/database" },
+          changed: { id: "changed", sourcePath: "/database" },
+        },
+      }),
+    );
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: runWorker,
@@ -748,15 +774,20 @@ describe("AgentSyncEngine", () => {
     });
     const workerRunner: WorkerRunner = {
       activeCount: 0,
-      run: vi.fn(async () => ({
-        sessions: [updated, retained],
-        meta: {
-          changed: { id: "changed", sourcePath: "/changed", sourceFingerprint: "new" },
-          retained: { id: "retained", sourcePath: "/retained", sourceFingerprint: "old" },
-        },
-        changedIds: [changed.id],
-        sourceFailures: [failure],
-      })),
+      run: vi.fn(async () =>
+        workerResult(
+          {
+            sessions: [updated, retained],
+            meta: {
+              changed: { id: "changed", sourcePath: "/changed", sourceFingerprint: "new" },
+              retained: { id: "retained", sourcePath: "/retained", sourceFingerprint: "old" },
+            },
+            changedIds: [changed.id],
+            sourceFailures: [failure],
+          },
+          "partial",
+        ),
+      ),
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(new FakeSyncAgent(), [changed, retained], workerRunner);
@@ -919,7 +950,7 @@ describe("AgentSyncEngine", () => {
     const agent = new FakeSyncAgent();
     const workerRunner: WorkerRunner = {
       activeCount: 0,
-      run: vi.fn(async () => ({ sessions: [session], meta: {}, changedIds: [] })),
+      run: vi.fn(async () => workerResult({ sessions: [session], meta: {}, changedIds: [] })),
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(agent, [session], workerRunner);
@@ -955,7 +986,7 @@ describe("AgentSyncEngine", () => {
       // The sync worker reports no changedIds even though the session content
       // changed — mirrors an out-of-band reclassification the file-fingerprint
       // check can't see.
-      run: vi.fn(async () => ({ sessions: [newSession], meta: {}, changedIds: [] })),
+      run: vi.fn(async () => workerResult({ sessions: [newSession], meta: {}, changedIds: [] })),
       shutdown: vi.fn(async () => undefined),
     };
     const state: LiveSnapshot = {
@@ -993,7 +1024,7 @@ describe("AgentSyncEngine", () => {
     const agent = new FakeSyncAgent();
     const workerRunner: WorkerRunner = {
       activeCount: 0,
-      run: vi.fn(async () => ({ sessions: [newSession], meta: {}, changedIds: [] })),
+      run: vi.fn(async () => workerResult({ sessions: [newSession], meta: {}, changedIds: [] })),
       commit: vi.fn(),
       discard: vi.fn(),
       shutdown: vi.fn(async () => undefined),
@@ -1058,7 +1089,7 @@ describe("AgentSyncEngine", () => {
     const scanResult = [makeSession("broken")];
     const workerRunner: WorkerRunner = {
       activeCount: 0,
-      run: vi.fn(async () => ({ sessions: scanResult, meta: {} })),
+      run: vi.fn(async () => workerResult({ sessions: scanResult, meta: {} }, "partial")),
       shutdown: vi.fn(async () => undefined),
     };
     const state: LiveSnapshot = { agents: [agent], byAgent: { codex: [] }, sessions: [] };

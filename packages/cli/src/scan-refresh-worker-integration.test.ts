@@ -348,7 +348,11 @@ describe("scan refresh worker entry", () => {
       }),
     );
     expect(mocks.postMessage.mock.calls.at(-1)?.[0]).toEqual(
-      expect.objectContaining({ type: "done" }),
+      expect.objectContaining({
+        type: "done",
+        completeness: "complete",
+        explicitRemovedSessionIds: [],
+      }),
     );
   });
 
@@ -370,6 +374,9 @@ describe("scan refresh worker entry", () => {
           completeness: "partial",
         }),
       }),
+    );
+    expect(mocks.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: "done", completeness: "partial" }),
     );
   });
 
@@ -833,6 +840,8 @@ describe("scan refresh worker entry", () => {
         changes: [{ session: updated, sortIndex: 1 }],
         removedSessionIds: ["removed"],
         removedMetaIds: ["removed"],
+        completeness: "partial",
+        explicitRemovedSessionIds: ["removed"],
         sourceFailures: [
           expect.objectContaining({ sessionId: "moved", stage: "parsing" }),
           expect.objectContaining({ sessionId: "missing", stage: "parsing" }),

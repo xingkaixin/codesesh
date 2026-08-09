@@ -6,6 +6,7 @@ import type {
   SessionHead,
   SessionHeadChange,
   SessionSourceFailure,
+  SessionSnapshotCompleteness,
 } from "@codesesh/core";
 import { appLogger } from "./logging.js";
 import type {
@@ -35,6 +36,8 @@ export interface WorkerResult {
   meta: Record<string, SessionCacheMeta>;
   changedIds?: string[];
   sourceFailures?: SessionSourceFailure[];
+  completeness: SessionSnapshotCompleteness;
+  explicitRemovedSessionIds: string[];
 }
 
 export interface WorkerRunner {
@@ -289,6 +292,8 @@ export class ThreadWorkerRunner implements WorkerRunner {
         meta: applyMetaChanges(pending.payload.meta, message.meta, removedMetaIds),
         changedIds: pending.payload.sourceSync ? replacedSessionIds : undefined,
         sourceFailures: message.sourceFailures,
+        completeness: message.completeness,
+        explicitRemovedSessionIds: message.explicitRemovedSessionIds,
       };
       slot.awaitingCommit = {
         requestId: message.requestId,

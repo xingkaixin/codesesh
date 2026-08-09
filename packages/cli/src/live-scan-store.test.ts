@@ -265,6 +265,12 @@ const workerThreads = vi.hoisted(() => ({
                 requestId: runData.requestId,
                 generation: runData.generation ?? 0,
                 ...delta,
+                sourceFailures: [],
+                completeness:
+                  runData.scanOptions?.from == null && runData.scanOptions?.to == null
+                    ? "complete"
+                    : "partial",
+                explicitRemovedSessionIds: runData.sourceSync ? delta.removedSessionIds : [],
                 durationMs: 0,
               });
               continue;
@@ -401,6 +407,12 @@ function makeWorkerRunner() {
     discard: vi.fn<NonNullable<WorkerRunner["discard"]>>(),
     shutdown: vi.fn<WorkerRunner["shutdown"]>(async () => undefined),
   } satisfies WorkerRunner;
+}
+
+function completeWorkerResult(
+  result: Omit<WorkerResult, "completeness" | "explicitRemovedSessionIds">,
+): WorkerResult {
+  return { ...result, completeness: "complete", explicitRemovedSessionIds: [] };
 }
 
 function syncEngineOf(store: LiveScanStore): AgentSyncEngine {
@@ -955,7 +967,9 @@ describe("LiveScanStore", () => {
             releaseBackfill = resolve;
           }),
       )
-      .mockResolvedValueOnce({ sessions: [fresh], meta: {}, changedIds: [fresh.id] });
+      .mockResolvedValueOnce(
+        completeWorkerResult({ sessions: [fresh], meta: {}, changedIds: [fresh.id] }),
+      );
     const store = new LiveScanStore({ watchEnabled: false, workerRunner });
     await store.initialize();
     const logInfo = vi.spyOn(appLogger, "info").mockImplementation(() => undefined);
@@ -967,7 +981,7 @@ describe("LiveScanStore", () => {
     await Promise.resolve();
     expect(workerRunner.run).toHaveBeenCalledTimes(1);
 
-    releaseBackfill!({ sessions: [stale], meta: {}, changedIds: [stale.id] });
+    releaseBackfill!(completeWorkerResult({ sessions: [stale], meta: {}, changedIds: [stale.id] }));
     await backfill;
     await refresh;
 
@@ -1006,7 +1020,9 @@ describe("LiveScanStore", () => {
     const workerRunner = makeWorkerRunner();
     workerRunner.run
       .mockRejectedValueOnce(new Error("backfill failed"))
-      .mockResolvedValueOnce({ sessions: [fresh], meta: {}, changedIds: [fresh.id] });
+      .mockResolvedValueOnce(
+        completeWorkerResult({ sessions: [fresh], meta: {}, changedIds: [fresh.id] }),
+      );
     const store = new LiveScanStore({ watchEnabled: false, workerRunner });
     await store.initialize();
 
@@ -1064,7 +1080,7 @@ describe("LiveScanStore", () => {
     await syncEngineOf(store).refresh("kimi");
     expect(store.getSnapshot().byAgent.kimi![0]?.title).toBe("kimi fresh");
 
-    releaseBackfill!({ sessions: [codexInitial], meta: {}, changedIds: [] });
+    releaseBackfill!(completeWorkerResult({ sessions: [codexInitial], meta: {}, changedIds: [] }));
     await backfill;
   });
 
@@ -1098,8 +1114,12 @@ describe("LiveScanStore", () => {
             releaseBackfill = resolve;
           }),
       )
-      .mockResolvedValueOnce({ sessions: [refreshed], meta: {}, changedIds: [refreshed.id] })
-      .mockResolvedValueOnce({ sessions: [rerun], meta: {}, changedIds: [rerun.id] });
+      .mockResolvedValueOnce(
+        completeWorkerResult({ sessions: [refreshed], meta: {}, changedIds: [refreshed.id] }),
+      )
+      .mockResolvedValueOnce(
+        completeWorkerResult({ sessions: [rerun], meta: {}, changedIds: [rerun.id] }),
+      );
     const store = new LiveScanStore({ watchEnabled: false, workerRunner });
     await store.initialize();
 
@@ -1112,7 +1132,9 @@ describe("LiveScanStore", () => {
     await syncEngineOf(store).refresh("codex");
 
     expect(workerRunner.run).toHaveBeenCalledTimes(1);
-    releaseBackfill!({ sessions: [backfilled], meta: {}, changedIds: [backfilled.id] });
+    releaseBackfill!(
+      completeWorkerResult({ sessions: [backfilled], meta: {}, changedIds: [backfilled.id] }),
+    );
     await backfill;
     await refresh;
     await vi.waitFor(() => expect(workerRunner.run).toHaveBeenCalledTimes(2));
@@ -1156,6 +1178,9 @@ describe("LiveScanStore", () => {
       sessions: [],
       meta: {},
       changedIds: undefined,
+      sourceFailures: [],
+      completeness: "complete",
+      explicitRemovedSessionIds: [],
     });
   });
 
@@ -1226,6 +1251,9 @@ describe("LiveScanStore", () => {
         retained: { id: "retained", sourcePath: "/retained" },
       },
       changedIds: undefined,
+      sourceFailures: [],
+      completeness: "complete",
+      explicitRemovedSessionIds: [],
     });
     expect(runner.activeCount).toBe(1);
     runner.commit("codex");
@@ -2393,6 +2421,8 @@ describe("LiveScanStore", () => {
         agentName: "codex",
         sessions: [],
         meta: {},
+        completeness: "complete",
+        removedSessionIds: [],
       },
     ]);
     const pending = [1, 2, 3].map((version) =>
@@ -2448,6 +2478,8 @@ describe("LiveScanStore", () => {
       agentName: "codex",
       sessions: [],
       meta: {},
+      completeness: "complete" as const,
+      removedSessionIds: [],
     };
     const batch = runner.enqueue("scan.refresh", [job]);
     const outcome = batch.catch((error: Error) => error);
@@ -2471,6 +2503,8 @@ describe("LiveScanStore", () => {
       agentName: "codex",
       sessions: [],
       meta: {},
+      completeness: "complete" as const,
+      removedSessionIds: [],
     };
     const batch = runner.enqueue("scan.refresh", [job]);
     const outcome = Promise.allSettled([batch]);

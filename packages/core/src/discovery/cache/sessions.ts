@@ -50,6 +50,7 @@ export type SessionSnapshotCompleteness = "complete" | "partial";
 
 export interface SaveCachedSessionsOptions {
   completeness?: SessionSnapshotCompleteness;
+  removedSessionIds?: readonly string[];
 }
 
 function parseCachedSessionMeta(value: string | null | undefined): SessionCacheMeta | null {
@@ -429,17 +430,19 @@ export function saveCachedSessions(
         .all(agentName) as SessionRow[];
       upsertAgent.run(agentName, timestamp);
 
+      const sessionIdsToDelete = new Set(options.removedSessionIds ?? []);
       if (completeness === "complete") {
         for (const row of existingSessionIds) {
           const sessionId = String(row.session_id);
-          if (!sessionIds.has(sessionId)) {
-            deleteSearchDocument.run(agentName, sessionId);
-            deleteMessageTools.run(agentName, sessionId);
-            deleteMessages.run(agentName, sessionId);
-            deleteFileActivity.run(agentName, sessionId);
-            deleteSession.run(agentName, sessionId);
-          }
+          if (!sessionIds.has(sessionId)) sessionIdsToDelete.add(sessionId);
         }
+      }
+      for (const sessionId of sessionIdsToDelete) {
+        deleteSearchDocument.run(agentName, sessionId);
+        deleteMessageTools.run(agentName, sessionId);
+        deleteMessages.run(agentName, sessionId);
+        deleteFileActivity.run(agentName, sessionId);
+        deleteSession.run(agentName, sessionId);
       }
 
       sessions.forEach((session, index) => {

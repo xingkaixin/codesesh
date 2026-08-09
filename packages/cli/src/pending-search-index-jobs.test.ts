@@ -49,6 +49,8 @@ function fullJob(agentName: string, version: number): SearchIndexWorkerJob {
     agentName,
     sessions: [session],
     meta: { [session.id]: makeMeta(session.id, version) },
+    completeness: "complete",
+    removedSessionIds: [],
     saveCache: true,
   };
 }

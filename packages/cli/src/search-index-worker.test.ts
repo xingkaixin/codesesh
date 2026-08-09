@@ -109,6 +109,8 @@ describe("search index worker", () => {
           agentName: "codex",
           sessions,
           meta,
+          completeness: "complete",
+          removedSessionIds: [],
           saveCache: true,
           searchIndexOptions: { force: true },
         },
@@ -119,15 +121,67 @@ describe("search index worker", () => {
 
     expect(mocks.saveCachedSessions).toHaveBeenCalledWith("codex", sessions, meta, {
       completeness: "complete",
+      removedSessionIds: [],
     });
     expect(mocks.syncSessionSearchIndex).toHaveBeenCalledWith(
       "codex",
       sessions,
       expect.any(Function),
-      { force: true, detailVersions: { s1: "detail:s1" } },
+      {
+        force: true,
+        completeness: "complete",
+        removedSessionIds: [],
+        detailVersions: { s1: "detail:s1" },
+      },
     );
     expect(mocks.markAgentCacheInitialized).toHaveBeenCalledWith("codex");
     expect(mocks.appLoggerWarn).not.toHaveBeenCalled();
+  });
+
+  it("passes partial scope and explicit removals to both durable indexes", async () => {
+    const agent = makeAgent();
+    const sessions = [{ id: "recent" }];
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    mocks.syncSessionSearchIndex.mockReturnValue({ indexed: 1, skipped: 0 });
+    mocks.workerData = {
+      context: "refresh",
+      agentNames: [],
+      sessionsByAgent: {},
+      metaByAgent: {},
+      jobs: [
+        {
+          kind: "full",
+          context: "codex-partial",
+          agentName: "codex",
+          sessions,
+          meta: {},
+          completeness: "partial",
+          removedSessionIds: ["removed"],
+          saveCache: true,
+        },
+      ],
+    };
+
+    await runWorker();
+
+    expect(mocks.saveCachedSessions).toHaveBeenCalledWith(
+      "codex",
+      sessions,
+      {},
+      {
+        completeness: "partial",
+        removedSessionIds: ["removed"],
+      },
+    );
+    expect(mocks.syncSessionSearchIndex).toHaveBeenCalledWith(
+      "codex",
+      sessions,
+      expect.any(Function),
+      expect.objectContaining({
+        completeness: "partial",
+        removedSessionIds: ["removed"],
+      }),
+    );
   });
 
   it("CS-73 regression: still marks the agent initialized when a session couldn't be indexed, but warns", async () => {
@@ -149,6 +203,8 @@ describe("search index worker", () => {
           agentName: "codex",
           sessions,
           meta,
+          completeness: "complete",
+          removedSessionIds: [],
           saveCache: true,
         },
       ],
@@ -268,6 +324,8 @@ describe("search index worker", () => {
           agentName: "codex",
           sessions: [{ id: "s1" }, { id: "s2" }],
           meta: {},
+          completeness: "complete",
+          removedSessionIds: [],
           saveCache: true,
         },
         {
@@ -276,6 +334,8 @@ describe("search index worker", () => {
           agentName: "codex",
           sessions: [{ id: "s3" }],
           meta: {},
+          completeness: "complete",
+          removedSessionIds: [],
           saveCache: true,
         },
       ],

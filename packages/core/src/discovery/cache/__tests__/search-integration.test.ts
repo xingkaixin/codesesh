@@ -1657,6 +1657,80 @@ describe("searchSessions", () => {
     expect(results[0]?.matchType).toBe("recent");
   });
 
+  it("preserves omitted durable facts in a partial publication", () => {
+    const old = makeSession("old");
+    const recent = makeSession("recent");
+    const removed = makeSession("removed");
+    const sessions = [old, recent, removed];
+    const meta = Object.fromEntries(
+      sessions.map((session) => [
+        session.id,
+        { id: session.id, sourcePath: `/${session.id}.jsonl` },
+      ]),
+    );
+    saveCachedSessions("codex", sessions, meta);
+    syncSessionSearchIndex("codex", sessions, (sessionId) => {
+      const session = sessions.find(({ id }) => id === sessionId)!;
+      const text =
+        sessionId === "old"
+          ? "historicalscope"
+          : sessionId === "removed"
+            ? "deletedscope"
+            : "recentscope";
+      return {
+        ...session,
+        messages: [
+          {
+            id: `${sessionId}-message`,
+            role: "user",
+            time_created: now,
+            parts: [
+              { type: "text", text },
+              ...(sessionId === "old"
+                ? [
+                    {
+                      type: "tool" as const,
+                      tool: "Read",
+                      state: {
+                        status: "completed" as const,
+                        input: { file_path: "src/historical.ts" },
+                      },
+                    },
+                  ]
+                : []),
+            ],
+          },
+        ],
+      };
+    });
+
+    const updatedRecent = { ...recent, title: "Recent updated" };
+    saveCachedSessions(
+      "codex",
+      [updatedRecent],
+      { recent: meta.recent! },
+      { completeness: "partial", removedSessionIds: [removed.id] },
+    );
+    syncSessionSearchIndex(
+      "codex",
+      [updatedRecent],
+      () => makeSessionData("recent", "recentscope updated"),
+      { completeness: "partial", removedSessionIds: [removed.id] },
+    );
+
+    expect(loadCachedSessions("codex")?.sessions.map(({ id }) => id)).toEqual(
+      expect.arrayContaining(["old", "recent"]),
+    );
+    expect(loadCachedSessions("codex")?.sessions.map(({ id }) => id)).not.toContain("removed");
+    expect(loadCachedSessions("codex")?.meta.old).toEqual(meta.old);
+    expect(loadCachedSessionData("codex", "old")?.messages).toHaveLength(1);
+    expect(searchSessions("historicalscope").map(({ session }) => session.id)).toEqual(["old"]);
+    expect(searchSessions("deletedscope")).toEqual([]);
+    expect(
+      listFileActivity({ agent: "codex", sessionId: "old", limit: 10 }).map(({ path }) => path),
+    ).toContain("src/historical.ts");
+  });
+
   it("upserts parent session rows before indexed messages", () => {
     const session = {
       ...makeSession("windowed"),
