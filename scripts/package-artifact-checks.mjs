@@ -13,6 +13,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const sourceManifest = JSON.parse(
   readFileSync(resolve(scriptDir, "../packages/cli/package.json"), "utf8"),
 );
+const publishedReadme = readFileSync(resolve(scriptDir, "../packages/cli/README.md"), "utf8");
 const validFiles = [
   "README.md",
   "package.json",
@@ -57,4 +58,13 @@ test("rejects missing runtime entries and Web assets", () => {
 
 test("rejects source files outside the publish allowlist", () => {
   assert.throws(() => validatePackedFiles([...validFiles, "src/index.ts"]));
+});
+
+test("documents the remote access security contract in the published README", () => {
+  for (const flag of ["--remote-access", "--tls-cert", "--tls-key", "--trust-proxy"]) {
+    assert.ok(publishedReadme.includes("`" + flag + "`"), `README is missing ${flag}`);
+  }
+  assert.match(publishedReadme, /loopback listener exposed by|listens on `127\.0\.0\.1`/i);
+  assert.match(publishedReadme, /plaintext/i);
+  assert.match(publishedReadme, /X-Forwarded-Proto: https/);
 });

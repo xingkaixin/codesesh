@@ -200,8 +200,9 @@ backup of your history. Session content stays in each agent's own data directory
 | `-v` | — | — | Print version number |
 | `-h` / `--help` | — | — | Show help |
 
-Non-loopback binding is rejected unless `--remote-access` is also present. CodeSesh generates a
-new access token for every process and includes it in the printed startup URL. Treat that URL as a
+Non-loopback binding and `--trust-proxy` are rejected unless `--remote-access` is also present.
+This includes a loopback listener exposed by a same-machine reverse proxy. CodeSesh generates a new
+access token for every process and includes it in the printed startup URL. Treat that URL as a
 password: do not publish it or place it in shared shell history.
 
 A token proves who is asking; it does not hide the answer. Without TLS the token and the full
@@ -212,16 +213,16 @@ proxy access logs. Pick one of:
 # CodeSesh terminates TLS
 npx codesesh --host 0.0.0.0 --remote-access --tls-cert ./cert.pem --tls-key ./key.pem
 
-# A reverse proxy terminates TLS and forwards to CodeSesh
-npx codesesh --host 0.0.0.0 --remote-access --trust-proxy
+# A reverse proxy terminates TLS; CodeSesh stays bound to loopback
+npx codesesh --host 127.0.0.1 --remote-access --trust-proxy
 ```
 
 `--trust-proxy` requires every API request to arrive with `X-Forwarded-Proto: https`, and refuses
 it otherwise — so a request that bypassed the proxy is rejected before authentication. This assumes
 the deployment makes CodeSesh unreachable except through that proxy.
 
-Binding to a non-loopback address without either option still starts, and prints a warning that the
-transport is unencrypted.
+Using `--remote-access` without either TLS option still starts on a non-loopback address and prints
+a warning that the transport is unencrypted.
 
 ---
 
