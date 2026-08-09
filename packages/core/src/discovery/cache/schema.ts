@@ -84,6 +84,7 @@ export function withCacheDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
     getCoreDiagnostics()?.warn("cache.write_failed", {
       message: error instanceof Error ? error.message : String(error),
       code: (error as { code?: string })?.code,
+      error_class: error instanceof Error ? error.name : typeof error,
       stack: error instanceof Error ? error.stack : undefined,
     });
     return null;
@@ -98,7 +99,12 @@ export function withCacheDbReadOnly<T>(fn: (db: SQLiteDatabase) => T): T | null 
 
   try {
     return fn(db);
-  } catch {
+  } catch (error) {
+    getCoreDiagnostics()?.warn("cache.read_failed", {
+      message: error instanceof Error ? error.message : String(error),
+      code: (error as { code?: string })?.code,
+      error_class: error instanceof Error ? error.name : typeof error,
+    });
     return null;
   } finally {
     db.close();
