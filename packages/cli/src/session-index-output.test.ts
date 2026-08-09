@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LiveSnapshot, SessionHead } from "@codesesh/core";
-import { buildSessionIndexOutput } from "./session-index-output.js";
+import { buildSessionIndexOutput, formatScanFailureDiagnostics } from "./session-index-output.js";
 
 function makeSession(id: string, activity: number): SessionHead {
   return {
@@ -81,5 +81,25 @@ describe("CS-150: --json is a session index", () => {
       count: 0,
       available: false,
     });
+  });
+});
+
+describe("scan failure diagnostics", () => {
+  it("formats agent-level failures without inventing a session", () => {
+    expect(
+      formatScanFailureDiagnostics({
+        scanFailures: {
+          codex: {
+            agentName: "codex",
+            stage: "enumerating session sources",
+            sourcePath: "/sessions",
+            errorClass: "EACCES",
+            message: "permission denied",
+          },
+        },
+      }),
+    ).toEqual([
+      "[codex] Scan failed during enumerating session sources at /sessions (EACCES): permission denied",
+    ]);
   });
 });

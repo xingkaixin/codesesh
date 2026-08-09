@@ -1,13 +1,4 @@
-import {
-  closeSync,
-  existsSync,
-  openSync,
-  readdirSync,
-  readFileSync,
-  readSync,
-  statSync,
-  type Dirent,
-} from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { join, basename } from "node:path";
 import {
   SingleFileSessionSource,
@@ -821,12 +812,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     if (!this.basePath) return [];
     const paths: string[] = [];
     const walk = (directory: string): void => {
-      let entries: Dirent[];
-      try {
-        entries = readdirSync(directory, { withFileTypes: true });
-      } catch {
-        return;
-      }
+      const entries = this.readSessionSourceDirectory(directory);
       for (const entry of entries) {
         const filePath = join(directory, entry.name);
         if (entry.isDirectory()) walk(filePath);

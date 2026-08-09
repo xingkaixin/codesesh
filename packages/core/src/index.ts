@@ -21,6 +21,7 @@ export {
   reportSessionSourceOutcome,
 } from "./agents/index.js";
 export type {
+  AgentScanFailure,
   AgentRoots,
   AgentScanOptions,
   AgentScanProgress,

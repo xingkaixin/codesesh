@@ -31,6 +31,33 @@ function snapshot(agents: BaseAgent[], byAgent: Record<string, SessionHead[]>): 
 }
 
 describe("LiveSessionIndex", () => {
+  it("keeps a failed agent out of the empty-success projection until recovery", () => {
+    const codex = makeAgent("codex");
+    const recovered = makeSession("recovered", 1);
+    const index = new LiveSessionIndex();
+    index.initialize({
+      agents: [codex],
+      byAgent: {},
+      sessions: [],
+      scanFailures: {
+        codex: {
+          agentName: "codex",
+          stage: "opening the database",
+          errorClass: "SessionScanError",
+          message: "database unavailable",
+        },
+      },
+    });
+
+    expect(index.snapshot().byAgent.codex).toBeUndefined();
+    expect(index.snapshot().scanFailures?.codex).toBeDefined();
+
+    index.commitAgentSessions("codex", [recovered]);
+
+    expect(index.snapshot().byAgent.codex).toEqual([recovered]);
+    expect(index.snapshot().scanFailures).toBeUndefined();
+  });
+
   it("initializes sorted views for the allowed agent catalog", () => {
     const codex = makeAgent("codex");
     const kimi = makeAgent("kimi");

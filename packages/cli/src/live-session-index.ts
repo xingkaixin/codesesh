@@ -3,6 +3,7 @@ import {
   mergeSortedSessions,
   sessionSignature,
   sortSessions,
+  type AgentScanFailure,
   type BaseAgent,
   type LiveSnapshot,
   type SessionHead,
@@ -19,6 +20,7 @@ export class LiveSessionIndex {
   private agentsByName = new Map<string, BaseAgent>();
   private byAgent: Record<string, SessionHead[]> = {};
   private sessions: SessionHead[] = [];
+  private scanFailures: Record<string, AgentScanFailure> = {};
   private signatureCaches = new Map<string, Map<string, string>>();
 
   initialize(snapshot: LiveSnapshot, options: LiveSessionIndexOptions = {}): void {
@@ -32,8 +34,12 @@ export class LiveSessionIndex {
       (agent) => !options.allowedAgents || options.allowedAgents.has(agent.name.toLowerCase()),
     );
     this.agentsByName = new Map(this.agents.map((agent) => [agent.name, agent]));
+    this.scanFailures = { ...snapshot.scanFailures };
     this.byAgent = Object.fromEntries(
-      this.agents.map((agent) => [agent.name, sortSessions(snapshot.byAgent[agent.name] ?? [])]),
+      this.agents.flatMap((agent) => {
+        if (this.scanFailures[agent.name] && !(agent.name in snapshot.byAgent)) return [];
+        return [[agent.name, sortSessions(snapshot.byAgent[agent.name] ?? [])]];
+      }),
     );
     this.sessions = mergeSortedSessions(Object.values(this.byAgent));
     this.signatureCaches.clear();
@@ -44,6 +50,7 @@ export class LiveSessionIndex {
       agents: this.agents,
       byAgent: this.byAgent,
       sessions: this.sessions,
+      ...(Object.keys(this.scanFailures).length > 0 ? { scanFailures: this.scanFailures } : {}),
     };
   }
 
@@ -56,6 +63,7 @@ export class LiveSessionIndex {
     nextSessions: SessionHead[],
     candidateChangedIds: string[] = [],
   ): SessionsUpdatedEvent | null {
+    delete this.scanFailures[agentName];
     const previousSessions = this.byAgent[agentName] ?? [];
     const signatureCache = this.signatureCache(agentName);
     const { changes, removedSessionIds, counts } = computeSessionDiff(

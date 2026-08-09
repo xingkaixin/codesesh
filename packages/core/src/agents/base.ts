@@ -80,6 +80,14 @@ export interface SessionSourceFailure {
   message: string;
 }
 
+export interface AgentScanFailure {
+  agentName: string;
+  stage: string;
+  sourcePath?: string;
+  errorClass: string;
+  message: string;
+}
+
 export type SessionSourceOutcome =
   | { status: "parsed"; session: SessionHead; source: SessionSourceRef }
   | { status: "filtered"; reason: string; source: SessionSourceRef }
@@ -279,6 +287,36 @@ function failureClass(error: unknown): string {
 function failureMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.slice(0, 500);
+}
+
+export function createAgentScanFailure(
+  agentName: string,
+  stage: string,
+  error: unknown,
+  sourcePath?: string,
+): AgentScanFailure {
+  const scanError = error instanceof SessionScanError ? error : null;
+  const cause = scanError?.cause ?? error;
+  return {
+    agentName: scanError?.agentName ?? agentName,
+    stage: scanError?.stage ?? stage,
+    ...((scanError?.sourcePath ?? sourcePath)
+      ? { sourcePath: scanError?.sourcePath ?? sourcePath }
+      : {}),
+    errorClass: failureClass(cause),
+    message: failureMessage(cause),
+  };
+}
+
+export function reportAgentScanFailure(failure: AgentScanFailure, baselineRetained: boolean): void {
+  getCoreDiagnostics()?.warn("agent.scan_failed", {
+    agent: failure.agentName,
+    stage: failure.stage,
+    source_path: failure.sourcePath,
+    error_class: failure.errorClass,
+    message: failure.message,
+    baseline_retained: baselineRetained,
+  });
 }
 
 export function createSessionSourceFailure(
@@ -497,12 +535,7 @@ export abstract class FileSystemSessionSource<
     this.sourceFileStats.clear();
 
     const walk = (directory: string): void => {
-      let entries: Dirent[];
-      try {
-        entries = readdirSync(directory, { withFileTypes: true });
-      } catch {
-        return;
-      }
+      const entries = this.readSessionSourceDirectory(directory);
 
       for (const entry of entries) {
         const filePath = join(directory, entry.name);
@@ -515,8 +548,12 @@ export abstract class FileSystemSessionSource<
         let stat: Stats;
         try {
           stat = statSync(filePath);
-        } catch {
-          continue;
+        } catch (error) {
+          if (isMissingSourceError(error)) continue;
+          throw new SessionScanError(this.name, "reading session source metadata", {
+            cause: error,
+            sourcePath: filePath,
+          });
         }
         if (!matchesScanWindow(stat.mtimeMs, options.scanWindow)) continue;
 
@@ -527,6 +564,17 @@ export abstract class FileSystemSessionSource<
 
     for (const root of typeof roots === "string" ? [roots] : roots) walk(root);
     return files;
+  }
+
+  protected readSessionSourceDirectory(directory: string): Dirent[] {
+    try {
+      return readdirSync(directory, { withFileTypes: true });
+    } catch (error) {
+      throw new SessionScanError(this.name, "enumerating session sources", {
+        cause: error,
+        sourcePath: directory,
+      });
+    }
   }
 
   protected sessionSourceFile(sourcePath: string): SessionSourceFile {
@@ -704,11 +752,14 @@ export class SessionScanError extends Error {
   constructor(
     readonly agentName: string,
     readonly stage: string,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; sourcePath?: string },
   ) {
     super(`${agentName} session scan failed while ${stage}`, options);
     this.name = "SessionScanError";
+    this.sourcePath = options?.sourcePath;
   }
+
+  readonly sourcePath?: string;
 }
 
 /**

@@ -6,16 +6,19 @@ export {
   SingleFileSessionSource,
 } from "./base.js";
 export {
+  createAgentScanFailure,
   createSessionSourceFailure,
   diffSessionSources,
   filteredSession,
   getParsedSession,
   matchesScanWindow,
   parsedSession,
+  reportAgentScanFailure,
   reportSessionSourceOutcome,
   skippedSession,
 } from "./base.js";
 export type {
+  AgentScanFailure,
   AgentScanOptions,
   AgentScanProgress,
   CachedMetaLookup,

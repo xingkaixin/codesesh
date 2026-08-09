@@ -3,16 +3,20 @@ import { Worker } from "node:worker_threads";
 import type { SessionDetail, SessionHead, SmartTag } from "../types/index.js";
 import { filterSessionTreeByActivityWindow } from "../contract/session-tree.js";
 import type {
+  AgentScanFailure,
   AgentScanOptions,
   BaseAgent,
   SessionCacheMeta,
   SessionSourceFailure,
 } from "../agents/index.js";
 import {
+  createAgentScanFailure,
   createRegisteredAgents,
   diffSessionSources,
   FileSystemSessionSource,
+  reportAgentScanFailure,
   reportSessionSourceOutcome,
+  SessionScanError,
 } from "../agents/index.js";
 import { filterSessionsByProjectScope } from "../projects/index.js";
 import {
@@ -68,6 +72,7 @@ export interface LiveSnapshot {
   agents: BaseAgent[];
   timings?: Record<string, AgentScanTiming>;
   cacheTimestamps?: Record<string, number>;
+  scanFailures?: Record<string, AgentScanFailure>;
 }
 
 /** 扫描状态更新回调 */
@@ -109,7 +114,8 @@ export interface SessionTagTiming {
   classifySessionTagsMs: number;
 }
 
-interface AgentScanResult {
+interface SuccessfulAgentScanResult {
+  status: "complete" | "partial";
   agent: BaseAgent;
   heads: SessionHead[];
   fromCache?: boolean;
@@ -117,6 +123,17 @@ interface AgentScanResult {
   timing?: AgentScanTiming;
   cacheTimestamp?: number;
 }
+
+interface FailedAgentScanResult {
+  status: "failed";
+  agent: BaseAgent;
+  failure: AgentScanFailure;
+  retainedHeads?: SessionHead[];
+  cacheTimestamp?: number;
+  timing: AgentScanTiming;
+}
+
+type AgentScanResult = SuccessfulAgentScanResult | FailedAgentScanResult;
 
 type AgentScanFinalization =
   | { kind: "cache-only"; cached: CachedResult }
@@ -133,6 +150,7 @@ interface FinalizeAgentScanContext {
   options: ScanOptions;
   timing: AgentScanTiming;
   agentStart: number;
+  completeness: "complete" | "partial";
   onProgress?: (progress: ScanProgress) => void;
 }
 
@@ -141,6 +159,10 @@ interface SmartTagWorkerResult {
   tags?: SmartTag[];
   sourceUpdatedAt?: number;
   error?: string;
+}
+
+function restoreAgentCacheMeta(agent: BaseAgent, cached: CachedResult): void {
+  agent.setSessionMetaMap(new Map(Object.entries(cached.meta)));
 }
 
 function saveCachedSessionDiff(
@@ -324,7 +346,7 @@ export async function finalizeAgentScan(
   agent: BaseAgent,
   sessions: SessionHead[],
   context: FinalizeAgentScanContext,
-): Promise<AgentScanResult> {
+): Promise<SuccessfulAgentScanResult> {
   const { finalization, options, timing, agentStart, onProgress } = context;
   const isIncremental = finalization.kind === "incremental";
 
@@ -370,6 +392,7 @@ export async function finalizeAgentScan(
   const heads = filterSessions(tagged.sessions, options);
   timing.total = performance.now() - agentStart;
   return {
+    status: context.completeness,
     agent,
     heads,
     fromCache: true,
@@ -402,11 +425,7 @@ async function scanAgentSmart(
 
     if (cached !== null) {
       // 恢复元数据
-      const metaMap = new Map<string, SessionCacheMeta>();
-      for (const [id, meta] of Object.entries(cached.meta)) {
-        metaMap.set(id, meta);
-      }
-      agent.setSessionMetaMap(metaMap);
+      restoreAgentCacheMeta(agent, cached);
 
       if (options.cacheOnly) {
         const visibleSessions = agent.filterCachedSessions(cached.sessions);
@@ -420,6 +439,7 @@ async function scanAgentSmart(
           options,
           timing,
           agentStart,
+          completeness: "partial",
           onProgress,
         });
       }
@@ -467,6 +487,7 @@ async function scanAgentSmart(
           options,
           timing,
           agentStart,
+          completeness: (checkResult.sourceFailures?.length ?? 0) > 0 ? "partial" : "complete",
           onProgress,
         });
       }
@@ -476,6 +497,7 @@ async function scanAgentSmart(
         options,
         timing,
         agentStart,
+        completeness: "complete",
         onProgress,
       });
     }
@@ -531,7 +553,7 @@ async function scanAgentFull(
     if (agent instanceof FileSystemSessionSource) {
       const cached = loadCachedSessions(agent.name);
       if (cached) {
-        agent.setSessionMetaMap(new Map(Object.entries(cached.meta)));
+        restoreAgentCacheMeta(agent, cached);
       }
       const batch = agent.scanSessionSources(agentScanOptions);
       const sessionMap = new Map(cached?.sessions.map((session) => [session.id, session]) ?? []);
@@ -604,10 +626,46 @@ async function scanAgentFull(
 
     const filtered = filterSessions(tagged.sessions, options);
     timing.total = performance.now() - agentStart;
-    return { agent, heads: filtered, fromCache: false, timing };
+    return {
+      status:
+        options.from == null && options.to == null && sourceFailures.length === 0
+          ? "complete"
+          : "partial",
+      agent,
+      heads: filtered,
+      fromCache: false,
+      timing,
+    };
   } catch (err) {
-    console.error(`Error scanning ${agent.name}:`, err);
-    return { agent, heads: [], fromCache: false };
+    if (err instanceof SessionScanError) throw err;
+    throw new SessionScanError(agent.name, "scanning sessions", { cause: err });
+  }
+}
+
+async function scanAgentOutcome(
+  agent: BaseAgent,
+  options: ScanOptions,
+  onProgress?: (progress: ScanProgress) => void,
+): Promise<AgentScanResult | null> {
+  const startedAt = performance.now();
+  try {
+    return await scanAgentSmart(agent, options, onProgress);
+  } catch (error) {
+    const cached = (options.useCache ?? true) ? loadCachedSessions(agent.name) : null;
+    if (cached) restoreAgentCacheMeta(agent, cached);
+    const retainedHeads = cached
+      ? filterSessions(agent.filterCachedSessions(cached.sessions), options)
+      : undefined;
+    const failure = createAgentScanFailure(agent.name, "scanning sessions", error);
+    reportAgentScanFailure(failure, retainedHeads !== undefined);
+    return {
+      status: "failed",
+      agent,
+      failure,
+      ...(retainedHeads !== undefined ? { retainedHeads } : {}),
+      ...(cached ? { cacheTimestamp: cached.timestamp } : {}),
+      timing: { total: performance.now() - startedAt },
+    };
   }
 }
 
@@ -624,6 +682,7 @@ export async function scanSessions(
   const allSessions: SessionHead[] = [];
   const availableAgents: BaseAgent[] = [];
   const cacheTimestamps: Record<string, number> = {};
+  const scanFailures: Record<string, AgentScanFailure> = {};
 
   const agentFilter = options.agents?.length
     ? new Set(options.agents.map((a) => a.toLowerCase()))
@@ -638,7 +697,7 @@ export async function scanSessions(
   });
 
   // 并行扫描所有 Agent
-  const scanPromises = agentsToScan.map((agent) => scanAgentSmart(agent, options, onProgress));
+  const scanPromises = agentsToScan.map((agent) => scanAgentOutcome(agent, options, onProgress));
 
   const results = await Promise.all(scanPromises);
 
@@ -647,8 +706,16 @@ export async function scanSessions(
   for (const result of results) {
     if (result) {
       availableAgents.push(result.agent);
-      byAgent[result.agent.name] = result.heads;
-      allSessions.push(...result.heads);
+      if (result.status === "failed") {
+        scanFailures[result.agent.name] = result.failure;
+        if (result.retainedHeads !== undefined) {
+          byAgent[result.agent.name] = result.retainedHeads;
+          allSessions.push(...result.retainedHeads);
+        }
+      } else {
+        byAgent[result.agent.name] = result.heads;
+        allSessions.push(...result.heads);
+      }
       if (result.timing) {
         timings[result.agent.name] = result.timing;
       }
@@ -665,5 +732,6 @@ export async function scanSessions(
     agents: availableAgents,
     timings,
     cacheTimestamps: Object.keys(cacheTimestamps).length > 0 ? cacheTimestamps : undefined,
+    scanFailures: Object.keys(scanFailures).length > 0 ? scanFailures : undefined,
   };
 }

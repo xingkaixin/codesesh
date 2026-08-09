@@ -623,6 +623,38 @@ describe("AgentSyncEngine", () => {
     expect(completed).toBe(true);
   });
 
+  it("publishes an initial scan failure without indexing a false empty baseline", async () => {
+    const agent = makeAgent();
+    const engine = new AgentSyncEngine({ workerRunner: makeWorkerRunner() });
+    engine.initialize({
+      agents: [agent],
+      byAgent: {},
+      sessions: [],
+      scanFailures: {
+        codex: {
+          agentName: "codex",
+          stage: "enumerating session sources",
+          sourcePath: "/sessions",
+          errorClass: "EACCES",
+          message: "permission denied",
+        },
+      },
+    });
+
+    expect(engine.status().agentStatuses.codex).toEqual(
+      expect.objectContaining({
+        status: "failed",
+        sessions: 0,
+        error: "enumerating session sources: permission denied",
+      }),
+    );
+
+    await engine.syncInitialIndex();
+
+    expect(core.loadCachedSessions).not.toHaveBeenCalled();
+    expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.initial", []);
+  });
+
   it("rescans imprecise changes in a worker and persists only the signature diff", async () => {
     const steady = makeSession("steady");
     const previous = makeSession("changed", "before");

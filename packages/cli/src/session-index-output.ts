@@ -29,6 +29,15 @@ export interface SessionIndexWindow {
   to?: number;
 }
 
+export function formatScanFailureDiagnostics(
+  snapshot: Pick<LiveSnapshot, "scanFailures">,
+): string[] {
+  return Object.values(snapshot.scanFailures ?? {}).map((failure) => {
+    const source = failure.sourcePath ? ` at ${failure.sourcePath}` : "";
+    return `[${failure.agentName}] Scan failed during ${failure.stage}${source} (${failure.errorClass}): ${failure.message}`;
+  });
+}
+
 export function buildSessionIndexOutput(
   snapshot: Pick<LiveSnapshot, "sessions" | "byAgent">,
   window: SessionIndexWindow = {},

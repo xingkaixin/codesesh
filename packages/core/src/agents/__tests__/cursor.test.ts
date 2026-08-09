@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { CursorAgent } from "../cursor.js";
+import { SessionScanError } from "../base.js";
 import type { MessagePart } from "../../types/index.js";
 import {
   getCoreDiagnostics,
@@ -187,5 +188,38 @@ describe("CursorAgent parsing", () => {
       setCoreDiagnostics(null);
       expect(getCoreDiagnostics()).toBeNull();
     }
+  });
+});
+
+describe("CursorAgent scan outcomes", () => {
+  function makeScanningAgent(dbPath: string): CursorAgent {
+    const agent = new CursorAgent();
+    Object.assign(agent, { dbPath });
+    return agent;
+  }
+
+  it("reports a corrupt database as a failure", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-cursor-test-"));
+    tempDirs.push(tempDir);
+    const dbPath = join(tempDir, "state.vscdb");
+    writeFileSync(dbPath, "this is not a sqlite file");
+
+    expect(() => makeScanningAgent(dbPath).scan()).toThrow(SessionScanError);
+  });
+
+  it("reports a missing composer table as a failure", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-cursor-test-"));
+    tempDirs.push(tempDir);
+    const dbPath = join(tempDir, "state.vscdb");
+    new Database(dbPath).close();
+
+    expect(() => makeScanningAgent(dbPath).scan()).toThrow(SessionScanError);
+  });
+
+  it("returns an empty result for a readable empty database", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-cursor-test-"));
+    tempDirs.push(tempDir);
+
+    expect(makeScanningAgent(createCursorDb(tempDir)).scan()).toEqual([]);
   });
 });
