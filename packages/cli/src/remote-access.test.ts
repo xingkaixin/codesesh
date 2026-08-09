@@ -7,6 +7,7 @@ import {
   isConfidentialTransport,
   isLoopbackHostname,
   RemoteTransportError,
+  resolveRemoteAccessPolicy,
   resolveRemoteTransport,
 } from "./remote-access.js";
 
@@ -31,6 +32,21 @@ describe("remote access", () => {
 
     expect(first).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(second).not.toBe(first);
+  });
+
+  it("resolves authentication from the complete exposure boundary", () => {
+    expect(resolveRemoteAccessPolicy("127.0.0.1", { kind: "loopback" })).toEqual({
+      bindCategory: "loopback",
+      authenticationRequired: false,
+    });
+    expect(resolveRemoteAccessPolicy("127.0.0.1", { kind: "trusted-proxy" })).toEqual({
+      bindCategory: "loopback",
+      authenticationRequired: true,
+    });
+    expect(resolveRemoteAccessPolicy("0.0.0.0", { kind: "plaintext" })).toEqual({
+      bindCategory: "network",
+      authenticationRequired: true,
+    });
   });
 });
 
