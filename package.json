@@ -24,7 +24,8 @@
     "bench:perf": "node scripts/benchmark-performance.mjs",
     "perf:check": "node scripts/perf-scale.mjs",
     "bench:session-index": "pnpm --filter @codesesh/core build && node scripts/benchmark-session-index.mjs",
-    "test:coverage": "vitest run --coverage",
+    "check:coverage-scopes": "node scripts/critical-coverage.mjs",
+    "test:coverage": "pnpm check:coverage-scopes && vitest run --coverage",
     "deploy:www": "pnpm --filter @codesesh/www deploy:cf"
   },
   "devDependencies": {
