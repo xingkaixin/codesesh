@@ -133,7 +133,7 @@ const scanSource: ScanResultSource = {
   getSnapshot: () =>
     ({
       sessions: [],
-      byAgent: {},
+      byAgent: { codex: [] },
       agents: [],
     }) as LiveSnapshot,
 };
@@ -581,6 +581,26 @@ describe("session alias handlers", () => {
 });
 
 describe("query boundary handlers", () => {
+  it("reports rejected and empty-result parameter outcomes", () => {
+    const sessions = makeContext({ query: { agent: "nonexistent" } });
+    handleGetSessions(sessions as never, scanSource);
+    const files = makeContext({ query: { limit: "1.5" } });
+    handleGetFileActivity(files as never);
+
+    expect(loggerMocks.warn).toHaveBeenCalledWith("api.query_parameter.invalid", {
+      endpoint: "sessions",
+      parameter: "agent",
+      validation_outcome: "empty_result",
+    });
+    expect(loggerMocks.warn).toHaveBeenCalledWith("api.query_parameter.invalid", {
+      endpoint: "file-activity",
+      parameter: "limit",
+      validation_outcome: "rejected",
+    });
+    expect(files.json).toHaveBeenCalledWith({ error: "limit must be a positive integer" }, 400);
+    expect(coreMocks.listFileActivity).not.toHaveBeenCalled();
+  });
+
   it("rejects invalid project identities consistently", () => {
     const sessions = makeContext({ query: { projectKind: "path" } });
     handleGetSessions(sessions as never, scanSource);
@@ -607,7 +627,7 @@ describe("query boundary handlers", () => {
   it("normalizes file activity filters and caps the result limit", () => {
     const c = makeContext({
       query: {
-        agent: " codex ",
+        agent: " CoDeX ",
         sessionId: " s1 ",
         projectKind: "path",
         projectKey: "/repo",
@@ -638,14 +658,25 @@ describe("query boundary handlers", () => {
     });
   });
 
-  it("uses safe defaults for invalid file activity filters", () => {
-    const c = makeContext({ query: { kind: "execute", limit: "invalid" } });
+  it.each(["1.5", "0", "-1", "", "Infinity", "invalid"])(
+    "rejects invalid file activity limit %j before storage",
+    (limit) => {
+      const c = makeContext({ query: { kind: "execute", limit } });
+
+      handleGetFileActivity(c as never);
+
+      expect(c.json).toHaveBeenCalledWith({ error: "limit must be a positive integer" }, 400);
+      expect(coreMocks.listFileActivity).not.toHaveBeenCalled();
+    },
+  );
+
+  it("returns an empty file activity result for an unknown agent without querying storage", () => {
+    const c = makeContext({ query: { agent: "nonexistent" } });
 
     handleGetFileActivity(c as never);
 
-    expect(coreMocks.listFileActivity).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: undefined, limit: 50 }),
-    );
+    expect(c.json).toHaveBeenCalledWith({ activity: [] });
+    expect(coreMocks.listFileActivity).not.toHaveBeenCalled();
   });
 
   // `days` is the number of calendar days covered, so it matches the bucket count.

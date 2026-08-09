@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../../utils/diagnostics.js";
-import { withCacheDb, withSearchIndexDb } from "../schema.js";
+import { withCacheDb, withCacheDbReadOnly, withSearchIndexDb } from "../schema.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-diag-test-"));
 
@@ -40,7 +40,33 @@ describe("withCacheDb diagnostics", () => {
     expect(events).toEqual([
       {
         event: "cache.write_failed",
-        detail: { message: "disk full", code: undefined, stack: expect.any(String) },
+        detail: {
+          message: "disk full",
+          code: undefined,
+          error_class: "Error",
+          stack: expect.any(String),
+        },
+      },
+    ]);
+  });
+
+  it("reports the error class for a read-only query failure", () => {
+    withCacheDb(() => undefined);
+    const events = collectDiagnostics();
+
+    const result = withCacheDbReadOnly(() => {
+      throw Object.assign(new Error("datatype mismatch"), { code: "SQLITE_MISMATCH" });
+    });
+
+    expect(result).toBeNull();
+    expect(events).toEqual([
+      {
+        event: "cache.read_failed",
+        detail: {
+          message: "datatype mismatch",
+          code: "SQLITE_MISMATCH",
+          error_class: "Error",
+        },
       },
     ]);
   });

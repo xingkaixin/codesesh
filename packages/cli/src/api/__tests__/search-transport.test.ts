@@ -5,8 +5,8 @@
  * filtering/ordering, FTS/file-activity dedupe, ...) are owned and fully
  * characterized by packages/core/src/search/__tests__/session-search.test.ts
  * via executeSessionSearch. This file only pins the HTTP-layer concerns that
- * live in handleSearchSessions itself: projectKind/projectKey pairing
- * validation, and a couple of smoke tests proving the route wires query
+ * live in handleSearchSessions itself: request validation, Agent
+ * canonicalization, and smoke tests proving the route wires validated query
  * params through to the search module and back into the response body.
  */
 import { mkdtempSync, rmSync } from "node:fs";
@@ -104,6 +104,27 @@ describe("search route: smoke wiring", () => {
     const { body } = await search(app, "?limit=2");
     expect(body.results!.map((r) => r.session.id)).toEqual(["recent-new", "recent-mid"]);
   });
+
+  it("normalizes a known agent and returns no results for an unknown agent", async () => {
+    const app = createApiRoutes(makeScanSource());
+
+    const known = await search(app, "?agent=ClaudeCode");
+    const unknown = await search(app, "?agent=nonexistent");
+
+    expect(known.body.results!.length).toBeGreaterThan(0);
+    expect(unknown.body.results).toEqual([]);
+  });
+
+  it.each(["1.5", "0", "-1", "", "Infinity", "invalid"])(
+    "400s for invalid limit %j",
+    async (limit) => {
+      const app = createApiRoutes(makeScanSource());
+      const { status, body } = await search(app, `?limit=${encodeURIComponent(limit)}`);
+
+      expect(status).toBe(400);
+      expect(body.error).toBe("limit must be a positive integer");
+    },
+  );
 
   it("routes a text q to the indexed FTS path and resolves matchType", async () => {
     const app = createApiRoutes(makeScanSource());

@@ -28,8 +28,31 @@ const SMART_TAGS: readonly string[] = [
   "planning",
 ];
 
-const SEARCH_LIMIT_MAX = 100;
-const SEARCH_LIMIT_DEFAULT = 50;
+export interface LimitPolicy {
+  defaultValue: number;
+  maxValue: number;
+}
+
+export const SEARCH_LIMIT_POLICY: LimitPolicy = { defaultValue: 50, maxValue: 100 };
+export const FILE_ACTIVITY_LIMIT_POLICY: LimitPolicy = { defaultValue: 50, maxValue: 200 };
+
+export type AgentFilterOutcome =
+  | { kind: "all" }
+  | { kind: "known"; agentName: string }
+  | { kind: "unknown" };
+
+export type LimitOutcome =
+  | { kind: "default"; value: number }
+  | { kind: "valid"; value: number }
+  | { kind: "invalid"; error: string };
+
+export interface SessionQuery {
+  agent: AgentFilterOutcome;
+}
+
+export interface LimitedSessionQuery extends SessionQuery {
+  limit: LimitOutcome;
+}
 
 export function searchParams(c: Context): URLSearchParams {
   return new URL(c.req.url ?? "http://localhost/", "http://localhost/").searchParams;
@@ -66,6 +89,53 @@ export function parseNumberParam(value: string | undefined): number | undefined 
   return Number.isFinite(number) ? number : undefined;
 }
 
+function parseAgentFilter(
+  value: string | null,
+  knownAgentNames: Iterable<string>,
+): AgentFilterOutcome {
+  if (value === null) return { kind: "all" };
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return { kind: "unknown" };
+
+  for (const agentName of knownAgentNames) {
+    if (agentName.toLowerCase() === normalized) return { kind: "known", agentName };
+  }
+  return { kind: "unknown" };
+}
+
+function parseLimit(value: string | null, policy: LimitPolicy): LimitOutcome {
+  if (value === null) return { kind: "default", value: policy.defaultValue };
+  const normalized = value.trim();
+  if (!/^\d+$/.test(normalized)) {
+    return { kind: "invalid", error: "limit must be a positive integer" };
+  }
+
+  const digits = normalized.replace(/^0+/, "");
+  if (!digits) return { kind: "invalid", error: "limit must be a positive integer" };
+  const maxDigits = String(policy.maxValue);
+  const exceedsMaximum =
+    digits.length > maxDigits.length || (digits.length === maxDigits.length && digits > maxDigits);
+  return { kind: "valid", value: exceedsMaximum ? policy.maxValue : Number(digits) };
+}
+
+export function parseSessionQuery(
+  params: URLSearchParams,
+  knownAgentNames: Iterable<string>,
+): SessionQuery;
+export function parseSessionQuery(
+  params: URLSearchParams,
+  knownAgentNames: Iterable<string>,
+  limitPolicy: LimitPolicy,
+): LimitedSessionQuery;
+export function parseSessionQuery(
+  params: URLSearchParams,
+  knownAgentNames: Iterable<string>,
+  limitPolicy?: LimitPolicy,
+): SessionQuery | LimitedSessionQuery {
+  const agent = parseAgentFilter(params.get("agent"), knownAgentNames);
+  return limitPolicy ? { agent, limit: parseLimit(params.get("limit"), limitPolicy) } : { agent };
+}
+
 export function parseSmartTags(values: string[]): SmartTag[] | undefined {
   const tags = values
     .map((value) => value.toLowerCase())
@@ -99,12 +169,12 @@ export function parseProjectIdentityFilter(
 export function parseSearchOptions(
   c: Context,
   defaults: SessionListDefaults,
+  request: { agent?: string; limit: number },
   projectIdentity?: ProjectIdentityRef,
 ): SearchOptions {
   const params = searchParams(c);
-  const limitValue = parseNumberParam(params.get("limit") ?? undefined);
   return {
-    agent: optionalQueryValue(params.get("agent") ?? undefined),
+    agent: request.agent,
     project: optionalQueryValue(params.get("project") ?? undefined),
     projectKind: projectIdentity?.kind,
     projectKey: projectIdentity?.key,
@@ -119,8 +189,7 @@ export function parseSearchOptions(
     costMax: parseNumberParam(params.get("costMax") ?? undefined),
     from: parseDateParam(params.get("from") ?? undefined, defaults.from),
     to: parseDateParam(params.get("to") ?? undefined, defaults.to),
-    limit:
-      limitValue && limitValue > 0 ? Math.min(limitValue, SEARCH_LIMIT_MAX) : SEARCH_LIMIT_DEFAULT,
+    limit: request.limit,
   };
 }
 

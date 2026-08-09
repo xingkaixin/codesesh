@@ -351,12 +351,19 @@ describe("handleGetSessions", () => {
     expect(response.sessions).toHaveLength(2);
   });
 
-  it("falls back to all sessions when agent not found in byAgent", () => {
+  it("returns no sessions when the requested agent is unknown", () => {
     const c = makeMockContext({ query: { agent: "nonexistent" } });
     handleGetSessions(c, makeScanSource());
     const response = c.json.mock.calls[0]![0];
-    // Falls back to scanResult.sessions
-    expect(response.sessions).toHaveLength(2);
+    expect(response.sessions).toEqual([]);
+  });
+
+  it("normalizes the requested agent case", () => {
+    const c = makeMockContext({ query: { agent: "ClaudeCode" } });
+
+    handleGetSessions(c, makeScanSource());
+
+    expect(c.json.mock.calls[0]![0].sessions).toHaveLength(2);
   });
 
   it("filters by q (title search)", () => {
@@ -525,7 +532,7 @@ describe("handleSearchSessions", () => {
     const c = makeMockContext({
       query: {
         q: " needle ",
-        agent: "claudecode",
+        agent: "ClaudeCode",
         tag: "bugfix",
         limit: "5",
         projectKind: "git_remote",
@@ -557,6 +564,39 @@ describe("handleSearchSessions", () => {
       expect.objectContaining({ error: expect.any(String) }),
       400,
     );
+    expect(coreMocks.executeSessionSearch).not.toHaveBeenCalled();
+  });
+
+  it.each(["1.5", "0", "-1", "", "Infinity", "invalid"])(
+    "rejects invalid search limit %j before executing search",
+    (limit) => {
+      const c = makeMockContext({ query: { q: "needle", limit } });
+
+      handleSearchSessions(c, makeScanSource());
+
+      expect(c.json).toHaveBeenCalledWith({ error: "limit must be a positive integer" }, 400);
+      expect(coreMocks.executeSessionSearch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("caps an oversized integer search limit", () => {
+    const c = makeMockContext({ query: { q: "needle", limit: "999999999999999999999" } });
+
+    handleSearchSessions(c, makeScanSource());
+
+    expect(coreMocks.executeSessionSearch).toHaveBeenCalledWith(
+      "needle",
+      expect.objectContaining({ limit: 100 }),
+      expect.anything(),
+    );
+  });
+
+  it("returns no search results for an unknown agent without executing search", () => {
+    const c = makeMockContext({ query: { q: "needle", agent: "nonexistent" } });
+
+    handleSearchSessions(c, makeScanSource());
+
+    expect(c.json).toHaveBeenCalledWith({ results: [] });
     expect(coreMocks.executeSessionSearch).not.toHaveBeenCalled();
   });
 

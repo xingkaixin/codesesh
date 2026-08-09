@@ -46,11 +46,15 @@ import { appLogger } from "../logging.js";
 import { resolveTimeWindow } from "../time-window-resolution.js";
 import {
   filterSessionsByActivityWindow,
+  FILE_ACTIVITY_LIMIT_POLICY,
   parseDateParam,
   parseFileActivityKind,
   parseProjectIdentityFilter,
+  parseSessionQuery,
   parseSearchOptions,
   optionalQueryValue,
+  searchParams,
+  SEARCH_LIMIT_POLICY,
   type SessionListDefaults,
 } from "./query-params.js";
 import {
@@ -70,6 +74,20 @@ export interface ScanResultSource {
 
 export interface ScanStatusSource {
   getScanStatus(): ScanStatusEvent;
+}
+
+const KNOWN_AGENT_NAMES = getAgentInfoMap({}).map((agent) => agent.name);
+
+function reportInvalidQueryParameter(
+  endpoint: string,
+  parameter: "agent" | "limit",
+  validationOutcome: "empty_result" | "rejected",
+): void {
+  appLogger.warn("api.query_parameter.invalid", {
+    endpoint,
+    parameter,
+    validation_outcome: validationOutcome,
+  });
 }
 
 interface SnapshotAggregationCache {
@@ -373,7 +391,7 @@ export function handleGetSessions(
   defaults: SessionListDefaults = {},
 ) {
   const scanResult = scanSource.getSnapshot();
-  const agent = c.req.query("agent");
+  const sessionQuery = parseSessionQuery(searchParams(c), KNOWN_AGENT_NAMES);
   const q = c.req.query("q")?.toLowerCase();
   const cwd = c.req.query("cwd");
   const projectIdentity = parseProjectIdentityFilter(
@@ -389,11 +407,12 @@ export function handleGetSessions(
 
   let sessions: SessionHead[] = [];
 
-  // If agent filter is specified, use byAgent directly
-  if (agent && scanResult.byAgent[agent]) {
-    sessions = [...scanResult.byAgent[agent]!];
-  } else {
+  if (sessionQuery.agent.kind === "all") {
     sessions = [...scanResult.sessions];
+  } else if (sessionQuery.agent.kind === "known") {
+    sessions = [...(scanResult.byAgent[sessionQuery.agent.agentName] ?? [])];
+  } else {
+    reportInvalidQueryParameter("sessions", "agent", "empty_result");
   }
 
   if (projectIdentity) {
@@ -459,6 +478,11 @@ export function handleSearchSessions(
 ) {
   const query = c.req.query("q")?.trim() ?? "";
   const scanResult = scanSource.getSnapshot();
+  const sessionQuery = parseSessionQuery(searchParams(c), KNOWN_AGENT_NAMES, SEARCH_LIMIT_POLICY);
+  if (sessionQuery.limit.kind === "invalid") {
+    reportInvalidQueryParameter("search", "limit", "rejected");
+    return c.json({ error: sessionQuery.limit.error }, 400);
+  }
   const projectIdentity = parseProjectIdentityFilter(
     c.req.query("projectKind"),
     c.req.query("projectKey"),
@@ -466,7 +490,19 @@ export function handleSearchSessions(
   if (projectIdentity === null) {
     return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
   }
-  const searchOptions = parseSearchOptions(c, defaults, projectIdentity);
+  if (sessionQuery.agent.kind === "unknown") {
+    reportInvalidQueryParameter("search", "agent", "empty_result");
+    return c.json({ results: [] });
+  }
+  const searchOptions = parseSearchOptions(
+    c,
+    defaults,
+    {
+      agent: sessionQuery.agent.kind === "known" ? sessionQuery.agent.agentName : undefined,
+      limit: sessionQuery.limit.value,
+    },
+    projectIdentity,
+  );
   const aliases = loadAliasView();
   const results = executeSessionSearch(query, searchOptions, scanResult).map((result) => ({
     ...result,
@@ -487,8 +523,15 @@ export function handleSearchSessions(
 }
 
 export function handleGetFileActivity(c: Context, defaults: SessionListDefaults = {}) {
-  const limitValue = Number(c.req.query("limit"));
-  const limit = Number.isFinite(limitValue) && limitValue > 0 ? Math.min(limitValue, 200) : 50;
+  const sessionQuery = parseSessionQuery(
+    searchParams(c),
+    KNOWN_AGENT_NAMES,
+    FILE_ACTIVITY_LIMIT_POLICY,
+  );
+  if (sessionQuery.limit.kind === "invalid") {
+    reportInvalidQueryParameter("file-activity", "limit", "rejected");
+    return c.json({ error: sessionQuery.limit.error }, 400);
+  }
   const projectIdentity = parseProjectIdentityFilter(
     c.req.query("projectKind"),
     c.req.query("projectKey"),
@@ -496,11 +539,15 @@ export function handleGetFileActivity(c: Context, defaults: SessionListDefaults 
   if (projectIdentity === null) {
     return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
   }
+  if (sessionQuery.agent.kind === "unknown") {
+    reportInvalidQueryParameter("file-activity", "agent", "empty_result");
+    return c.json({ activity: [] });
+  }
 
   const aliases = loadAliasView();
   return c.json({
     activity: listFileActivity({
-      agent: optionalQueryValue(c.req.query("agent")),
+      agent: sessionQuery.agent.kind === "known" ? sessionQuery.agent.agentName : undefined,
       sessionId: optionalQueryValue(c.req.query("sessionId")),
       projectKind: projectIdentity?.kind,
       projectKey: projectIdentity?.key,
@@ -510,7 +557,7 @@ export function handleGetFileActivity(c: Context, defaults: SessionListDefaults 
       kind: parseFileActivityKind(optionalQueryValue(c.req.query("kind"))),
       from: parseDateParam(c.req.query("from"), defaults.from),
       to: parseDateParam(c.req.query("to"), defaults.to),
-      limit,
+      limit: sessionQuery.limit.value,
     }).map((activity) => decorateFileActivity(activity, aliases)),
   });
 }
