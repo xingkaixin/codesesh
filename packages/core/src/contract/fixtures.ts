@@ -64,6 +64,7 @@ export const SAMPLE_SESSIONS_UPDATED_EVENT = {
   type: "sessions-updated",
   changedAgents: ["claudecode"],
   newSessions: 1,
+  newSessionRefs: [{ agentName: "claudecode", sessionId: SAMPLE_SESSION_HEAD.id }],
   updatedSessions: 0,
   removedSessions: 0,
   totalSessions: 43,
@@ -74,6 +75,8 @@ export const SAMPLE_SESSIONS_UPDATED_EVENT = {
       session: SAMPLE_SESSION_HEAD,
     },
   ],
+  projectionRelatedSessionHeads: [],
+  projectionSessionOrder: [{ agentName: "claudecode", sessionId: SAMPLE_SESSION_HEAD.id }],
   removedSessionRefs: [],
 } satisfies SessionsUpdatedEvent;
 

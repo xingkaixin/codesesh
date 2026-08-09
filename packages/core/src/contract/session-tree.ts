@@ -3,10 +3,20 @@
  * inclusive stat rollups and calendar-day grouping. Everything here is a pure
  * derivation of `parent_reference` — the wire format carries no tree.
  */
-import type { CostSource, SessionHead } from "./session.js";
+import type { CostSource, ReferencedSessionHead, SessionHead } from "./session.js";
 import { startOfCalendarDay, toCalendarDayKey } from "./calendar-day.js";
-import { compareSessionActivityDesc, getSessionRouteKey } from "./session-index.js";
-import { formatSessionReference, getSessionAgentKey } from "./session-reference.js";
+import {
+  applySessionChanges,
+  compareSessionActivityDesc,
+  getSessionRouteKey,
+  type SessionHeadChange,
+  type SessionHeadRemoval,
+} from "./session-index.js";
+import {
+  formatSessionReference,
+  getSessionAgentKey,
+  type SessionReference,
+} from "./session-reference.js";
 
 /**
  * Where a session sits relative to its parent. Replaces the two-state
@@ -272,4 +282,167 @@ export function filterSessionTreeByActivityWindow(
   }
 
   return sessions.filter((session) => visible.has(sessionKey(session)));
+}
+
+interface SessionHierarchyGraph {
+  sessionsByKey: Map<string, SessionHead>;
+  parentByKey: Map<string, string>;
+  childrenByKey: Map<string, string[]>;
+}
+
+function createSessionHierarchyGraph(sessions: SessionHead[]): SessionHierarchyGraph {
+  const sessionsByKey = new Map<string, SessionHead>();
+  for (const session of sessions) {
+    const key = sessionKey(session);
+    if (!sessionsByKey.has(key)) sessionsByKey.set(key, session);
+  }
+
+  const parentByKey = new Map<string, string>();
+  const childrenByKey = new Map<string, string[]>();
+  for (const [key, session] of sessionsByKey) {
+    const parent = parentKey(session);
+    if (!parent || !sessionsByKey.has(parent)) continue;
+    parentByKey.set(key, parent);
+    const children = childrenByKey.get(parent);
+    if (children) children.push(key);
+    else childrenByKey.set(parent, [key]);
+  }
+  return { sessionsByKey, parentByKey, childrenByKey };
+}
+
+function collectAffectedHierarchyKeys(
+  graph: SessionHierarchyGraph,
+  seedKeys: Iterable<string>,
+  includeAncestors: boolean,
+  collected: Set<string>,
+): void {
+  const visited = new Set<string>();
+  const pending = [...seedKeys].filter((key) => graph.sessionsByKey.has(key));
+  while (pending.length > 0) {
+    const key = pending.pop()!;
+    if (visited.has(key)) continue;
+    visited.add(key);
+    collected.add(key);
+    for (const child of graph.childrenByKey.get(key) ?? []) pending.push(child);
+  }
+
+  if (!includeAncestors) return;
+  for (const seed of seedKeys) {
+    let key = graph.sessionsByKey.has(seed) ? seed : undefined;
+    const onPath = new Set<string>();
+    while (key && !onPath.has(key)) {
+      onPath.add(key);
+      collected.add(key);
+      key = graph.parentByKey.get(key);
+    }
+  }
+}
+
+export interface SessionProjectionContext {
+  relatedSessionHeads: ReferencedSessionHead[];
+  sessionOrder: SessionReference[];
+}
+
+export function createSessionProjectionContext(
+  previousSessions: SessionHead[],
+  nextSessions: SessionHead[],
+  changedSessionHeads: ReferencedSessionHead[],
+  removedSessionRefs: SessionReference[],
+): SessionProjectionContext {
+  const changedKeys = new Set(
+    changedSessionHeads.map(({ reference }) =>
+      getSessionRouteKey(reference.agentName, reference.sessionId),
+    ),
+  );
+  const removedKeys = removedSessionRefs.map(({ agentName, sessionId }) =>
+    getSessionRouteKey(agentName, sessionId),
+  );
+  const affectedKeys = new Set<string>();
+  const previousGraph = createSessionHierarchyGraph(previousSessions);
+  const nextGraph = createSessionHierarchyGraph(nextSessions);
+  collectAffectedHierarchyKeys(previousGraph, changedKeys, true, affectedKeys);
+  collectAffectedHierarchyKeys(nextGraph, changedKeys, true, affectedKeys);
+  collectAffectedHierarchyKeys(previousGraph, removedKeys, false, affectedKeys);
+
+  const emitted = new Set<string>();
+  const relatedSessionHeads = nextSessions.flatMap((session) => {
+    const key = sessionKey(session);
+    if (!affectedKeys.has(key) || changedKeys.has(key) || emitted.has(key)) return [];
+    emitted.add(key);
+    return [
+      {
+        reference: { agentName: getSessionAgentKey(session), sessionId: session.id },
+        session,
+      },
+    ];
+  });
+  const affectedActivityTimes = new Set(
+    [...changedSessionHeads, ...relatedSessionHeads].map(({ session }) => activityTime(session)),
+  );
+  const sessionOrder = nextSessions.flatMap((session) =>
+    affectedActivityTimes.has(activityTime(session))
+      ? [{ agentName: getSessionAgentKey(session), sessionId: session.id }]
+      : [],
+  );
+  return { relatedSessionHeads, sessionOrder };
+}
+
+export interface SessionWindowChanges {
+  changedSessionHeads: SessionHeadChange[];
+  projectionRelatedSessionHeads?: SessionHeadChange[];
+  projectionSessionOrder?: SessionReference[];
+  removedSessionRefs: SessionHeadRemoval[];
+  from?: number;
+  to?: number;
+}
+
+export interface SessionWindowChangeResult {
+  sessions: SessionHead[];
+  visibleAddedSessions: number;
+  visibleRemovedSessions: number;
+}
+
+export function applySessionWindowChanges(
+  sessions: SessionHead[],
+  changes: SessionWindowChanges,
+): SessionWindowChangeResult {
+  const previousKeys = new Set(sessions.map(sessionKey));
+  const upserts = [
+    ...(changes.projectionRelatedSessionHeads ?? []),
+    ...changes.changedSessionHeads,
+  ];
+  const upsertsByKey = new Map(
+    upserts.map((change) => [
+      getSessionRouteKey(change.reference.agentName, change.reference.sessionId),
+      change,
+    ]),
+  );
+  const sessionsByKey = new Map(sessions.map((session) => [sessionKey(session), session]));
+  const orderedUpserts: SessionHeadChange[] = [];
+  const reorderedRefs: SessionReference[] = [];
+  for (const reference of changes.projectionSessionOrder ?? []) {
+    const key = getSessionRouteKey(reference.agentName, reference.sessionId);
+    const change = upsertsByKey.get(key);
+    const session = change?.session ?? sessionsByKey.get(key);
+    if (!session) continue;
+    orderedUpserts.push(change ?? { reference, session });
+    reorderedRefs.push(reference);
+    upsertsByKey.delete(key);
+  }
+  orderedUpserts.push(...upsertsByKey.values());
+  const merged = applySessionChanges(sessions, orderedUpserts, [
+    ...changes.removedSessionRefs,
+    ...reorderedRefs,
+  ]);
+  const projected = filterSessionTreeByActivityWindow(merged, changes.from, changes.to);
+  const nextKeys = new Set(projected.map(sessionKey));
+  let visibleAddedSessions = 0;
+  let visibleRemovedSessions = 0;
+  for (const key of nextKeys) {
+    if (!previousKeys.has(key)) visibleAddedSessions += 1;
+  }
+  for (const key of previousKeys) {
+    if (!nextKeys.has(key)) visibleRemovedSessions += 1;
+  }
+  return { sessions: projected, visibleAddedSessions, visibleRemovedSessions };
 }
