@@ -2,6 +2,31 @@ import { existsSync, readdirSync, statSync, type Dirent, type Stats } from "node
 import { join } from "node:path";
 import type { SessionHead, SessionDetail, ParseSessionResult } from "../types/index.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
+import {
+  createSessionSourceFailure,
+  isMissingSessionSourceError,
+  matchesScanWindow,
+  synchronizeSessionSources as runSessionSourceSynchronization,
+} from "./session-source-synchronization.js";
+import type {
+  SessionSourceSynchronizationBaseline,
+  SessionSourceSynchronizationOutcome,
+  SessionSourceSynchronizationRequest,
+} from "./session-source-synchronization.js";
+
+export {
+  createSessionSourceFailure,
+  diffSessionSources,
+  matchesScanWindow,
+  reportSessionSourceOutcome,
+  synchronizeSessionSources,
+} from "./session-source-synchronization.js";
+export type {
+  SessionSourceSynchronizationAdapter,
+  SessionSourceSynchronizationBaseline,
+  SessionSourceSynchronizationOutcome,
+  SessionSourceSynchronizationRequest,
+} from "./session-source-synchronization.js";
 
 export type { ParseSessionResult };
 
@@ -45,12 +70,6 @@ export interface AgentScanProgress {
 export interface FileWalkOptions {
   recursive?: boolean;
   scanWindow?: Pick<AgentScanOptions, "from" | "to">;
-}
-
-export function matchesScanWindow(activityTime: number, options?: AgentScanOptions): boolean {
-  if (options?.from != null && activityTime < options.from) return false;
-  if (options?.to != null && activityTime > options.to) return false;
-  return true;
 }
 
 /** 变更检测结果 */
@@ -151,130 +170,6 @@ export type CachedMetaLookup =
   | ReadonlyMap<string, SessionCacheMeta>
   | Record<string, SessionCacheMeta>;
 
-function readCachedMeta(meta: CachedMetaLookup, sessionId: string): SessionCacheMeta | undefined {
-  if (meta instanceof Map) return meta.get(sessionId);
-  return (meta as Record<string, SessionCacheMeta>)[sessionId];
-}
-
-/**
- * Fingerprints compare by exact string equality. Agents encode their head-index
- * and parser versions into the fingerprint precisely so that bumping either one
- * invalidates every cached head — a tolerant comparison would defeat that.
- */
-function fingerprintMatches(ref: SessionSourceRef, cached: SessionCacheMeta | undefined): boolean {
-  return (
-    typeof cached?.sourceFingerprint === "string" && cached.sourceFingerprint === ref.fingerprint
-  );
-}
-
-/**
- * Decides whether a cached session was in scope for this enumeration pass, which
- * is what makes its absence from the refs mean "deleted on disk" rather than
- * "outside the window".
- *
- * `sourceMtimeMs` must hold the same quantity the agent's `listSessionSources`
- * window-filters on, or the two disagree and sessions are dropped or kept wrongly.
- *
- * When it is missing we cannot tell, and the two wrong answers are not
- * symmetric: wrongly removing destroys cached sessions and their messages, while
- * wrongly keeping leaves a stale entry that the next unwindowed pass clears. So
- * an unknown mtime means "not enumerated" — keep it.
- */
-function wasEnumeratedThisPass(
-  cached: SessionCacheMeta | undefined,
-  options: AgentScanOptions | undefined,
-): boolean {
-  if (options?.from == null && options?.to == null) return true;
-  const mtimeMs = cached?.sourceMtimeMs;
-  return typeof mtimeMs === "number" && matchesScanWindow(mtimeMs, options);
-}
-
-/**
- * Single owner of "which sources changed" for file-backed agents. The main
- * thread reaches it through FileSystemSessionSource.checkForChanges; the
- * scan-refresh worker calls it directly, because it holds cached meta received
- * over workerData rather than a live agent metaMap.
- */
-export function diffSessionSources(
-  refs: SessionSourceRef[],
-  cachedSessions: SessionHead[],
-  cachedMeta: CachedMetaLookup,
-  options?: AgentScanOptions,
-): SessionSourceDiff {
-  const cachedIds = new Set(cachedSessions.map((session) => session.id));
-  const enumeratedIds = new Set<string>();
-  const changedIds: string[] = [];
-
-  for (const ref of refs) {
-    enumeratedIds.add(ref.sessionId);
-    const meta = readCachedMeta(cachedMeta, ref.sessionId);
-    // A ref with no cached session has to be parsed even when its meta matches:
-    // the caller's session list is what the refresh merges into.
-    const unchanged =
-      cachedIds.has(ref.sessionId) &&
-      meta?.sourcePath === ref.sourcePath &&
-      fingerprintMatches(ref, meta);
-    if (!unchanged) changedIds.push(ref.sessionId);
-  }
-
-  const removedIds: string[] = [];
-  const failedIds: string[] = [];
-  const sourceOutcomes: SessionSourceAbsenceOutcome[] = [];
-  for (const session of cachedSessions) {
-    if (enumeratedIds.has(session.id)) continue;
-    const meta = readCachedMeta(cachedMeta, session.id);
-    if (!wasEnumeratedThisPass(meta, options)) continue;
-    const source = {
-      sessionId: session.id,
-      sourcePath: typeof meta?.sourcePath === "string" ? meta.sourcePath : "",
-      fingerprint: typeof meta?.sourceFingerprint === "string" ? meta.sourceFingerprint : "",
-    };
-    if (!source.sourcePath) {
-      failedIds.push(session.id);
-      sourceOutcomes.push({
-        status: "failed",
-        failure: createSessionSourceFailure(
-          source,
-          "enumeration",
-          new Error("cached source path is missing"),
-        ),
-      });
-      continue;
-    }
-    try {
-      statSync(source.sourcePath);
-      failedIds.push(session.id);
-      sourceOutcomes.push({
-        status: "failed",
-        failure: createSessionSourceFailure(
-          source,
-          "enumeration",
-          new Error("cached source was not enumerated"),
-        ),
-      });
-    } catch (error) {
-      if (!isMissingSourceError(error)) {
-        failedIds.push(session.id);
-        sourceOutcomes.push({
-          status: "failed",
-          failure: createSessionSourceFailure(source, "enumeration", error),
-        });
-        continue;
-      }
-      removedIds.push(session.id);
-      sourceOutcomes.push({ status: "missing", source });
-    }
-  }
-
-  return { changedIds, removedIds, failedIds, sourceOutcomes };
-}
-
-function isMissingSourceError(error: unknown): boolean {
-  if (typeof error !== "object" || error === null || !("code" in error)) return false;
-  const code = (error as { code?: unknown }).code;
-  return code === "ENOENT" || code === "ENOTDIR";
-}
-
 function failureClass(error: unknown): string {
   if (typeof error === "object" && error !== null && "code" in error) {
     const code = (error as { code?: unknown }).code;
@@ -316,52 +211,6 @@ export function reportAgentScanFailure(failure: AgentScanFailure, baselineRetain
     error_class: failure.errorClass,
     message: failure.message,
     baseline_retained: baselineRetained,
-  });
-}
-
-export function createSessionSourceFailure(
-  source: Pick<SessionSourceRef, "sessionId" | "sourcePath">,
-  stage: SessionSourceFailure["stage"],
-  error: unknown,
-): SessionSourceFailure {
-  return {
-    sessionId: source.sessionId,
-    sourcePath: source.sourcePath,
-    stage,
-    errorClass: failureClass(error),
-    message: failureMessage(error),
-  };
-}
-
-export function reportSessionSourceOutcome(agentName: string, outcome: SessionSourceOutcome): void {
-  if (outcome.status === "parsed") return;
-  if (outcome.status === "filtered") {
-    getCoreDiagnostics()?.info?.("agent.session_source_outcome", {
-      agent: agentName,
-      session_id: outcome.source.sessionId,
-      source_path: outcome.source.sourcePath,
-      outcome: outcome.status,
-      reason: outcome.reason,
-    });
-    return;
-  }
-  if (outcome.status === "missing") {
-    getCoreDiagnostics()?.info?.("agent.session_source_outcome", {
-      agent: agentName,
-      session_id: outcome.source.sessionId,
-      source_path: outcome.source.sourcePath,
-      outcome: outcome.status,
-    });
-    return;
-  }
-  getCoreDiagnostics()?.warn("agent.session_source_outcome", {
-    agent: agentName,
-    session_id: outcome.failure.sessionId,
-    source_path: outcome.failure.sourcePath,
-    outcome: outcome.status,
-    stage: outcome.failure.stage,
-    error_class: outcome.failure.errorClass,
-    message: outcome.failure.message,
   });
 }
 
@@ -462,7 +311,7 @@ export abstract class FileSystemSessionSource<
     } catch (error) {
       if (previousMeta) this.sessionMetaMap.set(source.sessionId, previousMeta);
       else this.sessionMetaMap.delete(source.sessionId);
-      if (isMissingSourceError(error)) return { status: "missing", source };
+      if (isMissingSessionSourceError(error)) return { status: "missing", source };
       return {
         status: "failed",
         failure: createSessionSourceFailure(source, "parsing", error),
@@ -493,29 +342,27 @@ export abstract class FileSystemSessionSource<
     return changedIds;
   }
 
+  synchronizeSessionSources(
+    baseline: SessionSourceSynchronizationBaseline,
+    request: SessionSourceSynchronizationRequest,
+  ): SessionSourceSynchronizationOutcome {
+    return runSessionSourceSynchronization(this, baseline, request);
+  }
+
   scan(options?: AgentScanOptions): SessionHead[] {
     return this.scanSessionSources(options).sessions;
   }
 
   scanSessionSources(options?: AgentScanOptions): SessionSourceScanBatch {
-    const sources = this.listSessionSources(options);
-    const sessions: SessionHead[] = [];
-    const outcomes: SessionSourceOutcome[] = [];
-    options?.onProgress?.({ total: sources.length, processed: 0, sessions: 0 });
-
-    for (const [index, source] of sources.entries()) {
-      const outcome = this.scanSessionSourceOutcome(source, options);
-      outcomes.push(outcome);
-      if (outcome.status === "parsed") sessions.push(outcome.session);
-      else reportSessionSourceOutcome(this.name, outcome);
-      options?.onProgress?.({
-        total: sources.length,
-        processed: index + 1,
-        sessions: sessions.length,
-      });
-    }
-
-    return { sources, outcomes, sessions };
+    const outcome = this.synchronizeSessionSources(
+      { sessions: [], meta: this.sessionMetaMap },
+      { kind: "reload", scanOptions: options },
+    );
+    return {
+      sources: outcome.sources,
+      outcomes: outcome.sourceOutcomes,
+      sessions: outcome.sessions,
+    };
   }
 
   getSessionMetaMap(): Map<string, SessionCacheMeta> {
@@ -549,7 +396,7 @@ export abstract class FileSystemSessionSource<
         try {
           stat = statSync(filePath);
         } catch (error) {
-          if (isMissingSourceError(error)) continue;
+          if (isMissingSessionSourceError(error)) continue;
           throw new SessionScanError(this.name, "reading session source metadata", {
             cause: error,
             sourcePath: filePath,
@@ -593,66 +440,30 @@ export abstract class FileSystemSessionSource<
     }
   }
 
-  /**
-   * 变更检测：枚举当前源 → 交给 diffSessionSources 比对。
-   * 新增、变更、删除三类统一产出 changedIds。
-   */
   checkForChanges(_sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
-    const currentRefs = this.listSessionSources();
-    const diff = diffSessionSources(currentRefs, cachedSessions, this.sessionMetaMap);
-    const changedIds = [...new Set([...diff.changedIds, ...diff.removedIds])];
-    const sourceFailures = diff.sourceOutcomes.flatMap((outcome) =>
-      outcome.status === "failed" ? [outcome.failure] : [],
+    const outcome = this.synchronizeSessionSources(
+      { sessions: cachedSessions, meta: this.sessionMetaMap },
+      { kind: "inspect" },
     );
-    for (const outcome of diff.sourceOutcomes) reportSessionSourceOutcome(this.name, outcome);
 
     return {
-      hasChanges: changedIds.length > 0 || sourceFailures.length > 0,
-      changedIds,
+      hasChanges: outcome.detectedSessionIds.length > 0 || outcome.sourceFailures.length > 0,
+      changedIds: outcome.detectedSessionIds,
       timestamp: Date.now(),
-      refs: currentRefs,
-      sourceFailures,
+      refs: outcome.sources,
+      sourceFailures: outcome.sourceFailures,
     };
   }
 
-  /**
-   * 增量扫描：对变更/新增源调用 scanSessionSource 重解析，
-   * 删除已消失的源，合并回 cachedSessions。
-   * refs 未传时回退为自行枚举，供独立调用方（如测试）沿用旧行为。
-   */
   incrementalScan(
     cachedSessions: SessionHead[],
     changedIds: string[],
     refs?: SessionSourceRef[],
   ): SessionHead[] {
-    const sources = refs ?? this.listSessionSources();
-    const sessionMap = new Map(cachedSessions.map((session) => [session.id, session]));
-    const changedSet = new Set(this.expandChangedSessionIds(changedIds, sources));
-    const currentIds = new Set<string>();
-
-    for (const ref of sources) {
-      currentIds.add(ref.sessionId);
-      if (!changedSet.has(ref.sessionId)) continue;
-      const outcome = this.scanSessionSourceOutcome(ref);
-      if (outcome.status === "parsed") {
-        sessionMap.set(outcome.session.id, outcome.session);
-      } else if (outcome.status === "filtered" || outcome.status === "missing") {
-        sessionMap.delete(ref.sessionId);
-        this.sessionMetaMap.delete(ref.sessionId);
-      } else {
-        reportSessionSourceOutcome(this.name, outcome);
-      }
-    }
-
-    // Drop sessions flagged as changed but no longer present on disk.
-    for (const id of changedSet) {
-      if (!currentIds.has(id)) {
-        sessionMap.delete(id);
-        this.sessionMetaMap.delete(id);
-      }
-    }
-
-    return [...sessionMap.values()];
+    return this.synchronizeSessionSources(
+      { sessions: cachedSessions, meta: this.sessionMetaMap },
+      { kind: "known-changes", changedIds, refs },
+    ).sessions;
   }
 }
 

@@ -17,7 +17,7 @@ CLI
        -> scanSessions() 恢复初始快照
        -> AgentSyncEngine 协调每个 Agent 的刷新与 backfill
        -> SessionWatcher 把文件系统事件归并为 Agent 刷新
-            -> scan-refresh worker 读取/解析数据源
+            -> scan-refresh worker 调用共享 Session Source synchronization module
             -> search-index worker 持久化会话、详情与索引
             -> LiveScanStore 发布内存快照和 SSE 更新
 ```
@@ -26,8 +26,9 @@ CLI
 
 | 模块 | 职责 |
 |------|------|
-| `packages/core/src/discovery/scanner.ts` | 通用扫描、缓存恢复和同步增量合并 |
-| `packages/core/src/agents/base.ts` | 文件型/数据库型 Agent 的变更检测模板 |
+| `packages/core/src/discovery/scanner.ts` | 通用扫描、缓存恢复和 one-shot 调用策略 |
+| `packages/core/src/agents/session-source-synchronization.ts` | 文件源枚举、diff、解析、last-known-good、完整性与删除事实 |
+| `packages/core/src/agents/base.ts` | 文件型/数据库型 Agent adapter 原语与兼容入口 |
 | `packages/cli/src/live-scan.ts` | 持有当前不可变快照，对外提供订阅 |
 | `packages/cli/src/agent-sync-engine.ts` | 串行化单个 Agent 的 refresh/backfill，并协调发布 |
 | `packages/cli/src/session-watcher.ts` | 跨平台文件监听、写入稳定性等待与事件归并 |
@@ -49,6 +50,11 @@ CLI
 不同 Agent 可以并行刷新；同一个 Agent 的 refresh 与 backfill 由 `AgentSyncEngine`
 串行化，并为每次 operation 记录 generation。SQLite 搜索写入另由单一 job runner
 排队。
+
+主线程与 scan-refresh worker 之间使用封闭 operation union：`full-scan`、
+`incremental-scan`、`source-refresh`、`recompute-derived`、`full-backfill` 和
+`source-backfill`。checkpoint 只能在支持它的 operation 上声明为 `durable`；协议不使用
+多个独立的同步、派生计算、回填与持久化布尔开关，以免表达非法组合。
 
 ## 启动流程
 
@@ -76,8 +82,9 @@ loadCachedSessions()
 
 ### 文件型 Agent：源枚举 + 指纹 diff
 
-`FileSystemSessionSource.checkForChanges()` 不用缓存时间戳判断单个文件是否变化。它先由
-适配器枚举当前 `SessionSourceRef[]`：
+文件型路径统一调用 `synchronizeSessionSources(adapter, baseline, request)`。adapter 只提供
+源枚举、单源解析、依赖扩展和 meta 访问原语；同步 module 先枚举当前
+`SessionSourceRef[]`：
 
 ```typescript
 interface SessionSourceRef {
@@ -87,7 +94,7 @@ interface SessionSourceRef {
 }
 ```
 
-`diffSessionSources()` 将当前引用与缓存的会话和 `SessionCacheMeta` 比较：
+同步 module 将当前引用与 baseline 中的会话和 `SessionCacheMeta` 比较：
 
 - 缓存中没有该会话：新增；
 - `sourcePath` 改变或 `sourceFingerprint` 不同：变更；
@@ -98,8 +105,15 @@ interface SessionSourceRef {
 mtime 或解析器版本。比较采用精确字符串相等；声明版本字段的适配器可通过提升版本主动
 失效旧缓存。
 
-`incrementalScan()` 复用本次枚举得到的 refs，只对变更/新增源调用
-`scanSessionSource()`，同时移除已消失的会话。
+request 是封闭状态：`inspect` 只报告 diff，`refresh` 只解析变化源，`reload` 解析所有
+枚举源，`known-changes` 应用调用方已知的变化。返回的 closed outcome 同时携带 sessions、
+meta、detected/applied ids、显式删除、source failures、finalization ids 和
+`complete | partial`，caller 不再从 payload 形状或布尔组合反推这些事实。
+
+解析失败保留 baseline 中的 Session Head 与 meta，并把 outcome 标为 `partial`；只有明确
+filtered、解析期间 missing，或完整枚举证明 source missing 时才产生显式删除。one-shot
+scanner 与 worker adapter 都跨这个 interface；`checkForChanges()` / `incrementalScan()` 仅作为
+现有 Agent interface 的兼容入口，同样委托给该 module。
 
 ### 数据库型 Agent：数据库 mtime + 全量重扫
 
@@ -200,6 +214,7 @@ pnpm bench:perf -- --iterations 3
 
 - 新快照只能在对应 SQLite 写入成功后发布。
 - 文件型会话是否变化由 source fingerprint 决定，不由全局 mtime 截断决定。
+- one-shot 与 worker 文件源路径必须消费同一 synchronization outcome，不能各自实现 diff/merge。
 - 数据库型 Agent 检测到数据库变化后必须全量重扫。
 - 未变化会话不重新解析、不重写结构化消息。
 - 缓存详情指纹过期时不得直接返回旧消息。

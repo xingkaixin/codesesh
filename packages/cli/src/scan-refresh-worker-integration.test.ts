@@ -88,11 +88,8 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     sessionSignature: actual.sessionSignature,
     SMART_TAG_CLASSIFIER_REVISION: "smart-tags-v1",
     sortSessions: actual.sortSessions,
-    // The change decision is shared with FileSystemSessionSource.checkForChanges;
-    // stubbing it would stop this suite from covering the wiring it exists to test.
-    diffSessionSources: actual.diffSessionSources,
-    // diagnostics-bridge.js (imported by the worker for its side effect) needs this export.
-    setCoreDiagnostics: vi.fn(),
+    synchronizeSessionSources: actual.synchronizeSessionSources,
+    setCoreDiagnostics: actual.setCoreDiagnostics,
   };
 });
 
@@ -123,6 +120,8 @@ function makeAgent(overrides: Record<string, unknown> = {}) {
     incrementalScan: vi.fn(() => []),
     listSessionSources: vi.fn(() => []),
     scanSessionSource: vi.fn(() => null),
+    expandChangedSessionIds: vi.fn((changedIds: string[]) => changedIds),
+    filterCachedSessions: vi.fn((sessions: SessionHead[]) => sessions),
     getSessionData: vi.fn(),
     getSessionMetaMap: vi.fn(() => sessionMetaMap),
     setSessionMetaMap: vi.fn((next: Map<string, SessionCacheMeta>) => {
@@ -132,13 +131,17 @@ function makeAgent(overrides: Record<string, unknown> = {}) {
   });
 }
 
+function makeGenericAgent(overrides: Record<string, unknown> = {}) {
+  return { ...makeAgent(overrides) };
+}
+
 function setWorkerData(overrides: Record<string, unknown> = {}) {
   mocks.workerData = {
     type: "run",
     requestId: 1,
     agentName: "codex",
     previousSessions: [],
-    changedIds: null,
+    operation: { kind: "full-scan" },
     scanOptions: { fast: true },
     meta: {},
     ...overrides,
@@ -198,7 +201,7 @@ describe("scan refresh worker entry", () => {
         return [session];
       },
     );
-    const agent = makeAgent({
+    const agent = makeGenericAgent({
       scan,
       getSessionMetaMap: vi.fn(() => new Map([["fresh", { sourcePath: "/fresh" }]])),
     });
@@ -231,7 +234,7 @@ describe("scan refresh worker entry", () => {
       }
       return [];
     });
-    mocks.createRegisteredAgents.mockReturnValue([makeAgent({ scan })]);
+    mocks.createRegisteredAgents.mockReturnValue([makeGenericAgent({ scan })]);
 
     try {
       await runWorker();
@@ -254,7 +257,7 @@ describe("scan refresh worker entry", () => {
   it("reuses a committed baseline without receiving the full history again", async () => {
     const session = makeSession("stateful");
     const scan = vi.fn(() => [session]);
-    mocks.createRegisteredAgents.mockReturnValue([makeAgent({ scan })]);
+    mocks.createRegisteredAgents.mockReturnValue([makeGenericAgent({ scan })]);
     setWorkerData({ generation: 4 });
 
     await runWorker();
@@ -270,8 +273,7 @@ describe("scan refresh worker entry", () => {
       requestId: 2,
       agentName: "codex",
       generation: 5,
-      changedIds: [],
-      derivedOnly: true,
+      operation: { kind: "recompute-derived" },
       scanOptions: {},
     });
 
@@ -306,8 +308,7 @@ describe("scan refresh worker entry", () => {
       requestId: 2,
       agentName: "codex",
       generation: 4,
-      changedIds: [],
-      derivedOnly: true,
+      operation: { kind: "recompute-derived" },
       scanOptions: {},
     });
 
@@ -333,7 +334,7 @@ describe("scan refresh worker entry", () => {
       getSessionMetaMap: vi.fn(() => new Map([["fresh", { sourcePath: "/fresh" }]])),
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
-    setWorkerData({ checkpoint: true });
+    setWorkerData({ operation: { kind: "full-scan", checkpoint: "durable" } });
 
     await runWorker();
 
@@ -360,7 +361,7 @@ describe("scan refresh worker entry", () => {
     const agent = makeAgent({ scan: vi.fn(() => []) });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({
-      checkpoint: true,
+      operation: { kind: "full-scan", checkpoint: "durable" },
       scanOptions: { fast: true, from: 1 },
     });
 
@@ -390,7 +391,7 @@ describe("scan refresh worker entry", () => {
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({
-      checkpoint: true,
+      operation: { kind: "full-scan", checkpoint: "durable" },
       previousSessions: [cached],
       meta: {
         cached: { id: "cached", sourcePath: "/cached", sourceFingerprint: "old" },
@@ -428,7 +429,7 @@ describe("scan refresh worker entry", () => {
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({
-      sourceSync: true,
+      operation: { kind: "source-refresh" },
       previousSessions: [makeSession("changed")],
       meta: {
         changed: {
@@ -469,8 +470,7 @@ describe("scan refresh worker entry", () => {
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({
-      sourceSync: true,
-      checkpoint: true,
+      operation: { kind: "source-refresh", checkpoint: "durable" },
       previousSessions: [unchanged, makeSession(changed.id, { time_created: 1, time_updated: 1 })],
       meta: {
         unchanged: {
@@ -522,7 +522,7 @@ describe("scan refresh worker entry", () => {
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({
-      sourceSync: true,
+      operation: { kind: "source-refresh" },
       previousSessions: [parent, makeSession("child")],
       meta: {
         parent: { id: "parent", sourcePath: "/parent", sourceFingerprint: "same" },
@@ -567,10 +567,7 @@ describe("scan refresh worker entry", () => {
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({
-      sourceSync: true,
-      backfill: true,
-      backfillCursor: cursor.id,
-      checkpoint: true,
+      operation: { kind: "source-backfill", cursor: cursor.id, checkpoint: "durable" },
       previousSessions: [newest, cursor, next],
       meta: Object.fromEntries(
         [newest, cursor, next].map((session) => [
@@ -610,7 +607,7 @@ describe("scan refresh worker entry", () => {
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({
-      sourceSync: true,
+      operation: { kind: "source-refresh" },
       previousSessions: [recent, old],
       scanOptions: { from: 5, fast: true },
       meta: {
@@ -646,7 +643,7 @@ describe("scan refresh worker entry", () => {
   it("returns a head when only its metadata changes", async () => {
     const session = makeSession("same");
     let meta = new Map<string, SessionCacheMeta>();
-    const agent = makeAgent({
+    const agent = makeGenericAgent({
       scan: vi.fn(() => {
         meta.set("same", {
           id: "same",
@@ -697,7 +694,10 @@ describe("scan refresh worker entry", () => {
     const incrementalScan = vi.fn(() => Promise.resolve([updated]));
     const agent = makeAgent({ incrementalScan });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
-    setWorkerData({ previousSessions: [previous], changedIds: ["previous"] });
+    setWorkerData({
+      previousSessions: [previous],
+      operation: { kind: "incremental-scan", changedIds: ["previous"] },
+    });
 
     await runWorker();
 
@@ -723,7 +723,7 @@ describe("scan refresh worker entry", () => {
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({
-      sourceSync: true,
+      operation: { kind: "source-refresh" },
       previousSessions: [session],
       meta: {
         unchanged: {
@@ -757,7 +757,7 @@ describe("scan refresh worker entry", () => {
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({
-      sourceSync: true,
+      operation: { kind: "source-refresh" },
       previousSessions: [recent],
       scanOptions: { from: 5, fast: true },
       meta: {
@@ -813,7 +813,7 @@ describe("scan refresh worker entry", () => {
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({
-      sourceSync: true,
+      operation: { kind: "source-refresh" },
       previousSessions: [unchanged, changed, removed, outsideWindow, moved],
       // from: 5 puts `outside` (mtime 0) before the window and `removed`
       // (mtime 10) inside it, so only the latter counts as deleted on disk.
@@ -870,7 +870,7 @@ describe("scan refresh worker entry", () => {
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({
-      sourceSync: true,
+      operation: { kind: "source-refresh" },
       previousSessions: [cached],
       meta: {
         // Written by an older parser version: same file, but the head it produced

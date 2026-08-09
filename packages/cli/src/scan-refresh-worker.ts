@@ -6,25 +6,30 @@ import {
   buildAgentCacheMeta,
   computeSessionDiff,
   createRegisteredAgents,
-  diffSessionSources,
   ensureSessionTagsSync,
   FileSystemSessionSource,
   sessionSignature,
   SMART_TAG_CLASSIFIER_REVISION,
   sortSessions,
+  synchronizeSessionSources,
   type AgentScanProgress,
   type BaseAgent,
   type ScanOptions,
   type SessionCacheMeta,
   type SessionHead,
   type SessionHeadChange,
-  type SessionSourceAbsenceOutcome,
   type SessionSourceFailure,
   type SessionSnapshotCompleteness,
   type SessionTagTiming,
 } from "@codesesh/core";
 import { appLogger } from "./logging.js";
 import { MonotonicValueSampler } from "./monotonic-value-sampler.js";
+import {
+  isBackfillOperation,
+  synchronizesSessionSources,
+  usesDurableCheckpoints,
+  type ScanRefreshOperation,
+} from "./scan-refresh-operation.js";
 
 export type ScanRefreshWorkerMessage =
   | {
@@ -80,12 +85,7 @@ export interface ScanRefreshWorkerRunRequest {
   agentName: string;
   generation: number;
   previousSessions?: SessionHead[];
-  changedIds: string[] | null;
-  sourceSync?: boolean;
-  derivedOnly?: boolean;
-  backfill?: boolean;
-  backfillCursor?: string | null;
-  checkpoint?: boolean;
+  operation: ScanRefreshOperation;
   scanOptions: Pick<ScanOptions, "from" | "to" | "fast">;
   meta?: Record<string, SessionCacheMeta>;
 }
@@ -173,124 +173,6 @@ function selectBackfillSessions(
   }
 
   return { orderedSessions, finalizeSessionIds, cursorIndex };
-}
-
-/**
- * Source-level incremental sync. The change decision itself lives in
- * diffSessionSources so this path and FileSystemSessionSource.checkForChanges
- * cannot drift; only the expansion, re-parse and merge are local, because the
- * worker holds cached meta received over workerData rather than the agent's
- * live metaMap.
- */
-function syncAgentSources(
-  agent: FileSystemSessionSource,
-  cachedSessions: SessionHead[],
-  cachedMeta: Record<string, SessionCacheMeta>,
-  windowOptions?: Pick<ScanOptions, "from" | "to">,
-  onProgress?: (progress: AgentScanProgress) => void,
-): {
-  sessions: SessionHead[];
-  changedIds: string[];
-  finalizeSessionIds: string[];
-  sourceCount: number;
-  removedCount: number;
-  explicitRemovedSessionIds: string[];
-  sourceFailures: SessionSourceFailure[];
-} {
-  const sessionMap = new Map(cachedSessions.map((session) => [session.id, session]));
-  const sourceRefs = agent.listSessionSources(windowOptions);
-  const sourceById = new Map(sourceRefs.map((source) => [source.sessionId, source]));
-  const { changedIds, removedIds, sourceOutcomes } = diffSessionSources(
-    sourceRefs,
-    cachedSessions,
-    cachedMeta,
-    windowOptions,
-  );
-  // Expansion pulls in sessions whose derived data depends on the changed ones
-  // (e.g. parents of changed subagent files), so a targeted re-parse stays
-  // correct without rescanning the whole directory.
-  const rescanIds = agent.expandChangedSessionIds?.(
-    [...new Set([...changedIds, ...removedIds])],
-    sourceRefs,
-  ) ?? [...new Set([...changedIds, ...removedIds])];
-  const isWindowed = windowOptions?.from != null || windowOptions?.to != null;
-  const sourceFailures = sourceOutcomes.flatMap((outcome) =>
-    outcome.status === "failed" ? [outcome.failure] : [],
-  );
-  for (const outcome of sourceOutcomes) logAbsentSourceOutcome(agent.name, outcome);
-  const appliedIds = new Set(removedIds);
-  const explicitRemovedSessionIds = new Set(removedIds);
-
-  rescanIds.forEach((sessionId, index) => {
-    const source = sourceById.get(sessionId);
-    if (!source) return;
-    const outcome = agent.scanSessionSourceOutcome(source);
-    if (outcome.status === "parsed") {
-      sessionMap.set(outcome.session.id, outcome.session);
-      appliedIds.add(sessionId);
-    } else if (outcome.status === "filtered" || outcome.status === "missing") {
-      sessionMap.delete(sessionId);
-      agent.getSessionMetaMap().delete(sessionId);
-      appliedIds.add(sessionId);
-      explicitRemovedSessionIds.add(sessionId);
-      appLogger.info("agent.session_source_outcome", {
-        agent: agent.name,
-        session_id: sessionId,
-        source_path: source.sourcePath,
-        outcome: outcome.status,
-        ...(outcome.status === "filtered" ? { reason: outcome.reason } : {}),
-      });
-    } else {
-      sourceFailures.push(outcome.failure);
-      appLogger.warn("agent.session_source_outcome", {
-        agent: agent.name,
-        session_id: outcome.failure.sessionId,
-        source_path: outcome.failure.sourcePath,
-        outcome: outcome.status,
-        stage: outcome.failure.stage,
-        error_class: outcome.failure.errorClass,
-        message: outcome.failure.message,
-      });
-    }
-    onProgress?.({ total: rescanIds.length, processed: index + 1, sessions: sessionMap.size });
-  });
-
-  for (const sessionId of removedIds) sessionMap.delete(sessionId);
-  const failedIdSet = new Set(sourceFailures.map((failure) => failure.sessionId));
-  const finalizeSessionIds = (
-    isWindowed ? [...appliedIds] : sourceRefs.map((source) => source.sessionId)
-  ).filter((sessionId) => !failedIdSet.has(sessionId));
-
-  return {
-    sessions: [...sessionMap.values()],
-    changedIds: [...appliedIds],
-    finalizeSessionIds,
-    sourceCount: sourceRefs.length,
-    removedCount: removedIds.length,
-    explicitRemovedSessionIds: [...explicitRemovedSessionIds],
-    sourceFailures,
-  };
-}
-
-function logAbsentSourceOutcome(agentName: string, outcome: SessionSourceAbsenceOutcome): void {
-  if (outcome.status === "missing") {
-    appLogger.info("agent.session_source_outcome", {
-      agent: agentName,
-      session_id: outcome.source.sessionId,
-      source_path: outcome.source.sourcePath,
-      outcome: outcome.status,
-    });
-    return;
-  }
-  appLogger.warn("agent.session_source_outcome", {
-    agent: agentName,
-    session_id: outcome.failure.sessionId,
-    source_path: outcome.failure.sourcePath,
-    outcome: outcome.status,
-    stage: outcome.failure.stage,
-    error_class: outcome.failure.errorClass,
-    message: outcome.failure.message,
-  });
 }
 
 /**
@@ -446,13 +328,17 @@ async function run(
   const { agent } = baseline;
   const previousSessions = baseline.sessions;
   const previousMeta = baseline.meta;
+  const operation = data.operation;
+  const sourceSynchronization = synchronizesSessionSources(operation);
+  const backfill = isBackfillOperation(operation);
+  const durableCheckpoints = usesDurableCheckpoints(operation);
+  const backfillCursor = backfill ? operation.cursor : undefined;
 
   appLogger.debug("scan.refresh_worker.started", {
     agent: data.agentName,
-    source_sync: data.sourceSync ?? false,
-    backfill: data.backfill ?? false,
-    backfill_cursor: data.backfillCursor ?? undefined,
-    changed_ids: data.changedIds?.length ?? 0,
+    operation: operation.kind,
+    backfill_cursor: backfillCursor ?? undefined,
+    changed_ids: operation.kind === "incremental-scan" ? operation.changedIds.length : 0,
     previous_sessions: previousSessions.length,
   });
 
@@ -468,7 +354,7 @@ async function run(
   let finalizeSessionIds: ReadonlySet<string> | undefined;
   let backfillOrder: SessionHead[] | undefined;
   let backfillCursorIndex = -1;
-  let sourceSyncDetails:
+  let sourceSynchronizationDetails:
     | {
         sourceCount: number;
         removedCount: number;
@@ -477,27 +363,45 @@ async function run(
 
   if (!isAvailable) {
     sessions = [];
-  } else if (data.derivedOnly) {
+  } else if (operation.kind === "recompute-derived") {
     sessions = previousSessions;
-  } else if (
-    agent instanceof FileSystemSessionSource &&
-    (data.sourceSync === true || data.checkpoint === true)
-  ) {
-    const result = syncAgentSources(
+  } else if (sourceSynchronization) {
+    if (!(agent instanceof FileSystemSessionSource)) {
+      throw new Error(`Agent ${agent.name} does not support Session Source synchronization`);
+    }
+    const result = synchronizeSessionSources(
       agent,
-      previousSessions,
-      previousMeta,
-      data.scanOptions,
-      reportProgress,
+      { sessions: previousSessions, meta: previousMeta },
+      {
+        kind: "refresh",
+        scanOptions: { ...data.scanOptions, onProgress: reportProgress },
+      },
     );
     sessions = result.sessions;
-    changedIds = result.changedIds;
+    changedIds = result.changedSessionIds;
     finalizeSessionIds = new Set(result.finalizeSessionIds);
-    sourceSyncDetails = result;
+    sourceSynchronizationDetails = {
+      sourceCount: result.sourceCount,
+      removedCount: result.removedSourceCount,
+    };
     sourceFailures = result.sourceFailures;
     explicitRemovedSessionIds = result.explicitRemovedSessionIds;
-  } else if (data.changedIds) {
-    sessions = await Promise.resolve(agent.incrementalScan(previousSessions, data.changedIds));
+  } else if (operation.kind === "incremental-scan") {
+    changedIds = operation.changedIds;
+    sessions = await Promise.resolve(agent.incrementalScan(previousSessions, operation.changedIds));
+  } else if (agent instanceof FileSystemSessionSource) {
+    const result = synchronizeSessionSources(
+      agent,
+      { sessions: previousSessions, meta: previousMeta },
+      {
+        kind: "reload",
+        scanOptions: { ...data.scanOptions, onProgress: reportProgress },
+      },
+    );
+    sessions = result.sessions;
+    finalizeSessionIds = new Set(result.finalizeSessionIds);
+    sourceFailures = result.sourceFailures;
+    explicitRemovedSessionIds = result.explicitRemovedSessionIds;
   } else {
     sessions = await Promise.resolve(
       agent.scan({
@@ -512,7 +416,7 @@ async function run(
     data.scanOptions.from == null && data.scanOptions.to == null && sourceFailures.length === 0
       ? "complete"
       : "partial";
-  if (data.checkpoint) {
+  if (durableCheckpoints) {
     const ordered = sortSessions(sessions);
     parentPort?.postMessage({
       type: "checkpoint",
@@ -528,8 +432,8 @@ async function run(
     sessions = ordered;
   }
 
-  if (data.backfill) {
-    const selection = selectBackfillSessions(sessions, changedIds ?? [], data.backfillCursor);
+  if (backfill) {
+    const selection = selectBackfillSessions(sessions, changedIds ?? [], backfillCursor);
     sessions = selection.orderedSessions;
     finalizeSessionIds = selection.finalizeSessionIds;
     backfillOrder = selection.orderedSessions;
@@ -539,13 +443,12 @@ async function run(
   const scanDuration = performance.now() - startedAt;
   appLogger.debug("scan.refresh_worker.scanned", {
     agent: data.agentName,
-    source_sync: data.sourceSync ?? false,
-    backfill: data.backfill ?? false,
-    backfill_cursor: data.backfillCursor ?? undefined,
+    operation: operation.kind,
+    backfill_cursor: backfillCursor ?? undefined,
     sessions: sessions.length,
     changed_ids: changedIds?.length ?? 0,
-    source_count: sourceSyncDetails?.sourceCount,
-    removed_count: sourceSyncDetails?.removedCount,
+    source_count: sourceSynchronizationDetails?.sourceCount,
+    removed_count: sourceSynchronizationDetails?.removedCount,
     failed_sources: sourceFailures.length,
     duration_ms: Math.round(scanDuration),
   });
@@ -559,7 +462,7 @@ async function run(
     agent,
     sessions,
     reportProgress,
-    data.checkpoint
+    durableCheckpoints
       ? (checkpoint) => {
           let nextCheckpoint = checkpoint;
           if (checkpoint.stage === "finalizing" && backfillOrder && backfillPositionById) {
@@ -611,7 +514,7 @@ async function run(
   );
   appLogger.debug("scan.refresh_worker.finalized", {
     agent: data.agentName,
-    backfill: data.backfill ?? false,
+    operation: operation.kind,
     backfill_cursor: backfillOrder?.[backfillCursorIndex]?.id,
     sessions: sessions.length,
     finalized_sessions: finalizationTiming.sessions,
@@ -727,6 +630,7 @@ if (
   initialRequest?.type === "run" &&
   typeof initialRequest.requestId === "number" &&
   typeof initialRequest.agentName === "string" &&
+  initialRequest.operation != null &&
   Array.isArray(initialRequest.previousSessions) &&
   initialRequest.meta != null
 ) {

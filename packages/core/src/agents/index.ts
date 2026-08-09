@@ -16,6 +16,7 @@ export {
   reportAgentScanFailure,
   reportSessionSourceOutcome,
   skippedSession,
+  synchronizeSessionSources,
 } from "./base.js";
 export type {
   AgentScanFailure,
@@ -33,6 +34,10 @@ export type {
   SessionSourceOutcome,
   SessionSourceScanBatch,
   SessionSourceRef,
+  SessionSourceSynchronizationAdapter,
+  SessionSourceSynchronizationBaseline,
+  SessionSourceSynchronizationOutcome,
+  SessionSourceSynchronizationRequest,
   SessionWatchPlan,
   SessionWatchTarget,
 } from "./base.js";

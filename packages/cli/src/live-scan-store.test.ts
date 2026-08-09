@@ -230,18 +230,25 @@ const workerThreads = vi.hoisted(() => ({
               let sessions: SessionHead[] = [];
               let changedIds: string[] | undefined;
               if (agent?.isAvailable?.() !== false) {
-                if (runData.derivedOnly) {
+                if (runData.operation?.kind === "recompute-derived") {
                   sessions = runData.previousSessions;
                 } else if (
-                  runData.sourceSync &&
+                  (runData.operation?.kind === "source-refresh" ||
+                    runData.operation?.kind === "source-backfill") &&
                   agent?.listSessionSources &&
                   agent?.scanSessionSource
                 ) {
                   const result = runSourceSync(runData, agent);
                   sessions = result.sessions as SessionHead[];
                   changedIds = result.changedIds;
-                } else if (runData.changedIds && agent?.incrementalScan) {
-                  sessions = agent.incrementalScan(runData.previousSessions, runData.changedIds);
+                } else if (
+                  runData.operation?.kind === "incremental-scan" &&
+                  agent?.incrementalScan
+                ) {
+                  sessions = agent.incrementalScan(
+                    runData.previousSessions,
+                    runData.operation.changedIds,
+                  );
                 } else {
                   sessions = agent?.scan?.({
                     ...runData.scanOptions,
@@ -270,7 +277,11 @@ const workerThreads = vi.hoisted(() => ({
                   runData.scanOptions?.from == null && runData.scanOptions?.to == null
                     ? "complete"
                     : "partial",
-                explicitRemovedSessionIds: runData.sourceSync ? delta.removedSessionIds : [],
+                explicitRemovedSessionIds:
+                  runData.operation?.kind === "source-refresh" ||
+                  runData.operation?.kind === "source-backfill"
+                    ? delta.removedSessionIds
+                    : [],
                 durationMs: 0,
               });
               continue;
@@ -814,8 +825,7 @@ describe("LiveScanStore", () => {
     expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent"]);
     expect(workerThreads.workers).toHaveLength(1);
     expect(workerThreads.workers[0]?.workerData).toMatchObject({
-      derivedOnly: true,
-      changedIds: [],
+      operation: { kind: "recompute-derived" },
     });
   });
 
@@ -1153,7 +1163,7 @@ describe("LiveScanStore", () => {
 
     const refresh = runner.run(agent.name, {
       previousSessions: [],
-      changedIds: null,
+      operation: { kind: "full-scan" },
       scanOptions: {},
       meta: {},
     });
@@ -1170,7 +1180,7 @@ describe("LiveScanStore", () => {
     await expect(
       runner.run(agent.name, {
         previousSessions: [],
-        changedIds: null,
+        operation: { kind: "full-scan" },
         scanOptions: {},
         meta: {},
       }),
@@ -1192,7 +1202,7 @@ describe("LiveScanStore", () => {
 
     const refresh = runner.run(agent.name, {
       previousSessions: [],
-      changedIds: null,
+      operation: { kind: "full-scan", checkpoint: "durable" },
       scanOptions: {},
       meta: {},
       onCheckpoint: () => {
@@ -1236,7 +1246,7 @@ describe("LiveScanStore", () => {
 
     const result = await runner.run("codex", {
       previousSessions: [removed, retained],
-      changedIds: null,
+      operation: { kind: "full-scan" },
       scanOptions: {},
       meta: {
         removed: { id: "removed", sourcePath: "/removed" },
@@ -1269,15 +1279,14 @@ describe("LiveScanStore", () => {
 
     const first = await runner.run("codex", {
       previousSessions: [],
-      changedIds: null,
+      operation: { kind: "full-scan" },
       scanOptions: {},
       meta: {},
     });
     await expect(
       runner.run("codex", {
         previousSessions: first.sessions,
-        changedIds: [],
-        derivedOnly: true,
+        operation: { kind: "recompute-derived" },
         scanOptions: {},
         meta: first.meta,
       }),
@@ -1287,8 +1296,7 @@ describe("LiveScanStore", () => {
 
     const second = await runner.run("codex", {
       previousSessions: first.sessions,
-      changedIds: [],
-      derivedOnly: true,
+      operation: { kind: "recompute-derived" },
       scanOptions: {},
       meta: first.meta,
     });
@@ -1296,7 +1304,11 @@ describe("LiveScanStore", () => {
       .map(([request]) => request)
       .find((request) => request.type === "run");
 
-    expect(runRequest).toMatchObject({ type: "run", generation: 1, changedIds: [] });
+    expect(runRequest).toMatchObject({
+      type: "run",
+      generation: 1,
+      operation: { kind: "recompute-derived" },
+    });
     expect(runRequest).not.toHaveProperty("previousSessions");
     expect(runRequest).not.toHaveProperty("meta");
     expect(second.sessions).toEqual([session]);
@@ -1306,7 +1318,7 @@ describe("LiveScanStore", () => {
     worker.emitExit(1);
     await runner.run("codex", {
       previousSessions: second.sessions,
-      changedIds: null,
+      operation: { kind: "full-scan" },
       scanOptions: {},
       meta: second.meta,
     });
@@ -1326,7 +1338,7 @@ describe("LiveScanStore", () => {
 
     await runner.run("codex", {
       previousSessions: [lastKnownGood],
-      changedIds: null,
+      operation: { kind: "full-scan" },
       scanOptions: {},
       meta: {},
     });
@@ -1336,7 +1348,7 @@ describe("LiveScanStore", () => {
     expect(discardedWorker.terminate).toHaveBeenCalledTimes(1);
     await runner.run("codex", {
       previousSessions: [lastKnownGood],
-      changedIds: null,
+      operation: { kind: "full-scan" },
       scanOptions: {},
       meta: {},
     });
@@ -1357,7 +1369,7 @@ describe("LiveScanStore", () => {
 
     const refresh = runner.run("codex", {
       previousSessions: [],
-      changedIds: null,
+      operation: { kind: "full-scan" },
       scanOptions: {},
       meta: {},
     });
@@ -1382,7 +1394,7 @@ describe("LiveScanStore", () => {
     workerThreads.deferScanRefreshWorkers = false;
     await runner.run("codex", {
       previousSessions: [],
-      changedIds: null,
+      operation: { kind: "full-scan" },
       scanOptions: {},
       meta: {},
     });

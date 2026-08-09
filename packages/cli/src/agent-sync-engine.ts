@@ -32,6 +32,7 @@ import { appLogger, logSearchIndexSync } from "./logging.js";
 import { SearchIndexJobRunner } from "./search-index-job-runner.js";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 import { ScanStatusModel } from "./scan-status-model.js";
+import type { ScanRefreshOperation } from "./scan-refresh-operation.js";
 import type { WorkerRunner } from "./worker-runner.js";
 import { toError } from "./errors.js";
 
@@ -558,7 +559,7 @@ export class AgentSyncEngine {
     this.setScanPhase("initializing");
     const scanStartedAt = performance.now();
     const scope = this.startupScanOptions();
-    const result = await this.runWorker(agent, previousSessions, null, scope);
+    const result = await this.runWorker(agent, previousSessions, { kind: "full-scan" }, scope);
     agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
     const sessions = attachMissingProjectIdentities(result.sessions);
     this.lastRefreshAtByAgent.set(agent.name, Date.now());
@@ -577,8 +578,7 @@ export class AgentSyncEngine {
   ): Promise<RefreshStrategyResult> {
     const scanStartedAt = performance.now();
     const scope = this.startupScanOptions();
-    const result = await this.runWorker(agent, cached.sessions, null, scope, {
-      sourceSync: true,
+    const result = await this.runWorker(agent, cached.sessions, { kind: "source-refresh" }, scope, {
       meta: cached.meta,
     });
     agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
@@ -617,7 +617,7 @@ export class AgentSyncEngine {
     this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
     if (!checkResult.hasChanges) {
       const scanStartedAt = performance.now();
-      const result = await this.runWorker(agent, baseline, [], {}, { derivedOnly: true });
+      const result = await this.runWorker(agent, baseline, { kind: "recompute-derived" }, {});
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const sessions = attachMissingProjectIdentities(result.sessions);
       const persistenceDiff = buildPersistenceDiff(baseline, sessions);
@@ -652,7 +652,7 @@ export class AgentSyncEngine {
     const preciseChangedIds = checkResult.changedIds ?? null;
     const scanStartedAt = performance.now();
     if (preciseChangedIds === null) {
-      const result = await this.runWorker(agent, baseline, null, {});
+      const result = await this.runWorker(agent, baseline, { kind: "full-scan" }, {});
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const sessions = attachMissingProjectIdentities(result.sessions);
       return this.refreshStrategyResult(
@@ -691,7 +691,7 @@ export class AgentSyncEngine {
     previousSessions: SessionHead[],
   ): Promise<RefreshStrategyResult> {
     const scanStartedAt = performance.now();
-    const result = await this.runWorker(agent, previousSessions, null, {});
+    const result = await this.runWorker(agent, previousSessions, { kind: "full-scan" }, {});
     agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
     const sessions = attachMissingProjectIdentities(result.sessions);
     this.lastRefreshAtByAgent.set(agent.name, Date.now());
@@ -733,30 +733,20 @@ export class AgentSyncEngine {
   private runWorker(
     agent: BaseAgent,
     previousSessions: SessionHead[],
-    changedIds: string[] | null,
+    operation: ScanRefreshOperation,
     scanOptions: Pick<ScanOptions, "from" | "to" | "fast">,
-    workerOptions: {
-      sourceSync?: boolean;
-      derivedOnly?: boolean;
-      backfill?: boolean;
+    runOptions: {
       backfillAttempt?: BackfillAttemptRef;
-      backfillCursor?: string | null;
-      checkpoint?: boolean;
       meta?: CachedSessions["meta"];
     } = {},
   ) {
     return this.options.workerRunner.run(agent.name, {
       previousSessions,
-      changedIds,
+      operation,
       scanOptions,
-      sourceSync: workerOptions.sourceSync,
-      derivedOnly: workerOptions.derivedOnly,
-      backfill: workerOptions.backfill,
-      backfillCursor: workerOptions.backfillCursor,
-      checkpoint: workerOptions.checkpoint,
-      meta: workerOptions.meta ?? buildAgentCacheMeta(agent),
+      meta: runOptions.meta ?? buildAgentCacheMeta(agent),
       onProgress: (progress) =>
-        this.updateAgentScanProgress(agent.name, progress, workerOptions.backfillAttempt),
+        this.updateAgentScanProgress(agent.name, progress, runOptions.backfillAttempt),
     });
   }
 
@@ -826,16 +816,17 @@ export class AgentSyncEngine {
     let durableCommitted = false;
     try {
       markAgentFullSyncStarted(agentName);
+      const operation: ScanRefreshOperation =
+        agent instanceof FileSystemSessionSource
+          ? { kind: "source-backfill", cursor: backfillCursor }
+          : { kind: "full-backfill", cursor: backfillCursor };
       const result = await this.runWorker(
         agent,
         baseline,
-        null,
+        operation,
         {},
         {
-          sourceSync: agent instanceof FileSystemSessionSource,
-          backfill: true,
           backfillAttempt: attempt,
-          backfillCursor,
           meta,
         },
       );

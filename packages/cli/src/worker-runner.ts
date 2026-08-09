@@ -15,16 +15,12 @@ import type {
   ScanRefreshWorkerMessage,
   ScanRefreshWorkerRunRequest,
 } from "./scan-refresh-worker.js";
+import { synchronizesSessionSources, type ScanRefreshOperation } from "./scan-refresh-operation.js";
 import { toError } from "./errors.js";
 
 export interface WorkerPayload {
   previousSessions: SessionHead[];
-  changedIds: string[] | null;
-  sourceSync?: boolean;
-  derivedOnly?: boolean;
-  backfill?: boolean;
-  backfillCursor?: string | null;
-  checkpoint?: boolean;
+  operation: ScanRefreshOperation;
   scanOptions: Pick<ScanOptions, "from" | "to" | "fast">;
   meta: Record<string, SessionCacheMeta>;
   onProgress?: (progress: AgentScanProgress) => void;
@@ -138,12 +134,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
       requestId: this.nextRequestId++,
       agentName,
       generation,
-      changedIds: payload.changedIds,
-      sourceSync: payload.sourceSync,
-      derivedOnly: payload.derivedOnly,
-      backfill: payload.backfill,
-      backfillCursor: payload.backfillCursor,
-      checkpoint: payload.checkpoint,
+      operation: payload.operation,
       scanOptions: payload.scanOptions,
       ...(existingSlot ? {} : { previousSessions: payload.previousSessions, meta: payload.meta }),
     };
@@ -290,7 +281,9 @@ export class ThreadWorkerRunner implements WorkerRunner {
           message.removedSessionIds,
         ),
         meta: applyMetaChanges(pending.payload.meta, message.meta, removedMetaIds),
-        changedIds: pending.payload.sourceSync ? replacedSessionIds : undefined,
+        changedIds: synchronizesSessionSources(pending.payload.operation)
+          ? replacedSessionIds
+          : undefined,
         sourceFailures: message.sourceFailures,
         completeness: message.completeness,
         explicitRemovedSessionIds: message.explicitRemovedSessionIds,
