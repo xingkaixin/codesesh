@@ -122,29 +122,30 @@ export function runSearchIndexWrite<T>(
   db: SQLiteDatabase,
   rebuild: boolean,
   write: () => T,
+  transaction: "immediate" | "caller" = "immediate",
 ): SearchIndexWriteResult<T> {
-  return db
-    .transaction(() => {
-      if (rebuild) {
-        dropSearchTriggers(db);
-        dropMessageSearchTriggers(db);
-      }
+  const execute = () => {
+    if (rebuild) {
+      dropSearchTriggers(db);
+      dropMessageSearchTriggers(db);
+    }
 
-      const value = write();
-      let rebuildDurationMs: number | undefined;
+    const value = write();
+    let rebuildDurationMs: number | undefined;
 
-      if (rebuild) {
-        const rebuildStartedAt = performance.now();
-        rebuildSearchIndex(db);
-        rebuildMessageSearchIndex(db);
-        rebuildDurationMs = performance.now() - rebuildStartedAt;
-        createSearchTriggers(db);
-        createMessageSearchTriggers(db);
-      }
+    if (rebuild) {
+      const rebuildStartedAt = performance.now();
+      rebuildSearchIndex(db);
+      rebuildMessageSearchIndex(db);
+      rebuildDurationMs = performance.now() - rebuildStartedAt;
+      createSearchTriggers(db);
+      createMessageSearchTriggers(db);
+    }
 
-      return { value, rebuildDurationMs };
-    })
-    .immediate();
+    return { value, rebuildDurationMs };
+  };
+
+  return transaction === "caller" ? execute() : db.transaction(execute).immediate();
 }
 
 function createCacheTables(db: SQLiteDatabase): void {

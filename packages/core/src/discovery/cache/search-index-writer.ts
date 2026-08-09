@@ -91,6 +91,18 @@ interface LoadedSearchIndexEntry {
   detailVersion: string;
 }
 
+interface PreparedSearchIndexPublication {
+  agentName: string;
+  mode: "bulk" | "incremental";
+  sessions: number;
+  changed: number;
+  removedSessionIds: string[];
+  entries: LoadedSearchIndexEntry[];
+  failures: SearchIndexSyncFailure[];
+  needsRebuild: boolean;
+  startedAt: number;
+}
+
 function shouldBulkSyncSearchIndex(options: SearchIndexSyncOptions, changedCount: number): boolean {
   if (options.isBulk != null) {
     return options.isBulk;
@@ -438,6 +450,144 @@ function writeSearchIndexRows(
     indexed += 1;
   }
   return indexed;
+}
+
+export function prepareSessionSnapshotSearchIndex(
+  db: SQLiteDatabase,
+  agentName: string,
+  sessions: SessionHead[],
+  loadSessionData: (sessionId: string) => SessionDetail,
+  options: SearchIndexSyncOptions = {},
+): PreparedSearchIndexPublication {
+  const startedAt = performance.now();
+  const existingRows = db
+    .prepare("SELECT session_id FROM session_documents WHERE agent_name = ? ORDER BY id")
+    .all(agentName) as IndexedSearchRow[];
+  const searchIndexState = readSearchIndexState(
+    db,
+    agentName,
+    sessions.map((session) => session.id),
+  );
+  const sessionMap = new Map(sessions.map((session) => [session.id, session]));
+  const explicitRemovedSessionIds = new Set(options.removedSessionIds ?? []);
+  const completeness = options.completeness ?? "complete";
+  const removedSessionIds = existingRows
+    .map((row) => String(row.session_id))
+    .filter(
+      (sessionId) =>
+        explicitRemovedSessionIds.has(sessionId) ||
+        (completeness === "complete" && !sessionMap.has(sessionId)),
+    );
+  const toUpsert = sessions.filter((session) =>
+    searchIndexEntryNeedsUpdate(searchIndexState, session, options),
+  );
+  const sortIndexBySessionId = new Map(sessions.map((session, index) => [session.id, index]));
+  const changes = toUpsert.map((session) => ({
+    session,
+    sortIndex: sortIndexBySessionId.get(session.id) ?? 0,
+  }));
+  const changedCount = removedSessionIds.length + changes.length;
+  const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
+  const failures: SearchIndexSyncFailure[] = [];
+  const entries = [
+    ...loadSearchIndexEntries(
+      agentName,
+      changes,
+      loadSessionData,
+      (sessionId) => targetDetailVersion(searchIndexState, sessionId, options),
+      failures,
+    ),
+  ];
+
+  return {
+    agentName,
+    mode: isBulk ? "bulk" : "incremental",
+    sessions: sessions.length,
+    changed: changes.length,
+    removedSessionIds,
+    entries,
+    failures,
+    needsRebuild: isBulk && changedCount > 0,
+    startedAt,
+  };
+}
+
+export function prepareSessionChangesSearchIndex(
+  db: SQLiteDatabase,
+  agentName: string,
+  changes: SessionHeadChange[],
+  removedSessionIds: string[],
+  loadSessionData: (sessionId: string) => SessionDetail,
+  options: SearchIndexSyncOptions = {},
+): PreparedSearchIndexPublication {
+  const startedAt = performance.now();
+  const searchIndexState = readSearchIndexState(
+    db,
+    agentName,
+    changes.map(({ session }) => session.id),
+  );
+  const toUpsert = changes.filter(({ session }) =>
+    searchIndexEntryNeedsUpdate(searchIndexState, session, options),
+  );
+  const uniqueRemovedSessionIds = [...new Set(removedSessionIds)];
+  const changedCount = uniqueRemovedSessionIds.length + toUpsert.length;
+  const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
+  const failures: SearchIndexSyncFailure[] = [];
+  const entries = [
+    ...loadSearchIndexEntries(
+      agentName,
+      toUpsert,
+      loadSessionData,
+      (sessionId) => targetDetailVersion(searchIndexState, sessionId, options),
+      failures,
+    ),
+  ];
+
+  return {
+    agentName,
+    mode: isBulk ? "bulk" : "incremental",
+    sessions: changes.length,
+    changed: toUpsert.length,
+    removedSessionIds: uniqueRemovedSessionIds,
+    entries,
+    failures,
+    needsRebuild: isBulk && changedCount > 0,
+    startedAt,
+  };
+}
+
+export function writePreparedSessionSearchIndex(
+  db: SQLiteDatabase,
+  publication: PreparedSearchIndexPublication,
+): SearchIndexSyncResult {
+  let indexed = 0;
+  const { rebuildDurationMs } = runSearchIndexWrite(
+    db,
+    publication.needsRebuild,
+    () => {
+      indexed = writeSearchIndexRows(
+        db,
+        publication.agentName,
+        publication.removedSessionIds,
+        publication.entries,
+        publication.failures,
+      );
+    },
+    "caller",
+  );
+
+  return {
+    agentName: publication.agentName,
+    mode: publication.mode,
+    sessions: publication.sessions,
+    changed: publication.changed,
+    deleted: publication.removedSessionIds.length,
+    indexed,
+    skipped: publication.changed - indexed,
+    failures: publication.failures.length > 0 ? publication.failures : undefined,
+    durationMs: performance.now() - publication.startedAt,
+    rebuildDurationMs,
+  };
 }
 
 export function syncSessionSearchIndex(

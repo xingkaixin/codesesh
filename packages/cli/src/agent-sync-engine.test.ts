@@ -20,12 +20,8 @@ const core = vi.hoisted(() => ({
   getAgentLastFullSyncAt: vi.fn(() => Date.now()),
   isAgentCacheInitialized: vi.fn(() => true),
   loadCachedSessions: vi.fn((): ReturnType<typeof loadCachedSessions> => null),
-  markAgentCacheInitialized: vi.fn(),
-  markAgentFullSyncProgress: vi.fn(),
   markAgentFullSyncStarted: vi.fn(),
   markAgentFullSyncCompleted: vi.fn(),
-  saveCachedSessionChanges: vi.fn(() => true),
-  saveCachedSessions: vi.fn(() => true),
   sessionSignature: vi.fn(),
 }));
 
@@ -45,12 +41,8 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     getAgentLastFullSyncAt: core.getAgentLastFullSyncAt,
     isAgentCacheInitialized: core.isAgentCacheInitialized,
     loadCachedSessions: core.loadCachedSessions,
-    markAgentCacheInitialized: core.markAgentCacheInitialized,
-    markAgentFullSyncProgress: core.markAgentFullSyncProgress,
     markAgentFullSyncStarted: core.markAgentFullSyncStarted,
     markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
-    saveCachedSessionChanges: core.saveCachedSessionChanges,
-    saveCachedSessions: core.saveCachedSessions,
     sessionSignature: core.sessionSignature,
     SMART_TAG_CLASSIFIER_REVISION: "smart-tags-v1",
   };
@@ -179,12 +171,7 @@ afterEach(() => {
   core.getAgentLastFullSyncAt.mockReturnValue(Date.now());
   core.isAgentCacheInitialized.mockReturnValue(true);
   core.loadCachedSessions.mockReturnValue(null);
-  core.markAgentCacheInitialized.mockClear();
   core.markAgentFullSyncStarted.mockClear();
-  core.saveCachedSessionChanges.mockClear();
-  core.saveCachedSessions.mockClear();
-  core.saveCachedSessionChanges.mockReturnValue(true);
-  core.saveCachedSessions.mockReturnValue(true);
   searchIndex.enqueue.mockImplementation(async () => undefined);
 });
 
@@ -430,6 +417,7 @@ describe("AgentSyncEngine", () => {
     expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
       expect.objectContaining({
         kind: "changes",
+        publicationId: expect.stringMatching(/^scan\.refresh:codex:/),
         changes: [
           expect.objectContaining({
             session: expect.objectContaining({ smart_tags: ["docs"] }),
@@ -480,8 +468,14 @@ describe("AgentSyncEngine", () => {
     expect(engine.snapshot().sessions[0]?.title).toBe("after");
   });
 
-  it("publishes and persists the head checkpoint before final indexing", async () => {
+  it("keeps worker checkpoints private until the durable publication commits", async () => {
     core.isAgentCacheInitialized.mockReturnValue(false);
+    let commitIndex!: () => void;
+    searchIndex.enqueue.mockReturnValueOnce(
+      new Promise<undefined>((resolve) => {
+        commitIndex = () => resolve(undefined);
+      }),
+    );
     const head = makeSession("head");
     const tagged: SessionHead = {
       ...head,
@@ -492,35 +486,29 @@ describe("AgentSyncEngine", () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async (_agentName, payload) => {
-        payload.onCheckpoint?.({
-          stage: "scanned",
-          sessions: [head],
-          meta,
-          completeness: "complete",
-        });
-        payload.onCheckpoint?.({
-          stage: "finalizing",
-          changes: [{ session: tagged, sortIndex: 0 }],
-          meta,
-        });
+        expect(payload.onCheckpoint).toBeUndefined();
         return workerResult({ sessions: [tagged], meta });
       }),
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(makeAgent(), [], workerRunner);
 
-    await engine.refresh("codex");
+    const refresh = engine.refresh("codex");
+    await vi.waitFor(() => expect(searchIndex.enqueue).toHaveBeenCalledOnce());
 
-    expect(core.saveCachedSessions).toHaveBeenCalledWith("codex", [head], meta, {
-      completeness: "complete",
-    });
-    expect(core.markAgentCacheInitialized).toHaveBeenCalledWith("codex");
-    expect(core.saveCachedSessionChanges).toHaveBeenCalledWith(
-      "codex",
-      [{ session: tagged, sortIndex: 0 }],
-      [],
-      meta,
-    );
+    expect(engine.snapshot().sessions).toEqual([]);
+    expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
+      expect.objectContaining({
+        kind: "full",
+        sessions: [tagged],
+        saveCache: true,
+        publicationId: expect.stringMatching(/^scan\.refresh:codex:/),
+      }),
+    ]);
+
+    commitIndex();
+    await refresh;
+
     expect(engine.snapshot().sessions[0]?.smart_tags).toEqual(["feature-dev"]);
   });
 
@@ -536,15 +524,7 @@ describe("AgentSyncEngine", () => {
     const logInfo = vi.spyOn(appLogger, "info");
     const workerRunner: WorkerRunner = {
       activeCount: 0,
-      run: vi.fn(async (_agentName, payload) => {
-        payload.onCheckpoint?.({
-          stage: "scanned",
-          sessions: [recent],
-          meta: {},
-          completeness: "partial",
-        });
-        return workerResult({ sessions: [recent], meta: {} }, "partial");
-      }),
+      run: vi.fn(async () => workerResult({ sessions: [recent], meta: {} }, "partial")),
       shutdown: vi.fn(async () => undefined),
     };
     const state: LiveSnapshot = {
@@ -560,14 +540,6 @@ describe("AgentSyncEngine", () => {
 
     await engine.refresh("codex");
 
-    expect(logInfo).toHaveBeenCalledWith("scan.checkpoint.replacement_candidate", {
-      agent: "codex",
-      completeness: "partial",
-      cached_sessions: 2,
-      checkpoint_sessions: 1,
-      missing_cached_sessions: 1,
-      delete_candidates: 0,
-    });
     expect(logInfo).toHaveBeenCalledWith("scan.refresh.persistence_candidate", {
       agent: "codex",
       scope_from: 2,
@@ -577,105 +549,56 @@ describe("AgentSyncEngine", () => {
       payload_sessions: 1,
       delete_candidates: 0,
     });
-    expect(core.saveCachedSessions).toHaveBeenCalledWith(
-      "codex",
-      [recent],
-      {},
-      {
-        completeness: "partial",
-      },
-    );
     expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
       expect.objectContaining({ kind: "full", completeness: "partial" }),
     ]);
   });
 
-  it("keeps the last durable snapshot when a head checkpoint is rejected", async () => {
+  it("restores durable metadata and retries the same publication after a commit failure", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const logError = vi.spyOn(appLogger, "error").mockImplementation(() => undefined);
     core.isAgentCacheInitialized.mockReturnValue(false);
-    core.saveCachedSessions.mockReturnValue(false);
+    searchIndex.enqueue.mockRejectedValueOnce(new Error("atomic publication failed"));
     const previous = makeSession("head", "before");
     const head = makeSession("head", "after");
-    const meta = { head: { id: "head", sourcePath: "/head" } };
-    const setSessionMetaMap = vi.fn();
+    const oldMeta = new Map([["head", { id: "head", sourcePath: "/old" }]]);
+    const nextMeta = { head: { id: "head", sourcePath: "/updated" } };
+    let currentMeta = oldMeta;
+    const setSessionMetaMap = vi.fn((meta: Map<string, { id: string; sourcePath: string }>) => {
+      currentMeta = meta;
+    });
     const workerRunner: WorkerRunner = {
       activeCount: 0,
-      run: vi.fn(async (_agentName, payload) => {
-        payload.onCheckpoint?.({
-          stage: "scanned",
-          sessions: [head],
-          meta,
-          completeness: "complete",
-        });
-        return workerResult({ sessions: [head], meta });
-      }),
+      run: vi.fn(async () => workerResult({ sessions: [head], meta: nextMeta })),
       shutdown: vi.fn(async () => undefined),
     };
-    const { engine } = makeEngine(makeAgent({ setSessionMetaMap }), [previous], workerRunner);
+    const agent = makeAgent({
+      getSessionMetaMap: () => currentMeta,
+      setSessionMetaMap: setSessionMetaMap as BaseAgent["setSessionMetaMap"],
+    });
+    const { engine } = makeEngine(agent, [previous], workerRunner);
     const sessionChanges = vi.fn();
     engine.subscribeSessionsChanged(sessionChanges);
 
     await engine.refresh("codex");
 
     expect(engine.snapshot().sessions).toEqual([previous]);
-    expect(setSessionMetaMap).not.toHaveBeenCalled();
+    expect(currentMeta).toEqual(oldMeta);
     expect(sessionChanges).not.toHaveBeenCalled();
-    expect(searchIndex.enqueue).not.toHaveBeenCalled();
     expect(engine.status().agentStatuses.codex).toEqual(
       expect.objectContaining({
         status: "failed",
-        error: "Failed to persist scanned checkpoint for codex",
+        error: "atomic publication failed",
       }),
     );
-    expect(logError).toHaveBeenCalledWith(
-      "scan.checkpoint.failed",
-      expect.objectContaining({ agent: "codex", stage: "scanned", sessions: 1 }),
-    );
 
-    core.saveCachedSessions.mockReturnValue(true);
     await engine.refresh("codex");
 
+    expect(workerRunner.run).toHaveBeenCalledTimes(2);
+    expect(currentMeta).toEqual(new Map(Object.entries(nextMeta)));
     expect(engine.snapshot().sessions).toEqual([
       expect.objectContaining({ id: head.id, title: head.title }),
     ]);
     expect(sessionChanges.mock.calls.filter(([change]) => change.event != null)).toHaveLength(1);
-    expect(core.markAgentCacheInitialized).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps the last durable snapshot when head persistence throws", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-    core.isAgentCacheInitialized.mockReturnValue(false);
-    core.saveCachedSessions.mockImplementation(() => {
-      throw new Error("database is read-only");
-    });
-    const previous = makeSession("head", "before");
-    const head = makeSession("head", "after");
-    const meta = { head: { id: "head", sourcePath: "/head" } };
-    const workerRunner: WorkerRunner = {
-      activeCount: 0,
-      run: vi.fn(async (_agentName, payload) => {
-        payload.onCheckpoint?.({
-          stage: "scanned",
-          sessions: [head],
-          meta,
-          completeness: "complete",
-        });
-        return workerResult({ sessions: [head], meta });
-      }),
-      shutdown: vi.fn(async () => undefined),
-    };
-    const { engine } = makeEngine(makeAgent(), [previous], workerRunner);
-    const sessionChanges = vi.fn();
-    engine.subscribeSessionsChanged(sessionChanges);
-
-    await engine.refresh("codex");
-
-    expect(engine.snapshot().sessions).toEqual([previous]);
-    expect(sessionChanges).not.toHaveBeenCalled();
-    expect(engine.status().agentStatuses.codex).toEqual(
-      expect.objectContaining({ status: "failed", error: "database is read-only" }),
-    );
   });
 
   it("waits for the initial search index commit", async () => {

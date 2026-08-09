@@ -7,12 +7,8 @@ import {
   getAgentLastFullSyncAt,
   isAgentCacheInitialized,
   loadCachedSessions,
-  markAgentCacheInitialized,
-  markAgentFullSyncProgress,
   markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
-  saveCachedSessionChanges,
-  saveCachedSessions,
   sessionSignature,
   type AgentScanProgress,
   type BaseAgent,
@@ -36,7 +32,6 @@ import { appLogger, logSearchIndexSync } from "./logging.js";
 import { SearchIndexJobRunner } from "./search-index-job-runner.js";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 import { ScanStatusModel } from "./scan-status-model.js";
-import type { ScanRefreshWorkerCheckpoint } from "./scan-refresh-worker.js";
 import type { WorkerRunner } from "./worker-runner.js";
 import { toError } from "./errors.js";
 
@@ -401,6 +396,8 @@ export class AgentSyncEngine {
     const refreshBaseline = cached?.sessions ?? previousSessions;
     const cacheTimestamp = cached?.timestamp ?? this.lastRefreshAtByAgent.get(agentName) ?? 0;
     if (cached) restoreAgentCacheMeta(agent, cached);
+    const durableMeta = new Map(agent.getSessionMetaMap());
+    const durableLastRefreshAt = this.lastRefreshAtByAgent.get(agentName);
     const isInitialized = isAgentCacheInitialized(agentName);
     const availabilityStartedAt = performance.now();
     const isAvailable = agent.isAvailable();
@@ -477,13 +474,21 @@ export class AgentSyncEngine {
           ...(searchIndexOptions ? { searchIndexOptions } : {}),
         };
     this.beginAgentIndexing(agentName);
-    const publication = await this.commitSessionPublication({
-      context: "scan.refresh",
-      agentName,
-      sessions: nextSessions,
-      candidateChangedIds: strategyResult.preciseChangedIds ?? [],
-      indexJob: persistentJob,
-    });
+    let publication: SessionPublicationResult;
+    try {
+      publication = await this.commitSessionPublication({
+        context: "scan.refresh",
+        agentName,
+        sessions: nextSessions,
+        candidateChangedIds: strategyResult.preciseChangedIds ?? [],
+        indexJob: persistentJob,
+      });
+    } catch (error) {
+      agent.setSessionMetaMap(durableMeta);
+      if (durableLastRefreshAt == null) this.lastRefreshAtByAgent.delete(agentName);
+      else this.lastRefreshAtByAgent.set(agentName, durableLastRefreshAt);
+      throw error;
+    }
     this.options.workerRunner.commit?.(agentName);
     const persistDuration = performance.now() - persistStartedAt;
     logSearchIndexSync("scan.refresh", null, { pending_paths: pendingPathCount });
@@ -546,9 +551,7 @@ export class AgentSyncEngine {
     this.setScanPhase("initializing");
     const scanStartedAt = performance.now();
     const scope = this.startupScanOptions();
-    const result = await this.runWorker(agent, previousSessions, null, scope, {
-      checkpoint: true,
-    });
+    const result = await this.runWorker(agent, previousSessions, null, scope);
     agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
     const sessions = attachMissingProjectIdentities(result.sessions);
     this.lastRefreshAtByAgent.set(agent.name, Date.now());
@@ -642,7 +645,7 @@ export class AgentSyncEngine {
     const preciseChangedIds = checkResult.changedIds ?? null;
     const scanStartedAt = performance.now();
     if (preciseChangedIds === null) {
-      const result = await this.runWorker(agent, baseline, null, {}, { checkpoint: true });
+      const result = await this.runWorker(agent, baseline, null, {});
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const sessions = attachMissingProjectIdentities(result.sessions);
       return this.refreshStrategyResult(
@@ -681,7 +684,7 @@ export class AgentSyncEngine {
     previousSessions: SessionHead[],
   ): Promise<RefreshStrategyResult> {
     const scanStartedAt = performance.now();
-    const result = await this.runWorker(agent, previousSessions, null, {}, { checkpoint: true });
+    const result = await this.runWorker(agent, previousSessions, null, {});
     agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
     const sessions = attachMissingProjectIdentities(result.sessions);
     this.lastRefreshAtByAgent.set(agent.name, Date.now());
@@ -747,93 +750,6 @@ export class AgentSyncEngine {
       meta: workerOptions.meta ?? buildAgentCacheMeta(agent),
       onProgress: (progress) =>
         this.updateAgentScanProgress(agent.name, progress, workerOptions.backfillAttempt),
-      onCheckpoint: (checkpoint) => this.handleWorkerCheckpoint(agent, checkpoint),
-    });
-  }
-
-  private handleWorkerCheckpoint(agent: BaseAgent, checkpoint: ScanRefreshWorkerCheckpoint): void {
-    if (this.isShuttingDown) return;
-
-    if (checkpoint.stage === "scanned") {
-      const cachedSessions = loadCachedSessions(agent.name)?.sessions ?? [];
-      const checkpointSessionIds = new Set(checkpoint.sessions.map((session) => session.id));
-      const missingCachedSessionCount = cachedSessions.reduce(
-        (count, session) => count + Number(!checkpointSessionIds.has(session.id)),
-        0,
-      );
-      const cachedSessionIds = new Set(cachedSessions.map((session) => session.id));
-      const addedSessionCount = checkpoint.sessions.reduce(
-        (count, session) => count + Number(!cachedSessionIds.has(session.id)),
-        0,
-      );
-      const deleteCandidateCount =
-        checkpoint.completeness === "complete" ? missingCachedSessionCount : 0;
-      appLogger.info("scan.checkpoint.replacement_candidate", {
-        agent: agent.name,
-        completeness: checkpoint.completeness,
-        cached_sessions: cachedSessions.length,
-        checkpoint_sessions: checkpoint.sessions.length,
-        missing_cached_sessions: missingCachedSessionCount,
-        delete_candidates: deleteCandidateCount,
-      });
-      try {
-        if (
-          !saveCachedSessions(agent.name, checkpoint.sessions, checkpoint.meta, {
-            completeness: checkpoint.completeness,
-          })
-        ) {
-          throw new Error(`Failed to persist scanned checkpoint for ${agent.name}`);
-        }
-      } catch (error) {
-        appLogger.error("scan.checkpoint.failed", {
-          agent: agent.name,
-          stage: checkpoint.stage,
-          sessions: checkpoint.sessions.length,
-          error,
-        });
-        throw error;
-      }
-      markAgentCacheInitialized(agent.name);
-      agent.setSessionMetaMap(new Map(Object.entries(checkpoint.meta)));
-
-      const event = this.sessionIndex.commitAgentSessions(agent.name, checkpoint.sessions);
-      this.emitSessionsChanged({
-        agentName: agent.name,
-        sessions: this.sessionIndex.snapshot().byAgent[agent.name] ?? [],
-        event,
-      });
-      appLogger.info("scan.checkpoint.persisted", {
-        agent: agent.name,
-        stage: checkpoint.stage,
-        completeness: checkpoint.completeness,
-        sessions: checkpoint.sessions.length,
-        cached_sessions_before: cachedSessions.length,
-        cached_sessions_after: cachedSessions.length - deleteCandidateCount + addedSessionCount,
-      });
-      return;
-    }
-
-    try {
-      if (!saveCachedSessionChanges(agent.name, checkpoint.changes, [], checkpoint.meta)) {
-        throw new Error(`Failed to persist finalizing checkpoint for ${agent.name}`);
-      }
-    } catch (error) {
-      appLogger.error("scan.checkpoint.failed", {
-        agent: agent.name,
-        stage: checkpoint.stage,
-        sessions: checkpoint.changes.length,
-        error,
-      });
-      throw error;
-    }
-    if (checkpoint.backfillCursor) {
-      markAgentFullSyncProgress(agent.name, checkpoint.backfillCursor);
-    }
-    appLogger.debug("scan.checkpoint.persisted", {
-      agent: agent.name,
-      stage: checkpoint.stage,
-      sessions: checkpoint.changes.length,
-      backfill_cursor: checkpoint.backfillCursor,
     });
   }
 
@@ -900,6 +816,7 @@ export class AgentSyncEngine {
     const meta = cached?.meta ?? buildAgentCacheMeta(agent);
     const backfillCursor = getAgentFullSyncCursor(agentName);
     if (cached) restoreAgentCacheMeta(agent, cached);
+    let durableCommitted = false;
     try {
       markAgentFullSyncStarted(agentName);
       const result = await this.runWorker(
@@ -913,7 +830,6 @@ export class AgentSyncEngine {
           backfillAttempt: attempt,
           backfillCursor,
           meta,
-          checkpoint: true,
         },
       );
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
@@ -947,6 +863,7 @@ export class AgentSyncEngine {
           saveCache: true,
         },
       });
+      durableCommitted = true;
       this.options.workerRunner.commit?.(agentName);
       if (result.sourceFailures?.length) throw sourceFailureError(result.sourceFailures);
       markAgentFullSyncCompleted(agentName);
@@ -958,6 +875,7 @@ export class AgentSyncEngine {
       });
       return "committed";
     } catch (error) {
+      if (!durableCommitted) agent.setSessionMetaMap(new Map(Object.entries(meta)));
       this.options.workerRunner.discard?.(agentName);
       appLogger.error("scan.backfill.error", { agent: agentName, error });
       console.error(`[${agentName}] Backfill failed:`, error);
@@ -1009,7 +927,10 @@ export class AgentSyncEngine {
       jobs: jobs.length,
     });
     try {
-      await this.searchIndexJobs.enqueue(context, jobs);
+      await this.searchIndexJobs.enqueue(
+        context,
+        jobs.map((job) => ({ ...job, publicationId: details.publicationId })),
+      );
     } catch (error) {
       appLogger.error("session.publication.failed", {
         publication_id: details.publicationId,

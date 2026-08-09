@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { listFileActivity, searchFileActivitySessions } from "../file-activity.js";
+import { commitDurableSessionPublication } from "../publication.js";
 import { listCachedProjectGroups } from "../project-groups.js";
 import {
   loadCachedSessionData,
@@ -19,6 +20,7 @@ import {
 import { setSchemaEnsuredPath } from "../db.js";
 import { MESSAGE_PARTS_FORMAT_VERSION } from "../messages.js";
 import { withCacheDb, withSearchDb } from "../schema.js";
+import { setCoreDiagnostics } from "../../../utils/diagnostics.js";
 import type { SessionDetail, SessionHead } from "../../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-test-"));
@@ -191,6 +193,235 @@ describe("session detail re-indexing", () => {
     expect(loadCachedSessionData("codex", "codex-1")?.messages[0]?.parts[0]).toMatchObject({
       tool: "bash",
     });
+  });
+});
+
+describe("durable publication", () => {
+  it("rolls back when the head write fails", () => {
+    const original = makeSession("head-failure");
+    saveCachedSessions("codex", [original]);
+    syncSessionSearchIndex("codex", [original], () =>
+      makeSessionData(original.id, "head old content"),
+    );
+
+    const db = new Database(getCachePath());
+    try {
+      db.exec(`
+        CREATE TRIGGER fail_atomic_head_update
+        BEFORE UPDATE ON sessions
+        WHEN NEW.title = 'Head failure'
+        BEGIN
+          SELECT RAISE(ABORT, 'forced head failure');
+        END;
+      `);
+    } finally {
+      db.close();
+    }
+
+    const result = commitDurableSessionPublication(
+      {
+        kind: "snapshot",
+        agentName: "codex",
+        sessions: [{ ...original, title: "Head failure" }],
+        meta: {},
+        completeness: "complete",
+        removedSessionIds: [],
+      },
+      () => makeSessionData(original.id, "head updated content"),
+    );
+
+    expect(result).toMatchObject({ status: "rolled-back", stage: "cache" });
+    expect(loadCachedSessions("codex")?.sessions[0]?.title).toBe(original.title);
+    expect(searchSessions("head old content")).toHaveLength(1);
+    expect(searchSessions("head updated content")).toHaveLength(0);
+  });
+
+  it("rolls back the head cache when the search write fails", () => {
+    const original = makeSession("atomic");
+    saveCachedSessions("codex", [original], { atomic: { id: "atomic", sourcePath: "/old" } });
+    syncSessionSearchIndex("codex", [original], () => makeSessionData("atomic", "old content"));
+
+    const db = new Database(getCachePath());
+    try {
+      db.exec(`
+        CREATE TRIGGER fail_atomic_search_update
+        BEFORE UPDATE ON session_documents
+        WHEN NEW.title = 'Updated atomic'
+        BEGIN
+          SELECT RAISE(ABORT, 'forced search failure');
+        END;
+      `);
+    } finally {
+      db.close();
+    }
+
+    const updated = { ...original, title: "Updated atomic" };
+    const diagnosticEvents: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    let failed: ReturnType<typeof commitDurableSessionPublication>;
+    try {
+      setCoreDiagnostics({
+        info: (event, detail) => diagnosticEvents.push({ event, detail }),
+        warn: (event, detail) => diagnosticEvents.push({ event, detail }),
+      });
+      failed = commitDurableSessionPublication(
+        {
+          kind: "snapshot",
+          agentName: "codex",
+          sessions: [updated],
+          meta: { atomic: { id: "atomic", sourcePath: "/updated" } },
+          completeness: "complete",
+          removedSessionIds: [],
+          publicationId: "scan.refresh:codex:1",
+        },
+        () => makeSessionData("atomic", "updated content"),
+      );
+    } finally {
+      setCoreDiagnostics(null);
+    }
+
+    expect(failed).toMatchObject({
+      status: "rolled-back",
+      stage: "search_index",
+      publicationId: "scan.refresh:codex:1",
+    });
+
+    expect(loadCachedSessions("codex")?.sessions[0]?.title).toBe(original.title);
+    expect(loadCachedSessions("codex")?.meta.atomic?.sourcePath).toBe("/old");
+    expect(searchSessions("old content")).toHaveLength(1);
+    expect(searchSessions("updated content")).toHaveLength(0);
+    expect(diagnosticEvents).toContainEqual({
+      event: "search_index.publication_stage",
+      detail: expect.objectContaining({
+        publication_id: failed.publicationId,
+        stage: "rolled_back",
+        failure_stage: "search_index",
+      }),
+    });
+
+    const retryDb = new Database(getCachePath());
+    try {
+      retryDb.exec("DROP TRIGGER fail_atomic_search_update");
+    } finally {
+      retryDb.close();
+    }
+    const retried = commitDurableSessionPublication(
+      {
+        kind: "snapshot",
+        agentName: "codex",
+        sessions: [updated],
+        meta: { atomic: { id: "atomic", sourcePath: "/updated" } },
+        completeness: "complete",
+        removedSessionIds: [],
+      },
+      () => makeSessionData("atomic", "updated content"),
+    );
+
+    expect(retried.status).toBe("committed");
+    expect(loadCachedSessions("codex")?.sessions[0]?.title).toBe(updated.title);
+    expect(loadCachedSessions("codex")?.meta.atomic?.sourcePath).toBe("/updated");
+    expect(searchSessions("updated content")).toHaveLength(1);
+  });
+
+  it("rolls back staged rows when the transaction commit fails", () => {
+    const original = makeSession("commit-failure");
+    saveCachedSessions("codex", [original]);
+    syncSessionSearchIndex("codex", [original], () =>
+      makeSessionData(original.id, "commit old content"),
+    );
+
+    const db = new Database(getCachePath());
+    try {
+      db.exec(`
+        CREATE TABLE publication_commit_parent(id INTEGER PRIMARY KEY);
+        CREATE TABLE publication_commit_failure(
+          parent_id INTEGER,
+          FOREIGN KEY(parent_id) REFERENCES publication_commit_parent(id)
+            DEFERRABLE INITIALLY DEFERRED
+        );
+        CREATE TRIGGER fail_atomic_publication_commit
+        AFTER UPDATE ON sessions
+        WHEN NEW.title = 'Commit failure'
+        BEGIN
+          INSERT INTO publication_commit_failure(parent_id) VALUES (1);
+        END;
+      `);
+    } finally {
+      db.close();
+    }
+
+    const result = commitDurableSessionPublication(
+      {
+        kind: "snapshot",
+        agentName: "codex",
+        sessions: [{ ...original, title: "Commit failure" }],
+        meta: {},
+        completeness: "complete",
+        removedSessionIds: [],
+      },
+      () => makeSessionData(original.id, "commit updated content"),
+    );
+
+    expect(result).toMatchObject({ status: "rolled-back", stage: "commit" });
+    expect(loadCachedSessions("codex")?.sessions[0]?.title).toBe(original.title);
+    expect(searchSessions("commit old content")).toHaveLength(1);
+    expect(searchSessions("commit updated content")).toHaveLength(0);
+    const verifyDb = new Database(getCachePath(), { readonly: true });
+    try {
+      expect(
+        verifyDb.prepare("SELECT COUNT(*) AS value FROM publication_commit_failure").get(),
+      ).toEqual({ value: 0 });
+    } finally {
+      verifyDb.close();
+    }
+  });
+
+  it("commits partial snapshots and incremental changes through the same interface", () => {
+    const historical = makeSession("historical");
+    const recent = makeSession("recent");
+    const removed = makeSession("removed");
+    const initial = [historical, recent, removed];
+    saveCachedSessions("codex", initial);
+    syncSessionSearchIndex("codex", initial, (sessionId) =>
+      makeSessionData(sessionId, `${sessionId} publication content`),
+    );
+
+    const updatedRecent = { ...recent, title: "Recent partial" };
+    const partial = commitDurableSessionPublication(
+      {
+        kind: "snapshot",
+        agentName: "codex",
+        sessions: [updatedRecent],
+        meta: {},
+        completeness: "partial",
+        removedSessionIds: [removed.id],
+      },
+      () => makeSessionData(recent.id, "recent partial content"),
+    );
+
+    expect(partial.status).toBe("committed");
+    expect(loadCachedSessions("codex")?.sessions.map(({ id }) => id)).toEqual(
+      expect.arrayContaining([recent.id, historical.id]),
+    );
+    expect(loadCachedSessions("codex")?.sessions.map(({ id }) => id)).not.toContain(removed.id);
+    expect(searchSessions("historical publication")).toHaveLength(1);
+    expect(searchSessions("removed publication")).toHaveLength(0);
+
+    const updatedHistorical = { ...historical, title: "Historical incremental" };
+    const incremental = commitDurableSessionPublication(
+      {
+        kind: "changes",
+        agentName: "codex",
+        changes: [{ session: updatedHistorical, sortIndex: 0 }],
+        removedSessionIds: [recent.id],
+        meta: {},
+      },
+      () => makeSessionData(historical.id, "historical incremental content"),
+    );
+
+    expect(incremental.status).toBe("committed");
+    expect(loadCachedSessions("codex")?.sessions.map(({ id }) => id)).toEqual([historical.id]);
+    expect(searchSessions("historical incremental")).toHaveLength(1);
+    expect(searchSessions("recent partial")).toHaveLength(0);
   });
 });
 

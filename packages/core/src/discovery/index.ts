@@ -48,6 +48,12 @@ export {
 export type { FileActivityOptions, FileActivityResult } from "./cache/file-activity.js";
 export { listModelCostDistribution } from "./cache/model-cost.js";
 export type { ModelCostEntry, ModelCostOptions } from "./cache/model-cost.js";
+export { commitDurableSessionPublication } from "./cache/publication.js";
+export type {
+  DurableSessionPublication,
+  DurableSessionPublicationCommitResult,
+  DurableSessionPublicationFailureStage,
+} from "./cache/publication.js";
 export {
   mergeSearchQueryOptions,
   parseSearchQuery,

@@ -120,6 +120,7 @@ export class SearchIndexJobRunner {
           batch_id: batch.id,
           context: message.context,
           stage: message.stage,
+          publication_id: message.publicationId,
           agent: message.agentName,
           sessions: message.sessions,
         });
