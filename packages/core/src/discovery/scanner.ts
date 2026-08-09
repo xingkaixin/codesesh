@@ -12,11 +12,10 @@ import type {
 import {
   createAgentScanFailure,
   createRegisteredAgents,
-  diffSessionSources,
   FileSystemSessionSource,
   reportAgentScanFailure,
-  reportSessionSourceOutcome,
   SessionScanError,
+  synchronizeSessionSources,
 } from "../agents/index.js";
 import { filterSessionsByProjectScope } from "../projects/index.js";
 import {
@@ -402,6 +401,68 @@ export async function finalizeAgentScan(
   };
 }
 
+async function refreshCachedFileAgent(
+  agent: FileSystemSessionSource,
+  cached: CachedResult,
+  options: ScanOptions,
+  timing: AgentScanTiming,
+  agentStart: number,
+  onProgress?: (progress: ScanProgress) => void,
+): Promise<SuccessfulAgentScanResult> {
+  const scanStartedAt = performance.now();
+  const synchronization = synchronizeSessionSources(
+    agent,
+    { sessions: cached.sessions, meta: cached.meta },
+    {
+      kind: "refresh",
+      scanOptions: {
+        onProgress: (progress) => {
+          onProgress?.({
+            agent: agent.name,
+            phase: "incremental",
+            cachedCount: progress.total,
+            newCount: progress.sessions,
+            changedCount: progress.processed,
+          });
+        },
+      },
+    },
+  );
+  timing.scan = performance.now() - scanStartedAt;
+  const hasSourceChanges =
+    synchronization.detectedSessionIds.length > 0 || synchronization.sourceFailures.length > 0;
+
+  if (!hasSourceChanges) {
+    return finalizeAgentScan(agent, synchronization.sessions, {
+      finalization: { kind: "unchanged", cached },
+      options,
+      timing,
+      agentStart,
+      completeness: synchronization.completeness,
+      onProgress,
+    });
+  }
+
+  onProgress?.({
+    agent: agent.name,
+    phase: "incremental",
+    changedCount: synchronization.detectedSessionIds.length,
+  });
+  return finalizeAgentScan(agent, synchronization.sessions, {
+    finalization: {
+      kind: "incremental",
+      cached,
+      changedIds: synchronization.changedSessionIds,
+      cacheTimestamp: Date.now(),
+    },
+    options,
+    timing,
+    agentStart,
+    completeness: synchronization.completeness,
+    onProgress,
+  });
+}
+
 /**
  * 智能扫描单个 Agent
  * 1. 优先使用缓存立即返回
@@ -457,6 +518,10 @@ async function scanAgentSmart(
       });
 
       onProgress?.({ agent: agent.name, phase: "checking" });
+
+      if (agent instanceof FileSystemSessionSource) {
+        return refreshCachedFileAgent(agent, cached, options, timing, agentStart, onProgress);
+      }
 
       const t1 = performance.now();
       const checkResult = await Promise.resolve(
@@ -552,40 +617,13 @@ async function scanAgentFull(
     let sourceFailures: SessionSourceFailure[] = [];
     if (agent instanceof FileSystemSessionSource) {
       const cached = loadCachedSessions(agent.name);
-      if (cached) {
-        restoreAgentCacheMeta(agent, cached);
-      }
-      const batch = agent.scanSessionSources(agentScanOptions);
-      const sessionMap = new Map(cached?.sessions.map((session) => [session.id, session]) ?? []);
-      for (const outcome of batch.outcomes) {
-        if (outcome.status === "parsed") {
-          sessionMap.delete(outcome.source.sessionId);
-          sessionMap.set(outcome.session.id, outcome.session);
-        } else if (outcome.status === "filtered" || outcome.status === "missing") {
-          sessionMap.delete(outcome.source.sessionId);
-          agent.getSessionMetaMap().delete(outcome.source.sessionId);
-        } else {
-          sourceFailures.push(outcome.failure);
-        }
-      }
-      if (cached) {
-        const diff = diffSessionSources(
-          batch.sources,
-          cached.sessions,
-          cached.meta,
-          agentScanOptions,
-        );
-        for (const outcome of diff.sourceOutcomes) {
-          reportSessionSourceOutcome(agent.name, outcome);
-          if (outcome.status === "missing") {
-            sessionMap.delete(outcome.source.sessionId);
-            agent.getSessionMetaMap().delete(outcome.source.sessionId);
-          } else {
-            sourceFailures.push(outcome.failure);
-          }
-        }
-      }
-      heads = [...sessionMap.values()];
+      const synchronization = synchronizeSessionSources(
+        agent,
+        { sessions: cached?.sessions ?? [], meta: cached?.meta ?? new Map() },
+        { kind: "reload", scanOptions: agentScanOptions },
+      );
+      heads = synchronization.sessions;
+      sourceFailures = synchronization.sourceFailures;
     } else {
       heads = agent.scan(agentScanOptions);
     }
