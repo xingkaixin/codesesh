@@ -14,25 +14,33 @@
 
 ## 包结构与模块职能
 
-```
-packages/core       核心库（framework-agnostic）
-  agents/           各 Agent 适配器（base / registry / register + 各实现）
-  discovery/        会话路径解析 & 文件扫描（paths.ts / scanner.ts）
-  types/            共享类型定义
-  utils/            工具函数
-
-packages/cli        CLI 入口 & HTTP 服务器
-  index.ts          命令解析，驱动扫描 → 启动服务器
-  server.ts         Hono 服务，暴露 JSON API
-  api/              API 端点定义
-  commands/         CLI 子命令
-
-apps/web            React 前端
-  App.tsx           路由 & 顶层状态
-  components/       UI 组件
-  lib/              HTTP API 调用 & 工具
-  config.ts         前端配置（API 地址等）
-```
+- `packages/core/src/`：framework-agnostic 核心库
+  - `packages/core/src/agents/`：各 Agent 适配器、注册表与能力声明
+  - `packages/core/src/analytics/`：Dashboard 与项目聚合统计
+  - `packages/core/src/bookmarks/`：书签物化
+  - `packages/core/src/contract/`：前后端共享的 browser-safe 契约
+  - `packages/core/src/discovery/`：扫描编排、路径解析与 Session Detail 加载
+  - `packages/core/src/discovery/cache/`：Session 缓存与搜索索引持久化
+  - `packages/core/src/pricing/`：模型定价、代际同步与成本计算
+  - `packages/core/src/projects/`：Project Identity、分组与作用域匹配
+  - `packages/core/src/search/`：Session 搜索
+  - `packages/core/src/state/`：书签、别名等用户状态
+  - `packages/core/src/types/`：共享类型定义
+  - `packages/core/src/utils/`：通用工具函数
+- `packages/cli/src/`：CLI 入口、HTTP 服务与后台 Worker
+  - `packages/cli/src/index.ts`：参数解析，驱动扫描并启动服务器
+  - `packages/cli/src/server.ts`：Hono 服务与生命周期管理
+  - `packages/cli/src/api/`：HTTP API 端点；其余扫描、索引与 Worker 模块保持扁平布局
+- `apps/web/src/`：React 应用
+  - `apps/web/src/App.tsx`：路由与顶层状态
+  - `apps/web/src/components/`：产品与 UI 组件
+  - `apps/web/src/hooks/`：客户端状态与数据同步 hooks
+  - `apps/web/src/lib/`：HTTP API 客户端与前端工具
+  - `apps/web/src/styles/`：全局样式
+- `apps/www/`：Astro 产品站
+  - `apps/www/src/pages/`：静态页面路由
+  - `apps/www/src/components/`：产品站组件
+  - `apps/www/public/`：静态资源
 
 ## 数据流
 
@@ -43,10 +51,10 @@ CLI 参数 → core 全量扫描 / 缓存恢复 → LiveScanStore 文件监听�
 ## 扩展新 Agent
 
 1. 在 `packages/core/src/agents/` 新增适配器并导出数据根目录解析器。
-2. 在 `register.ts` 注册图标、根目录解析器、resume 命令能力（不支持时显式为
+2. 在 `packages/core/src/agents/register.ts` 注册图标、根目录解析器、resume 命令能力（不支持时显式为
    `null`）与工具展示策略类型。
 3. 在 `apps/web/public/icon/agent/` 添加对应 SVG。
 4. 自定义工具展示需新增 `apps/web/src/components/session-detail/tool-strategy/<agent>.ts`
-   并在同目录 `index.ts` 注册 builder；使用默认策略则无需新增实现。
+   并在同目录的 `apps/web/src/components/session-detail/tool-strategy/index.ts` 注册 builder；使用默认策略则无需新增实现。
 
 注册完备性测试必须覆盖图标与工具展示策略声明。

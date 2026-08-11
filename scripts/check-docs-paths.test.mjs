@@ -65,6 +65,22 @@ describe("CS-151: documentation path check", () => {
     expect(findMissingPaths(dir, ["docs/guide.md"])).toEqual([]);
   });
 
+  it("checks backticked paths in a repository structure map", () => {
+    const dir = repo({
+      "AGENTS.md": [
+        "- `packages/core/src/analytics/`",
+        "- `apps/www/src/pages/`",
+        "- `packages/cli/src/commands/`",
+      ].join("\n"),
+      "packages/core/src/analytics/index.ts": "",
+      "apps/www/src/pages/index.astro": "",
+    });
+
+    expect(findMissingPaths(dir, ["AGENTS.md"])).toEqual([
+      { document: "AGENTS.md", path: "packages/cli/src/commands/" },
+    ]);
+  });
+
   it("reports a document that is not there at all", () => {
     const dir = repo({ "README.md": "" });
 
@@ -74,6 +90,8 @@ describe("CS-151: documentation path check", () => {
   });
 
   it("checks the documents that describe the repository", () => {
+    expect(CHECKED_DOCUMENTS).toContain("AGENTS.md");
+    expect(CHECKED_DOCUMENTS).toContain("CONTEXT.md");
     expect(CHECKED_DOCUMENTS).toContain("README.md");
     expect(CHECKED_DOCUMENTS).toContain("docs/PRD.md");
     expect(CHECKED_DOCUMENTS).toContain("docs/sqlite-storage.md");
