@@ -50,6 +50,21 @@ describe("OverviewCostBreakdown", () => {
     expect(screen.getByText("20%")).toBeTruthy();
   });
 
+  it("collapses a four-figure total so it fits the ring", () => {
+    render(
+      <OverviewCostBreakdown
+        modelCost={[
+          { model: "sonnet", cost: 12_878.91, costRecorded: 0, costEstimated: 12_878.91 },
+        ]}
+        modelDistribution={modelDistribution}
+        totals={totals({ cost: 12_878.91 })}
+      />,
+    );
+
+    expect(screen.getAllByText("$12.88k")).toHaveLength(2);
+    expect(screen.queryByText("$12,878.91")).toBeNull();
+  });
+
   it("adds a remainder segment when the cache lags behind the snapshot", () => {
     render(
       <OverviewCostBreakdown

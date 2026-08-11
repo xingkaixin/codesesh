@@ -7,7 +7,7 @@
 import { useMemo, useState } from "react";
 
 import type { DashboardTotals, ModelCostEntry, ModelDistributionEntry } from "../../lib/api";
-import { formatCompact, formatPercent, formatUsd } from "../../lib/format";
+import { formatCompact, formatPercent, formatUsd, formatUsdCompact } from "../../lib/format";
 import { cn } from "../../lib/utils";
 import { Panel, PanelHeader } from "../ui/panel";
 import { TileDonut } from "../ui/tile-donut";
@@ -36,7 +36,7 @@ function costEntries(modelCost: ModelCostEntry[], totalCost: number): BreakdownE
     label: entry.model,
     value: entry.cost,
     color: `var(--chart-${index + 1})`,
-    display: formatUsd(entry.cost),
+    display: formatUsdCompact(entry.cost),
   }));
 
   const remainder = totalCost - top.reduce((sum, entry) => sum + entry.cost, 0);
@@ -46,7 +46,7 @@ function costEntries(modelCost: ModelCostEntry[], totalCost: number): BreakdownE
       label: "Other",
       value: remainder,
       color: "var(--console-border-strong)",
-      display: formatUsd(remainder),
+      display: formatUsdCompact(remainder),
     });
   }
   return entries;
@@ -110,7 +110,7 @@ export function OverviewCostBreakdown({
             size={DONUT_SIZE}
           >
             <span className="console-mono text-[16px] font-semibold text-[var(--console-text)]">
-              {byCost ? formatUsd(totals.cost) : formatCompact(totals.tokens)}
+              {byCost ? formatUsdCompact(totals.cost) : formatCompact(totals.tokens)}
             </span>
             <span className="console-mono mt-0.5 text-[9px] text-[var(--console-muted)]">
               {byCost ? "total cost" : "total tokens"}
