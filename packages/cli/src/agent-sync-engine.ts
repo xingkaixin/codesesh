@@ -7,6 +7,7 @@ import {
   getAgentLastFullSyncAt,
   isAgentCacheInitialized,
   loadCachedSessions,
+  markAgentFullSyncProgress,
   markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
   sessionSignature,
@@ -32,7 +33,11 @@ import { appLogger, logSearchIndexSync } from "./logging.js";
 import { SearchIndexJobRunner } from "./search-index-job-runner.js";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 import { ScanStatusModel } from "./scan-status-model.js";
-import type { ScanRefreshOperation } from "./scan-refresh-operation.js";
+import type {
+  BackfillScanRefreshOperation,
+  ScanRefreshOperation,
+} from "./scan-refresh-operation.js";
+import type { ScanRefreshWorkerCheckpoint } from "./scan-refresh-worker.js";
 import type { WorkerRunner } from "./worker-runner.js";
 import { toError } from "./errors.js";
 
@@ -738,6 +743,7 @@ export class AgentSyncEngine {
     runOptions: {
       backfillAttempt?: BackfillAttemptRef;
       meta?: CachedSessions["meta"];
+      onCheckpoint?: (checkpoint: ScanRefreshWorkerCheckpoint) => void;
     } = {},
   ) {
     return this.options.workerRunner.run(agent.name, {
@@ -747,6 +753,20 @@ export class AgentSyncEngine {
       meta: runOptions.meta ?? buildAgentCacheMeta(agent),
       onProgress: (progress) =>
         this.updateAgentScanProgress(agent.name, progress, runOptions.backfillAttempt),
+      onCheckpoint: runOptions.onCheckpoint,
+    });
+  }
+
+  private handleBackfillCheckpoint(
+    agentName: string,
+    checkpoint: ScanRefreshWorkerCheckpoint,
+  ): void {
+    if (checkpoint.stage !== "finalizing" || !checkpoint.backfillCursor) return;
+    markAgentFullSyncProgress(agentName, checkpoint.backfillCursor);
+    appLogger.debug("scan.backfill.checkpoint", {
+      agent: agentName,
+      cursor: checkpoint.backfillCursor,
+      sessions: checkpoint.changes.length,
     });
   }
 
@@ -816,10 +836,15 @@ export class AgentSyncEngine {
     let durableCommitted = false;
     try {
       markAgentFullSyncStarted(agentName);
-      const operation: ScanRefreshOperation =
+      const operation: BackfillScanRefreshOperation =
         agent instanceof FileSystemSessionSource
-          ? { kind: "source-backfill", cursor: backfillCursor }
-          : { kind: "full-backfill", cursor: backfillCursor };
+          ? { kind: "source-backfill", cursor: backfillCursor, checkpoint: "durable" }
+          : { kind: "full-backfill", cursor: backfillCursor, checkpoint: "durable" };
+      appLogger.info("scan.backfill.started", {
+        agent: agentName,
+        cursor: backfillCursor ?? undefined,
+        durable_checkpoints: operation.checkpoint === "durable",
+      });
       const result = await this.runWorker(
         agent,
         baseline,
@@ -828,6 +853,7 @@ export class AgentSyncEngine {
         {
           backfillAttempt: attempt,
           meta,
+          onCheckpoint: (checkpoint) => this.handleBackfillCheckpoint(agentName, checkpoint),
         },
       );
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));

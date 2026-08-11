@@ -560,7 +560,7 @@ describe("scan refresh worker entry", () => {
       time_created: 3_000,
       time_updated: 3_000,
       smart_tags: [],
-      smart_tags_source_updated_at: 3_000,
+      smart_tags_source_updated_at: 1,
       smart_tags_classifier_revision: "smart-tags-v1",
     });
     const cursor = makeSession("cursor", {
@@ -598,7 +598,11 @@ describe("scan refresh worker entry", () => {
 
     await runWorker();
 
-    expect(mocks.ensureSessionTagsSync).toHaveBeenCalledWith(agent, [next], expect.any(Function));
+    expect(mocks.ensureSessionTagsSync).toHaveBeenCalledWith(
+      agent,
+      [newest, next],
+      expect.any(Function),
+    );
     expect(mocks.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "checkpoint",
