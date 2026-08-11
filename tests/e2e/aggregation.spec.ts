@@ -15,17 +15,15 @@ test("aggregates Claude and Codex sessions under one project", async ({ page }) 
   const dashboard = page.getByTestId("dashboard");
   await expect(sessionsKpi(dashboard)).toContainText("2");
   await expect(dashboard.getByText("1 projects · 2 agents in scope")).toBeVisible();
-  const agentRows = dashboard.getByTestId("overview-agent-row");
-  await expect(agentRows).toHaveCount(2);
-  await expect(agentRows.filter({ hasText: "Claude Code" })).toContainText("1 · $0.00");
-  await expect(agentRows.filter({ hasText: "Codex" })).toContainText("1 · $0.00");
-  const projectRow = dashboard.getByTestId("overview-project-row");
-  await expect(projectRow).toHaveCount(1);
-  await expect(projectRow).toContainText("codesesh-e2e");
-  await expect(projectRow.getByRole("img", { name: "Codex", exact: true })).toBeVisible();
-  await expect(projectRow.getByRole("img", { name: "Claude Code", exact: true })).toBeVisible();
-  await expect(projectRow).not.toContainText("Codex");
-  await expect(projectRow).not.toContainText("Claude Code");
+  // Neither session has a cost, so the agent bars rank and read by sessions.
+  const agentColumns = dashboard.getByTestId("overview-agent-row");
+  await expect(agentColumns).toHaveCount(2);
+  const claude = agentColumns.filter({ hasText: "Claude Code" });
+  await expect(claude).toContainText("1");
+  await expect(claude.getByRole("img", { name: "Claude Code", exact: true })).toBeVisible();
+  const codex = agentColumns.filter({ hasText: "Codex" });
+  await expect(codex).toContainText("1");
+  await expect(codex.getByRole("img", { name: "Codex", exact: true })).toBeVisible();
 
   await page.goto("/projects");
   const project = page.locator("main").getByRole("link", { name: /codesesh-e2e/ });

@@ -14,6 +14,7 @@ import {
   formatRelativeTime,
   formatTokens,
   formatUsd,
+  formatUsdCompact,
 } from "./format";
 
 describe("formatRelativeTime", () => {
@@ -189,6 +190,23 @@ describe("formatUsd", () => {
 
   it("rounds sub-cent values to two decimals", () => {
     expect(formatUsd(0.004)).toBe("$0.00");
+  });
+});
+
+describe("formatUsdCompact", () => {
+  it("collapses thousands and millions so the figure fits its slot", () => {
+    expect(formatUsdCompact(12_878.91)).toBe("$12.88k");
+    expect(formatUsdCompact(1_000)).toBe("$1.00k");
+    expect(formatUsdCompact(2_450_000)).toBe("$2.45M");
+  });
+
+  it("leaves anything under a thousand exact", () => {
+    expect(formatUsdCompact(999.994)).toBe("$999.99");
+    expect(formatUsdCompact(0)).toBe("$0.00");
+  });
+
+  it("collapses by magnitude, so a credit reads the same way", () => {
+    expect(formatUsdCompact(-12_878.91)).toBe("$-12.88k");
   });
 });
 

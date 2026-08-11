@@ -56,6 +56,18 @@ export function formatUsd(value: number): string {
   })}`;
 }
 
+/**
+ * Money for a fixed slot — a ring's centre, a fixed-width column. Thousands and
+ * up collapse to a suffix, keeping two significant decimals: `$12,878.91` is
+ * wide enough to overrun the hole it sits in, `$12.88k` is not.
+ */
+export function formatUsdCompact(value: number): string {
+  const magnitude = Math.abs(value);
+  if (magnitude >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
+  if (magnitude >= 1_000) return `$${(value / 1_000).toFixed(2)}k`;
+  return formatUsd(value);
+}
+
 /** `null` means "no comparable baseline" — the caller omits the trend entirely. */
 export function formatDelta(current: number, previous: number): string | null {
   if (!Number.isFinite(current) || !Number.isFinite(previous) || previous <= 0) return null;

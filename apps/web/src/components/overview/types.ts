@@ -1,19 +1,10 @@
 /**
- * Shared vocabulary for the 统计总览 screen: the metric toggle, the range pills
- * and the two lookups every card needs (a stable scope identity, an agent's
- * display name).
+ * Shared vocabulary for the 统计总览 screen: the range pills and the two lookups
+ * every card needs (a stable scope identity, an agent's display name).
  */
 import type { AgentCatalog } from "../../lib/agents";
 import type { DashboardFilters } from "../../lib/api";
 import type { TimeWindowPreset } from "../../lib/time-window";
-
-export type OverviewMetric = "tokens" | "sessions" | "messages";
-
-export const OVERVIEW_METRIC_LABEL: Record<OverviewMetric, string> = {
-  tokens: "Tokens",
-  sessions: "Sessions",
-  messages: "Messages",
-};
 
 /** The range pills 3a exposes; a second view of the app's time-window presets. */
 export const OVERVIEW_RANGE_PRESETS: readonly { value: TimeWindowPreset; label: string }[] = [

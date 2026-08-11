@@ -36,11 +36,10 @@ test("browses the dashboard and project tree with a keyboard", async ({ page }) 
   await page.goto("/");
   const dashboard = page.getByTestId("dashboard");
   await expect(dashboard).toBeVisible();
-  await expect(dashboard.getByTestId("overview-project-row")).toContainText("codesesh-e2e");
+  await expect(dashboard.getByTestId("overview-agent-row").first()).toBeVisible();
+  // The bars are painted on a canvas, so the table is what carries the data.
   const activityChart = page.getByRole("region", { name: "Daily usage" });
-  const activityBar = activityChart.getByRole("button").first();
-  await activityBar.focus();
-  await expect(activityBar).toBeFocused();
+  await expect(activityChart).toBeVisible();
   await expect(activityChart.getByRole("table", { name: "Daily usage data" })).toBeAttached();
 
   await page

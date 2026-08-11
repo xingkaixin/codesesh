@@ -122,29 +122,27 @@ describe("OverviewScreen", () => {
   it("renders the full card set for the global scope", async () => {
     renderScreen();
 
-    await screen.findByRole("heading", { name: "Projects" });
+    await screen.findByRole("heading", { name: "Agents" });
     expect(screen.getByTestId("dashboard")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Daily usage" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Agents" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Cost by Model" })).toBeTruthy();
     expect(screen.getByText("1 projects · 2 agents in scope")).toBeTruthy();
-    expect(screen.getAllByTestId("overview-project-row")).toHaveLength(1);
     expect(screen.getAllByTestId("overview-agent-row")).toHaveLength(1);
   });
 
-  it("renders project agents as logos without visible names", async () => {
+  it("labels every agent bar with its icon and cost", async () => {
     renderScreen();
 
-    await screen.findByRole("heading", { name: "Projects" });
-    const projectRow = within(screen.getByTestId("overview-project-row"));
+    await screen.findByRole("heading", { name: "Agents" });
+    const agentColumn = within(screen.getByTestId("overview-agent-row"));
 
-    expect(projectRow.getByRole("img", { name: "Codex" })).toBeTruthy();
-    expect(projectRow.queryByText("Codex")).toBeNull();
+    expect(agentColumn.getByRole("img", { name: "Codex" })).toBeTruthy();
+    expect(agentColumn.getByText("$4.00")).toBeTruthy();
   });
 
   it("issues exactly one new request when the agent filter changes", async () => {
     renderScreen();
-    await screen.findByRole("heading", { name: "Projects" });
+    await screen.findByRole("heading", { name: "Agents" });
     expect(api.fetchDashboard).toHaveBeenCalledTimes(1);
 
     fireEvent.change(screen.getByRole("combobox", { name: "Filter by agent" }), {
@@ -159,11 +157,11 @@ describe("OverviewScreen", () => {
     );
   });
 
-  it("ranks agents instead of projects when mounted for a project", async () => {
+  it("keeps the same cards when mounted for a project", async () => {
     renderScreen({ project: { kind: "path", key: "/repo/codesesh" } });
 
     await screen.findByRole("heading", { name: "Agents" });
-    expect(screen.queryByRole("heading", { name: "Projects" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Cost by Model" })).toBeTruthy();
     expect(api.fetchDashboard).toHaveBeenLastCalledWith(
       timeWindow,
       { project: { kind: "path", key: "/repo/codesesh" }, agent: undefined },
