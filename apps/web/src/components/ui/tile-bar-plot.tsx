@@ -15,6 +15,7 @@ import {
 } from "../../hooks/useBarField";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { cn } from "../../lib/utils";
+import { ChartKeyboardList } from "./chart-keyboard-list";
 
 const TICK_FRACTIONS = [1, 0.75, 0.5, 0.25, 0] as const;
 
@@ -31,6 +32,8 @@ export function TileBarPlot({
   layout,
   height,
   formatTick,
+  ariaLabel,
+  itemLabels,
   className,
 }: {
   /** `[column][band]`; a plain bar chart is one band per column. */
@@ -44,6 +47,8 @@ export function TileBarPlot({
   height: number;
   /** Provide to render a value axis on the left; omit for a bare plot. */
   formatTick?: (value: number) => string;
+  ariaLabel: string;
+  itemLabels: readonly string[];
   className?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -94,6 +99,13 @@ export function TileBarPlot({
           />
         ))}
         <canvas ref={canvasRef} aria-hidden className="absolute inset-0 block" />
+        <ChartKeyboardList
+          label={ariaLabel}
+          itemLabels={itemLabels}
+          activeIndex={hovered?.column ?? null}
+          onActiveIndexChange={(column) => onHover(column === null ? null : { column, band: null })}
+          layout="columns"
+        />
       </div>
     </div>
   );

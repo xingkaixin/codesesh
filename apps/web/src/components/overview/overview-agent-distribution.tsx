@@ -21,18 +21,23 @@ const BAR_COLORS = ["var(--brand)"];
 export function OverviewAgentDistribution({ perAgent }: { perAgent: DashboardAgentStat[] }) {
   const [hover, setHover] = useState<BarHover | null>(null);
 
-  const { byCost, visible, values, axisMax } = useMemo(() => {
+  const { byCost, visible, values, axisMax, itemLabels } = useMemo(() => {
     const byCost = perAgent.some((agent) => agent.cost > 0);
     const weightOf = (agent: DashboardAgentStat) => (byCost ? agent.cost : agent.sessions);
     const visible = [...perAgent].sort((a, b) => weightOf(b) - weightOf(a)).slice(0, AGENT_LIMIT);
     const values = visible.map((agent) => [weightOf(agent)]);
+    const itemLabels = visible.map((agent) =>
+      byCost
+        ? `${agent.displayName}: ${formatUsd(agent.cost)}, ${formatInt(agent.sessions)} sessions`
+        : `${agent.displayName}: ${formatInt(agent.sessions)} sessions`,
+    );
     // The leader touches the top: with the figures printed under every bar
     // there is no axis to round to, and rounded headroom would just be blank.
-    return { byCost, visible, values, axisMax: Math.max(...values.flat(), 0) };
+    return { byCost, visible, values, axisMax: Math.max(...values.flat(), 0), itemLabels };
   }, [perAgent]);
 
   return (
-    <Panel className="p-4">
+    <Panel role="region" aria-label="Agents" className="p-4">
       <PanelHeader
         title="Agents"
         meta={`${byCost ? "by cost" : "by sessions"} · ${perAgent.length} total`}
@@ -50,6 +55,8 @@ export function OverviewAgentDistribution({ perAgent }: { perAgent: DashboardAge
             onHover={setHover}
             layout={BAR_LAYOUT}
             height={CHART_HEIGHT}
+            ariaLabel="Agent distribution chart"
+            itemLabels={itemLabels}
           />
           <div
             className="mt-2 grid"
