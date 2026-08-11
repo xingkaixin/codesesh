@@ -84,4 +84,25 @@ describe("OverviewUsageChart", () => {
     expect(screen.queryByText("3 sessions · 45 messages")).toBeNull();
     expect(liveSummary.textContent).toBe("");
   });
+
+  it("keeps unrelated daily rows out of hover updates", () => {
+    let unrelatedReads = 0;
+    const observedDaily = [
+      daily[0]!,
+      new Proxy(daily[1]!, {
+        get(target, property, receiver) {
+          if (property === "sessions") unrelatedReads++;
+          return Reflect.get(target, property, receiver);
+        },
+      }),
+    ];
+    render(<OverviewUsageChart daily={observedDaily} />);
+    unrelatedReads = 0;
+
+    fireEvent.focus(
+      within(screen.getByRole("listbox", { name: "Daily usage chart" })).getAllByRole("option")[0]!,
+    );
+
+    expect(unrelatedReads).toBe(0);
+  });
 });

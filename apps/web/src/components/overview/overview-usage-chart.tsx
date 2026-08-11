@@ -109,21 +109,47 @@ function DayTooltip({
   );
 }
 
-export function OverviewUsageChart({ daily }: { daily: DashboardDailyBucket[] }) {
+function TokenBars({ daily }: { daily: DashboardDailyBucket[] }) {
   const [hover, setHover] = useState<BarHover | null>(null);
-
   const values = useMemo(
     () => daily.map((bucket) => TOKEN_SERIES.map((series) => bucket[series.key])),
     [daily],
   );
   const itemLabels = useMemo(() => daily.map(bucketSummary), [daily]);
-  const axisMax = niceMax(daily.reduce((peak, bucket) => Math.max(peak, bucketTokens(bucket)), 0));
+  const axisMax = useMemo(
+    () => niceMax(daily.reduce((peak, bucket) => Math.max(peak, bucketTokens(bucket)), 0)),
+    [daily],
+  );
+  const hovered = hover === null ? undefined : daily[hover.column];
 
+  return (
+    <div className="relative mt-[14px]">
+      <TileBarPlot
+        values={values}
+        axisMax={axisMax}
+        colors={TOKEN_COLORS}
+        hovered={hover}
+        onHover={setHover}
+        layout={BAR_LAYOUT}
+        height={BAR_HEIGHT}
+        formatTick={formatCompact}
+        ariaLabel="Daily usage chart"
+        itemLabels={itemLabels}
+      />
+      {hovered && hover ? (
+        <div className="absolute inset-x-0 top-0" style={{ left: TILE_AXIS_WIDTH }}>
+          <DayTooltip bucket={hovered} index={hover.column} count={daily.length} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function OverviewUsageChart({ daily }: { daily: DashboardDailyBucket[] }) {
   const first = daily[0];
   const last = daily[daily.length - 1];
   const range =
     first && last ? ` · ${formatMonthDay(first.date)} → ${formatMonthDay(last.date)}` : "";
-  const hovered = hover === null ? undefined : daily[hover.column];
   const tickStep = Math.max(1, Math.ceil(daily.length / MAX_DATE_TICKS));
 
   return (
@@ -159,25 +185,7 @@ export function OverviewUsageChart({ daily }: { daily: DashboardDailyBucket[] })
         </p>
       ) : (
         <>
-          <div className="relative mt-[14px]">
-            <TileBarPlot
-              values={values}
-              axisMax={axisMax}
-              colors={TOKEN_COLORS}
-              hovered={hover}
-              onHover={setHover}
-              layout={BAR_LAYOUT}
-              height={BAR_HEIGHT}
-              formatTick={formatCompact}
-              ariaLabel="Daily usage chart"
-              itemLabels={itemLabels}
-            />
-            {hovered && hover ? (
-              <div className="absolute inset-x-0 top-0" style={{ left: TILE_AXIS_WIDTH }}>
-                <DayTooltip bucket={hovered} index={hover.column} count={daily.length} />
-              </div>
-            ) : null}
-          </div>
+          <TokenBars daily={daily} />
 
           <CostArea daily={daily} />
 
