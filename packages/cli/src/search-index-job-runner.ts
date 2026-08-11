@@ -113,6 +113,7 @@ export class SearchIndexJobRunner {
     this.activeBatch = batch;
 
     worker.on("message", (message: SearchIndexWorkerMessage) => {
+      if (appLogger.consumeWorkerMessage(message)) return;
       if (message.type === "sync-result") {
         logSearchIndexSync(message.context, message.result);
         return;

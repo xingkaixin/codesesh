@@ -3,12 +3,20 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   ensurePrivateDirectory,
+  isWorkerLogMessage,
   restrictExistingPrivateFiles,
   restrictPrivateFile,
+  WORKER_LOG_MESSAGE_TYPE,
+  type WorkerLogLevel,
+  type WorkerLogMessage,
 } from "@codesesh/core";
 import type { SearchIndexSyncResult } from "@codesesh/core";
 
-type LogLevel = "debug" | "info" | "warn" | "error";
+type LogLevel = WorkerLogLevel;
+
+interface WorkerLogPort {
+  postMessage(message: WorkerLogMessage): void;
+}
 
 const LEVEL_WEIGHT: Record<LogLevel, number> = {
   debug: 10,
@@ -77,6 +85,8 @@ export class AppLogger {
   private readonly currentPath: string;
   private rotationIndex = 0;
   private restrictedExistingLogs = false;
+  private workerTarget: { port: WorkerLogPort; threadId: number } | null = null;
+  private writeFailureReported = false;
 
   constructor(options: LoggerOptions = {}) {
     this.logDir = options.logDir ?? process.env.CODESESH_LOG_DIR ?? getDefaultLogDir();
@@ -84,11 +94,29 @@ export class AppLogger {
     this.maxBytes =
       options.maxBytes ?? parsePositiveInt(process.env.CODESESH_LOG_MAX_BYTES, 5_000_000);
     this.maxFiles = options.maxFiles ?? parsePositiveInt(process.env.CODESESH_LOG_MAX_FILES, 5);
-    this.currentPath = join(this.logDir, "codesesh.log");
+    this.currentPath = join(this.logDir, `codesesh-${process.pid}.log`);
   }
 
   getLogPath(): string {
     return this.currentPath;
+  }
+
+  forwardToParent(port: WorkerLogPort, threadId: number): void {
+    this.workerTarget = { port, threadId };
+  }
+
+  consumeWorkerMessage(message: unknown): boolean {
+    if (!isWorkerLogMessage(message)) return false;
+    if (LEVEL_WEIGHT[message.level] < LEVEL_WEIGHT[this.level]) return true;
+    this.appendRecord({
+      ...message.data,
+      ts: message.ts,
+      level: message.level,
+      event: message.event,
+      pid: message.pid,
+      thread_id: message.threadId,
+    });
+    return true;
   }
 
   debug(event: string, data: Record<string, unknown> = {}): void {
@@ -110,20 +138,54 @@ export class AppLogger {
   private write(level: LogLevel, event: string, data: Record<string, unknown>): void {
     if (LEVEL_WEIGHT[level] < LEVEL_WEIGHT[this.level]) return;
 
+    const ts = new Date().toISOString();
+    const normalizedData = toLogValue(data) as Record<string, unknown>;
+    if (this.workerTarget) {
+      try {
+        this.workerTarget.port.postMessage({
+          type: WORKER_LOG_MESSAGE_TYPE,
+          ts,
+          level,
+          event,
+          pid: process.pid,
+          threadId: this.workerTarget.threadId,
+          data: normalizedData,
+        });
+      } catch (error) {
+        this.reportWriteFailure(error);
+      }
+      return;
+    }
+
+    this.appendRecord({
+      ...normalizedData,
+      ts,
+      level,
+      event,
+      pid: process.pid,
+    });
+  }
+
+  private appendRecord(record: Record<string, unknown>): void {
     try {
       ensurePrivateDirectory(this.logDir);
       this.restrictExistingLogs();
-      const line = `${JSON.stringify({
-        ts: new Date().toISOString(),
-        level,
-        event,
-        pid: process.pid,
-        ...(toLogValue(data) as Record<string, unknown>),
-      })}\n`;
-      this.rotateIfNeeded(Buffer.byteLength(line));
+      const line = `${JSON.stringify(record)}\n`;
+      const restrictCurrentFile = this.rotateIfNeeded(Buffer.byteLength(line));
       appendFileSync(this.currentPath, line, "utf8");
-      // Logs carry project paths and error detail.
-      restrictPrivateFile(this.currentPath);
+      if (restrictCurrentFile) restrictPrivateFile(this.currentPath);
+      this.writeFailureReported = false;
+    } catch (error) {
+      this.reportWriteFailure(error);
+    }
+  }
+
+  private reportWriteFailure(error: unknown): void {
+    if (this.writeFailureReported) return;
+    this.writeFailureReported = true;
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      process.stderr.write(`[codesesh] Failed to write log ${this.currentPath}: ${message}\n`);
     } catch {}
   }
 
@@ -137,28 +199,30 @@ export class AppLogger {
     );
   }
 
-  private rotateIfNeeded(nextBytes: number): void {
+  private rotateIfNeeded(nextBytes: number): boolean {
     if (!existsSync(this.currentPath)) {
       this.removeExpiredLogs();
-      return;
+      return true;
     }
 
     const currentSize = statSync(this.currentPath).size;
-    if (currentSize + nextBytes <= this.maxBytes) return;
+    if (currentSize + nextBytes <= this.maxBytes) return false;
 
     this.rotationIndex += 1;
     const rotatedPath = join(
       this.logDir,
-      `codesesh-${timestampForFile()}-${process.pid}-${this.rotationIndex}.log`,
+      `codesesh-${process.pid}-${timestampForFile()}-${this.rotationIndex}.log`,
     );
     renameSync(this.currentPath, rotatedPath);
     restrictPrivateFile(rotatedPath);
     this.removeExpiredLogs();
+    return true;
   }
 
   private removeExpiredLogs(): void {
+    const ownedPrefix = `codesesh-${process.pid}-`;
     const rotated = readdirSync(this.logDir)
-      .filter((name) => /^codesesh-.+\.log$/.test(name))
+      .filter((name) => name.startsWith(ownedPrefix) && name.endsWith(".log"))
       .map((name) => {
         const path = join(this.logDir, name);
         return { path, mtimeMs: statSync(path).mtimeMs };

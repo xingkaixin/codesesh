@@ -1194,6 +1194,54 @@ describe("LiveScanStore", () => {
     });
   });
 
+  it("consumes scan worker logs without settling the active request", async () => {
+    workerThreads.deferScanRefreshWorkers = true;
+    const consumeWorkerMessage = vi
+      .spyOn(appLogger, "consumeWorkerMessage")
+      .mockImplementation((message) =>
+        Boolean(message && typeof message === "object" && "event" in message),
+      );
+    const runner = new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
+    const refresh = runner.run("codex", {
+      previousSessions: [],
+      operation: { kind: "full-scan" },
+      scanOptions: {},
+      meta: {},
+    });
+    const worker = workerThreads.workers.at(-1)!;
+    const logMessage = { type: "codesesh.worker-log", event: "scan.worker" };
+
+    worker.emitMessage(logMessage);
+
+    expect(consumeWorkerMessage).toHaveBeenCalledWith(logMessage);
+    expect(runner.activeCount).toBe(1);
+
+    worker.emitMessage({
+      type: "done",
+      requestId: worker.workerData.requestId,
+      generation: worker.workerData.generation,
+      changes: [],
+      removedSessionIds: [],
+      meta: {},
+      removedMetaIds: [],
+      sourceFailures: [],
+      completeness: "complete",
+      explicitRemovedSessionIds: [],
+      durationMs: 0,
+    });
+
+    await expect(refresh).resolves.toEqual({
+      sessions: [],
+      meta: {},
+      changedIds: undefined,
+      sourceFailures: [],
+      completeness: "complete",
+      explicitRemovedSessionIds: [],
+    });
+    runner.commit("codex");
+    await runner.shutdown();
+  });
+
   it("rejects a scan worker request when its checkpoint cannot commit", async () => {
     workerThreads.deferScanRefreshWorkers = true;
     const agent = makeFileSystemAgent("codex");

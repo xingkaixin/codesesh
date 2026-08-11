@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("node:worker_threads", () => ({
   parentPort: { postMessage: mocks.postMessage },
+  threadId: 17,
   get workerData() {
     return mocks.workerData;
   },
@@ -33,6 +34,7 @@ vi.mock("@codesesh/core", () => ({
 
 vi.mock("./logging.js", () => ({
   appLogger: {
+    forwardToParent: vi.fn(),
     info: mocks.appLoggerInfo,
     warn: mocks.appLoggerWarn,
     error: mocks.appLoggerError,

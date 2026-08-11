@@ -20,6 +20,12 @@ export {
 } from "./smart-tags.js";
 export { estimateTokenCost } from "./cost.js";
 export {
+  WORKER_LOG_MESSAGE_TYPE,
+  isWorkerLogMessage,
+  type WorkerLogLevel,
+  type WorkerLogMessage,
+} from "./worker-log.js";
+export {
   extractFileActivityOccurrences,
   extractSessionFileActivity,
   summarizeFileActivity,

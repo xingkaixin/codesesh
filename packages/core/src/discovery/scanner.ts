@@ -21,8 +21,10 @@ import { filterSessionsByProjectScope } from "../projects/index.js";
 import {
   classifySessionTags,
   getSmartTagSourceTimestamp,
+  isWorkerLogMessage,
   perf,
   SMART_TAG_CLASSIFIER_REVISION,
+  type WorkerLogMessage,
 } from "../utils/index.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import { getPricingGeneration } from "../pricing/index.js";
@@ -281,7 +283,13 @@ async function classifySessionTagsInWorker(
         meta,
       },
     });
-    worker.once("message", (results: SmartTagWorkerResult[]) => resolveWorker(results));
+    worker.on("message", (message: unknown) => {
+      if (isWorkerLogMessage(message)) {
+        relayWorkerLogMessage(message);
+        return;
+      }
+      resolveWorker(message as SmartTagWorkerResult[]);
+    });
     worker.once("error", rejectWorker);
     worker.once("exit", (code) => {
       if (code !== 0) {
@@ -289,6 +297,21 @@ async function classifySessionTagsInWorker(
       }
     });
   });
+}
+
+function relayWorkerLogMessage(message: WorkerLogMessage): void {
+  const detail = {
+    ...message.data,
+    worker_ts: message.ts,
+    worker_pid: message.pid,
+    worker_thread_id: message.threadId,
+    worker_level: message.level,
+  };
+  if (message.level === "warn" || message.level === "error") {
+    getCoreDiagnostics()?.warn(message.event, detail);
+    return;
+  }
+  getCoreDiagnostics()?.info?.(message.event, detail);
 }
 
 async function ensureSessionTags(
