@@ -245,6 +245,64 @@ describe("createServer", () => {
     }
   });
 
+  it("CS-193: rejects unsafe loopback writes without breaking same-origin JSON", async () => {
+    const app = await createServer(0, createStore());
+    const body = JSON.stringify({ event: "csrf-probe" });
+
+    try {
+      const textPlain = await fetch(`${app.url}/api/logs`, {
+        method: "POST",
+        headers: { Connection: "close", "Content-Type": "text/plain", Origin: app.url },
+        body,
+      });
+      const bookmarkImport = await fetch(`${app.url}/api/bookmarks/import`, {
+        method: "POST",
+        headers: { Connection: "close", "Content-Type": "text/plain", Origin: app.url },
+        body: "[]",
+      });
+      const crossOrigin = await fetch(`${app.url}/api/logs`, {
+        method: "POST",
+        headers: {
+          Connection: "close",
+          "Content-Type": "application/json",
+          Origin: "https://attacker.example",
+        },
+        body,
+      });
+      const crossSite = await fetch(`${app.url}/api/logs`, {
+        method: "POST",
+        headers: {
+          Connection: "close",
+          "Content-Type": "application/json",
+          "Sec-Fetch-Site": "cross-site",
+        },
+        body,
+      });
+      const sameOrigin = await fetch(`${app.url}/api/logs`, {
+        method: "POST",
+        headers: { Connection: "close", "Content-Type": "application/json", Origin: app.url },
+        body,
+      });
+      const statuses = {
+        textPlain: textPlain.status,
+        bookmarkImport: bookmarkImport.status,
+        crossOrigin: crossOrigin.status,
+        crossSite: crossSite.status,
+        sameOrigin: sameOrigin.status,
+      };
+
+      expect(statuses).toEqual({
+        textPlain: 415,
+        bookmarkImport: 415,
+        crossOrigin: 403,
+        crossSite: 403,
+        sameOrigin: 200,
+      });
+    } finally {
+      await app.shutdown();
+    }
+  });
+
   it("refuses a non-loopback hostname without remote access", async () => {
     await expect(createServer(0, createStore(), { hostname: "0.0.0.0" })).rejects.toThrow(
       "Add --remote-access",

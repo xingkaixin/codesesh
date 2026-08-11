@@ -13,6 +13,7 @@ import type { ScanResultSource } from "./api/handlers.js";
 import { createApiRoutes, type ApiRouteOptions } from "./api/routes.js";
 import { appLogger } from "./logging.js";
 import { validateLoopbackAuthority } from "./loopback-authority.js";
+import { loopbackWriteGuard } from "./loopback-write-guard.js";
 import {
   createRemoteAccessToken,
   REMOTE_ACCESS_QUERY_PARAM,
@@ -189,6 +190,10 @@ export async function createServer(
       });
     }
   });
+
+  if (loopbackAuthorityEnabled) {
+    app.use("/api/*", loopbackWriteGuard());
+  }
 
   // Ordered before authentication: a request that bypassed the proxy must be
   // refused outright, not given a chance to present a token in the clear.
