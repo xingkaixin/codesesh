@@ -2,7 +2,7 @@
  * happy-dom has no 2D context and reports every element as 0×0, so a canvas
  * chart would never paint a single frame under test. This installs the smallest
  * environment the painters need: a recording context, a fixed layout box and a
- * ResizeObserver that does nothing.
+ * controllable ResizeObserver.
  */
 import { vi } from "vitest";
 
@@ -29,7 +29,35 @@ type ContextMethod = (typeof CONTEXT_METHODS)[number];
 
 export interface StubbedCanvas {
   context: Record<ContextMethod, ReturnType<typeof vi.fn>>;
+  resize: () => void;
   restore: () => void;
+}
+
+export function stubAnimationFrames() {
+  let nextId = 1;
+  const pending = new Map<number, FrameRequestCallback>();
+  const request = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+    const id = nextId++;
+    pending.set(id, callback);
+    return id;
+  });
+  const cancel = vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
+    pending.delete(id);
+  });
+
+  return {
+    pendingCount: () => pending.size,
+    runNext: (time: number) => {
+      const next = pending.entries().next().value as [number, FrameRequestCallback] | undefined;
+      if (!next) throw new Error("No animation frame is pending");
+      pending.delete(next[0]);
+      next[1](time);
+    },
+    restore: () => {
+      request.mockRestore();
+      cancel.mockRestore();
+    },
+  };
 }
 
 function defineSize(size: { width: number; height: number }): () => void {
@@ -71,7 +99,13 @@ export function stubCanvas(size: { width: number; height: number }): StubbedCanv
   const restoreSize = defineSize(size);
 
   const previousObserver = globalThis.ResizeObserver;
+  let resizeCallback: ResizeObserverCallback | undefined;
+  let resizeObserver: ResizeObserver | undefined;
   globalThis.ResizeObserver = class {
+    constructor(callback: ResizeObserverCallback) {
+      resizeCallback = callback;
+      resizeObserver = this as unknown as ResizeObserver;
+    }
     observe() {}
     disconnect() {}
     unobserve() {}
@@ -79,6 +113,7 @@ export function stubCanvas(size: { width: number; height: number }): StubbedCanv
 
   return {
     context,
+    resize: () => resizeCallback?.([], resizeObserver!),
     restore: () => {
       getContext.mockRestore();
       rect.mockRestore();
