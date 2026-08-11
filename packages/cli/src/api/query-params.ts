@@ -46,6 +46,15 @@ export type LimitOutcome =
   | { kind: "valid"; value: number }
   | { kind: "invalid"; error: string };
 
+export type DateParamOutcome =
+  | { kind: "default"; value: number | undefined }
+  | { kind: "valid"; value: number }
+  | { kind: "invalid"; error: string };
+
+export type DateWindowOutcome =
+  | { kind: "valid"; from: number | undefined; to: number | undefined }
+  | { kind: "invalid"; parameter: "from" | "to"; error: string };
+
 export interface SessionQuery {
   agent: AgentFilterOutcome;
 }
@@ -77,10 +86,26 @@ export function optionalQueryValue(value: string | undefined): string | undefine
 export function parseDateParam(
   value: string | undefined,
   fallback: number | undefined,
-): number | undefined {
-  if (value == null) return fallback;
-  const ts = new Date(value).getTime();
-  return Number.isNaN(ts) ? fallback : ts;
+): DateParamOutcome {
+  const normalized = optionalQueryValue(value);
+  if (normalized == null) return { kind: "default", value: fallback };
+  const timestamp = new Date(normalized).getTime();
+  return Number.isNaN(timestamp)
+    ? { kind: "invalid", error: "must be a valid date" }
+    : { kind: "valid", value: timestamp };
+}
+
+export function parseDateWindow(
+  params: URLSearchParams,
+  defaults: SessionListDefaults,
+): DateWindowOutcome {
+  const from = parseDateParam(params.get("from") ?? undefined, defaults.from);
+  if (from.kind === "invalid") return { ...from, parameter: "from" };
+
+  const to = parseDateParam(params.get("to") ?? undefined, defaults.to);
+  if (to.kind === "invalid") return { ...to, parameter: "to" };
+
+  return { kind: "valid", from: from.value, to: to.value };
 }
 
 export function parseNumberParam(value: string | undefined): number | undefined {
@@ -168,7 +193,7 @@ export function parseProjectIdentityFilter(
 
 export function parseSearchOptions(
   c: Context,
-  defaults: SessionListDefaults,
+  window: SessionListDefaults,
   request: { agent?: string; limit: number },
   projectIdentity?: ProjectIdentityRef,
 ): SearchOptions {
@@ -187,8 +212,8 @@ export function parseSearchOptions(
     ),
     costMin: parseNumberParam(params.get("costMin") ?? undefined),
     costMax: parseNumberParam(params.get("costMax") ?? undefined),
-    from: parseDateParam(params.get("from") ?? undefined, defaults.from),
-    to: parseDateParam(params.get("to") ?? undefined, defaults.to),
+    from: window.from,
+    to: window.to,
     limit: request.limit,
   };
 }

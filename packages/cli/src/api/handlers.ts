@@ -51,7 +51,7 @@ import { resolveTimeWindow } from "../time-window-resolution.js";
 import {
   filterSessionsByActivityWindow,
   FILE_ACTIVITY_LIMIT_POLICY,
-  parseDateParam,
+  parseDateWindow,
   parseFileActivityKind,
   parseProjectIdentityFilter,
   parseSessionQuery,
@@ -85,7 +85,7 @@ const KNOWN_AGENT_NAME_SET = new Set(KNOWN_AGENT_NAMES);
 
 function reportInvalidQueryParameter(
   endpoint: string,
-  parameter: "agent" | "limit",
+  parameter: "agent" | "limit" | "from" | "to",
   validationOutcome: "empty_result" | "rejected",
 ): void {
   appLogger.warn("api.query_parameter.invalid", {
@@ -93,6 +93,17 @@ function reportInvalidQueryParameter(
     parameter,
     validation_outcome: validationOutcome,
   });
+}
+
+function parseDateWindowRequest(c: Context, endpoint: string, defaults: SessionListDefaults) {
+  const outcome = parseDateWindow(searchParams(c), defaults);
+  if (outcome.kind === "valid") return outcome;
+
+  reportInvalidQueryParameter(endpoint, outcome.parameter, "rejected");
+  return {
+    kind: "rejected" as const,
+    response: c.json({ error: `${outcome.parameter} ${outcome.error}` }, 400),
+  };
 }
 
 interface SnapshotAggregationCache {
@@ -310,8 +321,9 @@ export function handleGetAgents(
   defaults: SessionListDefaults = {},
 ) {
   const scanResult = scanSource.getSnapshot();
-  const from = parseDateParam(c.req.query("from"), defaults.from);
-  const to = parseDateParam(c.req.query("to"), defaults.to);
+  const window = parseDateWindowRequest(c, "agents", defaults);
+  if (window.kind === "rejected") return window.response;
+  const { from, to } = window;
   const agents = getSnapshotAggregation(
     scanSource,
     scanResult.sessions,
@@ -335,8 +347,9 @@ export function handleGetProjects(
   defaults: SessionListDefaults = {},
 ) {
   const scanResult = scanSource.getSnapshot();
-  const from = parseDateParam(c.req.query("from"), defaults.from);
-  const to = parseDateParam(c.req.query("to"), defaults.to);
+  const window = parseDateWindowRequest(c, "projects", defaults);
+  if (window.kind === "rejected") return window.response;
+  const { from, to } = window;
   const projects = getSnapshotAggregation(
     scanSource,
     scanResult.sessions,
@@ -368,8 +381,9 @@ export function handleGetSessions(
     return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
   }
   const tag = c.req.query("tag")?.toLowerCase();
-  const from = parseDateParam(c.req.query("from"), defaults.from);
-  const to = parseDateParam(c.req.query("to"), defaults.to);
+  const window = parseDateWindowRequest(c, "sessions", defaults);
+  if (window.kind === "rejected") return window.response;
+  const { from, to } = window;
 
   let sessions: SessionHead[] = [];
 
@@ -456,13 +470,15 @@ export function handleSearchSessions(
   if (projectIdentity === null) {
     return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
   }
+  const window = parseDateWindowRequest(c, "search", defaults);
+  if (window.kind === "rejected") return window.response;
   if (sessionQuery.agent.kind === "unknown") {
     reportInvalidQueryParameter("search", "agent", "empty_result");
     return c.json({ results: [] });
   }
   const searchOptions = parseSearchOptions(
     c,
-    defaults,
+    window,
     {
       agent: sessionQuery.agent.kind === "known" ? sessionQuery.agent.agentName : undefined,
       limit: sessionQuery.limit.value,
@@ -505,6 +521,8 @@ export function handleGetFileActivity(c: Context, defaults: SessionListDefaults 
   if (projectIdentity === null) {
     return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
   }
+  const window = parseDateWindowRequest(c, "file-activity", defaults);
+  if (window.kind === "rejected") return window.response;
   if (sessionQuery.agent.kind === "unknown") {
     reportInvalidQueryParameter("file-activity", "agent", "empty_result");
     return c.json({ activity: [] });
@@ -521,8 +539,8 @@ export function handleGetFileActivity(c: Context, defaults: SessionListDefaults 
       cwd: optionalQueryValue(c.req.query("cwd")),
       path: optionalQueryValue(c.req.query("path")),
       kind: parseFileActivityKind(optionalQueryValue(c.req.query("kind"))),
-      from: parseDateParam(c.req.query("from"), defaults.from),
-      to: parseDateParam(c.req.query("to"), defaults.to),
+      from: window.from,
+      to: window.to,
       limit: sessionQuery.limit.value,
     }).map((activity) => decorateFileActivity(activity, aliases)),
   });
@@ -741,6 +759,8 @@ export function handleGetDashboard(
   if (projectIdentity === null) {
     return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
   }
+  const dateWindow = parseDateWindowRequest(c, "dashboard", defaults);
+  if (dateWindow.kind === "rejected") return dateWindow.response;
   const { from, to, days } = resolveTimeWindow({
     mode: "dashboard",
     query: {
@@ -761,7 +781,7 @@ export function handleGetDashboard(
       ? undefined
       : { from: addCalendarDays(from, -(days ?? countCalendarDays(from, to))), to: from - 1 };
 
-  const fixedTo = parseDateParam(c.req.query("to"), defaults.to);
+  const fixedTo = dateWindow.to;
   const aggregate = getSnapshotAggregation(
     scanSource,
     scanResult.sessions,
