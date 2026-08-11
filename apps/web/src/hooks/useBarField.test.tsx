@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { stubCanvas, type StubbedCanvas } from "../test/canvas-stub";
-import { DEFAULT_BAR_LAYOUT, useBarField, type BarHover } from "./useBarField";
+import { columnProgress, DEFAULT_BAR_LAYOUT, useBarField, type BarHover } from "./useBarField";
 
 const WIDTH = 400;
 const HEIGHT = 200;
@@ -114,5 +114,22 @@ describe("useBarField", () => {
     await nextFrame();
 
     expect(canvas.context.roundRect).toHaveBeenCalled();
+  });
+});
+
+describe.each([21, 90])("columnProgress with %i columns", (count) => {
+  it("stays finite, bounded, and monotonic for every column", () => {
+    const timeline = Array.from({ length: 101 }, (_, step) => step / 100);
+
+    for (let column = 0; column < count; column++) {
+      const values = timeline.map((progress) => columnProgress(column, count, progress));
+
+      expect(values.every(Number.isFinite)).toBe(true);
+      expect(values.every((value) => value >= 0 && value <= 1)).toBe(true);
+      expect(values.at(-1)).toBe(1);
+      for (let index = 1; index < values.length; index++) {
+        expect(values[index]).toBeGreaterThanOrEqual(values[index - 1]!);
+      }
+    }
   });
 });
