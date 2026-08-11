@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import type { SessionSnapshotCompleteness } from "../discovery/cache/sessions.js";
-import { pricingResolver } from "../pricing/resolver.js";
+import { PRICING_CAPTURE_EPOCH, pricingBecameAvailable } from "../pricing/cost.js";
 import type { SessionHead } from "../types/index.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import type {
@@ -67,19 +67,6 @@ function readCachedMeta(meta: CachedMetaLookup, sessionId: string): SessionCache
 function fingerprintMatches(ref: SessionSourceRef, cached: SessionCacheMeta | undefined): boolean {
   return (
     typeof cached?.sourceFingerprint === "string" && cached.sourceFingerprint === ref.fingerprint
-  );
-}
-
-/**
- * A head cached while some of its models lacked pricing carries a zero estimate
- * forever unless re-parsed: the source file never changes again, so the
- * fingerprint alone cannot see a later pricing arrival.
- */
-function pricingBecameAvailable(cached: SessionCacheMeta | undefined): boolean {
-  const models = cached?.unpricedModels;
-  if (!Array.isArray(models)) return false;
-  return models.some(
-    (model) => typeof model === "string" && pricingResolver.resolve(model) !== null,
   );
 }
 
@@ -182,7 +169,8 @@ export function diffSessionSources(
       cachedIds.has(ref.sessionId) &&
       meta?.sourcePath === ref.sourcePath &&
       fingerprintMatches(ref, meta) &&
-      !pricingBecameAvailable(meta);
+      meta.pricingCaptureEpoch === PRICING_CAPTURE_EPOCH &&
+      !pricingBecameAvailable(meta.unpricedModels);
     if (!unchanged) changedIds.push(ref.sessionId);
   }
 

@@ -1,7 +1,11 @@
 import { existsSync, readdirSync, statSync, type Dirent, type Stats } from "node:fs";
 import { join } from "node:path";
 import type { SessionHead, SessionDetail, ParseSessionResult } from "../types/index.js";
-import { capturePricingMisses } from "../pricing/cost.js";
+import {
+  capturePricingMisses,
+  PRICING_CAPTURE_EPOCH,
+  pricingBecameAvailable,
+} from "../pricing/cost.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import {
   createSessionSourceFailure,
@@ -52,6 +56,8 @@ export interface SessionCacheMeta {
   sourcePath: string;
   /** Models the head parse could not price; their arrival invalidates the cache. */
   unpricedModels?: string[];
+  /** Pricing-miss capture semantics used when this head was parsed. */
+  pricingCaptureEpoch?: string;
   [key: string]: unknown;
 }
 
@@ -326,6 +332,7 @@ export abstract class FileSystemSessionSource<
     if (result.status === "parsed") {
       const meta = this.sessionMetaMap.get(result.data.id);
       if (meta) {
+        meta.pricingCaptureEpoch = PRICING_CAPTURE_EPOCH;
         if (unpricedModels.length > 0) meta.unpricedModels = unpricedModels;
         else delete meta.unpricedModels;
       }
@@ -628,10 +635,23 @@ export abstract class DatabaseSessionSource extends BaseAgent {
   protected abstract getDatabasePath(): string | null;
 
   /** 记录单个会话的缓存 meta（sourcePath = dbPath）。 */
-  protected rememberSession(sessionId: string): void {
+  protected rememberSession(sessionId: string, additionalMeta: Record<string, unknown> = {}): void {
     const dbPath = this.getDatabasePath();
     if (!dbPath) return;
-    this.sessionMetaMap.set(sessionId, { id: sessionId, sourcePath: dbPath });
+    this.sessionMetaMap.set(sessionId, {
+      ...additionalMeta,
+      id: sessionId,
+      sourcePath: dbPath,
+      pricingCaptureEpoch: PRICING_CAPTURE_EPOCH,
+    });
+  }
+
+  protected captureSessionPricingMisses<T extends SessionHead | null>(scan: () => T): T {
+    const { result, unpricedModels } = capturePricingMisses(scan);
+    if (result) {
+      this.rememberSession(result.id, unpricedModels.length > 0 ? { unpricedModels } : {});
+    }
+    return result;
   }
 
   getSessionMetaMap(): Map<string, SessionCacheMeta> {
@@ -650,13 +670,22 @@ export abstract class DatabaseSessionSource extends BaseAgent {
    * writes entirely. Size is part of the fingerprint because an uncheckpointed
    * commit may land in the same millisecond as the previous one.
    */
-  checkForChanges(sinceTimestamp: number, _cachedSessions: SessionHead[]): ChangeCheckResult {
+  checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
     const dbPath = this.getDatabasePath();
     if (!dbPath || !existsSync(dbPath)) {
       return { hasChanges: false, timestamp: Date.now() };
     }
 
     try {
+      const pricingChanged = cachedSessions.some((session) => {
+        const meta = this.sessionMetaMap.get(session.id);
+        return (
+          meta?.pricingCaptureEpoch !== PRICING_CAPTURE_EPOCH ||
+          pricingBecameAvailable(meta.unpricedModels)
+        );
+      });
+      if (pricingChanged) return { hasChanges: true, timestamp: Date.now() };
+
       const fingerprint = sqliteSourceFingerprint(dbPath);
       const previous = this.lastSourceFingerprint;
       this.lastSourceFingerprint = fingerprint;

@@ -16,6 +16,16 @@ function positive(value: number | undefined): number {
 
 let pricingMissCapture: Set<string> | null = null;
 
+export const PRICING_CAPTURE_EPOCH = "pricing-capture-v1";
+
+/** Whether a model that previously produced a zero estimate is now billable. */
+export function pricingBecameAvailable(unpricedModels: unknown): boolean {
+  if (!Array.isArray(unpricedModels)) return false;
+  return unpricedModels.some(
+    (model) => typeof model === "string" && pricingResolver.resolve(model) !== null,
+  );
+}
+
 /**
  * Records which models {@link estimateCostForTokens} failed to price during
  * `run`. Cached session heads carry these misses so they can be re-parsed once

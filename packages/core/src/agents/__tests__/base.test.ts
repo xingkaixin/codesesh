@@ -11,6 +11,9 @@ import {
 } from "../base.js";
 import type { AgentScanOptions, SessionCacheMeta, SessionSourceRef } from "../base.js";
 import type { SessionDetail, SessionHead } from "../../types/index.js";
+import { PRICING_CAPTURE_EPOCH } from "../../pricing/cost.js";
+import type { ModelPricing } from "../../pricing/fetcher.js";
+import { pricingResolver } from "../../pricing/resolver.js";
 import { estimateTokenCost } from "../../utils/cost.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
@@ -102,6 +105,15 @@ function makeSession(id: string): SessionHead {
     },
   };
 }
+
+const TEST_PRICING: ModelPricing = {
+  inputCostPerToken: 0.001,
+  outputCostPerToken: 0.002,
+  cacheCreateCostPerToken: 0,
+  cacheReadCostPerToken: 0,
+  reasoningCostPerToken: 0,
+  webSearchCostPerRequest: 0,
+};
 
 function source(id: string, fingerprint = "fp-1", overrides: Partial<FakeSource> = {}): FakeSource {
   return {
@@ -216,6 +228,7 @@ describe("FileSystemSessionSource pricing miss capture", () => {
     expect(agent.getSessionMetaMap().get("a")?.unpricedModels).toEqual([
       "vendor/nonexistent-model",
     ]);
+    expect(agent.getSessionMetaMap().get("a")?.pricingCaptureEpoch).toBe(PRICING_CAPTURE_EPOCH);
   });
 
   it("leaves no recorded misses when every model is priced", () => {
@@ -242,7 +255,13 @@ describe("diffSessionSources", () => {
   }
 
   function meta(id: string, overrides: Partial<SessionCacheMeta> = {}): SessionCacheMeta {
-    return { id, sourcePath: `/tmp/${id}.jsonl`, sourceFingerprint: "fp-1", ...overrides };
+    return {
+      id,
+      sourcePath: `/tmp/${id}.jsonl`,
+      sourceFingerprint: "fp-1",
+      pricingCaptureEpoch: PRICING_CAPTURE_EPOCH,
+      ...overrides,
+    };
   }
 
   it("reads cached meta from a Map and from a plain object identically", () => {
@@ -295,6 +314,14 @@ describe("diffSessionSources", () => {
     });
 
     expect(diff.changedIds).toEqual([]);
+  });
+
+  it("re-parses a cached head from before pricing misses were captured", () => {
+    const diff = diffSessionSources([ref("a")], [makeSession("a")], {
+      a: meta("a", { pricingCaptureEpoch: undefined }),
+    });
+
+    expect(diff.changedIds).toEqual(["a"]);
   });
 
   it("treats a ref with no cached session as changed even when its meta matches", () => {
@@ -394,8 +421,16 @@ describe("FileSystemSessionSource.checkForChanges", () => {
   it("reports no changes when fingerprints and paths match", () => {
     const agent = new FakeFileSystemSource([source("a"), source("b")]);
     // Seed metaMap as if a prior scan populated it.
-    agent.scanSessionSource("/tmp/a.jsonl");
-    agent.scanSessionSource("/tmp/b.jsonl");
+    agent.scanSessionSourceOutcome({
+      sessionId: "a",
+      sourcePath: "/tmp/a.jsonl",
+      fingerprint: "fp-1",
+    });
+    agent.scanSessionSourceOutcome({
+      sessionId: "b",
+      sourcePath: "/tmp/b.jsonl",
+      fingerprint: "fp-1",
+    });
 
     const result = agent.checkForChanges(Date.now(), [makeSession("a"), makeSession("b")]);
     expect(result.hasChanges).toBe(false);
@@ -404,7 +439,11 @@ describe("FileSystemSessionSource.checkForChanges", () => {
 
   it("detects added sources", () => {
     const agent = new FakeFileSystemSource([source("a"), source("b")]);
-    agent.scanSessionSource("/tmp/a.jsonl");
+    agent.scanSessionSourceOutcome({
+      sessionId: "a",
+      sourcePath: "/tmp/a.jsonl",
+      fingerprint: "fp-1",
+    });
 
     const result = agent.checkForChanges(Date.now(), [makeSession("a")]);
     expect(result.hasChanges).toBe(true);
@@ -413,7 +452,11 @@ describe("FileSystemSessionSource.checkForChanges", () => {
 
   it("detects removed sources", () => {
     const agent = new FakeFileSystemSource([source("a")]);
-    agent.scanSessionSource("/tmp/a.jsonl");
+    agent.scanSessionSourceOutcome({
+      sessionId: "a",
+      sourcePath: "/tmp/a.jsonl",
+      fingerprint: "fp-1",
+    });
     agent.getSessionMetaMap().set("ghost", {
       id: "ghost",
       sourcePath: "/tmp/ghost-does-not-exist.jsonl",
@@ -614,11 +657,25 @@ describe("DatabaseSessionSource", () => {
     const dbPath = makeDb();
     const agent = new FakeDatabaseSource(dbPath);
     const cached = [makeSession("db-1")];
+    agent.setSessionMetaMap(
+      new Map([
+        ["db-1", { id: "db-1", sourcePath: dbPath, pricingCaptureEpoch: PRICING_CAPTURE_EPOCH }],
+      ]),
+    );
 
     // since far in the future → no changes
     const fresh = agent.checkForChanges(Date.now() + 1_000_000, cached);
     expect(fresh.hasChanges).toBe(false);
     expect(fresh).not.toHaveProperty("changedIds");
+  });
+
+  it("invalidates database heads cached before pricing capture", () => {
+    const dbPath = makeDb();
+    const agent = new FakeDatabaseSource(dbPath);
+    const cached = [makeSession("db-1")];
+    agent.setSessionMetaMap(new Map([["db-1", { id: "db-1", sourcePath: dbPath }]]));
+
+    expect(agent.checkForChanges(Date.now() + 1_000_000, cached).hasChanges).toBe(true);
   });
 
   it("reports an imprecise change when db mtime is newer than since", () => {
@@ -651,6 +708,54 @@ describe("DatabaseSessionSource", () => {
     agent.rememberSession("db-1");
     const meta: SessionCacheMeta | undefined = agent.getSessionMetaMap().get("db-1");
     expect(meta?.sourcePath).toBe("/tmp/fake.db");
+    expect(meta?.pricingCaptureEpoch).toBe(PRICING_CAPTURE_EPOCH);
+  });
+
+  it("re-scans a database session when captured model pricing arrives", () => {
+    const model = "vendor/database-pricing-later";
+    let pricingAvailable = false;
+    const originalResolve = pricingResolver.resolve.bind(pricingResolver);
+    vi.spyOn(pricingResolver, "resolve").mockImplementation((modelName) =>
+      modelName === model ? (pricingAvailable ? TEST_PRICING : null) : originalResolve(modelName),
+    );
+
+    class PricingDatabaseSource extends FakeDatabaseSource {
+      override scan(): SessionHead[] {
+        this.scanCount += 1;
+        const session = this.captureSessionPricingMisses(() => {
+          const cost = estimateTokenCost(model, { input: 100, output: 20 }) ?? 0;
+          return {
+            ...makeSession("db-1"),
+            stats: {
+              ...makeSession("db-1").stats,
+              total_input_tokens: 100,
+              total_output_tokens: 20,
+              total_cost: cost,
+              cost_source: cost > 0 ? ("estimated" as const) : undefined,
+            },
+          };
+        });
+        return [session];
+      }
+    }
+
+    try {
+      const agent = new PricingDatabaseSource(makeDb());
+      const cached = agent.scan();
+      expect(cached[0]?.stats.total_cost).toBe(0);
+      expect(agent.getSessionMetaMap().get("db-1")?.unpricedModels).toEqual([model]);
+      expect(agent.checkForChanges(Date.now() + 1_000_000, cached).hasChanges).toBe(false);
+
+      pricingAvailable = true;
+      expect(agent.checkForChanges(Date.now() + 1_000_000, cached).hasChanges).toBe(true);
+
+      const refreshed = agent.incrementalScan(cached, []);
+      expect(refreshed[0]?.stats.total_cost).toBeGreaterThan(0);
+      expect(agent.getSessionMetaMap().get("db-1")?.unpricedModels).toBeUndefined();
+      expect(agent.checkForChanges(Date.now() + 1_000_000, refreshed).hasChanges).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });
 

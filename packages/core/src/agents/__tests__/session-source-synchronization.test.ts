@@ -1,6 +1,7 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { PRICING_CAPTURE_EPOCH } from "../../pricing/cost.js";
 import type { SessionHead } from "../../types/index.js";
 import {
   createSessionSourceFailure,
@@ -38,6 +39,7 @@ function meta(ref: SessionSourceRef, sourceMtimeMs = 2): SessionCacheMeta {
     sourcePath: ref.sourcePath,
     sourceFingerprint: ref.fingerprint,
     sourceMtimeMs,
+    pricingCaptureEpoch: PRICING_CAPTURE_EPOCH,
   };
 }
 

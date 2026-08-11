@@ -71,6 +71,7 @@ export {
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
 } from "./discovery/index.js";
+export { PRICING_CAPTURE_EPOCH } from "./pricing/index.js";
 export {
   filterSessionTreeByActivityWindow,
   isChildSession,

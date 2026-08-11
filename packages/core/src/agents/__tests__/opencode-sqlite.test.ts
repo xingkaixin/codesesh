@@ -5,6 +5,8 @@ import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OpenCodeSqliteAgent } from "../opencode-sqlite.js";
 import { SessionScanError } from "../base.js";
+import type { ModelPricing } from "../../pricing/fetcher.js";
+import { pricingResolver } from "../../pricing/resolver.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
 const tempDirs: string[] = [];
@@ -240,6 +242,7 @@ function createDatabaseWithRootChildren(rootCount: number): string {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const tempDir of tempDirs.splice(0)) {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -305,6 +308,57 @@ describe("OpenCodeSqliteAgent", () => {
       new Map([["s1", { id: "s1", sourcePath: dbPath, headParserVersion: "legacy" }]]),
     );
     expect(agent.checkForChanges(Number.MAX_SAFE_INTEGER, heads).hasChanges).toBe(true);
+  });
+
+  it("tracks missing pricing per cached SQLite head", () => {
+    const dbPath = createDatabase();
+    const model = "vendor/opencode-pricing-later";
+    const pricing: ModelPricing = {
+      inputCostPerToken: 0.001,
+      outputCostPerToken: 0.002,
+      cacheCreateCostPerToken: 0,
+      cacheReadCostPerToken: 0,
+      reasoningCostPerToken: 0,
+      webSearchCostPerRequest: 0,
+    };
+    let pricingAvailable = false;
+    const originalResolve = pricingResolver.resolve.bind(pricingResolver);
+    vi.spyOn(pricingResolver, "resolve").mockImplementation((modelName) =>
+      modelName === model ? (pricingAvailable ? pricing : null) : originalResolve(modelName),
+    );
+    const db = new Database(dbPath);
+    db.prepare("UPDATE message SET data = ? WHERE id = 'm1'").run(
+      JSON.stringify({
+        role: "user",
+        modelID: model,
+        tokens: { input: 100, output: 20 },
+      }),
+    );
+    db.prepare("UPDATE session SET time_created = ?, time_updated = ? WHERE id = 's1'").run(
+      Date.now() - 1_000,
+      Date.now(),
+    );
+    db.close();
+
+    const agent = new OpenCodeSqliteAgent({
+      name: "test-agent",
+      displayName: "Test Agent",
+      findDbPath: () => dbPath,
+      getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
+    });
+    agent.isAvailable();
+    const cached = agent.scan({ from: 0 });
+    expect(cached[0]?.stats.total_cost).toBe(0);
+    expect(agent.getSessionMetaMap().get("s1")?.unpricedModels).toEqual([model]);
+    expect(agent.checkForChanges(Number.MAX_SAFE_INTEGER, cached).hasChanges).toBe(false);
+
+    pricingAvailable = true;
+    expect(agent.checkForChanges(Number.MAX_SAFE_INTEGER, cached).hasChanges).toBe(true);
+
+    const refreshed = agent.incrementalScan(cached, []);
+    expect(refreshed[0]?.stats.total_cost).toBeGreaterThan(0);
+    expect(agent.getSessionMetaMap().get("s1")?.unpricedModels).toBeUndefined();
+    expect(agent.checkForChanges(Number.MAX_SAFE_INTEGER, refreshed).hasChanges).toBe(false);
   });
 
   it("falls back to an empty message record and reports drift when message data isn't a JSON object", () => {
