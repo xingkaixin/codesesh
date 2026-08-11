@@ -5,7 +5,7 @@
  * It renders no labels and no tooltip — the card that owns the data owns those,
  * because a day column and an agent column read very differently.
  */
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import {
   DEFAULT_BAR_LAYOUT,
@@ -21,6 +21,13 @@ const TICK_FRACTIONS = [1, 0.75, 0.5, 0.25, 0] as const;
 
 /** Exported so a card can indent anything that must line up with the plot. */
 export const TILE_AXIS_WIDTH = 38;
+
+function sameHover(left: BarHover | null, right: BarHover | null): boolean {
+  return (
+    left === right ||
+    (left !== null && right !== null && left.column === right.column && left.band === right.band)
+  );
+}
 
 export function TileBarPlot({
   values,
@@ -52,6 +59,7 @@ export function TileBarPlot({
   className?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const reportedHover = useRef<BarHover | null>(hovered);
   const reducedMotion = usePrefersReducedMotion();
   const { hitTest } = useBarField(canvasRef, {
     values,
@@ -62,6 +70,15 @@ export function TileBarPlot({
     layout: { ...DEFAULT_BAR_LAYOUT, ...layout },
     reducedMotion,
   });
+  useEffect(() => {
+    reportedHover.current = hovered;
+  }, [hovered]);
+
+  const reportHover = (nextHover: BarHover | null) => {
+    if (sameHover(reportedHover.current, nextHover)) return;
+    reportedHover.current = nextHover;
+    onHover(nextHover);
+  };
 
   return (
     <div className={cn("flex", className)}>
@@ -82,8 +99,8 @@ export function TileBarPlot({
       <div
         className="chart-hatch relative min-w-0 flex-1 touch-none"
         style={{ height }}
-        onPointerMove={(event) => onHover(hitTest(event.clientX, event.clientY))}
-        onPointerLeave={() => onHover(null)}
+        onPointerMove={(event) => reportHover(hitTest(event.clientX, event.clientY))}
+        onPointerLeave={() => reportHover(null)}
       >
         {TICK_FRACTIONS.map((fraction) => (
           <span
@@ -103,7 +120,9 @@ export function TileBarPlot({
           label={ariaLabel}
           itemLabels={itemLabels}
           activeIndex={hovered?.column ?? null}
-          onActiveIndexChange={(column) => onHover(column === null ? null : { column, band: null })}
+          onActiveIndexChange={(column) =>
+            reportHover(column === null ? null : { column, band: null })
+          }
           layout="columns"
         />
       </div>
