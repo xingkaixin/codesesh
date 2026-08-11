@@ -129,7 +129,7 @@ export function loadCachedSessions(agentName: string): CachedResult | null {
         `
           SELECT ${SESSION_HEAD_SELECT_COLUMNS}
           FROM sessions s
-          WHERE s.agent_name = ?
+          WHERE s.agent_name = ? AND s.publication_id IS NULL
           ORDER BY s.sort_index, s.activity_time DESC
         `,
       )
@@ -186,6 +186,7 @@ export function loadCachedSessionHeads(
               JOIN sessions s
                 ON s.agent_name = r.agent_name
                 AND s.session_id = r.session_id
+                AND s.publication_id IS NULL
             `,
           )
           .all(...params) as SessionRow[];
@@ -360,7 +361,9 @@ export function loadCachedSessionRawEntry(
           LEFT JOIN session_documents AS documents
             ON documents.agent_name = sessions.agent_name
             AND documents.session_id = sessions.session_id
-          WHERE sessions.agent_name = ? AND sessions.session_id = ?
+          WHERE sessions.agent_name = ?
+            AND sessions.session_id = ?
+            AND sessions.publication_id IS NULL
         `,
       )
       .get(agentName, sessionId) as SessionRow | undefined;
@@ -535,7 +538,7 @@ export function writeCachedSessionSnapshot(
         `
           SELECT session_id
           FROM sessions
-          WHERE agent_name = ?
+          WHERE agent_name = ? AND publication_id IS NULL
           ORDER BY activity_time DESC, sort_index, session_id
         `,
       )
@@ -661,9 +664,9 @@ export function getCacheInfo(): { lastScanTime: number | null; size: number } {
     const timestampRow = db.prepare("SELECT MAX(timestamp) AS value FROM agent_cache").get() as
       | ScalarRow
       | undefined;
-    const sizeRow = db.prepare("SELECT COUNT(*) AS value FROM sessions").get() as
-      | ScalarRow
-      | undefined;
+    const sizeRow = db
+      .prepare("SELECT COUNT(*) AS value FROM sessions WHERE publication_id IS NULL")
+      .get() as ScalarRow | undefined;
 
     const lastScanTime = Number(timestampRow?.value ?? 0) || null;
     const size = Number(sizeRow?.value ?? 0);

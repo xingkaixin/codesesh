@@ -222,6 +222,7 @@ function createSessionTables(db: SQLiteDatabase): void {
       smart_tags_source_updated_at INTEGER,
       smart_tags_classifier_revision TEXT,
       meta_json TEXT,
+      publication_id TEXT,
       PRIMARY KEY (agent_name, session_id)
     );
 
@@ -510,6 +511,14 @@ function addProjectIdentityProvenance(db: SQLiteDatabase): void {
   }
 }
 
+function addSessionPublicationId(db: SQLiteDatabase): void {
+  if (!tableExists(db, "sessions")) return;
+  if (!columnExists(db, "sessions", "publication_id")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN publication_id TEXT");
+  }
+  recreateProjectGroupsView(db);
+}
+
 function dropSearchTriggers(db: SQLiteDatabase): void {
   db.exec(`
     DROP TRIGGER IF EXISTS session_documents_ai;
@@ -580,6 +589,10 @@ function createProjectGroupsView(db: SQLiteDatabase): void {
   const hasParentReference =
     columnExists(db, "sessions", "parent_agent_name") &&
     columnExists(db, "sessions", "parent_session_id");
+  const predicates = [
+    ...(hasParentReference ? ["parent_agent_name IS NULL OR parent_session_id IS NULL"] : []),
+    ...(columnExists(db, "sessions", "publication_id") ? ["publication_id IS NULL"] : []),
+  ];
   db.exec(`
     CREATE VIEW IF NOT EXISTS project_groups_v AS
       SELECT
@@ -590,7 +603,7 @@ function createProjectGroupsView(db: SQLiteDatabase): void {
         COUNT(*) AS session_count,
         MAX(activity_time) AS last_activity
       FROM sessions
-      ${hasParentReference ? "WHERE parent_agent_name IS NULL OR parent_session_id IS NULL" : ""}
+      ${predicates.length > 0 ? `WHERE ${predicates.map((predicate) => `(${predicate})`).join(" AND ")}` : ""}
       GROUP BY project_identity_kind, project_identity_key;
   `);
 }
@@ -1380,6 +1393,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 18, migrate: addSessionParentReference },
       { version: 19, migrate: addDetailVersion },
       { version: 20, migrate: addProjectIdentityProvenance },
+      { version: 21, migrate: addSessionPublicationId },
     ],
   });
 

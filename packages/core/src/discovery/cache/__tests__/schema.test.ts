@@ -76,9 +76,10 @@ describe("cache schema boundary", () => {
         "project_identity_resolver_revision",
         "project_identity_input_signature",
         "smart_tags_classifier_revision",
+        "publication_id",
       ]),
     );
-    expect(state?.version).toBe(20);
+    expect(state?.version).toBe(21);
   });
 
   it("exposes capabilities instead of migration steps", () => {
@@ -122,7 +123,7 @@ describe("cache schema boundary", () => {
           .get("codex", session.id) != null,
     }));
 
-    expect(migrated).toEqual({ version: 20, detailVersion: "", pending: true });
+    expect(migrated).toEqual({ version: 21, detailVersion: "", pending: true });
   });
 
   it("marks legacy project identities stale by leaving added provenance empty", () => {
@@ -161,7 +162,7 @@ describe("cache schema boundary", () => {
     });
 
     expect(migrated).toEqual({
-      version: 20,
+      version: 21,
       resolverRevision: null,
       inputSignature: null,
       classifierRevision: null,
@@ -231,7 +232,7 @@ describe("cache schema boundary", () => {
       });
 
       expect(migrated).toEqual({
-        version: 20,
+        version: 21,
         partsJson: legacyPartsJson,
         partsFormatVersion: 0,
       });
