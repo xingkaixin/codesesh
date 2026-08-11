@@ -1,4 +1,10 @@
-import type { BaseAgent, SessionCacheMeta, SessionHead, SessionSourceRef } from "@codesesh/core";
+import {
+  PRICING_CAPTURE_EPOCH,
+  type BaseAgent,
+  type SessionCacheMeta,
+  type SessionHead,
+  type SessionSourceRef,
+} from "@codesesh/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
@@ -83,6 +89,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     createRegisteredAgents: mocks.createRegisteredAgents,
     ensureSessionTagsSync: mocks.ensureSessionTagsSync,
     FileSystemSessionSource: mocks.FileSystemSessionSource,
+    PRICING_CAPTURE_EPOCH: actual.PRICING_CAPTURE_EPOCH,
     buildAgentCacheMeta: actual.buildAgentCacheMeta,
     computeSessionDiff: actual.computeSessionDiff,
     sessionSignature: actual.sessionSignature,
@@ -109,6 +116,10 @@ function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionH
     },
     ...overrides,
   };
+}
+
+function currentPricingMeta(meta: SessionCacheMeta): SessionCacheMeta {
+  return { ...meta, pricingCaptureEpoch: PRICING_CAPTURE_EPOCH };
 }
 
 function makeAgent(overrides: Record<string, unknown> = {}) {
@@ -473,11 +484,11 @@ describe("scan refresh worker entry", () => {
       operation: { kind: "source-refresh", checkpoint: "durable" },
       previousSessions: [unchanged, makeSession(changed.id, { time_created: 1, time_updated: 1 })],
       meta: {
-        unchanged: {
+        unchanged: currentPricingMeta({
           id: unchanged.id,
           sourcePath: "/unchanged",
           sourceFingerprint: "same",
-        },
+        }),
         changed: {
           id: changed.id,
           sourcePath: "/changed",
@@ -525,7 +536,11 @@ describe("scan refresh worker entry", () => {
       operation: { kind: "source-refresh" },
       previousSessions: [parent, makeSession("child")],
       meta: {
-        parent: { id: "parent", sourcePath: "/parent", sourceFingerprint: "same" },
+        parent: currentPricingMeta({
+          id: "parent",
+          sourcePath: "/parent",
+          sourceFingerprint: "same",
+        }),
         child: { id: "child", sourcePath: "/child", sourceFingerprint: "old" },
       },
     });
@@ -726,11 +741,11 @@ describe("scan refresh worker entry", () => {
       operation: { kind: "source-refresh" },
       previousSessions: [session],
       meta: {
-        unchanged: {
+        unchanged: currentPricingMeta({
           id: "unchanged",
           sourcePath: "/unchanged",
           sourceFingerprint: "same",
-        },
+        }),
       },
     });
 
@@ -761,12 +776,12 @@ describe("scan refresh worker entry", () => {
       previousSessions: [recent],
       scanOptions: { from: 5, fast: true },
       meta: {
-        recent: {
+        recent: currentPricingMeta({
           id: "recent",
           sourcePath: "/recent",
           sourceFingerprint: "same",
           sourceMtimeMs: 10,
-        },
+        }),
       },
     });
 
@@ -819,7 +834,11 @@ describe("scan refresh worker entry", () => {
       // (mtime 10) inside it, so only the latter counts as deleted on disk.
       scanOptions: { from: 5, fast: true },
       meta: {
-        unchanged: { id: "unchanged", sourcePath: "/unchanged", sourceFingerprint: "same" },
+        unchanged: currentPricingMeta({
+          id: "unchanged",
+          sourcePath: "/unchanged",
+          sourceFingerprint: "same",
+        }),
         changed: { id: "changed", sourcePath: "/changed", sourceFingerprint: "old" },
         removed: { id: "removed", sourcePath: "/removed", sourceMtimeMs: 10 },
         outside: { id: "outside", sourcePath: "/outside", sourceMtimeMs: 0 },

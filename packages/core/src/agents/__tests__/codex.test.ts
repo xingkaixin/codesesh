@@ -13,6 +13,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexAgent } from "../codex.js";
 import type { Message, MessagePart, SessionHead, ToolPart } from "../../types/index.js";
 import { buildSessionTree } from "../../contract/session-tree.js";
+import type { ModelPricing } from "../../pricing/fetcher.js";
+import { pricingResolver } from "../../pricing/resolver.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
 // Spies while delegating to the real implementation so regression tests can
@@ -97,6 +99,52 @@ describe("CodexAgent cache refresh", () => {
 
     expect(result.hasChanges).toBe(true);
     expect(result.changedIds).toContain("019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb");
+  });
+
+  it("re-prices a cached head after missing model pricing arrives", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const sessionId = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+    const sessionFile = join(tempDir, `rollout-2026-04-20T10-00-00-${sessionId}.jsonl`);
+    const model = "vendor/codex-pricing-later";
+    const pricing: ModelPricing = {
+      inputCostPerToken: 0.001,
+      outputCostPerToken: 0.002,
+      cacheCreateCostPerToken: 0,
+      cacheReadCostPerToken: 0,
+      reasoningCostPerToken: 0,
+      webSearchCostPerRequest: 0,
+    };
+    let pricingAvailable = false;
+    const originalResolve = pricingResolver.resolve.bind(pricingResolver);
+    vi.spyOn(pricingResolver, "resolve").mockImplementation((modelName) =>
+      modelName === model ? (pricingAvailable ? pricing : null) : originalResolve(modelName),
+    );
+    writeFileSync(
+      sessionFile,
+      [
+        `{"timestamp":"2026-04-20T10:00:00Z","type":"session_meta","payload":{"cwd":"/tmp/project","model":"${model}"}}`,
+        '{"timestamp":"2026-04-20T10:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"output_tokens":20},"total_token_usage":{"total_tokens":120}}}}',
+        "",
+      ].join("\n"),
+    );
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.sessionIndexCache = new Map();
+    const cached = agent.scan({ from: 0 }) as SessionHead[];
+    expect(cached[0]?.stats.total_cost).toBe(0);
+    expect(agent.getSessionMetaMap().get(sessionId)?.unpricedModels).toEqual([model]);
+    expect(agent.checkForChanges(Date.now(), cached).hasChanges).toBe(false);
+
+    pricingAvailable = true;
+    const changed = agent.checkForChanges(Date.now(), cached);
+    expect(changed.changedIds).toEqual([sessionId]);
+
+    const refreshed = agent.incrementalScan(cached, changed.changedIds ?? [], changed.refs);
+    expect(refreshed[0]?.stats.total_cost).toBeGreaterThan(0);
+    expect(agent.getSessionMetaMap().get(sessionId)?.unpricedModels).toBeUndefined();
+    expect(agent.checkForChanges(Date.now(), refreshed).hasChanges).toBe(false);
   });
 
   it("ignores unrelated session index changes during cache validation", () => {

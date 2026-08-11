@@ -2,9 +2,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CursorAgent } from "../cursor.js";
 import { SessionScanError } from "../base.js";
+import type { ModelPricing } from "../../pricing/fetcher.js";
+import { pricingResolver } from "../../pricing/resolver.js";
 import type { MessagePart } from "../../types/index.js";
 import {
   getCoreDiagnostics,
@@ -29,6 +31,7 @@ function insertKv(dbPath: string, key: string, value: unknown): void {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const dir of tempDirs) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -221,5 +224,62 @@ describe("CursorAgent scan outcomes", () => {
     tempDirs.push(tempDir);
 
     expect(makeScanningAgent(createCursorDb(tempDir)).scan()).toEqual([]);
+  });
+
+  it("re-prices a cached head after missing model pricing arrives", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-cursor-test-"));
+    tempDirs.push(tempDir);
+    const dbPath = createCursorDb(tempDir);
+    const model = "vendor/cursor-pricing-later";
+    const pricing: ModelPricing = {
+      inputCostPerToken: 0.001,
+      outputCostPerToken: 0.002,
+      cacheCreateCostPerToken: 0,
+      cacheReadCostPerToken: 0,
+      reasoningCostPerToken: 0,
+      webSearchCostPerRequest: 0,
+    };
+    let pricingAvailable = false;
+    const originalResolve = pricingResolver.resolve.bind(pricingResolver);
+    vi.spyOn(pricingResolver, "resolve").mockImplementation((modelName) =>
+      modelName === model ? (pricingAvailable ? pricing : null) : originalResolve(modelName),
+    );
+
+    insertKv(dbPath, "composerData:composer-1", {
+      id: "composer-1",
+      name: "Pricing session",
+      modelConfig: { modelName: model },
+      createdAt: 1_000,
+      updatedAt: 2_000,
+      inputTokenCount: 100,
+      outputTokenCount: 20,
+    });
+    insertKv(dbPath, "bubbleId:composer-1:user", {
+      type: 1,
+      text: "Price this session",
+      createdAt: 1_100,
+    });
+    insertKv(dbPath, "bubbleId:composer-1:assistant", {
+      type: 2,
+      text: "Done",
+      createdAt: 1_200,
+      modelInfo: { modelName: model },
+      tokenCount: { inputTokens: 100, outputTokens: 20 },
+    });
+
+    const agent = makeScanningAgent(dbPath);
+    const cached = agent.scan();
+    expect(cached[0]?.stats.total_cost).toBe(0);
+    expect(agent.getSessionMetaMap().get("composer-1")?.unpricedModels).toEqual([model]);
+    expect(agent.checkForChanges(Number.MAX_SAFE_INTEGER, cached).hasChanges).toBe(false);
+
+    pricingAvailable = true;
+    const changed = agent.checkForChanges(Number.MAX_SAFE_INTEGER, cached);
+    expect(changed.hasChanges).toBe(true);
+
+    const refreshed = agent.incrementalScan(cached, []);
+    expect(refreshed[0]?.stats.total_cost).toBeGreaterThan(0);
+    expect(agent.getSessionMetaMap().get("composer-1")?.unpricedModels).toBeUndefined();
+    expect(agent.checkForChanges(Number.MAX_SAFE_INTEGER, refreshed).hasChanges).toBe(false);
   });
 });

@@ -636,38 +636,36 @@ export class CursorAgent extends DatabaseSessionSource {
             Array.isArray(composer.subagentInfos) && composer.subagentInfos.length > 0;
           if (options?.fast) {
             const directory = workspacePathMap.get(composerId) ?? "";
-            const totalCost =
-              estimateTokenCost(composer.modelConfig?.modelName ?? composer.model, {
-                input: composer.inputTokenCount ?? 0,
-                output: composer.outputTokenCount ?? 0,
-              }) ?? 0;
-            const head = getParsedSession(
-              hasFastMessages && fastMessageCount === 0 && !hasSubagents
-                ? filteredSession<SessionHead>("no visible messages")
-                : parsedSession<SessionHead>({
-                    id: composerId,
-                    slug: `cursor/${composerId}`,
-                    title: fastTitle,
-                    directory,
-                    time_created: createdAt,
-                    time_updated: updatedAt || undefined,
-                    stats: {
-                      message_count: fastMessageCount,
-                      total_input_tokens: composer.inputTokenCount ?? 0,
-                      total_output_tokens: composer.outputTokenCount ?? 0,
-                      total_cost: totalCost,
-                      cost_source: totalCost > 0 ? "estimated" : undefined,
-                    },
-                  }),
-            );
+            const head = this.captureSessionPricingMisses(() => {
+              const totalCost =
+                estimateTokenCost(composer.modelConfig?.modelName ?? composer.model, {
+                  input: composer.inputTokenCount ?? 0,
+                  output: composer.outputTokenCount ?? 0,
+                }) ?? 0;
+              return getParsedSession(
+                hasFastMessages && fastMessageCount === 0 && !hasSubagents
+                  ? filteredSession<SessionHead>("no visible messages")
+                  : parsedSession<SessionHead>({
+                      id: composerId,
+                      slug: `cursor/${composerId}`,
+                      title: fastTitle,
+                      directory,
+                      time_created: createdAt,
+                      time_updated: updatedAt || undefined,
+                      stats: {
+                        message_count: fastMessageCount,
+                        total_input_tokens: composer.inputTokenCount ?? 0,
+                        total_output_tokens: composer.outputTokenCount ?? 0,
+                        total_cost: totalCost,
+                        cost_source: totalCost > 0 ? "estimated" : undefined,
+                      },
+                    }),
+              );
+            });
             if (!head) continue;
             emitted.set(order, head);
             order += 1;
             this.composerCache.set(composerId, composer);
-            this.sessionMetaMap.set(composerId, {
-              id: composerId,
-              sourcePath: this.dbPath || "",
-            });
             continue;
           }
 
@@ -690,15 +688,19 @@ export class CursorAgent extends DatabaseSessionSource {
         const entry = wanted.get(bubbles.composerId);
         if (!entry) return;
         wanted.delete(bubbles.composerId);
-        const head = this.buildScanHead(entry, bubbles, workspacePathMap);
+        const head = this.captureSessionPricingMisses(() =>
+          this.buildScanHead(entry, bubbles, workspacePathMap),
+        );
         if (head) emitted.set(entry.order, head);
       });
       // Composers with no bubbles at all still go through the same builder.
       for (const entry of wanted.values()) {
-        const head = this.buildScanHead(
-          entry,
-          { composerId: entry.composerId, byKey: [], byRowId: [] },
-          workspacePathMap,
+        const head = this.captureSessionPricingMisses(() =>
+          this.buildScanHead(
+            entry,
+            { composerId: entry.composerId, byKey: [], byRowId: [] },
+            workspacePathMap,
+          ),
         );
         if (head) emitted.set(entry.order, head);
       }
@@ -910,8 +912,6 @@ export class CursorAgent extends DatabaseSessionSource {
         directory,
       } as unknown as ComposerData);
     }
-    this.sessionMetaMap.set(sessionId, { id: sessionId, sourcePath: this.dbPath || "" });
-
     return {
       id: sessionId,
       slug: `cursor/${sessionId}`,

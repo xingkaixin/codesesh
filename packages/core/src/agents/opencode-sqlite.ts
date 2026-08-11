@@ -14,6 +14,7 @@ import type {
 } from "./base.js";
 import type { SessionHead, SessionDetail, Message, MessagePart } from "../types/index.js";
 import { normalizeMessageParts } from "../contract/message-part.js";
+import { capturePricingMisses } from "../pricing/cost.js";
 import { columnExists, openDbReadOnly, type SQLiteDatabase } from "../utils/sqlite.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import { resolveSessionTitle } from "../utils/title-fallback.js";
@@ -42,6 +43,7 @@ interface OpenCodePartRow {
 interface OpenCodeHeadContext {
   stats: SessionHead["stats"];
   messageTitle: string | null;
+  unpricedModels: Set<string>;
 }
 
 interface OpenCodeSqliteAgentConfig {
@@ -217,20 +219,16 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
       options?.onProgress?.({ total: rows.length, processed: 0, sessions: 0 });
       let processed = 0;
       for (const row of rows) {
-        const head = getParsedSession(
-          this.parseSessionHeadRow(row, hasMessageTable, headContexts.get(String(row.id ?? ""))),
-        );
+        const context = headContexts.get(String(row.id ?? ""));
+        const head = getParsedSession(this.parseSessionHeadRow(row, hasMessageTable, context));
         if (head) {
           heads.push(head);
-
-          // Store session metadata for caching
-          if (this.dbPath) {
-            this.sessionMetaMap.set(head.id, {
-              id: head.id,
-              sourcePath: this.dbPath,
-              headParserVersion: HEAD_PARSER_VERSION,
-            });
-          }
+          this.rememberSession(head.id, {
+            headParserVersion: HEAD_PARSER_VERSION,
+            ...(context && context.unpricedModels.size > 0
+              ? { unpricedModels: [...context.unpricedModels] }
+              : {}),
+          });
         }
         processed += 1;
         options?.onProgress?.({ total: rows.length, processed, sessions: heads.length });
@@ -485,6 +483,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
             total_cost: 0,
           },
           messageTitle: null,
+          unpricedModels: new Set(),
         };
         contexts.set(sessionId, context);
       }
@@ -501,7 +500,10 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
       if (parts.length === 0) continue;
 
       const context = ensureContext(sessionId);
-      accumulateTokenStats(context.stats, msgData, this.name);
+      const { unpricedModels } = capturePricingMisses(() =>
+        accumulateTokenStats(context.stats, msgData, this.name),
+      );
+      for (const model of unpricedModels) context.unpricedModels.add(model);
       context.stats.message_count += 1;
 
       if (!context.messageTitle && String(msgData.role ?? "") === "user") {
