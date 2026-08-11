@@ -25,6 +25,7 @@ import {
 import type { ScanEventSource } from "./scan-source.js";
 
 const MAX_API_REQUEST_BYTES = 1024 * 1024;
+const SERVER_CLOSE_GRACE_MS = 1_000;
 
 export interface CreateServerOptions {
   defaultSessionFrom?: number;
@@ -98,6 +99,30 @@ function getListeningPort(server: ServerType, fallback: number): number {
   return typeof address === "object" && address !== null ? (address as AddressInfo).port : fallback;
 }
 
+async function closeHttpServer(server: ServerType | null, port: number | null): Promise<void> {
+  if (!server) return;
+
+  let forceCloseTimer: ReturnType<typeof setTimeout> | undefined;
+  const gracefulClose = new Promise<void>((resolve) => server.close(() => resolve()));
+  const forceClose = new Promise<void>((resolve) => {
+    forceCloseTimer = setTimeout(() => {
+      appLogger.warn("server.shutdown.force_close", {
+        port,
+        grace_ms: SERVER_CLOSE_GRACE_MS,
+      });
+      if ("closeAllConnections" in server) server.closeAllConnections();
+      resolve();
+    }, SERVER_CLOSE_GRACE_MS);
+    forceCloseTimer.unref();
+  });
+
+  try {
+    await Promise.race([gracefulClose, forceClose]);
+  } finally {
+    if (forceCloseTimer) clearTimeout(forceCloseTimer);
+  }
+}
+
 export async function createServer(
   port: number,
   store: ScanResultSource & ScanEventSource & { shutdown(): Promise<void> },
@@ -111,6 +136,7 @@ export async function createServer(
     ? (options.remoteAccessToken ?? (options.remoteAccess ? createRemoteAccessToken() : null))
     : null;
   const loopbackAuthorityEnabled = !accessPolicy.authenticationRequired;
+  const shutdownController = new AbortController();
   let actualPort: number | null = null;
 
   appLogger.info("server.access_policy", {
@@ -188,6 +214,7 @@ export async function createServer(
     defaultSessionFrom: options.defaultSessionFrom,
     defaultSessionTo: options.defaultSessionTo,
     defaultSessionDays: options.defaultSessionDays,
+    shutdownSignal: shutdownController.signal,
   };
   app.route("/api", createApiRoutes(store, store, routeOptions));
 
@@ -278,14 +305,15 @@ export async function createServer(
     url,
     shutdown: async () => {
       appLogger.info("server.shutdown", { port: actualPort });
-      await new Promise<void>((resolve) => {
-        if (!server) {
-          resolve();
-          return;
-        }
-        server.close(() => resolve());
-      });
-      await store.shutdown();
+      shutdownController.abort();
+      try {
+        appLogger.info("server.shutdown.phase", { phase: "http-closing", port: actualPort });
+        await closeHttpServer(server, actualPort);
+      } finally {
+        appLogger.info("server.shutdown.phase", { phase: "store-closing", port: actualPort });
+        await store.shutdown();
+      }
+      appLogger.info("server.shutdown.phase", { phase: "complete", port: actualPort });
     },
   };
 }

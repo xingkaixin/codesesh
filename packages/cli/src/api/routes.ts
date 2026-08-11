@@ -26,6 +26,7 @@ export interface ApiRouteOptions {
   defaultSessionFrom?: number;
   defaultSessionTo?: number;
   defaultSessionDays?: number;
+  shutdownSignal?: AbortSignal;
 }
 
 function createSseResponse(eventSource: ScanEventSource, signal: AbortSignal): Response {
@@ -126,7 +127,12 @@ export function createApiRoutes(
   api.delete("/session-aliases/:agent/:id", (c) => handleDeleteSessionAlias(c));
   api.post("/logs", (c) => handlePostClientLog(c));
   if (eventSource) {
-    api.get("/events", (c) => createSseResponse(eventSource, c.req.raw.signal));
+    api.get("/events", (c) => {
+      const signal = options.shutdownSignal
+        ? AbortSignal.any([c.req.raw.signal, options.shutdownSignal])
+        : c.req.raw.signal;
+      return createSseResponse(eventSource, signal);
+    });
   }
 
   return api;
