@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setCoreDiagnostics } from "../../../utils/diagnostics.js";
 import {
   clearCache,
   getCacheInfo,
@@ -22,6 +23,7 @@ vi.mock("node:os", async (importOriginal) => {
 });
 
 afterEach(() => {
+  setCoreDiagnostics(null);
   rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
 });
@@ -47,6 +49,43 @@ describe("cached sessions", () => {
 
     expect(loadCachedSessions("codex")?.sessions).toEqual([
       expect.objectContaining({ id: "keep", title: "Updated" }),
+    ]);
+  });
+
+  it("preserves and reports metadata omitted from an incremental change", () => {
+    const events: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    setCoreDiagnostics({ warn: (event, detail) => events.push({ event, detail }) });
+    saveCachedSessions("codex", [makeSessionHead("one")], {
+      one: { id: "one", sourcePath: "/transcripts/one.jsonl" },
+    });
+
+    saveCachedSessionChanges(
+      "codex",
+      [{ session: makeSessionHead("one", { title: "Updated" }), sortIndex: 0 }],
+      [],
+    );
+
+    const cached = loadCachedSessions("codex");
+    expect(cached?.sessions[0]?.title).toBe("Updated");
+    expect(cached?.meta.one).toEqual({
+      id: "one",
+      sourcePath: "/transcripts/one.jsonl",
+    });
+    expect(
+      withCacheDb(
+        (db) =>
+          (
+            db
+              .prepare("SELECT source_path FROM sessions WHERE agent_name = ? AND session_id = ?")
+              .get("codex", "one") as { source_path?: string }
+          ).source_path,
+      ),
+    ).toBe("/transcripts/one.jsonl");
+    expect(events).toEqual([
+      {
+        event: "cache.session_meta_missing",
+        detail: { agent: "codex", session_id: "one" },
+      },
     ]);
   });
 

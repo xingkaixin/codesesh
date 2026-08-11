@@ -6,6 +6,7 @@ import type { SessionCacheMeta } from "../../agents/base.js";
 import type { ReferencedSessionHead, SessionReference } from "../../contract/index.js";
 import { formatSessionReference, normalizeSessionReference } from "../../contract/index.js";
 import type { SessionDetail, SessionHead } from "../../types/index.js";
+import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import { tableExists, type SQLiteDatabase } from "../../utils/sqlite.js";
 import {
   getCachePath,
@@ -604,6 +605,12 @@ export function writeCachedSessionChanges(
 
   for (const { session, sortIndex } of changes) {
     const sessionMeta = meta[session.id];
+    if (!sessionMeta) {
+      getCoreDiagnostics()?.warn("cache.session_meta_missing", {
+        agent: agentName,
+        session_id: session.id,
+      });
+    }
     const metaJson = sessionMeta ? JSON.stringify(sessionMeta) : null;
     upsertSessionRow(
       upsertSession,
