@@ -21,7 +21,6 @@ import { OverviewAgentDistribution } from "./overview-agent-distribution";
 import { OverviewCostBreakdown } from "./overview-cost-breakdown";
 import { OverviewFilterBar } from "./overview-filter-bar";
 import { OverviewKpiGrid } from "./overview-kpi-grid";
-import { OverviewProjectRank } from "./overview-project-rank";
 import { OverviewSkeleton } from "./overview-skeleton";
 import { OverviewUsageChart } from "./overview-usage-chart";
 
@@ -74,24 +73,13 @@ export function OverviewScreen({
         <>
           <OverviewKpiGrid totals={dashboard.totals} rangeDays={dashboard.window.days} />
           <OverviewUsageChart daily={dashboard.dailyActivity} />
-          <div className="grid gap-4 lg:grid-cols-[1.45fr_1fr]">
-            <OverviewProjectRank
-              filters={filters}
-              projects={dashboard.perProject}
-              perAgent={dashboard.perAgent}
-              rollup={dashboard.projectRollup}
-              scopeCounts={dashboard.scopeCounts}
-              agentCatalog={agentCatalog}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <OverviewAgentDistribution perAgent={dashboard.perAgent} />
+            <OverviewCostBreakdown
+              modelCost={dashboard.modelCost}
+              modelDistribution={dashboard.modelDistribution}
+              totals={dashboard.totals}
             />
-            <div className="grid content-start gap-4">
-              {/* Inside a project the ranking card already ranks agents. */}
-              {project ? null : <OverviewAgentDistribution perAgent={dashboard.perAgent} />}
-              <OverviewCostBreakdown
-                modelCost={dashboard.modelCost}
-                modelDistribution={dashboard.modelDistribution}
-                totals={dashboard.totals}
-              />
-            </div>
           </div>
         </>
       ) : (
