@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { DashboardTotals, ModelCostEntry, ModelDistributionEntry } from "../../lib/api";
 import { OverviewCostBreakdown } from "./overview-cost-breakdown";
@@ -48,6 +48,27 @@ describe("OverviewCostBreakdown", () => {
     expect(screen.getByText("$10.00")).toBeTruthy();
     expect(screen.getByText("80%")).toBeTruthy();
     expect(screen.getByText("20%")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Cost by Model" })).toBeTruthy();
+  });
+
+  it("browses model slices and announces their values from the keyboard", () => {
+    render(
+      <OverviewCostBreakdown
+        modelCost={modelCost}
+        modelDistribution={modelDistribution}
+        totals={totals()}
+      />,
+    );
+    const chart = screen.getByRole("listbox", { name: "Cost by Model chart" });
+    const options = within(chart).getAllByRole("option");
+    const liveSummary = screen.getByRole("status");
+
+    fireEvent.focus(options[0]!);
+    expect(liveSummary.textContent).toBe("sonnet: 80%, $8.00");
+
+    fireEvent.keyDown(options[0]!, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(options[1]);
+    expect(liveSummary.textContent).toBe("haiku: 20%, $2.00");
   });
 
   it("collapses a four-figure total so it fits the ring", () => {

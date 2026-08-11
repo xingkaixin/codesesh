@@ -93,9 +93,13 @@ export function OverviewCostBreakdown({
   );
 
   const title = byCost ? "Cost by Model" : "Models";
+  const itemLabels = entries.map(
+    (entry) =>
+      `${entry.label}: ${formatPercent(ringTotal > 0 ? entry.value / ringTotal : 0)}, ${entry.display}`,
+  );
 
   return (
-    <Panel className="p-4">
+    <Panel role="region" aria-label={title} className="p-4">
       <PanelHeader title={title} meta={byCost ? "by cost" : "by tokens"} />
 
       {entries.length === 0 ? (
@@ -108,6 +112,8 @@ export function OverviewCostBreakdown({
             hovered={hovered}
             onHover={setHovered}
             size={DONUT_SIZE}
+            ariaLabel={`${title} chart`}
+            itemLabels={itemLabels}
           >
             <span className="console-mono text-[16px] font-semibold text-[var(--console-text)]">
               {byCost ? formatUsdCompact(totals.cost) : formatCompact(totals.tokens)}

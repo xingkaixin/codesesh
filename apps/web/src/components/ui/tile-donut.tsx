@@ -6,6 +6,7 @@ import { useRef, type ReactNode } from "react";
 
 import { useDonutRing } from "../../hooks/useDonutRing";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
+import { ChartKeyboardList } from "./chart-keyboard-list";
 
 export function TileDonut({
   shares,
@@ -13,6 +14,8 @@ export function TileDonut({
   hovered,
   onHover,
   size,
+  ariaLabel,
+  itemLabels,
   children,
 }: {
   /** Fractions of the ring, in draw order; they should sum to 1. */
@@ -21,6 +24,8 @@ export function TileDonut({
   hovered: number | null;
   onHover: (index: number | null) => void;
   size: number;
+  ariaLabel: string;
+  itemLabels: readonly string[];
   /** Centre content, e.g. the total. */
   children?: ReactNode;
 }) {
@@ -39,6 +44,13 @@ export function TileDonut({
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
         {children}
       </div>
+      <ChartKeyboardList
+        label={ariaLabel}
+        itemLabels={itemLabels}
+        activeIndex={hovered}
+        onActiveIndexChange={onHover}
+        layout="surface"
+      />
     </div>
   );
 }

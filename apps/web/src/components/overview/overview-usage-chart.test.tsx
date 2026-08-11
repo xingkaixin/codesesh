@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { DashboardDailyBucket } from "../../lib/api";
 import { OverviewUsageChart } from "./overview-usage-chart";
@@ -61,5 +61,27 @@ describe("OverviewUsageChart", () => {
 
     expect(screen.getByText("No usage data")).toBeTruthy();
     expect(screen.queryByText("Daily cost")).toBeNull();
+  });
+
+  it("moves the tooltip and live summary with the keyboard", () => {
+    render(<OverviewUsageChart daily={daily} />);
+    const chart = screen.getByRole("listbox", { name: "Daily usage chart" });
+    const options = within(chart).getAllByRole("option");
+    const liveSummary = screen.getByRole("status");
+    expect(options.map((option) => option.tabIndex)).toEqual([0, -1]);
+
+    fireEvent.focus(options[0]!);
+    expect(screen.getByText("2 sessions · 30 messages")).toBeTruthy();
+    expect(liveSummary.textContent).toContain("01-01: 1.0k tokens");
+
+    fireEvent.keyDown(options[0]!, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(options[1]);
+    expect(options.map((option) => option.tabIndex)).toEqual([-1, 0]);
+    expect(screen.getByText("3 sessions · 45 messages")).toBeTruthy();
+    expect(liveSummary.textContent).toContain("01-02: 100 tokens");
+
+    fireEvent.keyDown(options[1]!, { key: "Escape" });
+    expect(screen.queryByText("3 sessions · 45 messages")).toBeNull();
+    expect(liveSummary.textContent).toBe("");
   });
 });

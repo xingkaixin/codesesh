@@ -44,6 +44,10 @@ function bucketTokens(bucket: DashboardDailyBucket): number {
   return bucket.input + bucket.output + bucket.cache_read + bucket.cache_create;
 }
 
+function bucketSummary(bucket: DashboardDailyBucket): string {
+  return `${formatMonthDay(bucket.date)}: ${formatCompact(bucketTokens(bucket))} tokens, ${formatUsd(bucket.cost)}, ${formatInt(bucket.sessions)} sessions, ${formatInt(bucket.messages)} messages, input ${formatCompact(bucket.input)}, output ${formatCompact(bucket.output)}, cache read ${formatCompact(bucket.cache_read)}, cache write ${formatCompact(bucket.cache_create)}`;
+}
+
 function CostArea({ daily }: { daily: DashboardDailyBucket[] }) {
   const costs = useMemo(() => daily.map((bucket) => bucket.cost), [daily]);
   const labels = useMemo(() => daily.map((bucket) => formatMonthDay(bucket.date)), [daily]);
@@ -112,6 +116,7 @@ export function OverviewUsageChart({ daily }: { daily: DashboardDailyBucket[] })
     () => daily.map((bucket) => TOKEN_SERIES.map((series) => bucket[series.key])),
     [daily],
   );
+  const itemLabels = useMemo(() => daily.map(bucketSummary), [daily]);
   const axisMax = niceMax(daily.reduce((peak, bucket) => Math.max(peak, bucketTokens(bucket)), 0));
 
   const first = daily[0];
@@ -164,6 +169,8 @@ export function OverviewUsageChart({ daily }: { daily: DashboardDailyBucket[] })
               layout={BAR_LAYOUT}
               height={BAR_HEIGHT}
               formatTick={formatCompact}
+              ariaLabel="Daily usage chart"
+              itemLabels={itemLabels}
             />
             {hovered && hover ? (
               <div className="absolute inset-x-0 top-0" style={{ left: TILE_AXIS_WIDTH }}>
