@@ -219,13 +219,13 @@
     --console-thinking-bg: #fbfaf8;
     --console-thinking-border: #ecebe5;
 
-    /* Token composition ramp: one hue, four steps. A token class is a part
+    /* Token composition ramp: the brand hue, four steps. A token class is a part
        of one quantity, so it reads as a scale — the categorical ramp below stays
        reserved for models, where the series really are unrelated. */
-    --token-input: #1f6f8c;
-    --token-output: #3e9cb8;
-    --token-cache-read: #7cc3d6;
-    --token-cache-write: #bcdfea;
+    --token-input: #7a3410;
+    --token-output: #b4501c;
+    --token-cache-read: #e07a3a;
+    --token-cache-write: #f2a877;
 
     /* The paper every canvas chart sits on. */
     --chart-hatch: rgba(79, 96, 132, 0.05);
@@ -382,10 +382,10 @@
     --console-thinking-bg: #1e1e22;
     --console-thinking-border: #26262c;
 
-    --token-input: #2f88a6;
-    --token-output: #4fb0cb;
-    --token-cache-read: #86cadd;
-    --token-cache-write: #b6e0ec;
+    --token-input: #a4491a;
+    --token-output: #d8622a;
+    --token-cache-read: #ff8f52;
+    --token-cache-write: #ffb98d;
 
     --chart-hatch: rgba(255, 255, 255, 0.04);
     --tile-rest: oklch(0.32 0.012 45);

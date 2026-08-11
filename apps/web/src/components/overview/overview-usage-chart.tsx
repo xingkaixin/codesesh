@@ -20,9 +20,11 @@ const COST_HEIGHT = 132;
 /** Any denser and the dates collide at a 30-day range. */
 const MAX_DATE_TICKS = 6;
 
-const BAR_LAYOUT = { barRatio: 0.86, barMax: 46, bandGap: 0, minBand: 1 };
+/** The gap is what makes a lopsided stack readable: cache reads dwarf the other
+ *  classes, so without it the bar reads as one band. */
+const BAR_LAYOUT = { barRatio: 0.86, barMax: 46, bandGap: 2, minBand: 3 };
 
-/** Bottom to top, deepest blue at the base of every bar. */
+/** Bottom to top, deepest step at the base of every bar. */
 const TOKEN_SERIES = [
   { key: "input", label: "Input", color: "var(--token-input)" },
   { key: "output", label: "Output", color: "var(--token-output)" },

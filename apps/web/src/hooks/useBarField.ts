@@ -144,9 +144,13 @@ export function useBarField(
       ctx.fillStyle = color;
 
       const base = hot ? 0.5 : 0.36;
+      // A band thinner than a tile still gets one row, centred in it: the small
+      // classes of a lopsided stack would otherwise fall through the loop and
+      // the bar would read as a single band.
+      const firstRow = Math.min(cell, h) / 2;
       ctx.beginPath();
       for (let tx = x + cell / 2; tx < x + w; tx += cell) {
-        for (let ty = y + cell / 2; ty < y + h; ty += cell) {
+        for (let ty = y + firstRow; ty < y + h; ty += cell) {
           const topness = smoothstep(1 - (ty - y) / h);
           const wave = tileWave(tx, ty, drift);
           const s = cell * (base + 0.34 * topness + 0.26 * wave) * (0.8 + 0.4 * hashUnit(tx, ty));
