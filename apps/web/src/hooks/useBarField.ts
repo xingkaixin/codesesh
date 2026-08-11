@@ -17,6 +17,8 @@ const CAP_BOTTOM = 7;
 
 const GROW_MS = 620;
 const COLUMN_STAGGER = 0.05;
+// Leave every column at least 20% of the timeline for its own growth.
+const MAX_STAGGER_SPAN = 0.8;
 /** A crest crosses the field in ~8s: legible drift without reading as busy. */
 const DRIFT_STEP = 0.03;
 
@@ -43,6 +45,14 @@ export const DEFAULT_BAR_LAYOUT: BarFieldLayout = {
   bandGap: 4,
   minBand: 6,
 };
+
+export function columnProgress(index: number, count: number, progress: number) {
+  const columnIntervals = Math.max(1, count - 1);
+  const stagger = Math.min(COLUMN_STAGGER, MAX_STAGGER_SPAN / columnIntervals);
+  const span = 1 - (count - 1) * stagger;
+  const local = clamp01((progress - index * stagger) / span);
+  return 1 - Math.pow(1 - local, 3);
+}
 
 interface Options {
   /** `[column][band]`; a plain bar chart is one band per column. */
@@ -103,14 +113,11 @@ export function useBarField(
 
     let drift = 0;
 
-    /** Cubic ease-out, offset so column i starts 5% of the duration later. */
-    const columnProgress = (index: number, count: number, now: number) => {
+    const animatedColumnProgress = (index: number, count: number, now: number) => {
       if (!grow.current.running) return 1;
       const progress = clamp01((now - grow.current.startedAt) / GROW_MS);
-      const span = 1 - (count - 1) * COLUMN_STAGGER;
-      const local = clamp01((progress - index * COLUMN_STAGGER) / span);
       if (progress >= 1) grow.current.running = false;
-      return 1 - Math.pow(1 - local, 3);
+      return columnProgress(index, count, progress);
     };
 
     const drawBand = (
@@ -194,7 +201,7 @@ export function useBarField(
       const hover = current.hovered;
 
       current.values.forEach((bands, column) => {
-        const progress = columnProgress(column, count, now);
+        const progress = animatedColumnProgress(column, count, now);
         const x = column * columnW + (columnW - barW) / 2;
         let bottom = h;
 
