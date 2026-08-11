@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyMessageCost,
   applyMessageCosts,
+  capturePricingMisses,
   estimateCostForTokens,
   withEstimatedSessionCost,
 } from "../cost.js";
@@ -33,6 +34,20 @@ describe("pricing", () => {
   it("returns null for unknown models", () => {
     expect(estimateCostForTokens("unknown-model", { input: 1000, output: 1000 })).toBeNull();
     expect(pricingResolver.resolve("unknown-model")).toBeNull();
+  });
+
+  it("captures only resolver misses, and only within the capture window", () => {
+    const { unpricedModels } = capturePricingMisses(() => {
+      estimateCostForTokens("unknown-model", { input: 1000, output: 1000 });
+      estimateCostForTokens("unknown-model", { input: 1, output: 1 });
+      estimateCostForTokens("claude-sonnet-4-6", { input: 1000, output: 1000 });
+      estimateCostForTokens(null, { input: 1000, output: 1000 });
+    });
+
+    expect(unpricedModels).toEqual(["unknown-model"]);
+
+    const outside = capturePricingMisses(() => undefined);
+    expect(outside.unpricedModels).toEqual([]);
   });
 
   it("marks existing message costs as recorded", () => {

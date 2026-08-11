@@ -14,6 +14,24 @@ function positive(value: number | undefined): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
+let pricingMissCapture: Set<string> | null = null;
+
+/**
+ * Records which models {@link estimateCostForTokens} failed to price during
+ * `run`. Cached session heads carry these misses so they can be re-parsed once
+ * pricing for those models becomes available.
+ */
+export function capturePricingMisses<T>(run: () => T): { result: T; unpricedModels: string[] } {
+  const previous = pricingMissCapture;
+  const capture = new Set<string>();
+  pricingMissCapture = capture;
+  try {
+    return { result: run(), unpricedModels: [...capture] };
+  } finally {
+    pricingMissCapture = previous;
+  }
+}
+
 export function estimateCostForTokens(
   model: string | null | undefined,
   usage: CostUsage | undefined,
@@ -21,7 +39,10 @@ export function estimateCostForTokens(
   if (!model || !usage) return null;
 
   const pricing = pricingResolver.resolve(model);
-  if (!pricing) return null;
+  if (!pricing) {
+    pricingMissCapture?.add(model);
+    return null;
+  }
 
   const cacheRead = positive(usage.cache_read);
   const cacheCreate = positive(usage.cache_create);

@@ -33,7 +33,8 @@ import {
 } from "./base.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
-const HEAD_INDEX_VERSION = "claudecode-head-v4";
+// v5: heads cached before pricing misses were tracked may hold stale zero costs.
+const HEAD_INDEX_VERSION = "claudecode-head-v5";
 
 export function resolveClaudeCodeDataRoot(): string {
   return resolveHomePath("CLAUDE_CONFIG_DIR", ".claude");

@@ -11,6 +11,7 @@ import {
 } from "../base.js";
 import type { AgentScanOptions, SessionCacheMeta, SessionSourceRef } from "../base.js";
 import type { SessionDetail, SessionHead } from "../../types/index.js";
+import { estimateTokenCost } from "../../utils/cost.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 
 interface FakeSource {
@@ -193,6 +194,44 @@ describe("FileSystemSessionSource.scan", () => {
   });
 });
 
+describe("FileSystemSessionSource pricing miss capture", () => {
+  class UnpricedModelSource extends FakeFileSystemSource {
+    override scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null {
+      estimateTokenCost("vendor/nonexistent-model", { input: 10, output: 10 });
+      return super.scanSessionSource(sourcePath, options);
+    }
+  }
+
+  it("records models the head parse could not price into the session meta", () => {
+    const src = source("a");
+    const agent = new UnpricedModelSource([src]);
+
+    const outcome = agent.scanSessionSourceOutcome({
+      sessionId: src.sessionId,
+      sourcePath: src.sourcePath,
+      fingerprint: src.fingerprint,
+    });
+
+    expect(outcome.status).toBe("parsed");
+    expect(agent.getSessionMetaMap().get("a")?.unpricedModels).toEqual([
+      "vendor/nonexistent-model",
+    ]);
+  });
+
+  it("leaves no recorded misses when every model is priced", () => {
+    const src = source("a");
+    const agent = new FakeFileSystemSource([src]);
+
+    agent.scanSessionSourceOutcome({
+      sessionId: src.sessionId,
+      sourcePath: src.sourcePath,
+      fingerprint: src.fingerprint,
+    });
+
+    expect(agent.getSessionMetaMap().get("a")?.unpricedModels).toBeUndefined();
+  });
+});
+
 describe("diffSessionSources", () => {
   function ref(
     id: string,
@@ -240,6 +279,22 @@ describe("diffSessionSources", () => {
       failedIds: [],
       sourceOutcomes: [],
     });
+  });
+
+  it("re-parses a cached head once one of its unpriced models gains pricing", () => {
+    const diff = diffSessionSources([ref("a")], [makeSession("a")], {
+      a: meta("a", { unpricedModels: ["vendor/nonexistent-model", "claude-sonnet-4-6"] }),
+    });
+
+    expect(diff.changedIds).toEqual(["a"]);
+  });
+
+  it("keeps a cached head whose unpriced models are still unpriced", () => {
+    const diff = diffSessionSources([ref("a")], [makeSession("a")], {
+      a: meta("a", { unpricedModels: ["vendor/nonexistent-model"] }),
+    });
+
+    expect(diff.changedIds).toEqual([]);
   });
 
   it("treats a ref with no cached session as changed even when its meta matches", () => {

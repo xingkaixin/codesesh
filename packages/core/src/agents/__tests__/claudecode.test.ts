@@ -319,7 +319,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
         sessionId: "session-1",
         sourcePath: sessionFile,
         fingerprint: JSON.stringify([
-          "claudecode-head-v4",
+          "claudecode-head-v5",
           sessionTime.getTime(),
           statSync(sessionFile).size,
           indexTime.getTime(),
