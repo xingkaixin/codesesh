@@ -11,6 +11,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const CHECKED_DOCUMENTS = [
+  "AGENTS.md",
+  "CONTEXT.md",
   "README.md",
   "README_CN.md",
   "packages/cli/README.md",
