@@ -375,6 +375,115 @@ describe("durable publication", () => {
     }
   });
 
+  it(
+    "pre-stages a backlog larger than one commit chunk and commits it fully",
+    () => {
+      const sessions = Array.from({ length: 70 }, (_, index) => makeSession(`bulk-${index}`));
+
+      const result = commitDurableSessionPublication(
+        {
+          kind: "snapshot",
+          agentName: "codex",
+          sessions,
+          meta: {},
+          completeness: "complete",
+          removedSessionIds: [],
+        },
+        (sessionId) => makeSessionData(sessionId, `${sessionId} bulk needle`),
+      );
+
+      expect(result.status).toBe("committed");
+      expect(result.status === "committed" && result.searchIndex).toMatchObject({
+        changed: 70,
+        indexed: 70,
+        skipped: 0,
+      });
+      expect(loadCachedSessions("codex")?.sessions).toHaveLength(70);
+      expect(searchSessions("bulk-42 bulk needle")).toHaveLength(1);
+
+      const loadAgain = vi.fn((sessionId: string) =>
+        makeSessionData(sessionId, `${sessionId} bulk needle`),
+      );
+      const unchanged = commitDurableSessionPublication(
+        {
+          kind: "snapshot",
+          agentName: "codex",
+          sessions,
+          meta: {},
+          completeness: "complete",
+          removedSessionIds: [],
+        },
+        loadAgain,
+      );
+
+      expect(unchanged.status).toBe("committed");
+      expect(unchanged.status === "committed" && unchanged.searchIndex).toMatchObject({
+        changed: 0,
+        indexed: 0,
+      });
+      expect(loadAgain).not.toHaveBeenCalled();
+    },
+    SEARCH_INDEX_BATCH_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "resumes a large backlog without re-parsing sessions from finished chunks",
+    () => {
+      const sessions = Array.from({ length: 70 }, (_, index) => makeSession(`resume-${index}`));
+      const failingIds = new Set(["resume-68", "resume-69"]);
+
+      const firstPass = commitDurableSessionPublication(
+        {
+          kind: "snapshot",
+          agentName: "codex",
+          sessions,
+          meta: {},
+          completeness: "complete",
+          removedSessionIds: [],
+        },
+        (sessionId) => {
+          if (failingIds.has(sessionId)) throw new Error(`cannot parse ${sessionId}`);
+          return makeSessionData(sessionId, `${sessionId} resume needle`);
+        },
+      );
+
+      expect(firstPass.status).toBe("committed");
+      expect(firstPass.status === "committed" && firstPass.searchIndex).toMatchObject({
+        changed: 70,
+        indexed: 68,
+        skipped: 2,
+      });
+
+      const retryLoader = vi.fn((sessionId: string) =>
+        makeSessionData(sessionId, `${sessionId} resume needle`),
+      );
+      const secondPass = commitDurableSessionPublication(
+        {
+          kind: "snapshot",
+          agentName: "codex",
+          sessions,
+          meta: {},
+          completeness: "complete",
+          removedSessionIds: [],
+        },
+        retryLoader,
+      );
+
+      expect(secondPass.status).toBe("committed");
+      expect(secondPass.status === "committed" && secondPass.searchIndex).toMatchObject({
+        changed: 2,
+        indexed: 2,
+        skipped: 0,
+      });
+      expect(retryLoader.mock.calls.map(([sessionId]) => sessionId).sort()).toEqual([
+        "resume-68",
+        "resume-69",
+      ]);
+      expect(searchSessions("resume-69 resume needle")).toHaveLength(1);
+    },
+    SEARCH_INDEX_BATCH_TEST_TIMEOUT_MS,
+  );
+
   it("commits partial snapshots and incremental changes through the same interface", () => {
     const historical = makeSession("historical");
     const recent = makeSession("recent");

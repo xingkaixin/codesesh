@@ -98,6 +98,8 @@ interface PreparedSearchIndexPublication {
   changed: number;
   removedSessionIds: string[];
   entries: LoadedSearchIndexEntry[];
+  /** Entries already written durably in chunks before the atomic commit. */
+  preIndexed: number;
   failures: SearchIndexSyncFailure[];
   needsRebuild: boolean;
   startedAt: number;
@@ -301,6 +303,7 @@ function writeSearchIndexRows(
   removedSessionIds: string[],
   entries: Iterable<LoadedSearchIndexEntry>,
   failures: SearchIndexSyncFailure[],
+  verifySupersession = true,
 ): number {
   const deleteRow = db.prepare(
     "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
@@ -397,12 +400,14 @@ function writeSearchIndexRows(
 
   let indexed = 0;
   for (const entry of entries) {
-    const current = readCurrentMeta.get(agentName, entry.session.id) as
-      | { meta_json?: string | null }
-      | undefined;
-    if (entry.detailVersion !== detailVersionFromMetaJson(current?.meta_json)) {
-      failures.push({ sessionId: entry.session.id, reason: "superseded" });
-      continue;
+    if (verifySupersession) {
+      const current = readCurrentMeta.get(agentName, entry.session.id) as
+        | { meta_json?: string | null }
+        | undefined;
+      if (entry.detailVersion !== detailVersionFromMetaJson(current?.meta_json)) {
+        failures.push({ sessionId: entry.session.id, reason: "superseded" });
+        continue;
+      }
     }
     upsertSessionRow(upsertIndexedSession, agentName, entry.session, null, entry.sortIndex, null);
     deleteFileActivity.run(agentName, entry.session.id);
@@ -452,6 +457,55 @@ function writeSearchIndexRows(
   return indexed;
 }
 
+/**
+ * Loaded entries carry full message bodies, so a backlog larger than one commit
+ * chunk cannot be held in memory at once — a first-time index of a large agent
+ * (multi-GB codex rollouts) used to OOM the search-index worker. Larger
+ * backlogs are written durably in chunks up front instead; an interrupted run
+ * keeps its finished chunks and a retry skips them via their content hashes.
+ * Supersession is not verified during pre-staging: publication jobs are
+ * serialized, and the atomic commit that follows writes the very meta these
+ * detail versions were derived from, which would make the check vacuous anyway.
+ */
+function loadOrPreStageEntries(
+  db: SQLiteDatabase,
+  agentName: string,
+  changes: SessionHeadChange[],
+  loadSessionData: (sessionId: string) => SessionDetail,
+  detailVersionFor: (sessionId: string) => string,
+  failures: SearchIndexSyncFailure[],
+): { entries: LoadedSearchIndexEntry[]; preIndexed: number } {
+  if (changes.length <= SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
+    return {
+      entries: [
+        ...loadSearchIndexEntries(agentName, changes, loadSessionData, detailVersionFor, failures),
+      ],
+      preIndexed: 0,
+    };
+  }
+
+  let preIndexed = 0;
+  for (let offset = 0; offset < changes.length; offset += SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
+    const chunk = changes.slice(offset, offset + SEARCH_INDEX_COMMIT_CHUNK_SIZE);
+    runSearchIndexWrite(db, false, () => {
+      preIndexed += writeSearchIndexRows(
+        db,
+        agentName,
+        [],
+        loadSearchIndexEntries(agentName, chunk, loadSessionData, detailVersionFor, failures),
+        failures,
+        false,
+      );
+    });
+  }
+  getCoreDiagnostics()?.info?.("search_index.pre_staged", {
+    agent: agentName,
+    changed: changes.length,
+    indexed: preIndexed,
+  });
+  return { entries: [], preIndexed };
+}
+
 export function prepareSessionSnapshotSearchIndex(
   db: SQLiteDatabase,
   agentName: string,
@@ -489,15 +543,14 @@ export function prepareSessionSnapshotSearchIndex(
   const changedCount = removedSessionIds.length + changes.length;
   const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
   const failures: SearchIndexSyncFailure[] = [];
-  const entries = [
-    ...loadSearchIndexEntries(
-      agentName,
-      changes,
-      loadSessionData,
-      (sessionId) => targetDetailVersion(searchIndexState, sessionId, options),
-      failures,
-    ),
-  ];
+  const { entries, preIndexed } = loadOrPreStageEntries(
+    db,
+    agentName,
+    changes,
+    loadSessionData,
+    (sessionId) => targetDetailVersion(searchIndexState, sessionId, options),
+    failures,
+  );
 
   return {
     agentName,
@@ -506,8 +559,10 @@ export function prepareSessionSnapshotSearchIndex(
     changed: changes.length,
     removedSessionIds,
     entries,
+    preIndexed,
     failures,
-    needsRebuild: isBulk && changedCount > 0,
+    // Pre-staged chunks wrote through the live FTS triggers; no rebuild needed.
+    needsRebuild: preIndexed === 0 && isBulk && changedCount > 0,
     startedAt,
   };
 }
@@ -533,15 +588,14 @@ export function prepareSessionChangesSearchIndex(
   const changedCount = uniqueRemovedSessionIds.length + toUpsert.length;
   const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
   const failures: SearchIndexSyncFailure[] = [];
-  const entries = [
-    ...loadSearchIndexEntries(
-      agentName,
-      toUpsert,
-      loadSessionData,
-      (sessionId) => targetDetailVersion(searchIndexState, sessionId, options),
-      failures,
-    ),
-  ];
+  const { entries, preIndexed } = loadOrPreStageEntries(
+    db,
+    agentName,
+    toUpsert,
+    loadSessionData,
+    (sessionId) => targetDetailVersion(searchIndexState, sessionId, options),
+    failures,
+  );
 
   return {
     agentName,
@@ -550,8 +604,10 @@ export function prepareSessionChangesSearchIndex(
     changed: toUpsert.length,
     removedSessionIds: uniqueRemovedSessionIds,
     entries,
+    preIndexed,
     failures,
-    needsRebuild: isBulk && changedCount > 0,
+    // Pre-staged chunks wrote through the live FTS triggers; no rebuild needed.
+    needsRebuild: preIndexed === 0 && isBulk && changedCount > 0,
     startedAt,
   };
 }
@@ -560,12 +616,12 @@ export function writePreparedSessionSearchIndex(
   db: SQLiteDatabase,
   publication: PreparedSearchIndexPublication,
 ): SearchIndexSyncResult {
-  let indexed = 0;
+  let indexed = publication.preIndexed;
   const { rebuildDurationMs } = runSearchIndexWrite(
     db,
     publication.needsRebuild,
     () => {
-      indexed = writeSearchIndexRows(
+      indexed += writeSearchIndexRows(
         db,
         publication.agentName,
         publication.removedSessionIds,
