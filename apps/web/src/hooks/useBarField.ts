@@ -6,9 +6,11 @@
  * out of whatever is currently on screen, so a change mid-animation continues
  * from where the bar visually is instead of snapping back to zero.
  */
-import { useEffect, useRef, type RefObject } from "react";
+import { useContext, useEffect, useRef, type RefObject } from "react";
 
 import { clamp01, hashUnit, resolveColor, smoothstep, tileWave } from "../lib/chart-shading";
+import { ResolvedThemeContext } from "./useTheme";
+import { useCanvasFrameLoop } from "./useCanvasFrameLoop";
 
 const MAX_DPR = 2;
 const CORNER = 5;
@@ -20,7 +22,7 @@ const COLUMN_STAGGER = 0.05;
 // Leave every column at least 20% of the timeline for its own growth.
 const MAX_STAGGER_SPAN = 0.8;
 /** A crest crosses the field in ~8s: legible drift without reading as busy. */
-const DRIFT_STEP = 0.03;
+const DRIFT_RATE = 0.0018;
 
 const DIM_OTHER_COLUMN = 0.3;
 const DIM_SIBLING_BAND = 0.48;
@@ -69,8 +71,10 @@ export function useBarField(
   canvasRef: RefObject<HTMLCanvasElement | null>,
   { values, axisMax, colors, highlight, hovered, layout, reducedMotion }: Options,
 ) {
-  const state = useRef({ values, axisMax, colors, highlight, hovered, layout });
-  state.current = { values, axisMax, colors, highlight, hovered, layout };
+  const theme = useContext(ResolvedThemeContext);
+  const frameLoop = useCanvasFrameLoop(canvasRef, reducedMotion);
+  const colorsKey = colors.join("\0");
+  const state = useRef({ values, axisMax, hovered, layout });
 
   const drawn = useRef(new Map<string, number>());
   const from = useRef(new Map<string, number>());
@@ -79,24 +83,32 @@ export function useBarField(
   const redraw = useRef<() => void>(() => {});
 
   useEffect(() => {
+    state.current = { values, axisMax, hovered, layout };
+    if (reducedMotion) redraw.current();
+    else frameLoop.requestFrame();
+  }, [axisMax, frameLoop, hovered, layout, reducedMotion, values]);
+
+  useEffect(() => {
     from.current = new Map(drawn.current);
     if (reducedMotion) {
       grow.current.running = false;
       redraw.current();
     } else {
       grow.current = { startedAt: performance.now(), running: true };
+      frameLoop.requestFrame();
     }
-  }, [values, axisMax, reducedMotion]);
-
-  useEffect(() => {
-    if (reducedMotion) redraw.current();
-  }, [hovered, reducedMotion]);
+  }, [axisMax, frameLoop, reducedMotion, values]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const host = canvas?.parentElement;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !host || !ctx) return;
+
+    const style = getComputedStyle(canvas);
+    const colorTokens = colorsKey ? colorsKey.split("\0") : [];
+    const palette = colorTokens.map((color) => resolveColor(style, color));
+    const highlightColor = resolveColor(style, highlight);
 
     const layoutCanvas = () => {
       const w = host.clientWidth;
@@ -182,15 +194,15 @@ export function useBarField(
     };
 
     const draw = (now: number) => {
+      drift = now * DRIFT_RATE;
       const { w, h } = size.current;
       if (!w || !h) return;
       const current = state.current;
       ctx.clearRect(0, 0, w, h);
-      if (!current.values.length || current.axisMax <= 0) return;
-
-      const style = getComputedStyle(canvas);
-      const palette = current.colors.map((color) => resolveColor(style, color));
-      const highlightColor = resolveColor(style, current.highlight);
+      if (!current.values.length || current.axisMax <= 0) {
+        grow.current.running = false;
+        return;
+      }
 
       const { barRatio, barMax, bandGap, minBand } = current.layout;
       const count = current.values.length;
@@ -248,25 +260,28 @@ export function useBarField(
     };
     redraw.current = renderStatic;
 
-    let frame = 0;
-    const loop = (now: number) => {
-      drift += DRIFT_STEP;
+    frameLoop.setFrameHandler((now) => {
       draw(now);
-      frame = requestAnimationFrame(loop);
-    };
+      if (grow.current.running) return "active";
+      return state.current.hovered === null ? "stop" : "idle";
+    });
 
     layoutCanvas();
-    const observer = new ResizeObserver(renderStatic);
+    const onResize = () => {
+      layoutCanvas();
+      if (reducedMotion) draw(performance.now());
+      else frameLoop.requestFrame();
+    };
+    const observer = new ResizeObserver(onResize);
     observer.observe(host);
 
     if (reducedMotion) draw(performance.now());
-    else frame = requestAnimationFrame(loop);
 
     return () => {
-      cancelAnimationFrame(frame);
+      frameLoop.setFrameHandler(null);
       observer.disconnect();
     };
-  }, [canvasRef, reducedMotion]);
+  }, [canvasRef, colorsKey, frameLoop, highlight, reducedMotion, theme]);
 
   const hitTest = (clientX: number, clientY: number): BarHover | null => {
     const canvas = canvasRef.current;

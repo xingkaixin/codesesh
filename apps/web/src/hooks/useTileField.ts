@@ -6,9 +6,11 @@
  * The curve lives outside React so a data change reflows the field in place
  * instead of remounting the canvas.
  */
-import { useEffect, useRef, type RefObject } from "react";
+import { useContext, useEffect, useRef, type RefObject } from "react";
 
 import { curveAt, resampleCurve, SAMPLES, topFraction } from "../lib/curve";
+import { useCanvasFrameLoop } from "./useCanvasFrameLoop";
+import { ResolvedThemeContext } from "./useTheme";
 
 const MAX_DPR = 2;
 const RESHAPE_MS = 460;
@@ -57,6 +59,8 @@ interface Grid {
   rows: number;
   width: number;
   height: number;
+  left: number;
+  top: number;
   /** Drawing unit: tile geometry snaps to this so edges never land mid-pixel. */
   step: number;
   glow: Float32Array;
@@ -73,8 +77,8 @@ export function useTileField(
   canvasRef: RefObject<HTMLCanvasElement | null>,
   { values, max, reducedMotion }: Options,
 ) {
-  const reducedRef = useRef(reducedMotion);
-  reducedRef.current = reducedMotion;
+  const theme = useContext(ResolvedThemeContext);
+  const frameLoop = useCanvasFrameLoop(canvasRef, reducedMotion);
 
   const curve = useRef({
     from: resampleCurve(values),
@@ -107,18 +111,27 @@ export function useTileField(
     state.startedAt = performance.now();
     state.duration = reducedMotion ? 0 : RESHAPE_MS;
     if (reducedMotion) redraw.current();
-  }, [values, max, reducedMotion]);
+    else frameLoop.requestFrame();
+  }, [frameLoop, max, reducedMotion, values]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const host = canvas?.parentElement;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !host || !ctx) return;
+    const pointerState = pointer.current;
+
+    const style = getComputedStyle(canvas);
+    const rest = style.getPropertyValue("--tile-rest").trim();
+    const wash = style.getPropertyValue("--tile-wash").trim();
+    const ink = style.getPropertyValue("--tile-ink").trim();
+    const ramp = buildRamp(wash, ink);
 
     const layout = () => {
       const width = host.clientWidth;
       const height = host.clientHeight;
       if (!width || !height) return;
+      const bounds = host.getBoundingClientRect();
       const dpr = Math.min(MAX_DPR, window.devicePixelRatio || 1);
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
@@ -139,25 +152,12 @@ export function useTileField(
         rows,
         width,
         height,
+        left: bounds.left,
+        top: bounds.top,
         step: 1 / dpr,
         glow: new Float32Array(count),
         spark,
       };
-    };
-
-    let ramp: string[] = [];
-    let rampKey = "";
-    let rest = "";
-    const readPalette = () => {
-      const style = getComputedStyle(canvas);
-      rest = style.getPropertyValue("--tile-rest").trim();
-      const wash = style.getPropertyValue("--tile-wash").trim();
-      const ink = style.getPropertyValue("--tile-ink").trim();
-      const key = `${wash}|${ink}`;
-      if (key !== rampKey) {
-        rampKey = key;
-        ramp = buildRamp(wash, ink);
-      }
     };
 
     const advanceCurve = (now: number) => {
@@ -167,24 +167,25 @@ export function useTileField(
         state.current[s] = state.from[s]! + (state.to[s]! - state.from[s]!) * t;
       }
       state.currentMax = state.fromMax + (state.toMax - state.fromMax) * t;
+      if (t >= 1) state.duration = 0;
+      return t < 1;
     };
 
-    const advancePointer = () => {
+    const advancePointer = (frameScale: number) => {
       const p = pointer.current;
       const previousX = p.smoothX;
       const previousY = p.smoothY;
-      p.smoothX += (p.x - previousX) * POINTER_SMOOTHING;
-      p.smoothY += (p.y - previousY) * POINTER_SMOOTHING;
+      const smoothing = 1 - Math.pow(1 - POINTER_SMOOTHING, frameScale);
+      p.smoothX += (p.x - previousX) * smoothing;
+      p.smoothY += (p.y - previousY) * smoothing;
       p.speed = Math.hypot(p.smoothX - previousX, p.smoothY - previousY);
     };
 
-    const draw = (now: number) => {
+    const draw = (now: number, frameScale = 1) => {
       const g = grid.current;
-      if (!g) return;
-      readPalette();
+      if (!g) return false;
       const state = curve.current;
       const { cell, cols, rows, width, height, step, glow, spark } = g;
-      const reduced = reducedRef.current;
       // fillRect antialiases regardless of imageSmoothingEnabled, so a tile whose
       // edge lands mid-pixel shimmers as it resizes. Quantise to device pixels.
       const snap = (value: number) => Math.round(value / step) * step;
@@ -203,9 +204,12 @@ export function useTileField(
 
       const p = pointer.current;
       const radius = height * (RADIUS_MIN + Math.min(1, p.speed / 25) * (RADIUS_MAX - RADIUS_MIN));
-      const glowActive = !reduced && p.inside;
+      const glowActive = !reducedMotion && p.inside;
+      const glowRise = 1 - Math.pow(1 - GLOW_RISE, frameScale);
+      const glowDecay = 1 - Math.pow(1 - GLOW_DECAY, frameScale);
       const shimmerPhase = now * 0.0018;
       let level = -1;
+      let hasGlow = false;
 
       for (let col = 0; col < cols; col++) {
         const fx = cols > 1 ? (col + 0.5) / cols : 0.5;
@@ -226,12 +230,13 @@ export function useTileField(
           if (glowActive) {
             const distance = Math.hypot(cx - p.smoothX, y + cell / 2 - p.smoothY);
             const target = distance < radius ? 1 - distance / radius : 0;
-            lit += (target - lit) * (target > lit ? GLOW_RISE : GLOW_DECAY);
+            lit += (target - lit) * (target > lit ? glowRise : glowDecay);
             glow[i] = lit;
           } else if (lit > 0) {
-            lit *= 1 - GLOW_DECAY;
+            lit *= 1 - glowDecay;
             glow[i] = lit < 0.002 ? 0 : lit;
           }
+          if (glow[i]! > 0) hasGlow = true;
 
           // Size carries the low-frequency structure only. Shimmer and sparks are
           // high-frequency and drive colour alone — quantised size cannot express
@@ -240,7 +245,7 @@ export function useTileField(
           if (solid <= 0.02) continue;
 
           let tint = solid;
-          if (!reduced) {
+          if (!reducedMotion) {
             tint *= 1 + 0.07 * Math.sin(fy * Math.PI * 3 - shimmerPhase);
             if (spark[i] && lit > 0.02) tint *= 1 + 0.25 * lit * Math.sin(now * 0.012 + i);
             tint = Math.min(1, tint);
@@ -257,6 +262,7 @@ export function useTileField(
           ctx.fillRect(x + offset, y + offset, size, size);
         }
       }
+      return hasGlow;
     };
 
     const renderStatic = () => {
@@ -267,45 +273,67 @@ export function useTileField(
     redraw.current = renderStatic;
 
     const onPointerMove = (event: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect();
+      const g = grid.current;
+      if (!g) return;
       const p = pointer.current;
-      p.x = event.clientX - rect.left;
-      p.y = event.clientY - rect.top;
+      if (!p.inside) {
+        const bounds = host.getBoundingClientRect();
+        g.left = bounds.left;
+        g.top = bounds.top;
+      }
+      p.x = event.clientX - g.left;
+      p.y = event.clientY - g.top;
       if (!p.inside) {
         p.smoothX = p.x;
         p.smoothY = p.y;
       }
       p.inside = true;
+      frameLoop.requestFrame();
     };
     const onPointerOut = () => {
       pointer.current.inside = false;
+      frameLoop.requestFrame();
     };
 
-    let frame = 0;
-    const loop = (now: number) => {
-      advanceCurve(now);
-      advancePointer();
-      draw(now);
-      frame = requestAnimationFrame(loop);
-    };
+    let lastFrameTime = 0;
+    frameLoop.setFrameHandler((now) => {
+      const frameScale = lastFrameTime === 0 ? 1 : Math.min(3, (now - lastFrameTime) / (1000 / 60));
+      lastFrameTime = now;
+      const curveActive = advanceCurve(now);
+      advancePointer(frameScale);
+      const glowActive = draw(now, frameScale);
+      if (curveActive) return "active";
+      if (pointer.current.inside || glowActive) return "idle";
+      lastFrameTime = 0;
+      return "stop";
+    });
 
     layout();
-    const observer = new ResizeObserver(renderStatic);
+    const onResize = () => {
+      layout();
+      if (reducedMotion) {
+        advanceCurve(performance.now());
+        draw(performance.now());
+      } else {
+        frameLoop.requestFrame();
+      }
+    };
+    const observer = new ResizeObserver(onResize);
     observer.observe(host);
 
     if (reducedMotion) {
       renderStatic();
     } else {
-      window.addEventListener("pointermove", onPointerMove, { passive: true });
-      document.addEventListener("pointerleave", onPointerOut);
-      frame = requestAnimationFrame(loop);
+      host.addEventListener("pointermove", onPointerMove, { passive: true });
+      host.addEventListener("pointerleave", onPointerOut);
     }
 
     return () => {
-      cancelAnimationFrame(frame);
+      frameLoop.setFrameHandler(null);
       observer.disconnect();
-      window.removeEventListener("pointermove", onPointerMove);
-      document.removeEventListener("pointerleave", onPointerOut);
+      host.removeEventListener("pointermove", onPointerMove);
+      host.removeEventListener("pointerleave", onPointerOut);
+      pointerState.inside = false;
     };
-  }, [canvasRef, reducedMotion]);
+  }, [canvasRef, frameLoop, reducedMotion, theme]);
 }

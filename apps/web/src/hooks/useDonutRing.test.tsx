@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { act, cleanup, render } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { stubCanvas, type StubbedCanvas } from "../test/canvas-stub";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { stubAnimationFrames, stubCanvas, type StubbedCanvas } from "../test/canvas-stub";
 import { useDonutRing } from "./useDonutRing";
 
 /** The ring's logical space, so a client coordinate is also a ring coordinate. */
@@ -51,6 +51,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   canvas.restore();
+  vi.restoreAllMocks();
 });
 
 describe("useDonutRing", () => {
@@ -96,5 +97,27 @@ describe("useDonutRing", () => {
     await nextFrame();
 
     expect(canvas.context.clearRect).toHaveBeenCalled();
+  });
+
+  it("stops after morphing and wakes for hover without rereading styles", () => {
+    const frames = stubAnimationFrames();
+    const readStyle = vi.spyOn(window, "getComputedStyle");
+    const { rerender } = render(<Harness shares={[0.5, 0.5]} reducedMotion={false} />);
+    let now = performance.now() + 1_000;
+
+    act(() => frames.runNext(now));
+    expect(frames.pendingCount()).toBe(0);
+    expect(readStyle).toHaveBeenCalledTimes(1);
+
+    rerender(<Harness shares={[0.5, 0.5]} hovered={1} reducedMotion={false} />);
+    expect(frames.pendingCount()).toBe(1);
+    act(() => frames.runNext((now += 16)));
+    expect(canvas.context.translate).toHaveBeenCalled();
+    expect(readStyle).toHaveBeenCalledTimes(1);
+
+    rerender(<Harness shares={[0.5, 0.5]} reducedMotion={false} />);
+    expect(frames.pendingCount()).toBe(1);
+    act(() => frames.runNext((now += 16)));
+    expect(frames.pendingCount()).toBe(0);
   });
 });

@@ -5,7 +5,7 @@
  * The displayed angles are the source of truth, so a data change eases from
  * whatever is on screen right now, mid-flight included.
  */
-import { useEffect, useRef, type RefObject } from "react";
+import { useContext, useEffect, useRef, type RefObject } from "react";
 
 import {
   clamp01,
@@ -16,6 +16,8 @@ import {
   tileWave,
   withAlpha,
 } from "../lib/chart-shading";
+import { useCanvasFrameLoop } from "./useCanvasFrameLoop";
+import { ResolvedThemeContext } from "./useTheme";
 
 /** The ring lives in a fixed 200×200 space, so the tile grid never depends on
  *  the rendered size and can be built once for the module. */
@@ -30,7 +32,7 @@ const CORNER = 6;
 const CELL = 4.6;
 const MAX_DPR = 2;
 
-const DRIFT_STEP = 0.03;
+const DRIFT_RATE = 0.0018;
 const MORPH_MS = 500;
 const EXPLODE = 6;
 const BASE_ALPHA = 0.72;
@@ -113,8 +115,9 @@ export function useDonutRing(
   canvasRef: RefObject<HTMLCanvasElement | null>,
   { shares, colors, hovered, reducedMotion }: Options,
 ) {
-  const colorsRef = useRef(colors);
-  colorsRef.current = colors;
+  const theme = useContext(ResolvedThemeContext);
+  const frameLoop = useCanvasFrameLoop(canvasRef, reducedMotion);
+  const colorsKey = colors.join("\0");
   const hoveredRef = useRef(hovered);
 
   const morph = useRef({
@@ -138,19 +141,25 @@ export function useDonutRing(
     } else {
       current.startedAt = performance.now();
       current.running = true;
+      frameLoop.requestFrame();
     }
-  }, [shares, reducedMotion]);
+  }, [frameLoop, reducedMotion, shares]);
 
   useEffect(() => {
     hoveredRef.current = hovered;
     if (reducedMotion) redraw.current();
-  }, [hovered, reducedMotion]);
+    else frameLoop.requestFrame();
+  }, [frameLoop, hovered, reducedMotion]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const host = canvas?.parentElement;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !host || !ctx) return;
+
+    const style = getComputedStyle(canvas);
+    const colorTokens = colorsKey ? colorsKey.split("\0") : [];
+    const palette = colorTokens.map((color) => resolveColor(style, color));
 
     let scale = 1;
     const layout = () => {
@@ -217,14 +226,13 @@ export function useDonutRing(
       ctx.restore();
     };
 
-    const draw = () => {
+    const draw = (now: number) => {
+      drift = now * DRIFT_RATE;
       ctx.setTransform(scale, 0, 0, scale, 0, 0);
       ctx.clearRect(0, 0, LOGICAL, LOGICAL);
       const current = arcsFrom(morph.current.displayed);
       arcs.current = current;
 
-      const style = getComputedStyle(canvas);
-      const palette = colorsRef.current.map((color) => resolveColor(style, color));
       const hover = hoveredRef.current;
       const anyHovered = hover !== null;
 
@@ -238,30 +246,33 @@ export function useDonutRing(
 
     const renderStatic = () => {
       layout();
-      draw();
+      draw(performance.now());
     };
     redraw.current = renderStatic;
 
-    let frame = 0;
-    const loop = () => {
-      drift += DRIFT_STEP;
-      advanceMorph(performance.now());
-      draw();
-      frame = requestAnimationFrame(loop);
-    };
+    frameLoop.setFrameHandler((now) => {
+      advanceMorph(now);
+      draw(now);
+      if (morph.current.running) return "active";
+      return hoveredRef.current === null ? "stop" : "idle";
+    });
 
     layout();
-    const observer = new ResizeObserver(renderStatic);
+    const onResize = () => {
+      layout();
+      if (reducedMotion) draw(performance.now());
+      else frameLoop.requestFrame();
+    };
+    const observer = new ResizeObserver(onResize);
     observer.observe(host);
 
-    if (reducedMotion) draw();
-    else frame = requestAnimationFrame(loop);
+    if (reducedMotion) draw(performance.now());
 
     return () => {
-      cancelAnimationFrame(frame);
+      frameLoop.setFrameHandler(null);
       observer.disconnect();
     };
-  }, [canvasRef, reducedMotion]);
+  }, [canvasRef, colorsKey, frameLoop, reducedMotion, theme]);
 
   const hitTest = (clientX: number, clientY: number): number | null => {
     const canvas = canvasRef.current;
