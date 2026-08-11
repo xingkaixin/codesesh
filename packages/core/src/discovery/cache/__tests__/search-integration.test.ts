@@ -427,6 +427,78 @@ describe("durable publication", () => {
   );
 
   it(
+    "keeps pre-staged session heads hidden when a large publication rolls back",
+    () => {
+      const historical = makeSession("historical");
+      saveCachedSessions("codex", [historical], {
+        historical: { id: historical.id, sourcePath: "/historical" },
+      });
+      syncSessionSearchIndex("codex", [historical], () =>
+        makeSessionData(historical.id, "historical content"),
+      );
+
+      const sessions = Array.from({ length: 70 }, (_, index) => makeSession(`rollback-${index}`));
+      const meta = Object.fromEntries(
+        sessions.map((session) => [session.id, { id: session.id, sourcePath: `/${session.id}` }]),
+      );
+      const db = new Database(getCachePath());
+      try {
+        db.exec(`
+          CREATE TRIGGER fail_large_publication_head_write
+          BEFORE INSERT ON sessions
+          WHEN NEW.meta_json IS NOT NULL
+          BEGIN
+            SELECT RAISE(ABORT, 'forced large publication failure');
+          END;
+        `);
+      } finally {
+        db.close();
+      }
+
+      const result = commitDurableSessionPublication(
+        {
+          kind: "snapshot",
+          agentName: "codex",
+          sessions,
+          meta,
+          completeness: "complete",
+          removedSessionIds: [],
+        },
+        (sessionId) => makeSessionData(sessionId, `${sessionId} rollback content`),
+      );
+
+      expect(result).toMatchObject({ status: "rolled-back", stage: "cache" });
+      expect(loadCachedSessions("codex")?.sessions.map(({ id }) => id)).toEqual([historical.id]);
+      expect(searchSessions("rollback-42 rollback content")).toHaveLength(0);
+      const verifyDb = new Database(getCachePath(), { readonly: true });
+      try {
+        expect(
+          verifyDb
+            .prepare(
+              "SELECT COUNT(*) AS value FROM sessions WHERE agent_name = ? AND publication_id IS NULL",
+            )
+            .get("codex"),
+        ).toEqual({ value: 1 });
+        expect(
+          verifyDb
+            .prepare(
+              "SELECT COUNT(*) AS value FROM sessions WHERE agent_name = ? AND publication_id = ?",
+            )
+            .get("codex", result.publicationId),
+        ).toEqual({ value: 70 });
+        expect(
+          verifyDb
+            .prepare("SELECT COUNT(*) AS value FROM session_documents WHERE agent_name = ?")
+            .get("codex"),
+        ).toEqual({ value: 71 });
+      } finally {
+        verifyDb.close();
+      }
+    },
+    SEARCH_INDEX_BATCH_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "resumes a large backlog without re-parsing sessions from finished chunks",
     () => {
       const sessions = Array.from({ length: 70 }, (_, index) => makeSession(`resume-${index}`));
@@ -1066,7 +1138,7 @@ describe("searchSessions", () => {
     } finally {
       migratedDb.close();
     }
-    expect(getUserVersion(getCachePath())).toBe(20);
+    expect(getUserVersion(getCachePath())).toBe(21);
   });
 
   it("keeps small incremental updates searchable immediately", () => {
@@ -1854,7 +1926,7 @@ describe("searchSessions", () => {
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(20);
+    expect(getUserVersion(getCachePath())).toBe(21);
   });
 
   it("refreshes cached project identities when migrating to schema version 12", () => {

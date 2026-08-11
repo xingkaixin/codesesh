@@ -59,9 +59,11 @@ function publicationSessionCount(publication: DurableSessionPublication): number
 function publicationSearchOptions(
   publication: DurableSessionPublication,
   options: SearchIndexSyncOptions,
+  publicationId: string,
 ): SearchIndexSyncOptions {
   return {
     ...options,
+    publicationId,
     ...(publication.kind === "snapshot"
       ? {
           completeness: publication.completeness,
@@ -93,7 +95,7 @@ export function commitDurableSessionPublication(
   diagnostics?.info?.("search_index.publication_stage", { ...detail, stage: "started" });
 
   const searchIndex = withSearchIndexDb((db) => {
-    const options = publicationSearchOptions(publication, searchOptions);
+    const options = publicationSearchOptions(publication, searchOptions, publicationId);
     const prepared =
       publication.kind === "snapshot"
         ? prepareSessionSnapshotSearchIndex(

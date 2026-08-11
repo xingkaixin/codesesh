@@ -10,6 +10,7 @@ import {
   MESSAGE_PARTS_FORMAT_VERSION,
   normalizeMessages,
   prepareInsertFileActivity,
+  prepareInsertStagedSession,
   prepareInsertMessageTool,
   prepareUpsertIndexedSession,
   upsertSessionRow,
@@ -26,6 +27,7 @@ export interface SearchIndexSyncOptions {
   detailVersions?: Readonly<Record<string, string>>;
   completeness?: SessionSnapshotCompleteness;
   removedSessionIds?: readonly string[];
+  publicationId?: string;
 }
 
 export interface SearchIndexSyncFailure {
@@ -89,6 +91,11 @@ interface LoadedSearchIndexEntry {
   fileActivity: SessionFileActivity[];
   sortIndex: number;
   detailVersion: string;
+}
+
+interface SearchIndexRowWriteOptions {
+  verifySupersession?: boolean;
+  publicationId?: string;
 }
 
 interface PreparedSearchIndexPublication {
@@ -303,8 +310,9 @@ function writeSearchIndexRows(
   removedSessionIds: string[],
   entries: Iterable<LoadedSearchIndexEntry>,
   failures: SearchIndexSyncFailure[],
-  verifySupersession = true,
+  options: SearchIndexRowWriteOptions = {},
 ): number {
+  const { verifySupersession = true, publicationId } = options;
   const deleteRow = db.prepare(
     "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
   );
@@ -317,7 +325,9 @@ function writeSearchIndexRows(
   const deleteFileActivity = db.prepare(
     "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
   );
-  const upsertIndexedSession = prepareUpsertIndexedSession(db);
+  const writeIndexedSession = publicationId
+    ? prepareInsertStagedSession(db)
+    : prepareUpsertIndexedSession(db);
   const insertFileActivity = prepareInsertFileActivity(db);
   const insertMessageTool = prepareInsertMessageTool(db);
   const upsertMessage = db.prepare(`
@@ -409,7 +419,15 @@ function writeSearchIndexRows(
         continue;
       }
     }
-    upsertSessionRow(upsertIndexedSession, agentName, entry.session, null, entry.sortIndex, null);
+    upsertSessionRow(
+      writeIndexedSession,
+      agentName,
+      entry.session,
+      null,
+      entry.sortIndex,
+      null,
+      publicationId ?? null,
+    );
     deleteFileActivity.run(agentName, entry.session.id);
     deleteMessageTools.run(agentName, entry.session.id, 0);
     clearPendingReindex.run(agentName, entry.session.id);
@@ -474,6 +492,7 @@ function loadOrPreStageEntries(
   loadSessionData: (sessionId: string) => SessionDetail,
   detailVersionFor: (sessionId: string) => string,
   failures: SearchIndexSyncFailure[],
+  publicationId?: string,
 ): { entries: LoadedSearchIndexEntry[]; preIndexed: number } {
   if (changes.length <= SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
     return {
@@ -482,6 +501,10 @@ function loadOrPreStageEntries(
       ],
       preIndexed: 0,
     };
+  }
+
+  if (!publicationId) {
+    throw new Error("Large durable publications require a publication id");
   }
 
   let preIndexed = 0;
@@ -494,7 +517,7 @@ function loadOrPreStageEntries(
         [],
         loadSearchIndexEntries(agentName, chunk, loadSessionData, detailVersionFor, failures),
         failures,
-        false,
+        { verifySupersession: false, publicationId },
       );
     });
   }
@@ -550,6 +573,7 @@ export function prepareSessionSnapshotSearchIndex(
     loadSessionData,
     (sessionId) => targetDetailVersion(searchIndexState, sessionId, options),
     failures,
+    options.publicationId,
   );
 
   return {
@@ -595,6 +619,7 @@ export function prepareSessionChangesSearchIndex(
     loadSessionData,
     (sessionId) => targetDetailVersion(searchIndexState, sessionId, options),
     failures,
+    options.publicationId,
   );
 
   return {

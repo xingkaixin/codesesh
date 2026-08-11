@@ -180,7 +180,10 @@ const FILE_ACTIVITY_COLUMNS = `
 
 const FILE_ACTIVITY_JOIN = `
   FROM session_file_activity fa
-  JOIN sessions s ON s.agent_name = fa.agent_name AND s.session_id = fa.session_id
+  JOIN sessions s
+    ON s.agent_name = fa.agent_name
+    AND s.session_id = fa.session_id
+    AND s.publication_id IS NULL
 `;
 
 /** Most recent first, then busiest, then path — the tie-break every caller relies on. */
@@ -236,7 +239,10 @@ function fileActivitySql(query: FileActivityQuery, where: string): string {
       ${where}
     ) ranked
     JOIN session_file_activity fa ON fa.rowid = ranked.activity_rowid
-    JOIN sessions s ON s.agent_name = fa.agent_name AND s.session_id = fa.session_id
+    JOIN sessions s
+      ON s.agent_name = fa.agent_name
+      AND s.session_id = fa.session_id
+      AND s.publication_id IS NULL
     WHERE ranked.session_rank = 1
     ORDER BY ${FILE_ACTIVITY_ORDER}
     LIMIT ?

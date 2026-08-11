@@ -258,6 +258,7 @@ export function filterIndexedSessionReferences(
             SELECT s.agent_name, s.session_id
             FROM sessions s
             WHERE (${referenceClauses.join(" OR ")})
+              AND s.publication_id IS NULL
               ${filters.where}
           `,
         )
@@ -493,6 +494,7 @@ export function searchSessions(query: string, options: SearchOptions = {}): Sear
               '' AS snippet
             FROM sessions s
             WHERE 1 = 1
+              AND s.publication_id IS NULL
               ${filters.where}
             ORDER BY s.activity_time DESC
             LIMIT ?
@@ -518,6 +520,7 @@ export function searchSessions(query: string, options: SearchOptions = {}): Sear
           JOIN session_documents d ON d.id = session_documents_fts.rowid
           JOIN sessions s ON s.agent_name = d.agent_name AND s.session_id = d.session_id
           WHERE session_documents_fts MATCH ?
+            AND s.publication_id IS NULL
             ${filters.where}
           ORDER BY bm25(session_documents_fts, 8.0, 1.0), s.activity_time DESC
           LIMIT ?

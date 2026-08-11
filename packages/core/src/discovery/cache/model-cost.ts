@@ -72,7 +72,10 @@ const MODEL_COST_SQL = `
     SUM(CASE WHEN m.cost_source = 'recorded' THEN COALESCE(m.cost, 0) ELSE 0 END) AS cost_recorded,
     SUM(CASE WHEN m.cost_source = 'recorded' THEN 0 ELSE COALESCE(m.cost, 0) END) AS cost_estimated
   FROM messages m
-  JOIN sessions s ON s.agent_name = m.agent_name AND s.session_id = m.session_id
+  JOIN sessions s
+    ON s.agent_name = m.agent_name
+    AND s.session_id = m.session_id
+    AND s.publication_id IS NULL
 `;
 
 /**

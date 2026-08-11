@@ -10,7 +10,7 @@ import {
 
 const tempDirs = [];
 const coreFacts = {
-  cacheSchemaVersion: 20,
+  cacheSchemaVersion: 21,
   agents: [
     { name: "claudecode", displayName: "Claude Code", sourceKind: "filesystem" },
     { name: "cursor", displayName: "Cursor", sourceKind: "sqlite" },
@@ -47,7 +47,7 @@ function fixtureRepo(packageManager = "pnpm@11.20.0") {
     "docs/architecture.md": sourceKinds,
     "docs/sqlite-storage.md": marked(
       "cache-schema-version",
-      "- 当前 schema：`CACHE_SCHEMA_VERSION = 20`",
+      "- 当前 schema：`CACHE_SCHEMA_VERSION = 21`",
     ),
   };
 
@@ -76,13 +76,13 @@ describe("CS-172: semantic documentation facts", () => {
   it("reports a schema bump that was not copied to documentation", () => {
     const mismatches = findDocumentationFactMismatches(fixtureRepo(), {
       ...coreFacts,
-      cacheSchemaVersion: 21,
+      cacheSchemaVersion: 22,
     });
 
     expect(mismatches).toContainEqual({
       document: "docs/sqlite-storage.md",
       fact: "cache-schema-version",
-      message: "expected CACHE_SCHEMA_VERSION = 21; documented 20",
+      message: "expected CACHE_SCHEMA_VERSION = 22; documented 21",
     });
   });
 
