@@ -110,12 +110,14 @@ export async function createServer(
   const remoteAccessToken = accessPolicy.authenticationRequired
     ? (options.remoteAccessToken ?? (options.remoteAccess ? createRemoteAccessToken() : null))
     : null;
+  const loopbackAuthorityEnabled = !accessPolicy.authenticationRequired;
   let actualPort: number | null = null;
 
   appLogger.info("server.access_policy", {
     bind_category: accessPolicy.bindCategory,
     transport: transport.kind,
     authentication: remoteAccessToken ? "token" : "none",
+    loopback_authority: loopbackAuthorityEnabled ? "enabled" : "disabled",
   });
 
   if (accessPolicy.authenticationRequired && !remoteAccessToken) {
@@ -124,7 +126,7 @@ export async function createServer(
     );
   }
 
-  if (accessPolicy.bindCategory === "loopback") {
+  if (loopbackAuthorityEnabled) {
     app.use("*", async (c, next) => {
       const decision = validateLoopbackAuthority(c.env.incoming.rawHeaders, hostname, actualPort);
       if (!decision.allowed) {

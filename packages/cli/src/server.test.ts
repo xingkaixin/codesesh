@@ -482,6 +482,7 @@ describe("createServer", () => {
         bind_category: "loopback",
         transport: "trusted-proxy",
         authentication: "token",
+        loopback_authority: "disabled",
       });
       expect((await fetch(`${origin}/api/agents`, { headers: proxyHeaders })).status).toBe(401);
       expect(
@@ -509,6 +510,30 @@ describe("createServer", () => {
       await app.shutdown();
       warnSpy.mockRestore();
       logSpy.mockRestore();
+    }
+  });
+
+  it("CS-186: accepts a proxy's public authority on an authenticated loopback listener", async () => {
+    const app = await createServer(0, createStore(), {
+      hostname: "127.0.0.1",
+      remoteAccess: true,
+      remoteAccessToken: "proxy-token",
+      transport: { kind: "trusted-proxy" },
+    });
+    const origin = `http://127.0.0.1:${new URL(app.url).port}`;
+
+    try {
+      expect(
+        (
+          await httpRequest(`${origin}/api/agents`, {
+            Host: "codesesh.example.com",
+            "X-Forwarded-Proto": "https",
+            Authorization: "Bearer proxy-token",
+          })
+        ).status,
+      ).toBe(200);
+    } finally {
+      await app.shutdown();
     }
   });
 
