@@ -6,11 +6,6 @@
  */
 import { vi } from "vitest";
 
-export interface StubbedCanvas {
-  context: Record<string, ReturnType<typeof vi.fn>>;
-  restore: () => void;
-}
-
 const CONTEXT_METHODS = [
   "arc",
   "arcTo",
@@ -19,6 +14,7 @@ const CONTEXT_METHODS = [
   "clip",
   "closePath",
   "fill",
+  "fillRect",
   "moveTo",
   "rect",
   "restore",
@@ -28,6 +24,13 @@ const CONTEXT_METHODS = [
   "stroke",
   "translate",
 ] as const;
+
+type ContextMethod = (typeof CONTEXT_METHODS)[number];
+
+export interface StubbedCanvas {
+  context: Record<ContextMethod, ReturnType<typeof vi.fn>>;
+  restore: () => void;
+}
 
 function defineSize(size: { width: number; height: number }): () => void {
   const proto = HTMLElement.prototype as unknown as Record<string, unknown>;

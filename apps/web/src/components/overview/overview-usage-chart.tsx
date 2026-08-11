@@ -12,12 +12,11 @@ import { niceMax } from "../../lib/chart-shading";
 import { formatCompact, formatInt, formatMonthDay, formatUsd } from "../../lib/format";
 import { cn } from "../../lib/utils";
 import { Panel, PanelHeader } from "../ui/panel";
+import { TileAreaPlot } from "../ui/tile-area-plot";
 import { TILE_AXIS_WIDTH, TileBarPlot } from "../ui/tile-bar-plot";
 
 const BAR_HEIGHT = 168;
-const COST_HEIGHT = 52;
-/** Leaves the peak clear of the panel above it. */
-const COST_HEADROOM = 0.9;
+const COST_HEIGHT = 132;
 /** Any denser and the dates collide at a 30-day range. */
 const MAX_DATE_TICKS = 6;
 
@@ -33,28 +32,22 @@ const TOKEN_SERIES = [
 
 const TOKEN_COLORS = TOKEN_SERIES.map((series) => series.color);
 
+/** Axis ticks land on arbitrary fractions of the peak, so cents would be noise
+ *  in a 38px gutter. */
+function formatCostTick(value: number): string {
+  return value >= 1000 ? `$${formatCompact(value)}` : `$${Math.round(value)}`;
+}
+
 function bucketTokens(bucket: DashboardDailyBucket): number {
   return bucket.input + bucket.output + bucket.cache_read + bucket.cache_create;
 }
 
-function costAreaPoints(daily: DashboardDailyBucket[], maxCost: number) {
-  const edge = daily.map((bucket, index) => {
-    const x = ((index + 0.5) / daily.length) * 100;
-    const y = 100 - (bucket.cost / maxCost) * 100 * COST_HEADROOM;
-    return `${x.toFixed(2)},${y.toFixed(2)}`;
-  });
-  const first = `0,${100}`;
-  const last = `100,${100}`;
-  return { edge: edge.join(" "), area: [first, ...edge, last].join(" ") };
-}
-
 function CostArea({ daily }: { daily: DashboardDailyBucket[] }) {
-  const costs = daily.map((bucket) => bucket.cost);
+  const costs = useMemo(() => daily.map((bucket) => bucket.cost), [daily]);
+  const labels = useMemo(() => daily.map((bucket) => formatMonthDay(bucket.date)), [daily]);
   const total = costs.reduce((sum, cost) => sum + cost, 0);
   const peak = costs.reduce((max, cost) => Math.max(max, cost), 0);
   if (peak <= 0) return null;
-
-  const { edge, area } = costAreaPoints(daily, peak);
 
   return (
     <>
@@ -64,24 +57,15 @@ function CostArea({ daily }: { daily: DashboardDailyBucket[] }) {
           Peak {formatUsd(peak)} · Avg {formatUsd(total / daily.length)} · Total {formatUsd(total)}
         </span>
       </div>
-      <div className="relative mt-[7px]" style={{ height: COST_HEIGHT }} aria-hidden>
-        <span className="absolute inset-x-0 bottom-0 h-px bg-[var(--console-border)]" />
-        <svg
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          className="absolute inset-0 size-full"
-        >
-          <polygon points={area} fill="var(--brand)" fillOpacity="0.18" />
-          <polyline
-            points={edge}
-            fill="none"
-            stroke="var(--brand)"
-            strokeWidth="1.4"
-            vectorEffect="non-scaling-stroke"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </div>
+      <TileAreaPlot
+        values={costs}
+        max={peak}
+        labels={labels}
+        height={COST_HEIGHT}
+        formatValue={formatUsd}
+        formatTick={formatCostTick}
+        className="mt-[7px]"
+      />
     </>
   );
 }
@@ -186,8 +170,9 @@ export function OverviewUsageChart({ daily }: { daily: DashboardDailyBucket[] })
             ) : null}
           </div>
 
+          <CostArea daily={daily} />
+
           <div style={{ paddingLeft: TILE_AXIS_WIDTH }}>
-            <CostArea daily={daily} />
             <div className="console-mono mt-2 flex text-[10px] text-[var(--console-muted)]">
               {daily.map((bucket, index) => (
                 <span key={bucket.date} className="flex-1 text-center">

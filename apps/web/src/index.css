@@ -219,13 +219,22 @@
     --console-thinking-bg: #fbfaf8;
     --console-thinking-border: #ecebe5;
 
-    /* Token composition ramp: one hue, four steps. A token class is a part of
-       one quantity, so it reads as a scale — the categorical ramp below stays
+    /* Token composition ramp: one hue, four steps. A token class is a part
+       of one quantity, so it reads as a scale — the categorical ramp below stays
        reserved for models, where the series really are unrelated. */
     --token-input: #1f6f8c;
     --token-output: #3e9cb8;
     --token-cache-read: #7cc3d6;
     --token-cache-write: #bcdfea;
+
+    /* The paper every canvas chart sits on. */
+    --chart-hatch: rgba(79, 96, 132, 0.05);
+
+    /* Tiled area field: unlit cell, then the ramp its lit cells run along. Both
+       ends are OKLCH so the steps between them stay perceptually even. */
+    --tile-rest: oklch(0.925 0.012 45);
+    --tile-wash: oklch(0.86 0.055 45);
+    --tile-ink: oklch(0.62 0.175 45);
 
     /* Chart / categorical ramp */
     --chart-1: #4a9eff;
@@ -378,6 +387,11 @@
     --token-cache-read: #86cadd;
     --token-cache-write: #b6e0ec;
 
+    --chart-hatch: rgba(255, 255, 255, 0.04);
+    --tile-rest: oklch(0.32 0.012 45);
+    --tile-wash: oklch(0.44 0.07 45);
+    --tile-ink: oklch(0.78 0.175 45);
+
     --chart-1: #64adff;
     --chart-2: #9179ff;
     --chart-3: #55c79e;
@@ -482,6 +496,12 @@
   .console-display {
     font-family: var(--font-display);
     letter-spacing: var(--tracking-display);
+  }
+
+  /* The paper a canvas chart is painted on: too faint to read as content, but
+     it keeps an empty plot from looking broken. */
+  .chart-hatch {
+    background: repeating-linear-gradient(-45deg, var(--chart-hatch) 0 1px, transparent 1px 7px);
   }
 
   /* The uppercase mono eyebrow used by every card header. */

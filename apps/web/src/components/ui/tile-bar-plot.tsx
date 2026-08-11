@@ -75,7 +75,7 @@ export function TileBarPlot({
       ) : null}
 
       <div
-        className="relative min-w-0 flex-1 touch-none"
+        className="chart-hatch relative min-w-0 flex-1 touch-none"
         style={{ height }}
         onPointerMove={(event) => onHover(hitTest(event.clientX, event.clientY))}
         onPointerLeave={() => onHover(null)}
