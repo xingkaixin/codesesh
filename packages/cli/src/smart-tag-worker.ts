@@ -4,10 +4,12 @@ import {
   createRegisteredAgents,
   classifySessionTags,
   getSmartTagSourceTimestamp,
+  synchronizePricingGeneration,
   type SessionCacheMeta,
 } from "@codesesh/core";
 
 interface SmartTagWorkerData {
+  pricingGenerationId: number;
   agentName: string;
   sessionIds: string[];
   meta: Record<string, Record<string, unknown>>;
@@ -21,6 +23,7 @@ interface SmartTagWorkerResult {
 }
 
 const data = workerData as SmartTagWorkerData;
+synchronizePricingGeneration(data.pricingGenerationId);
 const agents = createRegisteredAgents();
 const agent = agents.find((a) => a.name === data.agentName);
 const results: SmartTagWorkerResult[] = [];

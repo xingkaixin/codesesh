@@ -45,7 +45,7 @@ export interface PricingGeneration {
 let published: PricingGeneration = { id: 1, pricing: loadSnapshot() };
 /** A completed refresh waiting for a safe point to become current. */
 let pending: Map<string, ModelPricing> | null = null;
-loadDiskCache();
+published = readDiskCache() ?? published;
 
 function normalizeKey(key: string): string {
   return key.trim().toLowerCase();
@@ -133,26 +133,36 @@ function parseLiteLLMData(data: Record<string, LiteLLMEntry>): Map<string, Model
   return map;
 }
 
-function loadDiskCache() {
+interface PricingCache {
+  timestamp: number;
+  generation?: number;
+  data: Record<string, Record<string, unknown>>;
+}
+
+function readDiskCache(allowStale = false): PricingGeneration | null {
   const path = getCachePath();
-  if (!existsSync(path)) return;
+  if (!existsSync(path)) return null;
 
   try {
-    const cached = JSON.parse(readFileSync(path, "utf-8")) as {
-      timestamp: number;
-      data: Record<string, Record<string, unknown>>;
-    };
-    if (Date.now() - cached.timestamp <= CACHE_TTL_MS) {
-      const next = loadSnapshot();
-      for (const [name, rawPricing] of Object.entries(cached.data)) {
-        const pricing = normalizeCachedPricing(rawPricing);
-        if (!pricing) continue;
-        next.set(normalizeKey(name), pricing);
-      }
-      published = { id: published.id + 1, pricing: next };
+    const cached = JSON.parse(readFileSync(path, "utf-8")) as PricingCache;
+    if (!Number.isFinite(cached.timestamp)) return null;
+    if (!allowStale && Date.now() - cached.timestamp > CACHE_TTL_MS) return null;
+    if (cached.data == null || typeof cached.data !== "object" || Array.isArray(cached.data)) {
+      return null;
     }
+
+    const generation = cached.generation ?? 2;
+    if (!Number.isSafeInteger(generation) || generation < 1) return null;
+
+    const next = loadSnapshot();
+    for (const [name, rawPricing] of Object.entries(cached.data)) {
+      const pricing = normalizeCachedPricing(rawPricing);
+      if (!pricing) continue;
+      next.set(normalizeKey(name), pricing);
+    }
+    return { id: generation, pricing: next };
   } catch {
-    // ignore malformed cache
+    return null;
   }
 }
 
@@ -165,13 +175,44 @@ export function getPricingGeneration(): PricingGeneration {
   return published;
 }
 
+/** Aligns an isolated worker with the generation selected by its parent. */
+export function synchronizePricingGeneration(expectedId: number): void {
+  if (!Number.isSafeInteger(expectedId) || expectedId < 1) {
+    throw new Error(`Invalid pricing generation: ${expectedId}`);
+  }
+  if (published.id === expectedId) return;
+
+  const cached = readDiskCache(true);
+  if (cached?.id !== expectedId) {
+    throw new Error(
+      `Pricing generation ${expectedId} is unavailable (current ${published.id}, cached ${cached?.id ?? "none"})`,
+    );
+  }
+
+  published = cached;
+  getCoreDiagnostics()?.info?.("pricing.generation.synchronized", {
+    generation: published.id,
+    models: published.pricing.size,
+  });
+}
+
 /**
  * Makes a completed refresh current. Owners call this between scans, never
  * during one, so a scan cannot span two generations.
  */
 export function publishPendingPricing(): boolean {
   if (!pending) return false;
-  published = { id: published.id + 1, pricing: pending };
+
+  const nextId = published.id + 1;
+  if (!Number.isSafeInteger(nextId)) {
+    getCoreDiagnostics()?.warn("pricing.generation_exhausted", { generation: published.id });
+    return false;
+  }
+
+  const next = { id: nextId, pricing: pending } satisfies PricingGeneration;
+  if (!writeDiskCacheAtomically(getCachePath(), next)) return false;
+
+  published = next;
   pending = null;
   getCoreDiagnostics()?.info?.("pricing.generation.published", {
     generation: published.id,
@@ -195,19 +236,25 @@ export function hasBillablePricing(pricing: ModelPricing): boolean {
 }
 
 /** Replaces the cache in one step, so an interrupted write cannot truncate it. */
-function writeDiskCacheAtomically(path: string, pricing: Map<string, ModelPricing>): void {
+function writeDiskCacheAtomically(path: string, generation: PricingGeneration): boolean {
   const temporaryPath = `${path}.${process.pid}.tmp`;
-  const payload = JSON.stringify({ timestamp: Date.now(), data: Object.fromEntries(pricing) });
+  const payload = JSON.stringify({
+    timestamp: Date.now(),
+    generation: generation.id,
+    data: Object.fromEntries(generation.pricing),
+  });
   try {
     ensurePrivateDirectory(getCacheDir());
     writeFileSync(temporaryPath, payload);
     restrictPrivateFile(temporaryPath);
     renameSync(temporaryPath, path);
+    return true;
   } catch (error) {
     rmSync(temporaryPath, { force: true });
     getCoreDiagnostics()?.warn("pricing.cache_write_failed", {
       message: error instanceof Error ? error.message : String(error),
     });
+    return false;
   }
 }
 
@@ -252,7 +299,6 @@ export async function refreshPricingCache(options: RefreshPricingOptions = {}): 
     }
 
     pending = next;
-    writeDiskCacheAtomically(path, next);
     getCoreDiagnostics()?.info?.("pricing.refresh.completed", {
       generation: published.id,
       models: next.size,

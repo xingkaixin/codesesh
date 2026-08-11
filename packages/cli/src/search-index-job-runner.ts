@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
+import { getPricingGeneration } from "@codesesh/core";
 import { toError } from "./errors.js";
 import { appLogger, logSearchIndexSync } from "./logging.js";
 import { PendingSearchIndexJobs, type SearchIndexJobBatch } from "./pending-search-index-jobs.js";
@@ -99,6 +100,7 @@ export class SearchIndexJobRunner {
 
     const worker = new Worker(workerUrl, {
       workerData: {
+        pricingGenerationId: getPricingGeneration().id,
         context: batch.context,
         jobs: batch.jobs,
         agentNames: [],

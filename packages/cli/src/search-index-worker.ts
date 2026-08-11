@@ -6,6 +6,7 @@ import {
   createRegisteredAgents,
   markAgentCacheInitialized,
   sessionDetailVersion,
+  synchronizePricingGeneration,
   syncSessionSearchIndex,
   type SearchIndexSyncResult,
   type SearchIndexSyncOptions,
@@ -65,6 +66,7 @@ export type SearchIndexWorkerJob =
     };
 
 interface SearchIndexWorkerData {
+  pricingGenerationId: number;
   jobs?: SearchIndexWorkerJob[];
   context: string;
   agentNames: string[];
@@ -76,6 +78,7 @@ type WorkerAgent = ReturnType<typeof createRegisteredAgents>[number];
 
 const data = workerData as SearchIndexWorkerData;
 const startedAt = performance.now();
+synchronizePricingGeneration(data.pricingGenerationId);
 const agents = createRegisteredAgents();
 const jobs =
   data.jobs ??

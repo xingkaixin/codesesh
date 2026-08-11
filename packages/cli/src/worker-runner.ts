@@ -1,12 +1,13 @@
 import { Worker } from "node:worker_threads";
-import type {
-  AgentScanProgress,
-  ScanOptions,
-  SessionCacheMeta,
-  SessionHead,
-  SessionHeadChange,
-  SessionSourceFailure,
-  SessionSnapshotCompleteness,
+import {
+  getPricingGeneration,
+  type AgentScanProgress,
+  type ScanOptions,
+  type SessionCacheMeta,
+  type SessionHead,
+  type SessionHeadChange,
+  type SessionSourceFailure,
+  type SessionSnapshotCompleteness,
 } from "@codesesh/core";
 import { appLogger } from "./logging.js";
 import type {
@@ -134,6 +135,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
       requestId: this.nextRequestId++,
       agentName,
       generation,
+      pricingGenerationId: getPricingGeneration().id,
       operation: payload.operation,
       scanOptions: payload.scanOptions,
       ...(existingSlot ? {} : { previousSessions: payload.previousSessions, meta: payload.meta }),

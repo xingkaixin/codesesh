@@ -11,6 +11,7 @@ import {
   sessionSignature,
   SMART_TAG_CLASSIFIER_REVISION,
   sortSessions,
+  synchronizePricingGeneration,
   synchronizeSessionSources,
   type AgentScanProgress,
   type BaseAgent,
@@ -84,6 +85,7 @@ export interface ScanRefreshWorkerRunRequest {
   requestId: number;
   agentName: string;
   generation: number;
+  pricingGenerationId: number;
   previousSessions?: SessionHead[];
   operation: ScanRefreshOperation;
   scanOptions: Pick<ScanOptions, "from" | "to" | "fast">;
@@ -585,6 +587,7 @@ async function handleRequest(data: ScanRefreshWorkerRunRequest): Promise<void> {
     },
   );
   try {
+    synchronizePricingGeneration(data.pricingGenerationId);
     await run(data, progressEmitter);
   } catch (error) {
     progressEmitter.flush();
@@ -630,6 +633,7 @@ if (
   initialRequest?.type === "run" &&
   typeof initialRequest.requestId === "number" &&
   typeof initialRequest.agentName === "string" &&
+  typeof initialRequest.pricingGenerationId === "number" &&
   initialRequest.operation != null &&
   Array.isArray(initialRequest.previousSessions) &&
   initialRequest.meta != null

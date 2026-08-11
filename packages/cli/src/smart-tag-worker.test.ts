@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   workerData: {} as Record<string, unknown>,
   postMessage: vi.fn(),
   createRegisteredAgents: vi.fn(),
+  synchronizePricingGeneration: vi.fn(),
   classifySessionTags: vi.fn(() => ["bugfix"]),
   getSmartTagSourceTimestamp: vi.fn(() => 42),
 }));
@@ -19,11 +20,13 @@ vi.mock("@codesesh/core", () => ({
   createRegisteredAgents: mocks.createRegisteredAgents,
   classifySessionTags: mocks.classifySessionTags,
   getSmartTagSourceTimestamp: mocks.getSmartTagSourceTimestamp,
+  synchronizePricingGeneration: mocks.synchronizePricingGeneration,
   // diagnostics-bridge.js (imported by the worker for its side effect) needs this export.
   setCoreDiagnostics: vi.fn(),
 }));
 
 async function runWorker() {
+  mocks.workerData = { pricingGenerationId: 17, ...mocks.workerData };
   await import("./smart-tag-worker.js");
 }
 
@@ -38,6 +41,17 @@ beforeEach(() => {
 });
 
 describe("smart tag worker", () => {
+  it("synchronizes pricing before creating agents", async () => {
+    mocks.createRegisteredAgents.mockReturnValue([]);
+
+    await runWorker();
+
+    expect(mocks.synchronizePricingGeneration).toHaveBeenCalledWith(17);
+    expect(mocks.synchronizePricingGeneration.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.createRegisteredAgents.mock.invocationCallOrder[0]!,
+    );
+  });
+
   it("classifies sessions and isolates per-session failures", async () => {
     const sessionData = { messages: [] };
     const agent = {

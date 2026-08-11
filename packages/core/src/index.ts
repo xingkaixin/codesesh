@@ -137,6 +137,7 @@ export {
   hasPendingPricing,
   publishPendingPricing,
   refreshPricingCache,
+  synchronizePricingGeneration,
   type PricingGeneration,
 } from "./pricing/index.js";
 export { buildDashboard, getSessionActivityTime } from "./analytics/dashboard.js";
