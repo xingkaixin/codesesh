@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SearchIndexWorkerJob, SearchIndexWorkerMessage } from "./search-index-worker.js";
+import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 
 const workerMocks = vi.hoisted(() => {
   type Handler = (arg: never) => void;
@@ -23,21 +23,30 @@ const workerMocks = vi.hoisted(() => {
       return 0;
     }
 
-    post(message: SearchIndexWorkerMessage): void {
-      (this.handlers.get("message") as ((arg: SearchIndexWorkerMessage) => void) | undefined)?.(
-        message,
-      );
+    post(message: unknown): void {
+      (this.handlers.get("message") as ((arg: unknown) => void) | undefined)?.(message);
     }
   }
   const workers: FakeWorker[] = [];
-  return { workers, FakeWorker, workerExists: true };
+  return {
+    workers,
+    FakeWorker,
+    workerExists: true,
+    consumeWorkerMessage: vi.fn((_message: unknown) => false),
+  };
 });
 
 vi.mock("node:worker_threads", () => ({ Worker: workerMocks.FakeWorker }));
 vi.mock("node:fs", () => ({ existsSync: () => workerMocks.workerExists }));
 vi.mock("@codesesh/core", () => ({ getPricingGeneration: () => ({ id: 17 }) }));
 vi.mock("./logging.js", () => ({
-  appLogger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  appLogger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    consumeWorkerMessage: workerMocks.consumeWorkerMessage,
+  },
   logSearchIndexSync: vi.fn(),
 }));
 
@@ -64,9 +73,24 @@ beforeEach(() => {
   workerMocks.workers.length = 0;
   workerMocks.workerExists = true;
   vi.clearAllMocks();
+  workerMocks.consumeWorkerMessage.mockReturnValue(false);
 });
 
 describe("SearchIndexJobRunner", () => {
+  it("consumes worker logs without settling the active batch", async () => {
+    const runner = new SearchIndexJobRunner();
+    const completion = runner.enqueue("scan.refresh", [makeJob()]);
+    const worker = startedWorker();
+    const logMessage = { type: "codesesh.worker-log" };
+    workerMocks.consumeWorkerMessage.mockImplementation((message) => message === logMessage);
+
+    worker.post(logMessage);
+    worker.post({ type: "done", context: "scan.refresh", durationMs: 1, sessions: 1 });
+
+    expect(workerMocks.consumeWorkerMessage).toHaveBeenNthCalledWith(1, logMessage);
+    await expect(completion).resolves.toBeUndefined();
+  });
+
   it("pins each worker batch to the current pricing generation", async () => {
     const runner = new SearchIndexJobRunner();
     const completion = runner.enqueue("scan.refresh", [makeJob()]);

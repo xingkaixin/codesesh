@@ -65,6 +65,7 @@ const mocks = vi.hoisted(() => {
       info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
+      forwardToParent: vi.fn(),
     },
   };
 });
@@ -76,6 +77,7 @@ vi.mock("node:worker_threads", () => ({
       if (event === "message") mocks.workerMessageHandler = handler;
     }),
   },
+  threadId: 17,
   get workerData() {
     return mocks.workerData;
   },
@@ -184,6 +186,10 @@ describe("scan refresh worker entry", () => {
 
     await runWorker();
 
+    expect(mocks.appLogger.forwardToParent).toHaveBeenCalledWith(
+      expect.objectContaining({ postMessage: mocks.postMessage }),
+      17,
+    );
     expect(mocks.synchronizePricingGeneration).toHaveBeenCalledWith(17);
     expect(mocks.synchronizePricingGeneration.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.createRegisteredAgents.mock.invocationCallOrder[0]!,

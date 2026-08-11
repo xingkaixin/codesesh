@@ -222,8 +222,9 @@ export class ThreadWorkerRunner implements WorkerRunner {
     };
     worker.unref();
     this.workers.set(agentName, slot);
-    worker.on("message", (message: ScanRefreshWorkerMessage) => {
-      this.handleMessage(slot, message);
+    worker.on("message", (message: unknown) => {
+      if (appLogger.consumeWorkerMessage(message)) return;
+      this.handleMessage(slot, message as ScanRefreshWorkerMessage);
     });
     worker.on("error", (error) => {
       this.closeWorker(agentName, slot, toError(error));

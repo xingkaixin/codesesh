@@ -126,11 +126,15 @@ export {
   classifySessionTags,
   ensurePrivateDirectory,
   getSmartTagSourceTimestamp,
+  isWorkerLogMessage,
   SMART_TAG_CLASSIFIER_REVISION,
   perf,
   restrictExistingPrivateFiles,
   restrictPrivateFile,
   setCoreDiagnostics,
+  WORKER_LOG_MESSAGE_TYPE,
+  type WorkerLogLevel,
+  type WorkerLogMessage,
 } from "./utils/index.js";
 export {
   getPricingGeneration,
