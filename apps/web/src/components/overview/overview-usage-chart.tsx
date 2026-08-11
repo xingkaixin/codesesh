@@ -18,8 +18,10 @@ const BAR_HEIGHT = 168;
 const COST_HEIGHT = 52;
 /** Leaves the peak clear of the panel above it. */
 const COST_HEADROOM = 0.9;
+/** Any denser and the dates collide at a 30-day range. */
+const MAX_DATE_TICKS = 6;
 
-const BAR_LAYOUT = { barRatio: 0.86, barMax: 30, bandGap: 0, minBand: 1 };
+const BAR_LAYOUT = { barRatio: 0.86, barMax: 46, bandGap: 0, minBand: 1 };
 
 /** Bottom to top, deepest blue at the base of every bar. */
 const TOKEN_SERIES = [
@@ -131,6 +133,7 @@ export function OverviewUsageChart({ daily }: { daily: DashboardDailyBucket[] })
   const range =
     first && last ? ` · ${formatMonthDay(first.date)} → ${formatMonthDay(last.date)}` : "";
   const hovered = hover === null ? undefined : daily[hover.column];
+  const tickStep = Math.max(1, Math.ceil(daily.length / MAX_DATE_TICKS));
 
   return (
     <Panel role="region" aria-label="Daily usage" className="p-4">
@@ -188,7 +191,7 @@ export function OverviewUsageChart({ daily }: { daily: DashboardDailyBucket[] })
             <div className="console-mono mt-2 flex text-[10px] text-[var(--console-muted)]">
               {daily.map((bucket, index) => (
                 <span key={bucket.date} className="flex-1 text-center">
-                  {index === 0 || index === daily.length - 1 || index % 6 === 0
+                  {index % tickStep === 0 || index === daily.length - 1
                     ? formatMonthDay(bucket.date)
                     : ""}
                 </span>

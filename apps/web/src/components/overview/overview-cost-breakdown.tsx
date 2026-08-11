@@ -13,7 +13,7 @@ import { Panel, PanelHeader } from "../ui/panel";
 import { TileDonut } from "../ui/tile-donut";
 
 const LEGEND_LIMIT = 5;
-const DONUT_SIZE = 124;
+const DONUT_SIZE = 142;
 /** Below this share of the total the cache lag is noise, not a missing slice. */
 const REMAINDER_THRESHOLD = 0.01;
 
@@ -83,10 +83,13 @@ export function OverviewCostBreakdown({
       entries: byCost ? costEntries(modelCost, totals.cost) : tokenEntries(modelDistribution),
     };
   }, [modelCost, modelDistribution, totals.cost]);
-  const total = entries.reduce((sum, entry) => sum + entry.value, 0);
+  // Shares are of the ring, so they always add up to it; the centre reports the
+  // scope total the KPI row already shows, which the ring covers in full once
+  // the per-model rows agree with it.
+  const ringTotal = entries.reduce((sum, entry) => sum + entry.value, 0);
   const shares = useMemo(
-    () => entries.map((entry) => (total > 0 ? entry.value / total : 1 / entries.length)),
-    [entries, total],
+    () => entries.map((entry) => (ringTotal > 0 ? entry.value / ringTotal : 1 / entries.length)),
+    [entries, ringTotal],
   );
 
   const title = byCost ? "Cost by Model" : "Models";
@@ -107,7 +110,7 @@ export function OverviewCostBreakdown({
             size={DONUT_SIZE}
           >
             <span className="console-mono text-[16px] font-semibold text-[var(--console-text)]">
-              {byCost ? formatUsd(total) : formatCompact(total)}
+              {byCost ? formatUsd(totals.cost) : formatCompact(totals.tokens)}
             </span>
             <span className="console-mono mt-0.5 text-[9px] text-[var(--console-muted)]">
               {byCost ? "total cost" : "total tokens"}
@@ -134,7 +137,7 @@ export function OverviewCostBreakdown({
                   {entry.label}
                 </span>
                 <span className="console-mono w-[34px] shrink-0 text-right text-[10.5px] text-[var(--console-muted)]">
-                  {formatPercent(total > 0 ? entry.value / total : 0)}
+                  {formatPercent(ringTotal > 0 ? entry.value / ringTotal : 0)}
                 </span>
                 <span className="console-mono w-[54px] shrink-0 text-right text-[10.5px] text-[var(--console-text)]">
                   {entry.display}

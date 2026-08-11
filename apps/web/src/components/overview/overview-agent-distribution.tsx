@@ -7,7 +7,6 @@ import { useMemo, useState } from "react";
 
 import type { BarHover } from "../../hooks/useBarField";
 import type { DashboardAgentStat } from "../../lib/api";
-import { niceMax } from "../../lib/chart-shading";
 import { formatInt, formatUsd } from "../../lib/format";
 import { cn } from "../../lib/utils";
 import { AgentIcon } from "../AgentIcon";
@@ -27,7 +26,9 @@ export function OverviewAgentDistribution({ perAgent }: { perAgent: DashboardAge
     const weightOf = (agent: DashboardAgentStat) => (byCost ? agent.cost : agent.sessions);
     const visible = [...perAgent].sort((a, b) => weightOf(b) - weightOf(a)).slice(0, AGENT_LIMIT);
     const values = visible.map((agent) => [weightOf(agent)]);
-    return { byCost, visible, values, axisMax: niceMax(Math.max(...values.flat(), 0)) };
+    // The leader touches the top: with the figures printed under every bar
+    // there is no axis to round to, and rounded headroom would just be blank.
+    return { byCost, visible, values, axisMax: Math.max(...values.flat(), 0) };
   }, [perAgent]);
 
   return (

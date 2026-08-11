@@ -119,6 +119,7 @@ export function useBarField(
       w: number,
       h: number,
       color: string,
+      glow: string,
       alpha: number,
       hot: boolean,
       isTop: boolean,
@@ -155,12 +156,14 @@ export function useBarField(
       ctx.fill();
       ctx.restore();
 
+      // A band keeps its own colour when hot — it encodes a series here — so the
+      // highlight is carried by denser tiles plus an outline in the accent.
       if (hot) {
         ctx.save();
         trace();
-        ctx.strokeStyle = color;
+        ctx.strokeStyle = glow;
         ctx.lineWidth = 1.75;
-        ctx.shadowColor = color;
+        ctx.shadowColor = glow;
         ctx.shadowBlur = 10;
         ctx.stroke();
         ctx.restore();
@@ -214,7 +217,8 @@ export function useBarField(
               bottom - height,
               barW,
               height,
-              hot ? highlightColor : (palette[band] ?? palette[0] ?? highlightColor),
+              palette[band] ?? palette[0] ?? highlightColor,
+              highlightColor,
               alpha,
               hot,
               band === bands.length - 1,
