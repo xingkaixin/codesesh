@@ -48,6 +48,7 @@ const mocks = vi.hoisted(() => {
     postMessage: vi.fn(),
     attachMissingProjectIdentities: vi.fn((sessions: SessionHead[]) => sessions),
     createRegisteredAgents: vi.fn(),
+    synchronizePricingGeneration: vi.fn(),
     ensureSessionTagsSync: vi.fn(
       (
         _agent: BaseAgent,
@@ -87,6 +88,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
   return {
     attachMissingProjectIdentities: mocks.attachMissingProjectIdentities,
     createRegisteredAgents: mocks.createRegisteredAgents,
+    synchronizePricingGeneration: mocks.synchronizePricingGeneration,
     ensureSessionTagsSync: mocks.ensureSessionTagsSync,
     FileSystemSessionSource: mocks.FileSystemSessionSource,
     PRICING_CAPTURE_EPOCH: actual.PRICING_CAPTURE_EPOCH,
@@ -151,6 +153,7 @@ function setWorkerData(overrides: Record<string, unknown> = {}) {
     type: "run",
     requestId: 1,
     agentName: "codex",
+    pricingGenerationId: 17,
     previousSessions: [],
     operation: { kind: "full-scan" },
     scanOptions: { fast: true },
@@ -176,6 +179,17 @@ beforeEach(() => {
 });
 
 describe("scan refresh worker entry", () => {
+  it("synchronizes pricing before creating agents", async () => {
+    mocks.createRegisteredAgents.mockReturnValue([]);
+
+    await runWorker();
+
+    expect(mocks.synchronizePricingGeneration).toHaveBeenCalledWith(17);
+    expect(mocks.synchronizePricingGeneration.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.createRegisteredAgents.mock.invocationCallOrder[0]!,
+    );
+  });
+
   it("reports an unknown agent as an error", async () => {
     mocks.createRegisteredAgents.mockReturnValue([]);
 
@@ -284,6 +298,7 @@ describe("scan refresh worker entry", () => {
       requestId: 2,
       agentName: "codex",
       generation: 5,
+      pricingGenerationId: 17,
       operation: { kind: "recompute-derived" },
       scanOptions: {},
     });
@@ -301,6 +316,7 @@ describe("scan refresh worker entry", () => {
     );
     expect(scan).toHaveBeenCalledTimes(1);
     expect(mocks.createRegisteredAgents).toHaveBeenCalledTimes(1);
+    expect(mocks.synchronizePricingGeneration).toHaveBeenCalledTimes(2);
   });
 
   it("fails closed when an operation skips the committed generation", async () => {
@@ -319,6 +335,7 @@ describe("scan refresh worker entry", () => {
       requestId: 2,
       agentName: "codex",
       generation: 4,
+      pricingGenerationId: 17,
       operation: { kind: "recompute-derived" },
       scanOptions: {},
     });

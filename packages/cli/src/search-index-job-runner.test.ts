@@ -5,8 +5,10 @@ const workerMocks = vi.hoisted(() => {
   type Handler = (arg: never) => void;
   class FakeWorker {
     private handlers = new Map<string, Handler>();
+    readonly workerData: Record<string, unknown>;
 
-    constructor() {
+    constructor(_url: URL, options?: { workerData?: Record<string, unknown> }) {
+      this.workerData = options?.workerData ?? {};
       workers.push(this);
     }
 
@@ -33,6 +35,7 @@ const workerMocks = vi.hoisted(() => {
 
 vi.mock("node:worker_threads", () => ({ Worker: workerMocks.FakeWorker }));
 vi.mock("node:fs", () => ({ existsSync: () => workerMocks.workerExists }));
+vi.mock("@codesesh/core", () => ({ getPricingGeneration: () => ({ id: 17 }) }));
 vi.mock("./logging.js", () => ({
   appLogger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   logSearchIndexSync: vi.fn(),
@@ -64,6 +67,16 @@ beforeEach(() => {
 });
 
 describe("SearchIndexJobRunner", () => {
+  it("pins each worker batch to the current pricing generation", async () => {
+    const runner = new SearchIndexJobRunner();
+    const completion = runner.enqueue("scan.refresh", [makeJob()]);
+    const worker = startedWorker();
+
+    expect(worker.workerData.pricingGenerationId).toBe(17);
+    worker.post({ type: "done", context: "scan.refresh", durationMs: 1, sessions: 1 });
+    await completion;
+  });
+
   it("resolves the batch when the worker reports done", async () => {
     const runner = new SearchIndexJobRunner();
     const completion = runner.enqueue("scan.refresh", [makeJob()]);

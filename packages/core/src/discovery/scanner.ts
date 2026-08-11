@@ -25,6 +25,7 @@ import {
   SMART_TAG_CLASSIFIER_REVISION,
 } from "../utils/index.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
+import { getPricingGeneration } from "../pricing/index.js";
 import {
   loadCachedSessions,
   markAgentCacheInitialized,
@@ -273,7 +274,12 @@ async function classifySessionTagsInWorker(
 ): Promise<SmartTagWorkerResult[]> {
   return new Promise((resolveWorker, rejectWorker) => {
     const worker = new Worker(workerUrl, {
-      workerData: { agentName, sessionIds, meta },
+      workerData: {
+        pricingGenerationId: getPricingGeneration().id,
+        agentName,
+        sessionIds,
+        meta,
+      },
     });
     worker.once("message", (results: SmartTagWorkerResult[]) => resolveWorker(results));
     worker.once("error", rejectWorker);

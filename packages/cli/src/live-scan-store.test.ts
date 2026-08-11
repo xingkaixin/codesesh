@@ -1307,6 +1307,7 @@ describe("LiveScanStore", () => {
     expect(runRequest).toMatchObject({
       type: "run",
       generation: 1,
+      pricingGenerationId: expect.any(Number),
       operation: { kind: "recompute-derived" },
     });
     expect(runRequest).not.toHaveProperty("previousSessions");

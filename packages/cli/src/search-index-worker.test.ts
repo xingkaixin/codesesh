@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   commitDurableSessionPublication: vi.fn(),
   createRegisteredAgents: vi.fn(),
   markAgentCacheInitialized: vi.fn(),
+  synchronizePricingGeneration: vi.fn(),
   syncSessionSearchIndex: vi.fn(),
   appLoggerInfo: vi.fn(),
   appLoggerWarn: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("@codesesh/core", () => ({
   createRegisteredAgents: mocks.createRegisteredAgents,
   markAgentCacheInitialized: mocks.markAgentCacheInitialized,
   sessionDetailVersion: (meta: { id?: string }) => `detail:${meta.id ?? "none"}`,
+  synchronizePricingGeneration: mocks.synchronizePricingGeneration,
   syncSessionSearchIndex: mocks.syncSessionSearchIndex,
   // diagnostics-bridge.js (imported by the worker for its side effect) needs this export.
   setCoreDiagnostics: vi.fn(),
@@ -46,6 +48,7 @@ function makeAgent() {
 }
 
 async function runWorker() {
+  mocks.workerData = { pricingGenerationId: 17, ...mocks.workerData };
   await import("./search-index-worker.js");
 }
 
@@ -66,6 +69,17 @@ beforeEach(() => {
 });
 
 describe("search index worker", () => {
+  it("synchronizes pricing before creating agents", async () => {
+    mocks.createRegisteredAgents.mockReturnValue([]);
+
+    await runWorker();
+
+    expect(mocks.synchronizePricingGeneration).toHaveBeenCalledWith(17);
+    expect(mocks.synchronizePricingGeneration.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.createRegisteredAgents.mock.invocationCallOrder[0]!,
+    );
+  });
+
   it("builds legacy full jobs", async () => {
     const agent = makeAgent();
     mocks.createRegisteredAgents.mockReturnValue([agent]);
