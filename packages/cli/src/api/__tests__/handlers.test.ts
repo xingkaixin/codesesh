@@ -509,12 +509,11 @@ describe("handleGetSessions", () => {
     expect(response.sessions[0].id).toBe("old-active");
   });
 
-  it("ignores invalid from date", () => {
+  it("rejects an invalid from date", () => {
     const c = makeMockContext({ query: { from: "not-a-date" } });
     handleGetSessions(c, makeScanSource());
-    const response = c.json.mock.calls[0]![0];
-    // Invalid date → filter not applied
-    expect(response.sessions).toHaveLength(2);
+
+    expect(c.json).toHaveBeenCalledWith({ error: "from must be a valid date" }, 400);
   });
 });
 

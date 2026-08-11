@@ -49,14 +49,17 @@ import {
 import {
   handleDeleteBookmark,
   handleDeleteSessionAlias,
+  handleGetAgents,
   handleGetBookmarks,
   handleGetDashboard,
   handleGetFileActivity,
+  handleGetProjects,
   handleGetSessions,
   handleImportBookmarks,
   handlePostClientLog,
   handlePutBookmark,
   handlePutSessionAlias,
+  handleSearchSessions,
   type ScanResultSource,
 } from "../handlers.js";
 import { addCalendarDays } from "@codesesh/core/contract";
@@ -576,6 +579,41 @@ describe("session alias handlers", () => {
 });
 
 describe("query boundary handlers", () => {
+  const dateHandlers: Array<{
+    endpoint: string;
+    invoke: (context: ReturnType<typeof makeContext>) => unknown;
+  }> = [
+    { endpoint: "agents", invoke: (context) => handleGetAgents(context as never, scanSource) },
+    { endpoint: "projects", invoke: (context) => handleGetProjects(context as never, scanSource) },
+    { endpoint: "sessions", invoke: (context) => handleGetSessions(context as never, scanSource) },
+    { endpoint: "search", invoke: (context) => handleSearchSessions(context as never, scanSource) },
+    { endpoint: "file-activity", invoke: (context) => handleGetFileActivity(context as never) },
+    {
+      endpoint: "dashboard",
+      invoke: (context) => handleGetDashboard(context as never, scanSource),
+    },
+  ];
+
+  for (const { endpoint, invoke } of dateHandlers) {
+    for (const parameter of ["from", "to"] as const) {
+      it(`rejects an invalid ${parameter} parameter on ${endpoint}`, () => {
+        const context = makeContext({ query: { [parameter]: "not-a-date" } });
+
+        invoke(context);
+
+        expect(context.json).toHaveBeenCalledWith(
+          { error: `${parameter} must be a valid date` },
+          400,
+        );
+        expect(loggerMocks.warn).toHaveBeenCalledWith("api.query_parameter.invalid", {
+          endpoint,
+          parameter,
+          validation_outcome: "rejected",
+        });
+      });
+    }
+  }
+
   it("reports rejected and empty-result parameter outcomes", () => {
     const sessions = makeContext({ query: { agent: "nonexistent" } });
     handleGetSessions(sessions as never, scanSource);

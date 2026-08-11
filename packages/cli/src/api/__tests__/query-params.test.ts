@@ -1,7 +1,38 @@
 import { describe, expect, it } from "vitest";
-import { parseSessionQuery, SEARCH_LIMIT_POLICY } from "../query-params.js";
+import {
+  parseDateParam,
+  parseDateWindow,
+  parseSessionQuery,
+  SEARCH_LIMIT_POLICY,
+} from "../query-params.js";
 
 describe("session query contract", () => {
+  it("distinguishes default, valid, and invalid date values", () => {
+    expect(parseDateParam(undefined, 1000)).toEqual({ kind: "default", value: 1000 });
+    expect(parseDateParam("   ", 1000)).toEqual({ kind: "default", value: 1000 });
+    expect(parseDateParam("2026-08-12", 1000)).toEqual({
+      kind: "valid",
+      value: new Date("2026-08-12").getTime(),
+    });
+    expect(parseDateParam("not-a-date", 1000)).toEqual({
+      kind: "invalid",
+      error: "must be a valid date",
+    });
+  });
+
+  it("identifies the first invalid date window parameter", () => {
+    expect(parseDateWindow(new URLSearchParams("from=bad&to=also-bad"), {})).toEqual({
+      kind: "invalid",
+      parameter: "from",
+      error: "must be a valid date",
+    });
+    expect(parseDateWindow(new URLSearchParams("to=bad"), { from: 1000 })).toEqual({
+      kind: "invalid",
+      parameter: "to",
+      error: "must be a valid date",
+    });
+  });
+
   it("distinguishes an absent agent from known and unknown values", () => {
     expect(parseSessionQuery(new URLSearchParams(), ["claudecode"]).agent).toEqual({
       kind: "all",
