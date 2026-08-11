@@ -44,6 +44,10 @@ describe("OverviewCostBreakdown", () => {
     expect(screen.getByText("$2.00")).toBeTruthy();
     expect(screen.getByText(/from model unit price/)).toBeTruthy();
     expect(screen.queryByText("Other")).toBeNull();
+    expect(screen.getByText("total cost")).toBeTruthy();
+    expect(screen.getByText("$10.00")).toBeTruthy();
+    expect(screen.getByText("80%")).toBeTruthy();
+    expect(screen.getByText("20%")).toBeTruthy();
   });
 
   it("adds a remainder segment when the cache lags behind the snapshot", () => {

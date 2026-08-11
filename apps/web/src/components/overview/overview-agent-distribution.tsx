@@ -1,57 +1,95 @@
 /**
- * Agent share of the current scope. Cost is the ranking metric only when some
- * agent actually has one — printing $0.00 five times says nothing, so a
- * cost-free scope ranks and reads by session count instead.
+ * Agent share of the current scope, as one bar per agent. Cost is the ranking
+ * metric only when some agent actually has one — printing $0.00 five times says
+ * nothing, so a cost-free scope ranks and reads by session count instead.
  */
+import { useMemo, useState } from "react";
+
+import type { BarHover } from "../../hooks/useBarField";
 import type { DashboardAgentStat } from "../../lib/api";
+import { niceMax } from "../../lib/chart-shading";
 import { formatInt, formatUsd } from "../../lib/format";
+import { cn } from "../../lib/utils";
 import { AgentIcon } from "../AgentIcon";
 import { Panel, PanelHeader } from "../ui/panel";
-import { ShareBar } from "../ui/share-bar";
+import { TileBarPlot } from "../ui/tile-bar-plot";
 
-const AGENT_LIMIT = 5;
+const AGENT_LIMIT = 6;
+const CHART_HEIGHT = 118;
+const BAR_LAYOUT = { barRatio: 0.52, barMax: 34, bandGap: 0, minBand: 4 };
+const BAR_COLORS = ["var(--brand)"];
 
 export function OverviewAgentDistribution({ perAgent }: { perAgent: DashboardAgentStat[] }) {
-  const byCost = perAgent.some((agent) => agent.cost > 0);
-  const weightOf = (agent: DashboardAgentStat) => (byCost ? agent.cost : agent.sessions);
-  const ranked = [...perAgent].sort((a, b) => weightOf(b) - weightOf(a));
-  const visible = ranked.slice(0, AGENT_LIMIT);
-  const peak = visible.reduce((max, agent) => Math.max(max, weightOf(agent)), 0);
+  const [hover, setHover] = useState<BarHover | null>(null);
+
+  const { byCost, visible, values, axisMax } = useMemo(() => {
+    const byCost = perAgent.some((agent) => agent.cost > 0);
+    const weightOf = (agent: DashboardAgentStat) => (byCost ? agent.cost : agent.sessions);
+    const visible = [...perAgent].sort((a, b) => weightOf(b) - weightOf(a)).slice(0, AGENT_LIMIT);
+    const values = visible.map((agent) => [weightOf(agent)]);
+    return { byCost, visible, values, axisMax: niceMax(Math.max(...values.flat(), 0)) };
+  }, [perAgent]);
 
   return (
     <Panel className="p-4">
-      <PanelHeader title="Agents" meta={`${perAgent.length} total`} />
+      <PanelHeader
+        title="Agents"
+        meta={`${byCost ? "by cost" : "by sessions"} · ${perAgent.length} total`}
+      />
 
       {visible.length === 0 ? (
         <p className="console-mono mt-3 text-[11px] text-[var(--console-muted)]">No data</p>
       ) : (
-        <ul className="mt-3 space-y-[10px]">
-          {visible.map((agent, index) => (
-            <li key={agent.name} data-testid="overview-agent-row">
-              <div className="flex items-center gap-2">
-                <span className="flex size-5 shrink-0 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-text)]">
+        <div className="mt-[14px]">
+          <TileBarPlot
+            values={values}
+            axisMax={axisMax}
+            colors={BAR_COLORS}
+            hovered={hover}
+            onHover={setHover}
+            layout={BAR_LAYOUT}
+            height={CHART_HEIGHT}
+          />
+          <div
+            className="mt-2 grid"
+            style={{ gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))` }}
+          >
+            {visible.map((agent, index) => (
+              <div
+                key={agent.name}
+                data-testid="overview-agent-row"
+                className="flex min-w-0 flex-col items-center gap-[5px]"
+              >
+                <span className="flex size-[18px] items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)]">
                   <AgentIcon
                     icon={agent.icon}
                     iconColored={agent.iconColored}
                     alt={agent.displayName}
-                    className="size-3"
+                    className="size-[10px]"
                   />
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--console-text)]">
+                <span
+                  className={cn(
+                    "console-mono max-w-full truncate text-[9.5px]",
+                    hover?.column === index
+                      ? "text-[var(--console-text)]"
+                      : "text-[var(--console-muted)]",
+                  )}
+                >
                   {agent.displayName}
                 </span>
-                <span className="console-mono shrink-0 text-[10.5px] text-[var(--console-muted)]">
-                  {byCost
-                    ? `${formatInt(agent.sessions)} · ${formatUsd(agent.cost)}`
-                    : `${formatInt(agent.sessions)} sessions`}
+                <span className="console-mono text-[9.5px] text-[var(--console-text)]">
+                  {byCost ? formatUsd(agent.cost) : formatInt(agent.sessions)}
                 </span>
+                {byCost ? (
+                  <span className="console-mono text-[9.5px] text-[var(--console-muted)]">
+                    {formatInt(agent.sessions)}
+                  </span>
+                ) : null}
               </div>
-              <div className="mt-[6px] flex" style={{ opacity: Math.max(0.4, 1 - index * 0.15) }}>
-                <ShareBar ratio={weightOf(agent) / peak} />
-              </div>
-            </li>
-          ))}
-        </ul>
+            ))}
+          </div>
+        </div>
       )}
 
       {perAgent.length > AGENT_LIMIT ? (
