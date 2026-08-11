@@ -340,6 +340,32 @@ describe("createServer", () => {
     }
   });
 
+  it("CS-187: shuts down while an SSE client remains connected", async () => {
+    const unsubscribeSessions = vi.fn();
+    const unsubscribeScanStatus = vi.fn();
+    const store = {
+      ...createStore(),
+      subscribe: () => unsubscribeSessions,
+      subscribeScanStatus: () => unsubscribeScanStatus,
+    };
+    const app = await createServer(0, store);
+    const events = await fetch(`${app.url}/api/events`);
+    const shutdown = app.shutdown();
+
+    const completedBeforeClientCancel = await Promise.race([
+      shutdown.then(() => true),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 2_000)),
+    ]);
+    const subscriptionsClosedBeforeClientCancel =
+      unsubscribeSessions.mock.calls.length === 1 && unsubscribeScanStatus.mock.calls.length === 1;
+    if (!completedBeforeClientCancel) await events.body?.cancel();
+    await shutdown;
+
+    expect(subscriptionsClosedBeforeClientCancel).toBe(true);
+    expect(completedBeforeClientCancel).toBe(true);
+    expect(store.shutdown).toHaveBeenCalledOnce();
+  });
+
   it("CS-131: serves the web build without reading outside its root", async () => {
     const root = mkdtempSync(join(tmpdir(), "codesesh-static-root-"));
     const webDist = join(root, "web");
