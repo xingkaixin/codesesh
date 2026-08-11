@@ -22,6 +22,7 @@ const core = vi.hoisted(() => ({
   loadCachedSessions: vi.fn((): ReturnType<typeof loadCachedSessions> => null),
   markAgentFullSyncStarted: vi.fn(),
   markAgentFullSyncCompleted: vi.fn(),
+  markAgentFullSyncProgress: vi.fn(),
   sessionSignature: vi.fn(),
 }));
 
@@ -43,6 +44,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     loadCachedSessions: core.loadCachedSessions,
     markAgentFullSyncStarted: core.markAgentFullSyncStarted,
     markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
+    markAgentFullSyncProgress: core.markAgentFullSyncProgress,
     sessionSignature: core.sessionSignature,
     SMART_TAG_CLASSIFIER_REVISION: "smart-tags-v1",
   };
@@ -172,6 +174,7 @@ afterEach(() => {
   core.isAgentCacheInitialized.mockReturnValue(true);
   core.loadCachedSessions.mockReturnValue(null);
   core.markAgentFullSyncStarted.mockClear();
+  core.markAgentFullSyncProgress.mockClear();
   searchIndex.enqueue.mockImplementation(async () => undefined);
 });
 
@@ -239,6 +242,50 @@ describe("AgentSyncEngine", () => {
       completedAgents: ["codex"],
       failedAgents: [],
     });
+  });
+
+  it("persists cursors from durable backfill finalization checkpoints", async () => {
+    core.getAgentFullSyncCursor.mockReturnValueOnce("previous");
+    const next = makeSession("next");
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async (_agentName, payload) => {
+        expect(payload.operation).toEqual({
+          kind: "source-backfill",
+          cursor: "previous",
+          checkpoint: "durable",
+        });
+        expect(payload.onCheckpoint).toEqual(expect.any(Function));
+        payload.onCheckpoint?.({
+          stage: "scanned",
+          sessions: [],
+          meta: {},
+          completeness: "complete",
+        });
+        payload.onCheckpoint?.({ stage: "finalizing", changes: [], meta: {} });
+        payload.onCheckpoint?.({
+          stage: "finalizing",
+          changes: [{ session: next, sortIndex: 0 }],
+          meta: {},
+          backfillCursor: next.id,
+        });
+        return workerResult({ sessions: [next], meta: {} });
+      }),
+      commit: vi.fn(),
+      discard: vi.fn(),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const { engine } = makeEngine(new FakeSyncAgent(), [], workerRunner);
+    const internal = engine as unknown as { enqueueBackfill(agentName: string): void };
+    const statuses: ScanStatusEvent[] = [];
+    engine.subscribeStatusChanged((status) => statuses.push(status));
+
+    internal.enqueueBackfill("codex");
+    await vi.waitFor(() => expect(statuses.at(-1)?.backfill.completedAgents).toEqual(["codex"]));
+
+    expect(core.markAgentFullSyncProgress).toHaveBeenCalledOnce();
+    expect(core.markAgentFullSyncProgress).toHaveBeenCalledWith("codex", next.id);
+    expect(core.markAgentFullSyncCompleted).toHaveBeenCalledWith("codex");
   });
 
   it("cancels backfill lifecycle before awaiting shutdown", async () => {
