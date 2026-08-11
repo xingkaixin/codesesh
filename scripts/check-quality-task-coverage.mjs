@@ -6,6 +6,7 @@ import { getPnpmInvocation } from "./lib/pnpm-process.mjs";
 
 export const QUALITY_TASKS = ["lint", "lint:fix", "format", "format:check"];
 export const QUALITY_PACKAGES = [
+  { name: "codesesh-monorepo", manifest: "package.json", turbo: false },
   { name: "@codesesh/core", manifest: "packages/core/package.json" },
   { name: "codesesh", manifest: "packages/cli/package.json" },
   { name: "@codesesh/web", manifest: "apps/web/package.json" },
@@ -16,6 +17,37 @@ export const WWW_TASK_REQUIREMENTS = {
   "lint:fix": ["oxlint", "eslint", "src/**/*.astro"],
   format: ["oxfmt", "prettier", "src/**/*.astro"],
   "format:check": ["oxfmt", "prettier", "src/**/*.astro"],
+};
+export const ROOT_TASK_REQUIREMENTS = {
+  lint: ["pnpm lint:root", "turbo run lint"],
+  "lint:root": ["oxlint", "scripts", "tests", "playwright.config.ts", "vitest.config.ts"],
+  "lint:fix": ["pnpm lint:fix:root", "turbo run lint:fix"],
+  "lint:fix:root": [
+    "oxlint",
+    "scripts",
+    "tests",
+    "playwright.config.ts",
+    "vitest.config.ts",
+    "--fix",
+  ],
+  format: ["pnpm format:root", "turbo run format"],
+  "format:root": [
+    "oxfmt",
+    "--write",
+    "scripts/**/*.{js,mjs,cjs,ts,tsx}",
+    "tests/**/*.{js,mjs,cjs,ts,tsx}",
+    "playwright.config.ts",
+    "vitest.config.ts",
+  ],
+  "format:check": ["pnpm format:check:root", "turbo run format:check"],
+  "format:check:root": [
+    "oxfmt",
+    "--check",
+    "scripts/**/*.{js,mjs,cjs,ts,tsx}",
+    "tests/**/*.{js,mjs,cjs,ts,tsx}",
+    "playwright.config.ts",
+    "vitest.config.ts",
+  ],
 };
 
 export function findManifestTaskGaps(manifests, tasks = QUALITY_TASKS) {
@@ -35,11 +67,15 @@ export function findTurboTaskGaps(dryRun, packageNames, task) {
   });
 }
 
-export function findCommandCoverageGaps(scripts, requirements = WWW_TASK_REQUIREMENTS) {
+export function findCommandCoverageGaps(
+  scripts,
+  requirements = WWW_TASK_REQUIREMENTS,
+  packageName = "@codesesh/www",
+) {
   return Object.entries(requirements).flatMap(([task, requiredTokens]) => {
     const command = scripts[task] ?? "";
     const missing = requiredTokens.filter((token) => !command.includes(token));
-    return missing.length > 0 ? [`@codesesh/www#${task} misses ${missing.join(", ")}`] : [];
+    return missing.length > 0 ? [`${packageName}#${task} misses ${missing.join(", ")}`] : [];
   });
 }
 
@@ -85,7 +121,7 @@ function readQualityManifests(repoRoot) {
 }
 
 function inspectTurboTasks(repoRoot) {
-  const packageNames = QUALITY_PACKAGES.map(({ name }) => name);
+  const packageNames = QUALITY_PACKAGES.filter(({ turbo = true }) => turbo).map(({ name }) => name);
   const dryRun = JSON.parse(
     runPnpm(repoRoot, ["exec", "turbo", "run", ...QUALITY_TASKS, "--dry=json"]),
   );
@@ -128,9 +164,15 @@ function inspectAstroCoverage(repoRoot) {
 function main() {
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const manifests = readQualityManifests(repoRoot);
+  const rootManifest = manifests.find(({ name }) => name === "codesesh-monorepo");
   const wwwManifest = manifests.find(({ name }) => name === "@codesesh/www");
   const gaps = [
     ...findManifestTaskGaps(manifests),
+    ...findCommandCoverageGaps(
+      rootManifest?.scripts ?? {},
+      ROOT_TASK_REQUIREMENTS,
+      "codesesh-monorepo",
+    ),
     ...findCommandCoverageGaps(wwwManifest?.scripts ?? {}),
     ...inspectTurboTasks(repoRoot),
   ];
@@ -145,7 +187,7 @@ function main() {
   }
 
   console.log(
-    `Quality tasks cover ${QUALITY_PACKAGES.length} packages; ESLint and Prettier parse ${astro.count} Astro files`,
+    `Quality tasks cover the repository root and ${QUALITY_PACKAGES.length - 1} packages; ESLint and Prettier parse ${astro.count} Astro files`,
   );
 }
 
