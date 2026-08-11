@@ -6,6 +6,7 @@ import {
   findTurboTaskGaps,
   QUALITY_PACKAGES,
   QUALITY_TASKS,
+  ROOT_TASK_REQUIREMENTS,
 } from "./check-quality-task-coverage.mjs";
 import { getPnpmInvocation } from "./lib/pnpm-process.mjs";
 
@@ -53,6 +54,41 @@ describe("CS-173: quality task coverage", () => {
     expect(findCommandCoverageGaps(scripts)).toEqual([]);
     expect(findCommandCoverageGaps({ ...scripts, lint: "oxlint src" })).toEqual([
       "@codesesh/www#lint misses eslint, src/**/*.astro",
+    ]);
+  });
+
+  it("keeps root sources in every repository quality command", () => {
+    const scripts = {
+      lint: "pnpm lint:root && turbo run lint",
+      "lint:root": "oxlint scripts tests playwright.config.ts vitest.config.ts",
+      "lint:fix": "pnpm lint:fix:root && turbo run lint:fix",
+      "lint:fix:root": "oxlint scripts tests playwright.config.ts vitest.config.ts --fix",
+      format: "pnpm format:root && turbo run format",
+      "format:root":
+        'oxfmt --write "scripts/**/*.{js,mjs,cjs,ts,tsx}" "tests/**/*.{js,mjs,cjs,ts,tsx}" playwright.config.ts vitest.config.ts',
+      "format:check": "pnpm format:check:root && turbo run format:check",
+      "format:check:root":
+        'oxfmt --check "scripts/**/*.{js,mjs,cjs,ts,tsx}" "tests/**/*.{js,mjs,cjs,ts,tsx}" playwright.config.ts vitest.config.ts',
+    };
+
+    expect(findCommandCoverageGaps(scripts, ROOT_TASK_REQUIREMENTS, "codesesh-monorepo")).toEqual(
+      [],
+    );
+    expect(
+      findCommandCoverageGaps(
+        { ...scripts, "lint:root": "oxlint scripts playwright.config.ts vitest.config.ts" },
+        ROOT_TASK_REQUIREMENTS,
+        "codesesh-monorepo",
+      ),
+    ).toEqual(["codesesh-monorepo#lint:root misses tests"]);
+    expect(
+      findCommandCoverageGaps(
+        { ...scripts, "format:check:root": "oxfmt --check scripts playwright.config.ts" },
+        ROOT_TASK_REQUIREMENTS,
+        "codesesh-monorepo",
+      ),
+    ).toEqual([
+      "codesesh-monorepo#format:check:root misses scripts/**/*.{js,mjs,cjs,ts,tsx}, tests/**/*.{js,mjs,cjs,ts,tsx}, vitest.config.ts",
     ]);
   });
 
