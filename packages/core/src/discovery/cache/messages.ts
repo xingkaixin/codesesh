@@ -151,7 +151,10 @@ export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
       sort_index = excluded.sort_index,
       slug = excluded.slug,
       title = excluded.title,
-      source_path = excluded.source_path,
+      source_path = CASE
+        WHEN excluded.meta_json IS NULL THEN sessions.source_path
+        ELSE excluded.source_path
+      END,
       directory = excluded.directory,
       parent_agent_name = excluded.parent_agent_name,
       parent_session_id = excluded.parent_session_id,
@@ -175,7 +178,7 @@ export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
       smart_tags_json = excluded.smart_tags_json,
       smart_tags_source_updated_at = excluded.smart_tags_source_updated_at,
       smart_tags_classifier_revision = excluded.smart_tags_classifier_revision,
-      meta_json = excluded.meta_json,
+      meta_json = COALESCE(excluded.meta_json, sessions.meta_json),
       publication_id = excluded.publication_id
   `);
 }
