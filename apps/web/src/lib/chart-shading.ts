@@ -3,9 +3,9 @@
  * same way — a field of small squares whose size is driven by a slowly drifting
  * wave — so the wave, the jitter hash and the colour lookup live here once.
  *
- * A canvas cannot read `var(--chart-1)`, so every colour is resolved against the
- * live computed style on each frame; that is also what makes a theme switch land
- * without re-mounting the chart.
+ * A canvas cannot read `var(--chart-1)`, so colours are resolved against the live
+ * computed style when chart inputs or the theme change, then reused while frames
+ * are painted.
  */
 
 export const TAU = Math.PI * 2;

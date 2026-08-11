@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { act, cleanup, render } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { stubCanvas, type StubbedCanvas } from "../test/canvas-stub";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { stubAnimationFrames, stubCanvas, type StubbedCanvas } from "../test/canvas-stub";
 import { columnProgress, DEFAULT_BAR_LAYOUT, useBarField, type BarHover } from "./useBarField";
 
 const WIDTH = 400;
@@ -51,6 +51,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   canvas.restore();
+  vi.restoreAllMocks();
 });
 
 describe("useBarField", () => {
@@ -114,6 +115,48 @@ describe("useBarField", () => {
     await nextFrame();
 
     expect(canvas.context.roundRect).toHaveBeenCalled();
+  });
+
+  it("stops after growth settles and reuses its resolved palette", () => {
+    const frames = stubAnimationFrames();
+    const readStyle = vi.spyOn(window, "getComputedStyle");
+
+    render(<Harness values={[[100]]} reducedMotion={false} />);
+    expect(frames.pendingCount()).toBe(1);
+
+    act(() => {
+      frames.runNext(performance.now() + 1_000);
+    });
+
+    expect(canvas.context.clearRect).toHaveBeenCalledTimes(1);
+    expect(frames.pendingCount()).toBe(0);
+    expect(readStyle).toHaveBeenCalledTimes(1);
+  });
+
+  it("wakes a settled field for data, hover, and resize changes", () => {
+    const frames = stubAnimationFrames();
+    const { rerender } = render(<Harness values={[[100]]} reducedMotion={false} />);
+    let now = performance.now() + 1_000;
+    act(() => frames.runNext(now));
+    expect(frames.pendingCount()).toBe(0);
+
+    rerender(<Harness values={[[50]]} reducedMotion={false} />);
+    expect(frames.pendingCount()).toBe(1);
+    act(() => frames.runNext((now += 1_000)));
+    expect(frames.pendingCount()).toBe(0);
+
+    rerender(<Harness values={[[50]]} hovered={{ column: 0, band: 0 }} reducedMotion={false} />);
+    expect(frames.pendingCount()).toBe(1);
+    act(() => frames.runNext((now += 16)));
+    expect(canvas.context.stroke).toHaveBeenCalled();
+
+    rerender(<Harness values={[[50]]} reducedMotion={false} />);
+    expect(frames.pendingCount()).toBe(1);
+    act(() => frames.runNext((now += 16)));
+    expect(frames.pendingCount()).toBe(0);
+
+    act(() => canvas.resize());
+    expect(frames.pendingCount()).toBe(1);
   });
 });
 
