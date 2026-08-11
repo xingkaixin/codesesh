@@ -72,7 +72,9 @@ function main() {
   if (missing.length > 0) {
     console.error("Documentation references paths that do not exist:");
     for (const entry of missing) {
-      console.error(`  - ${entry.document}: ${entry.path}${entry.reason ? ` (${entry.reason})` : ""}`);
+      console.error(
+        `  - ${entry.document}: ${entry.path}${entry.reason ? ` (${entry.reason})` : ""}`,
+      );
     }
     process.exit(1);
   }

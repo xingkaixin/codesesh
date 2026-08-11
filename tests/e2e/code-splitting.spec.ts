@@ -43,7 +43,5 @@ test("loads the receipt when its drawer opens", async ({ page }) => {
 
   await page.getByRole("button", { name: "Open session receipt" }).click();
 
-  await expect
-    .poll(() => requested.some((path) => /InteractiveReceipt/i.test(path)))
-    .toBe(true);
+  await expect.poll(() => requested.some((path) => /InteractiveReceipt/i.test(path))).toBe(true);
 });

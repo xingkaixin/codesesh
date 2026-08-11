@@ -38,7 +38,9 @@ export function checkReleaseVersions({ tag, manifests }) {
 
   for (const manifest of manifests) {
     if (!SEMVER.test(manifest.version ?? "")) {
-      problems.push(`${manifest.path} has a non-semver version: ${manifest.version ?? "(missing)"}`);
+      problems.push(
+        `${manifest.path} has a non-semver version: ${manifest.version ?? "(missing)"}`,
+      );
       continue;
     }
     if (manifest.version !== expected) {

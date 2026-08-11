@@ -2,7 +2,11 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { CHECKED_DOCUMENTS, extractRepositoryPaths, findMissingPaths } from "./check-docs-paths.mjs";
+import {
+  CHECKED_DOCUMENTS,
+  extractRepositoryPaths,
+  findMissingPaths,
+} from "./check-docs-paths.mjs";
 
 const tempDirs = [];
 
