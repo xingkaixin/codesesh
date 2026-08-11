@@ -12,8 +12,13 @@ vi.mock("node:os", async (importOriginal) => {
 
 const { setCoreDiagnostics } = await import("../../utils/diagnostics.js");
 const { estimateTokenCost } = await import("../../utils/cost.js");
-const { getPricingGeneration, hasPendingPricing, publishPendingPricing, refreshPricingCache } =
-  await import("../fetcher.js");
+const {
+  getPricingGeneration,
+  getPricingRegistry,
+  hasPendingPricing,
+  publishPendingPricing,
+  refreshPricingCache,
+} = await import("../fetcher.js");
 
 const MODEL = "claude-sonnet-4-5";
 const MILLION_INPUT = { input: 1_000_000, output: 0 };
@@ -40,12 +45,34 @@ afterEach(() => {
 });
 
 describe("CS-148: pricing generations", () => {
+  it("CS-194: keeps parent and isolated worker pricing on one generation", async () => {
+    const generationBefore = getPricingGeneration().id;
+    const pricingBefore = getPricingRegistry().get(MODEL);
+    stubFetch(async () => ({ ok: true, json: async () => remotePricing(0.000999) }));
+
+    expect(await refreshPricingCache()).toBe(true);
+    expect(existsSync(cachePath)).toBe(false);
+
+    vi.resetModules();
+    const workerPricing = await import("../fetcher.js");
+    expect(workerPricing.getPricingGeneration().id).toBe(generationBefore);
+    expect(workerPricing.getPricingRegistry().get(MODEL)).toEqual(pricingBefore);
+
+    expect(publishPendingPricing()).toBe(true);
+    const publishedGeneration = getPricingGeneration();
+    expect(workerPricing.getPricingGeneration().id).toBe(generationBefore);
+
+    workerPricing.synchronizePricingGeneration(publishedGeneration.id);
+    expect(workerPricing.getPricingGeneration()).toEqual(publishedGeneration);
+  });
+
   it("does not change live prices until the refresh is published", async () => {
     const before = estimateTokenCost(MODEL, MILLION_INPUT);
     const generationBefore = getPricingGeneration().id;
     stubFetch(async () => ({ ok: true, json: async () => remotePricing(0.000999) }));
 
     expect(await refreshPricingCache()).toBe(true);
+    expect(existsSync(cachePath)).toBe(false);
 
     // A scan in flight keeps the prices it started with.
     expect(estimateTokenCost(MODEL, MILLION_INPUT)).toBe(before);
@@ -127,15 +154,22 @@ describe("CS-148: pricing generations", () => {
     expect(hasPendingPricing()).toBe(false);
   });
 
-  it("replaces the disk cache in one step", async () => {
+  it("publishes the disk cache and generation in one step", async () => {
     stubFetch(async () => ({ ok: true, json: async () => remotePricing(0.000123) }));
 
     await refreshPricingCache();
+    expect(existsSync(cachePath)).toBe(false);
+    expect(publishPendingPricing()).toBe(true);
 
     const raw = readFileSync(cachePath, "utf8");
     // A truncated write would not parse.
-    const parsed = JSON.parse(raw) as { timestamp: number; data: Record<string, unknown> };
+    const parsed = JSON.parse(raw) as {
+      timestamp: number;
+      generation: number;
+      data: Record<string, unknown>;
+    };
     expect(typeof parsed.timestamp).toBe("number");
+    expect(parsed.generation).toBe(getPricingGeneration().id);
     expect(Object.keys(parsed.data).length).toBeGreaterThan(0);
     expect(existsSync(`${cachePath}.${process.pid}.tmp`)).toBe(false);
   });
@@ -148,16 +182,19 @@ describe("CS-148: pricing generations", () => {
     const events: string[] = [];
     setCoreDiagnostics({ warn: (event) => events.push(event) });
     stubFetch(async () => ({ ok: true, json: async () => remotePricing(0.000321) }));
+    const generationBefore = getPricingGeneration();
 
     try {
-      // The in-memory refresh still succeeds; only the cache write fails.
       expect(await refreshPricingCache()).toBe(true);
+      expect(publishPendingPricing()).toBe(false);
     } finally {
       setCoreDiagnostics(null);
       rmSync(cachePath, { recursive: true, force: true });
     }
 
     expect(events).toContain("pricing.cache_write_failed");
+    expect(getPricingGeneration()).toBe(generationBefore);
+    expect(hasPendingPricing()).toBe(true);
     expect(existsSync(`${cachePath}.${process.pid}.tmp`)).toBe(false);
   });
 });
