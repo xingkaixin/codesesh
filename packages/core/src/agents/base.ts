@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, statSync, type Dirent, type Stats } from "node:fs";
 import { join } from "node:path";
 import type { SessionHead, SessionDetail, ParseSessionResult } from "../types/index.js";
+import { capturePricingMisses } from "../pricing/cost.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import {
   createSessionSourceFailure,
@@ -49,6 +50,8 @@ export function getParsedSession<T>(result: ParseSessionResult<T>): T | null {
 export interface SessionCacheMeta {
   id: string;
   sourcePath: string;
+  /** Models the head parse could not price; their arrival invalidates the cache. */
+  unpricedModels?: string[];
   [key: string]: unknown;
 }
 
@@ -306,8 +309,11 @@ export abstract class FileSystemSessionSource<
   ): SessionSourceOutcome {
     const previousMeta = this.sessionMetaMap.get(source.sessionId);
     let result: ParseSessionResult<SessionHead>;
+    let unpricedModels: string[] = [];
     try {
-      result = this.scanSessionSourceResult(source, options);
+      ({ result, unpricedModels } = capturePricingMisses(() =>
+        this.scanSessionSourceResult(source, options),
+      ));
     } catch (error) {
       if (previousMeta) this.sessionMetaMap.set(source.sessionId, previousMeta);
       else this.sessionMetaMap.delete(source.sessionId);
@@ -317,7 +323,14 @@ export abstract class FileSystemSessionSource<
         failure: createSessionSourceFailure(source, "parsing", error),
       };
     }
-    if (result.status === "parsed") return { status: "parsed", source, session: result.data };
+    if (result.status === "parsed") {
+      const meta = this.sessionMetaMap.get(result.data.id);
+      if (meta) {
+        if (unpricedModels.length > 0) meta.unpricedModels = unpricedModels;
+        else delete meta.unpricedModels;
+      }
+      return { status: "parsed", source, session: result.data };
+    }
     if (result.status === "filtered") {
       return { status: "filtered", source, reason: result.reason ?? "filtered by agent" };
     }
