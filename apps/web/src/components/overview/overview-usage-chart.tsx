@@ -1,108 +1,144 @@
 /**
- * Per-day usage: a stacked bar per calendar day with the day's cost drawn over
- * it as a line. Plain DOM plus one inline <svg> — a stacked bar and a polyline
- * do not justify a charting library, and the hidden table keeps the data
- * readable without colour.
+ * Per-day usage. Two plots share one time axis: a stacked bar per calendar day
+ * for the token composition, and the day's cost as an area below it. Cost and
+ * tokens are different quantities, so they get different plots rather than two
+ * scales on one — the columns line up vertically and are read together.
  */
+import { useMemo, useState } from "react";
+
+import type { BarHover } from "../../hooks/useBarField";
 import type { DashboardDailyBucket } from "../../lib/api";
+import { niceMax } from "../../lib/chart-shading";
 import { formatCompact, formatInt, formatMonthDay, formatUsd } from "../../lib/format";
 import { cn } from "../../lib/utils";
 import { Panel, PanelHeader } from "../ui/panel";
-import { SegmentedControl } from "../ui/segmented-control";
-import { OVERVIEW_METRIC_LABEL, type OverviewMetric } from "./types";
+import { TILE_AXIS_WIDTH, TileBarPlot } from "../ui/tile-bar-plot";
 
-const CHART_HEIGHT = 168;
+const BAR_HEIGHT = 168;
+const COST_HEIGHT = 52;
+/** Leaves the peak clear of the panel above it. */
+const COST_HEADROOM = 0.9;
 
-const METRIC_OPTIONS = [
-  { value: "tokens", label: OVERVIEW_METRIC_LABEL.tokens },
-  { value: "sessions", label: OVERVIEW_METRIC_LABEL.sessions },
-  { value: "messages", label: OVERVIEW_METRIC_LABEL.messages },
-] as const;
+const BAR_LAYOUT = { barRatio: 0.86, barMax: 30, bandGap: 0, minBand: 1 };
 
+/** Bottom to top, deepest blue at the base of every bar. */
 const TOKEN_SERIES = [
-  { key: "cache_create", label: "Cache write", color: "var(--chart-4)" },
-  { key: "cache_read", label: "Cache read", color: "var(--chart-3)" },
-  { key: "output", label: "Output", color: "var(--chart-2)" },
-  { key: "input", label: "Input", color: "var(--chart-1)" },
+  { key: "input", label: "Input", color: "var(--token-input)" },
+  { key: "output", label: "Output", color: "var(--token-output)" },
+  { key: "cache_read", label: "Cache read", color: "var(--token-cache-read)" },
+  { key: "cache_create", label: "Cache write", color: "var(--token-cache-write)" },
 ] as const;
+
+const TOKEN_COLORS = TOKEN_SERIES.map((series) => series.color);
 
 function bucketTokens(bucket: DashboardDailyBucket): number {
   return bucket.input + bucket.output + bucket.cache_read + bucket.cache_create;
 }
 
-function bucketValue(bucket: DashboardDailyBucket, metric: OverviewMetric): number {
-  if (metric === "sessions") return bucket.sessions;
-  if (metric === "messages") return bucket.messages;
-  return bucketTokens(bucket);
-}
-
-/** Top-to-bottom pixel heights; the bottom segment absorbs the rounding error
- *  so a stacked bar never shows a 1px seam against its own total height. */
-function segmentHeights(bucket: DashboardDailyBucket, barHeight: number): number[] {
-  const total = bucketTokens(bucket);
-  if (total <= 0 || barHeight <= 0) return TOKEN_SERIES.map(() => 0);
-
-  let used = 0;
-  return TOKEN_SERIES.map((series, index) => {
-    if (index === TOKEN_SERIES.length - 1) return barHeight - used;
-    const height = Math.round((barHeight * bucket[series.key]) / total);
-    used += height;
-    return height;
+function costAreaPoints(daily: DashboardDailyBucket[], maxCost: number) {
+  const edge = daily.map((bucket, index) => {
+    const x = ((index + 0.5) / daily.length) * 100;
+    const y = 100 - (bucket.cost / maxCost) * 100 * COST_HEADROOM;
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
   });
+  const first = `0,${100}`;
+  const last = `100,${100}`;
+  return { edge: edge.join(" "), area: [first, ...edge, last].join(" ") };
 }
 
-function costPolylinePoints(daily: DashboardDailyBucket[], maxCost: number): string {
-  return daily
-    .map((bucket, index) => {
-      const x = ((index + 0.5) / daily.length) * 100;
-      const y = 100 - (bucket.cost / maxCost) * 100 * 0.82;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
+function CostArea({ daily }: { daily: DashboardDailyBucket[] }) {
+  const costs = daily.map((bucket) => bucket.cost);
+  const total = costs.reduce((sum, cost) => sum + cost, 0);
+  const peak = costs.reduce((max, cost) => Math.max(max, cost), 0);
+  if (peak <= 0) return null;
+
+  const { edge, area } = costAreaPoints(daily, peak);
+
+  return (
+    <>
+      <div className="mt-[14px] flex items-baseline justify-between border-t border-dashed border-[var(--console-border)] pt-[11px]">
+        <span className="console-mono text-[10.5px] text-[var(--console-text)]">Daily cost</span>
+        <span className="console-mono text-[10px] text-[var(--console-muted)]">
+          Peak {formatUsd(peak)} · Avg {formatUsd(total / daily.length)} · Total {formatUsd(total)}
+        </span>
+      </div>
+      <div className="relative mt-[7px]" style={{ height: COST_HEIGHT }} aria-hidden>
+        <span className="absolute inset-x-0 bottom-0 h-px bg-[var(--console-border)]" />
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          className="absolute inset-0 size-full"
+        >
+          <polygon points={area} fill="var(--brand)" fillOpacity="0.18" />
+          <polyline
+            points={edge}
+            fill="none"
+            stroke="var(--brand)"
+            strokeWidth="1.4"
+            vectorEffect="non-scaling-stroke"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+    </>
+  );
 }
 
-export function OverviewUsageChart({
-  daily,
-  metric,
-  onMetricChange,
-  hoverDayIndex,
-  onHoverDayChange,
+function DayTooltip({
+  bucket,
+  index,
+  count,
 }: {
-  daily: DashboardDailyBucket[];
-  metric: OverviewMetric;
-  onMetricChange: (metric: OverviewMetric) => void;
-  hoverDayIndex: number | null;
-  onHoverDayChange: (index: number | null) => void;
+  bucket: DashboardDailyBucket;
+  index: number;
+  count: number;
 }) {
+  return (
+    <div
+      className={cn(
+        "console-mono pointer-events-none absolute top-2 z-10 rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-2 text-[10.5px] whitespace-nowrap text-[var(--console-text)] shadow-[var(--shadow-overlay)]",
+        index >= count * 0.75 ? "-translate-x-full" : "-translate-x-1/2",
+      )}
+      style={{ left: `${((index + 0.5) / count) * 100}%` }}
+    >
+      <div>{formatMonthDay(bucket.date)}</div>
+      <div>
+        {formatCompact(bucketTokens(bucket))} tok ·{" "}
+        <span className="text-[var(--brand)]">{formatUsd(bucket.cost)}</span>
+      </div>
+      <div>
+        {formatInt(bucket.sessions)} sessions · {formatInt(bucket.messages)} messages
+      </div>
+      <div className="text-[var(--console-muted)]">
+        In {formatCompact(bucket.input)} · Out {formatCompact(bucket.output)} · Read{" "}
+        {formatCompact(bucket.cache_read)} · Write {formatCompact(bucket.cache_create)}
+      </div>
+    </div>
+  );
+}
+
+export function OverviewUsageChart({ daily }: { daily: DashboardDailyBucket[] }) {
+  const [hover, setHover] = useState<BarHover | null>(null);
+
+  const values = useMemo(
+    () => daily.map((bucket) => TOKEN_SERIES.map((series) => bucket[series.key])),
+    [daily],
+  );
+  const axisMax = niceMax(daily.reduce((peak, bucket) => Math.max(peak, bucketTokens(bucket)), 0));
+
   const first = daily[0];
   const last = daily[daily.length - 1];
-  const maxValue = daily.reduce((peak, bucket) => Math.max(peak, bucketValue(bucket, metric)), 0);
-  const maxCost = daily.reduce((peak, bucket) => Math.max(peak, bucket.cost), 0);
-  const hovered = hoverDayIndex == null ? undefined : daily[hoverDayIndex];
   const range =
     first && last ? ` · ${formatMonthDay(first.date)} → ${formatMonthDay(last.date)}` : "";
+  const hovered = hover === null ? undefined : daily[hover.column];
 
   return (
     <Panel role="region" aria-label="Daily usage" className="p-4">
       <PanelHeader
         title="Daily usage"
         action={
-          <SegmentedControl
-            options={METRIC_OPTIONS}
-            value={metric}
-            onChange={onMetricChange}
-            size="sm"
-            ariaLabel="Usage metric"
-          />
-        }
-      />
-      <p className="console-mono mt-1 text-[10.5px] text-[var(--console-muted)]">
-        Bars = {OVERVIEW_METRIC_LABEL[metric]} · Line = daily cost{range}
-      </p>
-
-      <div className="console-mono mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-[var(--console-muted)]">
-        {metric === "tokens"
-          ? TOKEN_SERIES.map((series) => (
+          <div className="console-mono flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-[var(--console-muted)]">
+            {TOKEN_SERIES.map((series) => (
               <span
                 key={series.key}
                 data-testid="overview-legend-token"
@@ -115,15 +151,13 @@ export function OverviewUsageChart({
                 />
                 {series.label}
               </span>
-            ))
-          : null}
-        {maxCost > 0 ? (
-          <span className="flex items-center gap-1">
-            <span className="h-px w-3 bg-[var(--brand)]" aria-hidden />
-            Cost
-          </span>
-        ) : null}
-      </div>
+            ))}
+          </div>
+        }
+      />
+      <p className="console-mono mt-1 text-[10.5px] text-[var(--console-muted)]">
+        Stacked bars = token mix · Area below = daily cost{range}
+      </p>
 
       {daily.length === 0 ? (
         <p className="console-mono mt-[14px] text-[11px] text-[var(--console-muted)]">
@@ -131,104 +165,35 @@ export function OverviewUsageChart({
         </p>
       ) : (
         <>
-          <div className="relative mt-[14px]" style={{ height: CHART_HEIGHT }}>
-            <div className="absolute inset-0 flex flex-col justify-between" aria-hidden>
-              {[0, 1, 2, 3].map((line) => (
-                <span key={line} className="h-px bg-[var(--console-border)]" />
-              ))}
-            </div>
-
-            <div className="absolute inset-0 flex items-end gap-[3px]">
-              {daily.map((bucket, index) => {
-                const value = bucketValue(bucket, metric);
-                const barHeight = maxValue > 0 ? Math.round((value / maxValue) * CHART_HEIGHT) : 0;
-                const heights = segmentHeights(bucket, barHeight);
-                return (
-                  <button
-                    key={bucket.date}
-                    type="button"
-                    aria-label={`${formatMonthDay(bucket.date)} usage`}
-                    onMouseEnter={() => onHoverDayChange(index)}
-                    onMouseLeave={() => onHoverDayChange(null)}
-                    onFocus={() => onHoverDayChange(index)}
-                    onBlur={() => onHoverDayChange(null)}
-                    className="flex h-full flex-1 flex-col justify-end focus-visible:outline-none"
-                  >
-                    <span
-                      className={cn(
-                        "flex flex-col overflow-hidden rounded-t-[3px]",
-                        hoverDayIndex === index
-                          ? "outline outline-1 outline-[var(--brand-line)]"
-                          : null,
-                      )}
-                      style={{ height: barHeight }}
-                    >
-                      {metric === "tokens" ? (
-                        TOKEN_SERIES.map((series, seriesIndex) => (
-                          <span
-                            key={series.key}
-                            style={{ height: heights[seriesIndex], background: series.color }}
-                          />
-                        ))
-                      ) : (
-                        <span className="h-full" style={{ background: "var(--chart-1)" }} />
-                      )}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {maxCost > 0 ? (
-              <svg
-                viewBox="0 0 100 100"
-                preserveAspectRatio="none"
-                aria-hidden
-                className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
-              >
-                <polyline
-                  points={costPolylinePoints(daily, maxCost)}
-                  fill="none"
-                  stroke="var(--brand)"
-                  strokeWidth="0.9"
-                  vectorEffect="non-scaling-stroke"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            ) : null}
-
-            {hovered && hoverDayIndex != null ? (
-              <div
-                className={cn(
-                  "console-mono pointer-events-none absolute top-2 z-10 rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-2 text-[10.5px] whitespace-nowrap text-[var(--console-text)] shadow-[var(--shadow-overlay)]",
-                  hoverDayIndex >= daily.length * 0.75 ? "-translate-x-full" : "-translate-x-1/2",
-                )}
-                style={{ left: `${((hoverDayIndex + 0.5) / daily.length) * 100}%` }}
-              >
-                <div>{formatMonthDay(hovered.date)}</div>
-                <div>
-                  {formatCompact(bucketTokens(hovered))} tok ·{" "}
-                  <span className="text-[var(--brand)]">{formatUsd(hovered.cost)}</span>
-                </div>
-                <div>
-                  {formatInt(hovered.sessions)} sessions · {formatInt(hovered.messages)} messages
-                </div>
-                <div className="text-[var(--console-muted)]">
-                  In {formatCompact(hovered.input)} · Out {formatCompact(hovered.output)} · Read{" "}
-                  {formatCompact(hovered.cache_read)} · Write {formatCompact(hovered.cache_create)}
-                </div>
+          <div className="relative mt-[14px]">
+            <TileBarPlot
+              values={values}
+              axisMax={axisMax}
+              colors={TOKEN_COLORS}
+              hovered={hover}
+              onHover={setHover}
+              layout={BAR_LAYOUT}
+              height={BAR_HEIGHT}
+              formatTick={formatCompact}
+            />
+            {hovered && hover ? (
+              <div className="absolute inset-x-0 top-0" style={{ left: TILE_AXIS_WIDTH }}>
+                <DayTooltip bucket={hovered} index={hover.column} count={daily.length} />
               </div>
             ) : null}
           </div>
 
-          <div className="console-mono mt-2 flex text-[10px] text-[var(--console-muted)]">
-            {daily.map((bucket, index) => (
-              <span key={bucket.date} className="flex-1 text-center">
-                {index === 0 || index === daily.length - 1 || index % 6 === 0
-                  ? formatMonthDay(bucket.date)
-                  : ""}
-              </span>
-            ))}
+          <div style={{ paddingLeft: TILE_AXIS_WIDTH }}>
+            <CostArea daily={daily} />
+            <div className="console-mono mt-2 flex text-[10px] text-[var(--console-muted)]">
+              {daily.map((bucket, index) => (
+                <span key={bucket.date} className="flex-1 text-center">
+                  {index === 0 || index === daily.length - 1 || index % 6 === 0
+                    ? formatMonthDay(bucket.date)
+                    : ""}
+                </span>
+              ))}
+            </div>
           </div>
         </>
       )}

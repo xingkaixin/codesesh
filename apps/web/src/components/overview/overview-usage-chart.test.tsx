@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import type { DashboardDailyBucket } from "../../lib/api";
 import { OverviewUsageChart } from "./overview-usage-chart";
 
@@ -26,23 +26,11 @@ const daily: DashboardDailyBucket[] = [
   },
 ];
 
-function renderChart(overrides: Partial<Parameters<typeof OverviewUsageChart>[0]> = {}) {
-  const props = {
-    daily,
-    metric: "tokens" as const,
-    onMetricChange: vi.fn(),
-    hoverDayIndex: null,
-    onHoverDayChange: vi.fn(),
-    ...overrides,
-  };
-  return { props, ...render(<OverviewUsageChart {...props} />) };
-}
-
 afterEach(cleanup);
 
 describe("OverviewUsageChart", () => {
   it("mirrors every bucket in the accessible table", () => {
-    renderChart();
+    render(<OverviewUsageChart daily={daily} />);
 
     const table = screen.getByRole("table", { name: "Daily usage data" });
     const rows = within(table).getAllByRole("row");
@@ -54,46 +42,24 @@ describe("OverviewUsageChart", () => {
     expect(cells).toEqual(["01-01", "2", "30", "1,000", "$1.50"]);
   });
 
-  it("drops the token swatches when the metric is not tokens", () => {
-    const { rerender } = renderChart();
+  it("legends the four token classes and the cost area", () => {
+    render(<OverviewUsageChart daily={daily} />);
+
     expect(screen.getAllByTestId("overview-legend-token")).toHaveLength(4);
-
-    rerender(
-      <OverviewUsageChart
-        daily={daily}
-        metric="sessions"
-        onMetricChange={vi.fn()}
-        hoverDayIndex={null}
-        onHoverDayChange={vi.fn()}
-      />,
-    );
-
-    expect(screen.queryAllByTestId("overview-legend-token")).toHaveLength(0);
+    expect(screen.getByText("Daily cost")).toBeTruthy();
+    expect(screen.getByText("Peak $2.50 · Avg $2.00 · Total $4.00")).toBeTruthy();
   });
 
-  it("reports the selected metric upwards", () => {
-    const { props } = renderChart();
+  it("drops the cost area when nothing was spent", () => {
+    render(<OverviewUsageChart daily={daily.map((bucket) => ({ ...bucket, cost: 0 }))} />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Sessions" }));
-
-    expect(props.onMetricChange).toHaveBeenCalledWith("sessions");
-  });
-
-  it("reports the hovered day and renders its tooltip", () => {
-    const { props } = renderChart();
-
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "01-02 usage" }));
-    expect(props.onHoverDayChange).toHaveBeenCalledWith(1);
-
-    cleanup();
-    renderChart({ hoverDayIndex: 1 });
-    expect(screen.getByText(/In 10 · Out 20 · Read 30 · Write 40/)).toBeTruthy();
+    expect(screen.queryByText("Daily cost")).toBeNull();
   });
 
   it("degrades to an empty state without buckets", () => {
-    renderChart({ daily: [] });
+    render(<OverviewUsageChart daily={[]} />);
 
     expect(screen.getByText("No usage data")).toBeTruthy();
-    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(screen.queryByText("Daily cost")).toBeNull();
   });
 });

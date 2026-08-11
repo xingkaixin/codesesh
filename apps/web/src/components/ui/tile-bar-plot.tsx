@@ -18,6 +18,9 @@ import { cn } from "../../lib/utils";
 
 const TICK_FRACTIONS = [1, 0.75, 0.5, 0.25, 0] as const;
 
+/** Exported so a card can indent anything that must line up with the plot. */
+export const TILE_AXIS_WIDTH = 38;
+
 export function TileBarPlot({
   values,
   axisMax,
@@ -58,7 +61,7 @@ export function TileBarPlot({
   return (
     <div className={cn("flex", className)}>
       {formatTick ? (
-        <div className="relative w-[38px] shrink-0" style={{ height }} aria-hidden>
+        <div className="relative shrink-0" style={{ height, width: TILE_AXIS_WIDTH }} aria-hidden>
           {TICK_FRACTIONS.map((fraction) => (
             <span
               key={fraction}

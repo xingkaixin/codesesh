@@ -24,7 +24,6 @@ import { OverviewKpiGrid } from "./overview-kpi-grid";
 import { OverviewProjectRank } from "./overview-project-rank";
 import { OverviewSkeleton } from "./overview-skeleton";
 import { OverviewUsageChart } from "./overview-usage-chart";
-import type { OverviewMetric } from "./types";
 
 export function OverviewScreen({
   project,
@@ -48,8 +47,6 @@ export function OverviewScreen({
   const [ownAgent, setOwnAgent] = useState<string | undefined>(undefined);
   const agent = onAgentChange ? controlledAgent : ownAgent;
 
-  const [metric, setMetric] = useState<OverviewMetric>("tokens");
-  const [hoverDayIndex, setHoverDayIndex] = useState<number | null>(null);
   const filters: DashboardFilters = { project, agent };
   const { dashboard, error } = useDashboard(window, filters);
 
@@ -76,13 +73,7 @@ export function OverviewScreen({
       ) : dashboard ? (
         <>
           <OverviewKpiGrid totals={dashboard.totals} rangeDays={dashboard.window.days} />
-          <OverviewUsageChart
-            daily={dashboard.dailyActivity}
-            metric={metric}
-            onMetricChange={setMetric}
-            hoverDayIndex={hoverDayIndex}
-            onHoverDayChange={setHoverDayIndex}
-          />
+          <OverviewUsageChart daily={dashboard.dailyActivity} />
           <div className="grid gap-4 lg:grid-cols-[1.45fr_1fr]">
             <OverviewProjectRank
               filters={filters}
