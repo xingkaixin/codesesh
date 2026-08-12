@@ -1,7 +1,16 @@
-import { mkdtempSync, mkdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { KimiAgent } from "../kimi.js";
 import { diffSessionSources } from "../base.js";
 import type { SessionHead } from "../../types/index.js";
@@ -11,6 +20,8 @@ const PROJECT_HASH = "project-hash";
 const PROJECT_DIR = "/tmp/kimi-project";
 
 let tempDirs: string[] = [];
+
+const KIMI_FIXTURE_ROOT = new URL("./fixtures/kimi/", import.meta.url);
 
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {
@@ -72,6 +83,49 @@ afterEach(() => {
   }
   tempDirs = [];
   setCoreDiagnostics(null);
+  vi.unstubAllEnvs();
+});
+
+describe("KimiAgent configuration", () => {
+  it("maps project identity and attributes wire usage with configured pricing", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "codesesh-kimi-fixture-"));
+    tempDirs.push(dataRoot);
+    const projectDir = "/workspace/kimi-fixture";
+    const projectHash = createHash("md5").update(projectDir).digest("hex");
+    const sessionDir = join(dataRoot, "sessions", projectHash, "fixture-session");
+    mkdirSync(sessionDir, { recursive: true });
+    for (const file of ["config.toml", "kimi.json"]) {
+      copyFileSync(new URL(file, KIMI_FIXTURE_ROOT), join(dataRoot, file));
+    }
+    for (const file of ["state.json", "wire.jsonl"]) {
+      copyFileSync(new URL(file, KIMI_FIXTURE_ROOT), join(sessionDir, file));
+    }
+    vi.stubEnv("KIMI_SHARE_DIR", dataRoot);
+
+    const agent = new KimiAgent();
+    expect(agent.isAvailable()).toBe(true);
+
+    const [head] = agent.scan();
+    const detail = agent.getSessionData("fixture-session");
+    const assistant = detail.messages.find((message) => message.role === "assistant");
+
+    expect(head).toMatchObject({
+      id: "fixture-session",
+      directory: projectDir,
+      stats: {
+        total_input_tokens: 1_000,
+        total_output_tokens: 1_000,
+        total_cost: 0.0031,
+        cost_source: "estimated",
+      },
+    });
+    expect(assistant).toMatchObject({
+      model: "kimi-for-coding",
+      tokens: { input: 1_000, output: 1_000 },
+      cost: 0.0031,
+      cost_source: "estimated",
+    });
+  });
 });
 
 describe("KimiAgent cache refresh", () => {
