@@ -306,6 +306,7 @@ export function logClientEvent(event: string, data: Record<string, unknown> = {}
 
 const INITIAL_RETRY_MS = 1_000;
 const MAX_RETRY_MS = 30_000;
+const DISCONNECT_NOTICE_DELAY_MS = 5_000;
 
 function jitter(delayMs: number): number {
   const spread = delayMs * 0.2;
@@ -320,10 +321,23 @@ export function subscribeSessionUpdates(
 ): () => void {
   let disposed = false;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let disconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let retryDelayMs = INITIAL_RETRY_MS;
   let hasConnectedOnce = false;
   let disconnectNotified = false;
   let currentSource: EventSource | undefined;
+
+  const clearDisconnectTimer = () => {
+    if (disconnectTimer === undefined) return;
+    clearTimeout(disconnectTimer);
+    disconnectTimer = undefined;
+  };
+
+  const notifyDisconnect = () => {
+    if (disconnectNotified) return;
+    disconnectNotified = true;
+    onDisconnect?.();
+  };
 
   const connect = () => {
     const source = new EventSource(remoteAccessUrl("/api/events"));
@@ -347,22 +361,28 @@ export function subscribeSessionUpdates(
     });
 
     source.onopen = () => {
+      clearDisconnectTimer();
       retryDelayMs = INITIAL_RETRY_MS;
+      const recoveredFromDisconnect = disconnectNotified;
       disconnectNotified = false;
-      if (hasConnectedOnce) {
+      if (hasConnectedOnce || recoveredFromDisconnect) {
         onReconnect?.();
       }
       hasConnectedOnce = true;
     };
 
     source.onerror = () => {
-      if (source.readyState !== EventSource.CLOSED) return;
+      if (source.readyState !== EventSource.CLOSED) {
+        disconnectTimer ??= setTimeout(() => {
+          disconnectTimer = undefined;
+          if (!disposed && currentSource === source) notifyDisconnect();
+        }, DISCONNECT_NOTICE_DELAY_MS);
+        return;
+      }
+      clearDisconnectTimer();
       source.close();
       if (disposed) return;
-      if (!disconnectNotified) {
-        disconnectNotified = true;
-        onDisconnect?.();
-      }
+      notifyDisconnect();
       const delay = jitter(retryDelayMs);
       retryDelayMs = Math.min(retryDelayMs * 2, MAX_RETRY_MS);
       retryTimer = setTimeout(connect, delay);
@@ -376,6 +396,7 @@ export function subscribeSessionUpdates(
     if (retryTimer !== undefined) {
       clearTimeout(retryTimer);
     }
+    clearDisconnectTimer();
     currentSource?.close();
   };
 }
