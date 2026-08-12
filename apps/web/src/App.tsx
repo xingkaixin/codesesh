@@ -33,7 +33,7 @@ import { AppRouteContent } from "./components/app/AppRouteContent";
 import { ScanStatusNotice } from "./components/app/ScanStatusNotice";
 import { formatSearchSubtitle } from "./lib/scan-format";
 import { findAgent } from "./lib/agents";
-import { getProjectIdentityKey, type ProjectRouteIdentity } from "./lib/projects";
+import { getProjectIdentityKey } from "./lib/projects";
 import {
   buildSessionIndexes,
   getSessionAgentKey,
@@ -67,7 +67,6 @@ export default function App() {
     reload,
   });
 
-  const [, setSelectedProjectIdentity] = useState<ProjectRouteIdentity | null>(null);
   const setScanStatus = useScanStatusPublisher();
   const [selectedSidebarSessionReference, setSelectedSidebarSessionReference] = useState<
     string | null
@@ -103,13 +102,6 @@ export default function App() {
     });
   }, [location.pathname, viewState.mode, viewState.activeAgentKey, viewState.activeSessionId]);
 
-  useEffect(() => {
-    if (viewState.mode !== "project") return;
-    setSelectedProjectIdentity({
-      kind: viewState.activeProjectKind,
-      key: viewState.activeProjectKey,
-    });
-  }, [viewState]);
   const sessionIndexes = useMemo(
     () => buildSessionIndexes(sessions, activeAgents),
     [sessions, activeAgents],
@@ -462,7 +454,6 @@ export default function App() {
             }}
             actions={{
               onCollapse: () => setSidebarCollapsed(true),
-              onSelectProject: setSelectedProjectIdentity,
               onToggleBookmark: toggleBookmark,
               onSelectFlatSidebarSession: handleSelectFlatSidebarSession,
               onToggleSidebarSessionBookmark: handleToggleSidebarSessionBookmark,

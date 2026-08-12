@@ -23,7 +23,6 @@ const projects = [
 function createActions(overrides: Partial<AppSidebarActions> = {}): AppSidebarActions {
   return {
     onCollapse: vi.fn(),
-    onSelectProject: vi.fn(),
     onToggleBookmark: vi.fn(),
     onSelectFlatSidebarSession: vi.fn(),
     onToggleSidebarSessionBookmark: vi.fn(),

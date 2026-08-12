@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import type { SessionHead } from "../lib/api";
@@ -191,7 +192,7 @@ function RecentSessions({
   );
 }
 
-export function DetailLanding({
+export const DetailLanding = memo(function DetailLanding({
   type,
   agentCatalog,
   sessions,
@@ -202,21 +203,35 @@ export function DetailLanding({
   isBookmarked,
   onToggleBookmark,
 }: DetailLandingProps) {
-  const sortedSessions = sessions.toSorted(
-    (a, b) => (b.time_updated || b.time_created || 0) - (a.time_updated || a.time_created || 0),
-  );
-  const recentSessions = sortedSessions.slice(0, 5);
-
-  const totalMessages = sessions.reduce((sum, item) => sum + item.stats.message_count, 0);
-  const totalTokens = sessions.reduce((sum, item) => sum + getSessionTotalTokens(item.stats), 0);
-  const totalCost = sessions.reduce((sum, item) => sum + item.stats.total_cost, 0);
-  const costSource =
-    totalCost > 0
-      ? sessions.some((item) => item.stats.cost_source === "estimated")
-        ? "estimated"
-        : "recorded"
-      : undefined;
-  const latestUpdatedAt = sortedSessions[0]?.time_updated || sortedSessions[0]?.time_created;
+  const { recentSessions, totalMessages, totalTokens, totalCost, costSource, latestUpdatedAt } =
+    useMemo(() => {
+      const sortedSessions = sessions.toSorted(
+        (a, b) => (b.time_updated || b.time_created || 0) - (a.time_updated || a.time_created || 0),
+      );
+      let totalMessages = 0;
+      let totalTokens = 0;
+      let totalCost = 0;
+      let hasEstimatedCost = false;
+      for (const session of sessions) {
+        totalMessages += session.stats.message_count;
+        totalTokens += getSessionTotalTokens(session.stats);
+        totalCost += session.stats.total_cost;
+        hasEstimatedCost ||= session.stats.cost_source === "estimated";
+      }
+      return {
+        recentSessions: sortedSessions.slice(0, 5),
+        totalMessages,
+        totalTokens,
+        totalCost,
+        costSource:
+          totalCost > 0
+            ? hasEstimatedCost
+              ? ("estimated" as const)
+              : ("recorded" as const)
+            : undefined,
+        latestUpdatedAt: sortedSessions[0]?.time_updated || sortedSessions[0]?.time_created,
+      };
+    }, [sessions]);
 
   if (type === "missing-agent") {
     const requestedPath = `/${attemptedAgentKey || "unknown"}${attemptedSessionId ? `/${attemptedSessionId}` : ""}`;
@@ -386,4 +401,4 @@ export function DetailLanding({
       />
     </div>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import {
   Bot,
   CalendarRange,
@@ -289,7 +289,7 @@ function AbortToolItem() {
   );
 }
 
-function ReasoningSection({
+const ReasoningSection = memo(function ReasoningSection({
   anchorId,
   parts,
   highlightQuery,
@@ -299,10 +299,14 @@ function ReasoningSection({
   highlightQuery?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const fullText = parts
-    .map((part) => part.text)
-    .filter(Boolean)
-    .join("\n\n");
+  const fullText = useMemo(
+    () =>
+      parts
+        .map((part) => part.text)
+        .filter(Boolean)
+        .join("\n\n"),
+    [parts],
+  );
 
   return (
     <div
@@ -333,9 +337,9 @@ function ReasoningSection({
       </Collapsible>
     </div>
   );
-}
+});
 
-function ToolsSection({
+const ToolsSection = memo(function ToolsSection({
   parts,
   anchorIds,
   sessionAgentKey,
@@ -364,9 +368,9 @@ function ToolsSection({
       </div>
     </div>
   );
-}
+});
 
-function PlansSection({
+const PlansSection = memo(function PlansSection({
   anchorId,
   parts,
   highlightQuery,
@@ -382,11 +386,17 @@ function PlansSection({
       ))}
     </div>
   );
-}
+});
 
-function PlanItem({ part, highlightQuery }: { part: PlanPart; highlightQuery?: string }) {
+const PlanItem = memo(function PlanItem({
+  part,
+  highlightQuery,
+}: {
+  part: PlanPart;
+  highlightQuery?: string;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const display = buildCodexPlanDisplay(part);
+  const display = useMemo(() => buildCodexPlanDisplay(part), [part]);
   const statusMeta =
     display.approvalStatus === "fail" ? TOOL_STATUS_META.error : TOOL_STATUS_META.completed;
   const StatusIcon = statusMeta.icon;
@@ -455,9 +465,9 @@ function PlanItem({ part, highlightQuery }: { part: PlanPart; highlightQuery?: s
       </Collapsible>
     </div>
   );
-}
+});
 
-function ToolItem({
+const ToolItem = memo(function ToolItem({
   tool,
   anchorId,
   sessionAgentKey,
@@ -471,9 +481,15 @@ function ToolItem({
   highlightQuery?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const state = normalizeToolState(tool);
-  const strategy = getToolDisplayStrategy(sessionAgentKey, tool, state, baseDirectory);
-  const inputPreviewText = getDisplayTextWithRelativePaths(state.inputText || "{}", baseDirectory);
+  const state = useMemo(() => normalizeToolState(tool), [tool]);
+  const strategy = useMemo(
+    () => getToolDisplayStrategy(sessionAgentKey, tool, state, baseDirectory),
+    [baseDirectory, sessionAgentKey, state, tool],
+  );
+  const inputPreviewText = useMemo(
+    () => getDisplayTextWithRelativePaths(state.inputText || "{}", baseDirectory),
+    [baseDirectory, state.inputText],
+  );
   const statusMeta = TOOL_STATUS_META[state.status];
   const StatusIcon = statusMeta.icon;
   const ToolIcon = strategy.Icon;
@@ -588,4 +604,4 @@ function ToolItem({
       </Collapsible>
     </div>
   );
-}
+});

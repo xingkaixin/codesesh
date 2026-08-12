@@ -33,11 +33,9 @@ function ScanAwareEmptyState({ scanning, empty }: { scanning: string; empty: str
 function ProjectNavList({
   projects,
   selectedProjectNavigationId,
-  onSelectProject,
 }: {
   projects: ApiProjectGroup[];
   selectedProjectNavigationId: string | null;
-  onSelectProject: (identity: ReturnType<typeof getProjectGroupIdentity>) => void;
 }) {
   return (
     <>
@@ -48,7 +46,6 @@ function ProjectNavList({
           <li key={`${project.identityKind}:${project.identityKey}`}>
             <Link
               to={getProjectPath(projectIdentity)}
-              onClick={() => onSelectProject(projectIdentity)}
               data-active={isSelected ? "true" : undefined}
               className={`min-w-0 ${navItemClass(isSelected)}`}
             >
@@ -81,7 +78,6 @@ export interface AppSidebarViewModel {
 
 export interface AppSidebarActions {
   onCollapse: () => void;
-  onSelectProject: (identity: ReturnType<typeof getProjectGroupIdentity>) => void;
   onToggleBookmark: (session: BookmarkView) => void;
   onSelectFlatSidebarSession: (session: SessionHead) => void;
   onToggleSidebarSessionBookmark: (session: SessionHead) => void;
@@ -104,7 +100,6 @@ export function AppSidebar({
   },
   actions: {
     onCollapse,
-    onSelectProject,
     onToggleBookmark,
     onSelectFlatSidebarSession,
     onToggleSidebarSessionBookmark,
@@ -153,7 +148,6 @@ export function AppSidebar({
             <ProjectNavList
               projects={projects}
               selectedProjectNavigationId={selectedProjectNavigationId}
-              onSelectProject={onSelectProject}
             />
             {projects.length === 0 && !loading ? (
               <li>

@@ -12,6 +12,19 @@ const PROFILER_LOG_STORAGE_KEY = "codeseshProfilerLog";
 const PROFILER_SLOW_COMMIT_MS = 16;
 const PROFILER_MAX_ENTRIES = 500;
 
+function readStorageFlag(key: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+const RENDER_PROFILER_ENABLED = readStorageFlag(PROFILER_STORAGE_KEY);
+const RENDER_PROFILER_LOG_ENABLED =
+  RENDER_PROFILER_ENABLED && readStorageFlag(PROFILER_LOG_STORAGE_KEY);
+
 interface RenderProfileEntry {
   id: string;
   source: "react-profiler" | "commit-latency" | "custom-timing";
@@ -31,23 +44,11 @@ declare global {
 }
 
 export function isRenderProfilerEnabled() {
-  if (typeof window === "undefined") return false;
-
-  try {
-    return window.localStorage.getItem(PROFILER_STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
+  return RENDER_PROFILER_ENABLED;
 }
 
 function shouldLogRenderProfilerEntries() {
-  if (typeof window === "undefined") return false;
-
-  try {
-    return window.localStorage.getItem(PROFILER_LOG_STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
+  return RENDER_PROFILER_LOG_ENABLED;
 }
 
 function pushProfileEntry(entry: RenderProfileEntry) {
