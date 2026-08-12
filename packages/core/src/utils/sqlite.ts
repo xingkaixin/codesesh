@@ -43,6 +43,8 @@ type SQLiteDatabaseConstructor = (
   options?: { readonly?: boolean },
 ) => SQLiteDatabase & SQLitePragmaCapable;
 
+const SQLITE_BUSY_TIMEOUT_MS = 5000;
+
 let DatabaseConstructor: SQLiteDatabaseConstructor | null = null;
 let loadErrorMessage: string | null = null;
 
@@ -270,6 +272,11 @@ export function openDbReadOnly(dbPath: string): SQLiteDatabase | null {
   }
   try {
     const db = DatabaseConstructor(dbPath, { readonly: true });
+    try {
+      db.pragma(`busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
+    } catch {
+      // The handle remains usable when SQLite rejects connection-level tuning.
+    }
     return db;
   } catch (error) {
     getCoreDiagnostics()?.warn("sqlite.open_failed", {
@@ -294,7 +301,7 @@ export function openDb(dbPath: string): SQLiteDatabase | null {
     try {
       // busy_timeout first: if a later pragma throws, writes must still wait for
       // concurrent writers instead of failing instantly with SQLITE_BUSY.
-      db.pragma("busy_timeout = 5000");
+      db.pragma(`busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
       db.pragma("journal_mode = WAL");
       db.pragma("synchronous = NORMAL");
       db.pragma("foreign_keys = ON");

@@ -94,19 +94,21 @@ export function withCacheDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
   }
 }
 
-export function withCacheDbReadOnly<T>(fn: (db: SQLiteDatabase) => T): T | null {
+export type CacheReadOutcome<T> = { status: "success"; value: T } | { status: "failed" };
+
+export function withCacheDbReadOnly<T>(fn: (db: SQLiteDatabase) => T): CacheReadOutcome<T> {
   const db = openDbReadOnly(getCachePath());
-  if (!db) return null;
+  if (!db) return { status: "failed" };
 
   try {
-    return fn(db);
+    return { status: "success", value: fn(db) };
   } catch (error) {
     getCoreDiagnostics()?.warn("cache.read_failed", {
       message: error instanceof Error ? error.message : String(error),
       code: (error as { code?: string })?.code,
       error_class: error instanceof Error ? error.name : typeof error,
     });
-    return null;
+    return { status: "failed" };
   } finally {
     db.close();
   }

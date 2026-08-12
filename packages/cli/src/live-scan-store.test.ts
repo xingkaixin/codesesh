@@ -37,6 +37,8 @@ const core = vi.hoisted(() => ({
   filterSessions: vi.fn((sessions: SessionHead[], _options: ScanOptions) => sessions),
   getAgentFullSyncCursor: vi.fn(() => null as string | null),
   getAgentLastFullSyncAt: vi.fn(),
+  readAgentCacheInitialization: vi.fn(),
+  readAgentLastFullSyncAt: vi.fn(),
   resolveAgentRoots: vi.fn((): AgentRoots => ({
     claudecode: "/tmp/claude",
     codex: "/tmp/codex",
@@ -391,6 +393,8 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     getAgentFullSyncCursor: core.getAgentFullSyncCursor,
     getAgentLastFullSyncAt: core.getAgentLastFullSyncAt,
     isAgentCacheInitialized: core.isAgentCacheInitialized,
+    readAgentCacheInitialization: core.readAgentCacheInitialization,
+    readAgentLastFullSyncAt: core.readAgentLastFullSyncAt,
     loadCachedSessions: core.loadCachedSessions,
     markAgentCacheInitialized: core.markAgentCacheInitialized,
     markAgentFullSyncProgress: core.markAgentFullSyncProgress,
@@ -614,6 +618,14 @@ describe("LiveScanStore", () => {
     );
     core.getAgentLastFullSyncAt.mockReturnValue(Date.now());
     core.isAgentCacheInitialized.mockReturnValue(true);
+    core.readAgentCacheInitialization.mockImplementation(() => ({
+      status: "success",
+      value: core.isAgentCacheInitialized(),
+    }));
+    core.readAgentLastFullSyncAt.mockImplementation(() => ({
+      status: "success",
+      value: core.getAgentLastFullSyncAt(),
+    }));
     core.loadCachedSessions.mockReturnValue(null);
     core.markAgentCacheInitialized.mockReset();
     core.markAgentFullSyncStarted.mockReset();

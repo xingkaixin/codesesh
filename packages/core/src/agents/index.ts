@@ -23,6 +23,7 @@ export type {
   AgentScanOptions,
   AgentScanProgress,
   CachedMetaLookup,
+  ChangeCheckFailure,
   ChangeCheckResult,
   FileSessionMeta,
   FileWalkOptions,

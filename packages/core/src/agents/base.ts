@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync, type Dirent, type Stats } from "node:fs";
+import { readdirSync, statSync, type Dirent, type Stats } from "node:fs";
 import { join } from "node:path";
 import type { SessionHead, SessionDetail, ParseSessionResult } from "../types/index.js";
 import {
@@ -81,8 +81,14 @@ export interface FileWalkOptions {
   scanWindow?: Pick<AgentScanOptions, "from" | "to">;
 }
 
-/** 变更检测结果 */
-export interface ChangeCheckResult {
+export interface ChangeCheckFailure {
+  sourcePath: string;
+  errorClass: string;
+  message: string;
+}
+
+interface SuccessfulChangeCheck {
+  status?: "checked";
   /** 是否有变更 */
   hasChanges: boolean;
   /** 可精确定位时的变更会话 ID；省略表示只能确认数据源发生过变化 */
@@ -92,7 +98,21 @@ export interface ChangeCheckResult {
   /** 检测过程中已枚举的会话源（可选），供 incrementalScan 复用以避免二次枚举 */
   refs?: SessionSourceRef[];
   sourceFailures?: SessionSourceFailure[];
+  failure?: never;
 }
+
+interface FailedChangeCheck {
+  status: "failed";
+  hasChanges: false;
+  timestamp: number;
+  failure: ChangeCheckFailure;
+  changedIds?: never;
+  refs?: never;
+  sourceFailures?: never;
+}
+
+/** 变更检测结果 */
+export type ChangeCheckResult = SuccessfulChangeCheck | FailedChangeCheck;
 
 export interface SessionSourceRef {
   sessionId: string;
@@ -608,8 +628,9 @@ export function sqliteSourceFiles(dbPath: string): string[] {
 function statOrNull(path: string): { size: number; mtimeMs: number } | null {
   try {
     return statSync(path);
-  } catch {
-    return null;
+  } catch (error) {
+    if (isMissingSessionSourceError(error)) return null;
+    throw error;
   }
 }
 
@@ -675,11 +696,14 @@ export abstract class DatabaseSessionSource extends BaseAgent {
    */
   checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
     const dbPath = this.getDatabasePath();
-    if (!dbPath || !existsSync(dbPath)) {
+    if (!dbPath) {
       return { hasChanges: false, timestamp: Date.now() };
     }
 
     try {
+      if (!statOrNull(dbPath)) {
+        return { hasChanges: false, timestamp: Date.now() };
+      }
       const pricingChanged = cachedSessions.some((session) => {
         const meta = this.sessionMetaMap.get(session.id);
         return (
@@ -702,8 +726,25 @@ export abstract class DatabaseSessionSource extends BaseAgent {
         hasChanges,
         timestamp: Date.now(),
       };
-    } catch {
-      return { hasChanges: false, timestamp: Date.now() };
+    } catch (error) {
+      const failure = {
+        sourcePath: dbPath,
+        errorClass: error instanceof Error ? error.name : typeof error,
+        message: error instanceof Error ? error.message : String(error),
+      };
+      getCoreDiagnostics()?.warn("agent.change_check_failed", {
+        agent: this.name,
+        source_path: failure.sourcePath,
+        error_class: failure.errorClass,
+        message: failure.message,
+        baseline_advanced: false,
+      });
+      return {
+        status: "failed",
+        hasChanges: false,
+        timestamp: sinceTimestamp,
+        failure,
+      };
     }
   }
 

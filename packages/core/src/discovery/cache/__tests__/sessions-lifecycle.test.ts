@@ -14,11 +14,14 @@ import {
   markAgentFullSyncProgress,
   markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
+  readAgentCacheInitialization,
+  readAgentLastFullSyncAt,
   saveCachedSessionChanges,
   saveCachedSessions,
 } from "../sessions.js";
 import { listCachedProjectGroups } from "../project-groups.js";
 import type { SessionCacheMeta } from "../../../agents/base.js";
+import { setCoreDiagnostics } from "../../../utils/diagnostics.js";
 import { withCacheDb, withSearchIndexDb } from "../schema.js";
 import { getSchemaEnsuredPath, setSchemaEnsuredPath } from "../db.js";
 import type { SessionHead } from "../../../types/index.js";
@@ -135,6 +138,7 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
+  setCoreDiagnostics(null);
 });
 describe("loadCachedSessions", () => {
   it("returns null when cache db does not exist", () => {
@@ -547,6 +551,28 @@ describe("clearCache", () => {
 });
 
 describe("cache initialization tracking", () => {
+  it("distinguishes cache-state read failures from uninitialized values", () => {
+    markAgentCacheInitialized("claudecode");
+    withCacheDb((db) => {
+      db.exec(`
+        DROP TABLE cache_initialization;
+        CREATE VIEW cache_initialization AS
+          SELECT
+            'claudecode' AS agent_name,
+            missing_cache_state() AS index_version,
+            1 AS last_sync_at;
+      `);
+    });
+    const events: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    setCoreDiagnostics({
+      warn: (event, detail) => events.push({ event, detail }),
+    });
+
+    expect(readAgentCacheInitialization("claudecode")).toEqual({ status: "failed" });
+    expect(readAgentLastFullSyncAt("claudecode")).toEqual({ status: "failed" });
+    expect(events.filter(({ event }) => event === "cache.read_failed")).toHaveLength(2);
+  });
+
   it("is not initialized and has no full-sync timestamp before any write", () => {
     expect(isAgentCacheInitialized("claudecode")).toBe(false);
     expect(getAgentLastFullSyncAt("claudecode")).toBeNull();
