@@ -55,6 +55,7 @@ interface SessionMeta extends FileSessionMeta {
   headIndexVersion: string;
   model: string | null | undefined;
   parentSessionId: string | null;
+  toolUseId: string | null;
 }
 
 interface ClaudeChildContext {
@@ -265,7 +266,9 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
   }
 
   setSessionMetaMap(meta: Map<string, SessionCacheMeta>): void {
+    const childIndexInputsChanged = this.childIndexReady && this.didChildIndexInputsChange(meta);
     super.setSessionMetaMap(meta);
+    if (!childIndexInputsChanged) return;
     this.childContextsBySource.clear();
     this.childSessionIdByToolUseId.clear();
     this.childIndexReady = false;
@@ -337,6 +340,30 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
     return this.readSessionSourceDirectory(this.basePath)
       .filter((entry) => entry.isDirectory())
       .map((entry) => join(this.basePath!, entry.name));
+  }
+
+  private didChildIndexInputsChange(meta: Map<string, SessionCacheMeta>): boolean {
+    if (meta.size !== this.sessionMetaMap.size) return true;
+
+    for (const [sessionId, next] of meta) {
+      const current = this.sessionMetaMap.get(sessionId);
+      if (!current || current.sourcePath !== next.sourcePath) return true;
+      if (
+        basename(dirname(next.sourcePath)) === "subagents" &&
+        (current.title !== next["title"] ||
+          current.parentSessionId !== next["parentSessionId"] ||
+          this.readToolUseId(current) !== this.readToolUseId(next))
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private readToolUseId(meta: SessionCacheMeta): string | null {
+    const value = meta["toolUseId"];
+    return typeof value === "string" && value.length > 0 ? value : null;
   }
 
   private ensureChildIndex(): void {
@@ -477,6 +504,7 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
         headIndexVersion: HEAD_INDEX_VERSION,
         model: head.stats.total_tokens ? "unknown" : undefined,
         parentSessionId: head.parent_reference?.sessionId ?? null,
+        toolUseId: child?.toolUseId ?? null,
       },
     });
   }

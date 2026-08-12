@@ -45,6 +45,18 @@ function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionH
   };
 }
 
+function writeMinimalClaudeSession(filePath: string): void {
+  writeFileSync(
+    filePath,
+    JSON.stringify({
+      type: "user",
+      timestamp: "2026-04-20T10:00:00Z",
+      cwd: "/tmp/project",
+      message: { role: "user", content: "Inspect the repository" },
+    }),
+  );
+}
+
 afterEach(() => {
   for (const dir of tempDirs) {
     rmSync(dir, { recursive: true, force: true });
@@ -228,6 +240,66 @@ describe("ClaudeCodeAgent cache refresh", () => {
     expect(
       readSpy.mock.calls.filter((call) => String(call[0]).endsWith(".meta.json")),
     ).toHaveLength(1);
+  });
+
+  it("keeps the child index when restored session metadata is equivalent", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-child-index-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    const parentId = "parent-session";
+    const childId = "child-session";
+    const childDir = join(projectDir, parentId, "subagents");
+    mkdirSync(childDir, { recursive: true });
+    writeMinimalClaudeSession(join(projectDir, parentId + ".jsonl"));
+    writeMinimalClaudeSession(join(childDir, "agent-" + childId + ".jsonl"));
+    writeFileSync(
+      join(childDir, "agent-" + childId + ".meta.json"),
+      JSON.stringify({ agentId: childId, toolUseId: "tool-child" }),
+    );
+
+    const agent = new ClaudeCodeAgent() as any;
+    agent.basePath = basePath;
+    agent.scan();
+    const restoredMeta = new Map(agent.getSessionMetaMap());
+    const walkSpy = vi.spyOn(agent, "walkFiles");
+
+    agent.setSessionMetaMap(restoredMeta);
+    agent.ensureChildIndex();
+
+    expect(walkSpy).not.toHaveBeenCalled();
+    expect(agent.childSessionIdByToolUseId.get("tool-child")).toBe(childId);
+  });
+
+  it("rebuilds the child index when restored session sources change", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-child-change-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    const parentId = "parent-session";
+    const childId = "added-child";
+    const childDir = join(projectDir, parentId, "subagents");
+    mkdirSync(projectDir, { recursive: true });
+    writeMinimalClaudeSession(join(projectDir, parentId + ".jsonl"));
+
+    const agent = new ClaudeCodeAgent() as any;
+    agent.basePath = basePath;
+    agent.scan();
+
+    mkdirSync(childDir, { recursive: true });
+    writeMinimalClaudeSession(join(childDir, "agent-" + childId + ".jsonl"));
+    writeFileSync(
+      join(childDir, "agent-" + childId + ".meta.json"),
+      JSON.stringify({ agentId: childId, toolUseId: "tool-added-child" }),
+    );
+    const refreshedAgent = new ClaudeCodeAgent() as any;
+    refreshedAgent.basePath = basePath;
+    refreshedAgent.scan();
+    const walkSpy = vi.spyOn(agent, "walkFiles");
+
+    agent.setSessionMetaMap(new Map(refreshedAgent.getSessionMetaMap()));
+    agent.ensureChildIndex();
+
+    expect(walkSpy).toHaveBeenCalledOnce();
+    expect(agent.childSessionIdByToolUseId.get("tool-added-child")).toBe(childId);
   });
 
   it("drops a window-only child when its parent is outside the window", () => {
