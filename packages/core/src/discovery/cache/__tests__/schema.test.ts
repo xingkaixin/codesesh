@@ -80,7 +80,7 @@ describe("cache schema boundary", () => {
         "publication_id",
       ]),
     );
-    expect(state?.version).toBe(22);
+    expect(state?.version).toBe(23);
   });
 
   it("reuses one connection for read and write capabilities until invalidated", () => {
@@ -244,7 +244,7 @@ describe("cache schema boundary", () => {
           .get("codex", session.id) != null,
     }));
 
-    expect(migrated).toEqual({ version: 22, detailVersion: "", pending: true });
+    expect(migrated).toEqual({ version: 23, detailVersion: "", pending: true });
   });
 
   it("marks legacy project identities stale by leaving added provenance empty", () => {
@@ -283,7 +283,7 @@ describe("cache schema boundary", () => {
     });
 
     expect(migrated).toEqual({
-      version: 22,
+      version: 23,
       resolverRevision: null,
       inputSignature: null,
       classifierRevision: null,
@@ -353,7 +353,7 @@ describe("cache schema boundary", () => {
       });
 
       expect(migrated).toEqual({
-        version: 22,
+        version: 23,
         partsJson: legacyPartsJson,
         partsFormatVersion: 0,
       });

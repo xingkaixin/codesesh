@@ -236,6 +236,13 @@ function readMigratedFacts(): Record<string, unknown> {
       searchDocuments: scalar("SELECT COUNT(*) AS value FROM session_documents"),
       projects: scalar("SELECT COUNT(*) AS value FROM project_sessions"),
       pendingReindex: scalar("SELECT COUNT(*) AS value FROM pending_reindex"),
+      sessionActivityIndexes: (
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_sessions_agent_activity%'",
+          )
+          .all() as Array<{ name: string }>
+      ).map(({ name }) => name),
       documentColumns: (
         db.prepare("PRAGMA table_info(session_documents)").all() as Array<{ name: string }>
       )
@@ -348,6 +355,7 @@ describe("sqlite migration release gate", () => {
         searchDocuments: 1,
         projects: 1,
         pendingReindex: 1,
+        sessionActivityIndexes: ["idx_sessions_agent_activity_order"],
         documentColumns: [
           "agent_name",
           "content_hash",

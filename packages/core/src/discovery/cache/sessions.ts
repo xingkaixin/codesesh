@@ -131,7 +131,7 @@ export function loadCachedSessions(agentName: string): CachedResult | null {
           SELECT ${SESSION_HEAD_SELECT_COLUMNS}
           FROM sessions s
           WHERE s.agent_name = ? AND s.publication_id IS NULL
-          ORDER BY s.sort_index, s.activity_time DESC
+          ORDER BY s.activity_time DESC, s.session_id
         `,
       )
       .all(agentName) as SessionRow[];
@@ -499,9 +499,6 @@ export function writeCachedSessionSnapshot(
     ON CONFLICT(agent_name) DO UPDATE SET timestamp = excluded.timestamp
   `);
   const upsertSession = prepareUpsertSession(db);
-  const updateSortIndex = db.prepare(
-    "UPDATE sessions SET sort_index = ? WHERE agent_name = ? AND session_id = ?",
-  );
   const sessionIds = new Set(sessions.map((session) => session.id));
   const existingSessionIds = db
     .prepare("SELECT session_id FROM sessions WHERE agent_name = ?")
@@ -536,22 +533,6 @@ export function writeCachedSessionSnapshot(
       sourcePathFromMeta(sessionMeta),
     );
   });
-
-  if (completeness === "partial" && sessions.length > 0) {
-    const mergedRows = db
-      .prepare(
-        `
-          SELECT session_id
-          FROM sessions
-          WHERE agent_name = ? AND publication_id IS NULL
-          ORDER BY activity_time DESC, sort_index, session_id
-        `,
-      )
-      .all(agentName) as SessionRow[];
-    mergedRows.forEach((row, index) => {
-      updateSortIndex.run(index, agentName, String(row.session_id));
-    });
-  }
 }
 
 /** Returns whether the write reached disk; callers must not publish on `false`. */

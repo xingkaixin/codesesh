@@ -200,7 +200,7 @@ describe("withCacheDb schema memo", () => {
   it("runs ensureSchema on the first open but skips it on later opens for the same path", () => {
     withCacheDb(() => undefined);
     expect(getSchemaEnsuredPath()).toBe(getCachePath());
-    expect(getUserVersion(getCachePath())).toBe(22);
+    expect(getUserVersion(getCachePath())).toBe(23);
 
     const db = new Database(getCachePath());
     db.pragma("user_version = 14");
@@ -211,7 +211,7 @@ describe("withCacheDb schema memo", () => {
 
     setSchemaEnsuredPath(null);
     withCacheDb(() => undefined);
-    expect(getUserVersion(getCachePath())).toBe(22);
+    expect(getUserVersion(getCachePath())).toBe(23);
   });
 });
 
@@ -219,7 +219,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(22);
+    expect(getUserVersion(getCachePath())).toBe(23);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -341,6 +341,70 @@ describe("saveCachedSessions", () => {
     ]);
   });
 
+  it("derives restored order from session activity", () => {
+    const older = { ...makeSession("older"), time_created: now - 2_000, time_updated: now - 2_000 };
+    const newer = { ...makeSession("newer"), time_created: now - 1_000, time_updated: now - 1_000 };
+
+    saveCachedSessions("claudecode", [older, newer]);
+
+    expect(loadCachedSessions("claudecode")?.sessions.map((session) => session.id)).toEqual([
+      "newer",
+      "older",
+    ]);
+  });
+
+  it("does not rewrite retained sort indexes for a partial snapshot", () => {
+    const retained = [makeSession("one"), makeSession("two"), makeSession("three")];
+    saveCachedSessions("claudecode", retained);
+    const db = new Database(getCachePath());
+    try {
+      db.exec(`
+        CREATE TABLE sort_index_updates (count INTEGER NOT NULL);
+        INSERT INTO sort_index_updates(count) VALUES (0);
+        CREATE TRIGGER count_sort_index_updates
+        AFTER UPDATE OF sort_index ON sessions
+        BEGIN
+          UPDATE sort_index_updates SET count = count + 1;
+        END;
+      `);
+    } finally {
+      db.close();
+    }
+
+    saveCachedSessions("claudecode", [retained[0]!], {}, { completeness: "partial" });
+
+    const auditDb = new Database(getCachePath(), { readonly: true });
+    try {
+      const row = auditDb.prepare("SELECT count FROM sort_index_updates").get() as {
+        count: number;
+      };
+      expect(row.count).toBe(1);
+    } finally {
+      auditDb.close();
+    }
+  });
+
+  it("uses the activity-order index without a temporary sort", () => {
+    saveCachedSessions("claudecode", [makeSession("one")]);
+    const db = new Database(getCachePath(), { readonly: true });
+    try {
+      const plan = db
+        .prepare(
+          `EXPLAIN QUERY PLAN
+           SELECT session_id
+           FROM sessions
+           WHERE agent_name = ? AND publication_id IS NULL
+           ORDER BY activity_time DESC, session_id`,
+        )
+        .all("claudecode") as Array<{ detail: string }>;
+      const details = plan.map(({ detail }) => detail).join("\n");
+      expect(details).toContain("idx_sessions_agent_activity_order");
+      expect(details).not.toContain("USE TEMP B-TREE");
+    } finally {
+      db.close();
+    }
+  });
+
   it("preserves other agents", () => {
     saveCachedSessions("cursor", [makeSession("cursor-1")]);
     saveCachedSessions("claudecode", [makeSession("claude-1")]);
@@ -431,7 +495,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(22);
+    expect(getUserVersion(getCachePath())).toBe(23);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
