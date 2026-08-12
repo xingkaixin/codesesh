@@ -26,6 +26,7 @@ export type {
   AgentRoots,
   AgentScanOptions,
   AgentScanProgress,
+  ChangeCheckFailure,
   ChangeCheckResult,
   SessionCacheMeta,
   SessionSourceFailure,

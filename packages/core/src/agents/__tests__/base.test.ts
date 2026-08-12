@@ -712,6 +712,58 @@ describe("DatabaseSessionSource", () => {
     expect(result.hasChanges).toBe(false);
   });
 
+  it("returns a failure without advancing the database change baseline", () => {
+    const dbPath = makeDb();
+    const agent = new FakeDatabaseSource(dbPath);
+    agent.setSessionMetaMap(
+      new Map([
+        [
+          "db-1",
+          {
+            id: "db-1",
+            sourcePath: dbPath,
+            pricingCaptureEpoch: PRICING_CAPTURE_EPOCH,
+            unpricedModels: ["unavailable-model"],
+          },
+        ],
+      ]),
+    );
+    const events: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    setCoreDiagnostics({
+      warn: (event, detail) => events.push({ event, detail }),
+    });
+    const resolve = vi.spyOn(pricingResolver, "resolve").mockImplementationOnce(() => {
+      throw new Error("pricing registry unavailable");
+    });
+
+    const result = agent.checkForChanges(123, [makeSession("db-1")]);
+
+    resolve.mockRestore();
+    setCoreDiagnostics(null);
+    expect(result).toEqual({
+      status: "failed",
+      hasChanges: false,
+      timestamp: 123,
+      failure: {
+        sourcePath: dbPath,
+        errorClass: "Error",
+        message: "pricing registry unavailable",
+      },
+    });
+    expect(events).toEqual([
+      {
+        event: "agent.change_check_failed",
+        detail: {
+          agent: "fakedb",
+          source_path: dbPath,
+          error_class: "Error",
+          message: "pricing registry unavailable",
+          baseline_advanced: false,
+        },
+      },
+    ]);
+  });
+
   it("incrementalScan delegates to a full scan", () => {
     const agent = new FakeDatabaseSource(makeDb());
     const options = { from: 1_000, to: 2_000 };

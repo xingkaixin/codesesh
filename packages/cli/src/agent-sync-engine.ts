@@ -4,12 +4,12 @@ import {
   buildAgentCacheMeta,
   getAgentFullSyncCursor,
   computeSessionDiff,
-  getAgentLastFullSyncAt,
-  isAgentCacheInitialized,
   loadCachedSessions,
   markAgentFullSyncProgress,
   markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
+  readAgentCacheInitialization,
+  readAgentLastFullSyncAt,
   sessionSignature,
   type AgentScanProgress,
   type BaseAgent,
@@ -427,7 +427,15 @@ export class AgentSyncEngine {
     if (cached) restoreAgentCacheMeta(agent, cached);
     const durableMeta = new Map(agent.getSessionMetaMap());
     const durableLastRefreshAt = this.lastRefreshAtByAgent.get(agentName);
-    const isInitialized = isAgentCacheInitialized(agentName);
+    const initialization = readAgentCacheInitialization(agentName);
+    if (initialization.status === "failed") {
+      appLogger.warn("scan.refresh.cache_state_unavailable", {
+        agent: agentName,
+        state: "initialization",
+      });
+      return "unchanged";
+    }
+    const isInitialized = initialization.value;
     const availabilityStartedAt = performance.now();
     const isAvailable = agent.isAvailable();
     const availabilityDuration = performance.now() - availabilityStartedAt;
@@ -636,6 +644,20 @@ export class AgentSyncEngine {
     const checkStartedAt = performance.now();
     const checkResult = await Promise.resolve(agent.checkForChanges(cacheTimestamp, baseline));
     const checkDuration = performance.now() - checkStartedAt;
+    if (checkResult.status === "failed") {
+      appLogger.warn("scan.refresh.change_check_failed", {
+        agent: agent.name,
+        source_path: checkResult.failure.sourcePath,
+        error_class: checkResult.failure.errorClass,
+        message: checkResult.failure.message,
+      });
+      return this.refreshStrategyResult(
+        baseline,
+        "partial",
+        {},
+        { status: "unchanged", checkDuration },
+      );
+    }
     this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
     if (!checkResult.hasChanges) {
       const scanStartedAt = performance.now();
@@ -798,7 +820,15 @@ export class AgentSyncEngine {
     const startupScanOptions = this.startupScanOptions();
     if (startupScanOptions.from == null && startupScanOptions.to == null) return false;
     if (!agent.isAvailable()) return false;
-    const lastSyncAt = getAgentLastFullSyncAt(agent.name);
+    const lastSync = readAgentLastFullSyncAt(agent.name);
+    if (lastSync.status === "failed") {
+      appLogger.warn("scan.backfill.cache_state_unavailable", {
+        agent: agent.name,
+        state: "last_full_sync",
+      });
+      return false;
+    }
+    const lastSyncAt = lastSync.value;
     if (lastSyncAt == null || Date.now() - lastSyncAt > BACKFILL_INTERVAL_MS) return true;
     if (!(agent instanceof FileSystemSessionSource)) return false;
     if (this.cacheIntegrityCheckedAgents.has(agent.name)) return false;

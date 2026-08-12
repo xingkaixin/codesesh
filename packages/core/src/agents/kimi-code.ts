@@ -10,6 +10,7 @@ import {
 } from "./base.js";
 import type {
   AgentScanOptions,
+  ChangeCheckResult,
   ParseSessionResult,
   SessionCacheMeta,
   SessionSourceRef,
@@ -489,8 +490,9 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
     return refs;
   }
 
-  checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]) {
+  checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
     const result = super.checkForChanges(sinceTimestamp, cachedSessions);
+    if (result.status === "failed") return result;
     const emptySessionIds = cachedSessions
       .filter((session) => !this.hasMessages(session))
       .map((session) => session.id);

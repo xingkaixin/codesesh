@@ -15,16 +15,32 @@ import type { ScanStatusEvent } from "@codesesh/core/contract";
 import type { WorkerResult, WorkerRunner } from "./worker-runner.js";
 import { appLogger } from "./logging.js";
 
-const core = vi.hoisted(() => ({
-  getAgentFullSyncCursor: vi.fn(() => null as string | null),
-  getAgentLastFullSyncAt: vi.fn(() => Date.now()),
-  isAgentCacheInitialized: vi.fn(() => true),
-  loadCachedSessions: vi.fn((): ReturnType<typeof loadCachedSessions> => null),
-  markAgentFullSyncStarted: vi.fn(),
-  markAgentFullSyncCompleted: vi.fn(),
-  markAgentFullSyncProgress: vi.fn(),
-  sessionSignature: vi.fn(),
-}));
+const core = vi.hoisted(() => {
+  const getAgentLastFullSyncAt = vi.fn(() => Date.now());
+  const isAgentCacheInitialized = vi.fn(() => true);
+  return {
+    getAgentFullSyncCursor: vi.fn(() => null as string | null),
+    getAgentLastFullSyncAt,
+    isAgentCacheInitialized,
+    readAgentCacheInitialization: vi.fn<
+      () => { status: "success"; value: boolean } | { status: "failed" }
+    >(() => ({
+      status: "success",
+      value: isAgentCacheInitialized(),
+    })),
+    readAgentLastFullSyncAt: vi.fn<
+      () => { status: "success"; value: number | null } | { status: "failed" }
+    >(() => ({
+      status: "success",
+      value: getAgentLastFullSyncAt(),
+    })),
+    loadCachedSessions: vi.fn((): ReturnType<typeof loadCachedSessions> => null),
+    markAgentFullSyncStarted: vi.fn(),
+    markAgentFullSyncCompleted: vi.fn(),
+    markAgentFullSyncProgress: vi.fn(),
+    sessionSignature: vi.fn(),
+  };
+});
 
 const searchIndex = vi.hoisted(() => ({
   enqueue: vi.fn<(...args: unknown[]) => Promise<undefined>>(async () => undefined),
@@ -41,6 +57,8 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     getAgentFullSyncCursor: core.getAgentFullSyncCursor,
     getAgentLastFullSyncAt: core.getAgentLastFullSyncAt,
     isAgentCacheInitialized: core.isAgentCacheInitialized,
+    readAgentCacheInitialization: core.readAgentCacheInitialization,
+    readAgentLastFullSyncAt: core.readAgentLastFullSyncAt,
     loadCachedSessions: core.loadCachedSessions,
     markAgentFullSyncStarted: core.markAgentFullSyncStarted,
     markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
@@ -180,6 +198,71 @@ afterEach(() => {
 });
 
 describe("AgentSyncEngine", () => {
+  it("keeps the current snapshot when cache initialization cannot be read", async () => {
+    core.readAgentCacheInitialization.mockReturnValueOnce({ status: "failed" });
+    const previous = makeSession("session", "retained");
+    const workerRunner = makeWorkerRunner();
+    const warn = vi.spyOn(appLogger, "warn");
+    const { engine } = makeEngine(makeAgent(), [previous], workerRunner);
+
+    await engine.refresh("codex");
+
+    expect(engine.snapshot().sessions).toEqual([previous]);
+    expect(workerRunner.run).not.toHaveBeenCalled();
+    expect(searchIndex.enqueue).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith("scan.refresh.cache_state_unavailable", {
+      agent: "codex",
+      state: "initialization",
+    });
+  });
+
+  it("does not enqueue a backfill when the full-sync timestamp cannot be read", () => {
+    core.readAgentLastFullSyncAt.mockReturnValueOnce({ status: "failed" });
+    const agent = makeAgent();
+    const warn = vi.spyOn(appLogger, "warn");
+    const { engine } = makeEngine(agent, [], makeWorkerRunner(), { from: 1 });
+    const internal = engine as unknown as { needsBackfill(candidate: BaseAgent): boolean };
+
+    expect(internal.needsBackfill(agent)).toBe(false);
+    expect(warn).toHaveBeenCalledWith("scan.backfill.cache_state_unavailable", {
+      agent: "codex",
+      state: "last_full_sync",
+    });
+  });
+
+  it("keeps the refresh baseline when database change detection fails", async () => {
+    const previous = makeSession("session", "retained");
+    const agent = makeAgent({
+      checkForChanges: () => ({
+        status: "failed",
+        hasChanges: false,
+        timestamp: 123,
+        failure: {
+          sourcePath: "/tmp/source.db",
+          errorClass: "SqliteError",
+          message: "database is locked",
+        },
+      }),
+    });
+    const workerRunner = makeWorkerRunner();
+    const warn = vi.spyOn(appLogger, "warn");
+    const { engine } = makeEngine(agent, [previous], workerRunner);
+    const refreshState = engine as unknown as { lastRefreshAtByAgent: Map<string, number> };
+    const baseline = refreshState.lastRefreshAtByAgent.get("codex");
+
+    await engine.refresh("codex");
+
+    expect(refreshState.lastRefreshAtByAgent.get("codex")).toBe(baseline);
+    expect(engine.snapshot().sessions).toEqual([previous]);
+    expect(workerRunner.run).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith("scan.refresh.change_check_failed", {
+      agent: "codex",
+      source_path: "/tmp/source.db",
+      error_class: "SqliteError",
+      message: "database is locked",
+    });
+  });
+
   it("publishes only the latest backfill attempt terminal", async () => {
     const { engine } = makeEngine(makeAgent());
     const internal = engine as unknown as {
