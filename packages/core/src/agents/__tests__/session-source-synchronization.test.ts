@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { PRICING_CAPTURE_EPOCH } from "../../pricing/cost.js";
 import type { SessionHead } from "../../types/index.js";
 import {
+  createAgentScanFailure,
   createSessionSourceFailure,
   synchronizeSessionSources,
   type SessionCacheMeta,
@@ -11,6 +12,28 @@ import {
   type SessionSourceRef,
   type SessionSourceSynchronizationAdapter,
 } from "../base.js";
+
+describe("failure normalization", () => {
+  it("describes agent and source failures with the same bounded fields", () => {
+    const error = Object.assign(new Error("x".repeat(600)), { code: "E_FIXTURE" });
+    const sourceFailure = createSessionSourceFailure(
+      { sessionId: "failed", sourcePath: "/sessions/failed.json" },
+      "parsing",
+      error,
+    );
+    const agentFailure = createAgentScanFailure("fixture", "scan", error);
+
+    expect({
+      errorClass: agentFailure.errorClass,
+      message: agentFailure.message,
+    }).toEqual({
+      errorClass: sourceFailure.errorClass,
+      message: sourceFailure.message,
+    });
+    expect(agentFailure.errorClass).toBe("E_FIXTURE");
+    expect(agentFailure.message).toHaveLength(500);
+  });
+});
 
 function session(id: string, title = id): SessionHead {
   return {
