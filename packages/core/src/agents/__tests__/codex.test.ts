@@ -1671,4 +1671,38 @@ describe("CodexAgent subagent folding", () => {
       parent_reference: { agentName: "codex", sessionId: PARENT_ID },
     });
   });
+
+  it("parses oversized subagent metadata in fast scans", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
+    tempDirs.push(tempDir);
+
+    writeSession(tempDir, PARENT_ID, { threadSource: "user" });
+    const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
+    writeFileSync(
+      childFile,
+      [
+        JSON.stringify({
+          timestamp: "2026-04-20T10:00:00Z",
+          type: "session_meta",
+          payload: {
+            cwd: "/tmp/project",
+            thread_source: "subagent",
+            parent_thread_id: PARENT_ID,
+            instructions: "x".repeat(70 * 1024),
+          },
+        }),
+        '{"timestamp":"2026-04-20T10:01:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"child done"}]}}',
+        "",
+      ].join("\n"),
+    );
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.sessionIndexCache = new Map();
+
+    const heads = agent.scan({ from: 0, fast: true });
+    expect(heads.find((head: SessionHead) => head.id === CHILD_ID)).toMatchObject({
+      parent_reference: { agentName: "codex", sessionId: PARENT_ID },
+    });
+  });
 });
