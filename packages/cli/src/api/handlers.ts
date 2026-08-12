@@ -657,10 +657,14 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
   }
 
   try {
-    const result = materializeSessionDetailResponse(scanSource.getSnapshot(), {
+    const reference = {
       agentName,
       sessionId,
-    });
+    };
+    const messageCursor = optionalQueryValue(c.req.query("messageCursor"));
+    const result = messageCursor
+      ? materializeSessionDetailResponse(scanSource.getSnapshot(), reference, { messageCursor })
+      : materializeSessionDetailResponse(scanSource.getSnapshot(), reference);
     if (result.status === "unknown-agent") {
       return c.json({ error: `Unknown agent: ${agentName}` }, 404);
     }
@@ -677,6 +681,9 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
       agent: agentName,
       session_id: sessionId,
       messages: result.status === "found-json" ? result.messageCount : result.data.messages.length,
+      sent_messages:
+        result.status === "found-json" ? result.sentMessageCount : result.data.messages.length,
+      message_update: result.data.message_update ?? "reset",
       duration_ms: Math.round(performance.now() - startedAt),
     });
     const aliases = loadAliasView();

@@ -217,6 +217,25 @@ describe("fetchSessionData", () => {
       signal: controller.signal,
     });
   });
+
+  it("sends an opaque message cursor without forwarding it as a fetch option", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ messages: [] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+
+    await fetchSessionData("codex", "session", {
+      signal: controller.signal,
+      messageCursor: "prefix+/=",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sessions/codex/session?messageCursor=prefix%2B%2F%3D",
+      { signal: controller.signal },
+    );
+  });
 });
 
 describe("project identity request filters", () => {

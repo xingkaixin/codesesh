@@ -194,6 +194,8 @@ export interface SessionDetail {
   summary_files?: unknown;
   stats: SessionStats;
   messages: Message[];
+  message_cursor?: string;
+  message_update?: "reset" | "append";
   smart_tags?: SmartTag[];
   smart_tags_source_updated_at?: number;
   smart_tags_classifier_revision?: string;

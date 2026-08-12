@@ -319,6 +319,110 @@ describe("materializeSessionDetail", () => {
     expect(agent.reads).toBe(0);
   });
 
+  it("streams only an unchanged message prefix's appended suffix", () => {
+    const makeStreamableHead = (messageCount: number, timeUpdated: number) => {
+      const head = makeHead({
+        time_updated: timeUpdated,
+        smart_tags: [],
+        smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+      });
+      return { ...head, stats: { ...head.stats, message_count: messageCount } };
+    };
+    const makeStreamableDetail = (head: SessionHead, texts: string[]) => ({
+      ...makeDetail("Cached Session"),
+      ...head,
+      reference: { agentName: "test", sessionId: "s1" },
+      smart_tags: [],
+      smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+      messages: texts.map((text, index) => ({
+        id: `m${index + 1}`,
+        role: "assistant" as const,
+        time_created: 1500 + index,
+        parts: [{ type: "text" as const, text }],
+      })),
+    });
+    const firstHead = makeStreamableHead(1, 2000);
+    const firstDetail = makeStreamableDetail(firstHead, ["first"]);
+    persistDetail(firstHead, firstDetail, "first");
+    const first = materializeSessionDetailResponse(
+      makeScanResult(new TestAgent(firstDetail, new Map([["s1", makeMeta("first")]])), firstHead),
+      { agentName: "test", sessionId: "s1" },
+    );
+
+    expect(first.status).toBe("found-json");
+    if (first.status !== "found-json") return;
+    expect(first.data.message_update).toBe("reset");
+    expect(first.sentMessageCount).toBe(1);
+
+    const appendedHead = makeStreamableHead(2, 3000);
+    const appendedDetail = makeStreamableDetail(appendedHead, ["first", "second"]);
+    persistDetail(appendedHead, appendedDetail, "appended");
+    const appended = materializeSessionDetailResponse(
+      makeScanResult(
+        new TestAgent(appendedDetail, new Map([["s1", makeMeta("appended")]])),
+        appendedHead,
+      ),
+      { agentName: "test", sessionId: "s1" },
+      { messageCursor: first.data.message_cursor },
+    );
+
+    expect(appended.status).toBe("found-json");
+    if (appended.status !== "found-json") return;
+    expect(appended.data.message_update).toBe("append");
+    expect(appended.messageCount).toBe(2);
+    expect(appended.sentMessageCount).toBe(1);
+    expect([...appended.messages].map((message) => JSON.parse(message).id)).toEqual(["m2"]);
+
+    const rewrittenDetail = makeStreamableDetail(appendedHead, ["rewritten", "second"]);
+    persistDetail(appendedHead, rewrittenDetail, "rewritten");
+    const rewritten = materializeSessionDetailResponse(
+      makeScanResult(
+        new TestAgent(rewrittenDetail, new Map([["s1", makeMeta("rewritten")]])),
+        appendedHead,
+      ),
+      { agentName: "test", sessionId: "s1" },
+      { messageCursor: appended.data.message_cursor },
+    );
+
+    expect(rewritten.status).toBe("found-json");
+    if (rewritten.status !== "found-json") return;
+    expect(rewritten.data.message_update).toBe("reset");
+    expect(rewritten.sentMessageCount).toBe(2);
+    expect([...rewritten.messages].map((message) => JSON.parse(message).id)).toEqual(["m1", "m2"]);
+  });
+
+  it("resets incremental transport while a changed fingerprint is rematerialized", () => {
+    const head = makeHead({
+      smart_tags: [],
+      smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+    });
+    const cached = {
+      ...makeDetail("Cached Session"),
+      smart_tags: [],
+      smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+    };
+    persistDetail(head, cached, "cached");
+    const first = materializeSessionDetailResponse(
+      makeScanResult(new TestAgent(cached, new Map([["s1", makeMeta("cached")]])), head),
+      { agentName: "test", sessionId: "s1" },
+    );
+    expect(first.status).toBe("found-json");
+    if (first.status !== "found-json") return;
+
+    saveCachedSessions("test", [head], { s1: makeMeta("changed") });
+    const source = makeDetail("Source Session");
+    const result = materializeSessionDetailResponse(
+      makeScanResult(new TestAgent(source, new Map([["s1", makeMeta("changed")]])), head),
+      { agentName: "test", sessionId: "s1" },
+      { messageCursor: first.data.message_cursor },
+    );
+
+    expect(result).toMatchObject({
+      status: "found",
+      data: { title: "Source Session", message_update: "reset" },
+    });
+  });
+
   it("indexes heads once per scan snapshot instead of calling Array.find", () => {
     const heads = Array.from({ length: 100 }, (_, index) =>
       makeHead({ id: `s${index}`, slug: `test/s${index}` }),

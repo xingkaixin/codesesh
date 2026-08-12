@@ -1,3 +1,4 @@
+import { createHash, type Hash } from "node:crypto";
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import type { SessionReference } from "../contract/index.js";
 import type { SessionDetail, SessionHead } from "../types/index.js";
@@ -27,7 +28,12 @@ export type SessionDetailResponseResult =
       data: Omit<SessionDetail, "messages">;
       messages: Iterable<string>;
       messageCount: number;
+      sentMessageCount: number;
     };
+
+export interface SessionDetailResponseOptions {
+  messageCursor?: string;
+}
 
 interface SessionDetailLookup {
   agentsByName: Map<string, BaseAgent>;
@@ -40,6 +46,101 @@ interface SessionDetailContext {
 }
 
 const sessionDetailLookups = new WeakMap<SessionHead[], SessionDetailLookup>();
+const MESSAGE_CURSOR_VERSION = 1;
+const MAX_MESSAGE_CURSOR_LENGTH = 512;
+
+interface MessageCursorPayload {
+  version: typeof MESSAGE_CURSOR_VERSION;
+  count: number;
+  digest: string;
+}
+
+function parseMessageCursor(value: string | undefined): MessageCursorPayload | null {
+  if (!value || value.length > MAX_MESSAGE_CURSOR_LENGTH) return null;
+  try {
+    const payload = JSON.parse(
+      Buffer.from(value, "base64url").toString("utf8"),
+    ) as Partial<MessageCursorPayload>;
+    if (
+      payload.version !== MESSAGE_CURSOR_VERSION ||
+      !Number.isSafeInteger(payload.count) ||
+      payload.count == null ||
+      payload.count < 0 ||
+      typeof payload.digest !== "string" ||
+      !/^[a-f0-9]{64}$/.test(payload.digest)
+    ) {
+      return null;
+    }
+    return payload as MessageCursorPayload;
+  } catch {
+    return null;
+  }
+}
+
+function encodeMessageCursor(count: number, digest: string): string {
+  return Buffer.from(JSON.stringify({ version: MESSAGE_CURSOR_VERSION, count, digest })).toString(
+    "base64url",
+  );
+}
+
+function createMessageCursorHash(reference: SessionReference): Hash {
+  return createHash("sha256")
+    .update("codesesh-session-messages-v1\0")
+    .update(JSON.stringify([reference.agentName, reference.sessionId]))
+    .update("\n");
+}
+
+function updateMessageCursorField(hash: Hash, value: string | number | null | undefined) {
+  if (value == null) {
+    hash.update("n;");
+    return;
+  }
+  const text = String(value);
+  hash.update(`v${text.length}:`).update(text).update(";");
+}
+
+function updateMessageCursorHash(hash: Hash, row: CachedSessionRawEntry["messageRows"][number]) {
+  updateMessageCursorField(hash, row.message_id);
+  updateMessageCursorField(hash, row.role);
+  updateMessageCursorField(hash, row.time_created);
+  updateMessageCursorField(hash, row.time_completed);
+  updateMessageCursorField(hash, row.agent);
+  updateMessageCursorField(hash, row.mode);
+  updateMessageCursorField(hash, row.model);
+  updateMessageCursorField(hash, row.provider);
+  updateMessageCursorField(hash, row.tokens_json);
+  updateMessageCursorField(hash, row.cost);
+  updateMessageCursorField(hash, row.cost_source);
+  updateMessageCursorField(hash, row.parts_json);
+  updateMessageCursorField(hash, row.parts_format_version);
+  updateMessageCursorField(hash, row.subagent_id);
+  updateMessageCursorField(hash, row.nickname);
+  hash.update("\n");
+}
+
+function projectMessageStream(
+  reference: SessionReference,
+  rows: CachedSessionRawEntry["messageRows"],
+  requestedCursor: string | undefined,
+) {
+  const requested = parseMessageCursor(requestedCursor);
+  const hash = createMessageCursorHash(reference);
+  let requestedDigest = requested?.count === 0 ? hash.copy().digest("hex") : null;
+
+  for (let index = 0; index < rows.length; index += 1) {
+    updateMessageCursorHash(hash, rows[index]!);
+    if (requested?.count === index + 1) requestedDigest = hash.copy().digest("hex");
+  }
+
+  const digest = hash.digest("hex");
+  const canAppend =
+    requested !== null && requested.count <= rows.length && requestedDigest === requested.digest;
+  return {
+    cursor: encodeMessageCursor(rows.length, digest),
+    startIndex: canAppend ? requested.count : 0,
+    update: canAppend ? ("append" as const) : ("reset" as const),
+  };
+}
 
 function sessionReferenceKey(agentName: string, sessionId: string): string {
   return `${agentName}\0${sessionId}`;
@@ -197,9 +298,12 @@ function materializeStructuredSessionDetail(
   };
 }
 
-function* serializeCachedMessages(entry: CachedSessionRawEntry): IterableIterator<string> {
-  for (const messageRow of entry.messageRows) {
-    yield messageJsonFromCachedRow(messageRow);
+function* serializeCachedMessages(
+  entry: CachedSessionRawEntry,
+  startIndex = 0,
+): IterableIterator<string> {
+  for (let index = startIndex; index < entry.messageRows.length; index += 1) {
+    yield messageJsonFromCachedRow(entry.messageRows[index]!);
   }
 }
 
@@ -215,6 +319,7 @@ export function materializeSessionDetail(
 export function materializeSessionDetailResponse(
   scanResult: LiveSnapshot,
   reference: SessionReference,
+  options: SessionDetailResponseOptions = {},
 ): SessionDetailResponseResult {
   const context = getSessionDetailContext(scanResult, reference);
   if (!context) return { status: "unknown-agent" };
@@ -230,22 +335,29 @@ export function materializeSessionDetailResponse(
     cachedEntry.data.smart_tags == null ||
     cachedEntry.data.smart_tags_classifier_revision !== SMART_TAG_CLASSIFIER_REVISION
   ) {
-    return materializeStructuredSessionDetail(context, reference, cachedEntry);
+    const result = materializeStructuredSessionDetail(context, reference, cachedEntry);
+    return result.status === "found"
+      ? { ...result, data: { ...result.data, message_update: "reset" } }
+      : result;
   }
 
   const data = cachedEntry.data;
+  const stream = projectMessageStream(reference, cachedEntry.messageRows, options.messageCursor);
   return {
     status: "found-json",
     data: {
       ...data,
       reference,
       detail_freshness: "fresh",
+      message_cursor: stream.cursor,
+      message_update: stream.update,
       project_identity: getProjectIdentity(data, context.head),
       smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
       file_activity:
         data.file_activity ?? listSessionFileActivity(reference.agentName, reference.sessionId),
     },
-    messages: serializeCachedMessages(cachedEntry),
+    messages: serializeCachedMessages(cachedEntry, stream.startIndex),
     messageCount: cachedEntry.messageRows.length,
+    sentMessageCount: cachedEntry.messageRows.length - stream.startIndex,
   };
 }

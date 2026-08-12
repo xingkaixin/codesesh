@@ -125,6 +125,10 @@ export interface FetchOptions {
   signal?: AbortSignal;
 }
 
+export interface SessionDetailFetchOptions extends FetchOptions {
+  messageCursor?: string;
+}
+
 interface SessionFetchProgress {
   onFirstPage?: (sessions: SessionHead[]) => void;
 }
@@ -242,9 +246,14 @@ export async function fetchSessions(
 export async function fetchSessionData(
   agent: string,
   sessionId: string,
-  options?: FetchOptions,
+  options?: SessionDetailFetchOptions,
 ): Promise<SessionDetail> {
-  return fetchJson(`/api/sessions${sessionRoutePath({ agentName: agent, sessionId })}`, options);
+  const path = `/api/sessions${sessionRoutePath({ agentName: agent, sessionId })}`;
+  const fetchOptions: FetchOptions | undefined = options ? { signal: options.signal } : undefined;
+  if (!options?.messageCursor) return fetchJson(path, fetchOptions);
+
+  const params = new URLSearchParams({ messageCursor: options.messageCursor });
+  return fetchJson(`${path}?${params}`, fetchOptions);
 }
 
 export async function fetchDashboard(
