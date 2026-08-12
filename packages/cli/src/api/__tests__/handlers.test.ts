@@ -1560,6 +1560,31 @@ describe("handleGetSessionData", () => {
     expect(serializedMessages).toBe(200);
   });
 
+  it("errors the response body and closes iteration when cached message reads fail", async () => {
+    const { messages: _messages, ...detailHeader } = detail;
+    const iterator = {
+      next: vi
+        .fn()
+        .mockReturnValueOnce({ done: false, value: JSON.stringify({ id: "m1" }) })
+        .mockImplementationOnce(() => {
+          throw new Error("cached message read failed");
+        }),
+      return: vi.fn(() => ({ done: true, value: undefined })),
+    };
+    coreMocks.materializeSessionDetailResponse.mockReturnValue({
+      status: "found-json",
+      data: detailHeader,
+      messages: { [Symbol.iterator]: () => iterator },
+      messageCount: 2,
+    });
+    const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
+
+    const response = (await handleGetSessionData(c, makeScanSource())) as Response;
+
+    await expect(response.text()).rejects.toThrow("cached message read failed");
+    expect(iterator.return).toHaveBeenCalledOnce();
+  });
+
   it("returns 400 when agent name is missing", async () => {
     const c = makeMockContext({ param: { agent: "", id: "s1" } });
     await handleGetSessionData(c, makeScanSource());
