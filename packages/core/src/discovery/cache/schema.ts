@@ -241,8 +241,8 @@ function createSessionTables(db: SQLiteDatabase): void {
       PRIMARY KEY (agent_name, session_id)
     );
 
-    CREATE INDEX IF NOT EXISTS idx_sessions_agent_activity
-      ON sessions(agent_name, activity_time);
+    CREATE INDEX IF NOT EXISTS idx_sessions_agent_activity_order
+      ON sessions(agent_name, activity_time DESC, session_id);
 
     CREATE INDEX IF NOT EXISTS idx_sessions_project
       ON sessions(project_identity_kind, project_identity_key, activity_time);
@@ -1073,6 +1073,15 @@ function addAtomicPublicationStaging(db: SQLiteDatabase): void {
   }
 }
 
+function replaceSessionActivityIndex(db: SQLiteDatabase): void {
+  if (!tableExists(db, "sessions")) return;
+  db.exec(`
+    DROP INDEX IF EXISTS idx_sessions_agent_activity;
+    CREATE INDEX IF NOT EXISTS idx_sessions_agent_activity_order
+      ON sessions(agent_name, activity_time DESC, session_id);
+  `);
+}
+
 function compactSessionDocuments(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents")) {
     createSearchTables(db);
@@ -1428,6 +1437,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 20, migrate: addProjectIdentityProvenance },
       { version: 21, migrate: addSessionPublicationId },
       { version: 22, migrate: addAtomicPublicationStaging },
+      { version: 23, migrate: replaceSessionActivityIndex },
     ],
   });
 

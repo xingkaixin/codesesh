@@ -95,7 +95,10 @@ describe("cached sessions", () => {
     });
     saveCachedSessions("codex", [makeSessionHead("parent"), child]);
 
-    expect(loadCachedSessions("codex")?.sessions[1]?.parent_reference).toEqual({
+    const restoredChild = loadCachedSessions("codex")?.sessions.find(
+      (session) => session.id === "child",
+    );
+    expect(restoredChild?.parent_reference).toEqual({
       agentName: "codex",
       sessionId: "parent",
     });
