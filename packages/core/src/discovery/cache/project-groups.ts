@@ -40,10 +40,8 @@ export function listCachedProjectGroups(sessions?: SessionHead[]): ProjectGroup[
       )
       .all() as ProjectGroupRow[];
 
-  let rows = withCacheDbReadOnly(queryRows);
-  if (rows == null) {
-    rows = withCacheDb(queryRows);
-  }
+  const read = withCacheDbReadOnly(queryRows);
+  const rows = read.status === "success" ? read.value : withCacheDb(queryRows);
 
   return (rows ?? []).map((row) => ({
     identityKind: row.identity_kind ?? "path",

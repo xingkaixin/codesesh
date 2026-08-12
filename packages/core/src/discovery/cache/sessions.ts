@@ -16,7 +16,7 @@ import {
   type ScalarRow,
   type SessionHeadChange,
 } from "./db.js";
-import { withCacheDb, withCacheDbReadOnly } from "./schema.js";
+import { withCacheDb, withCacheDbReadOnly, type CacheReadOutcome } from "./schema.js";
 import {
   messageFromCachedRow,
   prepareUpsertSession,
@@ -164,21 +164,16 @@ export function loadCachedSessionHeads(
     if (!unique.has(key)) unique.set(key, normalized);
   }
 
-  return (
-    withCacheDbReadOnly((db) => {
-      const resolved: ReferencedSessionHead[] = [];
-      const normalized = [...unique.values()];
-      for (
-        let offset = 0;
-        offset < normalized.length;
-        offset += SESSION_REFERENCE_QUERY_CHUNK_SIZE
-      ) {
-        const chunk = normalized.slice(offset, offset + SESSION_REFERENCE_QUERY_CHUNK_SIZE);
-        const values = chunk.map(() => "(?, ?)").join(", ");
-        const params = chunk.flatMap((reference) => [reference.agentName, reference.sessionId]);
-        const rows = db
-          .prepare(
-            `
+  const outcome = withCacheDbReadOnly((db) => {
+    const resolved: ReferencedSessionHead[] = [];
+    const normalized = [...unique.values()];
+    for (let offset = 0; offset < normalized.length; offset += SESSION_REFERENCE_QUERY_CHUNK_SIZE) {
+      const chunk = normalized.slice(offset, offset + SESSION_REFERENCE_QUERY_CHUNK_SIZE);
+      const values = chunk.map(() => "(?, ?)").join(", ");
+      const params = chunk.flatMap((reference) => [reference.agentName, reference.sessionId]);
+      const rows = db
+        .prepare(
+          `
               WITH requested(agent_name, session_id) AS (
                 VALUES ${values}
               )
@@ -189,47 +184,53 @@ export function loadCachedSessionHeads(
                 AND s.session_id = r.session_id
                 AND s.publication_id IS NULL
             `,
-          )
-          .all(...params) as SessionRow[];
+        )
+        .all(...params) as SessionRow[];
 
-        for (const row of rows) {
-          resolved.push({
-            reference: normalizeSessionReference({
-              agentName: String(row.agent_name ?? ""),
-              sessionId: String(row.session_id ?? ""),
-            }),
-            session: sessionFromRow(row),
-          });
-        }
+      for (const row of rows) {
+        resolved.push({
+          reference: normalizeSessionReference({
+            agentName: String(row.agent_name ?? ""),
+            sessionId: String(row.session_id ?? ""),
+          }),
+          session: sessionFromRow(row),
+        });
       }
-      return resolved;
-    }) ?? []
-  );
+    }
+    return resolved;
+  });
+  return outcome.status === "success" ? outcome.value : [];
+}
+
+export function readAgentCacheInitialization(
+  agentName: string,
+  indexVersion = CACHE_INITIALIZATION_VERSION,
+): CacheReadOutcome<boolean> {
+  if (!hasCacheStorage()) {
+    return { status: "success", value: false };
+  }
+
+  return withCacheDbReadOnly((db) => {
+    if (!tableExists(db, "cache_initialization")) return false;
+    const row = db
+      .prepare(
+        `
+          SELECT index_version
+          FROM cache_initialization
+          WHERE agent_name = ?
+        `,
+      )
+      .get(agentName) as { index_version?: string } | undefined;
+    return row?.index_version === indexVersion;
+  });
 }
 
 export function isAgentCacheInitialized(
   agentName: string,
   indexVersion = CACHE_INITIALIZATION_VERSION,
 ): boolean {
-  if (!hasCacheStorage()) {
-    return false;
-  }
-
-  return (
-    withCacheDbReadOnly((db) => {
-      if (!tableExists(db, "cache_initialization")) return false;
-      const row = db
-        .prepare(
-          `
-            SELECT index_version
-            FROM cache_initialization
-            WHERE agent_name = ?
-          `,
-        )
-        .get(agentName) as { index_version?: string } | undefined;
-      return row?.index_version === indexVersion;
-    }) ?? false
-  );
+  const outcome = readAgentCacheInitialization(agentName, indexVersion);
+  return outcome.status === "success" && outcome.value;
 }
 
 /**
@@ -272,14 +273,13 @@ export function markAgentFullSyncStarted(agentName: string): void {
 export function getAgentFullSyncCursor(agentName: string): string | null {
   if (!hasCacheStorage()) return null;
 
-  return (
-    withCacheDbReadOnly((db) => {
-      const row = db
-        .prepare("SELECT value FROM cache_meta WHERE key = ?")
-        .get(`${FULL_SYNC_CURSOR_PREFIX}${agentName}`) as { value?: string } | undefined;
-      return row?.value || null;
-    }) ?? null
-  );
+  const outcome = withCacheDbReadOnly((db) => {
+    const row = db
+      .prepare("SELECT value FROM cache_meta WHERE key = ?")
+      .get(`${FULL_SYNC_CURSOR_PREFIX}${agentName}`) as { value?: string } | undefined;
+    return row?.value || null;
+  });
+  return outcome.status === "success" ? outcome.value : null;
 }
 
 /** Persist a full-sync cursor only after the corresponding checkpoint is durable. */
@@ -306,27 +306,30 @@ function clearAgentFullSyncCursor(agentName: string): void {
   });
 }
 
-/** Timestamp of the agent's last full (unbounded) history reconciliation, or null if none yet. */
-export function getAgentLastFullSyncAt(agentName: string): number | null {
+export function readAgentLastFullSyncAt(agentName: string): CacheReadOutcome<number | null> {
   if (!hasCacheStorage()) {
-    return null;
+    return { status: "success", value: null };
   }
 
-  return (
-    withCacheDbReadOnly((db) => {
-      if (!tableExists(db, "cache_initialization")) return null;
-      const row = db
-        .prepare(
-          `
-            SELECT last_sync_at
-            FROM cache_initialization
-            WHERE agent_name = ?
-          `,
-        )
-        .get(agentName) as { last_sync_at?: number } | undefined;
-      return row?.last_sync_at || null;
-    }) ?? null
-  );
+  return withCacheDbReadOnly((db) => {
+    if (!tableExists(db, "cache_initialization")) return null;
+    const row = db
+      .prepare(
+        `
+          SELECT last_sync_at
+          FROM cache_initialization
+          WHERE agent_name = ?
+        `,
+      )
+      .get(agentName) as { last_sync_at?: number } | undefined;
+    return row?.last_sync_at || null;
+  });
+}
+
+/** Timestamp of the agent's last full (unbounded) history reconciliation, or null if none yet. */
+export function getAgentLastFullSyncAt(agentName: string): number | null {
+  const outcome = readAgentLastFullSyncAt(agentName);
+  return outcome.status === "success" ? outcome.value : null;
 }
 
 /** Record that a full (unbounded) history reconciliation just completed for this agent. */
@@ -351,7 +354,7 @@ export function loadCachedSessionRawEntry(
     return null;
   }
 
-  return withCacheDbReadOnly((db) => {
+  const outcome = withCacheDbReadOnly((db) => {
     const row = db
       .prepare(
         `
@@ -429,6 +432,7 @@ export function loadCachedSessionRawEntry(
       pendingReindex,
     };
   });
+  return outcome.status === "success" ? outcome.value : null;
 }
 
 export function loadCachedSessionDataEntry(

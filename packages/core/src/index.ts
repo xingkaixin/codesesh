@@ -50,6 +50,8 @@ export {
   getAgentLastFullSyncAt,
   getCachePath,
   isAgentCacheInitialized,
+  readAgentCacheInitialization,
+  readAgentLastFullSyncAt,
   listCachedProjectGroups,
   listFileActivity,
   listModelCostDistribution,
@@ -71,6 +73,7 @@ export {
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
 } from "./discovery/index.js";
+export type { CacheReadOutcome } from "./discovery/index.js";
 export { PRICING_CAPTURE_EPOCH } from "./pricing/index.js";
 export {
   filterSessionTreeByActivityWindow,

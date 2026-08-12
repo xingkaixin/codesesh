@@ -58,7 +58,7 @@ describe("withCacheDb diagnostics", () => {
       throw Object.assign(new Error("datatype mismatch"), { code: "SQLITE_MISMATCH" });
     });
 
-    expect(result).toBeNull();
+    expect(result).toEqual({ status: "failed" });
     expect(events).toEqual([
       {
         event: "cache.read_failed",

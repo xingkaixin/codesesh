@@ -22,6 +22,8 @@ export {
   getAgentLastFullSyncAt,
   getCacheInfo,
   isAgentCacheInitialized,
+  readAgentCacheInitialization,
+  readAgentLastFullSyncAt,
   loadCachedSessionData,
   loadCachedSessionDataEntry,
   loadCachedSessionHeads,
@@ -38,6 +40,7 @@ export type {
   SaveCachedSessionsOptions,
   SessionSnapshotCompleteness,
 } from "./cache/sessions.js";
+export type { CacheReadOutcome } from "./cache/schema.js";
 export { getCachePath } from "./cache/db.js";
 export type { SessionHeadChange } from "./cache/db.js";
 export { listCachedProjectGroups } from "./cache/project-groups.js";

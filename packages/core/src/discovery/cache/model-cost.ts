@@ -97,15 +97,15 @@ export function listModelCostDistribution(options: ModelCostOptions = {}): Model
     LIMIT ?
   `;
 
-  const rows = withCacheDbReadOnly(
+  const read = withCacheDbReadOnly(
     (db: SQLiteDatabase) =>
       db.prepare(sql).all(...params, options.limit ?? DEFAULT_MODEL_COST_LIMIT) as ModelCostRow[],
   );
-  if (rows == null) {
+  if (read.status === "failed") {
     return null;
   }
 
-  return rows.map((row) => ({
+  return read.value.map((row) => ({
     model: String(row.model ?? ""),
     cost: Number(row.cost ?? 0),
     costRecorded: Number(row.cost_recorded ?? 0),

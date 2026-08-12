@@ -264,10 +264,9 @@ function queryFileActivity(
   const queryRows = (db: SQLiteDatabase) =>
     db.prepare(sql).all(...params, options.limit ?? 50) as FileActivityRow[];
 
-  let rows = withCacheDbReadOnly(queryRows);
-  if (rows == null && options.path) {
-    rows = withCacheDb(queryRows);
-  }
+  const read = withCacheDbReadOnly(queryRows);
+  const rows =
+    read.status === "success" ? read.value : options.path ? withCacheDb(queryRows) : null;
 
   return (rows ?? []).map((row) => ({
     ...fileActivityFromRow(row),

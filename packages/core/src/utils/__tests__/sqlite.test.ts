@@ -230,6 +230,22 @@ describe("openDb pragmas", () => {
       db?.close();
     }
   });
+
+  it("sets the same busy_timeout on read-only connections", () => {
+    const dir = mkdtempSync(join(tmpdir(), "codesesh-sqlite-read-busy-timeout-test-"));
+    tempDirs.push(dir);
+    const dbPath = join(dir, "state.db");
+    openDb(dbPath)?.close();
+
+    const db = openDbReadOnly(dbPath);
+    expect(db).not.toBeNull();
+    try {
+      const pragmaCapable = db as unknown as { pragma(sql: string): unknown };
+      expect(pragmaCapable.pragma("busy_timeout")).toEqual([{ timeout: 5000 }]);
+    } finally {
+      db?.close();
+    }
+  });
 });
 
 describe("sqlite open failures", () => {
