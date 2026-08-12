@@ -151,5 +151,5 @@ export {
 } from "./pricing/index.js";
 export { buildDashboard, getSessionActivityTime } from "./analytics/dashboard.js";
 export type { DashboardData, DashboardScope } from "./analytics/dashboard.js";
-export { attachProjectMetrics } from "./analytics/projects.js";
+export { attachProjectMetrics, attachProjectMetricsFromTree } from "./analytics/projects.js";
 export { executeSessionSearch, filterSessionSearchCandidates } from "./search/index.js";

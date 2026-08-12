@@ -267,11 +267,11 @@ export function filterSessionTreeByActivityWindow(
   sessions: SessionHead[],
   from?: number,
   to?: number,
+  tree: SessionTree = buildSessionTree(sessions),
 ): SessionHead[] {
   if (from == null && to == null) return sessions;
 
-  const tree = buildSessionTree(sessions);
-  const pending = tree.entries.filter((node) => hasActivityInWindow(node.session, from, to));
+  const pending = filterSessionTreeEntriesByActivityWindow(tree, from, to);
 
   const visible = new Set<string>();
   while (pending.length > 0) {
@@ -283,6 +283,15 @@ export function filterSessionTreeByActivityWindow(
   }
 
   return sessions.filter((session) => visible.has(sessionKey(session)));
+}
+
+export function filterSessionTreeEntriesByActivityWindow(
+  tree: SessionTree,
+  from?: number,
+  to?: number,
+): SessionTreeNode[] {
+  if (from == null && to == null) return tree.entries;
+  return tree.entries.filter((node) => hasActivityInWindow(node.session, from, to));
 }
 
 interface SessionHierarchyGraph {

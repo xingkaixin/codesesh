@@ -39,6 +39,7 @@ describe("contract browser-safety", () => {
         "countCalendarDays",
         "createSessionIndex",
         "filterSessionTreeByActivityWindow",
+        "filterSessionTreeEntriesByActivityWindow",
         "formatSessionReference",
         "getProjectAgentKey",
         "getProjectIdentityKey",
