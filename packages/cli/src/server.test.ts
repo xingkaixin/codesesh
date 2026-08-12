@@ -566,6 +566,22 @@ describe("createServer", () => {
     }
   });
 
+  it("CS-223: warns trusted proxy operators that access logs can retain tokens", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const app = await createServer(0, createStore(), {
+      hostname: "0.0.0.0",
+      remoteAccessToken: "proxy-token",
+      transport: { kind: "trusted-proxy" },
+    });
+
+    try {
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("反向代理的访问日志"));
+    } finally {
+      await app.shutdown();
+      warnSpy.mockRestore();
+    }
+  });
+
   it("CS-140: refuses requests that bypassed the trusted proxy", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const app = await createServer(0, createStore(), {

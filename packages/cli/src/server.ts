@@ -332,6 +332,13 @@ export async function createServer(
           `  使用 --tls-cert/--tls-key 直接启用 TLS，或在受信反向代理后使用 --trust-proxy。\n`,
       );
     }
+    if (transport.kind === "trusted-proxy") {
+      appLogger.warn("server.listen.proxy_logging", { hostname, port: actualPort });
+      console.warn(
+        `⚠ URL 中的访问令牌会用于 SSE 重连，并可能写入受信反向代理的访问日志。\n` +
+          `  请在代理配置中关闭查询参数日志，或对 access_token 参数脱敏。\n`,
+      );
+    }
   }
 
   return {

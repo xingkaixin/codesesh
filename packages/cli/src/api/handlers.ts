@@ -648,7 +648,7 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
       duration_ms: Math.round(performance.now() - startedAt),
       error: message,
     });
-    return c.json({ error: message }, 500);
+    return c.json({ error: "Failed to load session" }, 500);
   }
 }
 
