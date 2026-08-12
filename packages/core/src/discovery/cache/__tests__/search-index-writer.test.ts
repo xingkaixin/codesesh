@@ -5,7 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { searchSessions } from "../search.js";
 import { syncSessionSearchIndex, syncSessionSearchIndexChanges } from "../search-index-writer.js";
 import { setSchemaEnsuredPath } from "../db.js";
-import { loadCachedSessionRawEntry, saveCachedSessions } from "../sessions.js";
+import { commitDurableSessionPublication } from "../publication.js";
+import {
+  loadCachedSessionRawEntry,
+  saveCachedSessionChanges,
+  saveCachedSessions,
+} from "../sessions.js";
 import { sessionDetailVersion } from "../detail-version.js";
 import { makeSessionData, makeSessionHead } from "./fixtures.js";
 
@@ -51,6 +56,77 @@ describe("search index writer", () => {
       syncSessionSearchIndexChanges("codex", [], ["one", "one"], () => makeSessionData("one")),
     ).toMatchObject({ deleted: 1, indexed: 0 });
     expect(searchSessions("visible")).toEqual([]);
+  });
+
+  it("plans direct and durable changes with the same rules", () => {
+    const directAgent = "codex";
+    const durableAgent = "claudecode";
+    const initialFor = (agentName: string) =>
+      ["updated", "removed"].map((id) => ({
+        ...makeSessionHead(id),
+        reference: { agentName, sessionId: id },
+        slug: `${agentName}/${id}`,
+      }));
+    const detailFor = (session: ReturnType<typeof makeSessionHead>, text: string) => ({
+      ...makeSessionData(session.id, text),
+      ...session,
+    });
+
+    for (const agentName of [directAgent, durableAgent]) {
+      const initial = initialFor(agentName);
+      const sessionsById = new Map(initial.map((session) => [session.id, session]));
+      saveCachedSessions(agentName, initial);
+      syncSessionSearchIndex(agentName, initial, (sessionId) =>
+        detailFor(sessionsById.get(sessionId)!, `${agentName} initial ${sessionId}`),
+      );
+    }
+
+    const directUpdated = { ...initialFor(directAgent)[0]!, title: "Direct updated" };
+    const directChanges = [{ session: directUpdated, sortIndex: 0 }];
+    saveCachedSessionChanges(directAgent, directChanges, ["removed", "removed"]);
+    const directResult = syncSessionSearchIndexChanges(
+      directAgent,
+      directChanges,
+      ["removed", "removed"],
+      () => detailFor(directUpdated, "shared updated needle"),
+      { isBulk: true },
+    );
+
+    const durableUpdated = { ...initialFor(durableAgent)[0]!, title: "Durable updated" };
+    const durableResult = commitDurableSessionPublication(
+      {
+        kind: "changes",
+        agentName: durableAgent,
+        changes: [{ session: durableUpdated, sortIndex: 0 }],
+        removedSessionIds: ["removed", "removed"],
+        meta: {},
+      },
+      () => detailFor(durableUpdated, "shared updated needle"),
+      { isBulk: true },
+    );
+
+    expect(durableResult.status).toBe("committed");
+    expect(directResult).toMatchObject({
+      mode: "bulk",
+      sessions: 1,
+      changed: 1,
+      deleted: 1,
+      indexed: 1,
+      skipped: 0,
+    });
+    expect(durableResult.status === "committed" && durableResult.searchIndex).toMatchObject({
+      mode: directResult?.mode,
+      sessions: directResult?.sessions,
+      changed: directResult?.changed,
+      deleted: directResult?.deleted,
+      indexed: directResult?.indexed,
+      skipped: directResult?.skipped,
+    });
+    expect(
+      searchSessions("shared updated needle")
+        .map(({ reference }) => reference.agentName)
+        .sort(),
+    ).toEqual([directAgent, durableAgent].sort());
   });
 
   it("rebuilds detail when only its parser version changes", () => {
