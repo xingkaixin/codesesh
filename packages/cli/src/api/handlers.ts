@@ -451,6 +451,52 @@ function withParentContext(
   });
 }
 
+const ALIAS_SEARCH_RESULT_SHARE = 0.25;
+
+function searchResultKey(result: SearchResult): string {
+  return `${result.reference.agentName}\0${result.reference.sessionId}`;
+}
+
+function uniqueSearchResults(results: SearchResult[]): SearchResult[] {
+  const seen = new Set<string>();
+  return results.filter((result) => {
+    const key = searchResultKey(result);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function mergeAliasSearchResults(
+  rankedResults: SearchResult[],
+  aliasResults: SearchResult[],
+  limit: number,
+): SearchResult[] {
+  if (limit <= 0) return [];
+
+  const ranked = uniqueSearchResults(rankedResults);
+  const rankedKeys = new Set(ranked.map(searchResultKey));
+  const aliases = uniqueSearchResults(aliasResults).filter(
+    (result) => !rankedKeys.has(searchResultKey(result)),
+  );
+  if (ranked.length === 0) return aliases.slice(0, limit);
+  if (aliases.length === 0) return ranked.slice(0, limit);
+
+  // Alias hits have no BM25 score. Keep ranked search dominant while reserving
+  // a bounded share so local renames remain discoverable.
+  const aliasQuota = Math.min(
+    limit - 1,
+    Math.max(1, Math.floor(limit * ALIAS_SEARCH_RESULT_SHARE)),
+  );
+  const rankedQuota = limit - aliasQuota;
+  return [
+    ...ranked.slice(0, rankedQuota),
+    ...aliases.slice(0, aliasQuota),
+    ...ranked.slice(rankedQuota),
+    ...aliases.slice(aliasQuota),
+  ].slice(0, limit);
+}
+
 export function handleSearchSessions(
   c: Context,
   scanSource: ScanResultSource,
@@ -491,16 +537,9 @@ export function handleSearchSessions(
     session: aliases.decorate(result.session, result.reference),
   }));
   const aliasResults = findAliasSearchResults(query, searchOptions, scanResult, aliases);
-  const deduped = new Map<string, (typeof results)[number]>();
-  for (const result of [...aliasResults, ...results]) {
-    deduped.set(`${result.reference.agentName}\0${result.reference.sessionId}`, result);
-  }
+  const mergedResults = mergeAliasSearchResults(results, aliasResults, searchOptions.limit ?? 50);
   return c.json({
-    results: withParentContext(
-      [...deduped.values()].slice(0, searchOptions.limit ?? 50),
-      scanResult.sessions,
-      aliases,
-    ),
+    results: withParentContext(mergedResults, scanResult.sessions, aliases),
   });
 }
 

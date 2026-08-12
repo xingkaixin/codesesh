@@ -67,7 +67,7 @@ import type {
   SessionHead,
   SessionDetail,
 } from "@codesesh/core";
-import type { ModelCostEntry } from "@codesesh/core/contract";
+import type { ModelCostEntry, SearchResult } from "@codesesh/core/contract";
 import { BaseAgent } from "@codesesh/core";
 
 // --- Helpers ---
@@ -552,6 +552,65 @@ describe("handleSearchSessions", () => {
       scanSource.getSnapshot(),
     );
     expect(c.json).toHaveBeenCalledWith({ results: sentinelResults });
+  });
+
+  it("keeps ranked search hits when alias matches fill the limit", () => {
+    const rankedSessions = ["ranked-1", "ranked-2", "ranked-3"].map((id) =>
+      makeSession(id, { slug: `claudecode/${id}` }),
+    );
+    const aliasSessions = ["alias-1", "alias-2", "alias-3"].map((id, index) =>
+      makeSession(id, {
+        slug: `claudecode/${id}`,
+        time_updated: 3_000 - index,
+      }),
+    );
+    coreMocks.executeSessionSearch.mockReturnValue(
+      rankedSessions.map((session) => ({
+        reference: { agentName: "claudecode", sessionId: session.id },
+        session,
+      })),
+    );
+    coreMocks.listSessionAliases.mockReturnValue(
+      aliasSessions.map((session) => makeAlias("claudecode", session.id, `Needle ${session.id}`)),
+    );
+    const sessions = [...rankedSessions, ...aliasSessions];
+    const c = makeMockContext({ query: { q: "needle", limit: "3" } });
+
+    handleSearchSessions(c, makeScanSource({ sessions, byAgent: { claudecode: sessions } }));
+
+    expect(
+      c.json.mock.calls[0]![0].results.map((result: SearchResult) => result.session.id),
+    ).toEqual(["ranked-1", "ranked-2", "alias-1"]);
+  });
+
+  it("keeps ranked order and value when an alias hit overlaps", () => {
+    const rankedSessions = ["ranked-1", "ranked-2", "ranked-3"].map((id) =>
+      makeSession(id, { slug: `claudecode/${id}` }),
+    );
+    const aliasOnly = makeSession("alias-1", {
+      slug: "claudecode/alias-1",
+      time_updated: 1,
+    });
+    coreMocks.executeSessionSearch.mockReturnValue(
+      rankedSessions.map((session) => ({
+        reference: { agentName: "claudecode", sessionId: session.id },
+        session,
+        snippet: "Ranked match",
+        matchType: "assistant_reply" as const,
+      })),
+    );
+    coreMocks.listSessionAliases.mockReturnValue([
+      makeAlias("claudecode", "ranked-2", "Needle overlap"),
+      makeAlias("claudecode", "alias-1", "Needle alias"),
+    ]);
+    const sessions = [...rankedSessions, aliasOnly];
+    const c = makeMockContext({ query: { q: "needle", limit: "3" } });
+
+    handleSearchSessions(c, makeScanSource({ sessions, byAgent: { claudecode: sessions } }));
+
+    const results = c.json.mock.calls[0]![0].results as SearchResult[];
+    expect(results.map((result) => result.session.id)).toEqual(["ranked-1", "ranked-2", "alias-1"]);
+    expect(results[1]?.matchType).toBe("assistant_reply");
   });
 
   it("rejects incomplete project identity filters without calling the search module", () => {
