@@ -165,6 +165,11 @@ export interface SessionHead {
   smart_tags_classifier_revision?: string;
 }
 
+export interface SessionListPage {
+  sessions: SessionHead[];
+  nextCursor?: string;
+}
+
 export interface ReferencedSessionHead {
   reference: SessionReference;
   session: SessionHead;
