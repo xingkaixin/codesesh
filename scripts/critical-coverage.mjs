@@ -18,6 +18,11 @@ export const CRITICAL_COVERAGE_SCOPES = [
     thresholds: { lines: 90 },
   },
   {
+    id: "agent-adapters",
+    owners: [{ path: "packages/core/src/agents", kind: "directory" }],
+    thresholds: { lines: 86 },
+  },
+  {
     id: "cli-runtime",
     owners: [
       { path: "packages/cli/src/agent-operation-scheduler.ts", kind: "file" },
@@ -63,6 +68,7 @@ export const CRITICAL_COVERAGE_SCOPES = [
   {
     id: "web-route-recovery",
     owners: [
+      { path: "apps/web/src/router.tsx", kind: "file" },
       { path: "apps/web/src/components/app/AppRouteContent.tsx", kind: "file" },
       { path: "apps/web/src/components/DetailLanding.tsx", kind: "file" },
     ],
