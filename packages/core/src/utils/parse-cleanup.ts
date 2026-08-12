@@ -1,9 +1,12 @@
-const INTERNAL_TAGS = [
+const INTERNAL_BLOCK_TAGS = [
   "command-message",
   "command-name",
+  "local-command-caveat",
   "local-command-stdout",
   "system-reminder",
 ];
+
+const TRANSPARENT_TAGS = ["command-args"];
 
 const INTERNAL_EVENT_TYPES = new Set([
   "progress",
@@ -46,13 +49,17 @@ export function isInternalEventType(value: unknown): boolean {
 export function cleanDisplayText(text: string): string | null {
   let cleaned = text;
 
-  for (const tag of INTERNAL_TAGS) {
+  for (const tag of INTERNAL_BLOCK_TAGS) {
     cleaned = cleaned.replace(blockTagLinePattern(tag), "$1");
     cleaned = cleaned.replace(blockTagPattern(tag), "");
     cleaned = cleaned.replace(openBlockTagPattern(tag), "");
   }
 
-  for (const tag of INTERNAL_TAGS) {
+  for (const tag of INTERNAL_BLOCK_TAGS) {
+    cleaned = cleaned.replace(looseTagPattern(tag), "");
+  }
+
+  for (const tag of TRANSPARENT_TAGS) {
     cleaned = cleaned.replace(looseTagPattern(tag), "");
   }
 

@@ -391,7 +391,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
         sessionId: "session-1",
         sourcePath: sessionFile,
         fingerprint: JSON.stringify([
-          "claudecode-head-v5",
+          "claudecode-head-v6",
           sessionTime.getTime(),
           statSync(sessionFile).size,
           indexTime.getTime(),
@@ -823,7 +823,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
           message: {
             role: "user",
             content:
-              "Visible request\n<command-name>clear</command-name>\n<local-command-stdout>noise</local-command-stdout>",
+              "<command-name>/review</command-name>\n<command-message>review</command-message>\n<command-args>Visible request</command-args>\n<local-command-caveat>noise</local-command-caveat>\n<local-command-stdout>noise</local-command-stdout>",
           },
         }),
         JSON.stringify({
@@ -857,6 +857,52 @@ describe("ClaudeCodeAgent cache refresh", () => {
     expect(data.messages[1]?.parts).toEqual([
       expect.objectContaining({ type: "text", text: "Visible answer" }),
     ]);
+  });
+
+  it("filters internal-only local command sessions", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-local-command-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+
+    mkdirSync(projectDir, { recursive: true });
+    writeFileSync(
+      join(projectDir, "local-command.jsonl"),
+      [
+        JSON.stringify({ type: "queue-operation", timestamp: "2026-04-20T10:00:00Z" }),
+        JSON.stringify({
+          type: "user",
+          isMeta: true,
+          timestamp: "2026-04-20T10:00:01Z",
+          cwd: "/tmp/project",
+          message: {
+            role: "user",
+            content: "<local-command-caveat>Internal command context</local-command-caveat>",
+          },
+        }),
+        JSON.stringify({
+          type: "user",
+          timestamp: "2026-04-20T10:00:02Z",
+          cwd: "/tmp/project",
+          message: {
+            role: "user",
+            content:
+              "<command-name>/usage</command-name>\n<command-message>usage</command-message>\n<command-args></command-args>",
+          },
+        }),
+        JSON.stringify({
+          type: "system",
+          subtype: "local_command",
+          timestamp: "2026-04-20T10:00:03Z",
+          content: "Internal output",
+        }),
+        JSON.stringify({ type: "last-prompt" }),
+      ].join("\n"),
+    );
+
+    const agent = new ClaudeCodeAgent() as any;
+    agent.basePath = basePath;
+
+    expect(agent.scan()).toEqual([]);
   });
 
   it("falls back to zero and reports a mismatch when a usage field has the wrong type", () => {
