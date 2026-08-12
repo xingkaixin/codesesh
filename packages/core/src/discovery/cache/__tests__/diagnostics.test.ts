@@ -86,5 +86,12 @@ describe("withCacheDb diagnostics", () => {
 
     expect(withSearchIndexDb(() => "ready")).toBe("ready");
     expect(events.some(({ event }) => event === "sqlite.fts_integrity.started")).toBe(false);
+    expect(events).toContainEqual({
+      event: "sqlite.publication_staging_cleanup.completed",
+      detail: {
+        duration_ms: expect.any(Number),
+        reclaimed: false,
+      },
+    });
   });
 });

@@ -38,7 +38,11 @@ import {
   type SessionRow,
 } from "./messages.js";
 import { CACHE_SCHEMA_VERSION } from "./version.js";
-import { createPublicationStagingTable, discardPublicationStaging } from "./publication-staging.js";
+import {
+  createPublicationStagingTable,
+  discardPublicationStaging,
+  hasPublicationStaging,
+} from "./publication-staging.js";
 
 interface MessageToolBackfillRow extends DatabaseRow {
   agent_name?: string;
@@ -100,6 +104,21 @@ function withCacheConnection<T>(fn: (connection: CacheConnection) => T): T | nul
   }
 }
 
+function cleanPublicationStaging(connection: CacheConnection): void {
+  if (connection.publicationStagingCleaned) return;
+
+  const startedAt = performance.now();
+  const reclaimed = hasPublicationStaging(connection.db);
+  if (reclaimed) {
+    connection.db.transaction(() => discardPublicationStaging(connection.db)).immediate();
+  }
+  connection.publicationStagingCleaned = true;
+  getCoreDiagnostics()?.info?.("sqlite.publication_staging_cleanup.completed", {
+    duration_ms: Math.round(performance.now() - startedAt),
+    reclaimed,
+  });
+}
+
 export function withCacheDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
   return withCacheConnection(({ db }) => fn(db));
 }
@@ -131,7 +150,10 @@ export function withSearchDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
 }
 
 export function withSearchIndexDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
-  return withCacheConnection((connection) => runWithFtsRecovery(connection, fn));
+  return withCacheConnection((connection) => {
+    cleanPublicationStaging(connection);
+    return runWithFtsRecovery(connection, fn);
+  });
 }
 
 interface SearchIndexWriteResult<T> {
@@ -1442,7 +1464,6 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
   });
 
   createLatestCacheSchema(db);
-  db.transaction(() => discardPublicationStaging(db)).immediate();
 
   // Only stamp when behind: every thread's first connection runs ensureSchema,
   // and an unconditional PRAGMA user_version write would contend for the write

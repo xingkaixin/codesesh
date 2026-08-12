@@ -32,6 +32,7 @@ export type SQLiteStatement = ReturnType<SQLiteDatabase["prepare"]>;
 export interface CacheConnection {
   db: SQLiteDatabase;
   ftsReady: boolean;
+  publicationStagingCleaned: boolean;
 }
 
 const cacheConnections = new Map<string, CacheConnection>();
@@ -44,7 +45,7 @@ export function getCacheConnection(path: string): CacheConnection | null {
   const db = openDb(path);
   if (!db) return null;
 
-  const connection = { db, ftsReady: false };
+  const connection = { db, ftsReady: false, publicationStagingCleaned: false };
   cacheConnections.set(path, connection);
   return connection;
 }
