@@ -191,10 +191,6 @@ export async function createServer(
     }
   });
 
-  if (loopbackAuthorityEnabled) {
-    app.use("/api/*", loopbackWriteGuard());
-  }
-
   // Ordered before authentication: a request that bypassed the proxy must be
   // refused outright, not given a chance to present a token in the clear.
   if (transport.kind === "trusted-proxy") {
@@ -203,6 +199,7 @@ export async function createServer(
   if (remoteAccessToken) {
     app.use("/api/*", remoteAccessAuth(remoteAccessToken));
   }
+  app.use("/api/*", loopbackWriteGuard());
   app.use(
     "/api/*",
     bodyLimit({
