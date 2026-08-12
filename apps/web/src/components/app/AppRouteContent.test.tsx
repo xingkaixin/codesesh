@@ -7,10 +7,13 @@ import { createQueryWrapper } from "../../test/query-wrapper";
 import type { LandingSession } from "../DetailLanding";
 import { AppRouteContent } from "./AppRouteContent";
 
+const sessionDetailRender = vi.hoisted(() => vi.fn());
+
 vi.mock("../SessionDetail", () => ({
-  SessionDetail: ({ session }: { session: SessionDetail }) => (
-    <div data-testid="session-detail">{session.id}</div>
-  ),
+  SessionDetail: (props: { session: SessionDetail; childSessions: SessionDetail[] }) => {
+    sessionDetailRender(props);
+    return <div data-testid="session-detail">{props.session.id}</div>;
+  },
 }));
 
 const LAZY_SURFACE_TIMEOUT_MS = 5_000;
@@ -135,7 +138,10 @@ function addRouteAgents(props: ReturnType<typeof makeProps>): void {
   props.agentNameMap = props.agentCatalog.displayNameByKey;
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  sessionDetailRender.mockClear();
+});
 
 function renderContent(props: Parameters<typeof AppRouteContent>[0]) {
   const { Wrapper } = createQueryWrapper();
@@ -221,7 +227,11 @@ describe("AppRouteContent", () => {
       activeSessionId: "session-a",
     };
     props.sessionDetail.session = makeSession("session-a");
-    const view = renderContent(props);
+    const view = render(
+      <MemoryRouter>
+        <AppRouteContent {...props} />
+      </MemoryRouter>,
+    );
     const firstDetail = await screen.findByTestId(
       "session-detail",
       {},
@@ -241,6 +251,39 @@ describe("AppRouteContent", () => {
     );
 
     expect(await screen.findByTestId("session-detail")).not.toBe(firstDetail);
+  });
+
+  it("keeps child session identity stable across unrelated detail rerenders", async () => {
+    const props = makeProps();
+    const parent = makeSession("parent");
+    const child = {
+      ...makeSession("child"),
+      slug: "claudecode/child",
+      parent_reference: parent.reference,
+    };
+    props.viewState = {
+      mode: "session",
+      activeAgentKey: "claudecode",
+      activeSessionId: parent.id,
+    };
+    props.sessionDetail.session = parent;
+    props.sessions = [child];
+    const view = render(
+      <MemoryRouter>
+        <AppRouteContent {...props} />
+      </MemoryRouter>,
+    );
+    await screen.findByTestId("session-detail", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS });
+    const firstChildren = sessionDetailRender.mock.calls.at(-1)?.[0].childSessions;
+
+    props.detailHighlightQuery = "unrelated";
+    view.rerender(
+      <MemoryRouter>
+        <AppRouteContent {...props} />
+      </MemoryRouter>,
+    );
+
+    expect(sessionDetailRender.mock.calls.at(-1)?.[0].childSessions).toBe(firstChildren);
   });
 
   it("renders an agent landing with encoded session links and full-reference bookmark actions", () => {

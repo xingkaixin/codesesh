@@ -124,14 +124,6 @@ export function useSidebarModel({
       selectedProjectAgent,
     );
     const sidebarSessionLookup = buildSidebarSessionLookup(sidebarSessions);
-    const bookmarkedSidebarSessionReferences = new Set(
-      sidebarSessions
-        .filter((sessionItem) =>
-          isSessionBookmarked(getSessionAgentKey(sessionItem), sessionItem.id),
-        )
-        .map(getSessionReferenceKey),
-    );
-
     return {
       activeAgentKey,
       activeAgent,
@@ -141,17 +133,20 @@ export function useSidebarModel({
       selectedProjectNavigation,
       sidebarSessions,
       sidebarSessionLookup,
-      bookmarkedSidebarSessionReferences,
     };
-  }, [
-    agents,
-    isSessionBookmarked,
-    projects,
-    selectedProjectAgent,
-    session,
-    sessionIndexes,
-    viewState,
-  ]);
+  }, [agents, projects, selectedProjectAgent, session, sessionIndexes, viewState]);
 
-  return model;
+  const bookmarkedSidebarSessionReferences = useMemo(
+    () =>
+      new Set(
+        model.sidebarSessions
+          .filter((sessionItem) =>
+            isSessionBookmarked(getSessionAgentKey(sessionItem), sessionItem.id),
+          )
+          .map(getSessionReferenceKey),
+      ),
+    [isSessionBookmarked, model.sidebarSessions],
+  );
+
+  return { ...model, bookmarkedSidebarSessionReferences };
 }

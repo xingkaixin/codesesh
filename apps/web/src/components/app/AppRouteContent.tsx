@@ -1,4 +1,12 @@
-import { lazy, Suspense, useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useMemo,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
 import { useLocation } from "react-router-dom";
 import { DetailLanding, type LandingAgentItem, type LandingSession } from "../DetailLanding";
 import { ErrorBoundary } from "../ErrorBoundary";
@@ -132,6 +140,26 @@ export function AppRouteContent({
       })),
     [agents],
   );
+  const currentSession = viewState.mode === "session" ? sessionDetail.session : null;
+  const currentSessionAgentName = currentSession?.reference.agentName;
+  const currentSessionId = currentSession?.reference.sessionId;
+  const childSessions = useMemo(() => {
+    if (!currentSessionAgentName || !currentSessionId) return [];
+    const parentRouteKey = getSessionRouteKey(currentSessionAgentName, currentSessionId);
+    return sessions.filter(
+      (candidate) =>
+        candidate.parent_reference &&
+        getSessionRouteKey(
+          candidate.parent_reference.agentName,
+          candidate.parent_reference.sessionId,
+        ) === parentRouteKey,
+    );
+  }, [currentSessionAgentName, currentSessionId, sessions]);
+  const toggleSessionBookmark = bookmarks.toggleSessionBookmark;
+  const toggleLandingBookmark = useCallback(
+    (session: LandingSession) => toggleSessionBookmark(session, session.agentKey),
+    [toggleSessionBookmark],
+  );
   if (loading) return <SessionDetailSkeleton />;
   if (search.active) {
     const resultCount = search.state.status === "loaded" ? search.state.results.length : 0;
@@ -224,13 +252,13 @@ export function AppRouteContent({
         agentItems={landingAgentItems}
         activeAgentKey={viewState.activeAgentKey}
         isBookmarked={bookmarks.isBookmarked}
-        onToggleBookmark={(session) => bookmarks.toggleSessionBookmark(session, session.agentKey)}
+        onToggleBookmark={toggleLandingBookmark}
       />
     );
   }
   if (viewState.mode === "session") {
     if (sessionDetail.loading) return <SessionDetailSkeleton />;
-    if (sessionDetail.error || !sessionDetail.session) {
+    if (sessionDetail.error || !currentSession) {
       return (
         <DetailLanding
           type="missing-session"
@@ -240,19 +268,10 @@ export function AppRouteContent({
           activeAgentKey={viewState.activeAgentKey}
           attemptedSessionId={viewState.activeSessionId}
           isBookmarked={bookmarks.isBookmarked}
-          onToggleBookmark={(session) => bookmarks.toggleSessionBookmark(session, session.agentKey)}
+          onToggleBookmark={toggleLandingBookmark}
         />
       );
     }
-    const currentSession = sessionDetail.session;
-    const childSessions = sessions.filter(
-      (candidate) =>
-        candidate.parent_reference &&
-        getSessionRouteKey(
-          candidate.parent_reference.agentName,
-          candidate.parent_reference.sessionId,
-        ) === getSessionRouteKey(currentSession.reference.agentName, currentSession.id),
-    );
     return (
       <RenderProfiler
         id="SessionDetail"

@@ -146,4 +146,13 @@ describe("useSidebarModel", () => {
     });
     expect(result.current.activeProjectSessions).toHaveLength(2);
   });
+
+  it("keeps bookmark set identity when only the route object identity changes", () => {
+    const { result, rerender } = renderModel(projectView);
+    const first = result.current.bookmarkedSidebarSessionReferences;
+
+    rerender({ viewState: { ...projectView }, selectedProjectAgent: undefined });
+
+    expect(result.current.bookmarkedSidebarSessionReferences).toBe(first);
+  });
 });
