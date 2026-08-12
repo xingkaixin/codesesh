@@ -412,7 +412,12 @@ async function run(
   } else if (operation.kind === "incremental-scan") {
     changedIds = operation.changedIds;
     sessions = inheritSmartTags(
-      await Promise.resolve(agent.incrementalScan(previousSessions, operation.changedIds)),
+      await Promise.resolve(
+        agent.incrementalScan(previousSessions, operation.changedIds, undefined, {
+          ...data.scanOptions,
+          onProgress: reportProgress,
+        }),
+      ),
       previousSessions,
     );
   } else if (agent instanceof FileSystemSessionSource) {

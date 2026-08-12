@@ -825,7 +825,10 @@ describe("scan refresh worker entry", () => {
 
     await runWorker();
 
-    expect(incrementalScan).toHaveBeenCalledWith([previous], ["previous"]);
+    expect(incrementalScan).toHaveBeenCalledWith([previous], ["previous"], undefined, {
+      fast: true,
+      onProgress: expect.any(Function),
+    });
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({
         type: "done",
