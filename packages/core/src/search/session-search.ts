@@ -5,7 +5,12 @@
  * paths), and cross-source result merging.
  */
 import type { SessionHead } from "../types/index.js";
-import { getSessionAgentKey, type SearchResult } from "../contract/index.js";
+import {
+  buildSessionTree,
+  getSessionAgentKey,
+  getSessionRouteKey,
+  type SearchResult,
+} from "../contract/index.js";
 import {
   filterIndexedSessionReferences,
   mergeSearchQueryOptions,
@@ -55,6 +60,7 @@ function matchesRecentSearchFilters(
   session: SessionHead,
   options: SearchOptions,
   projectScope: ProjectScopeMatcher | null,
+  inclusiveCost: number,
 ): boolean {
   if (options.projectKind || options.projectKey) {
     if (
@@ -84,7 +90,7 @@ function matchesRecentSearchFilters(
   if (options.tags?.length && !options.tags.every((tag) => session.smart_tags?.includes(tag))) {
     return false;
   }
-  if (!sessionMatchesSearchCost(session, options)) return false;
+  if (!sessionMatchesSearchCost(session, options, inclusiveCost)) return false;
   return true;
 }
 
@@ -95,12 +101,13 @@ export function matchesSessionSearchFilters(
   session: SessionHead,
   options: SearchOptions,
   projectScope: ProjectScopeMatcher | null = null,
+  inclusiveCost = session.stats.total_cost,
 ): boolean {
   if (options.agent && agentName !== options.agent) return false;
   const activity = getSessionActivityTime(session);
   if (options.from != null && activity < options.from) return false;
   if (options.to != null && activity > options.to) return false;
-  return matchesRecentSearchFilters(session, options, projectScope);
+  return matchesRecentSearchFilters(session, options, projectScope, inclusiveCost);
 }
 
 function sessionReferenceKey(agentName: string, sessionId: string): string {
@@ -110,14 +117,17 @@ function sessionReferenceKey(agentName: string, sessionId: string): string {
 export function filterSessionSearchCandidates(
   candidates: SearchResult[],
   options: SearchOptions,
+  sessionSnapshot: SessionHead[] = candidates.map((candidate) => candidate.session),
 ): SearchResult[] {
   const projectScope = options.cwd ? createProjectScopeMatcher(options.cwd) : null;
+  const inclusiveCosts = buildInclusiveCostLookup(sessionSnapshot, options);
   const headMatches = candidates.filter((candidate) =>
     matchesSessionSearchFilters(
       candidate.reference.agentName,
       candidate.session,
       options,
       projectScope,
+      inclusiveCostFor(candidate.reference.agentName, candidate.session, inclusiveCosts),
     ),
   );
   if (!options.file && !options.fileKind && !options.tools?.length) return headMatches;
@@ -148,12 +158,23 @@ function searchRecentSessions(
   if (limit === 0) return [];
 
   const projectScope = options.cwd ? createProjectScopeMatcher(options.cwd) : null;
+  const inclusiveCosts = buildInclusiveCostLookup(snapshot.sessions, options);
   const sessions = options.agent ? (snapshot.byAgent[options.agent] ?? []) : snapshot.sessions;
   const results: SearchResult[] = [];
 
   for (const session of sessions) {
     const agentName = options.agent ?? getSessionAgentKey(session);
-    if (!matchesSessionSearchFilters(agentName, session, options, projectScope)) continue;
+    if (
+      !matchesSessionSearchFilters(
+        agentName,
+        session,
+        options,
+        projectScope,
+        inclusiveCostFor(agentName, session, inclusiveCosts),
+      )
+    ) {
+      continue;
+    }
     results.push({
       reference: { agentName, sessionId: session.id },
       session,
@@ -164,6 +185,25 @@ function searchRecentSessions(
   }
 
   return results;
+}
+
+function buildInclusiveCostLookup(
+  sessions: SessionHead[],
+  options: SearchOptions,
+): ReturnType<typeof buildSessionTree>["byRouteKey"] | null {
+  if (options.costMin == null && options.costMax == null) return null;
+  return buildSessionTree(sessions).byRouteKey;
+}
+
+function inclusiveCostFor(
+  agentName: string,
+  session: SessionHead,
+  lookup: ReturnType<typeof buildSessionTree>["byRouteKey"] | null,
+): number {
+  return (
+    lookup?.get(getSessionRouteKey(agentName, session.id))?.inclusiveStats.cost ??
+    session.stats.total_cost
+  );
 }
 
 // `options.file` already carries the qualifier's `file:`/`path:` value once

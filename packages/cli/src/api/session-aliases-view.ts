@@ -136,7 +136,7 @@ export function findAliasSearchResults(
     });
   }
 
-  return filterSessionSearchCandidates(results, search.options).sort(
+  return filterSessionSearchCandidates(results, search.options, scanResult.sessions).sort(
     (a, b) => getSessionActivityTime(b.session) - getSessionActivityTime(a.session),
   );
 }
