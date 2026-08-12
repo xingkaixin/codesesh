@@ -59,6 +59,7 @@ describe("cli routes stay wire-compatible with @codesesh/core/contract", () => {
         reference: { agentName: "claudecode", sessionId: SAMPLE_SESSION_HEAD.id },
         session: SAMPLE_SESSION_HEAD,
         snippet: `Recent session · ${SAMPLE_SESSION_HEAD.directory}`,
+        snippetHighlights: [],
         matchType: "recent",
       },
     ]);

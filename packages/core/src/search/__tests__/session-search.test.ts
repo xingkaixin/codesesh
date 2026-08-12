@@ -790,6 +790,7 @@ describe("search candidate filtering", () => {
       reference: { agentName: spec.agent, sessionId: spec.id },
       session: snapshot.byAgent[spec.agent]!.find((session) => session.id === spec.id)!,
       snippet: "Alias",
+      snippetHighlights: [],
       matchType: "title" as const,
     }));
 
@@ -822,6 +823,7 @@ describe("search candidate filtering", () => {
         reference: { agentName: "codex", sessionId: parent.id },
         session: parent,
         snippet: "Alias",
+        snippetHighlights: [],
         matchType: "title",
       },
     ];

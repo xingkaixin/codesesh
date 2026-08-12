@@ -35,6 +35,7 @@ function makeSearchResult(id: string): SearchResult {
       },
     },
     snippet: "",
+    snippetHighlights: [],
     matchType: "assistant_reply",
   };
 }

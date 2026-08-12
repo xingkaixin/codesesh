@@ -104,6 +104,7 @@ describe("buildLocalRecentResults", () => {
         },
         session: sBugfixApp,
         snippet: `Recent session · ${sBugfixApp.directory}`,
+        snippetHighlights: [],
         matchType: "recent",
       },
     ]);
@@ -163,6 +164,7 @@ describe("buildSearchProjectOptions", () => {
     return {
       reference: { agentName: "codex", sessionId: id },
       snippet: "match",
+      snippetHighlights: [],
       matchType: "title",
       session: {
         id,

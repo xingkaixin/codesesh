@@ -67,6 +67,7 @@ export function buildLocalRecentResults(
       },
       session: sessionItem,
       snippet: `Recent session · ${sessionItem.directory}`,
+      snippetHighlights: [],
       matchType: "recent" as const,
     });
     if (results.length >= 50) break;

@@ -179,6 +179,7 @@ function searchRecentSessions(
       reference: { agentName, sessionId: session.id },
       session,
       snippet: `Recent session · ${session.directory}`,
+      snippetHighlights: [],
       matchType: "recent",
     });
     if (results.length >= limit) break;

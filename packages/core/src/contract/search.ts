@@ -14,8 +14,14 @@ export interface SearchResultParent {
   title: string;
 }
 
+export interface SearchHighlightRange {
+  start: number;
+  end: number;
+}
+
 export interface SearchResult extends ReferencedSessionHead {
   snippet: string;
+  snippetHighlights: SearchHighlightRange[];
   matchType: SearchMatchType;
   /** Present when the hit is a sub-session AND its parent is in the snapshot.
    *  Renders as 父 › 子 in the results list. */

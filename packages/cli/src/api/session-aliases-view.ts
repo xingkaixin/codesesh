@@ -132,6 +132,7 @@ export function findAliasSearchResults(
       reference: alias.reference,
       session: aliases.decorate(session, alias.reference),
       snippet: `Alias · ${session.directory}`,
+      snippetHighlights: [],
       matchType: "title",
     });
   }

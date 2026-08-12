@@ -8,7 +8,7 @@ import type {
   SessionHead,
   SmartTag,
 } from "../../types/index.js";
-import type { SearchMatchType, SearchResult } from "../../contract/index.js";
+import type { SearchHighlightRange, SearchMatchType, SearchResult } from "../../contract/index.js";
 import { computeIdentity, realFs } from "../../projects/index.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import { escapeRegExp, filePathFtsQuery, hasCacheStorage, likePattern } from "./db.js";
@@ -349,21 +349,51 @@ function textMatchesTerms(text: string, terms: { terms: string[]; mode: "all" | 
   return terms.terms.every((term) => lower.includes(term));
 }
 
-function highlightTerm(text: string, term: string): string {
-  return text.replace(new RegExp(escapeRegExp(term), "gi"), (match) => `<mark>${match}</mark>`);
+interface SearchSnippet {
+  snippet: string;
+  snippetHighlights: SearchHighlightRange[];
 }
 
-function buildTermSnippet(text: string, terms: { terms: string[]; mode: "all" | "any" }): string {
+function findHighlightRanges(text: string, terms: string[]): SearchHighlightRange[] {
+  const ranges = terms.flatMap((term) =>
+    Array.from(text.matchAll(new RegExp(escapeRegExp(term), "giu")), (match) => ({
+      start: match.index,
+      end: match.index + match[0].length,
+    })),
+  );
+  ranges.sort((left, right) => left.start - right.start || right.end - left.end);
+
+  return ranges.reduce<SearchHighlightRange[]>((merged, range) => {
+    const previous = merged.at(-1);
+    if (previous && range.start <= previous.end) {
+      previous.end = Math.max(previous.end, range.end);
+    } else {
+      merged.push(range);
+    }
+    return merged;
+  }, []);
+}
+
+function buildTermSnippet(
+  text: string,
+  terms: { terms: string[]; mode: "all" | "any" },
+): SearchSnippet {
   const lower = text.toLowerCase();
   const term = terms.terms.find((item) => lower.includes(item)) ?? terms.terms[0] ?? "";
-  if (!term) return text.slice(0, 180);
+  if (!term) {
+    return { snippet: text.slice(0, 180), snippetHighlights: [] };
+  }
 
   const index = lower.indexOf(term);
   const start = Math.max(0, index - 80);
   const end = Math.min(text.length, index + term.length + 80);
-  return `${start > 0 ? "… " : ""}${highlightTerm(text.slice(start, end), term)}${
+  const snippet = `${start > 0 ? "… " : ""}${text.slice(start, end)}${
     end < text.length ? " …" : ""
   }`;
+  return {
+    snippet,
+    snippetHighlights: findHighlightRanges(snippet, terms.terms),
+  };
 }
 
 function messageMatchType(row: MessageSearchRow): SearchMatchType {
@@ -381,7 +411,7 @@ function fetchMessageSearchMatches(
   rows: SearchResultRow[],
   ftsQuery: string,
   terms: { terms: string[]; mode: "all" | "any" },
-): Map<string, { snippet: string; matchType: SearchMatchType }> {
+): Map<string, SearchSnippet & { matchType: SearchMatchType }> {
   const candidates = rows.filter((row) => !textMatchesTerms(String(row.title ?? ""), terms));
   if (candidates.length === 0) {
     return new Map();
@@ -432,7 +462,7 @@ function fetchMessageSearchMatches(
       `,
     )
     .all(...candidateParams, ftsQuery) as MessageSearchRow[];
-  const matches = new Map<string, { snippet: string; matchType: SearchMatchType }>();
+  const matches = new Map<string, SearchSnippet & { matchType: SearchMatchType }>();
 
   for (const message of messageRows) {
     const key = searchResultRowKey(message);
@@ -442,7 +472,7 @@ function fetchMessageSearchMatches(
     if (!textMatchesTerms(text, terms)) continue;
 
     matches.set(key, {
-      snippet: buildTermSnippet(text, terms),
+      ...buildTermSnippet(text, terms),
       matchType: messageMatchType(message),
     });
   }
@@ -453,19 +483,20 @@ function fetchMessageSearchMatches(
 function resolveSearchMatch(
   row: SearchResultRow,
   terms: { terms: string[]; mode: "all" | "any" },
-  messageMatches: Map<string, { snippet: string; matchType: SearchMatchType }>,
-): { snippet: string; matchType: SearchMatchType } {
+  messageMatches: Map<string, SearchSnippet & { matchType: SearchMatchType }>,
+): SearchSnippet & { matchType: SearchMatchType } {
   const title = String(row.title ?? "");
 
   if (terms.terms.length === 0) {
     return {
       snippet: `Recent session · ${String(row.directory ?? "")}`,
+      snippetHighlights: [],
       matchType: "recent",
     };
   }
 
   if (textMatchesTerms(title, terms)) {
-    return { snippet: buildTermSnippet(title, terms), matchType: "title" };
+    return { ...buildTermSnippet(title, terms), matchType: "title" };
   }
 
   const messageMatch = messageMatches.get(searchResultRowKey(row));
@@ -475,6 +506,7 @@ function resolveSearchMatch(
 
   return {
     snippet: String(row.snippet ?? ""),
+    snippetHighlights: findHighlightRanges(String(row.snippet ?? ""), terms.terms),
     matchType: "assistant_reply",
   };
 }
@@ -489,7 +521,7 @@ function rowsToSearchResults(
   const messageMatches =
     terms.terms.length > 0 && ftsQuery
       ? fetchMessageSearchMatches(db, rows, ftsQuery, terms)
-      : new Map<string, { snippet: string; matchType: SearchMatchType }>();
+      : new Map<string, SearchSnippet & { matchType: SearchMatchType }>();
 
   return rows.map((row) => {
     const match = resolveSearchMatch(row, terms, messageMatches);
@@ -500,6 +532,7 @@ function rowsToSearchResults(
       },
       session: sessionHeadFromSearchRow(row),
       snippet: match.snippet,
+      snippetHighlights: match.snippetHighlights,
       matchType: match.matchType,
     };
   });
@@ -543,8 +576,8 @@ export function searchSessions(query: string, options: SearchOptions = {}): Sear
           SELECT
             ${searchSessionColumns()},
             COALESCE(
-              NULLIF(snippet(session_documents_fts, 1, '<mark>', '</mark>', ' … ', 18), ''),
-              highlight(session_documents_fts, 0, '<mark>', '</mark>')
+              NULLIF(snippet(session_documents_fts, 1, '', '', ' … ', 18), ''),
+              highlight(session_documents_fts, 0, '', '')
             ) AS snippet
           FROM session_documents_fts
           JOIN session_documents d ON d.id = session_documents_fts.rowid

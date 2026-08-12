@@ -603,6 +603,7 @@ describe("handleSearchSessions", () => {
         reference: { agentName: "claudecode", sessionId: session.id },
         session,
         snippet: "Ranked match",
+        snippetHighlights: [],
         matchType: "assistant_reply" as const,
       })),
     );

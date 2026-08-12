@@ -82,6 +82,12 @@ function makeSessionData(id: string, text: string): SessionDetail {
   };
 }
 
+function highlightedText(
+  result: { snippet: string; snippetHighlights: Array<{ start: number; end: number }> } | undefined,
+): string[] {
+  return result?.snippetHighlights.map(({ start, end }) => result.snippet.slice(start, end)) ?? [];
+}
+
 function createLegacyCacheTables(db: Database.Database): void {
   db.exec(`
     CREATE TABLE cache_meta (
@@ -860,7 +866,20 @@ describe("searchSessions", () => {
       total_output_tokens: 7,
       total_cost: 0.03,
     });
-    expect(results[0]?.snippet).toContain("<mark>sqlite</mark>");
+    expect(highlightedText(results[0])).toContain("sqlite");
+  });
+
+  it("exposes literal mark text beside a highlighted match", () => {
+    const session = makeSession("literal-mark");
+    saveCachedSessions("claudecode", [session]);
+    syncSessionSearchIndex("claudecode", [session], (sessionId) =>
+      makeSessionData(sessionId, "literal <mark>text</mark> before sqlite"),
+    );
+
+    const results = searchSessions("sqlite");
+
+    expect(results[0]?.snippet).toContain("literal <mark>text</mark>");
+    expect(highlightedText(results[0])).toEqual(["sqlite"]);
   });
 
   it("filters indexed search by complete project identity", () => {
@@ -1041,7 +1060,7 @@ describe("searchSessions", () => {
     expect(searchSessions("userneedle")[0]?.matchType).toBe("user_message");
     expect(searchSessions("assistantneedle")[0]?.matchType).toBe("assistant_reply");
     expect(searchSessions("toolneedle")[0]?.matchType).toBe("tool_output");
-    expect(searchSessions('"quoted phrase"')[0]?.snippet).toContain("<mark>quoted phrase</mark>");
+    expect(highlightedText(searchSessions('"quoted phrase"')[0])).toContain("quoted phrase");
 
     const allTermResults = searchSessions("assistantneedle reply");
     expect(allTermResults[0]?.session.id).toBe("assistant");
@@ -1050,11 +1069,11 @@ describe("searchSessions", () => {
     const orResults = searchSessions("alphaneedle OR betaneedle");
     expect(orResults[0]?.session.id).toBe("or-first");
     expect(orResults[0]?.matchType).toBe("assistant_reply");
-    expect(orResults[0]?.snippet).toContain("<mark>betaneedle</mark>");
+    expect(highlightedText(orResults[0])).toContain("betaneedle");
 
     const punctuatedResults = searchSessions('"école-needle"');
     expect(punctuatedResults[0]?.matchType).toBe("user_message");
-    expect(punctuatedResults[0]?.snippet).toContain("<mark>ÉCOLE-needle</mark>");
+    expect(highlightedText(punctuatedResults[0])).toContain("ÉCOLE-needle");
   });
 
   it("bounds a single message FTS lookup to one row per candidate", () => {
@@ -1185,7 +1204,7 @@ describe("searchSessions", () => {
     const filteredResults = searchSessions("needle", { cwd: "/tmp/bulk-project" });
     expect(filteredResults).toHaveLength(1);
     expect(filteredResults[0]?.session.id).toBe("bulk-42");
-    expect(filteredResults[0]?.snippet).toContain("<mark>needle</mark>");
+    expect(highlightedText(filteredResults[0])).toContain("needle");
   });
 
   it("writes each full search entry before loading the next one", () => {
@@ -1803,7 +1822,7 @@ describe("searchSessions", () => {
     const searchResults = searchFileActivitySessions("src/new.ts");
     expect(searchResults).toHaveLength(1);
     expect(searchResults[0]?.session.id).toBe("files");
-    expect(searchResults[0]?.snippet).toContain("<mark>src/new.ts</mark>");
+    expect(highlightedText(searchResults[0])).toContain("src/new.ts");
 
     const directWriteResults = searchFileActivitySessions("src/direct.ts");
     expect(directWriteResults).toHaveLength(1);
@@ -1927,7 +1946,8 @@ describe("searchSessions", () => {
 
     expect(results).toHaveLength(1);
     // Equal latest_time and count, so the path breaks the tie.
-    expect(results[0]?.snippet).toContain("</mark>/a.ts");
+    expect(results[0]?.snippet).toContain("src/tie/a.ts");
+    expect(highlightedText(results[0])).toEqual(["src/tie"]);
   });
 
   it("uses latest-time indexes for recent file activity query plans", () => {
@@ -2401,7 +2421,7 @@ describe("searchSessions", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0]?.session.id).toBe("fts-empty");
-    expect(results[0]?.snippet).toContain("<mark>orphan</mark>");
+    expect(highlightedText(results[0])).toContain("orphan");
   });
 
   it("rebuilds affected FTS indexes when update triggers are missing", () => {
