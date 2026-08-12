@@ -36,6 +36,12 @@ vi.mock("@codesesh/core", async (importOriginal) => {
       coreMocks.attachProjectMetrics(...args);
       return actual.attachProjectMetrics(...args);
     },
+    attachProjectMetricsFromTree: (
+      ...args: Parameters<typeof actual.attachProjectMetricsFromTree>
+    ) => {
+      coreMocks.attachProjectMetrics(...args);
+      return actual.attachProjectMetricsFromTree(...args);
+    },
     buildDashboard: (...args: Parameters<typeof actual.buildDashboard>) => {
       coreMocks.buildDashboard(...args);
       return actual.buildDashboard(...args);

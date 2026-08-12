@@ -11,6 +11,8 @@ import {
   addCalendarDays,
   countCalendarDays,
   createSessionIndex,
+  buildSessionTree,
+  filterSessionTreeByActivityWindow,
   formatSessionReference,
   getSessionAgentKey,
   getSessionRouteKey,
@@ -24,7 +26,7 @@ import {
 import {
   SessionAliasValidationError,
   StateStorageUnavailableError,
-  attachProjectMetrics,
+  attachProjectMetricsFromTree,
   createProjectScopeMatcher,
   deleteBookmark,
   getAgentInfoMap,
@@ -373,9 +375,10 @@ export function handleGetProjects(
     scanResult.sessions,
     ["projects", from, to],
     () => {
-      const sessions = filterSessionsByActivityWindow(scanResult.sessions, from, to);
+      const tree = buildSessionTree(scanResult.sessions);
+      const sessions = filterSessionTreeByActivityWindow(scanResult.sessions, from, to, tree);
       return {
-        projects: attachProjectMetrics(listCachedProjectGroups(sessions), sessions),
+        projects: attachProjectMetricsFromTree(listCachedProjectGroups(sessions), tree, from, to),
       };
     },
   );
