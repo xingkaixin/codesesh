@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SQLiteDatabase } from "../../../utils/sqlite.js";
 import { getCachePath, setSchemaEnsuredPath } from "../db.js";
 import * as schema from "../schema.js";
 import { saveCachedSessions } from "../sessions.js";
@@ -15,6 +16,23 @@ vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
   return { ...actual, homedir: vi.fn(() => testHomeDir) };
 });
+
+function readPublicationCounts(db: SQLiteDatabase) {
+  const sessions = db
+    .prepare("SELECT COUNT(*) AS value FROM sessions WHERE publication_id IS NOT NULL")
+    .get() as { value?: number };
+  const documents = db
+    .prepare("SELECT COUNT(*) AS value FROM session_documents WHERE agent_name = ?")
+    .get("codex") as { value?: number };
+  const payloads = db
+    .prepare("SELECT COUNT(*) AS value FROM search_index_publication_entries")
+    .get() as { value?: number };
+  return {
+    sessions: Number(sessions.value ?? 0),
+    documents: Number(documents.value ?? 0),
+    payloads: Number(payloads.value ?? 0),
+  };
+}
 
 beforeEach(() => {
   setSchemaEnsuredPath(null);
@@ -115,7 +133,7 @@ describe("cache schema boundary", () => {
     expect(secondProbeCount).toBe(firstProbeCount);
   });
 
-  it("reclaims orphaned publication rows on the next schema open", () => {
+  it("defers orphaned publication cleanup until the first search-index write", () => {
     const session = makeSessionHead("orphaned-publication");
     saveCachedSessions("codex", [session]);
     syncSessionSearchIndex("codex", [session], () => makeSessionData(session.id));
@@ -141,31 +159,36 @@ describe("cache schema boundary", () => {
     }
     setSchemaEnsuredPath(null);
 
-    const counts = schema.withCacheDb((ready) => ({
-      sessions: Number(
-        (
-          ready
-            .prepare("SELECT COUNT(*) AS value FROM sessions WHERE publication_id IS NOT NULL")
-            .get() as { value?: number }
-        ).value ?? 0,
-      ),
-      documents: Number(
-        (
-          ready
-            .prepare("SELECT COUNT(*) AS value FROM session_documents WHERE agent_name = ?")
-            .get("codex") as { value?: number }
-        ).value ?? 0,
-      ),
-      payloads: Number(
-        (
-          ready.prepare("SELECT COUNT(*) AS value FROM search_index_publication_entries").get() as {
-            value?: number;
-          }
-        ).value ?? 0,
-      ),
-    }));
+    const beforeCleanup = schema.withCacheDb(readPublicationCounts);
 
-    expect(counts).toEqual({ sessions: 0, documents: 0, payloads: 0 });
+    expect(beforeCleanup).toEqual({ sessions: 1, documents: 1, payloads: 1 });
+
+    const afterCleanup = schema.withSearchIndexDb(readPublicationCounts);
+
+    expect(afterCleanup).toEqual({ sessions: 0, documents: 0, payloads: 0 });
+  });
+
+  it("skips cleanup scans after an empty staging probe", () => {
+    schema.withCacheDb(() => undefined);
+    const prepare = vi.spyOn(Database.prototype, "prepare");
+
+    schema.withSearchIndexDb(() => undefined);
+    const firstProbeCount = prepare.mock.calls.filter(([sql]) =>
+      String(sql).includes("SELECT 1 FROM search_index_publication_entries LIMIT 1"),
+    ).length;
+    const cleanupStatementCount = prepare.mock.calls.filter(([sql]) =>
+      String(sql).includes("DELETE FROM"),
+    ).length;
+
+    schema.withSearchIndexDb(() => undefined);
+    const secondProbeCount = prepare.mock.calls.filter(([sql]) =>
+      String(sql).includes("SELECT 1 FROM search_index_publication_entries LIMIT 1"),
+    ).length;
+    prepare.mockRestore();
+
+    expect(firstProbeCount).toBe(1);
+    expect(secondProbeCount).toBe(firstProbeCount);
+    expect(cleanupStatementCount).toBe(0);
   });
 
   it("invalidates v21 detail rows so inconsistent publications rebuild", () => {

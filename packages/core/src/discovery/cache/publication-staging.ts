@@ -80,6 +80,19 @@ export function deletePublicationPayloads(db: SQLiteDatabase, publicationId: str
   );
 }
 
+function hasLegacyPublicationRows(db: SQLiteDatabase, publicationId?: string): boolean {
+  const predicate = publicationId ? "publication_id = ?" : "publication_id IS NOT NULL";
+  const params = publicationId ? [publicationId] : [];
+  return (
+    db.prepare(`SELECT 1 FROM sessions WHERE ${predicate} LIMIT 1`).get(...params) !== undefined
+  );
+}
+
+export function hasPublicationStaging(db: SQLiteDatabase): boolean {
+  const payload = db.prepare("SELECT 1 FROM search_index_publication_entries LIMIT 1").get();
+  return payload !== undefined || hasLegacyPublicationRows(db);
+}
+
 function deleteLegacyPublicationRows(db: SQLiteDatabase, publicationId?: string): void {
   // Schema v21 could leave staged heads and their live detail rows after an interruption.
   const predicate = publicationId
@@ -112,7 +125,9 @@ function deleteLegacyPublicationRows(db: SQLiteDatabase, publicationId?: string)
 }
 
 export function discardPublicationStaging(db: SQLiteDatabase, publicationId?: string): void {
-  deleteLegacyPublicationRows(db, publicationId);
+  if (hasLegacyPublicationRows(db, publicationId)) {
+    deleteLegacyPublicationRows(db, publicationId);
+  }
   if (publicationId) {
     deletePublicationPayloads(db, publicationId);
   } else {
