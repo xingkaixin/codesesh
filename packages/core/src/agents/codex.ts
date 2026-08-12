@@ -34,7 +34,7 @@ const PLAN_APPROVAL_PREFIX = "PLEASE IMPLEMENT THIS PLAN";
 const SUBAGENT_NOTIFICATION_PATTERN =
   /<subagent_notification>\s*([\s\S]*?)\s*<\/subagent_notification>/;
 const HEAD_INDEX_VERSION = "codex-head-v1";
-const PARSER_VERSION = "codex-parser-v7";
+const PARSER_VERSION = "codex-parser-v8";
 
 export function resolveCodexDataRoot(): string {
   return resolveHomePath("CODEX_HOME", ".codex");
