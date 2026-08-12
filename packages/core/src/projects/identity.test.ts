@@ -54,6 +54,9 @@ describe("normalizeGitRemote", () => {
     expect(normalizeGitRemote("https://github.com/xingkaixin/codesesh.git")).toBe(
       "github.com/xingkaixin/codesesh",
     );
+    expect(normalizeGitRemote("ssh://git@github.com:22/xingkaixin/codesesh.git")).toBe(
+      "github.com/xingkaixin/codesesh",
+    );
   });
 });
 
@@ -121,6 +124,19 @@ describe("computeIdentity", () => {
     expect(computeIdentity("/workspace/tool/src", fs)).toEqual({
       kind: "manifest_path",
       key: "/workspace/tool",
+      displayName: "tool",
+    });
+  });
+
+  it("treats a backslash inside an absolute POSIX path as a filename character", () => {
+    const project = "/Users/test/we\\ird/tool";
+    const fs = createFs({
+      [`${project}/package.json`]: JSON.stringify({ name: "tool" }),
+    });
+
+    expect(computeIdentity(`${project}/src`, fs)).toEqual({
+      kind: "manifest_path",
+      key: project,
       displayName: "tool",
     });
   });

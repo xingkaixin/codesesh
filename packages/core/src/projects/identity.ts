@@ -11,7 +11,7 @@ export interface IdentityFs {
   spawn(cmd: string, args: string[], opts: { cwd: string }): { stdout: string; exitCode: number };
 }
 
-export const PROJECT_IDENTITY_RESOLVER_REVISION = "project-identity-v1";
+export const PROJECT_IDENTITY_RESOLVER_REVISION = "project-identity-v2";
 
 export interface ProjectIdentityProjection {
   identity: ProjectIdentity;
@@ -48,10 +48,19 @@ export {
 
 export function normalizeGitRemote(url: string): string | null {
   if (!url) return null;
-  let value = url.trim().replace(/\.git$/, "");
-  const sshMatch = value.match(/^[^@]+@([^:]+):(.+)$/);
-  if (sshMatch) value = `${sshMatch[1]}/${sshMatch[2]}`;
-  value = value.replace(/^[a-z]+:\/\/(?:[^@/]*@)?/i, "");
+  let value = url.trim();
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(value)) {
+    try {
+      const parsed = new URL(value);
+      value = `${parsed.hostname}${parsed.pathname}`;
+    } catch {
+      return null;
+    }
+  } else {
+    const sshMatch = value.match(/^[^@]+@([^:]+):(.+)$/);
+    if (sshMatch) value = `${sshMatch[1]}/${sshMatch[2]}`;
+  }
+  value = value.replace(/\.git$/, "");
   if (!value.includes("/")) return null;
   return value.toLowerCase();
 }
@@ -230,7 +239,7 @@ function synthesizeCodexScratchIdentity(
 }
 
 function getPathOps(input: string): PathOps {
-  if (/^[a-zA-Z]:[\\/]/.test(input) || input.startsWith("\\\\") || input.includes("\\")) {
+  if (/^[a-zA-Z]:[\\/]/.test(input) || input.startsWith("\\\\")) {
     return path.win32;
   }
   if (input.startsWith("/")) return path.posix;
