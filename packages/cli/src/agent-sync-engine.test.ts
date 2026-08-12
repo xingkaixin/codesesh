@@ -754,6 +754,46 @@ describe("AgentSyncEngine", () => {
     ]);
   });
 
+  it("persists meta-only changes reported by a full rescan", async () => {
+    // Regression test for the zcode/opencode startup loop: checkForChanges kept
+    // reporting stale cache meta (missing pricingCaptureEpoch), the full rescan
+    // repaired it in memory, but the signature-only persistence diff dropped the
+    // meta-only change, so the repaired meta never reached disk and the next
+    // startup rescanned again.
+    const steady = makeSession("steady");
+    const staleMeta = { steady: { id: "steady", sourcePath: "/database" } };
+    const repairedMeta = {
+      steady: { id: "steady", sourcePath: "/database", pricingCaptureEpoch: "pricing-capture-v1" },
+    };
+    let currentMeta = new Map(Object.entries(staleMeta));
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async () =>
+        workerResult({ sessions: [steady], meta: repairedMeta, changedIds: [steady.id] }),
+      ),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const agent = makeAgent({
+      checkForChanges: () => ({ hasChanges: true, timestamp: 2 }),
+      getSessionMetaMap: () => currentMeta,
+      setSessionMetaMap: ((meta: Map<string, never>) => {
+        currentMeta = meta;
+      }) as BaseAgent["setSessionMetaMap"],
+    });
+    const { engine } = makeEngine(agent, [steady], workerRunner);
+
+    await engine.refresh("codex");
+
+    expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
+      expect.objectContaining({
+        kind: "changes",
+        agentName: "codex",
+        changes: [expect.objectContaining({ session: expect.objectContaining({ id: "steady" }) })],
+        meta: repairedMeta,
+      }),
+    ]);
+  });
+
   it("commits successful source updates while reporting retained parse failures", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const changed = makeSession("changed", "before");

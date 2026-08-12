@@ -16,7 +16,7 @@ import type {
   ScanRefreshWorkerMessage,
   ScanRefreshWorkerRunRequest,
 } from "./scan-refresh-worker.js";
-import { synchronizesSessionSources, type ScanRefreshOperation } from "./scan-refresh-operation.js";
+import type { ScanRefreshOperation } from "./scan-refresh-operation.js";
 import { toError } from "./errors.js";
 
 export interface WorkerPayload {
@@ -284,9 +284,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
           message.removedSessionIds,
         ),
         meta: applyMetaChanges(pending.payload.meta, message.meta, removedMetaIds),
-        changedIds: synchronizesSessionSources(pending.payload.operation)
-          ? replacedSessionIds
-          : undefined,
+        changedIds: replacedSessionIds,
         sourceFailures: message.sourceFailures,
         completeness: message.completeness,
         explicitRemovedSessionIds: message.explicitRemovedSessionIds,
