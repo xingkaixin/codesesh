@@ -37,7 +37,13 @@ function createAgent(basePath: string): KimiAgent {
   return agent as KimiAgent;
 }
 
-function createSessionDir(basePath: string, id: string, title: string, mtimeMs: number): string {
+function createSessionDir(
+  basePath: string,
+  id: string,
+  title: string,
+  mtimeMs: number,
+  createdAtMs = mtimeMs,
+): string {
   const sessionDir = join(basePath, PROJECT_HASH, id);
   mkdirSync(sessionDir, { recursive: true });
 
@@ -47,6 +53,7 @@ function createSessionDir(basePath: string, id: string, title: string, mtimeMs: 
     statePath,
     JSON.stringify({
       custom_title: title,
+      created_at: createdAtMs,
       wire_mtime: Math.floor(mtimeMs / 1000),
     }),
   );
@@ -118,7 +125,7 @@ describe("KimiAgent cache refresh", () => {
     expect(agent.getSessionMetaMap().has("deleted-session")).toBe(false);
   });
 
-  it("bounds listSessionSources to the createdAt window when options are passed", () => {
+  it("bounds listSessionSources to the activityAt window when options are passed", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-test-"));
     tempDirs.push(basePath);
     const oldTime = Date.now() - 30 * 24 * 60 * 60 * 1000;
@@ -148,10 +155,21 @@ describe("KimiAgent cache refresh", () => {
     const [head] = agent.scan();
     const meta = agent.getSessionMetaMap().get("windowed");
 
-    // diffSessionSources compares this against the scan window to tell
-    // "outside the window" apart from "deleted on disk", so it has to match
-    // the createdAt that listSessionSources filters on.
-    expect(meta?.sourceMtimeMs).toBe(head?.time_created);
+    expect(meta?.sourceMtimeMs).toBe(head?.time_updated);
+  });
+
+  it("keeps creation time separate from transcript activity", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-test-"));
+    tempDirs.push(basePath);
+    createSessionDir(basePath, "separate-times", "Separate times", 5_000, 1_000);
+
+    const agent = createAgent(basePath);
+    const [head] = agent.scan();
+
+    expect(head).toMatchObject({
+      time_created: 1_000,
+      time_updated: 5_000,
+    });
   });
 
   it("keeps out-of-window sessions out of the change set during a windowed refresh", () => {
@@ -233,6 +251,57 @@ describe("KimiAgent cache refresh", () => {
         output: [{ type: "text", text: '{ "name": "codesesh-monorepo" }' }],
       },
     });
+  });
+
+  it("preserves wire timestamps on assistant messages", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-test-"));
+    tempDirs.push(basePath);
+    const sessionDir = createSessionDir(basePath, "wire-times", "Wire times", 6_000, 1_000);
+    rmSync(join(sessionDir, "context.jsonl"));
+    writeFileSync(
+      join(sessionDir, "wire.jsonl"),
+      [
+        JSON.stringify({
+          timestamp: 1,
+          message: { type: "TurnBegin", payload: { user_input: ["First"] } },
+        }),
+        JSON.stringify({
+          timestamp: 2,
+          message: { type: "ContentPart", payload: { type: "think", think: "Reason" } },
+        }),
+        JSON.stringify({
+          timestamp: 3,
+          message: { type: "TurnBegin", payload: { user_input: ["Second"] } },
+        }),
+        JSON.stringify({
+          timestamp: 4,
+          message: { type: "ContentPart", payload: { type: "text", text: "Answer" } },
+        }),
+        JSON.stringify({
+          timestamp: 5,
+          message: { type: "TurnBegin", payload: { user_input: ["Third"] } },
+        }),
+        JSON.stringify({
+          timestamp: 6,
+          message: {
+            type: "ToolCall",
+            payload: {
+              id: "call-1",
+              function: { name: "ReadFile", arguments: '{"path":"package.json"}' },
+            },
+          },
+        }),
+        "",
+      ].join("\n"),
+    );
+
+    const agent = createAgent(basePath);
+    agent.scan();
+
+    const assistantMessages = agent
+      .getSessionData("wire-times")
+      .messages.filter((message) => message.role === "assistant");
+    expect(assistantMessages.map((message) => message.time_created)).toEqual([2_000, 4_000, 6_000]);
   });
 
   it("uses the first user message as fallback title", () => {
@@ -341,7 +410,7 @@ describe("KimiAgent cache refresh", () => {
     });
   });
 
-  it("falls back to file mtime and reports drift when state.json wire_mtime is not a number", () => {
+  it("falls back to filesystem times and reports drift when wire_mtime is not a number", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-test-"));
     tempDirs.push(basePath);
     const sessionDir = join(basePath, PROJECT_HASH, "mtime-drift");
@@ -363,7 +432,7 @@ describe("KimiAgent cache refresh", () => {
     const agent = createAgent(basePath);
     const [head] = agent.scan();
 
-    expect(head?.time_created).toBe(statSync(statePath).mtimeMs);
+    expect(head?.time_created).toBe(statSync(sessionDir).birthtimeMs);
     expect(calls).toContainEqual({
       event: "agent.field_shape_mismatch",
       detail: { agentName: "kimi", field: "session.wire_mtime" },

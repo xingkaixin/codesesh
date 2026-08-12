@@ -41,6 +41,7 @@ const KIMI_TOOL_TITLE_MAP: Record<string, string> = {
 };
 
 const KIMI_IGNORED_TOOLS = new Set(["SetTodoList"]);
+const KIMI_PARSER_REVISION = "kimi-parser-v1";
 
 export function resolveKimiDataRoot(): string {
   return resolveHomePath("KIMI_SHARE_DIR", ".kimi");
@@ -61,17 +62,13 @@ interface SessionSource {
   contextFile: string | null;
   wireFile: string | null;
   createdAt: number;
+  activityAt: number;
   metaFile: string;
   explicitTitle: string;
 }
 
 interface SessionMeta extends SessionCacheMeta, SessionSource {
   title: string;
-  /**
-   * Mirrors createdAt, which is what listSessionSources window-filters on.
-   * diffSessionSources compares this against the scan window to tell "outside
-   * the window" apart from "deleted on disk"; the two must be the same quantity.
-   */
   sourceMtimeMs: number;
 }
 
@@ -83,6 +80,16 @@ function readWireMtime(record: Record<string, unknown>): number | null {
 /** Reads a wire record's `timestamp`; reports drift when the field is present but not a number. */
 function readWireTimestamp(record: Record<string, unknown>): number {
   return narrowField("kimi", "wire.timestamp", record.timestamp, asNumber) ?? 0;
+}
+
+function parseTimestamp(raw: unknown): number | null {
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  if (typeof raw !== "string" || raw.trim() === "") return null;
+
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric)) return numeric;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 /** Reads a token count from a usage record; reports drift when the field is present but not a number. */
@@ -274,25 +281,31 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       let explicitTitle = "";
       let wireMtime: number | null = null;
       let metaFile = "";
+      let metadata: Record<string, unknown> = {};
 
       if (existsSync(statePath)) {
-        const state = asRecord(JSON.parse(readFileSync(statePath, "utf-8"))) ?? {};
-        explicitTitle = String(state.custom_title ?? "");
-        wireMtime = readWireMtime(state);
+        metadata = asRecord(JSON.parse(readFileSync(statePath, "utf-8"))) ?? {};
+        explicitTitle = String(metadata.custom_title ?? "");
+        wireMtime = readWireMtime(metadata);
         metaFile = statePath;
       } else if (existsSync(metaPath)) {
-        const meta = asRecord(JSON.parse(readFileSync(metaPath, "utf-8"))) ?? {};
-        explicitTitle = String(meta.title ?? "");
-        wireMtime = readWireMtime(meta);
+        metadata = asRecord(JSON.parse(readFileSync(metaPath, "utf-8"))) ?? {};
+        explicitTitle = String(metadata.title ?? "");
+        wireMtime = readWireMtime(metadata);
         metaFile = metaPath;
       }
 
+      const sessionStat = statSync(sessionDir);
       const createdAt =
-        wireMtime !== null
-          ? wireMtime * 1000
-          : metaFile
-            ? statSync(metaFile).mtimeMs
-            : statSync(sessionDir).mtimeMs;
+        parseTimestamp(metadata.createdAt) ??
+        parseTimestamp(metadata.created_at) ??
+        (sessionStat.birthtimeMs > 0 ? sessionStat.birthtimeMs : sessionStat.ctimeMs);
+      const activityAt = Math.max(
+        createdAt,
+        wireMtime === null ? 0 : wireMtime * 1000,
+        existingContextFile ? statSync(existingContextFile).mtimeMs : 0,
+        existingWireFile ? statSync(existingWireFile).mtimeMs : 0,
+      );
 
       return parsedSession({
         id: sessionId,
@@ -301,6 +314,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
         contextFile: existingContextFile,
         wireFile: existingWireFile,
         createdAt,
+        activityAt,
         metaFile,
         explicitTitle,
       });
@@ -322,7 +336,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       normalizeTitleText(source.explicitTitle) ??
       resolveSessionTitle(null, extractFirstUserTitle(source.contextFile, source.wireFile), null);
 
-    return parsedSession({ ...source, title, sourceMtimeMs: source.createdAt });
+    return parsedSession({ ...source, title, sourceMtimeMs: source.activityAt });
   }
 
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {
@@ -330,7 +344,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     const refs: SessionSourceRef[] = [];
     for (const dir of this.listSessionDirs()) {
       const source = getParsedSession(this.resolveSessionSourceResult(dir));
-      if (!source || !matchesScanWindow(source.createdAt, options)) continue;
+      if (!source || !matchesScanWindow(source.activityAt, options)) continue;
       refs.push({
         sessionId: source.id,
         sourcePath: source.sourcePath,
@@ -363,7 +377,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       title: meta.title,
       directory: meta.cwd,
       time_created: meta.createdAt,
-      time_updated: meta.createdAt,
+      time_updated: meta.activityAt,
       stats,
     });
   }
@@ -503,7 +517,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
             if (text) {
               builder.appendAssistantPart(
                 { type: "reasoning", text, time_created: timestampMs },
-                { id: `wire-${seq}`, timestampMs: 0, agent: "kimi" },
+                { id: `wire-${seq}`, timestampMs, agent: "kimi" },
                 { grouping: "current" },
               );
             }
@@ -512,7 +526,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
             if (text) {
               builder.appendAssistantPart(
                 { type: "text", text, time_created: timestampMs },
-                { id: `wire-${seq}`, timestampMs: 0, agent: "kimi" },
+                { id: `wire-${seq}`, timestampMs, agent: "kimi" },
                 { grouping: "current" },
               );
             }
@@ -549,7 +563,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
 
           builder.appendToolCall(
             toolPart,
-            { id: `wire-${seq}`, timestampMs: 0, agent: "kimi" },
+            { id: `wire-${seq}`, timestampMs, agent: "kimi" },
             { markModeAsTool: true, target: "current" },
           );
           openToolCallId = callId;
@@ -604,10 +618,21 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
 
   private sourceFingerprint(meta: Pick<SessionSource, "metaFile" | "contextFile" | "wireFile">) {
     return JSON.stringify([
-      this.readFileMtimeMs(meta.metaFile),
-      this.readFileMtimeMs(meta.contextFile),
-      this.readFileMtimeMs(meta.wireFile),
+      KIMI_PARSER_REVISION,
+      ...this.fileSnapshot(meta.metaFile),
+      ...this.fileSnapshot(meta.contextFile),
+      ...this.fileSnapshot(meta.wireFile),
     ]);
+  }
+
+  private fileSnapshot(filePath: string | null): [number | null, number | null] {
+    if (!filePath) return [null, null];
+    try {
+      const stat = statSync(filePath);
+      return [stat.mtimeMs, stat.size];
+    } catch {
+      return [null, null];
+    }
   }
 
   private buildContextAssistantMessage(
@@ -739,40 +764,37 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       message_count: 0,
     };
 
-    const wirePath = join(sessionDir, "wire.jsonl");
-    if (!existsSync(wirePath)) return stats;
-
-    // The `_usage` running total is read from context.jsonl when it exists.
-    // Otherwise it lives in wire.jsonl — the same file this pass already walks,
-    // so fold it in here rather than reading wire.jsonl a second time.
     const contextPath = join(sessionDir, "context.jsonl");
     const hasContext = existsSync(contextPath);
-
-    try {
-      for (const record of readJsonlFile(wirePath)) {
-        const tokenUsage = asRecord(asRecord(record.message)?.usage);
-        if (tokenUsage) {
-          const inputTokens = extractTokenField(tokenUsage, "input_tokens");
-          const outputTokens = extractTokenField(tokenUsage, "output_tokens");
-          stats.total_input_tokens += inputTokens;
-          stats.total_output_tokens += outputTokens;
-          const cost = estimateTokenCost(this.defaultModel, {
-            input: inputTokens,
-            output: outputTokens,
-          });
-          if (cost !== null) totalCost += cost;
-        }
-        if (!hasContext) this.applyUsageTotal(record, stats);
-      }
-    } catch {
-      // skip unreadable wire logs
-    }
 
     if (hasContext) {
       try {
         for (const record of readJsonlFile(contextPath)) this.applyUsageTotal(record, stats);
       } catch {
         // skip unreadable context logs
+      }
+    }
+
+    const wirePath = join(sessionDir, "wire.jsonl");
+    if (existsSync(wirePath)) {
+      try {
+        for (const record of readJsonlFile(wirePath)) {
+          const tokenUsage = asRecord(asRecord(record.message)?.usage);
+          if (tokenUsage) {
+            const inputTokens = extractTokenField(tokenUsage, "input_tokens");
+            const outputTokens = extractTokenField(tokenUsage, "output_tokens");
+            stats.total_input_tokens += inputTokens;
+            stats.total_output_tokens += outputTokens;
+            const cost = estimateTokenCost(this.defaultModel, {
+              input: inputTokens,
+              output: outputTokens,
+            });
+            if (cost !== null) totalCost += cost;
+          }
+          if (!hasContext) this.applyUsageTotal(record, stats);
+        }
+      } catch {
+        // skip unreadable wire logs
       }
     }
 
@@ -797,7 +819,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       slug: `kimi/${meta.id}`,
       directory: meta.cwd,
       time_created: meta.createdAt,
-      time_updated: meta.createdAt,
+      time_updated: meta.activityAt,
       stats: transcript.stats,
       messages: transcript.messages,
     };

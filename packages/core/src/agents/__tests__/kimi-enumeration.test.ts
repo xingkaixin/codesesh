@@ -97,7 +97,7 @@ describe("KimiAgent source enumeration", () => {
     expect(transcriptReadsSince(marks)).toEqual([]);
   });
 
-  it("skips the transcript title fallback when state.json carries a title", () => {
+  it("reads context once for stats when state.json carries a title", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-enum-"));
     tempDirs.push(basePath);
     createSessionDir(basePath, "titled", "Explicit title");
@@ -108,7 +108,7 @@ describe("KimiAgent source enumeration", () => {
     const head = agent.scanSessionSource(sourcePath);
 
     expect(head?.title).toBe("Explicit title");
-    expect(transcriptReadsSince(marks)).not.toContain(join(sourcePath, "context.jsonl"));
+    expect(transcriptReadsSince(marks)).toEqual([join(sourcePath, "context.jsonl")]);
   });
 
   it("still falls back to the first user message when no explicit title exists", () => {
@@ -122,7 +122,7 @@ describe("KimiAgent source enumeration", () => {
     expect(head?.title).toBe("first message of untitled");
   });
 
-  it("keeps the fingerprint bound to metadata and transcript mtimes only", () => {
+  it("fingerprints the parser revision, metadata, and transcript snapshots", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-enum-"));
     tempDirs.push(basePath);
     const sourcePath = createSessionDir(basePath, "fingerprint", "Fingerprint");
@@ -141,16 +141,25 @@ describe("KimiAgent source enumeration", () => {
     expect(before).toEqual({
       sessionId: "fingerprint",
       sourcePath,
-      fingerprint: JSON.stringify([stateTime.getTime(), pinned.getTime(), null]),
+      fingerprint: JSON.stringify([
+        "kimi-parser-v1",
+        stateTime.getTime(),
+        statSync(statePath).size,
+        pinned.getTime(),
+        statSync(contextPath).size,
+        null,
+        null,
+      ]),
     });
 
-    // Rewriting the transcript body without moving its mtime must not move the
-    // fingerprint: enumeration only observes mtimes, never content.
-    writeFileSync(contextPath, JSON.stringify({ role: "user", content: "rewritten" }) + "\n");
+    writeFileSync(
+      contextPath,
+      JSON.stringify({ role: "user", content: "a longer rewritten message" }) + "\n",
+    );
     utimesSync(contextPath, pinned, pinned);
 
     expect(statSync(contextPath).mtimeMs).toBe(pinned.getTime());
-    expect(agent.listSessionSources()[0]?.fingerprint).toBe(before?.fingerprint);
+    expect(agent.listSessionSources()[0]?.fingerprint).not.toBe(before?.fingerprint);
   });
 });
 
@@ -215,5 +224,20 @@ describe("KimiAgent stats extraction", () => {
       total_output_tokens: 5,
       total_tokens: 42,
     });
+  });
+
+  it("reads usage totals from a context-only session", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-stats-"));
+    tempDirs.push(basePath);
+    const sourcePath = createSessionDir(basePath, "context-only", "Context only");
+    writeFileSync(
+      join(sourcePath, "context.jsonl"),
+      JSON.stringify({ role: "_usage", token_count: 42 }) + "\n",
+    );
+
+    const agent = createAgent(basePath);
+    const head = agent.scanSessionSource(sourcePath);
+
+    expect(head?.stats.total_tokens).toBe(42);
   });
 });
