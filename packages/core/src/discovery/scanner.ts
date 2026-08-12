@@ -116,6 +116,28 @@ export interface SessionTagTiming {
   classifySessionTagsMs: number;
 }
 
+function buildAgentScanOptions(
+  agent: BaseAgent,
+  options: ScanOptions,
+  onProgress?: (progress: ScanProgress) => void,
+): AgentScanOptions {
+  return {
+    from: options.from,
+    to: options.to,
+    fast: options.fast,
+    includeRelatedSessions: true,
+    onProgress: (progress) => {
+      onProgress?.({
+        agent: agent.name,
+        phase: "incremental",
+        cachedCount: progress.total,
+        newCount: progress.sessions,
+        changedCount: progress.processed,
+      });
+    },
+  };
+}
+
 interface SuccessfulAgentScanResult {
   status: "complete" | "partial";
   agent: BaseAgent;
@@ -144,6 +166,7 @@ type AgentScanFinalization =
       kind: "incremental";
       cached: CachedResult;
       changedIds: string[];
+      explicitRemovedSessionIds?: string[];
       cacheTimestamp: number;
     };
 
@@ -172,14 +195,16 @@ function saveCachedSessionDiff(
   cachedSessions: SessionHead[],
   updatedSessions: SessionHead[],
   changedIds: string[] = [],
+  completeness: "complete" | "partial" = "complete",
+  explicitRemovedSessionIds: readonly string[] = [],
 ): void {
   const diff = computeSessionDiff(cachedSessions, updatedSessions, changedIds, sessionSignature);
-  saveCachedSessionChanges(
-    agent.name,
-    diff.changes,
-    diff.removedSessionIds,
-    buildAgentCacheMeta(agent),
-  );
+  const explicitRemovals = new Set(explicitRemovedSessionIds);
+  const removedSessionIds =
+    completeness === "complete"
+      ? diff.removedSessionIds
+      : diff.removedSessionIds.filter((sessionId) => explicitRemovals.has(sessionId));
+  saveCachedSessionChanges(agent.name, diff.changes, removedSessionIds, buildAgentCacheMeta(agent));
 }
 
 function getSmartTagWorkerCount(sessionCount: number): number {
@@ -407,6 +432,8 @@ export async function finalizeAgentScan(
         finalization.cached.sessions,
         tagged.sessions,
         finalization.changedIds,
+        context.completeness,
+        finalization.explicitRemovedSessionIds,
       );
     } else if (finalization.kind === "unchanged" && (identityChanged || tagged.changed)) {
       saveCachedSessionDiff(agent, finalization.cached.sessions, tagged.sessions);
@@ -482,6 +509,7 @@ async function refreshCachedFileAgent(
       kind: "incremental",
       cached,
       changedIds: synchronization.changedSessionIds,
+      explicitRemovedSessionIds: synchronization.explicitRemovedSessionIds,
       cacheTimestamp: Date.now(),
     },
     options,
@@ -566,8 +594,14 @@ async function scanAgentSmart(
         });
 
         const t2 = performance.now();
+        const scanOptions = buildAgentScanOptions(agent, options, onProgress);
         const updatedSessions = await Promise.resolve(
-          agent.incrementalScan(cached.sessions, checkResult.changedIds || [], checkResult.refs),
+          agent.incrementalScan(
+            cached.sessions,
+            checkResult.changedIds || [],
+            checkResult.refs,
+            scanOptions,
+          ),
         );
         timing.scan = performance.now() - t2;
 
@@ -581,7 +615,12 @@ async function scanAgentSmart(
           options,
           timing,
           agentStart,
-          completeness: (checkResult.sourceFailures?.length ?? 0) > 0 ? "partial" : "complete",
+          completeness:
+            options.from == null &&
+            options.to == null &&
+            (checkResult.sourceFailures?.length ?? 0) === 0
+              ? "complete"
+              : "partial",
           onProgress,
         });
       }
@@ -627,21 +666,7 @@ async function scanAgentFull(
   try {
     const scanMarker = perf.start(`agent:${agent.name}:scan`);
     const t0 = performance.now();
-    const agentScanOptions: AgentScanOptions = {
-      from: options.from,
-      to: options.to,
-      fast: options.fast,
-      includeRelatedSessions: true,
-      onProgress: (progress) => {
-        onProgress?.({
-          agent: agent.name,
-          phase: "incremental",
-          cachedCount: progress.total,
-          newCount: progress.sessions,
-          changedCount: progress.processed,
-        });
-      },
-    };
+    const agentScanOptions = buildAgentScanOptions(agent, options, onProgress);
     let heads: SessionHead[];
     let sourceFailures: SessionSourceFailure[] = [];
     if (agent instanceof FileSystemSessionSource) {

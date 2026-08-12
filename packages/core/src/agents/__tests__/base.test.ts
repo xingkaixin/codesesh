@@ -642,6 +642,7 @@ describe("DatabaseSessionSource", () => {
     readonly name = "fakedb";
     readonly displayName = "Fake DB";
     scanCount = 0;
+    lastScanOptions: AgentScanOptions | undefined;
 
     constructor(private dbPath: string | null) {
       super();
@@ -655,8 +656,9 @@ describe("DatabaseSessionSource", () => {
       return { status: "not-needed" as const, reason: "temporary test database" };
     }
 
-    scan(_options?: AgentScanOptions): SessionHead[] {
+    scan(options?: AgentScanOptions): SessionHead[] {
       this.scanCount += 1;
+      this.lastScanOptions = options;
       return [makeSession("db-1")];
     }
 
@@ -712,8 +714,10 @@ describe("DatabaseSessionSource", () => {
 
   it("incrementalScan delegates to a full scan", () => {
     const agent = new FakeDatabaseSource(makeDb());
-    const sessions = agent.incrementalScan([makeSession("stale")], ["stale"]);
+    const options = { from: 1_000, to: 2_000 };
+    const sessions = agent.incrementalScan([makeSession("stale")], ["stale"], undefined, options);
     expect(agent.scanCount).toBe(1);
+    expect(agent.lastScanOptions).toEqual(options);
     expect(sessions.map((s) => s.id)).toEqual(["db-1"]);
   });
 

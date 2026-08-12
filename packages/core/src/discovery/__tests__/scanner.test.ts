@@ -847,24 +847,37 @@ describe("scanSessions", () => {
       meta: {},
       timestamp: Date.now(),
     });
-    mockedCreateRegisteredAgents.mockReturnValue([
-      createTestAgent({
-        name: "test",
-        available: true,
-        sessions: refreshedSessions,
-        checkForChangesResult: {
-          hasChanges: true,
-          changedIds: ["fresh"],
-          timestamp: Date.now(),
-        },
-        incrementalScanResult: refreshedSessions,
-      }),
-    ]);
+    const agent = createTestAgent({
+      name: "test",
+      available: true,
+      sessions: refreshedSessions,
+      checkForChangesResult: {
+        hasChanges: true,
+        changedIds: ["fresh"],
+        timestamp: Date.now(),
+      },
+      incrementalScanResult: refreshedSessions,
+    });
+    const incrementalScan = vi.spyOn(agent, "incrementalScan");
+    mockedCreateRegisteredAgents.mockReturnValue([agent]);
 
-    const result = await scanSessions({ useCache: true, smartRefresh: false });
+    const result = await scanSessions({
+      useCache: true,
+      smartRefresh: false,
+      from: 500,
+      to: 1_500,
+      fast: true,
+    });
 
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions[0]!.id).toBe("fresh");
+    expect(incrementalScan).toHaveBeenCalledWith(cachedSessions, ["fresh"], undefined, {
+      from: 500,
+      to: 1_500,
+      fast: true,
+      includeRelatedSessions: true,
+      onProgress: expect.any(Function),
+    });
     expect(mockedSaveCachedSessions).not.toHaveBeenCalled();
     expect(mockedSaveCachedSessionChanges).toHaveBeenCalledWith(
       "test",
@@ -879,7 +892,7 @@ describe("scanSessions", () => {
           sortIndex: 0,
         },
       ],
-      ["cached"],
+      [],
       {},
     );
   });

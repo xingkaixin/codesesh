@@ -254,12 +254,14 @@ export abstract class BaseAgent {
    * 增量扫描（仅扫描变更的会话）
    * @param cachedSessions 缓存的会话列表
    * @param changedIds 变更的会话 ID 列表
+   * @param scanOptions 扫描窗口与解析选项
    * @returns 更新后的会话列表
    */
   abstract incrementalScan(
     cachedSessions: SessionHead[],
     changedIds: string[],
     refs?: SessionSourceRef[],
+    scanOptions?: AgentScanOptions,
   ): Promise<SessionHead[]> | SessionHead[];
 
   filterCachedSessions(sessions: SessionHead[]): SessionHead[] {
@@ -479,6 +481,7 @@ export abstract class FileSystemSessionSource<
     cachedSessions: SessionHead[],
     changedIds: string[],
     refs?: SessionSourceRef[],
+    _scanOptions?: AgentScanOptions,
   ): SessionHead[] {
     return this.synchronizeSessionSources(
       { sessions: cachedSessions, meta: this.sessionMetaMap },
@@ -705,7 +708,12 @@ export abstract class DatabaseSessionSource extends BaseAgent {
   }
 
   /** 增量扫描：数据库型无法增量，直接全量重扫。 */
-  incrementalScan(_cachedSessions: SessionHead[], _changedIds: string[]): SessionHead[] {
-    return this.scan();
+  incrementalScan(
+    _cachedSessions: SessionHead[],
+    _changedIds: string[],
+    _refs?: SessionSourceRef[],
+    scanOptions?: AgentScanOptions,
+  ): SessionHead[] {
+    return this.scan(scanOptions);
   }
 }

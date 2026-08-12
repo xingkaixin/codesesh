@@ -511,9 +511,10 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
     cachedSessions: SessionHead[],
     changedIds: string[],
     refs?: SessionSourceRef[],
+    scanOptions?: AgentScanOptions,
   ): SessionHead[] {
     const visibleSessions = this.removeEmptyCachedSessions(cachedSessions);
-    return super.incrementalScan(visibleSessions, changedIds, refs);
+    return super.incrementalScan(visibleSessions, changedIds, refs, scanOptions);
   }
 
   private hasMessages(session: SessionHead): boolean {
