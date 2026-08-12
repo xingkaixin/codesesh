@@ -154,6 +154,22 @@ describe("CS-142: Cursor scan shape", () => {
     expect(heads.map((head) => head.id)).toEqual(["new"]);
   });
 
+  it("releases composers excluded from the next scan", () => {
+    const dbPath = createDb([
+      composer("stale"),
+      ...bubbles("stale", [{ suffix: "a", bubble: { type: 1, text: "old" } }]),
+    ]);
+    const agent = makeAgent(dbPath);
+
+    agent.scan({ from: 0 });
+    expect((agent as any).composerCache.has("stale")).toBe(true);
+
+    agent.scan({ from: 3_000 });
+
+    expect((agent as any).composerCache.has("stale")).toBe(false);
+    expect(textOf(agent, "stale")).toEqual(["old"]);
+  });
+
   it("uses the same update-time fallback in heads and details", () => {
     const dbPath = createDb([
       composer("c1", { lastUpdatedAt: undefined, lastSendTime: 2_500 }),

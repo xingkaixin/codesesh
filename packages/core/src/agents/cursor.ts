@@ -487,8 +487,8 @@ export class CursorAgent extends DatabaseSessionSource {
 
   private dbPath: string | null = null;
 
-  // Cache composer data from scan so getSessionData can reuse it
   private composerCache = new Map<string, ComposerData>();
+  private directoryCache = new Map<string, string>();
 
   protected getDatabasePath(): string | null {
     if (!this.dbPath) {
@@ -603,6 +603,8 @@ export class CursorAgent extends DatabaseSessionSource {
   }
 
   scan(options?: AgentScanOptions): SessionHead[] {
+    this.composerCache.clear();
+    this.directoryCache.clear();
     if (!this.dbPath) return [];
 
     const scanMarker = perf.start("cursor:scan");
@@ -678,6 +680,7 @@ export class CursorAgent extends DatabaseSessionSource {
             emitted.set(order, head);
             order += 1;
             this.composerCache.set(composerId, composer);
+            if (directory) this.directoryCache.set(composerId, directory);
             continue;
           }
 
@@ -805,12 +808,8 @@ export class CursorAgent extends DatabaseSessionSource {
           }) ?? 0;
       }
 
-      // Retrieve directory from cache (populated during scan) or build map on demand
-      const cachedDir = this.composerCache.get(`__dir__${composerId}`);
       const directory =
-        (cachedDir as unknown as { directory?: string })?.directory ??
-        this.buildWorkspacePathMap().get(composerId) ??
-        "";
+        this.directoryCache.get(composerId) ?? this.buildWorkspacePathMap().get(composerId) ?? "";
 
       return {
         reference: { agentName: this.name, sessionId: composerId },
@@ -913,14 +912,7 @@ export class CursorAgent extends DatabaseSessionSource {
     const hasModelUsage = Object.keys(modelUsageMap).length > 0;
 
     this.composerCache.set(composerId, composer);
-    this.composerCache.set(`__mapping__${composerId}`, {
-      sessionId: composerId,
-    } as unknown as ComposerData);
-    if (directory) {
-      this.composerCache.set(`__dir__${composerId}`, {
-        directory,
-      } as unknown as ComposerData);
-    }
+    if (directory) this.directoryCache.set(composerId, directory);
     return {
       id: composerId,
       slug: `cursor/${composerId}`,
