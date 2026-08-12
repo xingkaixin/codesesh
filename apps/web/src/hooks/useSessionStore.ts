@@ -4,7 +4,7 @@ import {
   getSessionAgentKey,
 } from "@codesesh/core/contract";
 import { isCancelledError, queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type AgentInfo,
   type AppConfig,
@@ -80,14 +80,49 @@ function snapshotAggregatesOptions(window: AppConfig["window"]) {
   });
 }
 
-function sessionSnapshotOptions(window: AppConfig["window"]) {
+function sameWindow(
+  left: AppConfig["window"] | null | undefined,
+  right: AppConfig["window"] | null | undefined,
+): boolean {
+  return (
+    left != null &&
+    right != null &&
+    left.days === right.days &&
+    left.from === right.from &&
+    left.to === right.to
+  );
+}
+
+function sessionSnapshotOptions(
+  window: AppConfig["window"],
+  onPreview?: (snapshot: SessionStoreSnapshot) => void,
+) {
   return queryOptions({
     queryKey: queryKeys.sessionSnapshot(window),
     staleTime: Infinity,
     queryFn: async ({ signal }): Promise<SessionStoreSnapshot> => {
+      let loadedAggregates: SnapshotAggregates | undefined;
+      let firstPage: SessionHead[] | undefined;
+      const publishPreview = () => {
+        if (!loadedAggregates || !firstPage) return;
+        onPreview?.({ window, ...loadedAggregates, sessions: firstPage });
+      };
       const [aggregates, sessionResult] = await Promise.all([
-        fetchSnapshotAggregates(window, signal),
-        fetchSessions({ from: window.from, to: window.to }, { signal }),
+        fetchSnapshotAggregates(window, signal).then((value) => {
+          loadedAggregates = value;
+          publishPreview();
+          return value;
+        }),
+        fetchSessions(
+          { from: window.from, to: window.to },
+          { signal },
+          {
+            onFirstPage(sessions) {
+              firstPage = sessions;
+              publishPreview();
+            },
+          },
+        ),
       ]);
       return {
         window,
@@ -101,7 +136,9 @@ function sessionSnapshotOptions(window: AppConfig["window"]) {
 export function useSessionStore() {
   const queryClient = useQueryClient();
   const [requestedWindow, setRequestedWindow] = useState<AppConfig["window"] | null>(null);
+  const [previewSnapshot, setPreviewSnapshot] = useState<SessionStoreSnapshot | null>(null);
   const requestedWindowRef = useRef<AppConfig["window"] | null>(null);
+  const reloadVersionRef = useRef(0);
   const configQuery = useQuery({
     queryKey: queryKeys.config,
     retry: 2,
@@ -123,10 +160,19 @@ export function useSessionStore() {
   const refetchConfig = configQuery.refetch;
   const snapshot = snapshotQuery.data;
 
+  useEffect(() => {
+    if (previewSnapshot && sameWindow(snapshot?.window, previewSnapshot.window)) {
+      setPreviewSnapshot(null);
+    }
+  }, [previewSnapshot, snapshot]);
+
   const reload = useCallback(
     async (window: AppConfig["window"]): Promise<SessionStoreSnapshot | null> => {
+      const reloadVersion = reloadVersionRef.current + 1;
+      reloadVersionRef.current = reloadVersion;
       requestedWindowRef.current = window;
       setRequestedWindow(window);
+      setPreviewSnapshot(null);
       try {
         await queryClient.cancelQueries({ queryKey: queryKeys.sessionSnapshots });
         await queryClient.invalidateQueries({
@@ -134,7 +180,11 @@ export function useSessionStore() {
           exact: true,
           refetchType: "none",
         });
-        return await queryClient.fetchQuery(sessionSnapshotOptions(window));
+        return await queryClient.fetchQuery(
+          sessionSnapshotOptions(window, (preview) => {
+            if (reloadVersionRef.current === reloadVersion) setPreviewSnapshot(preview);
+          }),
+        );
       } catch (error) {
         if (isCancelledError(error)) return null;
         throw error;
@@ -227,7 +277,11 @@ export function useSessionStore() {
     await reload(activeWindow);
   }, [configFailed, refetchConfig, reload]);
 
-  const agents = snapshot?.agents ?? EMPTY_SNAPSHOT.agents;
+  const currentSnapshot = sameWindow(snapshot?.window, requestedWindow) ? snapshot : null;
+  const displayedSnapshot =
+    currentSnapshot ??
+    (sameWindow(previewSnapshot?.window, requestedWindow) ? previewSnapshot : null);
+  const agents = displayedSnapshot?.agents ?? EMPTY_SNAPSHOT.agents;
   const agentCatalog = useMemo(() => createAgentCatalog(agents), [agents]);
   const validAgentKeys = useMemo(
     () => new Set(agentCatalog.active.map((agent) => agent.name.toLowerCase())),
@@ -241,14 +295,15 @@ export function useSessionStore() {
 
   return {
     config: configQuery.data ?? null,
-    window: snapshot?.window ?? null,
+    window: displayedSnapshot?.window ?? null,
     agents,
-    sessions: snapshot?.sessions ?? EMPTY_SNAPSHOT.sessions,
-    projects: snapshot?.projects ?? EMPTY_SNAPSHOT.projects,
-    dashboard: snapshot?.dashboard ?? EMPTY_SNAPSHOT.dashboard,
+    sessions: displayedSnapshot?.sessions ?? EMPTY_SNAPSHOT.sessions,
+    projects: displayedSnapshot?.projects ?? EMPTY_SNAPSHOT.projects,
+    dashboard: displayedSnapshot?.dashboard ?? EMPTY_SNAPSHOT.dashboard,
     loading:
       configQuery.isPending ||
-      (!configQuery.isError && (requestedWindow === null || snapshotQuery.isPending)),
+      (!configQuery.isError &&
+        (requestedWindow === null || (snapshotQuery.isPending && displayedSnapshot === null))),
     error,
     version: snapshotQuery.dataUpdatedAt,
     activeAgents: agentCatalog.active,

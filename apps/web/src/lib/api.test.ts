@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SAMPLE_DASHBOARD_DATA } from "@codesesh/core/contract";
+import { SAMPLE_DASHBOARD_DATA, SAMPLE_SESSION_HEAD } from "@codesesh/core/contract";
 import type { DashboardFilters } from "./api";
 import {
   fetchAgents,
@@ -26,7 +26,7 @@ describe("abortable list requests", () => {
   ])("forwards the abort signal for %s", async (_name, request) => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({}),
+      json: () => Promise.resolve({ sessions: [] }),
     });
     vi.stubGlobal("fetch", fetchMock);
     const controller = new AbortController();
@@ -34,6 +34,69 @@ describe("abortable list requests", () => {
     await request(controller.signal);
 
     expect(fetchMock.mock.calls[0]?.[1]).toEqual({ signal: controller.signal });
+  });
+});
+
+describe("fetchSessions", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("collects cursor pages and publishes the first page", async () => {
+    const nextSession = {
+      ...SAMPLE_SESSION_HEAD,
+      id: "next-session",
+      slug: "claudecode/next-session",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ sessions: [SAMPLE_SESSION_HEAD], nextCursor: "next-page" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ sessions: [nextSession] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const onFirstPage = vi.fn();
+
+    const result = await fetchSessions({}, undefined, { onFirstPage });
+
+    expect(result.sessions).toEqual([SAMPLE_SESSION_HEAD, nextSession]);
+    expect(onFirstPage).toHaveBeenCalledWith([SAMPLE_SESSION_HEAD]);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/sessions?limit=250",
+      "/api/sessions?limit=250&cursor=next-page",
+    ]);
+  });
+
+  it("restarts pagination when the server snapshot changes", async () => {
+    const latestSession = {
+      ...SAMPLE_SESSION_HEAD,
+      id: "latest-session",
+      slug: "claudecode/latest-session",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ sessions: [SAMPLE_SESSION_HEAD], nextCursor: "stale" }),
+      })
+      .mockResolvedValueOnce({ ok: false, status: 409, statusText: "Conflict" })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ sessions: [latestSession] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const onFirstPage = vi.fn();
+
+    const result = await fetchSessions({}, undefined, { onFirstPage });
+
+    expect(result.sessions).toEqual([latestSession]);
+    expect(onFirstPage).toHaveBeenNthCalledWith(1, [SAMPLE_SESSION_HEAD]);
+    expect(onFirstPage).toHaveBeenNthCalledWith(2, [latestSession]);
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/sessions?limit=250");
   });
 });
 
@@ -143,7 +206,7 @@ describe("fetchSessionData", () => {
   it("forwards the abort signal to fetch", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({}),
+      json: () => Promise.resolve({ sessions: [] }),
     });
     vi.stubGlobal("fetch", fetchMock);
     const controller = new AbortController();
@@ -170,7 +233,7 @@ describe("project identity request filters", () => {
   ])("sends both identity fields for %s requests", async (_name, request) => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({}),
+      json: () => Promise.resolve({ sessions: [] }),
     });
     vi.stubGlobal("fetch", fetchMock);
 

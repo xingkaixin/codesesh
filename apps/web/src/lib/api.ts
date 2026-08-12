@@ -21,6 +21,7 @@ export type {
   MessagePart,
   Message,
   SessionDetail,
+  SessionListPage,
   SessionReference,
   ScanStatusEvent,
   BackfillStatus,
@@ -56,6 +57,7 @@ import type {
   ScanStatusEvent,
   SearchResult,
   SessionDetail,
+  SessionListPage,
   SessionReference,
   SessionHead,
   SessionsUpdatedEvent,
@@ -123,6 +125,13 @@ export interface FetchOptions {
   signal?: AbortSignal;
 }
 
+interface SessionFetchProgress {
+  onFirstPage?: (sessions: SessionHead[]) => void;
+}
+
+const SESSION_PAGE_SIZE = 250;
+const SESSION_STALE_RETRY_LIMIT = 2;
+
 /**
  * Which slice of the snapshot a dashboard request covers. Project and agent are
  * independent and either may be absent: no project means every project, no agent
@@ -137,9 +146,21 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, withRemoteAccess(init));
   if (!res.ok) {
     const method = init?.method ?? "GET";
-    throw new Error(`${method} ${path} failed: ${res.status} ${res.statusText}`);
+    throw new ApiRequestError(
+      `${method} ${path} failed: ${res.status} ${res.statusText}`,
+      res.status,
+    );
   }
   return res.json() as Promise<T>;
+}
+
+class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
 }
 
 export async function fetchConfig(options?: FetchOptions): Promise<AppConfig> {
@@ -182,13 +203,40 @@ export async function fetchSessions(
     to?: number;
   } = {},
   fetchOptions?: FetchOptions,
+  progress?: SessionFetchProgress,
 ): Promise<{ sessions: SessionHead[] }> {
-  const params = new URLSearchParams();
-  if (options.agent) params.set("agent", options.agent);
-  if (options.projectKind) params.set("projectKind", options.projectKind);
-  if (options.projectKey) params.set("projectKey", options.projectKey);
-  appendTimeWindow(params, options);
-  return fetchJson(`/api/sessions?${params}`, fetchOptions);
+  const baseParams = new URLSearchParams();
+  if (options.agent) baseParams.set("agent", options.agent);
+  if (options.projectKind) baseParams.set("projectKind", options.projectKind);
+  if (options.projectKey) baseParams.set("projectKey", options.projectKey);
+  appendTimeWindow(baseParams, options);
+
+  let staleRetries = 0;
+  while (true) {
+    try {
+      const sessions: SessionHead[] = [];
+      let cursor: string | undefined;
+      do {
+        const params = new URLSearchParams(baseParams);
+        params.set("limit", String(SESSION_PAGE_SIZE));
+        if (cursor) params.set("cursor", cursor);
+        const page = await fetchJson<SessionListPage>(`/api/sessions?${params}`, fetchOptions);
+        sessions.push(...page.sessions);
+        if (!cursor) progress?.onFirstPage?.([...sessions]);
+        cursor = page.nextCursor;
+      } while (cursor);
+      return { sessions };
+    } catch (error) {
+      if (
+        !(error instanceof ApiRequestError) ||
+        error.status !== 409 ||
+        staleRetries >= SESSION_STALE_RETRY_LIMIT
+      ) {
+        throw error;
+      }
+      staleRetries += 1;
+    }
+  }
 }
 
 export async function fetchSessionData(
