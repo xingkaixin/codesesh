@@ -34,8 +34,8 @@ import {
 } from "./base.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
-// v5: heads cached before pricing misses were tracked may hold stale zero costs.
-const HEAD_INDEX_VERSION = "claudecode-head-v5";
+// v6: heads created from internal-only local commands must be recomputed.
+const HEAD_INDEX_VERSION = "claudecode-head-v6";
 
 export function resolveClaudeCodeDataRoot(): string {
   return resolveHomePath("CLAUDE_CONFIG_DIR", ".claude");
@@ -607,6 +607,7 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
 
       try {
         if (isInternalEventType(data["type"])) continue;
+        if (data["isMeta"] === true) continue;
         const ts = parseTimestampMs(data);
         if (ts > updatedAt) updatedAt = ts;
 
@@ -623,7 +624,8 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
           if (msg["role"] !== undefined && role === undefined) {
             reportFieldMismatch("claudecode", "message.role");
           }
-          if (role?.trim()) {
+          const userTitle = role === "user" ? this.extractUserMessageTitle(msg["content"]) : null;
+          if (role?.trim() && (role !== "user" || userTitle !== null)) {
             messageCount++;
           }
           if (!model) {
@@ -632,9 +634,8 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
           }
           // Title fallback mirrors the removed extractTitle(): first non-empty
           // visible user text within the first 20 lines.
-          if (messageTitle === null && recordIndex < 20 && role === "user") {
-            const candidate = this.extractUserMessageTitle(msg["content"]);
-            if (candidate) messageTitle = candidate;
+          if (messageTitle === null && recordIndex < 20 && userTitle) {
+            messageTitle = userTitle;
           }
           if (role === "assistant") {
             const usage = extractClaudeUsage(data, msg);
