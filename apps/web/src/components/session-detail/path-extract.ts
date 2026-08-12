@@ -106,14 +106,24 @@ export function getDisplayPath(filePath: string, baseDirectory?: string) {
   return normalizedPath;
 }
 
+let relativePathPatternCache: { base: string; pattern: RegExp } | null = null;
+
+function getRelativePathPattern(base: string): RegExp {
+  if (relativePathPatternCache?.base !== base) {
+    relativePathPatternCache = {
+      base,
+      pattern: new RegExp(`${escapeRegExp(base)}(?=$|/|[\\s"'\\)\\]}:;,])`, "g"),
+    };
+  }
+  relativePathPatternCache.pattern.lastIndex = 0;
+  return relativePathPatternCache.pattern;
+}
+
 export function getDisplayTextWithRelativePaths(text: string, baseDirectory?: string) {
   const normalizedBase = (baseDirectory ?? "").replace(/\/+$/, "");
   if (!text || !normalizedBase) return text;
 
-  return text.replace(
-    new RegExp(`${escapeRegExp(normalizedBase)}(?=$|/|[\\s"'\\)\\]}:;,])`, "g"),
-    ".",
-  );
+  return text.replace(getRelativePathPattern(normalizedBase), ".");
 }
 
 export function formatTrackedPath(path: string, baseDirectory: string) {
