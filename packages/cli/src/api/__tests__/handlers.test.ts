@@ -7,6 +7,7 @@ const coreMocks = vi.hoisted(() => {
     materializeSessionDetailResponse: vi.fn(),
     listFileActivity: vi.fn((): FileActivityResult[] => []),
     listModelCostDistribution: vi.fn((): ModelCostEntry[] | null => null),
+    matchesProjectIdentity: vi.fn(),
     listSessionAliases: vi.fn<
       () => Array<{
         reference: { agentName: string; sessionId: string };
@@ -42,6 +43,10 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     materializeSessionDetailResponse: coreMocks.materializeSessionDetailResponse,
     listFileActivity: coreMocks.listFileActivity,
     listModelCostDistribution: coreMocks.listModelCostDistribution,
+    matchesProjectIdentity: (...args: Parameters<typeof actual.matchesProjectIdentity>) => {
+      coreMocks.matchesProjectIdentity(...args);
+      return actual.matchesProjectIdentity(...args);
+    },
     listSessionAliases: coreMocks.listSessionAliases,
     executeSessionSearch: coreMocks.executeSessionSearch,
   };
@@ -208,6 +213,7 @@ afterEach(() => {
   coreMocks.listFileActivity.mockReturnValue([]);
   coreMocks.listModelCostDistribution.mockReset();
   coreMocks.listModelCostDistribution.mockReturnValue(null);
+  coreMocks.matchesProjectIdentity.mockClear();
   coreMocks.listSessionAliases.mockReset();
   coreMocks.listSessionAliases.mockReturnValue([]);
   // The alias read model caches for the process lifetime; tests stub
@@ -421,6 +427,34 @@ describe("handleGetSessions", () => {
       { error: "cursor is invalid for this request" },
       400,
     );
+  });
+
+  it("reuses filtered candidates across pages from the same snapshot", () => {
+    const sessions = [
+      makeSession("first", {
+        project_identity: { kind: "path", key: "/workspace", displayName: "workspace" },
+      }),
+      makeSession("second", {
+        project_identity: { kind: "path", key: "/workspace", displayName: "workspace" },
+      }),
+    ];
+    const source = makeScanSource({ sessions, byAgent: { claudecode: sessions } });
+    const firstContext = makeMockContext({
+      query: { limit: "1", projectKind: "path", projectKey: "/workspace" },
+    });
+    handleGetSessions(firstContext, source);
+
+    const nextContext = makeMockContext({
+      query: {
+        limit: "1",
+        cursor: firstContext.json.mock.calls[0]![0].nextCursor,
+        projectKind: "path",
+        projectKey: "/workspace",
+      },
+    });
+    handleGetSessions(nextContext, source);
+
+    expect(coreMocks.matchesProjectIdentity).toHaveBeenCalledTimes(sessions.length);
   });
 
   it("filters by agent", () => {

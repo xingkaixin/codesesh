@@ -409,28 +409,38 @@ export function handleGetSessions(
   if (window.kind === "rejected") return window.response;
   const { from, to } = window;
 
-  let sessions: SessionHead[] = [];
-
-  if (sessionQuery.agent.kind === "all") {
-    sessions = [...scanResult.sessions];
-  } else if (sessionQuery.agent.kind === "known") {
-    sessions = [...(scanResult.byAgent[sessionQuery.agent.agentName] ?? [])];
-  } else {
+  if (sessionQuery.agent.kind === "unknown") {
     reportInvalidQueryParameter("sessions", "agent", "empty_result");
   }
 
-  if (projectIdentity) {
-    sessions = sessions.filter((session) =>
-      matchesProjectIdentity(session.project_identity, projectIdentity),
-    );
-  } else if (cwd) {
-    const projectScope = createProjectScopeMatcher(cwd);
-    sessions = sessions.filter((s) => sessionMatchesProjectScope(s, projectScope));
-  }
-  sessions = filterSessionsByActivityWindow(sessions, from, to);
-  if (tag) {
-    sessions = sessions.filter((s) => s.smart_tags?.includes(tag as SmartTag));
-  }
+  const agentFilter =
+    sessionQuery.agent.kind === "known" ? sessionQuery.agent.agentName : sessionQuery.agent.kind;
+  let sessions = getSnapshotAggregation(
+    scanSource,
+    scanResult.sessions,
+    ["sessions", agentFilter, projectIdentity?.kind, projectIdentity?.key, cwd, tag, from, to],
+    () => {
+      let filtered =
+        sessionQuery.agent.kind === "all"
+          ? scanResult.sessions
+          : sessionQuery.agent.kind === "known"
+            ? (scanResult.byAgent[sessionQuery.agent.agentName] ?? [])
+            : [];
+
+      if (projectIdentity) {
+        filtered = filtered.filter((session) =>
+          matchesProjectIdentity(session.project_identity, projectIdentity),
+        );
+      } else if (cwd) {
+        const projectScope = createProjectScopeMatcher(cwd);
+        filtered = filtered.filter((session) => sessionMatchesProjectScope(session, projectScope));
+      }
+      filtered = filterSessionsByActivityWindow(filtered, from, to);
+      return tag
+        ? filtered.filter((session) => session.smart_tags?.includes(tag as SmartTag))
+        : filtered;
+    },
+  );
 
   const aliases = loadAliasView();
   if (q) {
