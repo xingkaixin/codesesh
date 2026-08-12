@@ -31,6 +31,7 @@ import {
   type SessionRow,
 } from "./messages.js";
 import { CACHE_SCHEMA_VERSION } from "./version.js";
+import { createPublicationStagingTable, discardPublicationStaging } from "./publication-staging.js";
 
 interface MessageToolBackfillRow extends DatabaseRow {
   agent_name?: string;
@@ -618,6 +619,7 @@ function createLatestCacheSchema(db: SQLiteDatabase): void {
   createSessionTables(db);
   createFileActivityTables(db);
   createProjectTables(db);
+  createPublicationStagingTable(db);
   ensureFtsReady(db);
 }
 
@@ -1044,6 +1046,19 @@ function invalidateSearchContentHashes(db: SQLiteDatabase): void {
   }
 }
 
+function addAtomicPublicationStaging(db: SQLiteDatabase): void {
+  createPublicationStagingTable(db);
+  invalidateSearchContentHashes(db);
+  if (tableExists(db, "sessions") && tableExists(db, "pending_reindex")) {
+    db.exec(`
+      INSERT OR IGNORE INTO pending_reindex(agent_name, session_id)
+      SELECT agent_name, session_id
+      FROM sessions
+      WHERE publication_id IS NULL
+    `);
+  }
+}
+
 function compactSessionDocuments(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents")) {
     createSearchTables(db);
@@ -1394,10 +1409,12 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 19, migrate: addDetailVersion },
       { version: 20, migrate: addProjectIdentityProvenance },
       { version: 21, migrate: addSessionPublicationId },
+      { version: 22, migrate: addAtomicPublicationStaging },
     ],
   });
 
   createLatestCacheSchema(db);
+  db.transaction(() => discardPublicationStaging(db)).immediate();
 
   // Only stamp when behind: every thread's first connection runs ensureSchema,
   // and an unconditional PRAGMA user_version write would contend for the write

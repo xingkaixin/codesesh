@@ -6,7 +6,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 
 - 路径：`~/.cache/codesesh/codesesh.db`
 <!-- repo-fact:cache-schema-version:start -->
-- 当前 schema：`CACHE_SCHEMA_VERSION = 21`
+- 当前 schema：`CACHE_SCHEMA_VERSION = 22`
 <!-- repo-fact:cache-schema-version:end -->
 - 稳定导出入口：`packages/core/src/discovery/index.ts`
 - 实现目录：`packages/core/src/discovery/cache/`
@@ -22,6 +22,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 | `cache/schema.ts` | 建表、迁移、事务边界、FTS 完整性检查 |
 | `cache/sessions.ts` | 会话列表和详情快照的读取、写入与清理 |
 | `cache/messages.ts` | `sessions` / `messages` 行与领域对象之间的转换 |
+| `cache/publication-staging.ts` | 大批量详情发布的影子载荷与中断回收 |
 | `cache/search-index-writer.ts` | 详情、工具、文件活动与全文索引的同步写入 |
 | `cache/search.ts` | 搜索查询与结构化过滤 |
 | `cache/search-query-parser.ts` | 搜索语法解析 |
@@ -30,7 +31,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 
 ## Schema 清单
 
-当前 schema 创建 14 张表（其中 3 张是 FTS5 虚表）和 1 个视图。
+当前 schema 创建 15 张表（其中 3 张是 FTS5 虚表）和 1 个视图。
 
 ### 生命周期与同步状态
 
@@ -60,6 +61,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 | `session_file_activity_path_fts` | trigram FTS5 虚表 | 文件路径匹配 |
 | `session_documents` | 普通表 | 会话标题、聚合文本、内容签名与已索引消息数 |
 | `session_documents_fts` | FTS5 虚表 | 会话级标题和聚合文本搜索 |
+| `search_index_publication_entries` | 普通表 | 大批量发布提交前暂存序列化详情；提交或回滚后清空 |
 
 三个 FTS 表都由对应内容表的 insert/update/delete 触发器维护。批量变化达到阈值时，
 `runSearchIndexWrite()` 会在写事务中重建会话文档和消息索引；文件路径索引仍由触发器
@@ -109,7 +111,9 @@ SessionWatcher / 初始后台刷新
   -> 发布新的内存快照与 SSE 事件
 ```
 
-搜索索引 worker 完成对应的 SQLite 写入后，`AgentSyncEngine` 才发布新内存快照。
+搜索索引 worker 在同一 SQLite 事务中提交会话 head 与详情后，`AgentSyncEngine` 才发布
+新内存快照。大批量详情先分块写入影子表，最终事务再流式提升到正式表，避免为控制内存而
+提前暴露部分新详情。
 
 完整写入会整体协调某个 Agent 的会话集合；精确刷新只 upsert 变更会话并删除已消失
 会话。需要重新索引的会话才会调用适配器的 `getSessionData()`，随后由缓存事务和索引

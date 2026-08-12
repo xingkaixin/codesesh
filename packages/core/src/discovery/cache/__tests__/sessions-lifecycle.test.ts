@@ -196,7 +196,7 @@ describe("withCacheDb schema memo", () => {
   it("runs ensureSchema on the first open but skips it on later opens for the same path", () => {
     withCacheDb(() => undefined);
     expect(getSchemaEnsuredPath()).toBe(getCachePath());
-    expect(getUserVersion(getCachePath())).toBe(21);
+    expect(getUserVersion(getCachePath())).toBe(22);
 
     const db = new Database(getCachePath());
     db.pragma("user_version = 14");
@@ -207,7 +207,7 @@ describe("withCacheDb schema memo", () => {
 
     setSchemaEnsuredPath(null);
     withCacheDb(() => undefined);
-    expect(getUserVersion(getCachePath())).toBe(21);
+    expect(getUserVersion(getCachePath())).toBe(22);
   });
 });
 
@@ -215,7 +215,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(21);
+    expect(getUserVersion(getCachePath())).toBe(22);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -427,7 +427,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(21);
+    expect(getUserVersion(getCachePath())).toBe(22);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",

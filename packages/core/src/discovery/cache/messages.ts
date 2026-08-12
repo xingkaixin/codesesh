@@ -183,14 +183,8 @@ export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
   `);
 }
 
-function prepareIndexedSession(
-  db: SQLiteDatabase,
-  conflictAction: "update" | "ignore",
-): SQLiteStatement {
-  const onConflict =
-    conflictAction === "ignore"
-      ? "DO NOTHING"
-      : `DO UPDATE SET
+function prepareIndexedSession(db: SQLiteDatabase): SQLiteStatement {
+  const onConflict = `DO UPDATE SET
           slug = excluded.slug,
           title = excluded.title,
           directory = excluded.directory,
@@ -256,11 +250,7 @@ function prepareIndexedSession(
 }
 
 export function prepareUpsertIndexedSession(db: SQLiteDatabase): SQLiteStatement {
-  return prepareIndexedSession(db, "update");
-}
-
-export function prepareInsertStagedSession(db: SQLiteDatabase): SQLiteStatement {
-  return prepareIndexedSession(db, "ignore");
+  return prepareIndexedSession(db);
 }
 
 export function upsertSessionRow(
@@ -270,7 +260,6 @@ export function upsertSessionRow(
   metaJson: string | null,
   sortIndex: number,
   sourcePath: string | null,
-  publicationId: string | null = null,
 ): void {
   const identity = session.project_identity ?? computeIdentity(session.directory, realFs);
   const activityTime = session.time_updated ?? session.time_created;
@@ -305,7 +294,7 @@ export function upsertSessionRow(
     session.smart_tags_source_updated_at ?? null,
     session.smart_tags_classifier_revision ?? null,
     metaJson,
-    publicationId,
+    null,
   );
 }
 

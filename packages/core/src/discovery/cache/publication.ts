@@ -7,6 +7,7 @@ import { sessionDetailVersion } from "./detail-version.js";
 import {
   prepareSessionChangesSearchIndex,
   prepareSessionSnapshotSearchIndex,
+  discardPreparedSessionSearchIndex,
   writePreparedSessionSearchIndex,
   type SearchIndexSyncOptions,
   type SearchIndexSyncResult,
@@ -156,6 +157,7 @@ export function commitDurableSessionPublication(
   });
 
   if (!searchIndex) {
+    discardPreparedSessionSearchIndex(publicationId);
     diagnostics?.warn("search_index.publication_stage", {
       ...detail,
       stage: "rolled_back",
