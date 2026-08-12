@@ -112,6 +112,18 @@ describe("buildSessionTree", () => {
     expect(ids(tree.byRouteKey.get("codex/root")!.children)).toEqual(["child"]);
   });
 
+  it("deduplicates repeated route keys before building the hierarchy", () => {
+    const tree = buildSessionTree([
+      makeSession("root", 1, { messages: 1, cost: 1 }),
+      makeSession("root", 2, { messages: 10, cost: 10 }),
+      makeSession("child", 3, { parent: "root", messages: 2, cost: 2 }),
+    ]);
+
+    expect(ids(tree.entries)).toEqual(["root"]);
+    expect(tree.byRouteKey.size).toBe(2);
+    expect(tree.entries[0]?.inclusiveStats).toMatchObject({ messageCount: 3, cost: 3 });
+  });
+
   it("counts descendants at every depth", () => {
     const tree = buildSessionTree([
       makeSession("root", 1),
