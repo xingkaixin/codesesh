@@ -56,6 +56,7 @@ describe("cache schema boundary", () => {
       "session_documents",
       "session_file_activity",
       "project_groups_v",
+      "search_index_publication_entries",
     ]) {
       expect(state?.names.has(name)).toBe(true);
     }
@@ -79,7 +80,95 @@ describe("cache schema boundary", () => {
         "publication_id",
       ]),
     );
-    expect(state?.version).toBe(21);
+    expect(state?.version).toBe(22);
+  });
+
+  it("reclaims orphaned publication rows on the next schema open", () => {
+    const session = makeSessionHead("orphaned-publication");
+    saveCachedSessions("codex", [session]);
+    syncSessionSearchIndex("codex", [session], () => makeSessionData(session.id));
+
+    const db = new Database(getCachePath());
+    try {
+      db.prepare("UPDATE sessions SET publication_id = ? WHERE session_id = ?").run(
+        "orphaned",
+        session.id,
+      );
+      db.prepare(
+        `
+          INSERT INTO search_index_publication_entries(
+            publication_id,
+            agent_name,
+            session_id,
+            payload_json
+          ) VALUES (?, ?, ?, ?)
+        `,
+      ).run("orphaned", "codex", session.id, "{}");
+    } finally {
+      db.close();
+    }
+    setSchemaEnsuredPath(null);
+
+    const counts = schema.withCacheDb((ready) => ({
+      sessions: Number(
+        (
+          ready
+            .prepare("SELECT COUNT(*) AS value FROM sessions WHERE publication_id IS NOT NULL")
+            .get() as { value?: number }
+        ).value ?? 0,
+      ),
+      documents: Number(
+        (
+          ready
+            .prepare("SELECT COUNT(*) AS value FROM session_documents WHERE agent_name = ?")
+            .get("codex") as { value?: number }
+        ).value ?? 0,
+      ),
+      payloads: Number(
+        (
+          ready.prepare("SELECT COUNT(*) AS value FROM search_index_publication_entries").get() as {
+            value?: number;
+          }
+        ).value ?? 0,
+      ),
+    }));
+
+    expect(counts).toEqual({ sessions: 0, documents: 0, payloads: 0 });
+  });
+
+  it("invalidates v21 detail rows so inconsistent publications rebuild", () => {
+    const session = makeSessionHead("publication-rebuild");
+    saveCachedSessions("codex", [session]);
+    syncSessionSearchIndex("codex", [session], () => makeSessionData(session.id));
+
+    const db = new Database(getCachePath());
+    try {
+      db.prepare("UPDATE session_documents SET content_hash = ? WHERE session_id = ?").run(
+        "stale-but-matching",
+        session.id,
+      );
+      db.pragma("user_version = 21");
+      db.prepare("UPDATE cache_meta SET value = '21' WHERE key = 'version'").run();
+    } finally {
+      db.close();
+    }
+    setSchemaEnsuredPath(null);
+
+    const migrated = schema.withCacheDb((ready) => ({
+      contentHash: String(
+        (
+          ready
+            .prepare("SELECT content_hash FROM session_documents WHERE session_id = ?")
+            .get(session.id) as { content_hash?: string }
+        ).content_hash ?? "missing",
+      ),
+      pending:
+        ready
+          .prepare("SELECT 1 FROM pending_reindex WHERE agent_name = ? AND session_id = ?")
+          .get("codex", session.id) != null,
+    }));
+
+    expect(migrated).toEqual({ contentHash: "", pending: true });
   });
 
   it("exposes capabilities instead of migration steps", () => {
@@ -123,7 +212,7 @@ describe("cache schema boundary", () => {
           .get("codex", session.id) != null,
     }));
 
-    expect(migrated).toEqual({ version: 21, detailVersion: "", pending: true });
+    expect(migrated).toEqual({ version: 22, detailVersion: "", pending: true });
   });
 
   it("marks legacy project identities stale by leaving added provenance empty", () => {
@@ -162,7 +251,7 @@ describe("cache schema boundary", () => {
     });
 
     expect(migrated).toEqual({
-      version: 21,
+      version: 22,
       resolverRevision: null,
       inputSignature: null,
       classifierRevision: null,
@@ -232,7 +321,7 @@ describe("cache schema boundary", () => {
       });
 
       expect(migrated).toEqual({
-        version: 21,
+        version: 22,
         partsJson: legacyPartsJson,
         partsFormatVersion: 0,
       });

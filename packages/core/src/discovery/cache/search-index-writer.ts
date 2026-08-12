@@ -10,7 +10,6 @@ import {
   MESSAGE_PARTS_FORMAT_VERSION,
   normalizeMessages,
   prepareInsertFileActivity,
-  prepareInsertStagedSession,
   prepareInsertMessageTool,
   prepareUpsertIndexedSession,
   upsertSessionRow,
@@ -20,6 +19,12 @@ import {
 import { runSearchIndexWrite, withSearchIndexDb } from "./schema.js";
 import { sessionDetailVersion } from "./detail-version.js";
 import type { SessionSnapshotCompleteness } from "./sessions.js";
+import {
+  deletePublicationPayloads,
+  discardPublicationStaging,
+  readPublicationPayloads,
+  stagePublicationPayloads,
+} from "./publication-staging.js";
 
 export interface SearchIndexSyncOptions {
   isBulk?: boolean;
@@ -95,7 +100,6 @@ interface LoadedSearchIndexEntry {
 
 interface SearchIndexRowWriteOptions {
   verifySupersession?: boolean;
-  publicationId?: string;
 }
 
 interface PreparedSearchIndexPublication {
@@ -105,8 +109,9 @@ interface PreparedSearchIndexPublication {
   changed: number;
   removedSessionIds: string[];
   entries: LoadedSearchIndexEntry[];
-  /** Entries already written durably in chunks before the atomic commit. */
-  preIndexed: number;
+  publicationId?: string;
+  /** Full entries stored outside the live tables until the atomic commit. */
+  preStaged: number;
   failures: SearchIndexSyncFailure[];
   needsRebuild: boolean;
   startedAt: number;
@@ -312,7 +317,7 @@ function writeSearchIndexRows(
   failures: SearchIndexSyncFailure[],
   options: SearchIndexRowWriteOptions = {},
 ): number {
-  const { verifySupersession = true, publicationId } = options;
+  const { verifySupersession = true } = options;
   const deleteRow = db.prepare(
     "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
   );
@@ -325,9 +330,7 @@ function writeSearchIndexRows(
   const deleteFileActivity = db.prepare(
     "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
   );
-  const writeIndexedSession = publicationId
-    ? prepareInsertStagedSession(db)
-    : prepareUpsertIndexedSession(db);
+  const writeIndexedSession = prepareUpsertIndexedSession(db);
   const insertFileActivity = prepareInsertFileActivity(db);
   const insertMessageTool = prepareInsertMessageTool(db);
   const upsertMessage = db.prepare(`
@@ -419,15 +422,7 @@ function writeSearchIndexRows(
         continue;
       }
     }
-    upsertSessionRow(
-      writeIndexedSession,
-      agentName,
-      entry.session,
-      null,
-      entry.sortIndex,
-      null,
-      publicationId ?? null,
-    );
+    upsertSessionRow(writeIndexedSession, agentName, entry.session, null, entry.sortIndex, null);
     deleteFileActivity.run(agentName, entry.session.id);
     deleteMessageTools.run(agentName, entry.session.id, 0);
     clearPendingReindex.run(agentName, entry.session.id);
@@ -479,11 +474,9 @@ function writeSearchIndexRows(
  * Loaded entries carry full message bodies, so a backlog larger than one commit
  * chunk cannot be held in memory at once — a first-time index of a large agent
  * (multi-GB codex rollouts) used to OOM the search-index worker. Larger
- * backlogs are written durably in chunks up front instead; an interrupted run
- * keeps its finished chunks and a retry skips them via their content hashes.
- * Supersession is not verified during pre-staging: publication jobs are
- * serialized, and the atomic commit that follows writes the very meta these
- * detail versions were derived from, which would make the check vacuous anyway.
+ * backlogs are serialized into a shadow table in chunks. The final transaction
+ * streams those payloads into the live tables, keeping memory bounded without
+ * publishing any detail facts ahead of their session heads.
  */
 function loadOrPreStageEntries(
   db: SQLiteDatabase,
@@ -493,13 +486,13 @@ function loadOrPreStageEntries(
   detailVersionFor: (sessionId: string) => string,
   failures: SearchIndexSyncFailure[],
   publicationId?: string,
-): { entries: LoadedSearchIndexEntry[]; preIndexed: number } {
+): { entries: LoadedSearchIndexEntry[]; preStaged: number } {
   if (changes.length <= SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
     return {
       entries: [
         ...loadSearchIndexEntries(agentName, changes, loadSessionData, detailVersionFor, failures),
       ],
-      preIndexed: 0,
+      preStaged: 0,
     };
   }
 
@@ -507,26 +500,35 @@ function loadOrPreStageEntries(
     throw new Error("Large durable publications require a publication id");
   }
 
-  let preIndexed = 0;
+  let preStaged = 0;
   for (let offset = 0; offset < changes.length; offset += SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
     const chunk = changes.slice(offset, offset + SEARCH_INDEX_COMMIT_CHUNK_SIZE);
     runSearchIndexWrite(db, false, () => {
-      preIndexed += writeSearchIndexRows(
-        db,
+      const entries = loadSearchIndexEntries(
         agentName,
-        [],
-        loadSearchIndexEntries(agentName, chunk, loadSessionData, detailVersionFor, failures),
+        chunk,
+        loadSessionData,
+        detailVersionFor,
         failures,
-        { verifySupersession: false, publicationId },
+      );
+      preStaged += stagePublicationPayloads(
+        db,
+        publicationId,
+        agentName,
+        (function* () {
+          for (const entry of entries) {
+            yield { sessionId: entry.session.id, json: JSON.stringify(entry) };
+          }
+        })(),
       );
     });
   }
   getCoreDiagnostics()?.info?.("search_index.pre_staged", {
     agent: agentName,
     changed: changes.length,
-    indexed: preIndexed,
+    staged: preStaged,
   });
-  return { entries: [], preIndexed };
+  return { entries: [], preStaged };
 }
 
 export function prepareSessionSnapshotSearchIndex(
@@ -566,7 +568,7 @@ export function prepareSessionSnapshotSearchIndex(
   const changedCount = removedSessionIds.length + changes.length;
   const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
   const failures: SearchIndexSyncFailure[] = [];
-  const { entries, preIndexed } = loadOrPreStageEntries(
+  const { entries, preStaged } = loadOrPreStageEntries(
     db,
     agentName,
     changes,
@@ -583,10 +585,10 @@ export function prepareSessionSnapshotSearchIndex(
     changed: changes.length,
     removedSessionIds,
     entries,
-    preIndexed,
+    publicationId: options.publicationId,
+    preStaged,
     failures,
-    // Pre-staged chunks wrote through the live FTS triggers; no rebuild needed.
-    needsRebuild: preIndexed === 0 && isBulk && changedCount > 0,
+    needsRebuild: isBulk && changedCount > 0,
     startedAt,
   };
 }
@@ -612,7 +614,7 @@ export function prepareSessionChangesSearchIndex(
   const changedCount = uniqueRemovedSessionIds.length + toUpsert.length;
   const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
   const failures: SearchIndexSyncFailure[] = [];
-  const { entries, preIndexed } = loadOrPreStageEntries(
+  const { entries, preStaged } = loadOrPreStageEntries(
     db,
     agentName,
     toUpsert,
@@ -629,10 +631,10 @@ export function prepareSessionChangesSearchIndex(
     changed: toUpsert.length,
     removedSessionIds: uniqueRemovedSessionIds,
     entries,
-    preIndexed,
+    publicationId: options.publicationId,
+    preStaged,
     failures,
-    // Pre-staged chunks wrote through the live FTS triggers; no rebuild needed.
-    needsRebuild: preIndexed === 0 && isBulk && changedCount > 0,
+    needsRebuild: isBulk && changedCount > 0,
     startedAt,
   };
 }
@@ -641,18 +643,32 @@ export function writePreparedSessionSearchIndex(
   db: SQLiteDatabase,
   publication: PreparedSearchIndexPublication,
 ): SearchIndexSyncResult {
-  let indexed = publication.preIndexed;
+  let indexed = 0;
   const { rebuildDurationMs } = runSearchIndexWrite(
     db,
     publication.needsRebuild,
     () => {
+      const entries = (function* (): Generator<LoadedSearchIndexEntry> {
+        yield* publication.entries;
+        if (!publication.publicationId || publication.preStaged === 0) return;
+        for (const payload of readPublicationPayloads(
+          db,
+          publication.publicationId,
+          publication.agentName,
+        )) {
+          yield JSON.parse(payload) as LoadedSearchIndexEntry;
+        }
+      })();
       indexed += writeSearchIndexRows(
         db,
         publication.agentName,
         publication.removedSessionIds,
-        publication.entries,
+        entries,
         publication.failures,
       );
+      if (publication.publicationId) {
+        deletePublicationPayloads(db, publication.publicationId);
+      }
     },
     "caller",
   );
@@ -669,6 +685,12 @@ export function writePreparedSessionSearchIndex(
     durationMs: performance.now() - publication.startedAt,
     rebuildDurationMs,
   };
+}
+
+export function discardPreparedSessionSearchIndex(publicationId: string): void {
+  withSearchIndexDb((db) =>
+    db.transaction(() => discardPublicationStaging(db, publicationId)).immediate(),
+  );
 }
 
 export function syncSessionSearchIndex(

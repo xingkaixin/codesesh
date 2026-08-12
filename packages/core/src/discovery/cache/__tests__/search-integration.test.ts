@@ -400,6 +400,11 @@ describe("durable publication", () => {
       });
       expect(loadCachedSessions("codex")?.sessions).toHaveLength(70);
       expect(searchSessions("bulk-42 bulk needle")).toHaveLength(1);
+      expect(
+        withCacheDb((db) =>
+          db.prepare("SELECT COUNT(*) AS value FROM search_index_publication_entries").get(),
+        ),
+      ).toEqual({ value: 0 });
 
       const loadAgain = vi.fn((sessionId: string) =>
         makeSessionData(sessionId, `${sessionId} bulk needle`),
@@ -427,7 +432,7 @@ describe("durable publication", () => {
   );
 
   it(
-    "keeps pre-staged session heads hidden when a large publication rolls back",
+    "discards shadow entries when a large publication rolls back",
     () => {
       const historical = makeSession("historical");
       saveCachedSessions("codex", [historical], {
@@ -485,15 +490,97 @@ describe("durable publication", () => {
               "SELECT COUNT(*) AS value FROM sessions WHERE agent_name = ? AND publication_id = ?",
             )
             .get("codex", result.publicationId),
-        ).toEqual({ value: 70 });
+        ).toEqual({ value: 0 });
         expect(
           verifyDb
             .prepare("SELECT COUNT(*) AS value FROM session_documents WHERE agent_name = ?")
             .get("codex"),
-        ).toEqual({ value: 71 });
+        ).toEqual({ value: 1 });
+        expect(
+          verifyDb
+            .prepare(
+              "SELECT COUNT(*) AS value FROM search_index_publication_entries WHERE publication_id = ?",
+            )
+            .get(result.publicationId),
+        ).toEqual({ value: 0 });
       } finally {
         verifyDb.close();
       }
+    },
+    SEARCH_INDEX_BATCH_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "keeps live details aligned with heads when an updated backlog rolls back",
+    () => {
+      const originals = Array.from({ length: 70 }, (_, index) => makeSession(`aligned-${index}`));
+      saveCachedSessions("codex", originals);
+      syncSessionSearchIndex("codex", originals, (sessionId) =>
+        makeSessionData(sessionId, `${sessionId} old detail`),
+      );
+
+      const updated = originals.map((session) => ({
+        ...session,
+        title: `Updated ${session.id}`,
+      }));
+      const db = new Database(getCachePath());
+      try {
+        db.exec(`
+          CREATE TRIGGER fail_updated_backlog_head_write
+          BEFORE UPDATE ON sessions
+          WHEN NEW.title LIKE 'Updated aligned-%'
+          BEGIN
+            SELECT RAISE(ABORT, 'forced updated backlog failure');
+          END;
+        `);
+      } finally {
+        db.close();
+      }
+
+      const failed = commitDurableSessionPublication(
+        {
+          kind: "snapshot",
+          agentName: "codex",
+          sessions: updated,
+          meta: {},
+          completeness: "complete",
+          removedSessionIds: [],
+          publicationId: "scan.refresh:codex:aligned",
+        },
+        (sessionId) => makeSessionData(sessionId, `${sessionId} new detail`),
+      );
+
+      expect(failed).toMatchObject({ status: "rolled-back", stage: "cache" });
+      expect(loadCachedSessions("codex")?.sessions[0]?.title).toBe(originals[0]?.title);
+      expect(loadCachedSessionData("codex", "aligned-0")?.messages[0]?.parts).toEqual([
+        { type: "text", text: "aligned-0 old detail" },
+      ]);
+      expect(searchSessions("aligned-0 new detail")).toHaveLength(0);
+
+      const retryDb = new Database(getCachePath());
+      try {
+        retryDb.exec("DROP TRIGGER fail_updated_backlog_head_write");
+      } finally {
+        retryDb.close();
+      }
+      const retryLoader = vi.fn((sessionId: string) =>
+        makeSessionData(sessionId, `${sessionId} new detail`),
+      );
+      const retried = commitDurableSessionPublication(
+        {
+          kind: "snapshot",
+          agentName: "codex",
+          sessions: updated,
+          meta: {},
+          completeness: "complete",
+          removedSessionIds: [],
+        },
+        retryLoader,
+      );
+
+      expect(retried.status).toBe("committed");
+      expect(retryLoader).toHaveBeenCalledTimes(70);
+      expect(searchSessions("aligned-0 new detail")).toHaveLength(1);
     },
     SEARCH_INDEX_BATCH_TEST_TIMEOUT_MS,
   );
@@ -1182,7 +1269,7 @@ describe("searchSessions", () => {
     } finally {
       migratedDb.close();
     }
-    expect(getUserVersion(getCachePath())).toBe(21);
+    expect(getUserVersion(getCachePath())).toBe(22);
   });
 
   it("keeps small incremental updates searchable immediately", () => {
@@ -1970,7 +2057,7 @@ describe("searchSessions", () => {
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(21);
+    expect(getUserVersion(getCachePath())).toBe(22);
   });
 
   it("refreshes cached project identities when migrating to schema version 12", () => {
