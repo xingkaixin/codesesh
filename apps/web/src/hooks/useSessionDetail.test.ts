@@ -117,6 +117,42 @@ describe("useSessionDetail", () => {
     expect(api.fetchSessionData).toHaveBeenCalledTimes(2);
   });
 
+  it("requests and merges only messages appended by a live update", async () => {
+    const firstMessage = { id: "m1" };
+    const nextMessage = { id: "m2" };
+    const initial = {
+      id: "abc",
+      messages: [firstMessage],
+      message_cursor: "cursor-1",
+      message_update: "reset",
+    } as unknown as SessionDetail;
+    const appended = {
+      id: "abc",
+      messages: [nextMessage],
+      message_cursor: "cursor-2",
+      message_update: "append",
+    } as unknown as SessionDetail;
+    vi.mocked(api.fetchSessionData).mockResolvedValueOnce(initial).mockResolvedValueOnce(appended);
+    const { client, result } = renderSessionDetail();
+    await waitFor(() => expect(result.current.session).toEqual(initial));
+
+    await act(() =>
+      client.invalidateQueries({
+        queryKey: queryKeys.sessionDetail("claudecode", "claudecode/abc"),
+        exact: true,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(result.current.session?.messages).toEqual([firstMessage, nextMessage]),
+    );
+    expect(api.fetchSessionData).toHaveBeenLastCalledWith(
+      "claudecode",
+      "claudecode/abc",
+      expect.objectContaining({ messageCursor: "cursor-1" }),
+    );
+  });
+
   it("keeps the current route when an older request resolves last", async () => {
     const requestA = deferred<SessionDetail>();
     const requestB = deferred<SessionDetail>();

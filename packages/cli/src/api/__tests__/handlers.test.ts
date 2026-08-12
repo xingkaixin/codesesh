@@ -1615,6 +1615,23 @@ describe("handleGetSessionData", () => {
     expect(c.json).toHaveBeenCalledWith(detail);
   });
 
+  it("forwards an incremental message cursor to detail materialization", async () => {
+    coreMocks.materializeSessionDetailResponse.mockReturnValue({ status: "found", data: detail });
+    const scanSource = makeScanSource();
+    const c = makeMockContext({
+      param: { agent: "claudecode", id: "s1" },
+      query: { messageCursor: "known-prefix" },
+    });
+
+    await handleGetSessionData(c, scanSource);
+
+    expect(coreMocks.materializeSessionDetailResponse).toHaveBeenCalledWith(
+      scanSource.getSnapshot(),
+      { agentName: "claudecode", sessionId: "s1" },
+      { messageCursor: "known-prefix" },
+    );
+  });
+
   it("streams cached message JSON lazily while preserving aliases", async () => {
     const { messages: _messages, ...detailHeader } = detail;
     let serializedMessages = 0;
@@ -1646,6 +1663,7 @@ describe("handleGetSessionData", () => {
       data: detailHeader,
       messages: messages(),
       messageCount: 200,
+      sentMessageCount: 200,
     });
     const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
 
@@ -1690,6 +1708,7 @@ describe("handleGetSessionData", () => {
       data: detailHeader,
       messages: { [Symbol.iterator]: () => iterator },
       messageCount: 2,
+      sentMessageCount: 2,
     });
     const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
 

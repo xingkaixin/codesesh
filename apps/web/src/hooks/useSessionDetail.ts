@@ -1,10 +1,18 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { fetchSessionData, logClientEvent } from "../lib/api";
+import { fetchSessionData, logClientEvent, type SessionDetail } from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
 import type { ViewState } from "../lib/view-state";
 
 let nextSessionRequestId = 1;
+
+function mergeSessionDetailUpdate(
+  previous: SessionDetail | undefined,
+  next: SessionDetail,
+): SessionDetail {
+  if (next.message_update !== "append" || !previous?.message_cursor) return next;
+  return { ...next, messages: [...previous.messages, ...next.messages] };
+}
 
 function sessionRoute(viewState: ViewState) {
   if (viewState.mode !== "session") return null;
@@ -15,9 +23,11 @@ function sessionRoute(viewState: ViewState) {
 }
 
 export function useSessionDetail(viewState: ViewState) {
+  const queryClient = useQueryClient();
   const route = sessionRoute(viewState);
+  const queryKey = queryKeys.sessionDetail(route?.agent ?? "", route?.sessionId ?? "");
   const query = useQuery({
-    queryKey: queryKeys.sessionDetail(route?.agent ?? "", route?.sessionId ?? ""),
+    queryKey,
     enabled: route !== null,
     staleTime: Infinity,
     queryFn: async ({ signal }) => {
@@ -45,7 +55,12 @@ export function useSessionDetail(viewState: ViewState) {
       });
 
       try {
-        const data = await fetchSessionData(route.agent, route.sessionId, { signal });
+        const previous = queryClient.getQueryData<SessionDetail>(queryKey);
+        const response = await fetchSessionData(route.agent, route.sessionId, {
+          signal,
+          messageCursor: previous?.message_cursor,
+        });
+        const data = mergeSessionDetailUpdate(previous, response);
         if (signal.aborted) throw new DOMException("Aborted", "AbortError");
         logClientEvent("session.open.done", {
           request_id: requestId,
