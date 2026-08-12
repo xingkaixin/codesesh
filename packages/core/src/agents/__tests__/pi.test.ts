@@ -272,7 +272,7 @@ describe("PiAgent", () => {
         sourcePath: sessionFile,
         fingerprint: JSON.stringify([
           "pi-head-v1",
-          "pi-parser-v1",
+          "pi-parser-v2",
           sessionTime.getTime(),
           statSync(sessionFile).size,
         ]),
@@ -382,6 +382,8 @@ describe("PiAgent", () => {
       model_usage: { "claude-sonnet-4-5": 135 },
     });
     expect(data.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(data.stats.cost_source).toBe("recorded");
+    expect(assistant).toMatchObject({ cost: 0.25, cost_source: "recorded" });
     expect(assistant?.parts[0]).toMatchObject({
       type: "reasoning",
       text: "Need to read package.json",
@@ -399,6 +401,50 @@ describe("PiAgent", () => {
         output: [{ type: "text", text: "package output" }],
       },
     });
+  });
+
+  it("marks locally priced usage as estimated across messages, heads, and details", () => {
+    const sessionId = "019deeee-eeee-7eee-eeee-eeeeeeeeeeee";
+    const { agent } = writePiSession(sessionId, [
+      {
+        type: "session",
+        version: 3,
+        id: sessionId,
+        timestamp: TS,
+        cwd: "/tmp/project",
+      },
+      {
+        type: "message",
+        id: "user-1",
+        parentId: null,
+        timestamp: TS,
+        message: { role: "user", content: "Estimate this session" },
+      },
+      {
+        type: "message",
+        id: "assistant-1",
+        parentId: "user-1",
+        timestamp: TS,
+        message: {
+          role: "assistant",
+          provider: "anthropic",
+          model: "claude-sonnet-4-5",
+          usage: { input: 100, output: 20, totalTokens: 120 },
+          content: [{ type: "text", text: "Estimated reply" }],
+        },
+      },
+    ]);
+
+    const [head] = agent.scan();
+    const detail = agent.getSessionData(sessionId);
+    const assistant = detail.messages[1];
+
+    expect(head?.stats.cost_source).toBe("estimated");
+    expect(head?.stats.total_cost).toBeGreaterThan(0);
+    expect(detail.stats.cost_source).toBe("estimated");
+    expect(detail.stats.total_cost).toBe(head?.stats.total_cost);
+    expect(assistant?.cost_source).toBe("estimated");
+    expect(assistant?.cost).toBe(detail.stats.total_cost);
   });
 
   it("drops a message with a non-string role and reports the drift", () => {
