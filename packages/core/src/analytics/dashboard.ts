@@ -20,13 +20,14 @@ import type {
   DashboardRecentSession,
   DashboardTotals,
   ModelDistributionEntry,
+  SessionTree,
   SessionTreeNode,
 } from "../contract/index.js";
 import {
   addCalendarDays,
   buildSessionTree,
   countCalendarDays,
-  filterSessionTreeByActivityWindow,
+  filterSessionTreeEntriesByActivityWindow,
   getProjectIdentityKey,
   getSessionAgentKey,
   toCalendarDayKey,
@@ -137,13 +138,14 @@ function matchesScope(session: SessionHead, scope: DashboardScope): boolean {
 
 /** Top-level nodes (roots ∪ orphans) inside the window that match the scope. */
 function scopedEntries(
-  sessions: SessionHead[],
+  tree: SessionTree,
   scope: DashboardScope,
   from: number | undefined,
   to: number,
 ): SessionTreeNode[] {
-  const tree = buildSessionTree(filterSessionTreeByActivityWindow(sessions, from, to));
-  return tree.entries.filter((node) => matchesScope(node.session, scope));
+  return filterSessionTreeEntriesByActivityWindow(tree, from, to).filter((node) =>
+    matchesScope(node.session, scope),
+  );
 }
 
 function emptyDailyBucket(date: string): DashboardDailyBucket {
@@ -342,6 +344,7 @@ export function buildDashboard(
   options: DashboardOptions,
 ): DashboardAggregate {
   const { byAgentNames, scope, from, to, agentInfoMap, compare } = options;
+  const tree = buildSessionTree(sessions);
 
   const acc = createAccumulator(byAgentNames, scope, to);
   if (from != null) {
@@ -351,12 +354,12 @@ export function buildDashboard(
       acc.daily.set(key, emptyDailyBucket(key));
     }
   }
-  for (const node of scopedEntries(sessions, scope, from, to)) accumulate(node, acc);
+  for (const node of scopedEntries(tree, scope, from, to)) accumulate(node, acc);
 
   let previous: DashboardPreviousTotals | undefined;
   if (compare) {
     const compareAcc = createAccumulator(byAgentNames, scope, compare.to);
-    for (const node of scopedEntries(sessions, scope, compare.from, compare.to)) {
+    for (const node of scopedEntries(tree, scope, compare.from, compare.to)) {
       accumulate(node, compareAcc);
     }
     previous = toPreviousTotals(compareAcc);

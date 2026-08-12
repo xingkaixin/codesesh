@@ -8,9 +8,17 @@
  * instead of the cache-wide count carried by ProjectGroup.
  */
 import type { ProjectGroup, SessionHead } from "../types/index.js";
-import type { ApiProjectAgentStat, ApiProjectGroup } from "../contract/index.js";
+import type {
+  ApiProjectAgentStat,
+  ApiProjectGroup,
+  SessionTree,
+  SessionTreeNode,
+} from "../contract/index.js";
 import { getProjectIdentityKey } from "../contract/project-identity.js";
-import { buildSessionTree } from "../contract/session-tree.js";
+import {
+  buildSessionTree,
+  filterSessionTreeEntriesByActivityWindow,
+} from "../contract/session-tree.js";
 import { getSessionAgentName } from "./dashboard.js";
 
 interface ProjectMetrics {
@@ -41,9 +49,28 @@ export function attachProjectMetrics(
   projects: ProjectGroup[],
   sessions: SessionHead[],
 ): ApiProjectGroup[] {
+  return attachProjectMetricsToEntries(projects, buildSessionTree(sessions).entries);
+}
+
+export function attachProjectMetricsFromTree(
+  projects: ProjectGroup[],
+  tree: SessionTree,
+  from?: number,
+  to?: number,
+): ApiProjectGroup[] {
+  return attachProjectMetricsToEntries(
+    projects,
+    filterSessionTreeEntriesByActivityWindow(tree, from, to),
+  );
+}
+
+function attachProjectMetricsToEntries(
+  projects: ProjectGroup[],
+  entries: SessionTreeNode[],
+): ApiProjectGroup[] {
   const metrics = new Map<string, ProjectMetrics>();
 
-  for (const node of buildSessionTree(sessions).entries) {
+  for (const node of entries) {
     const identity = node.session.project_identity;
     if (!identity) continue;
 

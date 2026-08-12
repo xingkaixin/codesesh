@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { attachProjectMetrics } from "../projects.js";
+import { attachProjectMetrics, attachProjectMetricsFromTree } from "../projects.js";
 import type { ProjectGroup, SessionHead } from "../../types/index.js";
+import { buildSessionTree } from "../../contract/session-tree.js";
 
 function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
   return {
@@ -107,6 +108,25 @@ describe("attachProjectMetrics", () => {
     expect(project?.agentStats).toEqual([
       { name: "claudecode", sessions: 1, messages: 2, tokens: 70, cost: 0 },
     ]);
+  });
+
+  it("reuses a tree when applying a project activity window", () => {
+    const parent = makeSession("parent", { time_created: 100, time_updated: 100 });
+    const child = makeSession("child", {
+      time_created: 1,
+      time_updated: 1,
+      parent_reference: { agentName: "claudecode", sessionId: "parent" },
+    });
+    const outside = makeSession("outside", { time_created: 1, time_updated: 1 });
+
+    const [project] = attachProjectMetricsFromTree(
+      [makeGroup("repo-a")],
+      buildSessionTree([parent, child, outside]),
+      90,
+      110,
+    );
+
+    expect(project).toMatchObject({ sessionCount: 1, messages: 2 });
   });
 
   it("counts an orphaned sub-session as its own session", () => {
