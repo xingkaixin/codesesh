@@ -75,14 +75,37 @@ describe("useSessionStore", () => {
   it("surfaces config failures", async () => {
     const error = new Error("config unavailable");
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    vi.mocked(api.fetchConfig).mockRejectedValueOnce(error);
+    vi.mocked(api.fetchConfig).mockRejectedValue(error);
     const { Wrapper } = createQueryWrapper();
     const { result } = renderHook(() => useSessionStore(), { wrapper: Wrapper });
 
-    await waitFor(() => expect(result.current.error).toContain("Failed to load data"));
+    await waitFor(() => expect(result.current.error).toContain("Failed to load configuration"), {
+      timeout: 2_000,
+    });
 
     expect(result.current.loading).toBe(false);
+    expect(api.fetchConfig).toHaveBeenCalledTimes(3);
     expect(console.error).toHaveBeenCalledWith("Failed to load config:", error);
+
+    vi.mocked(api.fetchConfig).mockResolvedValue(config);
+    await act(() => result.current.retryLoad());
+
+    await waitFor(() => expect(result.current.config).toEqual(config));
+    expect(result.current.error).toBeNull();
+    expect(api.fetchConfig).toHaveBeenCalledTimes(4);
+  });
+
+  it("recovers from a transient config failure automatically", async () => {
+    const error = new Error("config unavailable");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(api.fetchConfig).mockRejectedValueOnce(error).mockResolvedValue(config);
+    const { Wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useSessionStore(), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.config).toEqual(config));
+
+    expect(result.current.error).toBeNull();
+    expect(api.fetchConfig).toHaveBeenCalledTimes(2);
   });
 
   it("ignores live events until a window has been selected", async () => {
@@ -390,7 +413,7 @@ describe("useSessionStore", () => {
     });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.error).toContain("Failed to load data");
+    expect(result.current.error).toContain("Failed to load session data");
     expect(result.current.sessions).toEqual([]);
   });
 

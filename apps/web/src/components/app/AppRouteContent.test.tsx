@@ -47,6 +47,7 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
   return {
     loading: false,
     error: null,
+    onRetry: vi.fn(),
     viewState: {
       mode: "root",
       activeAgentKey: null,
@@ -148,6 +149,17 @@ function renderContent(props: Parameters<typeof AppRouteContent>[0]) {
 }
 
 describe("AppRouteContent", () => {
+  it("offers a retry action when the initial load fails", () => {
+    const props = makeProps();
+    props.error = "Failed to load configuration.";
+
+    renderContent(props);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(screen.getByRole("alert").textContent).toContain(props.error);
+    expect(props.onRetry).toHaveBeenCalledTimes(1);
+  });
+
   it("renders the overview on the root route", async () => {
     renderContent(makeProps());
 
