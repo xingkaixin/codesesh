@@ -2,11 +2,10 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 const distDir = join(dirname(fileURLToPath(import.meta.url)), "../dist");
 const indexHtmlPath = join(distDir, "index.html");
-const distExists = existsSync(indexHtmlPath);
 
 /**
  * Budget for what a first paint costs, in gzipped JavaScript. Generous enough
@@ -23,8 +22,15 @@ function initialScripts(): string[] {
   return [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+\.js)"/g)].map((match) => match[1]!);
 }
 
-// Requires `pnpm --filter @codesesh/web build` to have run first.
-describe.skipIf(!distExists)("CS-146: initial bundle", () => {
+describe("CS-146: initial bundle", () => {
+  beforeAll(() => {
+    if (!existsSync(indexHtmlPath)) {
+      throw new Error(
+        "Initial bundle tests require apps/web/dist; run `pnpm --filter @codesesh/web build` first.",
+      );
+    }
+  });
+
   it("stays within the gzipped budget", () => {
     const total = initialScripts().reduce(
       (bytes, path) => bytes + gzipSync(readFileSync(join(distDir, path.slice(1)))).length,

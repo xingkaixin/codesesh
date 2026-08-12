@@ -25,6 +25,10 @@
       "cache": true,
       "dependsOn": ["^build"]
     },
+    "@codesesh/web#test": {
+      "cache": true,
+      "dependsOn": ["build", "^build"]
+    },
     "clean": {
       "cache": false
     }
