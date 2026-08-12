@@ -5,7 +5,11 @@ import { getPricingGeneration } from "@codesesh/core";
 import { toError } from "./errors.js";
 import { appLogger, logSearchIndexSync } from "./logging.js";
 import { PendingSearchIndexJobs, type SearchIndexJobBatch } from "./pending-search-index-jobs.js";
-import type { SearchIndexWorkerJob, SearchIndexWorkerMessage } from "./search-index-worker.js";
+import type {
+  SearchIndexWorkerJob,
+  SearchIndexWorkerMessage,
+  SearchIndexWorkerRunRequest,
+} from "./search-index-worker.js";
 
 const SHUTDOWN_ERROR_MESSAGE = "Live scan store shut down";
 
@@ -29,7 +33,7 @@ export class SearchIndexJobRunner {
 
     const batchId = this.nextBatchId++;
     const completion = this.pendingJobs.enqueue(batchId, context, jobs);
-    if (this.worker) {
+    if (this.activeBatch) {
       const snapshot = this.snapshot();
       appLogger.debug("search_index.worker_queued", {
         batch_id: batchId,
@@ -68,7 +72,7 @@ export class SearchIndexJobRunner {
   }
 
   private startNextBatch(): void {
-    if (this.isShuttingDown || this.worker) return;
+    if (this.isShuttingDown || this.activeBatch) return;
     const batch = this.pendingJobs.take();
     if (!batch) return;
 
@@ -86,10 +90,28 @@ export class SearchIndexJobRunner {
       return;
     }
 
+    const request: SearchIndexWorkerRunRequest = {
+      type: "run",
+      pricingGenerationId: getPricingGeneration().id,
+      context: batch.context,
+      jobs: batch.jobs,
+    };
+    const existingWorker = this.worker;
+    if (existingWorker) {
+      this.activeBatch = batch;
+      try {
+        existingWorker.postMessage(request);
+      } catch (error) {
+        this.invalidateWorker(existingWorker, toError(error));
+      }
+      return;
+    }
+
     const workerUrl = this.workerUrl();
     if (!workerUrl) {
       appLogger.warn("search_index.worker_missing", { context: batch.context });
       this.settle(batch, new Error("Search index worker is unavailable"));
+      this.startNextBatch();
       return;
     }
     appLogger.info("search_index.worker_started", {
@@ -98,37 +120,38 @@ export class SearchIndexJobRunner {
       jobs: batch.jobs.length,
     });
 
-    const worker = new Worker(workerUrl, {
-      workerData: {
-        pricingGenerationId: getPricingGeneration().id,
-        context: batch.context,
-        jobs: batch.jobs,
-        agentNames: [],
-        sessionsByAgent: {},
-        metaByAgent: {},
-      },
-    });
+    let worker: Worker;
+    try {
+      worker = new Worker(workerUrl, { workerData: request });
+    } catch (error) {
+      this.settle(batch, toError(error));
+      this.startNextBatch();
+      return;
+    }
     worker.unref();
     this.worker = worker;
     this.activeBatch = batch;
 
     worker.on("message", (message: SearchIndexWorkerMessage) => {
       if (appLogger.consumeWorkerMessage(message)) return;
+      if (this.worker !== worker) return;
+      const activeBatch = this.activeBatch;
+      if (!activeBatch) return;
       if (message.type === "sync-result") {
         logSearchIndexSync(message.context, message.result);
         return;
       }
       if (message.type === "persist-failed") {
         appLogger.error("search_index.persist_failed", {
-          batch_id: batch.id,
+          batch_id: activeBatch.id,
           context: message.context,
           stage: message.stage,
           publication_id: message.publicationId,
           agent: message.agentName,
           sessions: message.sessions,
         });
-        this.settle(
-          batch,
+        this.finishBatch(
+          activeBatch,
           new Error(
             `Search index worker failed to persist ${message.stage} for ${message.agentName}`,
           ),
@@ -141,31 +164,57 @@ export class SearchIndexJobRunner {
         duration_ms: Math.round(message.durationMs),
         sessions: message.sessions,
       });
-      this.settle(batch);
+      this.finishBatch(activeBatch);
     });
     worker.on("error", (error) => {
-      appLogger.error("search_index.worker_error", { context: batch.context, error });
-      this.settle(batch, toError(error));
+      appLogger.error("search_index.worker_error", {
+        context: this.activeBatch?.context ?? batch.context,
+        error,
+      });
+      this.invalidateWorker(worker, toError(error));
     });
-    worker.on("exit", (code) => this.finishWorker(worker, batch, code));
+    worker.on("exit", (code) => this.finishWorker(worker, code));
   }
 
-  private finishWorker(worker: Worker, batch: SearchIndexJobBatch, code: number): void {
+  private finishBatch(batch: SearchIndexJobBatch, error?: Error): void {
+    if (this.activeBatch !== batch) return;
+    this.activeBatch = null;
+    this.settle(batch, error);
+    this.startNextBatch();
+  }
+
+  private invalidateWorker(worker: Worker, error: Error): void {
+    if (this.worker !== worker) return;
+    this.worker = null;
+    const batch = this.activeBatch;
+    this.activeBatch = null;
+    if (batch) this.settle(batch, error);
+    void worker.terminate();
+    this.startNextBatch();
+  }
+
+  private finishWorker(worker: Worker, code: number): void {
+    const batch = this.worker === worker ? this.activeBatch : null;
     appLogger.info("search_index.worker_exited", {
-      batch_id: batch.id,
-      context: batch.context,
+      batch_id: batch?.id,
+      context: batch?.context,
       code,
       shutting_down: this.isShuttingDown || undefined,
     });
-    if (this.worker === worker) this.worker = null;
-    if (this.activeBatch === batch) this.activeBatch = null;
+    if (this.worker !== worker) return;
+    this.worker = null;
+    this.activeBatch = null;
 
-    const error =
-      code === 0
-        ? new Error("Search index worker exited before completing its batch")
-        : new Error(`Search index worker exited with code ${code}`);
-    if (code !== 0) appLogger.warn("search_index.worker_exit", { context: batch.context, code });
-    this.settle(batch, error);
+    if (batch) {
+      const error =
+        code === 0
+          ? new Error("Search index worker exited before completing its batch")
+          : new Error(`Search index worker exited with code ${code}`);
+      if (code !== 0) {
+        appLogger.warn("search_index.worker_exit", { context: batch.context, code });
+      }
+      this.settle(batch, error);
+    }
     this.startNextBatch();
   }
 

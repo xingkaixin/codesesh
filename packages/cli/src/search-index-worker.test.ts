@@ -11,10 +11,16 @@ const mocks = vi.hoisted(() => ({
   appLoggerInfo: vi.fn(),
   appLoggerWarn: vi.fn(),
   appLoggerError: vi.fn(),
+  messageHandler: undefined as ((message: Record<string, unknown>) => void) | undefined,
 }));
 
 vi.mock("node:worker_threads", () => ({
-  parentPort: { postMessage: mocks.postMessage },
+  parentPort: {
+    postMessage: mocks.postMessage,
+    on: (_event: string, handler: (message: Record<string, unknown>) => void) => {
+      mocks.messageHandler = handler;
+    },
+  },
   threadId: 17,
   get workerData() {
     return mocks.workerData;
@@ -50,13 +56,14 @@ function makeAgent() {
 }
 
 async function runWorker() {
-  mocks.workerData = { pricingGenerationId: 17, ...mocks.workerData };
+  mocks.workerData = { type: "run", pricingGenerationId: 17, ...mocks.workerData };
   await import("./search-index-worker.js");
 }
 
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
+  mocks.messageHandler = undefined;
   mocks.commitDurableSessionPublication.mockReturnValue({
     status: "committed",
     publicationId: "publication-default",
@@ -79,6 +86,27 @@ describe("search index worker", () => {
     expect(mocks.synchronizePricingGeneration).toHaveBeenCalledWith(17);
     expect(mocks.synchronizePricingGeneration.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.createRegisteredAgents.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("reuses module initialization while isolating agents between batches", async () => {
+    mocks.createRegisteredAgents.mockReturnValue([]);
+
+    await runWorker();
+    mocks.messageHandler?.({
+      type: "run",
+      pricingGenerationId: 17,
+      context: "second-refresh",
+      jobs: [],
+      agentNames: [],
+      sessionsByAgent: {},
+      metaByAgent: {},
+    });
+
+    expect(mocks.synchronizePricingGeneration).toHaveBeenCalledOnce();
+    expect(mocks.createRegisteredAgents).toHaveBeenCalledTimes(2);
+    expect(mocks.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: "done", context: "second-refresh" }),
     );
   });
 
