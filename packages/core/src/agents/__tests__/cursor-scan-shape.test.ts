@@ -57,19 +57,52 @@ function textOf(agent: CursorAgent, sessionId: string): string[] {
 }
 
 describe("CS-142: Cursor scan shape", () => {
-  it("takes the request id from the key-ordered bubbles", () => {
+  it("uses the composer id consistently in fast and full scans", () => {
     const dbPath = createDb([
       composer("c1"),
-      // Inserted out of key order on purpose: "b" sorts before "c".
       ...bubbles("c1", [
-        { suffix: "c", bubble: { type: 1, text: "second", requestId: "req-from-c" } },
-        { suffix: "b", bubble: { type: 1, text: "first", requestId: "req-from-b" } },
+        { suffix: "a", bubble: { type: 1, text: "question", requestId: "legacy-request" } },
       ]),
     ]);
+    const fastHeads = makeAgent(dbPath).scan({ from: 0, fast: true });
+    const fullHeads = makeAgent(dbPath).scan({ from: 0 });
 
-    const heads = makeAgent(dbPath).scan({ from: 0 });
+    expect(fastHeads.map((head) => head.id)).toEqual(["c1"]);
+    expect(fullHeads.map((head) => head.id)).toEqual(["c1"]);
+  });
 
-    expect(heads.map((head) => head.id)).toEqual(["req-from-b"]);
+  it("resolves legacy request ids to the canonical composer id", () => {
+    const dbPath = createDb([
+      composer("c1"),
+      ...bubbles("c1", [
+        { suffix: "a", bubble: { type: 1, text: "question", requestId: "legacy-request" } },
+      ]),
+    ]);
+    const agent = makeAgent(dbPath);
+
+    const detail = agent.getSessionData("legacy-request");
+
+    expect(detail.id).toBe("c1");
+    expect(detail.reference).toEqual({ agentName: "cursor", sessionId: "c1" });
+    expect(detail.slug).toBe("cursor/c1");
+  });
+
+  it("migrates cached request-id metadata during a full scan", () => {
+    const dbPath = createDb([
+      composer("c1"),
+      ...bubbles("c1", [
+        { suffix: "a", bubble: { type: 1, text: "question", requestId: "legacy-request" } },
+      ]),
+    ]);
+    const agent = makeAgent(dbPath);
+    agent.setSessionMetaMap(
+      new Map([["legacy-request", { id: "legacy-request", sourcePath: dbPath }]]),
+    );
+
+    agent.scan({ from: 0 });
+
+    expect(agent.getSessionMetaMap().has("legacy-request")).toBe(false);
+    expect(agent.getSessionMetaMap().get("c1")?.id).toBe("c1");
   });
 
   it("keeps message order by insertion, not by key", () => {

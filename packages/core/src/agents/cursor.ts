@@ -34,6 +34,7 @@ import {
 } from "../utils/session-normalization.js";
 import { perf } from "../utils/perf.js";
 import { estimateTokenCost } from "../utils/cost.js";
+import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import {
   asArray,
   asNumber,
@@ -748,7 +749,6 @@ export class CursorAgent extends DatabaseSessionSource {
     try {
       // Try cached composer data first
       let composer = this.composerCache.get(sessionId);
-      let resolvedSessionId = sessionId;
 
       if (!composer) {
         // Try loading directly by sessionId (might be composerId)
@@ -760,7 +760,6 @@ export class CursorAgent extends DatabaseSessionSource {
         const composerId = this.findComposerIdByRequestId(db, sessionId);
         if (composerId) {
           composer = this.loadComposer(db, composerId) ?? undefined;
-          resolvedSessionId = sessionId; // Keep the requestId as sessionId
         }
       }
 
@@ -776,7 +775,6 @@ export class CursorAgent extends DatabaseSessionSource {
       const messages = this.loadMessagesFromBubbles(
         db,
         composerId,
-        resolvedSessionId,
         composer.modelConfig?.modelName ?? composer.model ?? null,
       );
 
@@ -815,10 +813,10 @@ export class CursorAgent extends DatabaseSessionSource {
         "";
 
       return {
-        reference: { agentName: this.name, sessionId: resolvedSessionId },
-        id: resolvedSessionId,
+        reference: { agentName: this.name, sessionId: composerId },
+        id: composerId,
         title,
-        slug: `cursor/${resolvedSessionId}`,
+        slug: `cursor/${composerId}`,
         directory,
         time_created: createdAt,
         time_updated: updatedAt || undefined,
@@ -885,8 +883,7 @@ export class CursorAgent extends DatabaseSessionSource {
     workspacePathMap: Map<string, string>,
   ): SessionHead | null {
     const { composer, composerId, createdAt, updatedAt, hasSubagents } = entry;
-    const requestId = this.requestIdFromBubbles(bubbles);
-    const sessionId = requestId || composerId;
+    const legacySessionId = this.legacySessionIdFromBubbles(bubbles);
 
     const parsedMessages = cleanParsedMessages(
       this.messagesFromBubbles(bubbles, composer.modelConfig?.modelName ?? composer.model ?? null),
@@ -897,6 +894,7 @@ export class CursorAgent extends DatabaseSessionSource {
         : parsedSession(parsedMessages),
     );
     if (!messages) return null;
+    if (legacySessionId) this.migrateLegacySessionMeta(legacySessionId, composerId);
 
     const title = this.extractTitle(composer, messages);
     const directory = workspacePathMap.get(composerId) ?? "";
@@ -914,9 +912,9 @@ export class CursorAgent extends DatabaseSessionSource {
     }
     const hasModelUsage = Object.keys(modelUsageMap).length > 0;
 
-    this.composerCache.set(sessionId, composer);
+    this.composerCache.set(composerId, composer);
     this.composerCache.set(`__mapping__${composerId}`, {
-      sessionId,
+      sessionId: composerId,
     } as unknown as ComposerData);
     if (directory) {
       this.composerCache.set(`__dir__${composerId}`, {
@@ -924,8 +922,8 @@ export class CursorAgent extends DatabaseSessionSource {
       } as unknown as ComposerData);
     }
     return {
-      id: sessionId,
-      slug: `cursor/${sessionId}`,
+      id: composerId,
+      slug: `cursor/${composerId}`,
       title,
       directory,
       time_created: createdAt,
@@ -941,13 +939,27 @@ export class CursorAgent extends DatabaseSessionSource {
     };
   }
 
-  /** First request id in key order, matching what agent-dump reports. */
-  private requestIdFromBubbles(bubbles: ComposerBubbles): string | null {
+  private legacySessionIdFromBubbles(bubbles: ComposerBubbles): string | null {
     for (const entry of bubbles.byKey) {
       const requestId = entry.bubble.requestId?.trim();
       if (requestId) return requestId;
     }
     return null;
+  }
+
+  private migrateLegacySessionMeta(legacySessionId: string, sessionId: string): void {
+    if (legacySessionId === sessionId) return;
+    const legacyMeta = this.sessionMetaMap.get(legacySessionId);
+    if (!legacyMeta) return;
+
+    this.sessionMetaMap.delete(legacySessionId);
+    if (!this.sessionMetaMap.has(sessionId)) {
+      this.sessionMetaMap.set(sessionId, { ...legacyMeta, id: sessionId });
+    }
+    getCoreDiagnostics()?.info?.("cursor.session_id_migrated", {
+      legacy_session_id: legacySessionId,
+      session_id: sessionId,
+    });
   }
 
   /** Find composerId by requestId (reverse lookup) */
@@ -1013,7 +1025,6 @@ export class CursorAgent extends DatabaseSessionSource {
   private loadMessagesFromBubbles(
     db: SQLiteDatabase,
     composerId: string,
-    _sessionId: string,
     initialModelName: string | null,
   ): Message[] {
     try {
