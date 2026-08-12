@@ -7,6 +7,7 @@ import {
   QUALITY_PACKAGES,
   QUALITY_TASKS,
   ROOT_TASK_REQUIREMENTS,
+  SCRIPT_PACKAGE_TASK_REQUIREMENTS,
 } from "./check-quality-task-coverage.mjs";
 import { getPnpmInvocation } from "./lib/pnpm-process.mjs";
 
@@ -55,6 +56,33 @@ describe("CS-173: quality task coverage", () => {
     expect(findCommandCoverageGaps({ ...scripts, lint: "oxlint src" })).toEqual([
       "@codesesh/www#lint misses eslint, src/**/*.astro",
     ]);
+  });
+
+  it("covers every script file below each package root", () => {
+    const scripts = {
+      lint: "oxlint .",
+      "lint:fix": "oxlint . --fix",
+      format: 'oxfmt --write "**/*.{js,mjs,cjs,ts,tsx}"',
+      "format:check": 'oxfmt --check "**/*.{js,mjs,cjs,ts,tsx}"',
+    };
+
+    expect(
+      findCommandCoverageGaps(scripts, SCRIPT_PACKAGE_TASK_REQUIREMENTS, "@codesesh/web"),
+    ).toEqual([]);
+    expect(
+      findCommandCoverageGaps(
+        { ...scripts, lint: "oxlint src" },
+        SCRIPT_PACKAGE_TASK_REQUIREMENTS,
+        "@codesesh/web",
+      ),
+    ).toEqual(["@codesesh/web#lint misses oxlint ."]);
+    expect(
+      findCommandCoverageGaps(
+        { ...scripts, "format:check": "oxfmt --check src" },
+        SCRIPT_PACKAGE_TASK_REQUIREMENTS,
+        "@codesesh/web",
+      ),
+    ).toEqual(["@codesesh/web#format:check misses **/*.{js,mjs,cjs,ts,tsx}"]);
   });
 
   it("keeps root sources in every repository quality command", () => {
