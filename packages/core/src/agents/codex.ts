@@ -1,4 +1,4 @@
-import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, basename } from "node:path";
 import {
   SingleFileSessionSource,
@@ -14,6 +14,8 @@ import { parseJsonlLines, readJsonlFile, readJsonlFileLines } from "../utils/jso
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { cleanInternalText, isInternalEventType } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
+import { getCoreDiagnostics } from "../utils/diagnostics.js";
+import { parseAgentTimestampMs } from "../utils/timestamp.js";
 import { asRecord, asString, narrowField } from "../utils/narrow.js";
 import { TranscriptBuilder } from "./transcript-builder.js";
 import {
@@ -84,13 +86,7 @@ function extractSessionId(filename: string): string {
 // ---------------------------------------------------------------------------
 
 function parseTimestampMs(data: Record<string, unknown>): number {
-  const ts = String(data["timestamp"] ?? "").trim();
-  if (!ts) return 0;
-  try {
-    return new Date(ts.includes("Z") ? ts : ts.replace(" ", "T") + "Z").getTime();
-  } catch {
-    return 0;
-  }
+  return parseAgentTimestampMs(String(data["timestamp"] ?? ""), "codex");
 }
 
 function extractModelName(raw: unknown): string | null {
@@ -123,6 +119,16 @@ function extractThreadMeta(firstRecord: Record<string, unknown>): ThreadMeta | n
   const parentThreadId = asString(payload["parent_thread_id"]) ?? null;
   const agentNickname = asString(payload["agent_nickname"]) ?? null;
   return { threadSource, parentThreadId, agentNickname };
+}
+
+function readLeadingJsonlLines(filePath: string, limit: number): string[] {
+  const lines: string[] = [];
+  for (const line of readJsonlFileLines(filePath)) {
+    if (!line.trim()) continue;
+    lines.push(line);
+    if (lines.length === limit) break;
+  }
+  return lines;
 }
 
 function extractTokenUsage(payload: Record<string, unknown>): {
@@ -354,7 +360,6 @@ interface SessionMeta extends FileSessionMeta {
   indexMtimeMs: number | null;
   headIndexVersion: string;
   parserVersion: string;
-  model: string | null;
   parentThreadId: string | null;
 }
 
@@ -454,12 +459,14 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
 
   private readThreadMeta(filePath: string): ThreadMeta | null {
     try {
-      const firstLine = this.readFilePrefix(filePath)
-        .split("\n")
-        .filter((l) => l.trim())[0];
+      const firstLine = readLeadingJsonlLines(filePath, 1)[0];
       if (!firstLine) return null;
       return extractThreadMeta(JSON.parse(firstLine));
-    } catch {
+    } catch (error) {
+      getCoreDiagnostics()?.warn("codex.thread_meta_read_failed", {
+        filePath,
+        message: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
@@ -558,7 +565,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     let totalCost = 0;
 
     let pendingPlan: MessagePart | null = null;
-    let activeModel: string | null = meta.model;
+    let activeModel: string | null = null;
 
     // Token-count dedup state (matches codeburn strategy)
     let prevCumulativeTotal = 0;
@@ -570,7 +577,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     for (const record of readJsonlFile(meta.sourcePath)) {
       try {
         const recordType = String(record["type"] ?? "");
-        if (recordType === "turn_context") {
+        if (recordType === "session_meta" || recordType === "turn_context") {
           const payload = extractPayload(record);
           activeModel = extractModelName(payload["model"]) ?? activeModel;
         }
@@ -866,7 +873,6 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
         indexMtimeMs: indexMtime,
         headIndexVersion: HEAD_INDEX_VERSION,
         parserVersion: PARSER_VERSION,
-        model: null,
         parentThreadId: head.parent_reference?.sessionId ?? null,
       },
     });
@@ -929,17 +935,6 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
 
   // ---- Session head parsing ----
 
-  private readFilePrefix(filePath: string, bytes = 64 * 1024): string {
-    const fd = openSync(filePath, "r");
-    try {
-      const buffer = Buffer.alloc(bytes);
-      const bytesRead = readSync(fd, buffer, 0, bytes, 0);
-      return buffer.subarray(0, bytesRead).toString("utf-8");
-    } finally {
-      closeSync(fd);
-    }
-  }
-
   protected parseFileSessionHead(filePath: string, options?: AgentScanOptions): SessionHead | null {
     return this.parseSessionHead(filePath, options);
   }
@@ -969,7 +964,6 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     // candidate, count messages, extract models, and pre-accumulate tokens.
     let updatedAt = 0;
     let messageCount = 0;
-    let model: string | null = null;
     let activeModel: string | null = null;
     const modelUsageMap: Record<string, number> = {};
     let totalInputTokens = 0;
@@ -1027,7 +1021,6 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
           const nextModel = extractModelName(payload["model"]);
           if (nextModel) {
             activeModel = nextModel;
-            model ??= nextModel;
           }
           continue;
         }
@@ -1043,7 +1036,6 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
           const m = info?.["model"] ?? p["model"];
           if (typeof m === "string" && m.trim()) {
             activeModel = m.trim();
-            model ??= activeModel;
           }
         }
 
@@ -1131,8 +1123,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   }
 
   private parseFastSessionHeadResult(filePath: string): ParseSessionResult<SessionHead> {
-    const prefix = this.readFilePrefix(filePath);
-    const lines = prefix.split("\n").filter((l) => l.trim());
+    const lines = readLeadingJsonlLines(filePath, 20);
     if (lines.length === 0) return skippedSession("empty file");
 
     const sessionId = extractSessionId(filePath);
@@ -1140,7 +1131,12 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     let firstRecord: Record<string, unknown>;
     try {
       firstRecord = JSON.parse(lines[0]!);
-    } catch {
+    } catch (error) {
+      getCoreDiagnostics()?.warn("codex.fast_head_first_record_failed", {
+        filePath,
+        firstLineLength: lines[0]?.length ?? 0,
+        message: error instanceof Error ? error.message : String(error),
+      });
       return skippedSession("malformed first record");
     }
 

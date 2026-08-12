@@ -22,6 +22,7 @@ import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils
 import { isInternalEventType } from "../utils/parse-cleanup.js";
 import { cleanInternalText } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
+import { parseAgentTimestampMs } from "../utils/timestamp.js";
 import { asArray, asNumber, asRecord, asString, reportFieldMismatch } from "../utils/narrow.js";
 import {
   matchesScanWindow,
@@ -77,13 +78,7 @@ function parseTimestampMs(data: Record<string, unknown>): number {
     if (raw !== undefined && raw !== null) reportFieldMismatch("claudecode", "timestamp");
     return 0;
   }
-  const trimmed = value.trim();
-  if (!trimmed) return 0;
-  try {
-    return new Date(trimmed.includes("Z") ? trimmed : trimmed + "Z").getTime();
-  } catch {
-    return 0;
-  }
+  return parseAgentTimestampMs(value, "claudecode");
 }
 
 /** Reads a numeric usage field; a present-but-wrong-typed field is a schema drift signal. */

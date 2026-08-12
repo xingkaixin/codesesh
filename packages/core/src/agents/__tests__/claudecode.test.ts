@@ -969,6 +969,16 @@ describe("ClaudeCodeAgent head parsing", () => {
     expect(head?.time_created).toBe(statSync(sessionFile).mtimeMs);
   });
 
+  it("preserves explicit timezone offsets", () => {
+    const [head] = writeSession([
+      userLine("First", "2026-04-20T10:00:00+08:00"),
+      userLine("Second", "2026-04-20T10:02:30+08:00"),
+    ]).agent.scan();
+
+    expect(head?.time_created).toBe(Date.parse("2026-04-20T10:00:00+08:00"));
+    expect(head?.time_updated).toBe(Date.parse("2026-04-20T10:02:30+08:00"));
+  });
+
   it("only considers the first 20 records for the fallback title", () => {
     // Malformed records still advance the window, matching the pre-streaming
     // behaviour where the index came from the raw non-blank line list.
