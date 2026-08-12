@@ -274,13 +274,7 @@ export default function App() {
     }
 
     setSelectedSidebarSessionReference(null);
-  }, [
-    isSearchMode,
-    viewState.mode,
-    viewState.activeAgentKey,
-    viewState.activeSessionId,
-    sidebarSessions,
-  ]);
+  }, [isSearchMode, viewState.mode, viewState.activeAgentKey, viewState.activeSessionId]);
 
   const searchSubtitle =
     searchState.status === "failed"
