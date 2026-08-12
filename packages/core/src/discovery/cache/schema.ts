@@ -1442,7 +1442,11 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
   });
 
   createLatestCacheSchema(db);
+  const publicationCleanupStartedAt = performance.now();
   db.transaction(() => discardPublicationStaging(db)).immediate();
+  getCoreDiagnostics()?.info?.("sqlite.publication_staging_cleanup.completed", {
+    duration_ms: Math.round(performance.now() - publicationCleanupStartedAt),
+  });
 
   // Only stamp when behind: every thread's first connection runs ensureSchema,
   // and an unconditional PRAGMA user_version write would contend for the write
