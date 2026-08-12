@@ -37,6 +37,17 @@ export interface TranscriptResult {
   stats: SessionStats;
 }
 
+function mergeTokens(base: Message["tokens"], extra: Message["tokens"]): Message["tokens"] {
+  if (!base) return extra;
+  if (!extra) return base;
+  const merged = { ...base };
+  for (const key of Object.keys(extra) as (keyof NonNullable<Message["tokens"]>)[]) {
+    const value = extra[key];
+    if (typeof value === "number") merged[key] = (merged[key] ?? 0) + value;
+  }
+  return merged;
+}
+
 export class TranscriptBuilder {
   private readonly messages: Message[] = [];
   private readonly pendingToolCalls = new Map<string, ToolPart>();
@@ -166,16 +177,31 @@ export class TranscriptBuilder {
     tokens: Message["tokens"],
     options: { model?: string | null; cost?: number; costSource?: Message["cost_source"] } = {},
   ): boolean {
+    let mergeTarget: Message | null = null;
     for (let index = this.messages.length - 1; index >= 0; index -= 1) {
       const message = this.messages[index]!;
-      if (message.role !== "assistant" || message.tokens) continue;
-      message.tokens = tokens;
-      if (options.model !== undefined) message.model ??= options.model;
-      if (options.cost !== undefined) message.cost = options.cost;
-      if (options.costSource !== undefined) message.cost_source = options.costSource;
-      return true;
+      if (message.role !== "assistant") continue;
+      if (!message.tokens) {
+        message.tokens = tokens;
+        if (options.model !== undefined) message.model ??= options.model;
+        if (options.cost !== undefined) message.cost = options.cost;
+        if (options.costSource !== undefined) message.cost_source = options.costSource;
+        return true;
+      }
+      if (!mergeTarget && (message.model ?? null) === (options.model ?? null)) {
+        mergeTarget = message;
+      }
     }
-    return false;
+    // A turn can report usage more often than it produces assistant messages;
+    // folding the surplus into the latest same-model message keeps its tokens
+    // and cost attributed instead of silently dropping them.
+    if (!mergeTarget) return false;
+    mergeTarget.tokens = mergeTokens(mergeTarget.tokens, tokens);
+    if (options.cost !== undefined) {
+      mergeTarget.cost = (mergeTarget.cost ?? 0) + options.cost;
+      if (options.costSource !== undefined) mergeTarget.cost_source ??= options.costSource;
+    }
+    return true;
   }
 
   finish(baseStats?: SessionStats): TranscriptResult {

@@ -190,4 +190,71 @@ describe("TranscriptBuilder", () => {
       },
     });
   });
+
+  it("attaches usage to the latest assistant without tokens", () => {
+    const builder = new TranscriptBuilder();
+    builder.appendMessage({
+      id: "a1",
+      role: "assistant",
+      timestampMs: 1,
+      parts: [{ type: "text", text: "turn" }],
+    });
+
+    expect(
+      builder.attachUsageToLatestAssistant(
+        { input: 10, output: 5 },
+        { model: "sol", cost: 0.1, costSource: "estimated" },
+      ),
+    ).toBe(true);
+    expect(builder.finish().messages[0]).toMatchObject({
+      model: "sol",
+      tokens: { input: 10, output: 5 },
+      cost: 0.1,
+      cost_source: "estimated",
+    });
+  });
+
+  it("folds surplus usage into the latest same-model assistant", () => {
+    const builder = new TranscriptBuilder();
+    builder.appendMessage({
+      id: "a1",
+      role: "assistant",
+      timestampMs: 1,
+      parts: [{ type: "text", text: "turn" }],
+    });
+    builder.attachUsageToLatestAssistant(
+      { input: 10, output: 5, reasoning: 2 },
+      { model: "sol", cost: 0.1, costSource: "estimated" },
+    );
+
+    expect(
+      builder.attachUsageToLatestAssistant(
+        { input: 4, output: 1, cache_read: 8 },
+        { model: "sol", cost: 0.05, costSource: "estimated" },
+      ),
+    ).toBe(true);
+    expect(builder.finish().messages[0]).toMatchObject({
+      tokens: { input: 14, output: 6, reasoning: 2, cache_read: 8 },
+      cost: 0.15000000000000002,
+      cost_source: "estimated",
+    });
+  });
+
+  it("drops surplus usage when no assistant matches the model", () => {
+    const builder = new TranscriptBuilder();
+    builder.appendMessage({
+      id: "a1",
+      role: "assistant",
+      timestampMs: 1,
+      model: "luna",
+      tokens: { input: 10 },
+      cost: 0.1,
+      parts: [{ type: "text", text: "turn" }],
+    });
+
+    expect(builder.attachUsageToLatestAssistant({ input: 4 }, { model: "sol", cost: 0.05 })).toBe(
+      false,
+    );
+    expect(builder.finish().messages[0]).toMatchObject({ tokens: { input: 10 }, cost: 0.1 });
+  });
 });
