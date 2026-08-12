@@ -9,30 +9,7 @@
     />
     <link rel="icon" type="image/svg+xml" href="/logo.svg?v=3" />
     <title>CodeSesh</title>
-    <script>
-      // Sets .dark before first paint, reading the same localStorage key and
-      // envelope shape as useUiPreferences (apps/web/src/hooks/useUiPreferences.ts)
-      // so the pre-hydration skeleton below never flashes the wrong theme.
-      (function () {
-        var theme = "system";
-        try {
-          var raw = window.localStorage.getItem("codesesh.ui-preferences");
-          if (raw) {
-            var envelope = JSON.parse(raw);
-            var stored = envelope && envelope.version === 1 && envelope.state && envelope.state.theme;
-            if (stored === "light" || stored === "dark" || stored === "system") theme = stored;
-          }
-        } catch (e) {
-          theme = "system";
-        }
-        var isDark =
-          theme === "dark" ||
-          (theme === "system" &&
-            window.matchMedia &&
-            window.matchMedia("(prefers-color-scheme: dark)").matches);
-        if (isDark) document.documentElement.classList.add("dark");
-      })();
-    </script>
+    <script src="/theme-bootstrap.js"></script>
     <style>
       /* Duplicates the light/dark tokens of src/index.css so the pre-hydration
          skeleton below paints in the real palette. Keep both in sync. */
