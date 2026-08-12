@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+  closeCacheStorage,
   createRegisteredAgents,
   scanSessions,
   type LiveSnapshot,
@@ -166,6 +167,7 @@ export class LiveScanStore {
       await this.watcher.dispose();
       this.watcher = null;
     }
+    closeCacheStorage();
   }
 
   private emit(event: SessionsUpdatedEvent): void {

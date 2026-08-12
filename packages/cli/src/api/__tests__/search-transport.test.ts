@@ -31,7 +31,7 @@ vi.mock("node:os", async (importOriginal) => {
 // must only be imported dynamically, after the node:os mock above is
 // registered and testHomeDir exists, or that eager read races the mock and
 // throws (accessing testHomeDir before its own initialization).
-const { syncSessionSearchIndex } = await import("@codesesh/core");
+const { closeCacheStorage, syncSessionSearchIndex } = await import("@codesesh/core");
 const { createApiRoutes } = await import("../routes.js");
 
 function getCacheDir(): string {
@@ -79,6 +79,7 @@ async function search(app: ReturnType<typeof createApiRoutes>, qs: string) {
 }
 
 beforeAll(() => {
+  closeCacheStorage();
   rmSync(getCacheDir(), { recursive: true, force: true });
   syncSessionSearchIndex("claudecode", [ftsTitle], () => ({
     ...ftsTitle,
@@ -88,6 +89,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
+  closeCacheStorage();
   rmSync(getCacheDir(), { recursive: true, force: true });
 });
 

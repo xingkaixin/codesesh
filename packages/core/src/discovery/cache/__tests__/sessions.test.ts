@@ -24,8 +24,8 @@ vi.mock("node:os", async (importOriginal) => {
 
 afterEach(() => {
   setCoreDiagnostics(null);
-  rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
+  rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
 });
 
 describe("cached sessions", () => {

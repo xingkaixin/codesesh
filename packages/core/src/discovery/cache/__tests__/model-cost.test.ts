@@ -77,13 +77,13 @@ function seedFixture(): void {
 }
 
 beforeEach(() => {
-  rmSync(join(testHomeDir, ".cache", "codesesh"), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
+  rmSync(join(testHomeDir, ".cache", "codesesh"), { recursive: true, force: true });
 });
 
 afterEach(() => {
-  rmSync(join(testHomeDir, ".cache", "codesesh"), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
+  rmSync(join(testHomeDir, ".cache", "codesesh"), { recursive: true, force: true });
 });
 
 describe("listModelCostDistribution", () => {

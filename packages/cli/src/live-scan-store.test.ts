@@ -33,6 +33,7 @@ const fsWatch = vi.hoisted(() => ({
 }));
 
 const core = vi.hoisted(() => ({
+  closeCacheStorage: vi.fn(),
   createRegisteredAgents: vi.fn(),
   filterSessions: vi.fn((sessions: SessionHead[], _options: ScanOptions) => sessions),
   getAgentFullSyncCursor: vi.fn(() => null as string | null),
@@ -388,6 +389,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core")>();
   return {
     ...actual,
+    closeCacheStorage: core.closeCacheStorage,
     createRegisteredAgents: core.createRegisteredAgents,
     filterSessions: core.filterSessions,
     getAgentFullSyncCursor: core.getAgentFullSyncCursor,
@@ -2391,6 +2393,7 @@ describe("LiveScanStore", () => {
 
     await vi.advanceTimersByTimeAsync(10_000);
     expect(codex.checkForChanges).not.toHaveBeenCalled();
+    expect(core.closeCacheStorage).toHaveBeenCalledOnce();
   });
 
   it("terminates an active scan worker before shutdown completes", async () => {

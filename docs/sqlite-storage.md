@@ -18,7 +18,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 
 | 模块 | 职责 |
 |------|------|
-| `cache/db.ts` | 缓存路径、共享查询辅助函数、schema/FTS 进程内检查状态 |
+| `cache/db.ts` | 缓存路径、进程内连接生命周期、共享查询辅助函数、schema/FTS 检查状态 |
 | `cache/schema.ts` | 建表、迁移、事务边界、FTS 完整性检查 |
 | `cache/sessions.ts` | 会话列表和详情快照的读取、写入与清理 |
 | `cache/messages.ts` | `sessions` / `messages` 行与领域对象之间的转换 |
@@ -160,7 +160,7 @@ materializeSessionDetailResponse()
 
 ## 迁移与恢复
 
-`withCacheDb()` 首次打开当前数据库路径时调用 `ensureSchema()`：
+`withCacheDb()` 首次打开当前数据库路径时创建进程内连接并调用 `ensureSchema()`：
 
 1. 读取 `PRAGMA user_version`，旧数据库还会兼容读取 `cache_meta.version`。
 2. 破坏性迁移前备份有数据的缓存。
@@ -168,7 +168,9 @@ materializeSessionDetailResponse()
 4. 创建最新 schema，并更新 `user_version` 和 `cache_meta.version`。
 
 迁移实现与目标版本必须以 `cache/schema.ts` 为准；文档不引用易漂移的源码行号。
-搜索边界首次打开数据库时还会检查 FTS 完整性；检查失败则重建对应索引。
+后续读写复用同一模块实例内的连接；worker thread 各自持有独立连接，不跨线程共享。
+搜索边界在每个连接上首次使用时检查 FTS schema，缺表或触发器时重建对应索引。
+`clearCache()` 和 CLI shutdown 会关闭连接；下一次访问会重新建连并执行上述检查。
 
 ## 相关代码
 

@@ -33,14 +33,14 @@ function getCacheDir(): string {
 }
 
 beforeEach(() => {
-  rmSync(getCacheDir(), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
+  rmSync(getCacheDir(), { recursive: true, force: true });
   mockedWithCacheDb.mockClear();
 });
 
 afterEach(() => {
-  rmSync(getCacheDir(), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
+  rmSync(getCacheDir(), { recursive: true, force: true });
 });
 
 describe("cached project groups", () => {

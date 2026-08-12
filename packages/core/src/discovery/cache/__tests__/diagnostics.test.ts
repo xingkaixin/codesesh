@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../../utils/diagnostics.js";
+import { closeCacheStorage } from "../db.js";
 import { withCacheDb, withCacheDbReadOnly, withSearchIndexDb } from "../schema.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-diag-test-"));
@@ -13,6 +14,7 @@ vi.mock("node:os", async (importOriginal) => {
 });
 
 afterEach(() => {
+  closeCacheStorage();
   setCoreDiagnostics(null);
 });
 

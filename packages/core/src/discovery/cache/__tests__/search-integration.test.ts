@@ -120,14 +120,14 @@ function getUserVersion(dbPath: string): number {
 }
 
 beforeEach(() => {
+  setSchemaEnsuredPath(null);
   rmSync(getCacheDir(), { recursive: true, force: true });
   dateNowSpy.mockReturnValue(now);
-  setSchemaEnsuredPath(null);
 });
 
 afterEach(() => {
-  rmSync(getCacheDir(), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
+  rmSync(getCacheDir(), { recursive: true, force: true });
 });
 
 describe("session detail re-indexing", () => {
@@ -1563,6 +1563,7 @@ describe("searchSessions", () => {
     } finally {
       db.close();
     }
+    setSchemaEnsuredPath(null);
 
     saveCachedSessions("claudecode", [updated]);
     syncSessionSearchIndex("claudecode", [updated], () => ({
@@ -2446,6 +2447,7 @@ describe("searchSessions", () => {
     } finally {
       db.close();
     }
+    setSchemaEnsuredPath(null);
 
     const matches = withSearchDb((searchDb) => ({
       documents: searchDb
@@ -2475,6 +2477,7 @@ describe("searchSessions", () => {
     } finally {
       db.close();
     }
+    setSchemaEnsuredPath(null);
 
     expect(searchSessions("tablerepairneedle")[0]?.session.id).toBe(session.id);
   });

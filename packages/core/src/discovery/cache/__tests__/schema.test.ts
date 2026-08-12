@@ -17,13 +17,13 @@ vi.mock("node:os", async (importOriginal) => {
 });
 
 beforeEach(() => {
-  rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
+  rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
 });
 
 afterEach(() => {
-  rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
+  rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
 });
 
 describe("cache schema boundary", () => {
@@ -81,6 +81,38 @@ describe("cache schema boundary", () => {
       ]),
     );
     expect(state?.version).toBe(22);
+  });
+
+  it("reuses one connection for read and write capabilities until invalidated", () => {
+    const writeConnection = schema.withCacheDb((db) => db);
+    const nextWriteConnection = schema.withCacheDb((db) => db);
+    const readConnection = schema.withCacheDbReadOnly((db) => db);
+
+    expect(nextWriteConnection).toBe(writeConnection);
+    expect(readConnection).toEqual({ status: "success", value: writeConnection });
+
+    setSchemaEnsuredPath(null);
+
+    expect(schema.withCacheDb((db) => db)).not.toBe(writeConnection);
+  });
+
+  it("checks the FTS schema only on the first search for a connection", () => {
+    schema.withCacheDb(() => undefined);
+    const prepare = vi.spyOn(Database.prototype, "prepare");
+
+    schema.withSearchDb(() => undefined);
+    const firstProbeCount = prepare.mock.calls.filter(([sql]) =>
+      String(sql).includes("sqlite_master"),
+    ).length;
+
+    schema.withSearchDb(() => undefined);
+    const secondProbeCount = prepare.mock.calls.filter(([sql]) =>
+      String(sql).includes("sqlite_master"),
+    ).length;
+    prepare.mockRestore();
+
+    expect(firstProbeCount).toBeGreaterThan(0);
+    expect(secondProbeCount).toBe(firstProbeCount);
   });
 
   it("reclaims orphaned publication rows on the next schema open", () => {
