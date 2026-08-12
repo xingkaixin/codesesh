@@ -59,8 +59,10 @@ import {
   optionalQueryValue,
   searchParams,
   SEARCH_LIMIT_POLICY,
+  SESSION_PAGE_LIMIT_POLICY,
   type SessionListDefaults,
 } from "./query-params.js";
+import { paginateSessionSnapshot } from "./session-pagination.js";
 import {
   decorateBookmark,
   decorateFileActivity,
@@ -85,7 +87,7 @@ const KNOWN_AGENT_NAME_SET = new Set(KNOWN_AGENT_NAMES);
 
 function reportInvalidQueryParameter(
   endpoint: string,
-  parameter: "agent" | "limit" | "from" | "to",
+  parameter: "agent" | "cursor" | "limit" | "from" | "to",
   validationOutcome: "empty_result" | "rejected",
 ): void {
   appLogger.warn("api.query_parameter.invalid", {
@@ -237,9 +239,14 @@ function sanitizeClientLogData(value: unknown): Record<string, unknown> {
 }
 
 function toSessionListItem(session: SessionHead): SessionHead {
-  if (!session.model_usage) return session;
-  const item = { ...session };
-  delete item.model_usage;
+  const {
+    model_usage: _modelUsage,
+    project_identity_resolver_revision: _resolverRevision,
+    project_identity_input_signature: _identityInputSignature,
+    smart_tags_source_updated_at: _smartTagsSourceUpdatedAt,
+    smart_tags_classifier_revision: _smartTagsClassifierRevision,
+    ...item
+  } = session;
   return item;
 }
 
@@ -381,7 +388,13 @@ export function handleGetSessions(
   defaults: SessionListDefaults = {},
 ) {
   const scanResult = scanSource.getSnapshot();
-  const sessionQuery = parseSessionQuery(searchParams(c), KNOWN_AGENT_NAMES);
+  const params = searchParams(c);
+  const paginationRequested = params.has("limit") || params.has("cursor");
+  const sessionQuery = parseSessionQuery(params, KNOWN_AGENT_NAMES, SESSION_PAGE_LIMIT_POLICY);
+  if (sessionQuery.limit.kind === "invalid") {
+    reportInvalidQueryParameter("sessions", "limit", "rejected");
+    return c.json({ error: sessionQuery.limit.error }, 400);
+  }
   const q = c.req.query("q")?.toLowerCase();
   const cwd = c.req.query("cwd");
   const projectIdentity = parseProjectIdentityFilter(
@@ -396,28 +409,38 @@ export function handleGetSessions(
   if (window.kind === "rejected") return window.response;
   const { from, to } = window;
 
-  let sessions: SessionHead[] = [];
-
-  if (sessionQuery.agent.kind === "all") {
-    sessions = [...scanResult.sessions];
-  } else if (sessionQuery.agent.kind === "known") {
-    sessions = [...(scanResult.byAgent[sessionQuery.agent.agentName] ?? [])];
-  } else {
+  if (sessionQuery.agent.kind === "unknown") {
     reportInvalidQueryParameter("sessions", "agent", "empty_result");
   }
 
-  if (projectIdentity) {
-    sessions = sessions.filter((session) =>
-      matchesProjectIdentity(session.project_identity, projectIdentity),
-    );
-  } else if (cwd) {
-    const projectScope = createProjectScopeMatcher(cwd);
-    sessions = sessions.filter((s) => sessionMatchesProjectScope(s, projectScope));
-  }
-  sessions = filterSessionsByActivityWindow(sessions, from, to);
-  if (tag) {
-    sessions = sessions.filter((s) => s.smart_tags?.includes(tag as SmartTag));
-  }
+  const agentFilter =
+    sessionQuery.agent.kind === "known" ? sessionQuery.agent.agentName : sessionQuery.agent.kind;
+  let sessions = getSnapshotAggregation(
+    scanSource,
+    scanResult.sessions,
+    ["sessions", agentFilter, projectIdentity?.kind, projectIdentity?.key, cwd, tag, from, to],
+    () => {
+      let filtered =
+        sessionQuery.agent.kind === "all"
+          ? scanResult.sessions
+          : sessionQuery.agent.kind === "known"
+            ? (scanResult.byAgent[sessionQuery.agent.agentName] ?? [])
+            : [];
+
+      if (projectIdentity) {
+        filtered = filtered.filter((session) =>
+          matchesProjectIdentity(session.project_identity, projectIdentity),
+        );
+      } else if (cwd) {
+        const projectScope = createProjectScopeMatcher(cwd);
+        filtered = filtered.filter((session) => sessionMatchesProjectScope(session, projectScope));
+      }
+      filtered = filterSessionsByActivityWindow(filtered, from, to);
+      return tag
+        ? filtered.filter((session) => session.smart_tags?.includes(tag as SmartTag))
+        : filtered;
+    },
+  );
 
   const aliases = loadAliasView();
   if (q) {
@@ -426,6 +449,30 @@ export function handleGetSessions(
       return session.title.toLowerCase().includes(q) || alias?.toLowerCase().includes(q);
     });
   }
+
+  if (paginationRequested) {
+    const page = paginateSessionSnapshot(sessions, {
+      cursor: params.get("cursor") ?? undefined,
+      limit: sessionQuery.limit.value,
+      query: params,
+      snapshotIdentity: scanResult.sessions,
+      viewIdentity: aliases,
+    });
+    if (page.kind === "invalid_cursor") {
+      reportInvalidQueryParameter("sessions", "cursor", "rejected");
+      return c.json({ error: "cursor is invalid for this request" }, 400);
+    }
+    if (page.kind === "stale_snapshot") {
+      return c.json({ error: "session snapshot changed; restart pagination" }, 409);
+    }
+    return c.json({
+      sessions: page.items.map((session) =>
+        toSessionListItem(aliases.decorate(session, getSessionHeadReference(session))),
+      ),
+      ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+    });
+  }
+
   return c.json({
     sessions: sessions.map((session) =>
       toSessionListItem(aliases.decorate(session, getSessionHeadReference(session))),

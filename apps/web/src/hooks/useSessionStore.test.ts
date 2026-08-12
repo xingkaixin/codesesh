@@ -5,7 +5,7 @@ import {
 } from "@codesesh/core/contract";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentInfo, AppConfig, ApiProjectGroup } from "../lib/api";
+import type { AgentInfo, AppConfig, ApiProjectGroup, SessionHead } from "../lib/api";
 import * as api from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
 import { createQueryWrapper } from "../test/query-wrapper";
@@ -155,6 +155,35 @@ describe("useSessionStore", () => {
     expect(result.current.validAgentKeys.has("codex")).toBe(false);
     expect(result.current.agentNameMap.get("claudecode")).toBe("Claude Code");
     expect(result.current.version).toBeGreaterThan(0);
+  });
+
+  it("renders the first session page while the complete window keeps loading", async () => {
+    const completeSessions = deferred<{ sessions: SessionHead[] }>();
+    const finalSession = {
+      ...SAMPLE_SESSION_HEAD,
+      id: "final-session",
+      slug: "claudecode/final-session",
+    };
+    vi.mocked(api.fetchSessions).mockImplementation(async (_options, _fetchOptions, progress) => {
+      progress?.onFirstPage?.([SAMPLE_SESSION_HEAD]);
+      return completeSessions.promise;
+    });
+    const { result } = await renderStore();
+
+    let load!: ReturnType<typeof result.current.reload>;
+    act(() => {
+      load = result.current.reload(config.window);
+    });
+
+    await waitFor(() => expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]));
+    expect(result.current.loading).toBe(false);
+
+    completeSessions.resolve({ sessions: [SAMPLE_SESSION_HEAD, finalSession] });
+    await act(() => load);
+
+    await waitFor(() =>
+      expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD, finalSession]),
+    );
   });
 
   it("keeps the latest snapshot when an earlier request finishes late", async () => {

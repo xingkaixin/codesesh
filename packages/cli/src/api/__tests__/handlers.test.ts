@@ -7,6 +7,7 @@ const coreMocks = vi.hoisted(() => {
     materializeSessionDetailResponse: vi.fn(),
     listFileActivity: vi.fn((): FileActivityResult[] => []),
     listModelCostDistribution: vi.fn((): ModelCostEntry[] | null => null),
+    matchesProjectIdentity: vi.fn(),
     listSessionAliases: vi.fn<
       () => Array<{
         reference: { agentName: string; sessionId: string };
@@ -42,6 +43,10 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     materializeSessionDetailResponse: coreMocks.materializeSessionDetailResponse,
     listFileActivity: coreMocks.listFileActivity,
     listModelCostDistribution: coreMocks.listModelCostDistribution,
+    matchesProjectIdentity: (...args: Parameters<typeof actual.matchesProjectIdentity>) => {
+      coreMocks.matchesProjectIdentity(...args);
+      return actual.matchesProjectIdentity(...args);
+    },
     listSessionAliases: coreMocks.listSessionAliases,
     executeSessionSearch: coreMocks.executeSessionSearch,
   };
@@ -208,6 +213,7 @@ afterEach(() => {
   coreMocks.listFileActivity.mockReturnValue([]);
   coreMocks.listModelCostDistribution.mockReset();
   coreMocks.listModelCostDistribution.mockReturnValue(null);
+  coreMocks.matchesProjectIdentity.mockClear();
   coreMocks.listSessionAliases.mockReset();
   coreMocks.listSessionAliases.mockReturnValue([]);
   // The alias read model caches for the process lifetime; tests stub
@@ -331,8 +337,14 @@ describe("handleGetSessions", () => {
     expect(response.sessions).toHaveLength(2);
   });
 
-  it("omits dashboard-only model usage from list responses", () => {
-    const session = makeSession("usage", { model_usage: { "gpt-5.5": 120 } });
+  it("omits server-only metadata from list responses", () => {
+    const session = makeSession("usage", {
+      model_usage: { "gpt-5.5": 120 },
+      project_identity_resolver_revision: "resolver-v2",
+      project_identity_input_signature: "signature",
+      smart_tags_source_updated_at: 123,
+      smart_tags_classifier_revision: "classifier-v2",
+    });
     const source = makeScanSource({
       sessions: [session],
       byAgent: { claudecode: [session] },
@@ -341,8 +353,108 @@ describe("handleGetSessions", () => {
 
     handleGetSessions(c, source);
 
-    expect(c.json.mock.calls[0]![0].sessions[0]).not.toHaveProperty("model_usage");
+    const response = c.json.mock.calls[0]![0].sessions[0];
+    expect(response).not.toHaveProperty("model_usage");
+    expect(response).not.toHaveProperty("project_identity_resolver_revision");
+    expect(response).not.toHaveProperty("project_identity_input_signature");
+    expect(response).not.toHaveProperty("smart_tags_source_updated_at");
+    expect(response).not.toHaveProperty("smart_tags_classifier_revision");
     expect(session.model_usage).toEqual({ "gpt-5.5": 120 });
+  });
+
+  it("returns cursor pages without changing legacy unpaged requests", () => {
+    const sessions = [makeSession("first"), makeSession("second"), makeSession("third")];
+    const source = makeScanSource({ sessions, byAgent: { claudecode: sessions } });
+    const firstContext = makeMockContext({ query: { limit: "2" } });
+
+    handleGetSessions(firstContext, source);
+
+    const firstPage = firstContext.json.mock.calls[0]![0];
+    expect(firstPage.sessions.map((session: SessionHead) => session.id)).toEqual([
+      "first",
+      "second",
+    ]);
+    expect(firstPage.nextCursor).toEqual(expect.any(String));
+
+    const secondContext = makeMockContext({
+      query: { limit: "2", cursor: firstPage.nextCursor },
+    });
+    handleGetSessions(secondContext, source);
+
+    expect(secondContext.json.mock.calls[0]![0]).toEqual({ sessions: [sessions[2]] });
+
+    const legacyContext = makeMockContext();
+    handleGetSessions(legacyContext, source);
+    expect(legacyContext.json.mock.calls[0]![0].sessions).toHaveLength(3);
+  });
+
+  it("rejects a cursor after the scan snapshot changes", () => {
+    const initialSessions = [makeSession("first"), makeSession("second")];
+    let snapshot = makeScanResult({
+      sessions: initialSessions,
+      byAgent: { claudecode: initialSessions },
+    });
+    const source: ScanResultSource = { getSnapshot: () => snapshot };
+    const firstContext = makeMockContext({ query: { limit: "1" } });
+    handleGetSessions(firstContext, source);
+    const cursor = firstContext.json.mock.calls[0]![0].nextCursor;
+
+    const updatedSessions = [makeSession("new"), ...initialSessions];
+    snapshot = makeScanResult({
+      sessions: updatedSessions,
+      byAgent: { claudecode: updatedSessions },
+    });
+    const nextContext = makeMockContext({ query: { limit: "1", cursor } });
+    handleGetSessions(nextContext, source);
+
+    expect(nextContext.json).toHaveBeenCalledWith(
+      { error: "session snapshot changed; restart pagination" },
+      409,
+    );
+  });
+
+  it("rejects invalid pagination parameters", () => {
+    const invalidLimit = makeMockContext({ query: { limit: "many" } });
+    handleGetSessions(invalidLimit, makeScanSource());
+    expect(invalidLimit.json).toHaveBeenCalledWith(
+      { error: "limit must be a positive integer" },
+      400,
+    );
+
+    const invalidCursor = makeMockContext({ query: { cursor: "not-a-cursor" } });
+    handleGetSessions(invalidCursor, makeScanSource());
+    expect(invalidCursor.json).toHaveBeenCalledWith(
+      { error: "cursor is invalid for this request" },
+      400,
+    );
+  });
+
+  it("reuses filtered candidates across pages from the same snapshot", () => {
+    const sessions = [
+      makeSession("first", {
+        project_identity: { kind: "path", key: "/workspace", displayName: "workspace" },
+      }),
+      makeSession("second", {
+        project_identity: { kind: "path", key: "/workspace", displayName: "workspace" },
+      }),
+    ];
+    const source = makeScanSource({ sessions, byAgent: { claudecode: sessions } });
+    const firstContext = makeMockContext({
+      query: { limit: "1", projectKind: "path", projectKey: "/workspace" },
+    });
+    handleGetSessions(firstContext, source);
+
+    const nextContext = makeMockContext({
+      query: {
+        limit: "1",
+        cursor: firstContext.json.mock.calls[0]![0].nextCursor,
+        projectKind: "path",
+        projectKey: "/workspace",
+      },
+    });
+    handleGetSessions(nextContext, source);
+
+    expect(coreMocks.matchesProjectIdentity).toHaveBeenCalledTimes(sessions.length);
   });
 
   it("filters by agent", () => {
