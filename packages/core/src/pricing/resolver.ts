@@ -1,5 +1,10 @@
 import aliasesData from "./data/aliases.json";
-import { getPricingRegistry, hasBillablePricing, type ModelPricing } from "./fetcher.js";
+import {
+  getPricingRegistry,
+  hasBillablePricing,
+  normalizeModelKey,
+  type ModelPricing,
+} from "./fetcher.js";
 
 const BUILTIN_ALIASES = Object.fromEntries(
   Object.entries(aliasesData as Record<string, string>).map(([key, value]) => [
@@ -7,10 +12,6 @@ const BUILTIN_ALIASES = Object.fromEntries(
     normalizeModelKey(value),
   ]),
 );
-
-function normalizeModelKey(model: string): string {
-  return model.trim().toLowerCase().replaceAll("_", "-");
-}
 
 function stripVersion(model: string): string {
   return model.replace(/@.*$/, "").replace(/-\d{8}$/, "");

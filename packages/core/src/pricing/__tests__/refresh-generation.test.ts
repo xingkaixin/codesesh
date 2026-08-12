@@ -45,10 +45,52 @@ afterEach(() => {
 });
 
 describe("CS-148: pricing generations", () => {
+  it("loads stale cache data and derives generation identity from its content", async () => {
+    mkdirSync(join(testHome, ".cache", "codesesh"), { recursive: true });
+    writeFileSync(
+      cachePath,
+      JSON.stringify({
+        timestamp: Date.now() - 25 * 60 * 60 * 1000,
+        generation: 41,
+        data: {
+          "vertex_ai/cs_202_model": {
+            inputCostPerToken: 0.000001,
+            outputCostPerToken: 0.000002,
+          },
+        },
+      }),
+    );
+
+    vi.resetModules();
+    const isolatedPricing = await import("../fetcher.js");
+    const isolatedResolver = await import("../resolver.js");
+    const firstGeneration = isolatedPricing.getPricingGeneration().id;
+
+    expect(isolatedResolver.pricingResolver.resolve("vertex_ai/cs_202_model")).not.toBeNull();
+
+    writeFileSync(
+      cachePath,
+      JSON.stringify({
+        timestamp: Date.now() - 25 * 60 * 60 * 1000,
+        generation: 41,
+        data: {
+          "vertex_ai/cs_202_model": {
+            inputCostPerToken: 0.000003,
+            outputCostPerToken: 0.000004,
+          },
+        },
+      }),
+    );
+    vi.resetModules();
+    const changedPricing = await import("../fetcher.js");
+
+    expect(changedPricing.getPricingGeneration().id).not.toBe(firstGeneration);
+  });
+
   it("CS-194: keeps parent and isolated worker pricing on one generation", async () => {
     const generationBefore = getPricingGeneration().id;
     const pricingBefore = getPricingRegistry().get(MODEL);
-    stubFetch(async () => ({ ok: true, json: async () => remotePricing(0.000999) }));
+    stubFetch(async () => ({ ok: true, json: async () => remotePricing(0.000777) }));
 
     expect(await refreshPricingCache()).toBe(true);
     expect(existsSync(cachePath)).toBe(false);
@@ -81,7 +123,7 @@ describe("CS-148: pricing generations", () => {
 
     expect(publishPendingPricing()).toBe(true);
     expect(estimateTokenCost(MODEL, MILLION_INPUT)).toBe(999);
-    expect(getPricingGeneration().id).toBe(generationBefore + 1);
+    expect(getPricingGeneration().id).not.toBe(generationBefore);
   });
 
   it("reports nothing to publish when no refresh completed", () => {
@@ -154,7 +196,7 @@ describe("CS-148: pricing generations", () => {
     expect(hasPendingPricing()).toBe(false);
   });
 
-  it("publishes the disk cache and generation in one step", async () => {
+  it("publishes the disk cache in one step", async () => {
     stubFetch(async () => ({ ok: true, json: async () => remotePricing(0.000123) }));
 
     await refreshPricingCache();
@@ -165,11 +207,9 @@ describe("CS-148: pricing generations", () => {
     // A truncated write would not parse.
     const parsed = JSON.parse(raw) as {
       timestamp: number;
-      generation: number;
       data: Record<string, unknown>;
     };
     expect(typeof parsed.timestamp).toBe("number");
-    expect(parsed.generation).toBe(getPricingGeneration().id);
     expect(Object.keys(parsed.data).length).toBeGreaterThan(0);
     expect(existsSync(`${cachePath}.${process.pid}.tmp`)).toBe(false);
   });
