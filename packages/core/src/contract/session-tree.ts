@@ -147,16 +147,17 @@ function rollUpSubtree(entry: SessionTreeNode): void {
 
 export function buildSessionTree(sessions: SessionHead[]): SessionTree {
   const byRouteKey = new Map<string, SessionTreeNode>();
-  const nodes = sessions.map<SessionTreeNode>((session) => ({
-    session,
-    children: [],
-    descendantCount: 0,
-    inclusiveStats: ownStats(session),
-  }));
-  for (const node of nodes) {
-    const key = sessionKey(node.session);
-    if (!byRouteKey.has(key)) byRouteKey.set(key, node);
+  for (const session of sessions) {
+    const key = sessionKey(session);
+    if (byRouteKey.has(key)) continue;
+    byRouteKey.set(key, {
+      session,
+      children: [],
+      descendantCount: 0,
+      inclusiveStats: ownStats(session),
+    });
   }
+  const nodes = [...byRouteKey.values()];
 
   // A session whose parent chain re-enters itself can never reach a root, so it
   // is mounted nowhere. Memoized so the walk stays linear over long chains.
