@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildFileActivityWhere,
   fileActivityFromRow,
-  highlightFilePath,
+  findFilePathHighlightRanges,
 } from "../file-activity.js";
 
 describe("cached file activity", () => {
@@ -50,6 +50,6 @@ describe("cached file activity", () => {
       count: 2,
       latestTime: 30,
     });
-    expect(highlightFilePath("src/App.tsx", "app")).toBe("src/<mark>App</mark>.tsx");
+    expect(findFilePathHighlightRanges("src/App.tsx", "app")).toEqual([{ start: 4, end: 7 }]);
   });
 });

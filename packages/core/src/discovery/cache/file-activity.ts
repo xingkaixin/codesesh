@@ -7,7 +7,7 @@ import type {
   ProjectIdentityKind,
   SessionFileActivity,
 } from "../../types/index.js";
-import type { FileActivityResult } from "../../contract/index.js";
+import type { FileActivityResult, SearchHighlightRange } from "../../contract/index.js";
 import { computeIdentity, realFs } from "../../projects/index.js";
 import type { SQLiteDatabase } from "../../utils/sqlite.js";
 import { filePathFtsQuery, hasCacheStorage, likePattern, normalizeFilePathSearch } from "./db.js";
@@ -283,15 +283,13 @@ export function listSessionFileActivity(
   );
 }
 
-export function highlightFilePath(path: string, query: string): string {
+export function findFilePathHighlightRanges(path: string, query: string): SearchHighlightRange[] {
   const needle = normalizeFilePathSearch(query);
-  if (!needle) return path;
+  if (!needle) return [];
   const lower = path.toLowerCase();
   const index = lower.indexOf(needle.toLowerCase());
-  if (index < 0) return path;
-  return `${path.slice(0, index)}<mark>${path.slice(index, index + needle.length)}</mark>${path.slice(
-    index + needle.length,
-  )}`;
+  if (index < 0) return [];
+  return [{ start: index, end: index + needle.length }];
 }
 
 export function searchFileActivitySessions(
@@ -312,10 +310,17 @@ export function searchFileActivitySessions(
     true,
   );
 
-  return rows.map((row) => ({
-    reference: row.reference,
-    session: row.session,
-    snippet: `${row.kind} ${highlightFilePath(row.path, path)} · ${row.count} events`,
-    matchType: "file_path",
-  }));
+  return rows.map((row) => {
+    const prefix = `${row.kind} `;
+    return {
+      reference: row.reference,
+      session: row.session,
+      snippet: `${prefix}${row.path} · ${row.count} events`,
+      snippetHighlights: findFilePathHighlightRanges(row.path, path).map((range) => ({
+        start: prefix.length + range.start,
+        end: prefix.length + range.end,
+      })),
+      matchType: "file_path",
+    };
+  });
 }

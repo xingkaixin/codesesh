@@ -29,6 +29,7 @@ const searchResults: SearchResult[] = sessions.slice(0, 2).map((session) => ({
   reference: { agentName: "Codex", sessionId: session.id },
   session,
   snippet: session.title,
+  snippetHighlights: [],
   matchType: "title",
 }));
 

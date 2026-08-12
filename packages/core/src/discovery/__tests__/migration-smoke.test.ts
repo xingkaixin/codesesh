@@ -61,6 +61,12 @@ function getStatePath(): string {
   return join(getStateDir(), "state.db");
 }
 
+function highlightedText(
+  result: { snippet: string; snippetHighlights: Array<{ start: number; end: number }> } | undefined,
+): string[] {
+  return result?.snippetHighlights.map(({ start, end }) => result.snippet.slice(start, end)) ?? [];
+}
+
 function makeSession(): SessionHead {
   return {
     id: "legacy-smoke",
@@ -276,14 +282,14 @@ function expectMigratedBehavior(structured: boolean): void {
   ]);
   expect(results).toHaveLength(1);
   expect(results[0]?.session.id).toBe("legacy-smoke");
-  expect(results[0]?.snippet).toContain("<mark>needle</mark>");
+  expect(highlightedText(results[0])).toContain("needle");
 
   if (structured) {
     const toolResults = searchSessions("tool:read");
     const fileResults = searchFileActivitySessions("legacy.ts");
     expect(toolResults.map((result) => result.session.id)).toEqual(["legacy-smoke"]);
     expect(fileResults.map((result) => result.session.id)).toEqual(["legacy-smoke"]);
-    expect(fileResults[0]?.snippet).toContain("<mark>legacy.ts</mark>");
+    expect(highlightedText(fileResults[0])).toContain("legacy.ts");
   }
 }
 

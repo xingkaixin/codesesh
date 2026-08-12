@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Link } from "react-router-dom";
 import type { AgentInfo, SearchResult } from "../../lib/api";
 import { sessionRoutePath } from "../../lib/session-indexes";
@@ -16,15 +16,22 @@ const SEARCH_MATCH_LABELS: Record<SearchResult["matchType"], string> = {
   file_path: "File path",
 };
 
-function toSafeSnippetHtml(snippet: string): string {
-  return snippet
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;")
-    .replaceAll("&lt;mark&gt;", "<mark>")
-    .replaceAll("&lt;/mark&gt;", "</mark>");
+function renderHighlightedSnippet(
+  snippet: string,
+  highlights: SearchResult["snippetHighlights"],
+): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+
+  for (const { start, end } of highlights) {
+    if (start < cursor || end <= start || end > snippet.length) continue;
+    if (start > cursor) nodes.push(snippet.slice(cursor, start));
+    nodes.push(<mark key={`${start}-${end}`}>{snippet.slice(start, end)}</mark>);
+    cursor = end;
+  }
+
+  if (cursor < snippet.length) nodes.push(snippet.slice(cursor));
+  return nodes;
 }
 
 export function SearchResultsPanel({
@@ -188,12 +195,12 @@ export function SearchResultsPanel({
               {getSessionDisplayTitle(result.session)}
             </h2>
             <SmartTagChips tags={result.session.smart_tags} className="mt-2" />
-            <p
-              className="mt-2 text-xs leading-6 text-[var(--console-text-secondary)]"
-              dangerouslySetInnerHTML={{
-                __html: toSafeSnippetHtml(result.snippet || getSessionDisplayTitle(result.session)),
-              }}
-            />
+            <p className="mt-2 text-xs leading-6 text-[var(--console-text-secondary)]">
+              {renderHighlightedSnippet(
+                result.snippet || getSessionDisplayTitle(result.session),
+                result.snippet ? result.snippetHighlights : [],
+              )}
+            </p>
           </Link>
         );
       })}

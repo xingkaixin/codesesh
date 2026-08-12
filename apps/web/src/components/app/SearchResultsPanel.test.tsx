@@ -94,6 +94,8 @@ describe("SearchResultsPanel", () => {
   });
 
   it("renders safe result snippets and opens the selected result", () => {
+    const snippet = '<script>alert("x")</script><mark>literal</mark> needle & more';
+    const highlightStart = snippet.indexOf("needle");
     const results: SearchResult[] = [
       {
         reference: { agentName: "Codex", sessionId: "s1" },
@@ -101,13 +103,15 @@ describe("SearchResultsPanel", () => {
           display_title: "Renamed session",
           smart_tags: ["bugfix"],
         }),
-        snippet: '<script>alert("x")</script><mark>needle</mark> & more',
+        snippet,
+        snippetHighlights: [{ start: highlightStart, end: highlightStart + "needle".length }],
         matchType: "title",
       },
       {
         reference: { agentName: "Other", sessionId: "s2" },
         session: makeSession("s2"),
         snippet: "",
+        snippetHighlights: [],
         matchType: "file_path",
       },
     ];
@@ -132,8 +136,13 @@ describe("SearchResultsPanel", () => {
     expect(screen.getByText("Renamed session")).toBeTruthy();
     expect(screen.getAllByText("bugfix").some((element) => element.tagName === "SPAN")).toBe(true);
     expect(screen.getByText("needle").tagName).toBe("MARK");
+    expect(Array.from(container.querySelectorAll("mark"), (node) => node.textContent)).toEqual([
+      "needle",
+    ]);
     expect(container.querySelector("script")).toBeNull();
-    expect(container.textContent).toContain('<script>alert("x")</script>needle & more');
+    expect(container.textContent).toContain(
+      '<script>alert("x")</script><mark>literal</mark> needle & more',
+    );
 
     const firstLink = screen.getByText("Renamed session").closest("a");
     const selectedTitle = screen
@@ -158,6 +167,7 @@ describe("SearchResultsPanel", () => {
           parent_reference: { agentName: "codex", sessionId: "parent" },
         }),
         snippet: "",
+        snippetHighlights: [],
         matchType: "title",
         parent: {
           reference: { agentName: "codex", sessionId: "parent" },
@@ -182,6 +192,7 @@ describe("SearchResultsPanel", () => {
           parent_reference: { agentName: "codex", sessionId: "missing" },
         }),
         snippet: "",
+        snippetHighlights: [],
         matchType: "title",
       },
     ];
