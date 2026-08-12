@@ -82,22 +82,20 @@ export function upsertBookmark(reference: SessionReference): BookmarkRecord {
   }
 
   return withStateDb((db) => {
-    db.prepare(
-      `
-        INSERT INTO bookmarks(agent_name, session_id, bookmarked_at)
-        VALUES (?, ?, ?)
-        ON CONFLICT(agent_name, session_id) DO NOTHING
-      `,
-    ).run(normalized.agentName, normalized.sessionId, Date.now());
     const row = db
       .prepare(
         `
-          SELECT agent_name, session_id, bookmarked_at
-          FROM bookmarks
-          WHERE agent_name = ? AND session_id = ?
+          INSERT INTO bookmarks(agent_name, session_id, bookmarked_at)
+          VALUES (?, ?, ?)
+          ON CONFLICT(agent_name, session_id) DO UPDATE
+          SET bookmarked_at = bookmarks.bookmarked_at
+          RETURNING agent_name, session_id, bookmarked_at
         `,
       )
-      .get(normalized.agentName, normalized.sessionId) as BookmarkRow;
+      .get(normalized.agentName, normalized.sessionId, Date.now()) as BookmarkRow | undefined;
+    if (!row) {
+      throw new Error("Bookmark upsert returned no row");
+    }
     return toBookmarkRecord(row);
   });
 }

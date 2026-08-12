@@ -515,6 +515,13 @@ describe("handleGetSessions", () => {
 
     expect(c.json).toHaveBeenCalledWith({ error: "from must be a valid date" }, 400);
   });
+
+  it("rejects a date window whose start is after its end", () => {
+    const c = makeMockContext({ query: { from: "2026-08-13", to: "2026-08-12" } });
+    handleGetSessions(c, makeScanSource());
+
+    expect(c.json).toHaveBeenCalledWith({ error: "from must not be after to" }, 400);
+  });
 });
 
 describe("handleSearchSessions", () => {
@@ -1551,6 +1558,31 @@ describe("handleGetSessionData", () => {
     expect(payload.messages).toHaveLength(200);
     expect(chunks.length).toBeLessThan(10);
     expect(serializedMessages).toBe(200);
+  });
+
+  it("errors the response body and closes iteration when cached message reads fail", async () => {
+    const { messages: _messages, ...detailHeader } = detail;
+    const iterator = {
+      next: vi
+        .fn()
+        .mockReturnValueOnce({ done: false, value: JSON.stringify({ id: "m1" }) })
+        .mockImplementationOnce(() => {
+          throw new Error("cached message read failed");
+        }),
+      return: vi.fn(() => ({ done: true, value: undefined })),
+    };
+    coreMocks.materializeSessionDetailResponse.mockReturnValue({
+      status: "found-json",
+      data: detailHeader,
+      messages: { [Symbol.iterator]: () => iterator },
+      messageCount: 2,
+    });
+    const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
+
+    const response = (await handleGetSessionData(c, makeScanSource())) as Response;
+
+    await expect(response.text()).rejects.toThrow("cached message read failed");
+    expect(iterator.return).toHaveBeenCalledOnce();
   });
 
   it("returns 400 when agent name is missing", async () => {

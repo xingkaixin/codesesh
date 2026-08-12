@@ -99,6 +99,26 @@ describe("bookmarks state storage", () => {
     expect(listBookmarks()).toEqual([makeBookmark()]);
   });
 
+  it("returns the inserted bookmark even when it is deleted before a follow-up read", () => {
+    listBookmarks();
+    const db = new Database(getStatePath());
+    try {
+      db.exec(`
+        CREATE TRIGGER delete_bookmark_after_insert
+        AFTER INSERT ON bookmarks
+        WHEN NEW.session_id = 'racy'
+        BEGIN
+          DELETE FROM bookmarks
+          WHERE agent_name = NEW.agent_name AND session_id = NEW.session_id;
+        END;
+      `);
+    } finally {
+      db.close();
+    }
+
+    expect(upsertBookmark(makeBookmark("racy").reference)).toEqual(makeBookmark("racy"));
+  });
+
   it("imports facts idempotently and preserves existing timestamps", () => {
     upsertBookmark(makeBookmark("s1").reference);
 
