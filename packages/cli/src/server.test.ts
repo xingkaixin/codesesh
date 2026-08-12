@@ -345,6 +345,32 @@ describe("createServer", () => {
           })
         ).status,
       ).toBe(401);
+      expect(
+        (
+          await fetch(`${requestOrigin}/api/logs`, {
+            method: "POST",
+            headers: {
+              Authorization: "Bearer test-access-token",
+              "Content-Type": "application/json",
+              "Sec-Fetch-Site": "cross-site",
+            },
+            body: JSON.stringify({ event: "cross-site-probe" }),
+          })
+        ).status,
+      ).toBe(403);
+      expect(
+        (
+          await fetch(`${requestOrigin}/api/logs`, {
+            method: "POST",
+            headers: {
+              Authorization: "Bearer test-access-token",
+              "Content-Type": "application/json",
+              Origin: requestOrigin,
+            },
+            body: JSON.stringify({ event: "same-origin-probe" }),
+          })
+        ).status,
+      ).toBe(200);
 
       await app.shutdown();
     } finally {
