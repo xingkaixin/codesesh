@@ -145,6 +145,42 @@ describe("SessionWatcher", () => {
     }
   });
 
+  it("closes a fallback watcher when its directory is deleted", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "watcher-fallback-delete-"));
+    const childDir = join(tempDir, "child");
+    mkdirSync(childDir);
+    fsWatch.watch.mockImplementation((path, options, listener) => {
+      if (options.recursive) {
+        const error = Object.assign(new Error("recursive watch unavailable"), {
+          code: "ERR_FEATURE_UNAVAILABLE_ON_PLATFORM",
+        });
+        throw error;
+      }
+      return registerMockWatcher(path, options, listener);
+    });
+
+    try {
+      const watcher = new SessionWatcher();
+      watcher.start([
+        source("custom-agent", {
+          status: "supported",
+          targets: [{ path: tempDir }],
+        }),
+      ]);
+      const rootWatcher = fsWatch.watchers.find((entry) => entry.path === tempDir)!;
+      const childWatcher = fsWatch.watchers.find((entry) => entry.path === childDir)!;
+
+      rmSync(childDir, { recursive: true });
+      rootWatcher.listener("rename", "child");
+      await Promise.resolve();
+
+      expect(childWatcher.close).toHaveBeenCalledOnce();
+      await watcher.dispose();
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("distinguishes unsupported and unnecessary watch capabilities", () => {
     const watcher = new SessionWatcher();
 

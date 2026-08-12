@@ -80,4 +80,31 @@ describe("file activity extraction", () => {
       expect.objectContaining({ path: "src/b.ts", kind: "delete", count: 1 }),
     ]);
   });
+
+  it("keeps read activity when the input also contains typed content", () => {
+    const messages: Message[] = [
+      {
+        id: "m1",
+        role: "assistant",
+        time_created: 10,
+        parts: [
+          {
+            type: "tool",
+            tool: "Read",
+            state: {
+              status: "completed",
+              input: {
+                file_path: "src/a.ts",
+                content: [{ type: "text", text: "file contents" }],
+              },
+            },
+          },
+        ],
+      },
+    ];
+
+    expect(extractFileActivityOccurrences(messages)).toEqual([
+      expect.objectContaining({ path: "src/a.ts", kind: "read" }),
+    ]);
+  });
 });

@@ -544,9 +544,9 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
   private sumChildTokenStats(db: SQLiteDatabase, parentSessionId: string): SessionHead["stats"][] {
     if (!columnExists(db, "session", "parent_id")) return [];
 
-    const childRows = db
-      .prepare("SELECT id FROM session WHERE parent_id = ?")
-      .all(parentSessionId) as Record<string, unknown>[];
+    const childRows = this.readRelatedSessionRows(db, [parentSessionId]).filter(
+      (row) => String(row.id ?? "") !== parentSessionId,
+    );
 
     const results: SessionHead["stats"][] = [];
     for (const child of childRows) {

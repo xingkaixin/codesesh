@@ -202,6 +202,23 @@ describe("PiAgent", () => {
     expect(windowed.map((ref) => ref.sourcePath)).toEqual([newFile]);
   });
 
+  it("uses the same session id for source enumeration and parsed heads", () => {
+    const filenameSessionId = "filename-session";
+    const headerSessionId = "header-session";
+    const { agent } = writePiSession(filenameSessionId, [
+      { type: "session", id: headerSessionId, timestamp: TS, cwd: "/tmp/project" },
+      {
+        type: "message",
+        id: "message-1",
+        parentId: null,
+        timestamp: TS,
+        message: { role: "user", content: "Compare source ids" },
+      },
+    ]);
+
+    expect(agent.listSessionSources()[0]?.sessionId).toBe(agent.scan()[0]?.id);
+  });
+
   it("stats each session file once during a scan", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-pi-test-"));
     tempDirs.push(tempDir);
@@ -272,7 +289,7 @@ describe("PiAgent", () => {
         sourcePath: sessionFile,
         fingerprint: JSON.stringify([
           "pi-head-v1",
-          "pi-parser-v2",
+          "pi-parser-v3",
           sessionTime.getTime(),
           statSync(sessionFile).size,
         ]),
@@ -561,7 +578,7 @@ describe("PiAgent", () => {
     });
   });
 
-  it("takes the first session record as the header when several are present", () => {
+  it("takes metadata from the first session record when several are present", () => {
     const { agent, sessionId } = writePiSession("019deeee-eeee-7eee-eeee-eeeeeeeeeeee", [
       { type: "session", version: 3, id: "first", timestamp: TS, cwd: "/tmp/first" },
       { type: "session", version: 3, id: "second", timestamp: TS, cwd: "/tmp/second" },
@@ -576,9 +593,8 @@ describe("PiAgent", () => {
 
     const [head] = agent.scan();
 
-    expect(head?.id).toBe("first");
+    expect(head?.id).toBe(sessionId);
     expect(head?.directory).toBe("/tmp/first");
-    expect(sessionId).toBeTruthy();
   });
 
   it("skips files that are empty or missing a session header", () => {

@@ -587,6 +587,26 @@ describe("CS-180: related session reads stay inside the selected roots", () => {
       db.close();
     }
   });
+
+  it("includes every descendant in root detail stats", () => {
+    const dbPath = createDatabaseWithRelatedHistory(0);
+    const db = new Database(dbPath);
+    db.prepare("UPDATE message SET data = ?").run(
+      JSON.stringify({ role: "assistant", cost: 1, tokens: { input: 1, output: 0 } }),
+    );
+    db.close();
+    const agent = new OpenCodeSqliteAgent({
+      name: "test-agent",
+      displayName: "Test Agent",
+      findDbPath: () => dbPath,
+      getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
+    });
+
+    expect(agent.getSessionData("recent-root").stats).toMatchObject({
+      total_input_tokens: 4,
+      total_cost: 4,
+    });
+  });
 });
 
 describe("CS-138: unreadable databases are not empty scans", () => {

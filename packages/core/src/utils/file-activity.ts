@@ -12,6 +12,14 @@ interface CodexPatchEntry {
   oldPath: string;
 }
 
+const CODEX_PATCH_TYPES = new Set([
+  "edit_file",
+  "update_file",
+  "write_file",
+  "delete_file",
+  "move_file",
+]);
+
 function toRecord(value: unknown) {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>;
@@ -140,11 +148,13 @@ function classifyToolKind(part: ToolPart): FileActivityKind | null {
 function normalizeCodexPatchEntry(entry: unknown): CodexPatchEntry | null {
   const record = toRecord(entry);
   const type = toStringValue(record.type);
-  if (!type) return null;
+  const path = toStringValue(record.path);
+  const oldPath = toStringValue(record.old_path);
+  if (!CODEX_PATCH_TYPES.has(type) || (!path && !oldPath)) return null;
   return {
     type,
-    path: toStringValue(record.path),
-    oldPath: toStringValue(record.old_path),
+    path,
+    oldPath,
   };
 }
 
@@ -184,6 +194,7 @@ export function extractFileActivityOccurrences(
       const currentToolIndex = toolIndex;
       toolIndex += 1;
 
+      const kind = classifyToolKind(part);
       const patchEntries = getCodexPatchEntries(inputValue);
       if (patchEntries.length > 0) {
         for (const entry of patchEntries) {
@@ -201,7 +212,6 @@ export function extractFileActivityOccurrences(
         continue;
       }
 
-      const kind = classifyToolKind(part);
       if (!kind) continue;
 
       for (const path of extractPathsFromToolInput(inputValue)) {
