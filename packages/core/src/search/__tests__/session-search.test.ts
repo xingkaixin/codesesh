@@ -25,6 +25,7 @@ import type {
   SmartTag,
 } from "../../types/index.js";
 import type { SearchOptions } from "../../discovery/cache/search.js";
+import type { SearchResult } from "../../contract/index.js";
 import { searchSessions, syncSessionSearchIndex } from "../../discovery/cache/search.js";
 import { compareSessionActivityDesc, mergeSortedSessions } from "../../contract/session-index.js";
 import {
@@ -541,6 +542,32 @@ describe("search characterization: recent (empty-query) path", () => {
     );
   });
 
+  it("filters recent parents by inclusive child cost", () => {
+    const parent = makeSessionHead({
+      id: "cost-parent",
+      agent: "codex",
+      cost: 0,
+      messages: [],
+    });
+    const child = {
+      ...makeSessionHead({
+        id: "cost-child",
+        agent: "codex",
+        cost: 2,
+        messages: [],
+      }),
+      parent_reference: { agentName: "codex", sessionId: "cost-parent" },
+    };
+    const snapshot = {
+      sessions: [parent, child],
+      byAgent: { codex: [parent, child] },
+    };
+
+    const results = executeSessionSearch("", { costMin: 1 }, snapshot);
+
+    expect(results.map((result) => result.session.id)).toEqual(["cost-parent", "cost-child"]);
+  });
+
   it("reads the global ordered snapshot only until the result limit", () => {
     const ordered = Array.from({ length: 100 }, (_, index) =>
       makeSessionHead({
@@ -772,6 +799,36 @@ describe("search candidate filtering", () => {
     });
 
     expect(results.map((result) => result.session.id)).toEqual(["file-qualifier-match"]);
+  });
+
+  it("uses the full snapshot for alias-style inclusive cost filters", () => {
+    const parent = makeSessionHead({
+      id: "alias-cost-parent",
+      agent: "codex",
+      cost: 0,
+      messages: [],
+    });
+    const child = {
+      ...makeSessionHead({
+        id: "alias-cost-child",
+        agent: "codex",
+        cost: 2,
+        messages: [],
+      }),
+      parent_reference: { agentName: "codex", sessionId: parent.id },
+    };
+    const candidates: SearchResult[] = [
+      {
+        reference: { agentName: "codex", sessionId: parent.id },
+        session: parent,
+        snippet: "Alias",
+        matchType: "title",
+      },
+    ];
+
+    const results = filterSessionSearchCandidates(candidates, { costMin: 1 }, [parent, child]);
+
+    expect(results.map((result) => result.session.id)).toEqual([parent.id]);
   });
 });
 

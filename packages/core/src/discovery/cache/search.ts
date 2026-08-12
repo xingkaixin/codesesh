@@ -126,8 +126,11 @@ export function mergeSearchQueryOptions(query: string, options: SearchOptions) {
   };
 }
 
-export function sessionMatchesSearchCost(session: SessionHead, options: SearchOptions): boolean {
-  const cost = session.stats.total_cost;
+export function sessionMatchesSearchCost(
+  session: SessionHead,
+  options: SearchOptions,
+  cost = session.stats.total_cost,
+): boolean {
   if (options.costMin != null) {
     if (options.costMinExclusive ? cost <= options.costMin : cost < options.costMin) {
       return false;
@@ -216,19 +219,46 @@ export function buildSessionSearchFilters(options: SearchOptions): {
     clauses.push("s.activity_time <= ?");
     params.push(options.to);
   }
-  if (options.costMin != null) {
-    clauses.push(options.costMinExclusive ? "s.total_cost > ?" : "s.total_cost >= ?");
-    params.push(options.costMin);
-  }
-  if (options.costMax != null) {
-    clauses.push(options.costMaxExclusive ? "s.total_cost < ?" : "s.total_cost <= ?");
-    params.push(options.costMax);
-  }
+  appendInclusiveCostFilter(clauses, params, options);
 
   return {
     where: clauses.length > 0 ? ` AND ${clauses.join(" AND ")}` : "",
     params,
   };
+}
+
+function appendInclusiveCostFilter(
+  clauses: string[],
+  params: unknown[],
+  options: SearchOptions,
+): void {
+  const predicates: string[] = [];
+  if (options.costMin != null) {
+    predicates.push(options.costMinExclusive ? "SUM(own_cost) > ?" : "SUM(own_cost) >= ?");
+    params.push(options.costMin);
+  }
+  if (options.costMax != null) {
+    predicates.push(options.costMaxExclusive ? "SUM(own_cost) < ?" : "SUM(own_cost) <= ?");
+    params.push(options.costMax);
+  }
+  if (predicates.length === 0) return;
+
+  // UNION makes malformed parent cycles converge while preserving one row per session.
+  clauses.push(`EXISTS (
+    WITH RECURSIVE session_subtree(agent_name, session_id, own_cost) AS (
+      SELECT s.agent_name, s.session_id, s.total_cost
+      UNION
+      SELECT child.agent_name, child.session_id, child.total_cost
+      FROM sessions child
+      JOIN session_subtree parent
+        ON child.parent_agent_name = parent.agent_name
+        AND child.parent_session_id = parent.session_id
+      WHERE child.publication_id IS NULL
+    )
+    SELECT SUM(own_cost)
+    FROM session_subtree
+    HAVING ${predicates.join(" AND ")}
+  )`);
 }
 
 export interface SessionSearchReference {

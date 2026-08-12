@@ -638,6 +638,50 @@ describe("searchSessions", () => {
     ]);
   });
 
+  it("filters indexed parents by inclusive child cost", () => {
+    const parent = {
+      ...makeSession("inclusive-parent"),
+      slug: "codex/inclusive-parent",
+      stats: { ...makeSession("inclusive-parent").stats, total_cost: 0 },
+    };
+    const child = {
+      ...makeSession("inclusive-child"),
+      slug: "codex/inclusive-child",
+      parent_reference: { agentName: "codex", sessionId: "inclusive-parent" },
+      stats: { ...makeSession("inclusive-child").stats, total_cost: 2 },
+    };
+    const details = new Map<string, SessionDetail>([
+      [
+        parent.id,
+        {
+          ...parent,
+          reference: { agentName: "codex", sessionId: parent.id },
+          messages: [
+            {
+              id: "parent-message",
+              role: "user",
+              time_created: now,
+              parts: [{ type: "text", text: "inclusivecostneedle" }],
+            },
+          ],
+        },
+      ],
+      [
+        child.id,
+        {
+          ...child,
+          reference: { agentName: "codex", sessionId: child.id },
+          messages: [],
+        },
+      ],
+    ]);
+    syncSessionSearchIndex("codex", [parent, child], (sessionId) => details.get(sessionId)!);
+
+    expect(
+      searchSessions("inclusivecostneedle cost:>1").map((result) => result.session.id),
+    ).toEqual(["inclusive-parent"]);
+  });
+
   it("creates cache storage when syncing search index first", () => {
     const session = makeSession("first-search");
 
