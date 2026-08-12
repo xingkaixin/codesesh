@@ -288,6 +288,32 @@ describe("OpenCodeSqliteAgent", () => {
     });
   });
 
+  it("leaves zero-cost heads and details without a cost source", () => {
+    const dbPath = createDatabaseWithMessageData(
+      JSON.stringify({
+        role: "assistant",
+        modelID: "claude-sonnet-4-6",
+        tokens: { input: 0, output: 0 },
+      }),
+    );
+    const agent = new OpenCodeSqliteAgent({
+      name: "test-agent",
+      displayName: "Test Agent",
+      findDbPath: () => dbPath,
+      getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
+    });
+
+    expect(agent.isAvailable()).toBe(true);
+    const [head] = agent.scan({ from: 0 });
+    const detail = agent.getSessionData("s1");
+
+    expect(head?.stats.total_cost).toBe(0);
+    expect(head?.stats.cost_source).toBeUndefined();
+    expect(detail.stats.total_cost).toBe(0);
+    expect(detail.stats.cost_source).toBeUndefined();
+    expect(detail.messages[0]?.cost_source).toBeUndefined();
+  });
+
   it("invalidates cached heads from an older parser revision", () => {
     const dbPath = createDatabase();
     const agent = new OpenCodeSqliteAgent({
