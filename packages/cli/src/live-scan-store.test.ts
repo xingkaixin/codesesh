@@ -1187,7 +1187,7 @@ describe("LiveScanStore", () => {
     ).resolves.toEqual({
       sessions: [],
       meta: {},
-      changedIds: undefined,
+      changedIds: [],
       sourceFailures: [],
       completeness: "complete",
       explicitRemovedSessionIds: [],
@@ -1233,7 +1233,7 @@ describe("LiveScanStore", () => {
     await expect(refresh).resolves.toEqual({
       sessions: [],
       meta: {},
-      changedIds: undefined,
+      changedIds: [],
       sourceFailures: [],
       completeness: "complete",
       explicitRemovedSessionIds: [],
@@ -1308,7 +1308,7 @@ describe("LiveScanStore", () => {
         added: { id: "added", sourcePath: "/added" },
         retained: { id: "retained", sourcePath: "/retained" },
       },
-      changedIds: undefined,
+      changedIds: ["added", "removed"],
       sourceFailures: [],
       completeness: "complete",
       explicitRemovedSessionIds: [],

@@ -665,7 +665,10 @@ export class AgentSyncEngine {
         result.completeness,
         {},
         {
-          persistenceDiff: buildPersistenceDiff(baseline, sessions),
+          // Meta-only changes (e.g. a pricing capture epoch bump) leave the head
+          // signature intact; without the worker-reported ids they would never
+          // persist and checkForChanges would rescan on every startup.
+          persistenceDiff: buildPersistenceDiff(baseline, sessions, result.changedIds ?? []),
           checkDuration,
           scanDuration: performance.now() - scanStartedAt,
           sourceFailures: result.sourceFailures ?? [],
