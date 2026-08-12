@@ -69,6 +69,7 @@ import type {
 } from "@codesesh/core";
 import type { ModelCostEntry, SearchResult } from "@codesesh/core/contract";
 import { BaseAgent } from "@codesesh/core";
+import { appLogger } from "../../logging.js";
 
 // --- Helpers ---
 
@@ -1619,13 +1620,22 @@ describe("handleGetSessionData", () => {
   });
 
   it("maps materialization errors to 500", async () => {
+    const errorSpy = vi.spyOn(appLogger, "error").mockImplementation(() => {});
     coreMocks.materializeSessionDetailResponse.mockImplementation(() => {
-      throw new Error("DB not found");
+      throw new Error("ENOENT: open '/Users/private/.claude/session.json'");
     });
     const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
 
-    await handleGetSessionData(c, makeScanSource());
+    try {
+      await handleGetSessionData(c, makeScanSource());
 
-    expect(c.json).toHaveBeenCalledWith({ error: "DB not found" }, 500);
+      expect(c.json).toHaveBeenCalledWith({ error: "Failed to load session" }, 500);
+      expect(errorSpy).toHaveBeenCalledWith(
+        "api.session_data.error",
+        expect.objectContaining({ error: "ENOENT: open '/Users/private/.claude/session.json'" }),
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
