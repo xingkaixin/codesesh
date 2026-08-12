@@ -23,7 +23,7 @@ import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
 const HEAD_INDEX_VERSION = "pi-head-v1";
-const PARSER_VERSION = "pi-parser-v1";
+const PARSER_VERSION = "pi-parser-v2";
 
 export function resolvePiDataRoot(): string {
   return resolveHomePath("PI_HOME", ".pi");
@@ -195,7 +195,7 @@ export class PiAgent extends SingleFileSessionSource<SessionMeta> {
         total_cache_read_tokens: state.totalCacheReadTokens || undefined,
         total_cache_create_tokens: state.totalCacheCreateTokens || undefined,
         total_cost: state.totalCost,
-        cost_source: state.totalCost > 0 ? "recorded" : undefined,
+        cost_source: state.costSource,
       },
       messages: state.messages,
     };
@@ -252,7 +252,7 @@ export class PiAgent extends SingleFileSessionSource<SessionMeta> {
         total_cache_read_tokens: state.totalCacheReadTokens || undefined,
         total_cache_create_tokens: state.totalCacheCreateTokens || undefined,
         total_cost: state.totalCost,
-        cost_source: state.totalCost > 0 ? "recorded" : undefined,
+        cost_source: state.costSource,
       },
       model_usage: modelUsage,
     });
@@ -332,6 +332,7 @@ export class PiAgent extends SingleFileSessionSource<SessionMeta> {
     totalCacheReadTokens: number;
     totalCacheCreateTokens: number;
     totalCost: number;
+    costSource: Message["cost_source"];
     modelUsage: Record<string, number>;
   } {
     const builder = new TranscriptBuilder({ messageDefaults: "sparse" });
@@ -366,6 +367,7 @@ export class PiAgent extends SingleFileSessionSource<SessionMeta> {
       totalCacheReadTokens: result.stats.total_cache_read_tokens ?? 0,
       totalCacheCreateTokens: result.stats.total_cache_create_tokens ?? 0,
       totalCost: result.stats.total_cost,
+      costSource: result.stats.cost_source,
       modelUsage,
     };
   }
@@ -394,7 +396,9 @@ export class PiAgent extends SingleFileSessionSource<SessionMeta> {
       if (parts.length === 0) return null;
       const usage = this.normalizeUsage(message["usage"]);
       const model = typeof message["model"] === "string" ? message["model"].trim() : null;
-      const cost = usage.cost ?? estimateTokenCost(model, usage.tokens) ?? 0;
+      const estimatedCost = usage.cost === null ? estimateTokenCost(model, usage.tokens) : null;
+      const cost = usage.cost ?? estimatedCost ?? 0;
+      const costSource = cost > 0 ? (usage.cost === null ? "estimated" : "recorded") : undefined;
       return {
         message: {
           id,
@@ -406,7 +410,7 @@ export class PiAgent extends SingleFileSessionSource<SessionMeta> {
           model,
           tokens: usage.tokens,
           cost: cost || undefined,
-          costSource: cost > 0 ? "recorded" : undefined,
+          costSource,
         },
         totalTokens: usage.totalTokens,
         model,
