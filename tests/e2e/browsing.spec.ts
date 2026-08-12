@@ -316,9 +316,17 @@ test("returns a dragged receipt to its resting position", async ({ page }) => {
   await page.mouse.up();
 
   expect(await readCanvasHash()).not.toBe(restingHash);
-  await expect.poll(readCanvasHash, { timeout: 7_000, intervals: [100] }).toBe(restingHash);
-  await page.waitForTimeout(200);
-  expect(await readCanvasHash()).toBe(restingHash);
+  let restingSamples = 0;
+  await expect
+    .poll(
+      async () => {
+        const currentHash = await readCanvasHash();
+        restingSamples = currentHash === restingHash ? restingSamples + 1 : 0;
+        return restingSamples;
+      },
+      { timeout: 7_000, intervals: [50] },
+    )
+    .toBeGreaterThanOrEqual(5);
 });
 
 test("renders a static receipt for reduced motion", async ({ page }) => {
