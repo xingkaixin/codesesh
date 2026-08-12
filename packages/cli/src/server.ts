@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { compress } from "hono/compress";
+import { secureHeaders } from "hono/secure-headers";
 import { serve } from "@hono/node-server";
 import type { HttpBindings, ServerType } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -152,6 +153,36 @@ export async function createServer(
       `Refusing to expose CodeSesh on ${hostname} without authentication. Add --remote-access to continue.`,
     );
   }
+
+  app.use(
+    "*",
+    secureHeaders({
+      contentSecurityPolicy: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'none'"],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'", "data:"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        imgSrc: ["'self'", "data:"],
+        objectSrc: ["'none'"],
+        scriptSrc: ["'self'"],
+        scriptSrcAttr: ["'none'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+      },
+      crossOriginOpenerPolicy: false,
+      crossOriginResourcePolicy: false,
+      originAgentCluster: false,
+      referrerPolicy: "no-referrer",
+      strictTransportSecurity: false,
+      xContentTypeOptions: "nosniff",
+      xDnsPrefetchControl: false,
+      xDownloadOptions: false,
+      xFrameOptions: "DENY",
+      xPermittedCrossDomainPolicies: false,
+      xXssProtection: false,
+    }),
+  );
 
   if (loopbackAuthorityEnabled) {
     app.use("*", async (c, next) => {

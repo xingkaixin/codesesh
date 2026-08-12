@@ -450,6 +450,33 @@ describe("createServer", () => {
     expect(store.shutdown).toHaveBeenCalledOnce();
   });
 
+  it("serves the app with restrictive browser security headers", async () => {
+    const webDist = mkdtempSync(join(tmpdir(), "codesesh-security-headers-"));
+    writeFileSync(join(webDist, "index.html"), "<html>app shell</html>");
+    const app = await createServer(0, createStore(), { webDistPath: webDist });
+
+    try {
+      const response = await fetch(app.url);
+      const policy = response.headers.get("Content-Security-Policy") ?? "";
+
+      expect(policy).toContain("default-src 'self'");
+      expect(policy).toContain("script-src 'self'");
+      expect(policy).toContain("script-src-attr 'none'");
+      expect(policy).toContain("style-src 'self' 'unsafe-inline'");
+      expect(policy).toContain("img-src 'self' data:");
+      expect(policy).toContain("font-src 'self' data:");
+      expect(policy).toContain("object-src 'none'");
+      expect(policy).toContain("frame-ancestors 'none'");
+      expect(policy).toContain("base-uri 'none'");
+      expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+      expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+      expect(response.headers.get("X-Frame-Options")).toBe("DENY");
+    } finally {
+      await app.shutdown();
+      rmSync(webDist, { recursive: true, force: true });
+    }
+  });
+
   it("CS-131: serves the web build without reading outside its root", async () => {
     const root = mkdtempSync(join(tmpdir(), "codesesh-static-root-"));
     const webDist = join(root, "web");
