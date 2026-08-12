@@ -60,6 +60,7 @@ export default function App() {
     reload,
     applyLiveEvent,
     resyncLiveState,
+    retryLoad,
   } = sessionStore;
   useWindowedDataLoad({
     window: timeWindow,
@@ -306,6 +307,7 @@ export default function App() {
     <AppRouteContent
       loading={loading}
       error={error}
+      onRetry={() => void retryLoad()}
       viewState={viewState}
       detailHighlightQuery={detailHighlightQuery}
       agents={activeAgents}
@@ -566,7 +568,7 @@ export default function App() {
             </section>
 
             <section className="console-scrollbar bg-grid min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
-              <ErrorBoundary>
+              <ErrorBoundary key={location.pathname}>
                 <RenderProfiler
                   id="MainContent"
                   detail={{

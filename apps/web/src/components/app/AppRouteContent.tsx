@@ -1,4 +1,5 @@
 import { lazy, Suspense, useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useLocation } from "react-router-dom";
 import { DetailLanding, type LandingAgentItem, type LandingSession } from "../DetailLanding";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { RenderProfiler } from "../RenderProfiler";
@@ -24,8 +25,9 @@ const SearchResultsPanel = lazy(() =>
 
 /** Keeps a failed chunk load contained to the surface that needed it. */
 function LazySurface({ children }: { children: ReactNode }) {
+  const location = useLocation();
   return (
-    <ErrorBoundary>
+    <ErrorBoundary key={location.pathname}>
       <Suspense fallback={<SessionDetailSkeleton />}>{children}</Suspense>
     </ErrorBoundary>
   );
@@ -79,6 +81,7 @@ interface BookmarkContentModel {
 interface AppRouteContentProps {
   loading: boolean;
   error: string | null;
+  onRetry: () => void;
   viewState: ViewState;
   detailHighlightQuery: string;
   agents: AgentInfo[];
@@ -100,6 +103,7 @@ interface AppRouteContentProps {
 export function AppRouteContent({
   loading,
   error,
+  onRetry,
   viewState,
   detailHighlightQuery,
   agents,
@@ -156,8 +160,18 @@ export function AppRouteContent({
   }
   if (error) {
     return (
-      <div className="mx-auto max-w-4xl rounded-sm border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-6 text-sm text-[var(--console-error)]">
-        {error}
+      <div
+        role="alert"
+        className="mx-auto max-w-4xl rounded-sm border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-6 text-sm text-[var(--console-error)]"
+      >
+        <p>{error}</p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="console-mono mt-4 rounded-sm border border-[var(--console-error-border)] px-3 py-1.5 text-xs motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+        >
+          Retry
+        </button>
       </div>
     );
   }

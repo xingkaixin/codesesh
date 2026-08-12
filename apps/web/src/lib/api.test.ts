@@ -184,6 +184,7 @@ describe("project identity request filters", () => {
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
+  static readonly CONNECTING = 0;
   static readonly CLOSED = 2;
 
   readyState = 0;
@@ -219,6 +220,11 @@ class FakeEventSource {
 
   fail() {
     this.readyState = FakeEventSource.CLOSED;
+    this.onerror?.();
+  }
+
+  interrupt() {
+    this.readyState = FakeEventSource.CONNECTING;
     this.onerror?.();
   }
 }
@@ -343,5 +349,35 @@ describe("subscribeSessionUpdates", () => {
 
     expect(onReconnect).toHaveBeenCalledTimes(1);
     expect(onDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports native reconnect interruptions only after the delay threshold", () => {
+    const onDisconnect = vi.fn();
+    subscribeSessionUpdates(() => {}, undefined, undefined, onDisconnect);
+
+    latest().open();
+    latest().interrupt();
+    vi.advanceTimersByTime(4_999);
+
+    expect(onDisconnect).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+
+    expect(onDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels a pending disconnect notice when native reconnect succeeds", () => {
+    const onReconnect = vi.fn();
+    const onDisconnect = vi.fn();
+    subscribeSessionUpdates(() => {}, undefined, onReconnect, onDisconnect);
+
+    latest().open();
+    latest().interrupt();
+    vi.advanceTimersByTime(4_999);
+    latest().open();
+    vi.advanceTimersByTime(1);
+
+    expect(onDisconnect).not.toHaveBeenCalled();
+    expect(onReconnect).toHaveBeenCalledTimes(1);
   });
 });

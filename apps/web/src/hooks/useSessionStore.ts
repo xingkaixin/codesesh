@@ -104,6 +104,8 @@ export function useSessionStore() {
   const requestedWindowRef = useRef<AppConfig["window"] | null>(null);
   const configQuery = useQuery({
     queryKey: queryKeys.config,
+    retry: 2,
+    retryDelay: 250,
     queryFn: async ({ signal }) => {
       try {
         return await fetchConfig({ signal });
@@ -117,6 +119,8 @@ export function useSessionStore() {
     ...sessionSnapshotOptions(requestedWindow ?? {}),
     enabled: false,
   });
+  const configFailed = configQuery.isError;
+  const refetchConfig = configQuery.refetch;
   const snapshot = snapshotQuery.data;
 
   const reload = useCallback(
@@ -214,13 +218,26 @@ export function useSessionStore() {
     return refreshed;
   }, [queryClient, reload]);
 
+  const retryLoad = useCallback(async (): Promise<void> => {
+    const activeWindow = requestedWindowRef.current;
+    if (configFailed || !activeWindow) {
+      await refetchConfig();
+      return;
+    }
+    await reload(activeWindow);
+  }, [configFailed, refetchConfig, reload]);
+
   const agents = snapshot?.agents ?? EMPTY_SNAPSHOT.agents;
   const agentCatalog = useMemo(() => createAgentCatalog(agents), [agents]);
   const validAgentKeys = useMemo(
     () => new Set(agentCatalog.active.map((agent) => agent.name.toLowerCase())),
     [agentCatalog.active],
   );
-  const error = configQuery.error ?? snapshotQuery.error;
+  const error = configQuery.isError
+    ? "Failed to load configuration. The CLI may be restarting or unavailable."
+    : snapshotQuery.isError
+      ? "Failed to load session data for the selected time window."
+      : null;
 
   return {
     config: configQuery.data ?? null,
@@ -232,7 +249,7 @@ export function useSessionStore() {
     loading:
       configQuery.isPending ||
       (!configQuery.isError && (requestedWindow === null || snapshotQuery.isPending)),
-    error: error ? "Failed to load data. Is the CLI server running?" : null,
+    error,
     version: snapshotQuery.dataUpdatedAt,
     activeAgents: agentCatalog.active,
     agentCatalog,
@@ -241,5 +258,6 @@ export function useSessionStore() {
     reload,
     applyLiveEvent,
     resyncLiveState,
+    retryLoad,
   };
 }
