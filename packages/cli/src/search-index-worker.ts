@@ -65,32 +65,17 @@ export type SearchIndexWorkerJob =
       searchIndexOptions?: SearchIndexSyncOptions;
     };
 
-interface SearchIndexWorkerData {
+export interface SearchIndexWorkerRunRequest {
+  type: "run";
   pricingGenerationId: number;
   jobs?: SearchIndexWorkerJob[];
   context: string;
-  agentNames: string[];
-  sessionsByAgent: Record<string, SessionHead[]>;
-  metaByAgent: Record<string, Record<string, SessionCacheMeta>>;
+  agentNames?: string[];
+  sessionsByAgent?: Record<string, SessionHead[]>;
+  metaByAgent?: Record<string, Record<string, SessionCacheMeta>>;
 }
 
 type WorkerAgent = ReturnType<typeof createRegisteredAgents>[number];
-
-const data = workerData as SearchIndexWorkerData;
-const startedAt = performance.now();
-synchronizePricingGeneration(data.pricingGenerationId);
-const agents = createRegisteredAgents();
-const jobs =
-  data.jobs ??
-  data.agentNames.map((agentName): SearchIndexWorkerJob => ({
-    kind: "full",
-    context: data.context,
-    agentName,
-    sessions: data.sessionsByAgent[agentName] ?? [],
-    meta: data.metaByAgent[agentName] ?? {},
-    completeness: "complete",
-    removedSessionIds: [],
-  }));
 
 function jobSessionCount(job: SearchIndexWorkerJob): number {
   return job.kind === "full" ? job.sessions.length : job.changes.length;
@@ -204,35 +189,60 @@ function postSyncResult(context: string, result: SearchIndexSyncResult): void {
   } satisfies SearchIndexWorkerMessage);
 }
 
-let persistFailed = false;
-for (const job of jobs) {
-  const agent = agents.find((item) => item.name === job.agentName);
-  if (!agent) {
-    reportPersistFailure(job, {
-      stage: "prepare",
-      publicationId: job.publicationId ?? randomUUID(),
-    });
-    persistFailed = true;
-    break;
-  }
+let pricingGenerationId: number | null = null;
 
-  if (agent.setSessionMetaMap) {
-    agent.setSessionMetaMap(new Map(Object.entries(job.meta)));
-  }
-
-  const failure = runJob(job, agent);
-  if (failure) {
-    reportPersistFailure(job, failure);
-    persistFailed = true;
-    break;
-  }
+function jobsFromRequest(request: SearchIndexWorkerRunRequest): SearchIndexWorkerJob[] {
+  if (request.jobs) return request.jobs;
+  return (request.agentNames ?? []).map((agentName): SearchIndexWorkerJob => ({
+    kind: "full",
+    context: request.context,
+    agentName,
+    sessions: request.sessionsByAgent?.[agentName] ?? [],
+    meta: request.metaByAgent?.[agentName] ?? {},
+    completeness: "complete",
+    removedSessionIds: [],
+  }));
 }
 
-if (!persistFailed) {
+function runBatch(request: SearchIndexWorkerRunRequest): void {
+  const startedAt = performance.now();
+  if (pricingGenerationId !== request.pricingGenerationId) {
+    synchronizePricingGeneration(request.pricingGenerationId);
+    pricingGenerationId = request.pricingGenerationId;
+  }
+  const agents = createRegisteredAgents();
+  const jobs = jobsFromRequest(request);
+
+  for (const job of jobs) {
+    const agent = agents.find((item) => item.name === job.agentName);
+    if (!agent) {
+      reportPersistFailure(job, {
+        stage: "prepare",
+        publicationId: job.publicationId ?? randomUUID(),
+      });
+      return;
+    }
+
+    if (agent.setSessionMetaMap) {
+      agent.setSessionMetaMap(new Map(Object.entries(job.meta)));
+    }
+
+    const failure = runJob(job, agent);
+    if (failure) {
+      reportPersistFailure(job, failure);
+      return;
+    }
+  }
+
   parentPort?.postMessage({
     type: "done",
-    context: data.context,
+    context: request.context,
     durationMs: performance.now() - startedAt,
     sessions: jobs.reduce((total, job) => total + jobSessionCount(job), 0),
   } satisfies SearchIndexWorkerMessage);
 }
+
+parentPort?.on("message", (message: SearchIndexWorkerRunRequest) => {
+  if (message.type === "run") runBatch(message);
+});
+runBatch(workerData as SearchIndexWorkerRunRequest);

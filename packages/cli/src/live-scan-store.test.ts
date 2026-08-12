@@ -2529,11 +2529,19 @@ describe("LiveScanStore", () => {
     const outcomes = Promise.allSettled([active, ...pending]);
 
     const activeWorker = workerThreads.workers.find((worker) => worker.workerData.jobs)!;
-    activeWorker.emitDone();
+    activeWorker.emitMessage({
+      type: "done",
+      context: "scan.refresh",
+      durationMs: 0,
+      sessions: 1,
+    });
 
     const searchIndexWorkers = workerThreads.workers.filter((worker) => worker.workerData.jobs);
-    expect(searchIndexWorkers).toHaveLength(2);
-    expect(searchIndexWorkers[1]?.workerData.jobs).toEqual([
+    expect(searchIndexWorkers).toEqual([activeWorker]);
+    const nextBatch = activeWorker.postMessage.mock.calls.at(-1)?.[0] as
+      | { jobs?: unknown[] }
+      | undefined;
+    expect(nextBatch?.jobs).toEqual([
       expect.objectContaining({
         kind: "changes",
         changes: [
@@ -2544,7 +2552,12 @@ describe("LiveScanStore", () => {
       }),
     ]);
 
-    searchIndexWorkers[1]!.emitDone();
+    activeWorker.emitMessage({
+      type: "done",
+      context: "scan.refresh",
+      durationMs: 0,
+      sessions: 1,
+    });
     expect(await outcomes).toEqual([
       { status: "fulfilled", value: undefined },
       { status: "fulfilled", value: undefined },

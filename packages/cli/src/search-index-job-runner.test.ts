@@ -6,6 +6,7 @@ const workerMocks = vi.hoisted(() => {
   class FakeWorker {
     private handlers = new Map<string, Handler>();
     readonly workerData: Record<string, unknown>;
+    readonly postedMessages: unknown[] = [];
 
     constructor(_url: URL, options?: { workerData?: Record<string, unknown> }) {
       this.workerData = options?.workerData ?? {};
@@ -18,6 +19,10 @@ const workerMocks = vi.hoisted(() => {
     }
 
     unref(): void {}
+
+    postMessage(message: unknown): void {
+      this.postedMessages.push(message);
+    }
 
     async terminate(): Promise<number> {
       return 0;
@@ -113,6 +118,39 @@ describe("SearchIndexJobRunner", () => {
     });
 
     await expect(completion).resolves.toBeUndefined();
+  });
+
+  it("reuses one worker for consecutive batches", async () => {
+    const runner = new SearchIndexJobRunner();
+    const first = runner.enqueue("scan.refresh", [makeJob()]);
+    const worker = startedWorker();
+    worker.post({ type: "done", context: "scan.refresh", durationMs: 1, sessions: 1 });
+    await first;
+
+    const second = runner.enqueue("scan.refresh", [makeJob()]);
+
+    expect(workerMocks.workers).toEqual([worker]);
+    expect(worker.postedMessages).toEqual([
+      expect.objectContaining({ context: "scan.refresh", pricingGenerationId: 17 }),
+    ]);
+    worker.post({ type: "done", context: "scan.refresh", durationMs: 1, sessions: 1 });
+    await second;
+  });
+
+  it("dispatches a queued batch after the active batch completes", async () => {
+    const runner = new SearchIndexJobRunner();
+    const first = runner.enqueue("first-refresh", [makeJob()]);
+    const worker = startedWorker();
+    const second = runner.enqueue("second-refresh", [makeJob()]);
+
+    worker.post({ type: "done", context: "first-refresh", durationMs: 1, sessions: 1 });
+    await first;
+
+    expect(worker.postedMessages).toEqual([
+      expect.objectContaining({ context: "second-refresh", pricingGenerationId: 17 }),
+    ]);
+    worker.post({ type: "done", context: "second-refresh", durationMs: 1, sessions: 1 });
+    await second;
   });
 
   it("CS-137: rejects the batch when the worker reports a persistence failure", async () => {
