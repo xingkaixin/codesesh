@@ -2,12 +2,13 @@ import {
   createBrowserRouter,
   isRouteErrorResponse,
   RouterProvider,
+  type RouteObject,
   useRouteError,
 } from "react-router-dom";
 import App from "./App";
 import { appRouteChildren, validateRouteEncoding } from "./lib/app-routes";
 
-function RouteErrorFallback() {
+export function RouteErrorFallback() {
   const error = useRouteError();
   const message = isRouteErrorResponse(error)
     ? `${error.status} ${error.statusText}`
@@ -15,7 +16,7 @@ function RouteErrorFallback() {
   return <div role="alert">{message}</div>;
 }
 
-const router = createBrowserRouter([
+export const appRouterRoutes = [
   {
     id: "app-shell",
     path: "/",
@@ -24,7 +25,9 @@ const router = createBrowserRouter([
     loader: validateRouteEncoding,
     children: appRouteChildren,
   },
-]);
+] satisfies RouteObject[];
+
+const router = createBrowserRouter(appRouterRoutes);
 
 export function AppRouter() {
   return <RouterProvider router={router} />;
