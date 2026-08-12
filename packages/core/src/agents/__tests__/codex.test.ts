@@ -303,7 +303,7 @@ describe("CodexAgent cache refresh", () => {
         sourcePath: sessionFile,
         fingerprint: JSON.stringify([
           "codex-head-v1",
-          "codex-parser-v7",
+          "codex-parser-v8",
           sessionTime.getTime(),
           statSync(sessionFile).size,
           "Indexed title",
