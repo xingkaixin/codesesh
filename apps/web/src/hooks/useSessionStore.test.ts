@@ -260,6 +260,32 @@ describe("useSessionStore", () => {
     expect(result.current.version).toBeGreaterThan(0);
   });
 
+  it("reuses aggregate data across consecutive live event batches", async () => {
+    let now = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const { result } = await renderStore();
+    await act(() => result.current.reload(config.window));
+    vi.mocked(api.fetchAgents).mockClear();
+    vi.mocked(api.fetchProjects).mockClear();
+    vi.mocked(api.fetchDashboard).mockClear();
+
+    for (let batch = 0; batch < 3; batch += 1) {
+      now += 500;
+      await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
+    }
+
+    expect(api.fetchAgents).toHaveBeenCalledOnce();
+    expect(api.fetchProjects).toHaveBeenCalledOnce();
+    expect(api.fetchDashboard).toHaveBeenCalledOnce();
+
+    now += 1_001;
+    await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
+
+    expect(api.fetchAgents).toHaveBeenCalledTimes(2);
+    expect(api.fetchProjects).toHaveBeenCalledTimes(2);
+    expect(api.fetchDashboard).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps window-external backfill sessions out of the active snapshot", async () => {
     const window = { from: 100, to: 200, days: 7 };
     const recentSession = {
@@ -334,7 +360,7 @@ describe("useSessionStore", () => {
     expect(update?.visibleNewSessions).toBe(1);
   });
 
-  it("invalidates project dashboards, server searches, and inactive aggregate caches", async () => {
+  it("invalidates project dashboards and searches without expiring unrelated windows", async () => {
     const { result, client } = await renderStore();
     await act(() => result.current.reload(config.window));
     const projectDashboardKey = queryKeys.dashboard(config.window, {
@@ -354,7 +380,7 @@ describe("useSessionStore", () => {
 
     expect(client.getQueryState(projectDashboardKey)?.isInvalidated).toBe(true);
     expect(client.getQueryState(searchKey)?.isInvalidated).toBe(true);
-    expect(client.getQueryState(inactiveAggregateKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(inactiveAggregateKey)?.isInvalidated).toBe(false);
   });
 
   it("invalidates only session details changed by a live event", async () => {

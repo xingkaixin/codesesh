@@ -10,6 +10,13 @@ function invalidateSessionCollections(queryClient: QueryClient) {
   ];
 }
 
+export async function invalidateLiveSessionCollections(queryClient: QueryClient): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.dashboards }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
+  ]);
+}
+
 export async function invalidateSessionDerivedQueries(queryClient: QueryClient): Promise<void> {
   await Promise.all([
     ...invalidateSessionCollections(queryClient),
@@ -36,10 +43,9 @@ export async function invalidateLiveSessionDerivedQueries(
     );
   }
 
-  await Promise.all([
-    ...invalidateSessionCollections(queryClient),
-    ...Array.from(changedDetailKeys.values(), (queryKey) =>
+  await Promise.all(
+    Array.from(changedDetailKeys.values(), (queryKey) =>
       queryClient.invalidateQueries({ queryKey, exact: true }),
     ),
-  ]);
+  );
 }

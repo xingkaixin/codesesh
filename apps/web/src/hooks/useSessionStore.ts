@@ -3,7 +3,13 @@ import {
   formatSessionReference,
   getSessionAgentKey,
 } from "@codesesh/core/contract";
-import { isCancelledError, queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  isCancelledError,
+  queryOptions,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type AgentInfo,
@@ -21,6 +27,7 @@ import {
 import { createAgentCatalog } from "../lib/agents";
 import { queryKeys } from "../lib/query-keys";
 import {
+  invalidateLiveSessionCollections,
   invalidateLiveSessionDerivedQueries,
   invalidateSessionDerivedQueries,
 } from "../lib/session-query-consistency";
@@ -39,6 +46,7 @@ export interface LiveSessionApplyResult {
 }
 
 type SnapshotAggregates = Pick<SessionStoreSnapshot, "agents" | "projects" | "dashboard">;
+const LIVE_AGGREGATE_REFRESH_INTERVAL_MS = 2_000;
 
 const EMPTY_SNAPSHOT = {
   agents: [] satisfies AgentInfo[],
@@ -76,8 +84,26 @@ function snapshotAggregatesOptions(window: AppConfig["window"]) {
   return queryOptions({
     queryKey: queryKeys.sessionSnapshotAggregates(window),
     queryFn: ({ signal }) => fetchSnapshotAggregates(window, signal),
-    staleTime: 100,
+    staleTime: LIVE_AGGREGATE_REFRESH_INTERVAL_MS,
   });
+}
+
+async function fetchLiveSnapshotAggregates(
+  queryClient: QueryClient,
+  window: AppConfig["window"],
+): Promise<SnapshotAggregates> {
+  const options = snapshotAggregatesOptions(window);
+  const state = queryClient.getQueryState(options.queryKey);
+  const needsRefresh =
+    !state ||
+    state.data === undefined ||
+    state.isInvalidated ||
+    Date.now() - state.dataUpdatedAt >= LIVE_AGGREGATE_REFRESH_INTERVAL_MS;
+  const [aggregates] = await Promise.all([
+    queryClient.fetchQuery(options),
+    needsRefresh ? invalidateLiveSessionCollections(queryClient) : Promise.resolve(),
+  ]);
+  return aggregates;
 }
 
 function sameWindow(
@@ -201,7 +227,10 @@ export function useSessionStore() {
       const current = queryClient.getQueryData<SessionStoreSnapshot>(snapshotKey);
       if (!current) {
         const refreshed = await reload(activeWindow);
-        await invalidateLiveSessionDerivedQueries(queryClient, event);
+        await Promise.all([
+          invalidateLiveSessionDerivedQueries(queryClient, event),
+          invalidateLiveSessionCollections(queryClient),
+        ]);
         return refreshed ? { snapshot: refreshed, visibleNewSessions: 0 } : null;
       }
 
@@ -250,7 +279,7 @@ export function useSessionStore() {
         sessions: projection.sessions,
       });
       await invalidateLiveSessionDerivedQueries(queryClient, event);
-      const aggregates = await queryClient.fetchQuery(snapshotAggregatesOptions(activeWindow));
+      const aggregates = await fetchLiveSnapshotAggregates(queryClient, activeWindow);
       const updated =
         queryClient.setQueryData<SessionStoreSnapshot>(snapshotKey, (latest) =>
           latest ? { ...latest, ...aggregates } : latest,
