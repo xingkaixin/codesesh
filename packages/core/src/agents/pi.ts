@@ -23,7 +23,7 @@ import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
 const HEAD_INDEX_VERSION = "pi-head-v1";
-const PARSER_VERSION = "pi-parser-v2";
+const PARSER_VERSION = "pi-parser-v3";
 
 export function resolvePiDataRoot(): string {
   return resolveHomePath("PI_HOME", ".pi");
@@ -280,7 +280,7 @@ export class PiAgent extends SingleFileSessionSource<SessionMeta> {
     const pathEntries = buildCurrentPathEntries(entries);
     if (pathEntries.length === 0) throw new Error("empty session tree");
 
-    const sessionId = String(header["id"] ?? extractSessionIdFromFilename(filePath)).trim();
+    const sessionId = extractSessionIdFromFilename(filePath);
     if (!sessionId) throw new Error("missing session id");
 
     const stat = this.sessionSourceFile(filePath).stat;
