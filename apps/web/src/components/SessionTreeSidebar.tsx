@@ -553,6 +553,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
       ? "transparent"
       : "var(--brand-soft)",
   };
+  // Keep composition unset; @pierre/trees renders it with innerHTML, so session-derived HTML is unsafe.
   const { model } = useFileTree({
     flattenEmptyDirectories: false,
     initialExpansion: "closed",
