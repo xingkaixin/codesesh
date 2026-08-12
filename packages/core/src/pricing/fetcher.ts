@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -42,13 +43,31 @@ export interface PricingGeneration {
   pricing: Map<string, ModelPricing>;
 }
 
-let published: PricingGeneration = { id: 1, pricing: loadSnapshot() };
+let published = createPricingGeneration(loadSnapshot());
 /** A completed refresh waiting for a safe point to become current. */
 let pending: Map<string, ModelPricing> | null = null;
 published = readDiskCache() ?? published;
 
-function normalizeKey(key: string): string {
-  return key.trim().toLowerCase();
+export function normalizeModelKey(key: string): string {
+  return key.trim().toLowerCase().replaceAll("_", "-");
+}
+
+function createPricingGeneration(pricing: Map<string, ModelPricing>): PricingGeneration {
+  const hash = createHash("sha256");
+  const entries = [...pricing.entries()].sort(([left], [right]) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
+  for (const [name, modelPricing] of entries) {
+    hash.update(name);
+    hash.update("\0");
+    hash.update(JSON.stringify(modelPricing));
+    hash.update("\n");
+  }
+
+  return {
+    id: Number.parseInt(hash.digest("hex").slice(0, 13), 16) || 1,
+    pricing,
+  };
 }
 
 function costNumber(value: unknown, fallback: number): number {
@@ -68,7 +87,7 @@ function loadSnapshot(): Map<string, ModelPricing> {
   const snapshot = snapshotData as unknown as Record<string, SnapshotEntry>;
   for (const [name, entry] of Object.entries(snapshot)) {
     const [input, output, cacheCreate, cacheRead, reasoning, webSearch] = entry;
-    map.set(normalizeKey(name), {
+    indexPricing(map, name, {
       inputCostPerToken: input,
       outputCostPerToken: output,
       cacheCreateCostPerToken: cacheCreate ?? input * 1.25,
@@ -114,7 +133,7 @@ function normalizeCachedPricing(raw: Record<string, unknown>): ModelPricing | nu
 }
 
 function indexPricing(map: Map<string, ModelPricing>, name: string, pricing: ModelPricing) {
-  const normalized = normalizeKey(name);
+  const normalized = normalizeModelKey(name);
   map.set(normalized, pricing);
 
   const slashIndex = normalized.indexOf("/");
@@ -135,32 +154,27 @@ function parseLiteLLMData(data: Record<string, LiteLLMEntry>): Map<string, Model
 
 interface PricingCache {
   timestamp: number;
-  generation?: number;
   data: Record<string, Record<string, unknown>>;
 }
 
-function readDiskCache(allowStale = false): PricingGeneration | null {
+function readDiskCache(): PricingGeneration | null {
   const path = getCachePath();
   if (!existsSync(path)) return null;
 
   try {
     const cached = JSON.parse(readFileSync(path, "utf-8")) as PricingCache;
     if (!Number.isFinite(cached.timestamp)) return null;
-    if (!allowStale && Date.now() - cached.timestamp > CACHE_TTL_MS) return null;
     if (cached.data == null || typeof cached.data !== "object" || Array.isArray(cached.data)) {
       return null;
     }
-
-    const generation = cached.generation ?? 2;
-    if (!Number.isSafeInteger(generation) || generation < 1) return null;
 
     const next = loadSnapshot();
     for (const [name, rawPricing] of Object.entries(cached.data)) {
       const pricing = normalizeCachedPricing(rawPricing);
       if (!pricing) continue;
-      next.set(normalizeKey(name), pricing);
+      indexPricing(next, name, pricing);
     }
-    return { id: generation, pricing: next };
+    return createPricingGeneration(next);
   } catch {
     return null;
   }
@@ -182,7 +196,7 @@ export function synchronizePricingGeneration(expectedId: number): void {
   }
   if (published.id === expectedId) return;
 
-  const cached = readDiskCache(true);
+  const cached = readDiskCache();
   if (cached?.id !== expectedId) {
     throw new Error(
       `Pricing generation ${expectedId} is unavailable (current ${published.id}, cached ${cached?.id ?? "none"})`,
@@ -203,13 +217,7 @@ export function synchronizePricingGeneration(expectedId: number): void {
 export function publishPendingPricing(): boolean {
   if (!pending) return false;
 
-  const nextId = published.id + 1;
-  if (!Number.isSafeInteger(nextId)) {
-    getCoreDiagnostics()?.warn("pricing.generation_exhausted", { generation: published.id });
-    return false;
-  }
-
-  const next = { id: nextId, pricing: pending } satisfies PricingGeneration;
+  const next = createPricingGeneration(pending);
   if (!writeDiskCacheAtomically(getCachePath(), next)) return false;
 
   published = next;
@@ -240,7 +248,6 @@ function writeDiskCacheAtomically(path: string, generation: PricingGeneration): 
   const temporaryPath = `${path}.${process.pid}.tmp`;
   const payload = JSON.stringify({
     timestamp: Date.now(),
-    generation: generation.id,
     data: Object.fromEntries(generation.pricing),
   });
   try {
