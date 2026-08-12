@@ -397,6 +397,12 @@ function composerUpdatedAt(composer: ComposerData): number {
   );
 }
 
+function cursorToolStatus(status: string | undefined): ToolPartState["status"] {
+  if (status === "completed") return "completed";
+  if (status === "error" || status === "failed") return "error";
+  return "running";
+}
+
 /** Build a normalized tool state object from an action entry */
 function buildToolState(action: ActionEntry): ToolPartState {
   let output = action.output;
@@ -1118,7 +1124,7 @@ export class CursorAgent extends DatabaseSessionSource {
 
     // Build state
     const state: ToolPartState = {
-      status: toolData.status === "completed" ? "completed" : "running",
+      status: cursorToolStatus(toolData.status),
     };
 
     // Parse input params
@@ -1136,19 +1142,17 @@ export class CursorAgent extends DatabaseSessionSource {
 
     // Parse result/output
     if (toolData.result !== undefined) {
+      let result = toolData.result;
       if (typeof toolData.result === "string") {
         try {
-          const parsed = JSON.parse(toolData.result);
-          state.output = parsed;
-          if (parsed.error || parsed.message || parsed.stderr) {
-            state.error = parsed.error || parsed.message || parsed.stderr;
-            state.status = "error";
-          }
-        } catch {
-          state.output = toolData.result;
-        }
-      } else {
-        state.output = toolData.result;
+          result = JSON.parse(toolData.result);
+        } catch {}
+      }
+      state.output = result;
+      if (state.status === "error") {
+        const resultRecord = asRecord(result);
+        state.error =
+          resultRecord?.error ?? resultRecord?.message ?? resultRecord?.stderr ?? result;
       }
     }
 

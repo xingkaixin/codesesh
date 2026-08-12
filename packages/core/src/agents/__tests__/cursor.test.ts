@@ -90,6 +90,39 @@ describe("CursorAgent parsing", () => {
     });
   });
 
+  it("keeps completed tools successful when output contains message or stderr", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-cursor-test-"));
+    tempDirs.push(tempDir);
+    const dbPath = createCursorDb(tempDir);
+
+    insertKv(dbPath, "bubbleId:composer-1:assistant", {
+      type: 2,
+      createdAt: 1_000,
+      toolFormerData: {
+        name: "run_terminal_command_v2",
+        status: "completed",
+        result: JSON.stringify({ message: "Command finished", stderr: "npm progress" }),
+      },
+    });
+
+    const agent = new CursorAgent() as any;
+    agent.dbPath = dbPath;
+    agent.composerCache.set("composer-1", { id: "composer-1", createdAt: 1_000 });
+
+    const tool = agent
+      .getSessionData("composer-1")
+      .messages[0]?.parts.find((part: MessagePart) => part.type === "tool");
+
+    expect(tool).toMatchObject({
+      type: "tool",
+      state: {
+        status: "completed",
+        output: { message: "Command finished", stderr: "npm progress" },
+      },
+    });
+    expect(tool?.type === "tool" ? tool.state.error : undefined).toBeUndefined();
+  });
+
   it("falls back to untitled when no title text is available", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-cursor-test-"));
     tempDirs.push(tempDir);
