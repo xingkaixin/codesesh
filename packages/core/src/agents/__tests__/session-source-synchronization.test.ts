@@ -215,6 +215,30 @@ describe("synchronizeSessionSources", () => {
     expect(adapter.scannedIds).toEqual(["retry", "retry"]);
   });
 
+  it("skips a source that fails to parse without any retained baseline session", () => {
+    const goodRef = source("good");
+    const emptyRef = source("empty");
+    const failure = createSessionSourceFailure(emptyRef, "parsing", new Error("empty file"));
+    const adapter = new MemorySourceAdapter(
+      [goodRef, emptyRef],
+      new Map<string, SessionSourceOutcome>([
+        ["good", parsed(goodRef, session("good"))],
+        ["empty", { status: "failed", failure }],
+      ]),
+    );
+
+    const outcome = synchronizeSessionSources(
+      adapter,
+      { sessions: [], meta: {} },
+      { kind: "refresh" },
+    );
+
+    expect(outcome.sessions.map(({ id }) => id)).toEqual(["good"]);
+    expect(outcome.sourceFailures).toEqual([]);
+    expect(outcome.completeness).toBe("complete");
+    expect(outcome.sourceOutcomes).toContainEqual({ status: "failed", failure });
+  });
+
   it("reloads every enumerated source and removes explicitly filtered sessions", () => {
     const visibleRef = source("visible");
     const filteredRef = source("filtered");

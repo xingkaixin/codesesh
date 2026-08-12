@@ -376,7 +376,10 @@ export function synchronizeSessionSources(
         explicitRemovedSessionIds.add(source.sessionId);
         reportSessionSourceOutcome(adapter.name, outcome);
       } else {
-        sourceFailures.push(outcome.failure);
+        // "last-known-good data retained" is only a failure when data exists;
+        // a source that never produced a session (empty or malformed file) is
+        // logged and skipped so it cannot poison every future pass.
+        if (visibleBaselineIds.has(source.sessionId)) sourceFailures.push(outcome.failure);
         reportSessionSourceOutcome(adapter.name, outcome);
       }
     }
