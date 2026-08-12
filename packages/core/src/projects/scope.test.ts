@@ -34,12 +34,26 @@ describe("filterSessionsByProjectScope", () => {
           displayName: "project",
         },
       }),
+      makeSession("identity-without-directory", {
+        directory: "",
+        project_identity: {
+          kind: "path",
+          key: "/home/user/project",
+          displayName: "project",
+        },
+      }),
       makeSession("sibling", { directory: "/home/user/projectile" }),
     ];
 
     const result = filterSessionsByProjectScope(sessions, "/home/user/project");
 
-    expect(result.map((session) => session.id)).toEqual(["exact", "child", "parent", "identity"]);
+    expect(result.map((session) => session.id)).toEqual([
+      "exact",
+      "child",
+      "parent",
+      "identity",
+      "identity-without-directory",
+    ]);
   });
 
   it("computes the query project identity once for all sessions", () => {

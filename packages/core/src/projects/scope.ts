@@ -20,9 +20,8 @@ export function createProjectScopeMatcher(
 }
 
 export function matchesProjectScope(session: SessionHead, scope: ProjectScopeMatcher): boolean {
-  if (!session.directory) return false;
   if (matchesProjectIdentity(session.project_identity, scope.identity)) return true;
-  return isPathScopeMatch(scope.path, session.directory);
+  return session.directory ? isPathScopeMatch(scope.path, session.directory) : false;
 }
 
 export function filterSessionsByProjectScope(
