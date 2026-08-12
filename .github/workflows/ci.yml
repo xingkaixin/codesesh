@@ -39,6 +39,9 @@ jobs:
 
       - run: pnpm format:check
 
+      - name: Typecheck e2e and root test configs
+        run: pnpm typecheck:e2e
+
       - name: Verify package versions agree
         run: node scripts/release-preflight.mjs
 

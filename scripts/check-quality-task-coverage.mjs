@@ -18,6 +18,12 @@ export const WWW_TASK_REQUIREMENTS = {
   format: ["oxfmt", "prettier", "src/**/*.astro"],
   "format:check": ["oxfmt", "prettier", "src/**/*.astro"],
 };
+export const SCRIPT_PACKAGE_TASK_REQUIREMENTS = {
+  lint: ["oxlint ."],
+  "lint:fix": ["oxlint .", "--fix"],
+  format: ["oxfmt --write", "**/*.{js,mjs,cjs,ts,tsx}"],
+  "format:check": ["oxfmt --check", "**/*.{js,mjs,cjs,ts,tsx}"],
+};
 export const ROOT_TASK_REQUIREMENTS = {
   lint: ["pnpm lint:root", "turbo run lint"],
   "lint:root": ["oxlint", "scripts", "tests", "playwright.config.ts", "vitest.config.ts"],
@@ -166,6 +172,9 @@ function main() {
   const manifests = readQualityManifests(repoRoot);
   const rootManifest = manifests.find(({ name }) => name === "codesesh-monorepo");
   const wwwManifest = manifests.find(({ name }) => name === "@codesesh/www");
+  const scriptPackageManifests = manifests.filter(({ name }) =>
+    ["@codesesh/core", "codesesh", "@codesesh/web"].includes(name),
+  );
   const gaps = [
     ...findManifestTaskGaps(manifests),
     ...findCommandCoverageGaps(
@@ -174,6 +183,9 @@ function main() {
       "codesesh-monorepo",
     ),
     ...findCommandCoverageGaps(wwwManifest?.scripts ?? {}),
+    ...scriptPackageManifests.flatMap(({ name, scripts }) =>
+      findCommandCoverageGaps(scripts, SCRIPT_PACKAGE_TASK_REQUIREMENTS, name),
+    ),
     ...inspectTurboTasks(repoRoot),
   ];
   const astro = inspectAstroCoverage(repoRoot);

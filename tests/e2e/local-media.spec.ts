@@ -62,12 +62,9 @@ test("never requests remote media referenced by a transcript", async ({ page }, 
   await page.goto("/claudecode/e2e-dashboard");
   await expect(page.getByTestId("session-detail")).toBeVisible();
   await expect(page.getByText(`Report ${marker}`)).toBeVisible();
-  // The SSE stream stays open, so idle never fires; give any image request
-  // the renderer might have issued a chance to reach the route handler.
-  await page.waitForTimeout(500);
+  await expect(page.getByText("Remote image not loaded").first()).toBeVisible();
 
   expect(offOrigin).toEqual([]);
   expect(await page.locator(`img[src*="${REMOTE_HOST}"]`).count()).toBe(0);
   expect(await page.locator(`link[href*="${REMOTE_HOST}"]`).count()).toBe(0);
-  await expect(page.getByText("Remote image not loaded").first()).toBeVisible();
 });
