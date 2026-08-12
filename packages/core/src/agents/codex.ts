@@ -15,6 +15,7 @@ import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils
 import { cleanInternalText, isInternalEventType } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
+import { parseAgentTimestampMs } from "../utils/timestamp.js";
 import { asRecord, asString, narrowField } from "../utils/narrow.js";
 import { TranscriptBuilder } from "./transcript-builder.js";
 import {
@@ -85,13 +86,7 @@ function extractSessionId(filename: string): string {
 // ---------------------------------------------------------------------------
 
 function parseTimestampMs(data: Record<string, unknown>): number {
-  const ts = String(data["timestamp"] ?? "").trim();
-  if (!ts) return 0;
-  try {
-    return new Date(ts.includes("Z") ? ts : ts.replace(" ", "T") + "Z").getTime();
-  } catch {
-    return 0;
-  }
+  return parseAgentTimestampMs(String(data["timestamp"] ?? ""), "codex");
 }
 
 function extractModelName(raw: unknown): string | null {

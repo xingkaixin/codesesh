@@ -502,6 +502,30 @@ describe("CodexAgent cache refresh", () => {
     expect(head?.time_updated).toBe(new Date("2026-04-20T10:02:30Z").getTime());
   });
 
+  it("preserves explicit timezone offsets", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const sessionFile = join(
+      tempDir,
+      "rollout-2026-04-20T10-00-00-019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa.jsonl",
+    );
+    writeFileSync(
+      sessionFile,
+      [
+        '{"timestamp":"2026-04-20T10:00:00+08:00","type":"session_meta","payload":{"cwd":"/tmp/project"}}',
+        '{"timestamp":"2026-04-20T10:02:30+08:00","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}}',
+        "",
+      ].join("\n"),
+    );
+
+    const agent = new CodexAgent() as any;
+    agent.sessionIndexCache = new Map();
+    const head = agent.parseSessionHead(sessionFile);
+
+    expect(head?.time_created).toBe(Date.parse("2026-04-20T10:00:00+08:00"));
+    expect(head?.time_updated).toBe(Date.parse("2026-04-20T10:02:30+08:00"));
+  });
+
   it("aggregates model usage from token count events", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
     const sessionFile = join(
