@@ -9,9 +9,15 @@ const FACT_SPECS = [
   { document: "docs/scanning-and-caching.md", fact: "agent-source-kinds" },
   { document: "docs/architecture.md", fact: "agent-source-kinds" },
   { document: "docs/sqlite-storage.md", fact: "cache-schema-version" },
+  { document: "README.md", fact: "node-version" },
+  { document: "README_CN.md", fact: "node-version" },
+  { document: "apps/www/public/llms-full.txt", fact: "node-version" },
+  { document: "packages/cli/README.md", fact: "node-version" },
   { document: "README.md", fact: "pnpm-version" },
   { document: "README_CN.md", fact: "pnpm-version" },
   { document: "apps/www/public/llms-full.txt", fact: "pnpm-version" },
+  { document: "README.md", fact: "ci-commands" },
+  { document: "README_CN.md", fact: "ci-commands" },
 ];
 
 export const CHECKED_FACT_DOCUMENTS = [...new Set(FACT_SPECS.map(({ document }) => document))];
@@ -29,6 +35,25 @@ export function readPnpmVersion(repoRoot) {
   const match = /^pnpm@(\d+\.\d+\.\d+)$/.exec(manifest.packageManager ?? "");
   if (!match) throw new Error("package.json packageManager must be an exact pnpm version");
   return match[1];
+}
+
+export function readMinimumNodeVersion(repoRoot) {
+  const manifest = JSON.parse(readFileSync(join(repoRoot, "packages/cli/package.json"), "utf8"));
+  const match = /^>=(\d+\.\d+\.\d+)$/.exec(manifest.engines?.node ?? "");
+  if (!match) {
+    throw new Error("packages/cli/package.json engines.node must be an exact >=x.y.z version");
+  }
+  return match[1];
+}
+
+export function readRequiredCiCommands(repoRoot) {
+  const workflow = readFileSync(join(repoRoot, ".github/workflows/ci.yml"), "utf8");
+  return unique(
+    workflow
+      .split("\n")
+      .map((line) => line.trim().replace(/^(?:-\s+)?run:\s*/, ""))
+      .filter((line) => /^(?:pnpm(?:\s|$)|node (?:packages|scripts)\/)/.test(line)),
+  );
 }
 
 function unique(values) {
@@ -75,7 +100,40 @@ function parseSourceKindNames(region) {
   return { filesystem: splitNames(filesystem.trim()), sqlite: splitNames(sqlite.trim()) };
 }
 
+function normalizeDocumentedNodeVersion(version) {
+  const parts = version.split(".");
+  return [...parts, ...Array(3 - parts.length).fill("0")].join(".");
+}
+
+function parseDocumentedCiCommands(region) {
+  return unique(
+    region
+      .split("\n")
+      .map((line) => line.trim().replace(/\s+#.*$/, ""))
+      .filter((line) => /^(?:pnpm(?:\s|$)|node (?:packages|scripts)\/)/.test(line)),
+  );
+}
+
 function validateRegion(fact, region, repositoryFacts) {
+  if (fact === "ci-commands") {
+    const documented = parseDocumentedCiCommands(region);
+    const missing = repositoryFacts.ciCommands.filter((command) => !documented.includes(command));
+    return missing.length > 0 ? `missing ${JSON.stringify(missing)}` : null;
+  }
+
+  if (fact === "node-version") {
+    const versions = [...region.matchAll(/\bNode\.js\s+(\d+(?:\.\d+){0,2})\+/g)].map((match) =>
+      normalizeDocumentedNodeVersion(match[1]),
+    );
+    if (versions.length === 0) return "marker contains no `Node.js x+` declaration";
+    const stale = unique(
+      versions.filter((version) => version !== repositoryFacts.minimumNodeVersion),
+    );
+    return stale.length > 0
+      ? `expected Node.js ${repositoryFacts.minimumNodeVersion}; documented ${stale.join(", ")}`
+      : null;
+  }
+
   if (fact === "pnpm-version") {
     const versions = [...region.matchAll(/\bpnpm\s+(\d+\.\d+\.\d+)\b/g)].map((match) => match[1]);
     if (versions.length === 0) return "marker contains no `pnpm x.y.z` declaration";
@@ -128,7 +186,12 @@ function validateRegion(fact, region, repositoryFacts) {
 }
 
 export function findDocumentationFactMismatches(repoRoot, coreFacts) {
-  const repositoryFacts = { ...coreFacts, pnpmVersion: readPnpmVersion(repoRoot) };
+  const repositoryFacts = {
+    ...coreFacts,
+    ciCommands: readRequiredCiCommands(repoRoot),
+    minimumNodeVersion: readMinimumNodeVersion(repoRoot),
+    pnpmVersion: readPnpmVersion(repoRoot),
+  };
   const mismatches = [];
 
   for (const { document, fact } of FACT_SPECS) {

@@ -126,7 +126,11 @@ unreachable except through that trusted proxy.
 
 ## Requirements
 
+<!-- repo-fact:node-version:start -->
+
 - Node.js 22+
+
+<!-- repo-fact:node-version:end -->
 
 ## Links
 

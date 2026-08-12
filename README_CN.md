@@ -70,10 +70,15 @@ CodeSesh 认为，你的会话历史属于**你** —— 你应该在一个地�
 
 ### 环境要求
 
+<!-- repo-fact:node-version:start -->
+
+- 发布后的 CLI 和源码构建均需要 Node.js 22+
+
+<!-- repo-fact:node-version:end -->
+
 <!-- repo-fact:pnpm-version:start -->
 
-- 发布后的 CLI 需要 Node.js 22+
-- 源码构建需要 Node.js 24 和 pnpm 11.20.0
+- 源码构建需要 pnpm 11.20.0
 
 <!-- repo-fact:pnpm-version:end -->
 
@@ -252,6 +257,49 @@ pnpm --filter @codesesh/www deploy:cf
 覆盖率统计包括 Core、CLI、Web 的全部生产 TypeScript。各包的基线门槛用于防止覆盖率回退，
 扫描、API、实时运行时、Hook 和交互路径继续使用更严格的定向门槛。
 Astro 落地页由 Playwright 覆盖，不计入 Vitest 覆盖率。
+
+### 复现 CI 必需检查
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 是事实源。CI 会在 Linux、macOS、Windows
+上分别使用 Node.js 22 和 24 运行主任务；在仓库根目录按以下顺序执行，可复现其中的检查：
+
+<!-- repo-fact:ci-commands:start -->
+
+```bash
+# 依赖与静态门禁
+pnpm install --frozen-lockfile
+node scripts/check-quality-task-coverage.mjs
+pnpm lint
+pnpm format:check
+pnpm typecheck:e2e
+node scripts/release-preflight.mjs
+node scripts/check-docs-paths.mjs
+
+# 算法、构建、文档事实与清理重建门禁
+pnpm perf:check
+pnpm build
+node scripts/check-docs-facts.mjs
+node packages/cli/dist/index.js --version
+pnpm clean
+pnpm build
+
+# 单元测试、覆盖率、迁移与浏览器门禁
+pnpm test
+pnpm test:coverage # 内含 pnpm check:coverage-scopes
+pnpm test:migration
+pnpm exec playwright install --with-deps chromium
+pnpm test:e2e
+
+# npm 制品与安装后冒烟门禁
+pnpm package:artifact:test
+pnpm package:artifact
+node scripts/smoke-package-artifact.mjs artifacts/npm/codesesh-*.tgz
+```
+
+<!-- repo-fact:ci-commands:end -->
+
+工作流只在 Node.js 24 上运行 `perf:check` 和清理重建冒烟，并在 Node.js 22 上运行 CLI
+版本冒烟。本地执行覆盖命令本身；Pull Request 矩阵继续负责跨平台验证。
 
 ### 性能 Benchmark
 

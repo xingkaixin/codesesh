@@ -25,7 +25,7 @@ function marked(fact, contents) {
   return `<!-- repo-fact:${fact}:start -->\n${contents}\n<!-- repo-fact:${fact}:end -->`;
 }
 
-function fixtureRepo(packageManager = "pnpm@11.20.0") {
+function fixtureRepo(packageManager = "pnpm@11.20.0", nodeEngine = ">=22.0.0") {
   const dir = mkdtempSync(join(tmpdir(), "codesesh-docs-facts-"));
   tempDirs.push(dir);
   const agentsTable = marked(
@@ -33,16 +33,21 @@ function fixtureRepo(packageManager = "pnpm@11.20.0") {
     "| Agent | Status |\n|---|---|\n| Claude Code | Supported |\n| Cursor | Supported |",
   );
   const agentsList = marked("agents", "- Claude Code\n- Cursor");
-  const pnpm = marked("pnpm-version", "- Node.js 24 and pnpm 11.20.0");
+  const node = marked("node-version", "- Node.js 22+");
+  const pnpm = marked("pnpm-version", "- pnpm 11.20.0");
+  const ciCommands = marked("ci-commands", "```bash\npnpm lint\npnpm test\n```");
   const sourceKinds = marked(
     "agent-source-kinds",
     "- 文件型：Claude Code\n- 单 SQLite 数据库型：Cursor",
   );
   const files = {
     "package.json": JSON.stringify({ packageManager }),
-    "README.md": `${agentsTable}\n${pnpm}`,
-    "README_CN.md": `${agentsTable}\n${pnpm}`,
-    "apps/www/public/llms-full.txt": `${agentsList}\n${pnpm}\n${pnpm}`,
+    ".github/workflows/ci.yml": "steps:\n  - name: Lint\n    run: pnpm lint\n  - run: pnpm test\n",
+    "packages/cli/package.json": JSON.stringify({ engines: { node: nodeEngine } }),
+    "packages/cli/README.md": node,
+    "README.md": `${agentsTable}\n${node}\n${pnpm}\n${ciCommands}`,
+    "README_CN.md": `${agentsTable}\n${node}\n${pnpm}\n${ciCommands}`,
+    "apps/www/public/llms-full.txt": `${agentsList}\n${node}\n${node}\n${pnpm}\n${pnpm}`,
     "docs/scanning-and-caching.md": sourceKinds,
     "docs/architecture.md": sourceKinds,
     "docs/sqlite-storage.md": marked(
@@ -107,6 +112,40 @@ describe("CS-172: semantic documentation facts", () => {
     expect(pnpmMismatches[0].message).toContain("expected pnpm 11.21.0");
   });
 
+  it("reports every marked Node baseline after engines changes", () => {
+    const mismatches = findDocumentationFactMismatches(
+      fixtureRepo("pnpm@11.20.0", ">=24.0.0"),
+      coreFacts,
+    );
+    const nodeMismatches = mismatches.filter(({ fact }) => fact === "node-version");
+
+    expect(nodeMismatches).toHaveLength(5);
+    expect(nodeMismatches[0].message).toContain("expected Node.js 24.0.0");
+  });
+
+  it("reports a CI command that is absent from a README checklist", () => {
+    const dir = fixtureRepo();
+    writeFileSync(
+      join(dir, ".github/workflows/ci.yml"),
+      "steps:\n  - run: pnpm lint\n  - run: pnpm test\n  - run: pnpm test:e2e\n",
+    );
+
+    expect(findDocumentationFactMismatches(dir, coreFacts)).toEqual(
+      expect.arrayContaining([
+        {
+          document: "README.md",
+          fact: "ci-commands",
+          message: 'missing ["pnpm test:e2e"]',
+        },
+        {
+          document: "README_CN.md",
+          fact: "ci-commands",
+          message: 'missing ["pnpm test:e2e"]',
+        },
+      ]),
+    );
+  });
+
   it("requires an explicit marker in every checked document", () => {
     const dir = fixtureRepo();
     writeFileSync(join(dir, "README.md"), marked("agents", "- Claude Code\n- Cursor"));
@@ -123,6 +162,7 @@ describe("CS-172: semantic documentation facts", () => {
       expect.arrayContaining([
         "README.md",
         "README_CN.md",
+        "packages/cli/README.md",
         "docs/architecture.md",
         "apps/www/public/llms-full.txt",
       ]),

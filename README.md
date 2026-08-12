@@ -70,10 +70,15 @@ More agents coming soon. See the [extension checklist](#extending).
 
 ### Prerequisites
 
+<!-- repo-fact:node-version:start -->
+
+- Node.js 22+ for the published CLI and building from source
+
+<!-- repo-fact:node-version:end -->
+
 <!-- repo-fact:pnpm-version:start -->
 
-- Node.js 22+ for the published CLI
-- Node.js 24 and pnpm 11.20.0 for building from source
+- pnpm 11.20.0 for building from source
 
 <!-- repo-fact:pnpm-version:end -->
 
@@ -277,6 +282,51 @@ pnpm --filter @codesesh/www deploy:cf
 Package-level baselines prevent coverage regressions, while stricter targeted
 thresholds protect the scanning, API, live runtime, hook, and interaction paths.
 The Astro landing page is covered by Playwright rather than Vitest.
+
+### Reproduce Required CI Checks
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) is the source of truth. CI runs the main
+job on Node.js 22 and 24 across Linux, macOS, and Windows; the following sequence reproduces its
+gates from the repository root:
+
+<!-- repo-fact:ci-commands:start -->
+
+```bash
+# Dependencies and static gates
+pnpm install --frozen-lockfile
+node scripts/check-quality-task-coverage.mjs
+pnpm lint
+pnpm format:check
+pnpm typecheck:e2e
+node scripts/release-preflight.mjs
+node scripts/check-docs-paths.mjs
+
+# Algorithmic, build, documentation, and clean-rebuild gates
+pnpm perf:check
+pnpm build
+node scripts/check-docs-facts.mjs
+node packages/cli/dist/index.js --version
+pnpm clean
+pnpm build
+
+# Unit, coverage, migration, and browser gates
+pnpm test
+pnpm test:coverage # includes pnpm check:coverage-scopes
+pnpm test:migration
+pnpm exec playwright install --with-deps chromium
+pnpm test:e2e
+
+# Package artifact and installed-package gates
+pnpm package:artifact:test
+pnpm package:artifact
+node scripts/smoke-package-artifact.mjs artifacts/npm/codesesh-*.tgz
+```
+
+<!-- repo-fact:ci-commands:end -->
+
+The workflow limits `perf:check` and the clean-rebuild smoke test to Node.js 24, and runs the CLI
+version smoke test on Node.js 22. A local run covers the commands; the pull request matrix remains
+the cross-platform verification.
 
 ### Performance Benchmark
 
