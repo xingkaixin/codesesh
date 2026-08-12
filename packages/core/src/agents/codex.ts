@@ -354,7 +354,6 @@ interface SessionMeta extends FileSessionMeta {
   indexMtimeMs: number | null;
   headIndexVersion: string;
   parserVersion: string;
-  model: string | null;
   parentThreadId: string | null;
 }
 
@@ -558,7 +557,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     let totalCost = 0;
 
     let pendingPlan: MessagePart | null = null;
-    let activeModel: string | null = meta.model;
+    let activeModel: string | null = null;
 
     // Token-count dedup state (matches codeburn strategy)
     let prevCumulativeTotal = 0;
@@ -570,7 +569,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     for (const record of readJsonlFile(meta.sourcePath)) {
       try {
         const recordType = String(record["type"] ?? "");
-        if (recordType === "turn_context") {
+        if (recordType === "session_meta" || recordType === "turn_context") {
           const payload = extractPayload(record);
           activeModel = extractModelName(payload["model"]) ?? activeModel;
         }
@@ -866,7 +865,6 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
         indexMtimeMs: indexMtime,
         headIndexVersion: HEAD_INDEX_VERSION,
         parserVersion: PARSER_VERSION,
-        model: null,
         parentThreadId: head.parent_reference?.sessionId ?? null,
       },
     });
@@ -969,7 +967,6 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     // candidate, count messages, extract models, and pre-accumulate tokens.
     let updatedAt = 0;
     let messageCount = 0;
-    let model: string | null = null;
     let activeModel: string | null = null;
     const modelUsageMap: Record<string, number> = {};
     let totalInputTokens = 0;
@@ -1027,7 +1024,6 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
           const nextModel = extractModelName(payload["model"]);
           if (nextModel) {
             activeModel = nextModel;
-            model ??= nextModel;
           }
           continue;
         }
@@ -1043,7 +1039,6 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
           const m = info?.["model"] ?? p["model"];
           if (typeof m === "string" && m.trim()) {
             activeModel = m.trim();
-            model ??= activeModel;
           }
         }
 
