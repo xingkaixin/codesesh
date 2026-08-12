@@ -139,7 +139,7 @@ export class AgentSyncEngine {
   private readonly scheduler: AgentOperationScheduler;
   private readonly sessionIndex = new LiveSessionIndex();
   private readonly backfills = new BackfillLifecycle();
-  private cacheIntegrityCheckedAgents = new Set<string>();
+  private cacheIntegrityValidUntilByAgent = new Map<string, number>();
   private sessionsChangedListeners = new Set<SessionsChangedListener>();
   private statusChangedListeners = new Set<StatusChangedListener>();
   private statusProgressThrottles = new Map<string, LatestValueThrottle<void>>();
@@ -242,7 +242,7 @@ export class AgentSyncEngine {
     }
     this.backfills.cancelAll();
     this.cancelProgressStatuses();
-    this.cacheIntegrityCheckedAgents.clear();
+    this.cacheIntegrityValidUntilByAgent.clear();
     const searchIndexSnapshot = this.searchIndexJobs.snapshot();
     appLogger.info("search_index.shutdown.started", {
       active_batch_id: searchIndexSnapshot.activeBatchId,
@@ -393,9 +393,14 @@ export class AgentSyncEngine {
 
   private async performRefresh(agentName: string): Promise<AgentOperationResult> {
     this.beginAgentScan(agentName);
+    const startedAt = performance.now();
     let failed = false;
+    let cached: CachedSessions | null = null;
+    let result: Exclude<AgentOperationResult, "failed"> | null = null;
     try {
-      return await this.runRefresh(agentName);
+      if (this.findAgent(agentName)) cached = loadCachedSessions(agentName);
+      result = await this.runRefresh(agentName, cached, startedAt);
+      return result;
     } catch (error) {
       this.options.workerRunner.discard?.(agentName);
       failed = true;
@@ -408,12 +413,17 @@ export class AgentSyncEngine {
     } finally {
       if (!failed) this.finishAgentScan(agentName);
       const agent = this.findAgent(agentName);
-      if (agent && this.needsBackfill(agent)) this.enqueueBackfill(agentName);
+      if (agent && this.needsBackfill(agent, cached, failed || result === "committed")) {
+        this.enqueueBackfill(agentName);
+      }
     }
   }
 
-  private async runRefresh(agentName: string): Promise<Exclude<AgentOperationResult, "failed">> {
-    const startedAt = performance.now();
+  private async runRefresh(
+    agentName: string,
+    cached: CachedSessions | null,
+    startedAt: number,
+  ): Promise<Exclude<AgentOperationResult, "failed">> {
     const pendingPathCount = this.scheduler.takePendingSignalCount(agentName);
     const agent = this.findAgent(agentName);
     if (!agent) {
@@ -421,7 +431,6 @@ export class AgentSyncEngine {
       return "skipped";
     }
     const previousSessions = this.sessionIndex.snapshot().byAgent[agentName] ?? [];
-    const cached = loadCachedSessions(agentName);
     const refreshBaseline = cached?.sessions ?? previousSessions;
     const cacheTimestamp = cached?.timestamp ?? this.lastRefreshAtByAgent.get(agentName) ?? 0;
     if (cached) restoreAgentCacheMeta(agent, cached);
@@ -816,10 +825,15 @@ export class AgentSyncEngine {
     });
   }
 
-  private needsBackfill(agent: BaseAgent): boolean {
+  private needsBackfill(
+    agent: BaseAgent,
+    cached?: CachedSessions | null,
+    reloadCached = false,
+  ): boolean {
     const startupScanOptions = this.startupScanOptions();
     if (startupScanOptions.from == null && startupScanOptions.to == null) return false;
-    if (!agent.isAvailable()) return false;
+    const now = Date.now();
+    if ((this.cacheIntegrityValidUntilByAgent.get(agent.name) ?? 0) >= now) return false;
     const lastSync = readAgentLastFullSyncAt(agent.name);
     if (lastSync.status === "failed") {
       appLogger.warn("scan.backfill.cache_state_unavailable", {
@@ -829,14 +843,17 @@ export class AgentSyncEngine {
       return false;
     }
     const lastSyncAt = lastSync.value;
-    if (lastSyncAt == null || Date.now() - lastSyncAt > BACKFILL_INTERVAL_MS) return true;
+    if (lastSyncAt == null || now - lastSyncAt > BACKFILL_INTERVAL_MS) {
+      return agent.isAvailable();
+    }
     if (!(agent instanceof FileSystemSessionSource)) return false;
-    if (this.cacheIntegrityCheckedAgents.has(agent.name)) return false;
+    if (!agent.isAvailable()) return false;
 
-    const cached = loadCachedSessions(agent.name);
+    const cachedSessions =
+      reloadCached || cached === undefined ? loadCachedSessions(agent.name) : cached;
     const sourceCount = agent.listSessionSources().length;
-    const cachedCount = cached?.sessions.length ?? 0;
-    this.cacheIntegrityCheckedAgents.add(agent.name);
+    const cachedCount = cachedSessions?.sessions.length ?? 0;
+    this.cacheIntegrityValidUntilByAgent.set(agent.name, lastSyncAt + BACKFILL_INTERVAL_MS);
     if (sourceCount > 0 && cachedCount / sourceCount < CACHE_TRUNCATION_COVERAGE) {
       appLogger.warn("scan.backfill.cache_truncated", {
         agent: agent.name,
@@ -874,7 +891,14 @@ export class AgentSyncEngine {
     if (current?.status === "running" && current.attemptId === attempt.attemptId) {
       this.flushProgressStatus(`backfill:${attempt.agentName}`);
       if (this.backfills.complete(attempt, result)) {
-        if (result === "failed") this.cacheIntegrityCheckedAgents.delete(attempt.agentName);
+        if (result === "failed") {
+          this.cacheIntegrityValidUntilByAgent.delete(attempt.agentName);
+        } else if (result === "committed") {
+          this.cacheIntegrityValidUntilByAgent.set(
+            attempt.agentName,
+            Date.now() + BACKFILL_INTERVAL_MS,
+          );
+        }
         this.publishBackfillStatus();
       }
     }
