@@ -48,5 +48,16 @@ describe("critical coverage owners", () => {
     expect(getCriticalCoverageThresholds()).toHaveProperty(getCoverageScopePattern(runtime), {
       lines: 91,
     });
+
+    const adapters = CRITICAL_COVERAGE_SCOPES.find(({ id }) => id === "agent-adapters");
+    if (!adapters) throw new Error("agent-adapters coverage scope is missing");
+    expect(adapters.owners).toEqual([{ path: "packages/core/src/agents", kind: "directory" }]);
+    expect(getCriticalCoverageThresholds()).toHaveProperty(getCoverageScopePattern(adapters), {
+      lines: 86,
+    });
+
+    const routeRecovery = CRITICAL_COVERAGE_SCOPES.find(({ id }) => id === "web-route-recovery");
+    if (!routeRecovery) throw new Error("web-route-recovery coverage scope is missing");
+    expect(routeRecovery.owners.map(({ path }) => path)).toContain("apps/web/src/router.tsx");
   });
 });

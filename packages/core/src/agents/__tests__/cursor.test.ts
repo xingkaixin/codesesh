@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
@@ -15,6 +15,8 @@ import {
 } from "../../utils/diagnostics.js";
 
 let tempDirs: string[] = [];
+
+const CURSOR_FIXTURE_ROOT = new URL("./fixtures/cursor/", import.meta.url);
 
 function createCursorDb(tempDir: string): string {
   const dbPath = join(tempDir, "state.vscdb");
@@ -149,6 +151,43 @@ describe("CursorAgent parsing", () => {
       },
     });
     expect(tool?.type === "tool" ? tool.state.error : undefined).toBeUndefined();
+  });
+
+  it("normalizes array tool output from subagent actions", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-cursor-test-"));
+    tempDirs.push(tempDir);
+    const dbPath = createCursorDb(tempDir);
+    const fixture = JSON.parse(
+      readFileSync(new URL("subagent-tool-output.json", CURSOR_FIXTURE_ROOT), "utf-8"),
+    );
+    insertKv(dbPath, "bubble:sub-1", fixture);
+
+    const agent = new CursorAgent() as any;
+    agent.dbPath = dbPath;
+    agent.composerCache.set("composer-1", {
+      id: "composer-1",
+      createdAt: 1_000,
+      updatedAt: 2_000,
+      subagentInfos: [{ id: "sub-1", title: "Reader" }],
+    });
+
+    const tool = agent
+      .getSessionData("composer-1")
+      .messages.find((message: { subagent_id?: string }) => message.subagent_id === "sub-1")
+      ?.parts.find((part: MessagePart) => part.type === "tool");
+
+    expect(tool).toMatchObject({
+      type: "tool",
+      tool: "read",
+      state: {
+        status: "completed",
+        output: [
+          { type: "text", text: "first line", time_created: 0 },
+          { type: "text", text: "second line", time_created: 0 },
+          { type: "text", text: "third line", time_created: 0 },
+        ],
+      },
+    });
   });
 
   it("falls back to untitled when no title text is available", () => {
