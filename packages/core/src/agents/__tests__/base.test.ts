@@ -353,6 +353,22 @@ describe("diffSessionSources", () => {
     });
   });
 
+  it("removes a cached session whose meta records no source path", () => {
+    const diff = diffSessionSources([], [makeSession("orphan")], {});
+
+    expect(diff).toEqual({
+      changedIds: [],
+      removedIds: ["orphan"],
+      failedIds: [],
+      sourceOutcomes: [
+        {
+          status: "missing",
+          source: { sessionId: "orphan", sourcePath: "", fingerprint: "" },
+        },
+      ],
+    });
+  });
+
   it("treats an existing cached path omitted by enumeration as failed, not removed", () => {
     const directory = mkdtempSync(join(tmpdir(), "codesesh-source-outcome-"));
     const sourcePath = join(directory, "half-written.jsonl");

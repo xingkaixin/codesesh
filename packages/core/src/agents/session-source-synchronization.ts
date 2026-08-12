@@ -187,15 +187,11 @@ export function diffSessionSources(
       fingerprint: typeof meta?.sourceFingerprint === "string" ? meta.sourceFingerprint : "",
     };
     if (!source.sourcePath) {
-      failedIds.push(session.id);
-      sourceOutcomes.push({
-        status: "failed",
-        failure: createSessionSourceFailure(
-          source,
-          "enumeration",
-          new Error("cached source path is missing"),
-        ),
-      });
+      // No path can ever be re-checked, so keeping this entry would fail on
+      // every future pass; a complete enumeration finding neither file nor
+      // path proves the entry is unrecoverable.
+      removedIds.push(session.id);
+      sourceOutcomes.push({ status: "missing", source });
       continue;
     }
     try {
