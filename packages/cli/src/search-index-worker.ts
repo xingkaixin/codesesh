@@ -207,7 +207,14 @@ function postSyncResult(context: string, result: SearchIndexSyncResult): void {
 let persistFailed = false;
 for (const job of jobs) {
   const agent = agents.find((item) => item.name === job.agentName);
-  if (!agent) continue;
+  if (!agent) {
+    reportPersistFailure(job, {
+      stage: "prepare",
+      publicationId: job.publicationId ?? randomUUID(),
+    });
+    persistFailed = true;
+    break;
+  }
 
   if (agent.setSessionMetaMap) {
     agent.setSessionMetaMap(new Map(Object.entries(job.meta)));

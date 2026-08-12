@@ -93,7 +93,7 @@ describe("search index worker", () => {
     );
     mocks.workerData = {
       context: "startup",
-      agentNames: ["codex", "unknown"],
+      agentNames: ["codex"],
       sessionsByAgent: { codex: [{ id: "s1" }] },
       metaByAgent: { codex: { s1: { id: "s1" } } },
     };
@@ -108,6 +108,39 @@ describe("search index worker", () => {
     });
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({ type: "done", context: "startup", sessions: 1 }),
+    );
+  });
+
+  it("rejects a job for an unknown agent instead of reporting done", async () => {
+    mocks.createRegisteredAgents.mockReturnValue([]);
+    mocks.workerData = {
+      context: "scan.refresh",
+      agentNames: [],
+      sessionsByAgent: {},
+      metaByAgent: {},
+      jobs: [
+        {
+          kind: "full",
+          context: "scan.refresh",
+          agentName: "unknown",
+          sessions: [{ id: "s1" }],
+          meta: {},
+          completeness: "complete",
+          removedSessionIds: [],
+        },
+      ],
+    };
+
+    await runWorker();
+
+    expect(mocks.postMessage).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        type: "persist-failed",
+        context: "scan.refresh",
+        stage: "prepare",
+        agentName: "unknown",
+        sessions: 1,
+      }),
     );
   });
 
