@@ -205,6 +205,42 @@ describe("AgentSyncEngine", () => {
     });
   });
 
+  it("marks a rejected backfill failed and continues the queue", async () => {
+    const { engine } = makeEngine(makeAgent());
+    const internal = engine as unknown as {
+      backfills: { stateFor(agentName: string): { status: string } | undefined };
+      enqueueBackfill(agentName: string): void;
+      runBackfill(attempt: { agentName: string; attemptId: number }): Promise<unknown>;
+    };
+    const runBackfill = vi
+      .spyOn(internal, "runBackfill")
+      .mockRejectedValueOnce(new Error("backfill callback rejected"))
+      .mockResolvedValueOnce("committed");
+    const logError = vi.spyOn(appLogger, "error").mockImplementation(() => undefined);
+    engine.subscribeStatusChanged(() => {
+      throw new Error("status listener rejected");
+    });
+
+    try {
+      internal.enqueueBackfill("codex");
+      internal.enqueueBackfill("kimi");
+      await vi.waitFor(() => expect(internal.backfills.stateFor("kimi")?.status).toBe("committed"));
+      expect(logError).toHaveBeenCalledWith(
+        "scan.backfill.queue_error",
+        expect.objectContaining({ agent: "codex", error: expect.any(Error) }),
+      );
+      expect(logError).toHaveBeenCalledWith(
+        "scan.status_listener.error",
+        expect.objectContaining({ error: expect.any(Error) }),
+      );
+    } finally {
+      logError.mockRestore();
+    }
+
+    expect(internal.backfills.stateFor("codex")?.status).toBe("failed");
+    expect(runBackfill).toHaveBeenCalledTimes(2);
+  });
+
   it("bounds backfill progress and publishes its terminal immediately", async () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,

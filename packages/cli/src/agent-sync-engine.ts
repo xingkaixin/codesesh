@@ -329,7 +329,13 @@ export class AgentSyncEngine {
 
   private publishStatus(event: ScanStatusEvent | null): void {
     if (!event || this.isShuttingDown) return;
-    for (const listener of this.statusChangedListeners) listener(event);
+    for (const listener of this.statusChangedListeners) {
+      try {
+        listener(event);
+      } catch (error) {
+        appLogger.error("scan.status_listener.error", { error });
+      }
+    }
   }
 
   private publishProgressStatus(key: string, phase: string, event: ScanStatusEvent | null): void {
@@ -809,16 +815,30 @@ export class AgentSyncEngine {
     const attempt = this.backfills.startNext();
     if (!attempt) return;
     this.publishBackfillStatus();
-    void this.runBackfill(attempt).then((result) => {
-      if (this.isShuttingDown) return;
-      const current = this.backfills.stateFor(attempt.agentName);
-      if (current?.status !== "running" || current.attemptId !== attempt.attemptId) return;
+    void this.runBackfill(attempt)
+      .then((result) => this.completeBackfillAttempt(attempt, result))
+      .catch((error) => this.rejectBackfillAttempt(attempt, error));
+  }
+
+  private completeBackfillAttempt(
+    attempt: BackfillAttemptRef,
+    result: BackfillTerminalStatus,
+  ): void {
+    if (this.isShuttingDown) return;
+    const current = this.backfills.stateFor(attempt.agentName);
+    if (current?.status === "running" && current.attemptId === attempt.attemptId) {
       this.flushProgressStatus(`backfill:${attempt.agentName}`);
-      if (!this.backfills.complete(attempt, result)) return;
-      if (result === "failed") this.cacheIntegrityCheckedAgents.delete(attempt.agentName);
-      this.publishBackfillStatus();
-      this.pumpBackfillQueue();
-    });
+      if (this.backfills.complete(attempt, result)) {
+        if (result === "failed") this.cacheIntegrityCheckedAgents.delete(attempt.agentName);
+        this.publishBackfillStatus();
+      }
+    }
+    this.pumpBackfillQueue();
+  }
+
+  private rejectBackfillAttempt(attempt: BackfillAttemptRef, error: unknown): void {
+    appLogger.error("scan.backfill.queue_error", { agent: attempt.agentName, error });
+    this.completeBackfillAttempt(attempt, "failed");
   }
 
   private runBackfill(attempt: BackfillAttemptRef): Promise<BackfillTerminalStatus> {

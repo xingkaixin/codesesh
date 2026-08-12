@@ -401,6 +401,45 @@ describe("scan refresh worker entry", () => {
     );
   });
 
+  it("reports a rejected commit and continues processing later requests", async () => {
+    mocks.createRegisteredAgents.mockReturnValue([makeAgent({ scan: vi.fn(() => []) })]);
+    setWorkerData({ generation: 4 });
+
+    await runWorker();
+    await vi.waitFor(() =>
+      expect(mocks.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "done", requestId: 1, generation: 4 }),
+      ),
+    );
+    mocks.workerMessageHandler?.({ type: "commit", requestId: 1, generation: 5 });
+    mocks.workerMessageHandler?.({ type: "commit", requestId: 1, generation: 4 });
+    mocks.workerMessageHandler?.({
+      type: "run",
+      requestId: 2,
+      agentName: "codex",
+      generation: 5,
+      pricingGenerationId: 17,
+      operation: { kind: "recompute-derived" },
+      scanOptions: {},
+    });
+
+    await vi.waitFor(() =>
+      expect(mocks.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "error",
+          requestId: 1,
+          generation: 5,
+          error: "Worker commit generation mismatch: expected 4, received 5",
+        }),
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(mocks.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "done", requestId: 2, generation: 5 }),
+      ),
+    );
+  });
+
   it("emits a durable head checkpoint before metadata finalization", async () => {
     const session = makeSession("fresh", { time_updated: 1 });
     const agent = makeAgent({
