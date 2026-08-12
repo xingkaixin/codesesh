@@ -391,6 +391,12 @@ function isInternalBubble(bubble: BubbleData): boolean {
   return ["eventType", "kind", "subtype", "name"].some((key) => isInternalEventType(bubble[key]));
 }
 
+function composerUpdatedAt(composer: ComposerData): number {
+  return (
+    composer.updatedAt ?? composer.lastUpdatedAt ?? composer.lastSendTime ?? composer.createdAt ?? 0
+  );
+}
+
 /** Build a normalized tool state object from an action entry */
 function buildToolState(action: ActionEntry): ToolPartState {
   let output = action.output;
@@ -625,8 +631,7 @@ export class CursorAgent extends DatabaseSessionSource {
 
           const composerId = composer.id || composer.composerId || "";
           const createdAt = composer.createdAt ?? 0;
-          const updatedAt =
-            composer.updatedAt ?? composer.lastUpdatedAt ?? composer.lastSendTime ?? createdAt;
+          const updatedAt = composerUpdatedAt(composer);
           if (!matchesScanWindow(updatedAt, options)) continue;
 
           const fastTitle = this.extractTitle(composer);
@@ -759,7 +764,7 @@ export class CursorAgent extends DatabaseSessionSource {
 
       const composerId = composer.id || composer.composerId || "";
       const createdAt = composer.createdAt ?? 0;
-      const updatedAt = composer.updatedAt ?? createdAt;
+      const updatedAt = composerUpdatedAt(composer);
 
       // Load messages from bubbles (like agent-dump does)
       const messages = this.loadMessagesFromBubbles(

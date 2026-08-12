@@ -121,6 +121,20 @@ describe("CS-142: Cursor scan shape", () => {
     expect(heads.map((head) => head.id)).toEqual(["new"]);
   });
 
+  it("uses the same update-time fallback in heads and details", () => {
+    const dbPath = createDb([
+      composer("c1", { lastUpdatedAt: undefined, lastSendTime: 2_500 }),
+      ...bubbles("c1", [{ suffix: "a", bubble: { type: 1, text: "question" } }]),
+    ]);
+    const agent = makeAgent(dbPath);
+
+    const [head] = agent.scan({ from: 0 });
+    const detail = agent.getSessionData(head!.id);
+
+    expect(head?.time_updated).toBe(2_500);
+    expect(detail.time_updated).toBe(head?.time_updated);
+  });
+
   it("counts messages and totals from the bubbles it parsed", () => {
     const dbPath = createDb([
       composer("c1", { model: "gpt-4" }),
