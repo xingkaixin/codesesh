@@ -5,15 +5,10 @@
  */
 import type { ToolPart } from "../../../lib/api";
 import { buildKimiEditDiffBlocks, extractEditDiff } from "../diff";
-import {
-  getDisplayPath,
-  getDisplayTextWithRelativePaths,
-  getFilePathFromInput,
-} from "../path-extract";
+import { getDisplayPath, getFilePathFromInput } from "../path-extract";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
-  getOutputOrErrorText,
   toPlainText,
   toRecord,
 } from "../tool-normalize";
@@ -22,8 +17,9 @@ import {
   buildFileEditStrategy,
   buildFileReadStrategy,
   buildFileWriteStrategy,
+  buildSearchToolStrategy,
+  buildShellToolStrategy,
 } from "./shared";
-import { FileSearch, SquareTerminal } from "../../ui/icons";
 
 export function buildKimiToolStrategy(
   tool: ToolPart,
@@ -37,57 +33,34 @@ export function buildKimiToolStrategy(
   const displayPath = getDisplayPath(filePath, baseDirectory);
 
   if (toolKey === "glob") {
-    const pattern = toPlainText(input.pattern);
-    return {
-      ...defaultStrategy,
-      Icon: FileSearch,
+    return buildSearchToolStrategy({
+      defaultStrategy,
+      state,
       title: tool.title || "glob",
-      secondaryText: pattern || undefined,
-      showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "text",
-        isCode: false,
-      },
-    };
+      pattern: toPlainText(input.pattern),
+      baseDirectory,
+    });
   }
 
   if (toolKey === "grep") {
-    const path = toPlainText(input.path);
-    const pattern = toPlainText(input.pattern);
-    const details = [getDisplayPath(path, baseDirectory), pattern].filter(Boolean).join(" · ");
-    return {
-      ...defaultStrategy,
-      Icon: FileSearch,
+    return buildSearchToolStrategy({
+      defaultStrategy,
+      state,
       title: tool.title || "grep",
-      secondaryText: details || undefined,
-      showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "text",
-        isCode: false,
-      },
-    };
+      path: toPlainText(input.path),
+      pattern: toPlainText(input.pattern),
+      baseDirectory,
+    });
   }
 
   if (toolKey === "shell") {
-    const command = toPlainText(input.command);
-    const displayCommand = getDisplayTextWithRelativePaths(command, baseDirectory);
-    return {
-      ...defaultStrategy,
-      Icon: SquareTerminal,
+    return buildShellToolStrategy({
+      defaultStrategy,
+      state,
       title: tool.title || "bash",
-      secondaryText: displayCommand ? `(${displayCommand})` : undefined,
-      showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "text",
-        isCode: false,
-      },
-    };
+      command: toPlainText(input.command),
+      baseDirectory,
+    });
   }
 
   if (toolKey === "readfile") {

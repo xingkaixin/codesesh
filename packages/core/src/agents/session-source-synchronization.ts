@@ -92,6 +92,8 @@ export function isMissingSessionSourceError(error: unknown): boolean {
   return code === "ENOENT" || code === "ENOTDIR";
 }
 
+const FAILURE_MESSAGE_LIMIT = 500;
+
 function failureClass(error: unknown): string {
   if (typeof error === "object" && error !== null && "code" in error) {
     const code = (error as { code?: unknown }).code;
@@ -103,7 +105,14 @@ function failureClass(error: unknown): string {
 
 function failureMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  return message.slice(0, 500);
+  return message.slice(0, FAILURE_MESSAGE_LIMIT);
+}
+
+export function describeFailure(error: unknown) {
+  return {
+    errorClass: failureClass(error),
+    message: failureMessage(error),
+  };
 }
 
 export function createSessionSourceFailure(
@@ -115,8 +124,7 @@ export function createSessionSourceFailure(
     sessionId: source.sessionId,
     sourcePath: source.sourcePath,
     stage,
-    errorClass: failureClass(error),
-    message: failureMessage(error),
+    ...describeFailure(error),
   };
 }
 

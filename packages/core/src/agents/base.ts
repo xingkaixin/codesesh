@@ -9,6 +9,7 @@ import {
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import {
   createSessionSourceFailure,
+  describeFailure,
   isMissingSessionSourceError,
   matchesScanWindow,
   synchronizeSessionSources as runSessionSourceSynchronization,
@@ -199,20 +200,6 @@ export type CachedMetaLookup =
   | ReadonlyMap<string, SessionCacheMeta>
   | Record<string, SessionCacheMeta>;
 
-function failureClass(error: unknown): string {
-  if (typeof error === "object" && error !== null && "code" in error) {
-    const code = (error as { code?: unknown }).code;
-    if (typeof code === "string" && code) return code;
-  }
-  if (error instanceof Error && error.name) return error.name;
-  return typeof error;
-}
-
-function failureMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.slice(0, 500);
-}
-
 export function createAgentScanFailure(
   agentName: string,
   stage: string,
@@ -227,8 +214,7 @@ export function createAgentScanFailure(
     ...((scanError?.sourcePath ?? sourcePath)
       ? { sourcePath: scanError?.sourcePath ?? sourcePath }
       : {}),
-    errorClass: failureClass(cause),
-    message: failureMessage(cause),
+    ...describeFailure(cause),
   };
 }
 
