@@ -9,6 +9,10 @@ const FACT_SPECS = [
   { document: "docs/scanning-and-caching.md", fact: "agent-source-kinds" },
   { document: "docs/architecture.md", fact: "agent-source-kinds" },
   { document: "docs/sqlite-storage.md", fact: "cache-schema-version" },
+  { document: "README.md", fact: "node-version" },
+  { document: "README_CN.md", fact: "node-version" },
+  { document: "apps/www/public/llms-full.txt", fact: "node-version" },
+  { document: "packages/cli/README.md", fact: "node-version" },
   { document: "README.md", fact: "pnpm-version" },
   { document: "README_CN.md", fact: "pnpm-version" },
   { document: "apps/www/public/llms-full.txt", fact: "pnpm-version" },
@@ -28,6 +32,15 @@ export function readPnpmVersion(repoRoot) {
   const manifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
   const match = /^pnpm@(\d+\.\d+\.\d+)$/.exec(manifest.packageManager ?? "");
   if (!match) throw new Error("package.json packageManager must be an exact pnpm version");
+  return match[1];
+}
+
+export function readMinimumNodeVersion(repoRoot) {
+  const manifest = JSON.parse(readFileSync(join(repoRoot, "packages/cli/package.json"), "utf8"));
+  const match = /^>=(\d+\.\d+\.\d+)$/.exec(manifest.engines?.node ?? "");
+  if (!match) {
+    throw new Error("packages/cli/package.json engines.node must be an exact >=x.y.z version");
+  }
   return match[1];
 }
 
@@ -75,7 +88,25 @@ function parseSourceKindNames(region) {
   return { filesystem: splitNames(filesystem.trim()), sqlite: splitNames(sqlite.trim()) };
 }
 
+function normalizeDocumentedNodeVersion(version) {
+  const parts = version.split(".");
+  return [...parts, ...Array(3 - parts.length).fill("0")].join(".");
+}
+
 function validateRegion(fact, region, repositoryFacts) {
+  if (fact === "node-version") {
+    const versions = [...region.matchAll(/\bNode\.js\s+(\d+(?:\.\d+){0,2})\+/g)].map((match) =>
+      normalizeDocumentedNodeVersion(match[1]),
+    );
+    if (versions.length === 0) return "marker contains no `Node.js x+` declaration";
+    const stale = unique(
+      versions.filter((version) => version !== repositoryFacts.minimumNodeVersion),
+    );
+    return stale.length > 0
+      ? `expected Node.js ${repositoryFacts.minimumNodeVersion}; documented ${stale.join(", ")}`
+      : null;
+  }
+
   if (fact === "pnpm-version") {
     const versions = [...region.matchAll(/\bpnpm\s+(\d+\.\d+\.\d+)\b/g)].map((match) => match[1]);
     if (versions.length === 0) return "marker contains no `pnpm x.y.z` declaration";
@@ -128,7 +159,11 @@ function validateRegion(fact, region, repositoryFacts) {
 }
 
 export function findDocumentationFactMismatches(repoRoot, coreFacts) {
-  const repositoryFacts = { ...coreFacts, pnpmVersion: readPnpmVersion(repoRoot) };
+  const repositoryFacts = {
+    ...coreFacts,
+    minimumNodeVersion: readMinimumNodeVersion(repoRoot),
+    pnpmVersion: readPnpmVersion(repoRoot),
+  };
   const mismatches = [];
 
   for (const { document, fact } of FACT_SPECS) {

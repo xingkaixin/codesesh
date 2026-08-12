@@ -70,10 +70,15 @@ CodeSesh 认为，你的会话历史属于**你** —— 你应该在一个地�
 
 ### 环境要求
 
+<!-- repo-fact:node-version:start -->
+
+- 发布后的 CLI 和源码构建均需要 Node.js 22+
+
+<!-- repo-fact:node-version:end -->
+
 <!-- repo-fact:pnpm-version:start -->
 
-- 发布后的 CLI 需要 Node.js 22+
-- 源码构建需要 Node.js 24 和 pnpm 11.20.0
+- 源码构建需要 pnpm 11.20.0
 
 <!-- repo-fact:pnpm-version:end -->
 

@@ -70,10 +70,15 @@ More agents coming soon. See the [extension checklist](#extending).
 
 ### Prerequisites
 
+<!-- repo-fact:node-version:start -->
+
+- Node.js 22+ for the published CLI and building from source
+
+<!-- repo-fact:node-version:end -->
+
 <!-- repo-fact:pnpm-version:start -->
 
-- Node.js 22+ for the published CLI
-- Node.js 24 and pnpm 11.20.0 for building from source
+- pnpm 11.20.0 for building from source
 
 <!-- repo-fact:pnpm-version:end -->
 

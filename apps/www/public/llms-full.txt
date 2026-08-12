@@ -97,14 +97,15 @@ The command starts a local server and opens the Web UI at:
 http://localhost:4521
 ```
 
-Published CLI requirement:
+Published CLI and source build requirement:
 
+<!-- repo-fact:node-version:start -->
 - Node.js 22+
+<!-- repo-fact:node-version:end -->
 
-Source build requirement:
+Source build package manager:
 
 <!-- repo-fact:pnpm-version:start -->
-- Node.js 24
 - pnpm 11.20.0
 <!-- repo-fact:pnpm-version:end -->
 
@@ -124,8 +125,14 @@ CodeSesh runs on the user's machine and uses a local SQLite index with a local W
 
 ### How do you install and start CodeSesh?
 
+The fastest way to start CodeSesh is running `npx codesesh` in a terminal. CodeSesh scans supported local AI coding sessions and opens the Web UI at `http://localhost:4521`; if that default port is busy, it automatically tries the next available port.
+
+<!-- repo-fact:node-version:start -->
+The published CLI and source development require Node.js 22+.
+<!-- repo-fact:node-version:end -->
+
 <!-- repo-fact:pnpm-version:start -->
-The fastest way to start CodeSesh is running `npx codesesh` in a terminal. CodeSesh scans supported local AI coding sessions and opens the Web UI at `http://localhost:4521`; if that default port is busy, it automatically tries the next available port. The published CLI requires Node.js 22+; source development uses Node.js 24 and pnpm 11.20.0.
+Source development uses pnpm 11.20.0.
 <!-- repo-fact:pnpm-version:end -->
 
 ## Common CLI Usage
