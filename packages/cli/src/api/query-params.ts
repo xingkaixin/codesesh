@@ -105,6 +105,10 @@ export function parseDateWindow(
   const to = parseDateParam(params.get("to") ?? undefined, defaults.to);
   if (to.kind === "invalid") return { ...to, parameter: "to" };
 
+  if (from.value != null && to.value != null && from.value > to.value) {
+    return { kind: "invalid", parameter: "from", error: "must not be after to" };
+  }
+
   return { kind: "valid", from: from.value, to: to.value };
 }
 

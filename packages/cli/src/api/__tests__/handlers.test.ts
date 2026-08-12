@@ -515,6 +515,13 @@ describe("handleGetSessions", () => {
 
     expect(c.json).toHaveBeenCalledWith({ error: "from must be a valid date" }, 400);
   });
+
+  it("rejects a date window whose start is after its end", () => {
+    const c = makeMockContext({ query: { from: "2026-08-13", to: "2026-08-12" } });
+    handleGetSessions(c, makeScanSource());
+
+    expect(c.json).toHaveBeenCalledWith({ error: "from must not be after to" }, 400);
+  });
 });
 
 describe("handleSearchSessions", () => {

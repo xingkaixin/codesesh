@@ -33,6 +33,14 @@ describe("session query contract", () => {
     });
   });
 
+  it("rejects a date window whose start is after its end", () => {
+    expect(parseDateWindow(new URLSearchParams("from=2026-08-13&to=2026-08-12"), {})).toEqual({
+      kind: "invalid",
+      parameter: "from",
+      error: "must not be after to",
+    });
+  });
+
   it("distinguishes an absent agent from known and unknown values", () => {
     expect(parseSessionQuery(new URLSearchParams(), ["claudecode"]).agent).toEqual({
       kind: "all",
