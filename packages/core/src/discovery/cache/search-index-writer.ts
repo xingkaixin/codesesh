@@ -102,6 +102,38 @@ interface SearchIndexRowWriteOptions {
   verifySupersession?: boolean;
 }
 
+type SearchIndexPlanRequest =
+  | { kind: "snapshot"; sessions: SessionHead[] }
+  | {
+      kind: "changes";
+      changes: SessionHeadChange[];
+      removedSessionIds: readonly string[];
+    };
+
+interface SearchIndexPlan {
+  agentName: string;
+  mode: "bulk" | "incremental";
+  sessionCount: number;
+  changes: SessionHeadChange[];
+  removedSessionIds: string[];
+  detailVersionBySessionId: Map<string, string>;
+  needsRebuild: boolean;
+  startedAt: number;
+}
+
+interface SearchIndexPlanInput {
+  agentName: string;
+  sessionCount: number;
+  candidates: SessionHeadChange[];
+  removedSessionIds: string[];
+  state: SearchIndexState;
+  options: SearchIndexSyncOptions;
+  startedAt: number;
+}
+
+/** Full snapshots bound memory with durable chunks; targeted changes retain one atomic write. */
+type LargeBacklogWriteStrategy = "atomic" | "chunked";
+
 interface PreparedSearchIndexPublication {
   agentName: string;
   mode: "bulk" | "incremental";
@@ -531,6 +563,132 @@ function loadOrPreStageEntries(
   return { entries: [], preStaged };
 }
 
+function readSearchIndexPlanInput(
+  db: SQLiteDatabase,
+  agentName: string,
+  request: SearchIndexPlanRequest,
+  options: SearchIndexSyncOptions,
+): SearchIndexPlanInput {
+  const startedAt = performance.now();
+  let candidates: SessionHeadChange[];
+  let removedSessionIds: string[];
+  let sessionCount: number;
+
+  if (request.kind === "snapshot") {
+    const existingRows = db
+      .prepare("SELECT session_id FROM session_documents WHERE agent_name = ? ORDER BY id")
+      .all(agentName) as IndexedSearchRow[];
+    const includedSessionIds = new Set(request.sessions.map((session) => session.id));
+    const sortIndexBySessionId = new Map(
+      request.sessions.map((session, sortIndex) => [session.id, sortIndex]),
+    );
+    const explicitRemovedSessionIds = new Set(options.removedSessionIds ?? []);
+    const completeness = options.completeness ?? "complete";
+    removedSessionIds = existingRows
+      .map((row) => String(row.session_id))
+      .filter(
+        (sessionId) =>
+          explicitRemovedSessionIds.has(sessionId) ||
+          (completeness === "complete" && !includedSessionIds.has(sessionId)),
+      );
+    candidates = request.sessions.map((session) => ({
+      session,
+      sortIndex: sortIndexBySessionId.get(session.id) ?? 0,
+    }));
+    sessionCount = request.sessions.length;
+  } else {
+    candidates = request.changes;
+    removedSessionIds = [...new Set(request.removedSessionIds)];
+    sessionCount = request.changes.length;
+  }
+
+  const state = readSearchIndexState(
+    db,
+    agentName,
+    candidates.map(({ session }) => session.id),
+  );
+
+  return {
+    agentName,
+    sessionCount,
+    candidates,
+    removedSessionIds,
+    state,
+    options,
+    startedAt,
+  };
+}
+
+function createSearchIndexPlan(input: SearchIndexPlanInput): SearchIndexPlan {
+  const changes = input.candidates.filter(({ session }) =>
+    searchIndexEntryNeedsUpdate(input.state, session, input.options),
+  );
+  const detailVersionBySessionId = new Map(
+    changes.map(({ session }) => [
+      session.id,
+      targetDetailVersion(input.state, session.id, input.options),
+    ]),
+  );
+  const changedCount = input.removedSessionIds.length + changes.length;
+  const isBulk = shouldBulkSyncSearchIndex(input.options, changedCount);
+
+  return {
+    agentName: input.agentName,
+    mode: isBulk ? "bulk" : "incremental",
+    sessionCount: input.sessionCount,
+    changes,
+    removedSessionIds: input.removedSessionIds,
+    detailVersionBySessionId,
+    needsRebuild: isBulk && changedCount > 0,
+    startedAt: input.startedAt,
+  };
+}
+
+function planSearchIndexWrite(
+  db: SQLiteDatabase,
+  agentName: string,
+  request: SearchIndexPlanRequest,
+  options: SearchIndexSyncOptions,
+): SearchIndexPlan {
+  return createSearchIndexPlan(readSearchIndexPlanInput(db, agentName, request, options));
+}
+
+function detailVersionForPlan(plan: SearchIndexPlan, sessionId: string): string {
+  return plan.detailVersionBySessionId.get(sessionId) ?? sessionDetailVersion(null);
+}
+
+function prepareSearchIndexPublication(
+  db: SQLiteDatabase,
+  plan: SearchIndexPlan,
+  loadSessionData: (sessionId: string) => SessionDetail,
+  publicationId?: string,
+): PreparedSearchIndexPublication {
+  const failures: SearchIndexSyncFailure[] = [];
+  const { entries, preStaged } = loadOrPreStageEntries(
+    db,
+    plan.agentName,
+    plan.changes,
+    loadSessionData,
+    (sessionId) => detailVersionForPlan(plan, sessionId),
+    failures,
+    publicationId,
+  );
+
+  return {
+    agentName: plan.agentName,
+    mode: plan.mode,
+    sessions: plan.sessionCount,
+    changed: plan.changes.length,
+    removedSessionIds: plan.removedSessionIds,
+    entries,
+    publicationId,
+    preStaged,
+    failures,
+    needsRebuild: plan.needsRebuild,
+    startedAt: plan.startedAt,
+  };
+}
+
 export function prepareSessionSnapshotSearchIndex(
   db: SQLiteDatabase,
   agentName: string,
@@ -538,59 +696,12 @@ export function prepareSessionSnapshotSearchIndex(
   loadSessionData: (sessionId: string) => SessionDetail,
   options: SearchIndexSyncOptions = {},
 ): PreparedSearchIndexPublication {
-  const startedAt = performance.now();
-  const existingRows = db
-    .prepare("SELECT session_id FROM session_documents WHERE agent_name = ? ORDER BY id")
-    .all(agentName) as IndexedSearchRow[];
-  const searchIndexState = readSearchIndexState(
+  return prepareSearchIndexPublication(
     db,
-    agentName,
-    sessions.map((session) => session.id),
-  );
-  const sessionMap = new Map(sessions.map((session) => [session.id, session]));
-  const explicitRemovedSessionIds = new Set(options.removedSessionIds ?? []);
-  const completeness = options.completeness ?? "complete";
-  const removedSessionIds = existingRows
-    .map((row) => String(row.session_id))
-    .filter(
-      (sessionId) =>
-        explicitRemovedSessionIds.has(sessionId) ||
-        (completeness === "complete" && !sessionMap.has(sessionId)),
-    );
-  const toUpsert = sessions.filter((session) =>
-    searchIndexEntryNeedsUpdate(searchIndexState, session, options),
-  );
-  const sortIndexBySessionId = new Map(sessions.map((session, index) => [session.id, index]));
-  const changes = toUpsert.map((session) => ({
-    session,
-    sortIndex: sortIndexBySessionId.get(session.id) ?? 0,
-  }));
-  const changedCount = removedSessionIds.length + changes.length;
-  const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
-  const failures: SearchIndexSyncFailure[] = [];
-  const { entries, preStaged } = loadOrPreStageEntries(
-    db,
-    agentName,
-    changes,
+    planSearchIndexWrite(db, agentName, { kind: "snapshot", sessions }, options),
     loadSessionData,
-    (sessionId) => targetDetailVersion(searchIndexState, sessionId, options),
-    failures,
     options.publicationId,
   );
-
-  return {
-    agentName,
-    mode: isBulk ? "bulk" : "incremental",
-    sessions: sessions.length,
-    changed: changes.length,
-    removedSessionIds,
-    entries,
-    publicationId: options.publicationId,
-    preStaged,
-    failures,
-    needsRebuild: isBulk && changedCount > 0,
-    startedAt,
-  };
 }
 
 export function prepareSessionChangesSearchIndex(
@@ -601,42 +712,12 @@ export function prepareSessionChangesSearchIndex(
   loadSessionData: (sessionId: string) => SessionDetail,
   options: SearchIndexSyncOptions = {},
 ): PreparedSearchIndexPublication {
-  const startedAt = performance.now();
-  const searchIndexState = readSearchIndexState(
+  return prepareSearchIndexPublication(
     db,
-    agentName,
-    changes.map(({ session }) => session.id),
-  );
-  const toUpsert = changes.filter(({ session }) =>
-    searchIndexEntryNeedsUpdate(searchIndexState, session, options),
-  );
-  const uniqueRemovedSessionIds = [...new Set(removedSessionIds)];
-  const changedCount = uniqueRemovedSessionIds.length + toUpsert.length;
-  const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
-  const failures: SearchIndexSyncFailure[] = [];
-  const { entries, preStaged } = loadOrPreStageEntries(
-    db,
-    agentName,
-    toUpsert,
+    planSearchIndexWrite(db, agentName, { kind: "changes", changes, removedSessionIds }, options),
     loadSessionData,
-    (sessionId) => targetDetailVersion(searchIndexState, sessionId, options),
-    failures,
     options.publicationId,
   );
-
-  return {
-    agentName,
-    mode: isBulk ? "bulk" : "incremental",
-    sessions: changes.length,
-    changed: toUpsert.length,
-    removedSessionIds: uniqueRemovedSessionIds,
-    entries,
-    publicationId: options.publicationId,
-    preStaged,
-    failures,
-    needsRebuild: isBulk && changedCount > 0,
-    startedAt,
-  };
 }
 
 export function writePreparedSessionSearchIndex(
@@ -693,107 +774,83 @@ export function discardPreparedSessionSearchIndex(publicationId: string): void {
   );
 }
 
+function searchIndexSyncResult(
+  plan: SearchIndexPlan,
+  indexed: number,
+  failures: SearchIndexSyncFailure[],
+  rebuildDurationMs?: number,
+  mode = plan.mode,
+): SearchIndexSyncResult {
+  return {
+    agentName: plan.agentName,
+    mode,
+    sessions: plan.sessionCount,
+    changed: plan.changes.length,
+    deleted: plan.removedSessionIds.length,
+    indexed,
+    skipped: plan.changes.length - indexed,
+    failures: failures.length > 0 ? failures : undefined,
+    durationMs: performance.now() - plan.startedAt,
+    rebuildDurationMs,
+  };
+}
+
+function executeSearchIndexPlan(
+  db: SQLiteDatabase,
+  plan: SearchIndexPlan,
+  loadSessionData: (sessionId: string) => SessionDetail,
+  largeBacklogStrategy: LargeBacklogWriteStrategy,
+): SearchIndexSyncResult {
+  let indexed = 0;
+  const failures: SearchIndexSyncFailure[] = [];
+  const loadEntries = (changes: SessionHeadChange[]) =>
+    loadSearchIndexEntries(
+      plan.agentName,
+      changes,
+      loadSessionData,
+      (sessionId) => detailVersionForPlan(plan, sessionId),
+      failures,
+    );
+
+  if (largeBacklogStrategy === "chunked" && plan.changes.length > SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
+    runSearchIndexWrite(db, false, () => {
+      indexed += writeSearchIndexRows(db, plan.agentName, plan.removedSessionIds, [], failures);
+    });
+    for (let offset = 0; offset < plan.changes.length; offset += SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
+      const chunk = plan.changes.slice(offset, offset + SEARCH_INDEX_COMMIT_CHUNK_SIZE);
+      runSearchIndexWrite(db, false, () => {
+        indexed += writeSearchIndexRows(db, plan.agentName, [], loadEntries(chunk), failures);
+      });
+    }
+    return searchIndexSyncResult(plan, indexed, failures, undefined, "incremental");
+  }
+
+  const { rebuildDurationMs } = runSearchIndexWrite(db, plan.needsRebuild, () => {
+    indexed = writeSearchIndexRows(
+      db,
+      plan.agentName,
+      plan.removedSessionIds,
+      loadEntries(plan.changes),
+      failures,
+    );
+  });
+  return searchIndexSyncResult(plan, indexed, failures, rebuildDurationMs);
+}
+
 export function syncSessionSearchIndex(
   agentName: string,
   sessions: SessionHead[],
   loadSessionData: (sessionId: string) => SessionDetail,
   options: SearchIndexSyncOptions = {},
 ): SearchIndexSyncResult | null {
-  return withSearchIndexDb((db) => {
-    const startedAt = performance.now();
-    const existingRows = db
-      .prepare("SELECT session_id FROM session_documents WHERE agent_name = ? ORDER BY id")
-      .all(agentName) as IndexedSearchRow[];
-    const sessionSortIndexMap = new Map(sessions.map((session, index) => [session.id, index]));
-    const searchIndexState = readSearchIndexState(
+  return withSearchIndexDb((db) =>
+    executeSearchIndexPlan(
       db,
-      agentName,
-      sessions.map((session) => session.id),
-    );
-    const sessionMap = new Map(sessions.map((session) => [session.id, session]));
-
-    const explicitRemovedSessionIds = new Set(options.removedSessionIds ?? []);
-    const completeness = options.completeness ?? "complete";
-    const toDelete = existingRows
-      .map((row) => String(row.session_id))
-      .filter(
-        (sessionId) =>
-          explicitRemovedSessionIds.has(sessionId) ||
-          (completeness === "complete" && !sessionMap.has(sessionId)),
-      );
-    const toUpsert = sessions.filter((session) =>
-      searchIndexEntryNeedsUpdate(searchIndexState, session, options),
-    );
-    const changedCount = toDelete.length + toUpsert.length;
-    const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
-    const changes = toUpsert.map((session) => ({
-      session,
-      sortIndex: sessionSortIndexMap.get(session.id) ?? 0,
-    }));
-    let indexed = 0;
-    const failures: SearchIndexSyncFailure[] = [];
-    const detailVersionFor = (sessionId: string) =>
-      targetDetailVersion(searchIndexState, sessionId, options);
-
-    // A large backlog (e.g. the first full-history backfill) takes minutes to
-    // parse; one transaction would roll all of it back on interrupt. Chunked
-    // commits keep the FTS triggers active so every chunk is durable, and a
-    // restarted sync skips already-indexed sessions via their content hashes.
-    if (changes.length > SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
-      runSearchIndexWrite(db, false, () => {
-        indexed += writeSearchIndexRows(db, agentName, toDelete, [], failures);
-      });
-      for (let offset = 0; offset < changes.length; offset += SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
-        const chunk = changes.slice(offset, offset + SEARCH_INDEX_COMMIT_CHUNK_SIZE);
-        runSearchIndexWrite(db, false, () => {
-          indexed += writeSearchIndexRows(
-            db,
-            agentName,
-            [],
-            loadSearchIndexEntries(agentName, chunk, loadSessionData, detailVersionFor, failures),
-            failures,
-          );
-        });
-      }
-      return {
-        agentName,
-        mode: "incremental",
-        sessions: sessions.length,
-        changed: toUpsert.length,
-        deleted: toDelete.length,
-        indexed,
-        skipped: toUpsert.length - indexed,
-        failures: failures.length > 0 ? failures : undefined,
-        durationMs: performance.now() - startedAt,
-      };
-    }
-
-    const writeRows = () => {
-      indexed = writeSearchIndexRows(
-        db,
-        agentName,
-        toDelete,
-        loadSearchIndexEntries(agentName, changes, loadSessionData, detailVersionFor, failures),
-        failures,
-      );
-    };
-
-    const needsRebuild = isBulk && changedCount > 0;
-    const { rebuildDurationMs } = runSearchIndexWrite(db, needsRebuild, writeRows);
-
-    return {
-      agentName,
-      mode: isBulk ? "bulk" : "incremental",
-      sessions: sessions.length,
-      changed: toUpsert.length,
-      deleted: toDelete.length,
-      indexed,
-      skipped: toUpsert.length - indexed,
-      failures: failures.length > 0 ? failures : undefined,
-      durationMs: performance.now() - startedAt,
-      rebuildDurationMs,
-    };
-  });
+      planSearchIndexWrite(db, agentName, { kind: "snapshot", sessions }, options),
+      loadSessionData,
+      "chunked",
+    ),
+  );
 }
 
 export function syncSessionSearchIndexChanges(
@@ -816,47 +873,12 @@ export function syncSessionSearchIndexChanges(
     };
   }
 
-  return withSearchIndexDb((db) => {
-    const startedAt = performance.now();
-    const searchIndexState = readSearchIndexState(
+  return withSearchIndexDb((db) =>
+    executeSearchIndexPlan(
       db,
-      agentName,
-      changes.map(({ session }) => session.id),
-    );
-    const toUpsert = changes.filter(({ session }) =>
-      searchIndexEntryNeedsUpdate(searchIndexState, session, options),
-    );
-    const uniqueRemovedSessionIds = Array.from(new Set(removedSessionIds));
-    const changedCount = uniqueRemovedSessionIds.length + toUpsert.length;
-    const isBulk = shouldBulkSyncSearchIndex(options, changedCount);
-    let indexed = 0;
-    const failures: SearchIndexSyncFailure[] = [];
-    const detailVersionFor = (sessionId: string) =>
-      targetDetailVersion(searchIndexState, sessionId, options);
-    const writeRows = () => {
-      indexed = writeSearchIndexRows(
-        db,
-        agentName,
-        uniqueRemovedSessionIds,
-        loadSearchIndexEntries(agentName, toUpsert, loadSessionData, detailVersionFor, failures),
-        failures,
-      );
-    };
-
-    const needsRebuild = isBulk && changedCount > 0;
-    const { rebuildDurationMs } = runSearchIndexWrite(db, needsRebuild, writeRows);
-
-    return {
-      agentName,
-      mode: isBulk ? "bulk" : "incremental",
-      sessions: changes.length,
-      changed: toUpsert.length,
-      deleted: uniqueRemovedSessionIds.length,
-      indexed,
-      skipped: toUpsert.length - indexed,
-      failures: failures.length > 0 ? failures : undefined,
-      durationMs: performance.now() - startedAt,
-      rebuildDurationMs,
-    };
-  });
+      planSearchIndexWrite(db, agentName, { kind: "changes", changes, removedSessionIds }, options),
+      loadSessionData,
+      "atomic",
+    ),
+  );
 }
