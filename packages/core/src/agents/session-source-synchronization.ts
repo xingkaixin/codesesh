@@ -187,15 +187,11 @@ export function diffSessionSources(
       fingerprint: typeof meta?.sourceFingerprint === "string" ? meta.sourceFingerprint : "",
     };
     if (!source.sourcePath) {
-      failedIds.push(session.id);
-      sourceOutcomes.push({
-        status: "failed",
-        failure: createSessionSourceFailure(
-          source,
-          "enumeration",
-          new Error("cached source path is missing"),
-        ),
-      });
+      // No path can ever be re-checked, so keeping this entry would fail on
+      // every future pass; a complete enumeration finding neither file nor
+      // path proves the entry is unrecoverable.
+      removedIds.push(session.id);
+      sourceOutcomes.push({ status: "missing", source });
       continue;
     }
     try {
@@ -380,7 +376,10 @@ export function synchronizeSessionSources(
         explicitRemovedSessionIds.add(source.sessionId);
         reportSessionSourceOutcome(adapter.name, outcome);
       } else {
-        sourceFailures.push(outcome.failure);
+        // "last-known-good data retained" is only a failure when data exists;
+        // a source that never produced a session (empty or malformed file) is
+        // logged and skipped so it cannot poison every future pass.
+        if (visibleBaselineIds.has(source.sessionId)) sourceFailures.push(outcome.failure);
         reportSessionSourceOutcome(adapter.name, outcome);
       }
     }

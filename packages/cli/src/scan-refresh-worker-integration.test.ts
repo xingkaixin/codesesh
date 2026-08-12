@@ -888,10 +888,9 @@ describe("scan refresh worker entry", () => {
         removedMetaIds: ["removed"],
         completeness: "partial",
         explicitRemovedSessionIds: ["removed"],
-        sourceFailures: [
-          expect.objectContaining({ sessionId: "moved", stage: "parsing" }),
-          expect.objectContaining({ sessionId: "missing", stage: "parsing" }),
-        ],
+        // `missing` has no retained baseline session, so its parse failure is
+        // logged and skipped instead of being reported as a source failure.
+        sourceFailures: [expect.objectContaining({ sessionId: "moved", stage: "parsing" })],
       }),
     );
     expect(mocks.appLogger.warn).toHaveBeenCalledWith(
