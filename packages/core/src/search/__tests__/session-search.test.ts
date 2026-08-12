@@ -26,6 +26,7 @@ import type {
 } from "../../types/index.js";
 import type { SearchOptions } from "../../discovery/cache/search.js";
 import type { SearchResult } from "../../contract/index.js";
+import { closeCacheStorage } from "../../discovery/cache/db.js";
 import { searchSessions, syncSessionSearchIndex } from "../../discovery/cache/search.js";
 import { compareSessionActivityDesc, mergeSortedSessions } from "../../contract/session-index.js";
 import {
@@ -447,17 +448,17 @@ function trackedSessions(sessions: SessionHead[]) {
   };
 }
 
-// Sync once for the whole file rather than per-test: core memoizes "schema
-// already ensured for this db path" at module scope, and that memo is only
-// reset via setSchemaEnsuredPath, which isn't part of this test's concern
-// here. All fixtures are read-only for the rest of the file, so a single
-// shared index is sufficient and faster.
+// Sync once for the whole file rather than per-test. All fixtures are
+// read-only for the rest of the file, so a single shared index is sufficient
+// and faster.
 beforeAll(() => {
+  closeCacheStorage();
   rmSync(getCacheDir(), { recursive: true, force: true });
   syncFixturesToSqlite();
 });
 
 afterAll(() => {
+  closeCacheStorage();
   rmSync(getCacheDir(), { recursive: true, force: true });
 });
 
