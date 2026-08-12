@@ -26,6 +26,12 @@ interface WatchScope {
   targetPath: string;
 }
 
+interface WatchRegistration {
+  path: string;
+  recursive: boolean;
+  watcher: FSWatcher;
+}
+
 interface StablePathState {
   path: string;
   agentNames: Set<string>;
@@ -135,7 +141,7 @@ function resolveWatchEventPath(watchPath: string, filename: string | Buffer | nu
 }
 
 export class SessionWatcher {
-  private watchers: FSWatcher[] = [];
+  private watchers: WatchRegistration[] = [];
   private fallbackWatchScopes = new Map<string, WatchScope[]>();
   private stablePaths = new Map<string, StablePathState>();
   private listeners = new Set<AgentsChangedListener>();
@@ -220,7 +226,7 @@ export class SessionWatcher {
     }
     this.stablePaths.clear();
 
-    await Promise.all(this.watchers.map((watcher) => watcher.close()));
+    await Promise.all(this.watchers.map(({ watcher }) => watcher.close()));
     this.watchers = [];
     this.fallbackWatchScopes.clear();
     this.listeners.clear();
@@ -248,7 +254,7 @@ export class SessionWatcher {
         this.reportWatchError("watch.error", { path, recursive, error });
       });
 
-      this.watchers.push(watcher);
+      this.watchers.push({ path, recursive, watcher });
       return true;
     } catch (error) {
       if (recursive && isRecursiveWatchUnavailable(error)) {
@@ -304,7 +310,22 @@ export class SessionWatcher {
       if (statSync(path).isDirectory()) {
         this.watchDirectoryTree(path, scopes);
       }
-    } catch {}
+    } catch {
+      this.unwatchFallbackTree(path);
+    }
+  }
+
+  private unwatchFallbackTree(path: string): void {
+    const active: WatchRegistration[] = [];
+    for (const registration of this.watchers) {
+      if (registration.recursive || !isSameOrChildPath(path, registration.path)) {
+        active.push(registration);
+        continue;
+      }
+      registration.watcher.close();
+      this.fallbackWatchScopes.delete(registration.path);
+    }
+    this.watchers = active;
   }
 
   private handleWatchEvent(
