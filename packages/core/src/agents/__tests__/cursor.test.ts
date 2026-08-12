@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
@@ -32,6 +32,7 @@ function insertKv(dbPath: string, key: string, value: unknown): void {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   for (const dir of tempDirs) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -39,6 +40,33 @@ afterEach(() => {
 });
 
 describe("CursorAgent parsing", () => {
+  it("ignores workspace metadata in a linked workspace directory", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-cursor-test-"));
+    tempDirs.push(tempDir);
+    const dataRoot = join(tempDir, "cursor");
+    const workspaceStorage = join(dataRoot, "workspaceStorage");
+    const outsideWorkspace = join(tempDir, "outside-workspace");
+    mkdirSync(workspaceStorage, { recursive: true });
+    mkdirSync(outsideWorkspace);
+    writeFileSync(
+      join(outsideWorkspace, "workspace.json"),
+      JSON.stringify({ folder: "file:///outside/project" }),
+    );
+    const db = new Database(join(outsideWorkspace, "state.vscdb"));
+    db.exec("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+    db.prepare("INSERT INTO ItemTable (key, value) VALUES (?, ?)").run(
+      "composer.composerData",
+      JSON.stringify({ allComposers: [{ composerId: "outside-composer" }] }),
+    );
+    db.close();
+    symlinkSync(outsideWorkspace, join(workspaceStorage, "linked-workspace"));
+    vi.stubEnv("CURSOR_DATA_PATH", dataRoot);
+
+    const map = (new CursorAgent() as any).buildWorkspacePathMap();
+
+    expect(map).toEqual(new Map());
+  });
+
   it("cleans internal tags and keeps normalized tool names", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-cursor-test-"));
     tempDirs.push(tempDir);

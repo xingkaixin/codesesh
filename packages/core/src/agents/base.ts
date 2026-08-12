@@ -432,7 +432,7 @@ export abstract class FileSystemSessionSource<
           if (options.recursive !== false) walk(filePath);
           continue;
         }
-        if (!isSessionFile(entry)) continue;
+        if (!entry.isFile() || !isSessionFile(entry)) continue;
 
         let stat: Stats;
         try {

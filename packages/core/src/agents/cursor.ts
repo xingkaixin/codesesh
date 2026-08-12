@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join, normalize } from "node:path";
 import {
@@ -542,7 +542,7 @@ export class CursorAgent extends DatabaseSessionSource {
     for (const name of entryNames) {
       const wsDir = join(wsStoragePath, name);
       try {
-        if (!statSync(wsDir).isDirectory()) continue;
+        if (!lstatSync(wsDir).isDirectory()) continue;
       } catch {
         continue;
       }
