@@ -53,7 +53,9 @@ function xaiUpdate(
 }
 
 interface SessionFixtureOptions {
-  updates: Record<string, unknown>[];
+  updates?: Record<string, unknown>[];
+  chatHistory?: Record<string, unknown>[];
+  summaryChatMessageCount?: number;
   title?: string;
   parentSessionId?: string;
 }
@@ -75,14 +77,22 @@ function writeGrokSession(options: SessionFixtureOptions) {
       created_at: CREATED_AT,
       updated_at: "2026-08-05T08:30:00.000Z",
       last_active_at: "2026-08-05T08:29:00.000Z",
-      num_messages: options.updates.length,
-      num_chat_messages: 40,
+      num_messages: options.updates?.length ?? 0,
+      num_chat_messages: options.summaryChatMessageCount ?? 40,
       current_model_id: "grok-4.5",
       parent_session_id: options.parentSessionId,
     }),
   );
   const updatesPath = join(sessionDir, "updates.jsonl");
-  writeFileSync(updatesPath, options.updates.map((update) => JSON.stringify(update)).join("\n"));
+  if (options.updates) {
+    writeFileSync(updatesPath, options.updates.map((update) => JSON.stringify(update)).join("\n"));
+  }
+  if (options.chatHistory) {
+    writeFileSync(
+      join(sessionDir, "chat_history.jsonl"),
+      options.chatHistory.map((message) => JSON.stringify(message)).join("\n"),
+    );
+  }
 
   const agent = new GrokAgent();
   expect(agent.isAvailable()).toBe(true);
@@ -117,6 +127,27 @@ function turnUsage(
 }
 
 describe("GrokAgent", () => {
+  it.each([
+    { label: "missing", updates: undefined },
+    { label: "empty", updates: [] },
+  ])("filters sessions with a $label authoritative update stream", ({ updates }) => {
+    const { agent } = writeGrokSession({
+      updates,
+      summaryChatMessageCount: 2,
+      title: "Internal context only",
+      chatHistory: [
+        { type: "system", content: "Internal system prompt" },
+        {
+          type: "user",
+          synthetic_reason: "system_reminder",
+          content: [{ type: "text", text: "<system-reminder>Internal reminder</system-reminder>" }],
+        },
+      ],
+    });
+
+    expect(agent.scan()).toEqual([]);
+  });
+
   it("parses ACP messages, tools, plans, usage, and parent sessions", () => {
     const updates = [
       acpUpdate(CREATED_AT_MS + 1_000, "prompt-0", "user_message_chunk", {

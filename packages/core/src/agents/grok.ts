@@ -31,7 +31,7 @@ import { cleanInternalText } from "../utils/session-normalization.js";
 import { basenameTitle, resolveSessionTitle } from "../utils/title-fallback.js";
 import { TranscriptBuilder, type TranscriptResult } from "./transcript-builder.js";
 
-const HEAD_INDEX_VERSION = "grok-head-v1";
+const HEAD_INDEX_VERSION = "grok-head-v2";
 const PARSER_VERSION = "grok-parser-v1";
 const SUMMARY_FILE = "summary.json";
 const UPDATES_FILE = "updates.jsonl";
@@ -56,7 +56,6 @@ interface GrokSummary {
   title: string | null;
   createdAt: number;
   updatedAt: number;
-  messageCount: number;
   currentModel: string | null;
   parentSessionId: string | null;
 }
@@ -138,7 +137,6 @@ function parseSummary(source: SessionSourceFile): GrokSummary | null {
     title: generatedTitle || sessionSummary || null,
     createdAt,
     updatedAt,
-    messageCount: safeCount(summary?.num_chat_messages),
     currentModel: asString(summary?.current_model_id)?.trim() || null,
     parentSessionId: parentSessionId === id ? null : parentSessionId,
   };
@@ -879,7 +877,7 @@ export class GrokAgent extends FileSystemSessionSource<GrokSessionMeta> {
     const updatesPath = join(sessionDir, UPDATES_FILE);
     const existingUpdatesPath = existsSync(updatesPath) ? updatesPath : null;
     const headData = scanHeadData(existingUpdatesPath, summary.createdAt);
-    const messageCount = headData.visibleMessageCount || summary.messageCount;
+    const messageCount = headData.visibleMessageCount;
     if (messageCount === 0) return filteredSession("no visible messages");
 
     const title = resolveSessionTitle(
