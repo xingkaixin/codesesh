@@ -248,6 +248,11 @@ const workerThreads = vi.hoisted(() => ({
                   sessions = agent.incrementalScan(
                     runData.previousSessions,
                     runData.operation.changedIds,
+                    undefined,
+                    {
+                      ...runData.scanOptions,
+                      onProgress: () => undefined,
+                    },
                   );
                 } else {
                   sessions = agent?.scan?.({
@@ -1513,7 +1518,9 @@ describe("LiveScanStore", () => {
     await vi.advanceTimersByTimeAsync(250);
 
     expect(codex.checkForChanges).toHaveBeenCalledWith(1000, [old, recent]);
-    expect(codex.incrementalScan).toHaveBeenCalledWith([old, recent], ["old"], undefined);
+    expect(codex.incrementalScan).toHaveBeenCalledWith([old, recent], ["old"], undefined, {
+      from: 3000,
+    });
     expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent", "old"]);
     expect(events).toEqual([]);
     expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
@@ -1723,6 +1730,7 @@ describe("LiveScanStore", () => {
       previous ? [previous] : [],
       ["session", "added"],
       undefined,
+      {},
     );
     expect(core.saveCachedSessions).not.toHaveBeenCalled();
     expect(core.saveCachedSessionChanges).not.toHaveBeenCalled();

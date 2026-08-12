@@ -420,6 +420,33 @@ describe("OpenCodeSqliteAgent", () => {
   });
 });
 
+describe("CS-206: database scans preserve the requested window", () => {
+  it("applies an inclusive upper bound to roots without restricting related rows", () => {
+    const dbPath = createDatabaseWithRootChildren(2);
+    const db = new Database(dbPath);
+    db.prepare("UPDATE session SET time_created = ?, time_updated = ? WHERE id = ?").run(
+      25_000,
+      25_000,
+      "child-0",
+    );
+    db.close();
+    const agent = new OpenCodeSqliteAgent({
+      name: "test-agent",
+      displayName: "Test Agent",
+      findDbPath: () => dbPath,
+      getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
+    });
+    agent.isAvailable();
+
+    const heads = agent.scan({
+      from: 15_000,
+      to: 20_000,
+    });
+
+    expect(heads.map((head) => head.id)).toEqual(["child-0", "root-0"]);
+  });
+});
+
 describe("CS-180: related session reads stay inside the selected roots", () => {
   it("does not return unrelated historical child rows across the SQLite seam", () => {
     const dbPath = createDatabaseWithRelatedHistory(10_000);

@@ -156,6 +156,11 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
 
     try {
       const cutoffTime = options?.from ?? Date.now() - 3650 * 24 * 60 * 60 * 1000;
+      const activityPredicate =
+        options?.to == null
+          ? "COALESCE(s.time_updated, s.time_created) >= ?"
+          : "COALESCE(s.time_updated, s.time_created) >= ? AND COALESCE(s.time_updated, s.time_created) <= ?";
+      const activityBindings = options?.to == null ? [cutoffTime] : [cutoffTime, options.to];
 
       const hasMessageTable = Boolean(
         db
@@ -180,22 +185,22 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
             s.id, s.title, s.time_created, s.time_updated, s.slug, s.directory,
             s.version, s.summary_files${parentIdSelect}
           FROM session s
-          WHERE COALESCE(s.time_updated, s.time_created) >= ?
+          WHERE ${activityPredicate}
           ${childPredicate}
           ORDER BY COALESCE(s.time_updated, s.time_created) DESC, s.time_created DESC, s.id DESC
         `)
-          .all(cutoffTime);
+          .all(...activityBindings);
       } else {
         rows = db
           .prepare(`
           SELECT s.id, s.title, s.time_created, s.time_updated, s.slug, s.directory,
             s.version, s.summary_files, 0 AS message_count, NULL AS model_message_data${parentIdSelect}
           FROM session s
-          WHERE COALESCE(s.time_updated, s.time_created) >= ?
+          WHERE ${activityPredicate}
           ${childPredicate}
           ORDER BY COALESCE(s.time_updated, s.time_created) DESC, s.time_created DESC, s.id DESC
         `)
-          .all(cutoffTime);
+          .all(...activityBindings);
       }
 
       if (hasParentId && options?.includeRelatedSessions !== false) {

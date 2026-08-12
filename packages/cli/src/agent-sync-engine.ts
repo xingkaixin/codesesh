@@ -105,6 +105,8 @@ function buildPersistenceDiff(
   previousSessions: SessionHead[],
   nextSessions: SessionHead[],
   candidateChangedIds: string[] = [],
+  completeness: SessionSnapshotCompleteness = "complete",
+  explicitRemovedSessionIds: readonly string[] = [],
 ): SessionPersistenceDiff {
   const { changes, removedSessionIds } = computeSessionDiff(
     previousSessions,
@@ -112,7 +114,15 @@ function buildPersistenceDiff(
     candidateChangedIds,
     sessionSignature,
   );
-  return { changedSessions: changes, removedSessionIds };
+  if (completeness === "complete") {
+    return { changedSessions: changes, removedSessionIds };
+  }
+  // A bounded or failed scan cannot prove that an omitted session disappeared.
+  const explicitRemovals = new Set(explicitRemovedSessionIds);
+  return {
+    changedSessions: changes,
+    removedSessionIds: removedSessionIds.filter((sessionId) => explicitRemovals.has(sessionId)),
+  };
 }
 
 function sourceFailureError(failures: SessionSourceFailure[]): Error {
@@ -622,6 +632,7 @@ export class AgentSyncEngine {
     cacheTimestamp: number,
     refreshStartedAt: number,
   ): Promise<RefreshStrategyResult> {
+    const scope = this.startupScanOptions();
     const checkStartedAt = performance.now();
     const checkResult = await Promise.resolve(agent.checkForChanges(cacheTimestamp, baseline));
     const checkDuration = performance.now() - checkStartedAt;
@@ -663,41 +674,49 @@ export class AgentSyncEngine {
     const preciseChangedIds = checkResult.changedIds ?? null;
     const scanStartedAt = performance.now();
     if (preciseChangedIds === null) {
-      const result = await this.runWorker(agent, baseline, { kind: "full-scan" }, {});
+      const result = await this.runWorker(agent, baseline, { kind: "full-scan" }, scope);
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const sessions = attachMissingProjectIdentities(result.sessions);
-      return this.refreshStrategyResult(
-        sessions,
-        result.completeness,
-        {},
-        {
-          // Meta-only changes (e.g. a pricing capture epoch bump) leave the head
-          // signature intact; without the worker-reported ids they would never
-          // persist and checkForChanges would rescan on every startup.
-          persistenceDiff: buildPersistenceDiff(baseline, sessions, result.changedIds ?? []),
-          checkDuration,
-          scanDuration: performance.now() - scanStartedAt,
-          sourceFailures: result.sourceFailures ?? [],
-        },
-      );
+      return this.refreshStrategyResult(sessions, result.completeness, scope, {
+        // Meta-only changes (e.g. a pricing capture epoch bump) leave the head
+        // signature intact; without the worker-reported ids they would never
+        // persist and checkForChanges would rescan on every startup.
+        persistenceDiff: buildPersistenceDiff(
+          baseline,
+          sessions,
+          result.changedIds ?? [],
+          result.completeness,
+          result.explicitRemovedSessionIds,
+        ),
+        checkDuration,
+        scanDuration: performance.now() - scanStartedAt,
+        sourceFailures: result.sourceFailures ?? [],
+      });
     }
     this.options.workerRunner.discard?.(agent.name);
     const sessions = attachMissingProjectIdentities(
-      await Promise.resolve(agent.incrementalScan(baseline, preciseChangedIds, checkResult.refs)),
+      await Promise.resolve(
+        agent.incrementalScan(baseline, preciseChangedIds, checkResult.refs, scope),
+      ),
     );
     const sourceFailures = checkResult.sourceFailures ?? [];
-    return this.refreshStrategyResult(
-      sessions,
-      sourceFailures.length > 0 ? "partial" : "complete",
-      {},
-      {
+    const completeness =
+      scope.from == null && scope.to == null && sourceFailures.length === 0
+        ? "complete"
+        : "partial";
+    return this.refreshStrategyResult(sessions, completeness, scope, {
+      preciseChangedIds,
+      persistenceDiff: buildPersistenceDiff(
+        baseline,
+        sessions,
         preciseChangedIds,
-        persistenceDiff: buildPersistenceDiff(baseline, sessions, preciseChangedIds),
-        checkDuration,
-        scanDuration: performance.now() - scanStartedAt,
-        sourceFailures,
-      },
-    );
+        completeness,
+        preciseChangedIds,
+      ),
+      checkDuration,
+      scanDuration: performance.now() - scanStartedAt,
+      sourceFailures,
+    });
   }
 
   private async scanAgentFully(
@@ -705,21 +724,17 @@ export class AgentSyncEngine {
     previousSessions: SessionHead[],
   ): Promise<RefreshStrategyResult> {
     const scanStartedAt = performance.now();
-    const result = await this.runWorker(agent, previousSessions, { kind: "full-scan" }, {});
+    const scope = this.startupScanOptions();
+    const result = await this.runWorker(agent, previousSessions, { kind: "full-scan" }, scope);
     agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
     const sessions = attachMissingProjectIdentities(result.sessions);
     this.lastRefreshAtByAgent.set(agent.name, Date.now());
-    return this.refreshStrategyResult(
-      sessions,
-      result.completeness,
-      {},
-      {
-        fullScanSessions: sessions,
-        explicitRemovedSessionIds: result.explicitRemovedSessionIds,
-        scanDuration: performance.now() - scanStartedAt,
-        sourceFailures: result.sourceFailures ?? [],
-      },
-    );
+    return this.refreshStrategyResult(sessions, result.completeness, scope, {
+      fullScanSessions: sessions,
+      explicitRemovedSessionIds: result.explicitRemovedSessionIds,
+      scanDuration: performance.now() - scanStartedAt,
+      sourceFailures: result.sourceFailures ?? [],
+    });
   }
 
   private refreshStrategyResult(

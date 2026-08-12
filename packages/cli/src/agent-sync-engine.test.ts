@@ -147,13 +147,14 @@ function makeEngine(
   agent: BaseAgent,
   sessions: SessionHead[] = [],
   workerRunner: WorkerRunner = makeWorkerRunner(),
+  startupScanOptions: { from?: number; to?: number } = {},
 ) {
   const state: LiveSnapshot = {
     agents: [agent],
     byAgent: { [agent.name]: sessions },
     sessions,
   };
-  const engine = new AgentSyncEngine({ workerRunner });
+  const engine = new AgentSyncEngine({ workerRunner, startupScanOptions });
   engine.initialize(state);
   return { engine };
 }
@@ -396,11 +397,12 @@ describe("AgentSyncEngine", () => {
     const previous = makeSession("session", "before");
     const updated = makeSession("session", "after");
     const workerRunner = makeWorkerRunner();
+    const incrementalScan = vi.fn(() => [updated]);
     const agent = makeAgent({
       checkForChanges: () => ({ hasChanges: true, changedIds: [updated.id], timestamp: 2 }),
-      incrementalScan: () => [updated],
+      incrementalScan,
     });
-    const { engine } = makeEngine(agent, [previous], workerRunner);
+    const { engine } = makeEngine(agent, [previous], workerRunner, { from: 1, to: 2 });
     const sessionChanges = vi.fn();
     const statusChanges = vi.fn();
     engine.subscribeSessionsChanged(sessionChanges);
@@ -419,6 +421,10 @@ describe("AgentSyncEngine", () => {
       expect.objectContaining({ type: "scan-status", active: false }),
     );
     expect(workerRunner.discard).toHaveBeenCalledWith("codex");
+    expect(incrementalScan).toHaveBeenCalledWith([previous], [updated.id], undefined, {
+      from: 1,
+      to: 2,
+    });
   });
 
   it("bounds progress broadcasts while preserving phase and completion", async () => {
@@ -785,6 +791,51 @@ describe("AgentSyncEngine", () => {
             session: expect.objectContaining({ id: "changed", title: "after" }),
           }),
         ],
+        removedSessionIds: [],
+      }),
+    ]);
+  });
+
+  it("keeps out-of-window cache rows during a bounded database refresh", async () => {
+    const historical = makeSession("historical");
+    const previous = makeSession("recent", "before");
+    const updated = makeSession("recent", "after");
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async () =>
+        workerResult(
+          {
+            sessions: [updated],
+            meta: { recent: { id: "recent", sourcePath: "/database" } },
+          },
+          "partial",
+        ),
+      ),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const agent = makeAgent({
+      checkForChanges: () => ({ hasChanges: true, timestamp: 3 }),
+    });
+    const { engine } = makeEngine(agent, [historical, previous], workerRunner, {
+      from: 2,
+      to: 3,
+    });
+
+    await engine.refresh("codex");
+
+    expect(workerRunner.run).toHaveBeenCalledWith(
+      "codex",
+      expect.objectContaining({
+        operation: { kind: "full-scan" },
+        scanOptions: { from: 2, to: 3 },
+      }),
+    );
+    expect(engine.snapshot().sessions).toEqual([
+      expect.objectContaining({ id: "recent", title: "after" }),
+    ]);
+    expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
+      expect.objectContaining({
+        kind: "changes",
         removedSessionIds: [],
       }),
     ]);
