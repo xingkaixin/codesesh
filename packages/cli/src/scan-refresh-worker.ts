@@ -618,13 +618,7 @@ async function handleRequest(data: ScanRefreshWorkerRunRequest): Promise<void> {
     await run(data, progressEmitter);
   } catch (error) {
     progressEmitter.flush();
-    parentPort?.postMessage({
-      type: "error",
-      requestId: data.requestId,
-      generation: data.generation ?? 0,
-      error: error instanceof Error ? error.message : String(error),
-      durationMs: performance.now() - startedAt,
-    } satisfies ScanRefreshWorkerMessage);
+    postRequestError(data, error, startedAt);
   } finally {
     progressEmitter.cancel();
   }
@@ -649,10 +643,35 @@ function commitBaseline(data: ScanRefreshWorkerCommitRequest): void {
   workerBaseline.staged = null;
 }
 
+function postRequestError(data: ScanRefreshWorkerRequest, error: unknown, startedAt: number): void {
+  parentPort?.postMessage({
+    type: "error",
+    requestId: data.requestId,
+    generation: data.generation,
+    error: error instanceof Error ? error.message : String(error),
+    durationMs: performance.now() - startedAt,
+  } satisfies ScanRefreshWorkerMessage);
+}
+
+function handleCommit(data: ScanRefreshWorkerCommitRequest): void {
+  const startedAt = performance.now();
+  try {
+    commitBaseline(data);
+  } catch (error) {
+    postRequestError(data, error, startedAt);
+  }
+}
+
 function enqueueRequest(data: ScanRefreshWorkerRequest): void {
-  requestTail = requestTail.then(() =>
-    data.type === "commit" ? commitBaseline(data) : handleRequest(data),
-  );
+  requestTail = requestTail
+    .then(() => (data.type === "commit" ? handleCommit(data) : handleRequest(data)))
+    .catch((error) => {
+      appLogger.error("scan.refresh_worker.request_error", {
+        request_id: data.requestId,
+        request_type: data.type,
+        error,
+      });
+    });
 }
 
 const initialRequest = workerData as Partial<ScanRefreshWorkerRequest> | undefined;
