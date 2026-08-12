@@ -178,6 +178,27 @@ function selectBackfillSessions(
 }
 
 /**
+ * scan() rebuilds heads from the source without smart tags, which would force
+ * a full reclassification pass (one getSessionData() per session). Carry the
+ * previous tags over and let the staleness check in ensureSessionTagsSync —
+ * smart_tags_source_updated_at vs time_updated — decide what to recompute.
+ */
+function inheritSmartTags(sessions: SessionHead[], previousSessions: SessionHead[]): SessionHead[] {
+  const previousById = new Map(previousSessions.map((session) => [session.id, session]));
+  return sessions.map((session) => {
+    if (Array.isArray(session.smart_tags)) return session;
+    const previous = previousById.get(session.id);
+    if (!previous || !Array.isArray(previous.smart_tags)) return session;
+    return {
+      ...session,
+      smart_tags: previous.smart_tags,
+      smart_tags_source_updated_at: previous.smart_tags_source_updated_at,
+      smart_tags_classifier_revision: previous.smart_tags_classifier_revision,
+    };
+  });
+}
+
+/**
  * A session still receiving writes will be stale again within seconds, so
  * recomputing its tags every refresh cycle is wasted work — wait for it to
  * settle before paying the getSessionData() parse cost.
@@ -390,7 +411,10 @@ async function run(
     explicitRemovedSessionIds = result.explicitRemovedSessionIds;
   } else if (operation.kind === "incremental-scan") {
     changedIds = operation.changedIds;
-    sessions = await Promise.resolve(agent.incrementalScan(previousSessions, operation.changedIds));
+    sessions = inheritSmartTags(
+      await Promise.resolve(agent.incrementalScan(previousSessions, operation.changedIds)),
+      previousSessions,
+    );
   } else if (agent instanceof FileSystemSessionSource) {
     const result = synchronizeSessionSources(
       agent,
@@ -405,11 +429,14 @@ async function run(
     sourceFailures = result.sourceFailures;
     explicitRemovedSessionIds = result.explicitRemovedSessionIds;
   } else {
-    sessions = await Promise.resolve(
-      agent.scan({
-        ...data.scanOptions,
-        onProgress: reportProgress,
-      }),
+    sessions = inheritSmartTags(
+      await Promise.resolve(
+        agent.scan({
+          ...data.scanOptions,
+          onProgress: reportProgress,
+        }),
+      ),
+      previousSessions,
     );
   }
 

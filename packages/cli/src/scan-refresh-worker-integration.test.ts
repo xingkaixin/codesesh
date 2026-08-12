@@ -224,6 +224,49 @@ describe("scan refresh worker entry", () => {
     );
   });
 
+  it("inherits cached smart tags so an unchanged full rescan reports no changes", async () => {
+    // scan() rebuilds heads without smart tags; without inheritance every
+    // rescan would reclassify (and re-publish) every settled session.
+    const tagged = makeSession("steady", {
+      time_created: 1_000,
+      time_updated: 1_000,
+      smart_tags: ["feature-dev"],
+      smart_tags_source_updated_at: 1_000,
+      smart_tags_classifier_revision: "smart-tags-v1",
+    });
+    const rebuilt = makeSession("steady", { time_created: 1_000, time_updated: 1_000 });
+    const meta = { steady: { id: "steady", sourcePath: "/database" } };
+    const agent = makeGenericAgent({
+      scan: vi.fn(() => [rebuilt]),
+      getSessionMetaMap: vi.fn(() => new Map(Object.entries(meta))),
+    });
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    setWorkerData({ previousSessions: [tagged], meta });
+
+    await runWorker();
+
+    expect(mocks.ensureSessionTagsSync).toHaveBeenCalledWith(
+      agent,
+      [
+        expect.objectContaining({
+          smart_tags: ["feature-dev"],
+          smart_tags_source_updated_at: 1_000,
+          smart_tags_classifier_revision: "smart-tags-v1",
+        }),
+      ],
+      expect.any(Function),
+    );
+    expect(mocks.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: "done",
+        changes: [],
+        removedSessionIds: [],
+        meta: {},
+        removedMetaIds: [],
+      }),
+    );
+  });
+
   it("runs a full scan and forwards progress", async () => {
     const session = makeSession("fresh");
     const scan = vi.fn(
