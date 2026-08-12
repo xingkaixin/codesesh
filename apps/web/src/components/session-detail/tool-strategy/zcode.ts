@@ -6,11 +6,7 @@
 import type { ToolPart } from "../../../lib/api";
 import type { ToolDetailItem } from "../codex-tool";
 import { buildStructuredDiffFromTexts, buildZCodeEditDiffBlocks } from "../diff";
-import {
-  getDisplayPath,
-  getDisplayTextWithRelativePaths,
-  getFilePathFromInput,
-} from "../path-extract";
+import { getDisplayPath, getFilePathFromInput } from "../path-extract";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
@@ -25,16 +21,10 @@ import {
   buildFileEditStrategy,
   buildFileReadStrategy,
   buildFileWriteStrategy,
+  buildSearchToolStrategy,
+  buildShellToolStrategy,
 } from "./shared";
-import {
-  Bot,
-  CircleHelp,
-  FilePlus2,
-  FileSearch,
-  ListTodo,
-  SquareTerminal,
-  Wrench,
-} from "../../ui/icons";
+import { Bot, CircleHelp, FilePlus2, FileSearch, ListTodo, Wrench } from "../../ui/icons";
 
 function stripRecommendedMarker(value: string) {
   return value.replace(/\s*[(（](?:Recommended|推荐)[)）]\s*$/i, "").trim();
@@ -151,27 +141,16 @@ export function buildZCodeToolStrategy(
   if (toolKey === "bash" || toolKey === "shell") {
     const description = toPlainText(input.description);
     const command = toPlainText(input.command);
-    const displayCommand = getDisplayTextWithRelativePaths(command, baseDirectory);
-    const cleanedOutput =
-      outputText === "(Bash completed with no output)" ? "No output captured." : outputText;
-    return {
-      ...defaultStrategy,
-      Icon: SquareTerminal,
+    return buildShellToolStrategy({
+      defaultStrategy,
+      state,
       title: "bash",
-      secondaryText: description
-        ? `${description}${displayCommand ? ` (${displayCommand})` : ""}`
-        : displayCommand
-          ? `(${displayCommand})`
-          : undefined,
-      details: command ? [{ label: "Command", value: displayCommand || command }] : [],
-      showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: cleanedOutput,
-        language: "text",
-        isCode: false,
-      },
-    };
+      command,
+      description,
+      baseDirectory,
+      includeCommandDetail: true,
+      emptyOutputMarker: "(Bash completed with no output)",
+    });
   }
 
   if (toolKey === "read" || toolKey === "readfile") {
@@ -218,19 +197,14 @@ export function buildZCodeToolStrategy(
   }
 
   if (toolKey === "glob" || toolKey === "grep") {
-    const path = toPlainText(input.path);
-    const pattern = toPlainText(input.pattern);
-    const secondaryText = [getDisplayPath(path, baseDirectory), pattern]
-      .filter(Boolean)
-      .join(" · ");
-    return {
-      ...defaultStrategy,
-      Icon: FileSearch,
+    return buildSearchToolStrategy({
+      defaultStrategy,
+      state,
       title: toolKey,
-      secondaryText: secondaryText || undefined,
-      showInputPreview: false,
-      outputContent: { kind: "plain", text: outputText, language: "text", isCode: false },
-    };
+      path: toPlainText(input.path),
+      pattern: toPlainText(input.pattern),
+      baseDirectory,
+    });
   }
 
   if (toolKey === "todowrite" || toolKey === "todolist") {

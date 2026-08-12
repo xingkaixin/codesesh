@@ -22,8 +22,15 @@ import {
   toRecord,
   toStringValue,
 } from "../tool-normalize";
-import { getDisplayTextWithRelativePaths } from "../path-extract";
-import { BookOpenText, FilePenLine, NotebookPen, SquareTerminal, Wrench } from "../../ui/icons";
+import { getDisplayPath, getDisplayTextWithRelativePaths } from "../path-extract";
+import {
+  BookOpenText,
+  FilePenLine,
+  FileSearch,
+  NotebookPen,
+  SquareTerminal,
+  Wrench,
+} from "../../ui/icons";
 
 export type { NormalizedToolState, ToolDisplayStrategy, ToolStatus };
 
@@ -88,6 +95,26 @@ interface FileEditStrategyOptions extends FileStrategyContext {
   details?: ToolDetailItem[];
 }
 
+interface SearchToolStrategyOptions {
+  defaultStrategy: ToolDisplayStrategy;
+  state: NormalizedToolState;
+  title: string;
+  path?: string;
+  pattern?: string;
+  baseDirectory?: string;
+}
+
+interface ShellToolStrategyOptions {
+  defaultStrategy: ToolDisplayStrategy;
+  state: NormalizedToolState;
+  title: string;
+  command: string;
+  description?: string;
+  baseDirectory?: string;
+  includeCommandDetail?: boolean;
+  emptyOutputMarker?: string;
+}
+
 function buildFileToolStrategy(options: FileToolStrategyOptions): ToolDisplayStrategy {
   return {
     ...options.defaultStrategy,
@@ -134,6 +161,54 @@ export function buildFileEditStrategy(options: FileEditStrategyOptions): ToolDis
     Icon: FilePenLine,
     title: "edit",
   });
+}
+
+export function buildSearchToolStrategy(options: SearchToolStrategyOptions): ToolDisplayStrategy {
+  const secondaryText = [getDisplayPath(options.path ?? "", options.baseDirectory), options.pattern]
+    .filter(Boolean)
+    .join(" · ");
+
+  return {
+    ...options.defaultStrategy,
+    Icon: FileSearch,
+    title: options.title,
+    secondaryText: secondaryText || undefined,
+    showInputPreview: false,
+    outputContent: {
+      kind: "plain",
+      text: getOutputOrErrorText(options.state),
+      language: "text",
+      isCode: false,
+    },
+  };
+}
+
+export function buildShellToolStrategy(options: ShellToolStrategyOptions): ToolDisplayStrategy {
+  const displayCommand = getDisplayTextWithRelativePaths(options.command, options.baseDirectory);
+  const secondaryText = options.description
+    ? `${options.description}${displayCommand ? ` (${displayCommand})` : ""}`
+    : displayCommand
+      ? `(${displayCommand})`
+      : undefined;
+  const outputText = getOutputOrErrorText(options.state);
+
+  return {
+    ...options.defaultStrategy,
+    Icon: SquareTerminal,
+    title: options.title,
+    secondaryText,
+    details:
+      options.includeCommandDetail && options.command
+        ? [{ label: "Command", value: displayCommand || options.command }]
+        : options.defaultStrategy.details,
+    showInputPreview: false,
+    outputContent: {
+      kind: "plain",
+      text: options.emptyOutputMarker === outputText ? "No output captured." : outputText,
+      language: "text",
+      isCode: false,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
