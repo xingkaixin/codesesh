@@ -198,6 +198,61 @@ afterEach(() => {
 });
 
 describe("AgentSyncEngine", () => {
+  it("loads cached sessions once across a refresh and its backfill decision", async () => {
+    const session = makeSession("cached");
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [session],
+      meta: {},
+      timestamp: Date.now(),
+    });
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async (_agentName, payload) =>
+        workerResult({
+          sessions: payload.previousSessions,
+          meta: payload.meta,
+          changedIds: [],
+        }),
+      ),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const { engine } = makeEngine(new FakeSyncAgent(), [session], workerRunner, { from: 1 });
+
+    await engine.refresh("codex");
+
+    expect(core.loadCachedSessions).toHaveBeenCalledOnce();
+  });
+
+  it("skips source availability work until the full-sync interval expires", () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-08-12T00:00:00.000Z").getTime();
+    vi.setSystemTime(now);
+    core.getAgentLastFullSyncAt.mockReturnValue(now);
+    const agent = new FakeSyncAgent();
+    const isAvailable = vi.spyOn(agent, "isAvailable");
+    const listSessionSources = vi.spyOn(agent, "listSessionSources");
+    const { engine } = makeEngine(agent, [], makeWorkerRunner(), { from: 1 });
+    const internal = engine as unknown as {
+      needsBackfill(candidate: BaseAgent, cached: ReturnType<typeof loadCachedSessions>): boolean;
+    };
+    const cached = { sessions: [], meta: {}, timestamp: Date.now() };
+
+    expect(internal.needsBackfill(agent, cached)).toBe(false);
+    expect(internal.needsBackfill(agent, cached)).toBe(false);
+
+    expect(isAvailable).toHaveBeenCalledOnce();
+    expect(listSessionSources).toHaveBeenCalledOnce();
+    expect(core.readAgentLastFullSyncAt).toHaveBeenCalledOnce();
+    expect(core.loadCachedSessions).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000 + 1);
+
+    expect(internal.needsBackfill(agent, cached)).toBe(true);
+    expect(isAvailable).toHaveBeenCalledTimes(2);
+    expect(listSessionSources).toHaveBeenCalledOnce();
+    expect(core.readAgentLastFullSyncAt).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps the current snapshot when cache initialization cannot be read", async () => {
     core.readAgentCacheInitialization.mockReturnValueOnce({ status: "failed" });
     const previous = makeSession("session", "retained");
