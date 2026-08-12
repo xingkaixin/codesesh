@@ -44,6 +44,7 @@ export {
   attachMissingProjectIdentities,
   buildAgentCacheMeta,
   clearCache,
+  closeCacheStorage,
   commitDurableSessionPublication,
   computeSessionDiff,
   ensureSessionTagsSync,

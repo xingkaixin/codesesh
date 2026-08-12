@@ -1,11 +1,9 @@
-/**
- * Cache infrastructure: cache paths and shared query helpers.
- * Lower-level than schema.ts — no DB handles here.
- */
+/** Cache paths, process-local connections, and shared query helpers. */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
+import { getCoreDiagnostics } from "../../utils/diagnostics.js";
+import { openDb, type DatabaseRow, type SQLiteDatabase } from "../../utils/sqlite.js";
 import type { SessionHead } from "../../types/index.js";
 
 const CACHE_FILENAME = "codesesh.db";
@@ -31,17 +29,59 @@ export interface CacheRow extends DatabaseRow {
 
 export type SQLiteStatement = ReturnType<SQLiteDatabase["prepare"]>;
 
-// One-shot per-process ensureSchema guard; reset by clearCache. Once a path
-// has been schema-checked, withCacheDb skips ensureSchema's DDL exec (which
-// otherwise runs unconditionally on every open) so read-heavy callers stop
-// contending for the write lock.
+export interface CacheConnection {
+  db: SQLiteDatabase;
+  ftsReady: boolean;
+}
+
+const cacheConnections = new Map<string, CacheConnection>();
 let schemaEnsuredPath: string | null = null;
+
+export function getCacheConnection(path: string): CacheConnection | null {
+  const cached = cacheConnections.get(path);
+  if (cached) return cached;
+
+  const db = openDb(path);
+  if (!db) return null;
+
+  const connection = { db, ftsReady: false };
+  cacheConnections.set(path, connection);
+  return connection;
+}
+
+export function discardCacheConnection(path: string, connection: CacheConnection): void {
+  if (cacheConnections.get(path) !== connection) return;
+  cacheConnections.delete(path);
+  closeConnection(path, connection);
+}
+
+function closeConnection(path: string, connection: CacheConnection): void {
+  try {
+    connection.db.close();
+  } catch (error) {
+    getCoreDiagnostics()?.warn("cache.close_failed", {
+      dbPath: path,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+export function closeCacheStorage(): void {
+  const connections = [...cacheConnections];
+  cacheConnections.clear();
+  schemaEnsuredPath = null;
+  for (const [path, connection] of connections) closeConnection(path, connection);
+}
 
 export function getSchemaEnsuredPath(): string | null {
   return schemaEnsuredPath;
 }
 
 export function setSchemaEnsuredPath(path: string | null): void {
+  if (path === null) {
+    closeCacheStorage();
+    return;
+  }
   schemaEnsuredPath = path;
 }
 

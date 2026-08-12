@@ -17,8 +17,8 @@ vi.mock("node:os", async (importOriginal) => {
 });
 
 afterEach(() => {
-  rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
+  rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
 });
 
 describe("search index writer", () => {

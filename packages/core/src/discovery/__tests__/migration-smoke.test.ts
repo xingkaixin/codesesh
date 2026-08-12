@@ -294,16 +294,16 @@ function expectMigratedBehavior(structured: boolean): void {
 }
 
 beforeEach(() => {
+  setSchemaEnsuredPath(null);
   rmSync(getCacheDir(), { recursive: true, force: true });
   rmSync(getStateDir(), { recursive: true, force: true });
-  setSchemaEnsuredPath(null);
   setStateSchemaEnsuredPath(null);
 });
 
 afterEach(() => {
+  setSchemaEnsuredPath(null);
   rmSync(getCacheDir(), { recursive: true, force: true });
   rmSync(getStateDir(), { recursive: true, force: true });
-  setSchemaEnsuredPath(null);
   setStateSchemaEnsuredPath(null);
 });
 

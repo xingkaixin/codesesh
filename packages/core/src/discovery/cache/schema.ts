@@ -9,15 +9,22 @@ import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import {
   columnExists,
   getUserVersion,
-  openDb,
-  openDbReadOnly,
   runSchemaMigrations,
   setUserVersion,
   tableExists,
   type DatabaseRow,
   type SQLiteDatabase,
 } from "../../utils/sqlite.js";
-import { getCachePath, getSchemaEnsuredPath, setSchemaEnsuredPath, type CacheRow } from "./db.js";
+import {
+  discardCacheConnection,
+  getCacheConnection,
+  getCachePath,
+  getSchemaEnsuredPath,
+  hasCacheStorage,
+  setSchemaEnsuredPath,
+  type CacheConnection,
+  type CacheRow,
+} from "./db.js";
 import {
   messageFromBackfillRow,
   prepareInsertFileActivity,
@@ -70,17 +77,17 @@ interface ProjectIdentityRefreshRow extends DatabaseRow {
   directory?: string;
 }
 
-export function withCacheDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
+function withCacheConnection<T>(fn: (connection: CacheConnection) => T): T | null {
   const cachePath = getCachePath();
-  const db = openDb(cachePath);
-  if (!db) return null;
+  const connection = getCacheConnection(cachePath);
+  if (!connection) return null;
 
   try {
     if (getSchemaEnsuredPath() !== cachePath) {
-      ensureSchema(db, cachePath);
+      ensureSchema(connection.db, cachePath);
       setSchemaEnsuredPath(cachePath);
     }
-    return fn(db);
+    return fn(connection);
   } catch (error) {
     getCoreDiagnostics()?.warn("cache.write_failed", {
       message: error instanceof Error ? error.message : String(error),
@@ -88,38 +95,43 @@ export function withCacheDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
       error_class: error instanceof Error ? error.name : typeof error,
       stack: error instanceof Error ? error.stack : undefined,
     });
+    discardCacheConnection(cachePath, connection);
     return null;
-  } finally {
-    db.close();
   }
+}
+
+export function withCacheDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
+  return withCacheConnection(({ db }) => fn(db));
 }
 
 export type CacheReadOutcome<T> = { status: "success"; value: T } | { status: "failed" };
 
 export function withCacheDbReadOnly<T>(fn: (db: SQLiteDatabase) => T): CacheReadOutcome<T> {
-  const db = openDbReadOnly(getCachePath());
-  if (!db) return { status: "failed" };
+  const cachePath = getCachePath();
+  if (!hasCacheStorage()) return { status: "failed" };
+
+  const connection = getCacheConnection(cachePath);
+  if (!connection) return { status: "failed" };
 
   try {
-    return { status: "success", value: fn(db) };
+    return { status: "success", value: fn(connection.db) };
   } catch (error) {
     getCoreDiagnostics()?.warn("cache.read_failed", {
       message: error instanceof Error ? error.message : String(error),
       code: (error as { code?: string })?.code,
       error_class: error instanceof Error ? error.name : typeof error,
     });
+    discardCacheConnection(cachePath, connection);
     return { status: "failed" };
-  } finally {
-    db.close();
   }
 }
 
 export function withSearchDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
-  return withCacheDb((db) => runWithFtsRecovery(db, fn));
+  return withCacheConnection((connection) => runWithFtsRecovery(connection, fn));
 }
 
 export function withSearchIndexDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
-  return withCacheDb((db) => runWithFtsRecovery(db, fn));
+  return withCacheConnection((connection) => runWithFtsRecovery(connection, fn));
 }
 
 interface SearchIndexWriteResult<T> {
@@ -1299,8 +1311,12 @@ function isFtsCorruptionError(error: unknown): boolean {
   );
 }
 
-function runWithFtsRecovery<T>(db: SQLiteDatabase, fn: (db: SQLiteDatabase) => T): T {
-  ensureFtsReady(db);
+function runWithFtsRecovery<T>(connection: CacheConnection, fn: (db: SQLiteDatabase) => T): T {
+  const { db } = connection;
+  if (!connection.ftsReady) {
+    ensureFtsReady(db);
+    connection.ftsReady = true;
+  }
   try {
     return fn(db);
   } catch (error) {

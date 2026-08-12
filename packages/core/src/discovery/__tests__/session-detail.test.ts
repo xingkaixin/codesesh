@@ -131,14 +131,14 @@ function persistDetail(head: SessionHead, detail: SessionDetail, fingerprint: st
 }
 
 beforeEach(() => {
-  rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
+  rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
 });
 
 afterEach(() => {
   setCoreDiagnostics(null);
-  rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
+  rmSync(join(testHomeDir, ".cache"), { recursive: true, force: true });
 });
 
 describe("materializeSessionDetail", () => {

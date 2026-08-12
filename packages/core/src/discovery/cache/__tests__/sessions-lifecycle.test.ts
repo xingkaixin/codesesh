@@ -130,14 +130,14 @@ function getMigrationBackups(): string[] {
 }
 
 beforeEach(() => {
+  setSchemaEnsuredPath(null);
   rmSync(getCacheDir(), { recursive: true, force: true });
   dateNowSpy.mockReturnValue(now);
-  setSchemaEnsuredPath(null);
 });
 
 afterEach(() => {
-  rmSync(getCacheDir(), { recursive: true, force: true });
   setSchemaEnsuredPath(null);
+  rmSync(getCacheDir(), { recursive: true, force: true });
   setCoreDiagnostics(null);
 });
 describe("loadCachedSessions", () => {
@@ -537,7 +537,11 @@ describe("saveCachedSessionChanges", () => {
 describe("clearCache", () => {
   it("clears sqlite rows", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
+    const connection = withCacheDb((db) => db);
     clearCache();
+    const reopened = withCacheDb((db) => db);
+
+    expect(reopened).not.toBe(connection);
     expect(loadCachedSessions("claudecode")).toBeNull();
     expect(getCacheInfo()).toEqual({ lastScanTime: null, size: 0 });
   });

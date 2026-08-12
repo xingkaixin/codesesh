@@ -41,7 +41,7 @@ export type {
   SessionSnapshotCompleteness,
 } from "./cache/sessions.js";
 export type { CacheReadOutcome } from "./cache/schema.js";
-export { getCachePath } from "./cache/db.js";
+export { closeCacheStorage, getCachePath } from "./cache/db.js";
 export type { SessionHeadChange } from "./cache/db.js";
 export { listCachedProjectGroups } from "./cache/project-groups.js";
 export {

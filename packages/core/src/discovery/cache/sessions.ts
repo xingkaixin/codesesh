@@ -9,10 +9,10 @@ import type { SessionDetail, SessionHead } from "../../types/index.js";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import { tableExists, type SQLiteDatabase } from "../../utils/sqlite.js";
 import {
+  closeCacheStorage,
   getCachePath,
   getLegacyCachePath,
   hasCacheStorage,
-  setSchemaEnsuredPath,
   type ScalarRow,
   type SessionHeadChange,
 } from "./db.js";
@@ -628,7 +628,7 @@ export function writeCachedSessionChanges(
 }
 
 export function clearCache(): void {
-  setSchemaEnsuredPath(null);
+  closeCacheStorage();
   if (!hasCacheStorage()) {
     deleteLegacyCacheFile();
     return;
@@ -647,6 +647,7 @@ export function clearCache(): void {
       DELETE FROM project_sessions;
     `);
   });
+  closeCacheStorage();
 
   deleteLegacyCacheFile();
 
