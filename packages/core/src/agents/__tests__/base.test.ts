@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -133,6 +133,22 @@ describe("BaseAgent", () => {
 });
 
 describe("FileSystemSessionSource.scan", () => {
+  it("ignores a session-file symlink outside the scan root", () => {
+    const directory = mkdtempSync(join(tmpdir(), "codesesh-walk-symlink-"));
+    const root = join(directory, "root");
+    const target = join(directory, "outside.jsonl");
+    const link = join(root, "linked.jsonl");
+    try {
+      mkdirSync(root);
+      writeFileSync(target, "outside");
+      symlinkSync(target, link);
+
+      expect(new FakeFileSystemSource().walk(root)).toEqual([]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("raises a root-level failure when source enumeration cannot complete", () => {
     const agent = new FakeFileSystemSource();
     try {
