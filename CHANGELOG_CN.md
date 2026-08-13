@@ -1,5 +1,165 @@
 # Changelog
 
+## [1.0.1] - 2026-08-13
+
+本版本强化扫描、缓存与同步链路在部分失败或中断场景下的正确性，修补远程访问与浏览器安全缺口，消除大规模历史下的启动与渲染瓶颈，并重新设计 Dashboard 图表。
+
+### 新功能
+
+- 基于统一的方块画布图元重新设计 Dashboard 图表：每日用量以 Token 堆叠柱加成本面积呈现，Agent 使用柱状图，模型成本使用环形图；移除与项目页重复的项目排行卡片。 (#303)
+- 新增基于游标的会话快照分页 API，并在 Web UI 中按页渐进加载。 (#355)
+- 实时会话详情改为增量流式更新，不再整体刷新会话。 (#357)
+
+### 安全
+
+- 新增 Content-Security-Policy 及其他浏览器安全响应头，并将主题引导脚本移出内联脚本。 (#345)
+- 环回代理强制要求认证，校验环回请求来源，并在远程与环回传输上拒绝跨站写入。 (#279, #293, #308, #315, #344)
+- 扫描时不再跟随符号链接的会话文件与 Cursor 链接工作区目录。 (#343)
+- 收敛 CLI 输出中的凭据与路径暴露。 (#353)
+- 强化 CI 供应链管控，并在发布前校验已发布的 npm 制品。 (#288, #347)
+
+### 性能
+
+- 将孤儿缓存清理延后到索引写入阶段，消除启动延迟。 (#371)
+- 跨请求复用 SQLite 连接、刷新缓存快照、搜索索引 Worker 与分析用会话树。 (#354, #356, #360, #361)
+- 从缓存直接推导恢复后的会话顺序，并在扫描间保留 Claude Code 子会话索引。 (#362, #363)
+- 限制近期会话搜索、单会话消息 FTS 查询、OpenCode 关联会话查询、Cursor composer 扫描缓存以及实时链路中的扫描状态推送规模。 (#284, #285, #286, #299, #359)
+- 通过缓存转录渲染结果与节流实时聚合刷新，稳定 Web 渲染热点路径。 (#357, #358)
+- 将大规模搜索索引积压按持久化分块预处理，并在全量重扫中复用缓存的 smart tag。 (#305, #326)
+
+### 问题修复
+
+- 将全历史维护与发布解耦，后台索引不再阻塞可见会话状态。 (#374)
+- 在部分、失败或中断的扫描下保持已发布状态正确：仅发布持久化状态、原子提交、保留部分快照事实与失败扫描结果，以及保留扫描窗口外的缓存。 (#275, #277, #294, #295, #296, #334)
+- 源解析失败时保留会话，并终止启动重扫与 Codex 源失败的永久循环。 (#278, #324, #326)
+- 会话详情发布改为原子操作，并为持久化详情与派生投影加上版本，使过期缓存可自愈。 (#276, #282, #290, #333)
+- 修正成本与定价：跨 Agent 修复缺失定价、统一 Worker 定价代际、保留过期定价缓存、定价到达后重新解析缓存会话头、将 Codex 溢出用量归属到模型，并在搜索中使用包含子会话的成本。 (#304, #307, #316, #325, #327, #330, #337)
+- 修复 Cursor、Codex、Claude Code、Kimi、Kimi-Code、Grok、Pi 与 OpenCode 的解析问题，涵盖 composer 会话 ID、会话元数据模型、超大 rollout 头、时间戳偏移、后代会话统计，以及无可见内容的会话与空本地命令。 (#281, #329, #335, #336, #339, #372, #373)
+- 统一会话层级的消费方，并去重会话树路由键。 (#280, #338)
+- 让实时更新保持在当前时间窗内，并释放已删除的兜底会话树。 (#298, #339)
+- 校验并拒绝非法的会话查询参数与倒置或格式错误的日期区间。 (#297, #321, #340)
+- 让 Web 各页面从失败中恢复，暴露持续断连与详情流失败，并保留侧栏键盘选择。 (#340, #341, #342)
+- 修复 Dashboard 图表交互：限制入场动画进度、停止静止时的画布循环、去重悬停更新并恢复键盘访问。 (#311, #312, #313, #314)
+- 恢复被拒绝的扫描 Worker 队列，保持回填队列推进，持久化回填检查点，在存在 SSE 连接时限时关停，并串行化 Worker 日志写入。 (#309, #310, #318, #328)
+- 归一化 Project Identity 输入，保留数据库扫描窗口，并保留缓存中被省略的会话元数据。 (#317, #331, #332)
+
+### 构建
+
+- 在类型层强制 Node 22 运行时表面，约束 `apps/www` 的 Astro 源码质量，并将工具文件、根目录源码与 Agent 适配器纳入质量门禁覆盖。 (#289, #292, #319, #367, #369)
+- Bundle 测试前强制先构建 Web，并默认发现新增的 e2e 用例。 (#323, #368)
+- 升级 `actions/checkout`、`actions/upload-artifact`、`actions/download-artifact`、`pnpm/action-setup` 与 `softprops/action-gh-release`。 (#348, #349, #350, #351, #352)
+- 移除未使用的图表依赖。 (#322)
+
+### 文档
+
+- 从 `engines` 推导 Node 基线，约束仓库事实一致性与必需 CI 检查清单，刷新并门禁化 Agent 映射，并补充远程访问安全、缓存连接生命周期与扫描同步接缝的文档。 (#291, #293, #302, #320, #354, #370)
+
+### Changelog Detail
+
+- #375 refactor(sqlite): remove duplicate message FTS @xingkaixin
+- #374 fix: decouple full-history maintenance from publishing @xingkaixin
+- #352 build(deps): bump actions/download-artifact from 4.3.0 to 8.0.1 @dependabot
+- #351 build(deps): bump actions/checkout from 4.4.0 to 7.0.1 @dependabot
+- #350 build(deps): bump actions/upload-artifact from 4.6.2 to 7.0.1 @dependabot
+- #349 build(deps): bump pnpm/action-setup from 4.3.0 to 6.0.10 @dependabot
+- #348 build(deps): bump softprops/action-gh-release from 2.6.2 to 3.0.2 @dependabot
+- #371 Fix startup delays caused by cache cleanup @xingkaixin
+- #372 fix(grok): filter sessions without visible messages @xingkaixin
+- #373 fix(claude): filter empty local commands @xingkaixin
+- #370 docs: enforce Node and CI facts @xingkaixin
+- #369 chore(ci): close quality gate blind spots @xingkaixin
+- #368 fix(ci): require web build for bundle tests @xingkaixin
+- #367 test: cover agent adapters and route recovery @xingkaixin
+- #366 refactor: consolidate shared failure and tool logic @xingkaixin
+- #365 test(web): characterize tool strategies @xingkaixin
+- #364 refactor(cache): unify search index planning @xingkaixin
+- #363 perf(claudecode): preserve valid child index @xingkaixin
+- #362 perf(cache): derive restored session order @xingkaixin
+- #361 perf(analytics): reuse session trees per request @xingkaixin
+- #360 perf(cli): reuse search index worker @xingkaixin
+- #359 fix(cursor): bound composer scan cache @xingkaixin
+- #358 perf(web): stabilize render hot paths @xingkaixin
+- #357 perf(web): stream incremental live session updates @xingkaixin
+- #356 perf(cli): reuse refresh cache snapshots @xingkaixin
+- #355 feat(api): paginate session snapshots @xingkaixin
+- #354 refactor(cache): reuse SQLite connections @xingkaixin
+- #353 fix(cli): minimize credential and path exposure @xingkaixin
+- #347 chore(ci): harden supply chain controls @xingkaixin
+- #346 refactor(search): return structured highlights @xingkaixin
+- #345 Add CSP and browser security headers @xingkaixin
+- #344 fix(server): guard remote writes from cross-site requests @xingkaixin
+- #343 Block agent scans from following symlinks @xingkaixin
+- #342 fix(web): preserve sidebar keyboard selection @xingkaixin
+- #341 Fix web failure recovery paths @xingkaixin
+- #340 fix: harden API and bookmark edge cases @xingkaixin
+- #339 fix: harden scan and index pipelines @xingkaixin
+- #338 fix(session-tree): deduplicate route keys @xingkaixin
+- #337 fix: preserve accurate cost sources @xingkaixin
+- #336 fix: stabilize Cursor session parsing @xingkaixin
+- #335 fix: harden Codex and Claude session parsing @xingkaixin
+- #334 fix: preserve sync state after cache read failures @xingkaixin
+- #333 fix: make session detail publication atomic @xingkaixin
+- #332 fix(core): normalize project identity inputs @xingkaixin
+- #331 fix: preserve database scan windows @xingkaixin
+- #330 fix(search): preserve ranking and inclusive cost @xingkaixin
+- #329 fix(core): correct Kimi session facts @xingkaixin
+- #328 fix(cli): recover rejected scan queues @xingkaixin
+- #327 fix(core): preserve stale pricing caches @xingkaixin
+- #326 fix(cli): stop permanent startup rescan loop for SQLite-backed agents @xingkaixin
+- #325 fix(core): attribute surplus codex usage to models in cost breakdown @xingkaixin
+- #324 fix(core): stop permanent codex source-failure loop on startup @xingkaixin
+- #323 test(e2e): discover new specs by default @xingkaixin
+- #322 chore(web): remove unused chart dependencies @xingkaixin
+- #321 fix(api): reject invalid date filters @xingkaixin
+- #320 docs: refresh and gate agent map @xingkaixin
+- #319 chore(quality): cover root source files @xingkaixin
+- #318 fix(logging): serialize worker log writes @xingkaixin
+- #317 fix(cache): preserve omitted session metadata @xingkaixin
+- #316 fix: keep worker pricing generations consistent @xingkaixin
+- #315 fix(cli): reject cross-site loopback writes @xingkaixin
+- #314 fix(web): deduplicate bar chart hover updates @xingkaixin
+- #313 fix(web): stop resting canvas chart loops @xingkaixin
+- #312 fix(web): restore chart keyboard access @xingkaixin
+- #311 fix(web): bound bar chart stagger progress @xingkaixin
+- #310 fix(cli): persist backfill checkpoints @xingkaixin
+- #309 fix(cli): bound shutdown with active SSE @xingkaixin
+- #308 fix(cli): allow proxy authority on loopback @xingkaixin
+- #307 fix(core): heal missing pricing across agents @xingkaixin
+- #306 fix(core): isolate pre-staged session heads @xingkaixin
+- #304 fix(core): re-parse cached session heads once missing model pricing arrives @xingkaixin
+- #305 fix(core): pre-stage large search-index backlogs in durable chunks @xingkaixin
+- #303 Redesign the dashboard charts @xingkaixin
+- #302 refactor: centralize session source synchronization @xingkaixin
+- #301 test(coverage): validate critical owners @xingkaixin
+- #300 refactor(bookmarks): store reference facts @xingkaixin
+- #299 fix: bound OpenCode related session scans @xingkaixin
+- #298 fix: keep live updates inside the active window @xingkaixin
+- #297 fix: validate session query parameters @xingkaixin
+- #296 fix: preserve failed scan outcomes @xingkaixin
+- #295 fix(sync): commit durable publications atomically @xingkaixin
+- #294 fix(sync): preserve partial scan history @xingkaixin
+- #293 fix(cli): require auth for loopback proxies @xingkaixin
+- #292 build(www): enforce Astro source quality @xingkaixin
+- #291 docs: enforce repository fact consistency @xingkaixin
+- #290 fix(cache): preserve migration invariants @xingkaixin
+- #289 build(types): enforce Node 22 runtime surface @xingkaixin
+- #288 ci(release): verify the published npm artifact @xingkaixin
+- #287 refactor(cli): retain scan worker baselines @xingkaixin
+- #286 perf(core): bound recent session search @xingkaixin
+- #285 Bound scan status delivery across the live pipeline @xingkaixin
+- #284 Bound message FTS lookup per candidate session @xingkaixin
+- #283 Refactor backfill lifecycle into explicit attempts @xingkaixin
+- #282 fix(core): version persisted derived projections @xingkaixin
+- #281 fix(core): align Kimi-Code source activity @xingkaixin
+- #280 fix: unify session hierarchy consumers @xingkaixin
+- #279 fix(cli): enforce loopback request authority @xingkaixin
+- #278 fix: retain sessions when source parsing fails @xingkaixin
+- #277 fix: preserve cache outside windowed scans @xingkaixin
+- #276 fix(cache): version session detail projections @xingkaixin
+- #275 fix(sync): reject non-durable checkpoints @xingkaixin
+- #274 fix(core): keep session head stats local @xingkaixin
+
+
 ## [1.0.0] - 2026-08-07
 
 本次大版本重建 CodeSesh 控制台与产品体验，新增 Grok 会话支持，并强化并发索引稳定性，推动项目进入 1.0 阶段。

@@ -1,5 +1,165 @@
 # Changelog
 
+## [1.0.1] - 2026-08-13
+
+This release hardens the scan, cache and sync pipelines against partial or failed runs, closes a set of remote-access and browser security gaps, removes startup and rendering bottlenecks on large histories, and redesigns the dashboard charts.
+
+### Features
+
+- Redesigned the dashboard charts around shared tiled canvas primitives: daily usage as a stacked token bar with a cost area, agents as bars, and model cost as a ring; the project ranking card was removed in favor of the projects page. (#303)
+- Added cursor-based pagination for session snapshots and progressive page loading in the web UI. (#355)
+- Streamed live session detail updates incrementally instead of refreshing whole sessions. (#357)
+
+### Security
+
+- Added Content-Security-Policy and other browser security headers, and moved theme bootstrap out of inline scripts. (#345)
+- Required authentication for loopback proxies, enforced loopback request authority, and rejected cross-site writes on both remote and loopback transports. (#279, #293, #308, #315, #344)
+- Blocked agent scans from following symlinked session files and linked Cursor workspace directories. (#343)
+- Minimized credential and path exposure in CLI output. (#353)
+- Hardened CI supply-chain controls and verified the published npm artifact before release. (#288, #347)
+
+### Performance
+
+- Removed startup delays by deferring orphan cache cleanup to index writes. (#371)
+- Reused SQLite connections, refresh cache snapshots, the search index worker, and analytics session trees across requests. (#354, #356, #360, #361)
+- Derived restored session order from the cache instead of re-sorting, and preserved the Claude Code child index across scans. (#362, #363)
+- Bounded recent session search, per-session message FTS lookups, OpenCode related-session queries, the Cursor composer scan cache, and scan status delivery across the live pipeline. (#284, #285, #286, #299, #359)
+- Stabilized web render hot paths with memoized transcript work and throttled live aggregate refreshes. (#357, #358)
+- Pre-staged large search-index backlogs in durable chunks and reused cached smart tags across full rescans. (#305, #326)
+
+### Bug Fixes
+
+- Decoupled full-history maintenance from publishing so background indexing no longer blocks visible session state. (#374)
+- Preserved published state across partial, failed or interrupted scans: durable-only publication, atomic commits, partial snapshot facts, failed scan outcomes, and cache outside the scan window. (#275, #277, #294, #295, #296, #334)
+- Retained sessions whose sources fail to parse, and stopped permanent startup rescan and Codex source-failure loops. (#278, #324, #326)
+- Made session detail publication atomic and versioned persisted detail and derived projections so stale caches re-heal. (#276, #282, #290, #333)
+- Corrected cost and pricing: healed missing pricing across agents, kept worker pricing generations consistent, preserved stale pricing caches, re-parsed cached heads when pricing arrives, attributed surplus Codex usage to models, and used inclusive session cost in search. (#304, #307, #316, #325, #327, #330, #337)
+- Fixed agent parsing across Cursor, Codex, Claude Code, Kimi, Kimi-Code, Grok, Pi and OpenCode, including composer session ids, session metadata models, oversized rollout headers, timestamp offsets, descendant detail stats, and sessions or local commands with no visible content. (#281, #329, #335, #336, #339, #372, #373)
+- Unified session hierarchy consumers and deduplicated session-tree route keys. (#280, #338)
+- Kept live updates inside the active window and released deleted fallback trees. (#298, #339)
+- Validated and rejected invalid session query parameters and inverted or malformed date windows. (#297, #321, #340)
+- Recovered web app surfaces from failures, surfaced sustained live disconnects and detail stream failures, and preserved sidebar keyboard selection. (#340, #341, #342)
+- Fixed dashboard chart interaction: bounded stagger progress, stopped resting canvas loops, deduplicated hover updates, and restored keyboard access. (#311, #312, #313, #314)
+- Recovered rejected scan worker queues, kept the backfill queue advancing, persisted backfill checkpoints, bounded shutdown with active SSE clients, and serialized worker log writes. (#309, #310, #318, #328)
+- Normalized project identity inputs, preserved database scan windows, and preserved omitted session metadata in the cache. (#317, #331, #332)
+
+### Build
+
+- Enforced the Node 22 runtime surface in types, Astro source quality in `apps/www`, and quality-gate coverage for tooling, root sources and agent adapters. (#289, #292, #319, #367, #369)
+- Required a web build before bundle tests and made e2e specs discoverable by default. (#323, #368)
+- Bumped `actions/checkout`, `actions/upload-artifact`, `actions/download-artifact`, `pnpm/action-setup` and `softprops/action-gh-release`. (#348, #349, #350, #351, #352)
+- Removed unused chart dependencies. (#322)
+
+### Documentation
+
+- Derived the Node baseline from `engines`, enforced repository fact consistency and the required CI checklist, refreshed and gated the agent map, and documented remote access security, the cache connection lifecycle and the scan synchronization seam. (#291, #293, #302, #320, #354, #370)
+
+### Changelog Detail
+
+- #375 refactor(sqlite): remove duplicate message FTS @xingkaixin
+- #374 fix: decouple full-history maintenance from publishing @xingkaixin
+- #352 build(deps): bump actions/download-artifact from 4.3.0 to 8.0.1 @dependabot
+- #351 build(deps): bump actions/checkout from 4.4.0 to 7.0.1 @dependabot
+- #350 build(deps): bump actions/upload-artifact from 4.6.2 to 7.0.1 @dependabot
+- #349 build(deps): bump pnpm/action-setup from 4.3.0 to 6.0.10 @dependabot
+- #348 build(deps): bump softprops/action-gh-release from 2.6.2 to 3.0.2 @dependabot
+- #371 Fix startup delays caused by cache cleanup @xingkaixin
+- #372 fix(grok): filter sessions without visible messages @xingkaixin
+- #373 fix(claude): filter empty local commands @xingkaixin
+- #370 docs: enforce Node and CI facts @xingkaixin
+- #369 chore(ci): close quality gate blind spots @xingkaixin
+- #368 fix(ci): require web build for bundle tests @xingkaixin
+- #367 test: cover agent adapters and route recovery @xingkaixin
+- #366 refactor: consolidate shared failure and tool logic @xingkaixin
+- #365 test(web): characterize tool strategies @xingkaixin
+- #364 refactor(cache): unify search index planning @xingkaixin
+- #363 perf(claudecode): preserve valid child index @xingkaixin
+- #362 perf(cache): derive restored session order @xingkaixin
+- #361 perf(analytics): reuse session trees per request @xingkaixin
+- #360 perf(cli): reuse search index worker @xingkaixin
+- #359 fix(cursor): bound composer scan cache @xingkaixin
+- #358 perf(web): stabilize render hot paths @xingkaixin
+- #357 perf(web): stream incremental live session updates @xingkaixin
+- #356 perf(cli): reuse refresh cache snapshots @xingkaixin
+- #355 feat(api): paginate session snapshots @xingkaixin
+- #354 refactor(cache): reuse SQLite connections @xingkaixin
+- #353 fix(cli): minimize credential and path exposure @xingkaixin
+- #347 chore(ci): harden supply chain controls @xingkaixin
+- #346 refactor(search): return structured highlights @xingkaixin
+- #345 Add CSP and browser security headers @xingkaixin
+- #344 fix(server): guard remote writes from cross-site requests @xingkaixin
+- #343 Block agent scans from following symlinks @xingkaixin
+- #342 fix(web): preserve sidebar keyboard selection @xingkaixin
+- #341 Fix web failure recovery paths @xingkaixin
+- #340 fix: harden API and bookmark edge cases @xingkaixin
+- #339 fix: harden scan and index pipelines @xingkaixin
+- #338 fix(session-tree): deduplicate route keys @xingkaixin
+- #337 fix: preserve accurate cost sources @xingkaixin
+- #336 fix: stabilize Cursor session parsing @xingkaixin
+- #335 fix: harden Codex and Claude session parsing @xingkaixin
+- #334 fix: preserve sync state after cache read failures @xingkaixin
+- #333 fix: make session detail publication atomic @xingkaixin
+- #332 fix(core): normalize project identity inputs @xingkaixin
+- #331 fix: preserve database scan windows @xingkaixin
+- #330 fix(search): preserve ranking and inclusive cost @xingkaixin
+- #329 fix(core): correct Kimi session facts @xingkaixin
+- #328 fix(cli): recover rejected scan queues @xingkaixin
+- #327 fix(core): preserve stale pricing caches @xingkaixin
+- #326 fix(cli): stop permanent startup rescan loop for SQLite-backed agents @xingkaixin
+- #325 fix(core): attribute surplus codex usage to models in cost breakdown @xingkaixin
+- #324 fix(core): stop permanent codex source-failure loop on startup @xingkaixin
+- #323 test(e2e): discover new specs by default @xingkaixin
+- #322 chore(web): remove unused chart dependencies @xingkaixin
+- #321 fix(api): reject invalid date filters @xingkaixin
+- #320 docs: refresh and gate agent map @xingkaixin
+- #319 chore(quality): cover root source files @xingkaixin
+- #318 fix(logging): serialize worker log writes @xingkaixin
+- #317 fix(cache): preserve omitted session metadata @xingkaixin
+- #316 fix: keep worker pricing generations consistent @xingkaixin
+- #315 fix(cli): reject cross-site loopback writes @xingkaixin
+- #314 fix(web): deduplicate bar chart hover updates @xingkaixin
+- #313 fix(web): stop resting canvas chart loops @xingkaixin
+- #312 fix(web): restore chart keyboard access @xingkaixin
+- #311 fix(web): bound bar chart stagger progress @xingkaixin
+- #310 fix(cli): persist backfill checkpoints @xingkaixin
+- #309 fix(cli): bound shutdown with active SSE @xingkaixin
+- #308 fix(cli): allow proxy authority on loopback @xingkaixin
+- #307 fix(core): heal missing pricing across agents @xingkaixin
+- #306 fix(core): isolate pre-staged session heads @xingkaixin
+- #304 fix(core): re-parse cached session heads once missing model pricing arrives @xingkaixin
+- #305 fix(core): pre-stage large search-index backlogs in durable chunks @xingkaixin
+- #303 Redesign the dashboard charts @xingkaixin
+- #302 refactor: centralize session source synchronization @xingkaixin
+- #301 test(coverage): validate critical owners @xingkaixin
+- #300 refactor(bookmarks): store reference facts @xingkaixin
+- #299 fix: bound OpenCode related session scans @xingkaixin
+- #298 fix: keep live updates inside the active window @xingkaixin
+- #297 fix: validate session query parameters @xingkaixin
+- #296 fix: preserve failed scan outcomes @xingkaixin
+- #295 fix(sync): commit durable publications atomically @xingkaixin
+- #294 fix(sync): preserve partial scan history @xingkaixin
+- #293 fix(cli): require auth for loopback proxies @xingkaixin
+- #292 build(www): enforce Astro source quality @xingkaixin
+- #291 docs: enforce repository fact consistency @xingkaixin
+- #290 fix(cache): preserve migration invariants @xingkaixin
+- #289 build(types): enforce Node 22 runtime surface @xingkaixin
+- #288 ci(release): verify the published npm artifact @xingkaixin
+- #287 refactor(cli): retain scan worker baselines @xingkaixin
+- #286 perf(core): bound recent session search @xingkaixin
+- #285 Bound scan status delivery across the live pipeline @xingkaixin
+- #284 Bound message FTS lookup per candidate session @xingkaixin
+- #283 Refactor backfill lifecycle into explicit attempts @xingkaixin
+- #282 fix(core): version persisted derived projections @xingkaixin
+- #281 fix(core): align Kimi-Code source activity @xingkaixin
+- #280 fix: unify session hierarchy consumers @xingkaixin
+- #279 fix(cli): enforce loopback request authority @xingkaixin
+- #278 fix: retain sessions when source parsing fails @xingkaixin
+- #277 fix: preserve cache outside windowed scans @xingkaixin
+- #276 fix(cache): version session detail projections @xingkaixin
+- #275 fix(sync): reject non-durable checkpoints @xingkaixin
+- #274 fix(core): keep session head stats local @xingkaixin
+
+
 ## [1.0.0] - 2026-08-07
 
 This major release rebuilds the CodeSesh console and product experience, adds Grok session support, and hardens concurrent indexing as the project reaches 1.0.
