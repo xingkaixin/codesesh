@@ -1,1 +1,1 @@
-export const CACHE_SCHEMA_VERSION = 23;
+export const CACHE_SCHEMA_VERSION = 24;

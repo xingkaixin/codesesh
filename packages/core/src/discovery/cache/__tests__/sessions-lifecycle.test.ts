@@ -185,14 +185,10 @@ describe("loadCachedSessions", () => {
 describe("withSearchIndexDb", () => {
   it("provides ready search-index tables", () => {
     const tables = withSearchIndexDb((db) =>
-      db
-        .prepare(
-          "SELECT name FROM sqlite_master WHERE name IN ('session_documents_fts', 'messages_fts')",
-        )
-        .all(),
+      db.prepare("SELECT name FROM sqlite_master WHERE name = 'session_documents_fts'").all(),
     );
 
-    expect(tables).toHaveLength(2);
+    expect(tables).toHaveLength(1);
   });
 });
 
@@ -200,7 +196,7 @@ describe("withCacheDb schema memo", () => {
   it("runs ensureSchema on the first open but skips it on later opens for the same path", () => {
     withCacheDb(() => undefined);
     expect(getSchemaEnsuredPath()).toBe(getCachePath());
-    expect(getUserVersion(getCachePath())).toBe(23);
+    expect(getUserVersion(getCachePath())).toBe(24);
 
     const db = new Database(getCachePath());
     db.pragma("user_version = 14");
@@ -211,7 +207,7 @@ describe("withCacheDb schema memo", () => {
 
     setSchemaEnsuredPath(null);
     withCacheDb(() => undefined);
-    expect(getUserVersion(getCachePath())).toBe(23);
+    expect(getUserVersion(getCachePath())).toBe(24);
   });
 });
 
@@ -219,7 +215,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(23);
+    expect(getUserVersion(getCachePath())).toBe(24);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -495,7 +491,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(23);
+    expect(getUserVersion(getCachePath())).toBe(24);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
