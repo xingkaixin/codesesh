@@ -8,6 +8,7 @@ import type {
   BaseAgent,
   loadCachedSessions,
   LiveSnapshot,
+  PendingSearchIndexMaintenance,
   SessionHead,
   SessionSourceFailure,
 } from "@codesesh/core";
@@ -35,6 +36,9 @@ const core = vi.hoisted(() => {
       value: getAgentLastFullSyncAt(),
     })),
     loadCachedSessions: vi.fn((): ReturnType<typeof loadCachedSessions> => null),
+    readPendingSearchIndexMaintenance: vi.fn<
+      (_agentName: string, _limit: number) => PendingSearchIndexMaintenance | null
+    >(() => ({ sessionIds: [], total: 0 })),
     markAgentFullSyncStarted: vi.fn(),
     markAgentFullSyncCompleted: vi.fn(),
     markAgentFullSyncProgress: vi.fn(),
@@ -43,7 +47,12 @@ const core = vi.hoisted(() => {
 });
 
 const searchIndex = vi.hoisted(() => ({
-  enqueue: vi.fn<(...args: unknown[]) => Promise<undefined>>(async () => undefined),
+  enqueue: vi.fn<(...args: unknown[]) => Promise<undefined>>(async (...args: unknown[]) => {
+    const onStarted = args[2];
+    if (typeof onStarted === "function") onStarted();
+    return undefined;
+  }),
+  enqueueMaintenance: vi.fn<(...args: unknown[]) => Promise<undefined>>(async () => undefined),
   shutdown: vi.fn(async () => undefined),
   snapshot: vi.fn(() => ({ activeBatchId: undefined, pendingBatches: 0 })),
 }));
@@ -60,6 +69,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     readAgentCacheInitialization: core.readAgentCacheInitialization,
     readAgentLastFullSyncAt: core.readAgentLastFullSyncAt,
     loadCachedSessions: core.loadCachedSessions,
+    readPendingSearchIndexMaintenance: core.readPendingSearchIndexMaintenance,
     markAgentFullSyncStarted: core.markAgentFullSyncStarted,
     markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
     markAgentFullSyncProgress: core.markAgentFullSyncProgress,
@@ -71,6 +81,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
 vi.mock("./search-index-job-runner.js", () => ({
   SearchIndexJobRunner: class {
     enqueue = searchIndex.enqueue;
+    enqueueMaintenance = searchIndex.enqueueMaintenance;
     shutdown = searchIndex.shutdown;
     snapshot = searchIndex.snapshot;
   },
@@ -192,12 +203,43 @@ afterEach(() => {
   core.getAgentLastFullSyncAt.mockReturnValue(Date.now());
   core.isAgentCacheInitialized.mockReturnValue(true);
   core.loadCachedSessions.mockReturnValue(null);
+  core.readPendingSearchIndexMaintenance.mockReturnValue({ sessionIds: [], total: 0 });
   core.markAgentFullSyncStarted.mockClear();
   core.markAgentFullSyncProgress.mockClear();
-  searchIndex.enqueue.mockImplementation(async () => undefined);
+  searchIndex.enqueue.mockImplementation(async (...args: unknown[]) => {
+    const onStarted = args[2];
+    if (typeof onStarted === "function") onStarted();
+    return undefined;
+  });
+  searchIndex.enqueueMaintenance.mockImplementation(async () => undefined);
 });
 
 describe("AgentSyncEngine", () => {
+  it("schedules migration reindex work as separate background maintenance", async () => {
+    const session = makeSession("legacy");
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [session],
+      meta: { legacy: { id: "legacy", sourcePath: "/legacy" } },
+      timestamp: Date.now(),
+    });
+    core.readPendingSearchIndexMaintenance
+      .mockReturnValueOnce({ sessionIds: [session.id], total: 1 })
+      .mockReturnValueOnce({ sessionIds: [], total: 0 });
+    const { engine } = makeEngine(makeAgent(), [session]);
+
+    await engine.refresh("codex");
+    await vi.waitFor(() => expect(searchIndex.enqueueMaintenance).toHaveBeenCalledOnce());
+
+    expect(searchIndex.enqueueMaintenance).toHaveBeenCalledWith("search.maintenance", [
+      expect.objectContaining({
+        kind: "maintenance",
+        agentName: "codex",
+        changes: [expect.objectContaining({ session })],
+        searchIndexOptions: { isBulk: false },
+      }),
+    ]);
+  });
+
   it("loads cached sessions once across a refresh and its backfill decision", async () => {
     const session = makeSession("cached");
     core.loadCachedSessions.mockReturnValue({
@@ -403,13 +445,14 @@ describe("AgentSyncEngine", () => {
     const progress = statuses.flatMap((status) =>
       status.backfill.progress ? [status.backfill.progress] : [],
     );
-    expect(progress).toHaveLength(4);
-    expect(progress.map((item) => item.processed)).toEqual([1, 10_000, 10_000, 10_000]);
+    expect(progress).toHaveLength(5);
+    expect(progress.map((item) => item.processed)).toEqual([1, 10_000, 10_000, 10_000, 10_000]);
     expect(progress.map((item) => item.phase)).toEqual([
       "scanning",
       "scanning",
       "finalizing",
-      "indexing",
+      "publish-queued",
+      "publishing",
     ]);
     expect(statuses.at(-1)?.backfill).toEqual({
       active: false,
@@ -641,28 +684,38 @@ describe("AgentSyncEngine", () => {
       smart_tags: ["docs"],
       smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
     });
-    expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
-      expect.objectContaining({
-        kind: "changes",
-        publicationId: expect.stringMatching(/^scan\.refresh:codex:/),
-        changes: [
-          expect.objectContaining({
-            session: expect.objectContaining({ smart_tags: ["docs"] }),
-          }),
-        ],
-      }),
-    ]);
+    expect(searchIndex.enqueue).toHaveBeenCalledWith(
+      "scan.refresh",
+      [
+        expect.objectContaining({
+          kind: "changes",
+          publicationId: expect.stringMatching(/^scan\.refresh:codex:/),
+          changes: [
+            expect.objectContaining({
+              session: expect.objectContaining({ smart_tags: ["docs"] }),
+            }),
+          ],
+        }),
+      ],
+      expect.any(Function),
+    );
     expect(sessionChanges).toHaveBeenCalledWith(
       expect.objectContaining({ event: expect.objectContaining({ updatedSessions: 1 }) }),
     );
   });
 
-  it("publishes an ordinary refresh only after the search index commits", async () => {
+  it("distinguishes queued and active publication before committing the refresh", async () => {
+    let startIndex!: () => void;
     let commitIndex!: () => void;
-    searchIndex.enqueue.mockReturnValueOnce(
-      new Promise<undefined>((resolve) => {
-        commitIndex = () => resolve(undefined);
-      }),
+    searchIndex.enqueue.mockImplementationOnce(
+      (...args: unknown[]) =>
+        new Promise<undefined>((resolve) => {
+          const onStarted = args[2];
+          startIndex = () => {
+            if (typeof onStarted === "function") onStarted();
+          };
+          commitIndex = () => resolve(undefined);
+        }),
     );
     const previous = makeSession("session", "before");
     const updated = makeSession("session", "after");
@@ -682,12 +735,15 @@ describe("AgentSyncEngine", () => {
     expect(statuses.at(-1)).toEqual(
       expect.objectContaining({
         active: true,
-        phase: "indexing",
+        phase: "publishing",
         agentStatuses: {
-          codex: expect.objectContaining({ status: "indexing" }),
+          codex: expect.objectContaining({ status: "publish-queued" }),
         },
       }),
     );
+
+    startIndex();
+    expect(statuses.at(-1)?.agentStatuses.codex?.status).toBe("publishing");
 
     commitIndex();
     await refresh;
@@ -698,10 +754,13 @@ describe("AgentSyncEngine", () => {
   it("keeps worker checkpoints private until the durable publication commits", async () => {
     core.isAgentCacheInitialized.mockReturnValue(false);
     let commitIndex!: () => void;
-    searchIndex.enqueue.mockReturnValueOnce(
-      new Promise<undefined>((resolve) => {
-        commitIndex = () => resolve(undefined);
-      }),
+    searchIndex.enqueue.mockImplementationOnce(
+      (...args: unknown[]) =>
+        new Promise<undefined>((resolve) => {
+          const onStarted = args[2];
+          if (typeof onStarted === "function") onStarted();
+          commitIndex = () => resolve(undefined);
+        }),
     );
     const head = makeSession("head");
     const tagged: SessionHead = {
@@ -724,14 +783,18 @@ describe("AgentSyncEngine", () => {
     await vi.waitFor(() => expect(searchIndex.enqueue).toHaveBeenCalledOnce());
 
     expect(engine.snapshot().sessions).toEqual([]);
-    expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
-      expect.objectContaining({
-        kind: "full",
-        sessions: [tagged],
-        saveCache: true,
-        publicationId: expect.stringMatching(/^scan\.refresh:codex:/),
-      }),
-    ]);
+    expect(searchIndex.enqueue).toHaveBeenCalledWith(
+      "scan.refresh",
+      [
+        expect.objectContaining({
+          kind: "full",
+          sessions: [tagged],
+          saveCache: true,
+          publicationId: expect.stringMatching(/^scan\.refresh:codex:/),
+        }),
+      ],
+      expect.any(Function),
+    );
 
     commitIndex();
     await refresh;
@@ -776,9 +839,11 @@ describe("AgentSyncEngine", () => {
       payload_sessions: 1,
       delete_candidates: 0,
     });
-    expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
-      expect.objectContaining({ kind: "full", completeness: "partial" }),
-    ]);
+    expect(searchIndex.enqueue).toHaveBeenCalledWith(
+      "scan.refresh",
+      [expect.objectContaining({ kind: "full", completeness: "partial" })],
+      expect.any(Function),
+    );
   });
 
   it("restores durable metadata and retries the same publication after a commit failure", async () => {
@@ -920,18 +985,22 @@ describe("AgentSyncEngine", () => {
         operation: { kind: "full-scan" },
       }),
     );
-    expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
-      expect.objectContaining({
-        kind: "changes",
-        agentName: "codex",
-        changes: [
-          expect.objectContaining({
-            session: expect.objectContaining({ id: "changed", title: "after" }),
-          }),
-        ],
-        removedSessionIds: [],
-      }),
-    ]);
+    expect(searchIndex.enqueue).toHaveBeenCalledWith(
+      "scan.refresh",
+      [
+        expect.objectContaining({
+          kind: "changes",
+          agentName: "codex",
+          changes: [
+            expect.objectContaining({
+              session: expect.objectContaining({ id: "changed", title: "after" }),
+            }),
+          ],
+          removedSessionIds: [],
+        }),
+      ],
+      expect.any(Function),
+    );
   });
 
   it("keeps out-of-window cache rows during a bounded database refresh", async () => {
@@ -971,12 +1040,16 @@ describe("AgentSyncEngine", () => {
     expect(engine.snapshot().sessions).toEqual([
       expect.objectContaining({ id: "recent", title: "after" }),
     ]);
-    expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
-      expect.objectContaining({
-        kind: "changes",
-        removedSessionIds: [],
-      }),
-    ]);
+    expect(searchIndex.enqueue).toHaveBeenCalledWith(
+      "scan.refresh",
+      [
+        expect.objectContaining({
+          kind: "changes",
+          removedSessionIds: [],
+        }),
+      ],
+      expect.any(Function),
+    );
   });
 
   it("persists meta-only changes reported by a full rescan", async () => {
@@ -1009,14 +1082,20 @@ describe("AgentSyncEngine", () => {
 
     await engine.refresh("codex");
 
-    expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
-      expect.objectContaining({
-        kind: "changes",
-        agentName: "codex",
-        changes: [expect.objectContaining({ session: expect.objectContaining({ id: "steady" }) })],
-        meta: repairedMeta,
-      }),
-    ]);
+    expect(searchIndex.enqueue).toHaveBeenCalledWith(
+      "scan.refresh",
+      [
+        expect.objectContaining({
+          kind: "changes",
+          agentName: "codex",
+          changes: [
+            expect.objectContaining({ session: expect.objectContaining({ id: "steady" }) }),
+          ],
+          meta: repairedMeta,
+        }),
+      ],
+      expect.any(Function),
+    );
   });
 
   it("commits successful source updates while reporting retained parse failures", async () => {
@@ -1065,17 +1144,21 @@ describe("AgentSyncEngine", () => {
       expect.objectContaining({ id: updated.id, title: updated.title }),
       expect.objectContaining({ id: retained.id, title: retained.title }),
     ]);
-    expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.refresh", [
-      expect.objectContaining({
-        kind: "changes",
-        changes: [
-          expect.objectContaining({
-            session: expect.objectContaining({ id: updated.id, title: updated.title }),
-          }),
-        ],
-        removedSessionIds: [],
-      }),
-    ]);
+    expect(searchIndex.enqueue).toHaveBeenCalledWith(
+      "scan.refresh",
+      [
+        expect.objectContaining({
+          kind: "changes",
+          changes: [
+            expect.objectContaining({
+              session: expect.objectContaining({ id: updated.id, title: updated.title }),
+            }),
+          ],
+          removedSessionIds: [],
+        }),
+      ],
+      expect.any(Function),
+    );
     expect(engine.status().agentStatuses.codex).toEqual(
       expect.objectContaining({
         status: "failed",

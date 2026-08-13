@@ -25,6 +25,11 @@ function scanStatusMilestone(status: ScanStatusEvent): string {
     status.backfill.completedAgents,
     status.backfill.failedAgents,
     status.backfill.progress?.phase ?? null,
+    status.searchIndexMaintenance?.active ?? false,
+    status.searchIndexMaintenance?.currentAgent ?? null,
+    status.searchIndexMaintenance?.pendingAgents ?? [],
+    status.searchIndexMaintenance?.completedAgents ?? [],
+    status.searchIndexMaintenance?.failedAgents ?? [],
   ]);
 }
 

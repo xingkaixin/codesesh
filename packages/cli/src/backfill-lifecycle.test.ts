@@ -23,9 +23,9 @@ describe("BackfillLifecycle", () => {
       const attempt = lifecycle.startNext()!;
       expect(lifecycle.status()).toMatchObject({ currentAgent: "codex", pendingAgents: [] });
       expect(lifecycle.updateProgress(attempt, { phase: "scanning", processed: 2 })).toBe(true);
-      expect(lifecycle.updateProgress(attempt, { phase: "indexing", sessions: 3 })).toBe(true);
+      expect(lifecycle.updateProgress(attempt, { phase: "publishing", sessions: 3 })).toBe(true);
       expect(lifecycle.status().progress).toEqual({
-        phase: "indexing",
+        phase: "publishing",
         processed: 2,
         sessions: 3,
       });
@@ -66,7 +66,7 @@ describe("BackfillLifecycle", () => {
     lifecycle.enqueue("codex");
     const retry = lifecycle.startNext()!;
 
-    expect(lifecycle.updateProgress(first, { phase: "indexing" })).toBe(false);
+    expect(lifecycle.updateProgress(first, { phase: "publishing" })).toBe(false);
     expect(lifecycle.complete(first, "committed")).toBe(false);
     expect(lifecycle.stateFor("codex")).toMatchObject({
       status: "running",

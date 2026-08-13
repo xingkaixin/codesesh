@@ -18,6 +18,8 @@ export interface SearchIndexJobRunnerSnapshot {
   pendingBatches: number;
   pendingJobs: number;
   pendingChanges: number;
+  pendingMaintenanceBatches: number;
+  pendingMaintenanceJobs: number;
 }
 
 export class SearchIndexJobRunner {
@@ -25,14 +27,28 @@ export class SearchIndexJobRunner {
   private activeBatch: SearchIndexJobBatch | null = null;
   private nextBatchId = 1;
   private pendingJobs = new PendingSearchIndexJobs();
+  private pendingMaintenanceJobs = new PendingSearchIndexJobs();
   private isShuttingDown = false;
 
-  enqueue(context: string, jobs: SearchIndexWorkerJob[]): Promise<void> {
+  enqueue(context: string, jobs: SearchIndexWorkerJob[], onStarted?: () => void): Promise<void> {
+    return this.enqueueIn(this.pendingJobs, context, jobs, onStarted);
+  }
+
+  enqueueMaintenance(context: string, jobs: SearchIndexWorkerJob[]): Promise<void> {
+    return this.enqueueIn(this.pendingMaintenanceJobs, context, jobs);
+  }
+
+  private enqueueIn(
+    queue: PendingSearchIndexJobs,
+    context: string,
+    jobs: SearchIndexWorkerJob[],
+    onStarted?: () => void,
+  ): Promise<void> {
     if (jobs.length === 0) return Promise.resolve();
     if (this.isShuttingDown) return Promise.reject(new Error(SHUTDOWN_ERROR_MESSAGE));
 
     const batchId = this.nextBatchId++;
-    const completion = this.pendingJobs.enqueue(batchId, context, jobs);
+    const completion = queue.enqueue(batchId, context, jobs, onStarted);
     if (this.activeBatch) {
       const snapshot = this.snapshot();
       appLogger.debug("search_index.worker_queued", {
@@ -55,6 +71,8 @@ export class SearchIndexJobRunner {
       pendingBatches: this.pendingJobs.batchCount,
       pendingJobs: this.pendingJobs.jobCount,
       pendingChanges: this.pendingJobs.changeCount,
+      pendingMaintenanceBatches: this.pendingMaintenanceJobs.batchCount,
+      pendingMaintenanceJobs: this.pendingMaintenanceJobs.jobCount,
     };
   }
 
@@ -68,18 +86,26 @@ export class SearchIndexJobRunner {
     const shutdownError = new Error(SHUTDOWN_ERROR_MESSAGE);
     if (activeBatch) this.settle(activeBatch, shutdownError);
     this.pendingJobs.rejectAll(shutdownError);
+    this.pendingMaintenanceJobs.rejectAll(shutdownError);
     if (worker) await worker.terminate();
   }
 
   private startNextBatch(): void {
     if (this.isShuttingDown || this.activeBatch) return;
-    const batch = this.pendingJobs.take();
+    const batch = this.pendingJobs.take() ?? this.pendingMaintenanceJobs.take();
     if (!batch) return;
 
     appLogger.info("search_index.worker_dequeued", {
       batch_id: batch.id,
       context: batch.context,
       pending_batches: this.pendingJobs.batchCount,
+    });
+    batch.start((error) => {
+      appLogger.error("search_index.worker_start_listener_failed", {
+        batch_id: batch.id,
+        context: batch.context,
+        error: toError(error),
+      });
     });
     this.startBatch(batch);
   }
@@ -219,7 +245,12 @@ export class SearchIndexJobRunner {
   }
 
   private settle(batch: SearchIndexJobBatch, error?: Error): void {
-    if (!this.pendingJobs.settle(batch, error)) return;
+    if (
+      !this.pendingJobs.settle(batch, error) &&
+      !this.pendingMaintenanceJobs.settle(batch, error)
+    ) {
+      return;
+    }
     appLogger.info("search_index.worker_settled", {
       batch_id: batch.id,
       context: batch.context,

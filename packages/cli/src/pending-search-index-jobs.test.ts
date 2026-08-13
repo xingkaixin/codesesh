@@ -27,6 +27,7 @@ function changesJob(
   agentName: string,
   changes: Array<{ id: string; version: number }>,
   removedSessionIds: string[] = [],
+  publicationId?: string,
 ): SearchIndexWorkerJob {
   return {
     kind: "changes",
@@ -38,6 +39,7 @@ function changesJob(
     })),
     removedSessionIds,
     meta: Object.fromEntries(changes.map(({ id, version }) => [id, makeMeta(id, version)])),
+    ...(publicationId ? { publicationId } : {}),
   };
 }
 
@@ -58,18 +60,26 @@ function fullJob(agentName: string, version: number): SearchIndexWorkerJob {
 describe("PendingSearchIndexJobs", () => {
   it("keeps the latest change and settles every merged caller", async () => {
     const pending = new PendingSearchIndexJobs();
-    const first = pending.enqueue(1, "first", [
-      changesJob("codex", [{ id: "active", version: 1 }]),
-    ]);
-    const second = pending.enqueue(2, "second", [
-      changesJob("codex", [{ id: "active", version: 2 }]),
-    ]);
+    const started: string[] = [];
+    const first = pending.enqueue(
+      1,
+      "first",
+      [changesJob("codex", [{ id: "active", version: 1 }], [], "publication-1")],
+      () => started.push("first"),
+    );
+    const second = pending.enqueue(
+      2,
+      "second",
+      [changesJob("codex", [{ id: "active", version: 2 }], [], "publication-2")],
+      () => started.push("second"),
+    );
 
     const batch = pending.take()!;
     expect(batch.context).toBe("second");
     expect(batch.jobs).toEqual([
       expect.objectContaining({
         kind: "changes",
+        publicationId: "publication-2",
         changes: [
           expect.objectContaining({
             session: expect.objectContaining({ title: "version 2" }),
@@ -78,6 +88,10 @@ describe("PendingSearchIndexJobs", () => {
         meta: { active: makeMeta("active", 2) },
       }),
     ]);
+    expect(started).toEqual([]);
+    batch.start(() => undefined);
+    batch.start(() => undefined);
+    expect(started).toEqual(["first", "second"]);
 
     expect(pending.settle(batch)).toBe(true);
     await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);

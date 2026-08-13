@@ -1,7 +1,13 @@
 import type { AgentScanProgress } from "@codesesh/core";
-import type { BackfillStatus, ScanStatusEvent } from "@codesesh/core/contract";
+import type {
+  BackfillStatus,
+  ScanStatusEvent,
+  SearchIndexMaintenanceStatus,
+} from "@codesesh/core/contract";
 
-type ScanStatus = Omit<ScanStatusEvent, "type">;
+type ScanStatus = Omit<ScanStatusEvent, "type" | "searchIndexMaintenance"> & {
+  searchIndexMaintenance: SearchIndexMaintenanceStatus;
+};
 
 export class ScanStatusModel {
   private status: ScanStatus = {
@@ -14,6 +20,12 @@ export class ScanStatusModel {
     totalAgents: 0,
     updatedAt: Date.now(),
     backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
+    searchIndexMaintenance: {
+      active: false,
+      pendingAgents: [],
+      completedAgents: [],
+      failedAgents: [],
+    },
   };
 
   snapshot(): ScanStatusEvent {
@@ -41,6 +53,12 @@ export class ScanStatusModel {
         ]),
       ),
       backfill,
+      searchIndexMaintenance: {
+        ...this.status.searchIndexMaintenance,
+        pendingAgents: [...this.status.searchIndexMaintenance.pendingAgents],
+        completedAgents: [...this.status.searchIndexMaintenance.completedAgents],
+        failedAgents: [...this.status.searchIndexMaintenance.failedAgents],
+      },
     };
   }
 
@@ -123,7 +141,8 @@ export class ScanStatusModel {
       !status ||
       status.status === "pending" ||
       status.status === "complete" ||
-      (status.status === "indexing" && progress.phase !== "finalizing")
+      ((status.status === "publish-queued" || status.status === "publishing") &&
+        progress.phase !== "finalizing")
     ) {
       return null;
     }
@@ -149,7 +168,7 @@ export class ScanStatusModel {
     });
   }
 
-  indexAgent(agentName: string): ScanStatusEvent | null {
+  queueAgentPublication(agentName: string): ScanStatusEvent | null {
     const status = this.status.agentStatuses[agentName];
     if (
       !this.status.active ||
@@ -162,7 +181,32 @@ export class ScanStatusModel {
     const now = Date.now();
     const agentStatuses = {
       ...this.status.agentStatuses,
-      [agentName]: { ...status, status: "indexing" as const, updatedAt: now },
+      [agentName]: { ...status, status: "publish-queued" as const, updatedAt: now },
+    };
+    return this.set({
+      ...this.status,
+      phase: this.activePhase(this.status.pendingAgents, this.status.scanningAgents, agentStatuses),
+      agentStatuses,
+      updatedAt: now,
+    });
+  }
+
+  publishAgent(agentName: string): ScanStatusEvent | null {
+    const status = this.status.agentStatuses[agentName];
+    if (
+      !this.status.active ||
+      !status ||
+      (status.status !== "scanning" &&
+        status.status !== "finalizing" &&
+        status.status !== "publish-queued")
+    ) {
+      return null;
+    }
+
+    const now = Date.now();
+    const agentStatuses = {
+      ...this.status.agentStatuses,
+      [agentName]: { ...status, status: "publishing" as const, updatedAt: now },
     };
     return this.set({
       ...this.status,
@@ -282,6 +326,21 @@ export class ScanStatusModel {
     });
   }
 
+  updateSearchIndexMaintenance(
+    searchIndexMaintenance: SearchIndexMaintenanceStatus,
+  ): ScanStatusEvent {
+    return this.set({
+      ...this.status,
+      searchIndexMaintenance: {
+        ...searchIndexMaintenance,
+        pendingAgents: [...searchIndexMaintenance.pendingAgents],
+        completedAgents: [...searchIndexMaintenance.completedAgents],
+        failedAgents: [...searchIndexMaintenance.failedAgents],
+      },
+      updatedAt: Date.now(),
+    });
+  }
+
   private activePhase(
     pendingAgents: string[],
     scanningAgents: string[],
@@ -292,10 +351,10 @@ export class ScanStatusModel {
       scanningAgents.length > 0 &&
       scanningAgents.every((agentName) => {
         const status = agentStatuses[agentName]?.status;
-        return status === "finalizing" || status === "indexing";
+        return status === "finalizing" || status === "publish-queued" || status === "publishing";
       })
     ) {
-      return "indexing";
+      return "publishing";
     }
     return this.status.phase === "initializing" ? "initializing" : "scanning";
   }

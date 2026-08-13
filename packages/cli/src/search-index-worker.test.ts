@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   markAgentCacheInitialized: vi.fn(),
   synchronizePricingGeneration: vi.fn(),
   syncSessionSearchIndex: vi.fn(),
+  syncSessionSearchIndexChanges: vi.fn(),
   appLoggerInfo: vi.fn(),
   appLoggerWarn: vi.fn(),
   appLoggerError: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock("@codesesh/core", () => ({
   sessionDetailVersion: (meta: { id?: string }) => `detail:${meta.id ?? "none"}`,
   synchronizePricingGeneration: mocks.synchronizePricingGeneration,
   syncSessionSearchIndex: mocks.syncSessionSearchIndex,
+  syncSessionSearchIndexChanges: mocks.syncSessionSearchIndexChanges,
   // diagnostics-bridge.js (imported by the worker for its side effect) needs this export.
   setCoreDiagnostics: vi.fn(),
 }));
@@ -360,6 +362,44 @@ describe("search index worker", () => {
     );
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({ type: "done", sessions: 1 }),
+    );
+  });
+
+  it("updates maintenance rows without rewriting the session cache", async () => {
+    const agent = makeAgent();
+    const changes = [{ session: { id: "legacy" }, sortIndex: 0 }];
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    mocks.syncSessionSearchIndexChanges.mockReturnValue({ indexed: 1, skipped: 0 });
+    mocks.workerData = {
+      context: "search.maintenance",
+      jobs: [
+        {
+          kind: "maintenance",
+          context: "search.maintenance",
+          agentName: "codex",
+          changes,
+          removedSessionIds: [],
+          meta: { legacy: { id: "legacy" } },
+          searchIndexOptions: { isBulk: false },
+        },
+      ],
+    };
+
+    await runWorker();
+
+    expect(mocks.syncSessionSearchIndexChanges).toHaveBeenCalledWith(
+      "codex",
+      changes,
+      [],
+      expect.any(Function),
+      {
+        isBulk: false,
+        detailVersions: { legacy: "detail:legacy" },
+      },
+    );
+    expect(mocks.commitDurableSessionPublication).not.toHaveBeenCalled();
+    expect(mocks.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: "done", context: "search.maintenance", sessions: 1 }),
     );
   });
 

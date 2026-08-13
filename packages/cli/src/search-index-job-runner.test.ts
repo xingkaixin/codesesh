@@ -68,6 +68,17 @@ function makeJob(): SearchIndexWorkerJob {
   };
 }
 
+function makeMaintenanceJob(agentName = "codex"): SearchIndexWorkerJob {
+  return {
+    kind: "maintenance",
+    context: "search.maintenance",
+    agentName,
+    changes: [],
+    removedSessionIds: [],
+    meta: {},
+  };
+}
+
 function startedWorker() {
   const worker = workerMocks.workers.at(-1);
   if (!worker) throw new Error("no search index worker was started");
@@ -139,18 +150,46 @@ describe("SearchIndexJobRunner", () => {
 
   it("dispatches a queued batch after the active batch completes", async () => {
     const runner = new SearchIndexJobRunner();
-    const first = runner.enqueue("first-refresh", [makeJob()]);
+    const started: string[] = [];
+    const first = runner.enqueue("first-refresh", [makeJob()], () => started.push("first"));
     const worker = startedWorker();
-    const second = runner.enqueue("second-refresh", [makeJob()]);
+    const second = runner.enqueue("second-refresh", [makeJob()], () => started.push("second"));
+
+    expect(started).toEqual(["first"]);
 
     worker.post({ type: "done", context: "first-refresh", durationMs: 1, sessions: 1 });
     await first;
 
+    expect(started).toEqual(["first", "second"]);
     expect(worker.postedMessages).toEqual([
       expect.objectContaining({ context: "second-refresh", pricingGenerationId: 17 }),
     ]);
     worker.post({ type: "done", context: "second-refresh", durationMs: 1, sessions: 1 });
     await second;
+  });
+
+  it("runs foreground publications before the next maintenance batch", async () => {
+    const runner = new SearchIndexJobRunner();
+    const firstMaintenance = runner.enqueueMaintenance("maintenance-one", [makeMaintenanceJob()]);
+    const worker = startedWorker();
+    const secondMaintenance = runner.enqueueMaintenance("maintenance-two", [
+      makeMaintenanceJob("claudecode"),
+    ]);
+    const foreground = runner.enqueue("scan.backfill", [makeJob()]);
+
+    worker.post({ type: "done", context: "maintenance-one", durationMs: 1, sessions: 1 });
+    await firstMaintenance;
+    expect(worker.postedMessages).toEqual([expect.objectContaining({ context: "scan.backfill" })]);
+
+    worker.post({ type: "done", context: "scan.backfill", durationMs: 1, sessions: 1 });
+    await foreground;
+    expect(worker.postedMessages).toEqual([
+      expect.objectContaining({ context: "scan.backfill" }),
+      expect.objectContaining({ context: "maintenance-two" }),
+    ]);
+
+    worker.post({ type: "done", context: "maintenance-two", durationMs: 1, sessions: 1 });
+    await secondMaintenance;
   });
 
   it("CS-137: rejects the batch when the worker reports a persistence failure", async () => {

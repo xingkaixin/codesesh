@@ -16,7 +16,7 @@ import {
   writeFileActivityRows,
   type StructuredMessageRecord,
 } from "./messages.js";
-import { runSearchIndexWrite, withSearchIndexDb } from "./schema.js";
+import { runSearchIndexWrite, withCacheDbReadOnly, withSearchIndexDb } from "./schema.js";
 import { sessionDetailVersion } from "./detail-version.js";
 import type { SessionSnapshotCompleteness } from "./sessions.js";
 import {
@@ -29,6 +29,7 @@ import {
 export interface SearchIndexSyncOptions {
   isBulk?: boolean;
   bulkThreshold?: number;
+  includePendingReindex?: boolean;
   detailVersions?: Readonly<Record<string, string>>;
   completeness?: SessionSnapshotCompleteness;
   removedSessionIds?: readonly string[];
@@ -54,8 +55,14 @@ export interface SearchIndexSyncResult {
   rebuildDurationMs?: number;
 }
 
+export interface PendingSearchIndexMaintenance {
+  sessionIds: string[];
+  total: number;
+}
+
 interface SearchIndexState {
   contentHashBySessionId: Map<string, string>;
+  publishedContentHashBySessionId: Map<string, string>;
   indexedMessageCountBySessionId: Map<string, number>;
   messageCountBySessionId: Map<string, number>;
   detailVersionBySessionId: Map<string, string>;
@@ -71,6 +78,22 @@ interface IndexedSearchRow {
   meta_json?: string | null;
 }
 
+interface PublishedSessionRow {
+  session_slug?: string | null;
+  session_title?: string | null;
+  session_directory?: string | null;
+  session_time_created?: number | null;
+  session_time_updated?: number | null;
+  session_message_count?: number | null;
+  session_total_input_tokens?: number | null;
+  session_total_output_tokens?: number | null;
+  session_total_cache_read_tokens?: number | null;
+  session_total_cache_create_tokens?: number | null;
+  session_total_cost?: number | null;
+  session_cost_source?: string | null;
+  session_total_tokens?: number | null;
+}
+
 interface MessageCountRow {
   session_id?: string;
   value?: number;
@@ -83,7 +106,7 @@ function readPendingReindexIds(db: SQLiteDatabase, agentName: string): Set<strin
   return new Set(rows.map((row) => String(row.session_id)));
 }
 
-type SearchIndexStateRow = IndexedSearchRow & MessageCountRow;
+type SearchIndexStateRow = IndexedSearchRow & MessageCountRow & PublishedSessionRow;
 
 const SEARCH_INDEX_STATE_BATCH_SIZE = 900;
 const SEARCH_INDEX_COMMIT_CHUNK_SIZE = 64;
@@ -176,6 +199,25 @@ function sessionContentHash(session: SessionHead): string {
   ]);
 }
 
+function publishedSessionContentHash(row: PublishedSessionRow): string | null {
+  if (row.session_slug == null) return null;
+  return JSON.stringify([
+    row.session_slug,
+    row.session_title ?? "",
+    row.session_directory ?? "",
+    Number(row.session_time_created ?? 0),
+    Number(row.session_time_updated ?? row.session_time_created ?? 0),
+    Number(row.session_message_count ?? 0),
+    Number(row.session_total_input_tokens ?? 0),
+    Number(row.session_total_output_tokens ?? 0),
+    Number(row.session_total_cache_read_tokens ?? 0),
+    Number(row.session_total_cache_create_tokens ?? 0),
+    Number(row.session_total_cost ?? 0),
+    row.session_cost_source ?? "",
+    Number(row.session_total_tokens ?? 0),
+  ]);
+}
+
 function detailVersionFromMetaJson(value: string | null | undefined): string {
   if (!value) return sessionDetailVersion(null);
   try {
@@ -186,13 +228,19 @@ function detailVersionFromMetaJson(value: string | null | undefined): string {
 }
 
 function searchIndexStateFromRows(
-  indexedRows: IndexedSearchRow[],
+  indexedRows: SearchIndexStateRow[],
   messageCountRows: MessageCountRow[],
   pendingReindexSessionIds: Set<string> = new Set(),
 ): SearchIndexState {
   return {
     contentHashBySessionId: new Map(
       indexedRows.map((row) => [String(row.session_id), String(row.content_hash ?? "")]),
+    ),
+    publishedContentHashBySessionId: new Map(
+      indexedRows.flatMap((row) => {
+        const contentHash = publishedSessionContentHash(row);
+        return contentHash == null ? [] : [[String(row.session_id), contentHash]];
+      }),
     ),
     indexedMessageCountBySessionId: new Map(
       indexedRows.map((row) => [String(row.session_id), Number(row.indexed_message_count ?? 0)]),
@@ -231,6 +279,19 @@ function readSearchIndexState(
             documents.indexed_message_count,
             documents.detail_version,
             sessions.meta_json,
+            sessions.slug AS session_slug,
+            sessions.title AS session_title,
+            sessions.directory AS session_directory,
+            sessions.time_created AS session_time_created,
+            sessions.time_updated AS session_time_updated,
+            sessions.message_count AS session_message_count,
+            sessions.total_input_tokens AS session_total_input_tokens,
+            sessions.total_output_tokens AS session_total_output_tokens,
+            sessions.total_cache_read_tokens AS session_total_cache_read_tokens,
+            sessions.total_cache_create_tokens AS session_total_cache_create_tokens,
+            sessions.total_cost AS session_total_cost,
+            sessions.cost_source AS session_cost_source,
+            sessions.total_tokens AS session_total_tokens,
             COUNT(messages.message_index) AS value
           FROM requested_session_ids AS requested
           LEFT JOIN session_documents AS documents
@@ -244,7 +305,20 @@ function readSearchIndexState(
             documents.content_hash,
             documents.indexed_message_count,
             documents.detail_version,
-            sessions.meta_json
+            sessions.meta_json,
+            sessions.slug,
+            sessions.title,
+            sessions.directory,
+            sessions.time_created,
+            sessions.time_updated,
+            sessions.message_count,
+            sessions.total_input_tokens,
+            sessions.total_output_tokens,
+            sessions.total_cache_read_tokens,
+            sessions.total_cache_create_tokens,
+            sessions.total_cost,
+            sessions.cost_source,
+            sessions.total_tokens
         `,
       )
       .all(...batch, agentName, agentName, agentName) as SearchIndexStateRow[];
@@ -272,14 +346,63 @@ function searchIndexEntryNeedsUpdate(
   options: SearchIndexSyncOptions,
 ): boolean {
   const sessionId = session.id;
+  const pendingMaintenance = state.pendingReindexSessionIds.has(sessionId);
+  const targetVersion = targetDetailVersion(state, sessionId, options);
+  if (pendingMaintenance && options.includePendingReindex === false) {
+    return (
+      state.publishedContentHashBySessionId.get(sessionId) !== sessionContentHash(session) ||
+      state.targetDetailVersionBySessionId.get(sessionId) !== targetVersion
+    );
+  }
   return (
-    state.pendingReindexSessionIds.has(sessionId) ||
-    state.detailVersionBySessionId.get(sessionId) !==
-      targetDetailVersion(state, sessionId, options) ||
+    pendingMaintenance ||
+    state.detailVersionBySessionId.get(sessionId) !== targetVersion ||
     state.contentHashBySessionId.get(sessionId) !== sessionContentHash(session) ||
     state.indexedMessageCountBySessionId.get(sessionId) !==
       (state.messageCountBySessionId.get(sessionId) ?? 0)
   );
+}
+
+export function readPendingSearchIndexMaintenance(
+  agentName: string,
+  limit: number,
+): PendingSearchIndexMaintenance | null {
+  const boundedLimit = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0;
+  const outcome = withCacheDbReadOnly((db) => {
+    const totalRow = db
+      .prepare(
+        `
+          SELECT COUNT(*) AS value
+          FROM pending_reindex AS pending
+          INNER JOIN sessions
+            ON sessions.agent_name = pending.agent_name
+            AND sessions.session_id = pending.session_id
+          WHERE pending.agent_name = ?
+            AND sessions.publication_id IS NULL
+        `,
+      )
+      .get(agentName) as { value?: number } | undefined;
+    const rows = db
+      .prepare(
+        `
+          SELECT pending.session_id
+          FROM pending_reindex AS pending
+          INNER JOIN sessions
+            ON sessions.agent_name = pending.agent_name
+            AND sessions.session_id = pending.session_id
+          WHERE pending.agent_name = ?
+            AND sessions.publication_id IS NULL
+          ORDER BY sessions.sort_index, pending.session_id
+          LIMIT ?
+        `,
+      )
+      .all(agentName, boundedLimit) as Array<{ session_id?: string }>;
+    return {
+      sessionIds: rows.map((row) => String(row.session_id)),
+      total: Number(totalRow?.value ?? 0),
+    };
+  });
+  return outcome.status === "success" ? outcome.value : null;
 }
 
 function loadSearchIndexEntry(
@@ -663,6 +786,14 @@ function prepareSearchIndexPublication(
   loadSessionData: (sessionId: string) => SessionDetail,
   publicationId?: string,
 ): PreparedSearchIndexPublication {
+  getCoreDiagnostics()?.info?.("search_index.publication_plan", {
+    agent: plan.agentName,
+    sessions: plan.sessionCount,
+    changed: plan.changes.length,
+    removed: plan.removedSessionIds.length,
+    mode: plan.mode,
+    planning_ms: Math.round(performance.now() - plan.startedAt),
+  });
   const failures: SearchIndexSyncFailure[] = [];
   const { entries, preStaged } = loadOrPreStageEntries(
     db,
