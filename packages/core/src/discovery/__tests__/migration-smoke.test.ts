@@ -236,6 +236,9 @@ function readMigratedFacts(): Record<string, unknown> {
       searchDocuments: scalar("SELECT COUNT(*) AS value FROM session_documents"),
       projects: scalar("SELECT COUNT(*) AS value FROM project_sessions"),
       pendingReindex: scalar("SELECT COUNT(*) AS value FROM pending_reindex"),
+      legacyMessageSearchObjects: scalar(
+        "SELECT COUNT(*) AS value FROM sqlite_master WHERE name IN ('messages_fts', 'messages_ai', 'messages_ad', 'messages_au')",
+      ),
       sessionActivityIndexes: (
         db
           .prepare(
@@ -355,6 +358,7 @@ describe("sqlite migration release gate", () => {
         searchDocuments: 1,
         projects: 1,
         pendingReindex: 1,
+        legacyMessageSearchObjects: 0,
         sessionActivityIndexes: ["idx_sessions_agent_activity_order"],
         documentColumns: [
           "agent_name",

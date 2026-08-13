@@ -6,7 +6,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 
 - 路径：`~/.cache/codesesh/codesesh.db`
 <!-- repo-fact:cache-schema-version:start -->
-- 当前 schema：`CACHE_SCHEMA_VERSION = 23`
+- 当前 schema：`CACHE_SCHEMA_VERSION = 24`
 <!-- repo-fact:cache-schema-version:end -->
 - 稳定导出入口：`packages/core/src/discovery/index.ts`
 - 实现目录：`packages/core/src/discovery/cache/`
@@ -31,7 +31,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 
 ## Schema 清单
 
-当前 schema 创建 15 张表（其中 3 张是 FTS5 虚表）和 1 个视图。
+当前 schema 创建 14 张表（其中 2 张是 FTS5 虚表）和 1 个视图。
 
 ### 生命周期与同步状态
 
@@ -57,15 +57,19 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 
 | 表 | 类型 | 用途 |
 |----|------|------|
-| `messages_fts` | FTS5 虚表 | 消息级全文匹配 |
 | `session_file_activity_path_fts` | trigram FTS5 虚表 | 文件路径匹配 |
 | `session_documents` | 普通表 | 会话标题、聚合文本、内容签名与已索引消息数 |
 | `session_documents_fts` | FTS5 虚表 | 会话级标题和聚合文本搜索 |
 | `search_index_publication_entries` | 普通表 | 大批量发布提交前暂存序列化详情；提交或回滚后清空 |
 
-三个 FTS 表都由对应内容表的 insert/update/delete 触发器维护。批量变化达到阈值时，
-`runSearchIndexWrite()` 会在写事务中重建会话文档和消息索引；文件路径索引仍由触发器
-增量维护。
+两个 FTS 表都由对应内容表的 insert/update/delete 触发器维护。批量变化达到阈值时，
+`runSearchIndexWrite()` 会在写事务中重建会话文档索引；文件路径索引仍由触发器增量维护。
+搜索先由会话文档索引召回和排序，再在候选会话的消息纯文本中定位首条命中消息，不再
+为同一批内容维护第二套消息级倒排索引。
+
+Schema 24 删除旧消息索引后，SQLite 会把对应页计入 freelist，后续写入可以直接复用；
+数据库文件的字节大小不会因此立即下降。物理压缩需要重写整个数据库，因此不在启动迁移
+中自动执行，避免把一次性磁盘回收变成阻塞式维护。
 
 ### 项目聚合
 

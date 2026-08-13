@@ -1076,7 +1076,7 @@ describe("searchSessions", () => {
     expect(highlightedText(punctuatedResults[0])).toContain("ÉCOLE-needle");
   });
 
-  it("bounds a single message FTS lookup to one row per candidate", () => {
+  it("bounds message enrichment to one row per candidate", () => {
     const sessions = Array.from({ length: 3 }, (_, sessionIndex) => ({
       ...makeSession(`bulk-match-${sessionIndex}`),
       stats: { ...makeSession(`bulk-match-${sessionIndex}`).stats, message_count: 30 },
@@ -1125,9 +1125,13 @@ describe("searchSessions", () => {
     }
 
     const normalizedSql = preparedSql.map((sql) => sql.replace(/\s+/g, " ").trim());
-    const messageLookupSql = normalizedSql.filter((sql) => sql.includes("JOIN messages_fts"));
+    const messageLookupSql = normalizedSql.filter((sql) =>
+      sql.includes("first_message_matches AS MATERIALIZED"),
+    );
     expect(messageLookupSql).toHaveLength(1);
     expect(messageLookupSql[0]).toContain("INDEXED BY idx_messages_session");
+    expect(messageLookupSql[0]).toContain("codesesh_message_matches_terms(m.content_text)");
+    expect(messageLookupSql[0]).not.toContain("messages_fts");
     expect(messageLookupSql[0]).toContain("ORDER BY m.message_index LIMIT 1");
     expect(returnedMessageRows).toBe(sessions.length);
     expect(
@@ -1288,7 +1292,7 @@ describe("searchSessions", () => {
     } finally {
       migratedDb.close();
     }
-    expect(getUserVersion(getCachePath())).toBe(23);
+    expect(getUserVersion(getCachePath())).toBe(24);
   });
 
   it("keeps small incremental updates searchable immediately", () => {
@@ -2078,7 +2082,7 @@ describe("searchSessions", () => {
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(23);
+    expect(getUserVersion(getCachePath())).toBe(24);
   });
 
   it("refreshes cached project identities when migrating to schema version 12", () => {
@@ -2425,7 +2429,7 @@ describe("searchSessions", () => {
     expect(highlightedText(results[0])).toContain("orphan");
   });
 
-  it("rebuilds affected FTS indexes when update triggers are missing", () => {
+  it("rebuilds the session FTS index when update triggers are missing", () => {
     const session = makeSession("missing-fts-triggers");
     saveCachedSessions("claudecode", [session]);
     syncSessionSearchIndex("claudecode", [session], (sessionId) =>
@@ -2434,34 +2438,25 @@ describe("searchSessions", () => {
 
     const db = new Database(getCachePath());
     try {
-      db.exec(`
-        DROP TRIGGER session_documents_au;
-        DROP TRIGGER messages_au;
-      `);
+      db.exec("DROP TRIGGER session_documents_au");
       db.prepare(
         "UPDATE session_documents SET content_text = ? WHERE agent_name = ? AND session_id = ?",
       ).run("documentrepairneedle", "claudecode", session.id);
-      db.prepare(
-        "UPDATE messages SET content_text = ? WHERE agent_name = ? AND session_id = ?",
-      ).run("messagerepairneedle", "claudecode", session.id);
     } finally {
       db.close();
     }
     setSchemaEnsuredPath(null);
 
-    const matches = withSearchDb((searchDb) => ({
-      documents: searchDb
-        .prepare(
-          "SELECT COUNT(*) AS value FROM session_documents_fts WHERE session_documents_fts MATCH ?",
-        )
-        .get("documentrepairneedle") as { value: number },
-      messages: searchDb
-        .prepare("SELECT COUNT(*) AS value FROM messages_fts WHERE messages_fts MATCH ?")
-        .get("messagerepairneedle") as { value: number },
-    }));
+    const match = withSearchDb(
+      (searchDb) =>
+        searchDb
+          .prepare(
+            "SELECT COUNT(*) AS value FROM session_documents_fts WHERE session_documents_fts MATCH ?",
+          )
+          .get("documentrepairneedle") as { value: number },
+    );
 
-    expect(matches?.documents.value).toBe(1);
-    expect(matches?.messages.value).toBe(1);
+    expect(match?.value).toBe(1);
   });
 
   it("recreates and rebuilds a missing FTS table", () => {

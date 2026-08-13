@@ -78,6 +78,7 @@ describe("cache schema boundary", () => {
     ]) {
       expect(state?.names.has(name)).toBe(true);
     }
+    expect(state?.names.has("messages_fts")).toBe(false);
     expect(state?.documentColumns).toEqual([
       "id",
       "agent_name",
@@ -98,7 +99,48 @@ describe("cache schema boundary", () => {
         "publication_id",
       ]),
     );
-    expect(state?.version).toBe(23);
+    expect(state?.version).toBe(24);
+  });
+
+  it("removes the legacy message FTS objects when upgrading schema 23", () => {
+    schema.withCacheDb((db) => {
+      db.exec(`
+        CREATE VIRTUAL TABLE messages_fts USING fts5(
+          content_text,
+          content='messages',
+          content_rowid='rowid'
+        );
+        CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
+          INSERT INTO messages_fts(rowid, content_text) VALUES (new.rowid, new.content_text);
+        END;
+        CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, content_text)
+          VALUES ('delete', old.rowid, old.content_text);
+        END;
+        CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, content_text)
+          VALUES ('delete', old.rowid, old.content_text);
+          INSERT INTO messages_fts(rowid, content_text) VALUES (new.rowid, new.content_text);
+        END;
+        PRAGMA user_version = 23;
+        UPDATE cache_meta SET value = '23' WHERE key = 'version';
+      `);
+    });
+    setSchemaEnsuredPath(null);
+
+    const migrated = schema.withCacheDb((db) => ({
+      objects: db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE name IN ('messages_fts', 'messages_ai', 'messages_ad', 'messages_au')",
+        )
+        .all(),
+      version: Number(
+        (db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined)
+          ?.user_version ?? 0,
+      ),
+    }));
+
+    expect(migrated).toEqual({ objects: [], version: 24 });
   });
 
   it("reuses one connection for read and write capabilities until invalidated", () => {
@@ -267,7 +309,7 @@ describe("cache schema boundary", () => {
           .get("codex", session.id) != null,
     }));
 
-    expect(migrated).toEqual({ version: 23, detailVersion: "", pending: true });
+    expect(migrated).toEqual({ version: 24, detailVersion: "", pending: true });
   });
 
   it("marks legacy project identities stale by leaving added provenance empty", () => {
@@ -306,7 +348,7 @@ describe("cache schema boundary", () => {
     });
 
     expect(migrated).toEqual({
-      version: 23,
+      version: 24,
       resolverRevision: null,
       inputSignature: null,
       classifierRevision: null,
@@ -376,7 +418,7 @@ describe("cache schema boundary", () => {
       });
 
       expect(migrated).toEqual({
-        version: 23,
+        version: 24,
         partsJson: legacyPartsJson,
         partsFormatVersion: 0,
       });

@@ -411,7 +411,6 @@ function searchResultRowKey(row: Pick<SearchResultRow, "agent_name" | "session_i
 function fetchMessageSearchMatches(
   db: SQLiteDatabase,
   rows: SearchResultRow[],
-  ftsQuery: string,
   terms: { terms: string[]; mode: "all" | "any" },
 ): Map<string, SearchSnippet & { matchType: SearchMatchType }> {
   const candidates = rows.filter((row) => !textMatchesTerms(String(row.title ?? ""), terms));
@@ -441,10 +440,8 @@ function fetchMessageSearchMatches(
             (
               SELECT m.rowid
               FROM messages m INDEXED BY idx_messages_session
-              JOIN messages_fts ON messages_fts.rowid = m.rowid
               WHERE m.agent_name = c.agent_name
                 AND m.session_id = c.session_id
-                AND messages_fts MATCH ?
                 AND codesesh_message_matches_terms(m.content_text)
               ORDER BY m.message_index
               LIMIT 1
@@ -463,7 +460,7 @@ function fetchMessageSearchMatches(
         JOIN messages m ON m.rowid = f.message_rowid
       `,
     )
-    .all(...candidateParams, ftsQuery) as MessageSearchRow[];
+    .all(...candidateParams) as MessageSearchRow[];
   const matches = new Map<string, SearchSnippet & { matchType: SearchMatchType }>();
 
   for (const message of messageRows) {
@@ -517,12 +514,11 @@ function rowsToSearchResults(
   db: SQLiteDatabase,
   rows: SearchResultRow[],
   textQuery: string,
-  ftsQuery = toFtsQuery(textQuery),
 ): SearchResult[] {
   const terms = parseTextTerms(textQuery);
   const messageMatches =
-    terms.terms.length > 0 && ftsQuery
-      ? fetchMessageSearchMatches(db, rows, ftsQuery, terms)
+    terms.terms.length > 0
+      ? fetchMessageSearchMatches(db, rows, terms)
       : new Map<string, SearchSnippet & { matchType: SearchMatchType }>();
 
   return rows.map((row) => {
@@ -593,7 +589,7 @@ export function searchSessions(query: string, options: SearchOptions = {}): Sear
       )
       .all(ftsQuery, ...filters.params, search.options.limit ?? 50) as SearchResultRow[];
 
-    return rowsToSearchResults(db, rows, normalizedQuery, ftsQuery);
+    return rowsToSearchResults(db, rows, normalizedQuery);
   });
 
   return results ?? [];

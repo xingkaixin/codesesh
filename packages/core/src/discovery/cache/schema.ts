@@ -170,7 +170,6 @@ export function runSearchIndexWrite<T>(
   const execute = () => {
     if (rebuild) {
       dropSearchTriggers(db);
-      dropMessageSearchTriggers(db);
     }
 
     const value = write();
@@ -179,10 +178,8 @@ export function runSearchIndexWrite<T>(
     if (rebuild) {
       const rebuildStartedAt = performance.now();
       rebuildSearchIndex(db);
-      rebuildMessageSearchIndex(db);
       rebuildDurationMs = performance.now() - rebuildStartedAt;
       createSearchTriggers(db);
-      createMessageSearchTriggers(db);
     }
 
     return { value, rebuildDurationMs };
@@ -324,48 +321,12 @@ function createMessageToolTables(db: SQLiteDatabase): void {
   `);
 }
 
-function createMessageSearchTables(db: SQLiteDatabase): void {
-  if (!tableExists(db, "messages")) {
-    createSessionTables(db);
-  }
-
-  db.exec(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
-      content_text,
-      content='messages',
-      content_rowid='rowid'
-    );
-  `);
-
-  createMessageSearchTriggers(db);
-}
-
-function createMessageSearchTriggers(db: SQLiteDatabase): void {
-  db.exec(`
-    CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
-      INSERT INTO messages_fts(rowid, content_text)
-      VALUES (new.rowid, new.content_text);
-    END;
-
-    CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
-      INSERT INTO messages_fts(messages_fts, rowid, content_text)
-      VALUES ('delete', old.rowid, old.content_text);
-    END;
-
-    CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
-      INSERT INTO messages_fts(messages_fts, rowid, content_text)
-      VALUES ('delete', old.rowid, old.content_text);
-      INSERT INTO messages_fts(rowid, content_text)
-      VALUES (new.rowid, new.content_text);
-    END;
-  `);
-}
-
-function dropMessageSearchTriggers(db: SQLiteDatabase): void {
+function dropLegacyMessageSearchIndex(db: SQLiteDatabase): void {
   db.exec(`
     DROP TRIGGER IF EXISTS messages_ai;
     DROP TRIGGER IF EXISTS messages_ad;
     DROP TRIGGER IF EXISTS messages_au;
+    DROP TABLE IF EXISTS messages_fts;
   `);
 }
 
@@ -1239,17 +1200,6 @@ function rebuildSearchIndex(db: SQLiteDatabase): void {
   db.exec("INSERT INTO session_documents_fts(session_documents_fts) VALUES ('rebuild')");
 }
 
-function rebuildMessageSearchIndex(db: SQLiteDatabase): void {
-  if (!tableExists(db, "messages_fts")) {
-    return;
-  }
-  db.exec("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')");
-}
-
-const SEARCH_FTS_INDEXES = ["session_documents_fts", "messages_fts"] as const;
-
-type SearchFtsIndex = (typeof SEARCH_FTS_INDEXES)[number];
-
 function triggerExists(db: SQLiteDatabase, triggerName: string): boolean {
   return (
     db
@@ -1262,20 +1212,12 @@ function hasAllTriggers(db: SQLiteDatabase, triggerNames: string[]): boolean {
   return triggerNames.every((triggerName) => triggerExists(db, triggerName));
 }
 
-function rebuildSearchFtsIndexes(
-  db: SQLiteDatabase,
-  indexes: SearchFtsIndex[],
-  reason: "corruption" | "schema_missing",
-): void {
-  if (indexes.length === 0) return;
-
+function rebuildSearchFtsIndex(db: SQLiteDatabase, reason: "corruption" | "schema_missing"): void {
+  const indexes = ["session_documents_fts"];
   const startedAt = performance.now();
   getCoreDiagnostics()?.info?.("sqlite.fts_rebuild.started", { indexes, reason });
   try {
-    for (const index of indexes) {
-      if (index === "session_documents_fts") rebuildSearchIndex(db);
-      else rebuildMessageSearchIndex(db);
-    }
+    rebuildSearchIndex(db);
     getCoreDiagnostics()?.info?.("sqlite.fts_rebuild.completed", {
       indexes,
       reason,
@@ -1296,40 +1238,31 @@ function ensureFtsReady(db: SQLiteDatabase): void {
   const needsSearchRebuild =
     !tableExists(db, "session_documents_fts") ||
     !hasAllTriggers(db, ["session_documents_ai", "session_documents_ad", "session_documents_au"]);
-  const needsMessageSearchRebuild =
-    !tableExists(db, "messages_fts") ||
-    !hasAllTriggers(db, ["messages_ai", "messages_ad", "messages_au"]);
 
   createSearchTables(db);
-  createMessageSearchTables(db);
-
-  const indexes: SearchFtsIndex[] = [];
-  if (needsSearchRebuild) indexes.push("session_documents_fts");
-  if (needsMessageSearchRebuild) indexes.push("messages_fts");
-  rebuildSearchFtsIndexes(db, indexes, "schema_missing");
+  if (needsSearchRebuild) rebuildSearchFtsIndex(db, "schema_missing");
 }
 
 function ensureFtsConsistency(db: SQLiteDatabase): void {
   const startedAt = performance.now();
   getCoreDiagnostics()?.info?.("sqlite.fts_integrity.started", {
-    indexes: 2,
+    indexes: 1,
   });
   try {
     db.exec(
       "INSERT INTO session_documents_fts(session_documents_fts, rank) VALUES ('integrity-check', 1)",
     );
-    db.exec("INSERT INTO messages_fts(messages_fts, rank) VALUES ('integrity-check', 1)");
     getCoreDiagnostics()?.info?.("sqlite.fts_integrity.completed", {
-      indexes: 2,
+      indexes: 1,
       duration_ms: Math.round(performance.now() - startedAt),
     });
   } catch (error) {
     getCoreDiagnostics()?.warn("sqlite.fts_integrity.failed", {
-      indexes: 2,
+      indexes: 1,
       duration_ms: Math.round(performance.now() - startedAt),
       message: error instanceof Error ? error.message : String(error),
     });
-    rebuildSearchFtsIndexes(db, [...SEARCH_FTS_INDEXES], "corruption");
+    rebuildSearchFtsIndex(db, "corruption");
   }
 }
 
@@ -1425,13 +1358,6 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       },
       { version: 8, migrate: backfillFileActivity },
       {
-        version: 9,
-        migrate(db) {
-          createMessageSearchTables(db);
-          rebuildMessageSearchIndex(db);
-        },
-      },
-      {
         version: 10,
         migrate(db) {
           createFileActivityPathSearchTables(db);
@@ -1460,6 +1386,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 21, migrate: addSessionPublicationId },
       { version: 22, migrate: addAtomicPublicationStaging },
       { version: 23, migrate: replaceSessionActivityIndex },
+      { version: 24, migrate: dropLegacyMessageSearchIndex },
     ],
   });
 
