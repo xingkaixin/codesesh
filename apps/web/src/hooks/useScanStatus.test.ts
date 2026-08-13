@@ -21,6 +21,12 @@ const sample: ScanStatusEvent = {
   totalAgents: 1,
   updatedAt: 123,
   backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
+  searchIndexMaintenance: {
+    active: false,
+    pendingAgents: [],
+    completedAgents: [],
+    failedAgents: [],
+  },
 };
 
 afterEach(() => {
