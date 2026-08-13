@@ -82,8 +82,10 @@ export interface SearchOptions {
 }
 
 export {
+  readPendingSearchIndexMaintenance,
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
+  type PendingSearchIndexMaintenance,
   type SearchIndexSyncOptions,
   type SearchIndexSyncFailure,
   type SearchIndexSyncResult,

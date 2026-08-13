@@ -10,6 +10,7 @@ import {
 import type {
   AgentScanStatus,
   BackfillStatus,
+  SearchIndexMaintenanceStatus,
   ScanStatusEvent,
   SessionsUpdatedEvent,
 } from "@codesesh/core/contract";
@@ -19,7 +20,13 @@ import { appLogger } from "./logging.js";
 import { SessionWatcher } from "./session-watcher.js";
 import { ThreadWorkerRunner, type WorkerRunner } from "./worker-runner.js";
 
-export type { AgentScanStatus, BackfillStatus, ScanStatusEvent, SessionsUpdatedEvent };
+export type {
+  AgentScanStatus,
+  BackfillStatus,
+  SearchIndexMaintenanceStatus,
+  ScanStatusEvent,
+  SessionsUpdatedEvent,
+};
 
 type StoreListener = (event: SessionsUpdatedEvent) => void;
 type ScanStatusListener = (event: ScanStatusEvent) => void;

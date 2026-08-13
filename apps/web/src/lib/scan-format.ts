@@ -38,14 +38,19 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
         ? ` · ${progress.processed}/${progress.total}`
         : "";
     const stageLabel =
-      progress?.phase === "finalizing" ? "Finalizing session metadata" : "Indexing full history";
-    const resumeLabel = progress ? ". Progress is saved; you can resume later." : "";
+      progress?.phase === "publish-queued"
+        ? "Full-history publication queued"
+        : progress?.phase === "publishing" || progress?.phase === "indexing"
+          ? "Publishing full-history sessions"
+          : progress?.phase === "finalizing"
+            ? "Finalizing full-history metadata"
+            : "Scanning full session history";
     return current
-      ? `${stageLabel} · ${current}${progressLabel}${pending > 0 ? ` · ${pending} queued` : ""}${resumeLabel}`
-      : `${stageLabel}${progressLabel}${resumeLabel}`;
+      ? `${stageLabel} · ${current}${progressLabel}${pending > 0 ? ` · ${pending} history scan queued` : ""}`
+      : `${stageLabel}${progressLabel}`;
   }
   if (status.backfill?.failedAgents.length) {
-    return `History indexing failed · ${status.backfill.failedAgents.join(", ")}`;
+    return `Full-history refresh failed · ${status.backfill.failedAgents.join(", ")}`;
   }
   const failedAgent = Object.values(status.agentStatuses ?? {}).find(
     (agentStatus) => agentStatus.status === "failed",
@@ -53,44 +58,57 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
   if (failedAgent) {
     return `Session refresh failed · ${failedAgent.agentName}${failedAgent.error ? ` · ${failedAgent.error}` : ""}`;
   }
-  if (!status.active) return null;
+  if (status.active) {
+    const completed = status.completedAgents.length;
+    const total = status.totalAgents;
+    const current = status.scanningAgents[0];
+    const currentStatus = current ? status.agentStatuses[current] : null;
+    const itemProgress =
+      currentStatus?.total && currentStatus.processed != null
+        ? ` · ${currentStatus.processed}/${currentStatus.total}`
+        : "";
+    const agentProgress =
+      total > 0
+        ? current
+          ? ` · ${current}${itemProgress} · ${completed}/${total} agents ready`
+          : ` · ${completed}/${total} agents ready`
+        : "";
+    const stageLabel =
+      currentStatus?.status === "publish-queued"
+        ? "Session publication queued"
+        : currentStatus?.status === "finalizing"
+          ? "Finalizing session metadata"
+          : currentStatus?.status === "publishing" ||
+              currentStatus?.status === "indexing" ||
+              status.phase === "publishing" ||
+              status.phase === "indexing"
+            ? "Publishing session updates"
+            : "Checking for new or changed sessions";
 
-  const completed = status.completedAgents.length;
-  const total = status.totalAgents;
-  const current = status.scanningAgents[0];
-  const currentStatus = current ? status.agentStatuses[current] : null;
-  const itemProgress =
-    currentStatus?.total && currentStatus.processed != null
-      ? ` · ${currentStatus.processed}/${currentStatus.total}`
-      : "";
-  const agentProgress =
-    total > 0
-      ? current
-        ? ` · ${current}${itemProgress} · ${completed}/${total} agents ready`
-        : ` · ${completed}/${total} agents ready`
-      : "";
-  const stageLabel =
-    currentStatus?.status === "finalizing"
-      ? "Finalizing session metadata"
-      : currentStatus?.status === "indexing"
-        ? "Preparing local session index"
-        : "Checking for new or changed sessions";
+    if (status.phase === "initializing") {
+      return `Initializing recent sessions${agentProgress}`;
+    }
+    if (status.phase === "publishing" || status.phase === "indexing") {
+      return `${stageLabel}${agentProgress}`;
+    }
 
-  if (status.phase === "initializing") {
-    return `Initializing recent sessions${agentProgress}. Progress is saved; you can resume later.`;
-  }
-  if (status.phase === "indexing") {
-    return currentStatus?.status === "finalizing"
-      ? `${stageLabel}${agentProgress}. Progress is saved; you can resume later.`
-      : "Preparing local session index";
+    if (total > 0) {
+      return current
+        ? `${stageLabel} · ${current}${itemProgress} · ${completed}/${total} agents ready`
+        : `Checking for new or changed sessions · ${completed}/${total} agents ready`;
+    }
+    return "Checking for new or changed sessions";
   }
 
-  if (total > 0) {
-    return current
-      ? `${stageLabel} · ${current}${itemProgress} · ${completed}/${total} agents ready`
-      : `Checking for new or changed sessions · ${completed}/${total} agents ready`;
+  if (status.searchIndexMaintenance?.active) {
+    const current = status.searchIndexMaintenance.currentAgent;
+    const remaining = status.searchIndexMaintenance.remaining;
+    return `Updating search index in background${current ? ` · ${current}` : ""}${remaining != null ? ` · ${remaining} remaining` : ""}`;
   }
-  return "Checking for new or changed sessions";
+  if (status.searchIndexMaintenance?.failedAgents.length) {
+    return `Background search index maintenance paused · ${status.searchIndexMaintenance.failedAgents.join(", ")}`;
+  }
+  return null;
 }
 
 export function formatAgentScanProgress(
@@ -106,7 +124,10 @@ export function formatAgentScanProgress(
     }
     return "Finalizing";
   }
-  if (agentStatus.status === "indexing") return "Indexing";
+  if (agentStatus.status === "publishing" || agentStatus.status === "indexing") {
+    return "Publishing";
+  }
+  if (agentStatus.status === "publish-queued") return "Queued to publish";
   if (agentStatus.total && agentStatus.processed != null) {
     return `${agentStatus.processed}/${agentStatus.total}`;
   }

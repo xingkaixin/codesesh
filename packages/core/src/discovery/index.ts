@@ -61,6 +61,7 @@ export type {
 export {
   mergeSearchQueryOptions,
   parseSearchQuery,
+  readPendingSearchIndexMaintenance,
   searchSessions,
   sessionDetailVersion,
   syncSessionSearchIndex,
@@ -69,6 +70,7 @@ export {
 export type {
   ParsedSearchQuery,
   SearchIndexSyncOptions,
+  PendingSearchIndexMaintenance,
   SearchIndexSyncFailure,
   SearchIndexSyncResult,
   SearchMatchType,

@@ -88,7 +88,15 @@ export function mergeSessionsUpdatedEvents(
 
 export interface AgentScanStatus {
   agentName: string;
-  status: "pending" | "scanning" | "finalizing" | "indexing" | "complete" | "failed";
+  status:
+    | "pending"
+    | "scanning"
+    | "finalizing"
+    | "publish-queued"
+    | "publishing"
+    | "indexing"
+    | "complete"
+    | "failed";
   error?: string;
   total?: number;
   processed?: number;
@@ -104,7 +112,7 @@ export interface AgentScanStatus {
  * (capped at one agent at a time) periodically re-checks the rest of history.
  */
 export interface BackfillProgress {
-  phase?: "scanning" | "finalizing" | "indexing";
+  phase?: "scanning" | "finalizing" | "publish-queued" | "publishing" | "indexing";
   total?: number;
   processed?: number;
   sessions?: number;
@@ -119,10 +127,19 @@ export interface BackfillStatus {
   failedAgents: string[];
 }
 
+export interface SearchIndexMaintenanceStatus {
+  active: boolean;
+  pendingAgents: string[];
+  currentAgent?: string;
+  remaining?: number;
+  completedAgents: string[];
+  failedAgents: string[];
+}
+
 export interface ScanStatusEvent {
   type: "scan-status";
   active: boolean;
-  phase: "idle" | "indexing" | "initializing" | "scanning";
+  phase: "idle" | "publishing" | "indexing" | "initializing" | "scanning";
   pendingAgents: string[];
   scanningAgents: string[];
   completedAgents: string[];
@@ -132,4 +149,5 @@ export interface ScanStatusEvent {
   updatedAt: number;
   completedAt?: number;
   backfill: BackfillStatus;
+  searchIndexMaintenance?: SearchIndexMaintenanceStatus;
 }

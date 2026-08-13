@@ -31,6 +31,7 @@ import { LiveSessionIndex, type LiveSessionIndexOptions } from "./live-session-i
 import { LatestValueThrottle } from "./latest-value-throttle.js";
 import { appLogger, logSearchIndexSync } from "./logging.js";
 import { SearchIndexJobRunner } from "./search-index-job-runner.js";
+import { SearchIndexMaintenanceScheduler } from "./search-index-maintenance-scheduler.js";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 import { ScanStatusModel } from "./scan-status-model.js";
 import type {
@@ -73,6 +74,7 @@ interface SessionPublication {
   sessions: SessionHead[];
   candidateChangedIds: string[];
   indexJob: SearchIndexWorkerJob;
+  onPublishing?: () => void;
 }
 
 interface SessionPublicationResult {
@@ -144,13 +146,19 @@ export class AgentSyncEngine {
   private statusChangedListeners = new Set<StatusChangedListener>();
   private statusProgressThrottles = new Map<string, LatestValueThrottle<void>>();
   private scanStatus = new ScanStatusModel();
-  private searchIndexJobs = new SearchIndexJobRunner();
+  private readonly searchIndexJobs: SearchIndexJobRunner;
+  private readonly searchIndexMaintenance: SearchIndexMaintenanceScheduler;
   private nextPublicationId = 1;
   private backgroundRefreshTimer: NodeJS.Timeout | null = null;
   private isShuttingDown = false;
 
   constructor(private readonly options: AgentSyncEngineOptions) {
     this.scheduler = new AgentOperationScheduler((agentName) => this.performRefresh(agentName));
+    this.searchIndexJobs = new SearchIndexJobRunner();
+    this.searchIndexMaintenance = new SearchIndexMaintenanceScheduler(
+      this.searchIndexJobs,
+      (status) => this.publishStatus(this.scanStatus.updateSearchIndexMaintenance(status)),
+    );
   }
 
   initialize(snapshot: LiveSnapshot, options: AgentSyncEngineInitializationOptions = {}): void {
@@ -195,6 +203,7 @@ export class AgentSyncEngine {
       publicationId: this.publicationId("scan.initial"),
       agents: jobs.map((job) => job.agentName),
     });
+    for (const job of jobs) this.searchIndexMaintenance.enqueue(job.agentName);
   }
 
   handleAgentsChanged(agentNames: Iterable<string>): void {
@@ -241,6 +250,7 @@ export class AgentSyncEngine {
       this.backgroundRefreshTimer = null;
     }
     this.backfills.cancelAll();
+    this.searchIndexMaintenance.stop();
     this.cancelProgressStatuses();
     this.cacheIntegrityValidUntilByAgent.clear();
     const searchIndexSnapshot = this.searchIndexJobs.snapshot();
@@ -249,6 +259,7 @@ export class AgentSyncEngine {
       pending_batches: searchIndexSnapshot.pendingBatches,
     });
     await this.searchIndexJobs.shutdown();
+    await this.searchIndexMaintenance.waitForIdle();
     await this.options.workerRunner.shutdown();
     await this.scheduler.waitForIdle();
     const stoppedSearchIndexSnapshot = this.searchIndexJobs.snapshot();
@@ -317,9 +328,14 @@ export class AgentSyncEngine {
     this.publishProgressStatus(key, status?.agentStatuses[agentName]?.status ?? nextPhase, status);
   }
 
-  private beginAgentIndexing(agentName: string): void {
+  private beginAgentPublishing(agentName: string): void {
     this.flushProgressStatus(`scan:${agentName}`);
-    this.publishStatus(this.scanStatus.indexAgent(agentName));
+    this.publishStatus(this.scanStatus.publishAgent(agentName));
+  }
+
+  private queueAgentPublication(agentName: string): void {
+    this.flushProgressStatus(`scan:${agentName}`);
+    this.publishStatus(this.scanStatus.queueAgentPublication(agentName));
   }
 
   private finishAgentScan(agentName: string): void {
@@ -416,6 +432,7 @@ export class AgentSyncEngine {
       if (agent && this.needsBackfill(agent, cached, failed || result === "committed")) {
         this.enqueueBackfill(agentName);
       }
+      if (agent) this.searchIndexMaintenance.enqueue(agentName);
     }
   }
 
@@ -519,7 +536,7 @@ export class AgentSyncEngine {
           saveCache: true,
           ...(searchIndexOptions ? { searchIndexOptions } : {}),
         };
-    this.beginAgentIndexing(agentName);
+    this.queueAgentPublication(agentName);
     let publication: SessionPublicationResult;
     try {
       publication = await this.commitSessionPublication({
@@ -528,6 +545,7 @@ export class AgentSyncEngine {
         sessions: nextSessions,
         candidateChangedIds: strategyResult.preciseChangedIds ?? [],
         indexJob: persistentJob,
+        onPublishing: () => this.beginAgentPublishing(agentName),
       });
     } catch (error) {
       agent.setSessionMetaMap(durableMeta);
@@ -951,18 +969,21 @@ export class AgentSyncEngine {
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const fullSessions = attachMissingProjectIdentities(result.sessions);
       this.flushProgressStatus(`backfill:${agentName}`);
-      if (
-        this.backfills.updateProgress(attempt, {
-          phase: "indexing",
-          sessions: fullSessions.length,
-        })
-      ) {
-        this.publishProgressStatus(
-          `backfill:${agentName}`,
-          "indexing",
-          this.scanStatus.updateBackfill(this.backfills.status()),
-        );
-      }
+      const updatePublicationPhase = (phase: "publish-queued" | "publishing") => {
+        if (
+          this.backfills.updateProgress(attempt, {
+            phase,
+            sessions: fullSessions.length,
+          })
+        ) {
+          this.publishProgressStatus(
+            `backfill:${agentName}`,
+            phase,
+            this.scanStatus.updateBackfill(this.backfills.status()),
+          );
+        }
+      };
+      updatePublicationPhase("publish-queued");
       await this.commitSessionPublication({
         context: "scan.backfill",
         agentName,
@@ -978,6 +999,7 @@ export class AgentSyncEngine {
           removedSessionIds: result.explicitRemovedSessionIds,
           saveCache: true,
         },
+        onPublishing: () => updatePublicationPhase("publishing"),
       });
       durableCommitted = true;
       this.options.workerRunner.commit?.(agentName);
@@ -1014,6 +1036,7 @@ export class AgentSyncEngine {
               meta: cached.meta,
               completeness: "partial",
               removedSessionIds: [],
+              searchIndexOptions: { includePendingReindex: false },
             }
           : {
               kind: "full",
@@ -1023,6 +1046,7 @@ export class AgentSyncEngine {
               meta: buildAgentCacheMeta(agent),
               completeness: "partial",
               removedSessionIds: [],
+              searchIndexOptions: { includePendingReindex: false },
             },
       ];
     });
@@ -1036,7 +1060,12 @@ export class AgentSyncEngine {
   private async commitSearchIndex(
     context: string,
     jobs: SearchIndexWorkerJob[],
-    details: { publicationId: string; agent?: string; agents?: string[] },
+    details: {
+      publicationId: string;
+      agent?: string;
+      agents?: string[];
+      onStarted?: () => void;
+    },
   ): Promise<void> {
     appLogger.info("session.publication.prepared", {
       publication_id: details.publicationId,
@@ -1046,10 +1075,13 @@ export class AgentSyncEngine {
       jobs: jobs.length,
     });
     try {
-      await this.searchIndexJobs.enqueue(
-        context,
-        jobs.map((job) => ({ ...job, publicationId: details.publicationId })),
-      );
+      const publicationJobs = jobs.map((job) => ({
+        ...job,
+        publicationId: details.publicationId,
+      }));
+      await (details.onStarted
+        ? this.searchIndexJobs.enqueue(context, publicationJobs, details.onStarted)
+        : this.searchIndexJobs.enqueue(context, publicationJobs));
     } catch (error) {
       appLogger.error("session.publication.failed", {
         publication_id: details.publicationId,
@@ -1074,6 +1106,7 @@ export class AgentSyncEngine {
     await this.commitSearchIndex(publication.context, [publication.indexJob], {
       publicationId,
       agent: publication.agentName,
+      ...(publication.onPublishing ? { onStarted: publication.onPublishing } : {}),
     });
     const diffStartedAt = performance.now();
     const event = this.sessionIndex.commitAgentSessions(

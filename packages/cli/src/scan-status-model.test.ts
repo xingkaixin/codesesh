@@ -85,27 +85,30 @@ describe("ScanStatusModel", () => {
     expect(model.updateAgent("codex", { processed: 2 })).toBeNull();
   });
 
-  it("moves agents from scanning to indexing before completion", () => {
+  it("moves agents from scanning to publishing before completion", () => {
     const model = new ScanStatusModel();
     model.startBatch(["codex", "claude"], "scanning", {});
     model.beginAgent("codex", 2);
 
-    const codexIndexing = model.indexAgent("codex");
+    const codexQueued = model.queueAgentPublication("codex");
+    expect(codexQueued?.agentStatuses.codex?.status).toBe("publish-queued");
+    const codexPublishing = model.publishAgent("codex");
 
-    expect(codexIndexing).toEqual(
+    expect(codexPublishing).toEqual(
       expect.objectContaining({
         phase: "scanning",
         pendingAgents: ["claude"],
       }),
     );
-    expect(codexIndexing?.agentStatuses.codex?.status).toBe("indexing");
+    expect(codexPublishing?.agentStatuses.codex?.status).toBe("publishing");
 
     model.beginAgent("claude", 3);
-    const allIndexing = model.indexAgent("claude");
-    expect(allIndexing?.phase).toBe("indexing");
+    model.queueAgentPublication("claude");
+    const allPublishing = model.publishAgent("claude");
+    expect(allPublishing?.phase).toBe("publishing");
 
     const oneRemaining = model.finishAgent("codex");
-    expect(oneRemaining.phase).toBe("indexing");
+    expect(oneRemaining.phase).toBe("publishing");
     expect(model.updateAgent("claude", { processed: 1 })).toBeNull();
   });
 
@@ -123,7 +126,7 @@ describe("ScanStatusModel", () => {
 
     expect(status).toEqual(
       expect.objectContaining({
-        phase: "indexing",
+        phase: "publishing",
         scanningAgents: ["codex"],
       }),
     );
@@ -280,7 +283,7 @@ describe("ScanStatusModel", () => {
       active: true,
       currentAgent: "codex",
       pendingAgents: [],
-      progress: { phase: "indexing", sessions: 10 },
+      progress: { phase: "publishing", sessions: 10 },
       completedAgents: [],
       failedAgents: [],
     });
@@ -298,5 +301,32 @@ describe("ScanStatusModel", () => {
       completedAgents: ["codex"],
       failedAgents: [],
     });
+  });
+
+  it("tracks search-index maintenance independently from session scanning", () => {
+    const model = new ScanStatusModel();
+    const status = model.updateSearchIndexMaintenance({
+      active: true,
+      currentAgent: "codex",
+      pendingAgents: ["zcode"],
+      remaining: 2215,
+      completedAgents: [],
+      failedAgents: [],
+    });
+
+    expect(status).toEqual(
+      expect.objectContaining({
+        active: false,
+        phase: "idle",
+        searchIndexMaintenance: {
+          active: true,
+          currentAgent: "codex",
+          pendingAgents: ["zcode"],
+          remaining: 2215,
+          completedAgents: [],
+          failedAgents: [],
+        },
+      }),
+    );
   });
 });

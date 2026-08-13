@@ -3,9 +3,14 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { searchSessions } from "../search.js";
-import { syncSessionSearchIndex, syncSessionSearchIndexChanges } from "../search-index-writer.js";
+import {
+  readPendingSearchIndexMaintenance,
+  syncSessionSearchIndex,
+  syncSessionSearchIndexChanges,
+} from "../search-index-writer.js";
 import { setSchemaEnsuredPath } from "../db.js";
 import { commitDurableSessionPublication } from "../publication.js";
+import { withCacheDb } from "../schema.js";
 import {
   loadCachedSessionRawEntry,
   saveCachedSessionChanges,
@@ -46,6 +51,89 @@ describe("search index writer", () => {
       changed: 0,
       indexed: 0,
     });
+  });
+
+  it("keeps migration reindex work out of foreground publications", () => {
+    const session = makeSessionHead("one");
+    const loadSession = vi.fn(() => makeSessionData("one", "migration needle"));
+    saveCachedSessions("codex", [session]);
+    syncSessionSearchIndex("codex", [session], loadSession);
+    withCacheDb((db) => {
+      db.prepare("INSERT INTO pending_reindex(agent_name, session_id) VALUES (?, ?)").run(
+        "codex",
+        session.id,
+      );
+      db.prepare(
+        "UPDATE session_documents SET content_hash = '' WHERE agent_name = ? AND session_id = ?",
+      ).run("codex", session.id);
+    });
+    loadSession.mockClear();
+
+    expect(readPendingSearchIndexMaintenance("codex", 16)).toEqual({
+      sessionIds: [session.id],
+      total: 1,
+    });
+    const foregroundPublication = commitDurableSessionPublication(
+      {
+        kind: "changes",
+        agentName: "codex",
+        changes: [{ session, sortIndex: 0 }],
+        removedSessionIds: [],
+        meta: {},
+      },
+      loadSession,
+    );
+    expect(foregroundPublication).toMatchObject({
+      status: "committed",
+      searchIndex: { changed: 0, indexed: 0 },
+    });
+    expect(loadSession).not.toHaveBeenCalled();
+    expect(readPendingSearchIndexMaintenance("codex", 16)?.total).toBe(1);
+
+    expect(
+      syncSessionSearchIndexChanges("codex", [{ session, sortIndex: 0 }], [], loadSession, {
+        isBulk: false,
+      }),
+    ).toMatchObject({ changed: 1, indexed: 1 });
+    expect(readPendingSearchIndexMaintenance("codex", 16)).toEqual({
+      sessionIds: [],
+      total: 0,
+    });
+  });
+
+  it("still indexes a real head change while maintenance is pending", () => {
+    const session = makeSessionHead("one");
+    saveCachedSessions("codex", [session]);
+    syncSessionSearchIndex("codex", [session], () => makeSessionData("one", "old detail"));
+    withCacheDb((db) => {
+      db.prepare("INSERT INTO pending_reindex(agent_name, session_id) VALUES (?, ?)").run(
+        "codex",
+        session.id,
+      );
+      db.prepare(
+        "UPDATE session_documents SET content_hash = '' WHERE agent_name = ? AND session_id = ?",
+      ).run("codex", session.id);
+    });
+    const updated = { ...session, title: "Updated head" };
+    const loadSession = vi.fn(() => ({ ...makeSessionData("one", "new detail"), ...updated }));
+
+    const publication = commitDurableSessionPublication(
+      {
+        kind: "changes",
+        agentName: "codex",
+        changes: [{ session: updated, sortIndex: 0 }],
+        removedSessionIds: [],
+        meta: {},
+      },
+      loadSession,
+    );
+
+    expect(publication).toMatchObject({
+      status: "committed",
+      searchIndex: { changed: 1, indexed: 1 },
+    });
+    expect(loadSession).toHaveBeenCalledOnce();
+    expect(readPendingSearchIndexMaintenance("codex", 16)?.total).toBe(0);
   });
 
   it("deduplicates removals in incremental updates", () => {

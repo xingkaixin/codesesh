@@ -1542,6 +1542,7 @@ describe("LiveScanStore", () => {
         kind: "changes",
         context: "scan.refresh",
         agentName: "codex",
+        publicationId: expect.stringMatching(/^scan\.refresh:codex:/),
         changes: [{ session: updatedOldWithProject, sortIndex: 0 }],
         removedSessionIds: [],
         meta: { old: { id: "old", sourcePath: "/tmp/old" } },
@@ -1610,6 +1611,7 @@ describe("LiveScanStore", () => {
         kind: "changes",
         context: "scan.refresh",
         agentName: "codex",
+        publicationId: expect.stringMatching(/^scan\.refresh:codex:/),
         changes: [
           { session: updatedWithProject, sortIndex: 0 },
           { session: addedWithProject, sortIndex: 1 },
@@ -1755,6 +1757,7 @@ describe("LiveScanStore", () => {
         kind: "changes",
         context: "scan.refresh",
         agentName: "codex",
+        publicationId: expect.stringMatching(/^scan\.refresh:codex:/),
         changes: [
           { session: updatedWithProject, sortIndex: 0 },
           { session: addedWithProject, sortIndex: 1 },

@@ -3,15 +3,20 @@ import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 
 type FullSearchIndexJob = Extract<SearchIndexWorkerJob, { kind: "full" }>;
 type ChangesSearchIndexJob = Extract<SearchIndexWorkerJob, { kind: "changes" }>;
+type MaintenanceSearchIndexJob = Extract<SearchIndexWorkerJob, { kind: "maintenance" }>;
+type IncrementalSearchIndexJob = ChangesSearchIndexJob | MaintenanceSearchIndexJob;
 
 interface JobWaiter {
   resolve: () => void;
   reject: (error: Error) => void;
+  onStarted?: () => void;
 }
 
 interface PendingChanges {
+  kind: IncrementalSearchIndexJob["kind"];
   context: string;
   agentName: string;
+  publicationId?: string;
   changesBySessionId: Map<string, SessionHeadChange>;
   removedSessionIds: Set<string>;
   meta: Record<string, SessionCacheMeta>;
@@ -27,6 +32,7 @@ export interface SearchIndexJobBatch {
   readonly id: number;
   readonly context: string;
   readonly jobs: SearchIndexWorkerJob[];
+  start(onError: (error: unknown) => void): void;
 }
 
 class PendingSearchIndexJobBatch implements SearchIndexJobBatch {
@@ -34,6 +40,7 @@ class PendingSearchIndexJobBatch implements SearchIndexJobBatch {
   private readonly jobsByAgent = new Map<string, PendingAgentJobs>();
   private readonly waiters: JobWaiter[] = [];
   private settled = false;
+  private started = false;
 
   constructor(
     readonly id: number,
@@ -61,6 +68,18 @@ class PendingSearchIndexJobBatch implements SearchIndexJobBatch {
       count += pending.changes.changesBySessionId.size + pending.changes.removedSessionIds.size;
     }
     return count;
+  }
+
+  start(onError: (error: unknown) => void): void {
+    if (this.started) return;
+    this.started = true;
+    for (const waiter of this.waiters) {
+      try {
+        waiter.onStarted?.();
+      } catch (error) {
+        onError(error);
+      }
+    }
   }
 
   merge(context: string, jobs: SearchIndexWorkerJob[], waiter: JobWaiter): void {
@@ -97,6 +116,7 @@ class PendingSearchIndexJobBatch implements SearchIndexJobBatch {
 
 export class PendingSearchIndexJobs {
   private pendingBatch: PendingSearchIndexJobBatch | null = null;
+  private readonly batches = new WeakSet<PendingSearchIndexJobBatch>();
 
   get batchCount(): number {
     return this.pendingBatch ? 1 : 0;
@@ -110,15 +130,21 @@ export class PendingSearchIndexJobs {
     return this.pendingBatch?.changeCount ?? 0;
   }
 
-  enqueue(id: number, context: string, jobs: SearchIndexWorkerJob[]): Promise<void> {
+  enqueue(
+    id: number,
+    context: string,
+    jobs: SearchIndexWorkerJob[],
+    onStarted?: () => void,
+  ): Promise<void> {
     if (jobs.length === 0) return Promise.resolve();
 
     return new Promise((resolve, reject) => {
-      const waiter = { resolve, reject };
+      const waiter = { resolve, reject, onStarted };
       if (this.pendingBatch) {
         this.pendingBatch.merge(context, jobs, waiter);
       } else {
         this.pendingBatch = new PendingSearchIndexJobBatch(id, context, jobs, waiter);
+        this.batches.add(this.pendingBatch);
       }
     });
   }
@@ -130,7 +156,9 @@ export class PendingSearchIndexJobs {
   }
 
   settle(batch: SearchIndexJobBatch, error?: Error): boolean {
-    return batch instanceof PendingSearchIndexJobBatch && batch.settle(error);
+    if (!(batch instanceof PendingSearchIndexJobBatch) || !this.batches.has(batch)) return false;
+    this.batches.delete(batch);
+    return batch.settle(error);
   }
 
   rejectAll(error: Error): void {
@@ -139,10 +167,12 @@ export class PendingSearchIndexJobs {
   }
 }
 
-function createPendingChanges(job: ChangesSearchIndexJob): PendingChanges {
+function createPendingChanges(job: IncrementalSearchIndexJob): PendingChanges {
   return {
+    kind: job.kind,
     context: job.context,
     agentName: job.agentName,
+    ...(job.kind === "changes" && job.publicationId ? { publicationId: job.publicationId } : {}),
     changesBySessionId: new Map(),
     removedSessionIds: new Set(),
     meta: {},
@@ -150,8 +180,12 @@ function createPendingChanges(job: ChangesSearchIndexJob): PendingChanges {
   };
 }
 
-function mergeChanges(pending: PendingChanges, job: ChangesSearchIndexJob): void {
+function mergeChanges(pending: PendingChanges, job: IncrementalSearchIndexJob): void {
+  pending.kind = job.kind;
   pending.context = job.context;
+  if (job.kind === "changes" && job.publicationId) {
+    pending.publicationId = job.publicationId;
+  }
   pending.searchIndexOptions = mergeSearchIndexOptions(
     pending.searchIndexOptions,
     job.searchIndexOptions,
@@ -185,9 +219,8 @@ function mergeSearchIndexOptions(
   return { ...current, ...incoming };
 }
 
-function changesJobFromPending(pending: PendingChanges): ChangesSearchIndexJob {
-  return {
-    kind: "changes",
+function changesJobFromPending(pending: PendingChanges): IncrementalSearchIndexJob {
+  const common = {
     context: pending.context,
     agentName: pending.agentName,
     changes: [...pending.changesBySessionId.values()],
@@ -195,4 +228,11 @@ function changesJobFromPending(pending: PendingChanges): ChangesSearchIndexJob {
     meta: pending.meta,
     ...(pending.searchIndexOptions ? { searchIndexOptions: pending.searchIndexOptions } : {}),
   };
+  return pending.kind === "changes"
+    ? {
+        kind: "changes",
+        ...common,
+        ...(pending.publicationId ? { publicationId: pending.publicationId } : {}),
+      }
+    : { kind: "maintenance", ...common };
 }

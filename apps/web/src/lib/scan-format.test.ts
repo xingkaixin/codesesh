@@ -40,7 +40,20 @@ describe("formatScanStatusLabel", () => {
     expect(formatScanStatusLabel({ active: false } as ScanStatusEvent)).toBeNull();
   });
 
-  it("returns indexing message for indexing phase", () => {
+  it("returns a publishing message for the publishing phase", () => {
+    expect(
+      formatScanStatusLabel({
+        active: true,
+        phase: "publishing",
+        completedAgents: [],
+        scanningAgents: [],
+        totalAgents: 0,
+        agentStatuses: {},
+      } as unknown as ScanStatusEvent),
+    ).toBe("Publishing session updates");
+  });
+
+  it("maps the legacy indexing phase to publishing", () => {
     expect(
       formatScanStatusLabel({
         active: true,
@@ -50,7 +63,7 @@ describe("formatScanStatusLabel", () => {
         totalAgents: 0,
         agentStatuses: {},
       } as unknown as ScanStatusEvent),
-    ).toBe("Preparing local session index");
+    ).toBe("Publishing session updates");
   });
 
   it("surfaces an inactive refresh failure", () => {
@@ -80,7 +93,7 @@ describe("formatScanStatusLabel", () => {
           failedAgents: [],
         },
       } as unknown as ScanStatusEvent),
-    ).toBe("Indexing full history · codex · 1 queued");
+    ).toBe("Scanning full session history · codex · 1 history scan queued");
   });
 
   it("shows backfill finalization progress", () => {
@@ -96,16 +109,14 @@ describe("formatScanStatusLabel", () => {
           failedAgents: [],
         },
       } as unknown as ScanStatusEvent),
-    ).toBe(
-      "Finalizing session metadata · codex · 68/2107. Progress is saved; you can resume later.",
-    );
+    ).toBe("Finalizing full-history metadata · codex · 68/2107");
   });
 
   it("shows finalization progress instead of a stalled scan label", () => {
     expect(
       formatScanStatusLabel({
         active: true,
-        phase: "indexing",
+        phase: "publishing",
         completedAgents: ["claudecode"],
         scanningAgents: ["codex"],
         totalAgents: 2,
@@ -119,9 +130,57 @@ describe("formatScanStatusLabel", () => {
           },
         },
       } as unknown as ScanStatusEvent),
-    ).toBe(
-      "Finalizing session metadata · codex · 17/2108 · 1/2 agents ready. Progress is saved; you can resume later.",
-    );
+    ).toBe("Finalizing session metadata · codex · 17/2108 · 1/2 agents ready");
+  });
+
+  it("does not claim published progress can resume", () => {
+    expect(
+      formatScanStatusLabel({
+        active: false,
+        backfill: {
+          active: true,
+          currentAgent: "zcode",
+          pendingAgents: [],
+          progress: { phase: "publishing", sessions: 84 },
+          completedAgents: [],
+          failedAgents: [],
+        },
+      } as unknown as ScanStatusEvent),
+    ).toBe("Publishing full-history sessions · zcode");
+  });
+
+  it("does not describe a queued full-history publication as active", () => {
+    expect(
+      formatScanStatusLabel({
+        active: false,
+        backfill: {
+          active: true,
+          currentAgent: "zcode",
+          pendingAgents: [],
+          progress: { phase: "publish-queued", total: 84, processed: 84, sessions: 84 },
+          completedAgents: [],
+          failedAgents: [],
+        },
+      } as unknown as ScanStatusEvent),
+    ).toBe("Full-history publication queued · zcode · 84/84");
+  });
+
+  it("labels search maintenance as non-blocking background work", () => {
+    expect(
+      formatScanStatusLabel({
+        active: false,
+        backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
+        agentStatuses: {},
+        searchIndexMaintenance: {
+          active: true,
+          currentAgent: "codex",
+          pendingAgents: [],
+          remaining: 2199,
+          completedAgents: [],
+          failedAgents: [],
+        },
+      } as unknown as ScanStatusEvent),
+    ).toBe("Updating search index in background · codex · 2199 remaining");
   });
 });
 
@@ -130,16 +189,18 @@ describe("formatAgentScanProgress", () => {
     expect(formatAgentScanProgress(null, "codex")).toBeNull();
   });
 
-  it("distinguishes indexing from scanning and pending", () => {
+  it("distinguishes publishing from scanning and pending", () => {
     const status = {
       agentStatuses: {
-        codex: { status: "indexing" },
+        codex: { status: "publishing" },
+        zcode: { status: "publish-queued" },
         claude: { status: "scanning" },
         kimi: { status: "pending" },
       },
     } as unknown as ScanStatusEvent;
 
-    expect(formatAgentScanProgress(status, "codex")).toBe("Indexing");
+    expect(formatAgentScanProgress(status, "codex")).toBe("Publishing");
+    expect(formatAgentScanProgress(status, "zcode")).toBe("Queued to publish");
     expect(formatAgentScanProgress(status, "claude")).toBe("Scanning");
     expect(formatAgentScanProgress(status, "kimi")).toBe("Pending");
   });

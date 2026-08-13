@@ -8,6 +8,7 @@ import {
   sessionDetailVersion,
   synchronizePricingGeneration,
   syncSessionSearchIndex,
+  syncSessionSearchIndexChanges,
   type SearchIndexSyncResult,
   type SearchIndexSyncOptions,
   type SessionCacheMeta,
@@ -62,6 +63,15 @@ export type SearchIndexWorkerJob =
       removedSessionIds: string[];
       meta: Record<string, SessionCacheMeta>;
       publicationId?: string;
+      searchIndexOptions?: SearchIndexSyncOptions;
+    }
+  | {
+      kind: "maintenance";
+      context: string;
+      agentName: string;
+      changes: SessionHeadChange[];
+      removedSessionIds: string[];
+      meta: Record<string, SessionCacheMeta>;
       searchIndexOptions?: SearchIndexSyncOptions;
     };
 
@@ -122,6 +132,21 @@ function runJob(
   job: SearchIndexWorkerJob,
   agent: WorkerAgent,
 ): { stage: SearchIndexPersistStage; publicationId: string } | null {
+  if (job.kind === "maintenance") {
+    const result = syncSessionSearchIndexChanges(
+      job.agentName,
+      job.changes,
+      job.removedSessionIds,
+      (sessionId) => agent.getSessionData(sessionId),
+      searchIndexOptions(job),
+    );
+    if (!result) {
+      return { stage: "search_index", publicationId: randomUUID() };
+    }
+    postSyncResult(job.context, result);
+    return null;
+  }
+
   if (job.kind === "changes") {
     const publication = commitDurableSessionPublication(
       {
@@ -218,7 +243,8 @@ function runBatch(request: SearchIndexWorkerRunRequest): void {
     if (!agent) {
       reportPersistFailure(job, {
         stage: "prepare",
-        publicationId: job.publicationId ?? randomUUID(),
+        publicationId:
+          job.kind === "maintenance" ? randomUUID() : (job.publicationId ?? randomUUID()),
       });
       return;
     }

@@ -64,6 +64,7 @@ function publicationSearchOptions(
 ): SearchIndexSyncOptions {
   return {
     ...options,
+    includePendingReindex: false,
     publicationId,
     ...(publication.kind === "snapshot"
       ? {

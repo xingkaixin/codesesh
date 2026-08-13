@@ -58,6 +58,12 @@ export const SAMPLE_SCAN_STATUS_EVENT = {
     completedAgents: ["claudecode"],
     failedAgents: [],
   },
+  searchIndexMaintenance: {
+    active: false,
+    pendingAgents: [],
+    completedAgents: [],
+    failedAgents: [],
+  },
 } satisfies ScanStatusEvent;
 
 export const SAMPLE_SESSIONS_UPDATED_EVENT = {
