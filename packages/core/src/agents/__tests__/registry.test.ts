@@ -63,6 +63,14 @@ describe("agent registry", () => {
         count: 0,
       },
       {
+        name: "dsh",
+        displayName: "DSH",
+        icon: "/icon/agent/dsh.svg",
+        iconColored: true,
+        resumeCommandPrefix: null,
+        count: 0,
+      },
+      {
         name: "cursor",
         displayName: "Cursor",
         icon: "/icon/agent/cursor.svg",

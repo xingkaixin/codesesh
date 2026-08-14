@@ -8,6 +8,7 @@ import { CursorAgent, resolveCursorDataRoot } from "./cursor.js";
 import { PiAgent, resolvePiDataRoot } from "./pi.js";
 import { ZCodeAgent, resolveZCodeDataRoot } from "./zcode.js";
 import { GrokAgent, resolveGrokDataRoot } from "./grok.js";
+import { DshAgent, resolveDshDataRoot } from "./dsh.js";
 
 registerAgent({
   icon: "/icon/agent/claudecode.svg",
@@ -72,6 +73,17 @@ registerAgent({
   resumeCommandPrefix: "pi --session",
   toolStrategy: "custom",
   create: () => new PiAgent(),
+});
+
+registerAgent({
+  icon: "/icon/agent/dsh.svg",
+  iconColored: true,
+  resolveDataRoot: resolveDshDataRoot,
+  // The DSH launcher hands inner arguments to a profile, so no single resume
+  // command holds across installations.
+  resumeCommandPrefix: null,
+  toolStrategy: "custom",
+  create: () => new DshAgent(),
 });
 
 registerAgent({

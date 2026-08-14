@@ -275,6 +275,7 @@ describe("handleGetAgents", () => {
       "codex",
       "grok",
       "pi",
+      "dsh",
       "cursor",
     ]);
     expect(response.find((agent: { name: string }) => agent.name === "claudecode")?.count).toBe(1);
