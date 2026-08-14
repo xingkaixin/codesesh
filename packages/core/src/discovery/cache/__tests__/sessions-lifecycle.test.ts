@@ -34,6 +34,7 @@ import { clearIdentityCache } from "../../../projects/identity.js";
 import { realFs } from "../../../projects/fs.js";
 import { withCacheDb, withSearchIndexDb } from "../schema.js";
 import { getSchemaEnsuredPath, setSchemaEnsuredPath } from "../db.js";
+import { CACHE_SCHEMA_VERSION } from "../version.js";
 import type { SessionHead } from "../../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-test-"));
@@ -48,6 +49,20 @@ vi.mock("node:os", async (importOriginal) => {
 
 const now = Date.now();
 const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
+
+const CACHE_DATA_TABLES = [
+  "agent_cache",
+  "cache_initialization",
+  "cached_sessions",
+  "pending_reindex",
+  "search_index_publication_entries",
+  "session_documents",
+  "session_file_activity",
+  "message_tools",
+  "messages",
+  "sessions",
+  "project_sessions",
+] as const;
 
 function getCacheDir(): string {
   return join(testHomeDir, ".cache", "codesesh");
@@ -142,6 +157,24 @@ function getUserVersion(dbPath: string): number {
 
 function getMigrationBackups(): string[] {
   return readdirSync(getCacheDir()).filter((name) => name.endsWith(".cache-migration.bak"));
+}
+
+function cacheDataTableCounts(
+  db: Database.Database,
+): Record<(typeof CACHE_DATA_TABLES)[number], number> {
+  return Object.fromEntries(
+    CACHE_DATA_TABLES.map((table) => {
+      const row = db.prepare(`SELECT COUNT(*) AS value FROM ${table}`).get() as { value?: number };
+      return [table, Number(row.value ?? 0)];
+    }),
+  ) as Record<(typeof CACHE_DATA_TABLES)[number], number>;
+}
+
+function emptyCacheDataTableCounts(): Record<(typeof CACHE_DATA_TABLES)[number], number> {
+  return Object.fromEntries(CACHE_DATA_TABLES.map((table) => [table, 0])) as Record<
+    (typeof CACHE_DATA_TABLES)[number],
+    number
+  >;
 }
 
 beforeEach(() => {
@@ -696,6 +729,72 @@ describe("clearCache", () => {
     writeFileSync(getLegacyCachePath(), JSON.stringify({ stale: true }), "utf-8");
     clearCache();
     expect(() => readFileSync(getLegacyCachePath(), "utf-8")).toThrow();
+  });
+
+  it("CS-259: clears every cache-owned data table and stale metadata", () => {
+    const session = makeSession("clear-me");
+    expect(saveCachedSessions("codex", [session])).toBe(true);
+    withCacheDb((db) => {
+      db.exec(`
+        INSERT INTO cache_initialization(agent_name, initialized_at, index_version, last_sync_at)
+        VALUES ('codex', ${now}, 'index-v1', ${now});
+        INSERT INTO pending_reindex(agent_name, session_id) VALUES ('orphan', 'clear-me');
+        INSERT INTO search_index_publication_entries(publication_id, agent_name, session_id, payload_json)
+        VALUES ('staged-publication', 'codex', 'clear-me', '{}');
+        INSERT INTO session_documents(
+          agent_name, session_id, title, content_text, content_hash,
+          indexed_message_count, detail_version, indexed_at
+        ) VALUES ('codex', 'clear-me', 'title', 'content', 'hash', 1, 'detail-v1', ${now});
+        INSERT INTO session_file_activity(
+          agent_name, session_id, project_identity_key, path, kind, count, latest_time
+        ) VALUES ('codex', 'clear-me', '${FIXTURE_DIR}', 'src/index.ts', 'write', 1, ${now});
+        INSERT INTO messages(
+          agent_name, session_id, message_index, message_id, role, time_created, parts_json, content_text
+        ) VALUES ('codex', 'clear-me', 0, 'message-1', 'assistant', ${now}, '[]', 'content');
+        INSERT INTO message_tools(agent_name, session_id, message_index, tool_name)
+        VALUES ('codex', 'clear-me', 0, 'write');
+        INSERT INTO cache_meta(key, value) VALUES ('stale_migration_marker', '1');
+      `);
+    });
+
+    clearCache();
+
+    const cleared = new Database(getCachePath(), { readonly: true });
+    try {
+      expect(cacheDataTableCounts(cleared)).toEqual(emptyCacheDataTableCounts());
+      expect(
+        cleared.prepare("SELECT value FROM cache_meta WHERE key = 'stale_migration_marker'").get(),
+      ).toBeUndefined();
+      expect(cleared.prepare("SELECT key, value FROM cache_meta ORDER BY key").all()).toEqual([
+        { key: "analytics_revision", value: "2" },
+      ]);
+      expect(Number(cleared.pragma("user_version", { simple: true }))).toBe(CACHE_SCHEMA_VERSION);
+    } finally {
+      cleared.close();
+    }
+
+    const reopenedMetadata = withCacheDb((db) =>
+      db.prepare("SELECT key, value FROM cache_meta ORDER BY key").all(),
+    );
+    expect(reopenedMetadata).toEqual([
+      { key: "analytics_revision", value: "2" },
+      { key: "codex_exec_decode_migrated_v3", value: "1" },
+      { key: "opencode_subagent_fold_v1", value: "1" },
+      { key: "subagent_tree_v1", value: "1" },
+      { key: "version", value: String(CACHE_SCHEMA_VERSION) },
+    ]);
+
+    clearCache();
+
+    const clearedAgain = new Database(getCachePath(), { readonly: true });
+    try {
+      expect(cacheDataTableCounts(clearedAgain)).toEqual(emptyCacheDataTableCounts());
+      expect(clearedAgain.prepare("SELECT key, value FROM cache_meta ORDER BY key").all()).toEqual([
+        { key: "analytics_revision", value: "3" },
+      ]);
+    } finally {
+      clearedAgain.close();
+    }
   });
 });
 

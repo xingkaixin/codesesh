@@ -735,12 +735,15 @@ export function clearCache(): void {
         DELETE FROM agent_cache;
         DELETE FROM cache_initialization;
         DELETE FROM cached_sessions;
+        DELETE FROM pending_reindex;
+        DELETE FROM search_index_publication_entries;
         DELETE FROM session_documents;
         DELETE FROM session_file_activity;
         DELETE FROM message_tools;
         DELETE FROM messages;
         DELETE FROM sessions;
         DELETE FROM project_sessions;
+        -- analytics_revision is an invalidation counter, not cached data.
         DELETE FROM cache_meta WHERE key <> 'analytics_revision';
       `);
       advanceAnalyticsRevision(db);
