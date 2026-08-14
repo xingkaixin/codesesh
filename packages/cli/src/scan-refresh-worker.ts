@@ -26,6 +26,10 @@ import {
 import { appLogger } from "./logging.js";
 import { MonotonicValueSampler } from "./monotonic-value-sampler.js";
 import {
+  AgentUnavailableDuringScanError,
+  type ScanRefreshWorkerErrorCode,
+} from "./scan-refresh-error.js";
+import {
   isBackfillOperation,
   synchronizesSessionSources,
   usesDurableCheckpoints,
@@ -63,6 +67,7 @@ export type ScanRefreshWorkerMessage =
       requestId: number;
       generation: number;
       error: string;
+      errorCode?: ScanRefreshWorkerErrorCode;
       durationMs: number;
     };
 
@@ -369,7 +374,14 @@ async function run(
     progressEmitter.push(progress, progress.phase ?? "scanning");
   };
 
-  const isAvailable = agent.isAvailable();
+  if (!agent.isAvailable()) {
+    appLogger.warn("scan.refresh_worker.agent_unavailable", {
+      agent: data.agentName,
+      operation: operation.kind,
+    });
+    throw new AgentUnavailableDuringScanError(data.agentName);
+  }
+
   let sessions: SessionHead[];
   let changedIds: string[] | undefined;
   let sourceFailures: SessionSourceFailure[] = [];
@@ -384,9 +396,7 @@ async function run(
       }
     | undefined;
 
-  if (!isAvailable) {
-    sessions = [];
-  } else if (operation.kind === "recompute-derived") {
+  if (operation.kind === "recompute-derived") {
     sessions = previousSessions;
   } else if (sourceSynchronization) {
     if (!(agent instanceof FileSystemSessionSource)) {
@@ -649,11 +659,13 @@ function commitBaseline(data: ScanRefreshWorkerCommitRequest): void {
 }
 
 function postRequestError(data: ScanRefreshWorkerRequest, error: unknown, startedAt: number): void {
+  const errorCode = error instanceof AgentUnavailableDuringScanError ? error.code : undefined;
   parentPort?.postMessage({
     type: "error",
     requestId: data.requestId,
     generation: data.generation,
     error: error instanceof Error ? error.message : String(error),
+    ...(errorCode ? { errorCode } : {}),
     durationMs: performance.now() - startedAt,
   } satisfies ScanRefreshWorkerMessage);
 }
