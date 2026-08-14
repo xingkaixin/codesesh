@@ -4,6 +4,17 @@
  */
 import type { AppConfig, ScanStatusEvent } from "./api";
 
+function formatPartialCompletion(
+  completion: Pick<
+    NonNullable<ScanStatusEvent["agentStatuses"][string]>,
+    "sourceFailureCount" | "sourceFailureSummary"
+  >,
+): string {
+  const count = completion.sourceFailureCount;
+  const countLabel = count == null ? null : `${count} source${count === 1 ? "" : "s"} failed`;
+  return [countLabel, completion.sourceFailureSummary].filter((value) => value != null).join(" · ");
+}
+
 export function formatIsoDate(ts: number): string {
   const d = new Date(ts);
   const y = d.getFullYear();
@@ -98,6 +109,22 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
         : `Checking for new or changed sessions · ${completed}/${total} agents ready`;
     }
     return "Checking for new or changed sessions";
+  }
+
+  const partialBackfill = Object.entries(status.backfill?.partialAgents ?? {}).find(
+    ([, completion]) => completion.completeness === "partial",
+  );
+  if (partialBackfill) {
+    const [agentName, completion] = partialBackfill;
+    const detail = formatPartialCompletion(completion);
+    return `Full-history refresh completed with partial data · ${agentName}${detail ? ` · ${detail}` : ""}`;
+  }
+  const partialAgent = Object.values(status.agentStatuses ?? {}).find(
+    (agentStatus) => agentStatus.status === "complete" && agentStatus.completeness === "partial",
+  );
+  if (partialAgent) {
+    const detail = formatPartialCompletion(partialAgent);
+    return `Session refresh completed with partial data · ${partialAgent.agentName}${detail ? ` · ${detail}` : ""}`;
   }
 
   if (status.searchIndexMaintenance?.active) {

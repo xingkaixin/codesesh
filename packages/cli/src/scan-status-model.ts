@@ -1,6 +1,7 @@
 import type { AgentScanProgress } from "@codesesh/core";
 import type {
   BackfillStatus,
+  ScanCompletion,
   ScanStatusEvent,
   SearchIndexMaintenanceStatus,
 } from "@codesesh/core/contract";
@@ -39,6 +40,16 @@ export class ScanStatusModel {
       backfill.progress = { ...this.status.backfill.progress };
     } else {
       delete backfill.progress;
+    }
+    if (this.status.backfill.partialAgents) {
+      backfill.partialAgents = Object.fromEntries(
+        Object.entries(this.status.backfill.partialAgents).map(([agentName, completion]) => [
+          agentName,
+          { ...completion },
+        ]),
+      );
+    } else {
+      delete backfill.partialAgents;
     }
     return {
       type: "scan-status",
@@ -216,7 +227,11 @@ export class ScanStatusModel {
     });
   }
 
-  finishAgent(agentName: string, sessionCount?: number): ScanStatusEvent {
+  finishAgent(
+    agentName: string,
+    sessionCount?: number,
+    completion: ScanCompletion = { completeness: "complete" },
+  ): ScanStatusEvent {
     const pendingAgents = this.status.pendingAgents.filter((agent) => agent !== agentName);
     const scanningAgents = this.status.scanningAgents.filter((agent) => agent !== agentName);
     const completedAgents = [...new Set([...this.status.completedAgents, agentName])];
@@ -229,6 +244,7 @@ export class ScanStatusModel {
       [agentName]: {
         agentName,
         status: "complete" as const,
+        ...completion,
         total,
         processed: total,
         sessions: sessionCount ?? previousStatus?.sessions ?? 0,
@@ -302,6 +318,7 @@ export class ScanStatusModel {
             : {
                 ...status,
                 status: "complete",
+                completeness: status.completeness ?? "complete",
                 completedAt: status.completedAt ?? now,
                 updatedAt: now,
               },
@@ -321,6 +338,16 @@ export class ScanStatusModel {
         completedAgents: [...backfill.completedAgents],
         failedAgents: [...backfill.failedAgents],
         progress: backfill.progress ? { ...backfill.progress } : undefined,
+        ...(backfill.partialAgents
+          ? {
+              partialAgents: Object.fromEntries(
+                Object.entries(backfill.partialAgents).map(([agentName, completion]) => [
+                  agentName,
+                  { ...completion },
+                ]),
+              ),
+            }
+          : {}),
       },
       updatedAt: Date.now(),
     });

@@ -10,7 +10,22 @@ export const MAX_PENDING_CRITICAL_SSE_FRAMES = 64;
 function scanStatusMilestone(status: ScanStatusEvent): string {
   const agentStates = Object.entries(status.agentStatuses)
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([agentName, agentStatus]) => [agentName, agentStatus.status, agentStatus.error ?? null]);
+    .map(([agentName, agentStatus]) => [
+      agentName,
+      agentStatus.status,
+      agentStatus.error ?? null,
+      agentStatus.completeness ?? null,
+      agentStatus.sourceFailureCount ?? null,
+      agentStatus.sourceFailureSummary ?? null,
+    ]);
+  const partialBackfills = Object.entries(status.backfill.partialAgents ?? {})
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([agentName, completion]) => [
+      agentName,
+      completion.completeness,
+      completion.sourceFailureCount ?? null,
+      completion.sourceFailureSummary ?? null,
+    ]);
   return JSON.stringify([
     status.active,
     status.phase,
@@ -25,6 +40,7 @@ function scanStatusMilestone(status: ScanStatusEvent): string {
     status.backfill.completedAgents,
     status.backfill.failedAgents,
     status.backfill.progress?.phase ?? null,
+    partialBackfills,
     status.searchIndexMaintenance?.active ?? false,
     status.searchIndexMaintenance?.currentAgent ?? null,
     status.searchIndexMaintenance?.pendingAgents ?? [],

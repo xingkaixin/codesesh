@@ -96,6 +96,51 @@ describe("formatScanStatusLabel", () => {
     ).toBe("Scanning full session history · codex · 1 history scan queued");
   });
 
+  it("shows a partial refresh as completed rather than failed", () => {
+    expect(
+      formatScanStatusLabel({
+        active: false,
+        backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
+        agentStatuses: {
+          codex: {
+            agentName: "codex",
+            status: "complete",
+            completeness: "partial",
+            sourceFailureCount: 1,
+            sourceFailureSummary: "SyntaxError: truncated JSON",
+            updatedAt: 1,
+          },
+        },
+      } as unknown as ScanStatusEvent),
+    ).toBe(
+      "Session refresh completed with partial data · codex · 1 source failed · SyntaxError: truncated JSON",
+    );
+  });
+
+  it("shows a completed partial full-history refresh", () => {
+    expect(
+      formatScanStatusLabel({
+        active: false,
+        backfill: {
+          active: false,
+          pendingAgents: [],
+          completedAgents: ["codex"],
+          failedAgents: [],
+          partialAgents: {
+            codex: {
+              completeness: "partial",
+              sourceFailureCount: 2,
+              sourceFailureSummary: "SyntaxError: truncated JSON",
+            },
+          },
+        },
+        agentStatuses: {},
+      } as unknown as ScanStatusEvent),
+    ).toBe(
+      "Full-history refresh completed with partial data · codex · 2 sources failed · SyntaxError: truncated JSON",
+    );
+  });
+
   it("shows backfill finalization progress", () => {
     expect(
       formatScanStatusLabel({
