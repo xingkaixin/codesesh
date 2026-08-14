@@ -30,6 +30,7 @@ import {
   reportFieldMismatch,
 } from "../utils/narrow.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
+import { normalizeToolArguments } from "./tool-arguments.js";
 
 const KIMI_TOOL_TITLE_MAP: Record<string, string> = {
   ReadFile: "read",
@@ -143,17 +144,6 @@ class KimiUsageAccumulator {
     if (stats.total_cost > 0) stats.cost_source = "estimated";
     return stats;
   }
-}
-
-function normalizeToolArguments(raw: unknown): unknown {
-  if (typeof raw === "string") {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return raw;
-    }
-  }
-  return raw;
 }
 
 function normalizeToolOutputParts(content: unknown, timestampMs: number): MessagePart[] {
