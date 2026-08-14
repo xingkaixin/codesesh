@@ -10,6 +10,7 @@ import {
   getSessionAgentKey,
   getSessionRouteKey,
   type SearchResult,
+  type SessionTree,
 } from "../contract/index.js";
 import {
   filterIndexedSessionReferences,
@@ -31,15 +32,24 @@ export interface SessionSearchSnapshot {
   byAgent: Record<string, SessionHead[]>;
 }
 
+export interface SessionSearchContext {
+  sessionTree?: SessionTree;
+}
+
+export interface SessionSearchFilterContext extends SessionSearchContext {
+  sessionSnapshot?: SessionHead[];
+}
+
 export function executeSessionSearch(
   query: string,
   options: SearchOptions,
   snapshot: SessionSearchSnapshot,
+  context: SessionSearchContext = {},
 ): SearchResult[] {
   const merged = mergeSearchQueryOptions(query, options);
 
   if (!needsIndexedSearch(merged.text, merged.options)) {
-    return searchRecentSessions(snapshot, merged.options);
+    return searchRecentSessions(snapshot, merged.options, context);
   }
 
   return searchIndexedSessions(query, merged.text, merged.parsed, merged.options);
@@ -113,10 +123,12 @@ function sessionReferenceKey(agentName: string, sessionId: string): string {
 export function filterSessionSearchCandidates(
   candidates: SearchResult[],
   options: SearchOptions,
-  sessionSnapshot: SessionHead[] = candidates.map((candidate) => candidate.session),
+  context: SessionSearchFilterContext = {},
 ): SearchResult[] {
   const projectScope = options.projectScope ?? null;
-  const inclusiveCosts = buildInclusiveCostLookup(sessionSnapshot, options);
+  const sessionSnapshot =
+    context.sessionSnapshot ?? candidates.map((candidate) => candidate.session);
+  const inclusiveCosts = buildInclusiveCostLookup(sessionSnapshot, options, context.sessionTree);
   const headMatches = candidates.filter((candidate) =>
     matchesSessionSearchFilters(
       candidate.reference.agentName,
@@ -149,12 +161,13 @@ export function filterSessionSearchCandidates(
 function searchRecentSessions(
   snapshot: SessionSearchSnapshot,
   options: SearchOptions,
+  context: SessionSearchContext,
 ): SearchResult[] {
   const limit = Math.max(0, Math.trunc(options.limit ?? 50));
   if (limit === 0) return [];
 
   const projectScope = options.projectScope ?? null;
-  const inclusiveCosts = buildInclusiveCostLookup(snapshot.sessions, options);
+  const inclusiveCosts = buildInclusiveCostLookup(snapshot.sessions, options, context.sessionTree);
   const sessions = options.agent ? (snapshot.byAgent[options.agent] ?? []) : snapshot.sessions;
   const results: SearchResult[] = [];
 
@@ -187,9 +200,10 @@ function searchRecentSessions(
 function buildInclusiveCostLookup(
   sessions: SessionHead[],
   options: SearchOptions,
+  sessionTree?: SessionTree,
 ): ReturnType<typeof buildSessionTree>["byRouteKey"] | null {
   if (options.costMin == null && options.costMax == null) return null;
-  return buildSessionTree(sessions).byRouteKey;
+  return (sessionTree ?? buildSessionTree(sessions)).byRouteKey;
 }
 
 function inclusiveCostFor(

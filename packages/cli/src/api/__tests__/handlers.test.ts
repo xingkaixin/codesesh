@@ -3,7 +3,9 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 const coreMocks = vi.hoisted(() => {
   return {
     attachProjectMetrics: vi.fn(),
+    buildSessionTree: vi.fn(),
     buildDashboard: vi.fn(),
+    filterSessionSearchCandidates: vi.fn(),
     getAnalyticsRevision: vi.fn(() => "0"),
     materializeSessionDetailResponse: vi.fn(),
     listFileActivity: vi.fn((): FileActivityResult[] => []),
@@ -21,6 +23,7 @@ const coreMocks = vi.hoisted(() => {
         _query: string,
         _options?: unknown,
         _scanResult?: unknown,
+        _context?: unknown,
       ): Array<{
         reference: { agentName: string; sessionId: string };
         session: SessionHead;
@@ -47,6 +50,12 @@ vi.mock("@codesesh/core", async (importOriginal) => {
       coreMocks.buildDashboard(...args);
       return actual.buildDashboard(...args);
     },
+    filterSessionSearchCandidates: (
+      ...args: Parameters<typeof actual.filterSessionSearchCandidates>
+    ) => {
+      coreMocks.filterSessionSearchCandidates(...args);
+      return actual.filterSessionSearchCandidates(...args);
+    },
     getAnalyticsRevision: coreMocks.getAnalyticsRevision,
     materializeSessionDetailResponse: coreMocks.materializeSessionDetailResponse,
     listFileActivity: coreMocks.listFileActivity,
@@ -57,6 +66,17 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     },
     listSessionAliases: coreMocks.listSessionAliases,
     executeSessionSearch: coreMocks.executeSessionSearch,
+  };
+});
+
+vi.mock("@codesesh/core/contract", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core/contract")>();
+  return {
+    ...actual,
+    buildSessionTree: (...args: Parameters<typeof actual.buildSessionTree>) => {
+      coreMocks.buildSessionTree(...args);
+      return actual.buildSessionTree(...args);
+    },
   };
 });
 
@@ -227,7 +247,9 @@ function toLocalDateKey(ts: number): string {
 
 afterEach(() => {
   coreMocks.attachProjectMetrics.mockClear();
+  coreMocks.buildSessionTree.mockClear();
   coreMocks.buildDashboard.mockClear();
+  coreMocks.filterSessionSearchCandidates.mockClear();
   coreMocks.getAnalyticsRevision.mockReset();
   coreMocks.getAnalyticsRevision.mockReturnValue("0");
   coreMocks.materializeSessionDetailResponse.mockReset();
@@ -997,6 +1019,64 @@ describe("handleSearchSessions", () => {
 
     expect(c.json.mock.calls[0]![0].results[0].parent.title).toBe("Renamed parent");
   });
+
+  it("reuses one snapshot tree for cost, alias, and parent context", async () => {
+    const parent = makeSession("p1", {
+      slug: "claudecode/p1",
+      stats: {
+        message_count: 0,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 0,
+      },
+    });
+    const child = makeSession("c1", {
+      slug: "claudecode/c1",
+      parent_reference: { agentName: "claudecode", sessionId: "p1" },
+      stats: {
+        message_count: 0,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 2,
+      },
+    });
+    const sessions = [parent, child];
+    let snapshot = makeScanResult({
+      sessions,
+      byAgent: { claudecode: sessions },
+    });
+    const source: ScanResultSource = { getSnapshot: () => snapshot };
+    coreMocks.listSessionAliases.mockReturnValue([makeAlias("claudecode", "p1", "Needle parent")]);
+    coreMocks.executeSessionSearch.mockImplementation((_query, _options, _scanResult, context) => {
+      expect((context as { sessionTree?: unknown } | undefined)?.sessionTree).toBeDefined();
+      return [{ reference: { agentName: "claudecode", sessionId: "c1" }, session: child }];
+    });
+
+    await handleSearchSessions(makeMockContext({ query: { q: "needle cost:>1" } }), source);
+    await handleSearchSessions(makeMockContext({ query: { q: "needle cost:>1" } }), source);
+
+    expect(coreMocks.buildSessionTree).toHaveBeenCalledTimes(1);
+    const searchContext = coreMocks.executeSessionSearch.mock.calls[0]![3] as {
+      sessionTree: unknown;
+    };
+    expect(coreMocks.filterSessionSearchCandidates).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        sessionSnapshot: sessions,
+        sessionTree: searchContext.sessionTree,
+      }),
+    );
+
+    const replacementSessions = [...sessions];
+    snapshot = makeScanResult({
+      sessions: replacementSessions,
+      byAgent: { claudecode: replacementSessions },
+    });
+    await handleSearchSessions(makeMockContext({ query: { q: "needle cost:>1" } }), source);
+
+    expect(coreMocks.buildSessionTree).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("handleGetFileActivity", () => {
@@ -1030,6 +1110,24 @@ describe("handleGetProjects", () => {
     handleGetProjects(makeMockContext(), source);
 
     expect(coreMocks.attachProjectMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains a recently used aggregation when the cache reaches capacity", () => {
+    const source = makeScanSource();
+    const queryFor = (day: number) => ({
+      from: new Date(0).toISOString(),
+      to: new Date((day + 1) * 86400000).toISOString(),
+    });
+
+    for (let day = 0; day < 64; day += 1) {
+      handleGetProjects(makeMockContext({ query: queryFor(day) }), source);
+    }
+    handleGetProjects(makeMockContext({ query: queryFor(0) }), source);
+    handleGetProjects(makeMockContext({ query: queryFor(64) }), source);
+    handleGetProjects(makeMockContext({ query: queryFor(0) }), source);
+    handleGetProjects(makeMockContext({ query: queryFor(1) }), source);
+
+    expect(coreMocks.attachProjectMetrics).toHaveBeenCalledTimes(66);
   });
 
   it("lets request dates override the default time window", () => {

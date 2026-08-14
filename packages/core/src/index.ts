@@ -164,3 +164,4 @@ export { buildDashboard, getSessionActivityTime } from "./analytics/dashboard.js
 export type { DashboardData, DashboardScope } from "./analytics/dashboard.js";
 export { attachProjectMetrics, attachProjectMetricsFromTree } from "./analytics/projects.js";
 export { executeSessionSearch, filterSessionSearchCandidates } from "./search/index.js";
+export type { SessionSearchContext, SessionSearchFilterContext } from "./search/index.js";

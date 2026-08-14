@@ -15,8 +15,8 @@ import {
   filterSessionTreeByActivityWindow,
   formatSessionReference,
   getSessionAgentKey,
-  getSessionRouteKey,
   normalizeSessionReference,
+  type SessionTree,
   type AppConfig,
   type ScanStatusEvent,
   type SearchResult,
@@ -31,6 +31,7 @@ import {
   deleteBookmark,
   getAgentInfoMap,
   getAnalyticsRevision,
+  mergeSearchQueryOptions,
   executeSessionSearch,
   getSearchProjectDirectory,
   importBookmarks,
@@ -147,12 +148,25 @@ function parseDateWindowRequest(c: Context, endpoint: string, defaults: SessionL
 
 interface SnapshotAggregationCache {
   sessions: SessionHead[];
+  sessionTree?: SessionTree;
   values: Map<string, unknown>;
 }
 
 const SNAPSHOT_AGGREGATION_CACHE_LIMIT = 64;
 const snapshotAggregationCaches = new WeakMap<ScanResultSource, SnapshotAggregationCache>();
 type SnapshotAggregationCacheState = "hit" | "miss";
+
+function getSnapshotAggregationCache(
+  source: ScanResultSource,
+  sessions: SessionHead[],
+): SnapshotAggregationCache {
+  let cache = snapshotAggregationCaches.get(source);
+  if (!cache || cache.sessions !== sessions) {
+    cache = { sessions, values: new Map() };
+    snapshotAggregationCaches.set(source, cache);
+  }
+  return cache;
+}
 
 /**
  * LiveScanStore replaces its canonical sessions array whenever the snapshot
@@ -165,11 +179,7 @@ function getSnapshotAggregation<T>(
   build: () => T,
   onCacheState?: (state: SnapshotAggregationCacheState) => void,
 ): T {
-  let cache = snapshotAggregationCaches.get(source);
-  if (!cache || cache.sessions !== sessions) {
-    cache = { sessions, values: new Map() };
-    snapshotAggregationCaches.set(source, cache);
-  }
+  const cache = getSnapshotAggregationCache(source, sessions);
 
   const cacheKey = JSON.stringify(key);
   if (cache.values.has(cacheKey)) {
@@ -188,6 +198,11 @@ function getSnapshotAggregation<T>(
   cache.values.set(cacheKey, value);
   onCacheState?.("miss");
   return value;
+}
+
+function getSnapshotSessionTree(source: ScanResultSource, sessions: SessionHead[]): SessionTree {
+  const cache = getSnapshotAggregationCache(source, sessions);
+  return (cache.sessionTree ??= buildSessionTree(sessions));
 }
 
 type DashboardStorageAggregation = Pick<DashboardData, "recentFileActivities" | "modelCost">;
@@ -479,7 +494,7 @@ export function handleGetProjects(
     scanResult.sessions,
     ["projects", from, to],
     () => {
-      const tree = buildSessionTree(scanResult.sessions);
+      const tree = getSnapshotSessionTree(scanSource, scanResult.sessions);
       const sessions = filterSessionTreeByActivityWindow(scanResult.sessions, from, to, tree);
       return {
         projects: attachProjectMetricsFromTree(listCachedProjectGroups(sessions), tree, from, to),
@@ -615,22 +630,16 @@ export async function handleGetSessions(
  */
 function withParentContext(
   results: SearchResult[],
-  sessions: SessionHead[],
+  getSessionTree: () => SessionTree,
   aliases: AliasView,
 ): SearchResult[] {
   if (!results.some((result) => result.session.parent_reference)) return results;
-
-  const byRouteKey = new Map(
-    sessions.map((session) => [
-      getSessionRouteKey(getSessionAgentKey(session), session.id),
-      session,
-    ]),
-  );
+  const byRouteKey = getSessionTree().byRouteKey;
 
   return results.map((result) => {
     const parentReference = result.session.parent_reference;
     if (!parentReference) return result;
-    const parent = byRouteKey.get(formatSessionReference(parentReference));
+    const parent = byRouteKey.get(formatSessionReference(parentReference))?.session;
     if (!parent) return result;
     const reference = normalizeSessionReference(parentReference);
     return { ...result, parent: { reference, title: aliases.get(reference) ?? parent.title } };
@@ -731,18 +740,35 @@ export async function handleSearchSessions(
   const { cwd: _cwd, ...searchOptions } = searchRequestOptions;
   const resolvedSearchOptions = projectScope ? { ...searchOptions, projectScope } : searchOptions;
   const aliases = loadAliasView();
-  const results = executeSessionSearch(query, resolvedSearchOptions, scanResult).map((result) => ({
+  let sessionTree: SessionTree | undefined;
+  const getSessionTree = () =>
+    (sessionTree ??= getSnapshotSessionTree(scanSource, scanResult.sessions));
+  const effectiveSearchOptions = mergeSearchQueryOptions(query, resolvedSearchOptions).options;
+  const searchContext =
+    effectiveSearchOptions.costMin != null || effectiveSearchOptions.costMax != null
+      ? { sessionTree: getSessionTree() }
+      : undefined;
+  const searchResults = searchContext
+    ? executeSessionSearch(query, resolvedSearchOptions, scanResult, searchContext)
+    : executeSessionSearch(query, resolvedSearchOptions, scanResult);
+  const results = searchResults.map((result) => ({
     ...result,
     session: aliases.decorate(result.session, result.reference),
   }));
-  const aliasResults = findAliasSearchResults(query, resolvedSearchOptions, scanResult, aliases);
+  const aliasResults = findAliasSearchResults(
+    query,
+    resolvedSearchOptions,
+    scanResult,
+    aliases,
+    searchContext,
+  );
   const mergedResults = mergeAliasSearchResults(
     results,
     aliasResults,
     resolvedSearchOptions.limit ?? 50,
   );
   return c.json({
-    results: withParentContext(mergedResults, scanResult.sessions, aliases),
+    results: withParentContext(mergedResults, getSessionTree, aliases),
   });
 }
 
