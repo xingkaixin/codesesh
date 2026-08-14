@@ -4,7 +4,12 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const distEntry = join(dirname(fileURLToPath(import.meta.url)), "../../../dist/contract/index.mjs");
+const testFixturesEntry = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../dist/test-fixtures.mjs",
+);
 const distExists = existsSync(distEntry);
+const testFixturesExist = existsSync(testFixturesEntry);
 
 // Requires `pnpm --filter @codesesh/core build` to have run first — the
 // contract package runtime must remain browser-safe.
@@ -24,10 +29,6 @@ describe("contract browser-safety", () => {
     expect(Object.keys(contract).sort()).toEqual(
       [
         "PROJECT_IDENTITY_KINDS",
-        "SAMPLE_DASHBOARD_DATA",
-        "SAMPLE_SCAN_STATUS_EVENT",
-        "SAMPLE_SESSIONS_UPDATED_EVENT",
-        "SAMPLE_SESSION_HEAD",
         "UNKNOWN_AGENT_NAME",
         "addCalendarDays",
         "agentRoutePath",
@@ -61,6 +62,19 @@ describe("contract browser-safety", () => {
         "startOfCalendarDay",
         "toCalendarDayKey",
         "updateSessionIndex",
+      ].sort(),
+    );
+  });
+
+  it.skipIf(!testFixturesExist)("exposes fixtures from the explicit test-only entry", async () => {
+    const fixtures = await import(testFixturesEntry);
+
+    expect(Object.keys(fixtures).sort()).toEqual(
+      [
+        "SAMPLE_DASHBOARD_DATA",
+        "SAMPLE_SCAN_STATUS_EVENT",
+        "SAMPLE_SESSIONS_UPDATED_EVENT",
+        "SAMPLE_SESSION_HEAD",
       ].sort(),
     );
   });

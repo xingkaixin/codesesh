@@ -1,4 +1,8 @@
-import type { SearchIndexSyncOptions, SessionCacheMeta, SessionHeadChange } from "@codesesh/core";
+import type {
+  PersistedSessionHeadChange,
+  SearchIndexSyncOptions,
+  SessionCacheMeta,
+} from "@codesesh/core";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 
 type FullSearchIndexJob = Extract<SearchIndexWorkerJob, { kind: "full" }>;
@@ -17,7 +21,7 @@ interface PendingChanges {
   context: string;
   agentName: string;
   publicationId?: string;
-  changesBySessionId: Map<string, SessionHeadChange>;
+  changesBySessionId: Map<string, PersistedSessionHeadChange>;
   removedSessionIds: Set<string>;
   meta: Record<string, SessionCacheMeta>;
   searchIndexOptions?: SearchIndexSyncOptions;

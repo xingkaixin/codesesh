@@ -2,7 +2,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SAMPLE_SESSIONS_UPDATED_EVENT, SAMPLE_SESSION_HEAD } from "@codesesh/core/contract";
+import { SAMPLE_SESSIONS_UPDATED_EVENT, SAMPLE_SESSION_HEAD } from "@codesesh/core/test-fixtures";
 import type { ApiProjectGroup, DashboardData, SessionsUpdatedEvent } from "./lib/api";
 import App from "./App";
 import { appRouteChildren } from "./lib/app-routes";

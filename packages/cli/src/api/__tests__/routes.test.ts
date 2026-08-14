@@ -2,9 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import {
   SAMPLE_SCAN_STATUS_EVENT,
   SAMPLE_SESSIONS_UPDATED_EVENT,
-  type ScanStatusEvent,
-  type SessionsUpdatedEvent,
-} from "@codesesh/core/contract";
+} from "@codesesh/core/test-fixtures";
+import type { ScanStatusEvent, SessionsUpdatedEvent } from "@codesesh/core/contract";
 import { createApiRoutes } from "../routes.js";
 import { MAX_PENDING_CRITICAL_SSE_FRAMES } from "../sse-event-buffer.js";
 import type { LiveSnapshot } from "@codesesh/core";

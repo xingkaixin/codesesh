@@ -16,7 +16,7 @@ import {
   type ScanOptions,
   type LiveSnapshot,
   type SessionHead,
-  type SessionHeadChange,
+  type PersistedSessionHeadChange,
   type SessionSourceFailure,
   type SessionSnapshotCompleteness,
 } from "@codesesh/core";
@@ -69,7 +69,7 @@ type StatusChangedListener = (event: ScanStatusEvent) => void;
 type CachedSessions = NonNullable<ReturnType<typeof loadCachedSessions>>;
 
 interface SessionPersistenceDiff {
-  changedSessions: SessionHeadChange[];
+  changedSessions: PersistedSessionHeadChange[];
   removedSessionIds: string[];
 }
 

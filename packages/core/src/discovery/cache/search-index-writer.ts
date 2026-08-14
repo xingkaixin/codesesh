@@ -3,7 +3,7 @@ import type { SessionDetail, SessionFileActivity, SessionHead } from "../../type
 import { extractSessionFileActivity } from "../../utils/file-activity.js";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import type { SQLiteDatabase } from "../../utils/sqlite.js";
-import { SEARCH_INDEX_BULK_SYNC_THRESHOLD, type SessionHeadChange } from "./db.js";
+import { SEARCH_INDEX_BULK_SYNC_THRESHOLD, type PersistedSessionHeadChange } from "./db.js";
 import { advanceAnalyticsRevision } from "./analytics-revision.js";
 import {
   buildSessionContentFromMessages,
@@ -133,7 +133,7 @@ type SearchIndexPlanRequest =
   | { kind: "snapshot"; sessions: SessionHead[] }
   | {
       kind: "changes";
-      changes: SessionHeadChange[];
+      changes: PersistedSessionHeadChange[];
       removedSessionIds: readonly string[];
     };
 
@@ -141,7 +141,7 @@ interface SearchIndexPlan {
   agentName: string;
   mode: "bulk" | "incremental";
   sessionCount: number;
-  changes: SessionHeadChange[];
+  changes: PersistedSessionHeadChange[];
   removedSessionIds: string[];
   detailVersionBySessionId: Map<string, string>;
   needsRebuild: boolean;
@@ -151,7 +151,7 @@ interface SearchIndexPlan {
 interface SearchIndexPlanInput {
   agentName: string;
   sessionCount: number;
-  candidates: SessionHeadChange[];
+  candidates: PersistedSessionHeadChange[];
   removedSessionIds: string[];
   state: SearchIndexState;
   options: SearchIndexSyncOptions;
@@ -411,7 +411,7 @@ export function readPendingSearchIndexMaintenance(
 
 function loadSearchIndexEntry(
   agentName: string,
-  change: SessionHeadChange,
+  change: PersistedSessionHeadChange,
   loadSessionData: (sessionId: string) => SessionDetail,
   detailVersion: string,
   failures: SearchIndexSyncFailure[],
@@ -448,7 +448,7 @@ function loadSearchIndexEntry(
 
 function* loadSearchIndexEntries(
   agentName: string,
-  changes: Iterable<SessionHeadChange>,
+  changes: Iterable<PersistedSessionHeadChange>,
   loadSessionData: (sessionId: string) => SessionDetail,
   detailVersionFor: (sessionId: string) => string,
   failures: SearchIndexSyncFailure[],
@@ -648,7 +648,7 @@ function writeSearchIndexRows(
 function loadOrPreStageEntries(
   db: SQLiteDatabase,
   agentName: string,
-  changes: SessionHeadChange[],
+  changes: PersistedSessionHeadChange[],
   loadSessionData: (sessionId: string) => SessionDetail,
   detailVersionFor: (sessionId: string) => string,
   failures: SearchIndexSyncFailure[],
@@ -705,7 +705,7 @@ function readSearchIndexPlanInput(
   options: SearchIndexSyncOptions,
 ): SearchIndexPlanInput {
   const startedAt = performance.now();
-  let candidates: SessionHeadChange[];
+  let candidates: PersistedSessionHeadChange[];
   let removedSessionIds: string[];
   let sessionCount: number;
 
@@ -850,7 +850,7 @@ export function prepareSessionSnapshotSearchIndex(
 export function prepareSessionChangesSearchIndex(
   db: SQLiteDatabase,
   agentName: string,
-  changes: SessionHeadChange[],
+  changes: PersistedSessionHeadChange[],
   removedSessionIds: string[],
   loadSessionData: (sessionId: string) => SessionDetail,
   options: SearchIndexSyncOptions = {},
@@ -946,7 +946,7 @@ function executeSearchIndexPlan(
 ): SearchIndexSyncResult {
   let indexed = 0;
   const failures: SearchIndexSyncFailure[] = [];
-  const loadEntries = (changes: SessionHeadChange[]) =>
+  const loadEntries = (changes: PersistedSessionHeadChange[]) =>
     loadSearchIndexEntries(
       plan.agentName,
       changes,
@@ -1009,7 +1009,7 @@ export function syncSessionSearchIndex(
 
 export function syncSessionSearchIndexChanges(
   agentName: string,
-  changes: SessionHeadChange[],
+  changes: PersistedSessionHeadChange[],
   removedSessionIds: string[],
   loadSessionData: (sessionId: string) => SessionDetail,
   options: SearchIndexSyncOptions = {},

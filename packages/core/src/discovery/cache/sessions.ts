@@ -14,7 +14,7 @@ import {
   getLegacyCachePath,
   hasCacheStorage,
   type ScalarRow,
-  type SessionHeadChange,
+  type PersistedSessionHeadChange,
 } from "./db.js";
 import { advanceAnalyticsRevision } from "./analytics-revision.js";
 import { withCacheDb, withCacheDbReadOnly, type CacheReadOutcome } from "./schema.js";
@@ -645,7 +645,7 @@ export function writeCachedSessionSnapshot(
  */
 export function saveCachedSessionChanges(
   agentName: string,
-  changes: SessionHeadChange[],
+  changes: PersistedSessionHeadChange[],
   removedSessionIds: string[],
   meta: Record<string, SessionCacheMeta> = {},
 ): boolean {
@@ -670,7 +670,7 @@ export function saveCachedSessionChanges(
 export function writeCachedSessionChanges(
   db: SQLiteDatabase,
   agentName: string,
-  changes: SessionHeadChange[],
+  changes: PersistedSessionHeadChange[],
   removedSessionIds: string[],
   meta: Record<string, SessionCacheMeta> = {},
 ): void {

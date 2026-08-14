@@ -101,7 +101,7 @@ export type {
   SearchIndexSyncResult,
   SearchOptions,
   SearchRequestOptions,
-  SessionHeadChange,
+  PersistedSessionHeadChange,
   SessionTagTiming,
 } from "./discovery/index.js";
 export {

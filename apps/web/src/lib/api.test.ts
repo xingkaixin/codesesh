@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SAMPLE_DASHBOARD_DATA, SAMPLE_SESSION_HEAD } from "@codesesh/core/contract";
+import { SAMPLE_DASHBOARD_DATA, SAMPLE_SESSION_HEAD } from "@codesesh/core/test-fixtures";
 import type { DashboardFilters } from "./api";
 import {
   fetchAgents,

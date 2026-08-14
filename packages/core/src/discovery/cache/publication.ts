@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { SessionCacheMeta } from "../../agents/base.js";
 import type { SessionDetail, SessionHead } from "../../types/index.js";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
-import type { SessionHeadChange } from "./db.js";
+import type { PersistedSessionHeadChange } from "./db.js";
 import { advanceAnalyticsRevision } from "./analytics-revision.js";
 import { sessionDetailVersion } from "./detail-version.js";
 import { assertSessionProjectIdentities } from "./messages.js";
@@ -35,7 +35,7 @@ export type DurableSessionPublication =
   | {
       kind: "changes";
       agentName: string;
-      changes: SessionHeadChange[];
+      changes: PersistedSessionHeadChange[];
       removedSessionIds: string[];
       meta: Record<string, SessionCacheMeta>;
       publicationId?: string;

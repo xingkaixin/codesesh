@@ -6,7 +6,7 @@ import { createServer as createNodeServer, type Server as NodeServer } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/core/contract";
+import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/core/test-fixtures";
 import { appLogger } from "./logging.js";
 import type { ProjectIdentityResolver } from "./project-identity-resolver.js";
 import { createServer } from "./server.js";

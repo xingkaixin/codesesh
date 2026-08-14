@@ -1,7 +1,7 @@
 import {
   loadCachedSessions,
   readPendingSearchIndexMaintenance,
-  type SessionHeadChange,
+  type PersistedSessionHeadChange,
 } from "@codesesh/core";
 import type { SearchIndexMaintenanceStatus } from "@codesesh/core/contract";
 import { toError } from "./errors.js";
@@ -99,7 +99,7 @@ export class SearchIndexMaintenanceScheduler {
     const sessionsById = new Map(
       cached.sessions.map((session, sortIndex) => [session.id, { session, sortIndex }]),
     );
-    const changes = pending.sessionIds.flatMap((sessionId): SessionHeadChange[] => {
+    const changes = pending.sessionIds.flatMap((sessionId): PersistedSessionHeadChange[] => {
       const change = sessionsById.get(sessionId);
       return change ? [change] : [];
     });
