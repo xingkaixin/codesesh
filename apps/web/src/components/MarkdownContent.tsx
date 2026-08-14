@@ -2,6 +2,7 @@ import { memo, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components, Options } from "react-markdown";
 import { resolveLocalMediaSource } from "../lib/local-media-policy";
+import { buildHighlightPattern } from "../lib/search-highlight";
 
 const markdownComponents: Components = {
   a: ({ children }) => <span className="console-markdown-link">{children}</span>,
@@ -51,27 +52,6 @@ interface HastNode {
 
 /** Elements whose text is shown verbatim, so search must not rewrite it. */
 const OPAQUE_TAG_NAMES = new Set(["code", "pre", "mark"]);
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function buildHighlightPattern(query?: string): RegExp | null {
-  const normalized = query?.trim();
-  if (!normalized) return null;
-
-  const terms = Array.from(
-    new Set(
-      (normalized.match(/"[^"]+"|\S+/g) ?? [])
-        .map((term) => term.replace(/^"|"$/g, "").trim())
-        .filter(Boolean)
-        .filter((term) => !/^OR$/i.test(term)),
-    ),
-  );
-
-  if (terms.length === 0) return null;
-  return new RegExp(`(${terms.map(escapeRegExp).join("|")})`, "gi");
-}
 
 /** Splits a text node around matches, or returns null when nothing matched. */
 function splitHighlighted(value: string, pattern: RegExp): HastNode[] | null {

@@ -8,7 +8,7 @@ import {
   type SetStateAction,
 } from "react";
 import { useLocation } from "react-router-dom";
-import { DetailLanding, type LandingAgentItem, type LandingSession } from "../DetailLanding";
+import { DetailLanding, type LandingAgentItem } from "../DetailLanding";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { RenderProfiler } from "../RenderProfiler";
 import { SessionDetailSkeleton } from "../SessionDetailSkeleton";
@@ -47,7 +47,7 @@ import type { AgentCatalog } from "../../lib/agents";
 import type { TimeWindowPreset } from "../../lib/time-window";
 import type { ViewState } from "../../lib/view-state";
 import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
-import { getSessionRouteKey } from "../../lib/session-indexes";
+import { getSessionRouteKey, type IndexedSession } from "../../lib/session-indexes";
 
 interface SessionDetailModel {
   session: Api.SessionDetail | null;
@@ -98,11 +98,11 @@ interface AppRouteContentProps {
   agentCatalog: AgentCatalog;
   agentNameMap: ReadonlyMap<string, string>;
   projects: ApiProjectGroup[];
-  landingSessions: LandingSession[];
+  landingSessions: IndexedSession[];
   sessions?: SessionHead[];
-  sessionsByAgent: Map<string, LandingSession[]>;
+  sessionsByAgent: Map<string, IndexedSession[]>;
   activeProject: ApiProjectGroup | null;
-  activeProjectSessions: LandingSession[];
+  activeProjectSessions: IndexedSession[];
   overview: OverviewModel;
   sessionDetail: SessionDetailModel;
   projectAgentFilter: ProjectAgentFilterModel;
@@ -159,7 +159,7 @@ export function AppRouteContent({
   }, [currentSessionAgentName, currentSessionId, sessions]);
   const toggleSessionBookmark = bookmarks.toggleSessionBookmark;
   const toggleLandingBookmark = useCallback(
-    (session: LandingSession) => toggleSessionBookmark(session, session.agentKey),
+    (session: IndexedSession) => toggleSessionBookmark(session, session.agentKey),
     [toggleSessionBookmark],
   );
   if (loading) return <SessionDetailSkeleton />;

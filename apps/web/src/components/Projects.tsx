@@ -3,10 +3,9 @@ import type { ApiProjectAgentStat, ApiProjectGroup, AppConfig } from "../lib/api
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import { formatCompact, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getProjectPath } from "../lib/projects";
-import { sessionRoutePath } from "../lib/session-indexes";
+import { sessionRoutePath, type IndexedSession } from "../lib/session-indexes";
 import type { TimeWindowPreset } from "../lib/time-window";
 import { AgentIcon } from "./AgentIcon";
-import type { LandingSession } from "./DetailLanding";
 import { OverviewScreen } from "./overview/OverviewScreen";
 import { ProjectTimeline } from "./project-timeline/ProjectTimeline";
 import { Panel } from "./ui/panel";
@@ -229,7 +228,7 @@ export function ProjectDashboardView({
   project: ApiProjectGroup | null;
   agentCatalog: AgentCatalog;
   projectKey: string;
-  sessions: LandingSession[];
+  sessions: IndexedSession[];
   activeAgent?: string;
   onChangeAgent: (agent?: string) => void;
   timeWindow: AppConfig["window"] | null;
