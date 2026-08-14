@@ -25,7 +25,7 @@ import type {
   SmartTag,
 } from "../../types/index.js";
 import type { SearchOptions } from "../../discovery/cache/search.js";
-import type { SearchResult } from "../../contract/index.js";
+import { buildSessionTree, type SearchResult } from "../../contract/index.js";
 import { closeCacheStorage } from "../../discovery/cache/db.js";
 import { searchSessions, syncSessionSearchIndex } from "../../discovery/cache/search.js";
 import { compareSessionActivityDesc, mergeSortedSessions } from "../../contract/session-index.js";
@@ -839,7 +839,41 @@ describe("search candidate filtering", () => {
       },
     ];
 
-    const results = filterSessionSearchCandidates(candidates, { costMin: 1 }, [parent, child]);
+    const results = filterSessionSearchCandidates(
+      candidates,
+      { costMin: 1 },
+      {
+        sessionSnapshot: [parent, child],
+      },
+    );
+
+    expect(results.map((result) => result.session.id)).toEqual([parent.id]);
+  });
+
+  it("uses a supplied session tree for inclusive cost filters", () => {
+    const parent = makeSessionHead({
+      id: "provided-tree-parent",
+      agent: "codex",
+      cost: 0,
+      messages: [],
+    });
+    const child = {
+      ...makeSessionHead({
+        id: "provided-tree-child",
+        agent: "codex",
+        cost: 0,
+        messages: [],
+      }),
+      parent_reference: { agentName: "codex", sessionId: parent.id },
+    };
+    const snapshot = {
+      sessions: [parent, child],
+      byAgent: { codex: [parent, child] },
+    };
+    const sessionTree = buildSessionTree([parent, child]);
+    sessionTree.byRouteKey.get(`codex/${parent.id}`)!.inclusiveStats.cost = 1;
+
+    const results = executeSessionSearch("", { costMin: 1 }, snapshot, { sessionTree });
 
     expect(results.map((result) => result.session.id)).toEqual([parent.id]);
   });

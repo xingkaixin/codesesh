@@ -12,6 +12,7 @@ import {
   StateStorageUnavailableError,
   type FileActivityResult,
   type LiveSnapshot,
+  type SessionSearchContext,
   type SearchOptions,
 } from "@codesesh/core";
 import { appLogger } from "../logging.js";
@@ -107,6 +108,7 @@ export function findAliasSearchResults(
   options: SearchOptions,
   scanResult: LiveSnapshot,
   aliases: AliasView,
+  context: SessionSearchContext = {},
 ): SearchResult[] {
   const search = mergeSearchQueryOptions(query, options);
   const needle = search.text.trim().toLowerCase();
@@ -137,7 +139,8 @@ export function findAliasSearchResults(
     });
   }
 
-  return filterSessionSearchCandidates(results, search.options, scanResult.sessions).sort(
-    (a, b) => getSessionActivityTime(b.session) - getSessionActivityTime(a.session),
-  );
+  return filterSessionSearchCandidates(results, search.options, {
+    sessionSnapshot: scanResult.sessions,
+    sessionTree: context.sessionTree,
+  }).sort((a, b) => getSessionActivityTime(b.session) - getSessionActivityTime(a.session));
 }
