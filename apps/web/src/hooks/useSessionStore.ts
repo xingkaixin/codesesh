@@ -5,6 +5,7 @@ import {
 } from "@codesesh/core/contract";
 import {
   isCancelledError,
+  keepPreviousData,
   queryOptions,
   useQuery,
   useQueryClient,
@@ -36,7 +37,6 @@ export interface SessionStoreSnapshot {
   window: AppConfig["window"];
   agents: AgentInfo[];
   sessions: SessionHead[];
-  projects: ApiProjectGroup[];
   dashboard: DashboardData;
 }
 
@@ -45,39 +45,34 @@ export interface LiveSessionApplyResult {
   visibleNewSessions: number;
 }
 
-type SnapshotAggregates = Pick<SessionStoreSnapshot, "agents" | "projects" | "dashboard">;
+type SnapshotAggregates = Pick<SessionStoreSnapshot, "agents" | "dashboard">;
 const LIVE_AGGREGATE_REFRESH_INTERVAL_MS = 2_000;
+const EMPTY_PROJECTS: ApiProjectGroup[] = [];
 
 const EMPTY_SNAPSHOT = {
   agents: [] satisfies AgentInfo[],
   sessions: [] satisfies SessionHead[],
-  projects: [] satisfies ApiProjectGroup[],
   dashboard: null,
 };
 
-async function loadProjects(
-  window: AppConfig["window"],
-  signal: AbortSignal,
-): Promise<ApiProjectGroup[]> {
-  try {
-    return (await fetchProjects(window, { signal })).projects;
-  } catch (error) {
-    if (signal.aborted) throw error;
-    console.error("Failed to load projects:", error);
-    return [];
-  }
+function projectsOptions(window: AppConfig["window"]) {
+  return queryOptions({
+    queryKey: queryKeys.project(window),
+    queryFn: async ({ signal }) => (await fetchProjects(window, { signal })).projects,
+    staleTime: LIVE_AGGREGATE_REFRESH_INTERVAL_MS,
+    retry: false,
+  });
 }
 
 async function fetchSnapshotAggregates(
   window: AppConfig["window"],
   signal: AbortSignal,
 ): Promise<SnapshotAggregates> {
-  const [agents, projects, dashboard] = await Promise.all([
+  const [agents, dashboard] = await Promise.all([
     fetchAgents(window, { signal }),
-    loadProjects(window, signal),
     fetchDashboard(window, {}, { signal }),
   ]);
-  return { agents, projects, dashboard };
+  return { agents, dashboard };
 }
 
 function snapshotAggregatesOptions(window: AppConfig["window"]) {
@@ -104,6 +99,18 @@ async function fetchLiveSnapshotAggregates(
     needsRefresh ? invalidateLiveSessionCollections(queryClient) : Promise.resolve(),
   ]);
   return aggregates;
+}
+
+function refreshLiveProjects(queryClient: QueryClient, window: AppConfig["window"]): void {
+  const options = projectsOptions(window);
+  const state = queryClient.getQueryState(options.queryKey);
+  const needsRefresh =
+    !state ||
+    state.data === undefined ||
+    state.isInvalidated ||
+    Date.now() - state.dataUpdatedAt >= LIVE_AGGREGATE_REFRESH_INTERVAL_MS;
+  if (!needsRefresh) return;
+  void queryClient.fetchQuery(options).catch(() => undefined);
 }
 
 function sameWindow(
@@ -182,6 +189,11 @@ export function useSessionStore() {
     ...sessionSnapshotOptions(requestedWindow ?? {}),
     enabled: false,
   });
+  const projectsQuery = useQuery({
+    ...projectsOptions(requestedWindow ?? {}),
+    enabled: requestedWindow !== null,
+    placeholderData: keepPreviousData,
+  });
   const configFailed = configQuery.isError;
   const refetchConfig = configQuery.refetch;
   const snapshot = snapshotQuery.data;
@@ -200,12 +212,23 @@ export function useSessionStore() {
       setRequestedWindow(window);
       setPreviewSnapshot(null);
       try {
-        await queryClient.cancelQueries({ queryKey: queryKeys.sessionSnapshots });
-        await queryClient.invalidateQueries({
-          queryKey: queryKeys.sessionSnapshot(window),
-          exact: true,
-          refetchType: "none",
-        });
+        await Promise.all([
+          queryClient.cancelQueries({ queryKey: queryKeys.sessionSnapshots }),
+          queryClient.cancelQueries({ queryKey: queryKeys.projects }),
+        ]);
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.sessionSnapshot(window),
+            exact: true,
+            refetchType: "none",
+          }),
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.project(window),
+            exact: true,
+            refetchType: "none",
+          }),
+        ]);
+        void queryClient.fetchQuery(projectsOptions(window)).catch(() => undefined);
         return await queryClient.fetchQuery(
           sessionSnapshotOptions(window, (preview) => {
             if (reloadVersionRef.current === reloadVersion) setPreviewSnapshot(preview);
@@ -279,6 +302,7 @@ export function useSessionStore() {
         sessions: projection.sessions,
       });
       await invalidateLiveSessionDerivedQueries(queryClient, event);
+      refreshLiveProjects(queryClient, activeWindow);
       const aggregates = await fetchLiveSnapshotAggregates(queryClient, activeWindow);
       const updated =
         queryClient.setQueryData<SessionStoreSnapshot>(snapshotKey, (latest) =>
@@ -311,6 +335,18 @@ export function useSessionStore() {
     currentSnapshot ??
     (sameWindow(previewSnapshot?.window, requestedWindow) ? previewSnapshot : null);
   const agents = displayedSnapshot?.agents ?? EMPTY_SNAPSHOT.agents;
+  const projects = projectsQuery.data ?? EMPTY_PROJECTS;
+  const projectsLoading = requestedWindow === null || projectsQuery.isPending;
+  const projectsError =
+    requestedWindow !== null && projectsQuery.isError
+      ? projectsQuery.error instanceof Error
+        ? projectsQuery.error.message
+        : "Unable to load projects."
+      : null;
+  const retryProjects = useCallback(async (): Promise<void> => {
+    if (!requestedWindowRef.current) return;
+    await projectsQuery.refetch({ cancelRefetch: true });
+  }, [projectsQuery]);
   const agentCatalog = useMemo(() => createAgentCatalog(agents), [agents]);
   const validAgentKeys = useMemo(
     () => new Set(agentCatalog.active.map((agent) => agent.name.toLowerCase())),
@@ -327,7 +363,9 @@ export function useSessionStore() {
     window: displayedSnapshot?.window ?? null,
     agents,
     sessions: displayedSnapshot?.sessions ?? EMPTY_SNAPSHOT.sessions,
-    projects: displayedSnapshot?.projects ?? EMPTY_SNAPSHOT.projects,
+    projects,
+    projectsError,
+    projectsLoading,
     dashboard: displayedSnapshot?.dashboard ?? EMPTY_SNAPSHOT.dashboard,
     loading:
       configQuery.isPending ||
@@ -343,5 +381,6 @@ export function useSessionStore() {
     applyLiveEvent,
     resyncLiveState,
     retryLoad,
+    retryProjects,
   };
 }

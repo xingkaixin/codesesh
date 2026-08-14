@@ -139,15 +139,16 @@ describe("useSessionStore", () => {
     await waitFor(() => expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]));
   });
 
-  it("commits all window data as one snapshot", async () => {
+  it("keeps projects available alongside the session snapshot", async () => {
     const { result } = await renderStore();
 
     await act(() => result.current.reload(config.window));
 
+    await waitFor(() => expect(result.current.projects).toEqual(projects));
+
     expect(result.current.loading).toBe(false);
     expect(result.current.agents).toEqual(agents);
     expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]);
-    expect(result.current.projects).toEqual(projects);
     expect(result.current.dashboard).toEqual(SAMPLE_DASHBOARD_DATA);
     expect(result.current.activeAgents).toEqual([agents[0]]);
     expect(result.current.agentCatalog.byKey.get("codex")).toBe(agents[1]);
@@ -275,14 +276,14 @@ describe("useSessionStore", () => {
     }
 
     expect(api.fetchAgents).toHaveBeenCalledOnce();
-    expect(api.fetchProjects).toHaveBeenCalledOnce();
+    expect(api.fetchProjects).not.toHaveBeenCalled();
     expect(api.fetchDashboard).toHaveBeenCalledOnce();
 
     now += 1_001;
     await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
 
     expect(api.fetchAgents).toHaveBeenCalledTimes(2);
-    expect(api.fetchProjects).toHaveBeenCalledTimes(2);
+    expect(api.fetchProjects).toHaveBeenCalledOnce();
     expect(api.fetchDashboard).toHaveBeenCalledTimes(2);
   });
 
@@ -372,7 +373,6 @@ describe("useSessionStore", () => {
     client.setQueryData(searchKey, []);
     client.setQueryData(inactiveAggregateKey, {
       agents,
-      projects,
       dashboard: SAMPLE_DASHBOARD_DATA,
     });
 
@@ -445,17 +445,65 @@ describe("useSessionStore", () => {
     expect(result.current.version).toBeGreaterThan(0);
   });
 
-  it("keeps the snapshot usable when projects fail to load", async () => {
+  it("keeps sessions and dashboards available when projects fail", async () => {
     const error = new Error("projects unavailable");
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.mocked(api.fetchProjects).mockRejectedValue(error);
     const { result } = await renderStore();
 
     await act(() => result.current.reload(config.window));
 
+    await waitFor(() => expect(result.current.projectsError).toBe("projects unavailable"));
     expect(result.current.projects).toEqual([]);
     expect(result.current.error).toBeNull();
-    expect(console.error).toHaveBeenCalledWith("Failed to load projects:", error);
+    expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]);
+    expect(result.current.dashboard).toEqual(SAMPLE_DASHBOARD_DATA);
+
+    vi.mocked(api.fetchProjects).mockResolvedValueOnce({ projects });
+    await act(() => result.current.retryProjects());
+
+    await waitFor(() => expect(result.current.projects).toEqual(projects));
+    expect(result.current.projectsError).toBeNull();
+  });
+
+  it("retains the last project list when a refresh fails", async () => {
+    const error = new Error("projects unavailable");
+    const { result } = await renderStore();
+    await act(() => result.current.reload(config.window));
+    await waitFor(() => expect(result.current.projects).toEqual(projects));
+    vi.mocked(api.fetchProjects).mockRejectedValueOnce(error);
+
+    await act(() => result.current.retryProjects());
+
+    await waitFor(() => expect(result.current.projectsError).toBe("projects unavailable"));
+    expect(result.current.projects).toEqual(projects);
+  });
+
+  it("does not surface a cancelled project request as an error", async () => {
+    let firstSignal: AbortSignal | undefined;
+    vi.mocked(api.fetchProjects)
+      .mockImplementationOnce(
+        (_window, options) =>
+          new Promise((_resolve, reject) => {
+            firstSignal = options?.signal;
+            options?.signal?.addEventListener("abort", () => {
+              reject(new DOMException("Aborted", "AbortError"));
+            });
+          }),
+      )
+      .mockResolvedValue({ projects });
+    const { result } = await renderStore();
+    const firstWindow = { from: 1, to: 2 };
+    const nextWindow = { from: 3, to: 4 };
+
+    act(() => {
+      void result.current.reload(firstWindow);
+    });
+    await waitFor(() => expect(firstSignal).toBeDefined());
+    await act(() => result.current.reload(nextWindow));
+
+    await waitFor(() => expect(result.current.projects).toEqual(projects));
+    expect(firstSignal?.aborted).toBe(true);
+    expect(result.current.projectsError).toBeNull();
   });
 
   it("surfaces full reload failures without replacing the snapshot", async () => {
