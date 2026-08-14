@@ -53,6 +53,110 @@ describe("search index writer", () => {
     });
   });
 
+  it("recomputes the message hash chain when an indexed prefix changes", () => {
+    const session = {
+      ...makeSessionHead("chain"),
+      stats: { ...makeSessionHead("chain").stats, message_count: 2 },
+    };
+    const firstMeta = { id: session.id, sourcePath: "/chain", sourceFingerprint: "first" };
+    const nextMeta = { ...firstMeta, sourceFingerprint: "next" };
+    const detail = (firstText: string, secondText: string) => ({
+      ...makeSessionData(session.id),
+      ...session,
+      messages: [
+        {
+          id: "m1",
+          role: "user" as const,
+          time_created: 1,
+          parts: [{ type: "text" as const, text: firstText }],
+        },
+        {
+          id: "m2",
+          role: "assistant" as const,
+          time_created: 2,
+          parts: [{ type: "text" as const, text: secondText }],
+        },
+      ],
+    });
+    const readDigests = () =>
+      withCacheDb(
+        (db) =>
+          db
+            .prepare(
+              "SELECT content_chain_digest FROM messages WHERE agent_name = ? AND session_id = ? ORDER BY message_index",
+            )
+            .all("codex", session.id) as Array<{ content_chain_digest?: string | null }>,
+      )?.map((row) => row.content_chain_digest);
+
+    saveCachedSessions("codex", [session], { [session.id]: firstMeta });
+    syncSessionSearchIndex("codex", [session], () => detail("first", "second"));
+    const firstDigests = readDigests();
+
+    saveCachedSessions("codex", [session], { [session.id]: nextMeta });
+    syncSessionSearchIndex("codex", [session], () => detail("rewritten", "second"));
+    const nextDigests = readDigests();
+
+    expect(firstDigests).toHaveLength(2);
+    expect(firstDigests?.every((digest) => /^[a-f0-9]{64}$/.test(digest ?? ""))).toBe(true);
+    expect(nextDigests).toHaveLength(2);
+    expect(nextDigests).not.toEqual(firstDigests);
+  });
+
+  it("rolls back message hash chains with their rows", () => {
+    const session = {
+      ...makeSessionHead("rollback"),
+      stats: { ...makeSessionHead("rollback").stats, message_count: 2 },
+    };
+    const firstMeta = { id: session.id, sourcePath: "/rollback", sourceFingerprint: "first" };
+    const nextMeta = { ...firstMeta, sourceFingerprint: "next" };
+    const detail = (firstText: string, secondText: string) => ({
+      ...makeSessionData(session.id),
+      ...session,
+      messages: [
+        {
+          id: "m1",
+          role: "user" as const,
+          time_created: 1,
+          parts: [{ type: "text" as const, text: firstText }],
+        },
+        {
+          id: "m2",
+          role: "assistant" as const,
+          time_created: 2,
+          parts: [{ type: "text" as const, text: secondText }],
+        },
+      ],
+    });
+
+    saveCachedSessions("codex", [session], { [session.id]: firstMeta });
+    syncSessionSearchIndex("codex", [session], () => detail("first", "second"));
+    const before = loadCachedSessionRawEntry("codex", session.id)?.messageRows.map((row) => ({
+      partsJson: row.parts_json,
+      digest: row.content_chain_digest,
+    }));
+    withCacheDb((db) => {
+      db.exec(`
+        CREATE TRIGGER reject_message_chain_update
+        BEFORE UPDATE OF content_chain_digest ON messages
+        WHEN NEW.agent_name = 'codex' AND NEW.session_id = 'rollback' AND NEW.message_index = 1
+        BEGIN
+          SELECT RAISE(ABORT, 'reject message hash chain update');
+        END;
+      `);
+    });
+    saveCachedSessions("codex", [session], { [session.id]: nextMeta });
+
+    expect(
+      syncSessionSearchIndex("codex", [session], () => detail("rewritten", "second")),
+    ).toBeNull();
+    const after = loadCachedSessionRawEntry("codex", session.id)?.messageRows.map((row) => ({
+      partsJson: row.parts_json,
+      digest: row.content_chain_digest,
+    }));
+
+    expect(after).toEqual(before);
+  });
+
   it("keeps migration reindex work out of foreground publications", () => {
     const session = makeSessionHead("one");
     const loadSession = vi.fn(() => makeSessionData("one", "migration needle"));
