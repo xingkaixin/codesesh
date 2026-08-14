@@ -35,8 +35,12 @@ pnpm perf:check
 ```bash
 pnpm bench:perf            # 真实浏览器冷启动与导航
 pnpm bench:session-index   # Session index 构建
+pnpm bench:message-search  # 候选消息扫描与 trigram FTS5 的写入/查询/体积权衡
 ```
 
-这两个脚本读取开发者本机的会话数据、或在真实浏览器中测量墙钟时间，数值随机器与历史数据变化。
+这些基准读取开发者本机的会话数据、或在真实浏览器中测量墙钟时间，数值随机器与历史数据变化。
 它们用于观察和调查，不作为必需检查——把这种信号变成 required check 只会制造 flaky。
 `bench:session-index` 仍带一个宽松的比值预算，用于捕捉「规范路径反而更慢」这类明确错误。
+`bench:message-search` 固定测量 50 个候选会话各 2,000 条消息、且所有查询词分布在不同
+消息中的最坏情况；可通过 `MESSAGE_SEARCH_BENCH_SESSIONS`、
+`MESSAGE_SEARCH_BENCH_MESSAGES` 和 `MESSAGE_SEARCH_BENCH_ITERATIONS` 调整规模。

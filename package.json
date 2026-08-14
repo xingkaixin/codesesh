@@ -27,6 +27,7 @@
     "package:artifact:test": "node --test scripts/package-artifact-checks.mjs",
     "package:smoke": "node scripts/smoke-package-artifact.mjs",
     "bench:perf": "node scripts/benchmark-performance.mjs",
+    "bench:message-search": "node scripts/benchmark-message-search.mjs",
     "perf:check": "node scripts/perf-scale.mjs",
     "bench:session-index": "pnpm --filter @codesesh/core build && node scripts/benchmark-session-index.mjs",
     "check:coverage-scopes": "node scripts/critical-coverage.mjs",
