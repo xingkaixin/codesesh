@@ -35,12 +35,7 @@ import { ScanStatusNotice } from "./components/app/ScanStatusNotice";
 import { formatSearchSubtitle } from "./lib/scan-format";
 import { findAgent } from "./lib/agents";
 import { getProjectIdentityKey } from "./lib/projects";
-import {
-  buildSessionIndexes,
-  getSessionAgentKey,
-  getSessionReferenceKey,
-  getSessionRouteKey,
-} from "./lib/session-indexes";
+import { buildSessionIndexes, getSessionAgentKey } from "./lib/session-indexes";
 
 export default function App() {
   const navigate = useNavigate();
@@ -72,9 +67,6 @@ export default function App() {
   });
 
   const setScanStatus = useScanStatusPublisher();
-  const [selectedSidebarSessionReference, setSelectedSidebarSessionReference] = useState<
-    string | null
-  >(null);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const {
     shortcutHintDismissed,
@@ -190,7 +182,6 @@ export default function App() {
     activeProjectSessions,
     selectedProjectNavigation,
     sidebarSessions,
-    sidebarSessionLookup,
     bookmarkedSidebarSessionReferences,
   } = sidebar;
   const selectedProjectNavigationIdentity = selectedProjectNavigation?.identity ?? null;
@@ -198,7 +189,6 @@ export default function App() {
 
   const handleSelectFlatSidebarSession = useCallback(
     (sessionItem: SessionHead) => {
-      setSelectedSidebarSessionReference(getSessionReferenceKey(sessionItem));
       navigate(getSessionRoutePath(sessionItem));
     },
     [navigate],
@@ -258,24 +248,6 @@ export default function App() {
     if (!aliasTarget) return;
     await removeAlias(aliasTarget);
   }, [aliasTarget, removeAlias]);
-
-  useEffect(() => {
-    if (isSearchMode) return;
-
-    if (viewState.mode === "session") {
-      setSelectedSidebarSessionReference(
-        getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionId),
-      );
-      return;
-    }
-
-    if (viewState.mode === "agent") {
-      setSelectedSidebarSessionReference(null);
-      return;
-    }
-
-    setSelectedSidebarSessionReference(null);
-  }, [isSearchMode, viewState.mode, viewState.activeAgentKey, viewState.activeSessionId]);
 
   const searchSubtitle =
     searchState.status === "failed"
@@ -354,10 +326,6 @@ export default function App() {
   useKeyboardShortcuts({
     viewState,
     navigate,
-    sidebarSessions,
-    sidebarSessionLookup,
-    selectedSidebarSessionReference,
-    setSelectedSidebarSessionReference,
     selectedProjectNavigationIdentity,
     shortcutHelpOpen,
     setShortcutHelpOpen,
@@ -434,8 +402,11 @@ export default function App() {
               selectedProjectNavigationId,
               bookmarkedSessions,
               sidebarSessions,
-              selectedSidebarSessionReference,
+              sidebarSessionLookup: sidebar.sidebarSessionLookup,
               bookmarkedSidebarSessionReferences,
+              isSearchMode,
+              shortcutHelpOpen,
+              dismissShortcutHint,
             }}
             actions={{
               onCollapse: () => setSidebarCollapsed(true),

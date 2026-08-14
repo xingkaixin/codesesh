@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import type { AgentInfo, ApiProjectGroup, BookmarkView, ScanStatusEvent } from "../../lib/api";
 import { createAgentCatalog } from "../../lib/agents";
 import { ScanStatusProvider } from "../../hooks/useScanStatus";
+import { buildSidebarSessionLookup } from "../../lib/session-indexes";
 import { AppSidebar, type AppSidebarActions, type AppSidebarViewModel } from "./AppSidebar";
 
 afterEach(cleanup);
@@ -52,8 +53,11 @@ function renderSidebar(
             selectedProjectNavigationId: null,
             bookmarkedSessions: [],
             sidebarSessions: [],
-            selectedSidebarSessionReference: null,
+            sidebarSessionLookup: buildSidebarSessionLookup([]),
             bookmarkedSidebarSessionReferences: new Set(),
+            isSearchMode: false,
+            shortcutHelpOpen: false,
+            dismissShortcutHint: vi.fn(),
             ...model,
           }}
           actions={actions}
