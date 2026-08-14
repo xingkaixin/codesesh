@@ -11,6 +11,7 @@ const supportedAgents = [
   "Pi",
   "OpenCode",
   "ZCode",
+  "DSH",
 ] as const;
 
 const locales = [

@@ -116,6 +116,7 @@ export const agents = [
   { name: "Pi", icon: "/icon/agent/pi.svg" },
   { name: "OpenCode", icon: "/icon/agent/opencode.svg" },
   { name: "ZCode", icon: "/icon/agent/zcode.svg" },
+  { name: "DSH", icon: "/icon/agent/dsh.svg", iconColored: true },
 ] as const;
 
 export const copy = {
@@ -139,7 +140,7 @@ export const copy = {
       themeSwitchTo: "，点击切换到{next}",
     },
     hero: {
-      eyebrow: "本地运行 / 零配置 / 9 个 Agent",
+      eyebrow: "本地运行 / 零配置 / 10 个 Agent",
       title: ["你和 AI 写过的", "每一次对话，都还在。"],
       body: "CodeSesh 扫描九种 AI 编码 Agent 的本地会话，把分散的历史收进同一个索引：按项目组织、结构化搜索、逐条回放。",
       privacy: "会话内容与索引留在本机，无需账号、云同步或会话遥测。",
@@ -272,7 +273,7 @@ export const copy = {
         {
           question: "CodeSesh 是什么？",
           answer:
-            "CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放 AI 编码会话历史。它把 Claude Code、Cursor、Kimi、Kimi-Code、Codex、Grok、Pi、OpenCode 和 ZCode 的本地记录整理成按项目组织的工程记忆层。",
+            "CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放 AI 编码会话历史。它把 Claude Code、Cursor、Kimi、Kimi-Code、Codex、Grok、Pi、OpenCode、ZCode 和 DSH 的本地记录整理成按项目组织的工程记忆层。",
         },
         {
           question: "CodeSesh 会上传本地 AI 会话数据吗？",
@@ -306,7 +307,7 @@ export const copy = {
     meta: {
       title: "CodeSesh: Search and Replay Local AI Coding History",
       description:
-        "CodeSesh organizes local sessions from nine AI coding agents by project, with structured search, full replay, and a local SQLite index.",
+        "CodeSesh organizes local sessions from ten AI coding agents by project, with structured search, full replay, and a local SQLite index.",
     },
     header: {
       tour: "Tour",
@@ -322,9 +323,9 @@ export const copy = {
       themeSwitchTo: ". Switch to {next}.",
     },
     hero: {
-      eyebrow: "Local / Zero config / 9 agents",
+      eyebrow: "Local / Zero config / 10 agents",
       title: ["Every AI coding session", "is still here."],
-      body: "CodeSesh scans local histories from nine AI coding agents and puts them in one index: organized by project, structurally searchable, and replayable message by message.",
+      body: "CodeSesh scans local histories from ten AI coding agents and puts them in one index: organized by project, structurally searchable, and replayable message by message.",
       privacy:
         "Session content and indexes stay local. No account, cloud sync, or session telemetry.",
       command: "npx codesesh",
@@ -371,7 +372,7 @@ export const copy = {
             {
               icon: "eye",
               title: "Unified timeline",
-              description: "Browse histories from nine AI coding agents in one interface.",
+              description: "Browse histories from ten AI coding agents in one interface.",
             },
             {
               icon: "timer",
@@ -459,7 +460,7 @@ export const copy = {
         {
           question: "What is CodeSesh?",
           answer:
-            "CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, and ZCode into a project-aware engineering memory layer.",
+            "CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, ZCode, and DSH into a project-aware engineering memory layer.",
         },
         {
           question: "Does CodeSesh upload local AI session data?",

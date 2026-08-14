@@ -1,6 +1,6 @@
 # CodeSesh
 
-> CodeSesh is a local developer tool that turns session history from nine AI coding agents into project-aware, structurally searchable, replayable engineering memory.
+> CodeSesh is a local developer tool that turns session history from ten AI coding agents into project-aware, structurally searchable, replayable engineering memory.
 
 ## Canonical Links
 
@@ -26,6 +26,7 @@ CodeSesh scans supported local AI coding session stores and presents them throug
 - Pi
 - OpenCode
 - ZCode
+- DSH
 
 ## Core Capabilities
 

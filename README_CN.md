@@ -7,7 +7,7 @@
 
 > **一个地方，看遍你所有的 AI 编程会话。**
 
-你一直在用 AI Agent 写代码 —— Claude Code、Cursor、Kimi-Cli、Kimi-Code、Codex、Grok、Pi、OpenCode、ZCode —— 但这些对话分散在文件系统的各个角落。上下文丢失，成本不可见，历史深埋。
+你一直在用 AI Agent 写代码 —— Claude Code、Cursor、Kimi-Cli、Kimi-Code、Codex、Grok、Pi、OpenCode、ZCode、DSH —— 但这些对话分散在文件系统的各个角落。上下文丢失，成本不可见，历史深埋。
 
 **CodeSesh** 解决这个问题。它扫描你的本地机器，找到所有 AI Agent 会话，并在统一的 Web UI 中呈现。把它理解为你 AI 辅助开发历程的时光机。
 
@@ -59,6 +59,7 @@ CodeSesh 认为，你的会话历史属于**你** —— 你应该在一个地�
 | Pi          | 已支持 |
 | OpenCode    | 已支持 |
 | ZCode       | 已支持 |
+| DSH         | 已支持 |
 
 <!-- repo-fact:agents:end -->
 

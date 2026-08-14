@@ -22,6 +22,7 @@ import { buildCodexToolStrategy } from "./codex";
 import { buildCursorToolStrategy } from "./cursor";
 import { buildGrokToolStrategy } from "./grok";
 import { buildPiToolStrategy } from "./pi";
+import { buildDshToolStrategy } from "./dsh";
 import { buildDefaultToolStrategy } from "./shared";
 
 export type { NormalizedToolState, ToolDisplayStrategy, ToolStatus } from "../tool-normalize";
@@ -56,6 +57,7 @@ const TOOL_STRATEGY_BUILDERS: Record<string, ToolStrategyBuilder> = {
   grok: buildGrokToolStrategy,
   pi: buildPiToolStrategy,
   zcode: buildZCodeToolStrategy,
+  dsh: buildDshToolStrategy,
 };
 
 export function hasCustomToolStrategy(agentName: string): boolean {

@@ -4,6 +4,7 @@ import { buildCodexPlanDisplay } from "./codex-plan";
 import { extractCodexToolText } from "./codex-tool";
 import { getToolDisplayStrategy, normalizeToolState } from "./tool-strategy";
 import {
+  BookOpenText,
   Bot,
   CircleHelp,
   Clock3,
@@ -11,6 +12,7 @@ import {
   FileSearch,
   Image as ImageIcon,
   ListTodo,
+  NotebookPen,
   Plug,
   SquareTerminal,
   Target,
@@ -599,6 +601,127 @@ describe("Codex tool strategy", () => {
   });
 });
 
+describe("DSH tool strategy", () => {
+  it("renders bash with its description, command and working directory", () => {
+    const strategy = buildStrategy({
+      agent: "dsh",
+      tool: "bash",
+      input: {
+        command: "pwd && ls",
+        description: "Show working directory and root files",
+        workdir: "/repo/packages/core",
+      },
+      output: "packages",
+    });
+
+    expect(strategy).toMatchObject({
+      Icon: SquareTerminal,
+      title: "bash",
+      secondaryText: "Show working directory and root files (pwd && ls)",
+      details: [{ label: "Workdir", value: "packages/core" }],
+      showInputPreview: false,
+      outputContent: { kind: "plain", text: "packages", language: "text", isCode: false },
+    });
+  });
+
+  it("renders read against the file the model asked for", () => {
+    const strategy = buildStrategy({
+      agent: "dsh",
+      tool: "read",
+      input: { file_path: "/repo/README.md" },
+      output: "1|# Title",
+    });
+
+    expect(strategy).toMatchObject({
+      Icon: BookOpenText,
+      title: "read",
+      secondaryText: "README.md",
+      outputContent: { kind: "plain", text: "# Title", language: "markdown" },
+    });
+  });
+
+  it("renders write with the content it committed", () => {
+    const strategy = buildStrategy({
+      agent: "dsh",
+      tool: "write",
+      input: { file_path: "/repo/src/index.ts", content: "export const x = 1;" },
+      output: "wrote 1 line",
+    });
+
+    expect(strategy).toMatchObject({
+      Icon: NotebookPen,
+      title: "write",
+      secondaryText: "src/index.ts",
+      outputContent: { kind: "plain", text: "export const x = 1;", language: "typescript" },
+    });
+  });
+
+  it("prefers the result-time hunks over the literal edit arguments", () => {
+    const strategy = buildStrategy({
+      agent: "dsh",
+      tool: "edit",
+      input: { file_path: "/repo/src/index.ts", old_string: "one", new_string: "two" },
+      metadata: {
+        diffs: [{ path: "/repo/src/index.ts", oldText: "const a = 1", newText: "const a = 2" }],
+      },
+    });
+
+    expect(strategy).toMatchObject({
+      Icon: FilePenLine,
+      title: "edit",
+      secondaryText: "src/index.ts",
+      outputContent: {
+        kind: "structured-diff",
+        blocks: [
+          {
+            label: "index.ts · /repo/src/index.ts",
+            lines: [
+              { type: "remove", text: "const a = 1" },
+              { type: "add", text: "const a = 2" },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
+  it("falls back to diffing the edit arguments when no hunks were recorded", () => {
+    const strategy = buildStrategy({
+      agent: "dsh",
+      tool: "edit",
+      input: { file_path: "/repo/src/index.ts", old_string: "one", new_string: "two" },
+    });
+
+    expect(strategy.outputContent).toMatchObject({
+      kind: "structured-diff",
+      blocks: [
+        {
+          lines: [
+            { type: "remove", text: "one" },
+            { type: "add", text: "two" },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("keeps an unregistered DSH tool on the default card", () => {
+    const strategy = buildStrategy({
+      agent: "dsh",
+      tool: "job_output",
+      input: { job_id: "7" },
+      output: "still running",
+    });
+
+    expect(strategy).toMatchObject({
+      Icon: SquareTerminal,
+      title: "job_output",
+      showInputPreview: true,
+      outputContent: { kind: "plain", text: "still running" },
+    });
+  });
+});
+
 describe("search and shell strategy contracts", () => {
   it.each([
     {
@@ -637,6 +760,20 @@ describe("search and shell strategy contracts", () => {
       input: { path: "/repo/src", pattern: "*.ts" },
       title: "glob",
       secondaryText: "src · *.ts",
+    },
+    {
+      agent: "dsh",
+      tool: "glob",
+      input: { pattern: "README*" },
+      title: "glob",
+      secondaryText: "README*",
+    },
+    {
+      agent: "dsh",
+      tool: "grep",
+      input: { path: "/repo/src", pattern: "TODO" },
+      title: "grep",
+      secondaryText: "src · TODO",
     },
   ])("preserves $agent $tool output", (fixture) => {
     const strategy = buildStrategy({

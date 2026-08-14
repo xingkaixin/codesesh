@@ -124,6 +124,33 @@ export function buildPiEditDiffBlocks(state: NormalizedToolState, filePath: stri
   ];
 }
 
+/**
+ * DSH attaches one contextual hunk per applied change to the tool result's
+ * `meta`, so a replayed edit reproduces the same card the user saw live. Only
+ * a result that never carried that payload falls back to diffing the literal
+ * `old_string`/`new_string` arguments.
+ */
+export function buildDshEditDiffBlocks(state: NormalizedToolState, filePath: string): DiffBlock[] {
+  const metadata = toRecord(state.metadataValue);
+  const hunks = Array.isArray(metadata.diffs) ? metadata.diffs : [];
+  const blocks = hunks.flatMap((entry) => {
+    const hunk = toRecord(entry);
+    return buildStructuredDiffFromTexts(
+      toStringValue(hunk.path) || filePath,
+      toStringValue(hunk.oldText),
+      toStringValue(hunk.newText),
+    );
+  });
+  if (blocks.length > 0) return blocks;
+
+  const input = toRecord(state.inputValue);
+  return buildStructuredDiffFromTexts(
+    filePath,
+    toStringValue(input.old_string),
+    toStringValue(input.new_string),
+  );
+}
+
 function parseZCodePatchLine(line: string): DiffLineItem {
   if (line.startsWith("@@")) return { type: "context", text: line };
   if (line.startsWith("+")) return { type: "add", text: line.slice(1) };
