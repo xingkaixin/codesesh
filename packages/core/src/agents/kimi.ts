@@ -97,6 +97,54 @@ function extractTokenField(usage: Record<string, unknown>, field: string): numbe
   return narrowField("kimi", `usage.${field}`, usage[field], asNumber) ?? 0;
 }
 
+class KimiUsageAccumulator {
+  readonly stats: SessionDetail["stats"] = {
+    total_cost: 0,
+    total_input_tokens: 0,
+    total_output_tokens: 0,
+    total_tokens: 0,
+    message_count: 0,
+  };
+
+  private totalCost = 0;
+
+  constructor(
+    private readonly model: string | null,
+    private readonly usesWireTotalFallback: boolean,
+  ) {}
+
+  applyContextRecord(record: Record<string, unknown>): void {
+    if (record.role !== "_usage") return;
+    const tokenCount = asNumber(record.token_count);
+    if (tokenCount === undefined) {
+      reportFieldMismatch("kimi", "usage.token_count");
+      return;
+    }
+    this.stats.total_tokens = tokenCount;
+  }
+
+  applyWireRecord(record: Record<string, unknown>) {
+    if (this.usesWireTotalFallback) this.applyContextRecord(record);
+
+    const tokenUsage = asRecord(asRecord(record.message)?.usage);
+    if (!tokenUsage) return null;
+
+    const inputTokens = extractTokenField(tokenUsage, "input_tokens");
+    const outputTokens = extractTokenField(tokenUsage, "output_tokens");
+    const cost = estimateTokenCost(this.model, { input: inputTokens, output: outputTokens });
+    this.stats.total_input_tokens += inputTokens;
+    this.stats.total_output_tokens += outputTokens;
+    if (cost !== null) this.totalCost += cost;
+    return { inputTokens, outputTokens, cost };
+  }
+
+  finish(): SessionDetail["stats"] {
+    const stats = { ...this.stats, total_cost: Number(this.totalCost.toFixed(8)) };
+    if (stats.total_cost > 0) stats.cost_source = "estimated";
+    return stats;
+  }
+}
+
 function normalizeToolArguments(raw: unknown): unknown {
   if (typeof raw === "string") {
     try {
@@ -397,11 +445,13 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
 
     const builder = new TranscriptBuilder();
     const ignoredToolCallIds = new Set<string>();
+    const accumulator = new KimiUsageAccumulator(this.defaultModel, false);
 
     let seq = 0;
     const fallbackTs = meta.createdAt;
     for (const record of readJsonlFile(meta.contextFile)) {
       seq++;
+      accumulator.applyContextRecord(record);
       try {
         const role = String(record.role ?? "");
         if (role === "_checkpoint" || role === "_usage" || isInternalEventType(role)) continue;
@@ -452,8 +502,8 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       }
     }
 
-    const stats = this.extractStats(meta.sourcePath);
-    return this.buildSessionData(meta, builder, stats);
+    this.collectWireUsage(meta.sourcePath, accumulator);
+    return this.buildSessionData(meta, builder, accumulator.finish());
   }
 
   private getSessionDataFromWire(meta: SessionMeta): SessionDetail {
@@ -463,6 +513,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     const builder = new TranscriptBuilder();
     const ignoredToolCallIds = new Set<string>();
     const openToolArgumentBuffer = new Map<string, string>();
+    const accumulator = new KimiUsageAccumulator(this.defaultModel, true);
 
     let openToolCallId: string | null = null;
     let seq = 0;
@@ -470,6 +521,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     for (const record of readJsonlFile(wirePath)) {
       seq++;
       try {
+        const tokenUsage = accumulator.applyWireRecord(record);
         const message = asRecord(record.message) ?? {};
         const msgType = asString(message.type) ?? "";
         if (isInternalEventType(msgType)) continue;
@@ -477,19 +529,13 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
         const timestampMs = Math.floor(readWireTimestamp(record) * 1000);
 
         // Bind usage to the most recent assistant message without tokens
-        const usage = asRecord(message["usage"]);
-        if (usage) {
-          const inputTokens = extractTokenField(usage, "input_tokens");
-          const outputTokens = extractTokenField(usage, "output_tokens");
-          if (inputTokens || outputTokens) {
-            const tokens = { input: inputTokens, output: outputTokens };
-            const cost = estimateTokenCost(this.defaultModel, tokens);
-            builder.attachUsageToLatestAssistant(tokens, {
-              model: this.defaultModel,
-              cost: cost ?? undefined,
-              costSource: cost === null ? undefined : "estimated",
-            });
-          }
+        if (tokenUsage && (tokenUsage.inputTokens || tokenUsage.outputTokens)) {
+          const tokens = { input: tokenUsage.inputTokens, output: tokenUsage.outputTokens };
+          builder.attachUsageToLatestAssistant(tokens, {
+            model: this.defaultModel,
+            cost: tokenUsage.cost ?? undefined,
+            costSource: tokenUsage.cost === null ? undefined : "estimated",
+          });
         }
 
         if (msgType === "TurnBegin") {
@@ -610,8 +656,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       }
     }
 
-    const stats = this.extractStats(meta.sourcePath);
-    return this.buildSessionData(meta, builder, stats);
+    return this.buildSessionData(meta, builder, accumulator.finish());
   }
 
   // --- Helpers ---
@@ -743,67 +788,32 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     return builder.resolveToolCall(callId, { output: [...outputParts] });
   }
 
-  /** Applies a `_usage` record's running total; other records are ignored. */
-  private applyUsageTotal(record: Record<string, unknown>, stats: SessionDetail["stats"]): void {
-    if (record.role !== "_usage") return;
-    const tokenCount = asNumber(record.token_count);
-    if (tokenCount === undefined) {
-      reportFieldMismatch("kimi", "usage.token_count");
-      return;
-    }
-    stats.total_tokens = tokenCount;
-  }
-
   private extractStats(sessionDir: string): SessionDetail["stats"] {
-    let totalCost = 0;
-    const stats: SessionDetail["stats"] = {
-      total_cost: 0,
-      total_input_tokens: 0,
-      total_output_tokens: 0,
-      total_tokens: 0,
-      message_count: 0,
-    };
-
     const contextPath = join(sessionDir, "context.jsonl");
     const hasContext = existsSync(contextPath);
+    const accumulator = new KimiUsageAccumulator(this.defaultModel, !hasContext);
 
     if (hasContext) {
       try {
-        for (const record of readJsonlFile(contextPath)) this.applyUsageTotal(record, stats);
+        for (const record of readJsonlFile(contextPath)) accumulator.applyContextRecord(record);
       } catch {
         // skip unreadable context logs
       }
     }
 
+    this.collectWireUsage(sessionDir, accumulator);
+    return accumulator.finish();
+  }
+
+  private collectWireUsage(sessionDir: string, accumulator: KimiUsageAccumulator): void {
     const wirePath = join(sessionDir, "wire.jsonl");
     if (existsSync(wirePath)) {
       try {
-        for (const record of readJsonlFile(wirePath)) {
-          const tokenUsage = asRecord(asRecord(record.message)?.usage);
-          if (tokenUsage) {
-            const inputTokens = extractTokenField(tokenUsage, "input_tokens");
-            const outputTokens = extractTokenField(tokenUsage, "output_tokens");
-            stats.total_input_tokens += inputTokens;
-            stats.total_output_tokens += outputTokens;
-            const cost = estimateTokenCost(this.defaultModel, {
-              input: inputTokens,
-              output: outputTokens,
-            });
-            if (cost !== null) totalCost += cost;
-          }
-          if (!hasContext) this.applyUsageTotal(record, stats);
-        }
+        for (const record of readJsonlFile(wirePath)) accumulator.applyWireRecord(record);
       } catch {
         // skip unreadable wire logs
       }
     }
-
-    stats.total_cost = Number(totalCost.toFixed(8));
-    if (stats.total_cost > 0) {
-      stats.cost_source = "estimated";
-    }
-
-    return stats;
   }
 
   private buildSessionData(
