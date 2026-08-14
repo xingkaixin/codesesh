@@ -445,11 +445,13 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
 
     const builder = new TranscriptBuilder();
     const ignoredToolCallIds = new Set<string>();
+    const accumulator = new KimiUsageAccumulator(this.defaultModel, false);
 
     let seq = 0;
     const fallbackTs = meta.createdAt;
     for (const record of readJsonlFile(meta.contextFile)) {
       seq++;
+      accumulator.applyContextRecord(record);
       try {
         const role = String(record.role ?? "");
         if (role === "_checkpoint" || role === "_usage" || isInternalEventType(role)) continue;
@@ -500,8 +502,8 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       }
     }
 
-    const stats = this.extractStats(meta.sourcePath);
-    return this.buildSessionData(meta, builder, stats);
+    this.collectWireUsage(meta.sourcePath, accumulator);
+    return this.buildSessionData(meta, builder, accumulator.finish());
   }
 
   private getSessionDataFromWire(meta: SessionMeta): SessionDetail {
@@ -511,6 +513,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     const builder = new TranscriptBuilder();
     const ignoredToolCallIds = new Set<string>();
     const openToolArgumentBuffer = new Map<string, string>();
+    const accumulator = new KimiUsageAccumulator(this.defaultModel, true);
 
     let openToolCallId: string | null = null;
     let seq = 0;
@@ -518,6 +521,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     for (const record of readJsonlFile(wirePath)) {
       seq++;
       try {
+        const tokenUsage = accumulator.applyWireRecord(record);
         const message = asRecord(record.message) ?? {};
         const msgType = asString(message.type) ?? "";
         if (isInternalEventType(msgType)) continue;
@@ -525,19 +529,13 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
         const timestampMs = Math.floor(readWireTimestamp(record) * 1000);
 
         // Bind usage to the most recent assistant message without tokens
-        const usage = asRecord(message["usage"]);
-        if (usage) {
-          const inputTokens = extractTokenField(usage, "input_tokens");
-          const outputTokens = extractTokenField(usage, "output_tokens");
-          if (inputTokens || outputTokens) {
-            const tokens = { input: inputTokens, output: outputTokens };
-            const cost = estimateTokenCost(this.defaultModel, tokens);
-            builder.attachUsageToLatestAssistant(tokens, {
-              model: this.defaultModel,
-              cost: cost ?? undefined,
-              costSource: cost === null ? undefined : "estimated",
-            });
-          }
+        if (tokenUsage && (tokenUsage.inputTokens || tokenUsage.outputTokens)) {
+          const tokens = { input: tokenUsage.inputTokens, output: tokenUsage.outputTokens };
+          builder.attachUsageToLatestAssistant(tokens, {
+            model: this.defaultModel,
+            cost: tokenUsage.cost ?? undefined,
+            costSource: tokenUsage.cost === null ? undefined : "estimated",
+          });
         }
 
         if (msgType === "TurnBegin") {
@@ -658,8 +656,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       }
     }
 
-    const stats = this.extractStats(meta.sourcePath);
-    return this.buildSessionData(meta, builder, stats);
+    return this.buildSessionData(meta, builder, accumulator.finish());
   }
 
   // --- Helpers ---

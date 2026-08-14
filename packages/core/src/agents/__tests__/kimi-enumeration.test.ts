@@ -206,6 +206,63 @@ describe("KimiAgent stats extraction", () => {
     expect(transcriptReadsSince(marks)).toEqual([join(sourcePath, "wire.jsonl")]);
   });
 
+  it("reads each transcript once while materializing a context detail", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-stats-"));
+    tempDirs.push(basePath);
+    const sourcePath = createWireOnlySession(basePath, "detail-reads", "Detail reads");
+    writeFileSync(
+      join(sourcePath, "context.jsonl"),
+      [
+        JSON.stringify({ role: "user", content: "Context message" }),
+        JSON.stringify({ role: "_usage", token_count: 42 }),
+        "",
+      ].join("\n"),
+    );
+
+    const agent = createAgent(basePath);
+    (agent as unknown as { defaultModel: string | null }).defaultModel = "kimi-for-coding";
+    const [head] = agent.scan();
+    const marks = markReads();
+    const detail = agent.getSessionData("detail-reads");
+
+    expect(detail.stats).toMatchObject({
+      total_input_tokens: 12,
+      total_output_tokens: 5,
+      total_tokens: 42,
+      total_cost: 0.0000197,
+      cost_source: "estimated",
+    });
+    expect(head?.stats).toMatchObject({
+      total_input_tokens: detail.stats.total_input_tokens,
+      total_output_tokens: detail.stats.total_output_tokens,
+      total_tokens: detail.stats.total_tokens,
+      total_cost: detail.stats.total_cost,
+      cost_source: detail.stats.cost_source,
+    });
+    expect(transcriptReadsSince(marks)).toEqual([
+      join(sourcePath, "context.jsonl"),
+      join(sourcePath, "wire.jsonl"),
+    ]);
+  });
+
+  it("reads wire once while materializing a wire-only detail", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-stats-"));
+    tempDirs.push(basePath);
+    const sourcePath = createWireOnlySession(basePath, "wire-detail", "Wire detail");
+
+    const agent = createAgent(basePath);
+    agent.scan();
+    const marks = markReads();
+    const detail = agent.getSessionData("wire-detail");
+
+    expect(detail.stats).toMatchObject({
+      total_input_tokens: 12,
+      total_output_tokens: 5,
+      total_tokens: 999,
+    });
+    expect(transcriptReadsSince(marks)).toEqual([join(sourcePath, "wire.jsonl")]);
+  });
+
   it("reads the usage total from context.jsonl when it exists", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-stats-"));
     tempDirs.push(basePath);
