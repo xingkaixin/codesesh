@@ -70,6 +70,7 @@ export function normalizeGitRemote(url: string): string | null {
 // must bypass the cache to stay isolated from each other. git remotes change
 // rarely, so a coarse TTL is enough — no file-watch invalidation needed.
 const IDENTITY_CACHE_TTL_MS = 10 * 60 * 1000;
+export const IDENTITY_CACHE_MAX_ENTRIES = 512;
 
 interface IdentityCacheEntry {
   projection: ProjectIdentityProjection;
@@ -94,22 +95,31 @@ export function normalizeProjectDirectory(cwd: string | null | undefined): strin
 
 export function computeIdentityProjection(
   cwd: string | null | undefined,
-  fs: IdentityFs,
+  fs: IdentityFs = realFs,
   resolverRevision = PROJECT_IDENTITY_RESOLVER_REVISION,
 ): ProjectIdentityProjection {
   if (fs !== realFs) return resolveIdentityProjection(cwd, fs, resolverRevision);
 
   const key = normalizeProjectDirectory(cwd);
   const cached = identityCache.get(key);
-  if (
-    cached &&
-    cached.projection.resolverRevision === resolverRevision &&
-    Date.now() - cached.resolvedAt < IDENTITY_CACHE_TTL_MS
-  ) {
-    return cached.projection;
+  if (cached) {
+    if (
+      cached.projection.resolverRevision === resolverRevision &&
+      Date.now() - cached.resolvedAt < IDENTITY_CACHE_TTL_MS
+    ) {
+      identityCache.delete(key);
+      identityCache.set(key, cached);
+      return cached.projection;
+    }
+    identityCache.delete(key);
   }
   const projection = resolveIdentityProjection(cwd, fs, resolverRevision);
   identityCache.set(key, { projection, resolvedAt: Date.now() });
+  while (identityCache.size > IDENTITY_CACHE_MAX_ENTRIES) {
+    const oldestKey = identityCache.keys().next().value;
+    if (oldestKey == null) break;
+    identityCache.delete(oldestKey);
+  }
   return projection;
 }
 

@@ -20,6 +20,7 @@ import {
   type SessionListDefaults,
 } from "./handlers.js";
 import type { ScanEventSource } from "../scan-source.js";
+import type { ProjectIdentityResolver } from "../project-identity-resolver.js";
 import { SseEventBuffer } from "./sse-event-buffer.js";
 
 export interface ApiRouteOptions {
@@ -27,6 +28,7 @@ export interface ApiRouteOptions {
   defaultSessionTo?: number;
   defaultSessionDays?: number;
   shutdownSignal?: AbortSignal;
+  projectIdentityResolver?: ProjectIdentityResolver;
 }
 
 function createSseResponse(eventSource: ScanEventSource, signal: AbortSignal): Response {
@@ -114,9 +116,15 @@ export function createApiRoutes(
   }
   api.get("/agents", (c) => handleGetAgents(c, scanSource, listDefaults));
   api.get("/projects", (c) => handleGetProjects(c, scanSource, listDefaults));
-  api.get("/sessions", (c) => handleGetSessions(c, scanSource, listDefaults));
-  api.get("/search", (c) => handleSearchSessions(c, scanSource, listDefaults));
-  api.get("/file-activity", (c) => handleGetFileActivity(c, listDefaults));
+  api.get("/sessions", (c) =>
+    handleGetSessions(c, scanSource, listDefaults, options.projectIdentityResolver),
+  );
+  api.get("/search", (c) =>
+    handleSearchSessions(c, scanSource, listDefaults, options.projectIdentityResolver),
+  );
+  api.get("/file-activity", (c) =>
+    handleGetFileActivity(c, listDefaults, options.projectIdentityResolver),
+  );
   api.get("/sessions/:agent/:id", (c) => handleGetSessionData(c, scanSource));
   api.get("/dashboard", (c) => handleGetDashboard(c, scanSource, listDefaults));
   api.get("/bookmarks", (c) => handleGetBookmarks(c, scanSource));

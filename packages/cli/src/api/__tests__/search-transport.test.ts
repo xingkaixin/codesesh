@@ -41,11 +41,13 @@ function getCacheDir(): string {
 const now = Date.now();
 
 function makeSessionHead(id: string, title: string, timeUpdated: number): SessionHead {
+  const directory = `/fixtures/${id}`;
   return {
     id,
     slug: `claudecode/${id}`,
     title,
-    directory: `/fixtures/${id}`,
+    directory,
+    project_identity: { kind: "path", key: directory, displayName: id },
     time_created: timeUpdated,
     time_updated: timeUpdated,
     stats: { message_count: 1, total_input_tokens: 0, total_output_tokens: 0, total_cost: 0 },

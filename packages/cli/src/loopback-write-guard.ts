@@ -1,7 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 import { appLogger } from "./logging.js";
 
-const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const JSON_BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);
 const ALLOWED_FETCH_SITES = new Set(["same-origin", "none"]);
 
@@ -33,8 +32,6 @@ function isSameOrigin(origin: string, requestOrigin: string): boolean {
 
 export function evaluateLoopbackWriteRequest(request: LoopbackWriteRequest): LoopbackWriteDecision {
   const method = request.method.toUpperCase();
-  if (SAFE_METHODS.has(method)) return { allowed: true };
-
   if (JSON_BODY_METHODS.has(method) && mediaType(request.contentType) !== "application/json") {
     return { allowed: false, reason: "content-type", status: 415 };
   }
@@ -58,7 +55,7 @@ export function loopbackWriteGuard(): MiddlewareHandler {
       requestOrigin: url.origin,
     });
     if (!decision.allowed) {
-      appLogger.warn("http.loopback_write.rejected", {
+      appLogger.warn("http.loopback_request.rejected", {
         method: c.req.method,
         path: url.pathname,
         reason: decision.reason,
@@ -66,7 +63,7 @@ export function loopbackWriteGuard(): MiddlewareHandler {
       const error =
         decision.reason === "content-type"
           ? "Write requests require application/json"
-          : "Cross-origin write request rejected";
+          : "Cross-origin API request rejected";
       return c.json({ error }, decision.status);
     }
     await next();

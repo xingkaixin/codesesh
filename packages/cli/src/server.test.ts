@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/core/contract";
 import { appLogger } from "./logging.js";
+import type { ProjectIdentityResolver } from "./project-identity-resolver.js";
 import { createServer } from "./server.js";
 import { resolveRemoteTransport } from "./remote-access.js";
 
@@ -228,7 +229,7 @@ describe("createServer", () => {
             Origin: "https://attacker.example",
           })
         ).status,
-      ).toBe(200);
+      ).toBe(403);
 
       for (const path of ["/api/agents", "/api/events", "/app.js"]) {
         expect(
@@ -298,6 +299,45 @@ describe("createServer", () => {
         crossSite: 403,
         sameOrigin: 200,
       });
+    } finally {
+      await app.shutdown();
+    }
+  });
+
+  it("CS-242: blocks cross-site GET before resolving a requested directory", async () => {
+    const resolver: ProjectIdentityResolver = {
+      resolve: vi.fn(async (cwd: string) => ({
+        identity: { kind: "path" as const, key: cwd, displayName: "project" },
+        resolverRevision: "project-identity-v2",
+        inputSignature: "test",
+      })),
+      shutdown: vi.fn(async () => {}),
+    };
+    const app = await createServer(0, createStore(), { projectIdentityResolver: resolver });
+
+    try {
+      expect(
+        (
+          await httpRequest(`${app.url}/api/sessions?cwd=/untrusted`, {
+            "Sec-Fetch-Site": "cross-site",
+          })
+        ).status,
+      ).toBe(403);
+      expect(resolver.resolve).not.toHaveBeenCalled();
+
+      expect(
+        (
+          await httpRequest(`${app.url}/api/sessions?cwd=/untrusted`, {
+            Origin: "https://attacker.example",
+          })
+        ).status,
+      ).toBe(403);
+      expect(resolver.resolve).not.toHaveBeenCalled();
+
+      expect(
+        (await httpRequest(`${app.url}/api/sessions?cwd=/untrusted`, { Origin: app.url })).status,
+      ).toBe(200);
+      expect(resolver.resolve).toHaveBeenCalledWith("/untrusted");
     } finally {
       await app.shutdown();
     }

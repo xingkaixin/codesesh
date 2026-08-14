@@ -1,4 +1,12 @@
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
@@ -22,6 +30,8 @@ import {
 import { listCachedProjectGroups } from "../project-groups.js";
 import type { SessionCacheMeta } from "../../../agents/base.js";
 import { setCoreDiagnostics } from "../../../utils/diagnostics.js";
+import { clearIdentityCache } from "../../../projects/identity.js";
+import { realFs } from "../../../projects/fs.js";
 import { withCacheDb, withSearchIndexDb } from "../schema.js";
 import { getSchemaEnsuredPath, setSchemaEnsuredPath } from "../db.js";
 import type { SessionHead } from "../../../types/index.js";
@@ -62,6 +72,11 @@ function makeSession(id: string): SessionHead {
     slug: `agent/${id}`,
     title: `Session ${id}`,
     directory: FIXTURE_DIR,
+    project_identity: {
+      kind: "path",
+      key: FIXTURE_DIR,
+      displayName: FIXTURE_DIR_NAME,
+    },
     time_created: now,
     time_updated: now,
     stats: {
@@ -179,6 +194,19 @@ describe("loadCachedSessions", () => {
       meta: {},
       timestamp: now,
     });
+  });
+});
+
+describe("session identity persistence invariant", () => {
+  it("fails before opening the cache when a session identity is missing", () => {
+    const spawnSpy = vi.spyOn(realFs, "spawn");
+    const session = { ...makeSession("missing-identity"), project_identity: undefined };
+
+    expect(() => saveCachedSessions("claudecode", [session])).toThrow(
+      "Session claudecode/missing-identity is missing project_identity",
+    );
+    expect(spawnSpy).not.toHaveBeenCalled();
+    expect(existsSync(getCachePath())).toBe(false);
   });
 });
 
@@ -502,6 +530,37 @@ describe("saveCachedSessions", () => {
         lastActivity: now,
       },
     ]);
+  });
+
+  it("resolves legacy identities before schema migrations begin", () => {
+    clearIdentityCache();
+    createLegacyCachedSessionDb(3, {
+      ...makeSession("legacy-without-identity"),
+      project_identity: undefined,
+    });
+    const events: string[] = [];
+    const originalExists = realFs.exists.bind(realFs);
+    const existsSpy = vi.spyOn(realFs, "exists").mockImplementation((path) => {
+      events.push("identity");
+      return originalExists(path);
+    });
+    setCoreDiagnostics({
+      info(event) {
+        if (event === "sqlite.migration.started") events.push("migration");
+      },
+      warn() {},
+    });
+
+    try {
+      expect(loadCachedSessions("claudecode")?.sessions.map((session) => session.id)).toEqual([
+        "legacy-without-identity",
+      ]);
+      expect(events.indexOf("identity")).toBeGreaterThanOrEqual(0);
+      expect(events.indexOf("identity")).toBeLessThan(events.indexOf("migration"));
+    } finally {
+      existsSpy.mockRestore();
+      clearIdentityCache();
+    }
   });
 
   it("backs up populated cache before destructive migration", () => {

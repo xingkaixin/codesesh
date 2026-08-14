@@ -70,6 +70,7 @@ import {
   type ScanResultSource,
 } from "../handlers.js";
 import { invalidateAliasView } from "../session-aliases-view.js";
+import type { ProjectIdentityResolver } from "../../project-identity-resolver.js";
 import type {
   ChangeCheckResult,
   FileActivityResult,
@@ -198,6 +199,17 @@ function makeScanSource(overrides?: Partial<LiveSnapshot>): ScanResultSource {
     getSnapshot() {
       return result;
     },
+  };
+}
+
+function makeProjectIdentityResolver(): ProjectIdentityResolver {
+  return {
+    resolve: vi.fn(async (cwd: string) => ({
+      identity: { kind: "path" as const, key: cwd, displayName: "project" },
+      resolverRevision: "project-identity-v2",
+      inputSignature: "test",
+    })),
+    shutdown: vi.fn(async () => {}),
   };
 }
 
@@ -532,7 +544,7 @@ describe("handleGetSessions", () => {
     expect(c.json.mock.calls[0]![0].sessions[0].display_title).toBe("Legacy alias");
   });
 
-  it("filters by cwd using project scope match", () => {
+  it("filters by cwd using project scope match", async () => {
     const sessions = [
       makeSession("exact", { directory: "/home/user/project" }),
       makeSession("child", { directory: "/home/user/project/src" }),
@@ -548,7 +560,13 @@ describe("handleGetSessions", () => {
       makeSession("sibling", { directory: "/home/user/projectile" }),
     ];
     const c = makeMockContext({ query: { cwd: "/home/user/project" } });
-    handleGetSessions(c, makeScanSource({ sessions, byAgent: { claudecode: sessions } }));
+    const resolver = makeProjectIdentityResolver();
+    await handleGetSessions(
+      c,
+      makeScanSource({ sessions, byAgent: { claudecode: sessions } }),
+      {},
+      resolver,
+    );
     const response = c.json.mock.calls[0]![0];
     expect(response.sessions.map((session: SessionHead) => session.id)).toEqual([
       "exact",
@@ -556,6 +574,7 @@ describe("handleGetSessions", () => {
       "parent",
       "identity",
     ]);
+    expect(resolver.resolve).toHaveBeenCalledWith("/home/user/project");
   });
 
   it("filters by project identity key", () => {
@@ -679,6 +698,26 @@ describe("handleSearchSessions", () => {
       scanSource.getSnapshot(),
     );
     expect(c.json).toHaveBeenCalledWith({ results: sentinelResults });
+  });
+
+  it("resolves a cwd qualifier before delegating the search", async () => {
+    const scanSource = makeScanSource();
+    const c = makeMockContext({ query: { q: "cwd:/home/user/project needle" } });
+    const resolver = makeProjectIdentityResolver();
+
+    await handleSearchSessions(c, scanSource, {}, resolver);
+
+    expect(resolver.resolve).toHaveBeenCalledWith("/home/user/project");
+    expect(coreMocks.executeSessionSearch).toHaveBeenCalledWith(
+      "cwd:/home/user/project needle",
+      expect.objectContaining({
+        projectScope: {
+          identity: { kind: "path", key: "/home/user/project" },
+          path: "/home/user/project",
+        },
+      }),
+      scanSource.getSnapshot(),
+    );
   });
 
   it("keeps ranked search hits when alias matches fill the limit", () => {

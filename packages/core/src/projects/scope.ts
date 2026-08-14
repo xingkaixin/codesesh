@@ -13,6 +13,13 @@ export function createProjectScopeMatcher(
   fs: IdentityFs = realFs,
 ): ProjectScopeMatcher {
   const identity = computeIdentity(queryPath, fs);
+  return createProjectScopeMatcherFromIdentity(queryPath, identity);
+}
+
+export function createProjectScopeMatcherFromIdentity(
+  queryPath: string,
+  identity: ProjectIdentityRef,
+): ProjectScopeMatcher {
   return {
     identity: { kind: identity.kind, key: identity.key },
     path: normalizeScopePath(queryPath),

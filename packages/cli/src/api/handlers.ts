@@ -27,10 +27,11 @@ import {
   SessionAliasValidationError,
   StateStorageUnavailableError,
   attachProjectMetricsFromTree,
-  createProjectScopeMatcher,
+  createProjectScopeMatcherFromIdentity,
   deleteBookmark,
   getAgentInfoMap,
   executeSessionSearch,
+  getSearchProjectDirectory,
   importBookmarks,
   listFileActivity,
   listCachedProjectGroups,
@@ -44,11 +45,15 @@ import {
   upsertBookmark,
   matchesProjectScope as sessionMatchesProjectScope,
   matchesProjectIdentity,
+  normalizeProjectDirectory,
+  PROJECT_IDENTITY_RESOLVER_REVISION,
   buildDashboard,
   type DashboardData,
   type DashboardScope,
+  type ProjectScopeMatcher,
 } from "@codesesh/core";
 import { appLogger } from "../logging.js";
+import type { ProjectIdentityResolver } from "../project-identity-resolver.js";
 import { resolveTimeWindow } from "../time-window-resolution.js";
 import {
   filterSessionsByActivityWindow,
@@ -86,6 +91,35 @@ export interface ScanStatusSource {
 
 const KNOWN_AGENT_NAMES = getAgentInfoMap({}).map((agent) => agent.name);
 const KNOWN_AGENT_NAME_SET = new Set(KNOWN_AGENT_NAMES);
+
+async function resolveProjectScope(
+  cwd: string,
+  sessions: readonly SessionHead[],
+  resolver: ProjectIdentityResolver | undefined,
+): Promise<ProjectScopeMatcher> {
+  const normalizedCwd = normalizeProjectDirectory(cwd);
+  const matchingSession = sessions.find(
+    (session) =>
+      normalizeProjectDirectory(session.directory) === normalizedCwd &&
+      session.project_identity != null &&
+      session.project_identity_resolver_revision === PROJECT_IDENTITY_RESOLVER_REVISION &&
+      Boolean(session.project_identity_input_signature),
+  );
+  if (matchingSession?.project_identity) {
+    return createProjectScopeMatcherFromIdentity(cwd, matchingSession.project_identity);
+  }
+  if (!resolver) throw new Error("Project identity resolver is unavailable");
+
+  const projection = await resolver.resolve(cwd);
+  return createProjectScopeMatcherFromIdentity(cwd, projection.identity);
+}
+
+function reportProjectScopeResolutionFailure(endpoint: string, error: unknown): void {
+  appLogger.warn("api.project_scope.unavailable", {
+    endpoint,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
 
 function reportInvalidQueryParameter(
   endpoint: string,
@@ -385,10 +419,11 @@ export function handleGetProjects(
   return c.json(projects);
 }
 
-export function handleGetSessions(
+export async function handleGetSessions(
   c: Context,
   scanSource: ScanResultSource,
   defaults: SessionListDefaults = {},
+  resolver?: ProjectIdentityResolver,
 ) {
   const scanResult = scanSource.getSnapshot();
   const params = searchParams(c);
@@ -399,7 +434,7 @@ export function handleGetSessions(
     return c.json({ error: sessionQuery.limit.error }, 400);
   }
   const q = c.req.query("q")?.toLowerCase();
-  const cwd = c.req.query("cwd");
+  const cwd = optionalQueryValue(c.req.query("cwd"));
   const projectIdentity = parseProjectIdentityFilter(
     c.req.query("projectKind"),
     c.req.query("projectKey"),
@@ -412,6 +447,16 @@ export function handleGetSessions(
   if (window.kind === "rejected") return window.response;
   const { from, to } = window;
 
+  let projectScope: ProjectScopeMatcher | undefined;
+  if (cwd && !projectIdentity) {
+    try {
+      projectScope = await resolveProjectScope(cwd, scanResult.sessions, resolver);
+    } catch (error) {
+      reportProjectScopeResolutionFailure("sessions", error);
+      return c.json({ error: "Project scope unavailable" }, 503);
+    }
+  }
+
   if (sessionQuery.agent.kind === "unknown") {
     reportInvalidQueryParameter("sessions", "agent", "empty_result");
   }
@@ -421,7 +466,18 @@ export function handleGetSessions(
   let sessions = getSnapshotAggregation(
     scanSource,
     scanResult.sessions,
-    ["sessions", agentFilter, projectIdentity?.kind, projectIdentity?.key, cwd, tag, from, to],
+    [
+      "sessions",
+      agentFilter,
+      projectIdentity?.kind,
+      projectIdentity?.key,
+      projectScope?.identity.kind,
+      projectScope?.identity.key,
+      projectScope?.path,
+      tag,
+      from,
+      to,
+    ],
     () => {
       let filtered =
         sessionQuery.agent.kind === "all"
@@ -434,8 +490,7 @@ export function handleGetSessions(
         filtered = filtered.filter((session) =>
           matchesProjectIdentity(session.project_identity, projectIdentity),
         );
-      } else if (cwd) {
-        const projectScope = createProjectScopeMatcher(cwd);
+      } else if (projectScope) {
         filtered = filtered.filter((session) => sessionMatchesProjectScope(session, projectScope));
       }
       filtered = filterSessionsByActivityWindow(filtered, from, to);
@@ -558,10 +613,11 @@ function mergeAliasSearchResults(
   ].slice(0, limit);
 }
 
-export function handleSearchSessions(
+export async function handleSearchSessions(
   c: Context,
   scanSource: ScanResultSource,
   defaults: SessionListDefaults = {},
+  resolver?: ProjectIdentityResolver,
 ) {
   const query = c.req.query("q")?.trim() ?? "";
   const scanResult = scanSource.getSnapshot();
@@ -583,7 +639,7 @@ export function handleSearchSessions(
     reportInvalidQueryParameter("search", "agent", "empty_result");
     return c.json({ results: [] });
   }
-  const searchOptions = parseSearchOptions(
+  const searchRequestOptions = parseSearchOptions(
     c,
     window,
     {
@@ -592,19 +648,39 @@ export function handleSearchSessions(
     },
     projectIdentity,
   );
+  const cwd = getSearchProjectDirectory(query, searchRequestOptions);
+  let projectScope: ProjectScopeMatcher | undefined;
+  if (cwd) {
+    try {
+      projectScope = await resolveProjectScope(cwd, scanResult.sessions, resolver);
+    } catch (error) {
+      reportProjectScopeResolutionFailure("search", error);
+      return c.json({ error: "Project scope unavailable" }, 503);
+    }
+  }
+  const { cwd: _cwd, ...searchOptions } = searchRequestOptions;
+  const resolvedSearchOptions = projectScope ? { ...searchOptions, projectScope } : searchOptions;
   const aliases = loadAliasView();
-  const results = executeSessionSearch(query, searchOptions, scanResult).map((result) => ({
+  const results = executeSessionSearch(query, resolvedSearchOptions, scanResult).map((result) => ({
     ...result,
     session: aliases.decorate(result.session, result.reference),
   }));
-  const aliasResults = findAliasSearchResults(query, searchOptions, scanResult, aliases);
-  const mergedResults = mergeAliasSearchResults(results, aliasResults, searchOptions.limit ?? 50);
+  const aliasResults = findAliasSearchResults(query, resolvedSearchOptions, scanResult, aliases);
+  const mergedResults = mergeAliasSearchResults(
+    results,
+    aliasResults,
+    resolvedSearchOptions.limit ?? 50,
+  );
   return c.json({
     results: withParentContext(mergedResults, scanResult.sessions, aliases),
   });
 }
 
-export function handleGetFileActivity(c: Context, defaults: SessionListDefaults = {}) {
+export async function handleGetFileActivity(
+  c: Context,
+  defaults: SessionListDefaults = {},
+  resolver?: ProjectIdentityResolver,
+) {
   const sessionQuery = parseSessionQuery(
     searchParams(c),
     KNOWN_AGENT_NAMES,
@@ -628,6 +704,17 @@ export function handleGetFileActivity(c: Context, defaults: SessionListDefaults 
     return c.json({ activity: [] });
   }
 
+  const cwd = optionalQueryValue(c.req.query("cwd"));
+  let projectScope: ProjectScopeMatcher | undefined;
+  if (cwd) {
+    try {
+      projectScope = await resolveProjectScope(cwd, [], resolver);
+    } catch (error) {
+      reportProjectScopeResolutionFailure("file-activity", error);
+      return c.json({ error: "Project scope unavailable" }, 503);
+    }
+  }
+
   const aliases = loadAliasView();
   return c.json({
     activity: listFileActivity({
@@ -636,7 +723,7 @@ export function handleGetFileActivity(c: Context, defaults: SessionListDefaults 
       projectKind: projectIdentity?.kind,
       projectKey: projectIdentity?.key,
       project: optionalQueryValue(c.req.query("project")),
-      cwd: optionalQueryValue(c.req.query("cwd")),
+      projectScope,
       path: optionalQueryValue(c.req.query("path")),
       kind: parseFileActivityKind(optionalQueryValue(c.req.query("kind"))),
       from: window.from,

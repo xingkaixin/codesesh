@@ -79,6 +79,11 @@ describe("session cache integration", () => {
       slug: "codex/old",
       title: "Old session",
       directory: "/workspace/project",
+      project_identity: {
+        kind: "path",
+        key: "/workspace/project",
+        displayName: "project",
+      },
       time_created: 1,
       time_updated: 1,
       stats: {

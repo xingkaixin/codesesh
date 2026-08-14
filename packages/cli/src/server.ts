@@ -13,6 +13,10 @@ import { fileURLToPath } from "node:url";
 import type { ScanResultSource } from "./api/handlers.js";
 import { createApiRoutes, type ApiRouteOptions } from "./api/routes.js";
 import { appLogger } from "./logging.js";
+import {
+  createProjectIdentityResolver,
+  type ProjectIdentityResolver,
+} from "./project-identity-resolver.js";
 import { validateLoopbackAuthority } from "./loopback-authority.js";
 import { loopbackWriteGuard } from "./loopback-write-guard.js";
 import {
@@ -41,6 +45,7 @@ export interface CreateServerOptions {
   transport?: RemoteTransport;
   /** Overrides the auto-detected web build directory; used to pin the static root in tests. */
   webDistPath?: string;
+  projectIdentityResolver?: ProjectIdentityResolver;
 }
 
 function findWebDistPath(): string | null {
@@ -139,6 +144,8 @@ export async function createServer(
     : null;
   const loopbackAuthorityEnabled = !accessPolicy.authenticationRequired;
   const shutdownController = new AbortController();
+  const projectIdentityResolver =
+    options.projectIdentityResolver ?? createProjectIdentityResolver();
   let actualPort: number | null = null;
 
   appLogger.info("server.access_policy", {
@@ -248,6 +255,7 @@ export async function createServer(
     defaultSessionTo: options.defaultSessionTo,
     defaultSessionDays: options.defaultSessionDays,
     shutdownSignal: shutdownController.signal,
+    projectIdentityResolver,
   };
   app.route("/api", createApiRoutes(store, store, routeOptions));
 
@@ -350,8 +358,12 @@ export async function createServer(
         appLogger.info("server.shutdown.phase", { phase: "http-closing", port: actualPort });
         await closeHttpServer(server, actualPort);
       } finally {
-        appLogger.info("server.shutdown.phase", { phase: "store-closing", port: actualPort });
-        await store.shutdown();
+        try {
+          await projectIdentityResolver.shutdown();
+        } finally {
+          appLogger.info("server.shutdown.phase", { phase: "store-closing", port: actualPort });
+          await store.shutdown();
+        }
       }
       appLogger.info("server.shutdown.phase", { phase: "complete", port: actualPort });
     },

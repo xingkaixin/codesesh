@@ -65,6 +65,7 @@ import {
 import { addCalendarDays } from "@codesesh/core/contract";
 import { createApiRoutes } from "../routes.js";
 import { invalidateAliasView } from "../session-aliases-view.js";
+import type { ProjectIdentityResolver } from "../../project-identity-resolver.js";
 
 interface ContextOptions {
   body?: unknown;
@@ -86,6 +87,17 @@ function makeContext(options: ContextOptions = {}) {
       url: `http://localhost/${params.size > 0 ? `?${params.toString()}` : ""}`,
     },
     json: vi.fn((payload: unknown, status = 200) => ({ payload, status })),
+  };
+}
+
+function makeProjectIdentityResolver(): ProjectIdentityResolver {
+  return {
+    resolve: vi.fn(async (cwd: string) => ({
+      identity: { kind: "path" as const, key: cwd, displayName: "repo" },
+      resolverRevision: "project-identity-v2",
+      inputSignature: "test",
+    })),
+    shutdown: vi.fn(async () => {}),
   };
 }
 
@@ -657,7 +669,7 @@ describe("query boundary handlers", () => {
     );
   });
 
-  it("normalizes file activity filters and caps the result limit", () => {
+  it("normalizes file activity filters and caps the result limit", async () => {
     const c = makeContext({
       query: {
         agent: " CoDeX ",
@@ -674,7 +686,8 @@ describe("query boundary handlers", () => {
       },
     });
 
-    handleGetFileActivity(c as never);
+    const resolver = makeProjectIdentityResolver();
+    await handleGetFileActivity(c as never, {}, resolver);
 
     expect(coreMocks.listFileActivity).toHaveBeenCalledWith({
       agent: "codex",
@@ -682,13 +695,17 @@ describe("query boundary handlers", () => {
       projectKind: "path",
       projectKey: "/repo",
       project: "repo",
-      cwd: "/repo",
+      projectScope: {
+        identity: { kind: "path", key: "/repo" },
+        path: "/repo",
+      },
       path: "src/index.ts",
       kind: "edit",
       from: new Date("2026-01-01T00:00:00.000Z").getTime(),
       to: new Date("2026-01-02T00:00:00.000Z").getTime(),
       limit: 200,
     });
+    expect(resolver.resolve).toHaveBeenCalledWith("/repo");
   });
 
   it.each(["1.5", "0", "-1", "", "Infinity", "invalid"])(

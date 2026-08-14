@@ -4,6 +4,7 @@ import type { SessionDetail, SessionHead } from "../../types/index.js";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import type { SessionHeadChange } from "./db.js";
 import { sessionDetailVersion } from "./detail-version.js";
+import { assertSessionProjectIdentities } from "./messages.js";
 import {
   prepareSessionChangesSearchIndex,
   prepareSessionSnapshotSearchIndex,
@@ -86,6 +87,12 @@ export function commitDurableSessionPublication(
   loadSessionData: (sessionId: string) => SessionDetail,
   searchOptions: SearchIndexSyncOptions = {},
 ): DurableSessionPublicationCommitResult {
+  assertSessionProjectIdentities(
+    publication.agentName,
+    publication.kind === "snapshot"
+      ? publication.sessions
+      : publication.changes.map(({ session }) => session),
+  );
   const publicationId = publication.publicationId ?? randomUUID();
   let failureStage: DurableSessionPublicationFailureStage = "prepare";
   const diagnostics = getCoreDiagnostics();
