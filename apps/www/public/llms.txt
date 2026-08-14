@@ -67,4 +67,4 @@ It persists scan progress, restores from a SQLite cache, incrementally watches c
 
 ## Chinese Summary
 
-CodeSesh 将九种 AI 编码 Agent 的本地会话按项目组织到同一个 SQLite 索引中，提供结构化搜索、文件活动索引和完整会话回放。会话数据不上传，无需账号、云同步或会话遥测。
+CodeSesh 将十种 AI 编码 Agent 的本地会话按项目组织到同一个 SQLite 索引中，提供结构化搜索、文件活动索引和完整会话回放。会话数据不上传，无需账号、云同步或会话遥测。
