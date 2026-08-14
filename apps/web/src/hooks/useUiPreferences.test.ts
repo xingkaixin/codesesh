@@ -118,6 +118,23 @@ describe("useUiPreferences", () => {
       state: { shortcutHintDismissed: true, sidebarCollapsed: false, theme: "system" },
     });
   });
+
+  it("does not update again after the shortcut hint is dismissed", () => {
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders += 1;
+      return useUiPreferences();
+    });
+
+    act(() => result.current.dismissShortcutHint());
+    act(() => result.current.dismissShortcutHint());
+
+    expect(renders).toBe(2);
+    expect(JSON.parse(window.localStorage.getItem(UI_PREFERENCES_STORAGE_KEY)!)).toEqual({
+      version: 1,
+      state: { shortcutHintDismissed: true, sidebarCollapsed: false, theme: "system" },
+    });
+  });
 });
 
 describe("parseUiPreferences", () => {
