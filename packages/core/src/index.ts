@@ -50,6 +50,7 @@ export {
   ensureSessionTagsSync,
   getAgentFullSyncCursor,
   getAgentLastFullSyncAt,
+  getAnalyticsRevision,
   getCachePath,
   getSearchProjectDirectory,
   isAgentCacheInitialized,

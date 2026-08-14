@@ -90,11 +90,15 @@ describe("listModelCostDistribution", () => {
   it("groups message cost by model and splits recorded from estimated", () => {
     seedFixture();
 
-    expect(listModelCostDistribution()).toEqual([
+    const distribution = listModelCostDistribution();
+    expect(distribution).toEqual([
       { model: "gpt-5", cost: 3, costRecorded: 0, costEstimated: 3 },
       { model: "sonnet", cost: 1.5, costRecorded: 1, costEstimated: 0.5 },
       { model: "haiku", cost: 0.25, costRecorded: 0, costEstimated: 0.25 },
     ]);
+    for (const entry of distribution ?? []) {
+      expect(entry.costRecorded + entry.costEstimated).toBe(entry.cost);
+    }
   });
 
   it("scopes totals by agent, project and activity window", () => {

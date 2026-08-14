@@ -30,6 +30,7 @@ import {
   createProjectScopeMatcherFromIdentity,
   deleteBookmark,
   getAgentInfoMap,
+  getAnalyticsRevision,
   executeSessionSearch,
   getSearchProjectDirectory,
   importBookmarks,
@@ -151,6 +152,7 @@ interface SnapshotAggregationCache {
 
 const SNAPSHOT_AGGREGATION_CACHE_LIMIT = 64;
 const snapshotAggregationCaches = new WeakMap<ScanResultSource, SnapshotAggregationCache>();
+type SnapshotAggregationCacheState = "hit" | "miss";
 
 /**
  * LiveScanStore replaces its canonical sessions array whenever the snapshot
@@ -161,6 +163,7 @@ function getSnapshotAggregation<T>(
   sessions: SessionHead[],
   key: readonly unknown[],
   build: () => T,
+  onCacheState?: (state: SnapshotAggregationCacheState) => void,
 ): T {
   let cache = snapshotAggregationCaches.get(source);
   if (!cache || cache.sessions !== sessions) {
@@ -169,7 +172,13 @@ function getSnapshotAggregation<T>(
   }
 
   const cacheKey = JSON.stringify(key);
-  if (cache.values.has(cacheKey)) return cache.values.get(cacheKey) as T;
+  if (cache.values.has(cacheKey)) {
+    const cached = cache.values.get(cacheKey) as T;
+    cache.values.delete(cacheKey);
+    cache.values.set(cacheKey, cached);
+    onCacheState?.("hit");
+    return cached;
+  }
 
   const value = build();
   if (cache.values.size >= SNAPSHOT_AGGREGATION_CACHE_LIMIT) {
@@ -177,7 +186,68 @@ function getSnapshotAggregation<T>(
     if (oldestKey != null) cache.values.delete(oldestKey);
   }
   cache.values.set(cacheKey, value);
+  onCacheState?.("miss");
   return value;
+}
+
+type DashboardStorageAggregation = Pick<DashboardData, "recentFileActivities" | "modelCost">;
+
+function getDashboardStorageAggregation(
+  source: ScanResultSource,
+  sessions: SessionHead[],
+  scope: DashboardScope,
+  from: number | undefined,
+  to: number,
+  cacheTo: number,
+  analyticsRevision: string | null,
+): DashboardStorageAggregation {
+  const build = (): DashboardStorageAggregation => ({
+    recentFileActivities: listFileActivity({
+      agent: scope.agent,
+      projectKind: scope.projectKind,
+      projectKey: scope.projectKey,
+      from,
+      to,
+      limit: 12,
+    }),
+    modelCost: listModelCostDistribution({
+      agent: scope.agent,
+      projectKind: scope.projectKind,
+      projectKey: scope.projectKey,
+      from,
+      to,
+    }),
+  });
+  const startedAt = performance.now();
+  const log = (cache: SnapshotAggregationCacheState | "unavailable") => {
+    appLogger.info("api.dashboard.storage_aggregation", {
+      cache,
+      ...(analyticsRevision === null ? {} : { analytics_revision: analyticsRevision }),
+      duration_ms: Math.round(performance.now() - startedAt),
+    });
+  };
+
+  if (analyticsRevision === null) {
+    const value = build();
+    log("unavailable");
+    return value;
+  }
+
+  return getSnapshotAggregation(
+    source,
+    sessions,
+    [
+      "dashboard-storage",
+      scope.agent,
+      scope.projectKind,
+      scope.projectKey,
+      from,
+      cacheTo,
+      analyticsRevision,
+    ],
+    build,
+    log,
+  );
 }
 
 interface ClientLogPayload {
@@ -976,6 +1046,7 @@ export function handleGetDashboard(
       : { from: addCalendarDays(from, -(days ?? countCalendarDays(from, to))), to: from - 1 };
 
   const fixedTo = dateWindow.to;
+  const cacheTo = fixedTo ?? startOfCalendarDay(to);
   const aggregate = getSnapshotAggregation(
     scanSource,
     scanResult.sessions,
@@ -985,7 +1056,7 @@ export function handleGetDashboard(
       scope.projectKind,
       scope.projectKey,
       from,
-      fixedTo ?? startOfCalendarDay(to),
+      cacheTo,
       compare?.from,
       compare?.to,
     ],
@@ -1003,23 +1074,18 @@ export function handleGetDashboard(
     },
   );
 
+  const storageAggregation = getDashboardStorageAggregation(
+    scanSource,
+    scanResult.sessions,
+    scope,
+    from,
+    to,
+    cacheTo,
+    getAnalyticsRevision(),
+  );
   const data: DashboardData = {
     ...aggregate,
-    recentFileActivities: listFileActivity({
-      agent: scope.agent,
-      projectKind: scope.projectKind,
-      projectKey: scope.projectKey,
-      from,
-      to,
-      limit: 12,
-    }),
-    modelCost: listModelCostDistribution({
-      agent: scope.agent,
-      projectKind: scope.projectKind,
-      projectKey: scope.projectKey,
-      from,
-      to,
-    }),
+    ...storageAggregation,
     window: { from, to, days, compareFrom: compare?.from, compareTo: compare?.to },
   };
 

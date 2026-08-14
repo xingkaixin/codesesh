@@ -3,6 +3,7 @@ import type { SessionCacheMeta } from "../../agents/base.js";
 import type { SessionDetail, SessionHead } from "../../types/index.js";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import type { SessionHeadChange } from "./db.js";
+import { advanceAnalyticsRevision } from "./analytics-revision.js";
 import { sessionDetailVersion } from "./detail-version.js";
 import { assertSessionProjectIdentities } from "./messages.js";
 import {
@@ -158,6 +159,7 @@ export function commitDurableSessionPublication(
           ...detail,
           stage: "search_staged",
         });
+        advanceAnalyticsRevision(db);
         failureStage = "commit";
         return result;
       })

@@ -16,6 +16,7 @@ import {
   type ScalarRow,
   type SessionHeadChange,
 } from "./db.js";
+import { advanceAnalyticsRevision } from "./analytics-revision.js";
 import { withCacheDb, withCacheDbReadOnly, type CacheReadOutcome } from "./schema.js";
 import {
   assertSessionProjectIdentities,
@@ -469,9 +470,10 @@ export function saveCachedSessions(
 ): boolean {
   assertSessionProjectIdentities(agentName, sessions);
   const persisted = withCacheDb((db) => {
-    db.transaction(() =>
-      writeCachedSessionSnapshot(db, agentName, sessions, meta, options),
-    ).immediate();
+    db.transaction(() => {
+      writeCachedSessionSnapshot(db, agentName, sessions, meta, options);
+      advanceAnalyticsRevision(db);
+    }).immediate();
     deleteLegacyCacheFile();
     return true;
   });
@@ -555,9 +557,12 @@ export function saveCachedSessionChanges(
     changes.map(({ session }) => session),
   );
   const persisted = withCacheDb((db) => {
-    db.transaction(() =>
-      writeCachedSessionChanges(db, agentName, changes, removedSessionIds, meta),
-    ).immediate();
+    db.transaction(() => {
+      writeCachedSessionChanges(db, agentName, changes, removedSessionIds, meta);
+      if (changes.length > 0 || removedSessionIds.length > 0) {
+        advanceAnalyticsRevision(db);
+      }
+    }).immediate();
     deleteLegacyCacheFile();
     return true;
   });
@@ -628,17 +633,21 @@ export function clearCache(): void {
   }
 
   withCacheDb((db) => {
-    db.exec(`
-      DELETE FROM agent_cache;
-      DELETE FROM cache_initialization;
-      DELETE FROM cached_sessions;
-      DELETE FROM session_documents;
-      DELETE FROM session_file_activity;
-      DELETE FROM message_tools;
-      DELETE FROM messages;
-      DELETE FROM sessions;
-      DELETE FROM project_sessions;
-    `);
+    db.transaction(() => {
+      db.exec(`
+        DELETE FROM agent_cache;
+        DELETE FROM cache_initialization;
+        DELETE FROM cached_sessions;
+        DELETE FROM session_documents;
+        DELETE FROM session_file_activity;
+        DELETE FROM message_tools;
+        DELETE FROM messages;
+        DELETE FROM sessions;
+        DELETE FROM project_sessions;
+        DELETE FROM cache_meta WHERE key <> 'analytics_revision';
+      `);
+      advanceAnalyticsRevision(db);
+    }).immediate();
   });
   closeCacheStorage();
 

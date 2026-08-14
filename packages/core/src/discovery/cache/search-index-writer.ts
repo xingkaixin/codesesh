@@ -4,6 +4,7 @@ import { extractSessionFileActivity } from "../../utils/file-activity.js";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import type { SQLiteDatabase } from "../../utils/sqlite.js";
 import { SEARCH_INDEX_BULK_SYNC_THRESHOLD, type SessionHeadChange } from "./db.js";
+import { advanceAnalyticsRevision } from "./analytics-revision.js";
 import {
   buildSessionContentFromMessages,
   MESSAGE_PARTS_FORMAT_VERSION,
@@ -944,11 +945,20 @@ function executeSearchIndexPlan(
   if (largeBacklogStrategy === "chunked" && plan.changes.length > SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
     runSearchIndexWrite(db, false, () => {
       indexed += writeSearchIndexRows(db, plan.agentName, plan.removedSessionIds, [], failures);
+      if (plan.removedSessionIds.length > 0) advanceAnalyticsRevision(db);
     });
     for (let offset = 0; offset < plan.changes.length; offset += SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
       const chunk = plan.changes.slice(offset, offset + SEARCH_INDEX_COMMIT_CHUNK_SIZE);
       runSearchIndexWrite(db, false, () => {
-        indexed += writeSearchIndexRows(db, plan.agentName, [], loadEntries(chunk), failures);
+        const chunkIndexed = writeSearchIndexRows(
+          db,
+          plan.agentName,
+          [],
+          loadEntries(chunk),
+          failures,
+        );
+        indexed += chunkIndexed;
+        if (chunkIndexed > 0) advanceAnalyticsRevision(db);
       });
     }
     return searchIndexSyncResult(plan, indexed, failures, undefined, "incremental");
@@ -962,6 +972,7 @@ function executeSearchIndexPlan(
       loadEntries(plan.changes),
       failures,
     );
+    if (indexed > 0 || plan.removedSessionIds.length > 0) advanceAnalyticsRevision(db);
   });
   return searchIndexSyncResult(plan, indexed, failures, rebuildDurationMs);
 }
