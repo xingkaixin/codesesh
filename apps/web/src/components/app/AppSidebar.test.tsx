@@ -28,6 +28,7 @@ function createActions(overrides: Partial<AppSidebarActions> = {}): AppSidebarAc
     onToggleSidebarSessionBookmark: vi.fn(),
     onRenameSession: vi.fn(),
     onRenameBookmarkedSession: vi.fn(),
+    onRetryProjects: vi.fn(),
     ...overrides,
   };
 }
@@ -46,8 +47,9 @@ function renderSidebar(
             viewState: { mode: "root", activeAgentKey: null, activeSessionId: null },
             agentCatalog: createAgentCatalog(agents),
             projects,
+            projectsError: null,
+            projectsLoading: false,
             selectedProjectNavigationId: null,
-            loading: false,
             bookmarkedSessions: [],
             sidebarSessions: [],
             selectedSidebarSessionReference: null,
@@ -109,6 +111,31 @@ describe("AppSidebar", () => {
     });
 
     expect(screen.getByText("Scanning projects...")).toBeTruthy();
+  });
+
+  it("shows an empty state only after projects load successfully", () => {
+    renderSidebar({ projects: [] });
+
+    expect(screen.getByText("No projects found")).toBeTruthy();
+
+    cleanup();
+    renderSidebar({ projects: [], projectsLoading: true });
+
+    expect(screen.queryByText("No projects found")).toBeNull();
+  });
+
+  it("keeps project failures local and retryable", () => {
+    const onRetryProjects = vi.fn();
+    renderSidebar(
+      { projects: [], projectsError: "projects unavailable" },
+      createActions({ onRetryProjects }),
+    );
+
+    expect(screen.getByRole("alert").textContent).toContain("Couldn't load projects.");
+    expect(screen.getByText("projects unavailable")).toBeTruthy();
+    expect(screen.queryByText("No projects found")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetryProjects).toHaveBeenCalledTimes(1);
   });
 
   it("omits the sessions section until a project is selected", () => {

@@ -7,7 +7,8 @@ import { queryKeys } from "../lib/query-keys";
 import { createQueryWrapper } from "../test/query-wrapper";
 import { useSessionDetail } from "./useSessionDetail";
 
-vi.mock("../lib/api", () => ({
+vi.mock("../lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/api")>()),
   fetchSessionData: vi.fn(),
   logClientEvent: vi.fn(),
 }));
@@ -60,12 +61,40 @@ describe("useSessionDetail", () => {
     );
   });
 
-  it("sets an error when the fetch fails", async () => {
+  it("classifies a confirmed 404 as a missing session", async () => {
+    vi.mocked(api.fetchSessionData).mockRejectedValue(new api.ApiRequestError("not found", 404));
+    const { result } = renderSessionDetail();
+
+    await waitFor(() => expect(result.current.sessionError).toEqual({ kind: "missing" }));
+    expect(result.current.session).toBeNull();
+  });
+
+  it("keeps network and server failures distinct from missing sessions", async () => {
     vi.mocked(api.fetchSessionData).mockRejectedValue(new Error("nope"));
     const { result } = renderSessionDetail();
 
-    await waitFor(() => expect(result.current.sessionError).toBe("Session not found"));
+    await waitFor(() =>
+      expect(result.current.sessionError).toEqual({ kind: "load-failed", message: "nope" }),
+    );
     expect(result.current.session).toBeNull();
+  });
+
+  it("recovers from a failed detail request with a local retry", async () => {
+    vi.mocked(api.fetchSessionData)
+      .mockRejectedValueOnce(new api.ApiRequestError("server unavailable", 500))
+      .mockResolvedValueOnce(sample);
+    const { result } = renderSessionDetail();
+
+    await waitFor(() =>
+      expect(result.current.sessionError).toEqual({
+        kind: "load-failed",
+        message: "server unavailable",
+      }),
+    );
+    await act(() => result.current.refresh());
+
+    await waitFor(() => expect(result.current.session).toEqual(sample));
+    expect(result.current.sessionError).toBeNull();
   });
 
   it("does not fetch for a non-session route", () => {

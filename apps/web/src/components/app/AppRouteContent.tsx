@@ -42,6 +42,7 @@ function LazySurface({ children }: { children: ReactNode }) {
 }
 import type { AgentInfo, AppConfig, ApiProjectGroup, SessionHead } from "../../lib/api";
 import type * as Api from "../../lib/api";
+import type { SessionDetailError } from "../../hooks/useSessionDetail";
 import type { AgentCatalog } from "../../lib/agents";
 import type { TimeWindowPreset } from "../../lib/time-window";
 import type { ViewState } from "../../lib/view-state";
@@ -51,7 +52,8 @@ import { getSessionRouteKey } from "../../lib/session-indexes";
 interface SessionDetailModel {
   session: Api.SessionDetail | null;
   loading: boolean;
-  error: string | null;
+  error: SessionDetailError | null;
+  retry: () => void;
 }
 
 /** The overview owns its scope and its own request; the shell only lends it the
@@ -258,7 +260,7 @@ export function AppRouteContent({
   }
   if (viewState.mode === "session") {
     if (sessionDetail.loading) return <SessionDetailSkeleton />;
-    if (sessionDetail.error || !currentSession) {
+    if (sessionDetail.error?.kind === "missing") {
       return (
         <DetailLanding
           type="missing-session"
@@ -272,6 +274,21 @@ export function AppRouteContent({
         />
       );
     }
+    if (sessionDetail.error?.kind === "load-failed") {
+      return (
+        <DetailLanding
+          type="load-failed"
+          agentCatalog={agentCatalog}
+          sessions={sessionsByAgent.get(viewState.activeAgentKey) ?? []}
+          agentItems={landingAgentItems}
+          loadFailureMessage={sessionDetail.error.message}
+          isBookmarked={bookmarks.isBookmarked}
+          onToggleBookmark={toggleLandingBookmark}
+          onRetry={sessionDetail.retry}
+        />
+      );
+    }
+    if (!currentSession) return <SessionDetailSkeleton />;
     return (
       <RenderProfiler
         id="SessionDetail"

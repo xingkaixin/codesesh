@@ -21,7 +21,6 @@ export function useWindowedDataLoad({ window, reload }: WindowedDataLoadDeps) {
           duration_ms: Math.round(performance.now() - startedAt),
           agents: snapshot.agents.length,
           sessions: snapshot.sessions.length,
-          projects: snapshot.projects.length,
         });
       })
       .catch((error) => {

@@ -63,13 +63,33 @@ function ProjectNavList({
   );
 }
 
+function ProjectLoadFailure({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div
+      role="alert"
+      className="rounded-sm border border-[var(--console-error-border)] bg-[var(--console-error-bg)] px-3 py-2 text-xs text-[var(--console-error)]"
+    >
+      <p>Couldn&apos;t load projects.</p>
+      <p className="console-mono mt-1 break-all text-[11px]">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="console-mono mt-2 rounded-sm border border-[var(--console-error-border)] px-2 py-1 text-[11px] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
 export interface AppSidebarViewModel {
   sidebarCollapsed: boolean;
   viewState: ViewState;
   agentCatalog: AgentCatalog;
   projects: ApiProjectGroup[];
+  projectsError: string | null;
+  projectsLoading: boolean;
   selectedProjectNavigationId: string | null;
-  loading: boolean;
   bookmarkedSessions: BookmarkView[];
   sidebarSessions: SessionHead[];
   selectedSidebarSessionReference: string | null;
@@ -83,6 +103,7 @@ export interface AppSidebarActions {
   onToggleSidebarSessionBookmark: (session: SessionHead) => void;
   onRenameSession: (session: SessionHead) => void;
   onRenameBookmarkedSession: (session: BookmarkView) => void;
+  onRetryProjects: () => void;
 }
 
 export function AppSidebar({
@@ -91,8 +112,9 @@ export function AppSidebar({
     viewState,
     agentCatalog,
     projects,
+    projectsError,
+    projectsLoading,
     selectedProjectNavigationId,
-    loading,
     bookmarkedSessions,
     sidebarSessions,
     selectedSidebarSessionReference,
@@ -105,6 +127,7 @@ export function AppSidebar({
     onToggleSidebarSessionBookmark,
     onRenameSession,
     onRenameBookmarkedSession,
+    onRetryProjects,
   },
 }: {
   model: AppSidebarViewModel;
@@ -149,7 +172,11 @@ export function AppSidebar({
               projects={projects}
               selectedProjectNavigationId={selectedProjectNavigationId}
             />
-            {projects.length === 0 && !loading ? (
+            {projectsError ? (
+              <li>
+                <ProjectLoadFailure message={projectsError} onRetry={onRetryProjects} />
+              </li>
+            ) : projects.length === 0 && !projectsLoading ? (
               <li>
                 <ScanAwareEmptyState scanning="Scanning projects..." empty="No projects found" />
               </li>

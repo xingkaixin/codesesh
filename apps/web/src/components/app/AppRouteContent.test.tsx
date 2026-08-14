@@ -73,7 +73,7 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
       onRangeChange: vi.fn(),
       onSelectCustom: vi.fn(),
     },
-    sessionDetail: { session: null, loading: false, error: null },
+    sessionDetail: { session: null, loading: false, error: null, retry: vi.fn() },
     projectAgentFilter: { onChangeAgent: vi.fn() },
     search: {
       active: false,
@@ -330,7 +330,12 @@ describe("AppRouteContent", () => {
       activeAgentKey: "claudecode",
       activeSessionId: attemptedSessionId,
     };
-    props.sessionDetail = { session: null, loading: false, error: "not found" };
+    props.sessionDetail = {
+      session: null,
+      loading: false,
+      error: { kind: "missing" },
+      retry: vi.fn(),
+    };
     props.sessionsByAgent = new Map([
       ["claudecode", [claudeSession]],
       ["codex", [codexSession]],
@@ -347,6 +352,31 @@ describe("AppRouteContent", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add bookmark" }));
     expect(props.bookmarks.toggleSessionBookmark).toHaveBeenCalledWith(claudeSession, "claudecode");
+  });
+
+  it("renders a retryable load failure instead of a missing session", () => {
+    const props = makeProps();
+    addRouteAgents(props);
+    const retry = vi.fn();
+    props.viewState = {
+      mode: "session",
+      activeAgentKey: "claudecode",
+      activeSessionId: "unavailable-session",
+    };
+    props.sessionDetail = {
+      session: null,
+      loading: false,
+      error: { kind: "load-failed", message: "server unavailable" },
+      retry,
+    };
+
+    renderContent(props);
+
+    expect(screen.getByRole("heading", { name: "We couldn't load this session." })).toBeTruthy();
+    expect(screen.getByText("server unavailable")).toBeTruthy();
+    expect(screen.queryByText("This session isn't in the index.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(retry).toHaveBeenCalledTimes(1);
   });
 
   it("renders a missing agent with diagnostics and canonical recovery links", () => {

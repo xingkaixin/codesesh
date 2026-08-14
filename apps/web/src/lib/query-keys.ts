@@ -16,6 +16,8 @@ export const queryKeys = {
   dashboards: ["dashboard"] as const,
   dashboard: (window: TimeWindow, filters: DashboardFilters) =>
     ["dashboard", normalizeWindow(window), filters] as const,
+  projects: ["projects"] as const,
+  project: (window: TimeWindow) => ["projects", normalizeWindow(window)] as const,
   search: (query: string, options: SearchRequestOptions) => ["search", query, options] as const,
   searches: ["search"] as const,
   sessionDetails: ["session-detail"] as const,

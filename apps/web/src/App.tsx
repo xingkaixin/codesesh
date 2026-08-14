@@ -51,6 +51,8 @@ export default function App() {
     agentCatalog,
     sessions,
     projects,
+    projectsError,
+    projectsLoading,
     dashboard,
     window: loadedWindow,
     validAgentKeys,
@@ -61,6 +63,7 @@ export default function App() {
     applyLiveEvent,
     resyncLiveState,
     retryLoad,
+    retryProjects,
   } = sessionStore;
   useWindowedDataLoad({
     window: timeWindow,
@@ -284,7 +287,7 @@ export default function App() {
     activeAgent,
     sidebarSessionCount: sidebarSessions.length,
     session,
-    sessionError,
+    sessionError: sessionError?.kind ?? null,
     selectedProjectIdentity: selectedProjectNavigationIdentity,
     selectedProject: selectedProjectNavigation?.project ?? null,
   });
@@ -317,6 +320,7 @@ export default function App() {
         session: sessionDetail.session,
         loading: sessionDetail.sessionLoading,
         error: sessionDetail.sessionError,
+        retry: () => void sessionDetail.refresh(),
       }}
       projectAgentFilter={{
         selectedAgent: selectedProjectAgent,
@@ -445,8 +449,9 @@ export default function App() {
               viewState,
               agentCatalog,
               projects,
+              projectsError,
+              projectsLoading,
               selectedProjectNavigationId,
-              loading,
               bookmarkedSessions,
               sidebarSessions,
               selectedSidebarSessionReference,
@@ -459,6 +464,7 @@ export default function App() {
               onToggleSidebarSessionBookmark: handleToggleSidebarSessionBookmark,
               onRenameSession: handleRenameSession,
               onRenameBookmarkedSession: handleRenameBookmarkedSession,
+              onRetryProjects: () => void retryProjects(),
             }}
           />
 

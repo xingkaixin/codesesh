@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SAMPLE_DASHBOARD_DATA, SAMPLE_SESSION_HEAD } from "@codesesh/core/test-fixtures";
 import type { DashboardFilters } from "./api";
 import {
+  ApiRequestError,
   fetchAgents,
   fetchConfig,
   fetchDashboard,
@@ -235,6 +236,23 @@ describe("fetchSessionData", () => {
       "/api/sessions/codex/session?messageCursor=prefix%2B%2F%3D",
       { signal: controller.signal },
     );
+  });
+
+  it("exposes failed response status through ApiRequestError", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchSessionData("codex", "missing")).rejects.toEqual(
+      expect.objectContaining({
+        message: "GET /api/sessions/codex/missing failed: 404 Not Found",
+        status: 404,
+      }),
+    );
+    await expect(fetchSessionData("codex", "missing")).rejects.toBeInstanceOf(ApiRequestError);
   });
 });
 

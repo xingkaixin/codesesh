@@ -13,7 +13,6 @@ const snapshot = {
   window,
   agents: [],
   sessions: [],
-  projects: [],
   dashboard: SAMPLE_DASHBOARD_DATA,
 } satisfies SessionStoreSnapshot;
 
@@ -39,7 +38,6 @@ describe("useWindowedDataLoad", () => {
         duration_ms: expect.any(Number),
         agents: 0,
         sessions: 0,
-        projects: 0,
       }),
     );
   });
