@@ -3,8 +3,8 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentInfo, ApiProjectGroup, SessionDetail } from "../../lib/api";
 import { createAgentCatalog } from "../../lib/agents";
+import type { IndexedSession } from "../../lib/session-indexes";
 import { createQueryWrapper } from "../../test/query-wrapper";
-import type { LandingSession } from "../DetailLanding";
 import { AppRouteContent } from "./AppRouteContent";
 
 const sessionDetailRender = vi.hoisted(() => vi.fn());
@@ -112,7 +112,7 @@ function makeSession(id: string): SessionDetail {
   };
 }
 
-function makeLandingSession(agentKey: string, sessionId: string, title: string): LandingSession {
+function makeLandingSession(agentKey: string, sessionId: string, title: string): IndexedSession {
   return {
     id: sessionId,
     sessionId,

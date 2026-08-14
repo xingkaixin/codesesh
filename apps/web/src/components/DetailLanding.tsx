@@ -3,18 +3,12 @@ import { Link } from "react-router-dom";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import type { SessionHead } from "../lib/api";
 import { formatCostSource, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
-import { agentRoutePath, sessionRoutePath } from "../lib/session-indexes";
+import { agentRoutePath, sessionRoutePath, type IndexedSession } from "../lib/session-indexes";
 import { getSessionDisplayTitle } from "../lib/session-title";
 import { AgentIcon } from "./AgentIcon";
 import { BookmarkButton } from "./BookmarkButton";
 import { SmartTagChips } from "./SmartTagChips";
 import { Panel, PanelHeader } from "./ui/panel";
-
-export interface LandingSession extends SessionHead {
-  agentKey: string;
-  sessionId: string;
-  reference: string;
-}
 
 export interface LandingAgentItem {
   key: string;
@@ -27,14 +21,14 @@ export interface LandingAgentItem {
 interface DetailLandingProps {
   type: "global" | "agent" | "missing-agent" | "missing-session" | "load-failed";
   agentCatalog: AgentCatalog;
-  sessions: LandingSession[];
+  sessions: IndexedSession[];
   agentItems: LandingAgentItem[];
   activeAgentKey?: string;
   attemptedAgentKey?: string;
   attemptedSessionId?: string | null;
   loadFailureMessage?: string;
   isBookmarked: (agentKey: string, sessionId: string) => boolean;
-  onToggleBookmark: (session: LandingSession) => void;
+  onToggleBookmark: (session: IndexedSession) => void;
   onRetry?: () => void;
 }
 
@@ -113,10 +107,10 @@ function MissingStateHero({
   );
 }
 
-function RecommendedAgents({ agentItems }: { agentItems: LandingAgentItem[] }) {
+function AgentsPanel({ agentItems }: { agentItems: LandingAgentItem[] }) {
   return (
     <Panel className="p-4">
-      <PanelHeader title="Known Agents" meta={`${agentItems.length} items`} />
+      <PanelHeader title="Agents" meta={`${agentItems.length} items`} />
       <ul className="mt-3 grid gap-2 sm:grid-cols-2">
         {agentItems.map((agent) => (
           <li key={agent.key}>
@@ -151,9 +145,9 @@ function RecentSessions({
   isBookmarked,
   onToggleBookmark,
 }: {
-  sessions: LandingSession[];
+  sessions: IndexedSession[];
   isBookmarked: (agentKey: string, sessionId: string) => boolean;
-  onToggleBookmark: (session: LandingSession) => void;
+  onToggleBookmark: (session: IndexedSession) => void;
 }) {
   if (sessions.length === 0) {
     return <Panel className="p-4 text-sm text-[var(--console-muted)]">No sessions yet</Panel>;
@@ -257,7 +251,7 @@ export const DetailLanding = memo(function DetailLanding({
           ) : null}
         </div>
 
-        <RecommendedAgents agentItems={agentItems} />
+        <AgentsPanel agentItems={agentItems} />
       </div>
     );
   }
@@ -357,34 +351,7 @@ export const DetailLanding = memo(function DetailLanding({
           />
         </div>
 
-        <Panel className="p-4">
-          <PanelHeader title="Agents" meta={`${agentItems.length} items`} />
-          <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-            {agentItems.map((agent) => (
-              <li key={agent.key}>
-                <Link
-                  to={agentRoutePath(agent.key)}
-                  className="flex items-center gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]"
-                >
-                  {agent.icon ? (
-                    <AgentIcon
-                      icon={agent.icon}
-                      iconColored={agent.iconColored}
-                      alt={agent.name}
-                      className="size-4 object-contain"
-                    />
-                  ) : null}
-                  <span className="console-mono flex-1 text-xs text-[var(--console-text)]">
-                    {agent.name}
-                  </span>
-                  <span className="console-mono text-[11px] text-[var(--console-muted)]">
-                    {agent.count}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Panel>
+        <AgentsPanel agentItems={agentItems} />
 
         <RecentSessions
           sessions={recentSessions}
