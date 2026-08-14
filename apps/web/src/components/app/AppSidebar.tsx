@@ -1,8 +1,14 @@
+import { useCallback } from "react";
 import type { BookmarkView, ApiProjectGroup, SessionHead } from "../../lib/api";
 import { useScanStatus } from "../../hooks/useScanStatus";
+import { useSidebarKeyboardNavigation } from "../../hooks/useSidebarKeyboardNavigation";
 import { findAgent, type AgentCatalog } from "../../lib/agents";
 import { getSessionBookmarkKey } from "../../lib/bookmarks";
-import { getSessionRoutePath, getSessionRouteKey } from "../../lib/session-indexes";
+import {
+  getSessionRoutePath,
+  getSessionRouteKey,
+  type SidebarSessionLookup,
+} from "../../lib/session-indexes";
 import { getSessionDisplayTitle } from "../../lib/session-title";
 import { getProjectGroupIdentity, getProjectIdentityKey, getProjectPath } from "../../lib/projects";
 import type { ViewState } from "../../lib/view-state";
@@ -92,8 +98,11 @@ export interface AppSidebarViewModel {
   selectedProjectNavigationId: string | null;
   bookmarkedSessions: BookmarkView[];
   sidebarSessions: SessionHead[];
-  selectedSidebarSessionReference: string | null;
+  sidebarSessionLookup: SidebarSessionLookup;
   bookmarkedSidebarSessionReferences: Set<string>;
+  isSearchMode: boolean;
+  shortcutHelpOpen: boolean;
+  dismissShortcutHint: () => void;
 }
 
 export interface AppSidebarActions {
@@ -117,8 +126,11 @@ export function AppSidebar({
     selectedProjectNavigationId,
     bookmarkedSessions,
     sidebarSessions,
-    selectedSidebarSessionReference,
+    sidebarSessionLookup,
     bookmarkedSidebarSessionReferences,
+    isSearchMode,
+    shortcutHelpOpen,
+    dismissShortcutHint,
   },
   actions: {
     onCollapse,
@@ -138,6 +150,22 @@ export function AppSidebar({
       ? getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionId)
       : null;
   const isOverviewSelected = viewState.mode === "root";
+  const { selectedSessionReference, selectSession } = useSidebarKeyboardNavigation({
+    viewState,
+    sessions: sidebarSessions,
+    sessionLookup: sidebarSessionLookup,
+    isSearchMode,
+    shortcutHelpOpen,
+    dismissShortcutHint,
+    onOpenSession: onSelectFlatSidebarSession,
+  });
+  const handleSelectSession = useCallback(
+    (session: SessionHead) => {
+      selectSession(session);
+      onSelectFlatSidebarSession(session);
+    },
+    [onSelectFlatSidebarSession, selectSession],
+  );
 
   return (
     <aside
@@ -284,8 +312,8 @@ export function AppSidebar({
                 <SessionTreeSidebar
                   sessions={sidebarSessions}
                   activeSessionReference={activeSessionReference}
-                  selectedSessionReference={selectedSidebarSessionReference}
-                  onSelectSession={onSelectFlatSidebarSession}
+                  selectedSessionReference={selectedSessionReference}
+                  onSelectSession={handleSelectSession}
                   bookmarkedSessionReferences={bookmarkedSidebarSessionReferences}
                   onToggleBookmark={onToggleSidebarSessionBookmark}
                   onRenameSession={onRenameSession}

@@ -64,10 +64,9 @@ describe("useSessionSearch", () => {
     expect(result.current.searchResults).toEqual([]);
   });
 
-  it("submitSearch activates the trimmed draft query", () => {
+  it("submitSearch activates the trimmed query", () => {
     const { result } = renderSearch();
-    act(() => result.current.setDraftSearchQuery("  hello  "));
-    act(() => result.current.submitSearch());
+    act(() => result.current.submitSearch("  hello  "));
 
     expect(result.current.activeSearchQuery).toBe("hello");
     expect(result.current.searchMode).toBe(true);
@@ -76,8 +75,7 @@ describe("useSessionSearch", () => {
   it("runs a server search for an active query", async () => {
     vi.mocked(api.fetchSearchResults).mockResolvedValue({ results: serverResults });
     const { result } = renderSearch();
-    act(() => result.current.setDraftSearchQuery("hello"));
-    act(() => result.current.submitSearch());
+    act(() => result.current.submitSearch("hello"));
 
     await waitFor(() => expect(result.current.searchResults).toEqual(serverResults));
     expect(api.fetchSearchResults).toHaveBeenCalledWith("hello", expect.any(Object), {
@@ -89,8 +87,7 @@ describe("useSessionSearch", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.mocked(api.fetchSearchResults).mockRejectedValueOnce(new Error("Search unavailable"));
     const { result } = renderSearch();
-    act(() => result.current.setDraftSearchQuery("hello"));
-    act(() => result.current.submitSearch());
+    act(() => result.current.submitSearch("hello"));
 
     await waitFor(() =>
       expect(api.logClientEvent).toHaveBeenCalledWith(
@@ -129,8 +126,7 @@ describe("useSessionSearch", () => {
         project: { kind: "git_remote", key: "github.com/acme/app" },
       }),
     );
-    act(() => result.current.setDraftSearchQuery("hello"));
-    act(() => result.current.submitSearch());
+    act(() => result.current.submitSearch("hello"));
 
     await waitFor(() =>
       expect(api.fetchSearchResults).toHaveBeenCalledWith(
@@ -146,8 +142,7 @@ describe("useSessionSearch", () => {
 
   it("closeSearch exits and clears the active query", () => {
     const { result } = renderSearch();
-    act(() => result.current.setDraftSearchQuery("hello"));
-    act(() => result.current.submitSearch());
+    act(() => result.current.submitSearch("hello"));
     act(() => result.current.closeSearch());
 
     expect(result.current.searchMode).toBe(false);
@@ -157,8 +152,7 @@ describe("useSessionSearch", () => {
   it("refresh re-fetches server results while searching", async () => {
     vi.mocked(api.fetchSearchResults).mockResolvedValue({ results: serverResults });
     const { result } = renderSearch();
-    act(() => result.current.setDraftSearchQuery("hello"));
-    act(() => result.current.submitSearch());
+    act(() => result.current.submitSearch("hello"));
     await waitFor(() => expect(result.current.searchResults).toEqual(serverResults));
 
     const next = [makeSearchResult("s2")];

@@ -21,21 +21,18 @@ import { queryKeys } from "../lib/query-keys";
 const EMPTY_SEARCH_RESULTS: SearchResult[] = [];
 
 /**
- * Owns the session-search domain: query/filters state, the local-vs-server
- * result engine, keyboard-selection state, and result-scroll behaviour.
- * Exposes semantic actions (open/submit/close); the global keydown handler
- * stays in App and drives selection via the returned state + setters.
+ * Owns the committed session-search domain: query/filters state, the
+ * local-vs-server result engine, keyboard-selection state, and result-scroll
+ * behaviour. The search control owns its uncommitted input text.
  */
 export function useSessionSearch(
   sessionIndexes: SessionIndexes,
   timeWindow: AppConfig["window"] | null = null,
 ) {
-  const [draftSearchQuery, setDraftSearchQuery] = useState("");
   const [activeSearchQuery, setActiveSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState(false);
   const [searchFilters, setSearchFilters] = useState<SearchFilterState>({});
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchResultRefs = useRef(new Map<string, HTMLAnchorElement>());
 
   const costMin = useMemo(
@@ -139,17 +136,13 @@ export function useSessionSearch(
 
   const openSearch = useCallback(() => {
     setSearchMode(true);
-    window.setTimeout(() => {
-      searchInputRef.current?.focus();
-      searchInputRef.current?.select();
-    }, 0);
   }, []);
 
-  const submitSearch = useCallback(() => {
-    setActiveSearchQuery(draftSearchQuery.trim());
+  const submitSearch = useCallback((query: string) => {
+    setActiveSearchQuery(query.trim());
     setSearchMode(true);
     setSelectedSearchIndex(0);
-  }, [draftSearchQuery]);
+  }, []);
 
   const closeSearch = useCallback(() => {
     setSearchMode(false);
@@ -171,7 +164,6 @@ export function useSessionSearch(
   }, [searchMode, serverSearchQuery, usesServerSearch]);
 
   return {
-    draftSearchQuery,
     activeSearchQuery,
     searchMode,
     searchFilters,
@@ -181,9 +173,7 @@ export function useSessionSearch(
     projectOptions,
     usesServerSearch,
     selectedSearchIndex,
-    searchInputRef,
     registerResultRef,
-    setDraftSearchQuery,
     setSearchFilters,
     setSelectedSearchIndex,
     openSearch,

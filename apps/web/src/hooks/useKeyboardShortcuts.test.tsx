@@ -2,7 +2,6 @@ import { cleanup, fireEvent, renderHook } from "@testing-library/react";
 import type { NavigateFunction } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SearchResult, SessionHead } from "../lib/api";
-import { buildSidebarSessionLookup, getSessionReferenceKey } from "../lib/session-indexes";
 import type { ViewState } from "../lib/view-state";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 
@@ -41,10 +40,6 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
       activeSessionId: null,
     } satisfies ViewState,
     navigate: vi.fn() as unknown as NavigateFunction,
-    sidebarSessions: sessions,
-    sidebarSessionLookup: buildSidebarSessionLookup(sessions),
-    selectedSidebarSessionReference: null,
-    setSelectedSidebarSessionReference: vi.fn(),
     selectedProjectNavigationIdentity: null,
     shortcutHelpOpen: false,
     setShortcutHelpOpen: vi.fn(),
@@ -54,7 +49,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     searchResults,
     selectedSearchIndex: 0,
     setSelectedSearchIndex: vi.fn(),
-    setDraftSearchQuery: vi.fn(),
+    clearSearchInput: vi.fn(),
     openSearch: vi.fn(),
     closeSearch: vi.fn(),
     ...overrides,
@@ -103,7 +98,6 @@ describe("useKeyboardShortcuts", () => {
     const { unmount } = renderHook(() => useKeyboardShortcuts(helpDeps));
 
     dispatchKey("j");
-    expect(helpDeps.setSelectedSidebarSessionReference).not.toHaveBeenCalled();
     expect(dispatchKey("Escape").defaultPrevented).toBe(true);
     expect(helpDeps.setShortcutHelpOpen).toHaveBeenCalledWith(false);
     unmount();
@@ -115,7 +109,6 @@ describe("useKeyboardShortcuts", () => {
     input.focus();
 
     fireEvent.keyDown(input, { key: "j" });
-    expect(editableDeps.setSelectedSidebarSessionReference).not.toHaveBeenCalled();
     fireEvent.keyDown(input, { key: "Escape" });
     expect(document.activeElement).not.toBe(input);
     input.remove();
@@ -127,7 +120,7 @@ describe("useKeyboardShortcuts", () => {
 
     dispatchKey("Escape");
     expect(searchDeps.closeSearch).toHaveBeenCalledOnce();
-    expect(searchDeps.setDraftSearchQuery).toHaveBeenCalledWith("");
+    expect(searchDeps.clearSearchInput).toHaveBeenCalledOnce();
     unmount();
 
     const projectDeps = makeDeps({
@@ -177,38 +170,8 @@ describe("useKeyboardShortcuts", () => {
     });
   });
 
-  it("moves through sidebar sessions and opens agent or project routes", () => {
-    const deps = makeDeps();
-    const { unmount } = renderHook(() => useKeyboardShortcuts(deps));
-
-    dispatchKey("j");
-    expect(deps.setSelectedSidebarSessionReference).toHaveBeenNthCalledWith(1, "codex/s1");
-    dispatchKey("k");
-    expect(deps.setSelectedSidebarSessionReference).toHaveBeenNthCalledWith(2, "codex/s3");
-    dispatchKey("g");
-    expect(deps.setSelectedSidebarSessionReference).toHaveBeenNthCalledWith(3, "codex/s1");
-    dispatchKey("G");
-    expect(deps.setSelectedSidebarSessionReference).toHaveBeenNthCalledWith(4, "codex/s3");
-    unmount();
-
-    const agentDeps = makeDeps({ selectedSidebarSessionReference: "codex/s2" });
-    const agentHook = renderHook(() => useKeyboardShortcuts(agentDeps));
-    dispatchKey("Enter");
-    expect(agentDeps.navigate).toHaveBeenCalledWith("/codex/s2");
-    agentHook.unmount();
-
-    const projectDeps = makeDeps({
-      selectedSidebarSessionReference: "codex/s2",
-    });
-    renderHook(() => useKeyboardShortcuts(projectDeps));
-    dispatchKey("Enter");
-    expect(projectDeps.navigate).toHaveBeenCalledWith("/codex/s2");
-  });
-
-  it("does nothing without navigable results or sessions", () => {
+  it("does nothing without navigable search results", () => {
     const deps = makeDeps({
-      sidebarSessions: [],
-      sidebarSessionLookup: buildSidebarSessionLookup([]),
       isSearchMode: true,
       searchResults: [],
     });
@@ -218,22 +181,5 @@ describe("useKeyboardShortcuts", () => {
     dispatchKey("Enter");
 
     expect(deps.navigate).not.toHaveBeenCalled();
-    expect(deps.setSelectedSidebarSessionReference).not.toHaveBeenCalled();
-  });
-
-  it("opens the selected agent when project sessions share a native id", () => {
-    const codex = makeSession("same");
-    const claude = { ...makeSession("same"), slug: "claude/same" };
-    const projectSessions = [codex, claude];
-    const deps = makeDeps({
-      sidebarSessions: projectSessions,
-      sidebarSessionLookup: buildSidebarSessionLookup(projectSessions),
-      selectedSidebarSessionReference: getSessionReferenceKey(claude),
-    });
-    renderHook(() => useKeyboardShortcuts(deps));
-
-    dispatchKey("Enter");
-
-    expect(deps.navigate).toHaveBeenCalledWith("/claude/same");
   });
 });

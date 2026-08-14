@@ -109,6 +109,7 @@ export function useUiPreferences() {
   }, []);
 
   const dismissShortcutHint = useCallback(() => {
+    if (preferencesRef.current.shortcutHintDismissed) return;
     updatePreferences({ ...preferencesRef.current, shortcutHintDismissed: true });
   }, [updatePreferences]);
 

@@ -28,6 +28,8 @@ const cliPath = join(repoRoot, "packages/cli/dist/index.js");
 const cacheDir = join(homedir(), ".cache", "codesesh");
 const cacheFiles = ["codesesh.db", "codesesh.db-wal", "codesesh.db-shm", "scan-cache.json"];
 const activeCacheBackups = new Set();
+const PROFILE_SCENARIOS = ["typing", "sidebar", "live"];
+const PROFILE_TYPING_TEXT = "performance-baseline";
 
 function parseArgs(argv) {
   const options = {
@@ -38,8 +40,10 @@ function parseArgs(argv) {
     headless: true,
     reactProfile: false,
     coldStart: false,
+    fixtureSessions: 0,
     target: "auto",
     navigation: "direct",
+    profileScenarios: [],
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -74,6 +78,12 @@ function parseArgs(argv) {
     } else if (arg === "--navigation" && next) {
       options.navigation = next;
       index += 1;
+    } else if (arg === "--profile-scenarios" && next) {
+      options.profileScenarios = next.split(",").filter(Boolean);
+      index += 1;
+    } else if (arg === "--fixture-sessions" && next) {
+      options.fixtureSessions = Number(next);
+      index += 1;
     }
   }
 
@@ -86,11 +96,23 @@ function parseArgs(argv) {
   if (!Number.isFinite(options.timeoutMs) || options.timeoutMs < 1000) {
     throw new Error("--timeout must be at least 1000ms");
   }
+  if (!Number.isInteger(options.fixtureSessions) || options.fixtureSessions < 0) {
+    throw new Error("--fixture-sessions must be a non-negative integer");
+  }
   if (!["auto", "latest", "smallest", "largest", "lightest", "heaviest"].includes(options.target)) {
     throw new Error("--target must be one of: auto, latest, smallest, largest, lightest, heaviest");
   }
   if (!["direct", "click"].includes(options.navigation)) {
     throw new Error("--navigation must be one of: direct, click");
+  }
+  if (options.profileScenarios.includes("all")) {
+    options.profileScenarios = [...PROFILE_SCENARIOS];
+  }
+  if (options.profileScenarios.some((scenario) => !PROFILE_SCENARIOS.includes(scenario))) {
+    throw new Error(`--profile-scenarios must contain only: ${PROFILE_SCENARIOS.join(", ")}, all`);
+  }
+  if (options.profileScenarios.length > 0 && !options.reactProfile) {
+    throw new Error("--profile-scenarios requires --react-profile");
   }
 
   return options;
@@ -169,6 +191,35 @@ function printReactProfileSummary(label, entries) {
       `  [${group.source}] ${group.id}: commits ${group.commits}, total ${formatMs(group.totalActualDuration)}, max ${formatMs(group.maxActualDuration)}, avg ${formatMs(group.avgActualDuration)}`,
     );
   }
+}
+
+async function collectReactProfileEntries(page) {
+  return page.evaluate(() => {
+    const entries = window.__CODESHESH_RENDER_PROFILE__ ?? [];
+    window.__CODESHESH_RENDER_PROFILE__ = [];
+    return entries;
+  });
+}
+
+async function runProfileScenario(page, label, action) {
+  await collectReactProfileEntries(page);
+  const startedAt = performance.now();
+  await action();
+  await page.evaluate(
+    () =>
+      new Promise((resolvePromise) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolvePromise)),
+      ),
+  );
+  const entries = await collectReactProfileEntries(page);
+  const durationMs = performance.now() - startedAt;
+  printReactProfileSummary(`React profile: ${label}`, entries);
+  return {
+    label,
+    durationMs,
+    entries,
+    summary: summarizeReactProfile(entries),
+  };
 }
 
 function withTimeout(promise, timeoutMs, label) {
@@ -348,6 +399,183 @@ async function waitForWindowedSessions(url, timeoutMs) {
   return lastResult;
 }
 
+function createFixtureData(sessionCount) {
+  const now = Date.now();
+  const agent = { name: "codex", displayName: "Codex", count: sessionCount };
+  const project = {
+    identityKind: "path",
+    identityKey: "/benchmark/project",
+    displayName: "benchmark/project",
+    sources: ["/benchmark/project"],
+    sessionCount,
+    lastActivity: now,
+    messages: sessionCount,
+    tokens: sessionCount * 100,
+    cost: 0,
+    agentStats: [
+      {
+        name: "codex",
+        sessions: sessionCount,
+        messages: sessionCount,
+        tokens: sessionCount * 100,
+        cost: 0,
+      },
+    ],
+  };
+  const sessions = Array.from({ length: sessionCount }, (_, index) => {
+    const id = `benchmark-${String(index).padStart(4, "0")}`;
+    return {
+      id,
+      slug: `codex/${id}`,
+      title: `Benchmark session ${index}`,
+      directory: "/benchmark/project",
+      project_identity: {
+        kind: "path",
+        key: project.identityKey,
+        displayName: project.displayName,
+      },
+      time_created: now - index * 1_000,
+      time_updated: now - index * 1_000,
+      stats: {
+        message_count: 1,
+        total_input_tokens: 50,
+        total_output_tokens: 50,
+        total_cost: 0,
+      },
+    };
+  });
+  const dashboard = {
+    totals: {
+      sessions: sessionCount,
+      messages: sessionCount,
+      tokens: sessionCount * 100,
+      cost: 0,
+      costRecorded: 0,
+      costEstimated: 0,
+      cacheReadTokens: 0,
+    },
+    scopeCounts: { projects: 1, agents: 1 },
+    perAgent: [
+      {
+        name: "codex",
+        displayName: "Codex",
+        sessions: sessionCount,
+        messages: sessionCount,
+        tokens: sessionCount * 100,
+        cost: 0,
+      },
+    ],
+    dailyActivity: [],
+    modelDistribution: [],
+    modelCost: null,
+    perProject: [],
+    projectRollup: { projects: 1, sessions: sessionCount, tokens: sessionCount * 100, cost: 0 },
+    recentSessions: [],
+    recentFileActivities: [],
+    window: { days: 0, to: now },
+  };
+  const scanStatus = {
+    type: "scan-status",
+    active: false,
+    phase: "idle",
+    pendingAgents: [],
+    scanningAgents: [],
+    completedAgents: [],
+    agentStatuses: {},
+    totalAgents: 1,
+    updatedAt: now,
+    backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
+  };
+  return { agent, dashboard, project, scanStatus, sessions };
+}
+
+function createFixtureSessionDetail(session) {
+  return {
+    ...session,
+    reference: { agentName: "codex", sessionId: session.id },
+    messages: [
+      {
+        id: `${session.id}-message`,
+        role: "user",
+        time_created: session.time_created,
+        parts: [{ type: "text", text: session.title }],
+      },
+    ],
+  };
+}
+
+async function installFixtureRoutes(context, fixture) {
+  await context.route("**/api/**", async (route) => {
+    const { pathname } = new URL(route.request().url());
+    const json = (body) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(body),
+      });
+
+    if (pathname === "/api/config") return json({ window: { days: 0 } });
+    if (pathname === "/api/agents") return json([fixture.agent]);
+    if (pathname === "/api/projects") return json({ projects: [fixture.project] });
+    if (pathname === "/api/dashboard") return json(fixture.dashboard);
+    if (pathname === "/api/bookmarks") return json({ bookmarks: [] });
+    if (pathname === "/api/status") return json(fixture.scanStatus);
+    if (pathname === "/api/search") return json({ results: [] });
+    if (pathname === "/api/logs") return json({});
+
+    if (pathname === "/api/sessions") return json({ sessions: fixture.sessions });
+    if (pathname.startsWith("/api/sessions/")) {
+      const sessionId = decodeURIComponent(pathname.split("/").at(-1) ?? "");
+      const session = fixture.sessions.find((candidate) => candidate.id === sessionId);
+      return session
+        ? json(createFixtureSessionDetail(session))
+        : route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
+    }
+
+    return route.continue();
+  });
+}
+
+async function installBenchmarkEventSource(context) {
+  await context.addInitScript(() => {
+    const sources = [];
+
+    class BenchmarkEventSource {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSED = 2;
+
+      readyState = BenchmarkEventSource.OPEN;
+      onopen = null;
+      onerror = null;
+      listeners = new Map();
+
+      constructor() {
+        sources.push(this);
+        queueMicrotask(() => this.onopen?.());
+      }
+
+      addEventListener(type, listener) {
+        const listeners = this.listeners.get(type) ?? [];
+        listeners.push(listener);
+        this.listeners.set(type, listeners);
+      }
+
+      close() {
+        this.readyState = BenchmarkEventSource.CLOSED;
+      }
+    }
+
+    window.EventSource = BenchmarkEventSource;
+    window.__CODESHESH_BENCHMARK_EMIT__ = (type, payload) => {
+      const event = { data: JSON.stringify(payload) };
+      for (const source of sources) {
+        if (source.readyState !== BenchmarkEventSource.OPEN) continue;
+        for (const listener of source.listeners.get(type) ?? []) listener(event);
+      }
+    };
+  });
+}
+
 function getSessionMessageCount(session) {
   const value = Number(session?.stats?.message_count);
   return Number.isFinite(value) ? value : 0;
@@ -416,6 +644,93 @@ async function clickSessionLink(page, targetPath) {
   }, targetPath);
 }
 
+async function openSidebarProject(page, timeoutMs) {
+  if (await page.locator("file-tree-container").count()) return;
+  const projectLink = page.locator('aside a[href^="/projects/"]').first();
+  await projectLink.waitFor({ state: "visible", timeout: timeoutMs });
+  await projectLink.click();
+  await page.locator("file-tree-container").waitFor({ state: "visible", timeout: timeoutMs });
+  await page.locator('input[name="session-search"]').blur();
+}
+
+function createLiveEvent(session, index, totalSessions) {
+  const [agentName] = String(session.slug).split("/");
+  const reference = { agentName, sessionId: session.id };
+  return {
+    type: "sessions-updated",
+    changedAgents: [agentName],
+    newSessions: 0,
+    updatedSessions: 1,
+    removedSessions: 0,
+    totalSessions,
+    timestamp: (session.time_updated ?? session.time_created) + index + 1,
+    changedSessionHeads: [
+      {
+        reference,
+        session: {
+          ...session,
+          display_title: `Benchmark live update ${index + 1}`,
+          time_updated: (session.time_updated ?? session.time_created) + index + 1,
+        },
+      },
+    ],
+    projectionRelatedSessionHeads: [],
+    projectionSessionOrder: [reference],
+    removedSessionRefs: [],
+  };
+}
+
+async function runProfileScenarios(page, sessions, options) {
+  const results = [];
+
+  for (const scenario of options.profileScenarios) {
+    if (scenario === "typing") {
+      const input = page.locator('input[name="session-search"]');
+      await input.fill("");
+      results.push(
+        await runProfileScenario(page, "typing 20 characters", async () => {
+          await input.pressSequentially(PROFILE_TYPING_TEXT);
+        }),
+      );
+      continue;
+    }
+
+    if (scenario === "sidebar") {
+      await openSidebarProject(page, options.timeoutMs);
+      results.push(
+        await runProfileScenario(page, "sidebar 20 j/k moves", async () => {
+          await page.locator("body").click({ position: { x: 1_000, y: 800 } });
+          for (let index = 0; index < 20; index += 1) {
+            await page.keyboard.press(index % 2 === 0 ? "j" : "k");
+          }
+        }),
+      );
+      continue;
+    }
+
+    if (scenario === "live") {
+      const session = sessions[0];
+      if (!session) throw new Error("Live profiling requires at least one session");
+      results.push(
+        await runProfileScenario(page, "20 live update events", async () => {
+          for (let index = 0; index < 20; index += 1) {
+            const event = createLiveEvent(session, index, sessions.length);
+            await page.evaluate((payload) => {
+              if (!window.__CODESHESH_BENCHMARK_EMIT__) {
+                throw new Error("Benchmark EventSource is not installed");
+              }
+              window.__CODESHESH_BENCHMARK_EMIT__("sessions-updated", payload);
+            }, event);
+            await page.waitForTimeout(550);
+          }
+        }),
+      );
+    }
+  }
+
+  return results;
+}
+
 async function waitForSessionDetailVisible(page, target, timeoutMs) {
   try {
     await withTimeout(
@@ -459,6 +774,7 @@ async function runIteration(iteration, options) {
   const port = options.port || (await findFreePort());
   const url = `http://localhost:${port}`;
   const cacheBackup = options.coldStart ? moveCacheAside() : null;
+  const fixture = options.fixtureSessions > 0 ? createFixtureData(options.fixtureSessions) : null;
   let cli = null;
   let browser = null;
 
@@ -472,6 +788,8 @@ async function runIteration(iteration, options) {
 
     browser = await launchBrowser(options.headless);
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    if (fixture) await installFixtureRoutes(context, fixture);
+    if (options.profileScenarios.includes("live")) await installBenchmarkEventSource(context);
     if (options.reactProfile) {
       await context.addInitScript(() => {
         window.localStorage.setItem("codeseshProfiler", "1");
@@ -487,7 +805,7 @@ async function runIteration(iteration, options) {
     const dashboardReadyMs = performance.now() - startedAt;
     console.log(`#${iteration} dashboard visible in ${formatMs(dashboardReadyMs)}`);
 
-    const { sessions } = await waitForWindowedSessions(url, options.timeoutMs);
+    const { sessions } = fixture ?? (await waitForWindowedSessions(url, options.timeoutMs));
     if (!Array.isArray(sessions) || sessions.length === 0) {
       const windowLabel = options.days === 0 ? "all time" : `the last ${options.days} days`;
       const retryHint =
@@ -497,6 +815,9 @@ async function runIteration(iteration, options) {
       throw new Error(`No sessions found in ${windowLabel}. ${retryHint}`);
     }
     console.log(`#${iteration} loaded ${sessions.length} windowed sessions`);
+
+    const profileScenarios =
+      options.profileScenarios.length > 0 ? await runProfileScenarios(page, sessions, options) : [];
 
     const target = selectBenchmarkTarget(sessions, options.target);
     const [agentKey, sessionId] = String(target.slug).split("/");
@@ -544,15 +865,16 @@ async function runIteration(iteration, options) {
     const sessionClickMs = performance.now() - clickStartedAt;
     console.log(`#${iteration} session detail visible in ${formatMs(sessionClickMs)}`);
 
-    const reactProfileEntries = options.reactProfile
-      ? await withTimeout(
-          page.evaluate(() => window.__CODESHESH_RENDER_PROFILE__ ?? []),
-          2000,
-          "React profile collection",
-        ).catch(() => [])
+    const navigationReactProfileEntries = options.reactProfile
+      ? await withTimeout(collectReactProfileEntries(page), 2000, "React profile collection").catch(
+          () => [],
+        )
       : [];
     if (options.reactProfile) {
-      printReactProfileSummary(`#${iteration} React profile`, reactProfileEntries);
+      printReactProfileSummary(
+        `#${iteration} navigation React profile`,
+        navigationReactProfileEntries,
+      );
     }
 
     await browser.close();
@@ -568,8 +890,9 @@ async function runIteration(iteration, options) {
       serverReadyMs,
       dashboardReadyMs,
       sessionClickMs,
-      reactProfileEntries,
-      reactProfileSummary: summarizeReactProfile(reactProfileEntries),
+      profileScenarios,
+      reactProfileEntries: navigationReactProfileEntries,
+      reactProfileSummary: summarizeReactProfile(navigationReactProfileEntries),
     };
   } catch (error) {
     const output = cli?.getOutput() ?? "";
