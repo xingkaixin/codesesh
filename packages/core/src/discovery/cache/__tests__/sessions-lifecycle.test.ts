@@ -563,6 +563,32 @@ describe("saveCachedSessions", () => {
     }
   });
 
+  it("skips a malformed legacy session without aborting migration", () => {
+    createLegacyCachedSessionDb(3, {
+      ...makeSession("legacy-null-directory"),
+      directory: null as never,
+      project_identity: undefined,
+    });
+    const warnings: Array<{ event: string; detail: unknown }> = [];
+    setCoreDiagnostics({
+      info() {},
+      warn(event, detail) {
+        warnings.push({ event, detail });
+      },
+    });
+
+    try {
+      expect(loadCachedSessions("claudecode")?.sessions).toEqual([]);
+      expect(getUserVersion(getCachePath())).toBe(24);
+      expect(warnings).toContainEqual({
+        event: "sqlite.migration.identity_precompute.missing_directory",
+        detail: { agent_name: "claudecode", session_id: "legacy-null-directory" },
+      });
+    } finally {
+      setCoreDiagnostics(null);
+    }
+  });
+
   it("backs up populated cache before destructive migration", () => {
     createLegacyCachedSessionDb(2);
 

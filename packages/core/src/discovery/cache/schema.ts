@@ -93,13 +93,20 @@ function prepareLegacyProjectIdentityResolver(
 
   if (currentVersion < 7 && tableExists(db, "cached_sessions")) {
     const rows = db
-      .prepare("SELECT session_json FROM cached_sessions")
+      .prepare("SELECT agent_name, session_id, session_json FROM cached_sessions")
       .all() as ProjectBackfillSessionRow[];
     for (const row of rows) {
       if (!row.session_json) continue;
       try {
         const session = JSON.parse(row.session_json) as SessionHead;
-        if (session.directory != null) directories.add(String(session.directory));
+        if (session.directory != null) {
+          directories.add(String(session.directory));
+        } else {
+          getCoreDiagnostics()?.warn("sqlite.migration.identity_precompute.missing_directory", {
+            agent_name: row.agent_name,
+            session_id: row.session_id,
+          });
+        }
       } catch {
         continue;
       }
@@ -131,6 +138,10 @@ function prepareLegacyProjectIdentityResolver(
     if (identity) return identity;
     throw new Error(`Missing precomputed project identity for legacy directory: ${directory}`);
   };
+}
+
+function getLegacySessionDirectory(session: SessionHead): string | null {
+  return typeof session.directory === "string" ? session.directory : null;
 }
 
 function withCacheConnection<T>(fn: (connection: CacheConnection) => T): T | null {
@@ -794,14 +805,16 @@ function backfillProjectSessions(
 
     try {
       const session = JSON.parse(row.session_json) as SessionHead;
-      const identity = session.project_identity ?? resolveIdentity(session.directory);
+      const directory = getLegacySessionDirectory(session);
+      if (directory == null) continue;
+      const identity = session.project_identity ?? resolveIdentity(directory);
       upsert.run(
         row.agent_name,
         row.session_id,
         identity.kind,
         identity.key,
         identity.displayName,
-        session.directory,
+        directory,
         session.time_updated ?? session.time_created,
       );
     } catch {
@@ -935,9 +948,11 @@ function backfillStructuredSessions(
 
       try {
         const parsed = JSON.parse(row.session_json) as SessionHead;
+        const directory = getLegacySessionDirectory(parsed);
+        if (directory == null) continue;
         const session =
           parsed.project_identity == null
-            ? { ...parsed, project_identity: resolveIdentity(parsed.directory) }
+            ? { ...parsed, project_identity: resolveIdentity(directory) }
             : parsed;
         upsertSessionRow(
           upsertSession,
