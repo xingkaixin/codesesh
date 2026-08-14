@@ -1,4 +1,3 @@
-import { createHash, type Hash } from "node:crypto";
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import type { SessionReference } from "../contract/index.js";
 import type { SessionDetail, SessionHead } from "../types/index.js";
@@ -12,8 +11,24 @@ import {
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import { listSessionFileActivity } from "./cache/file-activity.js";
 import { sessionDetailVersion } from "./cache/detail-version.js";
-import { loadCachedSessionRawEntry, type CachedSessionRawEntry } from "./cache/sessions.js";
-import { messageFromCachedRow, messageJsonFromCachedRow } from "./cache/messages.js";
+import {
+  loadCachedSessionRawEntry,
+  readCachedSessionCursor,
+  type CachedSessionCursorEntry,
+  type CachedSessionCursorReader,
+  type CachedSessionRawEntry,
+} from "./cache/sessions.js";
+import {
+  messageCursorContentFromCachedRow,
+  messageFromCachedRow,
+  messageJsonFromCachedRow,
+  type CachedMessageRow,
+} from "./cache/messages.js";
+import {
+  computeMessageCursorDigest,
+  initialMessageCursorDigest,
+  MESSAGE_CURSOR_VERSION,
+} from "./cache/message-cursor.js";
 import type { LiveSnapshot } from "./scanner.js";
 
 export type SessionDetailResult =
@@ -46,7 +61,6 @@ interface SessionDetailContext {
 }
 
 const sessionDetailLookups = new WeakMap<SessionHead[], SessionDetailLookup>();
-const MESSAGE_CURSOR_VERSION = 1;
 const MAX_MESSAGE_CURSOR_LENGTH = 512;
 
 interface MessageCursorPayload {
@@ -83,62 +97,56 @@ function encodeMessageCursor(count: number, digest: string): string {
   );
 }
 
-function createMessageCursorHash(reference: SessionReference): Hash {
-  return createHash("sha256")
-    .update("codesesh-session-messages-v1\0")
-    .update(JSON.stringify([reference.agentName, reference.sessionId]))
-    .update("\n");
+interface CachedMessageStream {
+  cursor: string;
+  update: "append" | "reset";
+  messageRows: CachedMessageRow[];
+  messageCount: number;
 }
 
-function updateMessageCursorField(hash: Hash, value: string | number | null | undefined) {
-  if (value == null) {
-    hash.update("n;");
-    return;
-  }
-  const text = String(value);
-  hash.update(`v${text.length}:`).update(text).update(";");
-}
-
-function updateMessageCursorHash(hash: Hash, row: CachedSessionRawEntry["messageRows"][number]) {
-  updateMessageCursorField(hash, row.message_id);
-  updateMessageCursorField(hash, row.role);
-  updateMessageCursorField(hash, row.time_created);
-  updateMessageCursorField(hash, row.time_completed);
-  updateMessageCursorField(hash, row.agent);
-  updateMessageCursorField(hash, row.mode);
-  updateMessageCursorField(hash, row.model);
-  updateMessageCursorField(hash, row.provider);
-  updateMessageCursorField(hash, row.tokens_json);
-  updateMessageCursorField(hash, row.cost);
-  updateMessageCursorField(hash, row.cost_source);
-  updateMessageCursorField(hash, row.parts_json);
-  updateMessageCursorField(hash, row.parts_format_version);
-  updateMessageCursorField(hash, row.subagent_id);
-  updateMessageCursorField(hash, row.nickname);
-  hash.update("\n");
-}
-
-function projectMessageStream(
+function loadCachedMessageStream(
   reference: SessionReference,
-  rows: CachedSessionRawEntry["messageRows"],
+  entry: CachedSessionCursorEntry,
+  cursor: CachedSessionCursorReader,
   requestedCursor: string | undefined,
-) {
+): CachedMessageStream {
   const requested = parseMessageCursor(requestedCursor);
-  const hash = createMessageCursorHash(reference);
-  let requestedDigest = requested?.count === 0 ? hash.copy().digest("hex") : null;
+  const initialDigest = initialMessageCursorDigest(reference);
+  const hasStoredChain = entry.messageCount === 0 || entry.messageDigest !== null;
+  const canCheckAppend =
+    hasStoredChain && requested !== null && requested.count <= entry.messageCount;
+  const requestedDigest =
+    canCheckAppend && requested
+      ? requested.count === 0
+        ? initialDigest
+        : cursor.messageDigest(requested.count)
+      : null;
+  const canAppend = canCheckAppend && requested !== null && requestedDigest === requested.digest;
+  let startIndex = canAppend ? requested.count : 0;
+  let update: CachedMessageStream["update"] = canAppend ? "append" : "reset";
+  let messageRows = entry.messageCount === 0 ? [] : cursor.messageRows(startIndex);
 
-  for (let index = 0; index < rows.length; index += 1) {
-    updateMessageCursorHash(hash, rows[index]!);
-    if (requested?.count === index + 1) requestedDigest = hash.copy().digest("hex");
+  let messageCount = entry.messageCount;
+  let digest = entry.messageCount === 0 ? initialDigest : entry.messageDigest;
+  if (messageRows.length !== entry.messageCount - startIndex) {
+    startIndex = 0;
+    update = "reset";
+    messageRows = cursor.messageRows(startIndex);
+    messageCount = messageRows.length;
+    digest = null;
   }
 
-  const digest = hash.digest("hex");
-  const canAppend =
-    requested !== null && requested.count <= rows.length && requestedDigest === requested.digest;
+  if (!digest) {
+    digest = computeMessageCursorDigest(
+      reference,
+      messageRows.map((row) => messageCursorContentFromCachedRow(row)),
+    );
+  }
   return {
-    cursor: encodeMessageCursor(rows.length, digest),
-    startIndex: canAppend ? requested.count : 0,
-    update: canAppend ? ("append" as const) : ("reset" as const),
+    cursor: encodeMessageCursor(messageCount, digest),
+    update,
+    messageRows,
+    messageCount,
   };
 }
 
@@ -187,15 +195,17 @@ function getSessionDetailContext(
 }
 
 type CachedDetailState = "fresh" | "stale" | "missing";
+type CachedSessionDetailEntry = Pick<
+  CachedSessionRawEntry,
+  "data" | "detailVersion" | "pendingReindex"
+>;
 
 function cachedDetailState(
-  cachedEntry: CachedSessionRawEntry | null,
+  cachedEntry: CachedSessionDetailEntry | null,
   currentMeta: SessionCacheMeta | undefined,
+  messageCount: number,
 ): CachedDetailState {
-  if (
-    !cachedEntry ||
-    (cachedEntry.messageRows.length === 0 && cachedEntry.data.stats.message_count > 0)
-  ) {
+  if (!cachedEntry || (messageCount === 0 && cachedEntry.data.stats.message_count > 0)) {
     return "missing";
   }
   return !cachedEntry.pendingReindex &&
@@ -228,7 +238,11 @@ function materializeStructuredSessionDetail(
 ): SessionDetailResult {
   const { agent, head } = context;
   const currentMeta = head ? agent.getSessionMetaMap().get(reference.sessionId) : undefined;
-  const cacheState = cachedDetailState(cachedEntry, currentMeta);
+  const cacheState = cachedDetailState(
+    cachedEntry,
+    currentMeta,
+    cachedEntry?.messageRows.length ?? 0,
+  );
   let useCache = cacheState === "fresh";
   let freshness: SessionDetail["detail_freshness"] = useCache ? "fresh" : undefined;
   let data: SessionDetail | null = useCache
@@ -298,12 +312,9 @@ function materializeStructuredSessionDetail(
   };
 }
 
-function* serializeCachedMessages(
-  entry: CachedSessionRawEntry,
-  startIndex = 0,
-): IterableIterator<string> {
-  for (let index = startIndex; index < entry.messageRows.length; index += 1) {
-    yield messageJsonFromCachedRow(entry.messageRows[index]!);
+function* serializeCachedMessages(messageRows: CachedMessageRow[]): IterableIterator<string> {
+  for (const messageRow of messageRows) {
+    yield messageJsonFromCachedRow(messageRow);
   }
 }
 
@@ -324,25 +335,57 @@ export function materializeSessionDetailResponse(
   const context = getSessionDetailContext(scanResult, reference);
   if (!context) return { status: "unknown-agent" };
 
-  const cachedEntry = loadCachedSessionRawEntry(reference.agentName, reference.sessionId);
   const currentMeta = context.head
     ? context.agent.getSessionMetaMap().get(reference.sessionId)
     : undefined;
-  const cacheState = cachedDetailState(cachedEntry, currentMeta);
+  const startedAt = performance.now();
+  const cursorRead = readCachedSessionCursor(
+    reference.agentName,
+    reference.sessionId,
+    (entry, cursor) => {
+      const cacheState = cachedDetailState(entry, currentMeta, entry.messageCount);
+      const stream =
+        cacheState === "fresh" &&
+        entry.data.smart_tags != null &&
+        entry.data.smart_tags_classifier_revision === SMART_TAG_CLASSIFIER_REVISION
+          ? loadCachedMessageStream(reference, entry, cursor, options.messageCursor)
+          : null;
+      return { entry, cacheState, stream };
+    },
+  );
+  const cachedEntry = cursorRead?.entry ?? null;
+  const cacheState = cursorRead?.cacheState ?? "missing";
   if (
     !cachedEntry ||
     cacheState !== "fresh" ||
     cachedEntry.data.smart_tags == null ||
     cachedEntry.data.smart_tags_classifier_revision !== SMART_TAG_CLASSIFIER_REVISION
   ) {
-    const result = materializeStructuredSessionDetail(context, reference, cachedEntry);
+    const result = materializeStructuredSessionDetail(context, reference);
     return result.status === "found"
       ? { ...result, data: { ...result.data, message_update: "reset" } }
       : result;
   }
 
   const data = cachedEntry.data;
-  const stream = projectMessageStream(reference, cachedEntry.messageRows, options.messageCursor);
+  const stream = cursorRead?.stream;
+  if (!stream) {
+    const result = materializeStructuredSessionDetail(context, reference);
+    return result.status === "found"
+      ? { ...result, data: { ...result.data, message_update: "reset" } }
+      : result;
+  }
+  const partsJsonBytes = stream.messageRows.reduce(
+    (total, row) => total + Buffer.byteLength(String(row.parts_json)),
+    0,
+  );
+  getCoreDiagnostics()?.info?.("session_detail.cursor_stream", {
+    update: stream.update,
+    message_count: stream.messageCount,
+    sent_message_count: stream.messageRows.length,
+    parts_json_bytes: partsJsonBytes,
+    duration_ms: Math.round(performance.now() - startedAt),
+  });
   return {
     status: "found-json",
     data: {
@@ -356,8 +399,8 @@ export function materializeSessionDetailResponse(
       file_activity:
         data.file_activity ?? listSessionFileActivity(reference.agentName, reference.sessionId),
     },
-    messages: serializeCachedMessages(cachedEntry, stream.startIndex),
-    messageCount: cachedEntry.messageRows.length,
-    sentMessageCount: cachedEntry.messageRows.length - stream.startIndex,
+    messages: serializeCachedMessages(stream.messageRows),
+    messageCount: stream.messageCount,
+    sentMessageCount: stream.messageRows.length,
   };
 }

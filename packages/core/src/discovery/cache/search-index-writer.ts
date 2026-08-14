@@ -7,6 +7,7 @@ import { SEARCH_INDEX_BULK_SYNC_THRESHOLD, type SessionHeadChange } from "./db.j
 import { advanceAnalyticsRevision } from "./analytics-revision.js";
 import {
   buildSessionContentFromMessages,
+  messageCursorContentFromStructuredRecord,
   MESSAGE_PARTS_FORMAT_VERSION,
   normalizeMessages,
   prepareInsertFileActivity,
@@ -18,6 +19,7 @@ import {
   writeFileActivityRows,
   type StructuredMessageRecord,
 } from "./messages.js";
+import { advanceMessageCursorDigest, initialMessageCursorDigest } from "./message-cursor.js";
 import { runSearchIndexWrite, withCacheDbReadOnly, withSearchIndexDb } from "./schema.js";
 import { sessionDetailVersion } from "./detail-version.js";
 import type { SessionSnapshotCompleteness } from "./sessions.js";
@@ -505,11 +507,12 @@ function writeSearchIndexRows(
       cost_source,
       parts_json,
       parts_format_version,
+      content_chain_digest,
       subagent_id,
       nickname,
       content_text,
       tool_metadata_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(agent_name, session_id, message_index) DO UPDATE SET
       message_id = excluded.message_id,
       role = excluded.role,
@@ -524,6 +527,7 @@ function writeSearchIndexRows(
       cost_source = excluded.cost_source,
       parts_json = excluded.parts_json,
       parts_format_version = excluded.parts_format_version,
+      content_chain_digest = excluded.content_chain_digest,
       subagent_id = excluded.subagent_id,
       nickname = excluded.nickname,
       content_text = excluded.content_text,
@@ -581,7 +585,15 @@ function writeSearchIndexRows(
     deleteMessageTools.run(agentName, entry.session.id, 0);
     clearPendingReindex.run(agentName, entry.session.id);
     writeFileActivityRows(insertFileActivity, entry.fileActivity);
+    let contentChainDigest = initialMessageCursorDigest({
+      agentName,
+      sessionId: entry.session.id,
+    });
     for (const message of entry.messages) {
+      contentChainDigest = advanceMessageCursorDigest(
+        contentChainDigest,
+        messageCursorContentFromStructuredRecord(message),
+      );
       upsertMessage.run(
         agentName,
         entry.session.id,
@@ -599,6 +611,7 @@ function writeSearchIndexRows(
         message.costSource ?? null,
         message.partsJson,
         MESSAGE_PARTS_FORMAT_VERSION,
+        contentChainDigest,
         message.subagentId ?? null,
         message.nickname ?? null,
         message.contentText,

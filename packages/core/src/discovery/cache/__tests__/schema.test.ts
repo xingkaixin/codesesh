@@ -91,6 +91,7 @@ describe("cache schema boundary", () => {
       "indexed_at",
     ]);
     expect(state?.messageColumns).toContain("parts_format_version");
+    expect(state?.messageColumns).toContain("content_chain_digest");
     expect(state?.sessionColumns).toEqual(
       expect.arrayContaining([
         "project_identity_resolver_revision",
@@ -99,7 +100,7 @@ describe("cache schema boundary", () => {
         "publication_id",
       ]),
     );
-    expect(state?.version).toBe(24);
+    expect(state?.version).toBe(25);
   });
 
   it("removes the legacy message FTS objects when upgrading schema 23", () => {
@@ -140,7 +141,36 @@ describe("cache schema boundary", () => {
       ),
     }));
 
-    expect(migrated).toEqual({ objects: [], version: 24 });
+    expect(migrated).toEqual({ objects: [], version: 25 });
+  });
+
+  it("adds an empty hash chain column when upgrading schema 24", () => {
+    const session = makeSessionHead("legacy-chain");
+    saveCachedSessions("codex", [session]);
+    syncSessionSearchIndex("codex", [session], () => makeSessionData(session.id));
+
+    const legacyDb = new Database(getCachePath());
+    try {
+      legacyDb.exec("ALTER TABLE messages DROP COLUMN content_chain_digest");
+      legacyDb.pragma("user_version = 24");
+      legacyDb.prepare("UPDATE cache_meta SET value = '24' WHERE key = 'version'").run();
+    } finally {
+      legacyDb.close();
+    }
+    setSchemaEnsuredPath(null);
+
+    const migrated = schema.withCacheDb((db) => ({
+      version: Number(
+        (db.prepare("PRAGMA user_version").get() as { user_version?: number }).user_version,
+      ),
+      digest: (
+        db
+          .prepare("SELECT content_chain_digest FROM messages WHERE session_id = ?")
+          .get(session.id) as { content_chain_digest?: string | null }
+      ).content_chain_digest,
+    }));
+
+    expect(migrated).toEqual({ version: 25, digest: null });
   });
 
   it("reuses one connection for read and write capabilities until invalidated", () => {
@@ -309,7 +339,7 @@ describe("cache schema boundary", () => {
           .get("codex", session.id) != null,
     }));
 
-    expect(migrated).toEqual({ version: 24, detailVersion: "", pending: true });
+    expect(migrated).toEqual({ version: 25, detailVersion: "", pending: true });
   });
 
   it("marks legacy project identities stale by leaving added provenance empty", () => {
@@ -348,7 +378,7 @@ describe("cache schema boundary", () => {
     });
 
     expect(migrated).toEqual({
-      version: 24,
+      version: 25,
       resolverRevision: null,
       inputSignature: null,
       classifierRevision: null,
@@ -418,7 +448,7 @@ describe("cache schema boundary", () => {
       });
 
       expect(migrated).toEqual({
-        version: 24,
+        version: 25,
         partsJson: legacyPartsJson,
         partsFormatVersion: 0,
       });

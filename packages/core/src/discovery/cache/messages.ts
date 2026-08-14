@@ -16,6 +16,7 @@ import type {
 import { normalizeMessageParts } from "../../contract/message-part.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import type { SQLiteStatement } from "./db.js";
+import type { MessageCursorContent } from "./message-cursor.js";
 
 export const MESSAGE_PARTS_FORMAT_VERSION = 1;
 
@@ -68,6 +69,7 @@ export interface MessageBackfillRow extends DatabaseRow {
 
 export interface CachedMessageRow extends MessageBackfillRow {
   parts_format_version?: number | string;
+  content_chain_digest?: string | null;
   tokens_json?: string | null;
   cost?: number | null;
   cost_source?: SessionHead["stats"]["cost_source"] | null;
@@ -92,6 +94,48 @@ export interface StructuredMessageRecord {
   contentText: string;
   toolMetadataJson?: string | null;
   toolNames: string[];
+}
+
+export function messageCursorContentFromCachedRow(row: CachedMessageRow): MessageCursorContent {
+  return {
+    messageId: String(row.message_id),
+    role: String(row.role),
+    timeCreated: Number(row.time_created),
+    timeCompleted: row.time_completed,
+    agent: row.agent,
+    mode: row.mode,
+    model: row.model,
+    provider: row.provider,
+    tokensJson: row.tokens_json,
+    cost: row.cost,
+    costSource: row.cost_source,
+    partsJson: String(row.parts_json),
+    partsFormatVersion: row.parts_format_version,
+    subagentId: row.subagent_id,
+    nickname: row.nickname,
+  };
+}
+
+export function messageCursorContentFromStructuredRecord(
+  record: StructuredMessageRecord,
+): MessageCursorContent {
+  return {
+    messageId: record.id,
+    role: record.role,
+    timeCreated: record.timeCreated,
+    timeCompleted: record.timeCompleted,
+    agent: record.agent,
+    mode: record.mode,
+    model: record.model,
+    provider: record.provider,
+    tokensJson: record.tokensJson,
+    cost: record.cost,
+    costSource: record.costSource,
+    partsJson: record.partsJson,
+    partsFormatVersion: MESSAGE_PARTS_FORMAT_VERSION,
+    subagentId: record.subagentId,
+    nickname: record.nickname,
+  };
 }
 
 export function stringifyOptionalJson(value: unknown): string | null {

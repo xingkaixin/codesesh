@@ -349,6 +349,7 @@ function createSessionTables(db: SQLiteDatabase): void {
       cost_source TEXT,
       parts_json TEXT NOT NULL,
       parts_format_version INTEGER NOT NULL DEFAULT 0,
+      content_chain_digest TEXT,
       subagent_id TEXT,
       nickname TEXT,
       content_text TEXT NOT NULL,
@@ -1197,6 +1198,13 @@ function addMessagePartsFormatVersion(db: SQLiteDatabase): void {
   db.exec("ALTER TABLE messages ADD COLUMN parts_format_version INTEGER NOT NULL DEFAULT 0");
 }
 
+function addMessageContentChainDigest(db: SQLiteDatabase): void {
+  if (!tableExists(db, "messages") || columnExists(db, "messages", "content_chain_digest")) {
+    return;
+  }
+  db.exec("ALTER TABLE messages ADD COLUMN content_chain_digest TEXT");
+}
+
 function addSessionParentReference(db: SQLiteDatabase): void {
   if (!tableExists(db, "sessions")) return;
 
@@ -1478,6 +1486,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 22, migrate: addAtomicPublicationStaging },
       { version: 23, migrate: replaceSessionActivityIndex },
       { version: 24, migrate: dropLegacyMessageSearchIndex },
+      { version: 25, migrate: addMessageContentChainDigest },
     ],
   });
 
