@@ -37,6 +37,17 @@ function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead 
   };
 }
 
+function expectSessionChange(update: (session: SessionHead) => SessionHead): void {
+  const cached = makeSession("a");
+  const updated = update(cached);
+  expect(sessionSignature(cached)).not.toBe(sessionSignature(updated));
+  expect(computeSessionDiff([cached], [updated]).counts).toEqual({
+    new: 0,
+    updated: 1,
+    removed: 0,
+  });
+}
+
 describe("attachMissingProjectIdentities", () => {
   it("leaves a session untouched when its identity provenance is current", () => {
     const existing = { kind: "path" as const, displayName: "proj", key: "/p" };
@@ -241,6 +252,67 @@ describe("sessionSignature", () => {
     };
     expect(sessionSignature(base)).not.toBe(sessionSignature(grown));
   });
+
+  it("changes when the slug changes", () => {
+    expectSessionChange((session) => ({ ...session, slug: "agent/changed" }));
+  });
+
+  it("changes when model usage changes", () => {
+    expectSessionChange((session) => ({
+      ...session,
+      model_usage: { "test-model": 1 },
+    }));
+  });
+
+  it("changes when cache read tokens change", () => {
+    expectSessionChange((session) => ({
+      ...session,
+      stats: { ...session.stats, total_cache_read_tokens: 1 },
+    }));
+  });
+
+  it("changes when cache create tokens change", () => {
+    expectSessionChange((session) => ({
+      ...session,
+      stats: { ...session.stats, total_cache_create_tokens: 1 },
+    }));
+  });
+
+  it("changes when the cost source changes", () => {
+    expectSessionChange((session) => ({
+      ...session,
+      stats: { ...session.stats, cost_source: "recorded" },
+    }));
+  });
+
+  it("normalizes optional token counts to zero", () => {
+    const base = makeSession("a");
+    const explicitZeros = {
+      ...base,
+      stats: {
+        ...base.stats,
+        total_tokens: 0,
+        total_cache_read_tokens: 0,
+        total_cache_create_tokens: 0,
+      },
+    };
+    expect(sessionSignature(base)).toBe(sessionSignature(explicitZeros));
+    expect(computeSessionDiff([base], [explicitZeros]).counts.updated).toBe(0);
+  });
+
+  it("ignores model usage insertion order", () => {
+    const base = makeSession("a", { model_usage: { alpha: 1, beta: 2 } });
+    const reordered = { ...base, model_usage: { beta: 2, alpha: 1 } };
+    expect(sessionSignature(base)).toBe(sessionSignature(reordered));
+    expect(computeSessionDiff([base], [reordered]).counts.updated).toBe(0);
+  });
+
+  it("ignores alias display titles", () => {
+    const base = makeSession("a");
+    const aliased = { ...base, display_title: "Aliased session" };
+    expect(sessionSignature(base)).toBe(sessionSignature(aliased));
+    expect(computeSessionDiff([base], [aliased]).counts.updated).toBe(0);
+  });
 });
 
 describe("sortSessions", () => {
@@ -313,12 +385,12 @@ describe("computeSessionDiff", () => {
   });
 
   it("accepts a custom signature function", () => {
-    const cached = [makeSession("a", { slug: "old" })];
-    const updated = [makeSession("a", { slug: "new" })];
-    // Default signature ignores slug, so no change detected.
-    expect(computeSessionDiff(cached, updated).counts.updated).toBe(0);
-    // Custom signature that includes slug detects the change.
-    expect(computeSessionDiff(cached, updated, [], (s) => s.slug).counts.updated).toBe(1);
+    const cached = [makeSession("a", { title: "old" })];
+    const updated = [makeSession("a", { title: "new" })];
+    expect(computeSessionDiff(cached, updated).counts.updated).toBe(1);
+    expect(computeSessionDiff(cached, updated, [], (session) => session.slug).counts.updated).toBe(
+      0,
+    );
   });
 
   describe("signatureCache", () => {
