@@ -889,7 +889,7 @@ export class GrokAgent extends FileSystemSessionSource<GrokSessionMeta> {
     const fingerprint = this.sourceFingerprint(source);
     const head: SessionHead = {
       id: summary.id,
-      slug: `grok/${summary.id}`,
+      slug: this.sessionSlug(summary.id),
       title,
       directory: summary.cwd,
       parent_reference: summary.parentSessionId
@@ -928,7 +928,7 @@ export class GrokAgent extends FileSystemSessionSource<GrokSessionMeta> {
       reference: { agentName: this.name, sessionId: meta.id },
       id: meta.id,
       title: meta.title,
-      slug: `grok/${meta.id}`,
+      slug: this.sessionSlug(meta.id),
       directory: meta.directory,
       parent_reference: meta.parentSessionId
         ? { agentName: this.name, sessionId: meta.parentSessionId }

@@ -569,7 +569,7 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
     this.sessionMetaMap.set(meta.id, meta);
     return parsedSession({
       id: meta.id,
-      slug: `${this.name}/${meta.id}`,
+      slug: this.sessionSlug(meta.id),
       title: meta.title,
       directory: meta.workDir,
       time_created: meta.createdAt,
@@ -589,7 +589,7 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
       reference: { agentName: this.name, sessionId: meta.id },
       id: meta.id,
       title: meta.title,
-      slug: `${this.name}/${meta.id}`,
+      slug: this.sessionSlug(meta.id),
       directory: meta.workDir,
       time_created: meta.createdAt,
       time_updated: meta.activityAt,

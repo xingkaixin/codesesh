@@ -717,7 +717,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       reference: { agentName: this.name, sessionId: meta.id },
       id: meta.id,
       title: meta.title,
-      slug: `codex/${meta.id}`,
+      slug: this.sessionSlug(meta.id),
       directory: meta.directory,
       parent_reference:
         meta.parentThreadId == null
@@ -1188,7 +1188,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
 
     return parsedSession({
       id: sessionId,
-      slug: `codex/${sessionId}`,
+      slug: this.sessionSlug(sessionId),
       title,
       directory,
       parent_reference:
@@ -1240,7 +1240,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
 
     return parsedSession({
       id: sessionId,
-      slug: `codex/${sessionId}`,
+      slug: this.sessionSlug(sessionId),
       title,
       directory,
       parent_reference:

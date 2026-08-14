@@ -264,7 +264,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
 
     return parsedSession({
       id,
-      slug: `${this.name}/${id}`,
+      slug: this.sessionSlug(id),
       title: resolveSessionTitle(String(row.title ?? ""), messageTitle, null),
       directory: String(row.directory ?? ""),
       parent_reference:
