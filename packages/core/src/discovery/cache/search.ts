@@ -10,6 +10,7 @@ import type {
 } from "../../types/index.js";
 import type { SearchHighlightRange, SearchMatchType, SearchResult } from "../../contract/index.js";
 import { normalizeProjectScopePath, type ProjectScopeMatcher } from "../../projects/scope.js";
+import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import { escapeRegExp, filePathFtsQuery, hasCacheStorage, likePattern } from "./db.js";
 import { normalizeToolName, sessionFromRow, type SessionRow } from "./messages.js";
@@ -430,6 +431,7 @@ function fetchMessageSearchMatches(
   rows: SearchResultRow[],
   terms: { terms: string[]; mode: "all" | "any" },
 ): Map<string, SearchSnippet & { matchType: SearchMatchType }> {
+  const startedAt = performance.now();
   const candidates = rows.filter((row) => !textMatchesTerms(String(row.title ?? ""), terms));
   if (candidates.length === 0) {
     return new Map();
@@ -440,9 +442,11 @@ function fetchMessageSearchMatches(
     String(row.agent_name),
     String(row.session_id),
   ]);
-  db.function("codesesh_message_matches_terms", { deterministic: true }, (text) =>
-    textMatchesTerms(String(text ?? ""), terms) ? 1 : 0,
-  );
+  let predicateEvaluations = 0;
+  db.function("codesesh_message_matches_terms", { deterministic: true }, (text) => {
+    predicateEvaluations += 1;
+    return textMatchesTerms(String(text ?? ""), terms) ? 1 : 0;
+  });
 
   const messageRows = db
     .prepare(
@@ -492,6 +496,13 @@ function fetchMessageSearchMatches(
       matchType: messageMatchType(message),
     });
   }
+
+  getCoreDiagnostics()?.info?.("search.message_match_projection", {
+    candidate_sessions: candidates.length,
+    predicate_evaluations: predicateEvaluations,
+    matched_sessions: matches.size,
+    duration_ms: Math.round(performance.now() - startedAt),
+  });
 
   return matches;
 }
