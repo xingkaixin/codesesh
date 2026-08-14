@@ -38,6 +38,15 @@ export function formatScanFailureDiagnostics(
   });
 }
 
+export function formatCacheFailureDiagnostics(
+  snapshot: Pick<LiveSnapshot, "cacheFailures">,
+): string[] {
+  return Object.values(snapshot.cacheFailures ?? {}).map(
+    (failure) =>
+      `[${failure.agentName}] Cache persistence failed; serving in-memory results without advancing the durable baseline`,
+  );
+}
+
 export function buildSessionIndexOutput(
   snapshot: Pick<LiveSnapshot, "sessions" | "byAgent">,
   window: SessionIndexWindow = {},

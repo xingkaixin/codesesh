@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { LiveSnapshot, SessionHead } from "@codesesh/core";
-import { buildSessionIndexOutput, formatScanFailureDiagnostics } from "./session-index-output.js";
+import {
+  buildSessionIndexOutput,
+  formatCacheFailureDiagnostics,
+  formatScanFailureDiagnostics,
+} from "./session-index-output.js";
 
 function makeSession(id: string, activity: number): SessionHead {
   return {
@@ -100,6 +104,18 @@ describe("scan failure diagnostics", () => {
       }),
     ).toEqual([
       "[codex] Scan failed during enumerating session sources at /sessions (EACCES): permission denied",
+    ]);
+  });
+});
+
+describe("cache failure diagnostics", () => {
+  it("reports degraded persistence without treating the scan as failed", () => {
+    expect(
+      formatCacheFailureDiagnostics({
+        cacheFailures: { codex: { agentName: "codex" } },
+      }),
+    ).toEqual([
+      "[codex] Cache persistence failed; serving in-memory results without advancing the durable baseline",
     ]);
   });
 });

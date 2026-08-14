@@ -58,6 +58,27 @@ describe("LiveSessionIndex", () => {
     expect(index.snapshot().scanFailures).toBeUndefined();
   });
 
+  it("retains a cache persistence failure until a durable publication succeeds", () => {
+    const codex = makeAgent("codex");
+    const cached = makeSession("cached", 1);
+    const refreshed = makeSession("refreshed", 2);
+    const index = new LiveSessionIndex();
+    index.initialize({
+      agents: [codex],
+      byAgent: { codex: [cached] },
+      sessions: [cached],
+      cacheFailures: { codex: { agentName: "codex" } },
+    });
+
+    expect(index.snapshot().cacheFailures).toEqual({ codex: { agentName: "codex" } });
+    expect(index.snapshot().byAgent.codex).toEqual([cached]);
+
+    index.commitAgentSessions("codex", [refreshed]);
+
+    expect(index.snapshot().cacheFailures).toBeUndefined();
+    expect(index.snapshot().byAgent.codex).toEqual([refreshed]);
+  });
+
   it("initializes sorted views for the allowed agent catalog", () => {
     const codex = makeAgent("codex");
     const kimi = makeAgent("kimi");
