@@ -18,6 +18,7 @@ import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import { parseAgentTimestampMs } from "../utils/timestamp.js";
 import { asRecord, asString, narrowField } from "../utils/narrow.js";
 import { TranscriptBuilder } from "./transcript-builder.js";
+import { normalizeToolArguments } from "./tool-arguments.js";
 import {
   type ExecInnerCall,
   decodeExecCalls,
@@ -173,17 +174,6 @@ function resolveToolIdentity(
     tool: `${namespaceName}.${toolName || name}`,
     metadata: { name, namespace: namespaceText },
   };
-}
-
-function normalizeToolArguments(raw: unknown): unknown {
-  if (typeof raw === "string") {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return raw;
-    }
-  }
-  return raw;
 }
 
 function normalizeCustomToolArguments(toolName: string, input: unknown): unknown {

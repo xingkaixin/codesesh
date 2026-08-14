@@ -293,9 +293,13 @@ export abstract class BaseAgent {
 /**
  * 文件型 Agent 基类：每个会话对应磁盘上一个独立文件/目录。
  *
- * 子类只需实现两个文件级原语：
+ * 子类只需实现两个必需的文件级原语：
  *   - listSessionSources(): 枚举所有源 + 计算指纹
  *   - scanSessionSource(): 解析单个源（同时写入 metaMap）
+ *
+ * scanSessionSourceResult() 是可选的富结果扩展点：默认将 scanSessionSource()
+ * 的会话或 null 转成 parsed/skipped 结果；需要保留 filtered 等结果时可覆写，
+ * 例如 KimiAgent。
  *
  * 变更检测 / 增量扫描 / metaMap 管理由本基类统一提供：
  *   checkForChanges 用 listSessionSources 的指纹与缓存 metaMap 比对，

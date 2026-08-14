@@ -29,6 +29,7 @@ import { cleanInternalText } from "../utils/session-normalization.js";
 import { normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
+import { normalizeToolArguments } from "./tool-arguments.js";
 
 const KIMI_CODE_TOOL_TITLE_MAP: Record<string, string> = {
   Read: "read",
@@ -96,15 +97,6 @@ interface ParsedWire {
 
 function mapToolTitle(toolName: string): string {
   return KIMI_CODE_TOOL_TITLE_MAP[toolName] ?? toolName;
-}
-
-function normalizeToolArguments(raw: unknown): unknown {
-  if (typeof raw !== "string") return raw;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return raw;
-  }
 }
 
 function parseTimestamp(raw: unknown): number | null {
