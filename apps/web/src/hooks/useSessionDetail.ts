@@ -1,10 +1,20 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { fetchSessionData, logClientEvent, type SessionDetail } from "../lib/api";
+import { ApiRequestError, fetchSessionData, logClientEvent, type SessionDetail } from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
 import type { ViewState } from "../lib/view-state";
 
 let nextSessionRequestId = 1;
+
+export type SessionDetailError = { kind: "missing" } | { kind: "load-failed"; message: string };
+
+function getSessionDetailError(error: unknown): SessionDetailError {
+  if (error instanceof ApiRequestError && error.status === 404) return { kind: "missing" };
+  return {
+    kind: "load-failed",
+    message: error instanceof Error ? error.message : "Unable to load this session.",
+  };
+}
 
 function mergeSessionDetailUpdate(
   previous: SessionDetail | undefined,
@@ -101,7 +111,7 @@ export function useSessionDetail(viewState: ViewState) {
   return {
     session: route ? (query.data ?? null) : null,
     sessionLoading: route !== null && query.isPending,
-    sessionError: route !== null && query.isError ? "Session not found" : null,
+    sessionError: route !== null && query.isError ? getSessionDetailError(query.error) : null,
     refresh,
   };
 }

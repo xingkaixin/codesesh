@@ -26,7 +26,7 @@ interface RouteHeaderInput {
   activeAgent: AgentInfo | null;
   sidebarSessionCount: number;
   session: SessionDetail | null;
-  sessionError: string | null;
+  sessionError: "missing" | "load-failed" | null;
   selectedProjectIdentity: ProjectRouteIdentity | null;
   selectedProject: ApiProjectGroup | null;
 }
@@ -120,7 +120,7 @@ function routeTitleAndSubtitle(input: RouteHeaderInput): {
   if (viewState.mode === "session") {
     if (input.sessionError) {
       return {
-        title: "Session Not Found",
+        title: input.sessionError === "missing" ? "Session Not Found" : "Session Load Failed",
         subtitle: `Requested /${viewState.activeAgentKey}/${viewState.activeSessionId}`,
       };
     }

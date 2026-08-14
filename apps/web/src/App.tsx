@@ -284,7 +284,7 @@ export default function App() {
     activeAgent,
     sidebarSessionCount: sidebarSessions.length,
     session,
-    sessionError,
+    sessionError: sessionError?.kind ?? null,
     selectedProjectIdentity: selectedProjectNavigationIdentity,
     selectedProject: selectedProjectNavigation?.project ?? null,
   });
@@ -317,6 +317,7 @@ export default function App() {
         session: sessionDetail.session,
         loading: sessionDetail.sessionLoading,
         error: sessionDetail.sessionError,
+        retry: () => void sessionDetail.refresh(),
       }}
       projectAgentFilter={{
         selectedAgent: selectedProjectAgent,

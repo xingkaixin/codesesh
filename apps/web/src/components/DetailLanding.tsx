@@ -25,15 +25,17 @@ export interface LandingAgentItem {
 }
 
 interface DetailLandingProps {
-  type: "global" | "agent" | "missing-agent" | "missing-session";
+  type: "global" | "agent" | "missing-agent" | "missing-session" | "load-failed";
   agentCatalog: AgentCatalog;
   sessions: LandingSession[];
   agentItems: LandingAgentItem[];
   activeAgentKey?: string;
   attemptedAgentKey?: string;
   attemptedSessionId?: string | null;
+  loadFailureMessage?: string;
   isBookmarked: (agentKey: string, sessionId: string) => boolean;
   onToggleBookmark: (session: LandingSession) => void;
+  onRetry?: () => void;
 }
 
 function getSessionTotalTokens(stats: SessionHead["stats"]) {
@@ -200,8 +202,10 @@ export const DetailLanding = memo(function DetailLanding({
   activeAgentKey,
   attemptedAgentKey,
   attemptedSessionId,
+  loadFailureMessage,
   isBookmarked,
   onToggleBookmark,
+  onRetry,
 }: DetailLandingProps) {
   const { recentSessions, totalMessages, totalTokens, totalCost, costSource, latestUpdatedAt } =
     useMemo(() => {
@@ -294,6 +298,41 @@ export const DetailLanding = memo(function DetailLanding({
             </div>
           </div>
           <DiagnosticItem label="Session" value={sessionId} />
+        </div>
+
+        <RecentSessions
+          sessions={recentSessions}
+          isBookmarked={isBookmarked}
+          onToggleBookmark={onToggleBookmark}
+        />
+      </div>
+    );
+  }
+
+  if (type === "load-failed") {
+    return (
+      <div className="mx-auto max-w-4xl space-y-4">
+        <MissingStateHero
+          code="LOAD / SESSION"
+          title="We couldn't load this session."
+          description="The session request failed before we could determine whether the record exists. It may still be available once the connection or server recovers."
+          aside="Retry this request without leaving the current session path."
+        />
+
+        <div className="flex flex-wrap items-end justify-between gap-3 rounded-md border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-3">
+          <div className="min-w-0 flex-1">
+            <DiagnosticItem
+              label="Request Error"
+              value={loadFailureMessage ?? "Unable to load this session."}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="console-mono shrink-0 rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-1.5 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+          >
+            Retry
+          </button>
         </div>
 
         <RecentSessions
