@@ -1,6 +1,7 @@
 import {
   mkdtempSync,
   mkdirSync,
+  openSync,
   readFileSync,
   rmSync,
   statSync,
@@ -23,6 +24,7 @@ vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   return {
     ...actual,
+    openSync: vi.fn(actual.openSync),
     readFileSync: vi.fn(actual.readFileSync),
     statSync: vi.fn(actual.statSync),
   };
@@ -1448,6 +1450,26 @@ describe("CodexAgent subagent folding", () => {
     return `{"timestamp":"2026-04-20T10:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":${input},"output_tokens":${output}},"total_token_usage":{"total_tokens":${total}}}}}`;
   }
 
+  function makeMessage(options: {
+    subagentId?: string;
+    nickname?: string;
+    texts: string[];
+  }): Message {
+    return {
+      id: `message-${options.texts.join("-")}`,
+      role: "assistant",
+      agent: "codex",
+      time_created: 0,
+      mode: null,
+      model: null,
+      provider: null,
+      cost: 0,
+      ...(options.subagentId === undefined ? {} : { subagent_id: options.subagentId }),
+      ...(options.nickname === undefined ? {} : { nickname: options.nickname }),
+      parts: options.texts.map((text) => ({ type: "text", text, time_created: 0 })),
+    };
+  }
+
   afterEach(() => {
     for (const dir of tempDirs) {
       rmSync(dir, { recursive: true, force: true });
@@ -1557,6 +1579,161 @@ describe("CodexAgent subagent folding", () => {
       ),
     ).toBe(false);
     expect(data.stats.message_count).toBe(data.messages.length);
+  });
+
+  it("merges child messages with exact id and nickname/text visibility rules", () => {
+    const agent = new CodexAgent() as any;
+    const visibleMessages = [
+      makeMessage({ subagentId: "known-child", nickname: "worker", texts: ["id match"] }),
+      makeMessage({ nickname: "worker", texts: ["prefix", "shared text"] }),
+    ];
+
+    agent.mergeChildMessages(visibleMessages, [
+      makeMessage({ subagentId: "known-child", nickname: "other", texts: ["different"] }),
+      makeMessage({ nickname: "worker", texts: ["shared text"] }),
+      makeMessage({ subagentId: "different-child", nickname: "worker", texts: ["shared text"] }),
+      makeMessage({ nickname: "worker", texts: ["different text"] }),
+    ]);
+
+    expect(
+      visibleMessages.map((message) => {
+        const part = message.parts[0];
+        return part?.type === "text" ? part.text : undefined;
+      }),
+    ).toEqual(["id match", "prefix", "different text"]);
+
+    const identifiedVisible = [
+      makeMessage({ subagentId: "identified", nickname: "worker", texts: ["shared text"] }),
+    ];
+    agent.mergeChildMessages(identifiedVisible, [
+      makeMessage({ nickname: "worker", texts: ["shared text"] }),
+    ]);
+    expect(identifiedVisible).toHaveLength(2);
+
+    const newlyVisible: Message[] = [];
+    agent.mergeChildMessages(newlyVisible, [
+      makeMessage({ nickname: "worker", texts: ["new text"] }),
+      makeMessage({ nickname: "worker", texts: ["new text"] }),
+    ]);
+    expect(newlyVisible).toHaveLength(1);
+  });
+
+  it("merges large child batches without pairwise array scans", () => {
+    const agent = new CodexAgent() as any;
+    const visibleMessages = Array.from({ length: 200 }, (_, index) =>
+      makeMessage({ nickname: `worker-${index}`, texts: [`visible-${index}`] }),
+    );
+    const childMessages = Array.from({ length: 200 }, (_, index) =>
+      makeMessage({ nickname: `child-${index}`, texts: [`child-${index}`] }),
+    );
+    const someSpy = vi.spyOn(Array.prototype, "some");
+
+    someSpy.mockClear();
+    agent.mergeChildMessages(visibleMessages, childMessages);
+    const someCallCount = someSpy.mock.calls.length;
+    someSpy.mockRestore();
+
+    expect(someCallCount).toBe(0);
+    expect(visibleMessages).toHaveLength(400);
+  });
+
+  function childOpenCount(filePath: string): number {
+    return vi.mocked(openSync).mock.calls.filter(([path]) => String(path) === filePath).length;
+  }
+
+  it("caches child final messages until the source or parser changes", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
+    tempDirs.push(tempDir);
+    writeSession(tempDir, PARENT_ID, { threadSource: "user" });
+    writeSession(tempDir, CHILD_ID, {
+      threadSource: "subagent",
+      parentThreadId: PARENT_ID,
+      extra: [
+        '{"timestamp":"2026-04-20T10:03:00Z","type":"response_item","phase":"final_answer","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"first child result"}]}}',
+      ],
+    });
+    const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.sessionIndexCache = new Map();
+    agent.scan({ from: 0 });
+    agent.getSessionData(PARENT_ID);
+
+    const openSpy = vi.mocked(openSync);
+    openSpy.mockClear();
+    agent.getSessionData(PARENT_ID);
+    expect(childOpenCount(childFile)).toBe(0);
+
+    const cacheEntry = agent.childFinalMessagesByParent.get(PARENT_ID)?.get(childFile);
+    expect(cacheEntry).toBeDefined();
+    cacheEntry.parserVersion = "codex-parser-old";
+    openSpy.mockClear();
+    agent.getSessionData(PARENT_ID);
+    expect(childOpenCount(childFile)).toBeGreaterThan(0);
+
+    writeSession(tempDir, CHILD_ID, {
+      threadSource: "subagent",
+      parentThreadId: PARENT_ID,
+      extra: [
+        '{"timestamp":"2026-04-20T10:03:00Z","type":"response_item","phase":"final_answer","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"updated child result"}]}}',
+      ],
+    });
+    openSpy.mockClear();
+    const refreshed = agent.getSessionData(PARENT_ID);
+    expect(childOpenCount(childFile)).toBeGreaterThan(0);
+    expect(refreshed.messages).toContainEqual(
+      expect.objectContaining({
+        parts: [expect.objectContaining({ type: "text", text: "updated child result" })],
+      }),
+    );
+  });
+
+  it("caches a child with no final message", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
+    tempDirs.push(tempDir);
+    writeSession(tempDir, PARENT_ID, { threadSource: "user" });
+    writeSession(tempDir, CHILD_ID, {
+      threadSource: "subagent",
+      parentThreadId: PARENT_ID,
+    });
+    const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.sessionIndexCache = new Map();
+    agent.scan({ from: 0 });
+    expect(agent.getSessionData(PARENT_ID).messages).toEqual([]);
+
+    vi.mocked(openSync).mockClear();
+    expect(agent.getSessionData(PARENT_ID).messages).toEqual([]);
+    expect(childOpenCount(childFile)).toBe(0);
+  });
+
+  it("prunes child final message cache entries when a child disappears", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
+    tempDirs.push(tempDir);
+    writeSession(tempDir, PARENT_ID, { threadSource: "user" });
+    writeSession(tempDir, CHILD_ID, {
+      threadSource: "subagent",
+      parentThreadId: PARENT_ID,
+      extra: [
+        '{"timestamp":"2026-04-20T10:03:00Z","type":"response_item","phase":"final_answer","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"child result"}]}}',
+      ],
+    });
+    const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.sessionIndexCache = new Map();
+    agent.scan({ from: 0 });
+    agent.getSessionData(PARENT_ID);
+    expect(agent.childFinalMessagesByParent.get(PARENT_ID)?.has(childFile)).toBe(true);
+
+    rmSync(childFile);
+    agent.subagentIndex = null;
+    agent.getSessionData(PARENT_ID);
+    expect(agent.childFinalMessagesByParent.has(PARENT_ID)).toBe(false);
   });
 
   it("finds child rollouts when detail parsing starts from cached metadata", () => {

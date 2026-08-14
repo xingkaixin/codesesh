@@ -363,6 +363,52 @@ interface SessionMeta extends FileSessionMeta {
   parentThreadId: string | null;
 }
 
+interface ChildFinalMessageCacheEntry {
+  sourceFingerprint: string;
+  parserVersion: string;
+  message: Message | null;
+}
+
+class ChildMessageVisibilityIndex {
+  private readonly visibleSubagentIds = new Set<string>();
+  private readonly visibleNicknameTexts = new Map<string, Set<string>>();
+
+  constructor(messages: Message[]) {
+    for (const message of messages) this.add(message);
+  }
+
+  hasEquivalent(message: Message): boolean {
+    if (message.subagent_id !== undefined && this.visibleSubagentIds.has(message.subagent_id)) {
+      return true;
+    }
+
+    const nickname = message.nickname;
+    const text = message.parts.find((part) => part.type === "text")?.text;
+    return (
+      nickname !== undefined &&
+      text !== undefined &&
+      this.visibleNicknameTexts.get(nickname)?.has(text) === true
+    );
+  }
+
+  add(message: Message): void {
+    if (message.subagent_id !== undefined) {
+      this.visibleSubagentIds.add(message.subagent_id);
+      return;
+    }
+    if (message.nickname === undefined) return;
+
+    let texts = this.visibleNicknameTexts.get(message.nickname);
+    if (!texts) {
+      texts = new Set();
+      this.visibleNicknameTexts.set(message.nickname, texts);
+    }
+    for (const part of message.parts) {
+      if (part.type === "text") texts.add(part.text);
+    }
+  }
+}
+
 function compareSourceActivityDesc(left: SessionSourceFile, right: SessionSourceFile): number {
   const leftTimestamp = sourceTimestamp(left.file, left.stat.mtimeMs);
   const rightTimestamp = sourceTimestamp(right.file, right.stat.mtimeMs);
@@ -392,6 +438,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   private sessionIndexPath: string | undefined;
   private subagentIndex: SubagentIndex | null = null;
   private subagentStatsByParent = new Map<string, SessionHead["stats"][]>();
+  private childFinalMessagesByParent = new Map<string, Map<string, ChildFinalMessageCacheEntry>>();
 
   // ---- BaseAgent implementation ----
 
@@ -430,6 +477,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     super.setSessionMetaMap(meta);
     this.subagentIndex = null;
     this.subagentStatsByParent.clear();
+    this.childFinalMessagesByParent.clear();
   }
 
   /**
@@ -453,6 +501,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       expanded.add(parentId);
       this.subagentIndex = null;
       this.subagentStatsByParent.delete(parentId);
+      this.childFinalMessagesByParent.delete(parentId);
     }
     return [...expanded];
   }
@@ -661,19 +710,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     this.applyChildStats(result.stats, meta.id);
 
     const childMessages = this.collectChildMessages(meta.id);
-    for (const message of childMessages) {
-      const messageText = message.parts.find((part) => part.type === "text")?.text;
-      const alreadyVisible = result.messages.some(
-        (existing) =>
-          (message.subagent_id !== undefined && existing.subagent_id === message.subagent_id) ||
-          (existing.subagent_id === undefined &&
-            message.nickname !== undefined &&
-            messageText !== undefined &&
-            existing.nickname === message.nickname &&
-            existing.parts.some((part) => part.type === "text" && part.text === messageText)),
-      );
-      if (!alreadyVisible) result.messages.push(message);
-    }
+    this.mergeChildMessages(result.messages, childMessages);
     result.stats.message_count = result.messages.length;
 
     return {
@@ -742,16 +779,64 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     return this.ensureSubagentIndex().childFilesByParent.get(parentSessionId) ?? [];
   }
 
+  private mergeChildMessages(visibleMessages: Message[], childMessages: Message[]): void {
+    const visible = new ChildMessageVisibilityIndex(visibleMessages);
+    for (const message of childMessages) {
+      if (visible.hasEquivalent(message)) continue;
+      visibleMessages.push(message);
+      visible.add(message);
+    }
+  }
+
   private collectChildMessages(parentSessionId: string): Message[] {
-    return this.collectChildFiles(parentSessionId)
+    const childFiles = this.collectChildFiles(parentSessionId);
+    this.reconcileChildFinalMessageCache(parentSessionId, childFiles);
+    return childFiles
       .flatMap((file) => {
-        const message = this.parseChildFinalMessage(file);
+        const message = this.getChildFinalMessage(parentSessionId, file);
         return message ? [message] : [];
       })
       .sort((left, right) => left.time_created - right.time_created);
   }
 
-  private parseChildFinalMessage(filePath: string): Message | null {
+  private getChildFinalMessage(parentSessionId: string, filePath: string): Message | null {
+    const sourceFingerprint = this.childFinalMessageFingerprint(filePath);
+    let cache = this.childFinalMessagesByParent.get(parentSessionId);
+    if (!cache) {
+      cache = new Map();
+      this.childFinalMessagesByParent.set(parentSessionId, cache);
+    }
+
+    const cached = cache.get(filePath);
+    if (
+      cached?.sourceFingerprint === sourceFingerprint &&
+      cached.parserVersion === PARSER_VERSION
+    ) {
+      return cached.message;
+    }
+
+    const message = this.readChildFinalMessage(filePath);
+    cache.set(filePath, { sourceFingerprint, parserVersion: PARSER_VERSION, message });
+    return message;
+  }
+
+  private reconcileChildFinalMessageCache(parentSessionId: string, childFiles: string[]): void {
+    const cache = this.childFinalMessagesByParent.get(parentSessionId);
+    if (!cache) return;
+
+    const activeFiles = new Set(childFiles);
+    for (const filePath of cache.keys()) {
+      if (!activeFiles.has(filePath)) cache.delete(filePath);
+    }
+    if (cache.size === 0) this.childFinalMessagesByParent.delete(parentSessionId);
+  }
+
+  private childFinalMessageFingerprint(filePath: string): string {
+    const { mtimeMs, size } = statSync(filePath);
+    return JSON.stringify([mtimeMs, size]);
+  }
+
+  private readChildFinalMessage(filePath: string): Message | null {
     const sessionId = extractSessionId(filePath);
     const threadMeta = this.readThreadMeta(filePath);
     type ChildOutput = { id: string; text: string; timestampMs: number; isFinal: boolean };
