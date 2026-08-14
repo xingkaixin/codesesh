@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Message, PlanPart, ReasoningPart, ToolPart } from "../../lib/api";
+import { MarkdownContent } from "../MarkdownContent";
 import type { MessageBlock } from "./blocks";
 
 const normalizeToolStateCalls = vi.hoisted(() => vi.fn());
@@ -25,6 +26,40 @@ afterEach(() => {
 });
 
 describe("MessageItem", () => {
+  it("CS-258: matches Markdown highlighting for the same query", () => {
+    const text = "The quick brown fox";
+    const highlightQuery = '"quick brown" OR fox';
+    const reasoning: ReasoningPart = { type: "reasoning", text };
+    const message: Message = {
+      id: "m1",
+      role: "assistant",
+      time_created: 1,
+      parts: [reasoning],
+    };
+    const blocks: MessageBlock[] = [{ type: "reasoning", parts: [reasoning] }];
+    const markdown = render(<MarkdownContent text={text} highlightQuery={highlightQuery} />);
+    const messageItem = render(
+      <MemoryRouter>
+        <MessageItem
+          messageIndex={0}
+          msg={message}
+          blocks={blocks}
+          formatTokens={String}
+          sessionAgentKey="codex"
+          baseDirectory="/repo"
+          highlightQuery={highlightQuery}
+        />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(messageItem.getByRole("button", { name: "Thinking" }));
+
+    const markedText = (container: HTMLElement) =>
+      [...container.querySelectorAll("mark")].map((mark) => mark.textContent);
+
+    expect(markedText(messageItem.container)).toEqual(markedText(markdown.container));
+  });
+
   it("CS-258: exposes reasoning expansion through a native button", () => {
     const reasoning: ReasoningPart = { type: "reasoning", text: "Working through the answer" };
     const message: Message = {

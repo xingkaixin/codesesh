@@ -14,6 +14,7 @@ import type { AgentInfo, Message, PlanPart, ReasoningPart, ToolPart } from "../.
 import type { SessionHead } from "../../lib/api";
 import { formatMessageTime } from "../../lib/format";
 import { getSessionRoutePath } from "../../lib/session-indexes";
+import { buildHighlightPattern } from "../../lib/search-highlight";
 import { AgentIcon } from "../AgentIcon";
 import { MarkdownContent } from "../MarkdownContent";
 import { ToolOutputRenderer } from "../tool-output/ToolOutputRenderer";
@@ -24,7 +25,6 @@ import { isCodexTurnAbortedMessage } from "./codex-abort";
 import { buildCodexPlanDisplay } from "./codex-plan";
 import { getDisplayTextWithRelativePaths } from "./path-extract";
 import { buildBlockTimelineAnchorId, buildMessageTimelineAnchorId } from "./timeline";
-import { escapeRegExp } from "./utils";
 import {
   type ToolStatus,
   getAssistantDisplayLabel,
@@ -55,21 +55,6 @@ const TOOL_STATUS_META: Record<
     icon: LoaderCircle,
   },
 };
-
-function buildHighlightPattern(query?: string): RegExp | null {
-  const normalized = query?.trim();
-  if (!normalized) return null;
-  const terms = Array.from(
-    new Set(
-      (normalized.match(/"[^"]+"|\S+/g) ?? [])
-        .map((term) => term.replace(/^"|"$/g, "").trim())
-        .filter(Boolean)
-        .filter((term) => !/^OR$/i.test(term)),
-    ),
-  );
-  if (terms.length === 0) return null;
-  return new RegExp(`(${terms.map(escapeRegExp).join("|")})`, "gi");
-}
 
 function renderHighlightedText(text: string, query?: string) {
   const pattern = buildHighlightPattern(query);
