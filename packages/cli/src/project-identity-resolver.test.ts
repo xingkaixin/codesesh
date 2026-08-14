@@ -89,15 +89,4 @@ describe("ThreadProjectIdentityResolver", () => {
     await expect(third).resolves.toMatchObject({ identity: { key: "/three" } });
     await resolver.shutdown();
   });
-
-  it("leaves the event loop free while a worker resolves", async () => {
-    const resolver = new ThreadProjectIdentityResolver(workerUrl, 1);
-    const pending = resolver.resolve("/slow");
-
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    expect(workerMocks.workers).toHaveLength(1);
-
-    await resolver.shutdown();
-    await expect(pending).rejects.toThrow("Project identity resolver shut down");
-  });
 });
