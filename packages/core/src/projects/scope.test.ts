@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SessionHead } from "../types/index.js";
 import type { IdentityFs } from "./identity.js";
-import { filterSessionsByProjectScope } from "./scope.js";
+import { createProjectScopeMatcherFromIdentity, filterSessionsByProjectScope } from "./scope.js";
 
 function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
   return {
@@ -21,6 +21,15 @@ function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead 
 }
 
 describe("filterSessionsByProjectScope", () => {
+  it("uses slash-separated path syntax for Windows scopes", () => {
+    const scope = createProjectScopeMatcherFromIdentity("C:\\workspace\\app", {
+      kind: "path",
+      key: "C:/workspace/app",
+    });
+
+    expect(scope.path).toBe("C:/workspace/app");
+  });
+
   it("matches exact, query parent, session parent, and project identity scopes", () => {
     const sessions = [
       makeSession("exact", { directory: "/home/user/project" }),

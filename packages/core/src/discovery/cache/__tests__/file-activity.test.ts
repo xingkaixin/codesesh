@@ -32,6 +32,43 @@ describe("cached file activity", () => {
     ]);
   });
 
+  it("uses the resolved scope for identity and symmetric directory matching", () => {
+    const result = buildFileActivityWhere({
+      projectScope: {
+        identity: { kind: "git_remote", key: "github.com/acme/app" },
+        path: "/workspace/app/packages/web",
+      },
+    });
+
+    expect(result.where).toContain("s.project_identity_kind = ? AND s.project_identity_key = ?");
+    expect(result.where).toContain("REPLACE(LOWER(s.directory), char(92), '/')");
+    expect(result.where).toContain("instr(?, REPLACE(LOWER(s.directory), char(92), '/') || '/')");
+    expect(result.params).toEqual([
+      "git_remote",
+      "github.com/acme/app",
+      "/workspace/app/packages/web",
+      "/workspace/app/packages/web",
+      "/workspace/app/packages/web",
+    ]);
+  });
+
+  it("normalizes Windows scope paths before SQL matching", () => {
+    const result = buildFileActivityWhere({
+      projectScope: {
+        identity: { kind: "path", key: "C:/workspace/app" },
+        path: "C:\\workspace\\app",
+      },
+    });
+
+    expect(result.params).toEqual([
+      "path",
+      "C:/workspace/app",
+      "c:/workspace/app",
+      "c:/workspace/app",
+      "c:/workspace/app",
+    ]);
+  });
+
   it("maps rows and highlights paths case-insensitively", () => {
     expect(
       fileActivityFromRow({

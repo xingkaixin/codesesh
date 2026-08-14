@@ -20,11 +20,7 @@ import {
   type SearchOptions,
 } from "../discovery/cache/search.js";
 import { searchFileActivitySessions } from "../discovery/cache/file-activity.js";
-import {
-  createProjectScopeMatcher,
-  matchesProjectScope,
-  type ProjectScopeMatcher,
-} from "../projects/scope.js";
+import { matchesProjectScope, type ProjectScopeMatcher } from "../projects/scope.js";
 import { matchesProjectIdentity } from "../projects/identity.js";
 import { getSessionActivityTime } from "../analytics/dashboard.js";
 
@@ -119,7 +115,7 @@ export function filterSessionSearchCandidates(
   options: SearchOptions,
   sessionSnapshot: SessionHead[] = candidates.map((candidate) => candidate.session),
 ): SearchResult[] {
-  const projectScope = options.cwd ? createProjectScopeMatcher(options.cwd) : null;
+  const projectScope = options.projectScope ?? null;
   const inclusiveCosts = buildInclusiveCostLookup(sessionSnapshot, options);
   const headMatches = candidates.filter((candidate) =>
     matchesSessionSearchFilters(
@@ -157,7 +153,7 @@ function searchRecentSessions(
   const limit = Math.max(0, Math.trunc(options.limit ?? 50));
   if (limit === 0) return [];
 
-  const projectScope = options.cwd ? createProjectScopeMatcher(options.cwd) : null;
+  const projectScope = options.projectScope ?? null;
   const inclusiveCosts = buildInclusiveCostLookup(snapshot.sessions, options);
   const sessions = options.agent ? (snapshot.byAgent[options.agent] ?? []) : snapshot.sessions;
   const results: SearchResult[] = [];

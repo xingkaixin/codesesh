@@ -10,7 +10,7 @@ import {
   isProjectIdentityKind,
   type FileActivityKind,
   type ProjectIdentityRef,
-  type SearchOptions,
+  type SearchRequestOptions,
 } from "@codesesh/core";
 import type { TimeWindow } from "../time-window-resolution.js";
 
@@ -201,7 +201,7 @@ export function parseSearchOptions(
   window: SessionListDefaults,
   request: { agent?: string; limit: number },
   projectIdentity?: ProjectIdentityRef,
-): SearchOptions {
+): SearchRequestOptions {
   const params = searchParams(c);
   return {
     agent: request.agent,

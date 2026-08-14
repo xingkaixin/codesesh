@@ -8,7 +8,7 @@ import type {
   SessionFileActivity,
 } from "../../types/index.js";
 import type { FileActivityResult, SearchHighlightRange } from "../../contract/index.js";
-import { computeIdentity, realFs } from "../../projects/index.js";
+import { normalizeProjectScopePath, type ProjectScopeMatcher } from "../../projects/scope.js";
 import type { SQLiteDatabase } from "../../utils/sqlite.js";
 import { filePathFtsQuery, hasCacheStorage, likePattern, normalizeFilePathSearch } from "./db.js";
 import { withCacheDb, withCacheDbReadOnly } from "./schema.js";
@@ -37,7 +37,7 @@ export interface FileActivityOptions {
   projectKind?: ProjectIdentityKind;
   projectKey?: string;
   project?: string;
-  cwd?: string;
+  projectScope?: ProjectScopeMatcher;
   path?: string;
   kind?: FileActivityKind;
   from?: number;
@@ -49,21 +49,21 @@ export function fileActivityFilters(options: FileActivityOptions): {
   projectKind: ProjectIdentityKind | null;
   projectKey: string | null;
   projectLike: string | null;
-  cwdKind: ProjectIdentityKind | null;
-  cwdKey: string | null;
-  cwdLike: string | null;
+  scopeKind: ProjectIdentityKind | null;
+  scopeKey: string | null;
+  scopePath: string | null;
   path: string;
   pathLike: string | null;
 } {
   const path = options.path ? normalizeFilePathSearch(options.path) : "";
-  const cwdIdentity = options.cwd ? computeIdentity(options.cwd, realFs) : null;
+  const scope = options.projectScope;
   return {
     projectKind: options.projectKind ?? null,
     projectKey: options.projectKey ?? null,
     projectLike: options.project ? likePattern(options.project) : null,
-    cwdKind: cwdIdentity?.kind ?? null,
-    cwdKey: cwdIdentity?.key ?? null,
-    cwdLike: options.cwd ? likePattern(options.cwd) : null,
+    scopeKind: scope?.identity.kind ?? null,
+    scopeKey: scope?.identity.key ?? null,
+    scopePath: scope ? normalizeProjectScopePath(scope.path).toLowerCase() : null,
     path,
     pathLike: path ? likePattern(path) : null,
   };
@@ -113,11 +113,18 @@ export function buildFileActivityWhere(options: FileActivityOptions): {
     );
     params.push(filters.projectLike, filters.projectLike, filters.projectLike);
   }
-  if (filters.cwdKey != null) {
+  if (filters.scopeKey != null && filters.scopePath != null) {
+    const normalizedDirectory = "REPLACE(LOWER(s.directory), char(92), '/')";
     clauses.push(
-      "((s.project_identity_kind = ? AND s.project_identity_key = ?) OR LOWER(s.directory) LIKE ? ESCAPE '\\')",
+      `((s.project_identity_kind = ? AND s.project_identity_key = ?) OR ${normalizedDirectory} = ? OR instr(${normalizedDirectory}, ? || '/') = 1 OR instr(?, ${normalizedDirectory} || '/') = 1)`,
     );
-    params.push(filters.cwdKind, filters.cwdKey, filters.cwdLike);
+    params.push(
+      filters.scopeKind,
+      filters.scopeKey,
+      filters.scopePath,
+      filters.scopePath,
+      filters.scopePath,
+    );
   }
   if (filters.pathLike != null) {
     const pathQuery = filePathFtsQuery(filters.path);

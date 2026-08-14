@@ -7,6 +7,7 @@ import {
   computeIdentity,
   computeIdentityProjection,
   getProjectIdentityKey,
+  IDENTITY_CACHE_MAX_ENTRIES,
   matchesProjectIdentity,
   normalizeGitRemote,
   type IdentityFs,
@@ -290,5 +291,30 @@ describe("computeIdentity caching (realFs)", () => {
     vi.advanceTimersByTime(10 * 60 * 1000);
     computeIdentity(repoDir, realFs);
     expect(spawnSpy).toHaveBeenCalledTimes(spawnsAfterFirstCall * 2);
+  });
+
+  it("keeps the cache bounded and refreshes a hit before eviction", () => {
+    const root = mkdtempSync(join(tmpdir(), "codesesh-identity-cache-lru-"));
+    const directories = Array.from({ length: IDENTITY_CACHE_MAX_ENTRIES + 1 }, (_, index) => {
+      const directory = join(root, String(index));
+      mkdirSync(join(directory, ".git"), { recursive: true });
+      return directory;
+    });
+    const spawnSpy = vi.spyOn(realFs, "spawn").mockReturnValue({ stdout: "", exitCode: 1 });
+
+    try {
+      for (const directory of directories.slice(0, -1)) computeIdentity(directory, realFs);
+      computeIdentity(directories[0], realFs);
+      computeIdentity(directories.at(-1), realFs);
+
+      const spawnsBeforeRefreshCheck = spawnSpy.mock.calls.length;
+      computeIdentity(directories[0], realFs);
+      expect(spawnSpy).toHaveBeenCalledTimes(spawnsBeforeRefreshCheck);
+
+      computeIdentity(directories[1], realFs);
+      expect(spawnSpy.mock.calls.length).toBeGreaterThan(spawnsBeforeRefreshCheck);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

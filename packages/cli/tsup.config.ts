@@ -6,6 +6,7 @@ const bundleCore = process.env.BUNDLE_CORE === "true";
 export default defineConfig({
   entry: [
     "src/index.ts",
+    "src/project-identity-worker.ts",
     "src/search-index-worker.ts",
     "src/scan-refresh-worker.ts",
     "src/smart-tag-worker.ts",

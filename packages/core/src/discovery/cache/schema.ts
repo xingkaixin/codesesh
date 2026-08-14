@@ -2,7 +2,7 @@
  * Cache storage boundary. Callers request a ready database capability while
  * schema creation, migrations, and search-index maintenance stay internal.
  */
-import type { ProjectIdentityKind, SessionHead } from "../../types/index.js";
+import type { ProjectIdentity, ProjectIdentityKind, SessionHead } from "../../types/index.js";
 import { computeIdentity, realFs } from "../../projects/index.js";
 import { extractSessionFileActivity } from "../../utils/file-activity.js";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
@@ -79,6 +79,69 @@ interface ProjectIdentityRefreshRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
   directory?: string;
+}
+
+type LegacyProjectIdentityResolver = (directory: string) => ProjectIdentity;
+
+// Schema migrations hold an immediate SQLite transaction, so identity discovery
+// must complete before the migration runner starts one.
+function prepareLegacyProjectIdentityResolver(
+  db: SQLiteDatabase,
+  currentVersion: number,
+): LegacyProjectIdentityResolver {
+  const directories = new Set<string>();
+
+  if (currentVersion < 7 && tableExists(db, "cached_sessions")) {
+    const rows = db
+      .prepare("SELECT agent_name, session_id, session_json FROM cached_sessions")
+      .all() as ProjectBackfillSessionRow[];
+    for (const row of rows) {
+      if (!row.session_json) continue;
+      try {
+        const session = JSON.parse(row.session_json) as SessionHead;
+        if (session.directory != null) {
+          directories.add(String(session.directory));
+        } else {
+          getCoreDiagnostics()?.warn("sqlite.migration.identity_precompute.missing_directory", {
+            agent_name: row.agent_name,
+            session_id: row.session_id,
+          });
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  if (currentVersion < 12) {
+    for (const table of ["session_documents", "sessions", "project_sessions"]) {
+      if (!tableExists(db, table) || !columnExists(db, table, "directory")) continue;
+      const rows = db.prepare(`SELECT directory FROM ${table}`).all() as Array<{
+        directory?: unknown;
+      }>;
+      for (const row of rows) directories.add(String(row.directory ?? ""));
+    }
+  }
+
+  const identities = new Map<string, ProjectIdentity | Error>();
+  for (const directory of directories) {
+    try {
+      identities.set(directory, computeIdentity(directory, realFs));
+    } catch (error) {
+      identities.set(directory, error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  return (directory) => {
+    const identity = identities.get(directory);
+    if (identity instanceof Error) throw identity;
+    if (identity) return identity;
+    throw new Error(`Missing precomputed project identity for legacy directory: ${directory}`);
+  };
+}
+
+function getLegacySessionDirectory(session: SessionHead): string | null {
+  return typeof session.directory === "string" ? session.directory : null;
 }
 
 function withCacheConnection<T>(fn: (connection: CacheConnection) => T): T | null {
@@ -706,7 +769,10 @@ function hasAnyCacheSchema(db: SQLiteDatabase): boolean {
   ].some((table) => tableExists(db, table));
 }
 
-function backfillProjectSessions(db: SQLiteDatabase): void {
+function backfillProjectSessions(
+  db: SQLiteDatabase,
+  resolveIdentity: LegacyProjectIdentityResolver,
+): void {
   if (!tableExists(db, "cached_sessions") || !tableExists(db, "project_sessions")) {
     return;
   }
@@ -739,14 +805,16 @@ function backfillProjectSessions(db: SQLiteDatabase): void {
 
     try {
       const session = JSON.parse(row.session_json) as SessionHead;
-      const identity = session.project_identity ?? computeIdentity(session.directory, realFs);
+      const directory = getLegacySessionDirectory(session);
+      if (directory == null) continue;
+      const identity = session.project_identity ?? resolveIdentity(directory);
       upsert.run(
         row.agent_name,
         row.session_id,
         identity.kind,
         identity.key,
         identity.displayName,
-        session.directory,
+        directory,
         session.time_updated ?? session.time_created,
       );
     } catch {
@@ -755,7 +823,10 @@ function backfillProjectSessions(db: SQLiteDatabase): void {
   }
 }
 
-function backfillSessionDocumentProjects(db: SQLiteDatabase): void {
+function backfillSessionDocumentProjects(
+  db: SQLiteDatabase,
+  resolveIdentity: LegacyProjectIdentityResolver,
+): void {
   if (
     !tableExists(db, "session_documents") ||
     !columnExists(db, "session_documents", "project_identity_key")
@@ -776,19 +847,25 @@ function backfillSessionDocumentProjects(db: SQLiteDatabase): void {
   `);
 
   for (const row of rows) {
-    const identity = computeIdentity(String(row.directory ?? ""), realFs);
+    const identity = resolveIdentity(String(row.directory ?? ""));
     update.run(identity.kind, identity.key, identity.displayName, Number(row.id));
   }
 }
 
-function migrateProjectIdentity(db: SQLiteDatabase): void {
+function migrateProjectIdentity(
+  db: SQLiteDatabase,
+  resolveIdentity: LegacyProjectIdentityResolver,
+): void {
   ensureLegacySessionDocumentColumns(db);
   createProjectTables(db);
-  backfillProjectSessions(db);
-  backfillSessionDocumentProjects(db);
+  backfillProjectSessions(db, resolveIdentity);
+  backfillSessionDocumentProjects(db, resolveIdentity);
 }
 
-function refreshProjectIdentities(db: SQLiteDatabase): void {
+function refreshProjectIdentities(
+  db: SQLiteDatabase,
+  resolveIdentity: LegacyProjectIdentityResolver,
+): void {
   if (
     tableExists(db, "sessions") &&
     columnExists(db, "sessions", "project_identity_key") &&
@@ -816,7 +893,7 @@ function refreshProjectIdentities(db: SQLiteDatabase): void {
         : null;
 
     for (const row of rows) {
-      const identity = computeIdentity(String(row.directory ?? ""), realFs);
+      const identity = resolveIdentity(String(row.directory ?? ""));
       update.run(identity.kind, identity.key, identity.displayName, row.agent_name, row.session_id);
       updateFileActivity?.run(identity.key, row.agent_name, row.session_id);
     }
@@ -840,16 +917,19 @@ function refreshProjectIdentities(db: SQLiteDatabase): void {
     `);
 
     for (const row of rows) {
-      const identity = computeIdentity(String(row.directory ?? ""), realFs);
+      const identity = resolveIdentity(String(row.directory ?? ""));
       update.run(identity.kind, identity.key, identity.displayName, row.agent_name, row.session_id);
     }
   }
 
-  backfillSessionDocumentProjects(db);
+  backfillSessionDocumentProjects(db, resolveIdentity);
   recreateProjectGroupsView(db);
 }
 
-function backfillStructuredSessions(db: SQLiteDatabase): void {
+function backfillStructuredSessions(
+  db: SQLiteDatabase,
+  resolveIdentity: LegacyProjectIdentityResolver,
+): void {
   createSessionTables(db);
   recreateProjectGroupsView(db);
   const upsertSession = prepareUpsertSession(db);
@@ -867,7 +947,13 @@ function backfillStructuredSessions(db: SQLiteDatabase): void {
       }
 
       try {
-        const session = JSON.parse(row.session_json) as SessionHead;
+        const parsed = JSON.parse(row.session_json) as SessionHead;
+        const directory = getLegacySessionDirectory(parsed);
+        if (directory == null) continue;
+        const session =
+          parsed.project_identity == null
+            ? { ...parsed, project_identity: resolveIdentity(directory) }
+            : parsed;
         upsertSessionRow(
           upsertSession,
           String(row.agent_name),
@@ -919,7 +1005,7 @@ function backfillStructuredSessions(db: SQLiteDatabase): void {
             key: String(row.project_identity_key),
             displayName: String(row.project_display_name),
           }
-        : computeIdentity(directory, realFs);
+        : resolveIdentity(directory);
 
     upsertSessionRow(
       upsertSession,
@@ -1320,6 +1406,8 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
     return;
   }
 
+  const resolveLegacyProjectIdentity = prepareLegacyProjectIdentityResolver(db, currentVersion);
+
   runSchemaMigrations(db, {
     dbPath,
     currentVersion,
@@ -1339,7 +1427,10 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
     migrations: [
       { version: 3, migrate: createCacheTables },
       { version: 4, migrate: createSearchTables },
-      { version: 5, migrate: migrateProjectIdentity },
+      {
+        version: 5,
+        migrate: (migrationDb) => migrateProjectIdentity(migrationDb, resolveLegacyProjectIdentity),
+      },
       {
         version: 6,
         destructive: true,
@@ -1353,7 +1444,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
         version: 7,
         migrate(db) {
           addSessionParentReference(db);
-          backfillStructuredSessions(db);
+          backfillStructuredSessions(db, resolveLegacyProjectIdentity);
         },
       },
       { version: 8, migrate: backfillFileActivity },
@@ -1373,7 +1464,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       {
         version: 12,
         migrate(db) {
-          refreshProjectIdentities(db);
+          refreshProjectIdentities(db, resolveLegacyProjectIdentity);
         },
       },
       { version: 13, migrate: createCacheTables },

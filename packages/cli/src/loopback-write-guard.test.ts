@@ -13,7 +13,7 @@ function evaluate(request: Partial<Parameters<typeof evaluateLoopbackWriteReques
 }
 
 describe("evaluateLoopbackWriteRequest", () => {
-  it.each(["GET", "HEAD", "OPTIONS"])("allows safe %s requests", (method) => {
+  it.each(["GET", "HEAD", "OPTIONS"])("rejects cross-origin safe %s requests", (method) => {
     expect(
       evaluate({
         method,
@@ -21,7 +21,11 @@ describe("evaluateLoopbackWriteRequest", () => {
         fetchSite: "cross-site",
         origin: "https://attacker.example",
       }),
-    ).toEqual({ allowed: true });
+    ).toEqual({ allowed: false, reason: "fetch-site", status: 403 });
+  });
+
+  it.each(["GET", "HEAD", "OPTIONS"])("allows metadata-free safe %s requests", (method) => {
+    expect(evaluate({ method, contentType: "text/plain" })).toEqual({ allowed: true });
   });
 
   it.each(["application/json", "Application/JSON; charset=UTF-8"])(

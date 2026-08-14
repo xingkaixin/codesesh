@@ -56,6 +56,11 @@ function makeSession(id: string): SessionHead & Pick<SessionDetail, "reference">
     slug: `agent/${id}`,
     title: `Session ${id}`,
     directory: FIXTURE_DIR,
+    project_identity: {
+      kind: "path",
+      key: FIXTURE_DIR,
+      displayName: FIXTURE_DIR.split(/[\\/]/).pop()!,
+    },
     time_created: now,
     time_updated: now,
     stats: {
@@ -1205,10 +1210,73 @@ describe("searchSessions", () => {
     const allResults = searchSessions("needle");
     expect(allResults).toHaveLength(2);
 
-    const filteredResults = searchSessions("needle", { cwd: "/tmp/bulk-project" });
+    const filteredResults = searchSessions("needle", {
+      projectScope: {
+        identity: { kind: "path", key: "/tmp/bulk-project" },
+        path: "/tmp/bulk-project",
+      },
+    });
     expect(filteredResults).toHaveLength(1);
     expect(filteredResults[0]?.session.id).toBe("bulk-42");
     expect(highlightedText(filteredResults[0])).toContain("needle");
+  });
+
+  it("keeps ancestor and descendant directory scope matches when identities differ", () => {
+    const scopeRoot = "/tmp/codesesh-scope";
+    const sessions = [
+      {
+        ...makeSession("scope-ancestor"),
+        directory: scopeRoot,
+        project_identity: {
+          kind: "path" as const,
+          key: "/tmp/unrelated-ancestor",
+          displayName: "unrelated-ancestor",
+        },
+      },
+      {
+        ...makeSession("scope-descendant"),
+        directory: `${scopeRoot}/child`,
+        project_identity: {
+          kind: "path" as const,
+          key: "/tmp/unrelated-descendant",
+          displayName: "unrelated-descendant",
+        },
+      },
+      {
+        ...makeSession("scope-sibling"),
+        directory: `${scopeRoot}-sibling`,
+        project_identity: {
+          kind: "path" as const,
+          key: "/tmp/unrelated-sibling",
+          displayName: "unrelated-sibling",
+        },
+      },
+    ];
+    const sessionById = new Map(sessions.map((session) => [session.id, session]));
+
+    saveCachedSessions("claudecode", sessions);
+    syncSessionSearchIndex("claudecode", sessions, (sessionId) => ({
+      ...sessionById.get(sessionId)!,
+      messages: [
+        {
+          id: `${sessionId}-m1`,
+          role: "user",
+          time_created: now,
+          parts: [{ type: "text", text: "symmetric scope needle" }],
+        },
+      ],
+    }));
+
+    expect(
+      searchSessions("symmetric scope needle", {
+        projectScope: {
+          identity: { kind: "path", key: "/tmp/no-identity-match" },
+          path: `${scopeRoot}/child`,
+        },
+      })
+        .map(({ session }) => session.id)
+        .sort(),
+    ).toEqual(["scope-ancestor", "scope-descendant"]);
   });
 
   it("writes each full search entry before loading the next one", () => {
@@ -1815,7 +1883,10 @@ describe("searchSessions", () => {
         sessionId: "files",
         projectKind: "git_remote",
         projectKey: "github.com/acme/app",
-        cwd: FIXTURE_DIR,
+        projectScope: {
+          identity: { kind: "path", key: FIXTURE_DIR },
+          path: FIXTURE_DIR,
+        },
         path: "src/App",
         kind: "edit",
         from: now + 9,

@@ -9,7 +9,7 @@ import type {
   SmartTag,
 } from "../../types/index.js";
 import type { SearchHighlightRange, SearchMatchType, SearchResult } from "../../contract/index.js";
-import { computeIdentity, realFs } from "../../projects/index.js";
+import { normalizeProjectScopePath, type ProjectScopeMatcher } from "../../projects/scope.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import { escapeRegExp, filePathFtsQuery, hasCacheStorage, likePattern } from "./db.js";
 import { normalizeToolName, sessionFromRow, type SessionRow } from "./messages.js";
@@ -67,7 +67,7 @@ export interface SearchOptions {
   project?: string;
   projectKind?: ProjectIdentityKind;
   projectKey?: string;
-  cwd?: string;
+  projectScope?: ProjectScopeMatcher;
   tags?: SmartTag[];
   tools?: string[];
   file?: string;
@@ -79,6 +79,10 @@ export interface SearchOptions {
   from?: number;
   to?: number;
   limit?: number;
+}
+
+export interface SearchRequestOptions extends SearchOptions {
+  cwd?: string;
 }
 
 export {
@@ -114,7 +118,6 @@ export function mergeSearchQueryOptions(query: string, options: SearchOptions) {
       project: options.project ?? parsed.filters.project,
       projectKind: options.projectKind ?? parsed.filters.projectKind,
       projectKey: options.projectKey ?? parsed.filters.projectKey,
-      cwd: options.cwd ?? parsed.filters.cwd,
       tags: mergeSearchLists(options.tags, parsed.filters.tags),
       tools: mergeSearchLists(options.tools, parsed.filters.tools),
       file: options.file ?? parsed.filters.file,
@@ -126,6 +129,13 @@ export function mergeSearchQueryOptions(query: string, options: SearchOptions) {
     },
     parsed,
   };
+}
+
+export function getSearchProjectDirectory(
+  query: string,
+  options: SearchRequestOptions,
+): string | undefined {
+  return options.cwd ?? parseSearchQuery(query).filters.cwd;
 }
 
 export function sessionMatchesSearchCost(
@@ -165,12 +175,19 @@ export function buildSessionSearchFilters(options: SearchOptions): {
       clauses.push("0");
     }
   }
-  if (options.cwd) {
-    const identity = computeIdentity(options.cwd, realFs);
+  if (options.projectScope) {
+    const scopePath = normalizeProjectScopePath(options.projectScope.path).toLowerCase();
+    const normalizedDirectory = "REPLACE(LOWER(s.directory), char(92), '/')";
     clauses.push(
-      "((s.project_identity_kind = ? AND s.project_identity_key = ?) OR LOWER(s.directory) LIKE ? ESCAPE '\\')",
+      `((s.project_identity_kind = ? AND s.project_identity_key = ?) OR ${normalizedDirectory} = ? OR instr(${normalizedDirectory}, ? || '/') = 1 OR instr(?, ${normalizedDirectory} || '/') = 1)`,
     );
-    params.push(identity.kind, identity.key, likePattern(options.cwd));
+    params.push(
+      options.projectScope.identity.kind,
+      options.projectScope.identity.key,
+      scopePath,
+      scopePath,
+      scopePath,
+    );
   }
   if (options.project) {
     clauses.push(

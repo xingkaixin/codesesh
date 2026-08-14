@@ -6,6 +6,7 @@ import type { SessionCacheMeta } from "../../agents/base.js";
 import type {
   Message,
   MessagePart,
+  ProjectIdentity,
   ProjectIdentityKind,
   SessionDetail,
   SessionFileActivity,
@@ -13,7 +14,6 @@ import type {
   ToolPart,
 } from "../../types/index.js";
 import { normalizeMessageParts } from "../../contract/message-part.js";
-import { computeIdentity, realFs } from "../../projects/index.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import type { SQLiteStatement } from "./db.js";
 
@@ -110,6 +110,21 @@ export function sourcePathFromMetaJson(metaJson: string | null | undefined): str
   if (!metaJson) return null;
   const meta = JSON.parse(metaJson) as SessionCacheMeta;
   return sourcePathFromMeta(meta);
+}
+
+export function requireSessionProjectIdentity(
+  agentName: string,
+  session: SessionHead,
+): ProjectIdentity {
+  if (session.project_identity) return session.project_identity;
+  throw new Error(`Session ${agentName}/${session.id} is missing project_identity`);
+}
+
+export function assertSessionProjectIdentities(
+  agentName: string,
+  sessions: Iterable<SessionHead>,
+): void {
+  for (const session of sessions) requireSessionProjectIdentity(agentName, session);
 }
 
 export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
@@ -261,7 +276,7 @@ export function upsertSessionRow(
   sortIndex: number,
   sourcePath: string | null,
 ): void {
-  const identity = session.project_identity ?? computeIdentity(session.directory, realFs);
+  const identity = requireSessionProjectIdentity(agentName, session);
   const activityTime = session.time_updated ?? session.time_created;
   statement.run(
     agentName,

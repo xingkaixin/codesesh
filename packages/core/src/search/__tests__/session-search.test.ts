@@ -108,12 +108,13 @@ function fileToolMessage(
 
 function makeSessionHead(spec: FixtureSpec): SessionHead {
   const timeUpdated = spec.timeUpdated ?? now;
+  const directory = spec.project ? `/projects/${spec.project.key}` : `/fixtures/${spec.id}`;
   return {
     id: spec.id,
     slug: `${spec.agent}/${spec.id}`,
     title: spec.title ?? "plain",
-    directory: spec.project ? `/projects/${spec.project.key}` : `/fixtures/${spec.id}`,
-    project_identity: spec.project,
+    directory,
+    project_identity: spec.project ?? { kind: "path", key: directory, displayName: spec.id },
     time_created: timeUpdated,
     time_updated: timeUpdated,
     smart_tags: spec.tags,
@@ -751,7 +752,13 @@ describe("search characterization: file activity path", () => {
     ],
     [
       "file + cwd",
-      { file: "qualifier-matrix.ts", cwd: `/projects/${PROJ_APP.key}` },
+      {
+        file: "qualifier-matrix.ts",
+        projectScope: {
+          identity: { kind: PROJ_APP.kind, key: PROJ_APP.key },
+          path: `/projects/${PROJ_APP.key}`,
+        },
+      },
       ["file-qualifier-match"],
     ],
     [
@@ -765,7 +772,10 @@ describe("search characterization: file activity path", () => {
         from: now - 15_550,
         projectKind: PROJ_APP.kind,
         projectKey: PROJ_APP.key,
-        cwd: `/projects/${PROJ_APP.key}`,
+        projectScope: {
+          identity: { kind: PROJ_APP.kind, key: PROJ_APP.key },
+          path: `/projects/${PROJ_APP.key}`,
+        },
       },
       ["file-qualifier-match"],
     ],

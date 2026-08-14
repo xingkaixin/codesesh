@@ -59,6 +59,7 @@ export type {
   DurableSessionPublicationFailureStage,
 } from "./cache/publication.js";
 export {
+  getSearchProjectDirectory,
   mergeSearchQueryOptions,
   parseSearchQuery,
   readPendingSearchIndexMaintenance,
@@ -75,6 +76,7 @@ export type {
   SearchIndexSyncResult,
   SearchMatchType,
   SearchOptions,
+  SearchRequestOptions,
   SearchQueryFilters,
 } from "./cache/search.js";
 export { perf } from "../utils/index.js";

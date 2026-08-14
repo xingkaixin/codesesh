@@ -1,6 +1,10 @@
-import { resolve, sep } from "node:path";
 import type { ProjectIdentityRef, SessionHead } from "../types/index.js";
-import { computeIdentity, matchesProjectIdentity, type IdentityFs } from "./identity.js";
+import {
+  computeIdentity,
+  matchesProjectIdentity,
+  normalizeProjectDirectory,
+  type IdentityFs,
+} from "./identity.js";
 import { realFs } from "./fs.js";
 
 export interface ProjectScopeMatcher {
@@ -13,9 +17,16 @@ export function createProjectScopeMatcher(
   fs: IdentityFs = realFs,
 ): ProjectScopeMatcher {
   const identity = computeIdentity(queryPath, fs);
+  return createProjectScopeMatcherFromIdentity(queryPath, identity);
+}
+
+export function createProjectScopeMatcherFromIdentity(
+  queryPath: string,
+  identity: ProjectIdentityRef,
+): ProjectScopeMatcher {
   return {
     identity: { kind: identity.kind, key: identity.key },
-    path: normalizeScopePath(queryPath),
+    path: normalizeProjectScopePath(queryPath),
   };
 }
 
@@ -34,7 +45,7 @@ export function filterSessionsByProjectScope(
 }
 
 function isPathScopeMatch(queryPath: string, sessionPath: string): boolean {
-  const session = normalizeScopePath(sessionPath);
+  const session = normalizeProjectScopePath(sessionPath);
   return (
     session === queryPath ||
     session.startsWith(queryPath + "/") ||
@@ -42,6 +53,6 @@ function isPathScopeMatch(queryPath: string, sessionPath: string): boolean {
   );
 }
 
-function normalizeScopePath(path: string): string {
-  return resolve(path).replaceAll(sep, "/");
+export function normalizeProjectScopePath(path: string): string {
+  return normalizeProjectDirectory(path).replaceAll("\\", "/");
 }

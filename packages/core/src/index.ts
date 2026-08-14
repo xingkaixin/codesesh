@@ -51,6 +51,7 @@ export {
   getAgentFullSyncCursor,
   getAgentLastFullSyncAt,
   getCachePath,
+  getSearchProjectDirectory,
   isAgentCacheInitialized,
   readAgentCacheInitialization,
   readAgentLastFullSyncAt,
@@ -97,15 +98,21 @@ export type {
   SearchIndexSyncFailure,
   SearchIndexSyncResult,
   SearchOptions,
+  SearchRequestOptions,
   SessionHeadChange,
   SessionTagTiming,
 } from "./discovery/index.js";
 export {
+  computeIdentityProjection,
   createProjectScopeMatcher,
+  createProjectScopeMatcherFromIdentity,
   isProjectIdentityKind,
   matchesProjectIdentity,
   matchesProjectScope,
+  normalizeProjectDirectory,
+  PROJECT_IDENTITY_RESOLVER_REVISION,
 } from "./projects/index.js";
+export type { ProjectIdentityProjection, ProjectScopeMatcher } from "./projects/index.js";
 export {
   BookmarkStorageUnavailableError,
   deleteBookmark,

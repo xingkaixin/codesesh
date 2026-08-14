@@ -18,6 +18,7 @@ import {
 } from "./db.js";
 import { withCacheDb, withCacheDbReadOnly, type CacheReadOutcome } from "./schema.js";
 import {
+  assertSessionProjectIdentities,
   messageFromCachedRow,
   prepareUpsertSession,
   sessionFromRow,
@@ -463,6 +464,7 @@ export function saveCachedSessions(
   meta: Record<string, SessionCacheMeta> = {},
   options: SaveCachedSessionsOptions = {},
 ): boolean {
+  assertSessionProjectIdentities(agentName, sessions);
   const persisted = withCacheDb((db) => {
     db.transaction(() =>
       writeCachedSessionSnapshot(db, agentName, sessions, meta, options),
@@ -542,6 +544,10 @@ export function saveCachedSessionChanges(
   removedSessionIds: string[],
   meta: Record<string, SessionCacheMeta> = {},
 ): boolean {
+  assertSessionProjectIdentities(
+    agentName,
+    changes.map(({ session }) => session),
+  );
   const persisted = withCacheDb((db) => {
     db.transaction(() =>
       writeCachedSessionChanges(db, agentName, changes, removedSessionIds, meta),

@@ -1,6 +1,5 @@
 import type { SessionCacheMeta } from "../../agents/base.js";
 import type { SessionDetail, SessionFileActivity, SessionHead } from "../../types/index.js";
-import { computeIdentity, realFs } from "../../projects/index.js";
 import { extractSessionFileActivity } from "../../utils/file-activity.js";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import type { SQLiteDatabase } from "../../utils/sqlite.js";
@@ -12,6 +11,8 @@ import {
   prepareInsertFileActivity,
   prepareInsertMessageTool,
   prepareUpsertIndexedSession,
+  assertSessionProjectIdentities,
+  requireSessionProjectIdentity,
   upsertSessionRow,
   writeFileActivityRows,
   type StructuredMessageRecord,
@@ -415,10 +416,7 @@ function loadSearchIndexEntry(
   try {
     const data = loadSessionData(change.session.id);
     const messages = normalizeMessages(data);
-    const identity =
-      change.session.project_identity ??
-      data.project_identity ??
-      computeIdentity(change.session.directory, realFs);
+    const identity = requireSessionProjectIdentity(agentName, change.session);
     return {
       session: change.session,
       messages,
@@ -974,6 +972,7 @@ export function syncSessionSearchIndex(
   loadSessionData: (sessionId: string) => SessionDetail,
   options: SearchIndexSyncOptions = {},
 ): SearchIndexSyncResult | null {
+  assertSessionProjectIdentities(agentName, sessions);
   return withSearchIndexDb((db) =>
     executeSearchIndexPlan(
       db,
@@ -1003,6 +1002,11 @@ export function syncSessionSearchIndexChanges(
       durationMs: 0,
     };
   }
+
+  assertSessionProjectIdentities(
+    agentName,
+    changes.map(({ session }) => session),
+  );
 
   return withSearchIndexDb((db) =>
     executeSearchIndexPlan(
