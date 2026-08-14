@@ -12,6 +12,7 @@ import { createQueryWrapper } from "../test/query-wrapper";
 import {
   useSessionStore,
   type LiveSessionApplyResult,
+  type SessionProjection,
   type SessionStoreSnapshot,
 } from "./useSessionStore";
 
@@ -233,7 +234,7 @@ describe("useSessionStore", () => {
     expect(result.current.window).toEqual(latestWindow);
     await waitFor(() => expect(result.current.sessions).toEqual([changedSession]));
     expect(
-      client.getQueryData<SessionStoreSnapshot>(queryKeys.sessionSnapshot(firstWindow))?.sessions,
+      client.getQueryData<SessionProjection>(queryKeys.sessionProjection(firstWindow))?.sessions,
     ).toEqual([SAMPLE_SESSION_HEAD]);
   });
 
@@ -275,16 +276,16 @@ describe("useSessionStore", () => {
       await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
     }
 
-    expect(api.fetchAgents).toHaveBeenCalledOnce();
+    await waitFor(() => expect(api.fetchAgents).toHaveBeenCalledOnce());
     expect(api.fetchProjects).not.toHaveBeenCalled();
-    expect(api.fetchDashboard).toHaveBeenCalledOnce();
+    await waitFor(() => expect(api.fetchDashboard).toHaveBeenCalledOnce());
 
     now += 1_001;
     await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
 
-    expect(api.fetchAgents).toHaveBeenCalledTimes(2);
-    expect(api.fetchProjects).toHaveBeenCalledOnce();
-    expect(api.fetchDashboard).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(api.fetchAgents).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.fetchProjects).toHaveBeenCalledOnce());
+    await waitFor(() => expect(api.fetchDashboard).toHaveBeenCalledTimes(2));
   });
 
   it("keeps window-external backfill sessions out of the active snapshot", async () => {
@@ -362,24 +363,29 @@ describe("useSessionStore", () => {
   });
 
   it("invalidates project dashboards and searches without expiring unrelated windows", async () => {
+    let now = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => now);
     const { result, client } = await renderStore();
     await act(() => result.current.reload(config.window));
     const projectDashboardKey = queryKeys.dashboard(config.window, {
       project: { kind: "path", key: "p1" },
     });
     const searchKey = queryKeys.search("needle", {});
-    const inactiveAggregateKey = queryKeys.sessionSnapshotAggregates({ from: 10, to: 20 });
+    const inactiveAggregateKey = queryKeys.sessionAggregate({ from: 10, to: 20 });
     client.setQueryData(projectDashboardKey, SAMPLE_DASHBOARD_DATA);
     client.setQueryData(searchKey, []);
     client.setQueryData(inactiveAggregateKey, {
       agents,
       dashboard: SAMPLE_DASHBOARD_DATA,
     });
+    now += 2_001;
 
     await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
 
-    expect(client.getQueryState(projectDashboardKey)?.isInvalidated).toBe(true);
-    expect(client.getQueryState(searchKey)?.isInvalidated).toBe(true);
+    await waitFor(() =>
+      expect(client.getQueryState(projectDashboardKey)?.isInvalidated).toBe(true),
+    );
+    await waitFor(() => expect(client.getQueryState(searchKey)?.isInvalidated).toBe(true));
     expect(client.getQueryState(inactiveAggregateKey)?.isInvalidated).toBe(false);
   });
 
@@ -520,20 +526,54 @@ describe("useSessionStore", () => {
     expect(result.current.sessions).toEqual([]);
   });
 
-  it("surfaces live refresh failures without replacing the snapshot", async () => {
+  it("keeps the projection available when a live aggregate refresh fails", async () => {
     const error = new Error("dashboard unavailable");
+    let now = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => now);
     const { result } = await renderStore();
     await act(() => result.current.reload(config.window));
+    vi.mocked(api.fetchDashboard).mockClear();
+    now += 2_001;
     vi.mocked(api.fetchDashboard).mockRejectedValueOnce(error);
 
-    await act(async () => {
-      await expect(result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT)).rejects.toBe(
-        error,
-      );
-    });
+    await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
 
+    await waitFor(() => expect(api.fetchDashboard).toHaveBeenCalledOnce());
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeNull();
     expect(result.current.version).toBeGreaterThan(0);
+  });
+
+  it("does not republish the session projection when live aggregates finish", async () => {
+    let now = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const { result, client } = await renderStore();
+    await act(() => result.current.reload(config.window));
+    const changedSession = { ...SAMPLE_SESSION_HEAD, display_title: "Renamed" };
+    const liveAgents = deferred<AgentInfo[]>();
+    vi.mocked(api.fetchAgents).mockClear().mockReturnValueOnce(liveAgents.promise);
+    vi.mocked(api.fetchDashboard).mockClear();
+    now += 2_001;
+
+    await act(() =>
+      result.current.applyLiveEvent({
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        changedSessionHeads: [
+          {
+            reference: { agentName: "claudecode", sessionId: changedSession.id },
+            session: changedSession,
+          },
+        ],
+      }),
+    );
+
+    const projectionKey = queryKeys.sessionProjection(config.window);
+    const projectionAfterLive = client.getQueryData<SessionProjection>(projectionKey);
+    expect(projectionAfterLive?.sessions).toEqual([changedSession]);
+    await waitFor(() => expect(api.fetchAgents).toHaveBeenCalledOnce());
+
+    liveAgents.resolve(agents);
+    await waitFor(() => expect(result.current.agents).toEqual(agents));
+    expect(client.getQueryData<SessionProjection>(projectionKey)).toBe(projectionAfterLive);
   });
 });

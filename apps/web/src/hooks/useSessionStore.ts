@@ -40,20 +40,30 @@ export interface SessionStoreSnapshot {
   dashboard: DashboardData;
 }
 
+export interface SessionProjection {
+  window: AppConfig["window"];
+  sessions: SessionHead[];
+}
+
 export interface LiveSessionApplyResult {
   snapshot: SessionStoreSnapshot;
   visibleNewSessions: number;
 }
 
-type SnapshotAggregates = Pick<SessionStoreSnapshot, "agents" | "dashboard">;
+interface SnapshotAggregates {
+  window: AppConfig["window"];
+  agents: AgentInfo[];
+  dashboard: DashboardData;
+}
+
 const LIVE_AGGREGATE_REFRESH_INTERVAL_MS = 2_000;
 const EMPTY_PROJECTS: ApiProjectGroup[] = [];
 
-const EMPTY_SNAPSHOT = {
+const EMPTY_AGGREGATES = {
   agents: [] satisfies AgentInfo[],
-  sessions: [] satisfies SessionHead[],
   dashboard: null,
 };
+const EMPTY_SESSIONS: SessionHead[] = [];
 
 function projectsOptions(window: AppConfig["window"]) {
   return queryOptions({
@@ -72,28 +82,67 @@ async function fetchSnapshotAggregates(
     fetchAgents(window, { signal }),
     fetchDashboard(window, {}, { signal }),
   ]);
-  return { agents, dashboard };
+  return { window, agents, dashboard };
 }
 
 function snapshotAggregatesOptions(window: AppConfig["window"]) {
   return queryOptions({
-    queryKey: queryKeys.sessionSnapshotAggregates(window),
+    queryKey: queryKeys.sessionAggregate(window),
     queryFn: ({ signal }) => fetchSnapshotAggregates(window, signal),
     staleTime: LIVE_AGGREGATE_REFRESH_INTERVAL_MS,
   });
 }
 
+function sessionProjectionOptions(
+  window: AppConfig["window"],
+  onFirstPage?: (projection: SessionProjection) => void,
+) {
+  return queryOptions({
+    queryKey: queryKeys.sessionProjection(window),
+    staleTime: Infinity,
+    queryFn: async ({ signal }): Promise<SessionProjection> => {
+      const sessionResult = await fetchSessions(
+        { from: window.from, to: window.to },
+        { signal },
+        {
+          onFirstPage(sessions) {
+            onFirstPage?.({ window, sessions });
+          },
+        },
+      );
+      return { window, sessions: sessionResult.sessions };
+    },
+  });
+}
+
+function createSnapshot(
+  window: AppConfig["window"],
+  aggregates: SnapshotAggregates,
+  sessions: SessionHead[],
+): SessionStoreSnapshot {
+  return { window, agents: aggregates.agents, dashboard: aggregates.dashboard, sessions };
+}
+
 async function fetchLiveSnapshotAggregates(
   queryClient: QueryClient,
   window: AppConfig["window"],
+  forceRefresh: boolean,
 ): Promise<SnapshotAggregates> {
   const options = snapshotAggregatesOptions(window);
   const state = queryClient.getQueryState(options.queryKey);
   const needsRefresh =
+    forceRefresh ||
     !state ||
     state.data === undefined ||
     state.isInvalidated ||
     Date.now() - state.dataUpdatedAt >= LIVE_AGGREGATE_REFRESH_INTERVAL_MS;
+  if (forceRefresh) {
+    await queryClient.invalidateQueries({
+      queryKey: options.queryKey,
+      exact: true,
+      refetchType: "none",
+    });
+  }
   const [aggregates] = await Promise.all([
     queryClient.fetchQuery(options),
     needsRefresh ? invalidateLiveSessionCollections(queryClient) : Promise.resolve(),
@@ -126,51 +175,13 @@ function sameWindow(
   );
 }
 
-function sessionSnapshotOptions(
-  window: AppConfig["window"],
-  onPreview?: (snapshot: SessionStoreSnapshot) => void,
-) {
-  return queryOptions({
-    queryKey: queryKeys.sessionSnapshot(window),
-    staleTime: Infinity,
-    queryFn: async ({ signal }): Promise<SessionStoreSnapshot> => {
-      let loadedAggregates: SnapshotAggregates | undefined;
-      let firstPage: SessionHead[] | undefined;
-      const publishPreview = () => {
-        if (!loadedAggregates || !firstPage) return;
-        onPreview?.({ window, ...loadedAggregates, sessions: firstPage });
-      };
-      const [aggregates, sessionResult] = await Promise.all([
-        fetchSnapshotAggregates(window, signal).then((value) => {
-          loadedAggregates = value;
-          publishPreview();
-          return value;
-        }),
-        fetchSessions(
-          { from: window.from, to: window.to },
-          { signal },
-          {
-            onFirstPage(sessions) {
-              firstPage = sessions;
-              publishPreview();
-            },
-          },
-        ),
-      ]);
-      return {
-        window,
-        ...aggregates,
-        sessions: sessionResult.sessions,
-      };
-    },
-  });
-}
-
 export function useSessionStore() {
   const queryClient = useQueryClient();
   const [requestedWindow, setRequestedWindow] = useState<AppConfig["window"] | null>(null);
   const [previewSnapshot, setPreviewSnapshot] = useState<SessionStoreSnapshot | null>(null);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const requestedWindowRef = useRef<AppConfig["window"] | null>(null);
+  const liveAggregateWindowRef = useRef<AppConfig["window"] | null>(null);
   const reloadVersionRef = useRef(0);
   const configQuery = useQuery({
     queryKey: queryKeys.config,
@@ -185,8 +196,12 @@ export function useSessionStore() {
       }
     },
   });
-  const snapshotQuery = useQuery({
-    ...sessionSnapshotOptions(requestedWindow ?? {}),
+  const projectionQuery = useQuery({
+    ...sessionProjectionOptions(requestedWindow ?? {}),
+    enabled: false,
+  });
+  const aggregatesQuery = useQuery({
+    ...snapshotAggregatesOptions(requestedWindow ?? {}),
     enabled: false,
   });
   const projectsQuery = useQuery({
@@ -196,29 +211,44 @@ export function useSessionStore() {
   });
   const configFailed = configQuery.isError;
   const refetchConfig = configQuery.refetch;
-  const snapshot = snapshotQuery.data;
+  const querySnapshot =
+    requestedWindow !== null &&
+    projectionQuery.data &&
+    aggregatesQuery.data &&
+    sameWindow(projectionQuery.data.window, requestedWindow) &&
+    sameWindow(aggregatesQuery.data.window, requestedWindow)
+      ? createSnapshot(requestedWindow, aggregatesQuery.data, projectionQuery.data.sessions)
+      : null;
 
   useEffect(() => {
-    if (previewSnapshot && sameWindow(snapshot?.window, previewSnapshot.window)) {
+    if (previewSnapshot && sameWindow(querySnapshot?.window, previewSnapshot.window)) {
       setPreviewSnapshot(null);
     }
-  }, [previewSnapshot, snapshot]);
+  }, [previewSnapshot, querySnapshot]);
 
   const reload = useCallback(
     async (window: AppConfig["window"]): Promise<SessionStoreSnapshot | null> => {
       const reloadVersion = reloadVersionRef.current + 1;
       reloadVersionRef.current = reloadVersion;
       requestedWindowRef.current = window;
+      liveAggregateWindowRef.current = null;
       setRequestedWindow(window);
       setPreviewSnapshot(null);
+      setLoadError(null);
       try {
         await Promise.all([
-          queryClient.cancelQueries({ queryKey: queryKeys.sessionSnapshots }),
+          queryClient.cancelQueries({ queryKey: queryKeys.sessionProjections }),
+          queryClient.cancelQueries({ queryKey: queryKeys.sessionAggregates }),
           queryClient.cancelQueries({ queryKey: queryKeys.projects }),
         ]);
         await Promise.all([
           queryClient.invalidateQueries({
-            queryKey: queryKeys.sessionSnapshot(window),
+            queryKey: queryKeys.sessionProjection(window),
+            exact: true,
+            refetchType: "none",
+          }),
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.sessionAggregate(window),
             exact: true,
             refetchType: "none",
           }),
@@ -229,13 +259,30 @@ export function useSessionStore() {
           }),
         ]);
         void queryClient.fetchQuery(projectsOptions(window)).catch(() => undefined);
-        return await queryClient.fetchQuery(
-          sessionSnapshotOptions(window, (preview) => {
-            if (reloadVersionRef.current === reloadVersion) setPreviewSnapshot(preview);
+        let loadedAggregates: SnapshotAggregates | undefined;
+        let firstPage: SessionProjection | undefined;
+        const publishPreview = () => {
+          if (!loadedAggregates || !firstPage) return;
+          if (reloadVersionRef.current !== reloadVersion) return;
+          setPreviewSnapshot(createSnapshot(window, loadedAggregates, firstPage.sessions));
+        };
+        const [aggregates, projection] = await Promise.all([
+          queryClient.fetchQuery(snapshotAggregatesOptions(window)).then((value) => {
+            loadedAggregates = value;
+            publishPreview();
+            return value;
           }),
-        );
+          queryClient.fetchQuery(
+            sessionProjectionOptions(window, (firstPageProjection) => {
+              firstPage = firstPageProjection;
+              publishPreview();
+            }),
+          ),
+        ]);
+        return createSnapshot(window, aggregates, projection.sessions);
       } catch (error) {
         if (isCancelledError(error)) return null;
+        if (reloadVersionRef.current === reloadVersion) setLoadError(error);
         throw error;
       }
     },
@@ -246,9 +293,11 @@ export function useSessionStore() {
     async (event: SessionsUpdatedEvent): Promise<LiveSessionApplyResult | null> => {
       const activeWindow = requestedWindowRef.current;
       if (!activeWindow) return null;
-      const snapshotKey = queryKeys.sessionSnapshot(activeWindow);
-      const current = queryClient.getQueryData<SessionStoreSnapshot>(snapshotKey);
-      if (!current) {
+      const projectionKey = queryKeys.sessionProjection(activeWindow);
+      const aggregateKey = queryKeys.sessionAggregate(activeWindow);
+      const currentProjection = queryClient.getQueryData<SessionProjection>(projectionKey);
+      const currentAggregates = queryClient.getQueryData<SnapshotAggregates>(aggregateKey);
+      if (!currentProjection || !currentAggregates) {
         const refreshed = await reload(activeWindow);
         await Promise.all([
           invalidateLiveSessionDerivedQueries(queryClient, event),
@@ -257,7 +306,7 @@ export function useSessionStore() {
         return refreshed ? { snapshot: refreshed, visibleNewSessions: 0 } : null;
       }
 
-      const projection = applySessionWindowChanges(current.sessions, {
+      const projection = applySessionWindowChanges(currentProjection.sessions, {
         changedSessionHeads: event.changedSessionHeads,
         projectionRelatedSessionHeads: event.projectionRelatedSessionHeads,
         projectionSessionOrder: event.projectionSessionOrder,
@@ -274,7 +323,7 @@ export function useSessionStore() {
         ),
       );
       const previousSessionKeys = new Set(
-        current.sessions.map((session) =>
+        currentProjection.sessions.map((session) =>
           formatSessionReference({
             agentName: getSessionAgentKey(session),
             sessionId: session.id,
@@ -288,7 +337,7 @@ export function useSessionStore() {
       console.debug("live.session_projection", {
         window_from: activeWindow.from,
         window_to: activeWindow.to,
-        before_sessions: current.sessions.length,
+        before_sessions: currentProjection.sessions.length,
         changed_sessions: event.changedSessionHeads.length,
         projection_related_sessions: event.projectionRelatedSessionHeads?.length ?? 0,
         removed_sessions: event.removedSessionRefs.length,
@@ -297,18 +346,28 @@ export function useSessionStore() {
         visible_removed_sessions: projection.visibleRemovedSessions,
         visible_new_sessions: visibleNewSessions,
       });
-      queryClient.setQueryData<SessionStoreSnapshot>(snapshotKey, {
-        ...current,
+      queryClient.setQueryData<SessionProjection>(projectionKey, {
+        ...currentProjection,
         sessions: projection.sessions,
       });
       await invalidateLiveSessionDerivedQueries(queryClient, event);
       refreshLiveProjects(queryClient, activeWindow);
-      const aggregates = await fetchLiveSnapshotAggregates(queryClient, activeWindow);
-      const updated =
-        queryClient.setQueryData<SessionStoreSnapshot>(snapshotKey, (latest) =>
-          latest ? { ...latest, ...aggregates } : latest,
-        ) ?? null;
-      return updated ? { snapshot: updated, visibleNewSessions } : null;
+      const liveRefreshVersion = reloadVersionRef.current;
+      const forceAggregateRefresh = !sameWindow(liveAggregateWindowRef.current, activeWindow);
+      void fetchLiveSnapshotAggregates(queryClient, activeWindow, forceAggregateRefresh)
+        .then(() => {
+          if (
+            reloadVersionRef.current === liveRefreshVersion &&
+            sameWindow(requestedWindowRef.current, activeWindow)
+          ) {
+            liveAggregateWindowRef.current = activeWindow;
+          }
+        })
+        .catch(() => undefined);
+      return {
+        snapshot: createSnapshot(activeWindow, currentAggregates, projection.sessions),
+        visibleNewSessions,
+      };
     },
     [queryClient, reload],
   );
@@ -330,11 +389,11 @@ export function useSessionStore() {
     await reload(activeWindow);
   }, [configFailed, refetchConfig, reload]);
 
-  const currentSnapshot = sameWindow(snapshot?.window, requestedWindow) ? snapshot : null;
+  const currentSnapshot = sameWindow(querySnapshot?.window, requestedWindow) ? querySnapshot : null;
   const displayedSnapshot =
     currentSnapshot ??
     (sameWindow(previewSnapshot?.window, requestedWindow) ? previewSnapshot : null);
-  const agents = displayedSnapshot?.agents ?? EMPTY_SNAPSHOT.agents;
+  const agents = displayedSnapshot?.agents ?? EMPTY_AGGREGATES.agents;
   const projects = projectsQuery.data ?? EMPTY_PROJECTS;
   const projectsLoading = requestedWindow === null || projectsQuery.isPending;
   const projectsError =
@@ -354,7 +413,7 @@ export function useSessionStore() {
   );
   const error = configQuery.isError
     ? "Failed to load configuration. The CLI may be restarting or unavailable."
-    : snapshotQuery.isError
+    : loadError
       ? "Failed to load session data for the selected time window."
       : null;
 
@@ -362,17 +421,19 @@ export function useSessionStore() {
     config: configQuery.data ?? null,
     window: displayedSnapshot?.window ?? null,
     agents,
-    sessions: displayedSnapshot?.sessions ?? EMPTY_SNAPSHOT.sessions,
+    sessions: displayedSnapshot?.sessions ?? EMPTY_SESSIONS,
     projects,
     projectsError,
     projectsLoading,
-    dashboard: displayedSnapshot?.dashboard ?? EMPTY_SNAPSHOT.dashboard,
+    dashboard: displayedSnapshot?.dashboard ?? EMPTY_AGGREGATES.dashboard,
     loading:
       configQuery.isPending ||
       (!configQuery.isError &&
-        (requestedWindow === null || (snapshotQuery.isPending && displayedSnapshot === null))),
+        (requestedWindow === null ||
+          ((projectionQuery.isPending || aggregatesQuery.isPending) &&
+            displayedSnapshot === null))),
     error,
-    version: snapshotQuery.dataUpdatedAt,
+    version: projectionQuery.dataUpdatedAt,
     activeAgents: agentCatalog.active,
     agentCatalog,
     validAgentKeys,
