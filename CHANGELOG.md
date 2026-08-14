@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.2] - 2026-08-14
+
+This release adds DeepSeek Harness (DSH) as the tenth supported agent.
+
+### Features
+
+- Discovered and read DeepSeek Harness sessions from `DSH_HOME/sessions` (default `~/.dsh`) on macOS, Linux and Windows, decoding its multi-frame Zstandard logs frame by frame without writing to the artifact; compressed logs need Node `^22.19.0 || >=24.0.0` for the native Zstandard decoder. (#377)
+- Registered DSH with its own tool display strategy, preferring the contextual hunks DSH attaches to edit results; it declares no resume command because its launcher takes profile-specific arguments. (#377)
+
+### Documentation
+
+- Listed DSH among the supported agents across the READMEs, architecture docs and the landing page. (#377)
+
+### Changelog Detail
+
+- #377 feat: support DeepSeek Harness session discovery @xingkaixin
+
 ## [1.0.1] - 2026-08-13
 
 This release hardens the scan, cache and sync pipelines against partial or failed runs, closes a set of remote-access and browser security gaps, removes startup and rendering bottlenecks on large histories, and redesigns the dashboard charts.

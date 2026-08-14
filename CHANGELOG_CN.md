@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.2] - 2026-08-14
+
+本版本新增 DeepSeek Harness (DSH)，成为第十个受支持的 Agent。
+
+### 新功能
+
+- 在 macOS、Linux 与 Windows 上从 `DSH_HOME/sessions`（默认 `~/.dsh`）发现并读取 DeepSeek Harness 会话，逐帧解码其多帧 Zstandard 日志且不写入原始文件；读取压缩日志需要 Node `^22.19.0 || >=24.0.0` 提供的原生 Zstandard 解码器。 (#377)
+- 注册 DSH 及其工具展示策略，编辑卡片优先使用 DSH 随工具结果附带的上下文 hunk；因其启动器接受 profile 相关参数，未声明 resume 命令。 (#377)
+
+### 文档
+
+- 在 README、架构文档与产品落地页中列出 DSH。 (#377)
+
+### Changelog Detail
+
+- #377 feat: support DeepSeek Harness session discovery @xingkaixin
+
 ## [1.0.1] - 2026-08-13
 
 本版本强化扫描、缓存与同步链路在部分失败或中断场景下的正确性，修补远程访问与浏览器安全缺口，消除大规模历史下的启动与渲染瓶颈，并重新设计 Dashboard 图表。

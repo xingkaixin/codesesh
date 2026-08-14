@@ -124,7 +124,7 @@ export const copy = {
     meta: {
       title: "CodeSesh：搜索与回放本地 AI 编码历史",
       description:
-        "CodeSesh 把九种 AI 编码 Agent 的本地会话按项目组织，提供结构化搜索、完整回放与本地 SQLite 索引，让工程上下文可查、可追溯。",
+        "CodeSesh 把十种 AI 编码 Agent 的本地会话按项目组织，提供结构化搜索、完整回放与本地 SQLite 索引，让工程上下文可查、可追溯。",
     },
     header: {
       tour: "产品导览",
@@ -142,7 +142,7 @@ export const copy = {
     hero: {
       eyebrow: "本地运行 / 零配置 / 10 个 Agent",
       title: ["你和 AI 写过的", "每一次对话，都还在。"],
-      body: "CodeSesh 扫描九种 AI 编码 Agent 的本地会话，把分散的历史收进同一个索引：按项目组织、结构化搜索、逐条回放。",
+      body: "CodeSesh 扫描十种 AI 编码 Agent 的本地会话，把分散的历史收进同一个索引：按项目组织、结构化搜索、逐条回放。",
       privacy: "会话内容与索引留在本机，无需账号、云同步或会话遥测。",
       command: "npx codesesh",
       endpoint: "http://localhost:4521",
@@ -188,7 +188,7 @@ export const copy = {
             {
               icon: "eye",
               title: "统一时间线",
-              description: "九种 Agent 的历史会话进入同一个界面。",
+              description: "十种 Agent 的历史会话进入同一个界面。",
             },
             {
               icon: "timer",

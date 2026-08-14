@@ -100,4 +100,4 @@ The initial scan persists backfill progress. Later starts restore from the SQLit
 
 ## 中文说明
 
-CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放九种 AI 编码 Agent 的本地会话。会话内容与 SQLite 索引保留在用户电脑上，无需账号、云同步或会话遥测。
+CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放十种 AI 编码 Agent 的本地会话。会话内容与 SQLite 索引保留在用户电脑上，无需账号、云同步或会话遥测。
