@@ -15,6 +15,7 @@ import type {
 import type { ScanStatusEvent } from "@codesesh/core/contract";
 import type { WorkerResult, WorkerRunner } from "./worker-runner.js";
 import { appLogger } from "./logging.js";
+import { AgentUnavailableDuringScanError } from "./scan-refresh-error.js";
 
 const core = vi.hoisted(() => {
   const getAgentLastFullSyncAt = vi.fn(() => Date.now());
@@ -1212,6 +1213,49 @@ describe("AgentSyncEngine", () => {
     expect(engine.snapshot().byAgent.codex).toEqual([previous]);
     expect(sessionChanges).not.toHaveBeenCalled();
     expect(searchIndex.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("CS-243: retains the baseline when the worker loses agent availability", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const previous = makeSession("session", "before");
+    const updated = makeSession("session", "after");
+    const workerRunner = makeWorkerRunner();
+    workerRunner.run = vi
+      .fn()
+      .mockRejectedValueOnce(new AgentUnavailableDuringScanError("codex"))
+      .mockResolvedValueOnce(
+        workerResult({ sessions: [updated], meta: {}, changedIds: [updated.id] }),
+      );
+    const warn = vi.spyOn(appLogger, "warn");
+    const { engine } = makeEngine(
+      makeAgent({ checkForChanges: () => ({ hasChanges: true, timestamp: 2 }) }),
+      [previous],
+      workerRunner,
+    );
+    const refreshState = engine as unknown as { lastRefreshAtByAgent: Map<string, number> };
+    const baselineTimestamp = refreshState.lastRefreshAtByAgent.get("codex");
+    const sessionChanges = vi.fn();
+    engine.subscribeSessionsChanged(sessionChanges);
+
+    await engine.refresh("codex");
+
+    expect(engine.snapshot().byAgent.codex).toEqual([previous]);
+    expect(refreshState.lastRefreshAtByAgent.get("codex")).toBe(baselineTimestamp);
+    expect(sessionChanges).not.toHaveBeenCalled();
+    expect(searchIndex.enqueue).not.toHaveBeenCalled();
+    expect(workerRunner.commit).not.toHaveBeenCalled();
+    expect(workerRunner.discard).toHaveBeenCalledWith("codex");
+    expect(engine.status().agentStatuses.codex).toMatchObject({ status: "failed" });
+    expect(warn).toHaveBeenCalledWith("scan.refresh.worker_agent_unavailable", {
+      agent: "codex",
+      error: "Agent codex became unavailable during scan",
+    });
+
+    await engine.refresh("codex");
+
+    expect(engine.snapshot().byAgent.codex).toEqual([updated]);
+    expect(engine.status().agentStatuses.codex).toMatchObject({ status: "complete" });
+    expect(searchIndex.enqueue).toHaveBeenCalledOnce();
   });
 
   it("CS-138: keeps sessions when the agent becomes unreachable", async () => {

@@ -17,6 +17,10 @@ import type {
   ScanRefreshWorkerRunRequest,
 } from "./scan-refresh-worker.js";
 import type { ScanRefreshOperation } from "./scan-refresh-operation.js";
+import {
+  AGENT_UNAVAILABLE_DURING_SCAN_ERROR_CODE,
+  AgentUnavailableDuringScanError,
+} from "./scan-refresh-error.js";
 import { toError } from "./errors.js";
 
 export interface WorkerPayload {
@@ -269,7 +273,11 @@ export class ThreadWorkerRunner implements WorkerRunner {
 
     slot.pending.delete(message.requestId);
     if (message.type === "error") {
-      pending.reject(new Error(message.error));
+      pending.reject(
+        message.errorCode === AGENT_UNAVAILABLE_DURING_SCAN_ERROR_CODE
+          ? new AgentUnavailableDuringScanError(slot.agentName)
+          : new Error(message.error),
+      );
       this.invalidateWorker(slot.agentName, slot);
       return;
     }

@@ -14,6 +14,7 @@ import {
   type SessionHead,
   type SessionSourceRef,
 } from "@codesesh/core";
+import { AgentUnavailableDuringScanError } from "./scan-refresh-error.js";
 
 // Isolated temp directory for session fixtures so computeIdentity always
 // resolves to a "path" identity regardless of manifests in /tmp.
@@ -1211,6 +1212,33 @@ describe("LiveScanStore", () => {
       completeness: "complete",
       explicitRemovedSessionIds: [],
     });
+  });
+
+  it("rehydrates an unavailable-agent error from the scan worker", async () => {
+    workerThreads.deferScanRefreshWorkers = true;
+    const runner = new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
+    const refresh = runner.run("codex", {
+      previousSessions: [makeSession("retained")],
+      operation: { kind: "full-scan" },
+      scanOptions: {},
+      meta: {},
+    });
+    const worker = workerThreads.workers.at(-1)!;
+
+    worker.emitMessage({
+      type: "error",
+      requestId: worker.workerData.requestId,
+      generation: worker.workerData.generation,
+      error: "Agent codex became unavailable during scan",
+      errorCode: "agent-unavailable-during-scan",
+      durationMs: 0,
+    });
+
+    await expect(refresh).rejects.toBeInstanceOf(AgentUnavailableDuringScanError);
+    expect(runner.activeCount).toBe(0);
+    expect(worker.terminate).toHaveBeenCalledOnce();
+    await runner.shutdown();
+    workerThreads.deferScanRefreshWorkers = false;
   });
 
   it("consumes scan worker logs without settling the active request", async () => {

@@ -206,22 +206,30 @@ describe("scan refresh worker entry", () => {
     );
   });
 
-  it("returns an empty result when the agent is unavailable", async () => {
+  it("fails unavailable agents without staging an empty complete snapshot", async () => {
+    const retained = makeSession("retained");
     const agent = makeAgent({ isAvailable: vi.fn(() => false) });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
+    setWorkerData({
+      previousSessions: [retained],
+      meta: { retained: { id: "retained", sourcePath: "/workspace/retained" } },
+    });
 
     await runWorker();
 
-    expect(agent.setSessionMetaMap).toHaveBeenCalledWith(new Map());
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        type: "done",
-        changes: [],
-        removedSessionIds: [],
-        meta: {},
-        removedMetaIds: [],
+        type: "error",
+        error: "Agent codex became unavailable during scan",
+        errorCode: "agent-unavailable-during-scan",
       }),
     );
+    expect(mocks.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "done" }));
+    expect(agent.scan).not.toHaveBeenCalled();
+    expect(mocks.appLogger.warn).toHaveBeenCalledWith("scan.refresh_worker.agent_unavailable", {
+      agent: "codex",
+      operation: "full-scan",
+    });
   });
 
   it("inherits cached smart tags so an unchanged full rescan reports no changes", async () => {
