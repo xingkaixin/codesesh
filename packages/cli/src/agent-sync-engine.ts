@@ -39,6 +39,7 @@ import type {
   ScanRefreshOperation,
 } from "./scan-refresh-operation.js";
 import type { ScanRefreshWorkerCheckpoint } from "./scan-refresh-worker.js";
+import { AgentUnavailableDuringScanError } from "./scan-refresh-error.js";
 import type { WorkerRunner } from "./worker-runner.js";
 import { toError } from "./errors.js";
 
@@ -421,7 +422,14 @@ export class AgentSyncEngine {
       this.options.workerRunner.discard?.(agentName);
       failed = true;
       const failure = toError(error);
-      appLogger.error("scan.refresh.error", { agent: agentName, error });
+      if (failure instanceof AgentUnavailableDuringScanError) {
+        appLogger.warn("scan.refresh.worker_agent_unavailable", {
+          agent: agentName,
+          error: failure.message,
+        });
+      } else {
+        appLogger.error("scan.refresh.error", { agent: agentName, error });
+      }
       console.error(`[${agentName}] Session refresh failed:`, error);
       this.flushProgressStatus(`scan:${agentName}`);
       this.publishStatus(this.scanStatus.failAgent(agentName, failure.message));
@@ -685,12 +693,12 @@ export class AgentSyncEngine {
         { status: "unchanged", checkDuration },
       );
     }
-    this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
     if (!checkResult.hasChanges) {
       const scanStartedAt = performance.now();
       const result = await this.runWorker(agent, baseline, { kind: "recompute-derived" }, {});
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const sessions = attachMissingProjectIdentities(result.sessions);
+      this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
       const persistenceDiff = buildPersistenceDiff(baseline, sessions);
       if (
         persistenceDiff.changedSessions.length === 0 &&
@@ -726,6 +734,7 @@ export class AgentSyncEngine {
       const result = await this.runWorker(agent, baseline, { kind: "full-scan" }, scope);
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const sessions = attachMissingProjectIdentities(result.sessions);
+      this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
       return this.refreshStrategyResult(sessions, result.completeness, scope, {
         // Meta-only changes (e.g. a pricing capture epoch bump) leave the head
         // signature intact; without the worker-reported ids they would never
@@ -748,6 +757,7 @@ export class AgentSyncEngine {
         agent.incrementalScan(baseline, preciseChangedIds, checkResult.refs, scope),
       ),
     );
+    this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
     const sourceFailures = checkResult.sourceFailures ?? [];
     const completeness =
       scope.from == null && scope.to == null && sourceFailures.length === 0
