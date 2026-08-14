@@ -8,7 +8,7 @@ import type {
   SessionFileActivity,
 } from "../../types/index.js";
 import type { FileActivityResult, SearchHighlightRange } from "../../contract/index.js";
-import type { ProjectScopeMatcher } from "../../projects/scope.js";
+import { normalizeProjectScopePath, type ProjectScopeMatcher } from "../../projects/scope.js";
 import type { SQLiteDatabase } from "../../utils/sqlite.js";
 import { filePathFtsQuery, hasCacheStorage, likePattern, normalizeFilePathSearch } from "./db.js";
 import { withCacheDb, withCacheDbReadOnly } from "./schema.js";
@@ -63,7 +63,7 @@ export function fileActivityFilters(options: FileActivityOptions): {
     projectLike: options.project ? likePattern(options.project) : null,
     scopeKind: scope?.identity.kind ?? null,
     scopeKey: scope?.identity.key ?? null,
-    scopePath: scope?.path.toLowerCase() ?? null,
+    scopePath: scope ? normalizeProjectScopePath(scope.path).toLowerCase() : null,
     path,
     pathLike: path ? likePattern(path) : null,
   };

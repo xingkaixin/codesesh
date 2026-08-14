@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildSessionSearchFilters,
   mergeSearchLists,
   mergeSearchQueryOptions,
   sessionHeadFromSearchRow,
@@ -8,6 +9,23 @@ import {
 import { makeSessionHead } from "./fixtures.js";
 
 describe("cache search", () => {
+  it("normalizes Windows scope paths before SQL matching", () => {
+    const result = buildSessionSearchFilters({
+      projectScope: {
+        identity: { kind: "path", key: "C:/workspace/app" },
+        path: "C:\\workspace\\app",
+      },
+    });
+
+    expect(result.params).toEqual([
+      "path",
+      "C:/workspace/app",
+      "c:/workspace/app",
+      "c:/workspace/app",
+      "c:/workspace/app",
+    ]);
+  });
+
   it("merges query qualifiers without overriding explicit options", () => {
     const merged = mergeSearchQueryOptions("agent:codex tag:bugfix needle", {
       agent: "claudecode",

@@ -9,7 +9,7 @@ import type {
   SmartTag,
 } from "../../types/index.js";
 import type { SearchHighlightRange, SearchMatchType, SearchResult } from "../../contract/index.js";
-import type { ProjectScopeMatcher } from "../../projects/scope.js";
+import { normalizeProjectScopePath, type ProjectScopeMatcher } from "../../projects/scope.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import { escapeRegExp, filePathFtsQuery, hasCacheStorage, likePattern } from "./db.js";
 import { normalizeToolName, sessionFromRow, type SessionRow } from "./messages.js";
@@ -176,7 +176,7 @@ export function buildSessionSearchFilters(options: SearchOptions): {
     }
   }
   if (options.projectScope) {
-    const scopePath = options.projectScope.path.toLowerCase();
+    const scopePath = normalizeProjectScopePath(options.projectScope.path).toLowerCase();
     const normalizedDirectory = "REPLACE(LOWER(s.directory), char(92), '/')";
     clauses.push(
       `((s.project_identity_kind = ? AND s.project_identity_key = ?) OR ${normalizedDirectory} = ? OR instr(${normalizedDirectory}, ? || '/') = 1 OR instr(?, ${normalizedDirectory} || '/') = 1)`,
