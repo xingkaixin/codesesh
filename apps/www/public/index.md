@@ -2,7 +2,7 @@
 
 CodeSesh turns local AI coding history into searchable, replayable engineering memory.
 
-It discovers sessions from Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, and ZCode, then organizes them by project in one local index.
+It discovers sessions from Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, ZCode, and DSH, then organizes them by project in one local index.
 
 ## Start
 
@@ -31,7 +31,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 ### Discover
 
 - Zero configuration: scan supported local agent sessions with one command.
-- Unified timeline: browse nine AI coding agents in one interface.
+- Unified timeline: browse ten AI coding agents in one interface.
 - Live refresh: incrementally index changed sessions while the local server runs.
 
 ### Organize
@@ -63,6 +63,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 - Pi
 - OpenCode
 - ZCode
+- DSH
 
 ## Data Boundary
 
@@ -74,7 +75,7 @@ CodeSesh may fetch public model pricing metadata to estimate costs. That request
 
 ### What is CodeSesh?
 
-CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from nine supported agents into a project-aware engineering memory layer.
+CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from ten supported agents into a project-aware engineering memory layer.
 
 ### Does CodeSesh upload local AI session data?
 

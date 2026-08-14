@@ -43,7 +43,7 @@ CLI
 当前数据源类型：
 
 <!-- repo-fact:agent-source-kinds:start -->
-- 文件型：Claude Code、Codex、Grok、Kimi-Cli、Kimi-Code、Pi
+- 文件型：Claude Code、Codex、DSH、Grok、Kimi-Cli、Kimi-Code、Pi
 - 单 SQLite 数据库型：OpenCode、Cursor、ZCode
 <!-- repo-fact:agent-source-kinds:end -->
 

@@ -40,7 +40,7 @@
 │                        Agent Registry                          │
 │              packages/core/src/agents/register.ts              │
 │                                                                │
-│  文件系统: Claude Code · Codex · Grok · Kimi-Cli · Kimi-Code · Pi │
+│  文件系统: Claude Code · Codex · DSH · Grok · Kimi-Cli · Kimi-Code · Pi │
 │  SQLite:  OpenCode · Cursor · ZCode                            │
 │  扩展方式: 实现适配器 + 在 register.ts 声明完整能力             │
 └────────────────────────────────────────────────────────────────┘
