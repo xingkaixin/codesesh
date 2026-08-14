@@ -1,4 +1,4 @@
-import { SAMPLE_DASHBOARD_DATA } from "@codesesh/core/contract";
+import { SAMPLE_DASHBOARD_DATA } from "@codesesh/core/test-fixtures";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "../lib/api";

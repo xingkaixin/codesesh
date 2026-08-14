@@ -23,6 +23,11 @@
       "types": "./dist/repository-facts.d.ts",
       "import": "./dist/repository-facts.mjs",
       "require": "./dist/repository-facts.js"
+    },
+    "./test-fixtures": {
+      "types": "./dist/test-fixtures.d.ts",
+      "import": "./dist/test-fixtures.mjs",
+      "require": "./dist/test-fixtures.js"
     }
   },
   "scripts": {

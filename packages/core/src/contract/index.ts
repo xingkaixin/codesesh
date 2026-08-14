@@ -13,4 +13,3 @@ export * from "./session-reference.js";
 export * from "./session-index.js";
 export * from "./session-tree.js";
 export type * from "./api.js";
-export * from "./fixtures.js";

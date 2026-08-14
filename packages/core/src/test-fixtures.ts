@@ -1,6 +1,6 @@
-import type { DashboardData } from "./dashboard.js";
-import type { AgentScanStatus, ScanStatusEvent, SessionsUpdatedEvent } from "./events.js";
-import type { SessionHead } from "./session.js";
+import type { DashboardData } from "./contract/dashboard.js";
+import type { AgentScanStatus, ScanStatusEvent, SessionsUpdatedEvent } from "./contract/events.js";
+import type { SessionHead } from "./contract/session.js";
 
 export const SAMPLE_SESSION_HEAD = {
   id: "session-1",

@@ -2,7 +2,7 @@ import {
   SAMPLE_DASHBOARD_DATA,
   SAMPLE_SESSION_HEAD,
   SAMPLE_SESSIONS_UPDATED_EVENT,
-} from "@codesesh/core/contract";
+} from "@codesesh/core/test-fixtures";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentInfo, AppConfig, ApiProjectGroup, SessionHead } from "../lib/api";

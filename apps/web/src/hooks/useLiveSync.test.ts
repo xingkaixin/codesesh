@@ -1,4 +1,4 @@
-import { SAMPLE_SESSIONS_UPDATED_EVENT } from "@codesesh/core/contract";
+import { SAMPLE_SESSIONS_UPDATED_EVENT } from "@codesesh/core/test-fixtures";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionsUpdatedEvent } from "../lib/api";
