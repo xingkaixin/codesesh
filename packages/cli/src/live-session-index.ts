@@ -2,6 +2,7 @@ import {
   computeSessionDiff,
   mergeSortedSessions,
   sessionSignature,
+  type AgentCacheFailure,
   sortSessions,
   type AgentScanFailure,
   type BaseAgent,
@@ -20,6 +21,7 @@ export class LiveSessionIndex {
   private agentsByName = new Map<string, BaseAgent>();
   private byAgent: Record<string, SessionHead[]> = {};
   private sessions: SessionHead[] = [];
+  private cacheFailures: Record<string, AgentCacheFailure> = {};
   private scanFailures: Record<string, AgentScanFailure> = {};
   private signatureCaches = new Map<string, Map<string, string>>();
 
@@ -34,6 +36,7 @@ export class LiveSessionIndex {
       (agent) => !options.allowedAgents || options.allowedAgents.has(agent.name.toLowerCase()),
     );
     this.agentsByName = new Map(this.agents.map((agent) => [agent.name, agent]));
+    this.cacheFailures = { ...snapshot.cacheFailures };
     this.scanFailures = { ...snapshot.scanFailures };
     this.byAgent = Object.fromEntries(
       this.agents.flatMap((agent) => {
@@ -50,6 +53,7 @@ export class LiveSessionIndex {
       agents: this.agents,
       byAgent: this.byAgent,
       sessions: this.sessions,
+      ...(Object.keys(this.cacheFailures).length > 0 ? { cacheFailures: this.cacheFailures } : {}),
       ...(Object.keys(this.scanFailures).length > 0 ? { scanFailures: this.scanFailures } : {}),
     };
   }
@@ -63,6 +67,7 @@ export class LiveSessionIndex {
     nextSessions: SessionHead[],
     candidateChangedIds: string[] = [],
   ): SessionsUpdatedEvent | null {
+    delete this.cacheFailures[agentName];
     delete this.scanFailures[agentName];
     const previousSessions = this.byAgent[agentName] ?? [];
     const previousGlobalSessions = this.sessions;

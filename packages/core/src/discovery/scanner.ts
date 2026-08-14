@@ -74,7 +74,12 @@ export interface LiveSnapshot {
   agents: BaseAgent[];
   timings?: Record<string, AgentScanTiming>;
   cacheTimestamps?: Record<string, number>;
+  cacheFailures?: Record<string, AgentCacheFailure>;
   scanFailures?: Record<string, AgentScanFailure>;
+}
+
+export interface AgentCacheFailure {
+  agentName: string;
 }
 
 /** 扫描状态更新回调 */
@@ -138,10 +143,13 @@ function buildAgentScanOptions(
   };
 }
 
+type CachePersistence = "persisted" | "failed" | "not-requested";
+
 interface SuccessfulAgentScanResult {
   status: "complete" | "partial";
   agent: BaseAgent;
   heads: SessionHead[];
+  cachePersistence: CachePersistence;
   fromCache?: boolean;
   refreshed?: boolean;
   timing?: AgentScanTiming;
@@ -197,14 +205,27 @@ function saveCachedSessionDiff(
   changedIds: string[] = [],
   completeness: "complete" | "partial" = "complete",
   explicitRemovedSessionIds: readonly string[] = [],
-): void {
+): boolean {
   const diff = computeSessionDiff(cachedSessions, updatedSessions, changedIds, sessionSignature);
   const explicitRemovals = new Set(explicitRemovedSessionIds);
   const removedSessionIds =
     completeness === "complete"
       ? diff.removedSessionIds
       : diff.removedSessionIds.filter((sessionId) => explicitRemovals.has(sessionId));
-  saveCachedSessionChanges(agent.name, diff.changes, removedSessionIds, buildAgentCacheMeta(agent));
+  const persisted = saveCachedSessionChanges(
+    agent.name,
+    diff.changes,
+    removedSessionIds,
+    buildAgentCacheMeta(agent),
+  );
+  if (persisted === false) {
+    getCoreDiagnostics()?.warn("cache.save_failed", {
+      agent: agent.name,
+      changed_sessions: diff.changes.length,
+      removed_sessions: removedSessionIds.length,
+    });
+  }
+  return persisted;
 }
 
 function getSmartTagWorkerCount(sessionCount: number): number {
@@ -425,18 +446,25 @@ export async function finalizeAgentScan(
     timing.tags = performance.now() - tagsStart;
   }
 
+  let cachePersistence: CachePersistence = "not-requested";
   if (options.writeCache !== false) {
     if (finalization.kind === "incremental") {
-      saveCachedSessionDiff(
-        agent,
-        finalization.cached.sessions,
-        tagged.sessions,
-        finalization.changedIds,
-        context.completeness,
-        finalization.explicitRemovedSessionIds,
-      );
+      cachePersistence =
+        saveCachedSessionDiff(
+          agent,
+          finalization.cached.sessions,
+          tagged.sessions,
+          finalization.changedIds,
+          context.completeness,
+          finalization.explicitRemovedSessionIds,
+        ) === false
+          ? "failed"
+          : "persisted";
     } else if (finalization.kind === "unchanged" && (identityChanged || tagged.changed)) {
-      saveCachedSessionDiff(agent, finalization.cached.sessions, tagged.sessions);
+      cachePersistence =
+        saveCachedSessionDiff(agent, finalization.cached.sessions, tagged.sessions) === false
+          ? "failed"
+          : "persisted";
     }
   }
 
@@ -450,10 +478,14 @@ export async function finalizeAgentScan(
     status: context.completeness,
     agent,
     heads,
+    cachePersistence,
     fromCache: true,
     ...(isIncremental ? { refreshed: true } : {}),
     timing,
-    cacheTimestamp: isIncremental ? finalization.cacheTimestamp : finalization.cached.timestamp,
+    cacheTimestamp:
+      isIncremental && cachePersistence === "persisted"
+        ? finalization.cacheTimestamp
+        : finalization.cached.timestamp,
   };
 }
 
@@ -698,15 +730,18 @@ async function scanAgentFull(
     // 收集元数据
     const meta = buildAgentCacheMeta(agent);
 
+    let cachePersistence: CachePersistence = "not-requested";
     if (options.writeCache !== false) {
       const isFullWindow = options.from == null && options.to == null;
       const persisted = saveCachedSessions(agent.name, tagged.sessions, meta, {
         completeness: isFullWindow && sourceFailures.length === 0 ? "complete" : "partial",
       });
-      if (persisted) {
+      if (persisted !== false) {
+        cachePersistence = "persisted";
         if (isFullWindow && sourceFailures.length === 0) markAgentFullSyncCompleted(agent.name);
         markAgentCacheInitialized(agent.name);
       } else {
+        cachePersistence = "failed";
         getCoreDiagnostics()?.warn("cache.save_failed", {
           agent: agent.name,
           sessions: tagged.sessions.length,
@@ -725,6 +760,7 @@ async function scanAgentFull(
           : "partial",
       agent,
       heads: filtered,
+      cachePersistence,
       fromCache: false,
       timing,
     };
@@ -774,6 +810,7 @@ export async function scanSessions(
   const allSessions: SessionHead[] = [];
   const availableAgents: BaseAgent[] = [];
   const cacheTimestamps: Record<string, number> = {};
+  const cacheFailures: Record<string, AgentCacheFailure> = {};
   const scanFailures: Record<string, AgentScanFailure> = {};
 
   const agentFilter = options.agents?.length
@@ -807,6 +844,9 @@ export async function scanSessions(
       } else {
         byAgent[result.agent.name] = result.heads;
         allSessions.push(...result.heads);
+        if (result.cachePersistence === "failed") {
+          cacheFailures[result.agent.name] = { agentName: result.agent.name };
+        }
       }
       if (result.timing) {
         timings[result.agent.name] = result.timing;
@@ -824,6 +864,7 @@ export async function scanSessions(
     agents: availableAgents,
     timings,
     cacheTimestamps: Object.keys(cacheTimestamps).length > 0 ? cacheTimestamps : undefined,
+    cacheFailures: Object.keys(cacheFailures).length > 0 ? cacheFailures : undefined,
     scanFailures: Object.keys(scanFailures).length > 0 ? scanFailures : undefined,
   };
 }

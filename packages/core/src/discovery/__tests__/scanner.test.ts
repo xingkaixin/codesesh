@@ -238,6 +238,8 @@ const mockedSaveCachedSessions = vi.mocked(saveCachedSessions);
 beforeEach(() => {
   vi.clearAllMocks();
   mockedLoadCachedSessions.mockReturnValue(null);
+  mockedSaveCachedSessionChanges.mockReturnValue(true);
+  mockedSaveCachedSessions.mockReturnValue(true);
 });
 
 function createTestAgent(overrides: {
@@ -349,6 +351,7 @@ describe("finalizeAgentScan", () => {
 
     expect(result.heads.map((session) => session.id)).toEqual(["current"]);
     expect(result.heads[0]?.project_identity).toBeDefined();
+    expect(result.cachePersistence).toBe("not-requested");
     expect(result.cacheTimestamp).toBe(123);
     expect(agent.getSessionData).not.toHaveBeenCalled();
     expect(mockedSaveCachedSessionChanges).not.toHaveBeenCalled();
@@ -378,6 +381,7 @@ describe("finalizeAgentScan", () => {
     });
 
     expect(result.refreshed).toBe(true);
+    expect(result.cachePersistence).toBe("persisted");
     expect(result.cacheTimestamp).toBe(456);
     expect(mockedSaveCachedSessionChanges).toHaveBeenCalledWith(
       "test",
@@ -390,6 +394,64 @@ describe("finalizeAgentScan", () => {
       ["old"],
       {},
     );
+  });
+
+  it("serves fresh heads without advancing the durable timestamp when an incremental write fails", async () => {
+    const cachedSessions = [makeSession("old")];
+    const updatedSessions = [makeSession("new")];
+    const agent = createTestAgent({ name: "test", available: true, sessions: updatedSessions });
+    const events: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    mockedSaveCachedSessionChanges.mockReturnValue(false);
+    setCoreDiagnostics({ warn: (event, detail) => events.push({ event, detail }) });
+
+    try {
+      const result = await finalizeAgentScan(agent, updatedSessions, {
+        finalization: {
+          kind: "incremental",
+          cached: { sessions: cachedSessions, meta: {}, timestamp: 123 },
+          changedIds: ["new"],
+          cacheTimestamp: 456,
+        },
+        options: { includeSmartTags: false },
+        timing: { total: 0 },
+        agentStart: performance.now(),
+        completeness: "complete",
+      });
+
+      expect(result.heads.map((session) => session.id)).toEqual(["new"]);
+      expect(result.refreshed).toBe(true);
+      expect(result.cachePersistence).toBe("failed");
+      expect(result.cacheTimestamp).toBe(123);
+      expect(events).toContainEqual({
+        event: "cache.save_failed",
+        detail: { agent: "test", changed_sessions: 1, removed_sessions: 1 },
+      });
+    } finally {
+      setCoreDiagnostics(null);
+    }
+  });
+
+  it("does not advance an incremental durable timestamp when cache writes are disabled", async () => {
+    const cachedSessions = [makeSession("old")];
+    const updatedSessions = [makeSession("new")];
+    const agent = createTestAgent({ name: "test", available: true, sessions: updatedSessions });
+
+    const result = await finalizeAgentScan(agent, updatedSessions, {
+      finalization: {
+        kind: "incremental",
+        cached: { sessions: cachedSessions, meta: {}, timestamp: 123 },
+        changedIds: ["new"],
+        cacheTimestamp: 456,
+      },
+      options: { includeSmartTags: false, writeCache: false },
+      timing: { total: 0 },
+      agentStart: performance.now(),
+      completeness: "complete",
+    });
+
+    expect(result.cachePersistence).toBe("not-requested");
+    expect(result.cacheTimestamp).toBe(123);
+    expect(mockedSaveCachedSessionChanges).not.toHaveBeenCalled();
   });
 
   it("does not rewrite an unchanged cache when tag maintenance is disabled", async () => {
@@ -895,6 +957,43 @@ describe("scanSessions", () => {
       [],
       {},
     );
+  });
+
+  it("retains the durable baseline after a failed incremental cache write", async () => {
+    const cachedSessions = [makeSession("cached")];
+    const refreshedSessions = [makeSession("fresh")];
+    const checkForChanges = vi.fn(() => ({
+      hasChanges: true,
+      changedIds: ["fresh"],
+      timestamp: 456,
+    }));
+    const agent = createTestAgent({
+      name: "test",
+      available: true,
+      sessions: refreshedSessions,
+      incrementalScanResult: refreshedSessions,
+    });
+    agent.checkForChanges = checkForChanges;
+    mockedLoadCachedSessions.mockReturnValue({
+      sessions: cachedSessions,
+      meta: {},
+      timestamp: 123,
+    });
+    mockedSaveCachedSessionChanges.mockReturnValueOnce(false).mockReturnValue(true);
+    mockedCreateRegisteredAgents.mockReturnValue([agent]);
+
+    const failed = await scanSessions({ useCache: true, includeSmartTags: false });
+    const recovered = await scanSessions({ useCache: true, includeSmartTags: false });
+
+    expect(failed.sessions.map((session) => session.id)).toEqual(["fresh"]);
+    expect(failed.cacheTimestamps).toEqual({ test: 123 });
+    expect(failed.cacheFailures).toEqual({ test: { agentName: "test" } });
+    expect(failed.scanFailures).toBeUndefined();
+    expect(recovered.sessions.map((session) => session.id)).toEqual(["fresh"]);
+    expect(recovered.cacheTimestamps).toEqual({ test: 456 });
+    expect(recovered.cacheFailures).toBeUndefined();
+    expect(checkForChanges).toHaveBeenNthCalledWith(1, 123, cachedSessions);
+    expect(checkForChanges).toHaveBeenNthCalledWith(2, 123, cachedSessions);
   });
 
   it("writes only changed sessions after smart refresh", async () => {

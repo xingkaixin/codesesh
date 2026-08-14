@@ -5,7 +5,11 @@ import { LiveScanStore } from "./live-scan.js";
 import { printScanResults } from "./output.js";
 import { VERSION } from "./version.js";
 import { appLogger } from "./logging.js";
-import { buildSessionIndexOutput, formatScanFailureDiagnostics } from "./session-index-output.js";
+import {
+  buildSessionIndexOutput,
+  formatCacheFailureDiagnostics,
+  formatScanFailureDiagnostics,
+} from "./session-index-output.js";
 import {
   resolveRemoteAccessPolicy,
   resolveRemoteTransport,
@@ -231,6 +235,7 @@ const main = defineCommand({
         process.exitCode = 1;
         return;
       }
+      for (const diagnostic of formatCacheFailureDiagnostics(result)) console.error(diagnostic);
       const output = buildSessionIndexOutput(result, { from: listDefaultFrom, to: listDefaultTo });
       appLogger.info("cli.json_output", {
         sessions: output.sessions.length,

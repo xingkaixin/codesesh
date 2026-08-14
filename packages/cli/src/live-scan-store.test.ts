@@ -700,6 +700,24 @@ describe("LiveScanStore", () => {
     ]);
   });
 
+  it("serves initial memory results while preserving cache failure diagnostics", async () => {
+    const codex = makeAgent("codex");
+    const fresh = makeSession("fresh", { time_updated: 2_000 });
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [fresh],
+      byAgent: { codex: [fresh] },
+      agents: [codex],
+      cacheFailures: { codex: { agentName: "codex" } },
+    });
+
+    const store = new LiveScanStore({ watchEnabled: false });
+    await store.initialize();
+
+    expect(store.getSnapshot().sessions).toEqual([fresh]);
+    expect(store.getSnapshot().cacheFailures).toEqual({ codex: { agentName: "codex" } });
+  });
+
   it("can initialize from cache and refresh sessions in the background", async () => {
     vi.useFakeTimers();
     const cached = makeSession("cached", { title: "cached", time_updated: 1000 });
