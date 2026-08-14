@@ -944,13 +944,7 @@ function executeSearchIndexPlan(
 
   if (largeBacklogStrategy === "chunked" && plan.changes.length > SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
     runSearchIndexWrite(db, false, () => {
-      indexed += writeSearchIndexRows(
-        db,
-        plan.agentName,
-        plan.removedSessionIds,
-        [],
-        failures,
-      );
+      indexed += writeSearchIndexRows(db, plan.agentName, plan.removedSessionIds, [], failures);
       if (plan.removedSessionIds.length > 0) advanceAnalyticsRevision(db);
     });
     for (let offset = 0; offset < plan.changes.length; offset += SEARCH_INDEX_COMMIT_CHUNK_SIZE) {

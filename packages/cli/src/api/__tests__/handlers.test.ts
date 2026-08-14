@@ -4,6 +4,7 @@ const coreMocks = vi.hoisted(() => {
   return {
     attachProjectMetrics: vi.fn(),
     buildDashboard: vi.fn(),
+    getAnalyticsRevision: vi.fn(() => "0"),
     materializeSessionDetailResponse: vi.fn(),
     listFileActivity: vi.fn((): FileActivityResult[] => []),
     listModelCostDistribution: vi.fn((): ModelCostEntry[] | null => null),
@@ -46,6 +47,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
       coreMocks.buildDashboard(...args);
       return actual.buildDashboard(...args);
     },
+    getAnalyticsRevision: coreMocks.getAnalyticsRevision,
     materializeSessionDetailResponse: coreMocks.materializeSessionDetailResponse,
     listFileActivity: coreMocks.listFileActivity,
     listModelCostDistribution: coreMocks.listModelCostDistribution,
@@ -226,6 +228,8 @@ function toLocalDateKey(ts: number): string {
 afterEach(() => {
   coreMocks.attachProjectMetrics.mockClear();
   coreMocks.buildDashboard.mockClear();
+  coreMocks.getAnalyticsRevision.mockReset();
+  coreMocks.getAnalyticsRevision.mockReturnValue("0");
   coreMocks.materializeSessionDetailResponse.mockReset();
   coreMocks.listFileActivity.mockReset();
   coreMocks.listFileActivity.mockReturnValue([]);
@@ -1580,6 +1584,23 @@ describe("handleGetDashboard", () => {
     handleGetDashboard(makeMockContext({ query: { from: "2026-07-20", to, days: "3" } }), source);
 
     expect(coreMocks.buildDashboard).toHaveBeenCalledTimes(2);
+  });
+
+  it("reuses storage aggregations until the analytics revision changes", () => {
+    const source = makeScanSource();
+    coreMocks.getAnalyticsRevision.mockReturnValue("1");
+
+    handleGetDashboard(makeMockContext(), source);
+    handleGetDashboard(makeMockContext(), source);
+
+    expect(coreMocks.listFileActivity).toHaveBeenCalledTimes(1);
+    expect(coreMocks.listModelCostDistribution).toHaveBeenCalledTimes(1);
+
+    coreMocks.getAnalyticsRevision.mockReturnValue("2");
+    handleGetDashboard(makeMockContext(), source);
+
+    expect(coreMocks.listFileActivity).toHaveBeenCalledTimes(2);
+    expect(coreMocks.listModelCostDistribution).toHaveBeenCalledTimes(2);
   });
 
   it("propagates a null model-cost distribution instead of substituting zeros", () => {
