@@ -26,7 +26,7 @@ interface KeyboardShortcutsDeps {
   searchResults: SearchResult[];
   selectedSearchIndex: number;
   setSelectedSearchIndex: React.Dispatch<React.SetStateAction<number>>;
-  setDraftSearchQuery: (query: string) => void;
+  clearSearchInput: () => void;
   openSearch: () => void;
   closeSearch: () => void;
 }
@@ -65,7 +65,7 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
     searchResults,
     selectedSearchIndex,
     setSelectedSearchIndex,
-    setDraftSearchQuery,
+    clearSearchInput,
     openSearch,
     closeSearch,
   } = deps;
@@ -119,7 +119,7 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
       event.preventDefault();
       if (isSearchMode) {
         closeSearch();
-        setDraftSearchQuery("");
+        clearSearchInput();
         return;
       }
       if (viewState.mode === "session" && viewState.activeAgentKey) {

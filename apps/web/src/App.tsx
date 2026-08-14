@@ -1,6 +1,6 @@
 declare const __APP_VERSION__: string;
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PanelLeftOpen } from "./components/ui/icons";
 import { Link, useLocation, useMatches, useNavigate } from "react-router-dom";
 import type { BookmarkView, SessionHead } from "./lib/api";
@@ -27,6 +27,7 @@ import { useUiPreferences } from "./hooks/useUiPreferences";
 import { ResolvedThemeContext, useTheme } from "./hooks/useTheme";
 import { buildRouteHeaderModel } from "./lib/build-route-header-model";
 import { AppSidebar } from "./components/app/AppSidebar";
+import { SearchControls, type SearchControlsHandle } from "./components/app/SearchControls";
 import { ShortcutHelpDialog } from "./components/app/ShortcutHelpDialog";
 import { ThemeToggle } from "./components/app/ThemeToggle";
 import { AppRouteContent } from "./components/app/AppRouteContent";
@@ -111,21 +112,26 @@ export default function App() {
   );
 
   const search = useSessionSearch(sessionIndexes, loadedWindow);
+  const searchControlsRef = useRef<SearchControlsHandle>(null);
   const {
-    draftSearchQuery,
     activeSearchQuery,
     searchMode,
     searchState,
     searchResults,
     searchLoading,
     selectedSearchIndex,
-    searchInputRef,
-    setDraftSearchQuery,
     setSelectedSearchIndex,
     openSearch,
     submitSearch,
     closeSearch,
   } = search;
+  const openSearchAndFocus = useCallback(() => {
+    openSearch();
+    searchControlsRef.current?.focusAndSelect();
+  }, [openSearch]);
+  const clearSearchInput = useCallback(() => {
+    searchControlsRef.current?.clear();
+  }, []);
   const isSearchMode = searchMode;
   const detailHighlightQuery = isSearchMode
     ? activeSearchQuery
@@ -361,8 +367,8 @@ export default function App() {
     searchResults,
     selectedSearchIndex,
     setSelectedSearchIndex,
-    setDraftSearchQuery,
-    openSearch,
+    clearSearchInput,
+    openSearch: openSearchAndFocus,
     closeSearch,
   });
 
@@ -385,33 +391,7 @@ export default function App() {
                 </span>
               </Link>
             </div>
-            <form
-              className="order-3 col-span-2 flex w-full items-center justify-center gap-2 sm:order-none sm:col-span-1 sm:mx-auto sm:max-w-[560px]"
-              onSubmit={(event) => {
-                event.preventDefault();
-                submitSearch();
-              }}
-            >
-              <label className="flex min-w-0 flex-1 items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 focus-within:border-[var(--brand-line)] focus-within:ring-2 focus-within:ring-[var(--brand)]">
-                <span className="sr-only">Search Sessions</span>
-                <input
-                  ref={searchInputRef}
-                  type="search"
-                  name="session-search"
-                  autoComplete="off"
-                  value={draftSearchQuery}
-                  onChange={(event) => setDraftSearchQuery(event.target.value)}
-                  placeholder="Search sessions…  /"
-                  className="console-mono w-full min-w-0 bg-transparent text-xs text-[var(--console-text)] outline-none placeholder:text-[var(--console-muted)]"
-                />
-              </label>
-              <button
-                type="submit"
-                className="console-mono rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-3 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-              >
-                Search
-              </button>
-            </form>
+            <SearchControls ref={searchControlsRef} onSubmit={submitSearch} />
             <div className="flex items-center justify-end gap-2">
               <ThemeToggle theme={theme} onChange={setTheme} />
               <button

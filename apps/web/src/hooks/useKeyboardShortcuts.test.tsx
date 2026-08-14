@@ -54,7 +54,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     searchResults,
     selectedSearchIndex: 0,
     setSelectedSearchIndex: vi.fn(),
-    setDraftSearchQuery: vi.fn(),
+    clearSearchInput: vi.fn(),
     openSearch: vi.fn(),
     closeSearch: vi.fn(),
     ...overrides,
@@ -127,7 +127,7 @@ describe("useKeyboardShortcuts", () => {
 
     dispatchKey("Escape");
     expect(searchDeps.closeSearch).toHaveBeenCalledOnce();
-    expect(searchDeps.setDraftSearchQuery).toHaveBeenCalledWith("");
+    expect(searchDeps.clearSearchInput).toHaveBeenCalledOnce();
     unmount();
 
     const projectDeps = makeDeps({
