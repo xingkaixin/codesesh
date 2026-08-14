@@ -1448,6 +1448,26 @@ describe("CodexAgent subagent folding", () => {
     return `{"timestamp":"2026-04-20T10:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":${input},"output_tokens":${output}},"total_token_usage":{"total_tokens":${total}}}}}`;
   }
 
+  function makeMessage(options: {
+    subagentId?: string;
+    nickname?: string;
+    texts: string[];
+  }): Message {
+    return {
+      id: `message-${options.texts.join("-")}`,
+      role: "assistant",
+      agent: "codex",
+      time_created: 0,
+      mode: null,
+      model: null,
+      provider: null,
+      cost: 0,
+      ...(options.subagentId === undefined ? {} : { subagent_id: options.subagentId }),
+      ...(options.nickname === undefined ? {} : { nickname: options.nickname }),
+      parts: options.texts.map((text) => ({ type: "text", text, time_created: 0 })),
+    };
+  }
+
   afterEach(() => {
     for (const dir of tempDirs) {
       rmSync(dir, { recursive: true, force: true });
@@ -1557,6 +1577,62 @@ describe("CodexAgent subagent folding", () => {
       ),
     ).toBe(false);
     expect(data.stats.message_count).toBe(data.messages.length);
+  });
+
+  it("merges child messages with exact id and nickname/text visibility rules", () => {
+    const agent = new CodexAgent() as any;
+    const visibleMessages = [
+      makeMessage({ subagentId: "known-child", nickname: "worker", texts: ["id match"] }),
+      makeMessage({ nickname: "worker", texts: ["prefix", "shared text"] }),
+    ];
+
+    agent.mergeChildMessages(visibleMessages, [
+      makeMessage({ subagentId: "known-child", nickname: "other", texts: ["different"] }),
+      makeMessage({ nickname: "worker", texts: ["shared text"] }),
+      makeMessage({ subagentId: "different-child", nickname: "worker", texts: ["shared text"] }),
+      makeMessage({ nickname: "worker", texts: ["different text"] }),
+    ]);
+
+    expect(
+      visibleMessages.map((message) => {
+        const part = message.parts[0];
+        return part?.type === "text" ? part.text : undefined;
+      }),
+    ).toEqual(["id match", "prefix", "different text"]);
+
+    const identifiedVisible = [
+      makeMessage({ subagentId: "identified", nickname: "worker", texts: ["shared text"] }),
+    ];
+    agent.mergeChildMessages(identifiedVisible, [
+      makeMessage({ nickname: "worker", texts: ["shared text"] }),
+    ]);
+    expect(identifiedVisible).toHaveLength(2);
+
+    const newlyVisible: Message[] = [];
+    agent.mergeChildMessages(newlyVisible, [
+      makeMessage({ nickname: "worker", texts: ["new text"] }),
+      makeMessage({ nickname: "worker", texts: ["new text"] }),
+    ]);
+    expect(newlyVisible).toHaveLength(1);
+  });
+
+  it("merges large child batches without pairwise array scans", () => {
+    const agent = new CodexAgent() as any;
+    const visibleMessages = Array.from({ length: 200 }, (_, index) =>
+      makeMessage({ nickname: `worker-${index}`, texts: [`visible-${index}`] }),
+    );
+    const childMessages = Array.from({ length: 200 }, (_, index) =>
+      makeMessage({ nickname: `child-${index}`, texts: [`child-${index}`] }),
+    );
+    const someSpy = vi.spyOn(Array.prototype, "some");
+
+    someSpy.mockClear();
+    agent.mergeChildMessages(visibleMessages, childMessages);
+    const someCallCount = someSpy.mock.calls.length;
+    someSpy.mockRestore();
+
+    expect(someCallCount).toBe(0);
+    expect(visibleMessages).toHaveLength(400);
   });
 
   it("finds child rollouts when detail parsing starts from cached metadata", () => {

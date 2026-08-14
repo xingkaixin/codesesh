@@ -363,6 +363,46 @@ interface SessionMeta extends FileSessionMeta {
   parentThreadId: string | null;
 }
 
+class ChildMessageVisibilityIndex {
+  private readonly visibleSubagentIds = new Set<string>();
+  private readonly visibleNicknameTexts = new Map<string, Set<string>>();
+
+  constructor(messages: Message[]) {
+    for (const message of messages) this.add(message);
+  }
+
+  hasEquivalent(message: Message): boolean {
+    if (message.subagent_id !== undefined && this.visibleSubagentIds.has(message.subagent_id)) {
+      return true;
+    }
+
+    const nickname = message.nickname;
+    const text = message.parts.find((part) => part.type === "text")?.text;
+    return (
+      nickname !== undefined &&
+      text !== undefined &&
+      this.visibleNicknameTexts.get(nickname)?.has(text) === true
+    );
+  }
+
+  add(message: Message): void {
+    if (message.subagent_id !== undefined) {
+      this.visibleSubagentIds.add(message.subagent_id);
+      return;
+    }
+    if (message.nickname === undefined) return;
+
+    let texts = this.visibleNicknameTexts.get(message.nickname);
+    if (!texts) {
+      texts = new Set();
+      this.visibleNicknameTexts.set(message.nickname, texts);
+    }
+    for (const part of message.parts) {
+      if (part.type === "text") texts.add(part.text);
+    }
+  }
+}
+
 function compareSourceActivityDesc(left: SessionSourceFile, right: SessionSourceFile): number {
   const leftTimestamp = sourceTimestamp(left.file, left.stat.mtimeMs);
   const rightTimestamp = sourceTimestamp(right.file, right.stat.mtimeMs);
@@ -661,19 +701,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     this.applyChildStats(result.stats, meta.id);
 
     const childMessages = this.collectChildMessages(meta.id);
-    for (const message of childMessages) {
-      const messageText = message.parts.find((part) => part.type === "text")?.text;
-      const alreadyVisible = result.messages.some(
-        (existing) =>
-          (message.subagent_id !== undefined && existing.subagent_id === message.subagent_id) ||
-          (existing.subagent_id === undefined &&
-            message.nickname !== undefined &&
-            messageText !== undefined &&
-            existing.nickname === message.nickname &&
-            existing.parts.some((part) => part.type === "text" && part.text === messageText)),
-      );
-      if (!alreadyVisible) result.messages.push(message);
-    }
+    this.mergeChildMessages(result.messages, childMessages);
     result.stats.message_count = result.messages.length;
 
     return {
@@ -740,6 +768,15 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
 
   private collectChildFiles(parentSessionId: string): string[] {
     return this.ensureSubagentIndex().childFilesByParent.get(parentSessionId) ?? [];
+  }
+
+  private mergeChildMessages(visibleMessages: Message[], childMessages: Message[]): void {
+    const visible = new ChildMessageVisibilityIndex(visibleMessages);
+    for (const message of childMessages) {
+      if (visible.hasEquivalent(message)) continue;
+      visibleMessages.push(message);
+      visible.add(message);
+    }
   }
 
   private collectChildMessages(parentSessionId: string): Message[] {
