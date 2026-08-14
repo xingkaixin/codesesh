@@ -1,5 +1,6 @@
 import { readdirSync, statSync, type Dirent, type Stats } from "node:fs";
 import { join } from "node:path";
+import { formatSessionReference } from "../contract/session-reference.js";
 import type { SessionHead, SessionDetail, ParseSessionResult } from "../types/index.js";
 import {
   capturePricingMisses,
@@ -282,6 +283,10 @@ export abstract class BaseAgent {
 
   getUri(sessionId: string): string {
     return `${this.name}://${sessionId}`;
+  }
+
+  protected sessionSlug(sessionId: string): string {
+    return formatSessionReference({ agentName: this.name, sessionId });
   }
 }
 

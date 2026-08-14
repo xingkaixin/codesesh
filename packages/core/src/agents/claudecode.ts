@@ -319,7 +319,7 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
       reference: { agentName: this.name, sessionId: meta.id },
       id: meta.id,
       title: meta.title,
-      slug: `claudecode/${meta.id}`,
+      slug: this.sessionSlug(meta.id),
       directory: meta.directory,
       parent_reference:
         meta.parentSessionId == null
@@ -684,7 +684,7 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
 
     return parsedSession({
       id: sessionId,
-      slug: `claudecode/${sessionId}`,
+      slug: this.sessionSlug(sessionId),
       title,
       directory,
       parent_reference:

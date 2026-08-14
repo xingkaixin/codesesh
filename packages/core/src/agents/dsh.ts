@@ -167,7 +167,7 @@ export class DshAgent extends FileSystemSessionSource<DshSessionMeta> {
 
     const head: SessionHead = {
       id: header.id,
-      slug: `${this.name}/${header.id}`,
+      slug: this.sessionSlug(header.id),
       title: this.resolveTitle(header, projection),
       directory: header.cwd ?? "",
       ...(header.parentSession
@@ -211,7 +211,7 @@ export class DshAgent extends FileSystemSessionSource<DshSessionMeta> {
       reference: { agentName: this.name, sessionId: header.id },
       id: header.id,
       title: this.resolveTitle(header, projection),
-      slug: `${this.name}/${header.id}`,
+      slug: this.sessionSlug(header.id),
       directory: header.cwd ?? "",
       ...(header.parentSession
         ? { parent_reference: { agentName: this.name, sessionId: header.parentSession } }

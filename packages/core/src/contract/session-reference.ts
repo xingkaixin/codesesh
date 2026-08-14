@@ -29,8 +29,8 @@ export function formatSessionReference(reference: SessionReference): string {
   return `${normalized.agentName}/${normalized.sessionId}`;
 }
 
-export function getSessionAgentKey(session: { slug: string }): string {
-  return parseSessionReference(session.slug)?.agentName ?? UNKNOWN_AGENT_NAME;
+export function getSessionAgentKey(session: { slug?: string | null }): string {
+  return parseSessionReference(session.slug ?? "")?.agentName ?? UNKNOWN_AGENT_NAME;
 }
 
 /**

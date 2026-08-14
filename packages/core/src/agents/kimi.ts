@@ -421,7 +421,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     const stats = this.extractStats(meta.sourcePath);
     return parsedSession({
       id: meta.id,
-      slug: `kimi/${meta.id}`,
+      slug: this.sessionSlug(meta.id),
       title: meta.title,
       directory: meta.cwd,
       time_created: meta.createdAt,
@@ -826,7 +826,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
       reference: { agentName: this.name, sessionId: meta.id },
       id: meta.id,
       title: meta.title,
-      slug: `kimi/${meta.id}`,
+      slug: this.sessionSlug(meta.id),
       directory: meta.cwd,
       time_created: meta.createdAt,
       time_updated: meta.activityAt,

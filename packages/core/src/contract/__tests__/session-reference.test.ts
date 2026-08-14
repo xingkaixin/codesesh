@@ -42,6 +42,7 @@ describe("session references", () => {
 
   it("provides one explicit fallback for malformed legacy slugs", () => {
     expect(getSessionAgentKey({ slug: "" })).toBe("unknown");
+    expect(getSessionAgentKey({ slug: null })).toBe("unknown");
     expect(getSessionAgentKey({ slug: "codex/session" })).toBe("codex");
   });
 });

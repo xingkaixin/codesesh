@@ -32,7 +32,7 @@ interface FakeSource {
  * algorithm without touching the disk. Only the two primitives are faked.
  */
 class FakeFileSystemSource extends FileSystemSessionSource {
-  readonly name = "fake";
+  readonly name: string = "fake";
   readonly displayName = "Fake";
   lastScanOptions: AgentScanOptions | undefined;
 
@@ -46,6 +46,10 @@ class FakeFileSystemSource extends FileSystemSessionSource {
 
   walk(root: string) {
     return this.walkFiles(root, () => true);
+  }
+
+  sessionSlugForTest(sessionId: string): string {
+    return this.sessionSlug(sessionId);
   }
 
   isAvailable(): boolean {
@@ -89,6 +93,10 @@ class FakeFileSystemSource extends FileSystemSessionSource {
   }
 }
 
+class NormalizedNameSource extends FakeFileSystemSource {
+  override readonly name = " FaKe ";
+}
+
 function makeSession(id: string): SessionHead {
   return {
     id,
@@ -129,6 +137,11 @@ describe("BaseAgent", () => {
   it("getUri returns correct format", () => {
     const agent = new FakeFileSystemSource();
     expect(agent.getUri("abc123")).toBe("fake://abc123");
+  });
+
+  it("formats session slugs from its normalized registered identity", () => {
+    const agent = new NormalizedNameSource();
+    expect(agent.sessionSlugForTest("nested/session")).toBe("fake/nested/session");
   });
 });
 

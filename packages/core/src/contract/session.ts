@@ -148,6 +148,7 @@ export interface Message {
 /** Lightweight metadata for session listing */
 export interface SessionHead {
   id: string;
+  /** Serialized session reference. Adapters must not construct this string manually. */
   slug: string;
   title: string;
   display_title?: string;

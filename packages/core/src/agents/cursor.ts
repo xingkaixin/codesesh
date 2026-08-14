@@ -661,7 +661,7 @@ export class CursorAgent extends DatabaseSessionSource {
                   ? filteredSession<SessionHead>("no visible messages")
                   : parsedSession<SessionHead>({
                       id: composerId,
-                      slug: `cursor/${composerId}`,
+                      slug: this.sessionSlug(composerId),
                       title: fastTitle,
                       directory,
                       time_created: createdAt,
@@ -815,7 +815,7 @@ export class CursorAgent extends DatabaseSessionSource {
         reference: { agentName: this.name, sessionId: composerId },
         id: composerId,
         title,
-        slug: `cursor/${composerId}`,
+        slug: this.sessionSlug(composerId),
         directory,
         time_created: createdAt,
         time_updated: updatedAt || undefined,
@@ -915,7 +915,7 @@ export class CursorAgent extends DatabaseSessionSource {
     if (directory) this.directoryCache.set(composerId, directory);
     return {
       id: composerId,
-      slug: `cursor/${composerId}`,
+      slug: this.sessionSlug(composerId),
       title,
       directory,
       time_created: createdAt,

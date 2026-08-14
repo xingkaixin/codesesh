@@ -1,4 +1,5 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
+import { getSessionAgentKey } from "@codesesh/core/contract";
 import type { SessionDetail } from "../lib/api";
 import { getSessionDisplayTitle } from "../lib/session-title";
 import {
@@ -181,7 +182,7 @@ function formatReceiptSubtitle(tags?: SessionDetail["smart_tags"]) {
 }
 
 function createReceiptPayload(session: SessionDetail, toc: SessionDetailToc): ReceiptPayload {
-  const agent = session.slug?.split("/")[0] || "codesesh";
+  const agent = getSessionAgentKey(session);
   return {
     id: session.id,
     title: getSessionDisplayTitle(session) || "Untitled session",
