@@ -75,12 +75,25 @@ export interface CachedSessionDataEntry {
   meta: SessionCacheMeta | null;
 }
 
-export interface CachedSessionRawEntry {
+interface CachedSessionEntryBase {
   data: Omit<SessionDetail, "messages">;
-  messageRows: CachedMessageRow[];
   meta: SessionCacheMeta | null;
   detailVersion: string | null;
   pendingReindex: boolean;
+}
+
+export interface CachedSessionRawEntry extends CachedSessionEntryBase {
+  messageRows: CachedMessageRow[];
+}
+
+export interface CachedSessionCursorEntry extends CachedSessionEntryBase {
+  messageCount: number;
+  messageDigest: string | null;
+}
+
+export interface CachedSessionCursorReader {
+  messageDigest(messageCount: number): string | null;
+  messageRows(startIndex: number): CachedMessageRow[];
 }
 
 export type SessionSnapshotCompleteness = "complete" | "partial";
@@ -348,92 +361,176 @@ export function markAgentFullSyncCompleted(agentName: string): void {
   clearAgentFullSyncCursor(agentName);
 }
 
+function loadCachedSessionEntryBase(
+  db: SQLiteDatabase,
+  agentName: string,
+  sessionId: string,
+): CachedSessionEntryBase | null {
+  const row = db
+    .prepare(
+      `
+        SELECT
+          sessions.*,
+          documents.detail_version AS detail_version
+        FROM sessions
+        LEFT JOIN session_documents AS documents
+          ON documents.agent_name = sessions.agent_name
+          AND documents.session_id = sessions.session_id
+        WHERE sessions.agent_name = ?
+          AND sessions.session_id = ?
+          AND sessions.publication_id IS NULL
+      `,
+    )
+    .get(agentName, sessionId) as SessionRow | undefined;
+
+  if (!row) return null;
+
+  const pendingReindex =
+    db
+      .prepare("SELECT 1 FROM pending_reindex WHERE agent_name = ? AND session_id = ?")
+      .get(agentName, sessionId) != null;
+  const fileActivityRows = db
+    .prepare(
+      `
+        SELECT agent_name, session_id, project_identity_key, path, kind, count, latest_time
+        FROM session_file_activity
+        WHERE agent_name = ? AND session_id = ?
+        ORDER BY latest_time DESC, count DESC, path
+        LIMIT 500
+      `,
+    )
+    .all(agentName, sessionId) as FileActivityRow[];
+
+  return {
+    data: {
+      ...sessionFromRow(row),
+      reference: { agentName, sessionId },
+      file_activity: fileActivityRows.map((activityRow) => fileActivityFromRow(activityRow)),
+    },
+    meta: parseCachedSessionMeta(row.meta_json),
+    detailVersion: typeof row.detail_version === "string" ? row.detail_version : null,
+    pendingReindex,
+  };
+}
+
+function readCachedSessionMessageRows(
+  db: SQLiteDatabase,
+  agentName: string,
+  sessionId: string,
+  startIndex: number,
+): CachedMessageRow[] {
+  return db
+    .prepare(
+      `
+        SELECT
+          message_id,
+          role,
+          time_created,
+          time_completed,
+          agent,
+          mode,
+          model,
+          provider,
+          tokens_json,
+          cost,
+          cost_source,
+          parts_json,
+          parts_format_version,
+          content_chain_digest,
+          subagent_id,
+          nickname
+        FROM messages
+        WHERE agent_name = ? AND session_id = ? AND message_index >= ?
+        ORDER BY message_index
+      `,
+    )
+    .all(agentName, sessionId, startIndex) as CachedMessageRow[];
+}
+
 export function loadCachedSessionRawEntry(
   agentName: string,
   sessionId: string,
 ): CachedSessionRawEntry | null {
-  if (!hasCacheStorage()) {
-    return null;
-  }
+  if (!hasCacheStorage()) return null;
 
   const outcome = withCacheDbReadOnly((db) => {
-    const row = db
-      .prepare(
-        `
-          SELECT
-            sessions.*,
-            documents.detail_version AS detail_version
-          FROM sessions
-          LEFT JOIN session_documents AS documents
-            ON documents.agent_name = sessions.agent_name
-            AND documents.session_id = sessions.session_id
-          WHERE sessions.agent_name = ?
-            AND sessions.session_id = ?
-            AND sessions.publication_id IS NULL
-        `,
-      )
-      .get(agentName, sessionId) as SessionRow | undefined;
-
-    if (!row) {
-      return null;
-    }
-
-    const pendingReindex =
-      db
-        .prepare("SELECT 1 FROM pending_reindex WHERE agent_name = ? AND session_id = ?")
-        .get(agentName, sessionId) != null;
-
-    const messageRows = db
-      .prepare(
-        `
-          SELECT
-            message_id,
-            role,
-            time_created,
-            time_completed,
-            agent,
-            mode,
-            model,
-            provider,
-            tokens_json,
-            cost,
-            cost_source,
-            parts_json,
-            parts_format_version,
-            subagent_id,
-            nickname
-          FROM messages
-          WHERE agent_name = ? AND session_id = ?
-          ORDER BY message_index
-        `,
-      )
-      .all(agentName, sessionId) as CachedMessageRow[];
-
-    const head = sessionFromRow(row);
-    const fileActivityRows = db
-      .prepare(
-        `
-          SELECT agent_name, session_id, project_identity_key, path, kind, count, latest_time
-          FROM session_file_activity
-          WHERE agent_name = ? AND session_id = ?
-          ORDER BY latest_time DESC, count DESC, path
-          LIMIT 500
-        `,
-      )
-      .all(agentName, sessionId) as FileActivityRow[];
-
-    return {
-      data: {
-        ...head,
-        reference: { agentName, sessionId },
-        file_activity: fileActivityRows.map((activityRow) => fileActivityFromRow(activityRow)),
-      },
-      messageRows,
-      meta: parseCachedSessionMeta(row.meta_json),
-      detailVersion: typeof row.detail_version === "string" ? row.detail_version : null,
-      pendingReindex,
-    };
+    const entry = loadCachedSessionEntryBase(db, agentName, sessionId);
+    return entry
+      ? { ...entry, messageRows: readCachedSessionMessageRows(db, agentName, sessionId, 0) }
+      : null;
   });
+  return outcome.status === "success" ? outcome.value : null;
+}
+
+function readCachedSessionMessageDigest(
+  db: SQLiteDatabase,
+  agentName: string,
+  sessionId: string,
+  messageCount: number,
+): string | null {
+  if (!Number.isSafeInteger(messageCount) || messageCount <= 0) return null;
+  const row = db
+    .prepare(
+      `
+        SELECT content_chain_digest
+        FROM messages
+        WHERE agent_name = ? AND session_id = ? AND message_index = ?
+      `,
+    )
+    .get(agentName, sessionId, messageCount - 1) as { content_chain_digest?: string | null };
+  return typeof row?.content_chain_digest === "string" ? row.content_chain_digest : null;
+}
+
+export function readCachedSessionCursor<T>(
+  agentName: string,
+  sessionId: string,
+  read: (entry: CachedSessionCursorEntry, cursor: CachedSessionCursorReader) => T,
+): T | null {
+  if (!hasCacheStorage()) return null;
+
+  // A deferred transaction keeps cursor metadata and suffix rows in one snapshot.
+  const outcome = withCacheDbReadOnly((db) =>
+    db.transaction(() => {
+      const entryBase = loadCachedSessionEntryBase(db, agentName, sessionId);
+      if (!entryBase) return null;
+      const messageState = db
+        .prepare(
+          `
+            SELECT
+              COUNT(*) AS message_count,
+              (
+                SELECT content_chain_digest
+                FROM messages
+                WHERE agent_name = ? AND session_id = ?
+                ORDER BY message_index DESC
+                LIMIT 1
+              ) AS content_chain_digest
+            FROM messages
+            WHERE agent_name = ? AND session_id = ?
+          `,
+        )
+        .get(agentName, sessionId, agentName, sessionId) as {
+        message_count?: number;
+        content_chain_digest?: string | null;
+      };
+      const entry: CachedSessionCursorEntry = {
+        ...entryBase,
+        messageCount: Number(messageState.message_count ?? 0),
+        messageDigest:
+          typeof messageState.content_chain_digest === "string"
+            ? messageState.content_chain_digest
+            : null,
+      };
+      return read(entry, {
+        messageDigest: (messageCount) =>
+          readCachedSessionMessageDigest(db, agentName, sessionId, messageCount),
+        messageRows: (startIndex) =>
+          Number.isSafeInteger(startIndex) && startIndex >= 0
+            ? readCachedSessionMessageRows(db, agentName, sessionId, startIndex)
+            : [],
+      });
+    })(),
+  );
   return outcome.status === "success" ? outcome.value : null;
 }
 

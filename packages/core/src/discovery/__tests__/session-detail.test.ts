@@ -1,13 +1,16 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BaseAgent, type ChangeCheckResult, type SessionCacheMeta } from "../../agents/base.js";
 import type { SessionDetail, SessionHead } from "../../types/index.js";
-import { saveCachedSessions } from "../cache/sessions.js";
+import { readCachedSessionCursor, saveCachedSessions } from "../cache/sessions.js";
+import { withCacheDb } from "../cache/schema.js";
+import { MESSAGE_CURSOR_VERSION } from "../cache/message-cursor.js";
 import { syncSessionSearchIndex } from "../cache/search.js";
 import { materializeSessionDetail, materializeSessionDetailResponse } from "../session-detail.js";
 import type { LiveSnapshot } from "../scanner.js";
-import { setSchemaEnsuredPath } from "../cache/db.js";
+import { getCachePath, setSchemaEnsuredPath } from "../cache/db.js";
 import { setCoreDiagnostics } from "../../utils/diagnostics.js";
 import { SMART_TAG_CLASSIFIER_REVISION } from "../../utils/smart-tags.js";
 
@@ -128,6 +131,24 @@ function makeScanResult(agent: TestAgent, head = makeHead()): LiveSnapshot {
 function persistDetail(head: SessionHead, detail: SessionDetail, fingerprint: string): void {
   saveCachedSessions("test", [head], { [head.id]: makeMeta(fingerprint) });
   syncSessionSearchIndex("test", [head], () => detail);
+}
+
+function withPreparedSqlCapture<T>(run: () => T): { result: T; sql: string[] } {
+  const preparedSql: string[] = [];
+  const originalPrepare = Database.prototype.prepare;
+  const prepareSpy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+    this: Database.Database,
+    source: string,
+  ) {
+    preparedSql.push(source);
+    return originalPrepare.call(this, source);
+  });
+
+  try {
+    return { result: run(), sql: preparedSql.map((sql) => sql.replace(/\s+/g, " ").trim()) };
+  } finally {
+    prepareSpy.mockRestore();
+  }
 }
 
 beforeEach(() => {
@@ -320,6 +341,11 @@ describe("materializeSessionDetail", () => {
   });
 
   it("streams only an unchanged message prefix's appended suffix", () => {
+    const diagnostics: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    setCoreDiagnostics({
+      info: (event, detail) => diagnostics.push({ event, detail }),
+      warn() {},
+    });
     const makeStreamableHead = (messageCount: number, timeUpdated: number) => {
       const head = makeHead({
         time_updated: timeUpdated,
@@ -341,8 +367,9 @@ describe("materializeSessionDetail", () => {
         parts: [{ type: "text" as const, text }],
       })),
     });
+    const firstText = "x".repeat(64 * 1024);
     const firstHead = makeStreamableHead(1, 2000);
-    const firstDetail = makeStreamableDetail(firstHead, ["first"]);
+    const firstDetail = makeStreamableDetail(firstHead, [firstText]);
     persistDetail(firstHead, firstDetail, "first");
     const first = materializeSessionDetailResponse(
       makeScanResult(new TestAgent(firstDetail, new Map([["s1", makeMeta("first")]])), firstHead),
@@ -355,15 +382,17 @@ describe("materializeSessionDetail", () => {
     expect(first.sentMessageCount).toBe(1);
 
     const appendedHead = makeStreamableHead(2, 3000);
-    const appendedDetail = makeStreamableDetail(appendedHead, ["first", "second"]);
+    const appendedDetail = makeStreamableDetail(appendedHead, [firstText, "second"]);
     persistDetail(appendedHead, appendedDetail, "appended");
-    const appended = materializeSessionDetailResponse(
-      makeScanResult(
-        new TestAgent(appendedDetail, new Map([["s1", makeMeta("appended")]])),
-        appendedHead,
+    const { result: appended, sql } = withPreparedSqlCapture(() =>
+      materializeSessionDetailResponse(
+        makeScanResult(
+          new TestAgent(appendedDetail, new Map([["s1", makeMeta("appended")]])),
+          appendedHead,
+        ),
+        { agentName: "test", sessionId: "s1" },
+        { messageCursor: first.data.message_cursor },
       ),
-      { agentName: "test", sessionId: "s1" },
-      { messageCursor: first.data.message_cursor },
     );
 
     expect(appended.status).toBe("found-json");
@@ -372,6 +401,33 @@ describe("materializeSessionDetail", () => {
     expect(appended.messageCount).toBe(2);
     expect(appended.sentMessageCount).toBe(1);
     expect([...appended.messages].map((message) => JSON.parse(message).id)).toEqual(["m2"]);
+    const messageSql = sql.filter((statement) => statement.includes("FROM messages"));
+    expect(
+      messageSql.some(
+        (statement) =>
+          statement.includes("parts_json") && !statement.includes("message_index >= ?"),
+      ),
+    ).toBe(false);
+    expect(
+      messageSql.some(
+        (statement) => statement.includes("parts_json") && statement.includes("message_index >= ?"),
+      ),
+    ).toBe(true);
+    expect(diagnostics).toContainEqual({
+      event: "session_detail.cursor_stream",
+      detail: expect.objectContaining({
+        update: "append",
+        message_count: 2,
+        sent_message_count: 1,
+        parts_json_bytes: expect.any(Number),
+        duration_ms: expect.any(Number),
+      }),
+    });
+    const appendTelemetry = diagnostics.find(
+      ({ event, detail }) =>
+        event === "session_detail.cursor_stream" && detail?.update === "append",
+    );
+    expect(Number(appendTelemetry?.detail?.parts_json_bytes)).toBeLessThan(1_000);
 
     const rewrittenDetail = makeStreamableDetail(appendedHead, ["rewritten", "second"]);
     persistDetail(appendedHead, rewrittenDetail, "rewritten");
@@ -389,6 +445,239 @@ describe("materializeSessionDetail", () => {
     expect(rewritten.data.message_update).toBe("reset");
     expect(rewritten.sentMessageCount).toBe(2);
     expect([...rewritten.messages].map((message) => JSON.parse(message).id)).toEqual(["m1", "m2"]);
+  });
+
+  it("resets cursors when cached message order or length changes", () => {
+    const makeStreamableHead = (messageCount: number, timeUpdated: number) => ({
+      ...makeHead({
+        time_updated: timeUpdated,
+        smart_tags: [],
+        smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+      }),
+      stats: { ...makeHead().stats, message_count: messageCount },
+    });
+    const makeStreamableDetail = (
+      head: SessionHead,
+      messages: Array<{ id: string; text: string }>,
+    ) => ({
+      ...makeDetail("Cached Session"),
+      ...head,
+      reference: { agentName: "test", sessionId: "s1" },
+      smart_tags: [],
+      smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+      messages: messages.map((message, index) => ({
+        id: message.id,
+        role: "assistant" as const,
+        time_created: 1500 + index,
+        parts: [{ type: "text" as const, text: message.text }],
+      })),
+    });
+    const firstHead = makeStreamableHead(3, 2000);
+    const firstDetail = makeStreamableDetail(firstHead, [
+      { id: "m1", text: "first" },
+      { id: "m2", text: "second" },
+      { id: "m3", text: "third" },
+    ]);
+    persistDetail(firstHead, firstDetail, "first");
+    const first = materializeSessionDetailResponse(
+      makeScanResult(new TestAgent(firstDetail, new Map([["s1", makeMeta("first")]])), firstHead),
+      { agentName: "test", sessionId: "s1" },
+    );
+    expect(first.status).toBe("found-json");
+    if (first.status !== "found-json") return;
+
+    const reorderedHead = makeStreamableHead(3, 3000);
+    const reorderedDetail = makeStreamableDetail(reorderedHead, [
+      { id: "m3", text: "third" },
+      { id: "m1", text: "first" },
+      { id: "m2", text: "second" },
+    ]);
+    persistDetail(reorderedHead, reorderedDetail, "reordered");
+    const reordered = materializeSessionDetailResponse(
+      makeScanResult(
+        new TestAgent(reorderedDetail, new Map([["s1", makeMeta("reordered")]])),
+        reorderedHead,
+      ),
+      { agentName: "test", sessionId: "s1" },
+      { messageCursor: first.data.message_cursor },
+    );
+    expect(reordered).toMatchObject({
+      status: "found-json",
+      data: { message_update: "reset" },
+      messageCount: 3,
+      sentMessageCount: 3,
+    });
+    if (reordered.status !== "found-json") return;
+
+    const deletedHead = makeStreamableHead(2, 4000);
+    const deletedDetail = makeStreamableDetail(deletedHead, [
+      { id: "m3", text: "third" },
+      { id: "m2", text: "second" },
+    ]);
+    persistDetail(deletedHead, deletedDetail, "deleted");
+    const deleted = materializeSessionDetailResponse(
+      makeScanResult(
+        new TestAgent(deletedDetail, new Map([["s1", makeMeta("deleted")]])),
+        deletedHead,
+      ),
+      { agentName: "test", sessionId: "s1" },
+      { messageCursor: reordered.data.message_cursor },
+    );
+    expect(deleted).toMatchObject({
+      status: "found-json",
+      data: { message_update: "reset" },
+      messageCount: 2,
+      sentMessageCount: 2,
+    });
+    if (deleted.status !== "found-json") return;
+
+    const truncatedHead = makeStreamableHead(1, 5000);
+    const truncatedDetail = makeStreamableDetail(truncatedHead, [{ id: "m3", text: "third" }]);
+    persistDetail(truncatedHead, truncatedDetail, "truncated");
+    const truncated = materializeSessionDetailResponse(
+      makeScanResult(
+        new TestAgent(truncatedDetail, new Map([["s1", makeMeta("truncated")]])),
+        truncatedHead,
+      ),
+      { agentName: "test", sessionId: "s1" },
+      { messageCursor: deleted.data.message_cursor },
+    );
+    expect(truncated).toMatchObject({
+      status: "found-json",
+      data: { message_update: "reset" },
+      messageCount: 1,
+      sentMessageCount: 1,
+    });
+  });
+
+  it("resets cursors with missing chains or out-of-range counts", () => {
+    const head = makeHead({
+      smart_tags: [],
+      smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+    });
+    const detail = {
+      ...makeDetail("Cached Session"),
+      ...head,
+      smart_tags: [],
+      smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+    };
+    persistDetail(head, detail, "cached");
+    const agent = new TestAgent(detail, new Map([["s1", makeMeta("cached")]]));
+    const scanResult = makeScanResult(agent, head);
+    const first = materializeSessionDetailResponse(scanResult, {
+      agentName: "test",
+      sessionId: "s1",
+    });
+    expect(first.status).toBe("found-json");
+    if (first.status !== "found-json") return;
+
+    withCacheDb((db) => {
+      db.prepare("UPDATE messages SET content_chain_digest = NULL WHERE agent_name = ?").run(
+        "test",
+      );
+    });
+    const missingChain = materializeSessionDetailResponse(
+      scanResult,
+      { agentName: "test", sessionId: "s1" },
+      { messageCursor: first.data.message_cursor },
+    );
+    expect(missingChain).toMatchObject({
+      status: "found-json",
+      data: { message_update: "reset" },
+      messageCount: 1,
+      sentMessageCount: 1,
+    });
+
+    const oversizedCursor = Buffer.from(
+      JSON.stringify({ version: MESSAGE_CURSOR_VERSION, count: 2, digest: "0".repeat(64) }),
+    ).toString("base64url");
+    const oversized = materializeSessionDetailResponse(
+      scanResult,
+      { agentName: "test", sessionId: "s1" },
+      { messageCursor: oversizedCursor },
+    );
+    expect(oversized).toMatchObject({
+      status: "found-json",
+      data: { message_update: "reset" },
+      messageCount: 1,
+      sentMessageCount: 1,
+    });
+    expect(agent.reads).toBe(0);
+  });
+
+  it("keeps empty cursor streams appendable", () => {
+    const head = makeHead({
+      smart_tags: [],
+      smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+      stats: { ...makeHead().stats, message_count: 0 },
+    });
+    const detail = {
+      ...makeDetail("Cached Session"),
+      ...head,
+      smart_tags: [],
+      smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+      messages: [],
+    };
+    persistDetail(head, detail, "empty");
+    const scanResult = makeScanResult(
+      new TestAgent(detail, new Map([["s1", makeMeta("empty")]])),
+      head,
+    );
+    const first = materializeSessionDetailResponse(scanResult, {
+      agentName: "test",
+      sessionId: "s1",
+    });
+    expect(first).toMatchObject({
+      status: "found-json",
+      data: { message_update: "reset" },
+      messageCount: 0,
+      sentMessageCount: 0,
+    });
+    if (first.status !== "found-json") return;
+
+    const next = materializeSessionDetailResponse(
+      scanResult,
+      { agentName: "test", sessionId: "s1" },
+      { messageCursor: first.data.message_cursor },
+    );
+    expect(next).toMatchObject({
+      status: "found-json",
+      data: { message_update: "append" },
+      messageCount: 0,
+      sentMessageCount: 0,
+    });
+  });
+
+  it("reads cursor metadata and message ranges from one cache snapshot", () => {
+    const head = makeHead({
+      smart_tags: [],
+      smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+    });
+    const detail = {
+      ...makeDetail("Cached Session"),
+      ...head,
+      smart_tags: [],
+      smart_tags_classifier_revision: SMART_TAG_CLASSIFIER_REVISION,
+    };
+    persistDetail(head, detail, "snapshot");
+
+    const snapshot = readCachedSessionCursor("test", "s1", (entry, cursor) => {
+      const writer = new Database(getCachePath());
+      try {
+        writer
+          .prepare("UPDATE messages SET parts_json = ? WHERE agent_name = ? AND session_id = ?")
+          .run(JSON.stringify([]), "test", "s1");
+      } finally {
+        writer.close();
+      }
+      return {
+        digest: entry.messageDigest,
+        partsJson: cursor.messageRows(0)[0]?.parts_json,
+      };
+    });
+
+    expect(snapshot?.digest).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.parse(String(snapshot?.partsJson))).toEqual(detail.messages[0]?.parts);
   });
 
   it("resets incremental transport while a changed fingerprint is rematerialized", () => {
