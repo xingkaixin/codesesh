@@ -9,7 +9,12 @@
  */
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import { sortSessionsByActivity } from "../contract/session-index.js";
-import type { SessionHead } from "../types/index.js";
+import type {
+  ProjectIdentity,
+  SessionHead,
+  SessionReference,
+  SessionStats,
+} from "../types/index.js";
 import type { SessionHeadChange } from "./cache/db.js";
 import {
   computeIdentityProjection,
@@ -72,34 +77,94 @@ export function buildAgentCacheMeta(
   return meta;
 }
 
-/**
- * Stable signature for the user-visible fields that define a session's identity.
- * Used by both orchestrators to decide whether a session "changed". Includes
- * Derived values are part of the projection: changing an identity or tag must
- * propagate even when the underlying source timestamp and statistics do not.
- */
-export function sessionSignature(session: SessionHead): string {
-  return JSON.stringify([
-    session.title,
-    session.directory,
-    session.parent_reference?.agentName ?? null,
-    session.parent_reference?.sessionId ?? null,
-    session.time_created,
-    session.time_updated ?? session.time_created,
-    session.stats.message_count,
-    session.stats.total_input_tokens,
-    session.stats.total_output_tokens,
-    session.stats.total_cost,
-    session.stats.total_tokens ?? 0,
-    session.project_identity?.kind ?? null,
-    session.project_identity?.key ?? null,
-    session.project_identity?.displayName ?? null,
+type SignatureValue = string | number | boolean | null | readonly SignatureValue[];
+
+type SignatureSpec<Value extends object, Field extends keyof Value = keyof Value> = {
+  [Key in Field]-?: (value: Value) => readonly SignatureValue[];
+};
+
+type ObjectSignatureSpec<Value extends object> = {
+  [Key in keyof Value]-?: (value: Value) => SignatureValue;
+};
+
+function signatureValues<Value extends object, Field extends keyof Value>(
+  value: Value,
+  spec: SignatureSpec<Value, Field>,
+): SignatureValue[] {
+  const values: SignatureValue[] = [];
+  for (const key of Object.keys(spec) as Array<Extract<Field, string>>) {
+    values.push(...spec[key](value));
+  }
+  return values;
+}
+
+function objectSignatureValues<Value extends object>(
+  value: Value | undefined,
+  spec: ObjectSignatureSpec<Value>,
+): SignatureValue[] {
+  const keys = Object.keys(spec) as Array<Extract<keyof Value, string>>;
+  if (!value) return keys.map(() => null);
+  return keys.map((key) => spec[key](value));
+}
+
+const SESSION_REFERENCE_SIGNATURE_SPEC = {
+  agentName: (reference) => reference.agentName,
+  sessionId: (reference) => reference.sessionId,
+} satisfies ObjectSignatureSpec<SessionReference>;
+
+const PROJECT_IDENTITY_SIGNATURE_SPEC = {
+  kind: (identity) => identity.kind,
+  key: (identity) => identity.key,
+  displayName: (identity) => identity.displayName,
+} satisfies ObjectSignatureSpec<ProjectIdentity>;
+
+const SESSION_STATS_SIGNATURE_SPEC = {
+  message_count: (stats) => stats.message_count,
+  total_input_tokens: (stats) => stats.total_input_tokens,
+  total_output_tokens: (stats) => stats.total_output_tokens,
+  total_cost: (stats) => stats.total_cost,
+  cost_source: (stats) => stats.cost_source ?? null,
+  total_tokens: (stats) => stats.total_tokens ?? 0,
+  total_cache_read_tokens: (stats) => stats.total_cache_read_tokens ?? 0,
+  total_cache_create_tokens: (stats) => stats.total_cache_create_tokens ?? 0,
+} satisfies ObjectSignatureSpec<SessionStats>;
+
+/** `id` is the diff key; `display_title` is an API alias decoration. */
+type SessionHeadSignatureExcludedField = "id" | "display_title";
+
+type SessionHeadSignatureField = Exclude<keyof SessionHead, SessionHeadSignatureExcludedField>;
+
+function modelUsageSignature(modelUsage: SessionHead["model_usage"]): SignatureValue {
+  if (!modelUsage) return null;
+  return Object.entries(modelUsage)
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([model, tokens]) => [model, tokens]);
+}
+
+const SESSION_HEAD_SIGNATURE_SPEC = {
+  slug: (session) => [session.slug],
+  title: (session) => [session.title],
+  directory: (session) => [session.directory],
+  parent_reference: (session) =>
+    objectSignatureValues(session.parent_reference, SESSION_REFERENCE_SIGNATURE_SPEC),
+  project_identity: (session) =>
+    objectSignatureValues(session.project_identity, PROJECT_IDENTITY_SIGNATURE_SPEC),
+  project_identity_resolver_revision: (session) => [
     session.project_identity_resolver_revision ?? null,
-    session.project_identity_input_signature ?? null,
-    session.smart_tags ? [...session.smart_tags].sort() : null,
-    session.smart_tags_source_updated_at ?? null,
-    session.smart_tags_classifier_revision ?? null,
-  ]);
+  ],
+  project_identity_input_signature: (session) => [session.project_identity_input_signature ?? null],
+  time_created: (session) => [session.time_created],
+  time_updated: (session) => [session.time_updated ?? session.time_created],
+  stats: (session) => objectSignatureValues(session.stats, SESSION_STATS_SIGNATURE_SPEC),
+  model_usage: (session) => [modelUsageSignature(session.model_usage)],
+  smart_tags: (session) => [session.smart_tags ? [...session.smart_tags].sort() : null],
+  smart_tags_source_updated_at: (session) => [session.smart_tags_source_updated_at ?? null],
+  smart_tags_classifier_revision: (session) => [session.smart_tags_classifier_revision ?? null],
+} satisfies SignatureSpec<SessionHead, SessionHeadSignatureField>;
+
+/** Stable signature for canonical session fields used by both scan orchestrators. */
+export function sessionSignature(session: SessionHead): string {
+  return JSON.stringify(signatureValues(session, SESSION_HEAD_SIGNATURE_SPEC));
 }
 
 /** Sort sessions by activity time, newest first. */
