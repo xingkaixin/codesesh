@@ -86,6 +86,7 @@ export {
 } from "./contract/index.js";
 export type {
   FileActivityResult,
+  AgentCacheFailure,
   LiveSnapshot,
   SaveCachedSessionsOptions,
   ScanOptions,

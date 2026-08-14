@@ -457,7 +457,10 @@ export function loadCachedSessionData(agentName: string, sessionId: string): Ses
   return loadCachedSessionDataEntry(agentName, sessionId)?.data ?? null;
 }
 
-/** Returns whether the write reached disk; callers must not publish on `false`. */
+/**
+ * Returns whether the write reached disk; on `false`, callers must not mark the cache initialized
+ * or a full sync complete.
+ */
 export function saveCachedSessions(
   agentName: string,
   sessions: SessionHead[],
@@ -537,7 +540,10 @@ export function writeCachedSessionSnapshot(
   });
 }
 
-/** Returns whether the write reached disk; callers must not publish on `false`. */
+/**
+ * Returns whether the write reached disk. On `false`, callers may serve the in-memory result
+ * but must not advance the persistence timestamp, initialization marker, or durable baseline.
+ */
 export function saveCachedSessionChanges(
   agentName: string,
   changes: SessionHeadChange[],
