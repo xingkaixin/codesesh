@@ -314,9 +314,11 @@ const ReasoningSection = memo(function ReasoningSection({
       data-session-timeline-anchor={anchorId}
       className="scroll-mt-20 overflow-hidden rounded-lg border border-[var(--console-thinking-border)] bg-[var(--console-thinking-bg)]"
     >
-      <div
-        className="flex cursor-pointer items-center justify-between bg-[var(--console-surface-muted)] px-3 py-2"
-        onClick={() => setExpanded(!expanded)}
+      <button
+        type="button"
+        className="flex w-full items-center justify-between bg-[var(--console-surface-muted)] px-3 py-2 text-left motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand)]"
+        onClick={() => setExpanded((isExpanded) => !isExpanded)}
+        aria-expanded={expanded}
       >
         <span className="console-mono flex items-center gap-2 text-xs font-medium text-[var(--console-muted)]">
           <Lightbulb className="size-3.5" />
@@ -325,7 +327,7 @@ const ReasoningSection = memo(function ReasoningSection({
         <span className="text-[var(--console-muted)]">
           <ChevronDown className="motion-chevron w-4 h-4" data-open={expanded || undefined} />
         </span>
-      </div>
+      </button>
       <Collapsible open={expanded}>
         {() => (
           <div className="border-t border-dashed border-[var(--console-thinking-border)] px-4 py-3">
@@ -413,7 +415,8 @@ const PlanItem = memo(function PlanItem({
             <button
               type="button"
               className="flex w-full items-start gap-2 text-left"
-              onClick={() => setExpanded(!expanded)}
+              onClick={() => setExpanded((isExpanded) => !isExpanded)}
+              aria-expanded={expanded}
             >
               <CalendarRange className="mt-0.5 size-3.5 shrink-0 text-[var(--console-accent)]" />
               <span className="min-w-0 flex-1">

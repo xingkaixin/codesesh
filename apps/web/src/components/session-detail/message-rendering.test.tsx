@@ -1,7 +1,7 @@
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Message, ToolPart } from "../../lib/api";
+import type { Message, PlanPart, ReasoningPart, ToolPart } from "../../lib/api";
 import type { MessageBlock } from "./blocks";
 
 const normalizeToolStateCalls = vi.hoisted(() => vi.fn());
@@ -25,6 +25,76 @@ afterEach(() => {
 });
 
 describe("MessageItem", () => {
+  it("CS-258: exposes reasoning expansion through a native button", () => {
+    const reasoning: ReasoningPart = { type: "reasoning", text: "Working through the answer" };
+    const message: Message = {
+      id: "m1",
+      role: "assistant",
+      time_created: 1,
+      parts: [reasoning],
+    };
+    const blocks: MessageBlock[] = [{ type: "reasoning", parts: [reasoning] }];
+    const view = render(
+      <MemoryRouter>
+        <MessageItem
+          messageIndex={0}
+          msg={message}
+          blocks={blocks}
+          formatTokens={String}
+          sessionAgentKey="codex"
+          baseDirectory="/repo"
+        />
+      </MemoryRouter>,
+    );
+
+    const toggle = view.getByRole("button", { name: "Thinking" });
+    expect(toggle.tagName).toBe("BUTTON");
+    expect(toggle.tabIndex).toBe(0);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+    toggle.focus();
+    expect(document.activeElement).toBe(toggle);
+
+    fireEvent.click(toggle);
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(view.getByText("Working through the answer")).not.toBeNull();
+  });
+
+  it("CS-258: exposes plan expansion state to assistive technology", () => {
+    const plan: PlanPart = {
+      type: "plan",
+      text: "1. Implement the change",
+      approval_status: "success",
+    };
+    const message: Message = {
+      id: "m1",
+      role: "assistant",
+      time_created: 1,
+      parts: [plan],
+    };
+    const blocks: MessageBlock[] = [{ type: "plan", parts: [plan] }];
+    const view = render(
+      <MemoryRouter>
+        <MessageItem
+          messageIndex={0}
+          msg={message}
+          blocks={blocks}
+          formatTokens={String}
+          sessionAgentKey="codex"
+          baseDirectory="/repo"
+        />
+      </MemoryRouter>,
+    );
+
+    const toggle = view.getByRole("button", { name: "plan" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(toggle);
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("reuses normalized tool state when only highlighting changes", () => {
     const tool: ToolPart = {
       type: "tool",
