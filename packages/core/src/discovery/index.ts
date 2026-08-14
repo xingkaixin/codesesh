@@ -42,7 +42,7 @@ export type {
 } from "./cache/sessions.js";
 export type { CacheReadOutcome } from "./cache/schema.js";
 export { closeCacheStorage, getCachePath } from "./cache/db.js";
-export type { SessionHeadChange } from "./cache/db.js";
+export type { PersistedSessionHeadChange } from "./cache/db.js";
 export { getAnalyticsRevision } from "./cache/analytics-revision.js";
 export { listCachedProjectGroups } from "./cache/project-groups.js";
 export {

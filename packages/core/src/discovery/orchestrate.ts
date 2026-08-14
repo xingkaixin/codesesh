@@ -15,7 +15,7 @@ import type {
   SessionReference,
   SessionStats,
 } from "../types/index.js";
-import type { SessionHeadChange } from "./cache/db.js";
+import type { PersistedSessionHeadChange } from "./cache/db.js";
 import {
   computeIdentityProjection,
   normalizeProjectDirectory,
@@ -173,7 +173,7 @@ export function sortSessions(sessions: SessionHead[]): SessionHead[] {
 }
 
 export interface SessionDiffResult {
-  changes: SessionHeadChange[];
+  changes: PersistedSessionHeadChange[];
   removedSessionIds: string[];
   counts: { new: number; updated: number; removed: number };
 }
@@ -207,7 +207,7 @@ export function computeSessionDiff(
   const cachedMap = new Map(cachedSessions.map((session) => [session.id, session]));
   const updatedIds = new Set(updatedSessions.map((session) => session.id));
   const changedIdSet = new Set(changedIds);
-  const changes: SessionHeadChange[] = [];
+  const changes: PersistedSessionHeadChange[] = [];
   const removedSessionIds: string[] = [];
   let newCount = 0;
   let updatedCount = 0;

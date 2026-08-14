@@ -18,7 +18,7 @@ import {
   type ScanOptions,
   type SessionCacheMeta,
   type SessionHead,
-  type SessionHeadChange,
+  type PersistedSessionHeadChange,
   type SessionSourceFailure,
   type SessionSnapshotCompleteness,
   type SessionTagTiming,
@@ -53,7 +53,7 @@ export type ScanRefreshWorkerMessage =
       type: "done";
       requestId: number;
       generation: number;
-      changes: SessionHeadChange[];
+      changes: PersistedSessionHeadChange[];
       removedSessionIds: string[];
       meta: Record<string, SessionCacheMeta>;
       removedMetaIds: string[];
@@ -80,7 +80,7 @@ export type ScanRefreshWorkerCheckpoint =
     }
   | {
       stage: "finalizing";
-      changes: SessionHeadChange[];
+      changes: PersistedSessionHeadChange[];
       meta: Record<string, SessionCacheMeta>;
       backfillCursor?: string;
     };

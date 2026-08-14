@@ -5,7 +5,7 @@ import {
   type ScanOptions,
   type SessionCacheMeta,
   type SessionHead,
-  type SessionHeadChange,
+  type PersistedSessionHeadChange,
   type SessionSourceFailure,
   type SessionSnapshotCompleteness,
 } from "@codesesh/core";
@@ -71,7 +71,7 @@ const SHUTDOWN_ERROR_MESSAGE = "Scan refresh worker shut down";
 
 function applySessionChanges(
   previousSessions: SessionHead[],
-  changes: SessionHeadChange[],
+  changes: PersistedSessionHeadChange[],
   removedSessionIds: string[],
 ): SessionHead[] {
   if (changes.length === 0 && removedSessionIds.length === 0) return previousSessions;

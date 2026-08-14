@@ -12,7 +12,7 @@ import {
   type SearchIndexSyncResult,
   type SearchIndexSyncOptions,
   type SessionCacheMeta,
-  type SessionHeadChange,
+  type PersistedSessionHeadChange,
   type SessionHead,
   type SessionSnapshotCompleteness,
   type DurableSessionPublicationFailureStage,
@@ -59,7 +59,7 @@ export type SearchIndexWorkerJob =
       kind: "changes";
       context: string;
       agentName: string;
-      changes: SessionHeadChange[];
+      changes: PersistedSessionHeadChange[];
       removedSessionIds: string[];
       meta: Record<string, SessionCacheMeta>;
       publicationId?: string;
@@ -69,7 +69,7 @@ export type SearchIndexWorkerJob =
       kind: "maintenance";
       context: string;
       agentName: string;
-      changes: SessionHeadChange[];
+      changes: PersistedSessionHeadChange[];
       removedSessionIds: string[];
       meta: Record<string, SessionCacheMeta>;
       searchIndexOptions?: SearchIndexSyncOptions;
