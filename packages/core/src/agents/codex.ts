@@ -363,6 +363,12 @@ interface SessionMeta extends FileSessionMeta {
   parentThreadId: string | null;
 }
 
+interface ChildFinalMessageCacheEntry {
+  sourceFingerprint: string;
+  parserVersion: string;
+  message: Message | null;
+}
+
 class ChildMessageVisibilityIndex {
   private readonly visibleSubagentIds = new Set<string>();
   private readonly visibleNicknameTexts = new Map<string, Set<string>>();
@@ -432,6 +438,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   private sessionIndexPath: string | undefined;
   private subagentIndex: SubagentIndex | null = null;
   private subagentStatsByParent = new Map<string, SessionHead["stats"][]>();
+  private childFinalMessagesByParent = new Map<string, Map<string, ChildFinalMessageCacheEntry>>();
 
   // ---- BaseAgent implementation ----
 
@@ -470,6 +477,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     super.setSessionMetaMap(meta);
     this.subagentIndex = null;
     this.subagentStatsByParent.clear();
+    this.childFinalMessagesByParent.clear();
   }
 
   /**
@@ -493,6 +501,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       expanded.add(parentId);
       this.subagentIndex = null;
       this.subagentStatsByParent.delete(parentId);
+      this.childFinalMessagesByParent.delete(parentId);
     }
     return [...expanded];
   }
@@ -780,15 +789,54 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   }
 
   private collectChildMessages(parentSessionId: string): Message[] {
-    return this.collectChildFiles(parentSessionId)
+    const childFiles = this.collectChildFiles(parentSessionId);
+    this.reconcileChildFinalMessageCache(parentSessionId, childFiles);
+    return childFiles
       .flatMap((file) => {
-        const message = this.parseChildFinalMessage(file);
+        const message = this.getChildFinalMessage(parentSessionId, file);
         return message ? [message] : [];
       })
       .sort((left, right) => left.time_created - right.time_created);
   }
 
-  private parseChildFinalMessage(filePath: string): Message | null {
+  private getChildFinalMessage(parentSessionId: string, filePath: string): Message | null {
+    const sourceFingerprint = this.childFinalMessageFingerprint(filePath);
+    let cache = this.childFinalMessagesByParent.get(parentSessionId);
+    if (!cache) {
+      cache = new Map();
+      this.childFinalMessagesByParent.set(parentSessionId, cache);
+    }
+
+    const cached = cache.get(filePath);
+    if (
+      cached?.sourceFingerprint === sourceFingerprint &&
+      cached.parserVersion === PARSER_VERSION
+    ) {
+      return cached.message;
+    }
+
+    const message = this.readChildFinalMessage(filePath);
+    cache.set(filePath, { sourceFingerprint, parserVersion: PARSER_VERSION, message });
+    return message;
+  }
+
+  private reconcileChildFinalMessageCache(parentSessionId: string, childFiles: string[]): void {
+    const cache = this.childFinalMessagesByParent.get(parentSessionId);
+    if (!cache) return;
+
+    const activeFiles = new Set(childFiles);
+    for (const filePath of cache.keys()) {
+      if (!activeFiles.has(filePath)) cache.delete(filePath);
+    }
+    if (cache.size === 0) this.childFinalMessagesByParent.delete(parentSessionId);
+  }
+
+  private childFinalMessageFingerprint(filePath: string): string {
+    const { mtimeMs, size } = statSync(filePath);
+    return JSON.stringify([mtimeMs, size]);
+  }
+
+  private readChildFinalMessage(filePath: string): Message | null {
     const sessionId = extractSessionId(filePath);
     const threadMeta = this.readThreadMeta(filePath);
     type ChildOutput = { id: string; text: string; timestampMs: number; isFinal: boolean };

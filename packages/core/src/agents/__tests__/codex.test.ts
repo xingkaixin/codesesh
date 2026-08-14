@@ -1,6 +1,7 @@
 import {
   mkdtempSync,
   mkdirSync,
+  openSync,
   readFileSync,
   rmSync,
   statSync,
@@ -23,6 +24,7 @@ vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   return {
     ...actual,
+    openSync: vi.fn(actual.openSync),
     readFileSync: vi.fn(actual.readFileSync),
     statSync: vi.fn(actual.statSync),
   };
@@ -1633,6 +1635,105 @@ describe("CodexAgent subagent folding", () => {
 
     expect(someCallCount).toBe(0);
     expect(visibleMessages).toHaveLength(400);
+  });
+
+  function childOpenCount(filePath: string): number {
+    return vi.mocked(openSync).mock.calls.filter(([path]) => String(path) === filePath).length;
+  }
+
+  it("caches child final messages until the source or parser changes", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
+    tempDirs.push(tempDir);
+    writeSession(tempDir, PARENT_ID, { threadSource: "user" });
+    writeSession(tempDir, CHILD_ID, {
+      threadSource: "subagent",
+      parentThreadId: PARENT_ID,
+      extra: [
+        '{"timestamp":"2026-04-20T10:03:00Z","type":"response_item","phase":"final_answer","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"first child result"}]}}',
+      ],
+    });
+    const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.sessionIndexCache = new Map();
+    agent.scan({ from: 0 });
+    agent.getSessionData(PARENT_ID);
+
+    const openSpy = vi.mocked(openSync);
+    openSpy.mockClear();
+    agent.getSessionData(PARENT_ID);
+    expect(childOpenCount(childFile)).toBe(0);
+
+    const cacheEntry = agent.childFinalMessagesByParent.get(PARENT_ID)?.get(childFile);
+    expect(cacheEntry).toBeDefined();
+    cacheEntry.parserVersion = "codex-parser-old";
+    openSpy.mockClear();
+    agent.getSessionData(PARENT_ID);
+    expect(childOpenCount(childFile)).toBeGreaterThan(0);
+
+    writeSession(tempDir, CHILD_ID, {
+      threadSource: "subagent",
+      parentThreadId: PARENT_ID,
+      extra: [
+        '{"timestamp":"2026-04-20T10:03:00Z","type":"response_item","phase":"final_answer","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"updated child result"}]}}',
+      ],
+    });
+    openSpy.mockClear();
+    const refreshed = agent.getSessionData(PARENT_ID);
+    expect(childOpenCount(childFile)).toBeGreaterThan(0);
+    expect(refreshed.messages).toContainEqual(
+      expect.objectContaining({
+        parts: [expect.objectContaining({ type: "text", text: "updated child result" })],
+      }),
+    );
+  });
+
+  it("caches a child with no final message", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
+    tempDirs.push(tempDir);
+    writeSession(tempDir, PARENT_ID, { threadSource: "user" });
+    writeSession(tempDir, CHILD_ID, {
+      threadSource: "subagent",
+      parentThreadId: PARENT_ID,
+    });
+    const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.sessionIndexCache = new Map();
+    agent.scan({ from: 0 });
+    expect(agent.getSessionData(PARENT_ID).messages).toEqual([]);
+
+    vi.mocked(openSync).mockClear();
+    expect(agent.getSessionData(PARENT_ID).messages).toEqual([]);
+    expect(childOpenCount(childFile)).toBe(0);
+  });
+
+  it("prunes child final message cache entries when a child disappears", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-subagent-"));
+    tempDirs.push(tempDir);
+    writeSession(tempDir, PARENT_ID, { threadSource: "user" });
+    writeSession(tempDir, CHILD_ID, {
+      threadSource: "subagent",
+      parentThreadId: PARENT_ID,
+      extra: [
+        '{"timestamp":"2026-04-20T10:03:00Z","type":"response_item","phase":"final_answer","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"child result"}]}}',
+      ],
+    });
+    const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    agent.sessionIndexCache = new Map();
+    agent.scan({ from: 0 });
+    agent.getSessionData(PARENT_ID);
+    expect(agent.childFinalMessagesByParent.get(PARENT_ID)?.has(childFile)).toBe(true);
+
+    rmSync(childFile);
+    agent.subagentIndex = null;
+    agent.getSessionData(PARENT_ID);
+    expect(agent.childFinalMessagesByParent.has(PARENT_ID)).toBe(false);
   });
 
   it("finds child rollouts when detail parsing starts from cached metadata", () => {
