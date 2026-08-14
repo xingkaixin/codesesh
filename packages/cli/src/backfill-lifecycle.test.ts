@@ -58,6 +58,29 @@ describe("BackfillLifecycle", () => {
     expectValidStatus(lifecycle);
   });
 
+  it("retains partial snapshot completion after a committed attempt", () => {
+    const lifecycle = new BackfillLifecycle();
+    lifecycle.enqueue("codex");
+    const attempt = lifecycle.startNext()!;
+
+    expect(
+      lifecycle.recordCompletion(attempt, {
+        completeness: "partial",
+        sourceFailureCount: 1,
+        sourceFailureSummary: "SyntaxError: truncated JSON",
+      }),
+    ).toBe(true);
+    lifecycle.complete(attempt, "committed");
+
+    expect(lifecycle.status().partialAgents).toEqual({
+      codex: {
+        completeness: "partial",
+        sourceFailureCount: 1,
+        sourceFailureSummary: "SyntaxError: truncated JSON",
+      },
+    });
+  });
+
   it("ignores progress and results from an older attempt", () => {
     const lifecycle = new BackfillLifecycle();
     lifecycle.enqueue("codex");

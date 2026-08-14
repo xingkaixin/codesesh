@@ -97,6 +97,9 @@ export interface AgentScanStatus {
     | "indexing"
     | "complete"
     | "failed";
+  completeness?: ScanCompletion["completeness"];
+  sourceFailureCount?: number;
+  sourceFailureSummary?: string;
   error?: string;
   total?: number;
   processed?: number;
@@ -104,6 +107,13 @@ export interface AgentScanStatus {
   startedAt?: number;
   updatedAt: number;
   completedAt?: number;
+}
+
+/** Snapshot completeness is independent from whether the operation completed. */
+export interface ScanCompletion {
+  completeness: "complete" | "partial";
+  sourceFailureCount?: number;
+  sourceFailureSummary?: string;
 }
 
 /**
@@ -125,6 +135,7 @@ export interface BackfillStatus {
   progress?: BackfillProgress;
   completedAgents: string[];
   failedAgents: string[];
+  partialAgents?: Record<string, ScanCompletion>;
 }
 
 export interface SearchIndexMaintenanceStatus {

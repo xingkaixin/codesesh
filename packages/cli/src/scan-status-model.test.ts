@@ -225,6 +225,27 @@ describe("ScanStatusModel", () => {
     expect(complete.completedAgents).toEqual(["codex", "claude"]);
   });
 
+  it("keeps partial snapshot completion separate from a completed lifecycle", () => {
+    const model = new ScanStatusModel();
+    model.startBatch(["codex"], "scanning", { codex: 1 });
+    model.beginAgent("codex", 1);
+
+    const complete = model.finishAgent("codex", 1, {
+      completeness: "partial",
+      sourceFailureCount: 1,
+      sourceFailureSummary: "SyntaxError: truncated JSON",
+    });
+
+    expect(complete.agentStatuses.codex).toEqual(
+      expect.objectContaining({
+        status: "complete",
+        completeness: "partial",
+        sourceFailureCount: 1,
+        sourceFailureSummary: "SyntaxError: truncated JSON",
+      }),
+    );
+  });
+
   it("returns detached snapshots", () => {
     const model = new ScanStatusModel();
     model.startBatch(["codex"], "initializing", { codex: 1 });
@@ -301,6 +322,27 @@ describe("ScanStatusModel", () => {
       completedAgents: ["codex"],
       failedAgents: [],
     });
+  });
+
+  it("copies partial backfill completion into the status snapshot", () => {
+    const model = new ScanStatusModel();
+    const status = model.updateBackfill({
+      active: false,
+      pendingAgents: [],
+      completedAgents: ["codex"],
+      failedAgents: [],
+      partialAgents: {
+        codex: {
+          completeness: "partial",
+          sourceFailureCount: 1,
+          sourceFailureSummary: "SyntaxError: truncated JSON",
+        },
+      },
+    });
+
+    status.backfill.partialAgents!.codex!.sourceFailureCount = 2;
+
+    expect(model.snapshot().backfill.partialAgents?.codex?.sourceFailureCount).toBe(1);
   });
 
   it("tracks search-index maintenance independently from session scanning", () => {

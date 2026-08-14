@@ -1,4 +1,4 @@
-import type { BackfillProgress, BackfillStatus } from "@codesesh/core/contract";
+import type { BackfillProgress, BackfillStatus, ScanCompletion } from "@codesesh/core/contract";
 
 export type BackfillTerminalStatus = "committed" | "failed" | "skipped";
 
@@ -8,9 +8,16 @@ export interface BackfillAttemptRef {
 }
 
 export type BackfillAttemptState =
-  | (BackfillAttemptRef & { status: "queued" })
-  | (BackfillAttemptRef & { status: "running"; progress?: BackfillProgress })
-  | (BackfillAttemptRef & { status: BackfillTerminalStatus | "cancelled" });
+  | (BackfillAttemptRef & { status: "queued"; completion?: ScanCompletion })
+  | (BackfillAttemptRef & {
+      status: "running";
+      progress?: BackfillProgress;
+      completion?: ScanCompletion;
+    })
+  | (BackfillAttemptRef & {
+      status: BackfillTerminalStatus | "cancelled";
+      completion?: ScanCompletion;
+    });
 
 export class BackfillLifecycle {
   private readonly attempts = new Map<string, BackfillAttemptState>();
@@ -52,9 +59,17 @@ export class BackfillLifecycle {
     return true;
   }
 
+  recordCompletion(attempt: BackfillAttemptRef, completion: ScanCompletion): boolean {
+    const current = this.matchingRunningAttempt(attempt);
+    if (!current) return false;
+    this.attempts.set(attempt.agentName, { ...current, completion: { ...completion } });
+    return true;
+  }
+
   complete(attempt: BackfillAttemptRef, status: BackfillTerminalStatus): boolean {
-    if (!this.matchingRunningAttempt(attempt)) return false;
-    this.attempts.set(attempt.agentName, { ...attempt, status });
+    const current = this.matchingRunningAttempt(attempt);
+    if (!current) return false;
+    this.attempts.set(attempt.agentName, { ...current, status });
     return true;
   }
 
@@ -74,9 +89,10 @@ export class BackfillLifecycle {
   stateFor(agentName: string): BackfillAttemptState | undefined {
     const state = this.attempts.get(agentName);
     if (!state) return undefined;
+    const completion = state.completion ? { completion: { ...state.completion } } : {};
     return state.status === "running" && state.progress
-      ? { ...state, progress: { ...state.progress } }
-      : { ...state };
+      ? { ...state, progress: { ...state.progress }, ...completion }
+      : { ...state, ...completion };
   }
 
   status(): BackfillStatus {
@@ -85,6 +101,12 @@ export class BackfillLifecycle {
       .filter((attempt) => attempt.status === "queued")
       .sort((left, right) => left.attemptId - right.attemptId);
     const running = states.find((attempt) => attempt.status === "running");
+    const partialAgents: Record<string, ScanCompletion> = {};
+    for (const attempt of states) {
+      if (attempt.status === "committed" && attempt.completion?.completeness === "partial") {
+        partialAgents[attempt.agentName] = { ...attempt.completion };
+      }
+    }
     const status: BackfillStatus = {
       active: running != null || queued.length > 0,
       pendingAgents: queued.map((attempt) => attempt.agentName),
@@ -94,6 +116,7 @@ export class BackfillLifecycle {
       failedAgents: states
         .filter((attempt) => attempt.status === "failed")
         .map((attempt) => attempt.agentName),
+      ...(Object.keys(partialAgents).length > 0 ? { partialAgents } : {}),
     };
     if (running) {
       status.currentAgent = running.agentName;
