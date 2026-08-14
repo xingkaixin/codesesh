@@ -20,7 +20,11 @@ import {
   type SessionSourceFailure,
   type SessionSnapshotCompleteness,
 } from "@codesesh/core";
-import type { ScanStatusEvent, SessionsUpdatedEvent } from "@codesesh/core/contract";
+import type {
+  ScanCompletion,
+  ScanStatusEvent,
+  SessionsUpdatedEvent,
+} from "@codesesh/core/contract";
 import { AgentOperationScheduler, type AgentOperationResult } from "./agent-operation-scheduler.js";
 import {
   BackfillLifecycle,
@@ -76,11 +80,18 @@ interface SessionPublication {
   candidateChangedIds: string[];
   indexJob: SearchIndexWorkerJob;
   onPublishing?: () => void;
+  onCommitted?: (result: SessionPublicationResult) => void;
 }
 
 interface SessionPublicationResult {
+  durableCommitted: true;
   event: SessionsUpdatedEvent | null;
   diffDuration: number;
+}
+
+interface RefreshResult {
+  result: Exclude<AgentOperationResult, "failed">;
+  completion: ScanCompletion;
 }
 
 interface RefreshStrategyResult {
@@ -103,6 +114,8 @@ const SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD = 100;
 const BACKFILL_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const CACHE_TRUNCATION_COVERAGE = 0.5;
 const STATUS_PROGRESS_INTERVAL_MS = 100;
+// SSE carries one compact summary; logs retain the complete failure list.
+const SOURCE_FAILURE_SUMMARY_MAX_LENGTH = 160;
 
 function buildPersistenceDiff(
   previousSessions: SessionHead[],
@@ -128,9 +141,21 @@ function buildPersistenceDiff(
   };
 }
 
-function sourceFailureError(failures: SessionSourceFailure[]): Error {
-  const noun = failures.length === 1 ? "source" : "sources";
-  return new Error(`${failures.length} session ${noun} failed; last-known-good data retained`);
+function buildScanCompletion(
+  completeness: SessionSnapshotCompleteness,
+  sourceFailures: readonly SessionSourceFailure[],
+): ScanCompletion {
+  if (sourceFailures.length === 0) return { completeness };
+  const firstFailure = sourceFailures[0]!;
+  const summary = `${firstFailure.errorClass}: ${firstFailure.message}`;
+  return {
+    completeness: "partial",
+    sourceFailureCount: sourceFailures.length,
+    sourceFailureSummary:
+      summary.length > SOURCE_FAILURE_SUMMARY_MAX_LENGTH
+        ? `${summary.slice(0, SOURCE_FAILURE_SUMMARY_MAX_LENGTH - 1)}…`
+        : summary,
+  };
 }
 
 function restoreAgentCacheMeta(agent: BaseAgent, cached: CachedSessions): void {
@@ -339,10 +364,10 @@ export class AgentSyncEngine {
     this.publishStatus(this.scanStatus.queueAgentPublication(agentName));
   }
 
-  private finishAgentScan(agentName: string): void {
+  private finishAgentScan(agentName: string, completion: ScanCompletion): void {
     this.flushProgressStatus(`scan:${agentName}`);
     const count = this.sessionIndex.snapshot().byAgent[agentName]?.length;
-    this.publishStatus(this.scanStatus.finishAgent(agentName, count));
+    this.publishStatus(this.scanStatus.finishAgent(agentName, count, completion));
   }
 
   private finishScanBatch(): void {
@@ -405,55 +430,103 @@ export class AgentSyncEngine {
 
   private emitSessionsChanged(change: AgentSessionsChanged): void {
     if (this.isShuttingDown) return;
-    for (const listener of this.sessionsChangedListeners) listener(change);
+    for (const listener of this.sessionsChangedListeners) {
+      try {
+        listener(change);
+      } catch (error) {
+        this.reportPostCommitError("session.publication", change.agentName, error);
+      }
+    }
+  }
+
+  private reportPostCommitError(
+    operation: "scan.refresh" | "scan.backfill" | "session.publication",
+    agentName: string,
+    error: unknown,
+  ): void {
+    appLogger.error(`${operation}.post_commit_error`, { agent: agentName, error });
+  }
+
+  private finishCommittedAgentScan(agentName: string, completion: ScanCompletion): void {
+    try {
+      this.finishAgentScan(agentName, completion);
+    } catch (error) {
+      this.reportPostCommitError("scan.refresh", agentName, error);
+      // finishAgent is idempotent, so one retry restores the terminal projection.
+      try {
+        this.finishAgentScan(agentName, completion);
+      } catch (recoveryError) {
+        this.reportPostCommitError("scan.refresh", agentName, recoveryError);
+      }
+    }
   }
 
   private async performRefresh(agentName: string): Promise<AgentOperationResult> {
     this.beginAgentScan(agentName);
     const startedAt = performance.now();
     let failed = false;
+    let durableCommitted = false;
     let cached: CachedSessions | null = null;
-    let result: Exclude<AgentOperationResult, "failed"> | null = null;
+    let result: AgentOperationResult = "failed";
+    let completion: ScanCompletion = { completeness: "complete" };
     try {
       if (this.findAgent(agentName)) cached = loadCachedSessions(agentName);
-      result = await this.runRefresh(agentName, cached, startedAt);
-      return result;
+      const refresh = await this.runRefresh(agentName, cached, startedAt, (committedCompletion) => {
+        durableCommitted = true;
+        completion = committedCompletion;
+        result = "committed";
+      });
+      result = refresh.result;
+      completion = refresh.completion;
     } catch (error) {
-      this.options.workerRunner.discard?.(agentName);
-      failed = true;
-      const failure = toError(error);
-      if (failure instanceof AgentUnavailableDuringScanError) {
-        appLogger.warn("scan.refresh.worker_agent_unavailable", {
-          agent: agentName,
-          error: failure.message,
-        });
+      if (durableCommitted) {
+        this.reportPostCommitError("scan.refresh", agentName, error);
+        result = "committed";
       } else {
-        appLogger.error("scan.refresh.error", { agent: agentName, error });
+        this.options.workerRunner.discard?.(agentName);
+        failed = true;
+        const failure = toError(error);
+        if (failure instanceof AgentUnavailableDuringScanError) {
+          appLogger.warn("scan.refresh.worker_agent_unavailable", {
+            agent: agentName,
+            error: failure.message,
+          });
+        } else {
+          appLogger.error("scan.refresh.error", { agent: agentName, error });
+        }
+        console.error(`[${agentName}] Session refresh failed:`, error);
+        this.flushProgressStatus(`scan:${agentName}`);
+        this.publishStatus(this.scanStatus.failAgent(agentName, failure.message));
       }
-      console.error(`[${agentName}] Session refresh failed:`, error);
-      this.flushProgressStatus(`scan:${agentName}`);
-      this.publishStatus(this.scanStatus.failAgent(agentName, failure.message));
-      return "failed";
-    } finally {
-      if (!failed) this.finishAgentScan(agentName);
+    }
+    try {
+      if (!failed) {
+        if (durableCommitted) this.finishCommittedAgentScan(agentName, completion);
+        else this.finishAgentScan(agentName, completion);
+      }
       const agent = this.findAgent(agentName);
       if (agent && this.needsBackfill(agent, cached, failed || result === "committed")) {
         this.enqueueBackfill(agentName);
       }
       if (agent) this.searchIndexMaintenance.enqueue(agentName);
+    } catch (error) {
+      if (!durableCommitted) throw error;
+      this.reportPostCommitError("scan.refresh", agentName, error);
     }
+    return result;
   }
 
   private async runRefresh(
     agentName: string,
     cached: CachedSessions | null,
     startedAt: number,
-  ): Promise<Exclude<AgentOperationResult, "failed">> {
+    onDurableCommit: (completion: ScanCompletion) => void,
+  ): Promise<RefreshResult> {
     const pendingPathCount = this.scheduler.takePendingSignalCount(agentName);
     const agent = this.findAgent(agentName);
     if (!agent) {
       appLogger.warn("scan.refresh.missing_agent", { agent: agentName });
-      return "skipped";
+      return { result: "skipped", completion: { completeness: "complete" } };
     }
     const previousSessions = this.sessionIndex.snapshot().byAgent[agentName] ?? [];
     const refreshBaseline = cached?.sessions ?? previousSessions;
@@ -467,7 +540,7 @@ export class AgentSyncEngine {
         agent: agentName,
         state: "initialization",
       });
-      return "unchanged";
+      return { result: "unchanged", completion: { completeness: "complete" } };
     }
     const isInitialized = initialization.value;
     const availabilityStartedAt = performance.now();
@@ -492,7 +565,10 @@ export class AgentSyncEngine {
     }
     if (strategyResult.status === "unchanged") {
       this.options.workerRunner.commit?.(agentName);
-      return "unchanged";
+      return {
+        result: "unchanged",
+        completion: buildScanCompletion(strategyResult.completeness, strategyResult.sourceFailures),
+      };
     }
 
     const nextSessions = attachMissingProjectIdentities(strategyResult.nextSessions);
@@ -544,7 +620,12 @@ export class AgentSyncEngine {
           saveCache: true,
           ...(searchIndexOptions ? { searchIndexOptions } : {}),
         };
+    const completion = buildScanCompletion(
+      strategyResult.completeness,
+      strategyResult.sourceFailures,
+    );
     this.queueAgentPublication(agentName);
+    let publicationCommitted = false;
     let publication: SessionPublicationResult;
     try {
       publication = await this.commitSessionPublication({
@@ -554,11 +635,17 @@ export class AgentSyncEngine {
         candidateChangedIds: strategyResult.preciseChangedIds ?? [],
         indexJob: persistentJob,
         onPublishing: () => this.beginAgentPublishing(agentName),
+        onCommitted: () => {
+          publicationCommitted = true;
+          onDurableCommit(completion);
+        },
       });
     } catch (error) {
-      agent.setSessionMetaMap(durableMeta);
-      if (durableLastRefreshAt == null) this.lastRefreshAtByAgent.delete(agentName);
-      else this.lastRefreshAtByAgent.set(agentName, durableLastRefreshAt);
+      if (!publicationCommitted) {
+        agent.setSessionMetaMap(durableMeta);
+        if (durableLastRefreshAt == null) this.lastRefreshAtByAgent.delete(agentName);
+        else this.lastRefreshAtByAgent.set(agentName, durableLastRefreshAt);
+      }
       throw error;
     }
     this.options.workerRunner.commit?.(agentName);
@@ -592,9 +679,8 @@ export class AgentSyncEngine {
         agent: agentName,
         failures: strategyResult.sourceFailures,
       });
-      throw sourceFailureError(strategyResult.sourceFailures);
     }
-    return "committed";
+    return { result: "committed", completion };
   }
 
   /**
@@ -978,6 +1064,7 @@ export class AgentSyncEngine {
       );
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const fullSessions = attachMissingProjectIdentities(result.sessions);
+      const completion = buildScanCompletion(result.completeness, result.sourceFailures ?? []);
       this.flushProgressStatus(`backfill:${agentName}`);
       const updatePublicationPhase = (phase: "publish-queued" | "publishing") => {
         if (
@@ -994,7 +1081,7 @@ export class AgentSyncEngine {
         }
       };
       updatePublicationPhase("publish-queued");
-      await this.commitSessionPublication({
+      const publication = await this.commitSessionPublication({
         context: "scan.backfill",
         agentName,
         sessions: fullSessions,
@@ -1010,20 +1097,39 @@ export class AgentSyncEngine {
           saveCache: true,
         },
         onPublishing: () => updatePublicationPhase("publishing"),
+        onCommitted: () => {
+          durableCommitted = true;
+          if (completion.completeness === "partial") {
+            this.backfills.recordCompletion(attempt, completion);
+          }
+        },
       });
-      durableCommitted = true;
+      durableCommitted = publication.durableCommitted;
       this.options.workerRunner.commit?.(agentName);
-      if (result.sourceFailures?.length) throw sourceFailureError(result.sourceFailures);
       markAgentFullSyncCompleted(agentName);
-      appLogger.info("scan.backfill.done", {
-        agent: agentName,
-        duration_ms: Math.round(performance.now() - startedAt),
-        sessions: fullSessions.length,
-        changed: result.changedIds?.length ?? 0,
-      });
+      appLogger.info(
+        result.sourceFailures?.length ? "scan.backfill.partial" : "scan.backfill.done",
+        {
+          agent: agentName,
+          duration_ms: Math.round(performance.now() - startedAt),
+          sessions: fullSessions.length,
+          changed: result.changedIds?.length ?? 0,
+          failed_sources: result.sourceFailures?.length ?? 0,
+        },
+      );
+      if (result.sourceFailures?.length) {
+        appLogger.warn("scan.backfill.source_failures", {
+          agent: agentName,
+          failures: result.sourceFailures,
+        });
+      }
       return "committed";
     } catch (error) {
-      if (!durableCommitted) agent.setSessionMetaMap(new Map(Object.entries(meta)));
+      if (durableCommitted) {
+        this.reportPostCommitError("scan.backfill", agentName, error);
+        return "committed";
+      }
+      agent.setSessionMetaMap(new Map(Object.entries(meta)));
       this.options.workerRunner.discard?.(agentName);
       appLogger.error("scan.backfill.error", { agent: agentName, error });
       console.error(`[${agentName}] Backfill failed:`, error);
@@ -1125,6 +1231,8 @@ export class AgentSyncEngine {
       publication.candidateChangedIds,
     );
     const diffDuration = performance.now() - diffStartedAt;
+    const result: SessionPublicationResult = { durableCommitted: true, event, diffDuration };
+    publication.onCommitted?.(result);
     this.emitSessionsChanged({
       agentName: publication.agentName,
       sessions: this.sessionIndex.snapshot().byAgent[publication.agentName] ?? [],
@@ -1137,7 +1245,7 @@ export class AgentSyncEngine {
       sessions: publication.sessions.length,
       has_event: event != null,
     });
-    return { event, diffDuration };
+    return result;
   }
 
   private findAgent(agentName: string): BaseAgent | undefined {

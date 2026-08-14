@@ -16,6 +16,7 @@ import type { ScanStatusEvent } from "@codesesh/core/contract";
 import type { WorkerResult, WorkerRunner } from "./worker-runner.js";
 import { appLogger } from "./logging.js";
 import { AgentUnavailableDuringScanError } from "./scan-refresh-error.js";
+import type { ScanStatusModel } from "./scan-status-model.js";
 
 const core = vi.hoisted(() => {
   const getAgentLastFullSyncAt = vi.fn(() => Date.now());
@@ -504,6 +505,56 @@ describe("AgentSyncEngine", () => {
 
     expect(core.markAgentFullSyncProgress).toHaveBeenCalledOnce();
     expect(core.markAgentFullSyncProgress).toHaveBeenCalledWith("codex", next.id);
+    expect(core.markAgentFullSyncCompleted).toHaveBeenCalledWith("codex");
+  });
+
+  it("commits source failures in backfill as a partial snapshot", async () => {
+    const previous = makeSession("session", "before");
+    const updated = makeSession("session", "after");
+    const failure: SessionSourceFailure = {
+      sessionId: previous.id,
+      sourcePath: "/session",
+      stage: "parsing",
+      errorClass: "SyntaxError",
+      message: "Unexpected end of JSON input",
+    };
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async () =>
+        workerResult(
+          {
+            sessions: [updated],
+            meta: {},
+            changedIds: [updated.id],
+            sourceFailures: [failure],
+          },
+          "partial",
+        ),
+      ),
+      commit: vi.fn(),
+      discard: vi.fn(),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const { engine } = makeEngine(new FakeSyncAgent(), [previous], workerRunner);
+    const internal = engine as unknown as { enqueueBackfill(agentName: string): void };
+
+    internal.enqueueBackfill("codex");
+    await vi.waitFor(() => expect(engine.status().backfill.completedAgents).toEqual(["codex"]));
+
+    expect(engine.snapshot().byAgent.codex).toEqual([expect.objectContaining({ title: "after" })]);
+    expect(engine.status().backfill).toMatchObject({
+      completedAgents: ["codex"],
+      failedAgents: [],
+      partialAgents: {
+        codex: {
+          completeness: "partial",
+          sourceFailureCount: 1,
+          sourceFailureSummary: "SyntaxError: Unexpected end of JSON input",
+        },
+      },
+    });
+    expect(workerRunner.commit).toHaveBeenCalledWith("codex");
+    expect(workerRunner.discard).not.toHaveBeenCalled();
     expect(core.markAgentFullSyncCompleted).toHaveBeenCalledWith("codex");
   });
 
@@ -1099,8 +1150,7 @@ describe("AgentSyncEngine", () => {
     );
   });
 
-  it("commits successful source updates while reporting retained parse failures", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  it("commits successful source updates as a partial snapshot", async () => {
     const changed = makeSession("changed", "before");
     const updated = makeSession("changed", "after");
     const retained = makeSession("retained");
@@ -1135,6 +1185,8 @@ describe("AgentSyncEngine", () => {
           "partial",
         ),
       ),
+      commit: vi.fn(),
+      discard: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(new FakeSyncAgent(), [changed, retained], workerRunner);
@@ -1162,10 +1214,71 @@ describe("AgentSyncEngine", () => {
     );
     expect(engine.status().agentStatuses.codex).toEqual(
       expect.objectContaining({
-        status: "failed",
-        error: "1 session source failed; last-known-good data retained",
+        status: "complete",
+        completeness: "partial",
+        sourceFailureCount: 1,
+        sourceFailureSummary: "SyntaxError: Unexpected end of JSON input",
       }),
     );
+    expect(workerRunner.commit).toHaveBeenCalledWith("codex");
+    expect(workerRunner.discard).not.toHaveBeenCalled();
+  });
+
+  it("keeps a committed refresh complete when post-commit notifications throw", async () => {
+    const previous = makeSession("session", "before");
+    const updated = makeSession("session", "after");
+    core.loadCachedSessions.mockReturnValue({
+      sessions: [previous],
+      meta: { session: { id: "session", sourcePath: "/session", sourceFingerprint: "old" } },
+      timestamp: 1,
+    });
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async () =>
+        workerResult({
+          sessions: [updated],
+          meta: { session: { id: "session", sourcePath: "/session", sourceFingerprint: "new" } },
+          changedIds: [updated.id],
+        }),
+      ),
+      commit: vi.fn(),
+      discard: vi.fn(),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const { engine } = makeEngine(new FakeSyncAgent(), [previous], workerRunner);
+    engine.subscribeSessionsChanged(() => {
+      throw new Error("session event broadcast failed");
+    });
+    const scanStatus = (engine as unknown as { scanStatus: ScanStatusModel }).scanStatus;
+    const finishAgent = vi.spyOn(scanStatus, "finishAgent").mockImplementationOnce(() => {
+      throw new Error("terminal status publication failed");
+    });
+    const logError = vi.spyOn(appLogger, "error").mockImplementation(() => undefined);
+    const logInfo = vi.spyOn(appLogger, "info").mockImplementation((event) => {
+      if (event === "scan.refresh.done") throw new Error("post-commit reporting failed");
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      await engine.refresh("codex");
+
+      expect(engine.snapshot().byAgent.codex).toEqual([
+        expect.objectContaining({ id: updated.id, title: updated.title }),
+      ]);
+      expect(engine.status().agentStatuses.codex).toMatchObject({ status: "complete" });
+      expect(workerRunner.commit).toHaveBeenCalledWith("codex");
+      expect(workerRunner.discard).not.toHaveBeenCalled();
+      expect(finishAgent).toHaveBeenCalledTimes(2);
+      expect(logError).toHaveBeenCalledWith(
+        "scan.refresh.post_commit_error",
+        expect.objectContaining({ agent: "codex", error: expect.any(Error) }),
+      );
+    } finally {
+      consoleError.mockRestore();
+      logInfo.mockRestore();
+      logError.mockRestore();
+      finishAgent.mockRestore();
+    }
   });
 
   it("keeps the previous snapshot when search indexing fails", async () => {
@@ -1173,12 +1286,14 @@ describe("AgentSyncEngine", () => {
     searchIndex.enqueue.mockRejectedValueOnce(new Error("index failed"));
     const previous = makeSession("session", "before");
     const updated = makeSession("session", "after");
+    const workerRunner = makeWorkerRunner();
     const { engine } = makeEngine(
       makeAgent({
         checkForChanges: () => ({ hasChanges: true, changedIds: [updated.id], timestamp: 2 }),
         incrementalScan: () => [updated],
       }),
       [previous],
+      workerRunner,
     );
     const sessionChanges = vi.fn();
     engine.subscribeSessionsChanged(sessionChanges);
@@ -1191,6 +1306,9 @@ describe("AgentSyncEngine", () => {
       "[codex] Session refresh failed:",
       expect.objectContaining({ message: "index failed" }),
     );
+    expect(workerRunner.commit).not.toHaveBeenCalled();
+    expect(workerRunner.discard).toHaveBeenCalledWith("codex");
+    expect(engine.status().agentStatuses.codex).toMatchObject({ status: "failed" });
   });
 
   it("CS-138: keeps the previous snapshot when a scan fails", async () => {
