@@ -504,14 +504,21 @@ export class AgentSyncEngine {
         if (durableCommitted) this.finishCommittedAgentScan(agentName, completion);
         else this.finishAgentScan(agentName, completion);
       }
+    } catch (error) {
+      if (!durableCommitted) throw error;
+      this.reportPostCommitError("scan.refresh", agentName, error);
+    }
+    // The backfill probe touches the agent's filesystem (isAvailable /
+    // listSessionSources) and may throw on transient errors; that must not
+    // fail — let alone reject — an otherwise finished refresh.
+    try {
       const agent = this.findAgent(agentName);
       if (agent && this.needsBackfill(agent, cached, failed || result === "committed")) {
         this.enqueueBackfill(agentName);
       }
       if (agent) this.searchIndexMaintenance.enqueue(agentName);
     } catch (error) {
-      if (!durableCommitted) throw error;
-      this.reportPostCommitError("scan.refresh", agentName, error);
+      appLogger.warn("scan.refresh.backfill_probe_failed", { agent: agentName, error });
     }
     return result;
   }

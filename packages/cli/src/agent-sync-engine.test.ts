@@ -315,6 +315,22 @@ describe("AgentSyncEngine", () => {
     });
   });
 
+  it("completes the refresh when the backfill probe throws", async () => {
+    const warn = vi.spyOn(appLogger, "warn");
+    const { engine } = makeEngine(makeAgent(), []);
+    const internal = engine as unknown as { needsBackfill: () => boolean };
+    internal.needsBackfill = () => {
+      throw new Error("probe boom");
+    };
+
+    await expect(engine.refresh("codex")).resolves.toBeUndefined();
+
+    expect(warn).toHaveBeenCalledWith(
+      "scan.refresh.backfill_probe_failed",
+      expect.objectContaining({ agent: "codex" }),
+    );
+  });
+
   it("does not enqueue a backfill when the full-sync timestamp cannot be read", () => {
     core.readAgentLastFullSyncAt.mockReturnValueOnce({ status: "failed" });
     const agent = makeAgent();
