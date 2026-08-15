@@ -12,7 +12,6 @@ import {
   readAgentCacheInitialization,
   readAgentLastFullSyncAt,
   sessionSignature,
-  type AgentScanProgress,
   type BaseAgent,
   type ScanOptions,
   type LiveSnapshot,
@@ -33,12 +32,12 @@ import {
   type BackfillTerminalStatus,
 } from "./backfill-lifecycle.js";
 import { LiveSessionIndex, type LiveSessionIndexOptions } from "./live-session-index.js";
-import { LatestValueThrottle } from "./latest-value-throttle.js";
 import { appLogger, logSearchIndexSync } from "./logging.js";
 import { SearchIndexJobRunner } from "./search-index-job-runner.js";
 import { SearchIndexMaintenanceScheduler } from "./search-index-maintenance-scheduler.js";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
-import { ScanStatusModel } from "./scan-status-model.js";
+import { ScanStatusReporter } from "./scan-status-reporter.js";
+import { SearchIndexPublisher } from "./search-index-publisher.js";
 import type {
   BackfillScanRefreshOperation,
   ScanRefreshOperation,
@@ -114,7 +113,6 @@ const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
 const SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD = 100;
 const BACKFILL_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const CACHE_TRUNCATION_COVERAGE = 0.5;
-const STATUS_PROGRESS_INTERVAL_MS = 100;
 // SSE carries one compact summary; logs retain the complete failure list.
 const SOURCE_FAILURE_SUMMARY_MAX_LENGTH = 160;
 
@@ -170,21 +168,28 @@ export class AgentSyncEngine {
   private readonly backfills = new BackfillLifecycle();
   private cacheIntegrityValidUntilByAgent = new Map<string, number>();
   private sessionsChangedListeners = new Set<SessionsChangedListener>();
-  private statusChangedListeners = new Set<StatusChangedListener>();
-  private statusProgressThrottles = new Map<string, LatestValueThrottle<void>>();
-  private scanStatus = new ScanStatusModel();
+  private readonly statusReporter: ScanStatusReporter;
+  private readonly indexPublisher: SearchIndexPublisher;
   private readonly searchIndexJobs: SearchIndexJobRunner;
   private readonly searchIndexMaintenance: SearchIndexMaintenanceScheduler;
-  private nextPublicationId = 1;
   private backgroundRefreshTimer: NodeJS.Timeout | null = null;
   private isShuttingDown = false;
 
   constructor(private readonly options: AgentSyncEngineOptions) {
     this.scheduler = new AgentOperationScheduler((agentName) => this.performRefresh(agentName));
+    this.statusReporter = new ScanStatusReporter({
+      sessionCount: (agentName) => this.sessionIndex.snapshot().byAgent[agentName]?.length,
+      backfills: this.backfills,
+    });
     this.searchIndexJobs = new SearchIndexJobRunner();
+    this.indexPublisher = new SearchIndexPublisher({
+      jobs: this.searchIndexJobs,
+      snapshot: () => this.sessionIndex.snapshot(),
+      readCachedSessions: (agentName) => this.readCachedSessionsOrWarn("search.index", agentName),
+    });
     this.searchIndexMaintenance = new SearchIndexMaintenanceScheduler(
       this.searchIndexJobs,
-      (status) => this.publishStatus(this.scanStatus.updateSearchIndexMaintenance(status)),
+      (status) => this.statusReporter.updateSearchIndexMaintenance(status),
     );
   }
 
@@ -198,7 +203,7 @@ export class AgentSyncEngine {
       );
     }
     for (const [agentName, failure] of Object.entries(snapshot.scanFailures ?? {})) {
-      this.scanStatus.failAgent(
+      this.statusReporter.recordAgentFailure(
         agentName,
         `${failure.stage}: ${failure.message}`,
         snapshot.byAgent[agentName]?.length ?? 0,
@@ -211,7 +216,7 @@ export class AgentSyncEngine {
   }
 
   status(): ScanStatusEvent {
-    return this.scanStatus.snapshot();
+    return this.statusReporter.status();
   }
 
   subscribeSessionsChanged(listener: SessionsChangedListener): () => void {
@@ -220,14 +225,13 @@ export class AgentSyncEngine {
   }
 
   subscribeStatusChanged(listener: StatusChangedListener): () => void {
-    this.statusChangedListeners.add(listener);
-    return () => this.statusChangedListeners.delete(listener);
+    return this.statusReporter.subscribe(listener);
   }
 
   async syncInitialIndex(): Promise<void> {
-    const jobs = this.buildFullSearchIndexJobs("scan.initial");
-    await this.commitSearchIndex("scan.initial", jobs, {
-      publicationId: this.publicationId("scan.initial"),
+    const jobs = this.indexPublisher.buildFullSearchIndexJobs("scan.initial");
+    await this.indexPublisher.commitSearchIndex("scan.initial", jobs, {
+      publicationId: this.indexPublisher.publicationId("scan.initial"),
       agents: jobs.map((job) => job.agentName),
     });
     for (const job of jobs) this.searchIndexMaintenance.enqueue(job.agentName);
@@ -247,11 +251,11 @@ export class AgentSyncEngine {
   startBackgroundRefresh(): void {
     if (this.backgroundRefreshTimer) return;
     const agentNames = this.sessionIndex.snapshot().agents.map((agent) => agent.name);
-    this.startScanBatch(agentNames, "scanning");
+    this.statusReporter.startScanBatch(agentNames, "scanning");
     this.backgroundRefreshTimer = setTimeout(() => {
       this.backgroundRefreshTimer = null;
       for (const agentName of agentNames) this.scheduler.schedule(agentName, 0);
-      if (agentNames.length === 0) this.finishScanBatch();
+      if (agentNames.length === 0) this.statusReporter.finishScanBatch();
     }, 0);
   }
 
@@ -278,7 +282,7 @@ export class AgentSyncEngine {
     }
     this.backfills.cancelAll();
     this.searchIndexMaintenance.stop();
-    this.cancelProgressStatuses();
+    this.statusReporter.markShuttingDown();
     this.cacheIntegrityValidUntilByAgent.clear();
     const searchIndexSnapshot = this.searchIndexJobs.snapshot();
     appLogger.info("search_index.shutdown.started", {
@@ -294,139 +298,6 @@ export class AgentSyncEngine {
       active_batch_id: searchIndexSnapshot.activeBatchId,
       pending_batches: stoppedSearchIndexSnapshot.pendingBatches,
     });
-  }
-
-  private startScanBatch(agentNames: string[], phase: ScanStatusEvent["phase"]): void {
-    const snapshot = this.sessionIndex.snapshot();
-    const sessionCounts = Object.fromEntries(
-      agentNames.map((agentName) => [agentName, snapshot.byAgent[agentName]?.length ?? 0]),
-    );
-    this.publishStatus(this.scanStatus.startBatch(agentNames, phase, sessionCounts));
-  }
-
-  private setScanPhase(phase: ScanStatusEvent["phase"]): void {
-    this.publishStatus(this.scanStatus.setPhase(phase));
-  }
-
-  private beginAgentScan(agentName: string): void {
-    this.cancelProgressStatus(`scan:${agentName}`);
-    const snapshot = this.sessionIndex.snapshot();
-    if (!this.scanStatus.snapshot().active) this.startScanBatch([agentName], "scanning");
-    this.publishStatus(
-      this.scanStatus.beginAgent(agentName, snapshot.byAgent[agentName]?.length ?? 0),
-    );
-  }
-
-  private updateAgentScanProgress(
-    agentName: string,
-    progress: AgentScanProgress,
-    backfillAttempt?: BackfillAttemptRef,
-  ): void {
-    if (backfillAttempt) {
-      const key = `backfill:${agentName}`;
-      const current = this.backfills.stateFor(agentName);
-      if (current?.status !== "running" || current.attemptId !== backfillAttempt.attemptId) {
-        return;
-      }
-      const currentPhase = current.progress?.phase ?? "scanning";
-      const nextPhase = progress.phase ?? "scanning";
-      if (currentPhase && currentPhase !== nextPhase) this.flushProgressStatus(key);
-      if (
-        this.backfills.updateProgress(backfillAttempt, {
-          phase: progress.phase,
-          total: progress.total,
-          processed: progress.processed,
-          sessions: progress.sessions,
-        })
-      ) {
-        this.publishProgressStatus(
-          key,
-          nextPhase,
-          this.scanStatus.updateBackfill(this.backfills.status()),
-        );
-      }
-      return;
-    }
-    const key = `scan:${agentName}`;
-    const currentPhase = this.scanStatus.snapshot().agentStatuses[agentName]?.status;
-    const nextPhase = progress.phase === "finalizing" ? "finalizing" : "scanning";
-    if (currentPhase && currentPhase !== nextPhase) this.flushProgressStatus(key);
-    const status = this.scanStatus.updateAgent(agentName, progress);
-    this.publishProgressStatus(key, status?.agentStatuses[agentName]?.status ?? nextPhase, status);
-  }
-
-  private beginAgentPublishing(agentName: string): void {
-    this.flushProgressStatus(`scan:${agentName}`);
-    this.publishStatus(this.scanStatus.publishAgent(agentName));
-  }
-
-  private queueAgentPublication(agentName: string): void {
-    this.flushProgressStatus(`scan:${agentName}`);
-    this.publishStatus(this.scanStatus.queueAgentPublication(agentName));
-  }
-
-  private finishAgentScan(agentName: string, completion: ScanCompletion): void {
-    this.flushProgressStatus(`scan:${agentName}`);
-    const count = this.sessionIndex.snapshot().byAgent[agentName]?.length;
-    this.publishStatus(this.scanStatus.finishAgent(agentName, count, completion));
-  }
-
-  private finishScanBatch(): void {
-    this.flushProgressStatuses("scan:");
-    this.publishStatus(this.scanStatus.finishBatch());
-  }
-
-  private publishBackfillStatus(): void {
-    this.publishStatus(this.scanStatus.updateBackfill(this.backfills.status()));
-  }
-
-  private publishStatus(event: ScanStatusEvent | null): void {
-    if (!event || this.isShuttingDown) return;
-    for (const listener of this.statusChangedListeners) {
-      try {
-        listener(event);
-      } catch (error) {
-        appLogger.error("scan.status_listener.error", { error });
-      }
-    }
-  }
-
-  private publishProgressStatus(key: string, phase: string, event: ScanStatusEvent | null): void {
-    if (!event) return;
-    let throttle = this.statusProgressThrottles.get(key);
-    if (!throttle) {
-      throttle = new LatestValueThrottle<void>(STATUS_PROGRESS_INTERVAL_MS, () => {
-        this.publishStatus(this.scanStatus.snapshot());
-      });
-      this.statusProgressThrottles.set(key, throttle);
-    }
-    throttle.push(undefined, phase);
-  }
-
-  private flushProgressStatus(key: string): void {
-    const throttle = this.statusProgressThrottles.get(key);
-    if (!throttle) return;
-    throttle.flush();
-    throttle.cancel();
-    this.statusProgressThrottles.delete(key);
-  }
-
-  private cancelProgressStatus(key: string): void {
-    const throttle = this.statusProgressThrottles.get(key);
-    if (!throttle) return;
-    throttle.cancel();
-    this.statusProgressThrottles.delete(key);
-  }
-
-  private flushProgressStatuses(prefix: string): void {
-    for (const key of this.statusProgressThrottles.keys()) {
-      if (key.startsWith(prefix)) this.flushProgressStatus(key);
-    }
-  }
-
-  private cancelProgressStatuses(): void {
-    for (const throttle of this.statusProgressThrottles.values()) throttle.cancel();
-    this.statusProgressThrottles.clear();
   }
 
   private emitSessionsChanged(change: AgentSessionsChanged): void {
@@ -450,12 +321,12 @@ export class AgentSyncEngine {
 
   private finishCommittedAgentScan(agentName: string, completion: ScanCompletion): void {
     try {
-      this.finishAgentScan(agentName, completion);
+      this.statusReporter.finishAgentScan(agentName, completion);
     } catch (error) {
       this.reportPostCommitError("scan.refresh", agentName, error);
       // finishAgent is idempotent, so one retry restores the terminal projection.
       try {
-        this.finishAgentScan(agentName, completion);
+        this.statusReporter.finishAgentScan(agentName, completion);
       } catch (recoveryError) {
         this.reportPostCommitError("scan.refresh", agentName, recoveryError);
       }
@@ -463,7 +334,7 @@ export class AgentSyncEngine {
   }
 
   private async performRefresh(agentName: string): Promise<AgentOperationResult> {
-    this.beginAgentScan(agentName);
+    this.statusReporter.beginAgentScan(agentName);
     const startedAt = performance.now();
     let failed = false;
     let durableCommitted = false;
@@ -497,14 +368,13 @@ export class AgentSyncEngine {
           appLogger.error("scan.refresh.error", { agent: agentName, error });
         }
         console.error(`[${agentName}] Session refresh failed:`, error);
-        this.flushProgressStatus(`scan:${agentName}`);
-        this.publishStatus(this.scanStatus.failAgent(agentName, failure.message));
+        this.statusReporter.failAgent(agentName, failure.message);
       }
     }
     try {
       if (!failed) {
         if (durableCommitted) this.finishCommittedAgentScan(agentName, completion);
-        else this.finishAgentScan(agentName, completion);
+        else this.statusReporter.finishAgentScan(agentName, completion);
       }
     } catch (error) {
       if (!durableCommitted) throw error;
@@ -633,7 +503,7 @@ export class AgentSyncEngine {
       strategyResult.completeness,
       strategyResult.sourceFailures,
     );
-    this.queueAgentPublication(agentName);
+    this.statusReporter.queueAgentPublication(agentName);
     let publicationCommitted = false;
     let publication: SessionPublicationResult;
     try {
@@ -643,7 +513,7 @@ export class AgentSyncEngine {
         sessions: nextSessions,
         candidateChangedIds: strategyResult.preciseChangedIds ?? [],
         indexJob: persistentJob,
-        onPublishing: () => this.beginAgentPublishing(agentName),
+        onPublishing: () => this.statusReporter.beginAgentPublishing(agentName),
         onCommitted: () => {
           publicationCommitted = true;
           onDurableCommit(completion);
@@ -715,7 +585,7 @@ export class AgentSyncEngine {
     agent: BaseAgent,
     previousSessions: SessionHead[],
   ): Promise<RefreshStrategyResult> {
-    this.setScanPhase("initializing");
+    this.statusReporter.setScanPhase("initializing");
     const scanStartedAt = performance.now();
     const scope = this.startupScanOptions();
     const result = await this.runWorker(agent, previousSessions, { kind: "full-scan" }, scope);
@@ -933,7 +803,11 @@ export class AgentSyncEngine {
       scanOptions,
       meta: runOptions.meta ?? buildAgentCacheMeta(agent),
       onProgress: (progress) =>
-        this.updateAgentScanProgress(agent.name, progress, runOptions.backfillAttempt),
+        this.statusReporter.updateAgentScanProgress(
+          agent.name,
+          progress,
+          runOptions.backfillAttempt,
+        ),
       onCheckpoint: runOptions.onCheckpoint,
     });
   }
@@ -1026,7 +900,7 @@ export class AgentSyncEngine {
 
   private enqueueBackfill(agentName: string): void {
     if (this.isShuttingDown || !this.backfills.enqueue(agentName)) return;
-    this.publishBackfillStatus();
+    this.statusReporter.publishBackfillStatus();
     this.pumpBackfillQueue();
   }
 
@@ -1034,7 +908,7 @@ export class AgentSyncEngine {
     if (this.isShuttingDown) return;
     const attempt = this.backfills.startNext();
     if (!attempt) return;
-    this.publishBackfillStatus();
+    this.statusReporter.publishBackfillStatus();
     void this.runBackfill(attempt)
       .then((result) => this.completeBackfillAttempt(attempt, result))
       .catch((error) => this.rejectBackfillAttempt(attempt, error));
@@ -1047,7 +921,7 @@ export class AgentSyncEngine {
     if (this.isShuttingDown) return;
     const current = this.backfills.stateFor(attempt.agentName);
     if (current?.status === "running" && current.attemptId === attempt.attemptId) {
-      this.flushProgressStatus(`backfill:${attempt.agentName}`);
+      this.statusReporter.flushProgressStatus(`backfill:${attempt.agentName}`);
       if (this.backfills.complete(attempt, result)) {
         if (result === "failed") {
           this.cacheIntegrityValidUntilByAgent.delete(attempt.agentName);
@@ -1057,7 +931,7 @@ export class AgentSyncEngine {
             Date.now() + BACKFILL_INTERVAL_MS,
           );
         }
-        this.publishBackfillStatus();
+        this.statusReporter.publishBackfillStatus();
       }
     }
     this.pumpBackfillQueue();
@@ -1114,7 +988,7 @@ export class AgentSyncEngine {
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const fullSessions = attachMissingProjectIdentities(result.sessions);
       const completion = buildScanCompletion(result.completeness, result.sourceFailures ?? []);
-      this.flushProgressStatus(`backfill:${agentName}`);
+      this.statusReporter.flushProgressStatus(`backfill:${agentName}`);
       const updatePublicationPhase = (phase: "publish-queued" | "publishing") => {
         if (
           this.backfills.updateProgress(attempt, {
@@ -1122,11 +996,7 @@ export class AgentSyncEngine {
             sessions: fullSessions.length,
           })
         ) {
-          this.publishProgressStatus(
-            `backfill:${agentName}`,
-            phase,
-            this.scanStatus.updateBackfill(this.backfills.status()),
-          );
+          this.statusReporter.publishBackfillProgress(`backfill:${agentName}`, phase);
         }
       };
       updatePublicationPhase("publish-queued");
@@ -1188,89 +1058,14 @@ export class AgentSyncEngine {
     }
   }
 
-  private buildFullSearchIndexJobs(context: string): SearchIndexWorkerJob[] {
-    const snapshot = this.sessionIndex.snapshot();
-    return snapshot.agents.flatMap((agent) => {
-      if (!(agent.name in snapshot.byAgent)) return [];
-      const cached = this.readCachedSessionsOrWarn("search.index", agent.name);
-      return [
-        cached
-          ? {
-              kind: "full",
-              context,
-              agentName: agent.name,
-              sessions: cached.sessions,
-              meta: cached.meta,
-              completeness: "partial",
-              removedSessionIds: [],
-              searchIndexOptions: { includePendingReindex: false },
-            }
-          : {
-              kind: "full",
-              context,
-              agentName: agent.name,
-              sessions: snapshot.byAgent[agent.name] ?? [],
-              meta: buildAgentCacheMeta(agent),
-              completeness: "partial",
-              removedSessionIds: [],
-              searchIndexOptions: { includePendingReindex: false },
-            },
-      ];
-    });
-  }
-
-  private publicationId(context: string, agentName?: string): string {
-    const id = this.nextPublicationId++;
-    return agentName ? `${context}:${agentName}:${id}` : `${context}:${id}`;
-  }
-
-  private async commitSearchIndex(
-    context: string,
-    jobs: SearchIndexWorkerJob[],
-    details: {
-      publicationId: string;
-      agent?: string;
-      agents?: string[];
-      onStarted?: () => void;
-    },
-  ): Promise<void> {
-    appLogger.info("session.publication.prepared", {
-      publication_id: details.publicationId,
-      context,
-      agent: details.agent,
-      agents: details.agents,
-      jobs: jobs.length,
-    });
-    try {
-      const publicationJobs = jobs.map((job) => ({
-        ...job,
-        publicationId: details.publicationId,
-      }));
-      await (details.onStarted
-        ? this.searchIndexJobs.enqueue(context, publicationJobs, details.onStarted)
-        : this.searchIndexJobs.enqueue(context, publicationJobs));
-    } catch (error) {
-      appLogger.error("session.publication.failed", {
-        publication_id: details.publicationId,
-        context,
-        agent: details.agent,
-        stage: "search_index",
-        error,
-      });
-      throw error;
-    }
-    appLogger.info("session.publication.index_committed", {
-      publication_id: details.publicationId,
-      context,
-      agent: details.agent,
-    });
-  }
-
   private async commitSessionPublication(
     publication: SessionPublication,
   ): Promise<SessionPublicationResult> {
-    const publicationId = this.publicationId(publication.context, publication.agentName);
-    await this.commitSearchIndex(publication.context, [publication.indexJob], {
+    const publicationId = this.indexPublisher.publicationId(
+      publication.context,
+      publication.agentName,
+    );
+    await this.indexPublisher.commitSearchIndex(publication.context, [publication.indexJob], {
       publicationId,
       agent: publication.agentName,
       ...(publication.onPublishing ? { onStarted: publication.onPublishing } : {}),
