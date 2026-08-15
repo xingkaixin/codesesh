@@ -288,7 +288,9 @@ pnpm build
 pnpm test
 pnpm test:coverage # 内含 pnpm check:coverage-scopes
 pnpm test:migration
+pnpm --filter @codesesh/web test:bundle
 pnpm exec playwright install --with-deps chromium
+pnpm exec playwright install-deps chromium
 pnpm test:e2e
 
 # npm 制品与安装后冒烟门禁
