@@ -111,6 +111,42 @@ describe("SessionWatcher", () => {
     }
   });
 
+  it("keeps notifying later listeners when an earlier one throws", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "watcher-test-"));
+    try {
+      const sessionsDir = join(tempDir, "sessions");
+      mkdirSync(sessionsDir, { recursive: true });
+      const sessionFile = join(sessionsDir, "session.jsonl");
+      writeFileSync(sessionFile, "data");
+
+      const watcher = new SessionWatcher();
+      watcher.onAgentsChanged(() => {
+        throw new Error("listener boom");
+      });
+      const changed = vi.fn();
+      watcher.onAgentsChanged(changed);
+
+      watcher.start([
+        source("custom-agent", {
+          status: "supported",
+          targets: [{ path: sessionsDir }],
+        }),
+      ]);
+      const sessionsWatcher = fsWatch.watchers.find((w) => w.path === sessionsDir);
+      writeFileSync(sessionFile, "partial");
+      sessionsWatcher!.listener("change", "session.jsonl");
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1_500);
+
+      expect(changed).toHaveBeenCalledWith(new Set(["custom-agent"]));
+
+      await watcher.dispose();
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("unsubscribe removes the listener", () => {
     const watcher = new SessionWatcher();
     const cb = vi.fn();

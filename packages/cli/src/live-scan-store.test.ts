@@ -2233,6 +2233,37 @@ describe("LiveScanStore", () => {
     ]);
   });
 
+  it("keeps notifying later subscribers when an earlier one throws", async () => {
+    vi.useFakeTimers();
+    const existing = makeSession("codex-old");
+    const codex = makeAgent("codex", {
+      checkForChanges: vi.fn(() => ({
+        hasChanges: true,
+        changedIds: ["codex-new"],
+        timestamp: 3000,
+      })),
+      incrementalScan: vi.fn(() => [existing, makeSession("codex-new")]),
+    });
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [existing],
+      byAgent: { codex: [existing] },
+      agents: [codex],
+    });
+
+    const store = new LiveScanStore({ watchEnabled: false });
+    store.subscribe(() => {
+      throw new Error("subscriber boom");
+    });
+    const events: SessionsUpdatedEvent[] = [];
+    store.subscribe((event) => events.push(event));
+    await store.initialize();
+    await syncEngineOf(store).refresh("codex");
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(events).toEqual([expect.objectContaining({ changedAgents: ["codex"] })]);
+  });
+
   it("coalesces refresh schedules for the same agent into a single run", async () => {
     vi.useFakeTimers();
     const existing = makeSession("existing");
