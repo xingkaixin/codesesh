@@ -7,7 +7,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { DetailLanding, type LandingAgentItem } from "../DetailLanding";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { RenderProfiler } from "../RenderProfiler";
@@ -322,5 +322,23 @@ export function AppRouteContent({
       />
     );
   }
-  return <div className="text-sm text-[var(--console-muted)]">Invalid route.</div>;
+  return (
+    <div
+      role="alert"
+      className="rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] p-6"
+    >
+      <h3 className="console-mono mb-2 text-sm font-semibold text-[var(--console-text)]">
+        Page not found
+      </h3>
+      <p className="console-mono mb-3 text-xs text-[var(--console-text-secondary)]">
+        This address does not match any dashboard, agent, or session route.
+      </p>
+      <Link
+        to="/"
+        className="console-mono text-xs text-[var(--console-accent)] underline underline-offset-2"
+      >
+        Back to dashboard
+      </Link>
+    </div>
+  );
 }

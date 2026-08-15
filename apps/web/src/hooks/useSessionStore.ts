@@ -386,7 +386,13 @@ export function useSessionStore() {
       await refetchConfig();
       return;
     }
-    await reload(activeWindow);
+    try {
+      await reload(activeWindow);
+    } catch {
+      // reload already recorded the failure in loadError and the retry
+      // surface re-renders from that state; rethrowing would only leak an
+      // unhandled rejection from the button handler.
+    }
   }, [configFailed, refetchConfig, reload]);
 
   const currentSnapshot = sameWindow(querySnapshot?.window, requestedWindow) ? querySnapshot : null;
