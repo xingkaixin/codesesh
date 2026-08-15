@@ -840,6 +840,13 @@ describe("cache initialization tracking", () => {
     expect(getAgentLastFullSyncAt("claudecode")).toBe(now);
   });
 
+  it("records full-sync completion even without a prior initialization row", () => {
+    markAgentFullSyncCompleted("claudecode");
+
+    expect(getAgentLastFullSyncAt("claudecode")).toBe(now);
+    expect(isAgentCacheInitialized("claudecode")).toBe(true);
+  });
+
   it("keeps a full-sync marker pending until reconciliation completes", () => {
     markAgentCacheInitialized("claudecode");
     markAgentFullSyncCompleted("claudecode");

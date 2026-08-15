@@ -312,15 +312,6 @@ export function markAgentFullSyncProgress(agentName: string, cursor: string): vo
   });
 }
 
-/** Remove the cursor after the complete unbounded reconciliation commits. */
-function clearAgentFullSyncCursor(agentName: string): void {
-  withCacheDb((db) => {
-    db.prepare("DELETE FROM cache_meta WHERE key = ?").run(
-      `${FULL_SYNC_CURSOR_PREFIX}${agentName}`,
-    );
-  });
-}
-
 export function readAgentLastFullSyncAt(agentName: string): CacheReadOutcome<number | null> {
   if (!hasCacheStorage()) {
     return { status: "success", value: null };
@@ -349,16 +340,25 @@ export function getAgentLastFullSyncAt(agentName: string): number | null {
 
 /** Record that a full (unbounded) history reconciliation just completed for this agent. */
 export function markAgentFullSyncCompleted(agentName: string): void {
+  const completedAt = Date.now();
   withCacheDb((db) => {
-    db.prepare(
-      `
-        UPDATE cache_initialization
-        SET last_sync_at = ?
-        WHERE agent_name = ?
-      `,
-    ).run(Date.now(), agentName);
+    db.transaction(() => {
+      // Upsert: on a fresh cache the initialization row may not exist yet,
+      // and a bare UPDATE would silently record nothing (last_sync_at would
+      // read back as "never synced" and re-trigger a full backfill).
+      db.prepare(
+        `
+          INSERT INTO cache_initialization(agent_name, initialized_at, index_version, last_sync_at)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT(agent_name) DO UPDATE SET
+            last_sync_at = excluded.last_sync_at
+        `,
+      ).run(agentName, completedAt, CACHE_INITIALIZATION_VERSION, completedAt);
+      db.prepare("DELETE FROM cache_meta WHERE key = ?").run(
+        `${FULL_SYNC_CURSOR_PREFIX}${agentName}`,
+      );
+    }).immediate();
   });
-  clearAgentFullSyncCursor(agentName);
 }
 
 function loadCachedSessionEntryBase(
