@@ -486,6 +486,23 @@ function writeSearchIndexRows(
   const deleteFileActivity = db.prepare(
     "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
   );
+  const deleteModelCost = db.prepare(
+    "DELETE FROM session_model_cost WHERE agent_name = ? AND session_id = ?",
+  );
+  // Derived from the message rows just written, in the same transaction, so
+  // the rollup can never drift from its source (CS-270).
+  const rebuildModelCost = db.prepare(`
+    INSERT INTO session_model_cost(agent_name, session_id, model, cost, cost_recorded)
+    SELECT
+      agent_name,
+      session_id,
+      model,
+      SUM(COALESCE(cost, 0)),
+      SUM(CASE WHEN cost_source = 'recorded' THEN COALESCE(cost, 0) ELSE 0 END)
+    FROM messages
+    WHERE agent_name = ? AND session_id = ? AND model IS NOT NULL AND model <> ''
+    GROUP BY agent_name, session_id, model
+  `);
   const writeIndexedSession = prepareUpsertIndexedSession(db);
   const insertFileActivity = prepareInsertFileActivity(db);
   const insertMessageTool = prepareInsertMessageTool(db);
@@ -566,6 +583,7 @@ function writeSearchIndexRows(
     deleteFileActivity.run(agentName, sessionId);
     deleteMessageTools.run(agentName, sessionId, 0);
     deleteMessages.run(agentName, sessionId, 0);
+    deleteModelCost.run(agentName, sessionId);
     clearPendingReindex.run(agentName, sessionId);
   }
 
@@ -622,6 +640,8 @@ function writeSearchIndexRows(
       }
     }
     deleteMessages.run(agentName, entry.session.id, entry.messages.length);
+    deleteModelCost.run(agentName, entry.session.id);
+    rebuildModelCost.run(agentName, entry.session.id);
     upsertRow.run(
       agentName,
       entry.session.id,

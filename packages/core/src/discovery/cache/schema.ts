@@ -380,7 +380,29 @@ function createSessionTables(db: SQLiteDatabase): void {
       ON messages(agent_name, session_id, message_index);
   `);
 
+  createSessionModelCostTable(db);
   createMessageToolTables(db);
+}
+
+/**
+ * Per-(session, model) cost rollup maintained in the same transaction that
+ * writes message rows, so dashboard model-cost aggregation reads
+ * sessions×models rows instead of scanning the full messages table (CS-270).
+ */
+function createSessionModelCostTable(db: SQLiteDatabase): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_model_cost (
+      agent_name TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      cost REAL NOT NULL,
+      cost_recorded REAL NOT NULL,
+      PRIMARY KEY (agent_name, session_id, model),
+      FOREIGN KEY (agent_name, session_id)
+        REFERENCES sessions(agent_name, session_id)
+        ON DELETE CASCADE
+    );
+  `);
 }
 
 function createMessageToolTables(db: SQLiteDatabase): void {
@@ -1181,6 +1203,23 @@ function addSessionActivityIndex(db: SQLiteDatabase): void {
   `);
 }
 
+function addSessionModelCostRollup(db: SQLiteDatabase): void {
+  createSessionModelCostTable(db);
+  if (!tableExists(db, "messages")) return;
+  db.exec(`
+    INSERT OR REPLACE INTO session_model_cost(agent_name, session_id, model, cost, cost_recorded)
+    SELECT
+      agent_name,
+      session_id,
+      model,
+      SUM(COALESCE(cost, 0)),
+      SUM(CASE WHEN cost_source = 'recorded' THEN COALESCE(cost, 0) ELSE 0 END)
+    FROM messages
+    WHERE model IS NOT NULL AND model <> ''
+    GROUP BY agent_name, session_id, model
+  `);
+}
+
 function compactSessionDocuments(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents")) {
     createSearchTables(db);
@@ -1517,6 +1556,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 24, migrate: dropLegacyMessageSearchIndex },
       { version: 25, migrate: addMessageContentChainDigest },
       { version: 26, migrate: addSessionActivityIndex },
+      { version: 27, migrate: addSessionModelCostRollup },
     ],
   });
 

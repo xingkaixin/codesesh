@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import type { SessionHead } from "../../types/index.js";
 
-export const EXPECTED_CACHE_SCHEMA_VERSION = 26;
+export const EXPECTED_CACHE_SCHEMA_VERSION = 27;
 
 export const RELEASE_CACHE_FIXTURES = [
   { version: 3, sourceTag: "v0.3.0" },

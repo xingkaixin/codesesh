@@ -258,7 +258,7 @@ describe("withCacheDb schema memo", () => {
   it("runs ensureSchema on the first open but skips it on later opens for the same path", () => {
     withCacheDb(() => undefined);
     expect(getSchemaEnsuredPath()).toBe(getCachePath());
-    expect(getUserVersion(getCachePath())).toBe(26);
+    expect(getUserVersion(getCachePath())).toBe(27);
 
     const db = new Database(getCachePath());
     db.pragma("user_version = 14");
@@ -269,7 +269,7 @@ describe("withCacheDb schema memo", () => {
 
     setSchemaEnsuredPath(null);
     withCacheDb(() => undefined);
-    expect(getUserVersion(getCachePath())).toBe(26);
+    expect(getUserVersion(getCachePath())).toBe(27);
   });
 });
 
@@ -277,7 +277,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(26);
+    expect(getUserVersion(getCachePath())).toBe(27);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -553,7 +553,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(26);
+    expect(getUserVersion(getCachePath())).toBe(27);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
@@ -613,7 +613,7 @@ describe("saveCachedSessions", () => {
 
     try {
       expect(loadCachedSessions("claudecode")?.sessions).toEqual([]);
-      expect(getUserVersion(getCachePath())).toBe(26);
+      expect(getUserVersion(getCachePath())).toBe(27);
       expect(warnings).toContainEqual({
         event: "sqlite.migration.identity_precompute.missing_directory",
         detail: { agent_name: "claudecode", session_id: "legacy-null-directory" },
