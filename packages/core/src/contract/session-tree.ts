@@ -19,8 +19,8 @@ import {
 } from "./session-reference.js";
 
 /**
- * Where a session sits relative to its parent. Replaces the two-state
- * isChildSession() predicate for anything that must distinguish orphans.
+ * Where a session sits relative to its parent, with orphans distinguished
+ * from mounted children.
  */
 export type SessionMountState = "root" | "mounted-child" | "orphan";
 
@@ -82,14 +82,6 @@ function activityTime(session: SessionHead): number {
 function hasActivityInWindow(session: SessionHead, from?: number, to?: number): boolean {
   const activity = activityTime(session);
   return (from == null || activity >= from) && (to == null || activity <= to);
-}
-
-export function isChildSession(session: SessionHead): boolean {
-  return session.parent_reference != null;
-}
-
-export function getRootSessions(sessions: SessionHead[]): SessionHead[] {
-  return sessions.filter((session) => !session.parent_reference);
 }
 
 function ownStats(session: SessionHead): InclusiveSessionStats {
