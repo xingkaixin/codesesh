@@ -735,6 +735,31 @@ describe("DatabaseSessionSource", () => {
     expect(stale).not.toHaveProperty("changedIds");
   });
 
+  it("re-detects a database change when the consuming scan never commits", () => {
+    const dbPath = makeDb();
+    const agent = new FakeDatabaseSource(dbPath);
+    const cached = [makeSession("db-1")];
+    agent.setSessionMetaMap(
+      new Map([
+        ["db-1", { id: "db-1", sourcePath: dbPath, pricingCaptureEpoch: PRICING_CAPTURE_EPOCH }],
+      ]),
+    );
+
+    // A successful pass commits its observation as the baseline.
+    agent.checkForChanges(Date.now() + 1_000_000, cached);
+    agent.commitChangeCheck();
+
+    writeFileSync(dbPath, "changed-once");
+    expect(agent.checkForChanges(0, cached).hasChanges).toBe(true);
+    // The scan consuming that check failed → no commit → still flagged.
+    expect(agent.checkForChanges(0, cached).hasChanges).toBe(true);
+
+    agent.commitChangeCheck();
+    // since=0 would read "changed" via the mtime fallback; false proves the
+    // committed fingerprint is now the comparison baseline.
+    expect(agent.checkForChanges(0, cached).hasChanges).toBe(false);
+  });
+
   it("reports no changes when database path is missing", () => {
     const agent = new FakeDatabaseSource(null);
     const result = agent.checkForChanges(0, [makeSession("db-1")]);
@@ -915,8 +940,10 @@ describe("CS-139: WAL-mode change detection", () => {
 
   it("sees a commit that has not been checkpointed", () => {
     const { db, agent } = createWalDatabase();
-    // Establish the baseline the way a running server would.
+    // Establish the baseline the way a running server would: a check whose
+    // consuming scan succeeded gets committed by the orchestrator.
     agent.checkForChanges(0, []);
+    agent.commitChangeCheck();
     expect(agent.checkForChanges(0, []).hasChanges).toBe(false);
 
     db.prepare("INSERT INTO session VALUES (?)").run("s2");
@@ -928,6 +955,7 @@ describe("CS-139: WAL-mode change detection", () => {
   it("does not report a change caused by its own read-only scan", () => {
     const { db, agent } = createWalDatabase();
     agent.checkForChanges(0, []);
+    agent.commitChangeCheck();
 
     agent.scan();
 

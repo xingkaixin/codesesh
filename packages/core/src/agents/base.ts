@@ -258,6 +258,14 @@ export abstract class BaseAgent {
   ): Promise<ChangeCheckResult> | ChangeCheckResult;
 
   /**
+   * Commit the observation made by the latest checkForChanges. Called by the
+   * scan orchestrator only after the scan consuming that check succeeded, so
+   * a failed scan leaves the baseline behind and the next check re-detects
+   * the same change instead of silently skipping it.
+   */
+  commitChangeCheck(): void {}
+
+  /**
    * 增量扫描（仅扫描变更的会话）
    * @param cachedSessions 缓存的会话列表
    * @param changedIds 变更的会话 ID 列表
@@ -649,6 +657,7 @@ function latestSqliteSourceMtime(dbPath: string): number {
 export abstract class DatabaseSessionSource extends BaseAgent {
   protected sessionMetaMap = new Map<string, SessionCacheMeta>();
   private lastSourceFingerprint: string | null = null;
+  private pendingSourceFingerprint: string | null = null;
 
   /** 返回数据库文件路径（供 mtime 检测）。 */
   protected abstract getDatabasePath(): string | null;
@@ -681,6 +690,12 @@ export abstract class DatabaseSessionSource extends BaseAgent {
     this.sessionMetaMap = meta;
   }
 
+  override commitChangeCheck(): void {
+    if (this.pendingSourceFingerprint == null) return;
+    this.lastSourceFingerprint = this.pendingSourceFingerprint;
+    this.pendingSourceFingerprint = null;
+  }
+
   /**
    * 变更检测：数据库内部变更难以按行定位，按库文件集合的指纹判定。
    *
@@ -710,7 +725,9 @@ export abstract class DatabaseSessionSource extends BaseAgent {
 
       const fingerprint = sqliteSourceFingerprint(dbPath);
       const previous = this.lastSourceFingerprint;
-      this.lastSourceFingerprint = fingerprint;
+      // Advancing the baseline here would make a failed scan look "unchanged"
+      // on the next pass; stash it until the orchestrator commits the scan.
+      this.pendingSourceFingerprint = fingerprint;
       // Nothing to compare against on the first pass — fall back to the caller's
       // baseline, which also covers a WAL written while the process was down.
       const hasChanges =

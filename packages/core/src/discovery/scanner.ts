@@ -636,6 +636,7 @@ async function scanAgentSmart(
           ),
         );
         timing.scan = performance.now() - t2;
+        agent.commitChangeCheck();
 
         return finalizeAgentScan(agent, updatedSessions, {
           finalization: {
@@ -657,6 +658,7 @@ async function scanAgentSmart(
         });
       }
 
+      agent.commitChangeCheck();
       return finalizeAgentScan(agent, cached.sessions, {
         finalization: { kind: "unchanged", cached },
         options,

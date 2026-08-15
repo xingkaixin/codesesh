@@ -116,6 +116,7 @@ function makeAgent(overrides: Partial<BaseAgent> = {}): BaseAgent {
     isAvailable: () => true,
     scan: () => [],
     checkForChanges: () => ({ hasChanges: false, timestamp: Date.now() }),
+    commitChangeCheck: () => undefined,
     incrementalScan: (sessions) => sessions,
     getSessionData: () => ({ messages: [] }) as never,
     getSessionMetaMap: () => new Map(),
@@ -313,6 +314,23 @@ describe("AgentSyncEngine", () => {
       agent: "codex",
       state: "initialization",
     });
+  });
+
+  it("commits the change check only after the consuming scan succeeds", async () => {
+    const commitChangeCheck = vi.fn();
+    const agent = makeAgent({
+      commitChangeCheck,
+      checkForChanges: () => ({ hasChanges: true, timestamp: Date.now() }),
+    });
+    const workerRunner = makeWorkerRunner();
+    vi.mocked(workerRunner.run).mockRejectedValueOnce(new Error("worker crashed"));
+    const { engine } = makeEngine(agent, [makeSession("session")], workerRunner);
+
+    await engine.refresh("codex");
+    expect(commitChangeCheck).not.toHaveBeenCalled();
+
+    await engine.refresh("codex");
+    expect(commitChangeCheck).toHaveBeenCalledOnce();
   });
 
   it("completes the refresh when the backfill probe throws", async () => {

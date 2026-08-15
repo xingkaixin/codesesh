@@ -562,6 +562,7 @@ function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
     // Database-style agents detect changes via checkForChanges and rescan via
     // incrementalScan (which delegates to scan), mirroring DatabaseSessionSource.
     checkForChanges: vi.fn(() => ({ hasChanges: true, changedIds: [], timestamp: 0 })),
+    commitChangeCheck: vi.fn(),
     incrementalScan: vi.fn(() => (agent.scan as () => SessionHead[])()),
   };
   agent.scan = vi.fn(() => []);
