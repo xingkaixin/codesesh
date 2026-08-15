@@ -122,9 +122,13 @@ function extractThreadMeta(firstRecord: Record<string, unknown>): ThreadMeta | n
   return { threadSource, parentThreadId, agentNickname };
 }
 
+// Leading-line reads want a few KB, not the default 1 MiB streaming buffer;
+// readJsonlFileLines keeps accumulating chunks if a single line runs longer.
+const LEADING_READ_CHUNK_BYTES = 64 * 1024;
+
 function readLeadingJsonlLines(filePath: string, limit: number): string[] {
   const lines: string[] = [];
-  for (const line of readJsonlFileLines(filePath)) {
+  for (const line of readJsonlFileLines(filePath, LEADING_READ_CHUNK_BYTES)) {
     if (!line.trim()) continue;
     lines.push(line);
     if (lines.length === limit) break;
@@ -427,6 +431,12 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   private sessionIndexMtime: number | null | undefined;
   private sessionIndexPath: string | undefined;
   private subagentIndex: SubagentIndex | null = null;
+  // Thread meta lives in a rollout's immutable first line; fingerprinting by
+  // (mtime, size) lets index rebuilds stat files instead of re-reading them.
+  private readonly threadMetaByPath = new Map<
+    string,
+    { fingerprint: string; meta: ThreadMeta | null }
+  >();
   private subagentStatsByParent = new Map<string, SessionHead["stats"][]>();
   private childFinalMessagesByParent = new Map<string, Map<string, ChildFinalMessageCacheEntry>>();
 
@@ -498,9 +508,14 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
 
   private readThreadMeta(filePath: string): ThreadMeta | null {
     try {
+      const { mtimeMs, size } = statSync(filePath);
+      const fingerprint = `${mtimeMs}:${size}`;
+      const cached = this.threadMetaByPath.get(filePath);
+      if (cached && cached.fingerprint === fingerprint) return cached.meta;
       const firstLine = readLeadingJsonlLines(filePath, 1)[0];
-      if (!firstLine) return null;
-      return extractThreadMeta(JSON.parse(firstLine));
+      const meta = firstLine ? extractThreadMeta(JSON.parse(firstLine)) : null;
+      this.threadMetaByPath.set(filePath, { fingerprint, meta });
+      return meta;
     } catch (error) {
       getCoreDiagnostics()?.warn("codex.thread_meta_read_failed", {
         filePath,
@@ -729,7 +744,8 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     if (this.subagentIndex) return this.subagentIndex;
     this.basePath ??= this.findBasePath();
     const index: SubagentIndex = { childFilesByParent: new Map(), subagentFiles: new Set() };
-    for (const file of this.listRolloutFilePaths()) {
+    const paths = this.listRolloutFilePaths();
+    for (const file of paths) {
       const threadMeta = this.readThreadMeta(file);
       if (threadMeta?.threadSource !== "subagent") continue;
       index.subagentFiles.add(file);
@@ -737,6 +753,12 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       const files = index.childFilesByParent.get(threadMeta.parentThreadId);
       if (files) files.push(file);
       else index.childFilesByParent.set(threadMeta.parentThreadId, [file]);
+    }
+    if (this.threadMetaByPath.size > paths.length) {
+      const active = new Set(paths);
+      for (const path of this.threadMetaByPath.keys()) {
+        if (!active.has(path)) this.threadMetaByPath.delete(path);
+      }
     }
     this.subagentIndex = index;
     return index;
@@ -832,6 +854,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     type ChildOutput = { id: string; text: string; timestampMs: number; isFinal: boolean };
     let latestOutput: ChildOutput | null = null;
     let finalOutput: ChildOutput | null = null;
+    let fallbackMtimeMs: number | null = null;
 
     for (const record of readJsonlFile(filePath)) {
       try {
@@ -848,7 +871,9 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
           id: asString(payload["id"]) ?? `codex-subagent-${sessionId}`,
           text,
           timestampMs:
-            parseTimestampMs(record) || parseTimestampMs(payload) || statSync(filePath).mtimeMs,
+            parseTimestampMs(record) ||
+            parseTimestampMs(payload) ||
+            (fallbackMtimeMs ??= statSync(filePath).mtimeMs),
           isFinal:
             String(record["phase"] ?? "") === "final_answer" ||
             String(payload["phase"] ?? "") === "final_answer",

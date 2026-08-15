@@ -274,8 +274,59 @@ describe("CodexAgent cache refresh", () => {
 
     for (const { file } of files) {
       const callsForFile = statSpy.mock.calls.filter((call) => call[0] === file);
-      expect(callsForFile.length).toBe(1);
+      // One stat from the rollout listing, one from thread-meta fingerprinting;
+      // the guard is against per-session rescans, i.e. O(files²) growth.
+      expect(callsForFile.length).toBe(2);
     }
+  });
+
+  it("reuses cached thread meta when rebuilding the subagent index", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const parentId = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+    const otherParentId = "019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb";
+    const childId = "019dcccc-cccc-7ccc-cccc-cccccccccccc";
+    const parentFile = join(tempDir, `rollout-2026-04-20T10-00-00-${parentId}.jsonl`);
+    const otherParentFile = join(tempDir, `rollout-2026-04-20T10-01-00-${otherParentId}.jsonl`);
+    const childFile = join(tempDir, `rollout-2026-04-20T10-05-00-${childId}.jsonl`);
+    const meta = (payload: Record<string, unknown>) =>
+      `${JSON.stringify({ type: "session_meta", payload })}\n`;
+    writeFileSync(parentFile, meta({ id: parentId }));
+    writeFileSync(otherParentFile, meta({ id: otherParentId }));
+    writeFileSync(
+      childFile,
+      meta({ id: childId, thread_source: "subagent", parent_thread_id: parentId }),
+    );
+
+    const agent = new CodexAgent() as any;
+    agent.basePath = tempDir;
+    const window = { from: Date.now() - 24 * 60 * 60 * 1000 };
+    const openSpy = vi.mocked(openSync);
+
+    openSpy.mockClear();
+    let sources = agent.listScanSources(window);
+    expect(sources.map((ref: { file: string }) => ref.file).sort()).toEqual(
+      [parentFile, otherParentFile, childFile].sort(),
+    );
+    expect(openSpy.mock.calls.length).toBe(3);
+
+    // A new scan cycle drops the index but must rebuild it from cached meta.
+    agent.setSessionMetaMap(new Map());
+    openSpy.mockClear();
+    sources = agent.listScanSources(window);
+    expect(sources).toHaveLength(3);
+    expect(openSpy.mock.calls.length).toBe(0);
+
+    // A changed file invalidates only its own cache entry.
+    writeFileSync(
+      childFile,
+      meta({ id: childId, thread_source: "subagent", parent_thread_id: otherParentId, v: 2 }),
+    );
+    agent.setSessionMetaMap(new Map());
+    openSpy.mockClear();
+    agent.listScanSources(window);
+    expect(openSpy.mock.calls.length).toBe(1);
+    expect(agent.ensureSubagentIndex().childFilesByParent.get(otherParentId)).toEqual([childFile]);
   });
 
   it("keeps source references and fingerprints byte-for-byte stable", () => {
