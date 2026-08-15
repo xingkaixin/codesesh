@@ -99,3 +99,15 @@ codesesh --clear-cache
 # 性能追踪
 codesesh --trace
 ```
+
+## 依赖决策
+
+- **TypeScript preview 编译器别名**：workspace 内 `"typescript"` 别名指向 TS 6 preview
+  （`@typescript/typescript6`，供 tsup d.ts 发射与 Astro 等仍依赖 `typescript` API 的工具），
+  `"@typescript/native"` 指向 TS 7 原生编译器（日常 `tsc` 类型检查，速度显著更快）。
+  两者并存是刻意选择：拿到 TS 7 的编译速度，同时不阻塞尚未适配 TS 7 API 的生态工具；
+  待生态跟进 TS 7 API 后收敛为单一依赖。
+- **highlight.js 10.x（EOL）经 react-syntax-highlighter 进入依赖图**：代码只 import
+  `react-syntax-highlighter/dist/esm/prism-light`（Prism/refractor 路径），highlight.js
+  已验证被完整 tree-shake（产物中仅剩 `"hljs"` 类名字符串字面量），不进 bundle、不可达。
+  接受其留在 node_modules；若未来 `pnpm audit` 对其报可达告警，再评估换用 Prism-only 方案。
