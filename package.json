@@ -21,6 +21,7 @@
     "test": "turbo run test",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "typecheck": "turbo run typecheck",
     "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
     "test:migration": "vitest run --reporter=verbose packages/core/src/discovery/__tests__/migration-smoke.test.ts",
     "package:artifact": "node scripts/package-artifact.mjs",

@@ -314,7 +314,9 @@ pnpm build
 pnpm test
 pnpm test:coverage # includes pnpm check:coverage-scopes
 pnpm test:migration
+pnpm --filter @codesesh/web test:bundle
 pnpm exec playwright install --with-deps chromium
+pnpm exec playwright install-deps chromium
 pnpm test:e2e
 
 # Package artifact and installed-package gates

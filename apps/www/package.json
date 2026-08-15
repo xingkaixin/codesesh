@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro check && astro build",
+    "typecheck": "astro check",
     "preview": "astro preview",
     "clean": "node ../../scripts/clean.mjs",
     "lint": "oxlint astro.config.ts eslint.config.mjs prettier.config.mjs src && eslint \"src/**/*.astro\"",

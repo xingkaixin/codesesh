@@ -4,7 +4,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPnpmInvocation } from "./lib/pnpm-process.mjs";
 
-export const QUALITY_TASKS = ["lint", "lint:fix", "format", "format:check"];
+export const QUALITY_TASKS = ["lint", "lint:fix", "format", "format:check", "typecheck"];
 export const QUALITY_PACKAGES = [
   { name: "codesesh-monorepo", manifest: "package.json", turbo: false },
   { name: "@codesesh/core", manifest: "packages/core/package.json" },

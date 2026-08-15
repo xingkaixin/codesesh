@@ -28,6 +28,7 @@ describe("CS-173: quality task coverage", () => {
       "@codesesh/www#lint:fix has no package script",
       "@codesesh/www#format has no package script",
       "@codesesh/www#format:check has no package script",
+      "@codesesh/www#typecheck has no package script",
     ]);
   });
 

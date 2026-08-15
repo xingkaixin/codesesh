@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# Supersede in-flight runs for the same PR branch; keep every run on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ci:
     strategy:
@@ -97,7 +102,21 @@ jobs:
 
       - run: pnpm test:migration
 
+      - name: Enforce the initial bundle budget
+        run: pnpm --filter @codesesh/web test:bundle
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - run: pnpm exec playwright install --with-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+
+      - run: pnpm exec playwright install-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
 
       - run: pnpm test:e2e
 

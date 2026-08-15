@@ -12,7 +12,9 @@
     "lint:fix": "oxlint . --fix",
     "format": "oxfmt --write \"**/*.{js,mjs,cjs,ts,tsx}\"",
     "format:check": "oxfmt --check \"**/*.{js,mjs,cjs,ts,tsx}\"",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:bundle": "vitest run --config vitest.bundle.config.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

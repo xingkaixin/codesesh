@@ -25,9 +25,14 @@
       "cache": true,
       "dependsOn": ["^build"]
     },
-    "@codesesh/web#test": {
+    "test:bundle": {
       "cache": true,
-      "dependsOn": ["build", "^build"]
+      "dependsOn": ["build"]
+    },
+    "typecheck": {
+      "cache": true,
+      "dependsOn": ["^build"],
+      "outputs": []
     },
     "clean": {
       "cache": false
