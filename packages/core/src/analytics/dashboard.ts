@@ -34,7 +34,7 @@ import {
   toCalendarDayKey,
 } from "../contract/index.js";
 import type { DashboardCostFacts } from "./cost-facts.js";
-import { visitAttributedCosts } from "./cost-attribution.js";
+import { visitAttributedCosts, visitAttributedUsage } from "./cost-attribution.js";
 
 export type {
   DashboardAgentStat,
@@ -116,7 +116,7 @@ export interface DashboardOptions {
   agentInfoMap?: Map<string, AgentInfo>;
   /** Immediately preceding window of equal length; drives `totals.previous`. */
   compare?: { from: number; to: number };
-  /** Message-level cost facts; null/undefined keeps session-activity fallback behavior. */
+  /** Message-level cost and usage facts; null/undefined keeps session-activity fallback behavior. */
   costFacts?: DashboardCostFacts | null;
 }
 
@@ -253,10 +253,7 @@ function trackProjectActivity(
   const project = getOrCreateProject(node.session, acc);
   if (!identity || !project) return;
 
-  const stats = node.inclusiveStats;
   project.sessions += 1;
-  project.messages += stats.messageCount;
-  project.tokens += stats.totalTokens;
   project.agentSessions.set(agentKey, (project.agentSessions.get(agentKey) ?? 0) + 1);
   acc.projectKeys.add(getProjectIdentityKey(identity));
 }
@@ -264,21 +261,15 @@ function trackProjectActivity(
 /** Fold activity metrics for one top-level node and its inclusive subtree. */
 function accumulateActivity(node: SessionTreeNode, acc: DashboardAccumulator): void {
   const session = node.session;
-  const stats = node.inclusiveStats;
   const activity = getSessionActivityTime(session);
   const agentKey = getSessionAgentName(session);
 
   acc.sessions += 1;
-  acc.messages += stats.messageCount;
-  acc.tokens += stats.totalTokens;
-  acc.cacheReadTokens += stats.cacheReadTokens;
   acc.agentKeys.add(agentKey);
 
   const metric = acc.agents.get(agentKey);
   if (metric) {
     metric.sessions += 1;
-    metric.messages += stats.messageCount;
-    metric.tokens += stats.totalTokens;
   }
 
   const dayKey = toCalendarDayKey(activity);
@@ -288,11 +279,6 @@ function accumulateActivity(node: SessionTreeNode, acc: DashboardAccumulator): v
     acc.daily.set(dayKey, bucket);
   }
   bucket.sessions += 1;
-  bucket.messages += stats.messageCount;
-  bucket.input += Math.max(0, stats.inputTokens - stats.cacheReadTokens - stats.cacheCreateTokens);
-  bucket.output += stats.outputTokens;
-  bucket.cache_read += stats.cacheReadTokens;
-  bucket.cache_create += stats.cacheCreateTokens;
 
   const usage = new Map<string, number>();
   foldModelUsage(node, usage);
@@ -319,6 +305,78 @@ function accumulateActivity(node: SessionTreeNode, acc: DashboardAccumulator): v
     acc.recent.splice(recentIndex, 0, { session, activity });
     if (acc.recent.length > DASHBOARD_RECENT_LIMIT) acc.recent.pop();
   }
+}
+
+function addUsage(
+  acc: DashboardAccumulator,
+  entry: SessionTreeNode,
+  time: number,
+  usage: {
+    messages: number;
+    totalTokens: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreateTokens: number;
+  },
+): void {
+  const { messages, totalTokens, inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens } =
+    usage;
+  if (
+    messages <= 0 &&
+    totalTokens <= 0 &&
+    inputTokens <= 0 &&
+    outputTokens <= 0 &&
+    cacheReadTokens <= 0 &&
+    cacheCreateTokens <= 0
+  ) {
+    return;
+  }
+
+  acc.messages += messages;
+  acc.tokens += totalTokens;
+  acc.cacheReadTokens += cacheReadTokens;
+
+  const agentKey = getSessionAgentName(entry.session);
+  let metric = acc.agents.get(agentKey);
+  if (!metric) {
+    metric = { name: agentKey, sessions: 0, messages: 0, tokens: 0, cost: 0 };
+    acc.agents.set(agentKey, metric);
+  }
+  metric.messages += messages;
+  metric.tokens += totalTokens;
+
+  const dayKey = toCalendarDayKey(time);
+  let bucket = acc.daily.get(dayKey);
+  if (!bucket) {
+    bucket = emptyDailyBucket(dayKey);
+    acc.daily.set(dayKey, bucket);
+  }
+  bucket.messages += messages;
+  bucket.input += Math.max(0, inputTokens - cacheReadTokens - cacheCreateTokens);
+  bucket.output += outputTokens;
+  bucket.cache_read += cacheReadTokens;
+  bucket.cache_create += cacheCreateTokens;
+
+  const project = getOrCreateProject(entry.session, acc);
+  if (!project) return;
+  project.messages += messages;
+  project.tokens += totalTokens;
+}
+
+function accumulateUsage(
+  tree: SessionTree,
+  scope: DashboardScope,
+  acc: DashboardAccumulator,
+  from: number | undefined,
+  to: number,
+  costFacts: DashboardCostFacts | null | undefined,
+): void {
+  visitAttributedUsage(
+    tree,
+    { from, to, facts: costFacts, matchesEntry: (session) => matchesScope(session, scope) },
+    ({ entry, time, ...usage }) => addUsage(acc, entry, time, usage),
+  );
 }
 
 function addModelCost(
@@ -446,6 +504,7 @@ export function buildDashboard(
     }
   }
   for (const node of scopedEntries(tree, scope, from, to)) accumulateActivity(node, acc);
+  accumulateUsage(tree, scope, acc, from, to, costFacts);
   accumulateCosts(tree, scope, acc, from, to, costFacts);
 
   let previous: DashboardPreviousTotals | undefined;
@@ -454,6 +513,7 @@ export function buildDashboard(
     for (const node of scopedEntries(tree, scope, compare.from, compare.to)) {
       accumulateActivity(node, compareAcc);
     }
+    accumulateUsage(tree, scope, compareAcc, compare.from, compare.to, costFacts);
     accumulateCosts(tree, scope, compareAcc, compare.from, compare.to, costFacts);
     previous = toPreviousTotals(compareAcc);
   }
@@ -472,7 +532,7 @@ export function buildDashboard(
         cost: metrics.cost,
       };
     })
-    .filter((item) => item.sessions > 0 || item.cost > 0)
+    .filter((item) => item.sessions > 0 || item.messages > 0 || item.tokens > 0 || item.cost > 0)
     .sort((a, b) => b.sessions - a.sessions || b.cost - a.cost);
 
   const dailyActivity = [...acc.daily.values()].sort((a, b) => a.date.localeCompare(b.date));

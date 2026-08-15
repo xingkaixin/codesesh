@@ -1152,8 +1152,8 @@ describe("handleGetProjects", () => {
       project_identity: { kind: "git_remote", key: "repo-a", displayName: "Repo A" },
       stats: {
         message_count: 1,
-        total_input_tokens: 0,
-        total_output_tokens: 0,
+        total_input_tokens: 10,
+        total_output_tokens: 5,
         total_cost: 2,
         cost_source: "estimated",
       },
@@ -1162,6 +1162,18 @@ describe("handleGetProjects", () => {
       sessions: [
         {
           reference: { agentName: "agent", sessionId: session.id },
+          messageCount: 1,
+          untimedMessageCount: 0,
+          inputTokens: 10,
+          outputTokens: 5,
+          reasoningTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+          untimedInputTokens: 0,
+          untimedOutputTokens: 0,
+          untimedReasoningTokens: 0,
+          untimedCacheReadTokens: 0,
+          untimedCacheCreateTokens: 0,
           messageCost: 2,
           untimedMessageCost: 0,
           modelCosts: [],
@@ -1171,6 +1183,11 @@ describe("handleGetProjects", () => {
         {
           reference: { agentName: "agent", sessionId: session.id },
           time: 150,
+          inputTokens: 10,
+          outputTokens: 5,
+          reasoningTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
           cost: 2,
           costSource: "estimated",
         },
@@ -1186,7 +1203,8 @@ describe("handleGetProjects", () => {
       expect.objectContaining({
         identityKey: "repo-a",
         sessionCount: 0,
-        messages: 0,
+        messages: 1,
+        tokens: 15,
         cost: 2,
       }),
     ]);

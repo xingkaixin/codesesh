@@ -17,6 +17,18 @@ export interface CostFactOptions {
 interface CostSummaryRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
+  message_count?: number;
+  untimed_message_count?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  reasoning_tokens?: number;
+  cache_read_tokens?: number;
+  cache_create_tokens?: number;
+  untimed_input_tokens?: number;
+  untimed_output_tokens?: number;
+  untimed_reasoning_tokens?: number;
+  untimed_cache_read_tokens?: number;
+  untimed_cache_create_tokens?: number;
   message_cost?: number;
   untimed_message_cost?: number;
 }
@@ -26,6 +38,11 @@ interface MessageCostRow extends DatabaseRow {
   session_id?: string;
   cost_time?: number;
   model?: string | null;
+  input_tokens?: number;
+  output_tokens?: number;
+  reasoning_tokens?: number;
+  cache_read_tokens?: number;
+  cache_create_tokens?: number;
   cost?: number;
   cost_source?: string | null;
 }
@@ -51,6 +68,10 @@ function costSource(value: string | null | undefined): CostSource | undefined {
   return value === "recorded" || value === "estimated" ? value : undefined;
 }
 
+function nonNegative(value: number | undefined): number {
+  return Math.max(0, Number(value ?? 0));
+}
+
 function readCostFacts(db: SQLiteDatabase, options: CostFactOptions): DashboardCostFacts {
   const summaries = db
     .prepare(
@@ -58,6 +79,18 @@ function readCostFacts(db: SQLiteDatabase, options: CostFactOptions): DashboardC
         SELECT
           c.agent_name,
           c.session_id,
+          c.message_count,
+          c.untimed_message_count,
+          c.input_tokens,
+          c.output_tokens,
+          c.reasoning_tokens,
+          c.cache_read_tokens,
+          c.cache_create_tokens,
+          c.untimed_input_tokens,
+          c.untimed_output_tokens,
+          c.untimed_reasoning_tokens,
+          c.untimed_cache_read_tokens,
+          c.untimed_cache_create_tokens,
           c.message_cost,
           c.untimed_message_cost
         FROM session_cost_summary c
@@ -76,6 +109,18 @@ function readCostFacts(db: SQLiteDatabase, options: CostFactOptions): DashboardC
     const sessionId = String(row.session_id ?? "");
     const summary: SessionCostSummary = {
       reference: { agentName, sessionId },
+      messageCount: nonNegative(row.message_count),
+      untimedMessageCount: nonNegative(row.untimed_message_count),
+      inputTokens: nonNegative(row.input_tokens),
+      outputTokens: nonNegative(row.output_tokens),
+      reasoningTokens: nonNegative(row.reasoning_tokens),
+      cacheReadTokens: nonNegative(row.cache_read_tokens),
+      cacheCreateTokens: nonNegative(row.cache_create_tokens),
+      untimedInputTokens: nonNegative(row.untimed_input_tokens),
+      untimedOutputTokens: nonNegative(row.untimed_output_tokens),
+      untimedReasoningTokens: nonNegative(row.untimed_reasoning_tokens),
+      untimedCacheReadTokens: nonNegative(row.untimed_cache_read_tokens),
+      untimedCacheCreateTokens: nonNegative(row.untimed_cache_create_tokens),
       messageCost: Number(row.message_cost ?? 0),
       untimedMessageCost: Number(row.untimed_message_cost ?? 0),
       modelCosts: [],
@@ -116,7 +161,7 @@ function readCostFacts(db: SQLiteDatabase, options: CostFactOptions): DashboardC
     });
   }
 
-  const clauses = [`m.cost > 0`, `${EFFECTIVE_COST_TIME} IS NOT NULL`];
+  const clauses = [`${EFFECTIVE_COST_TIME} IS NOT NULL`];
   const params: unknown[] = [];
   if (options.from != null) {
     clauses.push(`${EFFECTIVE_COST_TIME} >= ?`);
@@ -135,9 +180,14 @@ function readCostFacts(db: SQLiteDatabase, options: CostFactOptions): DashboardC
           m.session_id,
           ${EFFECTIVE_COST_TIME} AS cost_time,
           m.model,
+          CAST(COALESCE(json_extract(m.tokens_json, '$.input'), 0) AS INTEGER) AS input_tokens,
+          CAST(COALESCE(json_extract(m.tokens_json, '$.output'), 0) AS INTEGER) AS output_tokens,
+          CAST(COALESCE(json_extract(m.tokens_json, '$.reasoning'), 0) AS INTEGER) AS reasoning_tokens,
+          CAST(COALESCE(json_extract(m.tokens_json, '$.cache_read'), 0) AS INTEGER) AS cache_read_tokens,
+          CAST(COALESCE(json_extract(m.tokens_json, '$.cache_create'), 0) AS INTEGER) AS cache_create_tokens,
           m.cost,
           m.cost_source
-        FROM messages m INDEXED BY idx_messages_cost_time
+        FROM messages m INDEXED BY idx_messages_usage_time
         JOIN sessions s
           ON s.agent_name = m.agent_name
           AND s.session_id = m.session_id
@@ -156,6 +206,11 @@ function readCostFacts(db: SQLiteDatabase, options: CostFactOptions): DashboardC
         sessionId: String(row.session_id ?? ""),
       },
       time: Number(row.cost_time ?? 0),
+      inputTokens: nonNegative(row.input_tokens),
+      outputTokens: nonNegative(row.output_tokens),
+      reasoningTokens: nonNegative(row.reasoning_tokens),
+      cacheReadTokens: nonNegative(row.cache_read_tokens),
+      cacheCreateTokens: nonNegative(row.cache_create_tokens),
       cost: Number(row.cost ?? 0),
       costSource: costSource(row.cost_source),
       ...(model ? { model } : {}),

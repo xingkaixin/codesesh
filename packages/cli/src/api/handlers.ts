@@ -213,7 +213,13 @@ export function handleGetProjects(
           from,
           to,
           costFacts,
-        ).filter((project) => project.sessionCount > 0 || project.cost > 0),
+        ).filter(
+          (project) =>
+            project.sessionCount > 0 ||
+            project.messages > 0 ||
+            project.tokens > 0 ||
+            project.cost > 0,
+        ),
       };
     },
   );
