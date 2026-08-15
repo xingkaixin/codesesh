@@ -12,8 +12,6 @@ export type {
 export {
   BaseAgent,
   createRegisteredAgents,
-  createSessionSourceFailure,
-  diffSessionSources,
   FileSystemSessionSource,
   getAgentInfoMap,
   getRegisteredAgents,
@@ -49,11 +47,8 @@ export {
   computeSessionDiff,
   ensureSessionTagsSync,
   getAgentFullSyncCursor,
-  getAgentLastFullSyncAt,
   getAnalyticsRevision,
-  getCachePath,
   getSearchProjectDirectory,
-  isAgentCacheInitialized,
   readAgentCacheInitialization,
   readAgentLastFullSyncAt,
   listCachedProjectGroups,
@@ -81,11 +76,7 @@ export {
 } from "./discovery/index.js";
 export type { CacheReadOutcome } from "./discovery/index.js";
 export { PRICING_CAPTURE_EPOCH } from "./pricing/index.js";
-export {
-  filterSessionTreeByActivityWindow,
-  isChildSession,
-  getRootSessions,
-} from "./contract/index.js";
+export { filterSessionTreeByActivityWindow } from "./contract/index.js";
 export type {
   FileActivityResult,
   AgentCacheFailure,
@@ -107,7 +98,6 @@ export type {
 } from "./discovery/index.js";
 export {
   computeIdentityProjection,
-  createProjectScopeMatcher,
   createProjectScopeMatcherFromIdentity,
   isProjectIdentityKind,
   matchesProjectIdentity,
@@ -135,7 +125,6 @@ export type {
   UnavailableBookmarkView,
 } from "./contract/index.js";
 export {
-  compareBookmarkViews,
   materializeBookmarkViews,
   type BookmarkMaterializationOptions,
 } from "./bookmarks/index.js";
