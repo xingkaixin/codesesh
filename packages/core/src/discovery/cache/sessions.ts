@@ -625,6 +625,9 @@ export function writeCachedSessionSnapshot(
   const deleteModelCost = db.prepare(
     "DELETE FROM session_model_cost WHERE agent_name = ? AND session_id = ?",
   );
+  const deleteCostSummary = db.prepare(
+    "DELETE FROM session_cost_summary WHERE agent_name = ? AND session_id = ?",
+  );
   const deleteMessageTools = db.prepare(
     "DELETE FROM message_tools WHERE agent_name = ? AND session_id = ?",
   );
@@ -656,6 +659,7 @@ export function writeCachedSessionSnapshot(
     deleteMessageTools.run(agentName, sessionId);
     deleteMessages.run(agentName, sessionId);
     deleteModelCost.run(agentName, sessionId);
+    deleteCostSummary.run(agentName, sessionId);
     deleteFileActivity.run(agentName, sessionId);
     deleteSession.run(agentName, sessionId);
   }
@@ -717,6 +721,9 @@ export function writeCachedSessionChanges(
   const deleteModelCost = db.prepare(
     "DELETE FROM session_model_cost WHERE agent_name = ? AND session_id = ?",
   );
+  const deleteCostSummary = db.prepare(
+    "DELETE FROM session_cost_summary WHERE agent_name = ? AND session_id = ?",
+  );
   const deleteMessageTools = db.prepare(
     "DELETE FROM message_tools WHERE agent_name = ? AND session_id = ?",
   );
@@ -737,6 +744,7 @@ export function writeCachedSessionChanges(
     deleteMessageTools.run(agentName, sessionId);
     deleteMessages.run(agentName, sessionId);
     deleteModelCost.run(agentName, sessionId);
+    deleteCostSummary.run(agentName, sessionId);
     deleteFileActivity.run(agentName, sessionId);
     deleteSession.run(agentName, sessionId);
   }
@@ -781,6 +789,7 @@ export function clearCache(): void {
         DELETE FROM message_tools;
         DELETE FROM messages;
         DELETE FROM session_model_cost;
+        DELETE FROM session_cost_summary;
         DELETE FROM sessions;
         DELETE FROM project_sessions;
         -- analytics_revision is an invalidation counter, not cached data.

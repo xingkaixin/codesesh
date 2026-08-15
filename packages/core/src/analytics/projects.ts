@@ -20,6 +20,8 @@ import {
   filterSessionTreeEntriesByActivityWindow,
 } from "../contract/session-tree.js";
 import { getSessionAgentName } from "./dashboard.js";
+import type { DashboardCostFacts } from "./cost-facts.js";
+import { visitAttributedCosts, visitAttributedUsage } from "./cost-attribution.js";
 
 interface ProjectMetrics {
   sessions: number;
@@ -49,7 +51,8 @@ export function attachProjectMetrics(
   projects: ProjectGroup[],
   sessions: SessionHead[],
 ): ApiProjectGroup[] {
-  return attachProjectMetricsToEntries(projects, buildSessionTree(sessions).entries);
+  const tree = buildSessionTree(sessions);
+  return attachProjectMetricsToEntries(projects, tree, tree.entries);
 }
 
 export function attachProjectMetricsFromTree(
@@ -57,16 +60,25 @@ export function attachProjectMetricsFromTree(
   tree: SessionTree,
   from?: number,
   to?: number,
+  costFacts?: DashboardCostFacts | null,
 ): ApiProjectGroup[] {
   return attachProjectMetricsToEntries(
     projects,
+    tree,
     filterSessionTreeEntriesByActivityWindow(tree, from, to),
+    from,
+    to,
+    costFacts,
   );
 }
 
 function attachProjectMetricsToEntries(
   projects: ProjectGroup[],
+  tree: SessionTree,
   entries: SessionTreeNode[],
+  from?: number,
+  to?: number,
+  costFacts?: DashboardCostFacts | null,
 ): ApiProjectGroup[] {
   const metrics = new Map<string, ProjectMetrics>();
 
@@ -81,30 +93,84 @@ function attachProjectMetricsToEntries(
       metrics.set(key, current);
     }
 
-    const stats = node.inclusiveStats;
     current.sessions += 1;
-    current.messages += stats.messageCount;
-    current.tokens += stats.totalTokens;
-    current.cost += stats.cost;
-    if (stats.costSource === "estimated") current.hasEstimatedCost = true;
 
     const agentName = getSessionAgentName(node.session);
     const agent = current.agentStats.get(agentName);
     if (agent) {
       agent.sessions += 1;
-      agent.messages += stats.messageCount;
-      agent.tokens += stats.totalTokens;
-      agent.cost += stats.cost;
     } else {
       current.agentStats.set(agentName, {
         name: agentName,
         sessions: 1,
-        messages: stats.messageCount,
-        tokens: stats.totalTokens,
-        cost: stats.cost,
+        messages: 0,
+        tokens: 0,
+        cost: 0,
       });
     }
   }
+
+  visitAttributedUsage(
+    tree,
+    { from, to: to ?? Number.POSITIVE_INFINITY, facts: costFacts },
+    ({ entry, messages, totalTokens }) => {
+      const identity = entry.session.project_identity;
+      if (!identity) return;
+      const key = getProjectIdentityKey(identity);
+      let current = metrics.get(key);
+      if (!current) {
+        current = emptyMetrics();
+        metrics.set(key, current);
+      }
+      current.messages += messages;
+      current.tokens += totalTokens;
+
+      const agentName = getSessionAgentName(entry.session);
+      const agent = current.agentStats.get(agentName);
+      if (agent) {
+        agent.messages += messages;
+        agent.tokens += totalTokens;
+      } else {
+        current.agentStats.set(agentName, {
+          name: agentName,
+          sessions: 0,
+          messages,
+          tokens: totalTokens,
+          cost: 0,
+        });
+      }
+    },
+  );
+
+  visitAttributedCosts(
+    tree,
+    { from, to: to ?? Number.POSITIVE_INFINITY, facts: costFacts },
+    ({ entry, cost, source }) => {
+      const identity = entry.session.project_identity;
+      if (!identity) return;
+      const key = getProjectIdentityKey(identity);
+      let current = metrics.get(key);
+      if (!current) {
+        current = emptyMetrics();
+        metrics.set(key, current);
+      }
+      current.cost += cost;
+      if (source === "estimated") current.hasEstimatedCost = true;
+
+      const agentName = getSessionAgentName(entry.session);
+      const agent = current.agentStats.get(agentName);
+      if (agent) agent.cost += cost;
+      else {
+        current.agentStats.set(agentName, {
+          name: agentName,
+          sessions: 0,
+          messages: 0,
+          tokens: 0,
+          cost,
+        });
+      }
+    },
+  );
 
   return projects.map((project) => {
     const metric = metrics.get(

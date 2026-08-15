@@ -6,7 +6,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 
 - 路径：`~/.cache/codesesh/codesesh.db`
 <!-- repo-fact:cache-schema-version:start -->
-- 当前 schema：`CACHE_SCHEMA_VERSION = 27`
+- 当前 schema：`CACHE_SCHEMA_VERSION = 29`
 <!-- repo-fact:cache-schema-version:end -->
 - 稳定导出入口：`packages/core/src/discovery/index.ts`
 - 实现目录：`packages/core/src/discovery/cache/`
@@ -27,11 +27,12 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 | `cache/search.ts` | 搜索查询与结构化过滤 |
 | `cache/search-query-parser.ts` | 搜索语法解析 |
 | `cache/file-activity.ts` | 文件活动查询 |
+| `cache/cost-facts.ts` | Dashboard 消息级用量、费用事实与会话摘要查询 |
 | `cache/project-groups.ts` | 项目聚合查询 |
 
 ## Schema 清单
 
-当前 schema 创建 14 张表（其中 2 张是 FTS5 虚表）和 1 个视图。
+当前 schema 创建 16 张表（其中 2 张是 FTS5 虚表）和 1 个视图。
 
 ### 生命周期与同步状态
 
@@ -48,6 +49,8 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 |----|------|
 | `sessions` | `SessionHead`、项目身份、统计数据、源路径与 `SessionCacheMeta` |
 | `messages` | 详情页使用的结构化消息快照 |
+| `session_model_cost` | 按会话和模型聚合消息费用，供模型费用分布读取 |
+| `session_cost_summary` | 汇总消息数、token 与费用，并记录缺少时间戳的部分，决定精确归因或整体回退 |
 | `message_tools` | 从消息中提取的工具名，用于结构化过滤 |
 | `session_file_activity` | 会话涉及的文件路径、操作类型、次数与最近时间 |
 
@@ -125,6 +128,8 @@ SessionWatcher / 初始后台刷新
 
 - `sessions`
 - `messages`
+- `session_model_cost`
+- `session_cost_summary`
 - `message_tools`
 - `session_file_activity`
 - `session_documents`

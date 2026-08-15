@@ -378,9 +378,20 @@ function createSessionTables(db: SQLiteDatabase): void {
 
     CREATE INDEX IF NOT EXISTS idx_messages_session
       ON messages(agent_name, session_id, message_index);
+
+    CREATE INDEX IF NOT EXISTS idx_messages_usage_time
+      ON messages(
+        CASE
+          WHEN time_completed > 0 THEN time_completed
+          WHEN time_created > 0 THEN time_created
+        END,
+        agent_name,
+        session_id
+      );
   `);
 
   createSessionModelCostTable(db);
+  createSessionCostSummaryTable(db);
   createMessageToolTables(db);
 }
 
@@ -398,6 +409,33 @@ function createSessionModelCostTable(db: SQLiteDatabase): void {
       cost REAL NOT NULL,
       cost_recorded REAL NOT NULL,
       PRIMARY KEY (agent_name, session_id, model),
+      FOREIGN KEY (agent_name, session_id)
+        REFERENCES sessions(agent_name, session_id)
+        ON DELETE CASCADE
+    );
+  `);
+}
+
+function createSessionCostSummaryTable(db: SQLiteDatabase): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_cost_summary (
+      agent_name TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      message_count INTEGER NOT NULL DEFAULT 0,
+      untimed_message_count INTEGER NOT NULL DEFAULT 0,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_create_tokens INTEGER NOT NULL DEFAULT 0,
+      untimed_input_tokens INTEGER NOT NULL DEFAULT 0,
+      untimed_output_tokens INTEGER NOT NULL DEFAULT 0,
+      untimed_reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+      untimed_cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      untimed_cache_create_tokens INTEGER NOT NULL DEFAULT 0,
+      message_cost REAL NOT NULL,
+      untimed_message_cost REAL NOT NULL,
+      PRIMARY KEY (agent_name, session_id),
       FOREIGN KEY (agent_name, session_id)
         REFERENCES sessions(agent_name, session_id)
         ON DELETE CASCADE
@@ -1220,6 +1258,155 @@ function addSessionModelCostRollup(db: SQLiteDatabase): void {
   `);
 }
 
+function addSessionCostSummary(db: SQLiteDatabase): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_cost_summary (
+      agent_name TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      message_cost REAL NOT NULL,
+      untimed_message_cost REAL NOT NULL,
+      PRIMARY KEY (agent_name, session_id),
+      FOREIGN KEY (agent_name, session_id)
+        REFERENCES sessions(agent_name, session_id)
+        ON DELETE CASCADE
+    );
+  `);
+  if (!tableExists(db, "messages")) return;
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_messages_cost_time
+      ON messages(
+        CASE
+          WHEN time_completed > 0 THEN time_completed
+          WHEN time_created > 0 THEN time_created
+        END,
+        agent_name,
+        session_id
+      )
+      WHERE cost > 0;
+  `);
+
+  if (columnExists(db, "session_cost_summary", "message_count")) return;
+  db.exec(`
+
+    INSERT OR REPLACE INTO session_cost_summary(
+      agent_name,
+      session_id,
+      message_cost,
+      untimed_message_cost
+    )
+    SELECT
+      m.agent_name,
+      m.session_id,
+      SUM(CASE WHEN m.cost > 0 THEN m.cost ELSE 0 END),
+      SUM(
+        CASE
+          WHEN m.cost > 0
+            AND COALESCE(m.time_completed, 0) <= 0
+            AND COALESCE(m.time_created, 0) <= 0
+          THEN m.cost
+          ELSE 0
+        END
+      )
+    FROM messages m
+    JOIN sessions s
+      ON s.agent_name = m.agent_name
+      AND s.session_id = m.session_id
+    GROUP BY m.agent_name, m.session_id
+  `);
+}
+
+function addSessionUsageSummary(db: SQLiteDatabase): void {
+  if (!tableExists(db, "session_cost_summary")) addSessionCostSummary(db);
+  const columns: Record<string, string> = {
+    message_count: "INTEGER NOT NULL DEFAULT 0",
+    untimed_message_count: "INTEGER NOT NULL DEFAULT 0",
+    input_tokens: "INTEGER NOT NULL DEFAULT 0",
+    output_tokens: "INTEGER NOT NULL DEFAULT 0",
+    reasoning_tokens: "INTEGER NOT NULL DEFAULT 0",
+    cache_read_tokens: "INTEGER NOT NULL DEFAULT 0",
+    cache_create_tokens: "INTEGER NOT NULL DEFAULT 0",
+    untimed_input_tokens: "INTEGER NOT NULL DEFAULT 0",
+    untimed_output_tokens: "INTEGER NOT NULL DEFAULT 0",
+    untimed_reasoning_tokens: "INTEGER NOT NULL DEFAULT 0",
+    untimed_cache_read_tokens: "INTEGER NOT NULL DEFAULT 0",
+    untimed_cache_create_tokens: "INTEGER NOT NULL DEFAULT 0",
+  };
+  for (const [name, definition] of Object.entries(columns)) {
+    if (!columnExists(db, "session_cost_summary", name)) {
+      db.exec(`ALTER TABLE session_cost_summary ADD COLUMN ${name} ${definition}`);
+    }
+  }
+  if (!tableExists(db, "messages")) return;
+
+  db.exec(`
+    DROP INDEX IF EXISTS idx_messages_cost_time;
+    CREATE INDEX IF NOT EXISTS idx_messages_usage_time
+      ON messages(
+        CASE
+          WHEN time_completed > 0 THEN time_completed
+          WHEN time_created > 0 THEN time_created
+        END,
+        agent_name,
+        session_id
+      );
+
+    DELETE FROM session_cost_summary;
+    WITH normalized AS (
+      SELECT
+        m.agent_name,
+        m.session_id,
+        COALESCE(m.time_completed, 0) <= 0 AND COALESCE(m.time_created, 0) <= 0 AS untimed,
+        MAX(CAST(COALESCE(json_extract(m.tokens_json, '$.input'), 0) AS INTEGER), 0) AS input_tokens,
+        MAX(CAST(COALESCE(json_extract(m.tokens_json, '$.output'), 0) AS INTEGER), 0) AS output_tokens,
+        MAX(CAST(COALESCE(json_extract(m.tokens_json, '$.reasoning'), 0) AS INTEGER), 0) AS reasoning_tokens,
+        MAX(CAST(COALESCE(json_extract(m.tokens_json, '$.cache_read'), 0) AS INTEGER), 0) AS cache_read_tokens,
+        MAX(CAST(COALESCE(json_extract(m.tokens_json, '$.cache_create'), 0) AS INTEGER), 0) AS cache_create_tokens,
+        CASE WHEN m.cost > 0 THEN m.cost ELSE 0 END AS cost
+      FROM messages m
+      JOIN sessions s
+        ON s.agent_name = m.agent_name
+        AND s.session_id = m.session_id
+    )
+    INSERT INTO session_cost_summary(
+      agent_name,
+      session_id,
+      message_count,
+      untimed_message_count,
+      input_tokens,
+      output_tokens,
+      reasoning_tokens,
+      cache_read_tokens,
+      cache_create_tokens,
+      untimed_input_tokens,
+      untimed_output_tokens,
+      untimed_reasoning_tokens,
+      untimed_cache_read_tokens,
+      untimed_cache_create_tokens,
+      message_cost,
+      untimed_message_cost
+    )
+    SELECT
+      agent_name,
+      session_id,
+      COUNT(*),
+      SUM(CASE WHEN untimed THEN 1 ELSE 0 END),
+      SUM(input_tokens),
+      SUM(output_tokens),
+      SUM(reasoning_tokens),
+      SUM(cache_read_tokens),
+      SUM(cache_create_tokens),
+      SUM(CASE WHEN untimed THEN input_tokens ELSE 0 END),
+      SUM(CASE WHEN untimed THEN output_tokens ELSE 0 END),
+      SUM(CASE WHEN untimed THEN reasoning_tokens ELSE 0 END),
+      SUM(CASE WHEN untimed THEN cache_read_tokens ELSE 0 END),
+      SUM(CASE WHEN untimed THEN cache_create_tokens ELSE 0 END),
+      SUM(cost),
+      SUM(CASE WHEN untimed THEN cost ELSE 0 END)
+    FROM normalized
+    GROUP BY agent_name, session_id;
+  `);
+}
+
 function compactSessionDocuments(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents")) {
     createSearchTables(db);
@@ -1557,6 +1744,8 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 25, migrate: addMessageContentChainDigest },
       { version: 26, migrate: addSessionActivityIndex },
       { version: 27, migrate: addSessionModelCostRollup },
+      { version: 28, migrate: addSessionCostSummary },
+      { version: 29, migrate: addSessionUsageSummary },
     ],
   });
 

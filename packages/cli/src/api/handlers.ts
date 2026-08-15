@@ -3,7 +3,6 @@ import type { SessionHead, SmartTag } from "@codesesh/core";
 import {
   addCalendarDays,
   countCalendarDays,
-  filterSessionTreeByActivityWindow,
   getSessionAgentKey,
   type SessionTree,
   type AppConfig,
@@ -18,6 +17,7 @@ import {
   mergeSearchQueryOptions,
   executeSessionSearch,
   getSearchProjectDirectory,
+  listDashboardCostFacts,
   listFileActivity,
   listCachedProjectGroups,
   materializeSessionDetailResponse,
@@ -51,6 +51,7 @@ import {
 import { paginateSessionSnapshot } from "./session-pagination.js";
 import type { ScanResultSource, ScanStatusSource } from "./scan-sources.js";
 import {
+  getDashboardCostFacts,
   getDashboardStorageAggregation,
   getSnapshotAggregation,
   getSnapshotSessionTree,
@@ -197,15 +198,28 @@ export function handleGetProjects(
   const window = parseDateWindowRequest(c, "projects", defaults);
   if (window.kind === "rejected") return window.response;
   const { from, to } = window;
+  const analyticsRevision = getAnalyticsRevision();
   const projects = getSnapshotAggregation(
     scanSource,
     scanResult.sessions,
-    ["projects", from, to],
+    ["projects", from, to, analyticsRevision],
     () => {
       const tree = getSnapshotSessionTree(scanSource, scanResult.sessions);
-      const sessions = filterSessionTreeByActivityWindow(scanResult.sessions, from, to, tree);
+      const costFacts = listDashboardCostFacts({ from, to, includeModelCosts: false });
       return {
-        projects: attachProjectMetricsFromTree(listCachedProjectGroups(sessions), tree, from, to),
+        projects: attachProjectMetricsFromTree(
+          listCachedProjectGroups(scanResult.sessions),
+          tree,
+          from,
+          to,
+          costFacts,
+        ).filter(
+          (project) =>
+            project.sessionCount > 0 ||
+            project.messages > 0 ||
+            project.tokens > 0 ||
+            project.cost > 0,
+        ),
       };
     },
   );
@@ -600,6 +614,15 @@ export function handleGetDashboard(
 
   const fixedTo = dateWindow.to;
   const cacheTo = fixedTo ?? startOfCalendarDay(to);
+  const analyticsRevision = getAnalyticsRevision();
+  const costFacts = getDashboardCostFacts(
+    scanSource,
+    scanResult.sessions,
+    compare?.from ?? from,
+    to,
+    cacheTo,
+    analyticsRevision,
+  );
   const aggregate = getSnapshotAggregation(
     scanSource,
     scanResult.sessions,
@@ -612,6 +635,7 @@ export function handleGetDashboard(
       cacheTo,
       compare?.from,
       compare?.to,
+      analyticsRevision,
     ],
     () => {
       const agentInfo = getAgentInfoMap({});
@@ -623,6 +647,7 @@ export function handleGetDashboard(
         to,
         agentInfoMap,
         compare,
+        costFacts,
       });
     },
   );
@@ -634,7 +659,7 @@ export function handleGetDashboard(
     from,
     to,
     cacheTo,
-    getAnalyticsRevision(),
+    analyticsRevision,
   );
   const data: DashboardData = {
     ...aggregate,

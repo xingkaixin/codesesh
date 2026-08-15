@@ -71,6 +71,7 @@ describe("cache schema boundary", () => {
     for (const name of [
       "sessions",
       "messages",
+      "session_cost_summary",
       "session_documents",
       "session_file_activity",
       "project_groups_v",
@@ -100,7 +101,7 @@ describe("cache schema boundary", () => {
         "publication_id",
       ]),
     );
-    expect(state?.version).toBe(27);
+    expect(state?.version).toBe(29);
   });
 
   it("removes the legacy message FTS objects when upgrading schema 23", () => {
@@ -141,7 +142,7 @@ describe("cache schema boundary", () => {
       ),
     }));
 
-    expect(migrated).toEqual({ objects: [], version: 27 });
+    expect(migrated).toEqual({ objects: [], version: 29 });
   });
 
   it("adds an empty hash chain column when upgrading schema 24", () => {
@@ -170,7 +171,105 @@ describe("cache schema boundary", () => {
       ).content_chain_digest,
     }));
 
-    expect(migrated).toEqual({ version: 27, digest: null });
+    expect(migrated).toEqual({ version: 29, digest: null });
+  });
+
+  it("backfills session usage summaries when upgrading schema 28", () => {
+    const session = makeSessionHead("cost-summary", {
+      stats: {
+        message_count: 2,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 3,
+        cost_source: "estimated",
+      },
+    });
+    saveCachedSessions("codex", [session]);
+    syncSessionSearchIndex("codex", [session], () => ({
+      ...makeSessionData(session.id),
+      ...session,
+      messages: [
+        {
+          id: "timed",
+          role: "assistant" as const,
+          time_created: 100,
+          cost: 1,
+          cost_source: "estimated" as const,
+          parts: [],
+        },
+        {
+          id: "untimed",
+          role: "assistant" as const,
+          time_created: 0,
+          cost: 2,
+          cost_source: "estimated" as const,
+          parts: [],
+        },
+      ],
+    }));
+
+    const legacyDb = new Database(getCachePath());
+    legacyDb.exec(`
+      DROP INDEX idx_messages_usage_time;
+      DROP TABLE session_cost_summary;
+      CREATE TABLE session_cost_summary (
+        agent_name TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        message_cost REAL NOT NULL,
+        untimed_message_cost REAL NOT NULL,
+        PRIMARY KEY (agent_name, session_id)
+      );
+      CREATE INDEX idx_messages_cost_time
+        ON messages(
+          CASE
+            WHEN time_completed > 0 THEN time_completed
+            WHEN time_created > 0 THEN time_created
+          END,
+          agent_name,
+          session_id
+        )
+        WHERE cost > 0;
+      PRAGMA user_version = 28;
+      UPDATE cache_meta SET value = '28' WHERE key = 'version';
+    `);
+    legacyDb.close();
+    setSchemaEnsuredPath(null);
+
+    const migrated = schema.withCacheDb((db) => ({
+      version: Number(
+        (db.prepare("PRAGMA user_version").get() as { user_version?: number }).user_version,
+      ),
+      summary: db
+        .prepare(
+          `SELECT
+            message_count,
+            untimed_message_count,
+            input_tokens,
+            output_tokens,
+            message_cost,
+            untimed_message_cost
+          FROM session_cost_summary
+          WHERE agent_name = ? AND session_id = ?`,
+        )
+        .get("codex", session.id),
+      hasIndex:
+        db
+          .prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?")
+          .get("idx_messages_usage_time") != null,
+    }));
+
+    expect(migrated).toEqual({
+      version: 29,
+      summary: {
+        message_count: 2,
+        untimed_message_count: 1,
+        input_tokens: 0,
+        output_tokens: 0,
+        message_cost: 3,
+        untimed_message_cost: 2,
+      },
+      hasIndex: true,
+    });
   });
 
   it("reuses one connection for read and write capabilities until invalidated", () => {
@@ -340,7 +439,7 @@ describe("cache schema boundary", () => {
           .get("codex", session.id) != null,
     }));
 
-    expect(migrated).toEqual({ version: 27, detailVersion: "", pending: true });
+    expect(migrated).toEqual({ version: 29, detailVersion: "", pending: true });
   });
 
   it("marks legacy project identities stale by leaving added provenance empty", () => {
@@ -379,7 +478,7 @@ describe("cache schema boundary", () => {
     });
 
     expect(migrated).toEqual({
-      version: 27,
+      version: 29,
       resolverRevision: null,
       inputSignature: null,
       classifierRevision: null,
@@ -449,7 +548,7 @@ describe("cache schema boundary", () => {
       });
 
       expect(migrated).toEqual({
-        version: 27,
+        version: 29,
         partsJson: legacyPartsJson,
         partsFormatVersion: 0,
       });

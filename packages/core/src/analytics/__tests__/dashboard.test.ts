@@ -7,8 +7,36 @@ import {
   getTotalTokens,
   PROJECT_SPARKLINE_DAYS,
 } from "../dashboard.js";
-import { addCalendarDays, startOfCalendarDay } from "../../contract/calendar-day.js";
+import {
+  addCalendarDays,
+  startOfCalendarDay,
+  toCalendarDayKey,
+} from "../../contract/calendar-day.js";
 import type { SessionHead } from "../../types/session.js";
+import type { DashboardCostFacts } from "../cost-facts.js";
+
+const EMPTY_MESSAGE_USAGE = {
+  inputTokens: 0,
+  outputTokens: 0,
+  reasoningTokens: 0,
+  cacheReadTokens: 0,
+  cacheCreateTokens: 0,
+};
+
+const EMPTY_SESSION_USAGE = {
+  messageCount: 0,
+  untimedMessageCount: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  reasoningTokens: 0,
+  cacheReadTokens: 0,
+  cacheCreateTokens: 0,
+  untimedInputTokens: 0,
+  untimedOutputTokens: 0,
+  untimedReasoningTokens: 0,
+  untimedCacheReadTokens: 0,
+  untimedCacheCreateTokens: 0,
+};
 
 function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
   const timeCreated = overrides?.time_created ?? 1_000_000_000_000;
@@ -197,6 +225,342 @@ describe("buildDashboard", () => {
       opts({ from: 5000, to: 10000 }),
     );
     expect(result.totals.sessions).toBe(1);
+  });
+
+  it("attributes reconciled message costs to their message days", () => {
+    const day1 = startOfCalendarDay(Date.now());
+    const day2 = addCalendarDays(day1, 1);
+    const day3 = addCalendarDays(day1, 2);
+    const session = makeSession("long-lived", {
+      time_created: day1,
+      time_updated: day3,
+      stats: {
+        message_count: 3,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 6,
+        cost_source: "estimated",
+      },
+    });
+    const costFacts: DashboardCostFacts = {
+      sessions: [
+        {
+          ...EMPTY_SESSION_USAGE,
+          reference: { agentName: "claudecode", sessionId: session.id },
+          messageCost: 6,
+          untimedMessageCost: 0,
+          modelCosts: [{ model: "sonnet", cost: 6, costRecorded: 0 }],
+        },
+      ],
+      messages: [
+        {
+          ...EMPTY_MESSAGE_USAGE,
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: day1 + 1_000,
+          model: "sonnet",
+          cost: 1,
+          costSource: "estimated",
+        },
+        {
+          ...EMPTY_MESSAGE_USAGE,
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: day2 + 1_000,
+          model: "sonnet",
+          cost: 2,
+          costSource: "estimated",
+        },
+        {
+          ...EMPTY_MESSAGE_USAGE,
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: day3 + 1_000,
+          model: "sonnet",
+          cost: 3,
+          costSource: "estimated",
+        },
+      ],
+    };
+
+    const result = buildDashboard([session], opts({ from: day2, to: day3 - 1, costFacts }));
+
+    expect(result.totals).toMatchObject({ sessions: 0, cost: 2, costEstimated: 2 });
+    expect(result.dailyActivity).toEqual([
+      {
+        date: toCalendarDayKey(day2),
+        sessions: 0,
+        messages: 0,
+        cost: 2,
+        input: 0,
+        output: 0,
+        cache_read: 0,
+        cache_create: 0,
+      },
+    ]);
+    expect(result.perAgent[0]).toMatchObject({ name: "claudecode", sessions: 0, cost: 2 });
+    expect(result.modelCost).toEqual([
+      { model: "sonnet", cost: 2, costRecorded: 0, costEstimated: 2 },
+    ]);
+  });
+
+  it("attributes reconciled message usage to message days", () => {
+    const day1 = startOfCalendarDay(Date.now());
+    const day2 = addCalendarDays(day1, 1);
+    const session = makeSession("usage-diagnostic", {
+      time_created: day1,
+      time_updated: day2,
+      stats: {
+        message_count: 2,
+        total_input_tokens: 150,
+        total_output_tokens: 30,
+        total_cache_read_tokens: 100,
+        total_cost: 3,
+        cost_source: "estimated",
+      },
+    });
+    const costFacts: DashboardCostFacts = {
+      sessions: [
+        {
+          ...EMPTY_SESSION_USAGE,
+          reference: { agentName: "claudecode", sessionId: session.id },
+          messageCount: 2,
+          inputTokens: 150,
+          outputTokens: 30,
+          cacheReadTokens: 100,
+          messageCost: 3,
+          untimedMessageCost: 0,
+          modelCosts: [],
+        },
+      ],
+      messages: [
+        {
+          ...EMPTY_MESSAGE_USAGE,
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: day1 + 1_000,
+          inputTokens: 100,
+          outputTokens: 20,
+          cacheReadTokens: 80,
+          cost: 1,
+          costSource: "estimated",
+        },
+        {
+          ...EMPTY_MESSAGE_USAGE,
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: day2 + 1_000,
+          inputTokens: 50,
+          outputTokens: 10,
+          cacheReadTokens: 20,
+          cost: 2,
+          costSource: "estimated",
+        },
+      ],
+    };
+
+    const result = buildDashboard(
+      [session],
+      opts({ from: day1, to: addCalendarDays(day2, 1) - 1, costFacts }),
+    );
+    expect(
+      result.dailyActivity.map(({ sessions, messages, input, output, cache_read, cost }) => ({
+        sessions,
+        messages,
+        input,
+        output,
+        cache_read,
+        cost,
+      })),
+    ).toEqual([
+      { sessions: 0, messages: 1, input: 20, output: 20, cache_read: 80, cost: 1 },
+      { sessions: 1, messages: 1, input: 30, output: 10, cache_read: 20, cost: 2 },
+    ]);
+    expect(result.totals).toMatchObject({ messages: 2, tokens: 180 });
+  });
+
+  it("keeps unreconciled or untimed usage on the session activity day", () => {
+    const day1 = startOfCalendarDay(Date.now());
+    const day2 = addCalendarDays(day1, 1);
+    const session = makeSession("untimed-usage", {
+      time_created: day1,
+      time_updated: day2,
+      stats: {
+        message_count: 2,
+        total_input_tokens: 150,
+        total_output_tokens: 30,
+        total_cost: 0,
+      },
+    });
+    const costFacts: DashboardCostFacts = {
+      sessions: [
+        {
+          ...EMPTY_SESSION_USAGE,
+          reference: { agentName: "claudecode", sessionId: session.id },
+          messageCount: 2,
+          untimedMessageCount: 1,
+          inputTokens: 150,
+          outputTokens: 30,
+          untimedInputTokens: 100,
+          untimedOutputTokens: 20,
+          messageCost: 0,
+          untimedMessageCost: 0,
+          modelCosts: [],
+        },
+      ],
+      messages: [
+        {
+          ...EMPTY_MESSAGE_USAGE,
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: day1 + 1_000,
+          inputTokens: 50,
+          outputTokens: 10,
+          cost: 0,
+        },
+      ],
+    };
+
+    const result = buildDashboard(
+      [session],
+      opts({ from: day1, to: addCalendarDays(day2, 1) - 1, costFacts }),
+    );
+
+    expect(
+      result.dailyActivity.map(({ sessions, messages, input, output }) => ({
+        sessions,
+        messages,
+        input,
+        output,
+      })),
+    ).toEqual([
+      { sessions: 0, messages: 0, input: 0, output: 0 },
+      { sessions: 1, messages: 2, input: 150, output: 30 },
+    ]);
+  });
+
+  it("normalizes additive and included reasoning token formats", () => {
+    const time = startOfCalendarDay(Date.now());
+    const additive = makeSession("additive-reasoning", {
+      time_created: time,
+      time_updated: time,
+      stats: {
+        message_count: 1,
+        total_input_tokens: 10,
+        total_output_tokens: 25,
+        total_cost: 0,
+      },
+    });
+    const included = makeSession("included-reasoning", {
+      time_created: time,
+      time_updated: time,
+      stats: {
+        message_count: 1,
+        total_input_tokens: 10,
+        total_output_tokens: 30,
+        total_cost: 0,
+      },
+    });
+    const summary = (session: SessionHead, outputTokens: number, reasoningTokens: number) => ({
+      ...EMPTY_SESSION_USAGE,
+      reference: { agentName: "claudecode", sessionId: session.id },
+      messageCount: 1,
+      inputTokens: 10,
+      outputTokens,
+      reasoningTokens,
+      messageCost: 0,
+      untimedMessageCost: 0,
+      modelCosts: [],
+    });
+    const message = (session: SessionHead, outputTokens: number, reasoningTokens: number) => ({
+      ...EMPTY_MESSAGE_USAGE,
+      reference: { agentName: "claudecode", sessionId: session.id },
+      time,
+      inputTokens: 10,
+      outputTokens,
+      reasoningTokens,
+      cost: 0,
+    });
+
+    const result = buildDashboard(
+      [additive, included],
+      opts({
+        from: time,
+        to: addCalendarDays(time, 1) - 1,
+        costFacts: {
+          sessions: [summary(additive, 20, 5), summary(included, 30, 20)],
+          messages: [message(additive, 20, 5), message(included, 30, 20)],
+        },
+      }),
+    );
+
+    expect(result.totals.tokens).toBe(75);
+    expect(result.dailyActivity[0]).toMatchObject({ input: 20, output: 55 });
+  });
+
+  it("keeps the whole session cost on its activity day when details cannot be segmented", () => {
+    const day1 = startOfCalendarDay(Date.now());
+    const day2 = addCalendarDays(day1, 1);
+    const session = makeSession("untimed", {
+      time_created: day1,
+      time_updated: day2,
+      stats: {
+        message_count: 2,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 6,
+        cost_source: "estimated",
+      },
+    });
+    const costFacts: DashboardCostFacts = {
+      sessions: [
+        {
+          ...EMPTY_SESSION_USAGE,
+          reference: { agentName: "claudecode", sessionId: session.id },
+          messageCost: 6,
+          untimedMessageCost: 3,
+          modelCosts: [{ model: "sonnet", cost: 6, costRecorded: 0 }],
+        },
+      ],
+      messages: [
+        {
+          ...EMPTY_MESSAGE_USAGE,
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: day1 + 1_000,
+          model: "sonnet",
+          cost: 3,
+          costSource: "estimated",
+        },
+      ],
+    };
+
+    const beforeActivity = buildDashboard([session], opts({ from: day1, to: day2 - 1, costFacts }));
+    const onActivity = buildDashboard(
+      [session],
+      opts({ from: day2, to: addCalendarDays(day2, 1) - 1, costFacts }),
+    );
+
+    expect(beforeActivity.totals.cost).toBe(0);
+    expect(onActivity.totals.cost).toBe(6);
+    expect(onActivity.modelCost).toEqual([
+      { model: "sonnet", cost: 6, costRecorded: 0, costEstimated: 6 },
+    ]);
+  });
+
+  it("keeps session-level-only cost on the session activity day", () => {
+    const session = makeSession("summary-only", {
+      time_created: 100,
+      time_updated: 200,
+      stats: {
+        message_count: 1,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 4,
+        cost_source: "recorded",
+      },
+    });
+
+    const result = buildDashboard(
+      [session],
+      opts({ from: 150, to: 250, costFacts: { sessions: [], messages: [] } }),
+    );
+
+    expect(result.totals).toMatchObject({ cost: 4, costRecorded: 4, costEstimated: 0 });
+    expect(result.modelCost).toEqual([]);
   });
 
   it("rolls child stats into the parent entry without counting it as a session", () => {
@@ -469,6 +833,55 @@ describe("buildDashboard compare window", () => {
 
     expect(result.totals).toMatchObject({ sessions: 1, messages: 2 });
     expect(result.totals.previous).toEqual({ sessions: 1, messages: 5, tokens: 5, cost: 0.25 });
+  });
+
+  it("attributes current and previous costs from the same message facts", () => {
+    const session = makeSession("long-lived", {
+      time_created: 100,
+      time_updated: 250,
+      stats: {
+        message_count: 2,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 3,
+        cost_source: "estimated",
+      },
+    });
+    const costFacts: DashboardCostFacts = {
+      sessions: [
+        {
+          ...EMPTY_SESSION_USAGE,
+          reference: { agentName: "claudecode", sessionId: session.id },
+          messageCost: 3,
+          untimedMessageCost: 0,
+          modelCosts: [],
+        },
+      ],
+      messages: [
+        {
+          ...EMPTY_MESSAGE_USAGE,
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: 150,
+          cost: 1,
+          costSource: "estimated",
+        },
+        {
+          ...EMPTY_MESSAGE_USAGE,
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: 250,
+          cost: 2,
+          costSource: "estimated",
+        },
+      ],
+    };
+
+    const result = buildDashboard(
+      [session],
+      opts({ from: 200, to: 299, compare: { from: 100, to: 199 }, costFacts }),
+    );
+
+    expect(result.totals.cost).toBe(2);
+    expect(result.totals.previous?.cost).toBe(1);
   });
 
   it("omits previous totals when no compare window is given", () => {

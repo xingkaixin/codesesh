@@ -52,6 +52,7 @@ export {
   readAgentCacheInitialization,
   readAgentLastFullSyncAt,
   listCachedProjectGroups,
+  listDashboardCostFacts,
   listFileActivity,
   listModelCostDistribution,
   loadCachedSessions,
@@ -152,6 +153,7 @@ export {
 } from "./pricing/index.js";
 export { buildDashboard, getSessionActivityTime } from "./analytics/dashboard.js";
 export type { DashboardData, DashboardScope } from "./analytics/dashboard.js";
+export type { DashboardCostFacts } from "./analytics/cost-facts.js";
 export { attachProjectMetrics, attachProjectMetricsFromTree } from "./analytics/projects.js";
 export { executeSessionSearch, filterSessionSearchCandidates } from "./search/index.js";
 export type { SessionSearchContext, SessionSearchFilterContext } from "./search/index.js";
