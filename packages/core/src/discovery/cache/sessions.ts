@@ -622,6 +622,9 @@ export function writeCachedSessionSnapshot(
     "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
   );
   const deleteMessages = db.prepare("DELETE FROM messages WHERE agent_name = ? AND session_id = ?");
+  const deleteModelCost = db.prepare(
+    "DELETE FROM session_model_cost WHERE agent_name = ? AND session_id = ?",
+  );
   const deleteMessageTools = db.prepare(
     "DELETE FROM message_tools WHERE agent_name = ? AND session_id = ?",
   );
@@ -652,6 +655,7 @@ export function writeCachedSessionSnapshot(
     deleteSearchDocument.run(agentName, sessionId);
     deleteMessageTools.run(agentName, sessionId);
     deleteMessages.run(agentName, sessionId);
+    deleteModelCost.run(agentName, sessionId);
     deleteFileActivity.run(agentName, sessionId);
     deleteSession.run(agentName, sessionId);
   }
@@ -710,6 +714,9 @@ export function writeCachedSessionChanges(
     "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
   );
   const deleteMessages = db.prepare("DELETE FROM messages WHERE agent_name = ? AND session_id = ?");
+  const deleteModelCost = db.prepare(
+    "DELETE FROM session_model_cost WHERE agent_name = ? AND session_id = ?",
+  );
   const deleteMessageTools = db.prepare(
     "DELETE FROM message_tools WHERE agent_name = ? AND session_id = ?",
   );
@@ -729,6 +736,7 @@ export function writeCachedSessionChanges(
     deleteSearchDocument.run(agentName, sessionId);
     deleteMessageTools.run(agentName, sessionId);
     deleteMessages.run(agentName, sessionId);
+    deleteModelCost.run(agentName, sessionId);
     deleteFileActivity.run(agentName, sessionId);
     deleteSession.run(agentName, sessionId);
   }
@@ -772,6 +780,7 @@ export function clearCache(): void {
         DELETE FROM session_file_activity;
         DELETE FROM message_tools;
         DELETE FROM messages;
+        DELETE FROM session_model_cost;
         DELETE FROM sessions;
         DELETE FROM project_sessions;
         -- analytics_revision is an invalidation counter, not cached data.
