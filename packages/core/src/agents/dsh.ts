@@ -119,7 +119,7 @@ export class DshAgent extends FileSystemSessionSource<DshSessionMeta> {
       if (!stats) continue;
       if (!matchesScanWindow(Number(stats.mtimeMs), options)) continue;
 
-      const header = this.enumerationStep("reading session headers", artifact.sourcePath, () =>
+      const header = this.scanStep("reading session headers", artifact.sourcePath, () =>
         readDshSessionHeader(artifact.sourcePath, artifact.encoding),
       );
       this.assertStoredIdentity(sessionsRoot, artifact, header);
@@ -337,14 +337,6 @@ export class DshAgent extends FileSystemSessionSource<DshSessionMeta> {
         artifact.sourcePath,
         `header identifies ${JSON.stringify(expected)}, not ${JSON.stringify(artifact.sourcePath)}`,
       );
-    }
-  }
-
-  private enumerationStep<T>(stage: string, sourcePath: string, read: () => T): T {
-    try {
-      return read();
-    } catch (error) {
-      throw new SessionScanError(this.name, stage, { cause: error, sourcePath });
     }
   }
 

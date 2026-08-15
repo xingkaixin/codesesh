@@ -319,6 +319,23 @@ describe("CursorAgent scan outcomes", () => {
     expect(() => makeScanningAgent(dbPath).scan()).toThrow(SessionScanError);
   });
 
+  it("CS-273: throws instead of returning empty messages when the bubble query fails", () => {
+    const agent = new CursorAgent() as unknown as {
+      loadMessagesFromBubbles(db: unknown, composerId: string, model: string | null): unknown;
+    };
+    const failingDb = {
+      prepare: () => {
+        throw new Error("database is locked");
+      },
+    };
+
+    // A broken database must surface as a scan error, never as a session
+    // that silently renders with zero messages.
+    expect(() => agent.loadMessagesFromBubbles(failingDb, "composer-1", null)).toThrow(
+      SessionScanError,
+    );
+  });
+
   it("returns an empty result for a readable empty database", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-cursor-test-"));
     tempDirs.push(tempDir);

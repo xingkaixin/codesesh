@@ -1023,7 +1023,13 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       }
       this.sessionIndexCache = cache;
       this.sessionIndexMtime = mtime;
-    } catch {
+    } catch (error) {
+      // Titles silently falling back to filenames is a confusing failure
+      // mode; keep the degradation but make it visible.
+      getCoreDiagnostics()?.warn("codex.session_index_read_failed", {
+        path: indexPath,
+        message: error instanceof Error ? error.message : String(error),
+      });
       this.sessionIndexCache.clear();
       this.sessionIndexMtime = undefined;
     }
