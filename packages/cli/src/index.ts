@@ -30,6 +30,13 @@ import {
 import { createRegisteredAgents, perf } from "@codesesh/core";
 import { startPricingRefresh } from "./pricing-refresh.js";
 
+// Node's default reaction to an unhandled rejection is to terminate without
+// touching the app log; record it first, then let the crash proceed.
+process.on("unhandledRejection", (reason) => {
+  appLogger.error("process.unhandled_rejection", { error: reason });
+  throw reason;
+});
+
 const main = defineCommand({
   meta: {
     name: "codesesh",
@@ -281,12 +288,16 @@ const main = defineCommand({
       await app.shutdown();
       process.exit(0);
     };
-    process.once("SIGINT", (signal) => {
-      void shutdown(signal);
-    });
-    process.once("SIGTERM", (signal) => {
-      void shutdown(signal);
-    });
+    // If shutdown rejects, process.exit(0) inside it never runs; log and
+    // exit non-zero instead of leaving an unhandled rejection behind.
+    const shutdownOnSignal = (signal: NodeJS.Signals) => {
+      shutdown(signal).catch((error) => {
+        appLogger.error("cli.shutdown_failed", { signal, error });
+        process.exit(1);
+      });
+    };
+    process.once("SIGINT", shutdownOnSignal);
+    process.once("SIGTERM", shutdownOnSignal);
 
     console.log(`  ${url}`);
     console.log("");

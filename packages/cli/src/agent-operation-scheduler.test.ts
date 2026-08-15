@@ -123,6 +123,23 @@ describe("AgentOperationScheduler", () => {
     await expect(next).resolves.toBe("committed");
   });
 
+  it("logs a rejection from a timer-scheduled refresh instead of leaking it", async () => {
+    vi.useFakeTimers();
+    const error = vi.spyOn(appLogger, "error");
+    const scheduler = new AgentOperationScheduler(async () => {
+      throw new Error("refresh boom");
+    });
+
+    scheduler.schedule("codex", 10);
+    await vi.advanceTimersByTimeAsync(10);
+    await scheduler.waitForIdle();
+
+    expect(error).toHaveBeenCalledWith(
+      "scan.refresh.uncaught",
+      expect.objectContaining({ agent: "codex" }),
+    );
+  });
+
   it("cancels timers and skips queued operations after stop", async () => {
     vi.useFakeTimers();
     const first = deferredResult();
