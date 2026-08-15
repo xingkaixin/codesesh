@@ -48,9 +48,17 @@ function mergeTokens(base: Message["tokens"], extra: Message["tokens"]): Message
   return merged;
 }
 
+interface PartFlags {
+  hasText: boolean;
+  hasTool: boolean;
+}
+
 export class TranscriptBuilder {
   private readonly messages: Message[] = [];
   private readonly pendingToolCalls = new Map<string, ToolPart>();
+  // Tracks per-message part kinds so grouping checks are O(1) instead of
+  // rescanning the growing parts array on every append (CS-283).
+  private readonly partFlags = new WeakMap<Message, PartFlags>();
   private currentAssistant: Message | null = null;
   private latestTextAssistant: Message | null = null;
 
@@ -64,11 +72,14 @@ export class TranscriptBuilder {
   appendMessage(input: TranscriptMessageInput): Message {
     const message = this.createMessage(input);
     this.messages.push(message);
-    this.registerToolCalls(message.parts);
+    for (const part of message.parts) {
+      this.registerToolCall(part);
+      this.notePart(message, part);
+    }
 
     if (message.role === "assistant") {
       this.currentAssistant = message;
-      if (message.parts.some((part) => part.type === "text")) {
+      if (this.flagsFor(message).hasText) {
         this.latestTextAssistant = message;
       }
     } else if (message.role === "user") {
@@ -88,13 +99,14 @@ export class TranscriptBuilder {
     } = {},
   ): Message {
     const current = this.currentAssistant;
+    const currentFlags = current === null ? null : this.flagsFor(current);
     const canReuse =
       current !== null &&
       (options.grouping === "current" ||
         (part.type === "text"
-          ? !current.parts.some((item) => item.type === "tool")
+          ? !currentFlags!.hasTool
           : part.type === "reasoning"
-            ? !current.parts.some((item) => item.type === "text" || item.type === "tool")
+            ? !currentFlags!.hasText && !currentFlags!.hasTool
             : false));
 
     const message = canReuse
@@ -103,7 +115,7 @@ export class TranscriptBuilder {
 
     if (canReuse) {
       if (options.deduplicateTail) this.appendPartIfNew(message, part);
-      else message.parts.push(part);
+      else this.pushPart(message, part);
       this.applyMissingMetadata(message, input);
     }
     if (part.type === "text") {
@@ -137,7 +149,7 @@ export class TranscriptBuilder {
         });
 
     if (target) {
-      message.parts.push(part);
+      this.pushPart(message, part);
       this.applyMissingMetadata(message, input);
       if (options.markModeAsTool) message.mode = "tool";
       this.registerToolCall(part);
@@ -149,7 +161,7 @@ export class TranscriptBuilder {
 
   appendToCurrentAssistant(part: MessagePart): boolean {
     if (!this.currentAssistant) return false;
-    this.currentAssistant.parts.push(part);
+    this.pushPart(this.currentAssistant, part);
     return true;
   }
 
@@ -239,10 +251,6 @@ export class TranscriptBuilder {
     };
   }
 
-  private registerToolCalls(parts: MessagePart[]): void {
-    for (const part of parts) this.registerToolCall(part);
-  }
-
   private registerToolCall(part: MessagePart): void {
     if (part.type === "tool" && part.callID) {
       this.pendingToolCalls.set(part.callID, part);
@@ -254,7 +262,27 @@ export class TranscriptBuilder {
     if ("text" in part && tail?.type === part.type && "text" in tail && tail.text === part.text) {
       return;
     }
+    this.pushPart(message, part);
+  }
+
+  private pushPart(message: Message, part: MessagePart): void {
     message.parts.push(part);
+    this.notePart(message, part);
+  }
+
+  private notePart(message: Message, part: MessagePart): void {
+    const flags = this.flagsFor(message);
+    if (part.type === "text") flags.hasText = true;
+    else if (part.type === "tool") flags.hasTool = true;
+  }
+
+  private flagsFor(message: Message): PartFlags {
+    let flags = this.partFlags.get(message);
+    if (!flags) {
+      flags = { hasText: false, hasTool: false };
+      this.partFlags.set(message, flags);
+    }
+    return flags;
   }
 
   private applyMissingMetadata(message: Message, input: AssistantMessageInput): void {
