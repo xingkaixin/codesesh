@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir, platform } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 /** Expand the tilde prefixes shells accept for home-relative paths. */
 function expandHomePath(path: string): string {
@@ -17,7 +17,10 @@ function expandHomePath(path: string): string {
 export function readEnvPath(name: string): string | null {
   const value = process.env[name];
   if (!value || !value.trim()) return null;
-  return resolve(expandHomePath(value.trim()));
+  const expanded = expandHomePath(value.trim());
+  // resolve() would also prepend a drive letter to POSIX-absolute paths on
+  // Windows; only relative inputs actually need anchoring.
+  return isAbsolute(expanded) ? expanded : resolve(expanded);
 }
 
 function firstExisting(...paths: string[]): string | null {
