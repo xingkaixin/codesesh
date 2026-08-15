@@ -284,6 +284,30 @@ describe("materializeSessionDetail", () => {
     expect(agent.reads).toBe(1);
   });
 
+  it("asks the caller to resolve identity instead of probing the filesystem", () => {
+    const detail = { ...makeDetail(), project_identity: undefined };
+    const head = { ...makeHead(), project_identity: undefined };
+    const agent = new TestAgent(detail, new Map([["s1", makeMeta("source")]]));
+    const scanResult = makeScanResult(agent, head);
+    const reference = { agentName: "test", sessionId: "s1" };
+
+    expect(materializeSessionDetail(scanResult, reference)).toEqual({
+      status: "needs-identity",
+      directory: "/workspace/project",
+    });
+    expect(materializeSessionDetailResponse(scanResult, reference, {})).toEqual({
+      status: "needs-identity",
+      directory: "/workspace/project",
+    });
+
+    const resolved = materializeSessionDetail(scanResult, reference, {
+      projectIdentityFallback: projectIdentity,
+    });
+    expect(resolved.status).toBe("found");
+    if (resolved.status !== "found") return;
+    expect(resolved.data.project_identity).toEqual(projectIdentity);
+  });
+
   it("derives the same file activity for cached and source details", () => {
     const head = makeHead();
     const detail = makeDetail();

@@ -125,7 +125,9 @@ export function createApiRoutes(
   api.get("/file-activity", (c) =>
     handleGetFileActivity(c, listDefaults, options.projectIdentityResolver),
   );
-  api.get("/sessions/:agent/:id", (c) => handleGetSessionData(c, scanSource));
+  api.get("/sessions/:agent/:id", (c) =>
+    handleGetSessionData(c, scanSource, options.projectIdentityResolver),
+  );
   api.get("/dashboard", (c) => handleGetDashboard(c, scanSource, listDefaults));
   api.get("/bookmarks", (c) => handleGetBookmarks(c, scanSource));
   api.put("/bookmarks", (c) => handlePutBookmark(c));

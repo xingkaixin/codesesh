@@ -52,6 +52,7 @@ import {
   buildDashboard,
   type DashboardData,
   type DashboardScope,
+  type ProjectIdentityProjection,
   type ProjectScopeMatcher,
 } from "@codesesh/core";
 import { appLogger } from "../logging.js";
@@ -829,7 +830,11 @@ export async function handleGetFileActivity(
   });
 }
 
-export async function handleGetSessionData(c: Context, scanSource: ScanResultSource) {
+export async function handleGetSessionData(
+  c: Context,
+  scanSource: ScanResultSource,
+  resolver?: ProjectIdentityResolver,
+) {
   const startedAt = performance.now();
   const agentName = c.req.param("agent");
   const sessionId = c.req.param("id");
@@ -848,9 +853,21 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
       sessionId,
     };
     const messageCursor = optionalQueryValue(c.req.query("messageCursor"));
-    const result = messageCursor
-      ? materializeSessionDetailResponse(scanSource.getSnapshot(), reference, { messageCursor })
-      : materializeSessionDetailResponse(scanSource.getSnapshot(), reference);
+    const materialize = (fallback?: ProjectIdentityProjection["identity"]) =>
+      materializeSessionDetailResponse(scanSource.getSnapshot(), reference, {
+        ...(messageCursor ? { messageCursor } : {}),
+        ...(fallback ? { projectIdentityFallback: fallback } : {}),
+      });
+    let result = materialize();
+    if (result.status === "needs-identity") {
+      // Identity resolution probes the filesystem and spawns git; it must run
+      // on the worker resolver, never synchronously on the request path.
+      if (!resolver) throw new Error("Project identity resolver is unavailable");
+      result = materialize((await resolver.resolve(result.directory)).identity);
+    }
+    if (result.status === "needs-identity") {
+      throw new Error("Project identity fallback was not applied");
+    }
     if (result.status === "unknown-agent") {
       return c.json({ error: `Unknown agent: ${agentName}` }, 404);
     }

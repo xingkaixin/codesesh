@@ -1776,6 +1776,38 @@ describe("handleGetSessionData", () => {
         agentName: "claudecode",
         sessionId: "s1",
       },
+      {},
+    );
+    expect(c.json).toHaveBeenCalledWith(detail);
+  });
+
+  it("resolves a missing identity off the request path and retries", async () => {
+    coreMocks.materializeSessionDetailResponse
+      .mockReturnValueOnce({ status: "needs-identity", directory: "/workspace/project" })
+      .mockReturnValueOnce({ status: "found", data: detail });
+    const identity = {
+      kind: "path" as const,
+      key: "/workspace/project",
+      displayName: "project",
+    };
+    const resolver = {
+      resolve: vi.fn(async () => ({
+        identity,
+        resolverRevision: "test",
+        inputSignature: "sig",
+      })),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const scanSource = makeScanSource();
+    const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
+
+    await handleGetSessionData(c, scanSource, resolver);
+
+    expect(resolver.resolve).toHaveBeenCalledWith("/workspace/project");
+    expect(coreMocks.materializeSessionDetailResponse).toHaveBeenLastCalledWith(
+      scanSource.getSnapshot(),
+      { agentName: "claudecode", sessionId: "s1" },
+      { projectIdentityFallback: identity },
     );
     expect(c.json).toHaveBeenCalledWith(detail);
   });
