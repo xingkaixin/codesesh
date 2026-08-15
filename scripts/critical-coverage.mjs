@@ -53,6 +53,17 @@ export const CRITICAL_COVERAGE_SCOPES = [
     thresholds: { lines: 95 },
   },
   {
+    // The browser↔server boundary: a regression here breaks every surface at
+    // once, and it is the highest-churn web module outside App.tsx.
+    id: "web-api-client",
+    owners: [
+      { path: "apps/web/src/lib/api.ts", kind: "file" },
+      { path: "apps/web/src/lib/session-detail-cache.ts", kind: "file" },
+      { path: "apps/web/src/lib/session-query-consistency.ts", kind: "file" },
+    ],
+    thresholds: { lines: 89 },
+  },
+  {
     id: "web-interactions",
     owners: [
       { path: "apps/web/src/components/overview/OverviewScreen.tsx", kind: "file" },
