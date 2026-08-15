@@ -10,6 +10,9 @@ const EXPECTED_NETWORK_NOISE =
 // Uses the raw playwright test: the shared browserErrorGate fixture asserts a
 // fully clean console, which a deliberately failing API cannot satisfy.
 base("keeps the retry surface clean while the API is down", async ({ page }) => {
+  // The failing branch waits out react-query's retry backoff before the error
+  // surface appears; CI runners need more than the default 30s budget.
+  base.setTimeout(120_000);
   const errors = monitorBrowserErrors(page);
   let failing = true;
   await page.route("**/api/config**", (route) =>
