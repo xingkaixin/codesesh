@@ -8,8 +8,8 @@ const coreMocks = vi.hoisted(() => {
     filterSessionSearchCandidates: vi.fn(),
     getAnalyticsRevision: vi.fn(() => "0"),
     materializeSessionDetailResponse: vi.fn(),
+    listDashboardCostFacts: vi.fn((): DashboardCostFacts | null => null),
     listFileActivity: vi.fn((): FileActivityResult[] => []),
-    listModelCostDistribution: vi.fn((): ModelCostEntry[] | null => null),
     matchesProjectIdentity: vi.fn(),
     listSessionAliases: vi.fn<
       () => Array<{
@@ -57,9 +57,9 @@ vi.mock("@codesesh/core", async (importOriginal) => {
       return actual.filterSessionSearchCandidates(...args);
     },
     getAnalyticsRevision: coreMocks.getAnalyticsRevision,
+    listDashboardCostFacts: coreMocks.listDashboardCostFacts,
     materializeSessionDetailResponse: coreMocks.materializeSessionDetailResponse,
     listFileActivity: coreMocks.listFileActivity,
-    listModelCostDistribution: coreMocks.listModelCostDistribution,
     matchesProjectIdentity: (...args: Parameters<typeof actual.matchesProjectIdentity>) => {
       coreMocks.matchesProjectIdentity(...args);
       return actual.matchesProjectIdentity(...args);
@@ -95,13 +95,14 @@ import { invalidateAliasView } from "../session-aliases-view.js";
 import type { ProjectIdentityResolver } from "../../project-identity-resolver.js";
 import type {
   ChangeCheckResult,
+  DashboardCostFacts,
   FileActivityResult,
   LiveSnapshot,
   SessionCacheMeta,
   SessionHead,
   SessionDetail,
 } from "@codesesh/core";
-import type { ModelCostEntry, SearchResult } from "@codesesh/core/contract";
+import type { SearchResult } from "@codesesh/core/contract";
 import { BaseAgent } from "@codesesh/core";
 import { appLogger } from "../../logging.js";
 
@@ -252,11 +253,11 @@ afterEach(() => {
   coreMocks.filterSessionSearchCandidates.mockClear();
   coreMocks.getAnalyticsRevision.mockReset();
   coreMocks.getAnalyticsRevision.mockReturnValue("0");
+  coreMocks.listDashboardCostFacts.mockReset();
+  coreMocks.listDashboardCostFacts.mockReturnValue(null);
   coreMocks.materializeSessionDetailResponse.mockReset();
   coreMocks.listFileActivity.mockReset();
   coreMocks.listFileActivity.mockReturnValue([]);
-  coreMocks.listModelCostDistribution.mockReset();
-  coreMocks.listModelCostDistribution.mockReturnValue(null);
   coreMocks.matchesProjectIdentity.mockClear();
   coreMocks.listSessionAliases.mockReset();
   coreMocks.listSessionAliases.mockReturnValue([]);
@@ -1144,6 +1145,53 @@ describe("handleGetProjects", () => {
     expect(c.json.mock.calls[0]![0].projects[0].displayName).toBe("old");
   });
 
+  it("includes a project whose message cost falls inside the window", () => {
+    const session = makeSession("long-lived", {
+      time_created: 100,
+      time_updated: 300,
+      project_identity: { kind: "git_remote", key: "repo-a", displayName: "Repo A" },
+      stats: {
+        message_count: 1,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 2,
+        cost_source: "estimated",
+      },
+    });
+    coreMocks.listDashboardCostFacts.mockReturnValue({
+      sessions: [
+        {
+          reference: { agentName: "agent", sessionId: session.id },
+          messageCost: 2,
+          untimedMessageCost: 0,
+          modelCosts: [],
+        },
+      ],
+      messages: [
+        {
+          reference: { agentName: "agent", sessionId: session.id },
+          time: 150,
+          cost: 2,
+          costSource: "estimated",
+        },
+      ],
+    });
+    const c = makeMockContext({
+      query: { from: new Date(100).toISOString(), to: new Date(200).toISOString() },
+    });
+
+    handleGetProjects(c, makeScanSource({ sessions: [session], byAgent: { agent: [session] } }));
+
+    expect(c.json.mock.calls[0]![0].projects).toEqual([
+      expect.objectContaining({
+        identityKey: "repo-a",
+        sessionCount: 0,
+        messages: 0,
+        cost: 2,
+      }),
+    ]);
+  });
+
   it("returns project groups sorted by recent activity", () => {
     const sessions = [
       makeSession("a", {
@@ -1692,16 +1740,16 @@ describe("handleGetDashboard", () => {
     handleGetDashboard(makeMockContext(), source);
 
     expect(coreMocks.listFileActivity).toHaveBeenCalledTimes(1);
-    expect(coreMocks.listModelCostDistribution).toHaveBeenCalledTimes(1);
+    expect(coreMocks.listDashboardCostFacts).toHaveBeenCalledTimes(1);
 
     coreMocks.getAnalyticsRevision.mockReturnValue("2");
     handleGetDashboard(makeMockContext(), source);
 
     expect(coreMocks.listFileActivity).toHaveBeenCalledTimes(2);
-    expect(coreMocks.listModelCostDistribution).toHaveBeenCalledTimes(2);
+    expect(coreMocks.listDashboardCostFacts).toHaveBeenCalledTimes(2);
   });
 
-  it("propagates a null model-cost distribution instead of substituting zeros", () => {
+  it("propagates unavailable cost facts instead of substituting model-cost zeros", () => {
     const c = makeMockContext();
 
     handleGetDashboard(c, makeScanSource());
@@ -1709,11 +1757,9 @@ describe("handleGetDashboard", () => {
     expect(c.json.mock.calls[0]![0].modelCost).toBeNull();
   });
 
-  it("passes the dashboard scope and window to the model-cost producer", () => {
-    const entries: ModelCostEntry[] = [
-      { model: "sonnet", cost: 1.5, costRecorded: 0, costEstimated: 1.5 },
-    ];
-    coreMocks.listModelCostDistribution.mockReturnValue(entries);
+  it("passes the combined dashboard windows to the cost-fact producer", () => {
+    const costFacts: DashboardCostFacts = { messages: [], sessions: [] };
+    coreMocks.listDashboardCostFacts.mockReturnValue(costFacts);
     const c = makeMockContext({
       query: {
         agent: "codex",
@@ -1726,14 +1772,15 @@ describe("handleGetDashboard", () => {
     handleGetDashboard(c, makeScanSource());
     const response = c.json.mock.calls[0]![0];
 
-    expect(coreMocks.listModelCostDistribution).toHaveBeenCalledWith({
-      agent: "codex",
-      projectKind: "git_remote",
-      projectKey: "github.com/acme/app",
-      from: response.window.from,
+    expect(coreMocks.listDashboardCostFacts).toHaveBeenCalledWith({
+      from: response.window.compareFrom,
       to: response.window.to,
     });
-    expect(response.modelCost).toEqual(entries);
+    expect(coreMocks.buildDashboard).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({ costFacts }),
+    );
+    expect(response.modelCost).toEqual([]);
   });
 });
 

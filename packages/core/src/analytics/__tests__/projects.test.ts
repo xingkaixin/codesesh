@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { attachProjectMetrics, attachProjectMetricsFromTree } from "../projects.js";
 import type { ProjectGroup, SessionHead } from "../../types/index.js";
 import { buildSessionTree } from "../../contract/session-tree.js";
+import type { DashboardCostFacts } from "../cost-facts.js";
 
 function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
   return {
@@ -127,6 +128,57 @@ describe("attachProjectMetrics", () => {
     );
 
     expect(project).toMatchObject({ sessionCount: 1, messages: 2 });
+  });
+
+  it("attributes project cost by message time outside the session activity window", () => {
+    const session = makeSession("long-lived", {
+      time_created: 100,
+      time_updated: 300,
+      stats: {
+        message_count: 1,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 2,
+        cost_source: "estimated",
+      },
+    });
+    const costFacts: DashboardCostFacts = {
+      sessions: [
+        {
+          reference: { agentName: "claudecode", sessionId: session.id },
+          messageCost: 2,
+          untimedMessageCost: 0,
+          modelCosts: [],
+        },
+      ],
+      messages: [
+        {
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: 150,
+          cost: 2,
+          costSource: "estimated",
+        },
+      ],
+    };
+
+    const [project] = attachProjectMetricsFromTree(
+      [makeGroup("repo-a")],
+      buildSessionTree([session]),
+      100,
+      200,
+      costFacts,
+    );
+
+    expect(project).toMatchObject({
+      sessionCount: 0,
+      messages: 0,
+      tokens: 0,
+      cost: 2,
+      cost_source: "estimated",
+    });
+    expect(project?.agentStats).toEqual([
+      { name: "claudecode", sessions: 0, messages: 0, tokens: 0, cost: 2 },
+    ]);
   });
 
   it("counts an orphaned sub-session as its own session", () => {

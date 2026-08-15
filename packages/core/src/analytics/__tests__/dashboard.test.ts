@@ -7,8 +7,13 @@ import {
   getTotalTokens,
   PROJECT_SPARKLINE_DAYS,
 } from "../dashboard.js";
-import { addCalendarDays, startOfCalendarDay } from "../../contract/calendar-day.js";
+import {
+  addCalendarDays,
+  startOfCalendarDay,
+  toCalendarDayKey,
+} from "../../contract/calendar-day.js";
 import type { SessionHead } from "../../types/session.js";
+import type { DashboardCostFacts } from "../cost-facts.js";
 
 function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
   const timeCreated = overrides?.time_created ?? 1_000_000_000_000;
@@ -197,6 +202,145 @@ describe("buildDashboard", () => {
       opts({ from: 5000, to: 10000 }),
     );
     expect(result.totals.sessions).toBe(1);
+  });
+
+  it("attributes reconciled message costs to their message days", () => {
+    const day1 = startOfCalendarDay(Date.now());
+    const day2 = addCalendarDays(day1, 1);
+    const day3 = addCalendarDays(day1, 2);
+    const session = makeSession("long-lived", {
+      time_created: day1,
+      time_updated: day3,
+      stats: {
+        message_count: 3,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 6,
+        cost_source: "estimated",
+      },
+    });
+    const costFacts: DashboardCostFacts = {
+      sessions: [
+        {
+          reference: { agentName: "claudecode", sessionId: session.id },
+          messageCost: 6,
+          untimedMessageCost: 0,
+          modelCosts: [{ model: "sonnet", cost: 6, costRecorded: 0 }],
+        },
+      ],
+      messages: [
+        {
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: day1 + 1_000,
+          model: "sonnet",
+          cost: 1,
+          costSource: "estimated",
+        },
+        {
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: day2 + 1_000,
+          model: "sonnet",
+          cost: 2,
+          costSource: "estimated",
+        },
+        {
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: day3 + 1_000,
+          model: "sonnet",
+          cost: 3,
+          costSource: "estimated",
+        },
+      ],
+    };
+
+    const result = buildDashboard([session], opts({ from: day2, to: day3 - 1, costFacts }));
+
+    expect(result.totals).toMatchObject({ sessions: 0, cost: 2, costEstimated: 2 });
+    expect(result.dailyActivity).toEqual([
+      {
+        date: toCalendarDayKey(day2),
+        sessions: 0,
+        messages: 0,
+        cost: 2,
+        input: 0,
+        output: 0,
+        cache_read: 0,
+        cache_create: 0,
+      },
+    ]);
+    expect(result.perAgent[0]).toMatchObject({ name: "claudecode", sessions: 0, cost: 2 });
+    expect(result.modelCost).toEqual([
+      { model: "sonnet", cost: 2, costRecorded: 0, costEstimated: 2 },
+    ]);
+  });
+
+  it("keeps the whole session cost on its activity day when details cannot be segmented", () => {
+    const day1 = startOfCalendarDay(Date.now());
+    const day2 = addCalendarDays(day1, 1);
+    const session = makeSession("untimed", {
+      time_created: day1,
+      time_updated: day2,
+      stats: {
+        message_count: 2,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 6,
+        cost_source: "estimated",
+      },
+    });
+    const costFacts: DashboardCostFacts = {
+      sessions: [
+        {
+          reference: { agentName: "claudecode", sessionId: session.id },
+          messageCost: 6,
+          untimedMessageCost: 3,
+          modelCosts: [{ model: "sonnet", cost: 6, costRecorded: 0 }],
+        },
+      ],
+      messages: [
+        {
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: day1 + 1_000,
+          model: "sonnet",
+          cost: 3,
+          costSource: "estimated",
+        },
+      ],
+    };
+
+    const beforeActivity = buildDashboard([session], opts({ from: day1, to: day2 - 1, costFacts }));
+    const onActivity = buildDashboard(
+      [session],
+      opts({ from: day2, to: addCalendarDays(day2, 1) - 1, costFacts }),
+    );
+
+    expect(beforeActivity.totals.cost).toBe(0);
+    expect(onActivity.totals.cost).toBe(6);
+    expect(onActivity.modelCost).toEqual([
+      { model: "sonnet", cost: 6, costRecorded: 0, costEstimated: 6 },
+    ]);
+  });
+
+  it("keeps session-level-only cost on the session activity day", () => {
+    const session = makeSession("summary-only", {
+      time_created: 100,
+      time_updated: 200,
+      stats: {
+        message_count: 1,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 4,
+        cost_source: "recorded",
+      },
+    });
+
+    const result = buildDashboard(
+      [session],
+      opts({ from: 150, to: 250, costFacts: { sessions: [], messages: [] } }),
+    );
+
+    expect(result.totals).toMatchObject({ cost: 4, costRecorded: 4, costEstimated: 0 });
+    expect(result.modelCost).toEqual([]);
   });
 
   it("rolls child stats into the parent entry without counting it as a session", () => {
@@ -469,6 +613,52 @@ describe("buildDashboard compare window", () => {
 
     expect(result.totals).toMatchObject({ sessions: 1, messages: 2 });
     expect(result.totals.previous).toEqual({ sessions: 1, messages: 5, tokens: 5, cost: 0.25 });
+  });
+
+  it("attributes current and previous costs from the same message facts", () => {
+    const session = makeSession("long-lived", {
+      time_created: 100,
+      time_updated: 250,
+      stats: {
+        message_count: 2,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 3,
+        cost_source: "estimated",
+      },
+    });
+    const costFacts: DashboardCostFacts = {
+      sessions: [
+        {
+          reference: { agentName: "claudecode", sessionId: session.id },
+          messageCost: 3,
+          untimedMessageCost: 0,
+          modelCosts: [],
+        },
+      ],
+      messages: [
+        {
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: 150,
+          cost: 1,
+          costSource: "estimated",
+        },
+        {
+          reference: { agentName: "claudecode", sessionId: session.id },
+          time: 250,
+          cost: 2,
+          costSource: "estimated",
+        },
+      ],
+    };
+
+    const result = buildDashboard(
+      [session],
+      opts({ from: 200, to: 299, compare: { from: 100, to: 199 }, costFacts }),
+    );
+
+    expect(result.totals.cost).toBe(2);
+    expect(result.totals.previous?.cost).toBe(1);
   });
 
   it("omits previous totals when no compare window is given", () => {

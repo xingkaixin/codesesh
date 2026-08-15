@@ -86,6 +86,8 @@ export interface DashboardAggregate {
   perAgent: DashboardAgentStat[];
   dailyActivity: DashboardDailyBucket[];
   modelDistribution: ModelDistributionEntry[];
+  /** null when message-level cost facts are unavailable. */
+  modelCost: ModelCostEntry[] | null;
   perProject: DashboardProjectStat[];
   projectRollup: DashboardProjectRollup;
   recentSessions: DashboardRecentSession[];
@@ -93,7 +95,5 @@ export interface DashboardAggregate {
 
 export interface DashboardData extends DashboardAggregate {
   recentFileActivities: FileActivityResult[];
-  /** null when the message cache is unavailable. */
-  modelCost: ModelCostEntry[] | null;
   window: { from?: number; to: number; days?: number; compareFrom?: number; compareTo?: number };
 }

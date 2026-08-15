@@ -1,6 +1,7 @@
 import {
   listFileActivity,
-  listModelCostDistribution,
+  listDashboardCostFacts,
+  type DashboardCostFacts,
   type DashboardData,
   type DashboardScope,
   type SessionHead,
@@ -71,7 +72,26 @@ export function getSnapshotSessionTree(
   return (cache.sessionTree ??= buildSessionTree(sessions));
 }
 
-type DashboardStorageAggregation = Pick<DashboardData, "recentFileActivities" | "modelCost">;
+type DashboardStorageAggregation = Pick<DashboardData, "recentFileActivities">;
+
+export function getDashboardCostFacts(
+  source: ScanResultSource,
+  sessions: SessionHead[],
+  from: number | undefined,
+  to: number | undefined,
+  cacheTo: number | undefined,
+  analyticsRevision: string | null,
+): DashboardCostFacts | null {
+  const build = () => listDashboardCostFacts({ from, to });
+  if (analyticsRevision === null) return build();
+
+  return getSnapshotAggregation(
+    source,
+    sessions,
+    ["dashboard-cost-facts", from, cacheTo, analyticsRevision],
+    build,
+  );
+}
 
 export function getDashboardStorageAggregation(
   source: ScanResultSource,
@@ -90,13 +110,6 @@ export function getDashboardStorageAggregation(
       from,
       to,
       limit: 12,
-    }),
-    modelCost: listModelCostDistribution({
-      agent: scope.agent,
-      projectKind: scope.projectKind,
-      projectKey: scope.projectKey,
-      from,
-      to,
     }),
   });
   const startedAt = performance.now();
