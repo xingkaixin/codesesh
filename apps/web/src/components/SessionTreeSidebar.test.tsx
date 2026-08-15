@@ -272,6 +272,42 @@ function dispatch(target: HTMLElement, type: string, init: EventInit & { key?: s
   );
 }
 
+describe("CS-275: untrusted session titles stay inert", () => {
+  afterEach(cleanup);
+
+  // The sidebar's XSS safety rests on two facts about @pierre/trees: node
+  // labels go through vnodes (escaped), and the innerHTML-rendered
+  // `composition` slot stays unset. This test enforces the invariant so a
+  // dependency bump or a future `composition` use cannot silently turn
+  // transcript-derived titles into an HTML sink.
+  function queryDeep(root: ParentNode, selector: string): Element | null {
+    const direct = root.querySelector(selector);
+    if (direct) return direct;
+    for (const element of root.querySelectorAll("*")) {
+      const nested = (element as HTMLElement).shadowRoot;
+      if (nested) {
+        const hit = queryDeep(nested, selector);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+
+  it("renders HTML metacharacters in titles as text, not markup", async () => {
+    const hostileTitle = '<img src=x onerror="globalThis.__cs275 = true"> <b>bold';
+    renderSessionTreeSidebar([makeSession({ id: "hostile", title: hostileTitle })]);
+
+    // The full title survives verbatim as escaped text (the visible label is
+    // split by MiddleTruncate, so assert on the row's aria-label instead).
+    await waitFor(() =>
+      expect(queryDeep(document, `[aria-label='${hostileTitle}']`)).not.toBeNull(),
+    );
+    expect(queryDeep(document, "img")).toBeNull();
+    expect(queryDeep(document, "b")).toBeNull();
+    expect((globalThis as { __cs275?: boolean }).__cs275).toBeUndefined();
+  });
+});
+
 describe("SessionTreeSidebar selection state", () => {
   afterEach(cleanup);
 
