@@ -266,8 +266,10 @@ describe("DSH path rules", () => {
   });
 
   it("resolves the data root from DSH_HOME, ignoring blank overrides", () => {
+    // Absolute overrides stay verbatim (shared readEnvPath semantics): on
+    // Windows resolve() would prepend a drive letter to a POSIX-style path.
     vi.stubEnv("DSH_HOME", "/explicit/root");
-    expect(resolveDshDataRoot()).toBe(resolve("/explicit/root"));
+    expect(resolveDshDataRoot()).toBe("/explicit/root");
 
     vi.stubEnv("DSH_HOME", "relative-root");
     expect(resolveDshDataRoot()).toBe(resolve("relative-root"));

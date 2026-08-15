@@ -14,10 +14,10 @@
  * verified complete prefix.
  */
 import { closeSync, openSync, readFileSync, readSync, statSync, type BigIntStats } from "node:fs";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import * as zlib from "node:zlib";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
+import { resolveHomePath } from "../discovery/paths.js";
 
 /** Physical encoding of a session artifact; DSH defaults to `zstd`. */
 export type DshEncoding = "zstd" | "none";
@@ -132,22 +132,13 @@ export class DshSessionLogError extends Error {
 // Data root and path layout
 // ---------------------------------------------------------------------------
 
-/** Expand the tilde prefixes DSH's `expandHomePath` accepts. */
-function expandHomePath(path: string): string {
-  if (path === "~") return homedir();
-  if (path.startsWith("~/") || path.startsWith("~\\")) return join(homedir(), path.slice(2));
-  return path;
-}
-
 /**
  * Reproduce DSH's `resolveDshHome`: a non-blank `DSH_HOME`, else `~/.dsh`.
  * DSH consults no XDG or Windows AppData location, so neither does this.
+ * The blank/tilde/relative handling now lives in the shared resolveHomePath.
  */
 export function resolveDshDataRoot(): string {
-  const fromEnv = process.env["DSH_HOME"];
-  const selected =
-    fromEnv !== undefined && fromEnv.trim().length > 0 ? fromEnv : join(homedir(), ".dsh");
-  return resolve(expandHomePath(selected));
+  return resolveHomePath("DSH_HOME", ".dsh");
 }
 
 export function dshSessionsRoot(dataRoot: string): string {
