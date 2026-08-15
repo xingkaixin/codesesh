@@ -34,12 +34,15 @@ export type SearchIndexWorkerMessage =
       publicationId: string;
       agentName: string;
       sessions: number;
+      /** True when the job carries a durable publication whose staged state must be rolled back. */
+      fatal: boolean;
     }
   | {
       type: "done";
       context: string;
       durationMs: number;
       sessions: number;
+      failedAgents: string[];
     };
 
 export type SearchIndexWorkerJob =
@@ -125,6 +128,7 @@ function reportPersistFailure(
     publicationId: failure.publicationId,
     agentName: job.agentName,
     sessions: jobSessionCount(job),
+    fatal: jobIsDurablePublication(job),
   } satisfies SearchIndexWorkerMessage);
 }
 
@@ -216,6 +220,10 @@ function postSyncResult(context: string, result: SearchIndexSyncResult): void {
 
 let pricingGenerationId: number | null = null;
 
+function jobIsDurablePublication(job: SearchIndexWorkerJob): boolean {
+  return job.kind !== "maintenance" && job.publicationId != null;
+}
+
 function jobsFromRequest(request: SearchIndexWorkerRunRequest): SearchIndexWorkerJob[] {
   if (request.jobs) return request.jobs;
   return (request.agentNames ?? []).map((agentName): SearchIndexWorkerJob => ({
@@ -238,7 +246,11 @@ function runBatch(request: SearchIndexWorkerRunRequest): void {
   const agents = createRegisteredAgents();
   const jobs = jobsFromRequest(request);
 
+  const failedAgents = new Set<string>();
   for (const job of jobs) {
+    // Later chunks for an agent whose earlier job failed would commit on top
+    // of unknown state; other agents' jobs are independent and keep going.
+    if (failedAgents.has(job.agentName)) continue;
     const agent = agents.find((item) => item.name === job.agentName);
     if (!agent) {
       reportPersistFailure(job, {
@@ -246,7 +258,11 @@ function runBatch(request: SearchIndexWorkerRunRequest): void {
         publicationId:
           job.kind === "maintenance" ? randomUUID() : (job.publicationId ?? randomUUID()),
       });
-      return;
+      // A session publication must reject the whole batch so its staged
+      // state gets rolled back by the caller.
+      if (jobIsDurablePublication(job)) return;
+      failedAgents.add(job.agentName);
+      continue;
     }
 
     if (agent.setSessionMetaMap) {
@@ -256,7 +272,8 @@ function runBatch(request: SearchIndexWorkerRunRequest): void {
     const failure = runJob(job, agent);
     if (failure) {
       reportPersistFailure(job, failure);
-      return;
+      if (jobIsDurablePublication(job)) return;
+      failedAgents.add(job.agentName);
     }
   }
 
@@ -265,6 +282,7 @@ function runBatch(request: SearchIndexWorkerRunRequest): void {
     context: request.context,
     durationMs: performance.now() - startedAt,
     sessions: jobs.reduce((total, job) => total + jobSessionCount(job), 0),
+    failedAgents: [...failedAgents],
   } satisfies SearchIndexWorkerMessage);
 }
 

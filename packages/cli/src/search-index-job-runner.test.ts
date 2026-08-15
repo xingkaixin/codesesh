@@ -101,7 +101,13 @@ describe("SearchIndexJobRunner", () => {
     workerMocks.consumeWorkerMessage.mockImplementation((message) => message === logMessage);
 
     worker.post(logMessage);
-    worker.post({ type: "done", context: "scan.refresh", durationMs: 1, sessions: 1 });
+    worker.post({
+      type: "done",
+      context: "scan.refresh",
+      durationMs: 1,
+      sessions: 1,
+      failedAgents: [],
+    });
 
     expect(workerMocks.consumeWorkerMessage).toHaveBeenNthCalledWith(1, logMessage);
     await expect(completion).resolves.toBeUndefined();
@@ -113,7 +119,13 @@ describe("SearchIndexJobRunner", () => {
     const worker = startedWorker();
 
     expect(worker.workerData.pricingGenerationId).toBe(17);
-    worker.post({ type: "done", context: "scan.refresh", durationMs: 1, sessions: 1 });
+    worker.post({
+      type: "done",
+      context: "scan.refresh",
+      durationMs: 1,
+      sessions: 1,
+      failedAgents: [],
+    });
     await completion;
   });
 
@@ -126,6 +138,7 @@ describe("SearchIndexJobRunner", () => {
       context: "scan.refresh",
       durationMs: 1,
       sessions: 1,
+      failedAgents: [],
     });
 
     await expect(completion).resolves.toBeUndefined();
@@ -135,7 +148,13 @@ describe("SearchIndexJobRunner", () => {
     const runner = new SearchIndexJobRunner();
     const first = runner.enqueue("scan.refresh", [makeJob()]);
     const worker = startedWorker();
-    worker.post({ type: "done", context: "scan.refresh", durationMs: 1, sessions: 1 });
+    worker.post({
+      type: "done",
+      context: "scan.refresh",
+      durationMs: 1,
+      sessions: 1,
+      failedAgents: [],
+    });
     await first;
 
     const second = runner.enqueue("scan.refresh", [makeJob()]);
@@ -144,7 +163,13 @@ describe("SearchIndexJobRunner", () => {
     expect(worker.postedMessages).toEqual([
       expect.objectContaining({ context: "scan.refresh", pricingGenerationId: 17 }),
     ]);
-    worker.post({ type: "done", context: "scan.refresh", durationMs: 1, sessions: 1 });
+    worker.post({
+      type: "done",
+      context: "scan.refresh",
+      durationMs: 1,
+      sessions: 1,
+      failedAgents: [],
+    });
     await second;
   });
 
@@ -157,14 +182,26 @@ describe("SearchIndexJobRunner", () => {
 
     expect(started).toEqual(["first"]);
 
-    worker.post({ type: "done", context: "first-refresh", durationMs: 1, sessions: 1 });
+    worker.post({
+      type: "done",
+      context: "first-refresh",
+      durationMs: 1,
+      sessions: 1,
+      failedAgents: [],
+    });
     await first;
 
     expect(started).toEqual(["first", "second"]);
     expect(worker.postedMessages).toEqual([
       expect.objectContaining({ context: "second-refresh", pricingGenerationId: 17 }),
     ]);
-    worker.post({ type: "done", context: "second-refresh", durationMs: 1, sessions: 1 });
+    worker.post({
+      type: "done",
+      context: "second-refresh",
+      durationMs: 1,
+      sessions: 1,
+      failedAgents: [],
+    });
     await second;
   });
 
@@ -177,18 +214,36 @@ describe("SearchIndexJobRunner", () => {
     ]);
     const foreground = runner.enqueue("scan.backfill", [makeJob()]);
 
-    worker.post({ type: "done", context: "maintenance-one", durationMs: 1, sessions: 1 });
+    worker.post({
+      type: "done",
+      context: "maintenance-one",
+      durationMs: 1,
+      sessions: 1,
+      failedAgents: [],
+    });
     await firstMaintenance;
     expect(worker.postedMessages).toEqual([expect.objectContaining({ context: "scan.backfill" })]);
 
-    worker.post({ type: "done", context: "scan.backfill", durationMs: 1, sessions: 1 });
+    worker.post({
+      type: "done",
+      context: "scan.backfill",
+      durationMs: 1,
+      sessions: 1,
+      failedAgents: [],
+    });
     await foreground;
     expect(worker.postedMessages).toEqual([
       expect.objectContaining({ context: "scan.backfill" }),
       expect.objectContaining({ context: "maintenance-two" }),
     ]);
 
-    worker.post({ type: "done", context: "maintenance-two", durationMs: 1, sessions: 1 });
+    worker.post({
+      type: "done",
+      context: "maintenance-two",
+      durationMs: 1,
+      sessions: 1,
+      failedAgents: [],
+    });
     await secondMaintenance;
   });
 
@@ -203,9 +258,35 @@ describe("SearchIndexJobRunner", () => {
       publicationId: "scan.refresh:codex:1",
       agentName: "codex",
       sessions: 1,
+      fatal: true,
     });
 
     await expect(completion).rejects.toThrow(/failed to persist cache for codex/);
+  });
+
+  it("resolves a batch whose non-fatal failures were reported per agent", async () => {
+    const runner = new SearchIndexJobRunner();
+    const completion = runner.enqueue("scan.initial", [makeJob()]);
+
+    const worker = startedWorker();
+    worker.post({
+      type: "persist-failed",
+      context: "scan.initial",
+      stage: "search_index",
+      publicationId: "generated",
+      agentName: "codex",
+      sessions: 1,
+      fatal: false,
+    });
+    worker.post({
+      type: "done",
+      context: "scan.initial",
+      durationMs: 1,
+      sessions: 1,
+      failedAgents: ["codex"],
+    });
+
+    await expect(completion).resolves.toBeUndefined();
   });
 
   it("rejects the batch when the search-index worker is unavailable", async () => {

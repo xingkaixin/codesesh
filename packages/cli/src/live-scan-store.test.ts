@@ -318,6 +318,7 @@ const workerThreads = vi.hoisted(() => ({
             context: data?.context ?? "",
             durationMs: 0,
             sessions: jobs.length,
+            failedAgents: [],
           });
         }
       });
@@ -365,6 +366,7 @@ const workerThreads = vi.hoisted(() => ({
             context: workerData?.context ?? "",
             durationMs: 0,
             sessions: workerData?.jobs?.length ?? 0,
+            failedAgents: [],
           });
         }
         for (const handler of exitHandlers) handler(0);
@@ -2623,6 +2625,7 @@ describe("LiveScanStore", () => {
       context: "scan.refresh",
       durationMs: 0,
       sessions: 1,
+      failedAgents: [],
     });
 
     const searchIndexWorkers = workerThreads.workers.filter((worker) => worker.workerData.jobs);
@@ -2646,6 +2649,7 @@ describe("LiveScanStore", () => {
       context: "scan.refresh",
       durationMs: 0,
       sessions: 1,
+      failedAgents: [],
     });
     expect(await outcomes).toEqual([
       { status: "fulfilled", value: undefined },

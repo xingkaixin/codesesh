@@ -163,14 +163,18 @@ describe("search index worker", () => {
 
     await runWorker();
 
-    expect(mocks.postMessage).toHaveBeenCalledExactlyOnceWith(
+    expect(mocks.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "persist-failed",
         context: "scan.refresh",
         stage: "prepare",
         agentName: "unknown",
         sessions: 1,
+        fatal: false,
       }),
+    );
+    expect(mocks.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: "done", failedAgents: ["unknown"] }),
     );
   });
 
@@ -430,14 +434,18 @@ describe("search index worker", () => {
 
     await runWorker();
 
-    expect(mocks.postMessage).toHaveBeenCalledExactlyOnceWith({
+    expect(mocks.postMessage).toHaveBeenCalledWith({
       type: "persist-failed",
       context: "scan.refresh",
       stage: "cache",
       publicationId: "publication-cache-failure",
       agentName: "codex",
       sessions: 1,
+      fatal: false,
     });
+    expect(mocks.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: "done", failedAgents: ["codex"] }),
+    );
   });
 
   it("CS-137: reports a failed index write and skips the remaining jobs", async () => {
@@ -481,20 +489,91 @@ describe("search index worker", () => {
 
     expect(mocks.markAgentCacheInitialized).not.toHaveBeenCalled();
     expect(mocks.commitDurableSessionPublication).toHaveBeenCalledOnce();
-    expect(mocks.postMessage).toHaveBeenCalledExactlyOnceWith({
+    expect(mocks.postMessage).toHaveBeenCalledWith({
       type: "persist-failed",
       context: "scan.refresh",
       stage: "search_index",
       publicationId: "publication-search-failure",
       agentName: "codex",
       sessions: 2,
+      fatal: false,
     });
+    expect(mocks.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: "done", failedAgents: ["codex"] }),
+    );
     expect(mocks.appLoggerError).toHaveBeenCalledWith(
       "search_index.persist_failed",
       expect.objectContaining({
         stage: "search_index",
         publication_id: "publication-search-failure",
       }),
+    );
+  });
+
+  it("continues with the remaining agents after one fails", async () => {
+    const codex = { ...makeAgent(), name: "codex" };
+    const kimi = { ...makeAgent(), name: "kimi" };
+    mocks.createRegisteredAgents.mockReturnValue([codex, kimi]);
+    mocks.syncSessionSearchIndex
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce({ indexed: 1, skipped: 0 });
+    const fullJob = (agentName: string) => ({
+      kind: "full",
+      context: "scan.initial",
+      agentName,
+      sessions: [{ id: `${agentName}-s1` }],
+      meta: {},
+      completeness: "complete",
+      removedSessionIds: [],
+    });
+    mocks.workerData = {
+      context: "scan.initial",
+      agentNames: [],
+      sessionsByAgent: {},
+      metaByAgent: {},
+      jobs: [fullJob("codex"), fullJob("kimi")],
+    };
+
+    await runWorker();
+
+    expect(mocks.syncSessionSearchIndex).toHaveBeenCalledTimes(2);
+    expect(mocks.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: "done", failedAgents: ["codex"] }),
+    );
+  });
+
+  it("aborts the batch when a durable session publication fails", async () => {
+    const agent = makeAgent();
+    mocks.createRegisteredAgents.mockReturnValue([agent]);
+    mocks.commitDurableSessionPublication.mockReturnValue({
+      status: "rolled-back",
+      publicationId: "scan.refresh:codex:1",
+      stage: "search_index",
+    });
+    mocks.workerData = {
+      context: "scan.refresh",
+      agentNames: [],
+      sessionsByAgent: {},
+      metaByAgent: {},
+      jobs: [
+        {
+          kind: "full",
+          context: "scan.refresh",
+          agentName: "codex",
+          sessions: [{ id: "s1" }],
+          meta: {},
+          completeness: "complete",
+          removedSessionIds: [],
+          publicationId: "scan.refresh:codex:1",
+          saveCache: true,
+        },
+      ],
+    };
+
+    await runWorker();
+
+    expect(mocks.postMessage).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ type: "persist-failed", fatal: true }),
     );
   });
 });
