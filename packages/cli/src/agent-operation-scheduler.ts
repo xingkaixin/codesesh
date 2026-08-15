@@ -61,7 +61,11 @@ export class AgentOperationScheduler {
     state.timer = setTimeout(() => {
       state.timer = null;
       state.timerDeadline = 0;
-      void this.refresh(agentName);
+      // A rejection here has no awaiter — without the catch it would escape
+      // as an unhandled rejection and take down the process.
+      this.refresh(agentName).catch((error) => {
+        appLogger.error("scan.refresh.uncaught", { agent: agentName, error });
+      });
     }, effectiveDelayMs);
   }
 
