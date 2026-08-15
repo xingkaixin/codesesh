@@ -21,6 +21,9 @@ import type { ScanStatusModel } from "./scan-status-model.js";
 const core = vi.hoisted(() => {
   const getAgentLastFullSyncAt = vi.fn(() => Date.now());
   const isAgentCacheInitialized = vi.fn(() => true);
+  const loadCachedSessionsMock = vi.fn(
+    (_agentName?: string): ReturnType<typeof loadCachedSessions> => null,
+  );
   return {
     getAgentFullSyncCursor: vi.fn(() => null as string | null),
     getAgentLastFullSyncAt,
@@ -37,13 +40,22 @@ const core = vi.hoisted(() => {
       status: "success",
       value: getAgentLastFullSyncAt(),
     })),
-    loadCachedSessions: vi.fn((): ReturnType<typeof loadCachedSessions> => null),
+    loadCachedSessions: loadCachedSessionsMock,
+    readCachedSessions: vi.fn(
+      (
+        agentName: string,
+      ):
+        | { status: "success"; value: ReturnType<typeof loadCachedSessions> }
+        | {
+            status: "failed";
+          } => ({ status: "success", value: loadCachedSessionsMock(agentName) }),
+    ),
     readPendingSearchIndexMaintenance: vi.fn<
       (_agentName: string, _limit: number) => PendingSearchIndexMaintenance | null
     >(() => ({ sessionIds: [], total: 0 })),
-    markAgentFullSyncStarted: vi.fn(),
-    markAgentFullSyncCompleted: vi.fn(),
-    markAgentFullSyncProgress: vi.fn(),
+    markAgentFullSyncStarted: vi.fn(() => true),
+    markAgentFullSyncCompleted: vi.fn(() => true),
+    markAgentFullSyncProgress: vi.fn(() => true),
     sessionSignature: vi.fn(),
   };
 });
@@ -71,6 +83,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     readAgentCacheInitialization: core.readAgentCacheInitialization,
     readAgentLastFullSyncAt: core.readAgentLastFullSyncAt,
     loadCachedSessions: core.loadCachedSessions,
+    readCachedSessions: core.readCachedSessions,
     readPendingSearchIndexMaintenance: core.readPendingSearchIndexMaintenance,
     markAgentFullSyncStarted: core.markAgentFullSyncStarted,
     markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
@@ -347,6 +360,40 @@ describe("AgentSyncEngine", () => {
       "scan.refresh.backfill_probe_failed",
       expect.objectContaining({ agent: "codex" }),
     );
+  });
+
+  it("does not enqueue a backfill when cached sessions cannot be read", () => {
+    core.readCachedSessions.mockReturnValueOnce({ status: "failed" });
+    const agent = new FakeSyncAgent();
+    const warn = vi.spyOn(appLogger, "warn");
+    const { engine } = makeEngine(agent, [], makeWorkerRunner(), { from: 1 });
+    const internal = engine as unknown as { needsBackfill(candidate: BaseAgent): boolean };
+
+    expect(internal.needsBackfill(agent)).toBe(false);
+    expect(warn).toHaveBeenCalledWith("scan.backfill.cache_state_unavailable", {
+      agent: "codex",
+      state: "cached_sessions",
+    });
+  });
+
+  it("does not report a backfill checkpoint that failed to persist", () => {
+    core.markAgentFullSyncProgress.mockReturnValueOnce(false);
+    const warn = vi.spyOn(appLogger, "warn");
+    const { engine } = makeEngine(makeAgent());
+    const internal = engine as unknown as {
+      handleBackfillCheckpoint(agentName: string, checkpoint: unknown): void;
+    };
+
+    internal.handleBackfillCheckpoint("codex", {
+      stage: "finalizing",
+      backfillCursor: "cursor-1",
+      changes: [],
+    });
+
+    expect(warn).toHaveBeenCalledWith("scan.backfill.checkpoint_not_durable", {
+      agent: "codex",
+      cursor: "cursor-1",
+    });
   });
 
   it("does not enqueue a backfill when the full-sync timestamp cannot be read", () => {

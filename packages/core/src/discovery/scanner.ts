@@ -763,7 +763,13 @@ async function scanAgentFull(
       if (persisted !== false) {
         cachePersistence = "persisted";
         markAgentCacheInitialized(agent.name);
-        if (isFullWindow && sourceFailures.length === 0) markAgentFullSyncCompleted(agent.name);
+        if (
+          isFullWindow &&
+          sourceFailures.length === 0 &&
+          !markAgentFullSyncCompleted(agent.name)
+        ) {
+          getCoreDiagnostics()?.warn("cache.full_sync_marker_failed", { agent: agent.name });
+        }
       } else {
         cachePersistence = "failed";
         getCoreDiagnostics()?.warn("cache.save_failed", {

@@ -24,6 +24,7 @@ import {
   markAgentFullSyncCompleted,
   readAgentCacheInitialization,
   readAgentLastFullSyncAt,
+  readCachedSessions,
   saveCachedSessionChanges,
   saveCachedSessions,
 } from "../sessions.js";
@@ -838,6 +839,42 @@ describe("cache initialization tracking", () => {
     markAgentFullSyncCompleted("claudecode");
 
     expect(getAgentLastFullSyncAt("claudecode")).toBe(now);
+  });
+
+  it("distinguishes cached-session read failures from an empty cache", () => {
+    expect(readCachedSessions("claudecode")).toEqual({ status: "success", value: null });
+
+    markAgentCacheInitialized("claudecode");
+    withCacheDb((db) => {
+      db.exec(`
+        DROP TABLE agent_cache;
+        CREATE VIEW agent_cache AS
+          SELECT 'claudecode' AS agent_name, missing_cache_state() AS timestamp;
+      `);
+    });
+    const events: Array<{ event: string }> = [];
+    setCoreDiagnostics({ warn: (event) => events.push({ event }) });
+
+    expect(readCachedSessions("claudecode")).toEqual({ status: "failed" });
+    expect(loadCachedSessions("claudecode")).toBeNull();
+    setCoreDiagnostics(null);
+  });
+
+  it("reports a full-sync cursor write that never reached disk", () => {
+    markAgentCacheInitialized("claudecode");
+    expect(markAgentFullSyncProgress("claudecode", "session-1")).toBe(true);
+
+    withCacheDb((db) => {
+      db.exec(`
+        DROP TABLE cache_meta;
+        CREATE VIEW cache_meta AS SELECT missing_cache_state() AS key, '' AS value;
+      `);
+    });
+    const events: Array<{ event: string }> = [];
+    setCoreDiagnostics({ warn: (event) => events.push({ event }) });
+
+    expect(markAgentFullSyncProgress("claudecode", "session-2")).toBe(false);
+    setCoreDiagnostics(null);
   });
 
   it("records full-sync completion even without a prior initialization row", () => {

@@ -188,6 +188,19 @@ export function withCacheDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
 
 export type CacheReadOutcome<T> = { status: "success"; value: T } | { status: "failed" };
 
+/**
+ * Like withCacheDb (schema-ensuring, so it can be the first cache touch at
+ * startup and still run migrations) but with an explicit failure outcome
+ * instead of a null that shadows legitimate empty results.
+ */
+export function withCacheDbOutcome<T>(fn: (db: SQLiteDatabase) => T): CacheReadOutcome<T> {
+  let result: CacheReadOutcome<T> = { status: "failed" };
+  withCacheConnection(({ db }) => {
+    result = { status: "success", value: fn(db) };
+  });
+  return result;
+}
+
 export function withCacheDbReadOnly<T>(fn: (db: SQLiteDatabase) => T): CacheReadOutcome<T> {
   const cachePath = getCachePath();
   if (!hasCacheStorage()) return { status: "failed" };
