@@ -127,4 +127,14 @@ describe("listModelCostDistribution", () => {
   it("returns null when no cache database exists", () => {
     expect(listModelCostDistribution()).toBeNull();
   });
+
+  it("drops a removed session's rollup rows from the distribution", () => {
+    seedFixture();
+    expect(listModelCostDistribution({ agent: "codex" })).not.toEqual([]);
+
+    // A complete empty snapshot removes every codex session and its rollup.
+    saveCachedSessions("codex", []);
+
+    expect(listModelCostDistribution({ agent: "codex" })).toEqual([]);
+  });
 });

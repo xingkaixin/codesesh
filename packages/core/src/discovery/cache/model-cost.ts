@@ -64,14 +64,17 @@ function buildModelCostWhere(options: ModelCostOptions): {
  * Sub-session messages are included on purpose: a parent's cost is defined to
  * cover its whole subtree. An unset `cost_source` counts as estimated, so
  * `costRecorded + costEstimated === cost` always holds.
+ *
+ * Reads the per-(session, model) rollup maintained alongside message writes
+ * (CS-270) — sessions×models rows instead of a full messages-table scan.
  */
 const MODEL_COST_SQL = `
   SELECT
     m.model AS model,
-    SUM(COALESCE(m.cost, 0)) AS cost,
-    SUM(CASE WHEN m.cost_source = 'recorded' THEN COALESCE(m.cost, 0) ELSE 0 END) AS cost_recorded,
-    SUM(CASE WHEN m.cost_source = 'recorded' THEN 0 ELSE COALESCE(m.cost, 0) END) AS cost_estimated
-  FROM messages m
+    SUM(m.cost) AS cost,
+    SUM(m.cost_recorded) AS cost_recorded,
+    SUM(m.cost - m.cost_recorded) AS cost_estimated
+  FROM session_model_cost m
   JOIN sessions s
     ON s.agent_name = m.agent_name
     AND s.session_id = m.session_id
