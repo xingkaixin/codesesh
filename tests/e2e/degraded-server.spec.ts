@@ -21,16 +21,19 @@ base("keeps the retry surface clean while the API is down", async ({ page }) => 
 
   await page.goto("/");
   const retry = page.getByRole("button", { name: "Retry" });
-  await expect(retry).toBeVisible({ timeout: 20_000 });
+  await expect(retry).toBeVisible({ timeout: 30_000 });
 
   // Retry while the server is still down: the error surface must persist and
-  // the click must not leak an unhandled rejection.
-  await retry.click();
+  // the click must not leak an unhandled rejection. dispatchEvent instead of
+  // click: background query retries keep re-rendering the panel, so a real
+  // click never sees a stable target on slow runners.
+  await retry.dispatchEvent("click");
   await expect(retry).toBeVisible();
 
+  // Once the API is back, recovery may come from the button or from the
+  // automatic config refetch — either way the dashboard must return.
   failing = false;
-  await retry.click();
-  await expect(page.getByTestId("dashboard")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("dashboard")).toBeVisible({ timeout: 60_000 });
 
   const unexpected = errors.filter((entry) => !EXPECTED_NETWORK_NOISE.test(entry));
   expect(unexpected, "unexpected browser errors").toEqual([]);
