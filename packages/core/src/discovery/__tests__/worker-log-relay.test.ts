@@ -33,6 +33,10 @@ const workers = vi.hoisted(() => {
     once(): this {
       return this;
     }
+
+    terminate(): Promise<number> {
+      return Promise.resolve(0);
+    }
   }
 
   return { FakeWorker };
