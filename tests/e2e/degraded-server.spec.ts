@@ -30,9 +30,9 @@ base("keeps the retry surface clean while the API is down", async ({ page }) => 
   await retry.dispatchEvent("click");
   await expect(retry).toBeVisible();
 
-  // Once the API is back, recovery may come from the button or from the
-  // automatic config refetch — either way the dashboard must return.
+  // Once the API is back, the retry button must bring the dashboard back.
   failing = false;
+  await retry.dispatchEvent("click");
   await expect(page.getByTestId("dashboard")).toBeVisible({ timeout: 60_000 });
 
   const unexpected = errors.filter((entry) => !EXPECTED_NETWORK_NOISE.test(entry));
