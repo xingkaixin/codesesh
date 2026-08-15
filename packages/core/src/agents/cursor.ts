@@ -988,45 +988,25 @@ export class CursorAgent extends DatabaseSessionSource {
     return resolveSessionTitle(explicit, messageTitle, null);
   }
 
-  /** Count messages from bubbles */
-  private countMessagesFromBubbles(db: SQLiteDatabase, composerId: string): number {
-    try {
-      const rows = db
-        .prepare("SELECT value FROM cursorDiskKV WHERE key LIKE ?")
-        .all(`bubbleId:${composerId}:%`) as Array<{ value: string }>;
-
-      let count = 0;
-      for (const row of rows) {
-        try {
-          const bubble = parseBubbleRow(row.value);
-          // type 1 = user, type 2 = assistant
-          if (bubble?.type === 1 || bubble?.type === 2) {
-            count++;
-          }
-        } catch {
-          // skip malformed bubbles
-        }
-      }
-      return count;
-    } catch {
-      return 0;
-    }
-  }
-
-  /** Load one composer's bubbles, for the detail path that only needs a single session. */
+  /**
+   * Load one composer's bubbles, for the detail path that only needs a
+   * single session. A failing bubble query throws instead of returning [] —
+   * a broken database must not read as an empty session.
+   */
   private loadMessagesFromBubbles(
     db: SQLiteDatabase,
     composerId: string,
     initialModelName: string | null,
   ): Message[] {
-    try {
-      const rows = db
-        .prepare("SELECT rowid AS row_id, key, value FROM cursorDiskKV WHERE key LIKE ?")
-        .all(`bubbleId:${composerId}:%`) as BubbleRow[];
-      return this.messagesFromBubbles(groupBubbleRows(rows), initialModelName);
-    } catch {
-      return [];
-    }
+    const rows = this.scanStep(
+      "reading composer bubbles",
+      this.getDatabasePath() ?? "",
+      () =>
+        db
+          .prepare("SELECT rowid AS row_id, key, value FROM cursorDiskKV WHERE key LIKE ?")
+          .all(`bubbleId:${composerId}:%`) as BubbleRow[],
+    );
+    return this.messagesFromBubbles(groupBubbleRows(rows), initialModelName);
   }
 
   /** Build messages from bubbles already parsed once, in insertion order. */
