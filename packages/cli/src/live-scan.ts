@@ -187,7 +187,16 @@ export class LiveScanStore {
   }
 
   private emitNow(event: SessionsUpdatedEvent): void {
-    for (const listener of this.listeners) listener(event);
+    // Per-listener isolation: one broken SSE subscriber must not starve the
+    // rest, and on the queueEvent timer path an escaped throw would be an
+    // uncaught exception.
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (error) {
+        appLogger.error("scan.sessions_listener.error", { error });
+      }
+    }
   }
 
   private queueEvent(event: SessionsUpdatedEvent): void {

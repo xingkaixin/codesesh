@@ -411,8 +411,14 @@ export class SessionWatcher {
 
   private emitAgentsChanged(agentNames: Set<string>): void {
     if (agentNames.size === 0) return;
+    // Reached from watcher timers; an escaped throw would be an uncaught
+    // exception, and one broken listener must not starve the rest.
     for (const listener of this.listeners) {
-      listener(new Set(agentNames));
+      try {
+        listener(new Set(agentNames));
+      } catch (error) {
+        appLogger.error("watch.agents_listener.error", { error });
+      }
     }
   }
 
