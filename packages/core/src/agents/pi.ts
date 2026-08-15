@@ -19,10 +19,11 @@ import { readJsonlFile } from "../utils/jsonl.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import { asNumber, asRecord, asString, narrowField } from "../utils/narrow.js";
 import { cleanInternalText } from "../utils/session-normalization.js";
+import { parseAgentTimestamp } from "../utils/timestamp.js";
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
-const HEAD_INDEX_VERSION = "pi-head-v1";
+const HEAD_INDEX_VERSION = "pi-head-v2";
 const PARSER_VERSION = "pi-parser-v3";
 
 export function resolvePiDataRoot(): string {
@@ -43,14 +44,6 @@ interface ParsedPiFile {
   pathEntries: Record<string, unknown>[];
 }
 
-function parseTimestampMs(value: unknown): number {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  const text = String(value ?? "").trim();
-  if (!text) return 0;
-  const ts = Date.parse(text);
-  return Number.isNaN(ts) ? 0 : ts;
-}
-
 function narrowPiField<T>(
   field: string,
   value: unknown,
@@ -61,14 +54,16 @@ function narrowPiField<T>(
 
 /**
  * Reports drift only when the timestamp is present but neither a number nor
- * a string (e.g. an object) — actual date parsing (and its silent-0
- * fallback for unparseable text) is unchanged, via `parseTimestampMs`.
+ * a string (e.g. an object); parsing goes through the shared agent parser
+ * (numeric strings accepted, unparseable text reported and treated as 0).
  */
 function narrowTimestampMs(field: string, value: unknown): number {
   const shaped = narrowPiField(field, value, (v) =>
     typeof v === "number" || typeof v === "string" ? v : undefined,
   );
-  return shaped === undefined ? 0 : parseTimestampMs(shaped);
+  return shaped === undefined
+    ? 0
+    : (parseAgentTimestamp(shaped, "pi", { numericStrings: true }) ?? 0);
 }
 
 function extractSessionIdFromFilename(filePath: string): string {

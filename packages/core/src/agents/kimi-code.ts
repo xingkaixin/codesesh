@@ -25,6 +25,7 @@ import type {
 import { resolveHomePath } from "../discovery/paths.js";
 import { readJsonlFile } from "../utils/jsonl.js";
 import { asArray, asNumber, asRecord, asString } from "../utils/narrow.js";
+import { parseAgentTimestamp } from "../utils/timestamp.js";
 import { cleanInternalText } from "../utils/session-normalization.js";
 import { normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { estimateTokenCost } from "../utils/cost.js";
@@ -49,7 +50,7 @@ const KIMI_CODE_TOOL_TITLE_MAP: Record<string, string> = {
 };
 
 const KIMI_CODE_IGNORED_TOOLS = new Set(["SetTodoList"]);
-const KIMI_CODE_PARSER_REVISION = "kimi-code-parser-v1";
+const KIMI_CODE_PARSER_REVISION = "kimi-code-parser-v2";
 
 export function resolveKimiCodeDataRoot(): string {
   return resolveHomePath("KIMI_CODE_HOME", ".kimi-code");
@@ -100,13 +101,7 @@ function mapToolTitle(toolName: string): string {
 }
 
 function parseTimestamp(raw: unknown): number | null {
-  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
-  if (typeof raw !== "string" || raw.trim() === "") return null;
-
-  const numeric = Number(raw);
-  if (Number.isFinite(numeric)) return numeric;
-  const parsed = Date.parse(raw);
-  return Number.isFinite(parsed) ? parsed : null;
+  return parseAgentTimestamp(raw, "kimi-code", { numericStrings: true });
 }
 
 function timestampFromRecord(record: Record<string, unknown>): number {

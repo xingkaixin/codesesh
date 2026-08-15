@@ -29,6 +29,7 @@ import {
   narrowField,
   reportFieldMismatch,
 } from "../utils/narrow.js";
+import { parseAgentTimestamp } from "../utils/timestamp.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 import { normalizeToolArguments } from "./tool-arguments.js";
 
@@ -42,7 +43,7 @@ const KIMI_TOOL_TITLE_MAP: Record<string, string> = {
 };
 
 const KIMI_IGNORED_TOOLS = new Set(["SetTodoList"]);
-const KIMI_PARSER_REVISION = "kimi-parser-v1";
+const KIMI_PARSER_REVISION = "kimi-parser-v2";
 
 export function resolveKimiDataRoot(): string {
   return resolveHomePath("KIMI_SHARE_DIR", ".kimi");
@@ -84,13 +85,7 @@ function readWireTimestamp(record: Record<string, unknown>): number {
 }
 
 function parseTimestamp(raw: unknown): number | null {
-  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
-  if (typeof raw !== "string" || raw.trim() === "") return null;
-
-  const numeric = Number(raw);
-  if (Number.isFinite(numeric)) return numeric;
-  const parsed = Date.parse(raw);
-  return Number.isFinite(parsed) ? parsed : null;
+  return parseAgentTimestamp(raw, "kimi", { numericStrings: true });
 }
 
 /** Reads a token count from a usage record; reports drift when the field is present but not a number. */

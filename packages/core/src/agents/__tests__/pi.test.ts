@@ -288,7 +288,7 @@ describe("PiAgent", () => {
         sessionId,
         sourcePath: sessionFile,
         fingerprint: JSON.stringify([
-          "pi-head-v1",
+          "pi-head-v2",
           "pi-parser-v3",
           sessionTime.getTime(),
           statSync(sessionFile).size,

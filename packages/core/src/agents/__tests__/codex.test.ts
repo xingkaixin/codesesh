@@ -355,7 +355,7 @@ describe("CodexAgent cache refresh", () => {
         sessionId,
         sourcePath: sessionFile,
         fingerprint: JSON.stringify([
-          "codex-head-v1",
+          "codex-head-v2",
           "codex-parser-v8",
           sessionTime.getTime(),
           statSync(sessionFile).size,
@@ -474,7 +474,7 @@ describe("CodexAgent cache refresh", () => {
           sourceMtimeMs: statSync(sessionFile).mtimeMs,
           indexPath: null,
           indexMtimeMs: null,
-          headIndexVersion: "codex-head-v1",
+          headIndexVersion: "codex-head-v2",
           parserVersion: "codex-parser-v2",
         },
       ],
