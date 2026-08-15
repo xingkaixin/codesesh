@@ -339,6 +339,9 @@ function createSessionTables(db: SQLiteDatabase): void {
     CREATE INDEX IF NOT EXISTS idx_sessions_agent_activity_order
       ON sessions(agent_name, activity_time DESC, session_id);
 
+    CREATE INDEX IF NOT EXISTS idx_sessions_activity
+      ON sessions(activity_time DESC, agent_name, session_id);
+
     CREATE INDEX IF NOT EXISTS idx_sessions_project
       ON sessions(project_identity_kind, project_identity_key, activity_time);
 
@@ -1165,6 +1168,19 @@ function replaceSessionActivityIndex(db: SQLiteDatabase): void {
   `);
 }
 
+/**
+ * The unfiltered "recent sessions" query orders by bare activity_time; every
+ * existing index leads with agent_name, so the planner fell back to a full
+ * scan plus a temp B-tree sort (verified via EXPLAIN QUERY PLAN, CS-271).
+ */
+function addSessionActivityIndex(db: SQLiteDatabase): void {
+  if (!tableExists(db, "sessions")) return;
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_sessions_activity
+      ON sessions(activity_time DESC, agent_name, session_id)
+  `);
+}
+
 function compactSessionDocuments(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents")) {
     createSearchTables(db);
@@ -1500,6 +1516,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 23, migrate: replaceSessionActivityIndex },
       { version: 24, migrate: dropLegacyMessageSearchIndex },
       { version: 25, migrate: addMessageContentChainDigest },
+      { version: 26, migrate: addSessionActivityIndex },
     ],
   });
 

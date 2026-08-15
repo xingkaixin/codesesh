@@ -258,7 +258,7 @@ describe("withCacheDb schema memo", () => {
   it("runs ensureSchema on the first open but skips it on later opens for the same path", () => {
     withCacheDb(() => undefined);
     expect(getSchemaEnsuredPath()).toBe(getCachePath());
-    expect(getUserVersion(getCachePath())).toBe(25);
+    expect(getUserVersion(getCachePath())).toBe(26);
 
     const db = new Database(getCachePath());
     db.pragma("user_version = 14");
@@ -269,7 +269,7 @@ describe("withCacheDb schema memo", () => {
 
     setSchemaEnsuredPath(null);
     withCacheDb(() => undefined);
-    expect(getUserVersion(getCachePath())).toBe(25);
+    expect(getUserVersion(getCachePath())).toBe(26);
   });
 });
 
@@ -277,7 +277,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(25);
+    expect(getUserVersion(getCachePath())).toBe(26);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -553,7 +553,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(25);
+    expect(getUserVersion(getCachePath())).toBe(26);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
@@ -613,7 +613,7 @@ describe("saveCachedSessions", () => {
 
     try {
       expect(loadCachedSessions("claudecode")?.sessions).toEqual([]);
-      expect(getUserVersion(getCachePath())).toBe(25);
+      expect(getUserVersion(getCachePath())).toBe(26);
       expect(warnings).toContainEqual({
         event: "sqlite.migration.identity_precompute.missing_directory",
         detail: { agent_name: "claudecode", session_id: "legacy-null-directory" },
@@ -839,6 +839,28 @@ describe("cache initialization tracking", () => {
     markAgentFullSyncCompleted("claudecode");
 
     expect(getAgentLastFullSyncAt("claudecode")).toBe(now);
+  });
+
+  it("CS-271: plans the unfiltered recent-session query from the activity index", () => {
+    markAgentCacheInitialized("claudecode");
+
+    const plan = withCacheDb((db) =>
+      db
+        .prepare(
+          `
+            EXPLAIN QUERY PLAN
+            SELECT * FROM sessions s
+            WHERE s.publication_id IS NULL
+            ORDER BY s.activity_time DESC
+            LIMIT ?
+          `,
+        )
+        .all(50),
+    ) as Array<{ detail: string }>;
+
+    const details = plan.map((row) => row.detail).join("\n");
+    expect(details).toContain("idx_sessions_activity");
+    expect(details).not.toContain("TEMP B-TREE");
   });
 
   it("distinguishes cached-session read failures from an empty cache", () => {

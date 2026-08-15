@@ -100,7 +100,7 @@ describe("cache schema boundary", () => {
         "publication_id",
       ]),
     );
-    expect(state?.version).toBe(25);
+    expect(state?.version).toBe(26);
   });
 
   it("removes the legacy message FTS objects when upgrading schema 23", () => {
@@ -141,7 +141,7 @@ describe("cache schema boundary", () => {
       ),
     }));
 
-    expect(migrated).toEqual({ objects: [], version: 25 });
+    expect(migrated).toEqual({ objects: [], version: 26 });
   });
 
   it("adds an empty hash chain column when upgrading schema 24", () => {
@@ -170,7 +170,7 @@ describe("cache schema boundary", () => {
       ).content_chain_digest,
     }));
 
-    expect(migrated).toEqual({ version: 25, digest: null });
+    expect(migrated).toEqual({ version: 26, digest: null });
   });
 
   it("reuses one connection for read and write capabilities until invalidated", () => {
@@ -340,7 +340,7 @@ describe("cache schema boundary", () => {
           .get("codex", session.id) != null,
     }));
 
-    expect(migrated).toEqual({ version: 25, detailVersion: "", pending: true });
+    expect(migrated).toEqual({ version: 26, detailVersion: "", pending: true });
   });
 
   it("marks legacy project identities stale by leaving added provenance empty", () => {
@@ -379,7 +379,7 @@ describe("cache schema boundary", () => {
     });
 
     expect(migrated).toEqual({
-      version: 25,
+      version: 26,
       resolverRevision: null,
       inputSignature: null,
       classifierRevision: null,
@@ -449,7 +449,7 @@ describe("cache schema boundary", () => {
       });
 
       expect(migrated).toEqual({
-        version: 25,
+        version: 26,
         partsJson: legacyPartsJson,
         partsFormatVersion: 0,
       });
