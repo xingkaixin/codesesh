@@ -15,7 +15,7 @@ import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils
 import { cleanInternalText, isInternalEventType } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
-import { parseAgentTimestampMs } from "../utils/timestamp.js";
+import { parseAgentTimestamp } from "../utils/timestamp.js";
 import { asRecord, asString, narrowField } from "../utils/narrow.js";
 import { TranscriptBuilder } from "./transcript-builder.js";
 import { normalizeToolArguments } from "./tool-arguments.js";
@@ -36,7 +36,7 @@ const PROPOSED_PLAN_PATTERN = /<proposed_plan>\s*([\s\S]*?)\s*<\/proposed_plan>/
 const PLAN_APPROVAL_PREFIX = "PLEASE IMPLEMENT THIS PLAN";
 const SUBAGENT_NOTIFICATION_PATTERN =
   /<subagent_notification>\s*([\s\S]*?)\s*<\/subagent_notification>/;
-const HEAD_INDEX_VERSION = "codex-head-v1";
+const HEAD_INDEX_VERSION = "codex-head-v2";
 const PARSER_VERSION = "codex-parser-v8";
 
 export function resolveCodexDataRoot(): string {
@@ -87,7 +87,7 @@ function extractSessionId(filename: string): string {
 // ---------------------------------------------------------------------------
 
 function parseTimestampMs(data: Record<string, unknown>): number {
-  return parseAgentTimestampMs(String(data["timestamp"] ?? ""), "codex");
+  return parseAgentTimestamp(data["timestamp"], "codex") ?? 0;
 }
 
 function extractModelName(raw: unknown): string | null {

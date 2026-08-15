@@ -142,7 +142,7 @@ describe("KimiAgent source enumeration", () => {
       sessionId: "fingerprint",
       sourcePath,
       fingerprint: JSON.stringify([
-        "kimi-parser-v1",
+        "kimi-parser-v2",
         stateTime.getTime(),
         statSync(statePath).size,
         pinned.getTime(),

@@ -22,7 +22,7 @@ import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils
 import { isInternalEventType } from "../utils/parse-cleanup.js";
 import { cleanInternalText } from "../utils/session-normalization.js";
 import { estimateTokenCost } from "../utils/cost.js";
-import { parseAgentTimestampMs } from "../utils/timestamp.js";
+import { parseAgentTimestamp } from "../utils/timestamp.js";
 import { asArray, asNumber, asRecord, asString, reportFieldMismatch } from "../utils/narrow.js";
 import {
   matchesScanWindow,
@@ -34,8 +34,8 @@ import {
 } from "./base.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
-// v6: heads created from internal-only local commands must be recomputed.
-const HEAD_INDEX_VERSION = "claudecode-head-v6";
+// v7: unified timestamp parsing changes head times for numeric timestamps.
+const HEAD_INDEX_VERSION = "claudecode-head-v7";
 
 export function resolveClaudeCodeDataRoot(): string {
   return resolveHomePath("CLAUDE_CONFIG_DIR", ".claude");
@@ -73,13 +73,7 @@ interface ClaudeChildContextCacheEntry {
 }
 
 function parseTimestampMs(data: Record<string, unknown>): number {
-  const raw = data["timestamp"];
-  const value = asString(raw);
-  if (value === undefined) {
-    if (raw !== undefined && raw !== null) reportFieldMismatch("claudecode", "timestamp");
-    return 0;
-  }
-  return parseAgentTimestampMs(value, "claudecode");
+  return parseAgentTimestamp(data["timestamp"], "claudecode") ?? 0;
 }
 
 /** Reads a numeric usage field; a present-but-wrong-typed field is a schema drift signal. */

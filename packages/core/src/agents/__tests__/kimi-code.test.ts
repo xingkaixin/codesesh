@@ -118,7 +118,7 @@ describe("KimiCodeAgent", () => {
       throw new TypeError("Expected Kimi-Code source fingerprint");
     }
     const fingerprint = JSON.parse(currentMeta.sourceFingerprint) as unknown[];
-    expect(fingerprint[0]).toBe("kimi-code-parser-v1");
+    expect(fingerprint[0]).toBe("kimi-code-parser-v2");
     expect(fingerprint[2]).toBe(statSync(join(sessionDir, "state.json")).size);
     expect(fingerprint[4]).toBe(statSync(join(sessionDir, "agents", "main", "wire.jsonl")).size);
     agent.setSessionMetaMap(
