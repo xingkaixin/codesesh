@@ -176,16 +176,27 @@ export class SearchIndexJobRunner {
           agent: message.agentName,
           sessions: message.sessions,
         });
-        this.finishBatch(
-          activeBatch,
-          new Error(
-            `Search index worker failed to persist ${message.stage} for ${message.agentName}`,
-          ),
-        );
+        // Non-fatal failures keep the batch running: the worker continues
+        // with the remaining agents and reports them in the done message.
+        if (message.fatal) {
+          this.finishBatch(
+            activeBatch,
+            new Error(
+              `Search index worker failed to persist ${message.stage} for ${message.agentName}`,
+            ),
+          );
+        }
         return;
       }
       if (message.type !== "done") return;
 
+      if (message.failedAgents.length > 0) {
+        appLogger.warn("search_index.batch_partial", {
+          batch_id: activeBatch.id,
+          context: message.context,
+          failed_agents: message.failedAgents,
+        });
+      }
       appLogger.info(`${message.context}.done`, {
         duration_ms: Math.round(message.durationMs),
         sessions: message.sessions,
