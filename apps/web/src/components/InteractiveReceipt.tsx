@@ -584,6 +584,11 @@ export function InteractiveReceipt({
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const hitSurfaceRef = useRef<HTMLDivElement | null>(null);
   const payload = useMemo(() => createReceiptPayload(session, toc), [session, toc]);
+  // Live polling produces a new payload identity for the same session; the
+  // simulation must survive that with only a texture repaint, not a full
+  // sheet/listener/rAF teardown (CS-284).
+  const payloadRef = useRef(payload);
+  const repaintRef = useRef<(() => void) | null>(null);
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -631,7 +636,10 @@ export function InteractiveReceipt({
 
     const repaintPaper = () => {
       const palette = readReceiptPalette(anchor);
-      paper = { texture: drawTexture(payload, palette, readReceiptMonoFamily(anchor)), palette };
+      paper = {
+        texture: drawTexture(payloadRef.current, palette, readReceiptMonoFamily(anchor)),
+        palette,
+      };
     };
 
     const getSheetMetrics = (): SheetMetrics => {
@@ -935,9 +943,17 @@ export function InteractiveReceipt({
     hitSurface.addEventListener("pointermove", onPointerMove);
     hitSurface.addEventListener("pointerup", releasePointer);
     hitSurface.addEventListener("pointercancel", releasePointer);
+    repaintRef.current = () => {
+      // Before the first fonts-ready paint there is nothing to refresh; the
+      // pending whenReceiptFontsReady callback reads the latest payloadRef.
+      if (disposed || !paper) return;
+      repaintPaper();
+      draw();
+    };
 
     return () => {
       disposed = true;
+      repaintRef.current = null;
       stopLoop();
       observer.disconnect();
       themeObserver.disconnect();
@@ -950,7 +966,12 @@ export function InteractiveReceipt({
       hitSurface.removeEventListener("pointerup", releasePointer);
       hitSurface.removeEventListener("pointercancel", releasePointer);
     };
-  }, [minWidthQuery, payload]);
+  }, [minWidthQuery]);
+
+  useLayoutEffect(() => {
+    payloadRef.current = payload;
+    repaintRef.current?.();
+  }, [payload]);
 
   return (
     <div ref={anchorRef} className="relative h-[calc(100dvh-5.5rem)] min-h-[420px]">
