@@ -48,6 +48,25 @@
 CLI 参数 → core 全量扫描 / 缓存恢复 → LiveScanStore 文件监听增量刷新 → Hono HTTP API / SSE → React Web UI（Dashboard / 会话列表 / 详情）
 ```
 
+## 验证
+
+一条命令的整体检查：`pnpm lint && pnpm typecheck && pnpm build && pnpm test`。
+
+- `pnpm typecheck`：全 workspace 类型检查（web 单独跑最快：`pnpm --filter @codesesh/web typecheck`）。
+- `pnpm test`：turbo 单测；单包用 `pnpm --filter <pkg> test`。
+- `pnpm test:coverage`：先跑 `scripts/critical-coverage.mjs` 的覆盖率 ratchet（按 scope 设阈值，低于阈值即红），再全量覆盖率。
+- `pnpm --filter @codesesh/web test:bundle`：初始 bundle 300KB gzip 预算（`apps/web/tests/initial-bundle.test.ts`），需先 `pnpm build`；随手一个顶层 import 就可能触发。
+- `pnpm test:e2e`：Playwright 端到端（`tests/e2e/`），需要先构建。
+- `pnpm test:migration`：SQLite 缓存 schema 迁移冒烟。
+
+CI（`.github/workflows/ci.yml`）在以上之外还前置这些门禁，本地提前跑可避免红管线往返：
+
+- `node scripts/check-quality-task-coverage.mjs`：每个包必须声明 lint/format/typecheck 等质量脚本。
+- `node scripts/check-docs-paths.mjs`：文档（含本文件）引用的路径必须真实存在。
+- `node scripts/check-docs-facts.mjs`：README 等文档中的 repo-fact 标记块（CI 命令清单、schema 版本号等）必须与源码一致——改了 `CACHE_SCHEMA_VERSION` 或 CI 步骤要同步改文档。
+- `node scripts/release-preflight.mjs`：包版本一致性。
+- `pnpm perf:check`：算法增长率检查。
+
 ## 扩展新 Agent
 
 1. 在 `packages/core/src/agents/` 新增适配器并导出数据根目录解析器。
