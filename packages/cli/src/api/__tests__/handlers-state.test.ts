@@ -47,21 +47,23 @@ import {
   type SessionHead,
 } from "@codesesh/core";
 import {
-  handleDeleteBookmark,
-  handleDeleteSessionAlias,
   handleGetAgents,
-  handleGetBookmarks,
   handleGetDashboard,
   handleGetFileActivity,
   handleGetProjects,
   handleGetSessions,
-  handleImportBookmarks,
   handlePostClientLog,
-  handlePutBookmark,
-  handlePutSessionAlias,
   handleSearchSessions,
   type ScanResultSource,
 } from "../handlers.js";
+import {
+  handleDeleteBookmark,
+  handleDeleteSessionAlias,
+  handleGetBookmarks,
+  handleImportBookmarks,
+  handlePutBookmark,
+  handlePutSessionAlias,
+} from "../bookmark-handlers.js";
 import { addCalendarDays } from "@codesesh/core/contract";
 import { createApiRoutes } from "../routes.js";
 import { invalidateAliasView } from "../session-aliases-view.js";
