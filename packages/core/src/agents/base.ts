@@ -265,6 +265,16 @@ export abstract class BaseAgent {
    */
   commitChangeCheck(): void {}
 
+  /** Wrap an enumeration/database read so failures follow the error taxonomy. */
+  protected scanStep<T>(stage: string, sourcePath: string, read: () => T): T {
+    try {
+      return read();
+    } catch (error) {
+      if (error instanceof SessionScanError) throw error;
+      throw new SessionScanError(this.name, stage, { cause: error, sourcePath });
+    }
+  }
+
   /**
    * 增量扫描（仅扫描变更的会话）
    * @param cachedSessions 缓存的会话列表
@@ -604,6 +614,22 @@ export abstract class SingleFileSessionSource<
  * This is not the same as an agent with no sessions. Callers must keep the last
  * successful snapshot: treating it as an empty result would diff every known
  * session into a removal and wipe the agent from cache, search and the UI.
+ */
+/**
+ * Error taxonomy for adapters — the same failure class must produce the same
+ * user-visible outcome regardless of agent:
+ *
+ * 1. Malformed record inside an otherwise readable source → skip the record;
+ *    visibility comes from counted diagnostics (see readJsonlFile's
+ *    `agent.jsonl_lines_skipped`), never from a hard failure.
+ * 2. One source fails to parse → the scan template converts the throw into a
+ *    `createSessionSourceFailure` ("parsing"), keeping the rest of the scan.
+ * 3. Enumeration or database access fails → throw `SessionScanError` (wrap
+ *    reads in `scanStep`); the scanner surfaces it as an agent scan failure.
+ *
+ * What is never acceptable: catching an I/O or database error and returning
+ * an empty/zero result — that makes a broken source indistinguishable from an
+ * empty one.
  */
 export class SessionScanError extends Error {
   constructor(
