@@ -1330,7 +1330,8 @@ describe("AgentSyncEngine", () => {
     engine.subscribeSessionsChanged(() => {
       throw new Error("session event broadcast failed");
     });
-    const scanStatus = (engine as unknown as { scanStatus: ScanStatusModel }).scanStatus;
+    const scanStatus = (engine as unknown as { statusReporter: { scanStatus: ScanStatusModel } })
+      .statusReporter.scanStatus;
     const finishAgent = vi.spyOn(scanStatus, "finishAgent").mockImplementationOnce(() => {
       throw new Error("terminal status publication failed");
     });
