@@ -1,11 +1,23 @@
 import { existsSync } from "node:fs";
 import { homedir, platform } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
+/** Expand the tilde prefixes shells accept for home-relative paths. */
+function expandHomePath(path: string): string {
+  if (path === "~") return homedir();
+  if (path.startsWith("~/") || path.startsWith("~\\")) return join(homedir(), path.slice(2));
+  return path;
+}
+
+/**
+ * Blank values count as unset, `~` expands, and relative paths resolve — so
+ * CODEX_HOME=~/data points at the home directory instead of a literal
+ * ./~/data that silently yields zero sessions.
+ */
 export function readEnvPath(name: string): string | null {
   const value = process.env[name];
-  if (!value) return null;
-  return value;
+  if (!value || !value.trim()) return null;
+  return resolve(expandHomePath(value.trim()));
 }
 
 function firstExisting(...paths: string[]): string | null {

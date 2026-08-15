@@ -67,6 +67,20 @@ describe("resolveAgentRoots", () => {
     expectPath(roots.codex!).toBe("/custom/codex");
   });
 
+  it("expands ~ in env overrides like the shell would", () => {
+    vi.stubEnv("CODEX_HOME", "~/codex-data");
+    mockedHomedir.mockReturnValue("/home/user");
+    const roots = resolveAgentRoots();
+    expectPath(roots.codex!).toBe("/home/user/codex-data");
+  });
+
+  it("treats a blank env override as unset", () => {
+    vi.stubEnv("CODEX_HOME", "   ");
+    mockedHomedir.mockReturnValue("/home/user");
+    const roots = resolveAgentRoots();
+    expectPath(roots.codex!).toBe("/home/user/.codex");
+  });
+
   it("respects CLAUDE_CONFIG_DIR override", () => {
     vi.stubEnv("CLAUDE_CONFIG_DIR", "/custom/claude");
     mockedHomedir.mockReturnValue("/home/user");
