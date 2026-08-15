@@ -164,13 +164,19 @@ const main = defineCommand({
       perf.enable();
     }
 
+    // Parsed named fields only — raw argv is the one unredacted sink in the
+    // logging pipeline, and would capture any future credential-bearing flag.
     appLogger.info("cli.start", {
       version: VERSION,
-      argv: process.argv.slice(2),
       port,
+      host: hostname,
+      transport: transport.kind,
+      remote_access: remoteAccess,
       json: jsonOnly,
       no_open: noOpen,
       cache: useCache,
+      clear_cache: clearCache,
+      trace,
       log_path: appLogger.getLogPath(),
     });
 
