@@ -8,6 +8,7 @@ import {
   markAgentFullSyncProgress,
   markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
+  readCachedSessions,
   readAgentCacheInitialization,
   readAgentLastFullSyncAt,
   sessionSignature,
@@ -470,7 +471,8 @@ export class AgentSyncEngine {
     let result: AgentOperationResult = "failed";
     let completion: ScanCompletion = { completeness: "complete" };
     try {
-      if (this.findAgent(agentName)) cached = loadCachedSessions(agentName);
+      if (this.findAgent(agentName))
+        cached = this.readCachedSessionsOrWarn("scan.refresh", agentName);
       const refresh = await this.runRefresh(agentName, cached, startedAt, (committedCompletion) => {
         durableCommitted = true;
         completion = committedCompletion;
@@ -941,12 +943,32 @@ export class AgentSyncEngine {
     checkpoint: ScanRefreshWorkerCheckpoint,
   ): void {
     if (checkpoint.stage !== "finalizing" || !checkpoint.backfillCursor) return;
-    markAgentFullSyncProgress(agentName, checkpoint.backfillCursor);
+    if (!markAgentFullSyncProgress(agentName, checkpoint.backfillCursor)) {
+      // Without a durable cursor the next restart re-walks the whole history;
+      // do not log the checkpoint as if it landed.
+      appLogger.warn("scan.backfill.checkpoint_not_durable", {
+        agent: agentName,
+        cursor: checkpoint.backfillCursor,
+      });
+      return;
+    }
     appLogger.debug("scan.backfill.checkpoint", {
       agent: agentName,
       cursor: checkpoint.backfillCursor,
       sessions: checkpoint.changes.length,
     });
+  }
+
+  private readCachedSessionsOrWarn(scope: string, agentName: string): CachedSessions | null {
+    const outcome = readCachedSessions(agentName);
+    if (outcome.status === "failed") {
+      appLogger.warn(`${scope}.cache_state_unavailable`, {
+        agent: agentName,
+        state: "cached_sessions",
+      });
+      return null;
+    }
+    return outcome.value;
   }
 
   private needsBackfill(
@@ -973,8 +995,20 @@ export class AgentSyncEngine {
     if (!(agent instanceof FileSystemSessionSource)) return false;
     if (!agent.isAvailable()) return false;
 
-    const cachedSessions =
-      reloadCached || cached === undefined ? loadCachedSessions(agent.name) : cached;
+    let cachedSessions = cached;
+    if (reloadCached || cached === undefined) {
+      const outcome = readCachedSessions(agent.name);
+      if (outcome.status === "failed") {
+        // A broken cache read must not masquerade as a truncated cache and
+        // trigger a full-history backfill against unknown state.
+        appLogger.warn("scan.backfill.cache_state_unavailable", {
+          agent: agent.name,
+          state: "cached_sessions",
+        });
+        return false;
+      }
+      cachedSessions = outcome.value;
+    }
     const sourceCount = agent.listSessionSources().length;
     const cachedCount = cachedSessions?.sessions.length ?? 0;
     this.cacheIntegrityValidUntilByAgent.set(agent.name, lastSyncAt + BACKFILL_INTERVAL_MS);
@@ -1044,14 +1078,19 @@ export class AgentSyncEngine {
     const agent = this.findAgent(agentName);
     if (!agent || !agent.isAvailable()) return "skipped";
     const snapshot = this.sessionIndex.snapshot();
-    const cached = loadCachedSessions(agentName);
+    const cached = this.readCachedSessionsOrWarn("scan.backfill", agentName);
     const baseline = cached?.sessions ?? snapshot.byAgent[agentName] ?? [];
     const meta = cached?.meta ?? buildAgentCacheMeta(agent);
     const backfillCursor = getAgentFullSyncCursor(agentName);
     if (cached) restoreAgentCacheMeta(agent, cached);
     let durableCommitted = false;
     try {
-      markAgentFullSyncStarted(agentName);
+      if (!markAgentFullSyncStarted(agentName)) {
+        appLogger.warn("scan.backfill.cache_state_unavailable", {
+          agent: agentName,
+          state: "full_sync_started",
+        });
+      }
       const operation: BackfillScanRefreshOperation =
         agent instanceof FileSystemSessionSource
           ? { kind: "source-backfill", cursor: backfillCursor, checkpoint: "durable" }
@@ -1116,7 +1155,9 @@ export class AgentSyncEngine {
       });
       durableCommitted = publication.durableCommitted;
       this.options.workerRunner.commit?.(agentName);
-      markAgentFullSyncCompleted(agentName);
+      if (!markAgentFullSyncCompleted(agentName)) {
+        appLogger.warn("scan.backfill.completion_not_durable", { agent: agentName });
+      }
       appLogger.info(
         result.sourceFailures?.length ? "scan.backfill.partial" : "scan.backfill.done",
         {
@@ -1151,7 +1192,7 @@ export class AgentSyncEngine {
     const snapshot = this.sessionIndex.snapshot();
     return snapshot.agents.flatMap((agent) => {
       if (!(agent.name in snapshot.byAgent)) return [];
-      const cached = loadCachedSessions(agent.name);
+      const cached = this.readCachedSessionsOrWarn("search.index", agent.name);
       return [
         cached
           ? {

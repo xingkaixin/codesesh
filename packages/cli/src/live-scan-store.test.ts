@@ -33,35 +33,42 @@ const fsWatch = vi.hoisted(() => ({
   }>,
 }));
 
-const core = vi.hoisted(() => ({
-  closeCacheStorage: vi.fn(),
-  createRegisteredAgents: vi.fn(),
-  filterSessions: vi.fn((sessions: SessionHead[], _options: ScanOptions) => sessions),
-  getAgentFullSyncCursor: vi.fn(() => null as string | null),
-  getAgentLastFullSyncAt: vi.fn(),
-  readAgentCacheInitialization: vi.fn(),
-  readAgentLastFullSyncAt: vi.fn(),
-  resolveAgentRoots: vi.fn((): AgentRoots => ({
-    claudecode: "/tmp/claude",
-    codex: "/tmp/codex",
-    cursor: "/tmp/cursor",
-    kimi: "/tmp/kimi",
-    opencode: "/tmp/opencode",
-    pi: "/tmp/pi",
-    zcode: "/tmp/zcode",
-  })),
-  isAgentCacheInitialized: vi.fn(),
-  loadCachedSessions: vi.fn(),
-  markAgentCacheInitialized: vi.fn(),
-  markAgentFullSyncProgress: vi.fn(),
-  markAgentFullSyncStarted: vi.fn(),
-  markAgentFullSyncCompleted: vi.fn(),
-  scanSessions: vi.fn(),
-  saveCachedSessions: vi.fn(),
-  saveCachedSessionChanges: vi.fn(),
-  syncSessionSearchIndex: vi.fn(),
-  syncSessionSearchIndexChanges: vi.fn(),
-}));
+const core = vi.hoisted(() => {
+  const loadCachedSessions = vi.fn();
+  return {
+    readCachedSessions: vi.fn((agentName: string) => ({
+      status: "success" as const,
+      value: loadCachedSessions(agentName),
+    })),
+    closeCacheStorage: vi.fn(),
+    createRegisteredAgents: vi.fn(),
+    filterSessions: vi.fn((sessions: SessionHead[], _options: ScanOptions) => sessions),
+    getAgentFullSyncCursor: vi.fn(() => null as string | null),
+    getAgentLastFullSyncAt: vi.fn(),
+    readAgentCacheInitialization: vi.fn(),
+    readAgentLastFullSyncAt: vi.fn(),
+    resolveAgentRoots: vi.fn((): AgentRoots => ({
+      claudecode: "/tmp/claude",
+      codex: "/tmp/codex",
+      cursor: "/tmp/cursor",
+      kimi: "/tmp/kimi",
+      opencode: "/tmp/opencode",
+      pi: "/tmp/pi",
+      zcode: "/tmp/zcode",
+    })),
+    isAgentCacheInitialized: vi.fn(),
+    loadCachedSessions,
+    markAgentCacheInitialized: vi.fn(),
+    markAgentFullSyncProgress: vi.fn(() => true),
+    markAgentFullSyncStarted: vi.fn(() => true),
+    markAgentFullSyncCompleted: vi.fn(() => true),
+    scanSessions: vi.fn(),
+    saveCachedSessions: vi.fn(),
+    saveCachedSessionChanges: vi.fn(),
+    syncSessionSearchIndex: vi.fn(),
+    syncSessionSearchIndexChanges: vi.fn(),
+  };
+});
 
 const workerThreads = vi.hoisted(() => ({
   deferSearchIndexWorkers: false,
@@ -399,6 +406,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     readAgentCacheInitialization: core.readAgentCacheInitialization,
     readAgentLastFullSyncAt: core.readAgentLastFullSyncAt,
     loadCachedSessions: core.loadCachedSessions,
+    readCachedSessions: core.readCachedSessions,
     markAgentCacheInitialized: core.markAgentCacheInitialized,
     markAgentFullSyncProgress: core.markAgentFullSyncProgress,
     markAgentFullSyncStarted: core.markAgentFullSyncStarted,
