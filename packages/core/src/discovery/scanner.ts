@@ -314,35 +314,57 @@ export function ensureSessionTagsSync(
   return { sessions: tagged, changed, timing };
 }
 
+const SMART_TAG_WORKER_TIMEOUT_MS = 300_000;
+
 async function classifySessionTagsInWorker(
   workerUrl: URL | string,
   agentName: string,
   sessionIds: string[],
   meta: Record<string, SessionCacheMeta>,
 ): Promise<SmartTagWorkerResult[]> {
-  return new Promise((resolveWorker, rejectWorker) => {
-    const worker = new Worker(workerUrl, {
-      workerData: {
-        pricingGenerationId: getPricingGeneration().id,
-        agentName,
-        sessionIds,
-        meta,
-      },
-    });
-    worker.on("message", (message: unknown) => {
-      if (isWorkerLogMessage(message)) {
-        relayWorkerLogMessage(message);
-        return;
-      }
-      resolveWorker(message as SmartTagWorkerResult[]);
-    });
-    worker.once("error", rejectWorker);
-    worker.once("exit", (code) => {
-      if (code !== 0) {
-        rejectWorker(new Error(`Smart tag worker exited with code ${code}`));
-      }
-    });
+  const worker = new Worker(workerUrl, {
+    workerData: {
+      pricingGenerationId: getPricingGeneration().id,
+      agentName,
+      sessionIds,
+      meta,
+    },
   });
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await new Promise<SmartTagWorkerResult[]>((resolveWorker, rejectWorker) => {
+      timer = setTimeout(() => {
+        rejectWorker(
+          new Error(`Smart tag worker timed out after ${SMART_TAG_WORKER_TIMEOUT_MS}ms`),
+        );
+      }, SMART_TAG_WORKER_TIMEOUT_MS);
+      worker.on("message", (message: unknown) => {
+        if (isWorkerLogMessage(message)) {
+          relayWorkerLogMessage(message);
+          return;
+        }
+        const results = message as SmartTagWorkerResult[];
+        // An empty answer to a non-empty request means the worker could not
+        // do the job at all (e.g. unresolvable agent) — fail over to the
+        // synchronous path instead of silently shipping untagged sessions.
+        if (results.length === 0 && sessionIds.length > 0) {
+          rejectWorker(new Error("Smart tag worker returned no results"));
+          return;
+        }
+        resolveWorker(results);
+      });
+      worker.once("error", rejectWorker);
+      // Any exit before a result message — including a clean code 0 — must
+      // reject; the old `code !== 0` guard left the promise pending forever
+      // and hung server startup.
+      worker.once("exit", (code) => {
+        rejectWorker(new Error(`Smart tag worker exited with code ${code} before responding`));
+      });
+    });
+  } finally {
+    if (timer) clearTimeout(timer);
+    worker.terminate().catch(() => {});
+  }
 }
 
 function relayWorkerLogMessage(message: WorkerLogMessage): void {
