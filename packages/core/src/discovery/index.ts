@@ -52,6 +52,8 @@ export {
   searchFileActivitySessions,
 } from "./cache/file-activity.js";
 export type { FileActivityOptions, FileActivityResult } from "./cache/file-activity.js";
+export { listDashboardCostFacts } from "./cache/cost-facts.js";
+export type { CostFactOptions } from "./cache/cost-facts.js";
 export { listModelCostDistribution } from "./cache/model-cost.js";
 export type { ModelCostEntry, ModelCostOptions } from "./cache/model-cost.js";
 export { commitDurableSessionPublication } from "./cache/publication.js";

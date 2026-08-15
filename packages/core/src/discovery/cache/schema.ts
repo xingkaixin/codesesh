@@ -378,9 +378,21 @@ function createSessionTables(db: SQLiteDatabase): void {
 
     CREATE INDEX IF NOT EXISTS idx_messages_session
       ON messages(agent_name, session_id, message_index);
+
+    CREATE INDEX IF NOT EXISTS idx_messages_cost_time
+      ON messages(
+        CASE
+          WHEN time_completed > 0 THEN time_completed
+          WHEN time_created > 0 THEN time_created
+        END,
+        agent_name,
+        session_id
+      )
+      WHERE cost > 0;
   `);
 
   createSessionModelCostTable(db);
+  createSessionCostSummaryTable(db);
   createMessageToolTables(db);
 }
 
@@ -398,6 +410,21 @@ function createSessionModelCostTable(db: SQLiteDatabase): void {
       cost REAL NOT NULL,
       cost_recorded REAL NOT NULL,
       PRIMARY KEY (agent_name, session_id, model),
+      FOREIGN KEY (agent_name, session_id)
+        REFERENCES sessions(agent_name, session_id)
+        ON DELETE CASCADE
+    );
+  `);
+}
+
+function createSessionCostSummaryTable(db: SQLiteDatabase): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_cost_summary (
+      agent_name TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      message_cost REAL NOT NULL,
+      untimed_message_cost REAL NOT NULL,
+      PRIMARY KEY (agent_name, session_id),
       FOREIGN KEY (agent_name, session_id)
         REFERENCES sessions(agent_name, session_id)
         ON DELETE CASCADE
@@ -1220,6 +1247,48 @@ function addSessionModelCostRollup(db: SQLiteDatabase): void {
   `);
 }
 
+function addSessionCostSummary(db: SQLiteDatabase): void {
+  createSessionCostSummaryTable(db);
+  if (!tableExists(db, "messages")) return;
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_messages_cost_time
+      ON messages(
+        CASE
+          WHEN time_completed > 0 THEN time_completed
+          WHEN time_created > 0 THEN time_created
+        END,
+        agent_name,
+        session_id
+      )
+      WHERE cost > 0;
+
+    INSERT OR REPLACE INTO session_cost_summary(
+      agent_name,
+      session_id,
+      message_cost,
+      untimed_message_cost
+    )
+    SELECT
+      m.agent_name,
+      m.session_id,
+      SUM(CASE WHEN m.cost > 0 THEN m.cost ELSE 0 END),
+      SUM(
+        CASE
+          WHEN m.cost > 0
+            AND COALESCE(m.time_completed, 0) <= 0
+            AND COALESCE(m.time_created, 0) <= 0
+          THEN m.cost
+          ELSE 0
+        END
+      )
+    FROM messages m
+    JOIN sessions s
+      ON s.agent_name = m.agent_name
+      AND s.session_id = m.session_id
+    GROUP BY m.agent_name, m.session_id
+  `);
+}
+
 function compactSessionDocuments(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents")) {
     createSearchTables(db);
@@ -1557,6 +1626,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 25, migrate: addMessageContentChainDigest },
       { version: 26, migrate: addSessionActivityIndex },
       { version: 27, migrate: addSessionModelCostRollup },
+      { version: 28, migrate: addSessionCostSummary },
     ],
   });
 

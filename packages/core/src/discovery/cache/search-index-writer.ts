@@ -489,6 +489,9 @@ function writeSearchIndexRows(
   const deleteModelCost = db.prepare(
     "DELETE FROM session_model_cost WHERE agent_name = ? AND session_id = ?",
   );
+  const deleteCostSummary = db.prepare(
+    "DELETE FROM session_cost_summary WHERE agent_name = ? AND session_id = ?",
+  );
   // Derived from the message rows just written, in the same transaction, so
   // the rollup can never drift from its source (CS-270).
   const rebuildModelCost = db.prepare(`
@@ -502,6 +505,30 @@ function writeSearchIndexRows(
     FROM messages
     WHERE agent_name = ? AND session_id = ? AND model IS NOT NULL AND model <> ''
     GROUP BY agent_name, session_id, model
+  `);
+  const rebuildCostSummary = db.prepare(`
+    INSERT INTO session_cost_summary(
+      agent_name,
+      session_id,
+      message_cost,
+      untimed_message_cost
+    )
+    SELECT
+      agent_name,
+      session_id,
+      SUM(CASE WHEN cost > 0 THEN cost ELSE 0 END),
+      SUM(
+        CASE
+          WHEN cost > 0
+            AND COALESCE(time_completed, 0) <= 0
+            AND COALESCE(time_created, 0) <= 0
+          THEN cost
+          ELSE 0
+        END
+      )
+    FROM messages
+    WHERE agent_name = ? AND session_id = ?
+    GROUP BY agent_name, session_id
   `);
   const writeIndexedSession = prepareUpsertIndexedSession(db);
   const insertFileActivity = prepareInsertFileActivity(db);
@@ -584,6 +611,7 @@ function writeSearchIndexRows(
     deleteMessageTools.run(agentName, sessionId, 0);
     deleteMessages.run(agentName, sessionId, 0);
     deleteModelCost.run(agentName, sessionId);
+    deleteCostSummary.run(agentName, sessionId);
     clearPendingReindex.run(agentName, sessionId);
   }
 
@@ -641,7 +669,9 @@ function writeSearchIndexRows(
     }
     deleteMessages.run(agentName, entry.session.id, entry.messages.length);
     deleteModelCost.run(agentName, entry.session.id);
+    deleteCostSummary.run(agentName, entry.session.id);
     rebuildModelCost.run(agentName, entry.session.id);
+    rebuildCostSummary.run(agentName, entry.session.id);
     upsertRow.run(
       agentName,
       entry.session.id,
