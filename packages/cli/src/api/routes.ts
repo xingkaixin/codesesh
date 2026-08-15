@@ -1,24 +1,26 @@
 import { Hono } from "hono";
 import {
   handleGetAgents,
-  handleGetBookmarks,
   handleGetConfig,
   handleGetDashboard,
   handleGetFileActivity,
   handleGetProjects,
   handleGetScanStatus,
-  handleDeleteBookmark,
-  handleDeleteSessionAlias,
-  handleImportBookmarks,
   handlePostClientLog,
   handleSearchSessions,
   handleGetSessions,
   handleGetSessionData,
-  handlePutBookmark,
-  handlePutSessionAlias,
   type ScanResultSource,
   type SessionListDefaults,
 } from "./handlers.js";
+import {
+  handleDeleteBookmark,
+  handleDeleteSessionAlias,
+  handleGetBookmarks,
+  handleImportBookmarks,
+  handlePutBookmark,
+  handlePutSessionAlias,
+} from "./bookmark-handlers.js";
 import type { ScanEventSource } from "../scan-source.js";
 import type { ProjectIdentityResolver } from "../project-identity-resolver.js";
 import { SseEventBuffer } from "./sse-event-buffer.js";

@@ -1,50 +1,26 @@
 import type { Context } from "hono";
-import type {
-  BookmarkRecord,
-  BookmarkView,
-  LiveSnapshot,
-  SessionDetail,
-  SessionHead,
-  SmartTag,
-} from "@codesesh/core";
+import type { SessionHead, SmartTag } from "@codesesh/core";
 import {
   addCalendarDays,
   countCalendarDays,
-  createSessionIndex,
-  buildSessionTree,
   filterSessionTreeByActivityWindow,
-  formatSessionReference,
   getSessionAgentKey,
-  normalizeSessionReference,
   type SessionTree,
   type AppConfig,
-  type ScanStatusEvent,
-  type SearchResult,
   type SessionReference,
   startOfCalendarDay,
 } from "@codesesh/core/contract";
 import {
-  SessionAliasValidationError,
-  StateStorageUnavailableError,
   attachProjectMetricsFromTree,
   createProjectScopeMatcherFromIdentity,
-  deleteBookmark,
   getAgentInfoMap,
   getAnalyticsRevision,
   mergeSearchQueryOptions,
   executeSessionSearch,
   getSearchProjectDirectory,
-  importBookmarks,
   listFileActivity,
   listCachedProjectGroups,
-  loadCachedSessionHeads,
-  listBookmarks,
-  listModelCostDistribution,
-  deleteSessionAlias,
   materializeSessionDetailResponse,
-  materializeBookmarkViews,
-  upsertSessionAlias,
-  upsertBookmark,
   matchesProjectScope as sessionMatchesProjectScope,
   matchesProjectIdentity,
   normalizeProjectDirectory,
@@ -73,27 +49,27 @@ import {
   type SessionListDefaults,
 } from "./query-params.js";
 import { paginateSessionSnapshot } from "./session-pagination.js";
+import type { ScanResultSource, ScanStatusSource } from "./scan-sources.js";
 import {
-  decorateBookmark,
+  getDashboardStorageAggregation,
+  getSnapshotAggregation,
+  getSnapshotSessionTree,
+} from "./snapshot-aggregation.js";
+import { sanitizeClientLogData } from "./request-payloads.js";
+import { createSessionDetailJsonResponse } from "./session-detail-stream.js";
+import { mergeAliasSearchResults, withParentContext } from "./search-result-merge.js";
+import {
   decorateFileActivity,
   findAliasSearchResults,
-  invalidateAliasView,
   loadAliasView,
-  type AliasView,
 } from "./session-aliases-view.js";
 
 export type { SessionListDefaults };
 
-export interface ScanResultSource {
-  getSnapshot(): LiveSnapshot;
-}
-
-export interface ScanStatusSource {
-  getScanStatus(): ScanStatusEvent;
-}
+export type { ScanResultSource, ScanStatusSource } from "./scan-sources.js";
 
 const KNOWN_AGENT_NAMES = getAgentInfoMap({}).map((agent) => agent.name);
-const KNOWN_AGENT_NAME_SET = new Set(KNOWN_AGENT_NAMES);
+export const KNOWN_AGENT_NAME_SET = new Set(KNOWN_AGENT_NAMES);
 
 async function resolveProjectScope(
   cwd: string,
@@ -147,217 +123,9 @@ function parseDateWindowRequest(c: Context, endpoint: string, defaults: SessionL
   };
 }
 
-interface SnapshotAggregationCache {
-  sessions: SessionHead[];
-  sessionTree?: SessionTree;
-  values: Map<string, unknown>;
-}
-
-const SNAPSHOT_AGGREGATION_CACHE_LIMIT = 64;
-const snapshotAggregationCaches = new WeakMap<ScanResultSource, SnapshotAggregationCache>();
-type SnapshotAggregationCacheState = "hit" | "miss";
-
-function getSnapshotAggregationCache(
-  source: ScanResultSource,
-  sessions: SessionHead[],
-): SnapshotAggregationCache {
-  let cache = snapshotAggregationCaches.get(source);
-  if (!cache || cache.sessions !== sessions) {
-    cache = { sessions, values: new Map() };
-    snapshotAggregationCaches.set(source, cache);
-  }
-  return cache;
-}
-
-/**
- * LiveScanStore replaces its canonical sessions array whenever the snapshot
- * changes, so that existing reference is the snapshot version.
- */
-function getSnapshotAggregation<T>(
-  source: ScanResultSource,
-  sessions: SessionHead[],
-  key: readonly unknown[],
-  build: () => T,
-  onCacheState?: (state: SnapshotAggregationCacheState) => void,
-): T {
-  const cache = getSnapshotAggregationCache(source, sessions);
-
-  const cacheKey = JSON.stringify(key);
-  if (cache.values.has(cacheKey)) {
-    const cached = cache.values.get(cacheKey) as T;
-    cache.values.delete(cacheKey);
-    cache.values.set(cacheKey, cached);
-    onCacheState?.("hit");
-    return cached;
-  }
-
-  const value = build();
-  if (cache.values.size >= SNAPSHOT_AGGREGATION_CACHE_LIMIT) {
-    const oldestKey = cache.values.keys().next().value;
-    if (oldestKey != null) cache.values.delete(oldestKey);
-  }
-  cache.values.set(cacheKey, value);
-  onCacheState?.("miss");
-  return value;
-}
-
-function getSnapshotSessionTree(source: ScanResultSource, sessions: SessionHead[]): SessionTree {
-  const cache = getSnapshotAggregationCache(source, sessions);
-  return (cache.sessionTree ??= buildSessionTree(sessions));
-}
-
-type DashboardStorageAggregation = Pick<DashboardData, "recentFileActivities" | "modelCost">;
-
-function getDashboardStorageAggregation(
-  source: ScanResultSource,
-  sessions: SessionHead[],
-  scope: DashboardScope,
-  from: number | undefined,
-  to: number,
-  cacheTo: number,
-  analyticsRevision: string | null,
-): DashboardStorageAggregation {
-  const build = (): DashboardStorageAggregation => ({
-    recentFileActivities: listFileActivity({
-      agent: scope.agent,
-      projectKind: scope.projectKind,
-      projectKey: scope.projectKey,
-      from,
-      to,
-      limit: 12,
-    }),
-    modelCost: listModelCostDistribution({
-      agent: scope.agent,
-      projectKind: scope.projectKind,
-      projectKey: scope.projectKey,
-      from,
-      to,
-    }),
-  });
-  const startedAt = performance.now();
-  const log = (cache: SnapshotAggregationCacheState | "unavailable") => {
-    appLogger.info("api.dashboard.storage_aggregation", {
-      cache,
-      ...(analyticsRevision === null ? {} : { analytics_revision: analyticsRevision }),
-      duration_ms: Math.round(performance.now() - startedAt),
-    });
-  };
-
-  if (analyticsRevision === null) {
-    const value = build();
-    log("unavailable");
-    return value;
-  }
-
-  return getSnapshotAggregation(
-    source,
-    sessions,
-    [
-      "dashboard-storage",
-      scope.agent,
-      scope.projectKind,
-      scope.projectKey,
-      from,
-      cacheTo,
-      analyticsRevision,
-    ],
-    build,
-    log,
-  );
-}
-
 interface ClientLogPayload {
   event?: unknown;
   data?: unknown;
-}
-
-interface SessionAliasPayload {
-  alias?: unknown;
-}
-
-function withStorageErrors<TResult, TFallback>(
-  handler: () => TResult,
-  onUnavailable: () => TFallback,
-): TResult | TFallback {
-  try {
-    return handler();
-  } catch (error) {
-    if (error instanceof StateStorageUnavailableError) {
-      return onUnavailable();
-    }
-    throw error;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function parseSessionReferencePayload(value: unknown): SessionReference | null {
-  if (
-    !isRecord(value) ||
-    typeof value.agentName !== "string" ||
-    typeof value.sessionId !== "string" ||
-    !value.agentName.trim() ||
-    !value.sessionId
-  ) {
-    return null;
-  }
-  return normalizeSessionReference({
-    agentName: value.agentName.trim().toLowerCase(),
-    sessionId: value.sessionId,
-  });
-}
-
-function parseBookmarkReference(value: unknown): SessionReference | null {
-  if (!isRecord(value)) return null;
-
-  const reference = parseSessionReferencePayload(value.reference);
-  if (reference) return reference;
-
-  if (
-    typeof value.agentKey !== "string" ||
-    typeof value.sessionId !== "string" ||
-    !value.agentKey.trim() ||
-    !value.sessionId
-  ) {
-    return null;
-  }
-  return normalizeSessionReference({
-    agentName: value.agentKey.trim().toLowerCase(),
-    sessionId: value.sessionId,
-  });
-}
-
-function parseBookmarkImport(value: unknown): BookmarkRecord | null {
-  if (!isRecord(value)) return null;
-  const reference = parseBookmarkReference(value);
-  if (!reference) return null;
-
-  const timestamp = value.bookmarkedAt ?? value.bookmarked_at;
-  if (timestamp != null && (typeof timestamp !== "number" || !Number.isFinite(timestamp))) {
-    return null;
-  }
-  return {
-    reference,
-    bookmarkedAt: typeof timestamp === "number" ? timestamp : Date.now(),
-  };
-}
-
-function sanitizeClientLogData(value: unknown): Record<string, unknown> {
-  if (!isRecord(value)) return {};
-
-  return Object.fromEntries(
-    Object.entries(value)
-      .slice(0, 30)
-      .map(([key, item]) => {
-        if (typeof item === "string") return [key, item.slice(0, 300)];
-        if (typeof item === "number" || typeof item === "boolean" || item == null) {
-          return [key, item];
-        }
-        return [key, String(item).slice(0, 300)];
-      }),
-  );
 }
 
 function toSessionListItem(session: SessionHead): SessionHead {
@@ -377,67 +145,6 @@ function getSessionHeadReference(session: SessionHead): SessionReference {
     agentName: getSessionAgentKey(session),
     sessionId: session.id,
   };
-}
-
-const SESSION_DETAIL_STREAM_BATCH_CHARS = 64 * 1024;
-
-function createSessionDetailJsonResponse(
-  data: Omit<SessionDetail, "messages">,
-  messages: Iterable<string>,
-): Response {
-  const encoder = new TextEncoder();
-  const headerJson = JSON.stringify(data);
-  const headerPrefix =
-    headerJson === "{}" ? '{"messages":[' : `${headerJson.slice(0, -1)},"messages":[`;
-  const iterator = messages[Symbol.iterator]();
-  let wroteHeader = false;
-  let wroteMessage = false;
-
-  return new Response(
-    new ReadableStream<Uint8Array>({
-      pull(controller) {
-        if (!wroteHeader) {
-          controller.enqueue(encoder.encode(headerPrefix));
-          wroteHeader = true;
-          return;
-        }
-
-        const batch: string[] = [];
-        let batchLength = 0;
-        let next: IteratorResult<string>;
-        try {
-          next = iterator.next();
-          while (!next.done) {
-            const prefix = wroteMessage ? "," : "";
-            batch.push(prefix, next.value);
-            batchLength += prefix.length + next.value.length;
-            wroteMessage = true;
-            if (batchLength >= SESSION_DETAIL_STREAM_BATCH_CHARS) break;
-            next = iterator.next();
-          }
-        } catch (error) {
-          try {
-            iterator.return?.();
-          } catch {}
-          controller.error(error);
-          return;
-        }
-
-        if (next.done) {
-          batch.push("]}");
-          controller.enqueue(encoder.encode(batch.join("")));
-          controller.close();
-          return;
-        }
-
-        controller.enqueue(encoder.encode(batch.join("")));
-      },
-      cancel() {
-        iterator.return?.();
-      },
-    }),
-    { headers: { "Content-Type": "application/json; charset=UTF-8" } },
-  );
 }
 
 export function handleGetConfig(c: Context, defaults: SessionListDefaults) {
@@ -622,75 +329,6 @@ export async function handleGetSessions(
       toSessionListItem(aliases.decorate(session, getSessionHeadReference(session))),
     ),
   });
-}
-
-/**
- * Sub-session hits render as 父 › 子, so each one needs its parent's title. The
- * index is built only when some hit actually has a parent — the common query
- * touches no sub-session at all.
- */
-function withParentContext(
-  results: SearchResult[],
-  getSessionTree: () => SessionTree,
-  aliases: AliasView,
-): SearchResult[] {
-  if (!results.some((result) => result.session.parent_reference)) return results;
-  const byRouteKey = getSessionTree().byRouteKey;
-
-  return results.map((result) => {
-    const parentReference = result.session.parent_reference;
-    if (!parentReference) return result;
-    const parent = byRouteKey.get(formatSessionReference(parentReference))?.session;
-    if (!parent) return result;
-    const reference = normalizeSessionReference(parentReference);
-    return { ...result, parent: { reference, title: aliases.get(reference) ?? parent.title } };
-  });
-}
-
-const ALIAS_SEARCH_RESULT_SHARE = 0.25;
-
-function searchResultKey(result: SearchResult): string {
-  return `${result.reference.agentName}\0${result.reference.sessionId}`;
-}
-
-function uniqueSearchResults(results: SearchResult[]): SearchResult[] {
-  const seen = new Set<string>();
-  return results.filter((result) => {
-    const key = searchResultKey(result);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function mergeAliasSearchResults(
-  rankedResults: SearchResult[],
-  aliasResults: SearchResult[],
-  limit: number,
-): SearchResult[] {
-  if (limit <= 0) return [];
-
-  const ranked = uniqueSearchResults(rankedResults);
-  const rankedKeys = new Set(ranked.map(searchResultKey));
-  const aliases = uniqueSearchResults(aliasResults).filter(
-    (result) => !rankedKeys.has(searchResultKey(result)),
-  );
-  if (ranked.length === 0) return aliases.slice(0, limit);
-  if (aliases.length === 0) return ranked.slice(0, limit);
-
-  // Alias hits have no BM25 score. Keep ranked search dominant while reserving
-  // a bounded share so local renames remain discoverable.
-  const aliasQuota = Math.min(
-    limit - 1,
-    Math.max(1, Math.floor(limit * ALIAS_SEARCH_RESULT_SHARE)),
-  );
-  const rankedQuota = limit - aliasQuota;
-  return [
-    ...ranked.slice(0, rankedQuota),
-    ...aliases.slice(0, aliasQuota),
-    ...ranked.slice(rankedQuota),
-    ...aliases.slice(aliasQuota),
-  ].slice(0, limit);
 }
 
 export async function handleSearchSessions(
@@ -923,164 +561,6 @@ export async function handlePostClientLog(c: Context) {
     .slice(0, 120);
   appLogger.info(`client.${event}`, sanitizeClientLogData(payload?.data));
   return c.json({ ok: true });
-}
-
-function materializeStoredBookmarks(
-  scanSource: ScanResultSource,
-  bookmarks: readonly BookmarkRecord[],
-  aliases: AliasView,
-): BookmarkView[] {
-  const snapshot = scanSource.getSnapshot();
-  const sessionIndex = getSnapshotAggregation(
-    scanSource,
-    snapshot.sessions,
-    ["bookmark-session-index"],
-    () => createSessionIndex(snapshot.sessions),
-  );
-  return materializeBookmarkViews(bookmarks, {
-    liveSessionsByReference: sessionIndex.byRouteKey,
-    knownAgentNames: KNOWN_AGENT_NAME_SET,
-    resolveCachedSessions: loadCachedSessionHeads,
-  }).map((bookmark) => decorateBookmark(bookmark, aliases));
-}
-
-export function handleGetBookmarks(c: Context, scanSource: ScanResultSource) {
-  return withStorageErrors(
-    () => {
-      const aliases = loadAliasView();
-      const bookmarks = materializeStoredBookmarks(scanSource, listBookmarks(), aliases);
-      return c.json({
-        bookmarks,
-        storageAvailable: true,
-      });
-    },
-    () => c.json({ bookmarks: [], storageAvailable: false }),
-  );
-}
-
-/**
- * Write endpoints must reject unknown agents: rows for agents that do not
- * exist accumulate in state.db forever — materialization filters on the known
- * set, so they are never visible and never garbage-collected.
- */
-function isKnownAgentKey(agentKey: string): boolean {
-  return KNOWN_AGENT_NAME_SET.has(agentKey.trim().toLowerCase());
-}
-
-export async function handlePutBookmark(c: Context) {
-  const payload = parseBookmarkReference(await c.req.json().catch(() => null));
-  if (!payload) {
-    return c.json({ error: "Invalid bookmark payload" }, 400);
-  }
-  if (!isKnownAgentKey(payload.agentName)) {
-    return c.json({ error: `Unknown agent: ${payload.agentName}` }, 400);
-  }
-
-  return withStorageErrors(
-    () => c.json({ bookmark: upsertBookmark(payload), storageAvailable: true }),
-    () => c.json({ error: "Bookmark storage is unavailable" }, 503),
-  );
-}
-
-export async function handleImportBookmarks(c: Context, scanSource: ScanResultSource) {
-  const payload = await c.req.json().catch(() => null);
-  if (!Array.isArray(payload)) {
-    return c.json({ error: "Invalid bookmark payload" }, 400);
-  }
-
-  const parsed = payload
-    .map((entry) => parseBookmarkImport(entry))
-    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-
-  if (parsed.length !== payload.length) {
-    return c.json({ error: "Invalid bookmark payload" }, 400);
-  }
-
-  // Legacy exports may reference agents this build no longer knows; skip them
-  // (reporting the count) instead of rejecting the rest of the import.
-  const bookmarks = parsed.filter((entry) => isKnownAgentKey(entry.reference.agentName));
-  const skippedUnknownAgents = parsed.length - bookmarks.length;
-
-  return withStorageErrors(
-    () => {
-      const imported = importBookmarks(bookmarks);
-      const views = materializeStoredBookmarks(scanSource, imported, loadAliasView());
-      return c.json({
-        bookmarks: views,
-        storageAvailable: true,
-        ...(skippedUnknownAgents > 0 ? { skippedUnknownAgents } : {}),
-      });
-    },
-    () => c.json({ error: "Bookmark storage is unavailable" }, 503),
-  );
-}
-
-export function handleDeleteBookmark(c: Context) {
-  const agentKey = c.req.param("agent");
-  const sessionId = c.req.param("id");
-  if (!agentKey || !sessionId) {
-    return c.json({ error: "Missing bookmark identifier" }, 400);
-  }
-  if (!isKnownAgentKey(agentKey)) {
-    return c.json({ error: `Unknown agent: ${agentKey}` }, 400);
-  }
-
-  return withStorageErrors(
-    () => {
-      deleteBookmark({ agentName: agentKey, sessionId });
-      return c.json({ ok: true, storageAvailable: true });
-    },
-    () => c.json({ error: "Bookmark storage is unavailable" }, 503),
-  );
-}
-
-export async function handlePutSessionAlias(c: Context) {
-  const agentKey = c.req.param("agent");
-  const sessionId = c.req.param("id");
-  const payload = (await c.req.json().catch(() => null)) as SessionAliasPayload | null;
-  const aliasValue = payload?.alias;
-  if (!agentKey || !sessionId || typeof aliasValue !== "string") {
-    return c.json({ error: "Invalid session alias payload" }, 400);
-  }
-  if (!isKnownAgentKey(agentKey)) {
-    return c.json({ error: `Unknown agent: ${agentKey}` }, 400);
-  }
-
-  try {
-    return withStorageErrors(
-      () => {
-        const alias = upsertSessionAlias({ agentName: agentKey, sessionId }, aliasValue);
-        invalidateAliasView();
-        return c.json({ alias });
-      },
-      () => c.json({ error: "Session alias storage is unavailable" }, 503),
-    );
-  } catch (error) {
-    if (error instanceof SessionAliasValidationError) {
-      return c.json({ error: "Session alias must be non-empty and at most 160 characters" }, 400);
-    }
-    throw error;
-  }
-}
-
-export function handleDeleteSessionAlias(c: Context) {
-  const agentKey = c.req.param("agent");
-  const sessionId = c.req.param("id");
-  if (!agentKey || !sessionId) {
-    return c.json({ error: "Missing session alias identifier" }, 400);
-  }
-  if (!isKnownAgentKey(agentKey)) {
-    return c.json({ error: `Unknown agent: ${agentKey}` }, 400);
-  }
-
-  return withStorageErrors(
-    () => {
-      deleteSessionAlias({ agentName: agentKey, sessionId });
-      invalidateAliasView();
-      return c.json({ ok: true });
-    },
-    () => c.json({ error: "Session alias storage is unavailable" }, 503),
-  );
 }
 
 export function handleGetDashboard(
