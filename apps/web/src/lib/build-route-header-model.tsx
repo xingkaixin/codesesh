@@ -142,12 +142,6 @@ function routeTitleAndSubtitle(input: RouteHeaderInput): {
   if (viewState.mode === "missingAgent") {
     return { title: "Agent Not Found", subtitle: `Requested /${viewState.attemptedKey}` };
   }
-  if (viewState.mode === "missingSession") {
-    return {
-      title: "Session Not Found",
-      subtitle: `Session not found in /${viewState.activeAgentKey}`,
-    };
-  }
   return { title: "CodeSesh", subtitle: "Select an agent to browse sessions" };
 }
 
@@ -193,9 +187,6 @@ function routeBreadcrumbs(input: RouteHeaderInput): BreadcrumbItem[] {
     to: viewState.mode === "session" ? `/${viewState.activeAgentKey}` : undefined,
   };
   if (viewState.mode === "agent") return [dashboard, { label: agentLabel }];
-  if (viewState.mode === "missingSession") {
-    return [dashboard, agent, { label: viewState.attemptedSessionId }];
-  }
   if (viewState.mode === "session") {
     return [
       dashboard,

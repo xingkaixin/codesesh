@@ -96,6 +96,28 @@ describe("useSessionStore", () => {
     expect(api.fetchConfig).toHaveBeenCalledTimes(4);
   });
 
+  it("CS-276: resolves retryLoad even when the reload fails again", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(api.fetchSessions).mockRejectedValue(new Error("api down"));
+    const { Wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useSessionStore(), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.config).toEqual(config), { timeout: 2_000 });
+    // Register the active window with a first load that fails.
+    await act(async () => {
+      await result.current.reload(config.window).catch(() => {});
+    });
+
+    // The server is still down; the retry must record the failure in state
+    // instead of rejecting out of the button handler.
+    await expect(act(() => result.current.retryLoad())).resolves.toBeUndefined();
+    await waitFor(() =>
+      expect(result.current.error).toBe(
+        "Failed to load session data for the selected time window.",
+      ),
+    );
+  });
+
   it("recovers from a transient config failure automatically", async () => {
     const error = new Error("config unavailable");
     vi.spyOn(console, "error").mockImplementation(() => undefined);

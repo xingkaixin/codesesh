@@ -31,4 +31,16 @@ describe("ErrorBoundary", () => {
 
     expect(screen.getByText("Recovered surface")).toBeTruthy();
   });
+
+  it("CS-276: offers a reload action from the default fallback", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(
+      <ErrorBoundary>
+        <Surface failed />
+      </ErrorBoundary>,
+    );
+
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reload page" })).toBeTruthy();
+  });
 });

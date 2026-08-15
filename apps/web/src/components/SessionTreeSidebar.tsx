@@ -532,7 +532,6 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   const sortOrderRef = useRef(modelData.sortOrderByPath);
   const groupCountByPathRef = useRef(modelData.groupCountByPath);
   const sessionByPathRef = useRef(modelData.sessionByPath);
-  const bookmarkedSessionReferencesRef = useRef(bookmarkedSessionReferences);
   const onSelectSessionRef = useRef(onSelectSession);
   const onToggleBookmarkRef = useRef(onToggleBookmark);
   const onRenameSessionRef = useRef(onRenameSession);
@@ -587,10 +586,6 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   useEffect(() => {
     onSelectSessionRef.current = onSelectSession;
   }, [onSelectSession]);
-
-  useEffect(() => {
-    bookmarkedSessionReferencesRef.current = bookmarkedSessionReferences;
-  }, [bookmarkedSessionReferences]);
 
   useEffect(() => {
     onToggleBookmarkRef.current = onToggleBookmark;
@@ -736,9 +731,9 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
             >
               {menuSession ? (
                 <SessionActionMenuItems
-                  bookmarked={bookmarkedSessionReferencesRef.current.has(
-                    getSessionReferenceKey(menuSession),
-                  )}
+                  // Read the prop directly: a ref read during render lags one
+                  // update behind, leaving an open menu with a stale label.
+                  bookmarked={bookmarkedSessionReferences.has(getSessionReferenceKey(menuSession))}
                   onRename={() => onRenameSessionRef.current(menuSession)}
                   onToggleBookmark={() => onToggleBookmarkRef.current(menuSession)}
                 />

@@ -15,12 +15,8 @@ export type ViewState =
   | { mode: "agent"; activeAgentKey: string; activeSessionId: null }
   | { mode: "session"; activeAgentKey: string; activeSessionId: string }
   | { mode: "missingAgent"; activeAgentKey: null; activeSessionId: null; attemptedKey: string }
-  | {
-      mode: "missingSession";
-      activeAgentKey: string;
-      activeSessionId: string;
-      attemptedSessionId: string;
-    }
+  // An unknown session id keeps mode "session"; the 404 is resolved later by
+  // useSessionDetail and rendered by the session surface itself.
   | { mode: "invalidRoute"; activeAgentKey: null; activeSessionId: null };
 
 export interface ViewRouteMatch {
