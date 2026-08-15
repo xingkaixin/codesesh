@@ -17,7 +17,12 @@ import {
   type PersistedSessionHeadChange,
 } from "./db.js";
 import { advanceAnalyticsRevision } from "./analytics-revision.js";
-import { withCacheDb, withCacheDbReadOnly, type CacheReadOutcome } from "./schema.js";
+import {
+  withCacheDb,
+  withCacheDbOutcome,
+  withCacheDbReadOnly,
+  type CacheReadOutcome,
+} from "./schema.js";
 import {
   assertSessionProjectIdentities,
   messageFromCachedRow,
@@ -125,12 +130,16 @@ export function deleteLegacyCacheFile(): void {
   }
 }
 
-export function loadCachedSessions(agentName: string): CachedResult | null {
+/**
+ * Distinguishes "no cache yet" (success with null) from "the database read
+ * failed" so callers can log the degradation instead of silently rescanning.
+ */
+export function readCachedSessions(agentName: string): CacheReadOutcome<CachedResult | null> {
   if (!hasCacheStorage()) {
-    return null;
+    return { status: "success", value: null };
   }
 
-  return withCacheDb((db) => {
+  return withCacheDbOutcome((db) => {
     const timestampRow = db
       .prepare("SELECT timestamp AS value FROM agent_cache WHERE agent_name = ?")
       .get(agentName) as ScalarRow | undefined;
@@ -165,6 +174,11 @@ export function loadCachedSessions(agentName: string): CachedResult | null {
 
     return { sessions, meta, timestamp };
   });
+}
+
+export function loadCachedSessions(agentName: string): CachedResult | null {
+  const outcome = readCachedSessions(agentName);
+  return outcome.status === "success" ? outcome.value : null;
 }
 
 export function loadCachedSessionHeads(
@@ -271,9 +285,12 @@ export function markAgentCacheInitialized(
   });
 }
 
-/** Mark a full-history reconciliation as incomplete until it commits. */
-export function markAgentFullSyncStarted(agentName: string): void {
-  withCacheDb((db) => {
+/**
+ * Mark a full-history reconciliation as incomplete until it commits.
+ * Returns whether the write reached disk, like saveCachedSessions.
+ */
+export function markAgentFullSyncStarted(agentName: string): boolean {
+  const persisted = withCacheDb((db) => {
     db.prepare(
       `
         UPDATE cache_initialization
@@ -281,7 +298,9 @@ export function markAgentFullSyncStarted(agentName: string): void {
         WHERE agent_name = ?
       `,
     ).run(agentName);
+    return true;
   });
+  return persisted ?? false;
 }
 
 /** Return the last durable source position reached by an incomplete full sync. */
@@ -297,11 +316,16 @@ export function getAgentFullSyncCursor(agentName: string): string | null {
   return outcome.status === "success" ? outcome.value : null;
 }
 
-/** Persist a full-sync cursor only after the corresponding checkpoint is durable. */
-export function markAgentFullSyncProgress(agentName: string, cursor: string): void {
-  if (!cursor) return;
+/**
+ * Persist a full-sync cursor only after the corresponding checkpoint is
+ * durable. Returns whether the write reached disk — a dropped cursor means
+ * every restart re-walks the whole history, so callers must not report the
+ * checkpoint as durable on false.
+ */
+export function markAgentFullSyncProgress(agentName: string, cursor: string): boolean {
+  if (!cursor) return true;
 
-  withCacheDb((db) => {
+  const persisted = withCacheDb((db) => {
     db.prepare(
       `
         INSERT INTO cache_meta(key, value)
@@ -309,7 +333,9 @@ export function markAgentFullSyncProgress(agentName: string, cursor: string): vo
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
       `,
     ).run(`${FULL_SYNC_CURSOR_PREFIX}${agentName}`, cursor);
+    return true;
   });
+  return persisted ?? false;
 }
 
 export function readAgentLastFullSyncAt(agentName: string): CacheReadOutcome<number | null> {
@@ -338,10 +364,13 @@ export function getAgentLastFullSyncAt(agentName: string): number | null {
   return outcome.status === "success" ? outcome.value : null;
 }
 
-/** Record that a full (unbounded) history reconciliation just completed for this agent. */
-export function markAgentFullSyncCompleted(agentName: string): void {
+/**
+ * Record that a full (unbounded) history reconciliation just completed for
+ * this agent. Returns whether the write reached disk.
+ */
+export function markAgentFullSyncCompleted(agentName: string): boolean {
   const completedAt = Date.now();
-  withCacheDb((db) => {
+  const persisted = withCacheDb((db) => {
     db.transaction(() => {
       // Upsert: on a fresh cache the initialization row may not exist yet,
       // and a bare UPDATE would silently record nothing (last_sync_at would
@@ -358,7 +387,9 @@ export function markAgentFullSyncCompleted(agentName: string): void {
         `${FULL_SYNC_CURSOR_PREFIX}${agentName}`,
       );
     }).immediate();
+    return true;
   });
+  return persisted ?? false;
 }
 
 function loadCachedSessionEntryBase(

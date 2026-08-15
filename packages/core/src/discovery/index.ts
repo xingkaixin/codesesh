@@ -28,6 +28,7 @@ export {
   loadCachedSessionDataEntry,
   loadCachedSessionHeads,
   loadCachedSessions,
+  readCachedSessions,
   markAgentCacheInitialized,
   markAgentFullSyncProgress,
   markAgentFullSyncStarted,

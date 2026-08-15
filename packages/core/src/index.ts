@@ -60,6 +60,7 @@ export {
   listFileActivity,
   listModelCostDistribution,
   loadCachedSessions,
+  readCachedSessions,
   loadCachedSessionHeads,
   markAgentCacheInitialized,
   markAgentFullSyncProgress,

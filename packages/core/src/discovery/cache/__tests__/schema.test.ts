@@ -302,6 +302,7 @@ describe("cache schema boundary", () => {
     expect(Object.keys(schema).sort()).toEqual([
       "runSearchIndexWrite",
       "withCacheDb",
+      "withCacheDbOutcome",
       "withCacheDbReadOnly",
       "withSearchDb",
       "withSearchIndexDb",
