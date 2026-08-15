@@ -958,10 +958,22 @@ export function handleGetBookmarks(c: Context, scanSource: ScanResultSource) {
   );
 }
 
+/**
+ * Write endpoints must reject unknown agents: rows for agents that do not
+ * exist accumulate in state.db forever — materialization filters on the known
+ * set, so they are never visible and never garbage-collected.
+ */
+function isKnownAgentKey(agentKey: string): boolean {
+  return KNOWN_AGENT_NAME_SET.has(agentKey.trim().toLowerCase());
+}
+
 export async function handlePutBookmark(c: Context) {
   const payload = parseBookmarkReference(await c.req.json().catch(() => null));
   if (!payload) {
     return c.json({ error: "Invalid bookmark payload" }, 400);
+  }
+  if (!isKnownAgentKey(payload.agentName)) {
+    return c.json({ error: `Unknown agent: ${payload.agentName}` }, 400);
   }
 
   return withStorageErrors(
@@ -976,19 +988,28 @@ export async function handleImportBookmarks(c: Context, scanSource: ScanResultSo
     return c.json({ error: "Invalid bookmark payload" }, 400);
   }
 
-  const bookmarks = payload
+  const parsed = payload
     .map((entry) => parseBookmarkImport(entry))
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
-  if (bookmarks.length !== payload.length) {
+  if (parsed.length !== payload.length) {
     return c.json({ error: "Invalid bookmark payload" }, 400);
   }
+
+  // Legacy exports may reference agents this build no longer knows; skip them
+  // (reporting the count) instead of rejecting the rest of the import.
+  const bookmarks = parsed.filter((entry) => isKnownAgentKey(entry.reference.agentName));
+  const skippedUnknownAgents = parsed.length - bookmarks.length;
 
   return withStorageErrors(
     () => {
       const imported = importBookmarks(bookmarks);
       const views = materializeStoredBookmarks(scanSource, imported, loadAliasView());
-      return c.json({ bookmarks: views, storageAvailable: true });
+      return c.json({
+        bookmarks: views,
+        storageAvailable: true,
+        ...(skippedUnknownAgents > 0 ? { skippedUnknownAgents } : {}),
+      });
     },
     () => c.json({ error: "Bookmark storage is unavailable" }, 503),
   );
@@ -999,6 +1020,9 @@ export function handleDeleteBookmark(c: Context) {
   const sessionId = c.req.param("id");
   if (!agentKey || !sessionId) {
     return c.json({ error: "Missing bookmark identifier" }, 400);
+  }
+  if (!isKnownAgentKey(agentKey)) {
+    return c.json({ error: `Unknown agent: ${agentKey}` }, 400);
   }
 
   return withStorageErrors(
@@ -1017,6 +1041,9 @@ export async function handlePutSessionAlias(c: Context) {
   const aliasValue = payload?.alias;
   if (!agentKey || !sessionId || typeof aliasValue !== "string") {
     return c.json({ error: "Invalid session alias payload" }, 400);
+  }
+  if (!isKnownAgentKey(agentKey)) {
+    return c.json({ error: `Unknown agent: ${agentKey}` }, 400);
   }
 
   try {
@@ -1041,6 +1068,9 @@ export function handleDeleteSessionAlias(c: Context) {
   const sessionId = c.req.param("id");
   if (!agentKey || !sessionId) {
     return c.json({ error: "Missing session alias identifier" }, 400);
+  }
+  if (!isKnownAgentKey(agentKey)) {
+    return c.json({ error: `Unknown agent: ${agentKey}` }, 400);
   }
 
   return withStorageErrors(
