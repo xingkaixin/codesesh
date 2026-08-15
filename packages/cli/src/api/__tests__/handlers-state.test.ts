@@ -322,6 +322,46 @@ describe("bookmark handlers", () => {
     expect(coreMocks.upsertBookmark).not.toHaveBeenCalled();
   });
 
+  it("rejects writes referencing agents that do not exist", async () => {
+    const put = makeContext({ body: { reference: { agentName: "ghost", sessionId: "s1" } } });
+    await handlePutBookmark(put as never);
+    expect(put.json).toHaveBeenCalledWith({ error: "Unknown agent: ghost" }, 400);
+    expect(coreMocks.upsertBookmark).not.toHaveBeenCalled();
+
+    const del = makeContext({ param: { agent: "ghost", id: "s1" } });
+    await handleDeleteBookmark(del as never);
+    expect(del.json).toHaveBeenCalledWith({ error: "Unknown agent: ghost" }, 400);
+    expect(coreMocks.deleteBookmark).not.toHaveBeenCalled();
+
+    const putAlias = makeContext({
+      param: { agent: "ghost", id: "s1" },
+      body: { alias: "renamed" },
+    });
+    await handlePutSessionAlias(putAlias as never);
+    expect(putAlias.json).toHaveBeenCalledWith({ error: "Unknown agent: ghost" }, 400);
+    expect(coreMocks.upsertSessionAlias).not.toHaveBeenCalled();
+
+    const delAlias = makeContext({ param: { agent: "ghost", id: "s1" } });
+    await handleDeleteSessionAlias(delAlias as never);
+    expect(delAlias.json).toHaveBeenCalledWith({ error: "Unknown agent: ghost" }, 400);
+    expect(coreMocks.deleteSessionAlias).not.toHaveBeenCalled();
+  });
+
+  it("skips unknown agents in bookmark imports and reports the count", async () => {
+    const mixed = makeContext({
+      body: [storedBookmark, { reference: { agentName: "ghost", sessionId: "s9" } }],
+    });
+
+    await handleImportBookmarks(mixed as never, bookmarkScanSource);
+
+    expect(coreMocks.importBookmarks).toHaveBeenCalledWith([storedBookmark]);
+    expect(mixed.json).toHaveBeenCalledWith({
+      bookmarks: [availableBookmark],
+      storageAvailable: true,
+      skippedUnknownAgents: 1,
+    });
+  });
+
   it("stores only identity from current and legacy snapshot payloads", async () => {
     const current = makeContext({
       body: { reference: validReference, session: { stale: true }, bookmarkedAt: 99 },
