@@ -791,6 +791,7 @@ export class AgentSyncEngine {
       const result = await this.runWorker(agent, baseline, { kind: "recompute-derived" }, {});
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const sessions = attachMissingProjectIdentities(result.sessions);
+      agent.commitChangeCheck();
       this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
       const persistenceDiff = buildPersistenceDiff(baseline, sessions);
       if (
@@ -827,6 +828,7 @@ export class AgentSyncEngine {
       const result = await this.runWorker(agent, baseline, { kind: "full-scan" }, scope);
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const sessions = attachMissingProjectIdentities(result.sessions);
+      agent.commitChangeCheck();
       this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
       return this.refreshStrategyResult(sessions, result.completeness, scope, {
         // Meta-only changes (e.g. a pricing capture epoch bump) leave the head
@@ -850,6 +852,7 @@ export class AgentSyncEngine {
         agent.incrementalScan(baseline, preciseChangedIds, checkResult.refs, scope),
       ),
     );
+    agent.commitChangeCheck();
     this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
     const sourceFailures = checkResult.sourceFailures ?? [];
     const completeness =
