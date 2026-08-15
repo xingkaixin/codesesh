@@ -1,7 +1,6 @@
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
 import type { SessionReference } from "../contract/index.js";
-import type { SessionDetail, SessionHead } from "../types/index.js";
-import { computeIdentity, realFs } from "../projects/index.js";
+import type { ProjectIdentity, SessionDetail, SessionHead } from "../types/index.js";
 import {
   classifySessionTags,
   extractSessionFileActivity,
@@ -34,7 +33,14 @@ import type { LiveSnapshot } from "./scanner.js";
 export type SessionDetailResult =
   | { status: "found"; data: SessionDetail }
   | { status: "unknown-agent" }
-  | { status: "not-ready" };
+  | { status: "not-ready" }
+  /**
+   * The session has no identity on its head or cached detail. Resolving one
+   * requires filesystem/git probing, which must not run on this synchronous
+   * path — the caller resolves `directory` asynchronously and retries with
+   * `projectIdentityFallback`.
+   */
+  | { status: "needs-identity"; directory: string };
 
 export type SessionDetailResponseResult =
   | SessionDetailResult
@@ -48,6 +54,8 @@ export type SessionDetailResponseResult =
 
 export interface SessionDetailResponseOptions {
   messageCursor?: string;
+  /** Pre-resolved identity used when neither the head nor the cache has one. */
+  projectIdentityFallback?: ProjectIdentity;
 }
 
 interface SessionDetailLookup {
@@ -217,8 +225,9 @@ function cachedDetailState(
 function getProjectIdentity(
   data: Pick<SessionDetail, "directory" | "project_identity">,
   head: SessionHead | undefined,
-) {
-  return head?.project_identity ?? data.project_identity ?? computeIdentity(data.directory, realFs);
+  fallback: ProjectIdentity | undefined,
+): ProjectIdentity | null {
+  return head?.project_identity ?? data.project_identity ?? fallback ?? null;
 }
 
 function getSmartTags(data: SessionDetail) {
@@ -235,6 +244,7 @@ function materializeStructuredSessionDetail(
   context: SessionDetailContext,
   reference: SessionReference,
   cachedEntry = loadCachedSessionRawEntry(reference.agentName, reference.sessionId),
+  identityFallback?: ProjectIdentity,
 ): SessionDetailResult {
   const { agent, head } = context;
   const currentMeta = head ? agent.getSessionMetaMap().get(reference.sessionId) : undefined;
@@ -281,7 +291,8 @@ function materializeStructuredSessionDetail(
     return { status: "not-ready" };
   }
 
-  const projectIdentity = getProjectIdentity(data, head);
+  const projectIdentity = getProjectIdentity(data, head, identityFallback);
+  if (!projectIdentity) return { status: "needs-identity", directory: data.directory };
   const fileActivity =
     data.file_activity ??
     (useCache
@@ -321,10 +332,16 @@ function* serializeCachedMessages(messageRows: CachedMessageRow[]): IterableIter
 export function materializeSessionDetail(
   scanResult: LiveSnapshot,
   reference: SessionReference,
+  options: Pick<SessionDetailResponseOptions, "projectIdentityFallback"> = {},
 ): SessionDetailResult {
   const context = getSessionDetailContext(scanResult, reference);
   if (!context) return { status: "unknown-agent" };
-  return materializeStructuredSessionDetail(context, reference);
+  return materializeStructuredSessionDetail(
+    context,
+    reference,
+    undefined,
+    options.projectIdentityFallback,
+  );
 }
 
 export function materializeSessionDetailResponse(
@@ -361,16 +378,28 @@ export function materializeSessionDetailResponse(
     cachedEntry.data.smart_tags == null ||
     cachedEntry.data.smart_tags_classifier_revision !== SMART_TAG_CLASSIFIER_REVISION
   ) {
-    const result = materializeStructuredSessionDetail(context, reference);
+    const result = materializeStructuredSessionDetail(
+      context,
+      reference,
+      undefined,
+      options.projectIdentityFallback,
+    );
     return result.status === "found"
       ? { ...result, data: { ...result.data, message_update: "reset" } }
       : result;
   }
 
   const data = cachedEntry.data;
+  const projectIdentity = getProjectIdentity(data, context.head, options.projectIdentityFallback);
+  if (!projectIdentity) return { status: "needs-identity", directory: data.directory };
   const stream = cursorRead?.stream;
   if (!stream) {
-    const result = materializeStructuredSessionDetail(context, reference);
+    const result = materializeStructuredSessionDetail(
+      context,
+      reference,
+      undefined,
+      options.projectIdentityFallback,
+    );
     return result.status === "found"
       ? { ...result, data: { ...result.data, message_update: "reset" } }
       : result;
@@ -394,7 +423,7 @@ export function materializeSessionDetailResponse(
       detail_freshness: "fresh",
       message_cursor: stream.cursor,
       message_update: stream.update,
-      project_identity: getProjectIdentity(data, context.head),
+      project_identity: projectIdentity,
       smart_tags_source_updated_at: getSmartTagSourceTimestamp(data),
       file_activity:
         data.file_activity ?? listSessionFileActivity(reference.agentName, reference.sessionId),
