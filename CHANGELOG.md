@@ -1,5 +1,111 @@
 # Changelog
 
+## [1.0.3] - 2026-08-16
+
+This release attributes dashboard and project usage to the time of each message instead of the whole session, stops scan, cache and CLI failures from silently degrading published state, and removes repeated parsing, query and render work across agents, the cache and the web UI.
+
+### Bug Fixes
+
+- Attributed usage, tokens and cost to the time of each message rather than the session, so a session spanning several days is no longer charged entirely to one of them. (#424)
+- Stopped agent adapters from reporting database read failures as empty session lists, and gave every scan step a single error taxonomy. (#416)
+- Committed the database change baseline only after a scan succeeds, so an interrupted scan no longer marks changed sources as already processed. (#398)
+- Preserved committed partial scan outcomes and exposed them in scan status. (#382)
+- Preserved scan state when a scan worker is unavailable, and retained the cache baseline after failed writes. (#380, #381)
+- Recorded full-sync completion on a fresh cache, cleared orphaned cache tables, and surfaced cache marker and persistence failures to the CLI instead of continuing silently. (#396, #399, #404)
+- Kept the index batch running past non-fatal jobs, isolated listener fan-out failures, bounded the smart-tag worker lifecycle, and hardened unhandled rejection paths around backfill probes, timer-scheduled refreshes and shutdown. (#397, #402, #403, #405)
+- Covered every session signature field so metadata-only changes are detected, and normalized environment data-root overrides while keeping absolute paths verbatim. (#390, #409)
+- Rejected unknown agents on state writes. (#406)
+- Hardened loopback project identity resolution, normalized Windows scope paths, and handled malformed legacy sessions. (#379)
+- Distinguished session from project load failures in the web UI, and hardened retry, menus and dead-end routes. (#393, #412)
+- Made message collapsibles keyboard accessible and unified the landing agent panel on session detail. (#395)
+
+### Security
+
+- Logged parsed startup flags instead of raw argv, keeping the one unredacted logging sink from capturing future credential-bearing flags. (#417)
+
+### Performance
+
+- Aggregated dashboard model cost from a per-session rollup table and cached dashboard storage aggregates across requests. (#385, #408)
+- Indexed sessions by bare activity time and reused snapshot session trees. (#388, #407)
+- Streamed cached message suffixes over persisted cursor hash chains instead of re-reading whole transcripts. (#386)
+- Cached Codex thread metadata by file fingerprint and Codex child final messages, and avoided duplicate Kimi detail transcript reads. (#383, #384, #401)
+- Tracked transcript part kinds while building instead of rescanning parts. (#420)
+- Resolved session-detail identity off the event loop. (#400)
+- Reduced live session render work by localizing search input and sidebar selection state and splitting live projections. (#394)
+- Repainted the interactive receipt without rebuilding its simulation. (#421)
+
+### Refactor
+
+- Split API handlers into focused modules and extracted the CLI status reporter and index publisher. (#422, #423)
+- Unified four drifted agent timestamp parsers into one shared utility. (#410)
+- Shared the agent tool argument parser and centralized session slugs. (#389, #391)
+- Narrowed the contract change boundaries, named persisted changes, and isolated test fixtures. (#392)
+- Pruned dead exports from the core public barrel. (#419)
+
+### Tests
+
+- Closed coverage gaps around the web api client, theme bootstrap and degraded-server retry. (#413)
+- Guarded session tree titles against HTML injection. (#411)
+- Benchmarked message scan tradeoffs for search. (#387)
+
+### Build
+
+- Patched nanoid, aligned `@types/node` across the workspace, and moved the landing page analytics token into an environment variable. (#418)
+- Added a dedicated typecheck task, split bundle tests out of the default suite, cancelled superseded CI runs and cached Playwright. (#414)
+
+### Documentation
+
+- Added the verification commands to `AGENTS.md` and recorded the dependency decisions. (#415, #418)
+
+### Changelog Detail
+
+- #424 fix(analytics): attribute usage by message time @xingkaixin
+- #423 refactor(cli): Extract status reporter and index publisher @xingkaixin
+- #422 refactor(api): Split handlers into focused modules @xingkaixin
+- #421 perf(web): Repaint receipt without rebuilding the sim @xingkaixin
+- #420 perf(agents): Track part kinds instead of rescanning @xingkaixin
+- #419 chore(core): Prune dead exports from the public barrel @xingkaixin
+- #418 chore(deps): dependency and manifest hygiene @xingkaixin
+- #417 chore(cli): Log parsed startup flags instead of argv @xingkaixin
+- #416 refactor(agents): codify the adapter error taxonomy and stop masking db failures @xingkaixin
+- #415 docs: Add verification commands to AGENTS.md @xingkaixin
+- #414 chore: tighten the DX feedback loops (typecheck task, bundle-test split, CI concurrency) @xingkaixin
+- #413 test: close the coverage gaps around the api client, theme bootstrap, and degraded-server retry @xingkaixin
+- #412 fix(web): robustness details across retry, menus, and dead-end routes @xingkaixin
+- #411 test(web): Guard tree titles against HTML injection @xingkaixin
+- #410 refactor(agents): unify the four drifted timestamp parsers @xingkaixin
+- #409 fix(discovery): normalize env data-root overrides @xingkaixin
+- #408 perf(cache): aggregate dashboard model cost from a per-session rollup @xingkaixin
+- #407 perf(cache): index sessions by bare activity time @xingkaixin
+- #406 fix(api): Reject unknown agents on state writes @xingkaixin
+- #405 fix(cli): Continue index batch past non-fatal jobs @xingkaixin
+- #404 fix(cache): surface cache marker write and read failures @xingkaixin
+- #403 fix(cli): Isolate listener fan-out failures @xingkaixin
+- #402 fix(discovery): Bound smart-tag worker lifecycle @xingkaixin
+- #401 perf(codex): Cache thread meta by file fingerprint @xingkaixin
+- #400 fix(api): resolve session-detail identity off the event loop @xingkaixin
+- #399 fix(cache): Record full-sync completion on fresh cache @xingkaixin
+- #398 fix(agents): commit database change baseline only after the scan succeeds @xingkaixin
+- #397 fix(cli): harden unhandled rejection paths @xingkaixin
+- #396 fix(cache): Clear orphaned cache tables @xingkaixin
+- #395 fix(web): align detail landing interactions @xingkaixin
+- #394 refactor(web): reduce live session render work @xingkaixin
+- #393 fix(web): distinguish API load failures @xingkaixin
+- #392 refactor(contract): narrow change seams @xingkaixin
+- #391 refactor(agents): share tool argument parser @xingkaixin
+- #390 fix(discovery): cover session signature fields @xingkaixin
+- #389 refactor(agents): centralize session slugs @xingkaixin
+- #388 fix(api): reuse snapshot session trees @xingkaixin
+- #387 perf(search): benchmark message scan tradeoffs @xingkaixin
+- #386 fix(discovery): stream cached message suffixes @xingkaixin
+- #385 fix(api): cache dashboard storage aggregates @xingkaixin
+- #384 fix(codex): cache child final messages @xingkaixin
+- #383 Avoid duplicate Kimi detail transcript reads @xingkaixin
+- #382 Fix committed partial scan status @xingkaixin
+- #381 Fix cache persistence baseline handling @xingkaixin
+- #380 fix(scan): preserve state on worker unavailability @xingkaixin
+- #379 fix(projects): harden loopback identity resolution @xingkaixin
+
 ## [1.0.2] - 2026-08-14
 
 This release adds DeepSeek Harness (DSH) as the tenth supported agent.
