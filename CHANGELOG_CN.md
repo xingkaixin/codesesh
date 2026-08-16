@@ -1,5 +1,111 @@
 # Changelog
 
+## [1.0.3] - 2026-08-16
+
+本版本将 Dashboard 与项目统计的用量归属到每条消息的时间而非整个会话，避免扫描、缓存与 CLI 的失败静默劣化已发布状态，并消除 Agent 解析、缓存查询与 Web 渲染中的重复工作。
+
+### 问题修复
+
+- 用量、Token 与成本按每条消息的时间归属，而非按会话归属，跨多天的会话不再被整体计入其中一天。 (#424)
+- Agent 适配器不再把数据库读取失败伪装成空会话列表，并为所有扫描步骤统一错误分类。 (#416)
+- 数据库变更基线仅在扫描成功后提交，扫描中断不再把已变更的数据源标记为已处理。 (#398)
+- 保留已提交的部分扫描结果，并在扫描状态中暴露部分完成的结果。 (#382)
+- 扫描 Worker 不可用时保留扫描状态，写入失败时保留缓存基线。 (#380, #381)
+- 在全新缓存上记录全量同步完成、清理孤儿缓存表，并把缓存标记与持久化失败上报给 CLI，不再静默继续。 (#396, #399, #404)
+- 索引批次遇到非致命任务继续推进，隔离监听器分发失败，限制 smart-tag Worker 生命周期，并加固回填探测、定时刷新与关停路径上的未处理 Promise 拒绝。 (#397, #402, #403, #405)
+- 会话签名覆盖全部字段，仅元数据变化也能被检测到；归一化环境变量指定的数据根目录，同时保持绝对路径原样。 (#390, #409)
+- 状态写入时拒绝未知 Agent。 (#406)
+- 加固环回场景下的 Project Identity 解析，归一化 Windows 作用域路径，并处理格式异常的历史会话。 (#379)
+- Web UI 区分会话与项目的加载失败，并加固重试、菜单与无效路由。 (#393, #412)
+- 消息折叠块支持键盘访问，会话详情的落地 Agent 面板统一实现。 (#395)
+
+### 安全
+
+- 启动日志改为记录解析后的具名参数而非原始 argv，避免日志链路中唯一未脱敏的出口捕获后续可能携带凭据的参数。 (#417)
+
+### 性能
+
+- Dashboard 模型成本改为从会话级 rollup 表聚合，并跨请求缓存 Dashboard 存储聚合结果。 (#385, #408)
+- 会话按裸活动时间建立索引，并复用快照会话树。 (#388, #407)
+- 基于持久化的游标哈希链流式读取缓存消息后缀，不再重读整份转录。 (#386)
+- 按文件指纹缓存 Codex thread 元数据与子会话最终消息，并避免 Kimi 详情转录的重复读取。 (#383, #384, #401)
+- 构建转录时直接跟踪 part 类型，不再重复扫描。 (#420)
+- 会话详情的身份解析移出事件循环。 (#400)
+- 通过局部化搜索输入与侧栏选择状态、拆分实时投影，减少实时会话的渲染工作。 (#394)
+- 交互式收据仅重绘，不再重建其模拟状态。 (#421)
+
+### 重构
+
+- 拆分 API handler 为职责单一的模块，并抽出 CLI 状态上报与索引发布逻辑。 (#422, #423)
+- 将四处漂移的 Agent 时间戳解析统一为共享工具。 (#410)
+- 共享 Agent 工具参数解析器，并集中会话 slug 生成。 (#389, #391)
+- 收敛 contract 的变更边界，为持久化变更命名，并隔离测试夹具。 (#392)
+- 清理 core 公共导出入口中的死导出。 (#419)
+
+### 测试
+
+- 补齐 Web API 客户端、主题引导与服务降级重试的覆盖缺口。 (#413)
+- 防护会话树标题的 HTML 注入。 (#411)
+- 为搜索的消息扫描权衡建立基准测试。 (#387)
+
+### 构建
+
+- 修补 nanoid，统一 workspace 中的 `@types/node`，并将落地页统计 Token 改为从环境变量读取。 (#418)
+- 新增独立的 typecheck 任务，把 bundle 测试从默认套件中拆出，取消被覆盖的 CI 运行并缓存 Playwright。 (#414)
+
+### 文档
+
+- 在 `AGENTS.md` 中补充验证命令，并记录依赖决策。 (#415, #418)
+
+### Changelog Detail
+
+- #424 fix(analytics): attribute usage by message time @xingkaixin
+- #423 refactor(cli): Extract status reporter and index publisher @xingkaixin
+- #422 refactor(api): Split handlers into focused modules @xingkaixin
+- #421 perf(web): Repaint receipt without rebuilding the sim @xingkaixin
+- #420 perf(agents): Track part kinds instead of rescanning @xingkaixin
+- #419 chore(core): Prune dead exports from the public barrel @xingkaixin
+- #418 chore(deps): dependency and manifest hygiene @xingkaixin
+- #417 chore(cli): Log parsed startup flags instead of argv @xingkaixin
+- #416 refactor(agents): codify the adapter error taxonomy and stop masking db failures @xingkaixin
+- #415 docs: Add verification commands to AGENTS.md @xingkaixin
+- #414 chore: tighten the DX feedback loops (typecheck task, bundle-test split, CI concurrency) @xingkaixin
+- #413 test: close the coverage gaps around the api client, theme bootstrap, and degraded-server retry @xingkaixin
+- #412 fix(web): robustness details across retry, menus, and dead-end routes @xingkaixin
+- #411 test(web): Guard tree titles against HTML injection @xingkaixin
+- #410 refactor(agents): unify the four drifted timestamp parsers @xingkaixin
+- #409 fix(discovery): normalize env data-root overrides @xingkaixin
+- #408 perf(cache): aggregate dashboard model cost from a per-session rollup @xingkaixin
+- #407 perf(cache): index sessions by bare activity time @xingkaixin
+- #406 fix(api): Reject unknown agents on state writes @xingkaixin
+- #405 fix(cli): Continue index batch past non-fatal jobs @xingkaixin
+- #404 fix(cache): surface cache marker write and read failures @xingkaixin
+- #403 fix(cli): Isolate listener fan-out failures @xingkaixin
+- #402 fix(discovery): Bound smart-tag worker lifecycle @xingkaixin
+- #401 perf(codex): Cache thread meta by file fingerprint @xingkaixin
+- #400 fix(api): resolve session-detail identity off the event loop @xingkaixin
+- #399 fix(cache): Record full-sync completion on fresh cache @xingkaixin
+- #398 fix(agents): commit database change baseline only after the scan succeeds @xingkaixin
+- #397 fix(cli): harden unhandled rejection paths @xingkaixin
+- #396 fix(cache): Clear orphaned cache tables @xingkaixin
+- #395 fix(web): align detail landing interactions @xingkaixin
+- #394 refactor(web): reduce live session render work @xingkaixin
+- #393 fix(web): distinguish API load failures @xingkaixin
+- #392 refactor(contract): narrow change seams @xingkaixin
+- #391 refactor(agents): share tool argument parser @xingkaixin
+- #390 fix(discovery): cover session signature fields @xingkaixin
+- #389 refactor(agents): centralize session slugs @xingkaixin
+- #388 fix(api): reuse snapshot session trees @xingkaixin
+- #387 perf(search): benchmark message scan tradeoffs @xingkaixin
+- #386 fix(discovery): stream cached message suffixes @xingkaixin
+- #385 fix(api): cache dashboard storage aggregates @xingkaixin
+- #384 fix(codex): cache child final messages @xingkaixin
+- #383 Avoid duplicate Kimi detail transcript reads @xingkaixin
+- #382 Fix committed partial scan status @xingkaixin
+- #381 Fix cache persistence baseline handling @xingkaixin
+- #380 fix(scan): preserve state on worker unavailability @xingkaixin
+- #379 fix(projects): harden loopback identity resolution @xingkaixin
+
 ## [1.0.2] - 2026-08-14
 
 本版本新增 DeepSeek Harness (DSH)，成为第十个受支持的 Agent。
