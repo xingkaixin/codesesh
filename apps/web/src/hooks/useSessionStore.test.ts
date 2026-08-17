@@ -233,12 +233,17 @@ describe("useSessionStore", () => {
     expect(result.current.version).toBeGreaterThan(0);
   });
 
-  it("applies live events to the latest window after a rapid switch", async () => {
+  it("releases inactive projections and applies live events to the latest window", async () => {
     const { result, client } = await renderStore();
     const firstWindow = { from: 1_700_000_000_000, to: 1_700_004_000_000 };
     const latestWindow = { from: 1_699_999_000_000, to: 1_700_005_000_000 };
     await act(() => result.current.reload(firstWindow));
     await act(() => result.current.reload(latestWindow));
+    await waitFor(() =>
+      expect(
+        client.getQueryCache().findAll({ queryKey: queryKeys.sessionProjections }),
+      ).toHaveLength(1),
+    );
     const changedSession = { ...SAMPLE_SESSION_HEAD, display_title: "Latest window" };
 
     await act(() =>
@@ -255,9 +260,10 @@ describe("useSessionStore", () => {
 
     expect(result.current.window).toEqual(latestWindow);
     await waitFor(() => expect(result.current.sessions).toEqual([changedSession]));
+    expect(client.getQueryData(queryKeys.sessionProjection(firstWindow))).toBeUndefined();
     expect(
-      client.getQueryData<SessionProjection>(queryKeys.sessionProjection(firstWindow))?.sessions,
-    ).toEqual([SAMPLE_SESSION_HEAD]);
+      client.getQueryData<SessionProjection>(queryKeys.sessionProjection(latestWindow))?.sessions,
+    ).toEqual([changedSession]);
   });
 
   it("applies an incremental live session diff without re-fetching sessions", async () => {
