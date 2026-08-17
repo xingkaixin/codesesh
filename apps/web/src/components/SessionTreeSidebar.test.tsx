@@ -2,7 +2,11 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionHead } from "../lib/api";
 import { getSessionReferenceKey } from "../lib/session-indexes";
-import { buildSessionTreeModel, SessionTreeSidebar } from "./SessionTreeSidebar";
+import {
+  buildSessionTreeModel,
+  MAX_SESSION_TREE_NESTING,
+  SessionTreeSidebar,
+} from "./SessionTreeSidebar";
 
 function makeSession(overrides: Partial<SessionHead> & { id: string }): SessionHead {
   return {
@@ -30,6 +34,34 @@ function groupOrderOf(paths: string[]) {
 }
 
 describe("buildSessionTreeModel group sorting", () => {
+  it("folds a deeply nested session chain without recursive or quadratic paths", () => {
+    const depth = 12_000;
+    const sessions = Array.from({ length: depth }, (_, index) =>
+      makeSession({
+        id: `deep-${index}`,
+        title: "x",
+        ...(index > 0
+          ? { parent_reference: { agentName: "codex", sessionId: `deep-${index - 1}` } }
+          : {}),
+      }),
+    );
+    const model = buildSessionTreeModel(sessions);
+    const deepestPath = model.pathBySessionReference.get(getSessionReferenceKey(sessions.at(-1)!))!;
+    let longestPathLength = 0;
+    let totalPathLength = 0;
+    for (const path of model.pathBySessionReference.values()) {
+      longestPathLength = Math.max(longestPathLength, path.length);
+      totalPathLength += path.length;
+    }
+
+    expect(model.pathBySessionReference.size).toBe(depth);
+    expect(deepestPath).toContain("Deeper sessions/");
+    expect(deepestPath.split("/")).toHaveLength(MAX_SESSION_TREE_NESTING + 3);
+    expect(longestPathLength).toBeLessThan(256);
+    expect(totalPathLength).toBeLessThan(depth * 256);
+    expect(model.paths).toContain(deepestPath);
+  });
+
   it("renders every cycle member once under the Unmounted group", () => {
     const a = makeSession({
       id: "a",

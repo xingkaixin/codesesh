@@ -40,6 +40,14 @@ interface SessionTreeModel {
   sessionByPath: Map<string, SessionHead>;
 }
 
+interface PendingSessionTreeNode {
+  node: SessionTreeNode;
+  parentPath: string;
+  siblingTitleCounts: Map<string, number>;
+  depth: number;
+  flattened: boolean;
+}
+
 type TreeHostStyle = CSSProperties & Record<`--${string}`, string>;
 
 const SESSION_TREE_CSS = `
@@ -247,6 +255,9 @@ function createPathAllocator() {
 
 /** Sessions the canonical hierarchy cannot mount still need a visible axis. */
 const UNMOUNTED_GROUP_LABEL = "Unmounted";
+const DEEP_SESSION_GROUP_LABEL = "Deeper sessions";
+/** FileTree keys contain every ancestor, so unbounded nesting would retain quadratic text. */
+export const MAX_SESSION_TREE_NESTING = 32;
 
 /**
  * `groupByProject: false` drops the project layer, for listings that already
@@ -305,11 +316,21 @@ export function buildSessionTreeModel(
       groupCountByPath.set(bareGroupPath, `${group.nodes.length}`);
     }
 
-    const appendSession = (
-      node: SessionTreeNode,
-      parentPath: string,
-      siblingTitleCounts: Map<string, number>,
-    ): void => {
+    const rootTitleCounts = new Map<string, number>();
+    const pending: PendingSessionTreeNode[] = [];
+    for (let index = group.nodes.length - 1; index >= 0; index -= 1) {
+      pending.push({
+        node: group.nodes[index]!,
+        parentPath: groupPath,
+        siblingTitleCounts: rootTitleCounts,
+        depth: 0,
+        flattened: false,
+      });
+    }
+
+    while (pending.length > 0) {
+      const frame = pending.pop()!;
+      const { node, parentPath, siblingTitleCounts } = frame;
       const session = node.session;
       const title = getSessionDisplayTitle(session);
       siblingTitleCounts.set(title, (siblingTitleCounts.get(title) ?? 0) + 1);
@@ -320,7 +341,7 @@ export function buildSessionTreeModel(
           : sanitizeSegment(title);
       const basePath = allocateSessionPath(`${parentPath}${leaf}`);
       const reference = getSessionReferenceKey(session);
-      const isDirectory = node.children.length > 0;
+      const isDirectory = !frame.flattened && node.children.length > 0;
       const sessionPath = isDirectory ? `${basePath}/` : basePath;
 
       if (isDirectory) {
@@ -337,15 +358,51 @@ export function buildSessionTreeModel(
       pathBySessionReference.set(reference, sessionPath);
       groupPathBySessionReference.set(reference, groupPath);
 
-      const childTitleCounts = new Map<string, number>();
-      for (const child of node.children) {
-        appendSession(child, sessionPath, childTitleCounts);
-      }
-    };
+      if (node.children.length === 0) continue;
 
-    const rootTitleCounts = new Map<string, number>();
-    for (const node of group.nodes) {
-      appendSession(node, groupPath, rootTitleCounts);
+      if (frame.flattened) {
+        for (let index = node.children.length - 1; index >= 0; index -= 1) {
+          pending.push({
+            node: node.children[index]!,
+            parentPath,
+            siblingTitleCounts,
+            depth: frame.depth,
+            flattened: true,
+          });
+        }
+        continue;
+      }
+
+      const childTitleCounts = new Map<string, number>();
+      if (frame.depth + 1 < MAX_SESSION_TREE_NESTING) {
+        for (let index = node.children.length - 1; index >= 0; index -= 1) {
+          pending.push({
+            node: node.children[index]!,
+            parentPath: sessionPath,
+            siblingTitleCounts: childTitleCounts,
+            depth: frame.depth + 1,
+            flattened: false,
+          });
+        }
+        continue;
+      }
+
+      const overflowBasePath = allocateSessionPath(`${sessionPath}${DEEP_SESSION_GROUP_LABEL}`);
+      const overflowPath = `${overflowBasePath}/`;
+      sortOrderByPath.set(overflowBasePath, order);
+      sortOrderByPath.set(overflowPath, order);
+      groupCountByPath.set(overflowBasePath, `${node.descendantCount}`);
+      groupCountByPath.set(overflowPath, `${node.descendantCount}`);
+      order += 1;
+      for (let index = node.children.length - 1; index >= 0; index -= 1) {
+        pending.push({
+          node: node.children[index]!,
+          parentPath: overflowPath,
+          siblingTitleCounts: childTitleCounts,
+          depth: frame.depth + 1,
+          flattened: true,
+        });
+      }
     }
   }
 
