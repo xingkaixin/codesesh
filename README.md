@@ -362,27 +362,31 @@ node --watch packages/cli/dist/index.js --cwd . --days 3
 
 ### Project Structure
 
-```
-packages/core       Core library (framework-agnostic)
-  agents/           Agent adapters, registry, and registration
-  analytics/        Dashboard aggregation
-  contract/         Browser-safe types and shared pure logic
-  discovery/        Session scanning, SQLite cache, and search index
-  pricing/          Model price registry and cost estimation
-  projects/         Project identity resolution
-  search/           Session search across sources
-  state/            Bookmarks, aliases, and preferences
-  types/            Shared TypeScript types
-  utils/            Utility functions
+```text
+packages/core/src/agents/       Agent adapters, registry, and registration
+packages/core/src/analytics/    Dashboard aggregation
+packages/core/src/contract/     Browser-safe types and shared pure logic
+packages/core/src/discovery/    Session scanning, SQLite cache, and search index
+packages/core/src/pricing/      Model price registry and cost estimation
+packages/core/src/projects/     Project identity resolution
+packages/core/src/search/       Session search across sources
+packages/core/src/state/        Bookmarks, aliases, and preferences
+packages/core/src/types/        Shared TypeScript types
+packages/core/src/utils/        Utility functions
 
-packages/cli        CLI entry point & HTTP server
-  api/              Hono routes and request handlers
-  *-worker.ts       Scan, search-index and smart-tag worker threads
+packages/cli/src/index.ts       CLI argument parsing and startup
+packages/cli/src/server.ts      Hono server and lifecycle
+packages/cli/src/api/           HTTP routes and request handlers
+packages/cli/src/*-worker.ts    Scan, search-index, and smart-tag worker threads
 
-apps/web            React frontend
-  components/       UI components
-  hooks/            Data loading and interaction hooks
-  lib/              API client & utilities
+apps/web/src/components/        Product and UI components
+apps/web/src/hooks/             Client state and data synchronization
+apps/web/src/lib/               HTTP API client and frontend utilities
+apps/web/src/styles/            Global styles
+
+apps/www/src/pages/             Product-site routes
+apps/www/src/components/        Product-site components
+apps/www/public/                Static product-site assets
 ```
 
 `docs/architecture.md` describes how a scan flows through these; `docs/sqlite-storage.md` covers

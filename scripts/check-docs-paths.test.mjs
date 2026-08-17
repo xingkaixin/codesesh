@@ -81,6 +81,24 @@ describe("CS-151: documentation path check", () => {
     ]);
   });
 
+  it("checks repository paths inside fenced structure maps", () => {
+    const dir = repo({
+      "docs/guide.md": [
+        "```text",
+        "packages/core/src/analytics/  Dashboard aggregation",
+        "packages/cli/src/commands/    CLI commands",
+        "packages/core/src/agents/<youragent>.ts  Adapter template",
+        "node packages/cli/dist/index.js --version",
+        "```",
+      ].join("\n"),
+      "packages/core/src/analytics/index.ts": "",
+    });
+
+    expect(findMissingPaths(dir, ["docs/guide.md"])).toEqual([
+      { document: "docs/guide.md", path: "packages/cli/src/commands/" },
+    ]);
+  });
+
   it("reports a document that is not there at all", () => {
     const dir = repo({ "README.md": "" });
 
