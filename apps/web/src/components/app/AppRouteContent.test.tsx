@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentInfo, ApiProjectGroup, SessionDetail } from "../../lib/api";
 import { createAgentCatalog } from "../../lib/agents";
-import type { IndexedSession } from "../../lib/session-indexes";
+import { getSessionRouteKey, type IndexedSession } from "../../lib/session-indexes";
 import { createQueryWrapper } from "../../test/query-wrapper";
 import { AppRouteContent } from "./AppRouteContent";
 
@@ -65,6 +65,7 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
     projectsLoading: false,
     onRetryProjects: vi.fn(),
     landingSessions: [],
+    childSessionsByParentRouteKey: new Map(),
     sessionsByAgent: new Map(),
     activeProject: null,
     activeProjectSessions: [],
@@ -285,7 +286,9 @@ describe("AppRouteContent", () => {
       activeSessionId: parent.id,
     };
     props.sessionDetail.session = parent;
-    props.sessions = [child];
+    props.childSessionsByParentRouteKey = new Map([
+      [getSessionRouteKey("claudecode", "parent"), [child]],
+    ]);
     const view = render(
       <MemoryRouter>
         <AppRouteContent {...props} />

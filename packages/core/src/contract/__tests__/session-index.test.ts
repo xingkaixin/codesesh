@@ -81,6 +81,25 @@ describe("canonical session index", () => {
     ).toEqual(["remote"]);
   });
 
+  it("keeps child sessions under their parent's full reference", () => {
+    const codexChild = createSession("codex-child", 100, {
+      parent_reference: { agentName: "codex", sessionId: "shared-parent" },
+    });
+    const claudeChild = createSession("claude-child", 200, {
+      slug: "claude/claude-child",
+      parent_reference: { agentName: "claude", sessionId: "shared-parent" },
+    });
+
+    const index = createSessionIndex([codexChild, claudeChild]);
+
+    expect(
+      index.childrenByParentRouteKey.get(getSessionRouteKey("codex", "shared-parent")),
+    ).toEqual([codexChild]);
+    expect(
+      index.childrenByParentRouteKey.get(getSessionRouteKey("claude", "shared-parent")),
+    ).toEqual([claudeChild]);
+  });
+
   it("places malformed legacy slugs in the explicit unknown agent bucket", () => {
     const malformed = createSession("malformed", 100, { slug: "" });
 

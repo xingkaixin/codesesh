@@ -26,6 +26,7 @@ export interface SessionProjectOption {
 
 export interface SessionIndexes {
   byRouteKey: Map<string, SessionHead>;
+  childrenByParentRouteKey: Map<string, SessionHead[]>;
   byAgent: Map<string, SessionHead[]>;
   byProjectIdentityKey: Map<string, SessionHead[]>;
   byProjectAgentKey: Map<string, SessionHead[]>;
@@ -117,6 +118,7 @@ export function buildSessionIndexes(sessions: SessionHead[], agents: AgentInfo[]
 
   return {
     byRouteKey: canonical.byRouteKey,
+    childrenByParentRouteKey: canonical.childrenByParentRouteKey,
     byAgent,
     byProjectIdentityKey: canonical.byProjectIdentityKey,
     byProjectAgentKey: canonical.byProjectAgentKey,

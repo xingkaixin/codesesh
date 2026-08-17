@@ -292,7 +292,7 @@ export default function App() {
       projectsLoading={projectsLoading}
       onRetryProjects={() => void retryProjects()}
       landingSessions={sessionIndexes.landingSessions}
-      sessions={sessions}
+      childSessionsByParentRouteKey={sessionIndexes.childrenByParentRouteKey}
       sessionsByAgent={sessionIndexes.byLandingAgent}
       activeProject={activeProject?.project ?? null}
       activeProjectSessions={activeProjectSessions}

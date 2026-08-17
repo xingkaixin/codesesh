@@ -102,7 +102,7 @@ interface AppRouteContentProps {
   projectsLoading: boolean;
   onRetryProjects: () => void;
   landingSessions: IndexedSession[];
-  sessions?: SessionHead[];
+  childSessionsByParentRouteKey: ReadonlyMap<string, SessionHead[]>;
   sessionsByAgent: Map<string, IndexedSession[]>;
   activeProject: ApiProjectGroup | null;
   activeProjectSessions: IndexedSession[];
@@ -127,7 +127,7 @@ export function AppRouteContent({
   projectsLoading,
   onRetryProjects,
   landingSessions,
-  sessions = [],
+  childSessionsByParentRouteKey,
   sessionsByAgent,
   activeProject,
   activeProjectSessions,
@@ -154,15 +154,8 @@ export function AppRouteContent({
   const childSessions = useMemo(() => {
     if (!currentSessionAgentName || !currentSessionId) return [];
     const parentRouteKey = getSessionRouteKey(currentSessionAgentName, currentSessionId);
-    return sessions.filter(
-      (candidate) =>
-        candidate.parent_reference &&
-        getSessionRouteKey(
-          candidate.parent_reference.agentName,
-          candidate.parent_reference.sessionId,
-        ) === parentRouteKey,
-    );
-  }, [currentSessionAgentName, currentSessionId, sessions]);
+    return childSessionsByParentRouteKey.get(parentRouteKey) ?? [];
+  }, [childSessionsByParentRouteKey, currentSessionAgentName, currentSessionId]);
   const toggleSessionBookmark = bookmarks.toggleSessionBookmark;
   const toggleLandingBookmark = useCallback(
     (session: IndexedSession) => toggleSessionBookmark(session, session.agentKey),
