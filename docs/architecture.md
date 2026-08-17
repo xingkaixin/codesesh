@@ -1,61 +1,63 @@
-# CodeSesh 扫描架构
+# CodeSesh 运行时架构
+
+CodeSesh 有两条启动路径。默认 Web 模式是持续运行的缓存恢复、后台核对与事件刷新；
+`--json` 是扫描完成后退出的一次性路径。两者共享 Agent 注册表、扫描原语和 SQLite，
+但生命周期与发布时机不同。
+
+## 默认 Web 模式
+
+```text
+CLI Entry (packages/cli/src/index.ts)
+  -> LiveScanStore.initialize()
+       -> scanSessions(cacheOnly: true) 从 SQLite 恢复初始快照
+       -> SessionWatcher 开始监听已注册 Agent 的数据根目录
+  -> 启动 Hono HTTP API / SSE
+  -> LiveScanStore.startBackgroundRefresh()
+       -> AgentSyncEngine 按 Agent 串行化 refresh 与 backfill
+            -> scan-refresh worker 核对并解析真实数据源
+            -> search-index worker 提交 sessions、details 与 FTS
+            -> LiveSessionIndex 发布新的不可变内存快照
+            -> SSE 通知 Web UI
+       -> 后续文件事件继续触发对应 Agent 的 refresh
+```
+
+初始 SQLite 快照可以立即被 API 读取。后台结果只有在对应持久化事务成功后才进入内存
+快照，因此客户端不会先看到无法从 SQLite 重建的状态。详细的变更检测、回填、失败保留
+和发布规则见 [scanning-and-caching.md](./scanning-and-caching.md)。
+
+## 一次性 JSON 模式
+
+```text
+CLI Entry (packages/cli/src/index.ts --json)
+  -> LiveScanStore.initialize()
+       -> scanSessions(cacheOnly: false) 扫描所选 Agent
+       -> 同步初始搜索索引
+  -> 应用 --days / --from / --to 输出窗口
+  -> 输出 JSON 并退出
+```
+
+这条路径关闭文件监听，也不启动后台 refresh。输出窗口只裁剪最终列表，不限制启动扫描
+范围；扫描失败会写入诊断并设置非零退出码。
+
+## 共享模块
+
+| 模块 | 职责 |
+|------|------|
+| `packages/core/src/discovery/scanner.ts` | 初始快照恢复与一次性扫描编排 |
+| `packages/core/src/agents/register.ts` | Agent 注册、数据根目录与能力声明 |
+| `packages/cli/src/live-scan.ts` | 运行中快照、订阅和生命周期入口 |
+| `packages/cli/src/agent-sync-engine.ts` | 持续 refresh、backfill、持久化后发布 |
+| `packages/cli/src/session-watcher.ts` | 文件事件监听、稳定性等待与归并 |
+| `packages/cli/src/scan-refresh-worker.ts` | 数据源扫描与解析 worker |
+| `packages/cli/src/search-index-worker.ts` | SQLite 会话、详情和 FTS 写入 worker |
 
 <!-- repo-fact:agent-source-kinds:start -->
-```
-┌────────────────────────────────────────────────────────────────┐
-│                         CLI Entry                              │
-│                    packages/cli/src/index.ts                   │
-└────────────────────────────┬───────────────────────────────────┘
-                             │
-                             ▼
-┌────────────────────────────────────────────────────────────────┐
-│                    Core Scanner Module                         │
-│              packages/core/src/discovery/scanner.ts            │
-│                                                                │
-│   ┌─────────────────┐     ┌──────────────────────────────┐    │
-│   │  scanSessions() │────▶│   Agent 并行扫描 (Promise.all)│    │
-│   └─────────────────┘     └──────────────────────────────┘    │
-│                                      │                         │
-│                                      ▼                         │
-│                    ┌─────────────────────────┐                │
-│                    │    scanAgentSmart()     │                │
-│                    │    智能扫描策略          │                │
-│                    └─────────────────────────┘                │
-│                             │                                  │
-│              ┌──────────────┼──────────────┐                  │
-│              ▼              ▼              ▼                  │
-│        ┌─────────┐   ┌──────────┐   ┌──────────┐            │
-│        │  检查缓存 │   │ 完整扫描  │   │ 增量刷新  │            │
-│        │         │   │         │   │         │            │
-│        │ 命中?    │   │ 无缓存   │   │ 检测变更  │            │
-│        └────┬────┘   └──────────┘   └─────────┘            │
-│             ▼ Yes                                           │
-│        ┌─────────┐                                          │
-│        │ 立即返回 │                                          │
-│        └─────────┘                                          │
-└────────────────────────────────────────────────────────────────┘
-                             │
-                             ▼
-┌────────────────────────────────────────────────────────────────┐
-│                        Agent Registry                          │
-│              packages/core/src/agents/register.ts              │
-│                                                                │
-│  文件系统: Claude Code · Codex · DSH · Grok · Kimi-Cli · Kimi-Code · Pi │
-│  SQLite:  OpenCode · Cursor · ZCode                            │
-│  扩展方式: 实现适配器 + 在 register.ts 声明完整能力             │
-└────────────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────────────┐
-│                          Cache Layer                           │
-│             packages/core/src/discovery/cache/*.ts              │
-│                                                                │
-│   存储位置: ~/.cache/codesesh/codesesh.db                     │
-│   存储内容: session heads + materialized details + FTS        │
-└────────────────────────────────────────────────────────────────┘
-
-详细表结构和数据流见 [sqlite-storage.md](./sqlite-storage.md)。
-```
+- 文件系统: Claude Code · Codex · DSH · Grok · Kimi-Cli · Kimi-Code · Pi
+- SQLite: OpenCode · Cursor · ZCode
 <!-- repo-fact:agent-source-kinds:end -->
+
+SQLite 存储在 `~/.cache/codesesh/codesesh.db`，包含 session heads、materialized details
+和 FTS。表结构与事务边界见 [sqlite-storage.md](./sqlite-storage.md)。
 
 ## 性能说明
 
@@ -79,10 +81,11 @@ pnpm bench:perf -- --iterations 3
 
 ## 关键特性
 
-1. **并行扫描**: 所有 Agent 同时工作
-2. **快速返回**: 缓存命中时优先返回缓存数据
-3. **智能刷新**: 后台检测变更，增量更新
-4. **数据一致**: 详情优先读取结构化快照，源指纹失效时回源解析
+1. **快速启动**：Web 模式优先发布 SQLite 中已持久化的快照
+2. **隔离刷新**：不同 Agent 可并行推进，同一 Agent 的 refresh 与 backfill 保持串行
+3. **提交后发布**：SQLite 与搜索索引写入成功后才更新内存快照和 SSE
+4. **持续核对**：后台初始化、全历史 backfill 与文件事件共同维持新鲜度
+5. **详情一致**：详情优先读取结构化快照，源指纹失效时回源解析
 
 ## 使用方法
 
