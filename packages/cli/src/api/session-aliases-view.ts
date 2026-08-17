@@ -32,21 +32,7 @@ function aliasKey(reference: SessionReference): string {
   return `${reference.agentName.toLowerCase()}\0${reference.sessionId}`;
 }
 
-function loadAliasMap(): Map<string, SessionAlias> {
-  try {
-    return new Map(listSessionAliases().map((alias) => [aliasKey(alias.reference), alias]));
-  } catch (error) {
-    if (!(error instanceof StateStorageUnavailableError)) {
-      appLogger.warn("api.session_aliases.load_failed", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    return new Map();
-  }
-}
-
-function buildAliasView(): AliasView {
-  const aliases = loadAliasMap();
+function buildAliasView(aliases: Map<string, SessionAlias>): AliasView {
   return {
     size: aliases.size,
     get: (reference) => aliases.get(aliasKey(reference))?.alias,
@@ -58,17 +44,38 @@ function buildAliasView(): AliasView {
   };
 }
 
+function readAliasView(): AliasView | null {
+  try {
+    return buildAliasView(
+      new Map(listSessionAliases().map((alias) => [aliasKey(alias.reference), alias])),
+    );
+  } catch (error) {
+    if (!(error instanceof StateStorageUnavailableError)) {
+      appLogger.warn("api.session_aliases.load_failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return null;
+  }
+}
+
+const EMPTY_ALIAS_VIEW = buildAliasView(new Map());
+
 /**
  * Aliases change only through this process's own PUT/DELETE handlers, so the
  * read model is built once and reused until one of them invalidates it. Six read
  * handlers call this per request; without the cache each one re-queries the whole
- * table. A storage failure is cached too — it does not heal between requests, and
- * invalidateAliasView() is what lets a recovered store be retried.
+ * table. Failed reads return an empty view for that request but are not published,
+ * so a recovered store is retried on the next request.
  */
 let cachedView: AliasView | null = null;
 
 export function loadAliasView(): AliasView {
-  return (cachedView ??= buildAliasView());
+  if (cachedView) return cachedView;
+  const loaded = readAliasView();
+  if (!loaded) return EMPTY_ALIAS_VIEW;
+  cachedView = loaded;
+  return loaded;
 }
 
 export function invalidateAliasView(): void {

@@ -261,7 +261,7 @@ afterEach(() => {
   coreMocks.matchesProjectIdentity.mockClear();
   coreMocks.listSessionAliases.mockReset();
   coreMocks.listSessionAliases.mockReturnValue([]);
-  // The alias read model caches for the process lifetime; tests stub
+  // Successful alias reads are cached for the process lifetime; tests stub
   // listSessionAliases per case and need a fresh load each time.
   invalidateAliasView();
   coreMocks.executeSessionSearch.mockReset();

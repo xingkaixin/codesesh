@@ -174,8 +174,8 @@ const bookmarkScanSource: ScanResultSource = {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  // The alias read model is cached for the process lifetime; each test needs a
-  // clean slate or it inherits the previous test's listSessionAliases stub.
+  // Successful alias reads are cached for the process lifetime; each test needs
+  // a clean slate or it inherits the previous test's listSessionAliases stub.
   invalidateAliasView();
   coreMocks.listBookmarks.mockReturnValue([]);
   coreMocks.listFileActivity.mockReturnValue([]);
@@ -272,7 +272,6 @@ describe("bookmark handlers", () => {
     handleGetBookmarks(makeContext() as never, bookmarkScanSource);
     expect(loggerMocks.warn).not.toHaveBeenCalled();
 
-    invalidateAliasView();
     coreMocks.listSessionAliases.mockImplementationOnce(() => {
       throw new Error("corrupt aliases");
     });
@@ -281,7 +280,6 @@ describe("bookmark handlers", () => {
       error: "corrupt aliases",
     });
 
-    invalidateAliasView();
     coreMocks.listSessionAliases.mockImplementationOnce(() => {
       throw "invalid aliases";
     });
@@ -865,23 +863,21 @@ describe("session alias caching", () => {
     ).not.toHaveProperty("display_title");
   });
 
-  it("caches an unavailable store but retries it after invalidation", () => {
-    coreMocks.listSessionAliases.mockImplementation(() => {
+  it("retries an unavailable store and caches the recovered view", () => {
+    coreMocks.listSessionAliases.mockImplementationOnce(() => {
       throw new StateStorageUnavailableError();
     });
-
-    handleGetSessions(makeContext() as never, scanSource);
-    handleGetSessions(makeContext() as never, scanSource);
-    expect(coreMocks.listSessionAliases).toHaveBeenCalledTimes(1);
-
-    invalidateAliasView();
     coreMocks.listSessionAliases.mockReturnValue([aliasRecord]);
+
+    handleGetSessions(makeContext() as never, scanSource);
     coreMocks.listBookmarks.mockReturnValue([storedBookmark]);
     const recovered = makeContext();
     handleGetBookmarks(recovered as never, bookmarkScanSource);
+    handleGetSessions(makeContext() as never, scanSource);
 
     expect(getResponsePayload<{ bookmarks: BookmarkView[] }>(recovered).bookmarks[0]).toMatchObject(
       { session: { display_title: "Renamed" } },
     );
+    expect(coreMocks.listSessionAliases).toHaveBeenCalledTimes(2);
   });
 });
