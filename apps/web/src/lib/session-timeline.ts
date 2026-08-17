@@ -97,13 +97,27 @@ function toChildRow(node: SessionTreeNode): TimelineChildRow {
   };
 }
 
+function pushChildrenForDepthFirstTraversal(
+  pending: SessionTreeNode[],
+  children: SessionTreeNode[],
+): void {
+  if (children.length === 1) {
+    pending.push(children[0]!);
+    return;
+  }
+  const ordered = children.toSorted((a, b) => activityTime(a.session) - activityTime(b.session));
+  for (let index = ordered.length - 1; index >= 0; index -= 1) {
+    pending.push(ordered[index]!);
+  }
+}
+
 function collectChildRows(node: SessionTreeNode, rows: TimelineChildRow[]): void {
-  const ordered = node.children.toSorted(
-    (a, b) => activityTime(a.session) - activityTime(b.session),
-  );
-  for (const child of ordered) {
+  const pending: SessionTreeNode[] = [];
+  pushChildrenForDepthFirstTraversal(pending, node.children);
+  while (pending.length > 0) {
+    const child = pending.pop()!;
     rows.push(toChildRow(child));
-    collectChildRows(child, rows);
+    pushChildrenForDepthFirstTraversal(pending, child.children);
   }
 }
 

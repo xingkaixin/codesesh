@@ -28,6 +28,28 @@ function createSession(
 }
 
 describe("buildProjectTimeline", () => {
+  it("flattens a deeply nested session chain without recursive traversal", () => {
+    const depth = 12_000;
+    const sessions = Array.from({ length: depth }, (_, index) =>
+      createSession({
+        id: `deep-${index}`,
+        time_updated: NOW + index,
+        ...(index > 0
+          ? { parent_reference: { agentName: "codex", sessionId: `deep-${index - 1}` } }
+          : {}),
+      }),
+    );
+    const timeline = buildProjectTimeline(sessions, { now: NOW });
+    const row = timeline.days[0]!.rows[0]!;
+
+    expect(timeline.mainCount).toBe(1);
+    expect(timeline.subCount).toBe(depth - 1);
+    expect(row.childCount).toBe(depth - 1);
+    expect(row.children).toHaveLength(depth - 1);
+    expect(row.children[0]!.routeKey).toBe("codex/deep-1");
+    expect(row.children.at(-1)!.routeKey).toBe(`codex/deep-${depth - 1}`);
+  });
+
   it("labels days relative to now", () => {
     const timeline = buildProjectTimeline(
       [
