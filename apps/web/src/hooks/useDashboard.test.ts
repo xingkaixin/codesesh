@@ -106,10 +106,11 @@ describe("useDashboard", () => {
     const { Wrapper } = createQueryWrapper();
     const { result } = renderHook(() => useDashboard(window, globalScope), { wrapper: Wrapper });
 
-    await waitFor(() => expect(result.current.error).toBe("Failed to load dashboard"));
+    await waitFor(() => expect(result.current.error).toBe("dashboard unavailable"));
 
     expect(result.current.dashboard).toBeNull();
     expect(result.current.loading).toBe(false);
+    expect(result.current.retry).toBeTypeOf("function");
     expect(console.error).toHaveBeenCalledWith("Failed to load dashboard:", error);
   });
 });

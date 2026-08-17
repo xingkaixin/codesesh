@@ -30,6 +30,7 @@ function createActions(overrides: Partial<AppSidebarActions> = {}): AppSidebarAc
     onRenameSession: vi.fn(),
     onRenameBookmarkedSession: vi.fn(),
     onRetryProjects: vi.fn(),
+    onRetryBookmarks: vi.fn(),
     ...overrides,
   };
 }
@@ -52,6 +53,8 @@ function renderSidebar(
             projectsLoading: false,
             selectedProjectNavigationId: null,
             bookmarkedSessions: [],
+            bookmarksError: null,
+            bookmarksLoading: false,
             sidebarSessions: [],
             sidebarSessionLookup: buildSidebarSessionLookup([]),
             bookmarkedSidebarSessionReferences: new Set(),
@@ -140,6 +143,27 @@ describe("AppSidebar", () => {
     expect(screen.queryByText("No projects found")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(onRetryProjects).toHaveBeenCalledTimes(1);
+  });
+
+  it("distinguishes bookmark failures from an empty list", () => {
+    const onRetryBookmarks = vi.fn();
+    renderSidebar(
+      { bookmarkedSessions: [], bookmarksError: "bookmarks unavailable" },
+      createActions({ onRetryBookmarks }),
+    );
+
+    expect(screen.getByRole("alert").textContent).toContain("Couldn't load bookmarks.");
+    expect(screen.getByText("bookmarks unavailable")).toBeTruthy();
+    expect(screen.queryByText("No bookmarks yet")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetryBookmarks).toHaveBeenCalledOnce();
+  });
+
+  it("does not show an empty bookmark state while loading", () => {
+    renderSidebar({ bookmarkedSessions: [], bookmarksLoading: true });
+
+    expect(screen.getByText("Loading bookmarks...")).toBeTruthy();
+    expect(screen.queryByText("No bookmarks yet")).toBeNull();
   });
 
   it("omits the sessions section until a project is selected", () => {

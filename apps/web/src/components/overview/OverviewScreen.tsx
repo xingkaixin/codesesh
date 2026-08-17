@@ -17,6 +17,7 @@ import type { AgentCatalog } from "../../lib/agents";
 import type { AppConfig, DashboardFilters } from "../../lib/api";
 import type { TimeWindowPreset } from "../../lib/time-window";
 import { useDashboard } from "../../hooks/useDashboard";
+import { ResourceLoadFailure } from "../ResourceLoadFailure";
 import { OverviewAgentDistribution } from "./overview-agent-distribution";
 import { OverviewCostBreakdown } from "./overview-cost-breakdown";
 import { OverviewFilterBar } from "./overview-filter-bar";
@@ -47,7 +48,7 @@ export function OverviewScreen({
   const agent = onAgentChange ? controlledAgent : ownAgent;
 
   const filters: DashboardFilters = { project, agent };
-  const { dashboard, error } = useDashboard(window, filters);
+  const { dashboard, error, retry } = useDashboard(window, filters);
 
   return (
     <div data-testid="dashboard" className="mx-auto max-w-6xl space-y-4">
@@ -63,13 +64,13 @@ export function OverviewScreen({
       />
 
       {error ? (
-        <p
-          role="alert"
-          className="rounded-lg border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-4 text-sm text-[var(--console-error)]"
-        >
-          {error}
-        </p>
-      ) : dashboard ? (
+        <ResourceLoadFailure
+          title="Couldn't load the dashboard."
+          message={error}
+          onRetry={() => void retry()}
+        />
+      ) : null}
+      {dashboard ? (
         <>
           <OverviewKpiGrid totals={dashboard.totals} rangeDays={dashboard.window.days} />
           <OverviewUsageChart daily={dashboard.dailyActivity} />
@@ -82,7 +83,7 @@ export function OverviewScreen({
             />
           </div>
         </>
-      ) : (
+      ) : error ? null : (
         <OverviewSkeleton />
       )}
     </div>

@@ -61,6 +61,9 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
     agentCatalog: createAgentCatalog([]),
     agentNameMap: new Map(),
     projects: [project],
+    projectsError: null,
+    projectsLoading: false,
+    onRetryProjects: vi.fn(),
     landingSessions: [],
     sessionsByAgent: new Map(),
     activeProject: null,
@@ -173,6 +176,21 @@ describe("AppRouteContent", () => {
       await screen.findByTestId("dashboard", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS }),
     ).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Filter by agent" })).toBeTruthy();
+  });
+
+  it("shows a retryable project failure instead of an empty state", async () => {
+    const props = makeProps();
+    props.viewState = { mode: "projects", activeAgentKey: null, activeSessionId: null };
+    props.projects = [];
+    props.projectsError = "projects unavailable";
+    renderContent(props);
+
+    const alert = await screen.findByRole("alert", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS });
+    expect(alert.textContent).toContain("Couldn't load projects.");
+    expect(alert.textContent).toContain("projects unavailable");
+    expect(screen.queryByText("No projects found")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(props.onRetryProjects).toHaveBeenCalledOnce();
   });
 
   // The route surfaces load on demand, so these assertions wait for the chunk.

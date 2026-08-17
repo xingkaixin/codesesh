@@ -14,6 +14,7 @@ import { getProjectGroupIdentity, getProjectIdentityKey, getProjectPath } from "
 import type { ViewState } from "../../lib/view-state";
 import { AgentIcon } from "../AgentIcon";
 import { RenderProfiler } from "../RenderProfiler";
+import { ResourceLoadFailure } from "../ResourceLoadFailure";
 import { SessionActionsMenu } from "../SessionActionsMenu";
 import { SessionTreeSidebar } from "../SessionTreeSidebar";
 import { PanelLeftClose } from "../ui/icons";
@@ -69,25 +70,6 @@ function ProjectNavList({
   );
 }
 
-function ProjectLoadFailure({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div
-      role="alert"
-      className="rounded-sm border border-[var(--console-error-border)] bg-[var(--console-error-bg)] px-3 py-2 text-xs text-[var(--console-error)]"
-    >
-      <p>Couldn&apos;t load projects.</p>
-      <p className="console-mono mt-1 break-all text-[11px]">{message}</p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="console-mono mt-2 rounded-sm border border-[var(--console-error-border)] px-2 py-1 text-[11px] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-      >
-        Retry
-      </button>
-    </div>
-  );
-}
-
 export interface AppSidebarViewModel {
   sidebarCollapsed: boolean;
   viewState: ViewState;
@@ -97,6 +79,8 @@ export interface AppSidebarViewModel {
   projectsLoading: boolean;
   selectedProjectNavigationId: string | null;
   bookmarkedSessions: BookmarkView[];
+  bookmarksError: string | null;
+  bookmarksLoading: boolean;
   sidebarSessions: SessionHead[];
   sidebarSessionLookup: SidebarSessionLookup;
   bookmarkedSidebarSessionReferences: Set<string>;
@@ -113,6 +97,7 @@ export interface AppSidebarActions {
   onRenameSession: (session: SessionHead) => void;
   onRenameBookmarkedSession: (session: BookmarkView) => void;
   onRetryProjects: () => void;
+  onRetryBookmarks: () => void;
 }
 
 export function AppSidebar({
@@ -125,6 +110,8 @@ export function AppSidebar({
     projectsLoading,
     selectedProjectNavigationId,
     bookmarkedSessions,
+    bookmarksError,
+    bookmarksLoading,
     sidebarSessions,
     sidebarSessionLookup,
     bookmarkedSidebarSessionReferences,
@@ -140,6 +127,7 @@ export function AppSidebar({
     onRenameSession,
     onRenameBookmarkedSession,
     onRetryProjects,
+    onRetryBookmarks,
   },
 }: {
   model: AppSidebarViewModel;
@@ -202,7 +190,12 @@ export function AppSidebar({
             />
             {projectsError ? (
               <li>
-                <ProjectLoadFailure message={projectsError} onRetry={onRetryProjects} />
+                <ResourceLoadFailure
+                  title="Couldn't load projects."
+                  message={projectsError}
+                  onRetry={onRetryProjects}
+                  className="px-3 py-2"
+                />
               </li>
             ) : projects.length === 0 && !projectsLoading ? (
               <li>
@@ -214,7 +207,19 @@ export function AppSidebar({
 
         <section>
           <h3 className="console-eyebrow mb-3">BOOKMARKS</h3>
-          {bookmarkedSessions.length === 0 ? (
+          {bookmarksError ? (
+            <ResourceLoadFailure
+              title="Couldn't load bookmarks."
+              message={bookmarksError}
+              onRetry={onRetryBookmarks}
+              className="mb-2 px-3 py-2"
+            />
+          ) : null}
+          {bookmarkedSessions.length === 0 && bookmarksLoading ? (
+            <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
+              Loading bookmarks...
+            </span>
+          ) : bookmarkedSessions.length === 0 && !bookmarksError ? (
             <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
               No bookmarks yet
             </span>
