@@ -24,6 +24,7 @@ import {
   accessTokenAuth,
   createAccessToken,
   requireProxyTls,
+  resolvePublicOrigin,
   resolveRemoteAccessPolicy,
   resolveRemoteTransport,
   type RemoteTransport,
@@ -41,6 +42,7 @@ export interface CreateServerOptions {
   hostname?: string;
   remoteAccess?: boolean;
   accessToken?: string;
+  publicUrl?: string;
   /** How the listener is protected; defaults to plaintext for a non-loopback host. */
   transport?: RemoteTransport;
   /** Overrides the auto-detected web build directory; used to pin the static root in tests. */
@@ -134,11 +136,12 @@ export async function createServer(
   port: number,
   store: ScanResultSource & ScanEventSource & { shutdown(): Promise<void> },
   options: CreateServerOptions = {},
-): Promise<{ url: string; shutdown: () => Promise<void> }> {
+): Promise<{ url: string; listenerUrl: string; shutdown: () => Promise<void> }> {
   const app = new Hono<{ Bindings: HttpBindings }>();
   const hostname = options.hostname ?? "127.0.0.1";
   const transport: RemoteTransport = options.transport ?? resolveRemoteTransport({ hostname });
   const accessPolicy = resolveRemoteAccessPolicy(hostname, transport);
+  const publicOrigin = resolvePublicOrigin(options.publicUrl, transport);
   const accessToken = options.accessToken || createAccessToken();
   const loopbackAuthorityEnabled = !accessPolicy.remoteAccessRequired;
   const shutdownController = new AbortController();
@@ -304,18 +307,19 @@ export async function createServer(
     }
   }
 
-  // A trusted proxy publishes its own https origin, so only direct TLS changes
-  // the scheme CodeSesh prints for itself.
+  // The backend stays HTTP behind a trusted proxy; its separately configured
+  // public origin is used only for browser startup.
   const scheme = transport.kind === "tls" ? "https" : "http";
-  const baseUrl =
+  const listenerUrl =
     accessPolicy.bindCategory === "loopback"
       ? `${scheme}://localhost:${actualPort}`
       : `${scheme}://${hostname}:${actualPort}`;
-  const url = `${baseUrl}/?${ACCESS_TOKEN_QUERY_PARAM}=${encodeURIComponent(accessToken)}`;
+  const url = `${publicOrigin ?? listenerUrl}/?${ACCESS_TOKEN_QUERY_PARAM}=${encodeURIComponent(accessToken)}`;
   appLogger.info("server.listen", {
     port: actualPort,
     requested_port: port,
     hostname,
+    public_origin: publicOrigin,
     remote_access: accessPolicy.remoteAccessRequired,
     transport: transport.kind,
   });
@@ -345,6 +349,7 @@ export async function createServer(
 
   return {
     url,
+    listenerUrl,
     shutdown: async () => {
       appLogger.info("server.shutdown", { port: actualPort });
       shutdownController.abort();

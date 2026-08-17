@@ -33,6 +33,14 @@ export interface RemoteTransportRequest {
 
 export class RemoteTransportError extends Error {}
 
+function assertTrustedProxyListener(hostname: string, transport: RemoteTransport): void {
+  if (transport.kind === "trusted-proxy" && !isLoopbackHostname(hostname)) {
+    throw new RemoteTransportError(
+      "--trust-proxy requires a loopback --host so clients cannot reach the HTTP backend directly.",
+    );
+  }
+}
+
 /**
  * Resolves the transport from the CLI flags. Loopback stays plaintext without
  * ceremony: nothing leaves the machine.
@@ -63,7 +71,11 @@ export function resolveRemoteTransport(request: RemoteTransportRequest): RemoteT
     }
   }
 
-  if (request.trustProxy) return { kind: "trusted-proxy" };
+  if (request.trustProxy) {
+    const transport = { kind: "trusted-proxy" } as const;
+    assertTrustedProxyListener(request.hostname, transport);
+    return transport;
+  }
   return isLoopbackHostname(request.hostname) ? { kind: "loopback" } : { kind: "plaintext" };
 }
 
@@ -76,6 +88,7 @@ export function resolveRemoteAccessPolicy(
   hostname: string,
   transport: RemoteTransport,
 ): RemoteAccessPolicy {
+  assertTrustedProxyListener(hostname, transport);
   const bindCategory = isLoopbackHostname(hostname) ? "loopback" : "network";
   const directLoopback = bindCategory === "loopback" && transport.kind === "loopback";
   return {
@@ -84,13 +97,47 @@ export function resolveRemoteAccessPolicy(
   };
 }
 
+export function resolvePublicOrigin(
+  value: string | undefined,
+  transport: RemoteTransport,
+): string | undefined {
+  if (transport.kind !== "trusted-proxy") {
+    if (value) throw new RemoteTransportError("--public-url requires --trust-proxy.");
+    return undefined;
+  }
+  if (!value) {
+    throw new RemoteTransportError(
+      "--trust-proxy requires an HTTPS --public-url for browser startup links.",
+    );
+  }
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new RemoteTransportError("--public-url must be a valid HTTPS origin.");
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  ) {
+    throw new RemoteTransportError(
+      "--public-url must be an HTTPS origin without credentials, path, query, or fragment.",
+    );
+  }
+  return url.origin;
+}
+
 const FORWARDED_PROTO_HEADER = "X-Forwarded-Proto";
 
 /**
- * Behind a trusted proxy, a request arriving without the proxy's own
- * `X-Forwarded-Proto: https` did not come through it. Trusting the header is
- * only sound because the deployment is expected to make CodeSesh unreachable
- * except via that proxy — which is what --trust-proxy asserts.
+ * The forwarded scheme validates proxy configuration, not client identity.
+ * The enforced loopback listener supplies the network boundary; the access
+ * token still authenticates every request that reaches it.
  */
 export function requireProxyTls(): MiddlewareHandler {
   return async (c, next) => {

@@ -61,10 +61,17 @@ test("rejects source files outside the publish allowlist", () => {
 });
 
 test("documents the remote access security contract in the published README", () => {
-  for (const flag of ["--remote-access", "--tls-cert", "--tls-key", "--trust-proxy"]) {
+  for (const flag of [
+    "--remote-access",
+    "--tls-cert",
+    "--tls-key",
+    "--trust-proxy",
+    "--public-url",
+  ]) {
     assert.ok(publishedReadme.includes("`" + flag + "`"), `README is missing ${flag}`);
   }
-  assert.match(publishedReadme, /loopback listener exposed by|listens on `127\.0\.0\.1`/i);
+  assert.match(publishedReadme, /enforces a loopback backend/i);
+  assert.match(publishedReadme, /cannot identify its sender/i);
   assert.match(publishedReadme, /plaintext/i);
   assert.match(publishedReadme, /X-Forwarded-Proto: https/);
 });

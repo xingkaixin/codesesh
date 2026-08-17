@@ -7,6 +7,7 @@ import {
   isConfidentialTransport,
   isLoopbackHostname,
   RemoteTransportError,
+  resolvePublicOrigin,
   resolveRemoteAccessPolicy,
   resolveRemoteTransport,
 } from "./remote-access.js";
@@ -124,10 +125,41 @@ describe("CS-140: remote transport", () => {
     ).toThrow(RemoteTransportError);
   });
 
-  it("accepts a trusted proxy as protected", () => {
-    const transport = resolveRemoteTransport({ hostname: "0.0.0.0", trustProxy: true });
+  it("accepts a trusted proxy on a loopback backend", () => {
+    const transport = resolveRemoteTransport({ hostname: "127.0.0.1", trustProxy: true });
 
     expect(transport).toEqual({ kind: "trusted-proxy" });
     expect(isConfidentialTransport(transport)).toBe(true);
+  });
+
+  it("rejects a trusted proxy on a network-reachable backend", () => {
+    expect(() => resolveRemoteTransport({ hostname: "0.0.0.0", trustProxy: true })).toThrow(
+      /loopback --host/,
+    );
+  });
+
+  it("normalizes a trusted proxy's public HTTPS origin", () => {
+    expect(resolvePublicOrigin("https://codesesh.example.com/", { kind: "trusted-proxy" })).toBe(
+      "https://codesesh.example.com",
+    );
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["plaintext", "http://codesesh.example.com"],
+    ["credentials", "https://user@codesesh.example.com"],
+    ["path", "https://codesesh.example.com/app"],
+    ["query", "https://codesesh.example.com?mode=proxy"],
+    ["fragment", "https://codesesh.example.com#app"],
+  ])("rejects a %s trusted proxy public URL", (_name, publicUrl) => {
+    expect(() => resolvePublicOrigin(publicUrl, { kind: "trusted-proxy" })).toThrow(
+      RemoteTransportError,
+    );
+  });
+
+  it("rejects a public URL without a trusted proxy", () => {
+    expect(() => resolvePublicOrigin("https://codesesh.example.com", { kind: "loopback" })).toThrow(
+      /requires --trust-proxy/,
+    );
   });
 });

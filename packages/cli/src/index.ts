@@ -11,6 +11,7 @@ import {
   formatScanFailureDiagnostics,
 } from "./session-index-output.js";
 import {
+  resolvePublicOrigin,
   resolveRemoteAccessPolicy,
   resolveRemoteTransport,
   type RemoteTransport,
@@ -72,6 +73,10 @@ const main = defineCommand({
       type: "boolean",
       description: "A reverse proxy in front of CodeSesh terminates TLS",
       default: false,
+    },
+    "public-url": {
+      type: "string",
+      description: "Public HTTPS origin served by the trusted reverse proxy",
     },
     agent: {
       type: "string",
@@ -141,6 +146,7 @@ const main = defineCommand({
     const remoteAccess = args["remote-access"] as boolean;
 
     let transport: RemoteTransport;
+    let publicOrigin: string | undefined;
     try {
       transport = resolveRemoteTransport({
         hostname,
@@ -148,6 +154,7 @@ const main = defineCommand({
         tlsKeyPath: args["tls-key"] as string | undefined,
         trustProxy: args["trust-proxy"] as boolean,
       });
+      publicOrigin = resolvePublicOrigin(args["public-url"] as string | undefined, transport);
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error));
       process.exit(1);
@@ -171,6 +178,7 @@ const main = defineCommand({
       port,
       host: hostname,
       transport: transport.kind,
+      public_url: publicOrigin,
       remote_access: remoteAccess,
       json: jsonOnly,
       no_open: noOpen,
@@ -273,6 +281,7 @@ const main = defineCommand({
         hostname,
         remoteAccess,
         transport,
+        publicUrl: publicOrigin,
       });
     } catch (error) {
       console.error(getServerStartupErrorMessage(error, port));
