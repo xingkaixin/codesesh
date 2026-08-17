@@ -88,7 +88,7 @@ npx codesesh --trace
 | ----------- | ----- | ------- | ----------------------------------------------------------- |
 | `--port`    | `-p`  | `4521`  | HTTP server starting port; falls back to the next available port if busy |
 | `--host`    | —     | `127.0.0.1` | HTTP server bind address; non-loopback values require `--remote-access` |
-| `--remote-access` | — | `false` | Enable token-protected access for any remotely exposed transport     |
+| `--remote-access` | — | `false` | Allow network or reverse-proxy exposure; every API mode uses a token |
 | `--tls-cert` | — | — | Path to a TLS certificate; serves remote access over HTTPS            |
 | `--tls-key` | — | — | Path to the private key matching `--tls-cert`                          |
 | `--trust-proxy` | — | `false` | A reverse proxy in front of CodeSesh terminates TLS                    |
@@ -105,10 +105,12 @@ npx codesesh --trace
 | `--clear-cache` | — | `false` | Clear scan cache before starting                            |
 | `-v`        | —     | —       | Print version number                                        |
 
-Non-loopback binding and `--trust-proxy` both require `--remote-access`. This includes the common
-setup where CodeSesh listens on `127.0.0.1` and a same-machine reverse proxy exposes it publicly.
-CodeSesh prints a startup URL containing a fresh access token. Anyone with that URL can read the
-indexed AI session history, so treat it as a password and do not share or persist it.
+Every CodeSesh server process protects its API with a fresh access token, including the default
+loopback listener, and prints that token in the startup URL. Non-loopback binding and
+`--trust-proxy` both require `--remote-access`. This includes the common setup where CodeSesh
+listens on `127.0.0.1` and a same-machine reverse proxy exposes it publicly. Anyone with the startup
+URL can read the indexed AI session history, so treat it as a password and do not share or persist
+it.
 
 A token authenticates the requester but does not encrypt traffic. Without TLS, the token and full
 session content travel over the network in plaintext, and URL tokens may be recorded in proxy logs.

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { isIP } from "node:net";
 import type { Context, MiddlewareHandler } from "hono";
 
-export const REMOTE_ACCESS_QUERY_PARAM = "access_token";
+export const ACCESS_TOKEN_QUERY_PARAM = "access_token";
 
 /**
  * How a remote listener's traffic is protected. A token proves who is asking;
@@ -21,7 +21,7 @@ export type RemoteTransport =
 
 export interface RemoteAccessPolicy {
   bindCategory: "loopback" | "network";
-  authenticationRequired: boolean;
+  remoteAccessRequired: boolean;
 }
 
 export interface RemoteTransportRequest {
@@ -77,9 +77,10 @@ export function resolveRemoteAccessPolicy(
   transport: RemoteTransport,
 ): RemoteAccessPolicy {
   const bindCategory = isLoopbackHostname(hostname) ? "loopback" : "network";
+  const directLoopback = bindCategory === "loopback" && transport.kind === "loopback";
   return {
     bindCategory,
-    authenticationRequired: bindCategory === "network" || transport.kind !== "loopback",
+    remoteAccessRequired: !directLoopback,
   };
 }
 
@@ -101,7 +102,7 @@ export function requireProxyTls(): MiddlewareHandler {
   };
 }
 
-export function createRemoteAccessToken(): string {
+export function createAccessToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
@@ -130,13 +131,13 @@ function requestToken(c: Context): string | undefined {
   const bearer = bearerToken(c);
   if (bearer) return bearer;
   if (c.req.method !== "GET") return undefined;
-  return c.req.query(REMOTE_ACCESS_QUERY_PARAM);
+  return c.req.query(ACCESS_TOKEN_QUERY_PARAM);
 }
 
-export function remoteAccessAuth(expectedToken: string): MiddlewareHandler {
+export function accessTokenAuth(expectedToken: string): MiddlewareHandler {
   return async (c, next) => {
     if (!tokenMatches(requestToken(c), expectedToken)) {
-      return c.json({ error: "Remote access authentication required" }, 401);
+      return c.json({ error: "API access token required" }, 401);
     }
     await next();
   };

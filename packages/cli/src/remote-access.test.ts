@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  createRemoteAccessToken,
+  createAccessToken,
   isConfidentialTransport,
   isLoopbackHostname,
   RemoteTransportError,
@@ -27,25 +27,25 @@ describe("remote access", () => {
   );
 
   it("creates a fresh 256-bit URL-safe token", () => {
-    const first = createRemoteAccessToken();
-    const second = createRemoteAccessToken();
+    const first = createAccessToken();
+    const second = createAccessToken();
 
     expect(first).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(second).not.toBe(first);
   });
 
-  it("resolves authentication from the complete exposure boundary", () => {
+  it("resolves remote opt-in from the exposure boundary", () => {
     expect(resolveRemoteAccessPolicy("127.0.0.1", { kind: "loopback" })).toEqual({
       bindCategory: "loopback",
-      authenticationRequired: false,
+      remoteAccessRequired: false,
     });
     expect(resolveRemoteAccessPolicy("127.0.0.1", { kind: "trusted-proxy" })).toEqual({
       bindCategory: "loopback",
-      authenticationRequired: true,
+      remoteAccessRequired: true,
     });
     expect(resolveRemoteAccessPolicy("0.0.0.0", { kind: "plaintext" })).toEqual({
       bindCategory: "network",
-      authenticationRequired: true,
+      remoteAccessRequired: true,
     });
   });
 });

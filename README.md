@@ -188,7 +188,7 @@ backup of your history. Session content stays in each agent's own data directory
 |------|-------|---------|-------------|
 | `--port` | `-p` | `4521` | HTTP server starting port; falls back to the next available port if busy |
 | `--host` | — | `127.0.0.1` | HTTP server bind address; default is local-only, set explicitly (e.g. `0.0.0.0`) to expose on the network |
-| `--remote-access` | — | `false` | Enable token-protected access for a non-loopback `--host`; anyone with the startup URL can read session data |
+| `--remote-access` | — | `false` | Allow network or reverse-proxy exposure; API access is token-protected in every mode |
 | `--tls-cert` | — | — | Path to a TLS certificate; serves remote access over HTTPS |
 | `--tls-key` | — | — | Path to the private key matching `--tls-cert` |
 | `--trust-proxy` | — | `false` | A reverse proxy in front of CodeSesh terminates TLS |
@@ -206,10 +206,11 @@ backup of your history. Session content stays in each agent's own data directory
 | `-v` | — | — | Print version number |
 | `-h` / `--help` | — | — | Show help |
 
-Non-loopback binding and `--trust-proxy` are rejected unless `--remote-access` is also present.
-This includes a loopback listener exposed by a same-machine reverse proxy. CodeSesh generates a new
-access token for every process and includes it in the printed startup URL. Treat that URL as a
-password: do not publish it or place it in shared shell history.
+Every CodeSesh server process protects its API with a new access token, including the default
+loopback listener, and includes that token in the printed startup URL. Non-loopback binding and
+`--trust-proxy` are rejected unless `--remote-access` is also present. This includes a loopback
+listener exposed by a same-machine reverse proxy. Treat the startup URL as a password: do not
+publish it or place it in shared shell history.
 
 A token proves who is asking; it does not hide the answer. Without TLS the token and the full
 session content travel the network in the clear, and the token in the URL can end up in reverse

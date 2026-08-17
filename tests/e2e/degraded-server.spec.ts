@@ -1,5 +1,5 @@
 import { expect, test as base } from "playwright/test";
-import { monitorBrowserErrors } from "./test-fixtures.js";
+import { configureApiAccess, monitorBrowserErrors } from "./test-fixtures.js";
 
 // Network failures unavoidably log resource/console errors; those are the
 // scenario, not a defect. Anything else — above all an "Uncaught (in
@@ -13,6 +13,7 @@ base("keeps the retry surface clean while the API is down", async ({ page }) => 
   // The failing branch waits out react-query's retry backoff before the error
   // surface appears; CI runners need more than the default 30s budget.
   base.setTimeout(120_000);
+  await configureApiAccess(page.context());
   const errors = monitorBrowserErrors(page);
   let failing = true;
   await page.route("**/api/config**", (route) =>
