@@ -23,4 +23,15 @@ describe("parseSearchQuery", () => {
       hasQualifiers: true,
     });
   });
+
+  it("replaces a prior comparison mode with a later range or exact cost", () => {
+    expect(parseSearchQuery("cost:>1 cost:<5 cost:2..3").filters).toEqual({
+      costMin: 2,
+      costMax: 3,
+    });
+    expect(parseSearchQuery("cost:>1 cost:<5 cost:2").filters).toEqual({
+      costMin: 2,
+      costMax: 2,
+    });
+  });
 });

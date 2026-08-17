@@ -64,8 +64,8 @@ function parseCostQualifier(value: string, filters: SearchQueryFilters): void {
   const raw = unwrapSearchValue(value);
   const range = raw.match(/^(\d+(?:\.\d+)?)\.\.(\d+(?:\.\d+)?)$/);
   if (range) {
-    filters.costMin = Number(range[1]);
-    filters.costMax = Number(range[2]);
+    setCostMinimum(filters, Number(range[1]), false);
+    setCostMaximum(filters, Number(range[2]), false);
     return;
   }
 
@@ -73,20 +73,30 @@ function parseCostQualifier(value: string, filters: SearchQueryFilters): void {
   if (comparison) {
     const amount = Number(comparison[2]);
     if (comparison[1]?.includes(">")) {
-      filters.costMin = amount;
-      filters.costMinExclusive = comparison[1] === ">";
+      setCostMinimum(filters, amount, comparison[1] === ">");
     } else {
-      filters.costMax = amount;
-      filters.costMaxExclusive = comparison[1] === "<";
+      setCostMaximum(filters, amount, comparison[1] === "<");
     }
     return;
   }
 
   const amount = Number(raw);
   if (!Number.isNaN(amount)) {
-    filters.costMin = amount;
-    filters.costMax = amount;
+    setCostMinimum(filters, amount, false);
+    setCostMaximum(filters, amount, false);
   }
+}
+
+function setCostMinimum(filters: SearchQueryFilters, value: number, exclusive: boolean): void {
+  filters.costMin = value;
+  if (exclusive) filters.costMinExclusive = true;
+  else delete filters.costMinExclusive;
+}
+
+function setCostMaximum(filters: SearchQueryFilters, value: number, exclusive: boolean): void {
+  filters.costMax = value;
+  if (exclusive) filters.costMaxExclusive = true;
+  else delete filters.costMaxExclusive;
 }
 
 function appendUnique<T>(values: T[] | undefined, value: T): T[] {

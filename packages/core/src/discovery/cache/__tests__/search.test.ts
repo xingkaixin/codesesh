@@ -38,6 +38,36 @@ describe("cache search", () => {
     expect(mergeSearchLists(["a", "b"], ["b", "c"])).toEqual(["a", "b", "c"]);
   });
 
+  it("merges cost values with the comparison mode from the same source", () => {
+    const explicit = mergeSearchQueryOptions("cost:>0.1 cost:<10", {
+      costMin: 3.5,
+      costMax: 8,
+    }).options;
+    expect(explicit.costMin).toBe(3.5);
+    expect(explicit.costMax).toBe(8);
+    expect(explicit.costMinExclusive).toBeUndefined();
+    expect(explicit.costMaxExclusive).toBeUndefined();
+
+    const qualifier = mergeSearchQueryOptions("cost:>0.1 cost:<10", {}).options;
+    expect(qualifier.costMin).toBe(0.1);
+    expect(qualifier.costMax).toBe(10);
+    expect(qualifier.costMinExclusive).toBe(true);
+    expect(qualifier.costMaxExclusive).toBe(true);
+
+    const strictExplicit = mergeSearchQueryOptions("cost:>=0.1", {
+      costMin: 3.5,
+      costMinExclusive: true,
+    }).options;
+    expect(strictExplicit.costMin).toBe(3.5);
+    expect(strictExplicit.costMinExclusive).toBe(true);
+
+    const orphanComparisonMode = mergeSearchQueryOptions("cost:>=1", {
+      costMinExclusive: true,
+    }).options;
+    expect(orphanComparisonMode.costMin).toBe(1);
+    expect(orphanComparisonMode.costMinExclusive).toBeUndefined();
+  });
+
   it("keeps inclusive and exclusive cost bounds distinct", () => {
     const session = makeSessionHead("s1", {
       stats: { ...makeSessionHead("base").stats, total_cost: 1 },

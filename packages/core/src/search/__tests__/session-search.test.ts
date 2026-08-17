@@ -698,17 +698,9 @@ describe("search characterization: FTS path", () => {
     expect(results.map((r) => r.session.id)).toEqual(["tagmerge-both"]);
   });
 
-  it("scalar qualifier/options merge: explicit costMin wins, but a leftover exclusive-comparison flag from the qualifier still applies", () => {
-    // Quirk: mergeSearchQueryOptions merges costMin/costMax and their
-    // *Exclusive flags independently. An explicit costMin option overrides
-    // the qualifier's costMin value, but if the qualifier used a strict
-    // comparison (cost:>N), its costMinExclusive=true flag survives even
-    // though the numeric value it was paired with did not. Here costMin=3.5
-    // ends up EXCLUSIVE because of the leftover `cost:>0.1` qualifier, so the
-    // session with total_cost exactly 3.5 is excluded even though costMin=3.5
-    // alone would normally read as ">=".
+  it("keeps an explicit inclusive cost bound independent from a strict qualifier", () => {
     const results = search("needle cost:>0.1", { costMin: 3.5, limit: 50 });
-    expect(results.map((r) => r.session.id)).not.toContain("recent-mid");
+    expect(results.map((r) => r.session.id)).toContain("recent-mid");
   });
 });
 
