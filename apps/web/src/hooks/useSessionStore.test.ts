@@ -5,7 +5,13 @@ import {
 } from "@codesesh/core/test-fixtures";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentInfo, AppConfig, ApiProjectGroup, SessionHead } from "../lib/api";
+import type {
+  AgentInfo,
+  AppConfig,
+  ApiProjectGroup,
+  ApiProjectPage,
+  SessionHead,
+} from "../lib/api";
 import * as api from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
 import { createQueryWrapper } from "../test/query-wrapper";
@@ -32,6 +38,16 @@ const agents = [
   { name: "Codex", displayName: "Codex", count: 0 },
 ] as unknown as AgentInfo[];
 const projects = [{ identityKind: "path", identityKey: "p1" }] as unknown as ApiProjectGroup[];
+const projectPage = {
+  projects,
+  summary: {
+    projects: 1,
+    sessions: 0,
+    tokens: 0,
+    cost: 0,
+    latestActivity: null,
+  },
+} satisfies ApiProjectPage;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -46,7 +62,7 @@ beforeEach(() => {
   vi.mocked(api.fetchConfig).mockResolvedValue(config);
   vi.mocked(api.fetchAgents).mockResolvedValue(agents);
   vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [SAMPLE_SESSION_HEAD] });
-  vi.mocked(api.fetchProjects).mockResolvedValue({ projects });
+  vi.mocked(api.fetchProjects).mockResolvedValue(projectPage);
   vi.mocked(api.fetchDashboard).mockResolvedValue(SAMPLE_DASHBOARD_DATA);
 });
 
@@ -492,7 +508,7 @@ describe("useSessionStore", () => {
     expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]);
     expect(result.current.dashboard).toEqual(SAMPLE_DASHBOARD_DATA);
 
-    vi.mocked(api.fetchProjects).mockResolvedValueOnce({ projects });
+    vi.mocked(api.fetchProjects).mockResolvedValueOnce(projectPage);
     await act(() => result.current.retryProjects());
 
     await waitFor(() => expect(result.current.projects).toEqual(projects));
@@ -524,7 +540,7 @@ describe("useSessionStore", () => {
             });
           }),
       )
-      .mockResolvedValue({ projects });
+      .mockResolvedValue(projectPage);
     const { result } = await renderStore();
     const firstWindow = { from: 1, to: 2 };
     const nextWindow = { from: 3, to: 4 };

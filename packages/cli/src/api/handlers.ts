@@ -25,6 +25,7 @@ import {
   matchesProjectIdentity,
   normalizeProjectDirectory,
   PROJECT_IDENTITY_RESOLVER_REVISION,
+  summarizeProjects,
   buildDashboard,
   type DashboardData,
   type DashboardScope,
@@ -44,15 +45,17 @@ import {
   parseDateWindow,
   parseFileActivityKind,
   parseProjectIdentityFilter,
+  parseLimit,
   parseSessionQuery,
   parseSearchOptions,
   optionalQueryValue,
+  PROJECT_PAGE_LIMIT_POLICY,
   searchParams,
   SEARCH_LIMIT_POLICY,
   SESSION_PAGE_LIMIT_POLICY,
   type SessionListDefaults,
 } from "./query-params.js";
-import { paginateSessionSnapshot } from "./session-pagination.js";
+import { paginateSnapshot } from "./snapshot-pagination.js";
 import type { ScanResultSource, ScanStatusSource } from "./scan-sources.js";
 import {
   getDashboardCostFacts,
@@ -209,35 +212,72 @@ export function handleGetProjects(
   defaults: SessionListDefaults = {},
 ) {
   const scanResult = scanSource.getSnapshot();
+  const params = searchParams(c);
+  const limit = parseLimit(params.get("limit"), PROJECT_PAGE_LIMIT_POLICY);
+  if (limit.kind === "invalid") {
+    reportInvalidQueryParameter("projects", "limit", "rejected");
+    return c.json({ error: limit.error }, 400);
+  }
+  const projectIdentity = parseProjectIdentityFilter(
+    c.req.query("projectKind"),
+    c.req.query("projectKey"),
+  );
+  if (projectIdentity === null) {
+    return c.json({ error: "projectKind and projectKey must form a valid project identity" }, 400);
+  }
   const window = parseDateWindowRequest(c, "projects", defaults);
   if (window.kind === "rejected") return window.response;
   const { from, to } = window;
   const analyticsRevision = getAnalyticsRevision();
-  const projects = getSnapshotAggregation(
+  const catalog = getSnapshotAggregation(
     scanSource,
     scanResult.sessions,
     ["projects", from, to, analyticsRevision],
     () => {
       const tree = getSnapshotSessionTree(scanSource, scanResult.sessions);
       const costFacts = listDashboardCostFacts({ from, to, includeModelCosts: false });
-      return {
-        projects: attachProjectMetricsFromTree(
-          listCachedProjectGroups(scanResult.sessions),
-          tree,
-          from,
-          to,
-          costFacts,
-        ).filter(
-          (project) =>
-            project.sessionCount > 0 ||
-            project.messages > 0 ||
-            project.tokens > 0 ||
-            project.cost > 0,
-        ),
-      };
+      const projects = attachProjectMetricsFromTree(
+        listCachedProjectGroups(scanResult.sessions),
+        tree,
+        from,
+        to,
+        costFacts,
+      ).filter(
+        (project) =>
+          project.sessionCount > 0 ||
+          project.messages > 0 ||
+          project.tokens > 0 ||
+          project.cost > 0,
+      );
+      return { projects, summary: summarizeProjects(projects) };
     },
   );
-  return c.json(projects);
+  const projects = projectIdentity
+    ? catalog.projects.filter(
+        (project) =>
+          project.identityKind === projectIdentity.kind &&
+          project.identityKey === projectIdentity.key,
+      )
+    : catalog.projects;
+  const page = paginateSnapshot(projects, {
+    cursor: params.get("cursor") ?? undefined,
+    limit: limit.value,
+    query: params,
+    snapshotIdentity: scanResult.sessions,
+    viewIdentity: catalog.projects,
+  });
+  if (page.kind === "invalid_cursor") {
+    reportInvalidQueryParameter("projects", "cursor", "rejected");
+    return c.json({ error: "cursor is invalid for this request" }, 400);
+  }
+  if (page.kind === "stale_snapshot") {
+    return c.json({ error: "project snapshot changed; restart pagination" }, 409);
+  }
+  return c.json({
+    projects: page.items,
+    summary: projectIdentity ? summarizeProjects(projects) : catalog.summary,
+    ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+  });
 }
 
 export async function handleGetSessions(
@@ -334,7 +374,7 @@ export async function handleGetSessions(
   }
 
   if (paginationRequested) {
-    const page = paginateSessionSnapshot(sessions, {
+    const page = paginateSnapshot(sessions, {
       cursor: params.get("cursor") ?? undefined,
       limit: sessionQuery.limit.value,
       query: params,

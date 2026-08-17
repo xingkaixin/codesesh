@@ -20,7 +20,7 @@ interface RouteHeaderInput {
   isSearchMode: boolean;
   searchSubtitle: string;
   dashboard: DashboardData | null;
-  projects: ApiProjectGroup[];
+  projectCount: number;
   sessionCount: number;
   activeProject: ApiProjectGroup | null;
   activeAgent: AgentInfo | null;
@@ -87,8 +87,8 @@ function routeTitleAndSubtitle(input: RouteHeaderInput): {
       title: "Projects",
       subtitle: (
         <span>
-          <Count value={input.projects.length} /> projects across{" "}
-          <Count value={input.sessionCount} /> sessions
+          <Count value={input.projectCount} /> projects across <Count value={input.sessionCount} />{" "}
+          sessions
         </span>
       ),
     };

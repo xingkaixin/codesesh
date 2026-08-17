@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { attachProjectMetrics, attachProjectMetricsFromTree } from "../projects.js";
+import {
+  attachProjectMetrics,
+  attachProjectMetricsFromTree,
+  summarizeProjects,
+} from "../projects.js";
+import type { ApiProjectGroup } from "../../contract/index.js";
 import type { ProjectGroup, SessionHead } from "../../types/index.js";
 import { buildSessionTree } from "../../contract/session-tree.js";
 import type { DashboardCostFacts } from "../cost-facts.js";
@@ -57,6 +62,26 @@ function makeGroup(identityKey: string, overrides?: Partial<ProjectGroup>): Proj
     ...overrides,
   };
 }
+
+describe("summarizeProjects", () => {
+  it("folds catalogs larger than the JavaScript argument limit", () => {
+    const project = {
+      ...makeGroup("repo-a", { sessionCount: 2, lastActivity: 100 }),
+      messages: 3,
+      tokens: 5,
+      cost: 0.25,
+      agentStats: [],
+    } satisfies ApiProjectGroup;
+
+    expect(summarizeProjects(Array(200_000).fill(project))).toEqual({
+      projects: 200_000,
+      sessions: 400_000,
+      tokens: 1_000_000,
+      cost: 50_000,
+      latestActivity: 100,
+    });
+  });
+});
 
 describe("attachProjectMetrics", () => {
   it("sums messages, tokens and cost per project", () => {

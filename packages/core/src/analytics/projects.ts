@@ -11,6 +11,7 @@ import type { ProjectGroup, SessionHead } from "../types/index.js";
 import type {
   ApiProjectAgentStat,
   ApiProjectGroup,
+  ApiProjectSummary,
   SessionTree,
   SessionTreeNode,
 } from "../contract/index.js";
@@ -30,6 +31,30 @@ interface ProjectMetrics {
   cost: number;
   hasEstimatedCost: boolean;
   agentStats: Map<string, ApiProjectAgentStat>;
+}
+
+export function summarizeProjects(projects: readonly ApiProjectGroup[]): ApiProjectSummary {
+  const summary: ApiProjectSummary = {
+    projects: projects.length,
+    sessions: 0,
+    tokens: 0,
+    cost: 0,
+    latestActivity: null,
+  };
+
+  for (const project of projects) {
+    summary.sessions += project.sessionCount;
+    summary.tokens += project.tokens;
+    summary.cost += project.cost;
+    if (project.lastActivity != null) {
+      summary.latestActivity =
+        summary.latestActivity == null
+          ? project.lastActivity
+          : Math.max(summary.latestActivity, project.lastActivity);
+    }
+  }
+
+  return summary;
 }
 
 function emptyMetrics(): ProjectMetrics {

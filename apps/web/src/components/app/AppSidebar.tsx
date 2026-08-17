@@ -21,6 +21,8 @@ import { SessionTreeSidebar } from "../SessionTreeSidebar";
 import { PanelLeftClose } from "../ui/icons";
 import { Link } from "react-router-dom";
 
+const SIDEBAR_PROJECT_LIMIT = 50;
+
 function navItemClass(isSelected: boolean): string {
   return `flex items-center gap-2 rounded-sm px-3 py-1.5 text-left motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
     isSelected
@@ -45,9 +47,20 @@ function ProjectNavList({
   projects: ApiProjectGroup[];
   selectedProjectNavigationId: string | null;
 }) {
+  const visibleProjects = projects.slice(0, SIDEBAR_PROJECT_LIMIT);
+  const selectedProject = selectedProjectNavigationId
+    ? projects.find((project) => {
+        const identity = getProjectGroupIdentity(project);
+        return getProjectIdentityKey(identity) === selectedProjectNavigationId;
+      })
+    : undefined;
+  if (selectedProject && !visibleProjects.includes(selectedProject)) {
+    visibleProjects.push(selectedProject);
+  }
+
   return (
     <>
-      {projects.map((project) => {
+      {visibleProjects.map((project) => {
         const projectIdentity = getProjectGroupIdentity(project);
         const isSelected = selectedProjectNavigationId === getProjectIdentityKey(projectIdentity);
         return (
@@ -77,6 +90,7 @@ export interface AppSidebarViewModel {
   viewState: ViewState;
   agentCatalog: AgentCatalog;
   projects: ApiProjectGroup[];
+  projectCount: number;
   projectsError: string | null;
   projectsLoading: boolean;
   selectedProjectNavigationId: string | null;
@@ -158,6 +172,7 @@ export function AppSidebar({
     viewState,
     agentCatalog,
     projects,
+    projectCount,
     projectsError,
     projectsLoading,
     selectedProjectNavigationId,
@@ -191,6 +206,7 @@ export function AppSidebar({
       ? getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionId)
       : null;
   const isOverviewSelected = viewState.mode === "root";
+  const isProjectsSelected = viewState.mode === "projects";
   const { selectedSessionReference, selectSession } = useSidebarKeyboardNavigation({
     viewState,
     sessions: sidebarSessions,
@@ -238,6 +254,18 @@ export function AppSidebar({
                   <PanelLeftClose className="size-4" />
                 </button>
               ) : null}
+            </li>
+            <li>
+              <Link
+                to="/projects"
+                data-active={isProjectsSelected ? "true" : undefined}
+                className={navItemClass(isProjectsSelected)}
+              >
+                <span className="console-mono min-w-0 flex-1 truncate text-xs">Projects</span>
+                <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
+                  {projectCount}
+                </span>
+              </Link>
             </li>
             <ProjectNavList
               projects={projects}

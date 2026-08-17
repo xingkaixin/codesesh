@@ -35,6 +35,7 @@ export interface LimitPolicy {
 
 export const SEARCH_LIMIT_POLICY: LimitPolicy = { defaultValue: 50, maxValue: 100 };
 export const FILE_ACTIVITY_LIMIT_POLICY: LimitPolicy = { defaultValue: 50, maxValue: 200 };
+export const PROJECT_PAGE_LIMIT_POLICY: LimitPolicy = { defaultValue: 100, maxValue: 250 };
 export const SESSION_PAGE_LIMIT_POLICY: LimitPolicy = { defaultValue: 250, maxValue: 500 };
 
 export type AgentFilterOutcome =
@@ -133,7 +134,7 @@ function parseAgentFilter(
   return { kind: "unknown" };
 }
 
-function parseLimit(value: string | null, policy: LimitPolicy): LimitOutcome {
+export function parseLimit(value: string | null, policy: LimitPolicy): LimitOutcome {
   if (value === null) return { kind: "default", value: policy.defaultValue };
   const normalized = value.trim();
   if (!/^\d+$/.test(normalized)) {

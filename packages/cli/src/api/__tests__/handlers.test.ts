@@ -1155,6 +1155,111 @@ describe("handleGetFileActivity", () => {
 });
 
 describe("handleGetProjects", () => {
+  it("bounds every response and keeps catalog totals outside the page", () => {
+    const sessions = Array.from({ length: 101 }, (_, index) =>
+      makeSession(`project-${index}`, {
+        time_updated: 1_000 - index,
+        project_identity: {
+          kind: "path",
+          key: `/workspace/${index}`,
+          displayName: `project-${index}`,
+        },
+      }),
+    );
+    const source = makeScanSource({ sessions, byAgent: { claudecode: sessions } });
+    const firstContext = makeMockContext();
+
+    handleGetProjects(firstContext, source);
+
+    const firstPage = firstContext.json.mock.calls[0]![0];
+    expect(firstPage.projects).toHaveLength(100);
+    expect(firstPage.summary).toMatchObject({ projects: 101, sessions: 101 });
+    expect(firstPage.nextCursor).toEqual(expect.any(String));
+
+    const secondContext = makeMockContext({ query: { cursor: firstPage.nextCursor } });
+    handleGetProjects(secondContext, source);
+
+    expect(secondContext.json.mock.calls[0]![0]).toEqual({
+      projects: [expect.objectContaining({ identityKey: "/workspace/100" })],
+      summary: expect.objectContaining({ projects: 101, sessions: 101 }),
+    });
+  });
+
+  it("rejects a project cursor after the scan snapshot changes", () => {
+    const initialSessions = [
+      makeSession("one", {
+        project_identity: { kind: "path", key: "/workspace/one", displayName: "one" },
+      }),
+      makeSession("two", {
+        project_identity: { kind: "path", key: "/workspace/two", displayName: "two" },
+      }),
+    ];
+    let snapshot = makeScanResult({
+      sessions: initialSessions,
+      byAgent: { claudecode: initialSessions },
+    });
+    const source: ScanResultSource = { getSnapshot: () => snapshot };
+    const firstContext = makeMockContext({ query: { limit: "1" } });
+    handleGetProjects(firstContext, source);
+    const cursor = firstContext.json.mock.calls[0]![0].nextCursor;
+
+    const updatedSessions = [
+      makeSession("new", {
+        project_identity: { kind: "path", key: "/workspace/new", displayName: "new" },
+      }),
+      ...initialSessions,
+    ];
+    snapshot = makeScanResult({
+      sessions: updatedSessions,
+      byAgent: { claudecode: updatedSessions },
+    });
+    const nextContext = makeMockContext({ query: { limit: "1", cursor } });
+
+    handleGetProjects(nextContext, source);
+
+    expect(nextContext.json).toHaveBeenCalledWith(
+      { error: "project snapshot changed; restart pagination" },
+      409,
+    );
+  });
+
+  it("looks up one project without expanding the catalog page", () => {
+    const sessions = [
+      makeSession("one", {
+        project_identity: { kind: "path", key: "/workspace/one", displayName: "one" },
+      }),
+      makeSession("two", {
+        project_identity: { kind: "path", key: "/workspace/two", displayName: "two" },
+      }),
+    ];
+    const c = makeMockContext({
+      query: { projectKind: "path", projectKey: "/workspace/two" },
+    });
+
+    handleGetProjects(c, makeScanSource({ sessions, byAgent: { claudecode: sessions } }));
+
+    expect(c.json.mock.calls[0]![0]).toEqual({
+      projects: [expect.objectContaining({ identityKey: "/workspace/two" })],
+      summary: expect.objectContaining({ projects: 1, sessions: 1 }),
+    });
+  });
+
+  it("rejects invalid project pagination parameters", () => {
+    const invalidLimit = makeMockContext({ query: { limit: "many" } });
+    handleGetProjects(invalidLimit, makeScanSource());
+    expect(invalidLimit.json).toHaveBeenCalledWith(
+      { error: "limit must be a positive integer" },
+      400,
+    );
+
+    const invalidCursor = makeMockContext({ query: { cursor: "not-a-cursor" } });
+    handleGetProjects(invalidCursor, makeScanSource());
+    expect(invalidCursor.json).toHaveBeenCalledWith(
+      { error: "cursor is invalid for this request" },
+      400,
+    );
+  });
+
   it("reuses project aggregation for the same snapshot and window", () => {
     const source = makeScanSource();
 

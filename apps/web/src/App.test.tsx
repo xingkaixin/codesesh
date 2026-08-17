@@ -1,4 +1,4 @@
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -57,10 +57,21 @@ const workspaceProject: ApiProjectGroup = {
   agentStats: [],
 };
 
+const workspaceProjectPage = {
+  projects: [workspaceProject],
+  summary: {
+    projects: 1,
+    sessions: 0,
+    tokens: 0,
+    cost: 0,
+    latestActivity: null,
+  },
+};
+
 const responses: Record<string, unknown> = {
   "/api/config": { window: { days: 30 } },
   "/api/agents": [],
-  "/api/projects": { projects: [workspaceProject] },
+  "/api/projects": workspaceProjectPage,
   "/api/sessions": { sessions: [] },
   "/api/dashboard": emptyDashboard,
   "/api/bookmarks": { bookmarks: [] },
@@ -79,18 +90,24 @@ const responses: Record<string, unknown> = {
 };
 
 let requestedUrls: string[] = [];
+let projectDetailResponse: unknown = null;
 
 beforeEach(() => {
   requestedUrls = [];
+  projectDetailResponse = null;
   liveSubscription.onUpdate = undefined;
   responses["/api/agents"] = [];
-  responses["/api/projects"] = { projects: [workspaceProject] };
+  responses["/api/projects"] = workspaceProjectPage;
   responses["/api/sessions"] = { sessions: [] };
   vi.stubGlobal("__APP_VERSION__", "0.0.0-test");
   vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
     const url = String(input);
     requestedUrls.push(url);
-    const body = responses[url.split("?")[0] ?? ""] ?? {};
+    const parsed = new URL(url, "http://localhost");
+    const body =
+      parsed.pathname === "/api/projects" && parsed.searchParams.has("projectKey")
+        ? (projectDetailResponse ?? responses[parsed.pathname] ?? {})
+        : (responses[parsed.pathname] ?? {});
     return new Response(JSON.stringify(body), {
       headers: { "content-type": "application/json" },
     });
@@ -165,6 +182,31 @@ describe("App live updates", () => {
 });
 
 describe("App dashboard scope wiring", () => {
+  it("resolves a project outside the bounded catalog page", async () => {
+    const selectedProject = {
+      ...workspaceProject,
+      identityKey: "/outside-first-page",
+      displayName: "outside-first-page",
+    };
+    projectDetailResponse = {
+      projects: [selectedProject],
+      summary: {
+        projects: 1,
+        sessions: 0,
+        tokens: 0,
+        cost: 0,
+        latestActivity: null,
+      },
+    };
+
+    renderAppAt("/projects/path/%2Foutside-first-page");
+
+    expect(await screen.findByRole("heading", { name: "outside-first-page" })).toBeTruthy();
+    expect(requestedUrls.some((url) => url.includes("projectKey=%2Foutside-first-page"))).toBe(
+      true,
+    );
+  });
+
   it("requests the project scope on a project route", async () => {
     renderAppAt("/projects/path/%2Fworkspace");
 

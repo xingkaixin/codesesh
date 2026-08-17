@@ -60,7 +60,16 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
     agents: [],
     agentCatalog: createAgentCatalog([]),
     agentNameMap: new Map(),
-    projects: [project],
+    projectPage: {
+      projects: [project],
+      summary: {
+        projects: 1,
+        sessions: 0,
+        tokens: 0,
+        cost: 0,
+        latestActivity: null,
+      },
+    },
     projectsError: null,
     projectsLoading: false,
     onRetryProjects: vi.fn(),
@@ -68,6 +77,9 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
     childSessionsByParentRouteKey: new Map(),
     sessionsByAgent: new Map(),
     activeProject: null,
+    activeProjectLoading: false,
+    activeProjectError: null,
+    onRetryActiveProject: vi.fn(),
     activeProjectSessions: [],
     // A null window keeps the overview's dashboard query idle, so these
     // assertions never depend on the network.
@@ -182,7 +194,16 @@ describe("AppRouteContent", () => {
   it("shows a retryable project failure instead of an empty state", async () => {
     const props = makeProps();
     props.viewState = { mode: "projects", activeAgentKey: null, activeSessionId: null };
-    props.projects = [];
+    props.projectPage = {
+      projects: [],
+      summary: {
+        projects: 0,
+        sessions: 0,
+        tokens: 0,
+        cost: 0,
+        latestActivity: null,
+      },
+    };
     props.projectsError = "projects unavailable";
     renderContent(props);
 

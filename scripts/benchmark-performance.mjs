@@ -515,7 +515,18 @@ async function installFixtureRoutes(context, fixture) {
 
     if (pathname === "/api/config") return json({ window: { days: 0 } });
     if (pathname === "/api/agents") return json([fixture.agent]);
-    if (pathname === "/api/projects") return json({ projects: [fixture.project] });
+    if (pathname === "/api/projects") {
+      return json({
+        projects: [fixture.project],
+        summary: {
+          projects: 1,
+          sessions: fixture.project.sessionCount,
+          tokens: fixture.project.tokens,
+          cost: fixture.project.cost,
+          latestActivity: fixture.project.lastActivity,
+        },
+      });
+    }
     if (pathname === "/api/dashboard") return json(fixture.dashboard);
     if (pathname === "/api/bookmarks") return json({ bookmarks: [] });
     if (pathname === "/api/status") return json(fixture.scanStatus);

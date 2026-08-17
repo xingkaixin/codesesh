@@ -23,3 +23,17 @@ export interface ApiProjectGroup extends ProjectGroup {
   cost_source?: CostSource;
   agentStats: ApiProjectAgentStat[];
 }
+
+export interface ApiProjectSummary {
+  projects: number;
+  sessions: number;
+  tokens: number;
+  cost: number;
+  latestActivity: number | null;
+}
+
+export interface ApiProjectPage {
+  projects: ApiProjectGroup[];
+  summary: ApiProjectSummary;
+  nextCursor?: string;
+}

@@ -8,6 +8,7 @@ export type {
   FileActivityResult,
   ProjectIdentityKind,
   ProjectIdentity,
+  ProjectIdentityRef,
   MessageTokens,
   ToolPartStatus,
   ToolPartState,
@@ -39,6 +40,8 @@ export type {
   SearchResult,
   SessionsUpdatedEvent,
   ApiProjectGroup,
+  ApiProjectPage,
+  ApiProjectSummary,
   ApiProjectAgentStat,
   BookmarkRecord,
   BookmarkView,
@@ -48,12 +51,14 @@ import { sessionRoutePath } from "@codesesh/core/contract";
 import type {
   AgentInfo,
   ApiProjectGroup,
+  ApiProjectPage,
   AppConfig,
   BookmarkRecord,
   BookmarkView,
   DashboardData,
   FileActivityKind,
   ProjectIdentityKind,
+  ProjectIdentityRef,
   ScanStatusEvent,
   SearchResult,
   SessionDetail,
@@ -129,6 +134,11 @@ export interface SessionDetailFetchOptions extends FetchOptions {
   messageCursor?: string;
 }
 
+export interface ProjectPageOptions extends FetchOptions {
+  cursor?: string;
+  project?: ProjectIdentityRef;
+}
+
 interface SessionFetchProgress {
   onFirstPage?: (sessions: SessionHead[]) => void;
 }
@@ -191,11 +201,29 @@ export async function fetchAgents(
 
 export async function fetchProjects(
   window?: AppConfig["window"],
-  options?: FetchOptions,
-): Promise<{ projects: ApiProjectGroup[] }> {
+  options?: ProjectPageOptions,
+): Promise<ApiProjectPage> {
   const params = new URLSearchParams();
   appendTimeWindow(params, window);
-  return fetchJson(`/api/projects?${params}`, options);
+  params.set("limit", options?.project ? "1" : "100");
+  if (options?.cursor) params.set("cursor", options.cursor);
+  if (options?.project) {
+    params.set("projectKind", options.project.kind);
+    params.set("projectKey", options.project.key);
+  }
+  return fetchJson(
+    `/api/projects?${params}`,
+    options?.signal ? { signal: options.signal } : undefined,
+  );
+}
+
+export async function fetchProject(
+  window: AppConfig["window"],
+  project: ProjectIdentityRef,
+  options?: FetchOptions,
+): Promise<ApiProjectGroup | null> {
+  const page = await fetchProjects(window, { ...options, project });
+  return page.projects[0] ?? null;
 }
 
 export async function fetchSessions(
