@@ -167,6 +167,29 @@ interface FailedAgentScanResult {
 
 type AgentScanResult = SuccessfulAgentScanResult | FailedAgentScanResult;
 
+function finalizeAgentScanFailure(
+  agent: BaseAgent,
+  failure: AgentScanFailure,
+  options: ScanOptions,
+  cached: CachedResult | null,
+  timing: AgentScanTiming,
+  startedAt: number,
+): FailedAgentScanResult {
+  const retainedHeads = cached
+    ? filterSessions(agent.filterCachedSessions(cached.sessions), options)
+    : undefined;
+  reportAgentScanFailure(failure, retainedHeads !== undefined);
+  timing.total = performance.now() - startedAt;
+  return {
+    status: "failed",
+    agent,
+    failure,
+    ...(retainedHeads !== undefined ? { retainedHeads } : {}),
+    ...(cached ? { cacheTimestamp: cached.timestamp } : {}),
+    timing,
+  };
+}
+
 type AgentScanFinalization =
   | { kind: "cache-only"; cached: CachedResult }
   | { kind: "unchanged"; cached: CachedResult }
@@ -640,6 +663,23 @@ async function scanAgentSmart(
       );
       timing.checkChanges = performance.now() - t1;
 
+      if (checkResult.status === "failed") {
+        return finalizeAgentScanFailure(
+          agent,
+          {
+            agentName: agent.name,
+            stage: "checking for changes",
+            sourcePath: checkResult.failure.sourcePath,
+            errorClass: checkResult.failure.errorClass,
+            message: checkResult.failure.message,
+          },
+          options,
+          cached,
+          timing,
+          agentStart,
+        );
+      }
+
       if (checkResult.hasChanges) {
         onProgress?.({
           agent: agent.name,
@@ -811,19 +851,8 @@ async function scanAgentOutcome(
   } catch (error) {
     const cached = (options.useCache ?? true) ? loadCachedSessions(agent.name) : null;
     if (cached) restoreAgentCacheMeta(agent, cached);
-    const retainedHeads = cached
-      ? filterSessions(agent.filterCachedSessions(cached.sessions), options)
-      : undefined;
     const failure = createAgentScanFailure(agent.name, "scanning sessions", error);
-    reportAgentScanFailure(failure, retainedHeads !== undefined);
-    return {
-      status: "failed",
-      agent,
-      failure,
-      ...(retainedHeads !== undefined ? { retainedHeads } : {}),
-      ...(cached ? { cacheTimestamp: cached.timestamp } : {}),
-      timing: { total: performance.now() - startedAt },
-    };
+    return finalizeAgentScanFailure(agent, failure, options, cached, { total: 0 }, startedAt);
   }
 }
 
