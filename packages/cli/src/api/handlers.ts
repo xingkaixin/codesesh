@@ -32,7 +32,11 @@ import {
   type ProjectScopeMatcher,
 } from "@codesesh/core";
 import { appLogger } from "../logging.js";
-import type { ProjectIdentityResolver } from "../project-identity-resolver.js";
+import {
+  ProjectIdentityQueueFullError,
+  ProjectIdentityRequestAbortedError,
+  type ProjectIdentityResolver,
+} from "../project-identity-resolver.js";
 import { resolveTimeWindow } from "../time-window-resolution.js";
 import {
   filterSessionsByActivityWindow,
@@ -76,6 +80,7 @@ async function resolveProjectScope(
   cwd: string,
   sessions: readonly SessionHead[],
   resolver: ProjectIdentityResolver | undefined,
+  signal: AbortSignal,
 ): Promise<ProjectScopeMatcher> {
   const normalizedCwd = normalizeProjectDirectory(cwd);
   const matchingSession = sessions.find(
@@ -90,7 +95,7 @@ async function resolveProjectScope(
   }
   if (!resolver) throw new Error("Project identity resolver is unavailable");
 
-  const projection = await resolver.resolve(cwd);
+  const projection = await resolver.resolve(cwd, signal);
   return createProjectScopeMatcherFromIdentity(cwd, projection.identity);
 }
 
@@ -99,6 +104,15 @@ function reportProjectScopeResolutionFailure(endpoint: string, error: unknown): 
     endpoint,
     error: error instanceof Error ? error.message : String(error),
   });
+}
+
+function projectScopeResolutionFailureResponse(c: Context, endpoint: string, error: unknown) {
+  if (error instanceof ProjectIdentityRequestAbortedError) throw error;
+  reportProjectScopeResolutionFailure(endpoint, error);
+  if (error instanceof ProjectIdentityQueueFullError) {
+    return c.json({ error: "Project scope busy; retry later" }, 429);
+  }
+  return c.json({ error: "Project scope unavailable" }, 503);
 }
 
 function reportInvalidQueryParameter(
@@ -257,10 +271,14 @@ export async function handleGetSessions(
   let projectScope: ProjectScopeMatcher | undefined;
   if (cwd && !projectIdentity) {
     try {
-      projectScope = await resolveProjectScope(cwd, scanResult.sessions, resolver);
+      projectScope = await resolveProjectScope(
+        cwd,
+        scanResult.sessions,
+        resolver,
+        c.req.raw.signal,
+      );
     } catch (error) {
-      reportProjectScopeResolutionFailure("sessions", error);
-      return c.json({ error: "Project scope unavailable" }, 503);
+      return projectScopeResolutionFailureResponse(c, "sessions", error);
     }
   }
 
@@ -384,10 +402,14 @@ export async function handleSearchSessions(
   let projectScope: ProjectScopeMatcher | undefined;
   if (cwd) {
     try {
-      projectScope = await resolveProjectScope(cwd, scanResult.sessions, resolver);
+      projectScope = await resolveProjectScope(
+        cwd,
+        scanResult.sessions,
+        resolver,
+        c.req.raw.signal,
+      );
     } catch (error) {
-      reportProjectScopeResolutionFailure("search", error);
-      return c.json({ error: "Project scope unavailable" }, 503);
+      return projectScopeResolutionFailureResponse(c, "search", error);
     }
   }
   const { cwd: _cwd, ...searchOptions } = searchRequestOptions;
@@ -457,10 +479,9 @@ export async function handleGetFileActivity(
   let projectScope: ProjectScopeMatcher | undefined;
   if (cwd) {
     try {
-      projectScope = await resolveProjectScope(cwd, [], resolver);
+      projectScope = await resolveProjectScope(cwd, [], resolver, c.req.raw.signal);
     } catch (error) {
-      reportProjectScopeResolutionFailure("file-activity", error);
-      return c.json({ error: "Project scope unavailable" }, 503);
+      return projectScopeResolutionFailureResponse(c, "file-activity", error);
     }
   }
 
@@ -515,7 +536,11 @@ export async function handleGetSessionData(
       // Identity resolution probes the filesystem and spawns git; it must run
       // on the worker resolver, never synchronously on the request path.
       if (!resolver) throw new Error("Project identity resolver is unavailable");
-      result = materialize((await resolver.resolve(result.directory)).identity);
+      try {
+        result = materialize((await resolver.resolve(result.directory, c.req.raw.signal)).identity);
+      } catch (error) {
+        return projectScopeResolutionFailureResponse(c, "session-data", error);
+      }
     }
     if (result.status === "needs-identity") {
       throw new Error("Project identity fallback was not applied");

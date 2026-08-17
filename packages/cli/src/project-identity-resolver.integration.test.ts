@@ -19,7 +19,7 @@ describe("ThreadProjectIdentityResolver integration", () => {
       chmodSync(gitPath, 0o755);
       process.env.PATH = [binDir, previousPath].filter(Boolean).join(delimiter);
 
-      const resolver = new ThreadProjectIdentityResolver(slowWorkerUrl, 1);
+      const resolver = new ThreadProjectIdentityResolver(slowWorkerUrl, { maxWorkers: 1 });
       try {
         let timerFired = false;
         let resolutionSettled = false;

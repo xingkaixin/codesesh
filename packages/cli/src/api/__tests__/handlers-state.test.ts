@@ -78,6 +78,7 @@ interface ContextOptions {
 
 function makeContext(options: ContextOptions = {}) {
   const params = new URLSearchParams(options.query ?? {});
+  const url = `http://localhost/${params.size > 0 ? `?${params.toString()}` : ""}`;
   return {
     req: {
       json: () =>
@@ -86,7 +87,8 @@ function makeContext(options: ContextOptions = {}) {
           : Promise.resolve(options.body),
       param: (key: string) => options.param?.[key],
       query: (key: string) => options.query?.[key],
-      url: `http://localhost/${params.size > 0 ? `?${params.toString()}` : ""}`,
+      url,
+      raw: new Request(url),
     },
     json: vi.fn((payload: unknown, status = 200) => ({ payload, status })),
   };
@@ -745,7 +747,7 @@ describe("query boundary handlers", () => {
       to: new Date("2026-01-02T00:00:00.000Z").getTime(),
       limit: 200,
     });
-    expect(resolver.resolve).toHaveBeenCalledWith("/repo");
+    expect(resolver.resolve).toHaveBeenCalledWith("/repo", expect.any(AbortSignal));
   });
 
   it.each(["1.5", "0", "-1", "", "Infinity", "invalid"])(
