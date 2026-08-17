@@ -665,6 +665,60 @@ describe("scanSessions", () => {
     }
   });
 
+  it("retains the cached baseline when change detection fails", async () => {
+    const cached = makeSession("cached");
+    mockedLoadCachedSessions.mockReturnValue({ sessions: [cached], meta: {}, timestamp: 123 });
+    const agent = createTestAgent({
+      name: "test",
+      available: true,
+      sessions: [],
+      checkForChangesResult: {
+        status: "failed",
+        hasChanges: false,
+        timestamp: 123,
+        failure: {
+          sourcePath: "/sessions/test.db",
+          errorClass: "SqliteError",
+          message: "database is locked",
+        },
+      },
+    });
+    const commitChangeCheck = vi.spyOn(agent, "commitChangeCheck");
+    mockedCreateRegisteredAgents.mockReturnValue([agent]);
+    const events: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    setCoreDiagnostics({ warn: (event, detail) => events.push({ event, detail }) });
+
+    try {
+      const result = await scanSessions({ useCache: true });
+
+      expect(result.sessions.map((session) => session.id)).toEqual(["cached"]);
+      expect(result.byAgent.test?.map((session) => session.id)).toEqual(["cached"]);
+      expect(result.cacheTimestamps).toEqual({ test: 123 });
+      expect(result.scanFailures?.test).toEqual({
+        agentName: "test",
+        stage: "checking for changes",
+        sourcePath: "/sessions/test.db",
+        errorClass: "SqliteError",
+        message: "database is locked",
+      });
+      expect(commitChangeCheck).not.toHaveBeenCalled();
+      expect(mockedSaveCachedSessionChanges).not.toHaveBeenCalled();
+      expect(mockedSaveCachedSessions).not.toHaveBeenCalled();
+      expect(events).toContainEqual({
+        event: "agent.scan_failed",
+        detail: expect.objectContaining({
+          agent: "test",
+          stage: "checking for changes",
+          source_path: "/sessions/test.db",
+          error_class: "SqliteError",
+          baseline_retained: true,
+        }),
+      });
+    } finally {
+      setCoreDiagnostics(null);
+    }
+  });
+
   it("does not publish a false empty baseline when a forced scan fails", async () => {
     const cached = makeSession("cached");
     mockedLoadCachedSessions.mockReturnValue({ sessions: [cached], meta: {}, timestamp: 123 });
