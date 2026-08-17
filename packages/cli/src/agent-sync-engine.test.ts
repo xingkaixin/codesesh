@@ -601,8 +601,14 @@ describe("AgentSyncEngine", () => {
     };
     const workerRunner: WorkerRunner = {
       activeCount: 0,
-      run: vi.fn(async () =>
-        workerResult(
+      run: vi.fn(async (_agentName, payload) => {
+        payload.onCheckpoint?.({
+          stage: "finalizing",
+          changes: [{ session: updated, sortIndex: 0 }],
+          meta: {},
+          backfillCursor: "cursor-2",
+        });
+        return workerResult(
           {
             sessions: [updated],
             meta: {},
@@ -610,14 +616,21 @@ describe("AgentSyncEngine", () => {
             sourceFailures: [failure],
           },
           "partial",
-        ),
-      ),
+        );
+      }),
       commit: vi.fn(),
       discard: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
-    const { engine } = makeEngine(new FakeSyncAgent(), [previous], workerRunner);
-    const internal = engine as unknown as { enqueueBackfill(agentName: string): void };
+    core.getAgentFullSyncCursor.mockReturnValueOnce("cursor-1");
+    const { engine } = makeEngine(new FakeSyncAgent(), [previous], workerRunner, { from: 1 });
+    const internal = engine as unknown as {
+      cacheIntegrityValidUntilByAgent: Map<string, number>;
+      enqueueBackfill(agentName: string): void;
+      scheduler: { schedule(agentName: string, delayMs: number): void };
+    };
+    const schedule = vi.spyOn(internal.scheduler, "schedule").mockImplementation(() => undefined);
+    const info = vi.spyOn(appLogger, "info");
 
     internal.enqueueBackfill("codex");
     await vi.waitFor(() => expect(engine.status().backfill.completedAgents).toEqual(["codex"]));
@@ -636,7 +649,20 @@ describe("AgentSyncEngine", () => {
     });
     expect(workerRunner.commit).toHaveBeenCalledWith("codex");
     expect(workerRunner.discard).not.toHaveBeenCalled();
-    expect(core.markAgentFullSyncCompleted).toHaveBeenCalledWith("codex");
+    expect(workerRunner.run).toHaveBeenCalledWith(
+      "codex",
+      expect.objectContaining({
+        operation: { kind: "source-backfill", cursor: "cursor-1", checkpoint: "durable" },
+      }),
+    );
+    expect(core.markAgentFullSyncProgress).toHaveBeenCalledWith("codex", "cursor-2");
+    expect(core.markAgentFullSyncCompleted).not.toHaveBeenCalled();
+    expect(internal.cacheIntegrityValidUntilByAgent.has("codex")).toBe(false);
+    expect(schedule).toHaveBeenCalledWith("codex", 5 * 60 * 1000);
+    expect(info).toHaveBeenCalledWith("scan.backfill.retry_scheduled", {
+      agent: "codex",
+      delay_ms: 5 * 60 * 1000,
+    });
   });
 
   it("cancels backfill lifecycle before awaiting shutdown", async () => {

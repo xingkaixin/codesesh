@@ -112,6 +112,7 @@ const REFRESH_DEBOUNCE_MS = 200;
 const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
 const SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD = 100;
 const BACKFILL_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const PARTIAL_BACKFILL_RETRY_DELAY_MS = 5 * 60 * 1000;
 const CACHE_TRUNCATION_COVERAGE = 0.5;
 // SSE carries one compact summary; logs retain the complete failure list.
 const SOURCE_FAILURE_SUMMARY_MAX_LENGTH = 160;
@@ -926,10 +927,19 @@ export class AgentSyncEngine {
         if (result === "failed") {
           this.cacheIntegrityValidUntilByAgent.delete(attempt.agentName);
         } else if (result === "committed") {
-          this.cacheIntegrityValidUntilByAgent.set(
-            attempt.agentName,
-            Date.now() + BACKFILL_INTERVAL_MS,
-          );
+          if (current.completion?.completeness === "partial") {
+            this.cacheIntegrityValidUntilByAgent.delete(attempt.agentName);
+            this.scheduler.schedule(attempt.agentName, PARTIAL_BACKFILL_RETRY_DELAY_MS);
+            appLogger.info("scan.backfill.retry_scheduled", {
+              agent: attempt.agentName,
+              delay_ms: PARTIAL_BACKFILL_RETRY_DELAY_MS,
+            });
+          } else {
+            this.cacheIntegrityValidUntilByAgent.set(
+              attempt.agentName,
+              Date.now() + BACKFILL_INTERVAL_MS,
+            );
+          }
         }
         this.statusReporter.publishBackfillStatus();
       }
@@ -1025,11 +1035,11 @@ export class AgentSyncEngine {
       });
       durableCommitted = publication.durableCommitted;
       this.options.workerRunner.commit?.(agentName);
-      if (!markAgentFullSyncCompleted(agentName)) {
+      if (completion.completeness === "complete" && !markAgentFullSyncCompleted(agentName)) {
         appLogger.warn("scan.backfill.completion_not_durable", { agent: agentName });
       }
       appLogger.info(
-        result.sourceFailures?.length ? "scan.backfill.partial" : "scan.backfill.done",
+        completion.completeness === "partial" ? "scan.backfill.partial" : "scan.backfill.done",
         {
           agent: agentName,
           duration_ms: Math.round(performance.now() - startedAt),
