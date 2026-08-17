@@ -192,6 +192,7 @@ backup of your history. Session content stays in each agent's own data directory
 | `--tls-cert` | — | — | Path to a TLS certificate; serves remote access over HTTPS |
 | `--tls-key` | — | — | Path to the private key matching `--tls-cert` |
 | `--trust-proxy` | — | `false` | A reverse proxy in front of CodeSesh terminates TLS |
+| `--public-url` | — | — | Public HTTPS origin used with `--trust-proxy` for startup links |
 | `--days` | `-d` | `7` | Only include sessions active in the last N days (`0` = all time) |
 | `--cwd` | — | — | Filter to sessions from a project directory (`.` = current dir) |
 | `--agent` | `-a` | all | Filter to specific agent(s), comma-separated |
@@ -207,10 +208,10 @@ backup of your history. Session content stays in each agent's own data directory
 | `-h` / `--help` | — | — | Show help |
 
 Every CodeSesh server process protects its API with a new access token, including the default
-loopback listener, and includes that token in the printed startup URL. Non-loopback binding and
-`--trust-proxy` are rejected unless `--remote-access` is also present. This includes a loopback
-listener exposed by a same-machine reverse proxy. Treat the startup URL as a password: do not
-publish it or place it in shared shell history.
+loopback listener, and includes that token in the printed startup URL. Non-loopback binding requires
+`--remote-access`. A trusted proxy also requires `--remote-access`, a loopback `--host`, and an
+HTTPS `--public-url`. Treat the startup URL as a password: do not publish it or place it in shared
+shell history.
 
 A token proves who is asking; it does not hide the answer. Without TLS the token and the full
 session content travel the network in the clear, and the token in the URL can end up in reverse
@@ -221,12 +222,14 @@ proxy access logs. Pick one of:
 npx codesesh --host 0.0.0.0 --remote-access --tls-cert ./cert.pem --tls-key ./key.pem
 
 # A reverse proxy terminates TLS; CodeSesh stays bound to loopback
-npx codesesh --host 127.0.0.1 --remote-access --trust-proxy
+npx codesesh --host 127.0.0.1 --remote-access --trust-proxy \
+  --public-url https://codesesh.example.com
 ```
 
-`--trust-proxy` requires every API request to arrive with `X-Forwarded-Proto: https`, and refuses
-it otherwise — so a request that bypassed the proxy is rejected before authentication. This assumes
-the deployment makes CodeSesh unreachable except through that proxy.
+`--trust-proxy` requires every API request to arrive with `X-Forwarded-Proto: https` and refuses it
+otherwise. That header validates the proxy's forwarding configuration; it cannot prove which client
+sent it. CodeSesh therefore enforces a loopback backend so network clients cannot reach the HTTP
+listener directly. The printed and automatically opened startup URL uses `--public-url`.
 
 Using `--remote-access` without either TLS option still starts on a non-loopback address and prints
 a warning that the transport is unencrypted.

@@ -15,6 +15,7 @@ import { resolveRemoteTransport } from "./remote-access.js";
 const serveOptionsLog = vi.hoisted(
   () => [] as { hostname?: string; port?: number; hasCreateServer: boolean }[],
 );
+const TRUSTED_PROXY_PUBLIC_URL = "https://codesesh.example.com";
 
 function httpRequest(
   url: string,
@@ -682,8 +683,10 @@ describe("createServer", () => {
   it("CS-223: warns trusted proxy operators that access logs can retain tokens", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const app = await createServer(0, createStore(), {
-      hostname: "0.0.0.0",
+      hostname: "127.0.0.1",
+      remoteAccess: true,
       accessToken: "proxy-token",
+      publicUrl: TRUSTED_PROXY_PUBLIC_URL,
       transport: { kind: "trusted-proxy" },
     });
 
@@ -695,14 +698,39 @@ describe("createServer", () => {
     }
   });
 
-  it("CS-140: refuses requests that bypassed the trusted proxy", async () => {
+  it("refuses a trusted proxy on a network-reachable listener", async () => {
+    await expect(
+      createServer(0, createStore(), {
+        hostname: "0.0.0.0",
+        remoteAccess: true,
+        accessToken: "proxy-token",
+        publicUrl: TRUSTED_PROXY_PUBLIC_URL,
+        transport: { kind: "trusted-proxy" },
+      }),
+    ).rejects.toThrow(/loopback --host/);
+  });
+
+  it("requires a trusted proxy to declare its public HTTPS origin", async () => {
+    await expect(
+      createServer(0, createStore(), {
+        hostname: "127.0.0.1",
+        remoteAccess: true,
+        accessToken: "proxy-token",
+        transport: { kind: "trusted-proxy" },
+      }),
+    ).rejects.toThrow(/requires an HTTPS --public-url/);
+  });
+
+  it("CS-140: requires forwarded HTTPS on the loopback proxy backend", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const app = await createServer(0, createStore(), {
-      hostname: "0.0.0.0",
+      hostname: "127.0.0.1",
+      remoteAccess: true,
       accessToken: "proxy-token",
+      publicUrl: TRUSTED_PROXY_PUBLIC_URL,
       transport: { kind: "trusted-proxy" },
     });
-    const origin = `http://127.0.0.1:${new URL(app.url).port}`;
+    const origin = app.listenerUrl;
     const authorized = { Authorization: "Bearer proxy-token" };
 
     try {
@@ -721,7 +749,6 @@ describe("createServer", () => {
           })
         ).status,
       ).toBe(200);
-      // The proxy check runs first, so a bypassed request never reaches auth.
       expect(
         (await fetch(`${origin}/api/agents`, { headers: { "X-Forwarded-Proto": "https" } })).status,
       ).toBe(401);
@@ -738,9 +765,10 @@ describe("createServer", () => {
       hostname: "127.0.0.1",
       remoteAccess: true,
       accessToken: "proxy-token",
+      publicUrl: TRUSTED_PROXY_PUBLIC_URL,
       transport: { kind: "trusted-proxy" },
     });
-    const origin = `http://127.0.0.1:${new URL(app.url).port}`;
+    const origin = app.listenerUrl;
     const proxyHeaders = { "X-Forwarded-Proto": "https" };
 
     try {
@@ -750,6 +778,8 @@ describe("createServer", () => {
         authentication: "token",
         loopback_authority: "disabled",
       });
+      expect(app.url).toBe(`${TRUSTED_PROXY_PUBLIC_URL}/?access_token=proxy-token`);
+      expect(app.listenerUrl).toMatch(/^http:\/\/localhost:\d+$/);
       expect((await fetch(`${origin}/api/agents`, { headers: proxyHeaders })).status).toBe(401);
       expect(
         (
@@ -784,9 +814,10 @@ describe("createServer", () => {
       hostname: "127.0.0.1",
       remoteAccess: true,
       accessToken: "proxy-token",
+      publicUrl: TRUSTED_PROXY_PUBLIC_URL,
       transport: { kind: "trusted-proxy" },
     });
-    const origin = `http://127.0.0.1:${new URL(app.url).port}`;
+    const origin = app.listenerUrl;
 
     try {
       expect(
@@ -807,6 +838,7 @@ describe("createServer", () => {
     await expect(
       createServer(0, createStore(), {
         hostname: "127.0.0.1",
+        publicUrl: TRUSTED_PROXY_PUBLIC_URL,
         transport: { kind: "trusted-proxy" },
       }),
     ).rejects.toThrow("Add --remote-access");
