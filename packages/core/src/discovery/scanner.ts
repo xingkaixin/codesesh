@@ -641,7 +641,19 @@ async function scanAgentSmart(
 
       const isAvail = agent.isAvailable();
       if (!isAvail) {
-        return null;
+        return finalizeAgentScanFailure(
+          agent,
+          {
+            agentName: agent.name,
+            stage: "checking availability",
+            errorClass: "AgentUnavailableError",
+            message: `Agent ${agent.name} is unavailable`,
+          },
+          options,
+          cached,
+          timing,
+          agentStart,
+        );
       }
 
       // 通知缓存已加载
