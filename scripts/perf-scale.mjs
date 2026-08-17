@@ -23,6 +23,7 @@ const MAX_COST_GROWTH = 2.5;
 
 /** Sizes chosen so the largest is still fast when the algorithm is correct. */
 const SIZES = [2_000, 8_000];
+const CONTROL_SIZES = [400, 1_600];
 
 /** Discards a warm-up run and reports the best of a few, to blunt scheduler noise. */
 function measure(run, iterations = 3) {
@@ -36,15 +37,12 @@ function measure(run, iterations = 3) {
   return best;
 }
 
-/** Cost per item, so sizes are directly comparable. */
-function perItemCost(size, run) {
-  return measure(() => run(size)) / size;
-}
-
-function checkGrowth(name, run, sizes = SIZES) {
+/** Normalizes two duration samples by input size and applies the growth policy. */
+function evaluateGrowth(name, sizes, durations) {
   const [small, large] = sizes;
-  const smallCost = perItemCost(small, run);
-  const largeCost = perItemCost(large, run);
+  const [smallDuration, largeDuration] = durations;
+  const smallCost = smallDuration / small;
+  const largeCost = largeDuration / large;
   // A near-zero small measurement would make the ratio meaningless.
   const growth = smallCost > 0 ? largeCost / smallCost : 1;
 
@@ -55,6 +53,14 @@ function checkGrowth(name, run, sizes = SIZES) {
     limit: MAX_COST_GROWTH,
     ok: growth <= MAX_COST_GROWTH,
   };
+}
+
+function checkGrowth(name, run, sizes = SIZES) {
+  return evaluateGrowth(
+    name,
+    sizes,
+    sizes.map((size) => measure(() => run(size))),
+  );
 }
 
 /** Allocates unique paths for labels that all collide — the sidebar's shape. */
@@ -112,6 +118,21 @@ function groupByOwner(size) {
   return grouped.size;
 }
 
+/** The former path allocator, used to prove the isolated gate detects O(N²). */
+function allocateWithRestartedProbes(size) {
+  const used = new Set();
+  for (let index = 0; index < size; index += 1) {
+    const base = "Same title #deadbeef";
+    let path = base;
+    let suffix = 2;
+    while (used.has(path)) {
+      path = `${base} (${suffix})`;
+      suffix += 1;
+    }
+    used.add(path);
+  }
+}
+
 const CASES = [
   ["sidebar path allocation over colliding labels", allocateCollidingPaths],
   ["virtual list height index over every row", measureEveryRow],
@@ -121,11 +142,23 @@ const CASES = [
 function main() {
   const asJson = process.argv.includes("--json");
   const results = CASES.map(([name, run]) => checkGrowth(name, run));
+  const control = checkGrowth(
+    "quadratic detection control",
+    allocateWithRestartedProbes,
+    CONTROL_SIZES,
+  );
+  const controlDetected = !control.ok;
+  const growthRegressionDetected = results.some((result) => !result.ok);
 
   if (asJson) {
     console.log(
       JSON.stringify(
-        { nodeVersion: process.version, maxCostGrowth: MAX_COST_GROWTH, results },
+        {
+          nodeVersion: process.version,
+          maxCostGrowth: MAX_COST_GROWTH,
+          control: { detected: controlDetected, measurement: control },
+          results,
+        },
         null,
         2,
       ),
@@ -138,14 +171,22 @@ function main() {
           `${result.sizes[0]} to ${result.sizes[1]} items (limit ×${result.limit})`,
       );
     }
+    const controlStatus = controlDetected ? "ok" : "FAIL";
+    console.log(
+      `${controlStatus.padEnd(5)} ${control.name}: observed per-item growth ×${control.growth} ` +
+        `(must exceed ×${control.limit})`,
+    );
   }
 
-  if (results.some((result) => !result.ok)) {
-    console.error("\nPer-item cost grew with input size: this shape is no longer linear.");
-    process.exit(1);
+  if (!controlDetected) {
+    console.error("\nGrowth-rate gate did not detect its quadratic control.");
   }
+  if (growthRegressionDetected) {
+    console.error("\nPer-item cost grew with input size: this shape is no longer linear.");
+  }
+  if (!controlDetected || growthRegressionDetected) process.exit(1);
 }
 
-export { CASES, MAX_COST_GROWTH, SIZES, checkGrowth };
+export { CASES, MAX_COST_GROWTH, SIZES, checkGrowth, evaluateGrowth };
 
 if (process.argv[1]?.endsWith("perf-scale.mjs")) main();
