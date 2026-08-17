@@ -1,5 +1,5 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 export interface SessionAliasTarget {
   agentKey: string;
@@ -22,42 +22,49 @@ export function SessionAliasDialog({
   const [alias, setAlias] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const activeRequest = useRef<symbol | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    activeRequest.current = null;
     setAlias(target?.displayTitle ?? target?.title ?? "");
     setError(null);
+    setSaving(false);
   }, [target]);
 
+  const runOperation = async (operation: () => Promise<void>, fallbackError: string) => {
+    if (activeRequest.current) return;
+    const request = Symbol();
+    activeRequest.current = request;
+    setSaving(true);
+    setError(null);
+    try {
+      await operation();
+      if (activeRequest.current === request) onClose();
+    } catch (operationError) {
+      if (activeRequest.current !== request) return;
+      setError(operationError instanceof Error ? operationError.message : fallbackError);
+    } finally {
+      if (activeRequest.current === request) {
+        activeRequest.current = null;
+        setSaving(false);
+      }
+    }
+  };
+
   const saveAlias = async () => {
+    if (!target) return;
     const nextAlias = alias.trim();
-    if (!nextAlias || nextAlias === target?.title.trim()) {
+    if (!nextAlias || nextAlias === target.title.trim()) {
       await removeAlias();
       return;
     }
 
-    setSaving(true);
-    setError(null);
-    try {
-      await onSave(nextAlias);
-      onClose();
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Could not rename this session.");
-    } finally {
-      setSaving(false);
-    }
+    await runOperation(() => onSave(nextAlias), "Could not rename this session.");
   };
 
   const removeAlias = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      await onRemove();
-      onClose();
-    } catch (removeError) {
-      setError(removeError instanceof Error ? removeError.message : "Could not restore the title.");
-    } finally {
-      setSaving(false);
-    }
+    if (!target) return;
+    await runOperation(onRemove, "Could not restore the title.");
   };
 
   return (
