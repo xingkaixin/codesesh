@@ -82,10 +82,11 @@ function getLegacyCachePath(): string {
 const FIXTURE_DIR = mkdtempSync(join(tmpdir(), "codesesh-identity-"));
 const FIXTURE_DIR_NAME = FIXTURE_DIR.split(/[\\/]/).pop()!;
 
-function makeSession(id: string): SessionHead {
+function makeSession(id: string, agentName = "claudecode"): SessionHead {
   return {
+    reference: { agentName, sessionId: id },
     id,
-    slug: `agent/${id}`,
+    slug: `${agentName}/${id}`,
     title: `Session ${id}`,
     directory: FIXTURE_DIR,
     project_identity: {
@@ -195,7 +196,7 @@ describe("loadCachedSessions", () => {
   });
 
   it("returns null when agent is not cached", () => {
-    saveCachedSessions("cursor", [makeSession("s1")]);
+    saveCachedSessions("cursor", [makeSession("s1", "cursor")]);
     expect(loadCachedSessions("claudecode")).toBeNull();
   });
 
@@ -232,6 +233,15 @@ describe("loadCachedSessions", () => {
 });
 
 describe("session identity persistence invariant", () => {
+  it("rejects conflicting session identities before opening the cache", () => {
+    const session = { ...makeSession("session"), slug: "codex/other" };
+
+    expect(() => saveCachedSessions("claudecode", [session])).toThrow(
+      "Session identity fields disagree",
+    );
+    expect(existsSync(getCachePath())).toBe(false);
+  });
+
   it("fails before opening the cache when a session identity is missing", () => {
     const spawnSpy = vi.spyOn(realFs, "spawn");
     const session = { ...makeSession("missing-identity"), project_identity: undefined };
@@ -258,7 +268,7 @@ describe("withCacheDb schema memo", () => {
   it("runs ensureSchema on the first open but skips it on later opens for the same path", () => {
     withCacheDb(() => undefined);
     expect(getSchemaEnsuredPath()).toBe(getCachePath());
-    expect(getUserVersion(getCachePath())).toBe(29);
+    expect(getUserVersion(getCachePath())).toBe(30);
 
     const db = new Database(getCachePath());
     db.pragma("user_version = 14");
@@ -269,7 +279,7 @@ describe("withCacheDb schema memo", () => {
 
     setSchemaEnsuredPath(null);
     withCacheDb(() => undefined);
-    expect(getUserVersion(getCachePath())).toBe(29);
+    expect(getUserVersion(getCachePath())).toBe(30);
   });
 });
 
@@ -277,7 +287,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(29);
+    expect(getUserVersion(getCachePath())).toBe(30);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -464,7 +474,7 @@ describe("saveCachedSessions", () => {
   });
 
   it("preserves other agents", () => {
-    saveCachedSessions("cursor", [makeSession("cursor-1")]);
+    saveCachedSessions("cursor", [makeSession("cursor-1", "cursor")]);
     saveCachedSessions("claudecode", [makeSession("claude-1")]);
 
     expect(loadCachedSessions("cursor")?.sessions.map((session) => session.id)).toEqual([
@@ -487,7 +497,6 @@ describe("saveCachedSessions", () => {
   it("writes project groups from cached sessions", () => {
     const claude = {
       ...makeSession("claude-1"),
-      slug: "claudecode/claude-1",
       project_identity: {
         kind: "git_remote" as const,
         key: "github.com/xingkaixin/codesesh",
@@ -495,8 +504,7 @@ describe("saveCachedSessions", () => {
       },
     };
     const codex = {
-      ...makeSession("codex-1"),
-      slug: "codex/codex-1",
+      ...makeSession("codex-1", "codex"),
       project_identity: claude.project_identity,
     };
 
@@ -518,7 +526,6 @@ describe("saveCachedSessions", () => {
   it("reads project groups from structured sessions", () => {
     const session = {
       ...makeSession("s1"),
-      slug: "claudecode/s1",
       project_identity: {
         kind: "git_remote" as const,
         key: "github.com/xingkaixin/codesesh",
@@ -553,7 +560,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(29);
+    expect(getUserVersion(getCachePath())).toBe(30);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
@@ -613,7 +620,7 @@ describe("saveCachedSessions", () => {
 
     try {
       expect(loadCachedSessions("claudecode")?.sessions).toEqual([]);
-      expect(getUserVersion(getCachePath())).toBe(29);
+      expect(getUserVersion(getCachePath())).toBe(30);
       expect(warnings).toContainEqual({
         event: "sqlite.migration.identity_precompute.missing_directory",
         detail: { agent_name: "claudecode", session_id: "legacy-null-directory" },
@@ -733,7 +740,7 @@ describe("clearCache", () => {
   });
 
   it("CS-259: clears every cache-owned data table and stale metadata", () => {
-    const session = makeSession("clear-me");
+    const session = makeSession("clear-me", "codex");
     expect(saveCachedSessions("codex", [session])).toBe(true);
     withCacheDb((db) => {
       db.exec(`
@@ -943,8 +950,8 @@ describe("getCacheInfo", () => {
   });
 
   it("returns aggregate info from sqlite cache", () => {
-    saveCachedSessions("agent1", [makeSession("a"), makeSession("b")]);
-    saveCachedSessions("agent2", [makeSession("c")]);
+    saveCachedSessions("agent1", [makeSession("a", "agent1"), makeSession("b", "agent1")]);
+    saveCachedSessions("agent2", [makeSession("c", "agent2")]);
 
     expect(getCacheInfo()).toEqual({ lastScanTime: now, size: 3 });
   });

@@ -67,7 +67,7 @@ function seedFixture(): void {
   seedAgent("cursor", [
     [
       makeSessionHead("beta", {
-        slug: "cursor/beta",
+        reference: { agentName: "cursor", sessionId: "beta" },
         time_updated: TEST_NOW + 10_000,
         project_identity: OTHER_PROJECT,
       }),

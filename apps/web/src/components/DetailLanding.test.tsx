@@ -18,10 +18,8 @@ describe("DetailLanding", () => {
     Object.defineProperty(stats, "message_count", { get: readMessageCount });
     const sessions: IndexedSession[] = [
       {
+        reference: { agentName: "codex", sessionId: "session-1" },
         id: "session-1",
-        sessionId: "session-1",
-        agentKey: "codex",
-        reference: "codex/session-1",
         slug: "codex/session-1",
         title: "Session",
         directory: "/repo",

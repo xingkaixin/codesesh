@@ -48,8 +48,8 @@ class FakeFileSystemSource extends FileSystemSessionSource {
     return this.walkFiles(root, () => true);
   }
 
-  sessionSlugForTest(sessionId: string): string {
-    return this.sessionSlug(sessionId);
+  sessionIdentityForTest(sessionId: string) {
+    return this.sessionIdentity(sessionId);
   }
 
   isAvailable(): boolean {
@@ -99,6 +99,7 @@ class NormalizedNameSource extends FakeFileSystemSource {
 
 function makeSession(id: string): SessionHead {
   return {
+    reference: { agentName: "fake", sessionId: id },
     id,
     slug: `fake/${id}`,
     title: id,
@@ -141,7 +142,11 @@ describe("BaseAgent", () => {
 
   it("formats session slugs from its normalized registered identity", () => {
     const agent = new NormalizedNameSource();
-    expect(agent.sessionSlugForTest("nested/session")).toBe("fake/nested/session");
+    expect(agent.sessionIdentityForTest("nested/session")).toEqual({
+      reference: { agentName: "fake", sessionId: "nested/session" },
+      id: "nested/session",
+      slug: "fake/nested/session",
+    });
   });
 });
 

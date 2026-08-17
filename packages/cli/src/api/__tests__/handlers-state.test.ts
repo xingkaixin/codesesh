@@ -112,6 +112,7 @@ function getResponsePayload<T>(context: ReturnType<typeof makeContext>): T {
 const validReference = { agentName: "codex", sessionId: "s1" };
 
 const sessionHead: SessionHead = {
+  reference: validReference,
   id: "s1",
   slug: "codex/s1",
   title: "Session one",

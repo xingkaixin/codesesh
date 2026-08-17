@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import type { SessionHead } from "../../types/index.js";
 
-export const EXPECTED_CACHE_SCHEMA_VERSION = 29;
+export const EXPECTED_CACHE_SCHEMA_VERSION = 30;
 
 export const RELEASE_CACHE_FIXTURES = [
   { version: 3, sourceTag: "v0.3.0" },
@@ -31,7 +31,7 @@ export function hasStructuredMessages(fixture: ReleaseCacheFixture): boolean {
 }
 
 export function expectedBackupCount(fixture: ReleaseCacheFixture): number {
-  return [6, 15].filter((version) => version > fixture.version).length;
+  return [6, 15, 30].filter((version) => version > fixture.version).length;
 }
 
 export function createReleaseCacheFixture(

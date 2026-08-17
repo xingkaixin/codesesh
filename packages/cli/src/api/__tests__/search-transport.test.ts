@@ -43,6 +43,7 @@ const now = Date.now();
 function makeSessionHead(id: string, title: string, timeUpdated: number): SessionHead {
   const directory = `/fixtures/${id}`;
   return {
+    reference: { agentName: "claudecode", sessionId: id },
     id,
     slug: `claudecode/${id}`,
     title,

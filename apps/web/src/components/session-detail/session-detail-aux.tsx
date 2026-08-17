@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import { formatSessionReference } from "@codesesh/core/contract";
 import { FileText, Funnel } from "../ui/icons";
 import type { SessionDetail } from "../../lib/api";
 import { ErrorBoundary } from "../ErrorBoundary";
@@ -35,7 +36,7 @@ export function DeferredInteractiveReceipt({
 
   useEffect(() => {
     setOpen(false);
-  }, [session.id]);
+  }, [session.reference.agentName, session.reference.sessionId]);
 
   useEffect(() => {
     if (!open) {
@@ -78,7 +79,11 @@ export function DeferredInteractiveReceipt({
           <RenderProfiler id="InteractiveReceipt">
             <ErrorBoundary>
               <Suspense fallback={<ReceiptPlaceholder />}>
-                <InteractiveReceipt key={session.id} session={session} toc={toc} />
+                <InteractiveReceipt
+                  key={formatSessionReference(session.reference)}
+                  session={session}
+                  toc={toc}
+                />
               </Suspense>
             </ErrorBoundary>
           </RenderProfiler>

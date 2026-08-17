@@ -21,6 +21,7 @@ beforeEach(() => {
 function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
   const timeCreated = overrides?.time_created ?? 1000;
   return {
+    reference: { agentName: "agent", sessionId: id },
     id,
     slug: `agent/${id}`,
     title: `Session ${id}`,
@@ -253,8 +254,12 @@ describe("sessionSignature", () => {
     expect(sessionSignature(base)).not.toBe(sessionSignature(grown));
   });
 
-  it("changes when the slug changes", () => {
-    expectSessionChange((session) => ({ ...session, slug: "agent/changed" }));
+  it("changes when the authoritative reference changes", () => {
+    expectSessionChange((session) => ({
+      ...session,
+      reference: { agentName: "changed", sessionId: session.reference.sessionId },
+      slug: `changed/${session.reference.sessionId}`,
+    }));
   });
 
   it("changes when model usage changes", () => {

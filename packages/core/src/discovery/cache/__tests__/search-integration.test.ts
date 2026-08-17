@@ -49,11 +49,14 @@ function getCachePath(): string {
 // resolves to a "path" identity regardless of what manifests exist in /tmp.
 const FIXTURE_DIR = mkdtempSync(join(tmpdir(), "codesesh-identity-"));
 
-function makeSession(id: string): SessionHead & Pick<SessionDetail, "reference"> {
+function makeAgentSession(
+  agentName: string,
+  id: string,
+): SessionHead & Pick<SessionDetail, "reference"> {
   return {
-    reference: { agentName: "agent", sessionId: id },
+    reference: { agentName, sessionId: id },
     id,
-    slug: `agent/${id}`,
+    slug: `${agentName}/${id}`,
     title: `Session ${id}`,
     directory: FIXTURE_DIR,
     project_identity: {
@@ -72,8 +75,8 @@ function makeSession(id: string): SessionHead & Pick<SessionDetail, "reference">
   };
 }
 
-function makeSessionData(id: string, text: string): SessionDetail {
-  const session = makeSession(id);
+function makeAgentSessionData(agentName: string, id: string, text: string): SessionDetail {
+  const session = makeAgentSession(agentName, id);
   return {
     ...session,
     messages: [
@@ -136,6 +139,8 @@ afterEach(() => {
 });
 
 describe("session detail re-indexing", () => {
+  const makeSession = (id: string) => makeAgentSession("codex", id);
+
   function toolSessionData(id: string, tool: string): SessionDetail {
     const session = makeSession(id);
     return {
@@ -176,10 +181,10 @@ describe("session detail re-indexing", () => {
 
   it("marks Codex details pending once on the exec-decode migration", () => {
     saveCachedSessions("codex", [makeSession("codex-1")], {});
-    saveCachedSessions("claudecode", [makeSession("cc-1")], {});
+    saveCachedSessions("claudecode", [makeAgentSession("claudecode", "cc-1")], {});
     syncSessionSearchIndex("codex", [makeSession("codex-1")], (id) => toolSessionData(id, "exec"));
-    syncSessionSearchIndex("claudecode", [makeSession("cc-1")], (id) =>
-      makeSessionData(id, "keep me"),
+    syncSessionSearchIndex("claudecode", [makeAgentSession("claudecode", "cc-1")], (id) =>
+      makeAgentSessionData("claudecode", id, "keep me"),
     );
     expect(loadCachedSessionData("codex", "codex-1")?.messages).toHaveLength(1);
 
@@ -208,6 +213,9 @@ describe("session detail re-indexing", () => {
 });
 
 describe("durable publication", () => {
+  const makeSession = (id: string) => makeAgentSession("codex", id);
+  const makeSessionData = (id: string, text: string) => makeAgentSessionData("codex", id, text);
+
   it("rolls back when the head write fails", () => {
     const original = makeSession("head-failure");
     saveCachedSessions("codex", [original]);
@@ -705,21 +713,25 @@ describe("durable publication", () => {
 });
 
 describe("searchSessions", () => {
+  const makeSession = (id: string) => makeAgentSession("claudecode", id);
+  const makeSessionData = (id: string, text: string) =>
+    makeAgentSessionData("claudecode", id, text);
+
   it("preserves strict cost qualifier comparisons", () => {
     const below = {
-      ...makeSession("below"),
+      ...makeAgentSession("codex", "below"),
       time_updated: now + 1,
-      stats: { ...makeSession("below").stats, total_cost: 0.99 },
+      stats: { ...makeAgentSession("codex", "below").stats, total_cost: 0.99 },
     };
     const boundary = {
-      ...makeSession("boundary"),
+      ...makeAgentSession("codex", "boundary"),
       time_updated: now + 2,
-      stats: { ...makeSession("boundary").stats, total_cost: 1 },
+      stats: { ...makeAgentSession("codex", "boundary").stats, total_cost: 1 },
     };
     const above = {
-      ...makeSession("above"),
+      ...makeAgentSession("codex", "above"),
       time_updated: now + 3,
-      stats: { ...makeSession("above").stats, total_cost: 1.01 },
+      stats: { ...makeAgentSession("codex", "above").stats, total_cost: 1.01 },
     };
 
     saveCachedSessions("codex", [below, boundary, above]);
@@ -738,22 +750,19 @@ describe("searchSessions", () => {
 
   it("filters indexed parents by inclusive child cost", () => {
     const parent = {
-      ...makeSession("inclusive-parent"),
-      slug: "codex/inclusive-parent",
-      stats: { ...makeSession("inclusive-parent").stats, total_cost: 0 },
+      ...makeAgentSession("codex", "inclusive-parent"),
+      stats: { ...makeAgentSession("codex", "inclusive-parent").stats, total_cost: 0 },
     };
     const child = {
-      ...makeSession("inclusive-child"),
-      slug: "codex/inclusive-child",
+      ...makeAgentSession("codex", "inclusive-child"),
       parent_reference: { agentName: "codex", sessionId: "inclusive-parent" },
-      stats: { ...makeSession("inclusive-child").stats, total_cost: 2 },
+      stats: { ...makeAgentSession("codex", "inclusive-child").stats, total_cost: 2 },
     };
     const details = new Map<string, SessionDetail>([
       [
         parent.id,
         {
           ...parent,
-          reference: { agentName: "codex", sessionId: parent.id },
           messages: [
             {
               id: "parent-message",
@@ -768,7 +777,6 @@ describe("searchSessions", () => {
         child.id,
         {
           ...child,
-          reference: { agentName: "codex", sessionId: child.id },
           messages: [],
         },
       ],
@@ -797,7 +805,7 @@ describe("searchSessions", () => {
 
   it("loads full session data from the SQLite message cache", () => {
     const session: SessionHead = {
-      ...makeSession("cached-detail"),
+      ...makeAgentSession("codex", "cached-detail"),
       stats: {
         message_count: 1,
         total_input_tokens: 3,
@@ -807,7 +815,7 @@ describe("searchSessions", () => {
       },
     };
     syncSessionSearchIndex("codex", [session], (sessionId) => ({
-      ...makeSessionData(sessionId, "detail view reads sqlite"),
+      ...makeAgentSessionData("codex", sessionId, "detail view reads sqlite"),
       messages: [
         {
           id: "m1",
@@ -1316,12 +1324,12 @@ describe("searchSessions", () => {
 
   it("validates normalized message counts instead of raw agent counts", () => {
     const session = {
-      ...makeSession("normalized-count"),
-      stats: { ...makeSession("normalized-count").stats, message_count: 5 },
+      ...makeAgentSession("codex", "normalized-count"),
+      stats: { ...makeAgentSession("codex", "normalized-count").stats, message_count: 5 },
     };
     const loadSession = vi.fn(() => ({
       ...session,
-      messages: makeSessionData(session.id, "normalized content").messages,
+      messages: makeAgentSessionData("codex", session.id, "normalized content").messages,
     }));
 
     syncSessionSearchIndex("codex", [session], loadSession);
@@ -1334,9 +1342,9 @@ describe("searchSessions", () => {
   });
 
   it("backfills normalized message counts when migrating existing search documents", () => {
-    const session = makeSession("normalized-count-migration");
+    const session = makeAgentSession("codex", "normalized-count-migration");
     syncSessionSearchIndex("codex", [session], () =>
-      makeSessionData(session.id, "normalized migration content"),
+      makeAgentSessionData("codex", session.id, "normalized migration content"),
     );
 
     const db = new Database(getCachePath());
@@ -1360,7 +1368,7 @@ describe("searchSessions", () => {
     } finally {
       migratedDb.close();
     }
-    expect(getUserVersion(getCachePath())).toBe(29);
+    expect(getUserVersion(getCachePath())).toBe(30);
   });
 
   it("keeps small incremental updates searchable immediately", () => {
@@ -1955,7 +1963,7 @@ describe("searchSessions", () => {
 
   it("CS-134: keeps same-id sessions from different agents apart", () => {
     for (const agent of ["claudecode", "codex"]) {
-      const session = { ...makeSession("shared-id"), slug: `${agent}/shared-id` };
+      const session = makeAgentSession(agent, "shared-id");
       saveCachedSessions(agent, [session]);
       syncSessionSearchIndex(
         agent,
@@ -2153,12 +2161,12 @@ describe("searchSessions", () => {
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(29);
+    expect(getUserVersion(getCachePath())).toBe(30);
   });
 
   it("refreshes cached project identities when migrating to schema version 12", () => {
     const directory = join(testHomeDir, "Documents", "Codex", "2026-05-22", "new-chat");
-    saveCachedSessions("codex", [{ ...makeSession("codex-scratch"), directory }]);
+    saveCachedSessions("codex", [{ ...makeAgentSession("codex", "codex-scratch"), directory }]);
 
     const db = new Database(getCachePath());
     try {
@@ -2207,8 +2215,7 @@ describe("searchSessions", () => {
 
   it("combines full text with structured filters", () => {
     const codex = {
-      ...makeSession("structured"),
-      slug: "codex/structured",
+      ...makeAgentSession("codex", "structured"),
       title: "Structured Retrieval",
       directory: "/tmp/codesesh",
       project_identity: {
@@ -2226,8 +2233,7 @@ describe("searchSessions", () => {
       },
     };
     const other = {
-      ...makeSession("other"),
-      slug: "cursor/other",
+      ...makeAgentSession("cursor", "other"),
       directory: "/tmp/other",
       smart_tags: ["docs" as const],
     };
@@ -2258,7 +2264,9 @@ describe("searchSessions", () => {
         },
       ],
     }));
-    syncSessionSearchIndex("cursor", [other], () => makeSessionData("other", "needle other"));
+    syncSessionSearchIndex("cursor", [other], () =>
+      makeAgentSessionData("cursor", "other", "needle other"),
+    );
 
     const results = searchSessions(
       "needle agent:codex project:codesesh tag:feature-dev tool:apply_patch file:App.tsx cost:>1",
@@ -2272,21 +2280,19 @@ describe("searchSessions", () => {
 
   it("returns recent sessions for structured-only queries", () => {
     const recent = {
-      ...makeSession("recent"),
-      slug: "codex/recent",
+      ...makeAgentSession("codex", "recent"),
       time_updated: now + 10,
       smart_tags: ["testing" as const],
     };
     const old = {
-      ...makeSession("old"),
-      slug: "codex/old",
+      ...makeAgentSession("codex", "old"),
       time_updated: now - 10,
       smart_tags: ["docs" as const],
     };
 
     saveCachedSessions("codex", [old, recent]);
     syncSessionSearchIndex("codex", [old, recent], (sessionId) =>
-      makeSessionData(sessionId, "indexed content"),
+      makeAgentSessionData("codex", sessionId, "indexed content"),
     );
 
     const results = searchSessions("agent:codex tag:testing");
@@ -2297,9 +2303,9 @@ describe("searchSessions", () => {
   });
 
   it("preserves omitted durable facts in a partial publication", () => {
-    const old = makeSession("old");
-    const recent = makeSession("recent");
-    const removed = makeSession("removed");
+    const old = makeAgentSession("codex", "old");
+    const recent = makeAgentSession("codex", "recent");
+    const removed = makeAgentSession("codex", "removed");
     const sessions = [old, recent, removed];
     const meta = Object.fromEntries(
       sessions.map((session) => [
@@ -2353,7 +2359,7 @@ describe("searchSessions", () => {
     syncSessionSearchIndex(
       "codex",
       [updatedRecent],
-      () => makeSessionData("recent", "recentscope updated"),
+      () => makeAgentSessionData("codex", "recent", "recentscope updated"),
       { completeness: "partial", removedSessionIds: [removed.id] },
     );
 
@@ -2373,11 +2379,10 @@ describe("searchSessions", () => {
   it("upserts parent session rows before indexed messages", () => {
     const session = {
       ...makeSession("windowed"),
-      slug: "claudecode/windowed",
       stats: { ...makeSession("windowed").stats, message_count: 1 },
     };
 
-    saveCachedSessions("cursor", [makeSession("existing")]);
+    saveCachedSessions("cursor", [makeAgentSession("cursor", "existing")]);
     syncSessionSearchIndex("claudecode", [session], () => ({
       ...session,
       messages: [
@@ -2412,14 +2417,14 @@ describe("searchSessions", () => {
 
   it("supports OR queries and agent filters", () => {
     const alpha = makeSession("alpha");
-    const beta = makeSession("beta");
+    const beta = makeAgentSession("cursor", "beta");
     saveCachedSessions("claudecode", [alpha]);
     saveCachedSessions("cursor", [beta]);
     syncSessionSearchIndex("claudecode", [alpha], (sessionId) =>
       makeSessionData(sessionId, "search alpha term"),
     );
     syncSessionSearchIndex("cursor", [beta], (sessionId) =>
-      makeSessionData(sessionId, "search beta term"),
+      makeAgentSessionData("cursor", sessionId, "search beta term"),
     );
 
     const allResults = searchSessions("alpha OR beta");

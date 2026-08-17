@@ -6,9 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SQLiteDatabase } from "../../../utils/sqlite.js";
 import { getCachePath, setSchemaEnsuredPath } from "../db.js";
 import * as schema from "../schema.js";
-import { saveCachedSessions } from "../sessions.js";
+import { loadCachedSessions, saveCachedSessions } from "../sessions.js";
 import { syncSessionSearchIndex } from "../search-index-writer.js";
 import { makeSessionData, makeSessionHead } from "./fixtures.js";
+import { setCoreDiagnostics } from "../../../utils/diagnostics.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-schema-test-"));
 
@@ -101,7 +102,42 @@ describe("cache schema boundary", () => {
         "publication_id",
       ]),
     );
-    expect(state?.version).toBe(29);
+    expect(state?.version).toBe(30);
+  });
+
+  it("derives session identity from the composite key when upgrading schema 29", () => {
+    const session = makeSessionHead("identity");
+    saveCachedSessions("codex", [session]);
+    schema.withCacheDb((db) => {
+      db.exec(`
+        ALTER TABLE sessions ADD COLUMN slug TEXT NOT NULL DEFAULT '';
+        UPDATE sessions SET slug = 'wrong/value';
+        PRAGMA user_version = 29;
+      `);
+    });
+    setSchemaEnsuredPath(null);
+    const warnings: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    setCoreDiagnostics({ warn: (event, detail) => warnings.push({ event, detail }) });
+
+    try {
+      const restored = loadCachedSessions("codex")?.sessions[0];
+      const columns = schema.withCacheDb((db) =>
+        (db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>).map(
+          (row) => row.name,
+        ),
+      );
+
+      expect(restored?.reference).toEqual({ agentName: "codex", sessionId: "identity" });
+      expect(restored?.id).toBe("identity");
+      expect(restored?.slug).toBe("codex/identity");
+      expect(columns).not.toContain("slug");
+      expect(warnings).toContainEqual({
+        event: "sqlite.migration.session_identity.mismatch",
+        detail: { row_count: 1, mismatch_count: 1 },
+      });
+    } finally {
+      setCoreDiagnostics(null);
+    }
   });
 
   it("removes the legacy message FTS objects when upgrading schema 23", () => {
@@ -142,7 +178,7 @@ describe("cache schema boundary", () => {
       ),
     }));
 
-    expect(migrated).toEqual({ objects: [], version: 29 });
+    expect(migrated).toEqual({ objects: [], version: 30 });
   });
 
   it("adds an empty hash chain column when upgrading schema 24", () => {
@@ -171,7 +207,7 @@ describe("cache schema boundary", () => {
       ).content_chain_digest,
     }));
 
-    expect(migrated).toEqual({ version: 29, digest: null });
+    expect(migrated).toEqual({ version: 30, digest: null });
   });
 
   it("backfills session usage summaries when upgrading schema 28", () => {
@@ -259,7 +295,7 @@ describe("cache schema boundary", () => {
     }));
 
     expect(migrated).toEqual({
-      version: 29,
+      version: 30,
       summary: {
         message_count: 2,
         untimed_message_count: 1,
@@ -439,7 +475,7 @@ describe("cache schema boundary", () => {
           .get("codex", session.id) != null,
     }));
 
-    expect(migrated).toEqual({ version: 29, detailVersion: "", pending: true });
+    expect(migrated).toEqual({ version: 30, detailVersion: "", pending: true });
   });
 
   it("marks legacy project identities stale by leaving added provenance empty", () => {
@@ -478,7 +514,7 @@ describe("cache schema boundary", () => {
     });
 
     expect(migrated).toEqual({
-      version: 29,
+      version: 30,
       resolverRevision: null,
       inputSignature: null,
       classifierRevision: null,
@@ -548,7 +584,7 @@ describe("cache schema boundary", () => {
       });
 
       expect(migrated).toEqual({
-        version: 29,
+        version: 30,
         partsJson: legacyPartsJson,
         partsFormatVersion: 0,
       });

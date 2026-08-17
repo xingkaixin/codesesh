@@ -4,6 +4,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listBookmarks, type BookmarkRecord } from "../../state/bookmarks.js";
+import { createSessionIdentity } from "../../contract/index.js";
 import { setStateSchemaEnsuredPath } from "../../state/database.js";
 import type { SessionHead } from "../../types/index.js";
 import { setSchemaEnsuredPath } from "../cache/db.js";
@@ -69,8 +70,7 @@ function highlightedText(
 
 function makeSession(): SessionHead {
   return {
-    id: "legacy-smoke",
-    slug: "claudecode/legacy-smoke",
+    ...createSessionIdentity({ agentName: "claudecode", sessionId: "legacy-smoke" }),
     title: "Legacy smoke session",
     directory: FIXTURE_DIR,
     project_identity: {
@@ -251,6 +251,9 @@ function readMigratedFacts(): Record<string, unknown> {
       )
         .map((row) => row.name)
         .sort(),
+      sessionColumns: (db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>)
+        .map((row) => row.name)
+        .sort(),
     };
   } finally {
     db.close();
@@ -265,6 +268,10 @@ function expectMigratedBehavior(structured: boolean): void {
   const results = searchSessions("needle");
 
   expect(cached?.sessions.map((session) => session.id)).toEqual(["legacy-smoke"]);
+  expect(cached?.sessions[0]?.reference).toEqual({
+    agentName: "claudecode",
+    sessionId: "legacy-smoke",
+  });
   expect(cached?.sessions[0]?.stats).toMatchObject({
     message_count: 1,
     total_input_tokens: 10,
@@ -370,6 +377,38 @@ describe("sqlite migration release gate", () => {
           "indexed_message_count",
           "session_id",
           "title",
+        ],
+        sessionColumns: [
+          "activity_time",
+          "agent_name",
+          "cost_source",
+          "directory",
+          "message_count",
+          "meta_json",
+          "model_usage_json",
+          "parent_agent_name",
+          "parent_session_id",
+          "project_display_name",
+          "project_identity_input_signature",
+          "project_identity_key",
+          "project_identity_kind",
+          "project_identity_resolver_revision",
+          "publication_id",
+          "session_id",
+          "smart_tags_classifier_revision",
+          "smart_tags_json",
+          "smart_tags_source_updated_at",
+          "sort_index",
+          "source_path",
+          "time_created",
+          "time_updated",
+          "title",
+          "total_cache_create_tokens",
+          "total_cache_read_tokens",
+          "total_cost",
+          "total_input_tokens",
+          "total_output_tokens",
+          "total_tokens",
         ],
       });
       const backups = getMigrationBackups();

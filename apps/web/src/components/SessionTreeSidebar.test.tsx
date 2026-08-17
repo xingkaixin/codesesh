@@ -10,6 +10,7 @@ import {
 
 function makeSession(overrides: Partial<SessionHead> & { id: string }): SessionHead {
   return {
+    reference: { agentName: "codex", sessionId: overrides.id },
     slug: `codex/${overrides.id}`,
     title: overrides.id,
     directory: "/repo/unused",

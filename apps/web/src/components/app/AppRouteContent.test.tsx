@@ -130,10 +130,8 @@ function makeSession(id: string): SessionDetail {
 
 function makeLandingSession(agentKey: string, sessionId: string, title: string): IndexedSession {
   return {
+    reference: { agentName: agentKey, sessionId },
     id: sessionId,
-    sessionId,
-    agentKey,
-    reference: `${agentKey}/${sessionId}`,
     slug: `${agentKey}/${sessionId}`,
     title,
     directory: "/repo",

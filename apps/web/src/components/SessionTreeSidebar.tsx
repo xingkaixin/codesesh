@@ -337,7 +337,7 @@ export function buildSessionTreeModel(
       const siblingCount = siblingTitleCounts.get(title) ?? 1;
       const leaf =
         siblingCount > 1
-          ? `${sanitizeSegment(title)} #${session.id.slice(0, 8)}`
+          ? `${sanitizeSegment(title)} #${session.reference.sessionId.slice(0, 8)}`
           : sanitizeSegment(title);
       const basePath = allocateSessionPath(`${parentPath}${leaf}`);
       const reference = getSessionReferenceKey(session);

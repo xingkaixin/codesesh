@@ -166,7 +166,7 @@ export function diffSessionSources(
   cachedMeta: CachedMetaLookup,
   options?: AgentScanOptions,
 ): SessionSourceDiff {
-  const cachedIds = new Set(cachedSessions.map((session) => session.id));
+  const cachedIds = new Set(cachedSessions.map((session) => session.reference.sessionId));
   const enumeratedIds = new Set<string>();
   const changedIds: string[] = [];
 
@@ -186,11 +186,12 @@ export function diffSessionSources(
   const failedIds: string[] = [];
   const sourceOutcomes: SessionSourceAbsenceOutcome[] = [];
   for (const session of cachedSessions) {
-    if (enumeratedIds.has(session.id)) continue;
-    const meta = readCachedMeta(cachedMeta, session.id);
+    const sessionId = session.reference.sessionId;
+    if (enumeratedIds.has(sessionId)) continue;
+    const meta = readCachedMeta(cachedMeta, sessionId);
     if (!wasEnumeratedThisPass(meta, options)) continue;
     const source = {
-      sessionId: session.id,
+      sessionId,
       sourcePath: typeof meta?.sourcePath === "string" ? meta.sourcePath : "",
       fingerprint: typeof meta?.sourceFingerprint === "string" ? meta.sourceFingerprint : "",
     };
@@ -198,13 +199,13 @@ export function diffSessionSources(
       // No path can ever be re-checked, so keeping this entry would fail on
       // every future pass; a complete enumeration finding neither file nor
       // path proves the entry is unrecoverable.
-      removedIds.push(session.id);
+      removedIds.push(sessionId);
       sourceOutcomes.push({ status: "missing", source });
       continue;
     }
     try {
       statSync(source.sourcePath);
-      failedIds.push(session.id);
+      failedIds.push(sessionId);
       sourceOutcomes.push({
         status: "failed",
         failure: createSessionSourceFailure(
@@ -215,14 +216,14 @@ export function diffSessionSources(
       });
     } catch (error) {
       if (!isMissingSessionSourceError(error)) {
-        failedIds.push(session.id);
+        failedIds.push(sessionId);
         sourceOutcomes.push({
           status: "failed",
           failure: createSessionSourceFailure(source, "enumeration", error),
         });
         continue;
       }
-      removedIds.push(session.id);
+      removedIds.push(sessionId);
       sourceOutcomes.push({ status: "missing", source });
     }
   }
@@ -256,8 +257,9 @@ function buildMeta(
 ): Record<string, SessionCacheMeta> {
   const meta: Record<string, SessionCacheMeta> = {};
   for (const session of sessions) {
-    const value = metaMap.get(session.id);
-    if (value) meta[session.id] = value;
+    const sessionId = session.reference.sessionId;
+    const value = metaMap.get(sessionId);
+    if (value) meta[sessionId] = value;
   }
   return meta;
 }
@@ -275,9 +277,11 @@ export function synchronizeSessionSources(
   const metaMap = adapter.getSessionMetaMap();
   const baselineMeta = new Map(metaMap);
   const baselineSessions = adapter.filterCachedSessions(baseline.sessions);
-  const visibleBaselineIds = new Set(baselineSessions.map((session) => session.id));
+  const visibleBaselineIds = new Set(
+    baselineSessions.map((session) => session.reference.sessionId),
+  );
   const filteredBaselineIds = baseline.sessions
-    .map((session) => session.id)
+    .map((session) => session.reference.sessionId)
     .filter((sessionId) => !visibleBaselineIds.has(sessionId));
   const filteredBaselineOutcomes: SessionSourceOutcome[] = filteredBaselineIds.map((sessionId) => ({
     status: "filtered",
@@ -326,7 +330,9 @@ export function synchronizeSessionSources(
     };
   }
 
-  const sessionsById = new Map(baselineSessions.map((session) => [session.id, session]));
+  const sessionsById = new Map(
+    baselineSessions.map((session) => [session.reference.sessionId, session]),
+  );
   const changedSessionIds = new Set(filteredBaselineIds);
   const explicitRemovedSessionIds = new Set(filteredBaselineIds);
   for (const outcome of diff.sourceOutcomes) {
@@ -371,10 +377,11 @@ export function synchronizeSessionSources(
       const outcome = adapter.scanSessionSourceOutcome(source, scanOptions);
       sourceOutcomes.push(outcome);
       if (outcome.status === "parsed") {
-        if (outcome.session.id !== source.sessionId) sessionsById.delete(source.sessionId);
-        sessionsById.set(outcome.session.id, outcome.session);
-        if (outcome.session.id !== source.sessionId) metaMap.delete(source.sessionId);
-        if (outcome.session.id === source.sessionId)
+        const parsedSessionId = outcome.session.reference.sessionId;
+        if (parsedSessionId !== source.sessionId) sessionsById.delete(source.sessionId);
+        sessionsById.set(parsedSessionId, outcome.session);
+        if (parsedSessionId !== source.sessionId) metaMap.delete(source.sessionId);
+        if (parsedSessionId === source.sessionId)
           explicitRemovedSessionIds.delete(source.sessionId);
         changedSessionIds.add(source.sessionId);
       } else if (outcome.status === "filtered" || outcome.status === "missing") {

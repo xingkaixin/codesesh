@@ -129,8 +129,8 @@ const SESSION_STATS_SIGNATURE_SPEC = {
   total_cache_create_tokens: (stats) => stats.total_cache_create_tokens ?? 0,
 } satisfies ObjectSignatureSpec<SessionStats>;
 
-/** `id` is the diff key; `display_title` is an API alias decoration. */
-type SessionHeadSignatureExcludedField = "id" | "display_title";
+/** Compatibility projections are derived from `reference`; `display_title` is API decoration. */
+type SessionHeadSignatureExcludedField = "id" | "slug" | "display_title";
 
 type SessionHeadSignatureField = Exclude<keyof SessionHead, SessionHeadSignatureExcludedField>;
 
@@ -142,7 +142,8 @@ function modelUsageSignature(modelUsage: SessionHead["model_usage"]): SignatureV
 }
 
 const SESSION_HEAD_SIGNATURE_SPEC = {
-  slug: (session) => [session.slug],
+  reference: (session) =>
+    objectSignatureValues(session.reference, SESSION_REFERENCE_SIGNATURE_SPEC),
   title: (session) => [session.title],
   directory: (session) => [session.directory],
   parent_reference: (session) =>
@@ -204,8 +205,10 @@ export function computeSessionDiff(
   signature: (session: SessionHead) => string = sessionSignature,
   signatureCache?: Map<string, string>,
 ): SessionDiffResult {
-  const cachedMap = new Map(cachedSessions.map((session) => [session.id, session]));
-  const updatedIds = new Set(updatedSessions.map((session) => session.id));
+  const cachedMap = new Map(
+    cachedSessions.map((session) => [session.reference.sessionId, session]),
+  );
+  const updatedIds = new Set(updatedSessions.map((session) => session.reference.sessionId));
   const changedIdSet = new Set(changedIds);
   const changes: PersistedSessionHeadChange[] = [];
   const removedSessionIds: string[] = [];
@@ -213,25 +216,27 @@ export function computeSessionDiff(
   let updatedCount = 0;
 
   updatedSessions.forEach((session, sortIndex) => {
-    const cached = cachedMap.get(session.id);
+    const sessionId = session.reference.sessionId;
+    const cached = cachedMap.get(sessionId);
     if (!cached) {
       newCount += 1;
       changes.push({ session, sortIndex });
-      signatureCache?.set(session.id, signature(session));
+      signatureCache?.set(sessionId, signature(session));
       return;
     }
-    const cachedSignature = signatureCache?.get(cached.id) ?? signature(cached);
+    const cachedSignature = signatureCache?.get(cached.reference.sessionId) ?? signature(cached);
     const updatedSignature = signature(session);
-    signatureCache?.set(session.id, updatedSignature);
-    if (changedIdSet.has(session.id) || cachedSignature !== updatedSignature) {
+    signatureCache?.set(sessionId, updatedSignature);
+    if (changedIdSet.has(sessionId) || cachedSignature !== updatedSignature) {
       updatedCount += 1;
       changes.push({ session, sortIndex });
     }
   });
 
   for (const session of cachedSessions) {
-    if (!updatedIds.has(session.id)) {
-      removedSessionIds.push(session.id);
+    const sessionId = session.reference.sessionId;
+    if (!updatedIds.has(sessionId)) {
+      removedSessionIds.push(sessionId);
     }
   }
 

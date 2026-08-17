@@ -8,6 +8,7 @@ import {
 
 function makeSession(id: string, activity: number): SessionHead {
   return {
+    reference: { agentName: "codex", sessionId: id },
     id,
     slug: `codex/${id}`,
     title: id,
@@ -31,6 +32,7 @@ function makeSnapshot(sessions: SessionHead[]): Pick<LiveSnapshot, "sessions" | 
 const DOCUMENTED_SESSION_FIELDS = [
   "directory",
   "id",
+  "reference",
   "slug",
   "stats",
   "time_created",

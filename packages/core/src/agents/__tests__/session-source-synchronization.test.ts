@@ -37,6 +37,7 @@ describe("failure normalization", () => {
 
 function session(id: string, title = id): SessionHead {
   return {
+    reference: { agentName: "test", sessionId: id },
     id,
     slug: `test/${id}`,
     title,

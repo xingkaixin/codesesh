@@ -32,6 +32,7 @@ function fact(id: string, bookmarkedAt = 1): BookmarkRecord {
 
 function session(id: string, updated = 1): SessionHead {
   return {
+    reference: { agentName: "cc", sessionId: id },
     id,
     slug: `cc/${id}`,
     title: id,

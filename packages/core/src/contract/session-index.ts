@@ -1,10 +1,6 @@
 import type { ReferencedSessionHead, SessionHead } from "./session.js";
 import { getProjectAgentKey, getProjectIdentityKey } from "./project-identity.js";
-import {
-  formatSessionReference,
-  getSessionAgentKey,
-  type SessionReference,
-} from "./session-reference.js";
+import { formatSessionReference, type SessionReference } from "./session-reference.js";
 
 export type SessionHeadChange = ReferencedSessionHead;
 
@@ -90,8 +86,8 @@ export function createSessionIndex(sourceSessions: SessionHead[]): CanonicalSess
   const byProjectAgentKey = new Map<string, SessionHead[]>();
 
   for (const session of sourceSessions) {
-    const agentName = getSessionAgentKey(session);
-    const routeKey = getSessionRouteKey(agentName, session.id);
+    const { agentName, sessionId } = session.reference;
+    const routeKey = getSessionRouteKey(agentName, sessionId);
     if (!byRouteKey.has(routeKey)) byRouteKey.set(routeKey, session);
     if (session.parent_reference) {
       pushMapValue(
@@ -104,7 +100,7 @@ export function createSessionIndex(sourceSessions: SessionHead[]): CanonicalSess
 
   const sessionsByActivity = sortSessionsByActivity(sourceSessions);
   for (const session of sessionsByActivity) {
-    const agentName = getSessionAgentKey(session);
+    const { agentName } = session.reference;
     pushMapValue(byAgent, agentName, session);
 
     const identity = session.project_identity;
@@ -133,7 +129,10 @@ export function applySessionChanges(
 ): SessionHead[] {
   const byRouteKey = new Map<string, SessionHead>();
   for (const session of sessions) {
-    byRouteKey.set(getSessionRouteKey(getSessionAgentKey(session), session.id), session);
+    byRouteKey.set(
+      getSessionRouteKey(session.reference.agentName, session.reference.sessionId),
+      session,
+    );
   }
 
   for (const removal of removals) {

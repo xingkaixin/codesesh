@@ -165,7 +165,6 @@ const FILE_ACTIVITY_COLUMNS = `
   fa.kind,
   fa.count,
   fa.latest_time,
-  s.slug,
   s.title,
   s.directory,
   s.project_identity_kind,

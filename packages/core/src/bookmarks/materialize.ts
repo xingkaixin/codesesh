@@ -5,7 +5,11 @@ import type {
   SessionHead,
   SessionReference,
 } from "../contract/index.js";
-import { formatSessionReference, normalizeSessionReference } from "../contract/index.js";
+import {
+  assertSessionIdentity,
+  formatSessionReference,
+  normalizeSessionReference,
+} from "../contract/index.js";
 
 export interface BookmarkMaterializationOptions {
   liveSessionsByReference: ReadonlyMap<string, SessionHead>;
@@ -20,11 +24,12 @@ function referenceKey(reference: SessionReference): string {
 }
 
 function canonicalSession(reference: SessionReference, session: SessionHead): SessionHead {
-  return {
-    ...session,
-    id: reference.sessionId,
-    slug: formatSessionReference(reference),
-  };
+  const normalized = normalizeSessionReference(reference);
+  assertSessionIdentity(session, normalized.agentName);
+  if (session.reference.sessionId !== normalized.sessionId) {
+    throw new Error("Session identity fields disagree");
+  }
+  return session;
 }
 
 function compareDescending(left: number, right: number): number {

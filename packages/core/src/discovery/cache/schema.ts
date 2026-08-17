@@ -3,6 +3,7 @@
  * schema creation, migrations, and search-index maintenance stay internal.
  */
 import type { ProjectIdentity, ProjectIdentityKind, SessionHead } from "../../types/index.js";
+import { createSessionIdentity } from "../../contract/index.js";
 import { computeIdentity, realFs } from "../../projects/index.js";
 import { extractSessionFileActivity } from "../../utils/file-activity.js";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
@@ -305,7 +306,6 @@ function createSessionTables(db: SQLiteDatabase): void {
       agent_name TEXT NOT NULL,
       session_id TEXT NOT NULL,
       sort_index INTEGER NOT NULL DEFAULT 0,
-      slug TEXT NOT NULL,
       title TEXT NOT NULL,
       source_path TEXT,
       directory TEXT NOT NULL,
@@ -1027,10 +1027,14 @@ function backfillStructuredSessions(
         const parsed = JSON.parse(row.session_json) as SessionHead;
         const directory = getLegacySessionDirectory(parsed);
         if (directory == null) continue;
-        const session =
-          parsed.project_identity == null
-            ? { ...parsed, project_identity: resolveIdentity(directory) }
-            : parsed;
+        const session = {
+          ...parsed,
+          ...createSessionIdentity({
+            agentName: String(row.agent_name),
+            sessionId: String(row.session_id),
+          }),
+          project_identity: parsed.project_identity ?? resolveIdentity(directory),
+        };
         upsertSessionRow(
           upsertSession,
           String(row.agent_name),
@@ -1088,8 +1092,10 @@ function backfillStructuredSessions(
       upsertSession,
       String(row.agent_name),
       {
-        id: String(row.session_id),
-        slug: String(row.slug),
+        ...createSessionIdentity({
+          agentName: String(row.agent_name),
+          sessionId: String(row.session_id),
+        }),
         title: String(row.title),
         directory,
         project_identity: identity,
@@ -1642,6 +1648,32 @@ function runWithFtsRecovery<T>(connection: CacheConnection, fn: (db: SQLiteDatab
   }
 }
 
+function dropDerivedSessionSlug(db: SQLiteDatabase): void {
+  if (!tableExists(db, "sessions") || !columnExists(db, "sessions", "slug")) return;
+
+  const row = db
+    .prepare(
+      `
+        SELECT
+          COUNT(*) AS row_count,
+          COALESCE(SUM(slug != agent_name || '/' || session_id), 0) AS mismatch_count
+        FROM sessions
+      `,
+    )
+    .get() as { row_count?: number; mismatch_count?: number } | undefined;
+  const details = {
+    row_count: Number(row?.row_count ?? 0),
+    mismatch_count: Number(row?.mismatch_count ?? 0),
+  };
+  if (details.mismatch_count > 0) {
+    getCoreDiagnostics()?.warn("sqlite.migration.session_identity.mismatch", details);
+  } else {
+    getCoreDiagnostics()?.info?.("sqlite.migration.session_identity.validated", details);
+  }
+
+  db.exec("ALTER TABLE sessions DROP COLUMN slug");
+}
+
 function setCacheMetaVersion(db: SQLiteDatabase): void {
   createCacheTables(db);
   db.prepare(
@@ -1746,6 +1778,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 27, migrate: addSessionModelCostRollup },
       { version: 28, migrate: addSessionCostSummary },
       { version: 29, migrate: addSessionUsageSummary },
+      { version: 30, destructive: true, migrate: dropDerivedSessionSlug },
     ],
   });
 

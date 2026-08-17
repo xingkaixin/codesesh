@@ -1,5 +1,6 @@
 import { memo, useMemo } from "react";
 import { Link } from "react-router-dom";
+import { formatSessionReference } from "@codesesh/core/contract";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import type { SessionHead } from "../lib/api";
 import { formatCostSource, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
@@ -158,14 +159,14 @@ function RecentSessions({
       <PanelHeader title="Recent Sessions" meta={`${sessions.length} items`} />
       <ul className="mt-3 space-y-2">
         {sessions.map((session) => {
-          const bookmarked = isBookmarked(session.agentKey, session.id);
+          const bookmarked = isBookmarked(session.reference.agentName, session.reference.sessionId);
           return (
-            <li key={session.id}>
+            <li key={formatSessionReference(session.reference)}>
               <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
                 <Link
                   to={sessionRoutePath({
-                    agentName: session.agentKey,
-                    sessionId: session.sessionId,
+                    agentName: session.reference.agentName,
+                    sessionId: session.reference.sessionId,
                   })}
                   className="min-w-0 flex-1"
                 >
@@ -173,7 +174,7 @@ function RecentSessions({
                     {getSessionDisplayTitle(session)}
                   </p>
                   <p className="console-mono mt-0.5 text-[11px] text-[var(--console-muted)]">
-                    /{session.reference} ·{" "}
+                    /{formatSessionReference(session.reference)} ·{" "}
                     {formatRelativeTime(session.time_updated || session.time_created)}
                   </p>
                   <SmartTagChips tags={session.smart_tags} className="mt-1.5" />

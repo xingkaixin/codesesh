@@ -22,6 +22,7 @@ interface SessionOverrides {
 
 function makeSession(id: string, time: number, overrides: SessionOverrides = {}): SessionHead {
   return {
+    reference: { agentName: "codex", sessionId: id },
     id,
     slug: `codex/${id}`,
     title: id,

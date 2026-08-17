@@ -202,7 +202,7 @@ function mergeChanges(pending: PendingChanges, job: IncrementalSearchIndexJob): 
   }
 
   for (const change of job.changes) {
-    const sessionId = change.session.id;
+    const sessionId = change.session.reference.sessionId;
     pending.removedSessionIds.delete(sessionId);
     pending.changesBySessionId.set(sessionId, change);
     if (Object.hasOwn(job.meta, sessionId)) pending.meta[sessionId] = job.meta[sessionId]!;

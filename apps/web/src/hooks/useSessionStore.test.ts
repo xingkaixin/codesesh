@@ -3,6 +3,7 @@ import {
   SAMPLE_SESSION_HEAD,
   SAMPLE_SESSIONS_UPDATED_EVENT,
 } from "@codesesh/core/test-fixtures";
+import { createSessionIdentity } from "@codesesh/core/contract";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -201,8 +202,7 @@ describe("useSessionStore", () => {
     const completeSessions = deferred<{ sessions: SessionHead[] }>();
     const finalSession = {
       ...SAMPLE_SESSION_HEAD,
-      id: "final-session",
-      slug: "claudecode/final-session",
+      ...createSessionIdentity({ agentName: "claudecode", sessionId: "final-session" }),
     };
     vi.mocked(api.fetchSessions).mockImplementation(async (_options, _fetchOptions, progress) => {
       progress?.onFirstPage?.([SAMPLE_SESSION_HEAD]);
@@ -341,8 +341,10 @@ describe("useSessionStore", () => {
     };
     const historicalSessions = Array.from({ length: 100 }, (_, index) => ({
       ...SAMPLE_SESSION_HEAD,
-      id: `historical-${index}`,
-      slug: `claudecode/historical-${index}`,
+      ...createSessionIdentity({
+        agentName: "claudecode",
+        sessionId: `historical-${index}`,
+      }),
       time_created: 10,
       time_updated: 10,
     }));
@@ -380,8 +382,7 @@ describe("useSessionStore", () => {
     };
     const addedSession = {
       ...SAMPLE_SESSION_HEAD,
-      id: "new-visible",
-      slug: "claudecode/new-visible",
+      ...createSessionIdentity({ agentName: "claudecode", sessionId: "new-visible" }),
       time_created: 160,
       time_updated: 160,
     };
@@ -451,8 +452,10 @@ describe("useSessionStore", () => {
             reference: { agentName: "claudecode", sessionId: "related-session" },
             session: {
               ...SAMPLE_SESSION_HEAD,
-              id: "related-session",
-              slug: "claudecode/related-session",
+              ...createSessionIdentity({
+                agentName: "claudecode",
+                sessionId: "related-session",
+              }),
             },
           },
         ],

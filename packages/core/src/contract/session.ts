@@ -1,5 +1,5 @@
 import type { ProjectIdentityKind } from "./project-identity.js";
-import type { SessionReference } from "./session-reference.js";
+import type { SessionIdentity, SessionReference } from "./session-reference.js";
 
 export interface SessionStats {
   message_count: number;
@@ -146,10 +146,7 @@ export interface Message {
 }
 
 /** Lightweight metadata for session listing */
-export interface SessionHead {
-  id: string;
-  /** Serialized session reference. Adapters must not construct this string manually. */
-  slug: string;
+export interface SessionHead extends SessionIdentity {
   title: string;
   display_title?: string;
   directory: string;
@@ -177,12 +174,9 @@ export interface ReferencedSessionHead {
 }
 
 /** Complete normalized content for replaying a Session */
-export interface SessionDetail {
-  reference: SessionReference;
-  id: string;
+export interface SessionDetail extends SessionIdentity {
   title: string;
   display_title?: string;
-  slug?: string | null;
   directory: string;
   parent_reference?: SessionReference;
   project_identity?: ProjectIdentity;

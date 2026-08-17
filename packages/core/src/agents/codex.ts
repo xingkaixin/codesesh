@@ -722,10 +722,8 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     result.stats.message_count = result.messages.length;
 
     return {
-      reference: { agentName: this.name, sessionId: meta.id },
-      id: meta.id,
+      ...this.sessionIdentity(meta.id),
       title: meta.title,
-      slug: this.sessionSlug(meta.id),
       directory: meta.directory,
       parent_reference:
         meta.parentThreadId == null
@@ -1211,8 +1209,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     const title = resolveSessionTitle(indexTitle, messageTitle, basenameTitle(directory || null));
 
     return parsedSession({
-      id: sessionId,
-      slug: this.sessionSlug(sessionId),
+      ...this.sessionIdentity(sessionId),
       title,
       directory,
       parent_reference:
@@ -1263,8 +1260,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     const title = resolveSessionTitle(indexTitle, messageTitle, directoryTitle);
 
     return parsedSession({
-      id: sessionId,
-      slug: this.sessionSlug(sessionId),
+      ...this.sessionIdentity(sessionId),
       title,
       directory,
       parent_reference:

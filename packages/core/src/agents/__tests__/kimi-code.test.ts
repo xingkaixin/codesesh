@@ -406,6 +406,7 @@ describe("KimiCodeAgent", () => {
 
     const agent = createAgent(dataRoot);
     const stale = {
+      reference: { agentName: "kimi-code", sessionId: SESSION_ID },
       id: SESSION_ID,
       slug: `kimi-code/${SESSION_ID}`,
       title: "New Session",

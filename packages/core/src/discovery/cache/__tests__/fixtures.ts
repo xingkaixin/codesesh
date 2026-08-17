@@ -1,4 +1,5 @@
 import type { SessionDetail, SessionHead } from "../../../types/index.js";
+import { createSessionIdentity } from "../../../contract/session-reference.js";
 
 export const TEST_NOW = 1_700_000_000_000;
 
@@ -6,10 +7,11 @@ export function makeSessionHead(
   id: string,
   overrides: Partial<SessionHead> = {},
 ): SessionHead & Pick<SessionDetail, "reference"> {
+  const identity = createSessionIdentity(
+    overrides.reference ?? { agentName: "codex", sessionId: id },
+  );
   return {
-    reference: { agentName: "codex", sessionId: id },
-    id,
-    slug: `codex/${id}`,
+    ...identity,
     title: `Session ${id}`,
     directory: "/workspace/project",
     project_identity: {
@@ -27,6 +29,7 @@ export function makeSessionHead(
       cost_source: "recorded",
     },
     ...overrides,
+    ...identity,
   };
 }
 

@@ -228,7 +228,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
         const head = getParsedSession(this.parseSessionHeadRow(row, hasMessageTable, context));
         if (head) {
           heads.push(head);
-          this.rememberSession(head.id, {
+          this.rememberSession(head.reference.sessionId, {
             headParserVersion: HEAD_PARSER_VERSION,
             ...(context && context.unpricedModels.size > 0
               ? { unpricedModels: [...context.unpricedModels] }
@@ -263,8 +263,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
     const messageTitle = context?.messageTitle ?? null;
 
     return parsedSession({
-      id,
-      slug: this.sessionSlug(id),
+      ...this.sessionIdentity(id),
       title: resolveSessionTitle(String(row.title ?? ""), messageTitle, null),
       directory: String(row.directory ?? ""),
       parent_reference:
@@ -535,7 +534,9 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
 
   checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
     const hasStaleHead = cachedSessions.some(
-      (session) => this.sessionMetaMap.get(session.id)?.headParserVersion !== HEAD_PARSER_VERSION,
+      (session) =>
+        this.sessionMetaMap.get(session.reference.sessionId)?.headParserVersion !==
+        HEAD_PARSER_VERSION,
     );
     if (hasStaleHead) return { hasChanges: true, timestamp: Date.now() };
     return super.checkForChanges(sinceTimestamp, cachedSessions);
@@ -595,7 +596,6 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
       }
 
       const id = String(sessionRow.id ?? sessionId);
-      const slug = `${this.name}/${id}`;
       const directory = String(sessionRow.directory ?? "");
       const timeCreated = Number(sessionRow.time_created ?? 0);
       const timeUpdated = Number(sessionRow.time_updated ?? timeCreated);
@@ -667,10 +667,8 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
       }
 
       return {
-        reference: { agentName: this.name, sessionId: id },
-        id,
+        ...this.sessionIdentity(id),
         title,
-        slug,
         directory,
         parent_reference:
           sessionRow.parent_id == null || String(sessionRow.parent_id) === ""

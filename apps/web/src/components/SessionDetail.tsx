@@ -1,6 +1,7 @@
 /* eslint-disable react/no-array-index-key */
 import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { formatSessionReference } from "@codesesh/core/contract";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import type { SessionDetail, SessionHead } from "../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
@@ -125,7 +126,10 @@ export function SessionDetail({
     [session.file_activity, session.messages, sessionAgentKey],
   );
   const { messages: messageModels, toc, fileChangeSummary } = displayModel;
-  const { state: filterState, actions: filterActions } = useSessionFilters(toc, session.id);
+  const { state: filterState, actions: filterActions } = useSessionFilters(
+    toc,
+    formatSessionReference(session.reference),
+  );
   const [openAuxPanel, setOpenAuxPanel] = useState<"toc" | "files" | null>(null);
   const selection = useMemo(
     () =>
@@ -136,7 +140,7 @@ export function SessionDetail({
   );
   const { messages: filteredMessages, timelineEntries, visibleUnitCount } = selection;
   const childSessionById = useMemo(
-    () => new Map(childSessions.map((child) => [child.id, child])),
+    () => new Map(childSessions.map((child) => [child.reference.sessionId, child])),
     [childSessions],
   );
   const virtualListRef = useRef<MessageListHandle | null>(null);
@@ -230,7 +234,7 @@ export function SessionDetail({
                 }}
               >
                 <MessageList
-                  key={session.id}
+                  key={formatSessionReference(session.reference)}
                   messages={filteredMessages}
                   sessionAgentKey={sessionAgentKey}
                   agent={sessionAgent}

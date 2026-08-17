@@ -8,7 +8,6 @@ import {
 import {
   buildSidebarSessionLookup,
   getProjectAgentKey,
-  getSessionAgentKey,
   getSessionReferenceKey,
   getSessionRouteKey,
   type SessionIndexes,
@@ -94,7 +93,11 @@ export function useSidebarModel({
           ) ?? null)
         : null;
     const openedSessionData =
-      viewState.mode === "session" && session?.id === viewState.activeSessionId ? session : null;
+      viewState.mode === "session" &&
+      session?.reference.agentName === viewState.activeAgentKey &&
+      session.reference.sessionId === viewState.activeSessionId
+        ? session
+        : null;
     const openedSessionProjectIdentity =
       openedSessionData?.project_identity ?? openedSessionHead?.project_identity ?? null;
     const selectedProjectIdentity =
@@ -141,7 +144,7 @@ export function useSidebarModel({
       new Set(
         model.sidebarSessions
           .filter((sessionItem) =>
-            isSessionBookmarked(getSessionAgentKey(sessionItem), sessionItem.id),
+            isSessionBookmarked(sessionItem.reference.agentName, sessionItem.reference.sessionId),
           )
           .map(getSessionReferenceKey),
       ),

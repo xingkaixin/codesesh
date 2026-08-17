@@ -106,6 +106,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
 
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {
+    reference: { agentName: "codex", sessionId: id },
     id,
     slug: `codex/${id}`,
     title: id,

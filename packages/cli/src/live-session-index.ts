@@ -9,7 +9,11 @@ import {
   type LiveSnapshot,
   type SessionHead,
 } from "@codesesh/core";
-import { createSessionProjectionContext, type SessionsUpdatedEvent } from "@codesesh/core/contract";
+import {
+  assertSessionIdentity,
+  createSessionProjectionContext,
+  type SessionsUpdatedEvent,
+} from "@codesesh/core/contract";
 
 export interface LiveSessionIndexOptions {
   registeredAgents?: BaseAgent[];
@@ -41,7 +45,9 @@ export class LiveSessionIndex {
     this.byAgent = Object.fromEntries(
       this.agents.flatMap((agent) => {
         if (this.scanFailures[agent.name] && !(agent.name in snapshot.byAgent)) return [];
-        return [[agent.name, sortSessions(snapshot.byAgent[agent.name] ?? [])]];
+        const sessions = snapshot.byAgent[agent.name] ?? [];
+        for (const session of sessions) assertSessionIdentity(session, agent.name);
+        return [[agent.name, sortSessions(sessions)]];
       }),
     );
     this.sessions = mergeSortedSessions(Object.values(this.byAgent));
@@ -67,6 +73,7 @@ export class LiveSessionIndex {
     nextSessions: SessionHead[],
     candidateChangedIds: string[] = [],
   ): SessionsUpdatedEvent | null {
+    for (const session of nextSessions) assertSessionIdentity(session, agentName);
     delete this.cacheFailures[agentName];
     delete this.scanFailures[agentName];
     const previousSessions = this.byAgent[agentName] ?? [];
@@ -86,10 +93,12 @@ export class LiveSessionIndex {
     if (counts.new === 0 && counts.updated === 0 && counts.removed === 0) return null;
 
     const changedSessionHeads = changes.map(({ session }) => ({
-      reference: { agentName, sessionId: session.id },
+      reference: session.reference,
       session,
     }));
-    const previousSessionIds = new Set(previousSessions.map((session) => session.id));
+    const previousSessionIds = new Set(
+      previousSessions.map((session) => session.reference.sessionId),
+    );
     const newSessionRefs = changedSessionHeads.flatMap(({ reference }) =>
       previousSessionIds.has(reference.sessionId) ? [] : [reference],
     );

@@ -184,7 +184,7 @@ function formatReceiptSubtitle(tags?: SessionDetail["smart_tags"]) {
 function createReceiptPayload(session: SessionDetail, toc: SessionDetailToc): ReceiptPayload {
   const agent = getSessionAgentKey(session);
   return {
-    id: session.id,
+    id: session.reference.sessionId,
     title: getSessionDisplayTitle(session) || "Untitled session",
     agent,
     updatedAt: session.time_updated ?? session.time_created,

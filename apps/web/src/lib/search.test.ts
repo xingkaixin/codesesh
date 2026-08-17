@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createSessionIdentity } from "@codesesh/core/contract";
 import type { SearchResult, SessionHead } from "./api";
 import type { SearchProjectOption } from "../components/app/types";
 import { getSessionAgentKey, type SessionIndexes } from "./session-indexes";
@@ -37,16 +38,16 @@ describe("buildLocalRecentResults", () => {
   };
 
   function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
+    const reference = overrides.reference ?? { agentName: "claudecode", sessionId: id };
     return {
-      id,
-      slug: `claudecode/${id}`,
       title: `Session ${id}`,
       directory: `/repo/${id}`,
       time_created: 0,
       time_updated: 0,
       stats: { message_count: 1, total_input_tokens: 0, total_output_tokens: 0, total_cost: 0 },
       ...overrides,
-    } as SessionHead;
+      ...createSessionIdentity(reference),
+    };
   }
 
   function buildIndexes(sessions: SessionHead[]): SessionIndexes {
@@ -69,19 +70,17 @@ describe("buildLocalRecentResults", () => {
   }
 
   const sBugfixApp = makeSession("s-bugfix-app", {
-    slug: "claudecode/s-bugfix-app",
     smart_tags: ["bugfix"],
     project_identity: projectApp,
     stats: { message_count: 1, total_input_tokens: 0, total_output_tokens: 0, total_cost: 0.5 },
   });
   const sFeatureApp = makeSession("s-feature-app", {
-    slug: "claudecode/s-feature-app",
     smart_tags: ["feature-dev"],
     project_identity: projectApp,
     stats: { message_count: 1, total_input_tokens: 0, total_output_tokens: 0, total_cost: 2 },
   });
   const sBugfixOther = makeSession("s-bugfix-other", {
-    slug: "codex/s-bugfix-other",
+    reference: { agentName: "codex", sessionId: "s-bugfix-other" },
     smart_tags: ["bugfix"],
     project_identity: projectOther,
     stats: { message_count: 1, total_input_tokens: 0, total_output_tokens: 0, total_cost: 5 },
@@ -152,7 +151,6 @@ describe("buildLocalRecentResults", () => {
   it("caps results at 50", () => {
     const many = Array.from({ length: 60 }, (_, index) =>
       makeSession(`s-many-${index}`, {
-        slug: `claudecode/s-many-${index}`,
         smart_tags: ["bugfix"],
       }),
     );
@@ -183,8 +181,7 @@ describe("buildSearchProjectOptions", () => {
       snippetHighlights: [],
       matchType: "title",
       session: {
-        id,
-        slug: `codex/${id}`,
+        ...createSessionIdentity({ agentName: "codex", sessionId: id }),
         title: id,
         directory: `/repo/${id}`,
         time_created: 0,

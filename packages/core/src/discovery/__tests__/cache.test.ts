@@ -28,6 +28,7 @@ afterEach(() => {
 describe("session cache integration", () => {
   it("persists, indexes, searches, and restores one session", () => {
     const session: SessionHead = {
+      reference: { agentName: "codex", sessionId: "smoke" },
       id: "smoke",
       slug: "codex/smoke",
       title: "Cache smoke",
@@ -75,6 +76,7 @@ describe("session cache integration", () => {
 
   it("merges a partial snapshot without deleting data outside its window", () => {
     const old: SessionHead = {
+      reference: { agentName: "codex", sessionId: "old" },
       id: "old",
       slug: "codex/old",
       title: "Old session",
@@ -95,6 +97,7 @@ describe("session cache integration", () => {
     };
     const recent: SessionHead = {
       ...old,
+      reference: { agentName: "codex", sessionId: "recent" },
       id: "recent",
       slug: "codex/recent",
       title: "Recent session",

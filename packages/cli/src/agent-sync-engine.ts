@@ -456,9 +456,11 @@ export class AgentSyncEngine {
       pendingPathCount >= SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD ? { isBulk: true } : undefined;
     const persistenceDiff = strategyResult.persistenceDiff;
     const publicationSessions = strategyResult.fullScanSessions ?? nextSessions;
-    const publicationSessionIds = new Set(publicationSessions.map((session) => session.id));
+    const publicationSessionIds = new Set(
+      publicationSessions.map((session) => session.reference.sessionId),
+    );
     const missingBaselineSessions = refreshBaseline.reduce(
-      (count, session) => count + Number(!publicationSessionIds.has(session.id)),
+      (count, session) => count + Number(!publicationSessionIds.has(session.reference.sessionId)),
       0,
     );
     const replacementDeleteCandidates = persistenceDiff
@@ -476,7 +478,7 @@ export class AgentSyncEngine {
       delete_candidates: replacementDeleteCandidates,
     });
     const changedSessionIds = persistenceDiff
-      ? new Set(persistenceDiff.changedSessions.map(({ session }) => session.id))
+      ? new Set(persistenceDiff.changedSessions.map(({ session }) => session.reference.sessionId))
       : undefined;
     const persistStartedAt = performance.now();
     const persistentJob: SearchIndexWorkerJob = persistenceDiff

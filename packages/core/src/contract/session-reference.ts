@@ -1,6 +1,15 @@
 export interface SessionReference {
-  agentName: string;
-  sessionId: string;
+  readonly agentName: string;
+  readonly sessionId: string;
+}
+
+export interface SessionIdentity {
+  /** The only authoritative session identity. */
+  readonly reference: SessionReference;
+  /** @deprecated Compatibility projection of `reference.sessionId`. */
+  readonly id: string;
+  /** @deprecated Compatibility projection serialized from `reference`. */
+  readonly slug: string;
 }
 
 export const UNKNOWN_AGENT_NAME = "unknown";
@@ -29,8 +38,30 @@ export function formatSessionReference(reference: SessionReference): string {
   return `${normalized.agentName}/${normalized.sessionId}`;
 }
 
-export function getSessionAgentKey(session: { slug?: string | null }): string {
-  return parseSessionReference(session.slug ?? "")?.agentName ?? UNKNOWN_AGENT_NAME;
+export function createSessionIdentity(reference: SessionReference): SessionIdentity {
+  const normalized = normalizeSessionReference(reference);
+  return {
+    reference: normalized,
+    id: normalized.sessionId,
+    slug: formatSessionReference(normalized),
+  };
+}
+
+export function assertSessionIdentity(identity: SessionIdentity, agentName?: string): void {
+  const normalized = normalizeSessionReference(identity.reference);
+  const expectedAgentName = agentName?.trim().toLowerCase();
+  if (
+    identity.reference.agentName !== normalized.agentName ||
+    identity.id !== normalized.sessionId ||
+    identity.slug !== formatSessionReference(normalized) ||
+    (expectedAgentName != null && normalized.agentName !== expectedAgentName)
+  ) {
+    throw new Error("Session identity fields disagree");
+  }
+}
+
+export function getSessionAgentKey(session: Pick<SessionIdentity, "reference">): string {
+  return normalizeSessionReference(session.reference).agentName;
 }
 
 /**
@@ -53,6 +84,6 @@ export function sessionRoutePath(reference: SessionReference): string {
 }
 
 /** Same as {@link sessionRoutePath}, for callers holding a session head. */
-export function getSessionRoutePath(session: { slug: string; id: string }): string {
-  return sessionRoutePath({ agentName: getSessionAgentKey(session), sessionId: session.id });
+export function getSessionRoutePath(session: Pick<SessionIdentity, "reference">): string {
+  return sessionRoutePath(session.reference);
 }

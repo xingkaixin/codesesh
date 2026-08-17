@@ -1,8 +1,4 @@
-import {
-  applySessionWindowChanges,
-  formatSessionReference,
-  getSessionAgentKey,
-} from "@codesesh/core/contract";
+import { applySessionWindowChanges, formatSessionReference } from "@codesesh/core/contract";
 import {
   hashKey,
   isCancelledError,
@@ -339,20 +335,10 @@ export function useSessionStore() {
         to: activeWindow.to,
       });
       const visibleSessionKeys = new Set(
-        projection.sessions.map((session) =>
-          formatSessionReference({
-            agentName: getSessionAgentKey(session),
-            sessionId: session.id,
-          }),
-        ),
+        projection.sessions.map((session) => formatSessionReference(session.reference)),
       );
       const previousSessionKeys = new Set(
-        currentProjection.sessions.map((session) =>
-          formatSessionReference({
-            agentName: getSessionAgentKey(session),
-            sessionId: session.id,
-          }),
-        ),
+        currentProjection.sessions.map((session) => formatSessionReference(session.reference)),
       );
       const visibleNewSessions = (event.newSessionRefs ?? []).filter((reference) => {
         const key = formatSessionReference(reference);

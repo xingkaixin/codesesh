@@ -222,7 +222,7 @@ export default function App() {
   const handleRenameSession = useCallback((sessionItem: SessionHead) => {
     setAliasTarget({
       agentKey: getSessionAgentKey(sessionItem),
-      sessionId: sessionItem.id,
+      sessionId: sessionItem.reference.sessionId,
       title: sessionItem.title,
       displayTitle: sessionItem.display_title,
     });
@@ -533,7 +533,7 @@ export default function App() {
                         findAgent(agentCatalog, viewState.activeAgentKey)?.resumeCommandPrefix ??
                         null
                       }
-                      sessionId={session.id}
+                      sessionId={session.reference.sessionId}
                       directory={session.directory}
                     />
                   ) : null}

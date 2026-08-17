@@ -76,8 +76,10 @@ function applySessionChanges(
 ): SessionHead[] {
   if (changes.length === 0 && removedSessionIds.length === 0) return previousSessions;
   const replacedIds = new Set(removedSessionIds);
-  for (const { session } of changes) replacedIds.add(session.id);
-  const retained = previousSessions.filter((session) => !replacedIds.has(session.id));
+  for (const { session } of changes) replacedIds.add(session.reference.sessionId);
+  const retained = previousSessions.filter(
+    (session) => !replacedIds.has(session.reference.sessionId),
+  );
   const next: Array<SessionHead | undefined> = Array.from({
     length: retained.length + changes.length,
   });
@@ -281,7 +283,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
       this.invalidateWorker(slot.agentName, slot);
       return;
     }
-    const changedIds = message.changes.map(({ session }) => session.id);
+    const changedIds = message.changes.map(({ session }) => session.reference.sessionId);
     const replacedSessionIds = [...changedIds, ...message.removedSessionIds];
     const removedMetaIds = [...message.removedSessionIds, ...message.removedMetaIds];
     try {

@@ -63,15 +63,12 @@ export function buildLocalRecentResults(
     }
     if (filters.tag && !sessionItem.smart_tags?.includes(filters.tag)) continue;
     const cost =
-      inclusiveCosts?.get(getSessionRouteKey(agentKey, sessionItem.id))?.inclusiveStats.cost ??
-      sessionItem.stats.total_cost;
+      inclusiveCosts?.get(getSessionRouteKey(agentKey, sessionItem.reference.sessionId))
+        ?.inclusiveStats.cost ?? sessionItem.stats.total_cost;
     if (costMin !== undefined && cost < costMin) continue;
 
     results.push({
-      reference: {
-        agentName: agentKey,
-        sessionId: sessionItem.id,
-      },
+      reference: sessionItem.reference,
       session: sessionItem,
       snippet: `Recent session · ${sessionItem.directory}`,
       snippetHighlights: [],

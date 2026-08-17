@@ -29,6 +29,7 @@ let tempDirs: string[] = [];
 
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {
+    reference: { agentName: "claudecode", sessionId: id },
     id,
     slug: `claudecode/${id}`,
     title: id,

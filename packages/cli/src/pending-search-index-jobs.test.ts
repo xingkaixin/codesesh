@@ -5,6 +5,7 @@ import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 
 function makeSession(id: string, title: string): SessionHead {
   return {
+    reference: { agentName: "agent", sessionId: id },
     id,
     slug: `agent/${id}`,
     title,
