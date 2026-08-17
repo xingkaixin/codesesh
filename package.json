@@ -7,7 +7,7 @@
     "build:app": "pnpm --filter codesesh build",
     "run:app": "pnpm --filter codesesh start",
     "dev": "turbo run dev",
-    "dev:www": "pnpm --filter @codesesh/www dev",
+    "dev:www": "pnpm --filter @codesesh/core build && pnpm --filter @codesesh/www dev",
     "serve": "node --watch packages/cli/dist/index.js",
     "clean": "turbo run clean",
     "lint": "pnpm lint:root && turbo run lint",
@@ -22,7 +22,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "typecheck": "turbo run typecheck",
-    "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
+    "typecheck:e2e": "pnpm --filter @codesesh/core build && tsc --noEmit -p tsconfig.e2e.json",
     "test:migration": "vitest run --reporter=verbose packages/core/src/discovery/__tests__/migration-smoke.test.ts",
     "package:artifact": "node scripts/package-artifact.mjs",
     "package:artifact:test": "node --test scripts/package-artifact-checks.mjs",
@@ -33,9 +33,10 @@
     "bench:session-index": "pnpm --filter @codesesh/core build && node scripts/benchmark-session-index.mjs",
     "check:coverage-scopes": "node scripts/critical-coverage.mjs",
     "test:coverage": "pnpm check:coverage-scopes && vitest run --coverage",
-    "deploy:www": "pnpm --filter @codesesh/www deploy:cf"
+    "deploy:www": "pnpm --filter @codesesh/core build && pnpm --filter @codesesh/www deploy:cf"
   },
   "devDependencies": {
+    "@codesesh/core": "workspace:*",
     "@types/node": "22.20.1",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^4.1.10",

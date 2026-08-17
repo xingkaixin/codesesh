@@ -44,7 +44,8 @@ CLI Entry (packages/cli/src/index.ts --json)
 | 模块 | 职责 |
 |------|------|
 | `packages/core/src/discovery/scanner.ts` | 初始快照恢复与一次性扫描编排 |
-| `packages/core/src/agents/register.ts` | Agent 注册、数据根目录与能力声明 |
+| `packages/core/src/contract/agent-catalog.ts` | Agent 公开身份与能力声明 |
+| `packages/core/src/agents/register.ts` | Agent 工厂与数据根目录注册 |
 | `packages/cli/src/live-scan.ts` | 运行中快照、订阅和生命周期入口 |
 | `packages/cli/src/agent-sync-engine.ts` | 持续 refresh、backfill、持久化后发布 |
 | `packages/cli/src/session-watcher.ts` | 文件事件监听、稳定性等待与归并 |

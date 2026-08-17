@@ -1,9 +1,7 @@
-import "./agents/register.js";
-import { DatabaseSessionSource, FileSystemSessionSource, type BaseAgent } from "./agents/base.js";
-import { createRegisteredAgents } from "./agents/registry.js";
+import { AGENT_CATALOG, type AgentSourceKind } from "./contract/agent-catalog.js";
 import { CACHE_SCHEMA_VERSION } from "./discovery/cache/version.js";
 
-export type AgentSourceKind = "filesystem" | "sqlite";
+export type { AgentSourceKind } from "./contract/agent-catalog.js";
 
 export interface RepositoryAgentFact {
   name: string;
@@ -16,19 +14,13 @@ export interface CoreRepositoryFacts {
   agents: RepositoryAgentFact[];
 }
 
-function getAgentSourceKind(agent: BaseAgent): AgentSourceKind {
-  if (agent instanceof DatabaseSessionSource) return "sqlite";
-  if (agent instanceof FileSystemSessionSource) return "filesystem";
-  throw new Error(`Registered agent ${agent.name} has no documented source kind`);
-}
-
 export function getCoreRepositoryFacts(): CoreRepositoryFacts {
   return {
     cacheSchemaVersion: CACHE_SCHEMA_VERSION,
-    agents: createRegisteredAgents().map((agent) => ({
-      name: agent.name,
-      displayName: agent.displayName,
-      sourceKind: getAgentSourceKind(agent),
+    agents: AGENT_CATALOG.map(({ name, displayName, sourceKind }) => ({
+      name,
+      displayName,
+      sourceKind,
     })),
   };
 }

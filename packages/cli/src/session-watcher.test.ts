@@ -252,9 +252,12 @@ describe("SessionWatcher", () => {
         targets: [{ path: tempDir }],
       }) as unknown as BaseAgent;
       registerAgent({
+        name: "registered-test-agent",
+        displayName: "Registered Test Agent",
         icon: "/test-agent.svg",
         resolveDataRoot: () => tempDir,
         resumeCommandPrefix: null,
+        sourceKind: "filesystem",
         toolStrategy: "default",
         create: () => adapter,
       });

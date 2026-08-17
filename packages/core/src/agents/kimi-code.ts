@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import {
   FileSystemSessionSource,
   filteredSession,
@@ -336,9 +337,11 @@ function readState(stateFile: string): Record<string, unknown> | null {
   }
 }
 
+const AGENT_METADATA = getAgentCatalogEntry("kimi-code");
+
 export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
-  readonly name = "kimi-code";
-  readonly displayName = "Kimi-Code";
+  readonly name = AGENT_METADATA.name;
+  readonly displayName = AGENT_METADATA.displayName;
 
   private basePath: string | null = null;
   private workDirBySessionPath = new Map<string, string>();

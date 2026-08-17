@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
+    "@codesesh/core": "workspace:*",
     "@hugeicons/core-free-icons": "^4.2.3",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "22.20.1",

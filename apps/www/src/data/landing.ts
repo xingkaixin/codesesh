@@ -1,3 +1,5 @@
+import { AGENT_CATALOG } from "@codesesh/core/contract";
+
 export type Locale = "en" | "zh";
 
 export type HeadingCopy = string | string[];
@@ -106,25 +108,22 @@ export const localeRoutes = {
   zh: "/zh/",
 } satisfies Record<Locale, string>;
 
-export const agents = [
-  { name: "Claude Code", icon: "/icon/agent/claudecode.svg", iconColored: true },
-  { name: "Cursor", icon: "/icon/agent/cursor.svg" },
-  { name: "Kimi", icon: "/icon/agent/kimi.svg" },
-  { name: "Kimi-Code", icon: "/icon/agent/kimi.svg" },
-  { name: "Codex", icon: "/icon/agent/codex.svg" },
-  { name: "Grok", icon: "/icon/agent/grok.svg" },
-  { name: "Pi", icon: "/icon/agent/pi.svg" },
-  { name: "OpenCode", icon: "/icon/agent/opencode.svg" },
-  { name: "ZCode", icon: "/icon/agent/zcode.svg" },
-  { name: "DSH", icon: "/icon/agent/dsh.svg", iconColored: true },
-] as const;
+const agentDisplayNames = AGENT_CATALOG.map(({ displayName }) => displayName);
+const agentCount = agentDisplayNames.length;
+const agentNamesEn = `${agentDisplayNames.slice(0, -1).join(", ")}, and ${agentDisplayNames.at(-1)}`;
+const agentNamesZh = `${agentDisplayNames.slice(0, -1).join("、")}和${agentDisplayNames.at(-1)}`;
+
+export const agents = AGENT_CATALOG.map((entry) => ({
+  name: entry.displayName,
+  icon: entry.icon,
+  ...("iconColored" in entry ? { iconColored: entry.iconColored } : {}),
+}));
 
 export const copy = {
   zh: {
     meta: {
       title: "CodeSesh：搜索与回放本地 AI 编码历史",
-      description:
-        "CodeSesh 把十种 AI 编码 Agent 的本地会话按项目组织，提供结构化搜索、完整回放与本地 SQLite 索引，让工程上下文可查、可追溯。",
+      description: `CodeSesh 把 ${agentCount} 种 AI 编码 Agent 的本地会话按项目组织，提供结构化搜索、完整回放与本地 SQLite 索引，让工程上下文可查、可追溯。`,
     },
     header: {
       tour: "产品导览",
@@ -140,9 +139,9 @@ export const copy = {
       themeSwitchTo: "，点击切换到{next}",
     },
     hero: {
-      eyebrow: "本地运行 / 零配置 / 10 个 Agent",
+      eyebrow: `本地运行 / 零配置 / ${agentCount} 个 Agent`,
       title: ["你和 AI 写过的", "每一次对话，都还在。"],
-      body: "CodeSesh 扫描十种 AI 编码 Agent 的本地会话，把分散的历史收进同一个索引：按项目组织、结构化搜索、逐条回放。",
+      body: `CodeSesh 扫描 ${agentCount} 种 AI 编码 Agent 的本地会话，把分散的历史收进同一个索引：按项目组织、结构化搜索、逐条回放。`,
       privacy: "会话内容与索引留在本机，无需账号、云同步或会话遥测。",
       command: "npx codesesh",
       endpoint: "http://localhost:4521",
@@ -188,7 +187,7 @@ export const copy = {
             {
               icon: "eye",
               title: "统一时间线",
-              description: "十种 Agent 的历史会话进入同一个界面。",
+              description: `${agentCount} 种 Agent 的历史会话进入同一个界面。`,
             },
             {
               icon: "timer",
@@ -272,8 +271,7 @@ export const copy = {
       items: [
         {
           question: "CodeSesh 是什么？",
-          answer:
-            "CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放 AI 编码会话历史。它把 Claude Code、Cursor、Kimi、Kimi-Code、Codex、Grok、Pi、OpenCode、ZCode 和 DSH 的本地记录整理成按项目组织的工程记忆层。",
+          answer: `CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放 AI 编码会话历史。它把 ${agentNamesZh} 的本地记录整理成按项目组织的工程记忆层。`,
         },
         {
           question: "CodeSesh 会上传本地 AI 会话数据吗？",
@@ -306,8 +304,7 @@ export const copy = {
   en: {
     meta: {
       title: "CodeSesh: Search and Replay Local AI Coding History",
-      description:
-        "CodeSesh organizes local sessions from ten AI coding agents by project, with structured search, full replay, and a local SQLite index.",
+      description: `CodeSesh organizes local sessions from ${agentCount} AI coding agents by project, with structured search, full replay, and a local SQLite index.`,
     },
     header: {
       tour: "Tour",
@@ -323,9 +320,9 @@ export const copy = {
       themeSwitchTo: ". Switch to {next}.",
     },
     hero: {
-      eyebrow: "Local / Zero config / 10 agents",
+      eyebrow: `Local / Zero config / ${agentCount} agents`,
       title: ["Every AI coding session", "is still here."],
-      body: "CodeSesh scans local histories from ten AI coding agents and puts them in one index: organized by project, structurally searchable, and replayable message by message.",
+      body: `CodeSesh scans local histories from ${agentCount} AI coding agents and puts them in one index: organized by project, structurally searchable, and replayable message by message.`,
       privacy:
         "Session content and indexes stay local. No account, cloud sync, or session telemetry.",
       command: "npx codesesh",
@@ -372,7 +369,7 @@ export const copy = {
             {
               icon: "eye",
               title: "Unified timeline",
-              description: "Browse histories from ten AI coding agents in one interface.",
+              description: `Browse histories from ${agentCount} AI coding agents in one interface.`,
             },
             {
               icon: "timer",
@@ -459,8 +456,7 @@ export const copy = {
       items: [
         {
           question: "What is CodeSesh?",
-          answer:
-            "CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, ZCode, and DSH into a project-aware engineering memory layer.",
+          answer: `CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from ${agentNamesEn} into a project-aware engineering memory layer.`,
         },
         {
           question: "Does CodeSesh upload local AI session data?",

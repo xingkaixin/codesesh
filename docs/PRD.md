@@ -10,7 +10,7 @@
 > - 产品能力与 CLI 参数：[`README.md`](../README.md)
 > - 扫描与缓存架构：[`docs/architecture.md`](./architecture.md)、[`docs/scanning-and-caching.md`](./scanning-and-caching.md)
 > - SQLite 存储与搜索索引：[`docs/sqlite-storage.md`](./sqlite-storage.md)
-> - 支持的 Agent 清单：`packages/core/src/agents/register.ts`
+> - 支持的 Agent 清单：`packages/core/src/contract/agent-catalog.ts`
 > - 发布流程：[`docs/release-guide.md`](./release-guide.md)
 
 ## 1. 概述
@@ -23,7 +23,7 @@ CodeSesh 是一个本地 CLI 工具，用于发现、聚合和可视化多种 AI
 
 当前存在两个独立项目：
 
-- **agent-dump** (Python)：从本地文件系统发现并导出 5 种 Coding Agent（Claude Code、Codex、OpenCode、Cursor、Kimi）的会话记录，统一为 JSON 格式（立项时的范围；当前支持的 Agent 以 `packages/core/src/agents/register.ts` 为准）
+- **agent-dump** (Python)：从本地文件系统发现并导出 5 种 Coding Agent（Claude Code、Codex、OpenCode、Cursor、Kimi）的会话记录，统一为 JSON 格式（立项时的范围；当前支持的 Agent 以 `packages/core/src/contract/agent-catalog.ts` 为准）
 - **agent-view** (React)：将导出的 JSON 会话文件可视化为网页，支持消息时间线、工具输出渲染、TOC 过滤等
 
 CodeSesh 将两者的能力整合为一个 TypeScript monorepo，提供从会话发现到可视化的端到端体验，无需 Python 环境。

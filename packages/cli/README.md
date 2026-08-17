@@ -6,7 +6,7 @@
 
 <p align="center"><strong>One place to see every AI coding session you've ever had.</strong></p>
 
-CodeSesh scans your local machine, finds every AI agent session (Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, ZCode, DSH), and surfaces them in a unified, beautiful Web UI.
+CodeSesh scans your local machine, finds sessions from supported AI coding agents, and surfaces them in a unified Web UI.
 
 ## Quick Start
 
@@ -41,11 +41,13 @@ Your browser will open at `http://localhost:4521` with all your sessions ready t
 
 ## Supported Agents
 
+<!-- repo-fact:agents:start -->
+
 | Agent       | Status       |
 | ----------- | ------------ |
 | Claude Code | ✅ Supported |
 | Cursor      | ✅ Supported |
-| Kimi        | ✅ Supported |
+| Kimi-Cli    | ✅ Supported |
 | Kimi-Code   | ✅ Supported |
 | Codex       | ✅ Supported |
 | Grok        | ✅ Supported |
@@ -53,6 +55,8 @@ Your browser will open at `http://localhost:4521` with all your sessions ready t
 | OpenCode    | ✅ Supported |
 | ZCode       | ✅ Supported |
 | DSH         | ✅ Supported |
+
+<!-- repo-fact:agents:end -->
 
 ## Usage
 

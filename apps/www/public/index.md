@@ -2,7 +2,7 @@
 
 CodeSesh turns local AI coding history into searchable, replayable engineering memory.
 
-It discovers sessions from Claude Code, Cursor, Kimi, Kimi-Code, Codex, Grok, Pi, OpenCode, ZCode, and DSH, then organizes them by project in one local index.
+It discovers sessions from supported local AI coding agents, then organizes them by project in one local index.
 
 ## Start
 
@@ -54,9 +54,10 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 
 ## Supported Agents
 
+<!-- repo-fact:agents:start -->
 - Claude Code
 - Cursor
-- Kimi
+- Kimi-Cli
 - Kimi-Code
 - Codex
 - Grok
@@ -64,6 +65,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 - OpenCode
 - ZCode
 - DSH
+<!-- repo-fact:agents:end -->
 
 ## Data Boundary
 

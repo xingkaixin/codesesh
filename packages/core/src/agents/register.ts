@@ -1,4 +1,5 @@
-import { registerAgent } from "./registry.js";
+import { AGENT_CATALOG, type AgentName } from "../contract/agent-catalog.js";
+import { registerAgent, type AgentRegistration } from "./registry.js";
 import { ClaudeCodeAgent, resolveClaudeCodeDataRoot } from "./claudecode.js";
 import { OpenCodeAgent, resolveOpenCodeDataRoot } from "./opencode.js";
 import { KimiAgent, resolveKimiDataRoot } from "./kimi.js";
@@ -10,86 +11,51 @@ import { ZCodeAgent, resolveZCodeDataRoot } from "./zcode.js";
 import { GrokAgent, resolveGrokDataRoot } from "./grok.js";
 import { DshAgent, resolveDshDataRoot } from "./dsh.js";
 
-registerAgent({
-  icon: "/icon/agent/claudecode.svg",
-  iconColored: true,
-  resolveDataRoot: resolveClaudeCodeDataRoot,
-  resumeCommandPrefix: "claude --resume",
-  toolStrategy: "custom",
-  create: () => new ClaudeCodeAgent(),
-});
+type AgentRuntimeRegistration = Pick<AgentRegistration, "create" | "resolveDataRoot">;
 
-registerAgent({
-  icon: "/icon/agent/opencode.svg",
-  resolveDataRoot: resolveOpenCodeDataRoot,
-  resumeCommandPrefix: "opencode -s",
-  toolStrategy: "custom",
-  create: () => new OpenCodeAgent(),
-});
+const RUNTIME_REGISTRATIONS = {
+  claudecode: {
+    create: () => new ClaudeCodeAgent(),
+    resolveDataRoot: resolveClaudeCodeDataRoot,
+  },
+  cursor: {
+    create: () => new CursorAgent(),
+    resolveDataRoot: resolveCursorDataRoot,
+  },
+  kimi: {
+    create: () => new KimiAgent(),
+    resolveDataRoot: resolveKimiDataRoot,
+  },
+  "kimi-code": {
+    create: () => new KimiCodeAgent(),
+    resolveDataRoot: resolveKimiCodeDataRoot,
+  },
+  codex: {
+    create: () => new CodexAgent(),
+    resolveDataRoot: resolveCodexDataRoot,
+  },
+  grok: {
+    create: () => new GrokAgent(),
+    resolveDataRoot: resolveGrokDataRoot,
+  },
+  pi: {
+    create: () => new PiAgent(),
+    resolveDataRoot: resolvePiDataRoot,
+  },
+  opencode: {
+    create: () => new OpenCodeAgent(),
+    resolveDataRoot: resolveOpenCodeDataRoot,
+  },
+  zcode: {
+    create: () => new ZCodeAgent(),
+    resolveDataRoot: resolveZCodeDataRoot,
+  },
+  dsh: {
+    create: () => new DshAgent(),
+    resolveDataRoot: resolveDshDataRoot,
+  },
+} satisfies Record<AgentName, AgentRuntimeRegistration>;
 
-registerAgent({
-  icon: "/icon/agent/zcode.svg",
-  resolveDataRoot: resolveZCodeDataRoot,
-  resumeCommandPrefix: null,
-  toolStrategy: "custom",
-  create: () => new ZCodeAgent(),
-});
-
-registerAgent({
-  icon: "/icon/agent/kimi.svg",
-  resolveDataRoot: resolveKimiDataRoot,
-  resumeCommandPrefix: "kimi -r",
-  toolStrategy: "custom",
-  create: () => new KimiAgent(),
-});
-
-registerAgent({
-  icon: "/icon/agent/kimi.svg",
-  resolveDataRoot: resolveKimiCodeDataRoot,
-  resumeCommandPrefix: "kimi -r",
-  toolStrategy: "custom",
-  create: () => new KimiCodeAgent(),
-});
-
-registerAgent({
-  icon: "/icon/agent/codex.svg",
-  resolveDataRoot: resolveCodexDataRoot,
-  resumeCommandPrefix: "codex resume",
-  toolStrategy: "custom",
-  create: () => new CodexAgent(),
-});
-
-registerAgent({
-  icon: "/icon/agent/grok.svg",
-  resolveDataRoot: resolveGrokDataRoot,
-  resumeCommandPrefix: "grok --resume",
-  toolStrategy: "custom",
-  create: () => new GrokAgent(),
-});
-
-registerAgent({
-  icon: "/icon/agent/pi.svg",
-  resolveDataRoot: resolvePiDataRoot,
-  resumeCommandPrefix: "pi --session",
-  toolStrategy: "custom",
-  create: () => new PiAgent(),
-});
-
-registerAgent({
-  icon: "/icon/agent/dsh.svg",
-  iconColored: true,
-  resolveDataRoot: resolveDshDataRoot,
-  // The DSH launcher hands inner arguments to a profile, so no single resume
-  // command holds across installations.
-  resumeCommandPrefix: null,
-  toolStrategy: "custom",
-  create: () => new DshAgent(),
-});
-
-registerAgent({
-  icon: "/icon/agent/cursor.svg",
-  resolveDataRoot: resolveCursorDataRoot,
-  resumeCommandPrefix: null,
-  toolStrategy: "custom",
-  create: () => new CursorAgent(),
-});
+for (const catalogEntry of AGENT_CATALOG) {
+  registerAgent({ ...catalogEntry, ...RUNTIME_REGISTRATIONS[catalogEntry.name] });
+}

@@ -1,18 +1,8 @@
 import { expect, test } from "./test-fixtures.js";
+import { AGENT_CATALOG } from "@codesesh/core/contract";
 
 const siteUrl = "https://codesesh.xingkaixin.me";
-const supportedAgents = [
-  "Claude Code",
-  "Cursor",
-  "Kimi",
-  "Kimi-Code",
-  "Codex",
-  "Grok",
-  "Pi",
-  "OpenCode",
-  "ZCode",
-  "DSH",
-] as const;
+const supportedAgents = AGENT_CATALOG.map(({ displayName }) => displayName);
 
 const locales = [
   { route: "/", language: "en", canonical: `${siteUrl}/` },

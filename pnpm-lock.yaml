@@ -12,6 +12,9 @@ importers:
 
   .:
     devDependencies:
+      '@codesesh/core':
+        specifier: workspace:*
+        version: link:packages/core
       '@types/node':
         specifier: 22.20.1
         version: 22.20.1
@@ -161,6 +164,9 @@ importers:
       '@astrojs/check':
         specifier: ^0.9.10
         version: 0.9.10(@typescript/typescript6@6.0.2)(prettier-plugin-astro@0.14.1)(prettier@3.9.6)
+      '@codesesh/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@hugeicons/core-free-icons':
         specifier: ^4.2.3
         version: 4.2.3

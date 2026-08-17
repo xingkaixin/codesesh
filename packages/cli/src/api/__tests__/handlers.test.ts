@@ -1,4 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
+import { AGENT_CATALOG } from "@codesesh/core/contract";
 
 const coreMocks = vi.hoisted(() => {
   return {
@@ -312,18 +313,9 @@ describe("handleGetAgents", () => {
       { from: now - 7 * 86400000 },
     );
     const response = c.json.mock.calls[0]![0];
-    expect(response.map((agent: { name: string }) => agent.name)).toEqual([
-      "claudecode",
-      "opencode",
-      "zcode",
-      "kimi",
-      "kimi-code",
-      "codex",
-      "grok",
-      "pi",
-      "dsh",
-      "cursor",
-    ]);
+    expect(response.map((agent: { name: string }) => agent.name)).toEqual(
+      AGENT_CATALOG.map(({ name }) => name),
+    );
     expect(response.find((agent: { name: string }) => agent.name === "claudecode")?.count).toBe(1);
     expect(response.find((agent: { name: string }) => agent.name === "codex")?.count).toBe(0);
   });

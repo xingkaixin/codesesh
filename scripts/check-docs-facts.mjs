@@ -5,7 +5,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const FACT_SPECS = [
   { document: "README.md", fact: "agents" },
   { document: "README_CN.md", fact: "agents" },
+  { document: "packages/cli/README.md", fact: "agents" },
   { document: "apps/www/public/llms-full.txt", fact: "agents" },
+  { document: "apps/www/public/llms.txt", fact: "agents" },
+  { document: "apps/www/public/index.md", fact: "agents" },
   { document: "docs/scanning-and-caching.md", fact: "agent-source-kinds" },
   { document: "docs/architecture.md", fact: "agent-source-kinds" },
   { document: "docs/sqlite-storage.md", fact: "cache-schema-version" },

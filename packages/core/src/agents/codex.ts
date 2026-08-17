@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, basename } from "node:path";
+import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import {
   SingleFileSessionSource,
   filteredSession,
@@ -422,9 +423,11 @@ function sourceTimestamp(filePath: string, fallback: number): number {
 // CodexAgent
 // ---------------------------------------------------------------------------
 
+const AGENT_METADATA = getAgentCatalogEntry("codex");
+
 export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
-  readonly name = "codex";
-  readonly displayName = "Codex";
+  readonly name = AGENT_METADATA.name;
+  readonly displayName = AGENT_METADATA.displayName;
 
   private basePath: string | null = null;
   private sessionIndexCache = new Map<string, string>();

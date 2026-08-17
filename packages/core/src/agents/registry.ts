@@ -1,16 +1,12 @@
 import type { BaseAgent } from "./base.js";
 import type { AgentInfo } from "../types/index.js";
+import type { AgentCatalogEntry } from "../contract/agent-catalog.js";
 
-export type AgentToolStrategy = "custom" | "default";
+export type { AgentToolStrategy } from "../contract/agent-catalog.js";
 
-export interface AgentRegistration {
+export interface AgentRegistration extends AgentCatalogEntry {
   create: () => BaseAgent;
-  icon: string;
-  /** Icon uses brand colors that work on both themes; render it as-is instead of tinting with currentColor. */
-  iconColored?: boolean;
   resolveDataRoot: () => string | null;
-  resumeCommandPrefix: string | null;
-  toolStrategy: AgentToolStrategy;
 }
 
 export type AgentRoots = Readonly<Record<string, string | null>>;
@@ -31,23 +27,17 @@ export function getRegisteredAgents(): readonly AgentRegistration[] {
 
 export function resolveAgentRoots(): AgentRoots {
   return Object.fromEntries(
-    registrations.map((registration) => [
-      registration.create().name,
-      registration.resolveDataRoot(),
-    ]),
+    registrations.map((registration) => [registration.name, registration.resolveDataRoot()]),
   );
 }
 
 export function getAgentInfoMap(sessionsByAgent: Record<string, number>): AgentInfo[] {
-  return registrations.map((registration) => {
-    const agent = registration.create();
-    return {
-      name: agent.name,
-      displayName: agent.displayName,
-      icon: registration.icon,
-      iconColored: registration.iconColored,
-      resumeCommandPrefix: registration.resumeCommandPrefix,
-      count: sessionsByAgent[agent.name] ?? 0,
-    };
-  });
+  return registrations.map((registration) => ({
+    name: registration.name,
+    displayName: registration.displayName,
+    icon: registration.icon,
+    iconColored: registration.iconColored,
+    resumeCommandPrefix: registration.resumeCommandPrefix,
+    count: sessionsByAgent[registration.name] ?? 0,
+  }));
 }

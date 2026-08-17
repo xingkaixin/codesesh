@@ -9,6 +9,7 @@
  */
 import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
+import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import {
   FileSystemSessionSource,
   SessionScanError,
@@ -87,9 +88,11 @@ function sameFile(left: string, right: string): boolean {
   }
 }
 
+const AGENT_METADATA = getAgentCatalogEntry("dsh");
+
 export class DshAgent extends FileSystemSessionSource<DshSessionMeta> {
-  readonly name = "dsh";
-  readonly displayName = "DSH";
+  readonly name = AGENT_METADATA.name;
+  readonly displayName = AGENT_METADATA.displayName;
 
   getSessionWatchPlan(): SessionWatchPlan {
     const dataRoot = resolveDshDataRoot();

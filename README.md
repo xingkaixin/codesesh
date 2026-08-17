@@ -7,7 +7,7 @@
 
 > **One place to see every AI coding session you've ever had.**
 
-You've been coding with AI agents — Claude Code, Cursor, Kimi-Cli, Kimi-Code, Codex, Grok, Pi, OpenCode, ZCode, DSH — and the conversations are scattered everywhere on your filesystem. Context is lost. Cost is invisible. History is buried.
+You've been coding with AI agents, and the conversations are scattered everywhere on your filesystem. Context is lost. Cost is invisible. History is buried.
 
 **CodeSesh** fixes that. It scans your local machine, finds every AI agent session, and surfaces them in a unified, beautiful Web UI. Think of it as a time machine for your AI-assisted development workflow.
 
@@ -395,11 +395,12 @@ a new guard.
 
 ### Extending
 
-Agent capabilities have one registration point:
+Agent metadata and runtime construction have separate, explicit declarations:
 
 1. Create `packages/core/src/agents/<youragent>.ts`, implement `BaseAgent`, and export its data-root resolver.
-2. Register it in `packages/core/src/agents/register.ts`, explicitly declaring its icon, data root, resume command support (`null` when unsupported), and whether it uses a custom or default tool display strategy.
-3. Add its SVG to `apps/web/public/icon/agent/`.
-4. For a custom tool display strategy, add `apps/web/src/components/session-detail/tool-strategy/<youragent>.ts` and register its builder in that directory's `index.ts`.
+2. Add its public identity and capabilities to `packages/core/src/contract/agent-catalog.ts`.
+3. Add its factory and data-root resolver to `packages/core/src/agents/register.ts`.
+4. Add its SVG to both `apps/web/public/icon/agent/` and `apps/www/public/icon/agent/`.
+5. For a custom tool display strategy, add `apps/web/src/components/session-detail/tool-strategy/<youragent>.ts` and register its builder in that directory's `index.ts`.
 
 The registration completeness test rejects missing icons, undeclared resume support, and custom strategy mismatches.

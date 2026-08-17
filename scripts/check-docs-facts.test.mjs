@@ -44,10 +44,12 @@ function fixtureRepo(packageManager = "pnpm@11.20.0", nodeEngine = ">=22.0.0") {
     "package.json": JSON.stringify({ packageManager }),
     ".github/workflows/ci.yml": "steps:\n  - name: Lint\n    run: pnpm lint\n  - run: pnpm test\n",
     "packages/cli/package.json": JSON.stringify({ engines: { node: nodeEngine } }),
-    "packages/cli/README.md": node,
+    "packages/cli/README.md": `${agentsTable}\n${node}`,
     "README.md": `${agentsTable}\n${node}\n${pnpm}\n${ciCommands}`,
     "README_CN.md": `${agentsTable}\n${node}\n${pnpm}\n${ciCommands}`,
     "apps/www/public/llms-full.txt": `${agentsList}\n${node}\n${node}\n${pnpm}\n${pnpm}`,
+    "apps/www/public/llms.txt": agentsList,
+    "apps/www/public/index.md": agentsList,
     "docs/scanning-and-caching.md": sourceKinds,
     "docs/architecture.md": sourceKinds,
     "docs/sqlite-storage.md": marked(
@@ -91,7 +93,7 @@ describe("CS-172: semantic documentation facts", () => {
     });
   });
 
-  it("reports a newly registered agent in both support and source-kind declarations", () => {
+  it("reports a newly cataloged agent in both support and source-kind declarations", () => {
     const mismatches = findDocumentationFactMismatches(fixtureRepo(), {
       ...coreFacts,
       agents: [
@@ -100,7 +102,7 @@ describe("CS-172: semantic documentation facts", () => {
       ],
     });
 
-    expect(mismatches).toHaveLength(5);
+    expect(mismatches).toHaveLength(8);
     expect(mismatches.every(({ message }) => message.includes('missing ["Fixture"]'))).toBe(true);
   });
 
@@ -165,6 +167,8 @@ describe("CS-172: semantic documentation facts", () => {
         "packages/cli/README.md",
         "docs/architecture.md",
         "apps/www/public/llms-full.txt",
+        "apps/www/public/llms.txt",
+        "apps/www/public/index.md",
       ]),
     );
   });
