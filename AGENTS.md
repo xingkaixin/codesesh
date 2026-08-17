@@ -1,6 +1,6 @@
 # CodeSesh
 
-**用途**：发现、聚合、可视化本地 AI 编码 Agent（Claude Code、Cursor、Kimi、Kimi-Code、Codex、Grok、Pi、OpenCode、ZCode、DSH）的历史会话，通过 Web UI 统一浏览。
+**用途**：发现、聚合、可视化受支持的本地 AI 编码 Agent 历史会话，通过 Web UI 统一浏览。
 
 ## 技术栈
 
@@ -70,10 +70,10 @@ CI（`.github/workflows/ci.yml`）在以上之外还前置这些门禁，本地�
 ## 扩展新 Agent
 
 1. 在 `packages/core/src/agents/` 新增适配器并导出数据根目录解析器。
-2. 在 `packages/core/src/agents/register.ts` 注册图标、根目录解析器、resume 命令能力（不支持时显式为
-   `null`）与工具展示策略类型。
-3. 在 `apps/web/public/icon/agent/` 添加对应 SVG。
-4. 自定义工具展示需新增 `apps/web/src/components/session-detail/tool-strategy/<agent>.ts`
+2. 在 `packages/core/src/contract/agent-catalog.ts` 声明公开身份、图标、来源类型、resume 命令能力与工具展示策略。
+3. 在 `packages/core/src/agents/register.ts` 添加工厂与数据根目录解析器。
+4. 在 `apps/web/public/icon/agent/` 与 `apps/www/public/icon/agent/` 添加对应 SVG。
+5. 自定义工具展示需新增 `apps/web/src/components/session-detail/tool-strategy/<agent>.ts`
    并在同目录的 `apps/web/src/components/session-detail/tool-strategy/index.ts` 注册 builder；使用默认策略则无需新增实现。
 
 注册完备性测试必须覆盖图标与工具展示策略声明。

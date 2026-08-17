@@ -7,7 +7,7 @@
 
 > **一个地方，看遍你所有的 AI 编程会话。**
 
-你一直在用 AI Agent 写代码 —— Claude Code、Cursor、Kimi-Cli、Kimi-Code、Codex、Grok、Pi、OpenCode、ZCode、DSH —— 但这些对话分散在文件系统的各个角落。上下文丢失，成本不可见，历史深埋。
+你一直在用 AI Agent 写代码，但这些对话分散在文件系统的各个角落。上下文丢失，成本不可见，历史深埋。
 
 **CodeSesh** 解决这个问题。它扫描你的本地机器，找到所有 AI Agent 会话，并在统一的 Web UI 中呈现。把它理解为你 AI 辅助开发历程的时光机。
 
@@ -360,13 +360,13 @@ apps/www/public/                产品站静态资源
 
 ### 扩展新 Agent
 
-Agent 能力统一在一个注册点声明：
+Agent 元数据与运行时构造分别显式声明：
 
 1. 创建 `packages/core/src/agents/<youragent>.ts`，实现 `BaseAgent` 并导出数据根目录解析器。
-2. 在 `packages/core/src/agents/register.ts` 中注册，显式声明图标、数据根目录、resume
-   命令能力（不支持时填 `null`）以及使用自定义还是默认工具展示策略。
-3. 在 `apps/web/public/icon/agent/` 添加 SVG。
-4. 如使用自定义工具展示策略，在
+2. 在 `packages/core/src/contract/agent-catalog.ts` 中添加公开身份与能力声明。
+3. 在 `packages/core/src/agents/register.ts` 中添加工厂与数据根目录解析器。
+4. 在 `apps/web/public/icon/agent/` 与 `apps/www/public/icon/agent/` 添加 SVG。
+5. 如使用自定义工具展示策略，在
    `apps/web/src/components/session-detail/tool-strategy/<youragent>.ts` 实现，并在同目录
    `index.ts` 注册 builder。
 
