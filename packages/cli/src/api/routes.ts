@@ -23,7 +23,10 @@ import {
 } from "./bookmark-handlers.js";
 import type { ScanEventSource } from "../scan-source.js";
 import type { ProjectIdentityResolver } from "../project-identity-resolver.js";
+import { appLogger } from "../logging.js";
 import { SseEventBuffer } from "./sse-event-buffer.js";
+
+export const MAX_ACTIVE_SSE_CONNECTIONS = 32;
 
 export interface ApiRouteOptions {
   defaultSessionFrom?: number;
@@ -33,7 +36,35 @@ export interface ApiRouteOptions {
   projectIdentityResolver?: ProjectIdentityResolver;
 }
 
-function createSseResponse(eventSource: ScanEventSource, signal: AbortSignal): Response {
+interface SseConnectionBudget {
+  acquire(): (() => void) | null;
+  activeCount(): number;
+}
+
+function createSseConnectionBudget(maxConnections: number): SseConnectionBudget {
+  let activeConnections = 0;
+  return {
+    acquire() {
+      if (activeConnections >= maxConnections) return null;
+      activeConnections += 1;
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        activeConnections -= 1;
+      };
+    },
+    activeCount() {
+      return activeConnections;
+    },
+  };
+}
+
+function createSseResponse(
+  eventSource: ScanEventSource,
+  signal: AbortSignal,
+  releaseConnection: () => void,
+): Response {
   let cancelStream = () => {};
   let drainStream = () => {};
 
@@ -45,16 +76,17 @@ function createSseResponse(eventSource: ScanEventSource, signal: AbortSignal): R
         let unsubscribeScanStatus = () => {};
         let abortStream = () => {};
         let heartbeat: ReturnType<typeof setInterval> | undefined;
-        let buffer: SseEventBuffer;
+        let buffer: SseEventBuffer | undefined;
 
         const cleanup = () => {
           if (isClosed) return false;
           isClosed = true;
-          buffer.close();
+          buffer?.close();
           if (heartbeat) clearInterval(heartbeat);
           unsubscribeSessions();
           unsubscribeScanStatus();
           signal.removeEventListener("abort", abortStream);
+          releaseConnection();
           return true;
         };
         abortStream = () => {
@@ -65,23 +97,28 @@ function createSseResponse(eventSource: ScanEventSource, signal: AbortSignal): R
         });
         drainStream = () => buffer.drain();
 
-        buffer.enqueue("connected", { timestamp: Date.now() });
-        buffer.enqueueScanStatus(eventSource.getScanStatus());
+        try {
+          buffer.enqueue("connected", { timestamp: Date.now() });
+          buffer.enqueueScanStatus(eventSource.getScanStatus());
 
-        unsubscribeSessions = eventSource.subscribe((event) => {
-          buffer.enqueue(event.type, event);
-        });
-        unsubscribeScanStatus = eventSource.subscribeScanStatus((event) => {
-          buffer.enqueueScanStatus(event);
-        });
+          unsubscribeSessions = eventSource.subscribe((event) => {
+            buffer?.enqueue(event.type, event);
+          });
+          unsubscribeScanStatus = eventSource.subscribeScanStatus((event) => {
+            buffer?.enqueueScanStatus(event);
+          });
 
-        heartbeat = setInterval(() => buffer.enqueueHeartbeat(), 15000);
-        cancelStream = () => {
+          heartbeat = setInterval(() => buffer?.enqueueHeartbeat(), 15000);
+          cancelStream = () => {
+            cleanup();
+          };
+
+          if (signal.aborted) abortStream();
+          else signal.addEventListener("abort", abortStream, { once: true });
+        } catch (error) {
           cleanup();
-        };
-
-        if (signal.aborted) abortStream();
-        else signal.addEventListener("abort", abortStream, { once: true });
+          throw error;
+        }
       },
       pull() {
         drainStream();
@@ -106,6 +143,7 @@ export function createApiRoutes(
   options: ApiRouteOptions = {},
 ): Hono {
   const api = new Hono();
+  const sseConnections = createSseConnectionBudget(MAX_ACTIVE_SSE_CONNECTIONS);
   const listDefaults: SessionListDefaults = {
     from: options.defaultSessionFrom,
     to: options.defaultSessionTo,
@@ -140,10 +178,24 @@ export function createApiRoutes(
   api.post("/logs", (c) => handlePostClientLog(c));
   if (eventSource) {
     api.get("/events", (c) => {
+      const releaseConnection = sseConnections.acquire();
+      if (!releaseConnection) {
+        appLogger.warn("api.sse.connection_limit_reached", {
+          active_connections: sseConnections.activeCount(),
+          connection_limit: MAX_ACTIVE_SSE_CONNECTIONS,
+        });
+        c.header("Retry-After", "1");
+        return c.json({ error: "Too many active event streams" }, 429);
+      }
       const signal = options.shutdownSignal
         ? AbortSignal.any([c.req.raw.signal, options.shutdownSignal])
         : c.req.raw.signal;
-      return createSseResponse(eventSource, signal);
+      try {
+        return createSseResponse(eventSource, signal, releaseConnection);
+      } catch (error) {
+        releaseConnection();
+        throw error;
+      }
     });
   }
 
