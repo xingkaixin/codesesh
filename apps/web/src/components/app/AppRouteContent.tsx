@@ -98,6 +98,9 @@ interface AppRouteContentProps {
   agentCatalog: AgentCatalog;
   agentNameMap: ReadonlyMap<string, string>;
   projects: ApiProjectGroup[];
+  projectsError: string | null;
+  projectsLoading: boolean;
+  onRetryProjects: () => void;
   landingSessions: IndexedSession[];
   sessions?: SessionHead[];
   sessionsByAgent: Map<string, IndexedSession[]>;
@@ -120,6 +123,9 @@ export function AppRouteContent({
   agentCatalog,
   agentNameMap,
   projects,
+  projectsError,
+  projectsLoading,
+  onRetryProjects,
   landingSessions,
   sessions = [],
   sessionsByAgent,
@@ -223,7 +229,13 @@ export function AppRouteContent({
   if (viewState.mode === "projects") {
     return (
       <LazySurface>
-        <ProjectsOverview projects={projects} agentCatalog={agentCatalog} />
+        <ProjectsOverview
+          projects={projects}
+          agentCatalog={agentCatalog}
+          loading={projectsLoading}
+          error={projectsError}
+          onRetry={onRetryProjects}
+        />
       </LazySurface>
     );
   }

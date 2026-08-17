@@ -8,6 +8,7 @@ import type { TimeWindowPreset } from "../lib/time-window";
 import { AgentIcon } from "./AgentIcon";
 import { OverviewScreen } from "./overview/OverviewScreen";
 import { ProjectTimeline } from "./project-timeline/ProjectTimeline";
+import { ResourceLoadFailure } from "./ResourceLoadFailure";
 import { Panel } from "./ui/panel";
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -101,9 +102,15 @@ function ProjectListItem({
 export function ProjectsOverview({
   projects,
   agentCatalog,
+  loading,
+  error,
+  onRetry,
 }: {
   projects: ApiProjectGroup[];
   agentCatalog: AgentCatalog;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
 }) {
   const totalSessions = projects.reduce((sum, project) => sum + project.sessionCount, 0);
   const totalTokens = projects.reduce((sum, project) => sum + project.tokens, 0);
@@ -111,6 +118,20 @@ export function ProjectsOverview({
   const latestActivity = Math.max(0, ...projects.map((project) => project.lastActivity ?? 0));
 
   if (projects.length === 0) {
+    if (error) {
+      return (
+        <div className="mx-auto max-w-6xl">
+          <ResourceLoadFailure title="Couldn't load projects." message={error} onRetry={onRetry} />
+        </div>
+      );
+    }
+    if (loading) {
+      return (
+        <Panel className="mx-auto max-w-6xl p-6 text-sm text-[var(--console-muted)]">
+          Loading projects...
+        </Panel>
+      );
+    }
     return (
       <Panel className="mx-auto max-w-6xl p-6 text-sm text-[var(--console-muted)]">
         No projects found
@@ -120,6 +141,9 @@ export function ProjectsOverview({
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
+      {error ? (
+        <ResourceLoadFailure title="Couldn't refresh projects." message={error} onRetry={onRetry} />
+      ) : null}
       <div className="grid gap-3 md:grid-cols-4">
         <StatCard label="Projects" value={formatNumber(projects.length)} />
         <StatCard label="Sessions" value={formatNumber(totalSessions)} />

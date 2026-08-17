@@ -186,9 +186,16 @@ export function useBookmarks() {
   const refresh = useCallback(async () => {
     await refreshBookmarks();
   }, [refreshBookmarks]);
+  const error = bookmarksQuery.isError
+    ? bookmarksQuery.error instanceof Error
+      ? bookmarksQuery.error.message
+      : "Unable to load bookmarks."
+    : null;
 
   return {
     bookmarkedSessions: bookmarks,
+    loading: bookmarksQuery.isPending,
+    error,
     isSessionBookmarked,
     toggleBookmark,
     toggleSessionBookmark,

@@ -314,17 +314,20 @@ describe("useBookmarks", () => {
     await request.promise;
   });
 
-  it("reports load and explicit refresh failures", async () => {
+  it("surfaces load failures and recovers through explicit refresh", async () => {
     const error = new Error("offline");
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.mocked(api.fetchBookmarks).mockRejectedValueOnce(error);
     const { result } = renderBookmarks();
-    await waitFor(() =>
-      expect(consoleError).toHaveBeenCalledWith("Failed to load bookmarks:", error),
-    );
+    await waitFor(() => expect(result.current.error).toBe("offline"));
 
-    vi.mocked(api.fetchBookmarks).mockRejectedValueOnce(error);
+    expect(result.current.bookmarkedSessions).toEqual([]);
+    expect(result.current.loading).toBe(false);
+    expect(consoleError).toHaveBeenCalledWith("Failed to load bookmarks:", error);
+
+    vi.mocked(api.fetchBookmarks).mockResolvedValueOnce({ bookmarks: [available("recovered")] });
     await act(() => result.current.refresh());
-    expect(consoleError).toHaveBeenLastCalledWith("Failed to load bookmarks:", error);
+    await waitFor(() => expect(result.current.error).toBeNull());
+    expect(result.current.isSessionBookmarked("cc", "recovered")).toBe(true);
   });
 });

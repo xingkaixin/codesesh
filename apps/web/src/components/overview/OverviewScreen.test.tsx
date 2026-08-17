@@ -119,6 +119,20 @@ describe("OverviewScreen", () => {
     await waitFor(() => expect(screen.queryByTestId("overview-skeleton")).toBeNull());
   });
 
+  it("shows a dashboard failure and retries it in place", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(api.fetchDashboard).mockRejectedValueOnce(new Error("dashboard unavailable"));
+    renderScreen();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Couldn't load the dashboard.");
+    expect(alert.textContent).toContain("dashboard unavailable");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await screen.findByRole("heading", { name: "Agents" });
+    expect(api.fetchDashboard).toHaveBeenCalledTimes(2);
+  });
+
   it("renders the full card set for the global scope", async () => {
     renderScreen();
 

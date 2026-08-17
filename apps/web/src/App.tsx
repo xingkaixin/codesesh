@@ -137,6 +137,8 @@ export default function App() {
   const bookmarks = useBookmarks();
   const {
     bookmarkedSessions,
+    loading: bookmarksLoading,
+    error: bookmarksError,
     isSessionBookmarked,
     toggleBookmark,
     toggleSessionBookmark,
@@ -281,6 +283,9 @@ export default function App() {
       agentCatalog={agentCatalog}
       agentNameMap={agentNameMap}
       projects={projects}
+      projectsError={projectsError}
+      projectsLoading={projectsLoading}
+      onRetryProjects={() => void retryProjects()}
       landingSessions={sessionIndexes.landingSessions}
       sessions={sessions}
       sessionsByAgent={sessionIndexes.byLandingAgent}
@@ -401,6 +406,8 @@ export default function App() {
               projectsLoading,
               selectedProjectNavigationId,
               bookmarkedSessions,
+              bookmarksError,
+              bookmarksLoading,
               sidebarSessions,
               sidebarSessionLookup: sidebar.sidebarSessionLookup,
               bookmarkedSidebarSessionReferences,
@@ -416,6 +423,7 @@ export default function App() {
               onRenameSession: handleRenameSession,
               onRenameBookmarkedSession: handleRenameBookmarkedSession,
               onRetryProjects: () => void retryProjects(),
+              onRetryBookmarks: () => void refreshBookmarks(),
             }}
           />
 
