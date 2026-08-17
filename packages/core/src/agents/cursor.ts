@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join, normalize } from "node:path";
+import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import {
   DatabaseSessionSource,
   filteredSession,
@@ -481,9 +482,11 @@ function convertActionToPart(action: ActionEntry, timestampMs: number): MessageP
 // CursorAgent
 // ---------------------------------------------------------------------------
 
+const AGENT_METADATA = getAgentCatalogEntry("cursor");
+
 export class CursorAgent extends DatabaseSessionSource {
-  readonly name = "cursor";
-  readonly displayName = "Cursor";
+  readonly name = AGENT_METADATA.name;
+  readonly displayName = AGENT_METADATA.displayName;
 
   private dbPath: string | null = null;
 

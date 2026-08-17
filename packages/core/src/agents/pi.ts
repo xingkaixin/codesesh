@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
+import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import {
   SingleFileSessionSource,
   filteredSession,
@@ -131,9 +132,11 @@ function buildCurrentPathEntries(entries: Record<string, unknown>[]): Record<str
   return path.reverse();
 }
 
+const AGENT_METADATA = getAgentCatalogEntry("pi");
+
 export class PiAgent extends SingleFileSessionSource<SessionMeta> {
-  readonly name = "pi";
-  readonly displayName = "Pi";
+  readonly name = AGENT_METADATA.name;
+  readonly displayName = AGENT_METADATA.displayName;
 
   private basePath: string | null = null;
 

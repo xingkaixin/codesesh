@@ -28,6 +28,7 @@ describe("contract browser-safety", () => {
     const contract = await import(distEntry);
     expect(Object.keys(contract).sort()).toEqual(
       [
+        "AGENT_CATALOG",
         "PROJECT_IDENTITY_KINDS",
         "UNKNOWN_AGENT_NAME",
         "addCalendarDays",
@@ -48,6 +49,7 @@ describe("contract browser-safety", () => {
         "getSessionRouteKey",
         "getSessionRoutePath",
         "groupSessionsByCalendarDay",
+        "getAgentCatalogEntry",
         "isProjectIdentityKind",
         "matchesProjectIdentity",
         "mergeSessionsUpdatedEvents",

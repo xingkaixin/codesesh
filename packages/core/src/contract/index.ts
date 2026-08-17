@@ -1,6 +1,7 @@
 export type * from "./session.js";
 export * from "./message-part.js";
 export type * from "./agent.js";
+export * from "./agent-catalog.js";
 export type * from "./file-activity.js";
 export type * from "./search.js";
 export type * from "./bookmarks.js";

@@ -1,8 +1,11 @@
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
+import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import { firstExisting } from "../discovery/paths.js";
 import { isSqliteAvailable } from "../utils/sqlite.js";
 import { OpenCodeSqliteAgent } from "./opencode-sqlite.js";
+
+const AGENT_METADATA = getAgentCatalogEntry("zcode");
 
 export function resolveZCodeDataRoot(): string | null {
   const currentPlatform = platform();
@@ -28,8 +31,8 @@ function getZCodeSessionWatchPlan() {
 export class ZCodeAgent extends OpenCodeSqliteAgent {
   constructor() {
     super({
-      name: "zcode",
-      displayName: "ZCode",
+      name: AGENT_METADATA.name,
+      displayName: AGENT_METADATA.displayName,
       findDbPath: findZCodeDbPath,
       getSessionWatchPlan: getZCodeSessionWatchPlan,
     });

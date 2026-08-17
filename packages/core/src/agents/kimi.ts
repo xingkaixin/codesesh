@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
+import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import {
   FileSystemSessionSource,
   getParsedSession,
@@ -218,9 +219,11 @@ function extractFirstUserTitle(contextFile: string | null, wireFile: string | nu
   return null;
 }
 
+const AGENT_METADATA = getAgentCatalogEntry("kimi");
+
 export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
-  readonly name = "kimi";
-  readonly displayName = "Kimi-Cli";
+  readonly name = AGENT_METADATA.name;
+  readonly displayName = AGENT_METADATA.displayName;
 
   private basePath: string | null = null;
   private projectMap = new Map<string, string>();

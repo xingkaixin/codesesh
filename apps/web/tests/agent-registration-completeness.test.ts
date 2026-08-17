@@ -4,14 +4,15 @@ import { getRegisteredAgents } from "@codesesh/core";
 import { describe, expect, it } from "vitest";
 import { hasCustomToolStrategy } from "../src/components/session-detail/tool-strategy";
 
-const WEB_ROOT = existsSync(resolve(process.cwd(), "public/icon/agent"))
+const REPO_ROOT = existsSync(resolve(process.cwd(), "apps/web"))
   ? process.cwd()
-  : resolve(process.cwd(), "apps/web");
-const PUBLIC_ROOT = resolve(WEB_ROOT, "public");
-const AGENT_ICON_ROOT = resolve(PUBLIC_ROOT, "icon/agent");
+  : resolve(process.cwd(), "../..");
+const WEB_PUBLIC_ROOT = resolve(REPO_ROOT, "apps/web/public");
+const WWW_PUBLIC_ROOT = resolve(REPO_ROOT, "apps/www/public");
+const AGENT_ICON_ROOT = resolve(WEB_PUBLIC_ROOT, "icon/agent");
 
 function registrationName(registration: ReturnType<typeof getRegisteredAgents>[number]): string {
-  return registration.create().name;
+  return registration.name;
 }
 
 describe("agent registration completeness", () => {
@@ -33,13 +34,18 @@ describe("agent registration completeness", () => {
     expect(incomplete).toEqual([]);
   });
 
-  it("keeps the agent icon directory aligned with registered icons", () => {
+  it("provides every registered icon to the app and product site", () => {
     const registeredIcons = [
       ...new Set(
         getRegisteredAgents().map((registration) => {
-          const iconPath = resolve(PUBLIC_ROOT, registration.icon.replace(/^\/+/, ""));
-          expect(existsSync(iconPath), `${registrationName(registration)} icon`).toBe(true);
-          return basename(iconPath);
+          const relativeIconPath = registration.icon.replace(/^\/+/, "");
+          for (const publicRoot of [WEB_PUBLIC_ROOT, WWW_PUBLIC_ROOT]) {
+            expect(
+              existsSync(resolve(publicRoot, relativeIconPath)),
+              `${registrationName(registration)} icon in ${publicRoot}`,
+            ).toBe(true);
+          }
+          return basename(relativeIconPath);
         }),
       ),
     ].toSorted();

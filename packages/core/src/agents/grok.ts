@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import {
   FileSystemSessionSource,
   filteredSession,
@@ -817,9 +818,11 @@ function parseTranscript(meta: GrokSessionMeta): TranscriptResult {
   return replay.finish(meta.stats);
 }
 
+const AGENT_METADATA = getAgentCatalogEntry("grok");
+
 export class GrokAgent extends FileSystemSessionSource<GrokSessionMeta> {
-  readonly name = "grok";
-  readonly displayName = "Grok";
+  readonly name = AGENT_METADATA.name;
+  readonly displayName = AGENT_METADATA.displayName;
 
   private basePath: string | null = null;
 

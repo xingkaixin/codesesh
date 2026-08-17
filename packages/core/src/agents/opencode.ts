@@ -1,7 +1,10 @@
 import { join } from "node:path";
+import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import { firstExisting, resolveDataHome } from "../discovery/paths.js";
 import { isSqliteAvailable } from "../utils/sqlite.js";
 import { OpenCodeSqliteAgent } from "./opencode-sqlite.js";
+
+const AGENT_METADATA = getAgentCatalogEntry("opencode");
 
 export function resolveOpenCodeDataRoot(): string {
   return join(resolveDataHome(), "opencode");
@@ -26,8 +29,8 @@ function getOpenCodeSessionWatchPlan() {
 export class OpenCodeAgent extends OpenCodeSqliteAgent {
   constructor() {
     super({
-      name: "opencode",
-      displayName: "OpenCode",
+      name: AGENT_METADATA.name,
+      displayName: AGENT_METADATA.displayName,
       findDbPath: findOpenCodeDbPath,
       getSessionWatchPlan: getOpenCodeSessionWatchPlan,
     });

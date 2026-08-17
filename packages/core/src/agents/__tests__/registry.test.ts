@@ -1,82 +1,39 @@
 import { describe, expect, it } from "vitest";
+import { AGENT_CATALOG } from "../../contract/agent-catalog.js";
+import { DatabaseSessionSource, FileSystemSessionSource } from "../base.js";
 import "../register.js";
-import { getAgentInfoMap } from "../registry.js";
+import { getAgentInfoMap, getRegisteredAgents } from "../registry.js";
 
 describe("agent registry", () => {
-  it("derives public agent metadata from registered agent instances", () => {
-    expect(getAgentInfoMap({ claudecode: 2, codex: 1 })).toEqual([
-      {
-        name: "claudecode",
-        displayName: "Claude Code",
-        icon: "/icon/agent/claudecode.svg",
-        iconColored: true,
-        resumeCommandPrefix: "claude --resume",
-        count: 2,
-      },
-      {
-        name: "opencode",
-        displayName: "OpenCode",
-        icon: "/icon/agent/opencode.svg",
-        resumeCommandPrefix: "opencode -s",
-        count: 0,
-      },
-      {
-        name: "zcode",
-        displayName: "ZCode",
-        icon: "/icon/agent/zcode.svg",
-        resumeCommandPrefix: null,
-        count: 0,
-      },
-      {
-        name: "kimi",
-        displayName: "Kimi-Cli",
-        icon: "/icon/agent/kimi.svg",
-        resumeCommandPrefix: "kimi -r",
-        count: 0,
-      },
-      {
-        name: "kimi-code",
-        displayName: "Kimi-Code",
-        icon: "/icon/agent/kimi.svg",
-        resumeCommandPrefix: "kimi -r",
-        count: 0,
-      },
-      {
-        name: "codex",
-        displayName: "Codex",
-        icon: "/icon/agent/codex.svg",
-        resumeCommandPrefix: "codex resume",
-        count: 1,
-      },
-      {
-        name: "grok",
-        displayName: "Grok",
-        icon: "/icon/agent/grok.svg",
-        resumeCommandPrefix: "grok --resume",
-        count: 0,
-      },
-      {
-        name: "pi",
-        displayName: "Pi",
-        icon: "/icon/agent/pi.svg",
-        resumeCommandPrefix: "pi --session",
-        count: 0,
-      },
-      {
-        name: "dsh",
-        displayName: "DSH",
-        icon: "/icon/agent/dsh.svg",
-        iconColored: true,
-        resumeCommandPrefix: null,
-        count: 0,
-      },
-      {
-        name: "cursor",
-        displayName: "Cursor",
-        icon: "/icon/agent/cursor.svg",
-        resumeCommandPrefix: null,
-        count: 0,
-      },
-    ]);
+  it("projects public metadata from the catalog", () => {
+    const counts: Record<string, number> = { claudecode: 2, codex: 1 };
+
+    expect(getAgentInfoMap(counts)).toEqual(
+      AGENT_CATALOG.map((entry) => ({
+        name: entry.name,
+        displayName: entry.displayName,
+        icon: entry.icon,
+        iconColored: "iconColored" in entry ? entry.iconColored : undefined,
+        resumeCommandPrefix: entry.resumeCommandPrefix,
+        count: counts[entry.name] ?? 0,
+      })),
+    );
+  });
+
+  it("keeps every factory identity aligned with its catalog entry", () => {
+    expect(
+      getRegisteredAgents().map((registration) => {
+        const agent = registration.create();
+        return { name: agent.name, displayName: agent.displayName };
+      }),
+    ).toEqual(AGENT_CATALOG.map(({ name, displayName }) => ({ name, displayName })));
+  });
+
+  it("keeps declared source kinds aligned with runtime implementations", () => {
+    for (const registration of getRegisteredAgents()) {
+      const SourceClass =
+        registration.sourceKind === "sqlite" ? DatabaseSessionSource : FileSystemSessionSource;
+      expect(registration.create()).toBeInstanceOf(SourceClass);
+    }
   });
 });

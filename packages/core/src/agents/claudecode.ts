@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
+import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import {
   SingleFileSessionSource,
   filteredSession,
@@ -115,9 +116,11 @@ function extractClaudeUsage(
   };
 }
 
+const AGENT_METADATA = getAgentCatalogEntry("claudecode");
+
 export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
-  readonly name = "claudecode";
-  readonly displayName = "Claude Code";
+  readonly name = AGENT_METADATA.name;
+  readonly displayName = AGENT_METADATA.displayName;
 
   private basePath: string | null = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
