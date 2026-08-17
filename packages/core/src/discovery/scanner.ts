@@ -1,6 +1,7 @@
 import { availableParallelism } from "node:os";
 import { Worker } from "node:worker_threads";
 import type { SessionDetail, SessionHead, SmartTag } from "../types/index.js";
+import { assertSessionIdentity } from "../contract/session-reference.js";
 import { filterSessionTreeByActivityWindow } from "../contract/session-tree.js";
 import type {
   AgentScanFailure,
@@ -304,7 +305,7 @@ export function ensureSessionTagsSync(
       const getSessionDataStartedAt = performance.now();
       let data: SessionDetail;
       try {
-        data = agent.getSessionData(session.id);
+        data = agent.getSessionData(session.reference.sessionId);
       } finally {
         timing.getSessionDataMs += performance.now() - getSessionDataStartedAt;
       }
@@ -434,7 +435,7 @@ async function ensureSessionTags(
     const results = (
       await Promise.all(
         chunkSessions(
-          staleSessions.map((session) => session.id),
+          staleSessions.map((session) => session.reference.sessionId),
           workerCount,
         ).map((sessionIds) =>
           classifySessionTagsInWorker(workerUrl!, agent.name, sessionIds, meta),
@@ -446,7 +447,7 @@ async function ensureSessionTags(
     return {
       changed: resultMap.size > 0,
       sessions: sessions.map((session) => {
-        const result = resultMap.get(session.id);
+        const result = resultMap.get(session.reference.sessionId);
         if (!result?.tags || result.sourceUpdatedAt == null) return session;
         return {
           ...session,
@@ -468,6 +469,7 @@ export async function finalizeAgentScan(
 ): Promise<SuccessfulAgentScanResult> {
   const { finalization, options, timing, agentStart, onProgress } = context;
   const isIncremental = finalization.kind === "incremental";
+  for (const session of sessions) assertSessionIdentity(session, agent.name);
 
   if (!isIncremental) {
     onProgress?.({ agent: agent.name, phase: "complete", newCount: sessions.length });
@@ -789,6 +791,7 @@ async function scanAgentFull(
     } else {
       heads = agent.scan(agentScanOptions);
     }
+    for (const session of heads) assertSessionIdentity(session, agent.name);
     perf.end(scanMarker);
     timing.scan = performance.now() - t0;
 

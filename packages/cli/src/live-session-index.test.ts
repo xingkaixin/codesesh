@@ -9,10 +9,11 @@ function makeAgent(name: string): BaseAgent {
   } as BaseAgent;
 }
 
-function makeSession(id: string, updatedAt: number, title = id): SessionHead {
+function makeSession(id: string, updatedAt: number, title = id, agentName = "codex"): SessionHead {
   return {
+    reference: { agentName, sessionId: id },
     id,
-    slug: `codex/${id}`,
+    slug: `${agentName}/${id}`,
     title,
     directory: "/workspace",
     time_created: updatedAt,
@@ -31,6 +32,21 @@ function snapshot(agents: BaseAgent[], byAgent: Record<string, SessionHead[]>): 
 }
 
 describe("LiveSessionIndex", () => {
+  it("rejects conflicting session identities at snapshot boundaries", () => {
+    const codex = makeAgent("codex");
+    const conflicting = { ...makeSession("session", 1), id: "other" };
+    const index = new LiveSessionIndex();
+
+    expect(() => index.initialize(snapshot([codex], { codex: [conflicting] }))).toThrow(
+      "Session identity fields disagree",
+    );
+
+    index.initialize(snapshot([codex], { codex: [] }));
+    expect(() => index.commitAgentSessions("codex", [conflicting])).toThrow(
+      "Session identity fields disagree",
+    );
+  });
+
   it("keeps a failed agent out of the empty-success projection until recovery", () => {
     const codex = makeAgent("codex");
     const recovered = makeSession("recovered", 1);
@@ -107,7 +123,7 @@ describe("LiveSessionIndex", () => {
     const previous = makeSession("previous", 2, "before");
     const updated = makeSession("previous", 4, "after");
     const added = makeSession("added", 1);
-    const other = makeSession("other", 3);
+    const other = makeSession("other", 3, "other", "kimi");
     const index = new LiveSessionIndex();
     index.initialize(snapshot([codex, kimi], { codex: [previous], kimi: [other] }));
 

@@ -83,7 +83,6 @@ interface IndexedSearchRow {
 }
 
 interface PublishedSessionRow {
-  session_slug?: string | null;
   session_title?: string | null;
   session_directory?: string | null;
   session_time_created?: number | null;
@@ -187,7 +186,6 @@ function shouldBulkSyncSearchIndex(options: SearchIndexSyncOptions, changedCount
 
 function sessionContentHash(session: SessionHead): string {
   return JSON.stringify([
-    session.slug,
     session.title,
     session.directory,
     session.time_created,
@@ -204,9 +202,8 @@ function sessionContentHash(session: SessionHead): string {
 }
 
 function publishedSessionContentHash(row: PublishedSessionRow): string | null {
-  if (row.session_slug == null) return null;
+  if (row.session_title == null) return null;
   return JSON.stringify([
-    row.session_slug,
     row.session_title ?? "",
     row.session_directory ?? "",
     Number(row.session_time_created ?? 0),
@@ -283,7 +280,6 @@ function readSearchIndexState(
             documents.indexed_message_count,
             documents.detail_version,
             sessions.meta_json,
-            sessions.slug AS session_slug,
             sessions.title AS session_title,
             sessions.directory AS session_directory,
             sessions.time_created AS session_time_created,
@@ -310,7 +306,6 @@ function readSearchIndexState(
             documents.indexed_message_count,
             documents.detail_version,
             sessions.meta_json,
-            sessions.slug,
             sessions.title,
             sessions.directory,
             sessions.time_created,
@@ -349,7 +344,7 @@ function searchIndexEntryNeedsUpdate(
   session: SessionHead,
   options: SearchIndexSyncOptions,
 ): boolean {
-  const sessionId = session.id;
+  const sessionId = session.reference.sessionId;
   const pendingMaintenance = state.pendingReindexSessionIds.has(sessionId);
   const targetVersion = targetDetailVersion(state, sessionId, options);
   if (pendingMaintenance && options.includePendingReindex === false) {
@@ -416,8 +411,9 @@ function loadSearchIndexEntry(
   detailVersion: string,
   failures: SearchIndexSyncFailure[],
 ): LoadedSearchIndexEntry | null {
+  const sessionId = change.session.reference.sessionId;
   try {
-    const data = loadSessionData(change.session.id);
+    const data = loadSessionData(sessionId);
     const messages = normalizeMessages(data);
     const identity = requireSessionProjectIdentity(agentName, change.session);
     return {
@@ -425,21 +421,16 @@ function loadSearchIndexEntry(
       messages,
       contentText: buildSessionContentFromMessages(data.title ?? change.session.title, messages),
       contentHash: sessionContentHash(change.session),
-      fileActivity: extractSessionFileActivity(
-        agentName,
-        change.session.id,
-        identity.key,
-        data.messages,
-      ),
+      fileActivity: extractSessionFileActivity(agentName, sessionId, identity.key, data.messages),
       sortIndex: change.sortIndex,
       detailVersion,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    failures.push({ sessionId: change.session.id, reason: "parse-failed", message });
+    failures.push({ sessionId, reason: "parse-failed", message });
     getCoreDiagnostics()?.warn("search_index.session_parse_failed", {
       agent: agentName,
-      session_id: change.session.id,
+      session_id: sessionId,
       message,
     });
     return null;
@@ -454,11 +445,12 @@ function* loadSearchIndexEntries(
   failures: SearchIndexSyncFailure[],
 ): Generator<LoadedSearchIndexEntry> {
   for (const change of changes) {
+    const sessionId = change.session.reference.sessionId;
     const entry = loadSearchIndexEntry(
       agentName,
       change,
       loadSessionData,
-      detailVersionFor(change.session.id),
+      detailVersionFor(sessionId),
       failures,
     );
     if (entry) yield entry;
@@ -646,23 +638,24 @@ function writeSearchIndexRows(
 
   let indexed = 0;
   for (const entry of entries) {
+    const sessionId = entry.session.reference.sessionId;
     if (verifySupersession) {
-      const current = readCurrentMeta.get(agentName, entry.session.id) as
+      const current = readCurrentMeta.get(agentName, sessionId) as
         | { meta_json?: string | null }
         | undefined;
       if (entry.detailVersion !== detailVersionFromMetaJson(current?.meta_json)) {
-        failures.push({ sessionId: entry.session.id, reason: "superseded" });
+        failures.push({ sessionId, reason: "superseded" });
         continue;
       }
     }
     upsertSessionRow(writeIndexedSession, agentName, entry.session, null, entry.sortIndex, null);
-    deleteFileActivity.run(agentName, entry.session.id);
-    deleteMessageTools.run(agentName, entry.session.id, 0);
-    clearPendingReindex.run(agentName, entry.session.id);
+    deleteFileActivity.run(agentName, sessionId);
+    deleteMessageTools.run(agentName, sessionId, 0);
+    clearPendingReindex.run(agentName, sessionId);
     writeFileActivityRows(insertFileActivity, entry.fileActivity);
     let contentChainDigest = initialMessageCursorDigest({
       agentName,
-      sessionId: entry.session.id,
+      sessionId,
     });
     for (const message of entry.messages) {
       contentChainDigest = advanceMessageCursorDigest(
@@ -671,7 +664,7 @@ function writeSearchIndexRows(
       );
       upsertMessage.run(
         agentName,
-        entry.session.id,
+        sessionId,
         message.index,
         message.id,
         message.role,
@@ -693,17 +686,17 @@ function writeSearchIndexRows(
         message.toolMetadataJson ?? null,
       );
       for (const toolName of message.toolNames) {
-        insertMessageTool.run(agentName, entry.session.id, message.index, toolName);
+        insertMessageTool.run(agentName, sessionId, message.index, toolName);
       }
     }
-    deleteMessages.run(agentName, entry.session.id, entry.messages.length);
-    deleteModelCost.run(agentName, entry.session.id);
-    deleteCostSummary.run(agentName, entry.session.id);
-    rebuildModelCost.run(agentName, entry.session.id);
-    rebuildCostSummary.run(agentName, entry.session.id);
+    deleteMessages.run(agentName, sessionId, entry.messages.length);
+    deleteModelCost.run(agentName, sessionId);
+    deleteCostSummary.run(agentName, sessionId);
+    rebuildModelCost.run(agentName, sessionId);
+    rebuildCostSummary.run(agentName, sessionId);
     upsertRow.run(
       agentName,
-      entry.session.id,
+      sessionId,
       entry.session.title,
       entry.contentText,
       entry.contentHash,
@@ -763,7 +756,10 @@ function loadOrPreStageEntries(
         agentName,
         (function* () {
           for (const entry of entries) {
-            yield { sessionId: entry.session.id, json: JSON.stringify(entry) };
+            yield {
+              sessionId: entry.session.reference.sessionId,
+              json: JSON.stringify(entry),
+            };
           }
         })(),
       );
@@ -792,9 +788,11 @@ function readSearchIndexPlanInput(
     const existingRows = db
       .prepare("SELECT session_id FROM session_documents WHERE agent_name = ? ORDER BY id")
       .all(agentName) as IndexedSearchRow[];
-    const includedSessionIds = new Set(request.sessions.map((session) => session.id));
+    const includedSessionIds = new Set(
+      request.sessions.map((session) => session.reference.sessionId),
+    );
     const sortIndexBySessionId = new Map(
-      request.sessions.map((session, sortIndex) => [session.id, sortIndex]),
+      request.sessions.map((session, sortIndex) => [session.reference.sessionId, sortIndex]),
     );
     const explicitRemovedSessionIds = new Set(options.removedSessionIds ?? []);
     const completeness = options.completeness ?? "complete";
@@ -807,7 +805,7 @@ function readSearchIndexPlanInput(
       );
     candidates = request.sessions.map((session) => ({
       session,
-      sortIndex: sortIndexBySessionId.get(session.id) ?? 0,
+      sortIndex: sortIndexBySessionId.get(session.reference.sessionId) ?? 0,
     }));
     sessionCount = request.sessions.length;
   } else {
@@ -819,7 +817,7 @@ function readSearchIndexPlanInput(
   const state = readSearchIndexState(
     db,
     agentName,
-    candidates.map(({ session }) => session.id),
+    candidates.map(({ session }) => session.reference.sessionId),
   );
 
   return {
@@ -838,10 +836,10 @@ function createSearchIndexPlan(input: SearchIndexPlanInput): SearchIndexPlan {
     searchIndexEntryNeedsUpdate(input.state, session, input.options),
   );
   const detailVersionBySessionId = new Map(
-    changes.map(({ session }) => [
-      session.id,
-      targetDetailVersion(input.state, session.id, input.options),
-    ]),
+    changes.map(({ session }) => {
+      const sessionId = session.reference.sessionId;
+      return [sessionId, targetDetailVersion(input.state, sessionId, input.options)];
+    }),
   );
   const changedCount = input.removedSessionIds.length + changes.length;
   const isBulk = shouldBulkSyncSearchIndex(input.options, changedCount);

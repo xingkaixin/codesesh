@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { formatSessionReference } from "@codesesh/core/contract";
 import type { AgentInfo, SessionHead } from "./api";
 import {
   buildSessionIndexes,
@@ -26,11 +27,12 @@ const agents: AgentInfo[] = [
 ];
 
 function createSession(
-  overrides: Partial<SessionHead> & Pick<SessionHead, "id" | "slug" | "title">,
+  overrides: Partial<SessionHead> & Pick<SessionHead, "reference" | "title">,
 ): SessionHead {
   return {
-    id: overrides.id,
-    slug: overrides.slug,
+    reference: overrides.reference,
+    id: overrides.reference.sessionId,
+    slug: formatSessionReference(overrides.reference),
     title: overrides.title,
     directory: overrides.directory ?? "/workspace/a",
     project_identity: overrides.project_identity,
@@ -51,29 +53,25 @@ describe("session indexes", () => {
     const projectA = { kind: "path" as const, key: "/workspace/a", displayName: "Project A" };
     const projectB = { kind: "path" as const, key: "/workspace/b", displayName: "Project B" };
     const oldCodex = createSession({
-      id: "old",
-      slug: "codex/old",
+      reference: { agentName: "codex", sessionId: "old" },
       title: "Old",
       project_identity: projectA,
       time_updated: 100,
     });
     const claude = createSession({
-      id: "claude",
-      slug: "claude/claude",
+      reference: { agentName: "claude", sessionId: "claude" },
       title: "Claude",
       project_identity: projectA,
       time_updated: 200,
     });
     const newCodex = createSession({
-      id: "new",
-      slug: "codex/new",
+      reference: { agentName: "codex", sessionId: "new" },
       title: "New",
       project_identity: projectA,
       time_updated: 300,
     });
     const otherCodex = createSession({
-      id: "other",
-      slug: "codex/other",
+      reference: { agentName: "codex", sessionId: "other" },
       title: "Other",
       directory: "/workspace/b",
       project_identity: projectB,
@@ -133,8 +131,7 @@ describe("session indexes", () => {
 
   it("keeps equal project keys from different kinds in separate indexes", () => {
     const remote = createSession({
-      id: "remote",
-      slug: "codex/remote",
+      reference: { agentName: "codex", sessionId: "remote" },
       title: "Remote",
       project_identity: {
         kind: "git_remote",
@@ -143,8 +140,7 @@ describe("session indexes", () => {
       },
     });
     const path = createSession({
-      id: "path",
-      slug: "codex/path",
+      reference: { agentName: "codex", sessionId: "path" },
       title: "Path",
       project_identity: {
         kind: "path",
@@ -164,9 +160,18 @@ describe("session indexes", () => {
   });
 
   it("keeps equal session ids from different agents in separate sidebar entries", () => {
-    const first = createSession({ id: "same", slug: "codex/same", title: "First" });
-    const duplicate = createSession({ id: "same", slug: "claude/same", title: "Duplicate" });
-    const next = createSession({ id: "next", slug: "codex/next", title: "Next" });
+    const first = createSession({
+      reference: { agentName: "codex", sessionId: "same" },
+      title: "First",
+    });
+    const duplicate = createSession({
+      reference: { agentName: "claude", sessionId: "same" },
+      title: "Duplicate",
+    });
+    const next = createSession({
+      reference: { agentName: "codex", sessionId: "next" },
+      title: "Next",
+    });
 
     const lookup = buildSidebarSessionLookup([first, duplicate, next]);
 
@@ -179,8 +184,14 @@ describe("session indexes", () => {
   });
 
   it("keeps route lookup compatible with first-match session search", () => {
-    const first = createSession({ id: "same", slug: "codex/same", title: "First" });
-    const duplicate = createSession({ id: "same", slug: "codex/same", title: "Duplicate" });
+    const first = createSession({
+      reference: { agentName: "codex", sessionId: "same" },
+      title: "First",
+    });
+    const duplicate = createSession({
+      reference: { agentName: "codex", sessionId: "same" },
+      title: "Duplicate",
+    });
 
     const indexes = buildSessionIndexes([first, duplicate], agents);
 

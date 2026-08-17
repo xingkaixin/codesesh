@@ -10,11 +10,7 @@ import {
 } from "@codesesh/core/contract";
 import { getProjectIdentityKey } from "./projects";
 
-export interface IndexedSession extends SessionHead {
-  agentKey: string;
-  sessionId: string;
-  reference: string;
-}
+export type IndexedSession = SessionHead;
 
 export interface SessionProjectOption {
   key: string;
@@ -51,8 +47,8 @@ export {
   sessionRoutePath,
 };
 
-export function getSessionReferenceKey(session: Pick<SessionHead, "id" | "slug">): string {
-  return getSessionRouteKey(getSessionAgentKey(session), session.id);
+export function getSessionReferenceKey(session: Pick<SessionHead, "reference">): string {
+  return getSessionRouteKey(session.reference.agentName, session.reference.sessionId);
 }
 
 function pushMapValue<K, V>(map: Map<K, V[]>, key: K, value: V): void {
@@ -80,23 +76,16 @@ export function buildSessionIndexes(sessions: SessionHead[], agents: AgentInfo[]
 
   for (const session of sessions) {
     const agentKey = getSessionAgentKey(session);
-    const indexedSession: IndexedSession = {
-      ...session,
-      agentKey,
-      sessionId: session.id,
-      reference: session.slug,
-    };
-
-    landingSessions.push(indexedSession);
+    landingSessions.push(session);
     if (knownAgentKeys.has(agentKey)) {
-      byLandingAgent.get(agentKey)!.push(indexedSession);
+      byLandingAgent.get(agentKey)!.push(session);
     }
 
     const identity = session.project_identity;
     if (!identity?.key) continue;
 
     const projectIdentityKey = getProjectIdentityKey(identity);
-    pushMapValue(byLandingProjectIdentityKey, projectIdentityKey, indexedSession);
+    pushMapValue(byLandingProjectIdentityKey, projectIdentityKey, session);
 
     const option = projectOptionsByKey.get(projectIdentityKey);
     if (option) {

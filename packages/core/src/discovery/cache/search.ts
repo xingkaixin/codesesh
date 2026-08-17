@@ -37,7 +37,6 @@ interface MessageSearchRow extends DatabaseRow {
 export interface SearchResultRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
-  slug?: string;
   title?: string;
   directory?: string;
   project_identity_kind?: ProjectIdentityKind;
@@ -356,7 +355,6 @@ function searchSessionColumns(): string {
   return `
     s.agent_name,
     s.session_id,
-    s.slug,
     s.title,
     s.directory,
     s.project_identity_kind,

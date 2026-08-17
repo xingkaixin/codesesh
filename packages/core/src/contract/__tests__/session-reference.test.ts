@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   agentRoutePath,
+  assertSessionIdentity,
+  createSessionIdentity,
   formatSessionReference,
   getSessionAgentKey,
   getSessionRoutePath,
@@ -40,10 +42,18 @@ describe("session references", () => {
     expect(parseSessionReference(value)).toBeNull();
   });
 
-  it("provides one explicit fallback for malformed legacy slugs", () => {
-    expect(getSessionAgentKey({ slug: "" })).toBe("unknown");
-    expect(getSessionAgentKey({ slug: null })).toBe("unknown");
-    expect(getSessionAgentKey({ slug: "codex/session" })).toBe("codex");
+  it("derives compatibility fields from one canonical reference", () => {
+    const identity = createSessionIdentity({ agentName: " CoDeX ", sessionId: "nested/session" });
+
+    expect(identity).toEqual({
+      reference: { agentName: "codex", sessionId: "nested/session" },
+      id: "nested/session",
+      slug: "codex/nested/session",
+    });
+    expect(getSessionAgentKey(identity)).toBe("codex");
+    expect(() => assertSessionIdentity({ ...identity, id: "different" }, "codex")).toThrow(
+      "Session identity fields disagree",
+    );
   });
 });
 
@@ -63,7 +73,10 @@ describe("session reference transport", () => {
   });
 
   it("CS-132: derives the same path from a session head", () => {
-    const session = { slug: "codex/nested/session", id: "nested/session" };
+    const session = createSessionIdentity({
+      agentName: "codex",
+      sessionId: "nested/session",
+    });
 
     expect(getSessionRoutePath(session)).toBe(
       sessionRoutePath({ agentName: "codex", sessionId: "nested/session" }),

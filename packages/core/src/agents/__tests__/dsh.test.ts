@@ -1080,6 +1080,7 @@ describe("DSH source synchronization", () => {
     expect(
       agent.filterCachedSessions([
         {
+          reference: { agentName: "dsh", sessionId: "a" },
           id: "a",
           slug: "dsh/a",
           title: "a",
@@ -1088,6 +1089,7 @@ describe("DSH source synchronization", () => {
           stats: { message_count: 0, total_input_tokens: 0, total_output_tokens: 0, total_cost: 0 },
         },
         {
+          reference: { agentName: "dsh", sessionId: "b" },
           id: "b",
           slug: "dsh/b",
           title: "b",

@@ -7,7 +7,6 @@ import type { SessionHead, SessionReference, SessionTreeNode } from "@codesesh/c
 import {
   addCalendarDays,
   buildSessionTree,
-  getSessionAgentKey,
   getSessionRouteKey,
   groupSessionsByCalendarDay,
   startOfCalendarDay,
@@ -103,7 +102,7 @@ function activityTime(session: SessionHead): number {
 }
 
 function referenceOf(session: SessionHead): SessionReference {
-  return { agentName: getSessionAgentKey(session), sessionId: session.id };
+  return session.reference;
 }
 
 function formatDayLabel(dayStart: number, now: number): string {

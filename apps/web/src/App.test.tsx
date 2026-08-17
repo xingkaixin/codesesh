@@ -3,6 +3,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SAMPLE_SESSIONS_UPDATED_EVENT, SAMPLE_SESSION_HEAD } from "@codesesh/core/test-fixtures";
+import { createSessionIdentity } from "@codesesh/core/contract";
 import type { ApiProjectGroup, DashboardData, SessionsUpdatedEvent } from "./lib/api";
 import App from "./App";
 import { appRouteChildren } from "./lib/app-routes";
@@ -145,8 +146,7 @@ describe("App live updates", () => {
   it("preserves keyboard selection when a live update replaces the session list", async () => {
     const sidebarSession = {
       ...SAMPLE_SESSION_HEAD,
-      id: "sidebar-session",
-      slug: "claudecode/sidebar-session",
+      ...createSessionIdentity({ agentName: "claudecode", sessionId: "sidebar-session" }),
       project_identity: { kind: "path" as const, key: "/workspace", displayName: "workspace" },
     };
     responses["/api/agents"] = [{ name: "claudecode", displayName: "Claude Code", count: 1 }];
@@ -166,11 +166,11 @@ describe("App live updates", () => {
         totalSessions: 1,
         changedSessionHeads: [
           {
-            reference: { agentName: "claudecode", sessionId: sidebarSession.id },
+            reference: sidebarSession.reference,
             session: { ...sidebarSession, display_title: "Live title" },
           },
         ],
-        projectionSessionOrder: [{ agentName: "claudecode", sessionId: sidebarSession.id }],
+        projectionSessionOrder: [sidebarSession.reference],
       });
       await vi.advanceTimersByTimeAsync(500);
     });

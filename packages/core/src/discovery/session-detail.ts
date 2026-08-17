@@ -1,5 +1,5 @@
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
-import type { SessionReference } from "../contract/index.js";
+import { assertSessionIdentity, type SessionReference } from "../contract/index.js";
 import type { ProjectIdentity, SessionDetail, SessionHead } from "../types/index.js";
 import {
   classifySessionTags,
@@ -162,6 +162,16 @@ function sessionReferenceKey(agentName: string, sessionId: string): string {
   return `${agentName}\0${sessionId}`;
 }
 
+function assertSessionMatchesReference(
+  session: SessionHead | SessionDetail,
+  reference: SessionReference,
+): void {
+  assertSessionIdentity(session, reference.agentName);
+  if (session.reference.sessionId !== reference.sessionId) {
+    throw new Error("Session identity fields disagree");
+  }
+}
+
 /**
  * The canonical sessions array is replaced atomically with each scan snapshot,
  * so its identity also versions this lazily built lookup.
@@ -175,9 +185,9 @@ function getSessionDetailLookup(scanResult: LiveSnapshot): SessionDetailLookup {
     if (!agentsByName.has(agent.name)) agentsByName.set(agent.name, agent);
   }
   const headsByReference = new Map<string, SessionHead>();
-  for (const [agentName, sessions] of Object.entries(scanResult.byAgent)) {
+  for (const sessions of Object.values(scanResult.byAgent)) {
     for (const session of sessions) {
-      const key = sessionReferenceKey(agentName, session.id);
+      const key = sessionReferenceKey(session.reference.agentName, session.reference.sessionId);
       if (!headsByReference.has(key)) headsByReference.set(key, session);
     }
   }
@@ -290,6 +300,7 @@ function materializeStructuredSessionDetail(
   if (!data) {
     return { status: "not-ready" };
   }
+  assertSessionMatchesReference(data, reference);
 
   const projectIdentity = getProjectIdentity(data, head, identityFallback);
   if (!projectIdentity) return { status: "needs-identity", directory: data.directory };
@@ -308,7 +319,6 @@ function materializeStructuredSessionDetail(
     status: "found",
     data: {
       ...data,
-      reference,
       detail_freshness: freshness,
       project_identity: projectIdentity,
       project_identity_resolver_revision:
@@ -390,6 +400,7 @@ export function materializeSessionDetailResponse(
   }
 
   const data = cachedEntry.data;
+  assertSessionMatchesReference(data, reference);
   const projectIdentity = getProjectIdentity(data, context.head, options.projectIdentityFallback);
   if (!projectIdentity) return { status: "needs-identity", directory: data.directory };
   const stream = cursorRead?.stream;
@@ -419,7 +430,6 @@ export function materializeSessionDetailResponse(
     status: "found-json",
     data: {
       ...data,
-      reference,
       detail_freshness: "fresh",
       message_cursor: stream.cursor,
       message_update: stream.update,

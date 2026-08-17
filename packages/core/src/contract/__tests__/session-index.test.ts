@@ -17,6 +17,7 @@ function createSession(
   overrides: Partial<SessionHead> = {},
 ): SessionHead {
   return {
+    reference: { agentName: "codex", sessionId: id },
     id,
     slug: `codex/${id}`,
     title: id,
@@ -100,13 +101,13 @@ describe("canonical session index", () => {
     ).toEqual([claudeChild]);
   });
 
-  it("places malformed legacy slugs in the explicit unknown agent bucket", () => {
+  it("indexes by the authoritative reference instead of the compatibility slug", () => {
     const malformed = createSession("malformed", 100, { slug: "" });
 
     const index = createSessionIndex([malformed]);
 
-    expect(index.byAgent.get("unknown")).toEqual([malformed]);
-    expect(index.byRouteKey.get(getSessionRouteKey("unknown", "malformed"))).toBe(malformed);
+    expect(index.byAgent.get("codex")).toEqual([malformed]);
+    expect(index.byRouteKey.get(getSessionRouteKey("codex", "malformed"))).toBe(malformed);
   });
 
   it("applies route-keyed changes and removals with wire-event semantics", () => {

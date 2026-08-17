@@ -7,7 +7,6 @@
 import type { SessionHead } from "../types/index.js";
 import {
   buildSessionTree,
-  getSessionAgentKey,
   getSessionRouteKey,
   type SearchResult,
   type SessionTree,
@@ -172,7 +171,7 @@ function searchRecentSessions(
   const results: SearchResult[] = [];
 
   for (const session of sessions) {
-    const agentName = options.agent ?? getSessionAgentKey(session);
+    const agentName = options.agent ?? session.reference.agentName;
     if (
       !matchesSessionSearchFilters(
         agentName,
@@ -185,7 +184,7 @@ function searchRecentSessions(
       continue;
     }
     results.push({
-      reference: { agentName, sessionId: session.id },
+      reference: session.reference,
       session,
       snippet: `Recent session · ${session.directory}`,
       snippetHighlights: [],
@@ -212,7 +211,7 @@ function inclusiveCostFor(
   lookup: ReturnType<typeof buildSessionTree>["byRouteKey"] | null,
 ): number {
   return (
-    lookup?.get(getSessionRouteKey(agentName, session.id))?.inclusiveStats.cost ??
+    lookup?.get(getSessionRouteKey(agentName, session.reference.sessionId))?.inclusiveStats.cost ??
     session.stats.total_cost
   );
 }

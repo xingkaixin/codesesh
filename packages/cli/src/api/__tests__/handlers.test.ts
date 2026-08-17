@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { AGENT_CATALOG } from "@codesesh/core/contract";
+import { AGENT_CATALOG, createSessionIdentity } from "@codesesh/core/contract";
 
 const coreMocks = vi.hoisted(() => {
   return {
@@ -114,9 +114,11 @@ import { appLogger } from "../../logging.js";
 // --- Helpers ---
 
 function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
+  const identity = createSessionIdentity(
+    overrides?.reference ?? { agentName: "agent", sessionId: id },
+  );
   return {
-    id,
-    slug: `agent/${id}`,
+    ...identity,
     title: `Session ${id}`,
     time_created: Date.now(),
     time_updated: Date.now(),
@@ -128,6 +130,7 @@ function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead 
       total_cost: 0,
     },
     ...overrides,
+    ...identity,
   };
 }
 
@@ -213,8 +216,8 @@ class MockAgent extends BaseAgent {
 function makeScanResult(overrides?: Partial<LiveSnapshot>): LiveSnapshot {
   const agent = new MockAgent();
   const sessions = [
-    makeSession("s1", { slug: "claudecode/s1" }),
-    makeSession("s2", { slug: "claudecode/s2" }),
+    makeSession("s1", { reference: { agentName: "claudecode", sessionId: "s1" } }),
+    makeSession("s2", { reference: { agentName: "claudecode", sessionId: "s2" } }),
   ];
   return {
     sessions,
@@ -295,12 +298,12 @@ describe("handleGetAgents", () => {
     const c = makeMockContext();
     const now = Date.now();
     const old = makeSession("old", {
-      slug: "codex/old",
+      reference: { agentName: "codex", sessionId: "old" },
       time_created: now - 30 * 86400000,
       time_updated: now - 30 * 86400000,
     });
     const recent = makeSession("recent", {
-      slug: "claudecode/recent",
+      reference: { agentName: "claudecode", sessionId: "recent" },
       time_created: now - 86400000,
       time_updated: now - 86400000,
     });
@@ -551,8 +554,13 @@ describe("handleGetSessions", () => {
     });
   });
 
-  it("uses the canonical unknown agent bucket for a malformed legacy slug", () => {
-    const session = makeSession("legacy", { slug: "" });
+  it("uses the authoritative reference when a legacy slug is malformed", () => {
+    const session = {
+      ...makeSession("legacy", {
+        reference: { agentName: "unknown", sessionId: "legacy" },
+      }),
+      slug: "",
+    };
     coreMocks.listSessionAliases.mockReturnValue([
       {
         reference: { agentName: "unknown", sessionId: "legacy" },
@@ -792,11 +800,11 @@ describe("handleSearchSessions", () => {
 
   it("keeps ranked search hits when alias matches fill the limit", () => {
     const rankedSessions = ["ranked-1", "ranked-2", "ranked-3"].map((id) =>
-      makeSession(id, { slug: `claudecode/${id}` }),
+      makeSession(id, { reference: { agentName: "claudecode", sessionId: id } }),
     );
     const aliasSessions = ["alias-1", "alias-2", "alias-3"].map((id, index) =>
       makeSession(id, {
-        slug: `claudecode/${id}`,
+        reference: { agentName: "claudecode", sessionId: id },
         time_updated: 3_000 - index,
       }),
     );
@@ -821,10 +829,10 @@ describe("handleSearchSessions", () => {
 
   it("keeps ranked order and value when an alias hit overlaps", () => {
     const rankedSessions = ["ranked-1", "ranked-2", "ranked-3"].map((id) =>
-      makeSession(id, { slug: `claudecode/${id}` }),
+      makeSession(id, { reference: { agentName: "claudecode", sessionId: id } }),
     );
     const aliasOnly = makeSession("alias-1", {
-      slug: "claudecode/alias-1",
+      reference: { agentName: "claudecode", sessionId: "alias-1" },
       time_updated: 1,
     });
     coreMocks.executeSessionSearch.mockReturnValue(
@@ -896,7 +904,9 @@ describe("handleSearchSessions", () => {
   });
 
   it("matches aliases while preserving an agent: qualifier embedded in q, calling the search module only once", () => {
-    const cursorSession = makeSession("c1", { slug: "cursor/c1" });
+    const cursorSession = makeSession("c1", {
+      reference: { agentName: "cursor", sessionId: "c1" },
+    });
     coreMocks.listSessionAliases.mockReturnValue([
       makeAlias("claudecode", "s1", "Custom cache title"),
       makeAlias("cursor", "c1", "Custom cache from cursor"),
@@ -907,9 +917,18 @@ describe("handleSearchSessions", () => {
     handleSearchSessions(
       c,
       makeScanSource({
-        sessions: [makeSession("s1", { slug: "claudecode/s1" }), cursorSession],
+        sessions: [
+          makeSession("s1", {
+            reference: { agentName: "claudecode", sessionId: "s1" },
+          }),
+          cursorSession,
+        ],
         byAgent: {
-          claudecode: [makeSession("s1", { slug: "claudecode/s1" })],
+          claudecode: [
+            makeSession("s1", {
+              reference: { agentName: "claudecode", sessionId: "s1" },
+            }),
+          ],
           cursor: [cursorSession],
         },
       }),
@@ -929,7 +948,9 @@ describe("handleSearchSessions", () => {
 
   it("finds alias matches by scanning the alias map, not the full session list", () => {
     const sessions = Array.from({ length: 1001 }, (_, index) =>
-      makeSession(`s${index}`, { slug: `claudecode/s${index}` }),
+      makeSession(`s${index}`, {
+        reference: { agentName: "claudecode", sessionId: `s${index}` },
+      }),
     );
     coreMocks.listSessionAliases.mockReturnValue([makeAlias("claudecode", "s1000", "Old alias")]);
     coreMocks.executeSessionSearch.mockReturnValue([]);
@@ -951,7 +972,7 @@ describe("handleSearchSessions", () => {
   it("excludes alias hits outside the requested time window", () => {
     const now = Date.now();
     const oldSession = makeSession("s1", {
-      slug: "claudecode/s1",
+      reference: { agentName: "claudecode", sessionId: "s1" },
       time_created: now - 30 * 86400000,
       time_updated: now - 30 * 86400000,
     });
@@ -989,7 +1010,7 @@ describe("handleSearchSessions", () => {
 
   it("excludes alias hits outside the requested project identity", () => {
     const session = makeSession("s1", {
-      slug: "claudecode/s1",
+      reference: { agentName: "claudecode", sessionId: "s1" },
       project_identity: { kind: "git_remote", key: "github.com/acme/app", displayName: "app" },
     });
     coreMocks.listSessionAliases.mockReturnValue([
@@ -1013,13 +1034,16 @@ describe("handleSearchSessions", () => {
   });
 
   it("attaches the parent title to a sub-session hit and omits it when the parent is missing", () => {
-    const parent = makeSession("p1", { slug: "claudecode/p1", title: "Parent session" });
+    const parent = makeSession("p1", {
+      reference: { agentName: "claudecode", sessionId: "p1" },
+      title: "Parent session",
+    });
     const mounted = makeSession("c1", {
-      slug: "claudecode/c1",
+      reference: { agentName: "claudecode", sessionId: "c1" },
       parent_reference: { agentName: "claudecode", sessionId: "p1" },
     });
     const orphan = makeSession("c2", {
-      slug: "claudecode/c2",
+      reference: { agentName: "claudecode", sessionId: "c2" },
       parent_reference: { agentName: "claudecode", sessionId: "gone" },
     });
     coreMocks.executeSessionSearch.mockReturnValue([
@@ -1045,9 +1069,12 @@ describe("handleSearchSessions", () => {
   });
 
   it("uses the parent's alias as its parent-context title", () => {
-    const parent = makeSession("p1", { slug: "claudecode/p1", title: "Parent session" });
+    const parent = makeSession("p1", {
+      reference: { agentName: "claudecode", sessionId: "p1" },
+      title: "Parent session",
+    });
     const child = makeSession("c1", {
-      slug: "claudecode/c1",
+      reference: { agentName: "claudecode", sessionId: "c1" },
       parent_reference: { agentName: "claudecode", sessionId: "p1" },
     });
     coreMocks.listSessionAliases.mockReturnValue([makeAlias("claudecode", "p1", "Renamed parent")]);
@@ -1066,7 +1093,7 @@ describe("handleSearchSessions", () => {
 
   it("reuses one snapshot tree for cost, alias, and parent context", async () => {
     const parent = makeSession("p1", {
-      slug: "claudecode/p1",
+      reference: { agentName: "claudecode", sessionId: "p1" },
       stats: {
         message_count: 0,
         total_input_tokens: 0,
@@ -1075,7 +1102,7 @@ describe("handleSearchSessions", () => {
       },
     });
     const child = makeSession("c1", {
-      slug: "claudecode/c1",
+      reference: { agentName: "claudecode", sessionId: "c1" },
       parent_reference: { agentName: "claudecode", sessionId: "p1" },
       stats: {
         message_count: 0,
@@ -1125,7 +1152,9 @@ describe("handleSearchSessions", () => {
 
 describe("handleGetFileActivity", () => {
   it("projects aliases onto nested sessions", () => {
-    const session = makeSession("s1", { slug: "claudecode/s1" });
+    const session = makeSession("s1", {
+      reference: { agentName: "claudecode", sessionId: "s1" },
+    });
     coreMocks.listSessionAliases.mockReturnValue([makeAlias("claudecode", "s1", "Activity alias")]);
     coreMocks.listFileActivity.mockReturnValue([
       {
@@ -1361,7 +1390,7 @@ describe("handleGetProjects", () => {
   it("returns project groups sorted by recent activity", () => {
     const sessions = [
       makeSession("a", {
-        slug: "claudecode/a",
+        reference: { agentName: "claudecode", sessionId: "a" },
         project_identity: { kind: "git_remote", key: "github.com/acme/app", displayName: "app" },
         time_updated: 100,
         stats: {
@@ -1372,7 +1401,7 @@ describe("handleGetProjects", () => {
         },
       }),
       makeSession("b", {
-        slug: "codex/b",
+        reference: { agentName: "codex", sessionId: "b" },
         project_identity: { kind: "git_remote", key: "github.com/acme/app", displayName: "app" },
         time_updated: 200,
         stats: {
@@ -1457,7 +1486,9 @@ describe("handleGetDashboard", () => {
   });
 
   it("projects aliases onto recent file activity sessions", () => {
-    const session = makeSession("s1", { slug: "claudecode/s1" });
+    const session = makeSession("s1", {
+      reference: { agentName: "claudecode", sessionId: "s1" },
+    });
     coreMocks.listSessionAliases.mockReturnValue([makeAlias("claudecode", "s1", "Activity alias")]);
     coreMocks.listFileActivity.mockReturnValue([
       {
@@ -1521,7 +1552,7 @@ describe("handleGetDashboard", () => {
   it("scopes dashboard data by project identity and agent", () => {
     const now = Date.now();
     const appClaude = makeSession("app-claude", {
-      slug: "claudecode/app-claude",
+      reference: { agentName: "claudecode", sessionId: "app-claude" },
       time_updated: now,
       project_identity: { kind: "git_remote", key: "github.com/acme/app", displayName: "app" },
       stats: {
@@ -1532,7 +1563,7 @@ describe("handleGetDashboard", () => {
       },
     });
     const appCodex = makeSession("app-codex", {
-      slug: "codex/app-codex",
+      reference: { agentName: "codex", sessionId: "app-codex" },
       time_updated: now,
       project_identity: { kind: "git_remote", key: "github.com/acme/app", displayName: "app" },
       stats: {
@@ -1543,7 +1574,7 @@ describe("handleGetDashboard", () => {
       },
     });
     const otherCodex = makeSession("other-codex", {
-      slug: "codex/other-codex",
+      reference: { agentName: "codex", sessionId: "other-codex" },
       time_updated: now,
       project_identity: { kind: "path", key: "/repo/other", displayName: "other" },
       stats: {
@@ -1554,7 +1585,7 @@ describe("handleGetDashboard", () => {
       },
     });
     const sameKeyPathCodex = makeSession("same-key-path-codex", {
-      slug: "codex/same-key-path-codex",
+      reference: { agentName: "codex", sessionId: "same-key-path-codex" },
       time_updated: now,
       project_identity: { kind: "path", key: "github.com/acme/app", displayName: "app path" },
       stats: {
@@ -1595,7 +1626,7 @@ describe("handleGetDashboard", () => {
     const now = Date.now();
     const codexSessions = Array.from({ length: 12 }, (_, index) =>
       makeSession(`codex-${index}`, {
-        slug: `codex/codex-${index}`,
+        reference: { agentName: "codex", sessionId: `codex-${index}` },
         time_created: now - index * 1000,
         time_updated: now - index * 1000,
         stats: {
@@ -1607,7 +1638,7 @@ describe("handleGetDashboard", () => {
       }),
     );
     const claudeSession = makeSession("claude", {
-      slug: "claudecode/claude",
+      reference: { agentName: "claudecode", sessionId: "claude" },
       time_created: now,
       time_updated: now,
     });
@@ -1677,7 +1708,7 @@ describe("handleGetDashboard", () => {
     vi.setSystemTime(new Date("2026-05-20T12:00:00Z"));
 
     const oldSession = makeSession("old", {
-      slug: "claudecode/old",
+      reference: { agentName: "claudecode", sessionId: "old" },
       time_created: new Date("2026-04-20T10:00:00Z").getTime(),
       time_updated: new Date("2026-04-20T10:00:00Z").getTime(),
       stats: {

@@ -485,7 +485,7 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
     if (result.status === "failed") return result;
     const emptySessionIds = cachedSessions
       .filter((session) => !this.hasMessages(session))
-      .map((session) => session.id);
+      .map((session) => session.reference.sessionId);
     if (emptySessionIds.length === 0) return result;
 
     return {
@@ -516,7 +516,7 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
   private removeEmptyCachedSessions(sessions: SessionHead[]): SessionHead[] {
     return sessions.filter((session) => {
       if (this.hasMessages(session)) return true;
-      this.sessionMetaMap.delete(session.id);
+      this.sessionMetaMap.delete(session.reference.sessionId);
       return false;
     });
   }
@@ -558,8 +558,7 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
     };
     this.sessionMetaMap.set(meta.id, meta);
     return parsedSession({
-      id: meta.id,
-      slug: this.sessionSlug(meta.id),
+      ...this.sessionIdentity(meta.id),
       title: meta.title,
       directory: meta.workDir,
       time_created: meta.createdAt,
@@ -576,10 +575,8 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
     const parsed = this.parseWire(meta);
     const transcript = parsed.builder.finish(parsed.stats);
     return {
-      reference: { agentName: this.name, sessionId: meta.id },
-      id: meta.id,
+      ...this.sessionIdentity(meta.id),
       title: meta.title,
-      slug: this.sessionSlug(meta.id),
       directory: meta.workDir,
       time_created: meta.createdAt,
       time_updated: meta.activityAt,

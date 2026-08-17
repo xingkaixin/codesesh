@@ -313,10 +313,8 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
     const transcript = builder.finish();
 
     return {
-      reference: { agentName: this.name, sessionId: meta.id },
-      id: meta.id,
+      ...this.sessionIdentity(meta.id),
       title: meta.title,
-      slug: this.sessionSlug(meta.id),
       directory: meta.directory,
       parent_reference:
         meta.parentSessionId == null
@@ -680,8 +678,7 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
     if (messageCount === 0) return filteredSession("no visible messages");
 
     return parsedSession({
-      id: sessionId,
-      slug: this.sessionSlug(sessionId),
+      ...this.sessionIdentity(sessionId),
       title,
       directory,
       parent_reference:

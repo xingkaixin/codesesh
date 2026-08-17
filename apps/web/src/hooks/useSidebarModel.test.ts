@@ -1,4 +1,5 @@
 import { SAMPLE_SESSION_HEAD } from "@codesesh/core/test-fixtures";
+import { createSessionIdentity } from "@codesesh/core/contract";
 import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentInfo, ApiProjectGroup, SessionHead } from "../lib/api";
@@ -31,14 +32,12 @@ const projects = [
 ] as ApiProjectGroup[];
 const codexSession = {
   ...SAMPLE_SESSION_HEAD,
-  id: "codex-session",
-  slug: "codex/codex-session",
+  ...createSessionIdentity({ agentName: "codex", sessionId: "codex-session" }),
   project_identity: projectIdentity,
 } satisfies SessionHead;
 const claudeSession = {
   ...SAMPLE_SESSION_HEAD,
-  id: "claude-session",
-  slug: "claudecode/claude-session",
+  ...createSessionIdentity({ agentName: "claudecode", sessionId: "claude-session" }),
   project_identity: projectIdentity,
 } satisfies SessionHead;
 const sessionIndexes = buildSessionIndexes([codexSession, claudeSession], agents);
@@ -123,8 +122,10 @@ describe("useSidebarModel", () => {
   it("keeps bookmark and lookup identity separate across agents with the same session id", () => {
     const sameIdClaude = {
       ...claudeSession,
-      id: codexSession.id,
-      slug: `claudecode/${codexSession.id}`,
+      ...createSessionIdentity({
+        agentName: "claudecode",
+        sessionId: codexSession.reference.sessionId,
+      }),
     };
     const indexes = buildSessionIndexes([codexSession, sameIdClaude], agents);
     const { result } = renderModel(projectView, indexes);

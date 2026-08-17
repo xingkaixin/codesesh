@@ -6,7 +6,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 
 - 路径：`~/.cache/codesesh/codesesh.db`
 <!-- repo-fact:cache-schema-version:start -->
-- 当前 schema：`CACHE_SCHEMA_VERSION = 29`
+- 当前 schema：`CACHE_SCHEMA_VERSION = 30`
 <!-- repo-fact:cache-schema-version:end -->
 - 稳定导出入口：`packages/core/src/discovery/index.ts`
 - 实现目录：`packages/core/src/discovery/cache/`
@@ -55,6 +55,8 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 | `session_file_activity` | 会话涉及的文件路径、操作类型、次数与最近时间 |
 
 `messages` 和 `session_file_activity` 通过复合外键关联 `sessions`，删除会话时级联清理。
+`sessions` 的 `(agent_name, session_id)` 复合主键是会话身份的持久化事实来源；领域对象的
+`reference` 由这两列恢复，`id` 与 `slug` 仅在序列化时作为兼容字段派生，不单独存储。
 
 ### 搜索索引
 

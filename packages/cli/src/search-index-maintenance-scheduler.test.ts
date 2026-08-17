@@ -20,6 +20,7 @@ import { SearchIndexMaintenanceScheduler } from "./search-index-maintenance-sche
 
 function makeSession(id: string): SessionHead {
   return {
+    reference: { agentName: "codex", sessionId: id },
     id,
     slug: `codex/${id}`,
     title: id,

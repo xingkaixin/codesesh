@@ -558,7 +558,7 @@ export function buildDashboard(
     );
 
   const recentSessions: DashboardRecentSession[] = acc.recent.map(({ session }) => ({
-    reference: { agentName: getSessionAgentName(session), sessionId: session.id },
+    reference: session.reference,
     session,
   }));
 

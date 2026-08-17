@@ -13,6 +13,7 @@ import {
   toCalendarDayKey,
 } from "../../contract/calendar-day.js";
 import type { SessionHead } from "../../types/session.js";
+import { createSessionIdentity } from "../../contract/session-reference.js";
 import type { DashboardCostFacts } from "../cost-facts.js";
 
 const EMPTY_MESSAGE_USAGE = {
@@ -40,9 +41,11 @@ const EMPTY_SESSION_USAGE = {
 
 function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
   const timeCreated = overrides?.time_created ?? 1_000_000_000_000;
+  const identity = createSessionIdentity(
+    overrides?.reference ?? { agentName: "claudecode", sessionId: id },
+  );
   return {
-    id,
-    slug: `claudecode/${id}`,
+    ...identity,
     title: id,
     directory: "/home/user/project",
     time_created: timeCreated,
@@ -54,6 +57,7 @@ function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead 
       total_cost: 0,
     },
     ...overrides,
+    ...identity,
   };
 }
 
@@ -90,9 +94,10 @@ describe("getTotalTokens / getSessionAgentName / getSessionActivityTime", () => 
     ).toBe(15);
   });
 
-  it("getSessionAgentName extracts agent from slug", () => {
-    expect(getSessionAgentName(makeSession("a", { slug: "codex/abc" }))).toBe("codex");
-    expect(getSessionAgentName({ ...makeSession("x"), slug: "" })).toBe("unknown");
+  it("getSessionAgentName reads the authoritative reference", () => {
+    expect(
+      getSessionAgentName(makeSession("a", { reference: { agentName: "codex", sessionId: "a" } })),
+    ).toBe("codex");
   });
 
   it("getSessionActivityTime prefers time_updated", () => {
@@ -191,7 +196,7 @@ describe("buildDashboard", () => {
 
   it("filters by scope.agent", () => {
     const result = buildDashboard(
-      [makeSession("a", { slug: "claudecode/a" }), makeSession("b", { slug: "codex/b" })],
+      [makeSession("a"), makeSession("b", { reference: { agentName: "codex", sessionId: "b" } })],
       opts({ byAgentNames: ["claudecode", "codex"], scope: { agent: "codex" } }),
     );
     expect(result.totals.sessions).toBe(1);
@@ -648,7 +653,7 @@ describe("buildDashboard", () => {
       [
         makeSession("old", { time_created: 1000, time_updated: 1000 }),
         makeSession("latest", {
-          slug: "codex/latest",
+          reference: { agentName: "codex", sessionId: "latest" },
           time_created: 5000,
           time_updated: 5000,
           project_identity: { kind: "git_remote", key: "repo-a", displayName: "Repo A" },
@@ -792,9 +797,12 @@ describe("buildDashboard project ranking", () => {
   it("lists a project's agents by session count desc", () => {
     const result = buildDashboard(
       [
-        { ...projectSession("a", "repo-a", 0, to), slug: "codex/a" },
-        { ...projectSession("b", "repo-a", 0, to), slug: "claudecode/b" },
-        { ...projectSession("c", "repo-a", 0, to), slug: "claudecode/c" },
+        makeSession("a", {
+          ...projectSession("a", "repo-a", 0, to),
+          reference: { agentName: "codex", sessionId: "a" },
+        }),
+        projectSession("b", "repo-a", 0, to),
+        projectSession("c", "repo-a", 0, to),
       ],
       opts({ byAgentNames: ["claudecode", "codex"], to }),
     );

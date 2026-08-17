@@ -52,6 +52,7 @@ import { finalizeAgentScan } from "../scanner.js";
 
 function makeSession(index: number): SessionHead {
   return {
+    reference: { agentName: "test", sessionId: `session-${index}` },
     id: `session-${index}`,
     slug: `test/session-${index}`,
     title: `Session ${index}`,

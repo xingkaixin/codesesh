@@ -1,6 +1,6 @@
 import type { CostSource, SessionHead } from "../types/session.js";
 import type { SessionTree, SessionTreeNode } from "../contract/index.js";
-import { getSessionAgentKey, getSessionRouteKey } from "../contract/index.js";
+import { getSessionRouteKey } from "../contract/index.js";
 import type {
   DashboardCostFacts,
   MessageCostFact,
@@ -176,8 +176,7 @@ export function visitAttributedCosts(
       const session = node.session;
       const totalCost = Math.max(0, session.stats.total_cost);
       if (totalCost <= 0) continue;
-      const agentName = getSessionAgentKey(session);
-      const key = costFactKey(agentName, session.id);
+      const key = costFactKey(session.reference.agentName, session.reference.sessionId);
       const summary = factIndex.summariesBySession.get(key);
 
       if (factsAvailable && hasDetailedCost(session, summary)) {
@@ -233,7 +232,7 @@ export function visitAttributedUsage(
       for (const child of node.children) pending.push(child);
 
       const session = node.session;
-      const key = costFactKey(getSessionAgentKey(session), session.id);
+      const key = costFactKey(session.reference.agentName, session.reference.sessionId);
       const summary = factIndex.summariesBySession.get(key);
       const detailedMessages = factsAvailable && hasDetailedMessages(session, summary);
       const outputIncludesReasoning = factsAvailable

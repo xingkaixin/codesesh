@@ -1,6 +1,6 @@
 import { readdirSync, statSync, type Dirent, type Stats } from "node:fs";
 import { join } from "node:path";
-import { formatSessionReference } from "../contract/session-reference.js";
+import { createSessionIdentity, type SessionIdentity } from "../contract/session-reference.js";
 import type { SessionHead, SessionDetail, ParseSessionResult } from "../types/index.js";
 import {
   capturePricingMisses,
@@ -303,8 +303,8 @@ export abstract class BaseAgent {
     return `${this.name}://${sessionId}`;
   }
 
-  protected sessionSlug(sessionId: string): string {
-    return formatSessionReference({ agentName: this.name, sessionId });
+  protected sessionIdentity(sessionId: string): SessionIdentity {
+    return createSessionIdentity({ agentName: this.name, sessionId });
   }
 }
 
@@ -365,7 +365,7 @@ export abstract class FileSystemSessionSource<
       };
     }
     if (result.status === "parsed") {
-      const meta = this.sessionMetaMap.get(result.data.id);
+      const meta = this.sessionMetaMap.get(result.data.reference.sessionId);
       if (meta) {
         meta.pricingCaptureEpoch = PRICING_CAPTURE_EPOCH;
         if (unpricedModels.length > 0) meta.unpricedModels = unpricedModels;
@@ -554,7 +554,7 @@ export abstract class SingleFileSessionSource<
     }
     if (result.status === "parsed") {
       this.sessionMetaMap.set(
-        result.data.id,
+        result.data.reference.sessionId,
         this.createFileSessionMeta(result.data, this.sessionSourceFile(sourcePath)),
       );
     }
@@ -589,7 +589,7 @@ export abstract class SingleFileSessionSource<
   }): FileSessionMeta & TExtra {
     return {
       ...extras,
-      id: head.id,
+      id: head.reference.sessionId,
       title: head.title,
       sourcePath: source.file,
       sourceFingerprint: fingerprint,
@@ -703,7 +703,10 @@ export abstract class DatabaseSessionSource extends BaseAgent {
   protected captureSessionPricingMisses<T extends SessionHead | null>(scan: () => T): T {
     const { result, unpricedModels } = capturePricingMisses(scan);
     if (result) {
-      this.rememberSession(result.id, unpricedModels.length > 0 ? { unpricedModels } : {});
+      this.rememberSession(
+        result.reference.sessionId,
+        unpricedModels.length > 0 ? { unpricedModels } : {},
+      );
     }
     return result;
   }
@@ -741,7 +744,7 @@ export abstract class DatabaseSessionSource extends BaseAgent {
         return { hasChanges: false, timestamp: Date.now() };
       }
       const pricingChanged = cachedSessions.some((session) => {
-        const meta = this.sessionMetaMap.get(session.id);
+        const meta = this.sessionMetaMap.get(session.reference.sessionId);
         return (
           meta?.pricingCaptureEpoch !== PRICING_CAPTURE_EPOCH ||
           pricingBecameAvailable(meta.unpricedModels)

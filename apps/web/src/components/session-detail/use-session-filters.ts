@@ -1,7 +1,7 @@
 /**
  * Binds `filter-state.ts` to React state for one session.
  *
- * The filter set is rebuilt on `sessionId` change only. Keying it on the toc
+ * The filter set is rebuilt on `sessionKey` change only. Keying it on the toc
  * would reset it on every live-sync rebuild (`toc.filterIds` is a fresh Set
  * each time), which silently threw away the reader's filters.
  */
@@ -32,16 +32,16 @@ export interface SessionFilterActions {
 
 export function useSessionFilters(
   toc: SessionDetailToc,
-  sessionId: string,
+  sessionKey: string,
 ): { state: SessionFilterState; actions: SessionFilterActions } {
   const [state, setState] = useState(() => createFilterState(toc));
-  const [renderedSessionId, setRenderedSessionId] = useState(sessionId);
+  const [renderedSessionKey, setRenderedSessionKey] = useState(sessionKey);
 
   // React's "adjust state during render" pattern: cheaper and flash-free
   // compared with an effect, which would paint the new session once through
   // the previous session's filter set.
-  if (renderedSessionId !== sessionId) {
-    setRenderedSessionId(sessionId);
+  if (renderedSessionKey !== sessionKey) {
+    setRenderedSessionKey(sessionKey);
     setState(createFilterState(toc));
   }
 

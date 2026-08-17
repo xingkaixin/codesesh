@@ -42,7 +42,6 @@ const SESSION_HEAD_SELECT_COLUMNS = `
   s.agent_name,
   s.session_id,
   s.sort_index,
-  s.slug,
   s.title,
   s.source_path,
   s.directory,
@@ -168,7 +167,7 @@ export function readCachedSessions(agentName: string): CacheReadOutcome<CachedRe
       sessions.push(session);
 
       if (row.meta_json) {
-        meta[session.id] = JSON.parse(row.meta_json) as SessionCacheMeta;
+        meta[session.reference.sessionId] = JSON.parse(row.meta_json) as SessionCacheMeta;
       }
     }
 
@@ -640,7 +639,7 @@ export function writeCachedSessionSnapshot(
     ON CONFLICT(agent_name) DO UPDATE SET timestamp = excluded.timestamp
   `);
   const upsertSession = prepareUpsertSession(db);
-  const sessionIds = new Set(sessions.map((session) => session.id));
+  const sessionIds = new Set(sessions.map((session) => session.reference.sessionId));
   const existingSessionIds = db
     .prepare("SELECT session_id FROM sessions WHERE agent_name = ?")
     .all(agentName) as SessionRow[];
@@ -665,7 +664,7 @@ export function writeCachedSessionSnapshot(
   }
 
   sessions.forEach((session, index) => {
-    const sessionMeta = meta[session.id];
+    const sessionMeta = meta[session.reference.sessionId];
     const metaJson = sessionMeta ? JSON.stringify(sessionMeta) : null;
     upsertSessionRow(
       upsertSession,
@@ -750,11 +749,12 @@ export function writeCachedSessionChanges(
   }
 
   for (const { session, sortIndex } of changes) {
-    const sessionMeta = meta[session.id];
+    const sessionId = session.reference.sessionId;
+    const sessionMeta = meta[sessionId];
     if (!sessionMeta) {
       getCoreDiagnostics()?.warn("cache.session_meta_missing", {
         agent: agentName,
-        session_id: session.id,
+        session_id: sessionId,
       });
     }
     const metaJson = sessionMeta ? JSON.stringify(sessionMeta) : null;

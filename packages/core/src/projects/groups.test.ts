@@ -4,6 +4,7 @@ import { buildProjectGroups } from "./groups.js";
 
 function makeSession(id: string, agent: string, time: number): SessionHead {
   return {
+    reference: { agentName: agent, sessionId: id },
     id,
     slug: `${agent}/${id}`,
     title: id,

@@ -1,10 +1,10 @@
 import type { DashboardData } from "./contract/dashboard.js";
 import type { AgentScanStatus, ScanStatusEvent, SessionsUpdatedEvent } from "./contract/events.js";
 import type { SessionHead } from "./contract/session.js";
+import { createSessionIdentity } from "./contract/session-reference.js";
 
 export const SAMPLE_SESSION_HEAD = {
-  id: "session-1",
-  slug: "claudecode/session-1",
+  ...createSessionIdentity({ agentName: "claudecode", sessionId: "session-1" }),
   title: "Fix flaky search index test",
   directory: "/Users/dev/project",
   project_identity: {
@@ -70,19 +70,19 @@ export const SAMPLE_SESSIONS_UPDATED_EVENT = {
   type: "sessions-updated",
   changedAgents: ["claudecode"],
   newSessions: 1,
-  newSessionRefs: [{ agentName: "claudecode", sessionId: SAMPLE_SESSION_HEAD.id }],
+  newSessionRefs: [SAMPLE_SESSION_HEAD.reference],
   updatedSessions: 0,
   removedSessions: 0,
   totalSessions: 43,
   timestamp: 1_700_000_020_000,
   changedSessionHeads: [
     {
-      reference: { agentName: "claudecode", sessionId: SAMPLE_SESSION_HEAD.id },
+      reference: SAMPLE_SESSION_HEAD.reference,
       session: SAMPLE_SESSION_HEAD,
     },
   ],
   projectionRelatedSessionHeads: [],
-  projectionSessionOrder: [{ agentName: "claudecode", sessionId: SAMPLE_SESSION_HEAD.id }],
+  projectionSessionOrder: [SAMPLE_SESSION_HEAD.reference],
   removedSessionRefs: [],
 } satisfies SessionsUpdatedEvent;
 
@@ -142,7 +142,7 @@ export const SAMPLE_DASHBOARD_DATA = {
   projectRollup: { projects: 0, sessions: 0, tokens: 0, cost: 0 },
   recentSessions: [
     {
-      reference: { agentName: "claudecode", sessionId: SAMPLE_SESSION_HEAD.id },
+      reference: SAMPLE_SESSION_HEAD.reference,
       session: SAMPLE_SESSION_HEAD,
     },
   ],

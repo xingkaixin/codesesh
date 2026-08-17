@@ -162,12 +162,14 @@ function selectBackfillSessions(
   cursor: string | null | undefined,
 ): BackfillSelection {
   const orderedSessions = sortSessions(sessions);
-  const cursorIndex = cursor ? orderedSessions.findIndex((session) => session.id === cursor) : -1;
+  const cursorIndex = cursor
+    ? orderedSessions.findIndex((session) => session.reference.sessionId === cursor)
+    : -1;
   const finalizeSessionIds = new Set<string>();
   const startIndex = cursorIndex >= 0 ? cursorIndex + 1 : 0;
 
   for (let index = startIndex; index < orderedSessions.length; index += 1) {
-    finalizeSessionIds.add(orderedSessions[index]!.id);
+    finalizeSessionIds.add(orderedSessions[index]!.reference.sessionId);
   }
 
   for (const changedId of changedIds) finalizeSessionIds.add(changedId);
@@ -176,7 +178,7 @@ function selectBackfillSessions(
   // the next pass so it is not permanently skipped when it becomes idle.
   for (let index = 0; index <= cursorIndex; index += 1) {
     const session = orderedSessions[index]!;
-    if (hasStaleSmartTags(session)) finalizeSessionIds.add(session.id);
+    if (hasStaleSmartTags(session)) finalizeSessionIds.add(session.reference.sessionId);
   }
 
   return { orderedSessions, finalizeSessionIds, cursorIndex };
@@ -189,10 +191,12 @@ function selectBackfillSessions(
  * smart_tags_source_updated_at vs time_updated — decide what to recompute.
  */
 function inheritSmartTags(sessions: SessionHead[], previousSessions: SessionHead[]): SessionHead[] {
-  const previousById = new Map(previousSessions.map((session) => [session.id, session]));
+  const previousById = new Map(
+    previousSessions.map((session) => [session.reference.sessionId, session]),
+  );
   return sessions.map((session) => {
     if (Array.isArray(session.smart_tags)) return session;
-    const previous = previousById.get(session.id);
+    const previous = previousById.get(session.reference.sessionId);
     if (!previous || !Array.isArray(previous.smart_tags)) return session;
     return {
       ...session,
@@ -266,7 +270,8 @@ export function finalizeSessions(
   const now = Date.now();
   const settled = ordered.filter(
     (session) =>
-      (!finalizeSessionIds || finalizeSessionIds.has(session.id)) && isSettled(session, now),
+      (!finalizeSessionIds || finalizeSessionIds.has(session.reference.sessionId)) &&
+      isSettled(session, now),
   );
   if (settled.length === 0) return ordered;
 
@@ -284,7 +289,9 @@ export function finalizeSessions(
   };
   reportProgress(0, settled.length);
 
-  const sortIndexById = new Map(ordered.map((session, index) => [session.id, index]));
+  const sortIndexById = new Map(
+    ordered.map((session, index) => [session.reference.sessionId, index]),
+  );
   const taggedById = new Map<string, SessionHead>();
   for (let start = 0; start < settled.length; start += TAG_CHECKPOINT_SIZE) {
     const batch = settled.slice(start, start + TAG_CHECKPOINT_SIZE);
@@ -293,18 +300,21 @@ export function finalizeSessions(
     });
     if (taggedResult.timing) onTiming?.(taggedResult.timing);
     const taggedBatch = taggedResult.sessions;
-    for (const session of taggedBatch) taggedById.set(session.id, session);
+    for (const session of taggedBatch) taggedById.set(session.reference.sessionId, session);
 
     onCheckpoint?.({
       stage: "finalizing",
       changes: taggedBatch.map((session) => ({
         session,
-        sortIndex: sortIndexById.get(session.id) ?? 0,
+        sortIndex: sortIndexById.get(session.reference.sessionId) ?? 0,
       })),
-      meta: buildAgentCacheMeta(agent, new Set(taggedBatch.map((session) => session.id))),
+      meta: buildAgentCacheMeta(
+        agent,
+        new Set(taggedBatch.map((session) => session.reference.sessionId)),
+      ),
     });
   }
-  return ordered.map((session) => taggedById.get(session.id) ?? session);
+  return ordered.map((session) => taggedById.get(session.reference.sessionId) ?? session);
 }
 
 let workerBaseline: WorkerBaseline | null = null;
@@ -469,7 +479,10 @@ async function run(
       checkpoint: {
         stage: "scanned",
         sessions: ordered,
-        meta: buildAgentCacheMeta(agent, new Set(ordered.map((session) => session.id))),
+        meta: buildAgentCacheMeta(
+          agent,
+          new Set(ordered.map((session) => session.reference.sessionId)),
+        ),
         completeness,
       },
     } satisfies ScanRefreshWorkerMessage);
@@ -500,7 +513,7 @@ async function run(
   const finalizeStartedAt = performance.now();
   const finalizationTiming = createSessionFinalizationTiming();
   const backfillPositionById = backfillOrder
-    ? new Map(backfillOrder.map((session, index) => [session.id, index]))
+    ? new Map(backfillOrder.map((session, index) => [session.reference.sessionId, index]))
     : undefined;
   sessions = finalizeSessions(
     agent,
@@ -512,14 +525,14 @@ async function run(
           if (checkpoint.stage === "finalizing" && backfillOrder && backfillPositionById) {
             let nextCursorIndex = backfillCursorIndex;
             for (const { session } of checkpoint.changes) {
-              const index = backfillPositionById.get(session.id);
+              const index = backfillPositionById.get(session.reference.sessionId);
               if (index != null && index > nextCursorIndex) nextCursorIndex = index;
             }
             if (nextCursorIndex > backfillCursorIndex) {
               backfillCursorIndex = nextCursorIndex;
               nextCheckpoint = {
                 ...checkpoint,
-                backfillCursor: backfillOrder[nextCursorIndex]?.id,
+                backfillCursor: backfillOrder[nextCursorIndex]?.reference.sessionId,
               };
             }
           }
@@ -559,7 +572,7 @@ async function run(
   appLogger.debug("scan.refresh_worker.finalized", {
     agent: data.agentName,
     operation: operation.kind,
-    backfill_cursor: backfillOrder?.[backfillCursorIndex]?.id,
+    backfill_cursor: backfillOrder?.[backfillCursorIndex]?.reference.sessionId,
     sessions: sessions.length,
     finalized_sessions: finalizationTiming.sessions,
     batches: finalizationTiming.batches,
@@ -584,7 +597,10 @@ async function run(
     duration_ms: roundMilliseconds(finalizationDuration),
     total_duration_ms: Math.round(performance.now() - startedAt),
   });
-  const nextMeta = buildAgentCacheMeta(agent, new Set(sessions.map((session) => session.id)));
+  const nextMeta = buildAgentCacheMeta(
+    agent,
+    new Set(sessions.map((session) => session.reference.sessionId)),
+  );
   const metaDiff = computeCacheMetaDiff(previousMeta, nextMeta);
   const diff = computeSessionDiff(
     previousSessions,

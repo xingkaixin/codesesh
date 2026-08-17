@@ -179,10 +179,8 @@ export class PiAgent extends SingleFileSessionSource<SessionMeta> {
     const state = this.convertEntries(parsed.pathEntries);
 
     return {
-      reference: { agentName: this.name, sessionId: meta.id },
-      id: meta.id,
+      ...this.sessionIdentity(meta.id),
       title: meta.title,
-      slug: this.sessionSlug(meta.id),
       directory: meta.directory,
       time_created: meta.createdAt,
       time_updated: meta.updatedAt,
@@ -237,8 +235,7 @@ export class PiAgent extends SingleFileSessionSource<SessionMeta> {
 
     const modelUsage = Object.keys(state.modelUsage).length > 0 ? state.modelUsage : undefined;
     return parsedSession({
-      id: parsed.sessionId,
-      slug: this.sessionSlug(parsed.sessionId),
+      ...this.sessionIdentity(parsed.sessionId),
       title: parsed.title,
       directory: parsed.directory,
       time_created: parsed.createdAt,

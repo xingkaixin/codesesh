@@ -408,8 +408,7 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     this.sessionMetaMap.set(meta.id, meta);
     const stats = this.extractStats(meta.sourcePath);
     return parsedSession({
-      id: meta.id,
-      slug: this.sessionSlug(meta.id),
+      ...this.sessionIdentity(meta.id),
       title: meta.title,
       directory: meta.cwd,
       time_created: meta.createdAt,
@@ -811,10 +810,8 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
   ): SessionDetail {
     const transcript = builder.finish(stats);
     return {
-      reference: { agentName: this.name, sessionId: meta.id },
-      id: meta.id,
+      ...this.sessionIdentity(meta.id),
       title: meta.title,
-      slug: this.sessionSlug(meta.id),
       directory: meta.cwd,
       time_created: meta.createdAt,
       time_updated: meta.activityAt,

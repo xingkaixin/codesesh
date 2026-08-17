@@ -8,6 +8,7 @@ import type { ApiProjectGroup } from "../../contract/index.js";
 import type { ProjectGroup, SessionHead } from "../../types/index.js";
 import { buildSessionTree } from "../../contract/session-tree.js";
 import type { DashboardCostFacts } from "../cost-facts.js";
+import { createSessionIdentity } from "../../contract/session-reference.js";
 
 const EMPTY_MESSAGE_USAGE = {
   inputTokens: 0,
@@ -33,9 +34,11 @@ const EMPTY_SESSION_USAGE = {
 };
 
 function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
+  const identity = createSessionIdentity(
+    overrides?.reference ?? { agentName: "claudecode", sessionId: id },
+  );
   return {
-    id,
-    slug: `claudecode/${id}`,
+    ...identity,
     title: id,
     directory: "/home/user/project",
     time_created: 1_000_000_000_000,
@@ -48,6 +51,7 @@ function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead 
     },
     project_identity: { kind: "git_remote", key: "repo-a", displayName: "Repo A" },
     ...overrides,
+    ...identity,
   };
 }
 
@@ -296,9 +300,9 @@ describe("attachProjectMetrics", () => {
     const [project] = attachProjectMetrics(
       [makeGroup("repo-a")],
       [
-        makeSession("a", { slug: "codex/a" }),
-        makeSession("b", { slug: "claudecode/b" }),
-        makeSession("c", { slug: "claudecode/c" }),
+        makeSession("a", { reference: { agentName: "codex", sessionId: "a" } }),
+        makeSession("b"),
+        makeSession("c"),
       ],
     );
 

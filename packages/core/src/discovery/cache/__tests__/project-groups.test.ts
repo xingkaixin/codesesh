@@ -47,7 +47,10 @@ describe("cached project groups", () => {
   it("groups an explicit session set without opening cache storage", () => {
     const sessions = [
       makeSessionHead("one"),
-      makeSessionHead("two", { slug: "claudecode/two", time_updated: 1_800_000_000_000 }),
+      makeSessionHead("two", {
+        reference: { agentName: "claudecode", sessionId: "two" },
+        time_updated: 1_800_000_000_000,
+      }),
       makeSessionHead("loose", {
         project_identity: { kind: "loose", key: "scratch", displayName: "Scratch" },
       }),

@@ -663,8 +663,7 @@ export class CursorAgent extends DatabaseSessionSource {
                 hasFastMessages && fastMessageCount === 0 && !hasSubagents
                   ? filteredSession<SessionHead>("no visible messages")
                   : parsedSession<SessionHead>({
-                      id: composerId,
-                      slug: this.sessionSlug(composerId),
+                      ...this.sessionIdentity(composerId),
                       title: fastTitle,
                       directory,
                       time_created: createdAt,
@@ -815,10 +814,8 @@ export class CursorAgent extends DatabaseSessionSource {
         this.directoryCache.get(composerId) ?? this.buildWorkspacePathMap().get(composerId) ?? "";
 
       return {
-        reference: { agentName: this.name, sessionId: composerId },
-        id: composerId,
+        ...this.sessionIdentity(composerId),
         title,
-        slug: this.sessionSlug(composerId),
         directory,
         time_created: createdAt,
         time_updated: updatedAt || undefined,
@@ -917,8 +914,7 @@ export class CursorAgent extends DatabaseSessionSource {
     this.composerCache.set(composerId, composer);
     if (directory) this.directoryCache.set(composerId, directory);
     return {
-      id: composerId,
-      slug: this.sessionSlug(composerId),
+      ...this.sessionIdentity(composerId),
       title,
       directory,
       time_created: createdAt,

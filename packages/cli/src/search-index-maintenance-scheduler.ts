@@ -97,7 +97,10 @@ export class SearchIndexMaintenanceScheduler {
     if (!cached) throw new Error(`Session cache is unavailable for ${agentName}`);
     this.cachedSessionsByAgent.set(agentName, cached);
     const sessionsById = new Map(
-      cached.sessions.map((session, sortIndex) => [session.id, { session, sortIndex }]),
+      cached.sessions.map((session, sortIndex) => [
+        session.reference.sessionId,
+        { session, sortIndex },
+      ]),
     );
     const changes = pending.sessionIds.flatMap((sessionId): PersistedSessionHeadChange[] => {
       const change = sessionsById.get(sessionId);
@@ -109,8 +112,9 @@ export class SearchIndexMaintenanceScheduler {
 
     const meta = Object.fromEntries(
       changes.flatMap(({ session }) => {
-        const sessionMeta = cached.meta[session.id];
-        return sessionMeta ? [[session.id, sessionMeta]] : [];
+        const sessionId = session.reference.sessionId;
+        const sessionMeta = cached.meta[sessionId];
+        return sessionMeta ? [[sessionId, sessionMeta]] : [];
       }),
     );
     const job: SearchIndexWorkerJob = {

@@ -30,7 +30,7 @@ describe("SessionDetail identity", () => {
     const session: Api.SessionDetail = {
       reference: { agentName: "codex", sessionId: "s1" },
       id: "s1",
-      slug: null,
+      slug: "codex/s1",
       title: "Session",
       directory: "/repo",
       time_created: 1,
@@ -78,6 +78,7 @@ describe("SessionDetail identity", () => {
       messages: [],
     };
     const child: Api.SessionHead = {
+      reference: { agentName: "codex", sessionId: "child" },
       id: "child",
       slug: "codex/child",
       title: "Child",

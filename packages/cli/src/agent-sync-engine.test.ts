@@ -106,6 +106,7 @@ import { AgentSyncEngine } from "./agent-sync-engine.js";
 
 function makeSession(id: string, title = id): SessionHead {
   const session: SessionHead = {
+    reference: { agentName: "codex", sessionId: id },
     id,
     slug: `codex/${id}`,
     title,

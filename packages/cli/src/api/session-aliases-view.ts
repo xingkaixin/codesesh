@@ -125,7 +125,9 @@ export function findAliasSearchResults(
   const lookupSession = (agentName: string, sessionId: string): SessionHead | undefined => {
     let byId = sessionsByAgent.get(agentName);
     if (!byId) {
-      byId = new Map((scanResult.byAgent[agentName] ?? []).map((item) => [item.id, item]));
+      byId = new Map(
+        (scanResult.byAgent[agentName] ?? []).map((item) => [item.reference.sessionId, item]),
+      );
       sessionsByAgent.set(agentName, byId);
     }
     return byId.get(sessionId);

@@ -178,9 +178,10 @@ npx codesesh -j
 ```
 
 The output is an index, not an archive: an `agents` summary and a `sessions` array of session
-metadata — id, slug, title, directory, project identity, timestamps, token/cost stats and smart
-tags. It does **not** include messages, tool calls, reasoning or file activity, so it is not a
-backup of your history. Session content stays in each agent's own data directory.
+metadata — reference, compatibility id/slug fields, title, directory, project identity,
+timestamps, token/cost stats and smart tags. It does **not** include messages, tool calls,
+reasoning or file activity, so it is not a backup of your history. Session content stays in each
+agent's own data directory.
 
 ### CLI Options Reference
 

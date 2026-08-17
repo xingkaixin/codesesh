@@ -14,6 +14,7 @@ import type {
   ToolPart,
 } from "../../types/index.js";
 import { normalizeMessageParts } from "../../contract/message-part.js";
+import { assertSessionIdentity, createSessionIdentity } from "../../contract/session-reference.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import type { SQLiteStatement } from "./db.js";
 import type { MessageCursorContent } from "./message-cursor.js";
@@ -24,7 +25,6 @@ export interface SessionRow extends DatabaseRow {
   agent_name?: string;
   session_id?: string;
   sort_index?: number;
-  slug?: string;
   title?: string;
   source_path?: string | null;
   directory?: string;
@@ -160,8 +160,11 @@ export function requireSessionProjectIdentity(
   agentName: string,
   session: SessionHead,
 ): ProjectIdentity {
+  assertSessionIdentity(session, agentName);
   if (session.project_identity) return session.project_identity;
-  throw new Error(`Session ${agentName}/${session.id} is missing project_identity`);
+  throw new Error(
+    `Session ${session.reference.agentName}/${session.reference.sessionId} is missing project_identity`,
+  );
 }
 
 export function assertSessionProjectIdentities(
@@ -177,7 +180,6 @@ export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
       agent_name,
       session_id,
       sort_index,
-      slug,
       title,
       source_path,
       directory,
@@ -205,10 +207,9 @@ export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
       smart_tags_classifier_revision,
       meta_json,
       publication_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(agent_name, session_id) DO UPDATE SET
       sort_index = excluded.sort_index,
-      slug = excluded.slug,
       title = excluded.title,
       source_path = CASE
         WHEN excluded.meta_json IS NULL THEN sessions.source_path
@@ -244,7 +245,6 @@ export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
 
 function prepareIndexedSession(db: SQLiteDatabase): SQLiteStatement {
   const onConflict = `DO UPDATE SET
-          slug = excluded.slug,
           title = excluded.title,
           directory = excluded.directory,
           parent_agent_name = excluded.parent_agent_name,
@@ -275,7 +275,6 @@ function prepareIndexedSession(db: SQLiteDatabase): SQLiteStatement {
       agent_name,
       session_id,
       sort_index,
-      slug,
       title,
       source_path,
       directory,
@@ -303,7 +302,7 @@ function prepareIndexedSession(db: SQLiteDatabase): SQLiteStatement {
       smart_tags_classifier_revision,
       meta_json,
       publication_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(agent_name, session_id) ${onConflict}
   `);
 }
@@ -323,10 +322,9 @@ export function upsertSessionRow(
   const identity = requireSessionProjectIdentity(agentName, session);
   const activityTime = session.time_updated ?? session.time_created;
   statement.run(
-    agentName,
-    session.id,
+    session.reference.agentName,
+    session.reference.sessionId,
     sortIndex,
-    session.slug,
     session.title,
     sourcePath,
     session.directory,
@@ -401,8 +399,10 @@ export function writeFileActivityRows(
 
 export function sessionFromRow(row: SessionRow): SessionHead {
   const session: SessionHead = {
-    id: String(row.session_id),
-    slug: String(row.slug),
+    ...createSessionIdentity({
+      agentName: String(row.agent_name),
+      sessionId: String(row.session_id),
+    }),
     title: String(row.title),
     directory: String(row.directory),
     time_created: Number(row.time_created),
@@ -657,7 +657,7 @@ export function normalizeMessages(session: SessionDetail): StructuredMessageReco
 
     return {
       index,
-      id: message.id || `${session.id}:${index}`,
+      id: message.id || `${session.reference.sessionId}:${index}`,
       role: message.role,
       timeCreated: message.time_created,
       timeCompleted: message.time_completed ?? null,

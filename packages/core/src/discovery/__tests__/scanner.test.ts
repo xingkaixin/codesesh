@@ -14,11 +14,16 @@ import { setCoreDiagnostics } from "../../utils/diagnostics.js";
 
 // --- filterSessions tests (pure function) ---
 
-function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
+function makeSession(
+  id: string,
+  overrides?: Partial<SessionHead>,
+  agentName = "test",
+): SessionHead {
   const timeCreated = overrides?.time_created ?? 1000;
   return {
+    reference: { agentName, sessionId: id },
     id,
-    slug: `agent/${id}`,
+    slug: `${agentName}/${id}`,
     title: `Session ${id}`,
     directory: "/home/user/project",
     time_created: timeCreated,
@@ -611,6 +616,22 @@ describe("scanSessions", () => {
     expect(result.byAgent.test).toHaveLength(2);
   });
 
+  it("reports a scan failure when an adapter publishes a conflicting identity", async () => {
+    const conflicting = { ...makeSession("session"), id: "other" };
+    mockedCreateRegisteredAgents.mockReturnValue([
+      createTestAgent({ name: "test", available: true, sessions: [conflicting] }),
+    ]);
+
+    const result = await scanSessions({});
+
+    expect(result.byAgent.test).toBeUndefined();
+    expect(result.scanFailures?.test).toMatchObject({
+      agentName: "test",
+      stage: "scanning sessions",
+      message: "Session identity fields disagree",
+    });
+  });
+
   it("handles scan errors gracefully", async () => {
     const events: Array<{ event: string; detail?: Record<string, unknown> }> = [];
     setCoreDiagnostics({ warn: (event, detail) => events.push({ event, detail }) });
@@ -650,7 +671,11 @@ describe("scanSessions", () => {
   it("keeps successful agents when another agent fails", async () => {
     mockedCreateRegisteredAgents.mockReturnValue([
       createTestAgent({ name: "failed", available: true, sessions: [], shouldThrow: true }),
-      createTestAgent({ name: "healthy", available: true, sessions: [makeSession("ok")] }),
+      createTestAgent({
+        name: "healthy",
+        available: true,
+        sessions: [makeSession("ok", undefined, "healthy")],
+      }),
     ]);
 
     const result = await scanSessions({});
@@ -864,7 +889,7 @@ describe("scanSessions", () => {
   });
 
   it("retains a cached head and writes a partial snapshot when full parsing fails", async () => {
-    const cached = makeSession("cached");
+    const cached = makeSession("cached", undefined, "files");
     const meta = {
       cached: {
         id: "cached",

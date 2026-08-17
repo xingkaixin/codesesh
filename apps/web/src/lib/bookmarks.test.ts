@@ -9,8 +9,9 @@ import {
 
 function createSession(overrides: Partial<SessionHead> = {}): SessionHead {
   return {
+    reference: { agentName: "codex", sessionId: "s1" },
     id: "s1",
-    slug: "stale/route",
+    slug: "codex/s1",
     title: "Bookmark me",
     directory: "/tmp/project",
     time_created: 100,
@@ -43,7 +44,7 @@ describe("bookmarks", () => {
 
     expect(toBookmarkView(session, " CoDeX ")).toEqual({
       reference: { agentName: "codex", sessionId: "s1" },
-      session: { ...session, id: "s1", slug: "codex/s1" },
+      session,
       availability: "available",
       bookmarkedAt: 300,
     });

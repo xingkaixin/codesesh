@@ -130,7 +130,9 @@ function routeTitleAndSubtitle(input: RouteHeaderInput): {
         title: getSessionDisplayTitle(input.session) || "Session",
         subtitle: (
           <>
-            <span className="console-mono">ID: #{input.session.id.slice(0, 8)}</span>
+            <span className="console-mono">
+              ID: #{input.session.reference.sessionId.slice(0, 8)}
+            </span>
             <span>·</span>
             <span className="console-mono">Updated {formatRelativeTime(updated)}</span>
             <SmartTagChips tags={input.session.smart_tags} limit={9} className="inline-flex" />

@@ -3,7 +3,6 @@ import type { SessionHead, SmartTag } from "@codesesh/core";
 import {
   addCalendarDays,
   countCalendarDays,
-  getSessionAgentKey,
   type SessionTree,
   type AppConfig,
   type SessionReference,
@@ -159,10 +158,7 @@ function toSessionListItem(session: SessionHead): SessionHead {
 }
 
 function getSessionHeadReference(session: SessionHead): SessionReference {
-  return {
-    agentName: getSessionAgentKey(session),
-    sessionId: session.id,
-  };
+  return session.reference;
 }
 
 export function handleGetConfig(c: Context, defaults: SessionListDefaults) {

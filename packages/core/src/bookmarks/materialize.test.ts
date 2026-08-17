@@ -8,6 +8,7 @@ function makeBookmark(sessionId: string, agentName = "codex", bookmarkedAt = 1):
 
 function makeSession(sessionId: string, agentName = "codex", timeUpdated = 1): SessionHead {
   return {
+    reference: { agentName, sessionId },
     id: sessionId,
     slug: `${agentName}/${sessionId}`,
     title: `${sessionId} title`,
@@ -45,7 +46,7 @@ describe("materializeBookmarkViews", () => {
   it("resolves sessions outside the live window in one targeted cache batch", () => {
     const cached: ReferencedSessionHead = {
       reference: { agentName: "codex", sessionId: "old" },
-      session: { ...makeSession("wrong", "stale", 8), title: "Cached title" },
+      session: { ...makeSession("old", "codex", 8), title: "Cached title" },
     };
     const resolveCachedSessions = vi.fn(() => [cached]);
 

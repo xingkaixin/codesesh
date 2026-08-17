@@ -14,6 +14,7 @@ import {
   type SessionHead,
   type SessionSourceRef,
 } from "@codesesh/core";
+import { createSessionIdentity } from "@codesesh/core/contract";
 import { AgentUnavailableDuringScanError } from "./scan-refresh-error.js";
 
 // Isolated temp directory for session fixtures so computeIdentity always
@@ -508,9 +509,11 @@ function registerMockWatcher(
 }
 
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
+  const identity = createSessionIdentity(
+    overrides.reference ?? { agentName: "codex", sessionId: id },
+  );
   const session: SessionHead = {
-    id,
-    slug: `codex/${id}`,
+    ...identity,
     title: id,
     directory: FIXTURE_DIR,
     time_created: 1000,
@@ -522,6 +525,7 @@ function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionH
       total_cost: 0,
     },
     ...overrides,
+    ...identity,
   };
   return attachMissingProjectIdentities([session])[0]!;
 }
@@ -552,6 +556,7 @@ function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
     displayName: name,
     isAvailable: vi.fn(() => true),
     getSessionData: vi.fn(() => ({
+      reference: { agentName: name, sessionId: "session" },
       id: "session",
       title: "session",
       slug: `${name}/session`,
@@ -1094,13 +1099,13 @@ describe("LiveScanStore", () => {
   });
 
   it("allows another agent to refresh while a backfill is in flight", async () => {
-    const codexInitial = makeSession("codex-session", { slug: "codex/codex-session" });
+    const codexInitial = makeSession("codex-session");
     const kimiInitial = makeSession("kimi-session", {
-      slug: "kimi/kimi-session",
+      reference: { agentName: "kimi", sessionId: "kimi-session" },
       title: "kimi initial",
     });
     const kimiFresh = makeSession("kimi-session", {
-      slug: "kimi/kimi-session",
+      reference: { agentName: "kimi", sessionId: "kimi-session" },
       title: "kimi fresh",
       time_updated: 2000,
     });
@@ -2187,7 +2192,9 @@ describe("LiveScanStore", () => {
   it("merges new session events inside a short window", async () => {
     vi.useFakeTimers();
     const existingCodex = makeSession("codex-old");
-    const existingKimi = makeSession("kimi-old");
+    const existingKimi = makeSession("kimi-old", {
+      reference: { agentName: "kimi", sessionId: "kimi-old" },
+    });
     const codex = makeAgent("codex", {
       checkForChanges: vi.fn(() => ({
         hasChanges: true,
@@ -2202,7 +2209,12 @@ describe("LiveScanStore", () => {
         changedIds: ["kimi-new"],
         timestamp: 3000,
       })),
-      incrementalScan: vi.fn(() => [existingKimi, makeSession("kimi-new")]),
+      incrementalScan: vi.fn(() => [
+        existingKimi,
+        makeSession("kimi-new", {
+          reference: { agentName: "kimi", sessionId: "kimi-new" },
+        }),
+      ]),
     });
     core.createRegisteredAgents.mockReturnValue([codex, kimi]);
     core.scanSessions.mockResolvedValue({
@@ -2529,8 +2541,14 @@ describe("LiveScanStore", () => {
   it("does not start a pending search-index batch while shutting down", async () => {
     const codexBefore = makeSession("codex-session", { title: "codex before" });
     const codexAfter = makeSession("codex-session", { title: "codex after" });
-    const kimiBefore = makeSession("kimi-session", { title: "kimi before" });
-    const kimiAfter = makeSession("kimi-session", { title: "kimi after" });
+    const kimiBefore = makeSession("kimi-session", {
+      reference: { agentName: "kimi", sessionId: "kimi-session" },
+      title: "kimi before",
+    });
+    const kimiAfter = makeSession("kimi-session", {
+      reference: { agentName: "kimi", sessionId: "kimi-session" },
+      title: "kimi after",
+    });
     const codex = makeAgent("codex", {
       checkForChanges: vi.fn(() => ({
         hasChanges: true,

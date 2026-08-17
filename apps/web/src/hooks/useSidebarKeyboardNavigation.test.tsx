@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createSessionIdentity } from "@codesesh/core/contract";
 import type { SessionHead } from "../lib/api";
 import { buildSidebarSessionLookup, getSessionReferenceKey } from "../lib/session-indexes";
 import type { ViewState } from "../lib/view-state";
@@ -7,10 +8,9 @@ import { useSidebarKeyboardNavigation } from "./useSidebarKeyboardNavigation";
 
 afterEach(cleanup);
 
-function makeSession(id: string): SessionHead {
+function makeSession(id: string, agentName = "codex"): SessionHead {
   return {
-    id,
-    slug: `codex/${id}`,
+    ...createSessionIdentity({ agentName, sessionId: id }),
     title: id,
     directory: "/workspace",
     time_created: 1,
@@ -68,7 +68,7 @@ describe("useSidebarKeyboardNavigation", () => {
 
   it("uses the session reference when native ids overlap", () => {
     const codex = makeSession("same");
-    const claude = { ...makeSession("same"), slug: "claude/same" };
+    const claude = makeSession("same", "claude");
     const projectSessions = [codex, claude];
     const deps = makeDeps({
       sessions: projectSessions,

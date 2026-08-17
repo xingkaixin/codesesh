@@ -110,6 +110,7 @@ function makeSessionHead(spec: FixtureSpec): SessionHead {
   const timeUpdated = spec.timeUpdated ?? now;
   const directory = spec.project ? `/projects/${spec.project.key}` : `/fixtures/${spec.id}`;
   return {
+    reference: { agentName: spec.agent, sessionId: spec.id },
     id: spec.id,
     slug: `${spec.agent}/${spec.id}`,
     title: spec.title ?? "plain",
@@ -412,9 +413,11 @@ function makeRandomSnapshot(seed: number): SessionSearchSnapshot {
   for (const agentName of ["claudecode", "codex", "cursor"]) {
     byAgent[agentName] = Array.from({ length: 20 }, (_, index) => {
       const activity = now - Math.floor(random() * 8) * 1_000;
+      const sessionId = `${agentName}-${index}`;
       return {
-        id: `${agentName}-${index}`,
-        slug: `${agentName}/${agentName}-${index}`,
+        reference: { agentName, sessionId },
+        id: sessionId,
+        slug: `${agentName}/${sessionId}`,
         title: `${agentName}-${index}`,
         directory: `/fixtures/${agentName}`,
         time_created: activity,

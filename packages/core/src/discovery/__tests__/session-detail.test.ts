@@ -13,6 +13,7 @@ import type { LiveSnapshot } from "../scanner.js";
 import { getCachePath, setSchemaEnsuredPath } from "../cache/db.js";
 import { setCoreDiagnostics } from "../../utils/diagnostics.js";
 import { SMART_TAG_CLASSIFIER_REVISION } from "../../utils/smart-tags.js";
+import { createSessionIdentity } from "../../contract/session-reference.js";
 
 const { testHomeDir } = vi.hoisted(() => ({
   testHomeDir: `/tmp/codesesh-session-detail-test-${process.pid}`,
@@ -74,6 +75,7 @@ class TestAgent extends BaseAgent {
 
 function makeHead(overrides: Partial<SessionHead> = {}): SessionHead {
   return {
+    reference: { agentName: "test", sessionId: "s1" },
     id: "s1",
     slug: "test/s1",
     title: "Cached Session",
@@ -263,10 +265,7 @@ describe("materializeSessionDetail", () => {
   it("reads the source when its fingerprint no longer matches the cache", () => {
     const head = makeHead();
     persistDetail(head, makeDetail("Cached Session"), "old");
-    const sourceDetail = {
-      ...makeDetail(),
-      reference: { agentName: "wrong", sessionId: "wrong" },
-    };
+    const sourceDetail = makeDetail();
     const agent = new TestAgent(sourceDetail, new Map([["s1", makeMeta("current")]]));
 
     const result = materializeSessionDetail(makeScanResult(agent, head), {
@@ -282,6 +281,22 @@ describe("materializeSessionDetail", () => {
       },
     });
     expect(agent.reads).toBe(1);
+  });
+
+  it("rejects source detail for a different session reference", () => {
+    const head = makeHead();
+    const sourceDetail = {
+      ...makeDetail(),
+      ...createSessionIdentity({ agentName: "test", sessionId: "other" }),
+    };
+    const agent = new TestAgent(sourceDetail, new Map());
+
+    expect(() =>
+      materializeSessionDetail(makeScanResult(agent, head), {
+        agentName: "test",
+        sessionId: "s1",
+      }),
+    ).toThrow("Session identity fields disagree");
   });
 
   it("asks the caller to resolve identity instead of probing the filesystem", () => {
@@ -737,11 +752,24 @@ describe("materializeSessionDetail", () => {
   });
 
   it("indexes heads once per scan snapshot instead of calling Array.find", () => {
-    const heads = Array.from({ length: 100 }, (_, index) =>
-      makeHead({ id: `s${index}`, slug: `test/s${index}` }),
-    );
+    const heads = Array.from({ length: 100 }, (_, index) => {
+      const sessionId = `s${index}`;
+      return makeHead({
+        reference: { agentName: "test", sessionId },
+        id: sessionId,
+        slug: `test/${sessionId}`,
+      });
+    });
     const target = heads.at(-1)!;
-    const agent = new TestAgent({ ...makeDetail(), id: target.id, slug: target.slug }, new Map());
+    const agent = new TestAgent(
+      {
+        ...makeDetail(),
+        reference: target.reference,
+        id: target.id,
+        slug: target.slug,
+      },
+      new Map(),
+    );
     const scanResult = {
       sessions: heads,
       byAgent: { test: heads },

@@ -170,7 +170,7 @@ export function AppRouteContent({
   }, [childSessionsByParentRouteKey, currentSessionAgentName, currentSessionId]);
   const toggleSessionBookmark = bookmarks.toggleSessionBookmark;
   const toggleLandingBookmark = useCallback(
-    (session: IndexedSession) => toggleSessionBookmark(session, session.agentKey),
+    (session: IndexedSession) => toggleSessionBookmark(session, session.reference.agentName),
     [toggleSessionBookmark],
   );
   if (loading) return <SessionDetailSkeleton />;
@@ -315,7 +315,7 @@ export function AppRouteContent({
         id="SessionDetail"
         detail={{
           messages: currentSession.messages.length,
-          session: currentSession.id,
+          session: currentSession.reference.sessionId,
         }}
       >
         <LazySurface>
@@ -339,7 +339,9 @@ export function AppRouteContent({
         agentItems={landingAgentItems}
         attemptedAgentKey={viewState.attemptedKey}
         isBookmarked={bookmarks.isBookmarked}
-        onToggleBookmark={(session) => bookmarks.toggleSessionBookmark(session, session.agentKey)}
+        onToggleBookmark={(session) =>
+          bookmarks.toggleSessionBookmark(session, session.reference.agentName)
+        }
       />
     );
   }

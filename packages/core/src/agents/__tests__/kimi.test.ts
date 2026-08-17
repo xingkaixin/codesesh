@@ -25,6 +25,7 @@ const KIMI_FIXTURE_ROOT = new URL("./fixtures/kimi/", import.meta.url);
 
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {
+    reference: { agentName: "kimi", sessionId: id },
     id,
     slug: `kimi/${id}`,
     title: id,

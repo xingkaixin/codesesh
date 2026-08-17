@@ -344,7 +344,7 @@ export function ProjectDashboardView({
   }
 
   const scopedSessions = activeAgent
-    ? sessions.filter((session) => session.agentKey === activeAgent)
+    ? sessions.filter((session) => session.reference.agentName === activeAgent)
     : sessions;
 
   return (

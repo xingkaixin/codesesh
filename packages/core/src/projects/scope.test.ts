@@ -5,6 +5,7 @@ import { createProjectScopeMatcherFromIdentity, filterSessionsByProjectScope } f
 
 function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
   return {
+    reference: { agentName: "agent", sessionId: id },
     id,
     slug: `agent/${id}`,
     title: `Session ${id}`,

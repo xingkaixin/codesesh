@@ -12,11 +12,7 @@ import {
   type SessionHeadChange,
   type SessionHeadRemoval,
 } from "./session-index.js";
-import {
-  formatSessionReference,
-  getSessionAgentKey,
-  type SessionReference,
-} from "./session-reference.js";
+import { formatSessionReference, type SessionReference } from "./session-reference.js";
 
 /**
  * Where a session sits relative to its parent, with orphans distinguished
@@ -68,7 +64,7 @@ export interface SessionDayGroup {
 }
 
 function sessionKey(session: SessionHead): string {
-  return getSessionRouteKey(getSessionAgentKey(session), session.id);
+  return getSessionRouteKey(session.reference.agentName, session.reference.sessionId);
 }
 
 function parentKey(session: SessionHead): string | null {
@@ -373,7 +369,7 @@ export function createSessionProjectionContext(
     emitted.add(key);
     return [
       {
-        reference: { agentName: getSessionAgentKey(session), sessionId: session.id },
+        reference: session.reference,
         session,
       },
     ];
@@ -382,9 +378,7 @@ export function createSessionProjectionContext(
     [...changedSessionHeads, ...relatedSessionHeads].map(({ session }) => activityTime(session)),
   );
   const sessionOrder = nextSessions.flatMap((session) =>
-    affectedActivityTimes.has(activityTime(session))
-      ? [{ agentName: getSessionAgentKey(session), sessionId: session.id }]
-      : [],
+    affectedActivityTimes.has(activityTime(session)) ? [session.reference] : [],
   );
   return { relatedSessionHeads, sessionOrder };
 }

@@ -107,7 +107,10 @@ describe("cached sessions", () => {
   it("loads only requested session heads by compound identity", () => {
     saveCachedSessions("codex", [makeSessionHead("shared"), makeSessionHead("other")]);
     saveCachedSessions("cursor", [
-      makeSessionHead("shared", { slug: "cursor/shared", title: "Cursor shared" }),
+      makeSessionHead("shared", {
+        reference: { agentName: "cursor", sessionId: "shared" },
+        title: "Cursor shared",
+      }),
     ]);
 
     const sessions = loadCachedSessionHeads([
