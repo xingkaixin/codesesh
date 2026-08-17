@@ -1,5 +1,5 @@
-import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildSemanticOutputContent } from "../session-detail/tool-normalize";
 import { ToolOutputRenderer } from "./ToolOutputRenderer";
 import type { ToolOutputContent } from "./types";
@@ -179,5 +179,59 @@ describe("ToolOutputRenderer", () => {
     expect(view.getByText("owner")).toBeTruthy();
     expect(view.getByText("agent")).toBeTruthy();
     expect(view.getByText("coverage")).toBeTruthy();
+  });
+
+  it("bounds large code and unified diff output before expensive rendering", () => {
+    const codeText = `${"const value = 1;\n".repeat(3_000)}final_code_marker`;
+    const code = renderOutput({
+      kind: "plain",
+      text: codeText,
+      language: "typescript",
+      isCode: true,
+    });
+
+    expect(code.container.textContent).not.toContain("final_code_marker");
+    expect(code.getByRole("button", { name: "Render more content" })).toBeTruthy();
+    code.unmount();
+
+    const diffText = Array.from({ length: 5_000 }, (_, index) => `+changed line ${index}`).join(
+      "\n",
+    );
+    const diff = renderOutput({
+      kind: "plain",
+      text: diffText,
+      language: "diff",
+      isCode: true,
+    });
+
+    expect(diff.queryByText("+changed line 4999")).toBeNull();
+    expect(diff.container.querySelectorAll("pre > span").length).toBeLessThanOrEqual(800);
+    expect(diff.getByRole("button", { name: "Render more content" })).toBeTruthy();
+  });
+
+  it("bounds structured diff lines and copies the complete diff", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+      configurable: true,
+    });
+    const lines = Array.from({ length: 2_000 }, (_, index) => ({
+      type: "add" as const,
+      text: `changed line ${index}`,
+    }));
+    const view = renderOutput({
+      kind: "structured-diff",
+      blocks: [{ label: "src/large.ts", lines }],
+    });
+
+    expect(view.queryByText("+changed line 1999")).toBeNull();
+    expect(view.container.querySelectorAll("pre > span").length).toBeLessThanOrEqual(799);
+
+    await act(async () => {
+      fireEvent.click(view.getByRole("button", { name: "Copy full content" }));
+      await Promise.resolve();
+    });
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      `diff src/large.ts\n${lines.map((line) => `+${line.text}`).join("\n")}`,
+    );
   });
 });

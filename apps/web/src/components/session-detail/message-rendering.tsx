@@ -17,6 +17,7 @@ import { getSessionRoutePath } from "../../lib/session-indexes";
 import { buildHighlightPattern } from "../../lib/search-highlight";
 import { AgentIcon } from "../AgentIcon";
 import { MarkdownContent } from "../MarkdownContent";
+import { ProgressiveText } from "../ProgressiveContent";
 import { ToolOutputRenderer } from "../tool-output/ToolOutputRenderer";
 import { Collapsible } from "../ui/Collapsible";
 import { Link } from "react-router-dom";
@@ -25,6 +26,7 @@ import { isCodexTurnAbortedMessage } from "./codex-abort";
 import { buildCodexPlanDisplay } from "./codex-plan";
 import { getDisplayTextWithRelativePaths } from "./path-extract";
 import { buildBlockTimelineAnchorId, buildMessageTimelineAnchorId } from "./timeline";
+import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
 import {
   type ToolStatus,
   getAssistantDisplayLabel,
@@ -316,9 +318,13 @@ const ReasoningSection = memo(function ReasoningSection({
       <Collapsible open={expanded}>
         {() => (
           <div className="border-t border-dashed border-[var(--console-thinking-border)] px-4 py-3">
-            <div className="console-mono whitespace-pre-wrap text-xs leading-relaxed text-[var(--console-muted)]">
-              {renderHighlightedText(fullText, highlightQuery)}
-            </div>
+            <ProgressiveText text={fullText} initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}>
+              {(visibleText) => (
+                <div className="console-mono whitespace-pre-wrap text-xs leading-relaxed text-[var(--console-muted)]">
+                  {renderHighlightedText(visibleText, highlightQuery)}
+                </div>
+              )}
+            </ProgressiveText>
           </div>
         )}
       </Collapsible>
@@ -567,9 +573,18 @@ const ToolItem = memo(function ToolItem({
                         <span className="console-mono shrink-0 text-[11px] font-semibold uppercase tracking-wide text-[var(--console-muted)] md:w-24">
                           {detail.label}
                         </span>
-                        <span className="console-mono whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-text)]">
-                          {renderHighlightedText(detail.value, highlightQuery)}
-                        </span>
+                        <div className="min-w-0 flex-1">
+                          <ProgressiveText
+                            text={detail.value}
+                            initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}
+                          >
+                            {(visibleText) => (
+                              <span className="console-mono whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-text)]">
+                                {renderHighlightedText(visibleText, highlightQuery)}
+                              </span>
+                            )}
+                          </ProgressiveText>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -582,9 +597,16 @@ const ToolItem = memo(function ToolItem({
                 <span className="console-mono text-[11px] text-[var(--console-muted)]">
                   Input Preview
                 </span>
-                <pre className="console-mono mt-1 max-h-[200px] overflow-x-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-muted)]">
-                  {renderHighlightedText(inputPreviewText, highlightQuery)}
-                </pre>
+                <ProgressiveText
+                  text={inputPreviewText}
+                  initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}
+                >
+                  {(visibleText) => (
+                    <pre className="console-mono mt-1 max-h-[200px] overflow-x-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-muted)]">
+                      {renderHighlightedText(visibleText, highlightQuery)}
+                    </pre>
+                  )}
+                </ProgressiveText>
               </div>
             ) : null}
           </div>

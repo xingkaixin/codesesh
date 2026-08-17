@@ -1,6 +1,8 @@
 import { CodeHighlighter } from "./CodeHighlighter";
 import type { FileSectionItem } from "./types";
 import { UnifiedDiffOutput } from "./UnifiedDiffOutput";
+import { ProgressiveText } from "../ProgressiveContent";
+import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
 
 interface FileSectionsOutputProps {
   sections: FileSectionItem[];
@@ -11,9 +13,13 @@ function renderSectionContent(section: FileSectionItem) {
 
   if (!section.isCode || section.language === "text") {
     return (
-      <pre className="console-mono max-h-[420px] overflow-auto whitespace-pre-wrap break-all p-3 text-xs leading-relaxed text-[var(--console-text)]">
-        {outputText}
-      </pre>
+      <ProgressiveText text={outputText} initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}>
+        {(visibleText) => (
+          <pre className="console-mono max-h-[420px] overflow-auto whitespace-pre-wrap break-all p-3 text-xs leading-relaxed text-[var(--console-text)]">
+            {visibleText}
+          </pre>
+        )}
+      </ProgressiveText>
     );
   }
 
