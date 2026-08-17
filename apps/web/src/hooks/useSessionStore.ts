@@ -18,6 +18,7 @@ import {
   type AppConfig,
   type DashboardData,
   type ApiProjectGroup,
+  type ApiProjectPage,
   type SessionHead,
   type SessionsUpdatedEvent,
   fetchAgents,
@@ -59,6 +60,16 @@ interface SnapshotAggregates {
 
 const LIVE_AGGREGATE_REFRESH_INTERVAL_MS = 2_000;
 const EMPTY_PROJECTS: ApiProjectGroup[] = [];
+const EMPTY_PROJECT_PAGE: ApiProjectPage = {
+  projects: EMPTY_PROJECTS,
+  summary: {
+    projects: 0,
+    sessions: 0,
+    tokens: 0,
+    cost: 0,
+    latestActivity: null,
+  },
+};
 
 const EMPTY_AGGREGATES = {
   agents: [] satisfies AgentInfo[],
@@ -68,8 +79,8 @@ const EMPTY_SESSIONS: SessionHead[] = [];
 
 function projectsOptions(window: AppConfig["window"]) {
   return queryOptions({
-    queryKey: queryKeys.project(window),
-    queryFn: async ({ signal }) => (await fetchProjects(window, { signal })).projects,
+    queryKey: queryKeys.projectPage(window),
+    queryFn: ({ signal }) => fetchProjects(window, { signal }),
     staleTime: LIVE_AGGREGATE_REFRESH_INTERVAL_MS,
     retry: false,
   });
@@ -266,7 +277,7 @@ export function useSessionStore() {
             refetchType: "none",
           }),
           queryClient.invalidateQueries({
-            queryKey: queryKeys.project(window),
+            queryKey: queryKeys.projectPage(window),
             exact: true,
             refetchType: "none",
           }),
@@ -413,7 +424,8 @@ export function useSessionStore() {
     currentSnapshot ??
     (sameWindow(previewSnapshot?.window, requestedWindow) ? previewSnapshot : null);
   const agents = displayedSnapshot?.agents ?? EMPTY_AGGREGATES.agents;
-  const projects = projectsQuery.data ?? EMPTY_PROJECTS;
+  const projectPage = projectsQuery.data ?? EMPTY_PROJECT_PAGE;
+  const projects = projectPage.projects;
   const projectsLoading = requestedWindow === null || projectsQuery.isPending;
   const projectsError =
     requestedWindow !== null && projectsQuery.isError
@@ -442,6 +454,7 @@ export function useSessionStore() {
     agents,
     sessions: displayedSnapshot?.sessions ?? EMPTY_SESSIONS,
     projects,
+    projectPage,
     projectsError,
     projectsLoading,
     dashboard: displayedSnapshot?.dashboard ?? EMPTY_AGGREGATES.dashboard,

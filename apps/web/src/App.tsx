@@ -18,6 +18,7 @@ import { useSessionSearch } from "./hooks/useSessionSearch";
 import { useBookmarks } from "./hooks/useBookmarks";
 import { useSidebarModel } from "./hooks/useSidebarModel";
 import { useSessionStore } from "./hooks/useSessionStore";
+import { useProjectLookup } from "./hooks/useProjects";
 import { useSessionAliasMutations } from "./hooks/useSessionAliasMutations";
 import { useWindowedDataLoad } from "./hooks/useWindowedDataLoad";
 import { useLiveSync } from "./hooks/useLiveSync";
@@ -47,6 +48,7 @@ export default function App() {
     agentCatalog,
     sessions,
     projects,
+    projectPage,
     projectsError,
     projectsLoading,
     dashboard,
@@ -157,6 +159,15 @@ export default function App() {
     activeProjectKind && activeProjectKey
       ? getProjectIdentityKey({ kind: activeProjectKind, key: activeProjectKey })
       : null;
+  const activeProjectIdentity =
+    activeProjectKind && activeProjectKey
+      ? { kind: activeProjectKind, key: activeProjectKey }
+      : null;
+  const projectLookup = useProjectLookup(loadedWindow, activeProjectIdentity, projects);
+  const resolvedProjects = useMemo(() => {
+    if (!projectLookup.project || projects.includes(projectLookup.project)) return projects;
+    return [...projects, projectLookup.project];
+  }, [projectLookup.project, projects]);
 
   const [projectAgentFilter, setProjectAgentFilter] = useState<{
     identityKey: string;
@@ -179,7 +190,7 @@ export default function App() {
     sessionIndexes,
     session,
     agents: activeAgents,
-    projects,
+    projects: resolvedProjects,
     selectedProjectAgent,
     isSessionBookmarked,
   });
@@ -266,7 +277,7 @@ export default function App() {
     isSearchMode,
     searchSubtitle,
     dashboard,
-    projects,
+    projectCount: projectPage.summary.projects,
     sessionCount: sessions.length,
     activeProject: activeProject?.project ?? null,
     activeAgent,
@@ -287,7 +298,7 @@ export default function App() {
       agents={activeAgents}
       agentCatalog={agentCatalog}
       agentNameMap={agentNameMap}
-      projects={projects}
+      projectPage={projectPage}
       projectsError={projectsError}
       projectsLoading={projectsLoading}
       onRetryProjects={() => void retryProjects()}
@@ -295,6 +306,9 @@ export default function App() {
       childSessionsByParentRouteKey={sessionIndexes.childrenByParentRouteKey}
       sessionsByAgent={sessionIndexes.byLandingAgent}
       activeProject={activeProject?.project ?? null}
+      activeProjectLoading={projectLookup.loading}
+      activeProjectError={projectLookup.error}
+      onRetryActiveProject={() => void projectLookup.retry()}
       activeProjectSessions={activeProjectSessions}
       overview={{
         window: loadedWindow,
@@ -407,7 +421,8 @@ export default function App() {
               mobileNavigationOpen,
               viewState,
               agentCatalog,
-              projects,
+              projects: resolvedProjects,
+              projectCount: projectPage.summary.projects,
               projectsError,
               projectsLoading,
               selectedProjectNavigationId,

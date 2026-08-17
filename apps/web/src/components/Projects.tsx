@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
-import type { ApiProjectAgentStat, ApiProjectGroup, AppConfig } from "../lib/api";
+import type { ApiProjectAgentStat, ApiProjectGroup, ApiProjectPage, AppConfig } from "../lib/api";
+import { useProjectPagination } from "../hooks/useProjects";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import { formatCompact, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getProjectPath } from "../lib/projects";
@@ -100,32 +101,39 @@ function ProjectListItem({
 }
 
 export function ProjectsOverview({
-  projects,
+  initialPage,
+  window,
   agentCatalog,
   loading,
   error,
   onRetry,
 }: {
-  projects: ApiProjectGroup[];
+  initialPage: ApiProjectPage;
+  window: AppConfig["window"] | null;
   agentCatalog: AgentCatalog;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
 }) {
-  const totalSessions = projects.reduce((sum, project) => sum + project.sessionCount, 0);
-  const totalTokens = projects.reduce((sum, project) => sum + project.tokens, 0);
-  const totalCost = projects.reduce((sum, project) => sum + project.cost, 0);
-  const latestActivity = Math.max(0, ...projects.map((project) => project.lastActivity ?? 0));
+  const pagination = useProjectPagination(window, initialPage);
+  const page = pagination.page ?? initialPage;
+  const projects = page.projects.slice(0, 250);
+  const currentError = pagination.error ?? error;
+  const retry = pagination.error ? () => void pagination.retry() : onRetry;
 
-  if (projects.length === 0) {
-    if (error) {
+  if (page.summary.projects === 0) {
+    if (currentError) {
       return (
         <div className="mx-auto max-w-6xl">
-          <ResourceLoadFailure title="Couldn't load projects." message={error} onRetry={onRetry} />
+          <ResourceLoadFailure
+            title="Couldn't load projects."
+            message={currentError}
+            onRetry={retry}
+          />
         </div>
       );
     }
-    if (loading) {
+    if (loading || pagination.loading) {
       return (
         <Panel className="mx-auto max-w-6xl p-6 text-sm text-[var(--console-muted)]">
           Loading projects...
@@ -141,18 +149,50 @@ export function ProjectsOverview({
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
-      {error ? (
-        <ResourceLoadFailure title="Couldn't refresh projects." message={error} onRetry={onRetry} />
+      {currentError ? (
+        <ResourceLoadFailure
+          title="Couldn't refresh projects."
+          message={currentError}
+          onRetry={retry}
+        />
       ) : null}
       <div className="grid gap-3 md:grid-cols-4">
-        <StatCard label="Projects" value={formatNumber(projects.length)} />
-        <StatCard label="Sessions" value={formatNumber(totalSessions)} />
-        <StatCard label="Tokens" value={formatCompact(totalTokens)} />
+        <StatCard label="Projects" value={formatNumber(page.summary.projects)} />
+        <StatCard label="Sessions" value={formatNumber(page.summary.sessions)} />
+        <StatCard label="Tokens" value={formatCompact(page.summary.tokens)} />
         <StatCard
           label="Total Cost"
-          value={formatMoney(totalCost)}
-          hint={latestActivity ? `Latest ${formatRelativeTime(latestActivity)}` : undefined}
+          value={formatMoney(page.summary.cost)}
+          hint={
+            page.summary.latestActivity
+              ? `Latest ${formatRelativeTime(page.summary.latestActivity)}`
+              : undefined
+          }
         />
+      </div>
+
+      <div className="console-mono flex items-center justify-between gap-3 text-[11px] text-[var(--console-muted)]">
+        <span>
+          Page {pagination.pageNumber} · {formatNumber(projects.length)} shown
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={!pagination.canPrevious}
+            onClick={pagination.previous}
+            className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-1.5 text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            disabled={!pagination.canNext}
+            onClick={pagination.next}
+            className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-1.5 text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
       </div>
 
       <ul className="grid gap-3">
@@ -239,6 +279,9 @@ function ProjectHeader({ project }: { project: ApiProjectGroup }) {
 
 export function ProjectDashboardView({
   project,
+  loading,
+  error,
+  onRetry,
   agentCatalog,
   projectKey,
   sessions,
@@ -250,6 +293,9 @@ export function ProjectDashboardView({
   onSelectCustom,
 }: {
   project: ApiProjectGroup | null;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
   agentCatalog: AgentCatalog;
   projectKey: string;
   sessions: IndexedSession[];
@@ -261,6 +307,22 @@ export function ProjectDashboardView({
   onSelectCustom: (from: string, to: string) => void;
 }) {
   const navigate = useNavigate();
+
+  if (loading) {
+    return (
+      <Panel className="mx-auto max-w-4xl p-6 text-sm text-[var(--console-muted)]">
+        Loading project...
+      </Panel>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-4xl">
+        <ResourceLoadFailure title="Couldn't load project." message={error} onRetry={onRetry} />
+      </div>
+    );
+  }
 
   if (!project) {
     return (

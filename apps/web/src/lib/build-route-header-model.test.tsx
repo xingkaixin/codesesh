@@ -13,7 +13,7 @@ function createInput(
     isSearchMode: false,
     searchSubtitle: "Search results",
     dashboard: null,
-    projects: [],
+    projectCount: 0,
     sessionCount: 0,
     activeProject: null,
     activeAgent: null,

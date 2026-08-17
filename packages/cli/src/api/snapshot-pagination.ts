@@ -66,11 +66,8 @@ function decodeCursor(cursor: string): CursorPayload | null {
   }
 }
 
-/** Keeps every page on the same immutable scan and alias read-model versions. */
-export function paginateSessionSnapshot<T>(
-  items: T[],
-  request: PaginationRequest,
-): PaginationResult<T> {
+/** Keeps every page on the same immutable scan and derived-view versions. */
+export function paginateSnapshot<T>(items: T[], request: PaginationRequest): PaginationResult<T> {
   const snapshot = identityVersion(request.snapshotIdentity);
   const view = identityVersion(request.viewIdentity);
   const query = queryFingerprint(request.query);

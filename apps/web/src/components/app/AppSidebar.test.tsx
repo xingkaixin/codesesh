@@ -51,6 +51,7 @@ function renderSidebar(
             viewState: { mode: "root", activeAgentKey: null, activeSessionId: null },
             agentCatalog: createAgentCatalog(agents),
             projects,
+            projectCount: projects.length,
             projectsError: null,
             projectsLoading: false,
             selectedProjectNavigationId: null,
@@ -92,6 +93,25 @@ describe("AppSidebar", () => {
     const projectLink = screen.getByRole("link", { name: /codesesh/ });
     expect(projectLink.getAttribute("href")).toBe("/projects/path/%2Frepo%2Fcodesesh");
     expect(projectLink.textContent).toContain("12");
+  });
+
+  it("bounds project links while keeping the active project reachable", () => {
+    const manyProjects = Array.from({ length: 200 }, (_, index) => ({
+      ...projects[0]!,
+      identityKey: `/repo/${index}`,
+      displayName: `project-${index}`,
+    }));
+    renderSidebar({
+      projects: manyProjects,
+      projectCount: manyProjects.length,
+      selectedProjectNavigationId: "path:/repo/199",
+    });
+
+    expect(screen.getByRole("link", { name: /^Projects 200$/ })).toBeTruthy();
+    expect(
+      screen.getAllByRole("link").filter((link) => link.textContent?.includes("project-")),
+    ).toHaveLength(51);
+    expect(screen.getByRole("link", { name: /project-199/ })).toBeTruthy();
   });
 
   it("marks the dashboard entry active only on the root route", () => {

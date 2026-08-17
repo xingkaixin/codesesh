@@ -1,4 +1,4 @@
-import type { AppConfig, DashboardFilters, SearchRequestOptions } from "./api";
+import type { AppConfig, DashboardFilters, ProjectIdentityRef, SearchRequestOptions } from "./api";
 
 type TimeWindow = AppConfig["window"];
 
@@ -17,7 +17,10 @@ export const queryKeys = {
   dashboard: (window: TimeWindow, filters: DashboardFilters) =>
     ["dashboard", normalizeWindow(window), filters] as const,
   projects: ["projects"] as const,
-  project: (window: TimeWindow) => ["projects", normalizeWindow(window)] as const,
+  projectPage: (window: TimeWindow, cursor?: string) =>
+    ["projects", "page", normalizeWindow(window), cursor ?? null] as const,
+  projectDetail: (window: TimeWindow, project: ProjectIdentityRef) =>
+    ["projects", "detail", normalizeWindow(window), project] as const,
   search: (query: string, options: SearchRequestOptions) => ["search", query, options] as const,
   searches: ["search"] as const,
   sessionDetails: ["session-detail"] as const,

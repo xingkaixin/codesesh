@@ -40,7 +40,13 @@ function LazySurface({ children }: { children: ReactNode }) {
     </ErrorBoundary>
   );
 }
-import type { AgentInfo, AppConfig, ApiProjectGroup, SessionHead } from "../../lib/api";
+import type {
+  AgentInfo,
+  AppConfig,
+  ApiProjectGroup,
+  ApiProjectPage,
+  SessionHead,
+} from "../../lib/api";
 import type * as Api from "../../lib/api";
 import type { SessionDetailError } from "../../hooks/useSessionDetail";
 import type { AgentCatalog } from "../../lib/agents";
@@ -97,7 +103,7 @@ interface AppRouteContentProps {
   agents: AgentInfo[];
   agentCatalog: AgentCatalog;
   agentNameMap: ReadonlyMap<string, string>;
-  projects: ApiProjectGroup[];
+  projectPage: ApiProjectPage;
   projectsError: string | null;
   projectsLoading: boolean;
   onRetryProjects: () => void;
@@ -105,6 +111,9 @@ interface AppRouteContentProps {
   childSessionsByParentRouteKey: ReadonlyMap<string, SessionHead[]>;
   sessionsByAgent: Map<string, IndexedSession[]>;
   activeProject: ApiProjectGroup | null;
+  activeProjectLoading: boolean;
+  activeProjectError: string | null;
+  onRetryActiveProject: () => void;
   activeProjectSessions: IndexedSession[];
   overview: OverviewModel;
   sessionDetail: SessionDetailModel;
@@ -122,7 +131,7 @@ export function AppRouteContent({
   agents,
   agentCatalog,
   agentNameMap,
-  projects,
+  projectPage,
   projectsError,
   projectsLoading,
   onRetryProjects,
@@ -130,6 +139,9 @@ export function AppRouteContent({
   childSessionsByParentRouteKey,
   sessionsByAgent,
   activeProject,
+  activeProjectLoading,
+  activeProjectError,
+  onRetryActiveProject,
   activeProjectSessions,
   overview,
   sessionDetail,
@@ -206,7 +218,7 @@ export function AppRouteContent({
   }
   if (viewState.mode === "root") {
     return (
-      <RenderProfiler id="OverviewScreen" detail={{ projects: projects.length }}>
+      <RenderProfiler id="OverviewScreen" detail={{ projects: projectPage.summary.projects }}>
         <LazySurface>
           <OverviewScreen
             window={overview.window}
@@ -223,7 +235,8 @@ export function AppRouteContent({
     return (
       <LazySurface>
         <ProjectsOverview
-          projects={projects}
+          initialPage={projectPage}
+          window={overview.window}
           agentCatalog={agentCatalog}
           loading={projectsLoading}
           error={projectsError}
@@ -237,6 +250,9 @@ export function AppRouteContent({
       <LazySurface>
         <ProjectDashboardView
           project={activeProject}
+          loading={activeProjectLoading}
+          error={activeProjectError}
+          onRetry={onRetryActiveProject}
           agentCatalog={agentCatalog}
           projectKey={viewState.activeProjectKey}
           sessions={activeProjectSessions}
