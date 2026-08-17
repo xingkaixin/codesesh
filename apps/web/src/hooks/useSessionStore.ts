@@ -4,6 +4,7 @@ import {
   getSessionAgentKey,
 } from "@codesesh/core/contract";
 import {
+  hashKey,
   isCancelledError,
   keepPreviousData,
   queryOptions,
@@ -112,6 +113,17 @@ function sessionProjectionOptions(
       );
       return { window, sessions: sessionResult.sessions };
     },
+  });
+}
+
+function removeOtherSessionProjections(
+  queryClient: QueryClient,
+  activeWindow: AppConfig["window"],
+): void {
+  const activeProjectionHash = hashKey(queryKeys.sessionProjection(activeWindow));
+  queryClient.removeQueries({
+    queryKey: queryKeys.sessionProjections,
+    predicate: (query) => query.queryHash !== activeProjectionHash,
   });
 }
 
@@ -241,6 +253,7 @@ export function useSessionStore() {
           queryClient.cancelQueries({ queryKey: queryKeys.sessionAggregates }),
           queryClient.cancelQueries({ queryKey: queryKeys.projects }),
         ]);
+        removeOtherSessionProjections(queryClient, window);
         await Promise.all([
           queryClient.invalidateQueries({
             queryKey: queryKeys.sessionProjection(window),
