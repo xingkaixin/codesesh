@@ -331,20 +331,31 @@ node --watch packages/cli/dist/index.js --cwd . --days 3
 
 ### 项目结构
 
-```
-packages/core       核心库（framework-agnostic）
-  agents/           各 Agent 适配器（每个 Agent 一个文件）
-  discovery/        会话路径解析 & 文件扫描
-  types/            共享 TypeScript 类型定义
-  utils/            工具函数
+```text
+packages/core/src/agents/       Agent 适配器、注册表与能力声明
+packages/core/src/analytics/    Dashboard 聚合
+packages/core/src/contract/     浏览器安全的共享契约与纯逻辑
+packages/core/src/discovery/    会话扫描、SQLite 缓存与搜索索引
+packages/core/src/pricing/      模型定价与成本估算
+packages/core/src/projects/     项目身份解析
+packages/core/src/search/       跨来源会话搜索
+packages/core/src/state/        收藏、别名与用户偏好
+packages/core/src/types/        共享 TypeScript 类型
+packages/core/src/utils/        通用工具函数
 
-packages/cli        CLI 入口 & HTTP 服务器
-  src/commands/     CLI 子命令
-  src/api/          Hono 路由处理器
+packages/cli/src/index.ts       CLI 参数解析与启动
+packages/cli/src/server.ts      Hono 服务与生命周期
+packages/cli/src/api/           HTTP 路由与请求处理器
+packages/cli/src/*-worker.ts    扫描、搜索索引与智能标签 Worker
 
-apps/web            React 前端
-  src/components/   UI 组件
-  src/lib/          API 客户端 & 工具函数
+apps/web/src/components/        产品与 UI 组件
+apps/web/src/hooks/             客户端状态与数据同步 Hook
+apps/web/src/lib/               HTTP API 客户端与前端工具
+apps/web/src/styles/            全局样式
+
+apps/www/src/pages/             产品站路由
+apps/www/src/components/        产品站组件
+apps/www/public/                产品站静态资源
 ```
 
 ### 扩展新 Agent

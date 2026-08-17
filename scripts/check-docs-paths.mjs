@@ -2,9 +2,9 @@
  * Verifies that repository paths quoted in documentation still exist.
  *
  * Docs drifted silently once code moved: `discovery/cache.ts` was deleted while
- * two documents still called it the stable entry point. This only checks
- * backticked paths that look like repository files or directories — prose,
- * commands and external references are left alone.
+ * two documents still called it the stable entry point. This checks paths in
+ * inline code and fenced command or structure blocks. Prose and external
+ * references are left alone.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -27,6 +27,21 @@ export const CHECKED_DOCUMENTS = [
 /** Directories a repository path must start with to be checked. */
 const REPO_ROOTS = ["packages/", "apps/", "docs/", "scripts/", ".github/"];
 
+const FENCED_CODE_BLOCK = /```[^\n]*\n([\s\S]*?)```/g;
+
+function cleanCodeToken(token) {
+  return token.replace(/^[([{<'"`]+/, "").replace(/[\])}>'"`,;:]+$/, "");
+}
+
+function extractFencedCodePaths(markdown) {
+  return [...markdown.matchAll(FENCED_CODE_BLOCK)].flatMap((match) =>
+    (match[1] ?? "")
+      .split(/\s+/)
+      .map(cleanCodeToken)
+      .filter((token) => REPO_ROOTS.some((root) => token.startsWith(root))),
+  );
+}
+
 /** Paths that stand for a pattern or a placeholder rather than a file. */
 function isTemplate(path) {
   return path.includes("*") || path.includes("<");
@@ -44,8 +59,7 @@ export function extractRepositoryPaths(markdown) {
   const quoted = markdown.match(/`[^`\n]+`/g) ?? [];
   return [
     ...new Set(
-      quoted
-        .map((token) => token.slice(1, -1).trim())
+      [...quoted.map((token) => token.slice(1, -1).trim()), ...extractFencedCodePaths(markdown)]
         .filter((token) => REPO_ROOTS.some((root) => token.startsWith(root)))
         .filter((token) => !isTemplate(token) && !isBuildOutput(token)),
     ),
