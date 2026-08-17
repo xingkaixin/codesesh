@@ -1,6 +1,8 @@
 import { lazy, Suspense } from "react";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { CODE_METRICS } from "./code-metrics";
+import { ProgressiveText } from "../ProgressiveContent";
+import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
 
 export interface CodeHighlighterProps {
   language: string;
@@ -27,10 +29,14 @@ function PlainCode({ text }: { text: string }) {
 
 export function CodeHighlighter({ language, text }: CodeHighlighterProps) {
   return (
-    <ErrorBoundary fallback={<PlainCode text={text} />}>
-      <Suspense fallback={<PlainCode text={text} />}>
-        <PrismHighlighter language={language} text={text} />
-      </Suspense>
-    </ErrorBoundary>
+    <ProgressiveText text={text} initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.code}>
+      {(visibleText) => (
+        <ErrorBoundary fallback={<PlainCode text={visibleText} />}>
+          <Suspense fallback={<PlainCode text={visibleText} />}>
+            <PrismHighlighter language={language} text={visibleText} />
+          </Suspense>
+        </ErrorBoundary>
+      )}
+    </ProgressiveText>
   );
 }

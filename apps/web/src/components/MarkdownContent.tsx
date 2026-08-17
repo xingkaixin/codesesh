@@ -3,6 +3,8 @@ import ReactMarkdown from "react-markdown";
 import type { Components, Options } from "react-markdown";
 import { resolveLocalMediaSource } from "../lib/local-media-policy";
 import { buildHighlightPattern } from "../lib/search-highlight";
+import { INITIAL_CONTENT_RENDER_BUDGETS } from "../lib/content-render-budget";
+import { ProgressiveText } from "./ProgressiveContent";
 
 const markdownComponents: Components = {
   a: ({ children }) => <span className="console-markdown-link">{children}</span>,
@@ -119,14 +121,18 @@ export const MarkdownContent = memo(function MarkdownContent({
   }, [highlightQuery]);
 
   return (
-    <div>
-      <ReactMarkdown
-        components={markdownComponents}
-        rehypePlugins={rehypePlugins}
-        urlTransform={transformMediaUrl}
-      >
-        {text}
-      </ReactMarkdown>
-    </div>
+    <ProgressiveText text={text} initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.markdown}>
+      {(visibleText) => (
+        <div>
+          <ReactMarkdown
+            components={markdownComponents}
+            rehypePlugins={rehypePlugins}
+            urlTransform={transformMediaUrl}
+          >
+            {visibleText}
+          </ReactMarkdown>
+        </div>
+      )}
+    </ProgressiveText>
   );
 });

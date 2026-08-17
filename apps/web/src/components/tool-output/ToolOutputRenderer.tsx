@@ -7,6 +7,8 @@ import { StructuredDiffOutput } from "./StructuredDiffOutput";
 import { TaskListOutput } from "./TaskListOutput";
 import type { ToolOutputContent } from "./types";
 import { UnifiedDiffOutput } from "./UnifiedDiffOutput";
+import { ProgressiveText } from "../ProgressiveContent";
+import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
 
 interface ToolOutputRendererProps {
   outputContent: ToolOutputContent;
@@ -41,9 +43,13 @@ export function ToolOutputRenderer({ outputContent }: ToolOutputRendererProps) {
 
   if (!outputContent.isCode || outputContent.language === "text") {
     return (
-      <pre className="console-mono max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)] p-3 text-xs leading-relaxed text-[var(--console-text)]">
-        {outputText}
-      </pre>
+      <ProgressiveText text={outputText} initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}>
+        {(visibleText) => (
+          <pre className="console-mono max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)] p-3 text-xs leading-relaxed text-[var(--console-text)]">
+            {visibleText}
+          </pre>
+        )}
+      </ProgressiveText>
     );
   }
 

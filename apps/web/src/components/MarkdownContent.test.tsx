@@ -1,5 +1,5 @@
-import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MarkdownContent } from "./MarkdownContent";
 
 afterEach(cleanup);
@@ -94,5 +94,36 @@ describe("CS-136: markdown media stays local", () => {
     expect(view.container.querySelector("img")?.getAttribute("src")).toBe(
       `${window.location.origin}/api/assets/a.png`,
     );
+  });
+});
+
+describe("MarkdownContent render budget", () => {
+  beforeEach(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+      configurable: true,
+    });
+  });
+
+  it("bounds the initial parse and preserves access to a large message", async () => {
+    const text = Array.from(
+      { length: 3_000 },
+      (_, index) => `## Entry ${index}\n\n${"payload ".repeat(12)}`,
+    ).join("\n\n");
+    const view = render(<MarkdownContent text={text} />);
+
+    const initialRenderedCharacters = view.container.textContent?.length ?? 0;
+    expect(view.queryByText("Entry 2999")).toBeNull();
+    expect(initialRenderedCharacters).toBeLessThan(40_000);
+
+    fireEvent.click(view.getByRole("button", { name: "Render more content" }));
+    expect(view.container.textContent?.length ?? 0).toBeGreaterThan(initialRenderedCharacters);
+    expect(view.queryByText("Entry 2999")).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(view.getByRole("button", { name: "Copy full content" }));
+      await Promise.resolve();
+    });
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(text);
   });
 });

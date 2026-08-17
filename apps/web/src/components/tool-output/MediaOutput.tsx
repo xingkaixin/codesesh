@@ -1,4 +1,6 @@
 import type { MediaItem } from "./types";
+import { ProgressiveText } from "../ProgressiveContent";
+import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
 
 export function MediaOutput({ items, text }: { items: MediaItem[]; text?: string }) {
   return (
@@ -24,9 +26,13 @@ export function MediaOutput({ items, text }: { items: MediaItem[]; text?: string
         ))}
       </div>
       {text ? (
-        <pre className="console-mono whitespace-pre-wrap break-words rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)] p-3 text-xs leading-relaxed text-[var(--console-text)]">
-          {text}
-        </pre>
+        <ProgressiveText text={text} initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}>
+          {(visibleText) => (
+            <pre className="console-mono whitespace-pre-wrap break-words rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)] p-3 text-xs leading-relaxed text-[var(--console-text)]">
+              {visibleText}
+            </pre>
+          )}
+        </ProgressiveText>
       ) : null}
     </div>
   );
