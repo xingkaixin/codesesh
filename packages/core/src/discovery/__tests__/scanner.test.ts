@@ -557,6 +557,46 @@ describe("scanSessions", () => {
     expect(result.agents).toHaveLength(0);
   });
 
+  it("retains cached sessions when an agent is unavailable", async () => {
+    mockedLoadCachedSessions.mockReturnValue({
+      sessions: [makeSession("cached")],
+      meta: {},
+      timestamp: 123,
+    });
+    mockedCreateRegisteredAgents.mockReturnValue([
+      createTestAgent({ name: "test", available: false, sessions: [] }),
+    ]);
+    const events: Array<{ event: string; detail?: Record<string, unknown> }> = [];
+    setCoreDiagnostics({ warn: (event, detail) => events.push({ event, detail }) });
+
+    try {
+      const result = await scanSessions({ useCache: true });
+
+      expect(result.sessions.map((session) => session.id)).toEqual(["cached"]);
+      expect(result.byAgent.test?.map((session) => session.id)).toEqual(["cached"]);
+      expect(result.cacheTimestamps).toEqual({ test: 123 });
+      expect(result.scanFailures?.test).toEqual({
+        agentName: "test",
+        stage: "checking availability",
+        errorClass: "AgentUnavailableError",
+        message: "Agent test is unavailable",
+      });
+      expect(mockedSaveCachedSessionChanges).not.toHaveBeenCalled();
+      expect(mockedSaveCachedSessions).not.toHaveBeenCalled();
+      expect(events).toContainEqual({
+        event: "agent.scan_failed",
+        detail: expect.objectContaining({
+          agent: "test",
+          stage: "checking availability",
+          error_class: "AgentUnavailableError",
+          baseline_retained: true,
+        }),
+      });
+    } finally {
+      setCoreDiagnostics(null);
+    }
+  });
+
   it("scans available agents and returns sessions", async () => {
     mockedCreateRegisteredAgents.mockReturnValue([
       createTestAgent({
