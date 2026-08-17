@@ -3,6 +3,7 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionHead } from "@codesesh/core/contract";
 import { createAgentCatalog } from "../../lib/agents";
+import { TIMELINE_CHILD_PAGE_SIZE, TIMELINE_MAIN_PAGE_SIZE } from "../../lib/session-timeline";
 import { ProjectTimeline } from "./ProjectTimeline";
 
 const AGENT_CATALOG = createAgentCatalog([
@@ -71,6 +72,51 @@ function renderTimeline(sessions: SessionHead[]) {
 afterEach(cleanup);
 
 describe("ProjectTimeline", () => {
+  it("renders one bounded page of main sessions", () => {
+    const rootCount = 500;
+    const roots = Array.from({ length: rootCount }, (_, index) =>
+      createSession({ id: `large-root-${index}`, time_updated: at(5, 9) + index }),
+    );
+
+    renderTimeline(roots);
+
+    expect(document.querySelectorAll("article")).toHaveLength(TIMELINE_MAIN_PAGE_SIZE);
+    expect(screen.getByText(`Page 1 · ${TIMELINE_MAIN_PAGE_SIZE} shown`)).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next timeline page" }));
+
+    expect(document.querySelectorAll("article")).toHaveLength(TIMELINE_MAIN_PAGE_SIZE);
+    expect(screen.getByText(`Page 2 · ${TIMELINE_MAIN_PAGE_SIZE} shown`)).not.toBeNull();
+  });
+
+  it("derives and renders one bounded page of sub-sessions after expansion", () => {
+    const childCount = 120;
+    const parent = createSession({ id: "large-parent", time_updated: at(6, 8) });
+    const children = Array.from({ length: childCount }, (_, index) =>
+      createSession({
+        id: `large-child-${index}`,
+        time_updated: at(6, 9) + index,
+        parent_reference: { agentName: "codex", sessionId: parent.id },
+      }),
+    );
+
+    renderTimeline([parent, ...children]);
+    fireEvent.click(screen.getByRole("button", { name: /⑂/ }));
+
+    expect(screen.getAllByRole("button", { name: /large-child-/ })).toHaveLength(
+      TIMELINE_CHILD_PAGE_SIZE,
+    );
+    expect(screen.getByRole("button", { name: /large-child-0\b/ })).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next sub-session page" }));
+
+    expect(screen.getAllByRole("button", { name: /large-child-/ })).toHaveLength(
+      TIMELINE_CHILD_PAGE_SIZE,
+    );
+    expect(screen.queryByRole("button", { name: /large-child-0\b/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /large-child-40\b/ })).not.toBeNull();
+  });
+
   it("summarises main and sub sessions in the header", () => {
     renderTimeline([PARENT, CHILD, SOLO]);
 

@@ -370,6 +370,7 @@ export function ProjectDashboardView({
       />
 
       <ProjectTimeline
+        key={`${project.identityKind}:${project.identityKey}:${activeAgent ?? "all"}`}
         sessions={scopedSessions}
         projectName={project.displayName}
         agentCatalog={agentCatalog}

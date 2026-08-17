@@ -4,7 +4,11 @@
  */
 import type { SessionReference } from "@codesesh/core/contract";
 import type { AgentCatalog } from "../../lib/agents";
-import { isRowExpanded, type SubSessionMode, type TimelineDay } from "../../lib/session-timeline";
+import {
+  isRowExpanded,
+  type SubSessionMode,
+  type TimelinePageDay,
+} from "../../lib/session-timeline";
 import { TimelineSessionRow } from "./timeline-session-row";
 
 export function TimelineDayGroup({
@@ -15,7 +19,7 @@ export function TimelineDayGroup({
   onToggle,
   onOpen,
 }: {
-  day: TimelineDay;
+  day: TimelinePageDay;
   mode: SubSessionMode;
   openIds: ReadonlySet<string>;
   agentCatalog: AgentCatalog;

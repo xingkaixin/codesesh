@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildSessionTree } from "@codesesh/core/contract";
 import { createAgentCatalog } from "../../lib/agents";
 import type { TimelineRow } from "../../lib/session-timeline";
 import { TimelineSessionRow } from "./timeline-session-row";
@@ -22,7 +23,7 @@ function createRow(overrides: Partial<TimelineRow> = {}): TimelineRow {
     title: "Refactor the scanner",
     agentKey: "codex",
     childCount: 0,
-    children: [],
+    childRoots: [],
     messageCount: 12,
     tokens: 34_000,
     cost: 1.25,
@@ -31,14 +32,21 @@ function createRow(overrides: Partial<TimelineRow> = {}): TimelineRow {
   };
 }
 
-const CHILD = {
-  routeKey: "codex/child",
-  reference: { agentName: "codex", sessionId: "child" },
-  time: new Date(2026, 7, 6, 9, 30).getTime(),
-  title: "Probe the cache",
-  messageCount: 3,
-  cost: 0.25,
-};
+const CHILD = buildSessionTree([
+  {
+    id: "child",
+    slug: "codex/child",
+    title: "Probe the cache",
+    directory: "/workspace/a",
+    time_created: new Date(2026, 7, 6, 9, 30).getTime(),
+    stats: {
+      message_count: 3,
+      total_input_tokens: 10,
+      total_output_tokens: 5,
+      total_cost: 0.25,
+    },
+  },
+]).roots[0]!;
 
 afterEach(cleanup);
 
@@ -61,7 +69,7 @@ function renderRow(props: Partial<Parameters<typeof TimelineSessionRow>[0]> = {}
 
 describe("TimelineSessionRow", () => {
   it("reports the pill's expansion state and the panel it controls", () => {
-    const row = createRow({ childCount: 1, children: [CHILD] });
+    const row = createRow({ childCount: 1, childRoots: [CHILD] });
     const { onToggle, view } = renderRow({ row });
 
     const pill = screen.getByRole("button", { name: /⑂/ });
@@ -92,7 +100,7 @@ describe("TimelineSessionRow", () => {
 
   it("opens the session from the title block without toggling the panel", () => {
     const { onOpen, onToggle } = renderRow({
-      row: createRow({ childCount: 1, children: [CHILD] }),
+      row: createRow({ childCount: 1, childRoots: [CHILD] }),
     });
 
     fireEvent.click(screen.getByRole("button", { name: /Refactor the scanner/ }));
@@ -103,7 +111,7 @@ describe("TimelineSessionRow", () => {
 
   it("opens a sub-session from the child panel", () => {
     const { onOpen } = renderRow({
-      row: createRow({ childCount: 1, children: [CHILD] }),
+      row: createRow({ childCount: 1, childRoots: [CHILD] }),
       expanded: true,
     });
 
@@ -125,7 +133,7 @@ describe("TimelineSessionRow", () => {
   });
 
   it("omits a kind badge when the adapter reports none", () => {
-    renderRow({ row: createRow({ childCount: 1, children: [CHILD] }), expanded: true });
+    renderRow({ row: createRow({ childCount: 1, childRoots: [CHILD] }), expanded: true });
 
     const childRow = screen.getByRole("button", { name: /Probe the cache/ });
     expect(childRow.textContent).toBe("09:30Probe the cache3 msgs · $0.25");

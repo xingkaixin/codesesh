@@ -1,6 +1,6 @@
 /**
- * View model for the project timeline: turns a flat session snapshot into
- * day-grouped rows whose sub-sessions live inside their parent row. Pure —
+ * View model for the project timeline: keeps a flat session snapshot as
+ * day-grouped tree references and derives bounded row pages from it. Pure —
  * expansion state belongs to the component, never to the model.
  */
 import type { SessionHead, SessionReference, SessionTreeNode } from "@codesesh/core/contract";
@@ -16,6 +16,9 @@ import { formatMonthDay } from "./format";
 import { getSessionDisplayTitle } from "./session-title";
 
 export type SubSessionMode = "collapsed" | "expanded" | "hidden";
+
+export const TIMELINE_MAIN_PAGE_SIZE = 40;
+export const TIMELINE_CHILD_PAGE_SIZE = 40;
 
 export interface TimelineChildRow {
   routeKey: string;
@@ -39,10 +42,10 @@ export interface TimelineRow {
   time: number;
   title: string;
   agentKey: string;
-  /** Descendants at every depth, i.e. `children.length`. */
+  /** Descendants at every depth. */
   childCount: number;
-  /** Flattened descendants, depth-first, siblings oldest first. */
-  children: TimelineChildRow[];
+  /** Direct tree references only; descendant rows are derived one page at a time. */
+  childRoots: readonly SessionTreeNode[];
   /** Inclusive of every descendant — the visible proof of the aggregation rule. */
   messageCount: number;
   tokens: number;
@@ -57,6 +60,16 @@ export interface TimelineDay {
   label: string;
   mainCount: number;
   subCount: number;
+  /** Main-axis tree nodes; render rows are derived only for the visible page. */
+  nodes: readonly SessionTreeNode[];
+}
+
+export interface TimelinePageDay {
+  dayKey: string;
+  dayStart: number;
+  label: string;
+  mainCount: number;
+  subCount: number;
   rows: TimelineRow[];
 }
 
@@ -66,6 +79,23 @@ export interface ProjectTimeline {
   mainCount: number;
   subCount: number;
   totalTokens: number;
+}
+
+export interface TimelinePage {
+  days: TimelinePageDay[];
+  offset: number;
+  pageNumber: number;
+  shown: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+}
+
+export interface TimelineChildPage {
+  rows: TimelineChildRow[];
+  offset: number;
+  pageNumber: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
 }
 
 function activityTime(session: SessionHead): number {
@@ -99,7 +129,7 @@ function toChildRow(node: SessionTreeNode): TimelineChildRow {
 
 function pushChildrenForDepthFirstTraversal(
   pending: SessionTreeNode[],
-  children: SessionTreeNode[],
+  children: readonly SessionTreeNode[],
 ): void {
   if (children.length === 1) {
     pending.push(children[0]!);
@@ -111,21 +141,29 @@ function pushChildrenForDepthFirstTraversal(
   }
 }
 
-function collectChildRows(node: SessionTreeNode, rows: TimelineChildRow[]): void {
-  const pending: SessionTreeNode[] = [];
-  pushChildrenForDepthFirstTraversal(pending, node.children);
-  while (pending.length > 0) {
-    const child = pending.pop()!;
-    rows.push(toChildRow(child));
-    pushChildrenForDepthFirstTraversal(pending, child.children);
+function getPageBounds(
+  total: number,
+  requestedOffset: number,
+  limit: number,
+): { offset: number; end: number } {
+  if (!Number.isSafeInteger(total) || total < 0) {
+    throw new RangeError("page total must be a non-negative safe integer");
   }
+  if (!Number.isSafeInteger(limit) || limit <= 0) {
+    throw new RangeError("page limit must be a positive safe integer");
+  }
+  if (total === 0) return { offset: 0, end: 0 };
+  const normalizedRequest =
+    Number.isSafeInteger(requestedOffset) && requestedOffset > 0 ? requestedOffset : 0;
+  const pageOffset = normalizedRequest - (normalizedRequest % limit);
+  const lastPageOffset = Math.floor((total - 1) / limit) * limit;
+  const offset = Math.min(pageOffset, lastPageOffset);
+  return { offset, end: offset + Math.min(limit, total - offset) };
 }
 
 function toRow(node: SessionTreeNode, isOrphan: boolean): TimelineRow {
   const { session, inclusiveStats } = node;
   const reference = referenceOf(session);
-  const children: TimelineChildRow[] = [];
-  collectChildRows(node, children);
 
   return {
     routeKey: getSessionRouteKey(reference.agentName, reference.sessionId),
@@ -134,11 +172,78 @@ function toRow(node: SessionTreeNode, isOrphan: boolean): TimelineRow {
     title: getSessionDisplayTitle(session),
     agentKey: reference.agentName,
     childCount: node.descendantCount,
-    children,
+    childRoots: node.children,
     messageCount: inclusiveStats.messageCount,
     tokens: inclusiveStats.totalTokens,
     cost: inclusiveStats.cost,
     isOrphan,
+  };
+}
+
+export function getTimelineChildPage(
+  row: TimelineRow,
+  requestedOffset = 0,
+  limit = TIMELINE_CHILD_PAGE_SIZE,
+): TimelineChildPage {
+  const { offset, end } = getPageBounds(row.childCount, requestedOffset, limit);
+  const rows: TimelineChildRow[] = [];
+  const pending: SessionTreeNode[] = [];
+  pushChildrenForDepthFirstTraversal(pending, row.childRoots);
+  let index = 0;
+
+  while (pending.length > 0 && index < end) {
+    const child = pending.pop()!;
+    if (index >= offset) rows.push(toChildRow(child));
+    index += 1;
+    pushChildrenForDepthFirstTraversal(pending, child.children);
+  }
+
+  return {
+    rows,
+    offset,
+    pageNumber: Math.floor(offset / limit) + 1,
+    hasPrevious: offset > 0,
+    hasNext: end < row.childCount,
+  };
+}
+
+export function getProjectTimelinePage(
+  timeline: ProjectTimeline,
+  requestedOffset = 0,
+  limit = TIMELINE_MAIN_PAGE_SIZE,
+): TimelinePage {
+  const { offset, end } = getPageBounds(timeline.mainCount, requestedOffset, limit);
+  const pageSize = end - offset;
+  const days: TimelinePageDay[] = [];
+  let skipped = 0;
+  let shown = 0;
+
+  for (const day of timeline.days) {
+    if (shown === pageSize) break;
+    const dayOffset = Math.max(0, offset - skipped);
+    skipped += day.nodes.length;
+    if (dayOffset >= day.nodes.length) continue;
+    const nodes = day.nodes.slice(dayOffset, dayOffset + pageSize - shown);
+    if (nodes.length === 0) continue;
+    const rows = nodes.map((node) => toRow(node, node.session.parent_reference != null));
+    days.push({
+      dayKey: day.dayKey,
+      dayStart: day.dayStart,
+      label: day.label,
+      mainCount: day.mainCount,
+      subCount: day.subCount,
+      rows,
+    });
+    shown += rows.length;
+  }
+
+  return {
+    days,
+    offset,
+    pageNumber: Math.floor(offset / limit) + 1,
+    shown,
+    hasPrevious: offset > 0,
+    hasNext: end < timeline.mainCount,
   };
 }
 
@@ -155,7 +260,7 @@ export function buildProjectTimeline(
     label: formatDayLabel(group.dayStart, now),
     mainCount: group.mainCount,
     subCount: group.subCount,
-    rows: group.nodes.map((node) => toRow(node, tree.mountStateOf(node.session) === "orphan")),
+    nodes: group.nodes,
   }));
 
   return {
