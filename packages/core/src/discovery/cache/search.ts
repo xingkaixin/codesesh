@@ -109,8 +109,35 @@ export function mergeSearchLists<T>(
   return values.length > 0 ? [...new Set(values)] : undefined;
 }
 
+function mergeCostLimit(
+  optionValue: number | undefined,
+  optionExclusive: boolean | undefined,
+  qualifierValue: number | undefined,
+  qualifierExclusive: boolean | undefined,
+) {
+  if (optionValue !== undefined) {
+    return { value: optionValue, exclusive: optionExclusive };
+  }
+  if (qualifierValue !== undefined) {
+    return { value: qualifierValue, exclusive: qualifierExclusive };
+  }
+  return { value: undefined, exclusive: undefined };
+}
+
 export function mergeSearchQueryOptions(query: string, options: SearchOptions) {
   const parsed = parseSearchQuery(query);
+  const costMin = mergeCostLimit(
+    options.costMin,
+    options.costMinExclusive,
+    parsed.filters.costMin,
+    parsed.filters.costMinExclusive,
+  );
+  const costMax = mergeCostLimit(
+    options.costMax,
+    options.costMaxExclusive,
+    parsed.filters.costMax,
+    parsed.filters.costMaxExclusive,
+  );
   return {
     text: parsed.text || (parsed.hasQualifiers ? "" : query.trim()),
     options: {
@@ -123,10 +150,10 @@ export function mergeSearchQueryOptions(query: string, options: SearchOptions) {
       tools: mergeSearchLists(options.tools, parsed.filters.tools),
       file: options.file ?? parsed.filters.file,
       fileKind: options.fileKind ?? parsed.filters.fileKind,
-      costMin: options.costMin ?? parsed.filters.costMin,
-      costMax: options.costMax ?? parsed.filters.costMax,
-      costMinExclusive: options.costMinExclusive ?? parsed.filters.costMinExclusive,
-      costMaxExclusive: options.costMaxExclusive ?? parsed.filters.costMaxExclusive,
+      costMin: costMin.value,
+      costMax: costMax.value,
+      costMinExclusive: costMin.exclusive,
+      costMaxExclusive: costMax.exclusive,
     },
     parsed,
   };
