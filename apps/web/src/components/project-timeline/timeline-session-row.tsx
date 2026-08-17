@@ -87,7 +87,7 @@ export function TimelineSessionRow({
           {hasChildren ? " incl. sub" : ""}
         </span>
       </div>
-      {expanded ? <TimelineChildPanel id={panelId} rows={row.children} onOpen={onOpen} /> : null}
+      {expanded ? <TimelineChildPanel id={panelId} row={row} onOpen={onOpen} /> : null}
     </article>
   );
 }

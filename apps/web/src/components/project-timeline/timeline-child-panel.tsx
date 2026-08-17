@@ -3,27 +3,42 @@
  * child never gets its own slot on the day axis.
  */
 import type { SessionReference } from "@codesesh/core/contract";
+import { useMemo, useState } from "react";
 import { formatClockTime, formatInt, formatUsd } from "../../lib/format";
-import type { TimelineChildRow } from "../../lib/session-timeline";
+import {
+  getTimelineChildPage,
+  TIMELINE_CHILD_PAGE_SIZE,
+  type TimelineRow,
+} from "../../lib/session-timeline";
 
 export function TimelineChildPanel({
   id,
-  rows,
+  row,
   onOpen,
 }: {
   id: string;
-  rows: TimelineChildRow[];
+  row: TimelineRow;
   onOpen: (reference: SessionReference) => void;
 }) {
+  const [pageOffset, setPageOffset] = useState(0);
+  const page = useMemo(() => getTimelineChildPage(row, pageOffset), [pageOffset, row]);
+
   return (
     <div
       id={id}
       // The 66px inset lines the child list up with the parent's title column.
       className="border-t border-dashed border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] p-[10px_16px_12px_66px]"
     >
-      <span className="console-eyebrow">Sub-sessions · derived from this session</span>
+      <div className="flex items-center justify-between gap-3">
+        <span className="console-eyebrow">Sub-sessions · derived from this session</span>
+        {row.childCount > TIMELINE_CHILD_PAGE_SIZE ? (
+          <span className="console-mono text-[10px] text-[var(--console-muted)]">
+            Page {page.pageNumber} · {page.rows.length} shown
+          </span>
+        ) : null}
+      </div>
       <div className="mt-2 flex flex-col gap-1.5 border-l border-dashed border-[var(--console-border-strong)] pl-[14px]">
-        {rows.map((child) => (
+        {page.rows.map((child) => (
           <button
             key={child.routeKey}
             type="button"
@@ -47,6 +62,28 @@ export function TimelineChildPanel({
           </button>
         ))}
       </div>
+      {page.hasPrevious || page.hasNext ? (
+        <div className="mt-2 flex justify-end gap-2">
+          <button
+            type="button"
+            aria-label="Previous sub-session page"
+            disabled={!page.hasPrevious}
+            onClick={() => setPageOffset(page.offset - TIMELINE_CHILD_PAGE_SIZE)}
+            className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 text-[10px] text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            aria-label="Next sub-session page"
+            disabled={!page.hasNext}
+            onClick={() => setPageOffset(page.offset + TIMELINE_CHILD_PAGE_SIZE)}
+            className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 text-[10px] text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

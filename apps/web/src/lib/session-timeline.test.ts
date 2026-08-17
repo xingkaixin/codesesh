@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { SessionHead } from "@codesesh/core/contract";
-import { buildProjectTimeline, isRowExpanded, type TimelineRow } from "./session-timeline";
+import {
+  buildProjectTimeline,
+  getProjectTimelinePage,
+  getTimelineChildPage,
+  isRowExpanded,
+  TIMELINE_CHILD_PAGE_SIZE,
+  TIMELINE_MAIN_PAGE_SIZE,
+  type TimelineRow,
+} from "./session-timeline";
 
 const NOW = new Date(2026, 7, 6, 12, 0, 0).getTime();
 
@@ -28,7 +36,7 @@ function createSession(
 }
 
 describe("buildProjectTimeline", () => {
-  it("flattens a deeply nested session chain without recursive traversal", () => {
+  it("pages a deeply nested session chain without flattening every descendant", () => {
     const depth = 12_000;
     const sessions = Array.from({ length: depth }, (_, index) =>
       createSession({
@@ -40,14 +48,21 @@ describe("buildProjectTimeline", () => {
       }),
     );
     const timeline = buildProjectTimeline(sessions, { now: NOW });
-    const row = timeline.days[0]!.rows[0]!;
+    const row = getProjectTimelinePage(timeline).days[0]!.rows[0]!;
+    const firstChildPage = getTimelineChildPage(row);
+    const lastChildPage = getTimelineChildPage(row, depth - 1);
 
     expect(timeline.mainCount).toBe(1);
     expect(timeline.subCount).toBe(depth - 1);
     expect(row.childCount).toBe(depth - 1);
-    expect(row.children).toHaveLength(depth - 1);
-    expect(row.children[0]!.routeKey).toBe("codex/deep-1");
-    expect(row.children.at(-1)!.routeKey).toBe(`codex/deep-${depth - 1}`);
+    expect(row.childRoots).toHaveLength(1);
+    expect("children" in row).toBe(false);
+    expect(firstChildPage.rows).toHaveLength(TIMELINE_CHILD_PAGE_SIZE);
+    expect(firstChildPage.rows[0]!.routeKey).toBe("codex/deep-1");
+    expect(firstChildPage.rows.at(-1)!.routeKey).toBe(`codex/deep-${TIMELINE_CHILD_PAGE_SIZE}`);
+    expect(firstChildPage.hasNext).toBe(true);
+    expect(lastChildPage.rows.at(-1)!.routeKey).toBe(`codex/deep-${depth - 1}`);
+    expect(lastChildPage.hasNext).toBe(false);
   });
 
   it("labels days relative to now", () => {
@@ -91,12 +106,13 @@ describe("buildProjectTimeline", () => {
       { now: NOW },
     );
 
-    const rows = timeline.days.flatMap((day) => day.rows);
+    const rows = getProjectTimelinePage(timeline).days.flatMap((day) => day.rows);
     expect(rows.map((row) => row.routeKey)).toEqual(["codex/root"]);
 
     const root = rows[0]!;
+    const children = getTimelineChildPage(root, 0, 10).rows;
     expect(root.childCount).toBe(3);
-    expect(root.children.map((child) => child.routeKey)).toEqual([
+    expect(children.map((child) => child.routeKey)).toEqual([
       "codex/child-d",
       "codex/child-b",
       "codex/grandchild",
@@ -104,8 +120,8 @@ describe("buildProjectTimeline", () => {
     expect(root.messageCount).toBe(4);
     expect(root.tokens).toBe(60);
     expect(root.cost).toBeCloseTo(2);
-    expect(root.children.every((child) => child.kind === undefined)).toBe(true);
-    expect(root.children[0]).toMatchObject({
+    expect(children.every((child) => child.kind === undefined)).toBe(true);
+    expect(children[0]).toMatchObject({
       reference: { agentName: "codex", sessionId: "child-d" },
       messageCount: 1,
       cost: 0.5,
@@ -125,7 +141,7 @@ describe("buildProjectTimeline", () => {
       { now: NOW },
     );
 
-    const rows = timeline.days[0]!.rows;
+    const rows = getProjectTimelinePage(timeline).days[0]!.rows;
     expect(rows.map((row) => [row.routeKey, row.isOrphan])).toEqual([
       ["codex/orphan", true],
       ["codex/root", false],
@@ -155,7 +171,7 @@ describe("buildProjectTimeline", () => {
       { now: NOW },
     );
 
-    const rows = timeline.days.flatMap((day) => day.rows);
+    const rows = getProjectTimelinePage(timeline).days.flatMap((day) => day.rows);
     expect(rows.map((row) => row.routeKey).toSorted()).toEqual([
       "codex/a",
       "codex/b",
@@ -197,6 +213,42 @@ describe("buildProjectTimeline", () => {
       subCount: 0,
       totalTokens: 0,
     });
+  });
+});
+
+describe("timeline paging", () => {
+  it("bounds main rows while preserving full day counts", () => {
+    const today = Array.from({ length: 45 }, (_, index) =>
+      createSession({ id: `today-${index}`, time_updated: at(6, 9, index) }),
+    );
+    const yesterday = Array.from({ length: 10 }, (_, index) =>
+      createSession({ id: `yesterday-${index}`, time_updated: at(5, 9, index) }),
+    );
+    const timeline = buildProjectTimeline([...today, ...yesterday], { now: NOW });
+
+    const firstPage = getProjectTimelinePage(timeline);
+    const secondPage = getProjectTimelinePage(timeline, TIMELINE_MAIN_PAGE_SIZE);
+
+    expect(firstPage.shown).toBe(TIMELINE_MAIN_PAGE_SIZE);
+    expect(firstPage.days).toHaveLength(1);
+    expect(firstPage.days[0]!.mainCount).toBe(45);
+    expect(firstPage.hasNext).toBe(true);
+    expect(secondPage.days.map((day) => [day.label, day.rows.length, day.mainCount])).toEqual([
+      ["Today", 5, 45],
+      ["Yesterday", 10, 10],
+    ]);
+    expect(secondPage.shown).toBe(15);
+    expect(secondPage.hasPrevious).toBe(true);
+    expect(secondPage.hasNext).toBe(false);
+  });
+
+  it("rejects page limits that cannot advance safely", () => {
+    const timeline = buildProjectTimeline([], { now: NOW });
+
+    expect(() => getProjectTimelinePage(timeline, 0, 0)).toThrow(RangeError);
+    expect(() => getProjectTimelinePage(timeline, 0, Number.MAX_SAFE_INTEGER + 1)).toThrow(
+      RangeError,
+    );
   });
 });
 
