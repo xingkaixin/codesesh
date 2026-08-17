@@ -33,6 +33,18 @@ function httpRequest(
   });
 }
 
+function getServerAccess(startupUrl: string) {
+  const url = new URL(startupUrl);
+  const token = url.searchParams.get("access_token");
+  if (!token) throw new Error("Expected an access token in the startup URL");
+
+  return {
+    origin: url.origin,
+    token,
+    authorization: { Authorization: `Bearer ${token}` },
+  };
+}
+
 vi.mock("@hono/node-server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@hono/node-server")>();
   return {
@@ -182,7 +194,7 @@ describe("createServer", () => {
   it("reports the actual port when binding to port 0", async () => {
     const app = await createServer(0, createStore());
 
-    expect(app.url).toMatch(/^http:\/\/localhost:\d+$/);
+    expect(app.url).toMatch(/^http:\/\/localhost:\d+\/\?access_token=[A-Za-z0-9_-]{43}$/);
     expect(app.url).not.toBe("http://localhost:0");
 
     await app.shutdown();
@@ -195,7 +207,8 @@ describe("createServer", () => {
     try {
       app = await createServer(port, createStore(), { portFallbackAttempts: 2 });
 
-      expect(app.url).toBe(`http://localhost:${port + 1}`);
+      expect(new URL(app.url).origin).toBe(`http://localhost:${port + 1}`);
+      expect(getServerAccess(app.url).token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     } finally {
       await app?.shutdown();
       await close(blocker);
@@ -206,9 +219,28 @@ describe("createServer", () => {
     const app = await createServer(0, createStore());
 
     expect(serveOptionsLog.at(-1)?.hostname).toBe("127.0.0.1");
-    expect(app.url).toMatch(/^http:\/\/localhost:\d+$/);
+    expect(new URL(app.url).hostname).toBe("localhost");
+    expect(getServerAccess(app.url).token).toMatch(/^[A-Za-z0-9_-]{43}$/);
 
     await app.shutdown();
+  });
+
+  it("protects the default loopback API with a generated access token", async () => {
+    const app = await createServer(0, createStore());
+    const access = getServerAccess(app.url);
+
+    try {
+      expect((await fetch(`${access.origin}/api/agents`)).status).toBe(401);
+      expect(
+        (
+          await fetch(`${access.origin}/api/agents`, {
+            headers: access.authorization,
+          })
+        ).status,
+      ).toBe(200);
+    } finally {
+      await app.shutdown();
+    }
   });
 
   it("CS-160: enforces loopback authority before API, SSE, and static routes", async () => {
@@ -216,15 +248,24 @@ describe("createServer", () => {
     writeFileSync(join(webDist, "index.html"), "<html>app shell</html>");
     writeFileSync(join(webDist, "app.js"), "console.log('bundle')");
     const app = await createServer(0, createStore(), { webDistPath: webDist });
+    const access = getServerAccess(app.url);
     const port = new URL(app.url).port;
 
     try {
       for (const authority of [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`]) {
-        expect((await httpRequest(`${app.url}/api/agents`, { Host: authority })).status).toBe(200);
+        expect(
+          (
+            await httpRequest(`${access.origin}/api/agents`, {
+              ...access.authorization,
+              Host: authority,
+            })
+          ).status,
+        ).toBe(200);
       }
       expect(
         (
-          await httpRequest(`${app.url}/api/agents`, {
+          await httpRequest(`${access.origin}/api/agents`, {
+            ...access.authorization,
             Host: `localhost:${port}`,
             Origin: "https://attacker.example",
           })
@@ -234,7 +275,7 @@ describe("createServer", () => {
       for (const path of ["/api/agents", "/api/events", "/app.js"]) {
         expect(
           (
-            await httpRequest(`${app.url}${path}`, {
+            await httpRequest(`${access.origin}${path}`, {
               Host: `attacker.example:${port}`,
             })
           ).status,
@@ -248,40 +289,58 @@ describe("createServer", () => {
 
   it("CS-193: rejects unsafe loopback writes without breaking same-origin JSON", async () => {
     const app = await createServer(0, createStore());
+    const access = getServerAccess(app.url);
     const body = JSON.stringify({ event: "csrf-probe" });
 
     try {
-      const textPlain = await fetch(`${app.url}/api/logs`, {
-        method: "POST",
-        headers: { Connection: "close", "Content-Type": "text/plain", Origin: app.url },
-        body,
-      });
-      const bookmarkImport = await fetch(`${app.url}/api/bookmarks/import`, {
-        method: "POST",
-        headers: { Connection: "close", "Content-Type": "text/plain", Origin: app.url },
-        body: "[]",
-      });
-      const crossOrigin = await fetch(`${app.url}/api/logs`, {
+      const textPlain = await fetch(`${access.origin}/api/logs`, {
         method: "POST",
         headers: {
+          ...access.authorization,
+          Connection: "close",
+          "Content-Type": "text/plain",
+          Origin: access.origin,
+        },
+        body,
+      });
+      const bookmarkImport = await fetch(`${access.origin}/api/bookmarks/import`, {
+        method: "POST",
+        headers: {
+          ...access.authorization,
+          Connection: "close",
+          "Content-Type": "text/plain",
+          Origin: access.origin,
+        },
+        body: "[]",
+      });
+      const crossOrigin = await fetch(`${access.origin}/api/logs`, {
+        method: "POST",
+        headers: {
+          ...access.authorization,
           Connection: "close",
           "Content-Type": "application/json",
           Origin: "https://attacker.example",
         },
         body,
       });
-      const crossSite = await fetch(`${app.url}/api/logs`, {
+      const crossSite = await fetch(`${access.origin}/api/logs`, {
         method: "POST",
         headers: {
+          ...access.authorization,
           Connection: "close",
           "Content-Type": "application/json",
           "Sec-Fetch-Site": "cross-site",
         },
         body,
       });
-      const sameOrigin = await fetch(`${app.url}/api/logs`, {
+      const sameOrigin = await fetch(`${access.origin}/api/logs`, {
         method: "POST",
-        headers: { Connection: "close", "Content-Type": "application/json", Origin: app.url },
+        headers: {
+          ...access.authorization,
+          Connection: "close",
+          "Content-Type": "application/json",
+          Origin: access.origin,
+        },
         body,
       });
       const statuses = {
@@ -314,11 +373,13 @@ describe("createServer", () => {
       shutdown: vi.fn(async () => {}),
     };
     const app = await createServer(0, createStore(), { projectIdentityResolver: resolver });
+    const access = getServerAccess(app.url);
 
     try {
       expect(
         (
-          await httpRequest(`${app.url}/api/sessions?cwd=/untrusted`, {
+          await httpRequest(`${access.origin}/api/sessions?cwd=/untrusted`, {
+            ...access.authorization,
             "Sec-Fetch-Site": "cross-site",
           })
         ).status,
@@ -327,7 +388,8 @@ describe("createServer", () => {
 
       expect(
         (
-          await httpRequest(`${app.url}/api/sessions?cwd=/untrusted`, {
+          await httpRequest(`${access.origin}/api/sessions?cwd=/untrusted`, {
+            ...access.authorization,
             Origin: "https://attacker.example",
           })
         ).status,
@@ -335,7 +397,12 @@ describe("createServer", () => {
       expect(resolver.resolve).not.toHaveBeenCalled();
 
       expect(
-        (await httpRequest(`${app.url}/api/sessions?cwd=/untrusted`, { Origin: app.url })).status,
+        (
+          await httpRequest(`${access.origin}/api/sessions?cwd=/untrusted`, {
+            ...access.authorization,
+            Origin: access.origin,
+          })
+        ).status,
       ).toBe(200);
       expect(resolver.resolve).toHaveBeenCalledWith("/untrusted");
     } finally {
@@ -356,7 +423,7 @@ describe("createServer", () => {
       const app = await createServer(0, createStore(), {
         hostname: "0.0.0.0",
         remoteAccess: true,
-        remoteAccessToken: "test-access-token",
+        accessToken: "test-access-token",
       });
       const startupUrl = new URL(app.url);
       const requestOrigin = `http://127.0.0.1:${startupUrl.port}`;
@@ -422,7 +489,7 @@ describe("createServer", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const app = await createServer(0, createStore(), {
       hostname: "0.0.0.0",
-      remoteAccessToken: "test-access-token",
+      accessToken: "test-access-token",
     });
     const startupUrl = new URL(app.url);
     const requestOrigin = `http://127.0.0.1:${startupUrl.port}`;
@@ -446,15 +513,16 @@ describe("createServer", () => {
 
   it("compresses large JSON API responses but leaves the SSE stream untouched", async () => {
     const app = await createServer(0, createLargeSessionsStore());
+    const access = getServerAccess(app.url);
 
     try {
-      const sessionsResponse = await fetch(`${app.url}/api/sessions`, {
-        headers: { "Accept-Encoding": "gzip" },
+      const sessionsResponse = await fetch(`${access.origin}/api/sessions`, {
+        headers: { ...access.authorization, "Accept-Encoding": "gzip" },
       });
       expect(sessionsResponse.headers.get("Content-Encoding")).toBe("gzip");
 
-      const eventsResponse = await fetch(`${app.url}/api/events`, {
-        headers: { "Accept-Encoding": "gzip" },
+      const eventsResponse = await fetch(`${access.origin}/api/events`, {
+        headers: { ...access.authorization, "Accept-Encoding": "gzip" },
       });
       expect(eventsResponse.headers.get("Content-Encoding")).toBeNull();
       expect(eventsResponse.headers.get("Content-Type")).toContain("text/event-stream");
@@ -473,7 +541,10 @@ describe("createServer", () => {
       subscribeScanStatus: () => unsubscribeScanStatus,
     };
     const app = await createServer(0, store);
-    const events = await fetch(`${app.url}/api/events`);
+    const access = getServerAccess(app.url);
+    const events = await fetch(`${access.origin}/api/events`, {
+      headers: access.authorization,
+    });
     const shutdown = app.shutdown();
 
     const completedBeforeClientCancel = await Promise.race([
@@ -494,9 +565,10 @@ describe("createServer", () => {
     const webDist = mkdtempSync(join(tmpdir(), "codesesh-security-headers-"));
     writeFileSync(join(webDist, "index.html"), "<html>app shell</html>");
     const app = await createServer(0, createStore(), { webDistPath: webDist });
+    const { origin } = getServerAccess(app.url);
 
     try {
-      const response = await fetch(app.url);
+      const response = await fetch(origin);
       const policy = response.headers.get("Content-Security-Policy") ?? "";
 
       expect(policy).toContain("default-src 'self'");
@@ -528,18 +600,19 @@ describe("createServer", () => {
     writeFileSync(join(root, "private.txt"), outsideMarker);
 
     const app = await createServer(0, createStore(), { webDistPath: webDist });
+    const { origin } = getServerAccess(app.url);
     const encodedDot = "%2e";
     const separators = ["/", "\\", "%2f", "%5c"];
 
     try {
-      expect(await (await fetch(`${app.url}/app.js`)).text()).toContain("bundle");
+      expect(await (await fetch(`${origin}/app.js`)).text()).toContain("bundle");
       // SPA fallback still resolves unknown routes to the app shell.
-      expect(await (await fetch(`${app.url}/sessions/anything`)).text()).toContain("app shell");
+      expect(await (await fetch(`${origin}/sessions/anything`)).text()).toContain("app shell");
 
       for (const separator of separators) {
         for (const dots of ["..", `${encodedDot}${encodedDot}`]) {
           const escape = `${dots}${separator}`.repeat(4);
-          const response = await fetch(`${app.url}/${escape}private.txt`);
+          const response = await fetch(`${origin}/${escape}private.txt`);
           expect(await response.text()).not.toContain(outsideMarker);
         }
       }
@@ -560,7 +633,7 @@ describe("createServer", () => {
     });
     const app = await createServer(0, createStore(), {
       hostname: "0.0.0.0",
-      remoteAccessToken: "tls-token",
+      accessToken: "tls-token",
       transport,
     });
 
@@ -593,7 +666,7 @@ describe("createServer", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const app = await createServer(0, createStore(), {
       hostname: "0.0.0.0",
-      remoteAccessToken: "plaintext-token",
+      accessToken: "plaintext-token",
       transport: { kind: "plaintext" },
     });
 
@@ -610,7 +683,7 @@ describe("createServer", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const app = await createServer(0, createStore(), {
       hostname: "0.0.0.0",
-      remoteAccessToken: "proxy-token",
+      accessToken: "proxy-token",
       transport: { kind: "trusted-proxy" },
     });
 
@@ -626,7 +699,7 @@ describe("createServer", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const app = await createServer(0, createStore(), {
       hostname: "0.0.0.0",
-      remoteAccessToken: "proxy-token",
+      accessToken: "proxy-token",
       transport: { kind: "trusted-proxy" },
     });
     const origin = `http://127.0.0.1:${new URL(app.url).port}`;
@@ -664,7 +737,7 @@ describe("createServer", () => {
     const app = await createServer(0, createStore(), {
       hostname: "127.0.0.1",
       remoteAccess: true,
-      remoteAccessToken: "proxy-token",
+      accessToken: "proxy-token",
       transport: { kind: "trusted-proxy" },
     });
     const origin = `http://127.0.0.1:${new URL(app.url).port}`;
@@ -710,7 +783,7 @@ describe("createServer", () => {
     const app = await createServer(0, createStore(), {
       hostname: "127.0.0.1",
       remoteAccess: true,
-      remoteAccessToken: "proxy-token",
+      accessToken: "proxy-token",
       transport: { kind: "trusted-proxy" },
     });
     const origin = `http://127.0.0.1:${new URL(app.url).port}`;

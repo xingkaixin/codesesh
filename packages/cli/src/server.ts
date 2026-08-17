@@ -20,9 +20,9 @@ import {
 import { validateLoopbackAuthority } from "./loopback-authority.js";
 import { loopbackWriteGuard } from "./loopback-write-guard.js";
 import {
-  createRemoteAccessToken,
-  REMOTE_ACCESS_QUERY_PARAM,
-  remoteAccessAuth,
+  ACCESS_TOKEN_QUERY_PARAM,
+  accessTokenAuth,
+  createAccessToken,
   requireProxyTls,
   resolveRemoteAccessPolicy,
   resolveRemoteTransport,
@@ -40,7 +40,7 @@ export interface CreateServerOptions {
   portFallbackAttempts?: number;
   hostname?: string;
   remoteAccess?: boolean;
-  remoteAccessToken?: string;
+  accessToken?: string;
   /** How the listener is protected; defaults to plaintext for a non-loopback host. */
   transport?: RemoteTransport;
   /** Overrides the auto-detected web build directory; used to pin the static root in tests. */
@@ -139,10 +139,8 @@ export async function createServer(
   const hostname = options.hostname ?? "127.0.0.1";
   const transport: RemoteTransport = options.transport ?? resolveRemoteTransport({ hostname });
   const accessPolicy = resolveRemoteAccessPolicy(hostname, transport);
-  const remoteAccessToken = accessPolicy.authenticationRequired
-    ? (options.remoteAccessToken ?? (options.remoteAccess ? createRemoteAccessToken() : null))
-    : null;
-  const loopbackAuthorityEnabled = !accessPolicy.authenticationRequired;
+  const accessToken = options.accessToken || createAccessToken();
+  const loopbackAuthorityEnabled = !accessPolicy.remoteAccessRequired;
   const shutdownController = new AbortController();
   const projectIdentityResolver =
     options.projectIdentityResolver ?? createProjectIdentityResolver();
@@ -151,13 +149,13 @@ export async function createServer(
   appLogger.info("server.access_policy", {
     bind_category: accessPolicy.bindCategory,
     transport: transport.kind,
-    authentication: remoteAccessToken ? "token" : "none",
+    authentication: "token",
     loopback_authority: loopbackAuthorityEnabled ? "enabled" : "disabled",
   });
 
-  if (accessPolicy.authenticationRequired && !remoteAccessToken) {
+  if (accessPolicy.remoteAccessRequired && !options.remoteAccess && !options.accessToken) {
     throw new Error(
-      `Refusing to expose CodeSesh on ${hostname} without authentication. Add --remote-access to continue.`,
+      `Refusing to expose CodeSesh on ${hostname} without explicit remote access. Add --remote-access to continue.`,
     );
   }
 
@@ -234,9 +232,7 @@ export async function createServer(
   if (transport.kind === "trusted-proxy") {
     app.use("/api/*", requireProxyTls());
   }
-  if (remoteAccessToken) {
-    app.use("/api/*", remoteAccessAuth(remoteAccessToken));
-  }
+  app.use("/api/*", accessTokenAuth(accessToken));
   app.use("/api/*", loopbackWriteGuard());
   app.use(
     "/api/*",
@@ -315,18 +311,16 @@ export async function createServer(
     accessPolicy.bindCategory === "loopback"
       ? `${scheme}://localhost:${actualPort}`
       : `${scheme}://${hostname}:${actualPort}`;
-  const url = remoteAccessToken
-    ? `${baseUrl}/?${REMOTE_ACCESS_QUERY_PARAM}=${encodeURIComponent(remoteAccessToken)}`
-    : baseUrl;
+  const url = `${baseUrl}/?${ACCESS_TOKEN_QUERY_PARAM}=${encodeURIComponent(accessToken)}`;
   appLogger.info("server.listen", {
     port: actualPort,
     requested_port: port,
     hostname,
-    remote_access: Boolean(remoteAccessToken),
+    remote_access: accessPolicy.remoteAccessRequired,
     transport: transport.kind,
   });
 
-  if (accessPolicy.authenticationRequired) {
+  if (accessPolicy.remoteAccessRequired) {
     appLogger.warn("server.listen.remote_access", {
       hostname,
       port: actualPort,

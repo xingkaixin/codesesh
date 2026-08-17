@@ -172,26 +172,34 @@ async function smoke(tarballPath) {
       stderr += chunk;
     });
 
-    const origin = await waitFor(
-      () => stdout.match(/http:\/\/localhost:\d+/)?.[0],
+    const startupUrl = await waitFor(
+      () => stdout.match(/http:\/\/localhost:\d+\/\?access_token=[A-Za-z0-9_-]+/)?.[0],
       "the packaged CLI server",
     );
-    const configResponse = await fetch(`${origin}/api/config`);
+    const access = new URL(startupUrl);
+    const token = access.searchParams.get("access_token");
+    assert(token, "Packaged CLI startup URL did not include an access token");
+    const authorization = { Authorization: `Bearer ${token}` };
+    const configResponse = await fetch(`${access.origin}/api/config`, {
+      headers: authorization,
+    });
     assert(configResponse.ok, `Packaged API returned ${configResponse.status}`);
     await configResponse.json();
 
     await waitFor(async () => {
-      const response = await fetch(`${origin}/api/sessions?days=0`);
+      const response = await fetch(`${access.origin}/api/sessions?days=0`, {
+        headers: authorization,
+      });
       if (!response.ok) return false;
       return JSON.stringify(await response.json()).includes("Artifact package smoke session");
     }, "the scan and search-index workers");
 
-    const htmlResponse = await fetch(origin);
+    const htmlResponse = await fetch(access.origin);
     assert(htmlResponse.ok, `Packaged Web root returned ${htmlResponse.status}`);
     const html = await htmlResponse.text();
     const assetPath = html.match(/(?:src|href)=["'](\/assets\/[^"']+)["']/)?.[1];
     assert(assetPath, "Packaged Web HTML did not reference a hashed asset");
-    const assetResponse = await fetch(new URL(assetPath, origin));
+    const assetResponse = await fetch(new URL(assetPath, access.origin));
     assert(assetResponse.ok, `Packaged Web asset returned ${assetResponse.status}`);
 
     const databasePath = join(homeDir, ".cache", "codesesh", "codesesh.db");

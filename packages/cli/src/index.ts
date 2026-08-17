@@ -153,9 +153,9 @@ const main = defineCommand({
       process.exit(1);
     }
 
-    if (resolveRemoteAccessPolicy(hostname, transport).authenticationRequired && !remoteAccess) {
+    if (resolveRemoteAccessPolicy(hostname, transport).remoteAccessRequired && !remoteAccess) {
       console.error(
-        `Refusing to expose CodeSesh on ${hostname} without authentication. Add --remote-access to continue.`,
+        `Refusing to expose CodeSesh on ${hostname} without explicit remote access. Add --remote-access to continue.`,
       );
       process.exit(1);
     }

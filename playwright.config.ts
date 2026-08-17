@@ -5,6 +5,7 @@ import { defineConfig, devices } from "playwright/test";
 
 const FIXTURE_PROJECT_DIR_TOKEN = "__E2E_PROJECT_DIR__";
 const E2E_HOME_ENV = "CODESESH_PLAYWRIGHT_HOME";
+const E2E_STARTUP_URL_ENV = "CODESESH_E2E_STARTUP_URL_PATH";
 const port = Number(process.env.CODESESH_E2E_PORT ?? 4387);
 const wwwPort = Number(process.env.CODESESH_WWW_E2E_PORT ?? 4388);
 const inheritedE2eHome = process.env[E2E_HOME_ENV];
@@ -12,6 +13,7 @@ const e2eHome = inheritedE2eHome ?? mkdtempSync(join(tmpdir(), "codesesh-e2e-hom
 const fixtureTemplateRoot = resolve("tests/e2e/fixtures");
 const fixtureRoot = join(e2eHome, "fixtures");
 const e2eProjectDir = join(e2eHome, "codesesh-e2e");
+const startupUrlPath = join(e2eHome, "startup-url.txt");
 const fixtureSessionPath = join(fixtureRoot, "claude/projects/codesesh-e2e/e2e-dashboard.jsonl");
 const codexFixtureSessionPath = join(
   fixtureRoot,
@@ -35,6 +37,7 @@ if (!inheritedE2eHome) {
     );
   }
 }
+process.env[E2E_STARTUP_URL_ENV] = startupUrlPath;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -54,8 +57,8 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `pnpm build && node packages/cli/dist/index.js --port ${port} --agent claudecode,codex --days 0 --noOpen --cache false`,
-      url: `http://127.0.0.1:${port}/api/config`,
+      command: `pnpm build && node tests/e2e/start-cli-server.mjs --port ${port} --agent claudecode,codex --days 0 --noOpen --cache false`,
+      url: `http://127.0.0.1:${port}`,
       reuseExistingServer: false,
       timeout: 60_000,
       env: {
@@ -67,6 +70,7 @@ export default defineConfig({
         LOCALAPPDATA: join(e2eHome, "AppData", "Local"),
         CODESESH_STATE_STORE: "memory",
         CODESESH_STATE_DIR: join(e2eHome, "state"),
+        CODESESH_E2E_STARTUP_URL_PATH: startupUrlPath,
         CLAUDE_CONFIG_DIR: join(fixtureRoot, "claude"),
         CODEX_HOME: join(fixtureRoot, "codex"),
         KIMI_SHARE_DIR: join(e2eHome, ".kimi"),
