@@ -1,16 +1,128 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+
+const loggerMocks = vi.hoisted(() => ({ warn: vi.fn() }));
+
+vi.mock("../../logging.js", () => ({ appLogger: loggerMocks }));
 import {
   SAMPLE_SCAN_STATUS_EVENT,
   SAMPLE_SESSIONS_UPDATED_EVENT,
 } from "@codesesh/core/test-fixtures";
 import type { ScanStatusEvent, SessionsUpdatedEvent } from "@codesesh/core/contract";
-import { createApiRoutes } from "../routes.js";
+import { createApiRoutes, MAX_ACTIVE_SSE_CONNECTIONS } from "../routes.js";
 import { MAX_PENDING_CRITICAL_SSE_FRAMES } from "../sse-event-buffer.js";
 import type { LiveSnapshot } from "@codesesh/core";
 import type { ScanResultSource } from "../handlers.js";
 import type { ScanEventSource } from "../../scan-source.js";
 
 describe("createApiRoutes", () => {
+  beforeEach(() => {
+    loggerMocks.warn.mockClear();
+  });
+
+  it("bounds active SSE clients and restores capacity after cancellation", async () => {
+    const unsubscribeSessions = vi.fn();
+    const unsubscribeScanStatus = vi.fn();
+    const eventSource: ScanEventSource = {
+      getScanStatus: () => SAMPLE_SCAN_STATUS_EVENT,
+      subscribe: vi.fn(() => unsubscribeSessions),
+      subscribeScanStatus: vi.fn(() => unsubscribeScanStatus),
+    };
+    const app = createApiRoutes(
+      { getSnapshot: () => ({ sessions: [], byAgent: {}, agents: [] }) },
+      eventSource,
+    );
+
+    const responses = await Promise.all(
+      Array.from({ length: MAX_ACTIVE_SSE_CONNECTIONS }, () => app.request("/events")),
+    );
+    const rejected = await app.request("/events");
+
+    expect(responses.every((response) => response.status === 200)).toBe(true);
+    expect(rejected.status).toBe(429);
+    expect(rejected.headers.get("Retry-After")).toBe("1");
+    expect(await rejected.json()).toEqual({ error: "Too many active event streams" });
+    expect(eventSource.subscribe).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS);
+    expect(eventSource.subscribeScanStatus).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS);
+    expect(loggerMocks.warn).toHaveBeenCalledWith("api.sse.connection_limit_reached", {
+      active_connections: MAX_ACTIVE_SSE_CONNECTIONS,
+      connection_limit: MAX_ACTIVE_SSE_CONNECTIONS,
+    });
+
+    await responses[0]!.body?.cancel();
+    const replacement = await app.request("/events");
+
+    expect(replacement.status).toBe(200);
+    expect(eventSource.subscribe).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS + 1);
+    expect(eventSource.subscribeScanStatus).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS + 1);
+
+    await Promise.all([
+      ...responses.slice(1).map((response) => response.body?.cancel()),
+      replacement.body?.cancel(),
+    ]);
+    expect(unsubscribeSessions).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS + 1);
+    expect(unsubscribeScanStatus).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS + 1);
+  });
+
+  it("releases every SSE connection when the server shuts down", async () => {
+    const unsubscribeSessions = vi.fn();
+    const unsubscribeScanStatus = vi.fn();
+    const eventSource: ScanEventSource = {
+      getScanStatus: () => SAMPLE_SCAN_STATUS_EVENT,
+      subscribe: vi.fn(() => unsubscribeSessions),
+      subscribeScanStatus: vi.fn(() => unsubscribeScanStatus),
+    };
+    const shutdownController = new AbortController();
+    const app = createApiRoutes(
+      { getSnapshot: () => ({ sessions: [], byAgent: {}, agents: [] }) },
+      eventSource,
+      { shutdownSignal: shutdownController.signal },
+    );
+    const responses = await Promise.all(
+      Array.from({ length: MAX_ACTIVE_SSE_CONNECTIONS }, () => app.request("/events")),
+    );
+
+    expect((await app.request("/events")).status).toBe(429);
+    shutdownController.abort();
+
+    expect(unsubscribeSessions).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS);
+    expect(unsubscribeScanStatus).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS);
+    const afterShutdown = await app.request("/events");
+    expect(afterShutdown.status).toBe(200);
+    const reader = afterShutdown.body!.getReader();
+    let done = false;
+    while (!done) ({ done } = await reader.read());
+    expect(done).toBe(true);
+
+    await Promise.all(responses.map((response) => response.body?.cancel()));
+  });
+
+  it("releases SSE capacity when subscription setup fails", async () => {
+    const unsubscribeSessions = vi.fn();
+    const eventSource: ScanEventSource = {
+      getScanStatus: () => SAMPLE_SCAN_STATUS_EVENT,
+      subscribe: vi.fn(() => unsubscribeSessions),
+      subscribeScanStatus: vi.fn(() => {
+        throw new Error("status subscription failed");
+      }),
+    };
+    const app = createApiRoutes(
+      { getSnapshot: () => ({ sessions: [], byAgent: {}, agents: [] }) },
+      eventSource,
+    );
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      for (let index = 0; index <= MAX_ACTIVE_SSE_CONNECTIONS; index += 1) {
+        expect((await app.request("/events")).status).toBe(500);
+      }
+    } finally {
+      consoleError.mockRestore();
+    }
+
+    expect(eventSource.subscribe).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS + 1);
+    expect(unsubscribeSessions).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS + 1);
+  });
+
   it("returns a Hono instance with route handlers", () => {
     const scanSource: ScanResultSource = {
       getSnapshot() {
