@@ -1,4 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useMutation,
+  useMutationState,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 import {
   type BookmarkView,
@@ -23,6 +29,8 @@ interface ToggleBookmarkVariables {
 }
 
 const EMPTY_BOOKMARKS: BookmarkView[] = [];
+const BOOKMARK_TOGGLE_MUTATION_KEY = ["bookmarks", "toggle"] as const;
+const BOOKMARK_WRITE_SCOPE = { id: "bookmark-writes" };
 
 function toggledBookmarks(
   bookmarks: BookmarkView[],
@@ -33,7 +41,28 @@ function toggledBookmarks(
   if (isBookmarked) {
     return bookmarks.filter((item) => getSessionBookmarkKey(item.reference) !== key);
   }
-  return [bookmark, ...bookmarks];
+  return [bookmark, ...bookmarks.filter((item) => getSessionBookmarkKey(item.reference) !== key)];
+}
+
+function applyBookmarkToggles(
+  bookmarks: BookmarkView[],
+  toggles: readonly ToggleBookmarkVariables[],
+): BookmarkView[] {
+  return toggles.reduce(
+    (current, { bookmark, isBookmarked }) => toggledBookmarks(current, bookmark, isBookmarked),
+    bookmarks,
+  );
+}
+
+function getPendingBookmarkToggles(queryClient: QueryClient): ToggleBookmarkVariables[] {
+  return queryClient
+    .getMutationCache()
+    .findAll({
+      mutationKey: BOOKMARK_TOGGLE_MUTATION_KEY,
+      exact: true,
+      status: "pending",
+    })
+    .map((mutation) => mutation.state.variables as ToggleBookmarkVariables);
 }
 
 export function useBookmarks() {
@@ -49,7 +78,19 @@ export function useBookmarks() {
       }
     },
   });
-  const bookmarks = bookmarksQuery.data?.bookmarks ?? EMPTY_BOOKMARKS;
+  const confirmedBookmarks = bookmarksQuery.data?.bookmarks ?? EMPTY_BOOKMARKS;
+  const pendingToggles = useMutationState<ToggleBookmarkVariables>({
+    filters: {
+      mutationKey: BOOKMARK_TOGGLE_MUTATION_KEY,
+      exact: true,
+      status: "pending",
+    },
+    select: (mutation) => mutation.state.variables as ToggleBookmarkVariables,
+  });
+  const bookmarks = useMemo(
+    () => applyBookmarkToggles(confirmedBookmarks, pendingToggles),
+    [confirmedBookmarks, pendingToggles],
+  );
 
   const setBookmarks = useCallback(
     (next: BookmarkView[]) => {
@@ -59,6 +100,8 @@ export function useBookmarks() {
   );
 
   const { mutate: mutateBookmark } = useMutation({
+    mutationKey: BOOKMARK_TOGGLE_MUTATION_KEY,
+    scope: BOOKMARK_WRITE_SCOPE,
     mutationFn: async ({ bookmark, isBookmarked }: ToggleBookmarkVariables) => {
       if (isBookmarked) {
         await deleteBookmark(bookmark.reference);
@@ -66,25 +109,30 @@ export function useBookmarks() {
       }
       await upsertBookmark(bookmark.reference);
     },
-    onMutate: async ({ bookmark, isBookmarked }) => {
-      const cancellation = queryClient.cancelQueries({ queryKey: queryKeys.bookmarks });
-      const previous = queryClient.getQueryData<{ bookmarks: BookmarkView[] }>(queryKeys.bookmarks);
-      setBookmarks(toggledBookmarks(previous?.bookmarks ?? [], bookmark, isBookmarked));
+    onMutate: ({ bookmark, isBookmarked }) => {
       logClientEvent(isBookmarked ? "bookmark.delete" : "bookmark.add", {
         agent: bookmark.reference.agentName,
         session: bookmark.reference.sessionId,
       });
-      await cancellation;
-      return previous;
     },
-    onError: (error, _variables, previous) => {
-      if (previous) queryClient.setQueryData(queryKeys.bookmarks, previous);
+    onError: (error) => {
       console.error("Failed to toggle bookmark:", error);
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks }),
+    onSettled: () => {
+      if (
+        queryClient.isMutating({
+          mutationKey: BOOKMARK_TOGGLE_MUTATION_KEY,
+          exact: true,
+        }) !== 1
+      ) {
+        return;
+      }
+      return queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks });
+    },
   });
 
   const { mutate: migrateBookmarks } = useMutation({
+    scope: BOOKMARK_WRITE_SCOPE,
     mutationFn: importBookmarks,
   });
 
@@ -114,10 +162,17 @@ export function useBookmarks() {
 
   const toggleBookmark = useCallback(
     (bookmark: BookmarkView) => {
+      const confirmed =
+        queryClient.getQueryData<{ bookmarks: BookmarkView[] }>(queryKeys.bookmarks)?.bookmarks ??
+        EMPTY_BOOKMARKS;
+      const current = applyBookmarkToggles(confirmed, getPendingBookmarkToggles(queryClient));
       const key = getSessionBookmarkKey(bookmark.reference);
-      mutateBookmark({ bookmark, isBookmarked: bookmarkKeySet.has(key) });
+      mutateBookmark({
+        bookmark,
+        isBookmarked: current.some((item) => getSessionBookmarkKey(item.reference) === key),
+      });
     },
-    [bookmarkKeySet, mutateBookmark],
+    [mutateBookmark, queryClient],
   );
 
   const toggleSessionBookmark = useCallback(

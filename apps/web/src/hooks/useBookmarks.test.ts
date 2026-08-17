@@ -213,6 +213,86 @@ describe("useBookmarks", () => {
     expect(consoleError).toHaveBeenCalledWith("Failed to toggle bookmark:", error);
   });
 
+  it("persists overlapping toggles for the same bookmark in intent order", async () => {
+    const addRequest = deferred<void>();
+    const deleteRequest = deferred<void>();
+    const completionOrder: string[] = [];
+    let serverBookmarked = false;
+    vi.mocked(api.fetchBookmarks).mockImplementation(async () => ({
+      bookmarks: serverBookmarked ? [available("racy")] : [],
+    }));
+    vi.mocked(api.upsertBookmark).mockImplementationOnce(async () => {
+      await addRequest.promise;
+      serverBookmarked = true;
+      completionOrder.push("add");
+      return { bookmark: fact("racy") };
+    });
+    vi.mocked(api.deleteBookmark).mockImplementationOnce(async () => {
+      await deleteRequest.promise;
+      serverBookmarked = false;
+      completionOrder.push("delete");
+    });
+    const { result } = renderBookmarks();
+    await waitFor(() => expect(api.fetchBookmarks).toHaveBeenCalledOnce());
+
+    act(() => result.current.toggleBookmark(available("racy")));
+    await waitFor(() => expect(result.current.isSessionBookmarked("cc", "racy")).toBe(true));
+    act(() => result.current.toggleBookmark(available("racy")));
+    await waitFor(() => expect(result.current.isSessionBookmarked("cc", "racy")).toBe(false));
+    expect(api.deleteBookmark).not.toHaveBeenCalled();
+
+    addRequest.resolve();
+    await addRequest.promise;
+    await waitFor(() => expect(api.deleteBookmark).toHaveBeenCalledOnce());
+    expect(result.current.isSessionBookmarked("cc", "racy")).toBe(false);
+
+    deleteRequest.resolve();
+    await deleteRequest.promise;
+    await waitFor(() => expect(completionOrder).toEqual(["add", "delete"]));
+    expect(serverBookmarked).toBe(false);
+    expect(result.current.isSessionBookmarked("cc", "racy")).toBe(false);
+  });
+
+  it("rolls back only the failed bookmark while another toggle is pending", async () => {
+    const failedRequest = deferred<void>();
+    const successfulRequest = deferred<void>();
+    const error = new Error("first write failed");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let serverBookmarks: BookmarkView[] = [];
+    vi.mocked(api.fetchBookmarks).mockImplementation(async () => ({
+      bookmarks: serverBookmarks,
+    }));
+    vi.mocked(api.upsertBookmark)
+      .mockImplementationOnce(async () => {
+        await failedRequest.promise;
+        return { bookmark: fact("first") };
+      })
+      .mockImplementationOnce(async () => {
+        await successfulRequest.promise;
+        serverBookmarks = [available("second")];
+        return { bookmark: fact("second") };
+      });
+    const { result } = renderBookmarks();
+    await waitFor(() => expect(api.fetchBookmarks).toHaveBeenCalledOnce());
+
+    act(() => result.current.toggleBookmark(available("first")));
+    await waitFor(() => expect(result.current.isSessionBookmarked("cc", "first")).toBe(true));
+    act(() => result.current.toggleBookmark(available("second")));
+    await waitFor(() => expect(result.current.isSessionBookmarked("cc", "second")).toBe(true));
+    expect(api.upsertBookmark).toHaveBeenCalledTimes(1);
+
+    failedRequest.reject(error);
+    await failedRequest.promise.catch(() => undefined);
+    await waitFor(() => expect(api.upsertBookmark).toHaveBeenCalledTimes(2));
+    expect(result.current.isSessionBookmarked("cc", "first")).toBe(false);
+    expect(result.current.isSessionBookmarked("cc", "second")).toBe(true);
+
+    successfulRequest.resolve();
+    await successfulRequest.promise;
+    await waitFor(() => expect(result.current.bookmarkedSessions).toEqual(serverBookmarks));
+    expect(consoleError).toHaveBeenCalledWith("Failed to toggle bookmark:", error);
+  });
+
   it("converts live sessions into optimistic views but writes only their reference", async () => {
     const request = deferred<{ bookmark: BookmarkRecord }>();
     vi.mocked(api.upsertBookmark).mockReturnValueOnce(request.promise);
