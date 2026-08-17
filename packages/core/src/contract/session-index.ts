@@ -14,6 +14,7 @@ export interface CanonicalSessionIndex {
   sourceSessions: SessionHead[];
   sessionsByActivity: SessionHead[];
   byRouteKey: Map<string, SessionHead>;
+  childrenByParentRouteKey: Map<string, SessionHead[]>;
   byAgent: Map<string, SessionHead[]>;
   byProjectIdentityKey: Map<string, SessionHead[]>;
   byProjectAgentKey: Map<string, SessionHead[]>;
@@ -83,6 +84,7 @@ function pushMapValue<K, V>(map: Map<K, V[]>, key: K, value: V): void {
 
 export function createSessionIndex(sourceSessions: SessionHead[]): CanonicalSessionIndex {
   const byRouteKey = new Map<string, SessionHead>();
+  const childrenByParentRouteKey = new Map<string, SessionHead[]>();
   const byAgent = new Map<string, SessionHead[]>();
   const byProjectIdentityKey = new Map<string, SessionHead[]>();
   const byProjectAgentKey = new Map<string, SessionHead[]>();
@@ -91,6 +93,13 @@ export function createSessionIndex(sourceSessions: SessionHead[]): CanonicalSess
     const agentName = getSessionAgentKey(session);
     const routeKey = getSessionRouteKey(agentName, session.id);
     if (!byRouteKey.has(routeKey)) byRouteKey.set(routeKey, session);
+    if (session.parent_reference) {
+      pushMapValue(
+        childrenByParentRouteKey,
+        getSessionRouteKey(session.parent_reference.agentName, session.parent_reference.sessionId),
+        session,
+      );
+    }
   }
 
   const sessionsByActivity = sortSessionsByActivity(sourceSessions);
@@ -110,6 +119,7 @@ export function createSessionIndex(sourceSessions: SessionHead[]): CanonicalSess
     sourceSessions,
     sessionsByActivity,
     byRouteKey,
+    childrenByParentRouteKey,
     byAgent,
     byProjectIdentityKey,
     byProjectAgentKey,
