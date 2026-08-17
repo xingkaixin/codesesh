@@ -405,7 +405,7 @@ describe("createServer", () => {
           })
         ).status,
       ).toBe(200);
-      expect(resolver.resolve).toHaveBeenCalledWith("/untrusted");
+      expect(resolver.resolve).toHaveBeenCalledWith("/untrusted", expect.any(AbortSignal));
     } finally {
       await app.shutdown();
     }

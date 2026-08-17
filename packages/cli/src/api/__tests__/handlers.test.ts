@@ -92,7 +92,11 @@ import {
   type ScanResultSource,
 } from "../handlers.js";
 import { invalidateAliasView } from "../session-aliases-view.js";
-import type { ProjectIdentityResolver } from "../../project-identity-resolver.js";
+import {
+  ProjectIdentityQueueFullError,
+  ProjectIdentityRequestAbortedError,
+  type ProjectIdentityResolver,
+} from "../../project-identity-resolver.js";
 import type {
   ChangeCheckResult,
   DashboardCostFacts,
@@ -138,15 +142,18 @@ function makeMockContext(
   overrides: {
     query?: Record<string, string>;
     param?: Record<string, string>;
+    signal?: AbortSignal;
   } = {},
 ) {
   const jsonFn = vi.fn().mockReturnValue({ status: 200 });
   const params = new URLSearchParams(overrides.query ?? {});
+  const url = `http://localhost/${params.size ? `?${params.toString()}` : ""}`;
   return {
     req: {
       query: (key: string) => overrides.query?.[key] ?? "",
       param: (key: string) => overrides.param?.[key] ?? "",
-      url: `http://localhost/${params.size ? `?${params.toString()}` : ""}`,
+      url,
+      raw: new Request(url, { signal: overrides.signal }),
     },
     json: jsonFn,
   } as any;
@@ -601,7 +608,51 @@ describe("handleGetSessions", () => {
       "parent",
       "identity",
     ]);
-    expect(resolver.resolve).toHaveBeenCalledWith("/home/user/project");
+    expect(resolver.resolve).toHaveBeenCalledWith("/home/user/project", expect.any(AbortSignal));
+  });
+
+  it("returns 429 when project identity capacity is exhausted", async () => {
+    const c = makeMockContext({ query: { cwd: "/home/user/project" } });
+    const resolver = makeProjectIdentityResolver();
+    vi.mocked(resolver.resolve).mockRejectedValue(new ProjectIdentityQueueFullError());
+
+    await handleGetSessions(c, makeScanSource(), {}, resolver);
+
+    expect(c.json).toHaveBeenCalledWith({ error: "Project scope busy; retry later" }, 429);
+  });
+
+  it("returns 503 when project identity resolution fails", async () => {
+    const c = makeMockContext({ query: { cwd: "/home/user/project" } });
+    const resolver = makeProjectIdentityResolver();
+    vi.mocked(resolver.resolve).mockRejectedValue(new Error("worker failed"));
+
+    await handleGetSessions(c, makeScanSource(), {}, resolver);
+
+    expect(c.json).toHaveBeenCalledWith({ error: "Project scope unavailable" }, 503);
+  });
+
+  it("propagates request cancellation into project identity resolution", async () => {
+    const controller = new AbortController();
+    const c = makeMockContext({
+      query: { cwd: "/home/user/project" },
+      signal: controller.signal,
+    });
+    const resolver = makeProjectIdentityResolver();
+    vi.mocked(resolver.resolve).mockImplementation(
+      async (_cwd, signal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(new ProjectIdentityRequestAbortedError()),
+            { once: true },
+          );
+        }),
+    );
+
+    const response = handleGetSessions(c, makeScanSource(), {}, resolver);
+    controller.abort();
+
+    await expect(response).rejects.toBeInstanceOf(ProjectIdentityRequestAbortedError);
   });
 
   it("filters by project identity key", () => {
@@ -734,7 +785,7 @@ describe("handleSearchSessions", () => {
 
     await handleSearchSessions(c, scanSource, {}, resolver);
 
-    expect(resolver.resolve).toHaveBeenCalledWith("/home/user/project");
+    expect(resolver.resolve).toHaveBeenCalledWith("/home/user/project", expect.any(AbortSignal));
     expect(coreMocks.executeSessionSearch).toHaveBeenCalledWith(
       "cwd:/home/user/project needle",
       expect.objectContaining({
@@ -1868,7 +1919,7 @@ describe("handleGetSessionData", () => {
 
     await handleGetSessionData(c, scanSource, resolver);
 
-    expect(resolver.resolve).toHaveBeenCalledWith("/workspace/project");
+    expect(resolver.resolve).toHaveBeenCalledWith("/workspace/project", expect.any(AbortSignal));
     expect(coreMocks.materializeSessionDetailResponse).toHaveBeenLastCalledWith(
       scanSource.getSnapshot(),
       { agentName: "claudecode", sessionId: "s1" },
