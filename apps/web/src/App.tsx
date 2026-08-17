@@ -68,6 +68,7 @@ export default function App() {
 
   const setScanStatus = useScanStatusPublisher();
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const {
     shortcutHintDismissed,
     sidebarCollapsed,
@@ -97,6 +98,10 @@ export default function App() {
       session: viewState.activeSessionId,
     });
   }, [location.pathname, viewState.mode, viewState.activeAgentKey, viewState.activeSessionId]);
+
+  useEffect(() => {
+    setMobileNavigationOpen(false);
+  }, [location.pathname]);
 
   const sessionIndexes = useMemo(
     () => buildSessionIndexes(sessions, activeAgents),
@@ -399,6 +404,7 @@ export default function App() {
           <AppSidebar
             model={{
               sidebarCollapsed,
+              mobileNavigationOpen,
               viewState,
               agentCatalog,
               projects,
@@ -417,6 +423,7 @@ export default function App() {
             }}
             actions={{
               onCollapse: () => setSidebarCollapsed(true),
+              onMobileNavigationOpenChange: setMobileNavigationOpen,
               onToggleBookmark: toggleBookmark,
               onSelectFlatSidebarSession: handleSelectFlatSidebarSession,
               onToggleSidebarSessionBookmark: handleToggleSidebarSessionBookmark,
@@ -429,6 +436,16 @@ export default function App() {
 
           <main id="main" tabIndex={-1} className="flex min-w-0 flex-1 flex-col outline-none">
             <section className="flex shrink-0 items-start gap-3 border-b border-[var(--console-border)] bg-[var(--console-surface)]/70 px-4 py-4 backdrop-blur-sm md:px-8">
+              <button
+                type="button"
+                aria-expanded={mobileNavigationOpen}
+                aria-label="Open navigation"
+                title="Open navigation"
+                onClick={() => setMobileNavigationOpen(true)}
+                className="mt-0.5 inline-flex shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none min-[1025px]:hidden"
+              >
+                <PanelLeftOpen className="size-4" />
+              </button>
               {sidebarCollapsed ? (
                 <button
                   type="button"
@@ -436,7 +453,7 @@ export default function App() {
                   aria-label="Expand sidebar"
                   title="Expand sidebar"
                   onClick={() => setSidebarCollapsed(false)}
-                  className="mt-0.5 hidden shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none lg:inline-flex"
+                  className="mt-0.5 hidden shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none min-[1025px]:inline-flex"
                 >
                   <PanelLeftOpen className="size-4" />
                 </button>

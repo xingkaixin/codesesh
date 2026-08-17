@@ -13,17 +13,24 @@ const VARIANT_STYLES = {
   },
 } as const;
 
+const SIDE_STYLES = {
+  left: "left-0 border-r",
+  right: "right-0 border-l",
+} as const;
+
 export function DrawerDialog({
   open,
   onOpenChange,
   title,
   variant,
+  side = "right",
   children,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
   variant: keyof typeof VARIANT_STYLES;
+  side?: keyof typeof SIDE_STYLES;
   children: ReactNode;
 }) {
   const styles = VARIANT_STYLES[variant];
@@ -33,7 +40,8 @@ export function DrawerDialog({
       <Dialog.Portal>
         <Dialog.Backdrop className={`motion-backdrop fixed inset-0 ${styles.backdrop}`} />
         <Dialog.Popup
-          className={`motion-drawer fixed bottom-0 right-0 top-0 overscroll-contain border-l border-[var(--console-border)] bg-[var(--console-bg)] shadow-[var(--shadow-drawer)] outline-none ${styles.popup}`}
+          data-drawer-side={side}
+          className={`motion-drawer fixed bottom-0 top-0 overscroll-contain border-[var(--console-border)] bg-[var(--console-bg)] shadow-[var(--shadow-drawer)] outline-none ${SIDE_STYLES[side]} ${styles.popup}`}
         >
           <div className="mb-3 flex items-center justify-between gap-3">
             <Dialog.Title className="console-mono text-xs font-semibold uppercase tracking-[0.16em] text-[var(--console-text)]">

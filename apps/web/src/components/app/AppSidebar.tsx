@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, type ReactNode } from "react";
 import type { BookmarkView, ApiProjectGroup, SessionHead } from "../../lib/api";
 import { useScanStatus } from "../../hooks/useScanStatus";
 import { useSidebarKeyboardNavigation } from "../../hooks/useSidebarKeyboardNavigation";
@@ -13,6 +13,7 @@ import { getSessionDisplayTitle } from "../../lib/session-title";
 import { getProjectGroupIdentity, getProjectIdentityKey, getProjectPath } from "../../lib/projects";
 import type { ViewState } from "../../lib/view-state";
 import { AgentIcon } from "../AgentIcon";
+import { DrawerDialog } from "../DrawerDialog";
 import { RenderProfiler } from "../RenderProfiler";
 import { ResourceLoadFailure } from "../ResourceLoadFailure";
 import { SessionActionsMenu } from "../SessionActionsMenu";
@@ -72,6 +73,7 @@ function ProjectNavList({
 
 export interface AppSidebarViewModel {
   sidebarCollapsed: boolean;
+  mobileNavigationOpen: boolean;
   viewState: ViewState;
   agentCatalog: AgentCatalog;
   projects: ApiProjectGroup[];
@@ -91,6 +93,7 @@ export interface AppSidebarViewModel {
 
 export interface AppSidebarActions {
   onCollapse: () => void;
+  onMobileNavigationOpenChange: (open: boolean) => void;
   onToggleBookmark: (session: BookmarkView) => void;
   onSelectFlatSidebarSession: (session: SessionHead) => void;
   onToggleSidebarSessionBookmark: (session: SessionHead) => void;
@@ -100,9 +103,58 @@ export interface AppSidebarActions {
   onRetryBookmarks: () => void;
 }
 
+function SidebarFrame({
+  collapsed,
+  mobileOpen,
+  onMobileOpenChange,
+  children,
+}: {
+  collapsed: boolean;
+  mobileOpen: boolean;
+  onMobileOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}) {
+  useEffect(() => {
+    if (!mobileOpen || typeof window.matchMedia !== "function") return;
+    const desktop = window.matchMedia("(min-width: 1025px)");
+    const closeOnDesktop = () => {
+      if (desktop.matches) onMobileOpenChange(false);
+    };
+    desktop.addEventListener("change", closeOnDesktop);
+    closeOnDesktop();
+    return () => desktop.removeEventListener("change", closeOnDesktop);
+  }, [mobileOpen, onMobileOpenChange]);
+
+  if (mobileOpen) {
+    return (
+      <DrawerDialog
+        open
+        onOpenChange={onMobileOpenChange}
+        title="Navigation"
+        variant="mobile"
+        side="left"
+      >
+        {children}
+      </DrawerDialog>
+    );
+  }
+
+  return (
+    <aside
+      aria-label="Primary navigation"
+      className={`w-64 shrink-0 flex-col border-r border-[var(--console-border)] bg-[var(--console-sidebar-bg)] ${
+        collapsed ? "hidden" : "hidden min-[1025px]:flex"
+      }`}
+    >
+      {children}
+    </aside>
+  );
+}
+
 export function AppSidebar({
   model: {
     sidebarCollapsed,
+    mobileNavigationOpen,
     viewState,
     agentCatalog,
     projects,
@@ -121,6 +173,7 @@ export function AppSidebar({
   },
   actions: {
     onCollapse,
+    onMobileNavigationOpenChange,
     onToggleBookmark,
     onSelectFlatSidebarSession,
     onToggleSidebarSessionBookmark,
@@ -156,10 +209,10 @@ export function AppSidebar({
   );
 
   return (
-    <aside
-      className={`w-64 shrink-0 flex-col border-r border-[var(--console-border)] bg-[var(--console-sidebar-bg)] ${
-        sidebarCollapsed ? "hidden" : "hidden lg:flex"
-      }`}
+    <SidebarFrame
+      collapsed={sidebarCollapsed}
+      mobileOpen={mobileNavigationOpen}
+      onMobileOpenChange={onMobileNavigationOpenChange}
     >
       <div className="console-scrollbar flex-1 space-y-8 overflow-y-auto px-4 py-6">
         <section>
@@ -173,16 +226,18 @@ export function AppSidebar({
                 <img src="/logo.svg?v=3" alt="Dashboard" className="size-3.5 rounded-[2px]" />
                 <span className="console-mono line-clamp-1 flex-1 text-xs">Dashboard</span>
               </Link>
-              <button
-                type="button"
-                aria-expanded="true"
-                aria-label="Collapse sidebar"
-                title="Collapse sidebar"
-                onClick={onCollapse}
-                className="shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-              >
-                <PanelLeftClose className="size-4" />
-              </button>
+              {!mobileNavigationOpen ? (
+                <button
+                  type="button"
+                  aria-expanded="true"
+                  aria-label="Collapse sidebar"
+                  title="Collapse sidebar"
+                  onClick={onCollapse}
+                  className="shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+                >
+                  <PanelLeftClose className="size-4" />
+                </button>
+              ) : null}
             </li>
             <ProjectNavList
               projects={projects}
@@ -329,6 +384,6 @@ export function AppSidebar({
           </section>
         ) : null}
       </div>
-    </aside>
+    </SidebarFrame>
   );
 }

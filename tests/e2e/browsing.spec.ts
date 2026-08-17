@@ -1,5 +1,19 @@
 import { expect, test } from "./test-fixtures.js";
 
+test("keeps project navigation reachable on narrow viewports", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  const navigation = page.getByRole("dialog", { name: "Navigation" });
+  await expect(navigation).toBeVisible();
+
+  await navigation.getByRole("link", { name: /codesesh-e2e/ }).click();
+
+  await expect(page.getByRole("heading", { level: 1, name: "codesesh-e2e" })).toBeVisible();
+  await expect(navigation).not.toBeVisible();
+});
+
 test("keeps project navigation aligned with the overview route", async ({ page }) => {
   await page.goto("/projects");
   await expect(page.getByRole("heading", { level: 1, name: "Projects" })).toBeVisible();
