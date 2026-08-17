@@ -620,6 +620,11 @@
     transform: translateX(100%);
   }
 
+  .motion-drawer[data-drawer-side="left"][data-starting-style],
+  .motion-drawer[data-drawer-side="left"][data-ending-style] {
+    transform: translateX(-100%);
+  }
+
   .motion-drawer[data-ending-style] {
     transition-duration: 180ms;
   }

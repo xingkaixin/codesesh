@@ -24,6 +24,7 @@ const projects = [
 function createActions(overrides: Partial<AppSidebarActions> = {}): AppSidebarActions {
   return {
     onCollapse: vi.fn(),
+    onMobileNavigationOpenChange: vi.fn(),
     onToggleBookmark: vi.fn(),
     onSelectFlatSidebarSession: vi.fn(),
     onToggleSidebarSessionBookmark: vi.fn(),
@@ -46,6 +47,7 @@ function renderSidebar(
         <AppSidebar
           model={{
             sidebarCollapsed: false,
+            mobileNavigationOpen: false,
             viewState: { mode: "root", activeAgentKey: null, activeSessionId: null },
             agentCatalog: createAgentCatalog(agents),
             projects,
@@ -71,6 +73,18 @@ function renderSidebar(
 }
 
 describe("AppSidebar", () => {
+  it("renders navigation in a mobile drawer without the desktop collapse control", () => {
+    const onMobileNavigationOpenChange = vi.fn();
+    renderSidebar({ mobileNavigationOpen: true }, createActions({ onMobileNavigationOpenChange }));
+
+    expect(screen.getByRole("dialog", { name: "Navigation" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Dashboard/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Collapse sidebar" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close navigation" }));
+    expect(onMobileNavigationOpenChange.mock.calls[0]?.[0]).toBe(false);
+  });
+
   it("lists projects under the global dashboard entry", () => {
     renderSidebar();
 
