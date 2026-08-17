@@ -1,5 +1,6 @@
+import { buildSessionTree } from "@codesesh/core/contract";
 import { type SearchRequestOptions, type SearchResult } from "./api";
-import { type SessionIndexes, getSessionAgentKey } from "./session-indexes";
+import { type SessionIndexes, getSessionAgentKey, getSessionRouteKey } from "./session-indexes";
 import { getProjectIdentityKey } from "./projects";
 import type { SearchFilterState, SearchProjectOption } from "../components/app/types";
 
@@ -46,10 +47,13 @@ export function buildLocalRecentResults(
         ? agentSessions
         : projectSessions
       : (agentSessions ?? projectSessions ?? sessionIndexes.sessionsByActivity);
+  const inclusiveCosts =
+    costMin === undefined ? null : buildSessionTree(sessionIndexes.sessionsByActivity).byRouteKey;
   const results: SearchResult[] = [];
 
   for (const sessionItem of sourceSessions) {
-    if (filters.agent && getSessionAgentKey(sessionItem) !== filters.agent) continue;
+    const agentKey = getSessionAgentKey(sessionItem);
+    if (filters.agent && agentKey !== filters.agent) continue;
     if (
       projectIdentityKey &&
       (!sessionItem.project_identity ||
@@ -58,11 +62,14 @@ export function buildLocalRecentResults(
       continue;
     }
     if (filters.tag && !sessionItem.smart_tags?.includes(filters.tag)) continue;
-    if (costMin !== undefined && sessionItem.stats.total_cost < costMin) continue;
+    const cost =
+      inclusiveCosts?.get(getSessionRouteKey(agentKey, sessionItem.id))?.inclusiveStats.cost ??
+      sessionItem.stats.total_cost;
+    if (costMin !== undefined && cost < costMin) continue;
 
     results.push({
       reference: {
-        agentName: getSessionAgentKey(sessionItem),
+        agentName: agentKey,
         sessionId: sessionItem.id,
       },
       session: sessionItem,

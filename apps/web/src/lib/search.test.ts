@@ -133,6 +133,22 @@ describe("buildLocalRecentResults", () => {
     );
   });
 
+  it("includes a parent when descendant cost reaches costMin", () => {
+    const parent = makeSession("parent");
+    const child = makeSession("child", {
+      parent_reference: { agentName: "claudecode", sessionId: parent.id },
+      stats: {
+        message_count: 1,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost: 2,
+      },
+    });
+    const results = buildLocalRecentResults(buildIndexes([parent, child]), {}, 1);
+
+    expect(results.map((result) => result.session.id)).toEqual(["parent", "child"]);
+  });
+
   it("caps results at 50", () => {
     const many = Array.from({ length: 60 }, (_, index) =>
       makeSession(`s-many-${index}`, {
