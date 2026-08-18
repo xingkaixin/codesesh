@@ -3,6 +3,8 @@ import "./agents/register.js";
 
 export type {
   FileActivityKind,
+  IdentifiedSessionDetail,
+  IdentifiedSessionHead,
   ProjectIdentityRef,
   SessionDetail,
   SessionHead,

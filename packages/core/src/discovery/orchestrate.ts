@@ -8,8 +8,10 @@
  * plumbing that previously had to be kept in sync by hand.
  */
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
+import { assertIdentifiedSessionHead } from "../contract/index.js";
 import { sortSessionsByActivity } from "../contract/session-index.js";
 import type {
+  IdentifiedSessionHead,
   ProjectIdentity,
   SessionHead,
   SessionReference,
@@ -29,7 +31,7 @@ type ProjectIdentityResolver = (directory: string) => ProjectIdentityProjection;
 export function attachMissingProjectIdentities(
   sessions: SessionHead[],
   resolve: ProjectIdentityResolver = (directory) => computeIdentityProjection(directory, realFs),
-): SessionHead[] {
+): IdentifiedSessionHead[] {
   const projections = new Map<string, ProjectIdentityProjection>();
 
   return sessions.map((session) => {
@@ -48,6 +50,7 @@ export function attachMissingProjectIdentities(
       session.project_identity_resolver_revision === projection.resolverRevision &&
       session.project_identity_input_signature === projection.inputSignature
     ) {
+      assertIdentifiedSessionHead(session);
       return session;
     }
 
@@ -169,12 +172,12 @@ export function sessionSignature(session: SessionHead): string {
 }
 
 /** Sort sessions by activity time, newest first. */
-export function sortSessions(sessions: SessionHead[]): SessionHead[] {
+export function sortSessions<T extends SessionHead>(sessions: T[]): T[] {
   return sortSessionsByActivity(sessions);
 }
 
-export interface SessionDiffResult {
-  changes: PersistedSessionHeadChange[];
+export interface SessionDiffResult<T extends SessionHead = SessionHead> {
+  changes: PersistedSessionHeadChange<T>[];
   removedSessionIds: string[];
   counts: { new: number; updated: number; removed: number };
 }
@@ -198,19 +201,19 @@ export interface SessionDiffResult {
  * of the previous call's `updatedSessions`), a stale or mismatched hit will
  * silently suppress a real change.
  */
-export function computeSessionDiff(
+export function computeSessionDiff<T extends SessionHead>(
   cachedSessions: SessionHead[],
-  updatedSessions: SessionHead[],
+  updatedSessions: T[],
   changedIds: string[] = [],
   signature: (session: SessionHead) => string = sessionSignature,
   signatureCache?: Map<string, string>,
-): SessionDiffResult {
+): SessionDiffResult<T> {
   const cachedMap = new Map(
     cachedSessions.map((session) => [session.reference.sessionId, session]),
   );
   const updatedIds = new Set(updatedSessions.map((session) => session.reference.sessionId));
   const changedIdSet = new Set(changedIds);
-  const changes: PersistedSessionHeadChange[] = [];
+  const changes: PersistedSessionHeadChange<T>[] = [];
   const removedSessionIds: string[] = [];
   let newCount = 0;
   let updatedCount = 0;

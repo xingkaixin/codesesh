@@ -251,12 +251,12 @@ export function groupSessionsByCalendarDay(nodes: SessionTreeNode[]): SessionDay
  * mounted descendant of a match. The input order is preserved so callers keep
  * their existing sort behavior.
  */
-export function filterSessionTreeByActivityWindow(
-  sessions: SessionHead[],
+export function filterSessionTreeByActivityWindow<T extends SessionHead>(
+  sessions: T[],
   from?: number,
   to?: number,
   tree: SessionTree = buildSessionTree(sessions),
-): SessionHead[] {
+): T[] {
   if (from == null && to == null) return sessions;
 
   const pending = filterSessionTreeEntriesByActivityWindow(tree, from, to);

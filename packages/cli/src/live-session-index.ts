@@ -6,10 +6,11 @@ import {
   sortSessions,
   type AgentScanFailure,
   type BaseAgent,
+  type IdentifiedSessionHead,
   type LiveSnapshot,
-  type SessionHead,
 } from "@codesesh/core";
 import {
+  assertIdentifiedSessionHead,
   assertSessionIdentity,
   createSessionProjectionContext,
   type SessionsUpdatedEvent,
@@ -23,8 +24,8 @@ export interface LiveSessionIndexOptions {
 export class LiveSessionIndex {
   private agents: BaseAgent[] = [];
   private agentsByName = new Map<string, BaseAgent>();
-  private byAgent: Record<string, SessionHead[]> = {};
-  private sessions: SessionHead[] = [];
+  private byAgent: Record<string, IdentifiedSessionHead[]> = {};
+  private sessions: IdentifiedSessionHead[] = [];
   private cacheFailures: Record<string, AgentCacheFailure> = {};
   private scanFailures: Record<string, AgentScanFailure> = {};
   private signatureCaches = new Map<string, Map<string, string>>();
@@ -46,7 +47,10 @@ export class LiveSessionIndex {
       this.agents.flatMap((agent) => {
         if (this.scanFailures[agent.name] && !(agent.name in snapshot.byAgent)) return [];
         const sessions = snapshot.byAgent[agent.name] ?? [];
-        for (const session of sessions) assertSessionIdentity(session, agent.name);
+        for (const session of sessions) {
+          assertSessionIdentity(session, agent.name);
+          assertIdentifiedSessionHead(session);
+        }
         return [[agent.name, sortSessions(sessions)]];
       }),
     );
@@ -70,10 +74,13 @@ export class LiveSessionIndex {
 
   commitAgentSessions(
     agentName: string,
-    nextSessions: SessionHead[],
+    nextSessions: IdentifiedSessionHead[],
     candidateChangedIds: string[] = [],
   ): SessionsUpdatedEvent | null {
-    for (const session of nextSessions) assertSessionIdentity(session, agentName);
+    for (const session of nextSessions) {
+      assertSessionIdentity(session, agentName);
+      assertIdentifiedSessionHead(session);
+    }
     delete this.cacheFailures[agentName];
     delete this.scanFailures[agentName];
     const previousSessions = this.byAgent[agentName] ?? [];

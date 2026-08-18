@@ -7,6 +7,7 @@ import {
 import type {
   AggregateSessionSourceCapability,
   BaseAgent,
+  IdentifiedSessionHead,
   loadCachedSessions,
   LiveSnapshot,
   PendingSearchIndexMaintenance,
@@ -105,7 +106,7 @@ vi.mock("./search-index-job-runner.js", () => ({
 
 import { AgentSyncEngine } from "./agent-sync-engine.js";
 
-function makeSession(id: string, title = id): SessionHead {
+function makeSession(id: string, title = id): IdentifiedSessionHead {
   const session: SessionHead = {
     reference: { agentName: "codex", sessionId: id },
     id,
@@ -212,7 +213,7 @@ function makeWorkerRunner(): WorkerRunner {
 
 function makeEngine(
   agent: BaseAgent,
-  sessions: SessionHead[] = [],
+  sessions: IdentifiedSessionHead[] = [],
   workerRunner: WorkerRunner = makeWorkerRunner(),
   startupScanOptions: { from?: number; to?: number } = {},
 ) {

@@ -9,11 +9,11 @@ import {
   synchronizePricingGeneration,
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
+  type IdentifiedSessionHead,
   type SearchIndexSyncResult,
   type SearchIndexSyncOptions,
   type SessionCacheMeta,
   type PersistedSessionHeadChange,
-  type SessionHead,
   type SessionSnapshotCompleteness,
   type DurableSessionPublicationFailureStage,
 } from "@codesesh/core";
@@ -50,7 +50,7 @@ export type SearchIndexWorkerJob =
       kind: "full";
       context: string;
       agentName: string;
-      sessions: SessionHead[];
+      sessions: IdentifiedSessionHead[];
       meta: Record<string, SessionCacheMeta>;
       completeness: SessionSnapshotCompleteness;
       removedSessionIds: string[];
@@ -62,7 +62,7 @@ export type SearchIndexWorkerJob =
       kind: "changes";
       context: string;
       agentName: string;
-      changes: PersistedSessionHeadChange[];
+      changes: PersistedSessionHeadChange<IdentifiedSessionHead>[];
       removedSessionIds: string[];
       meta: Record<string, SessionCacheMeta>;
       publicationId?: string;
@@ -72,7 +72,7 @@ export type SearchIndexWorkerJob =
       kind: "maintenance";
       context: string;
       agentName: string;
-      changes: PersistedSessionHeadChange[];
+      changes: PersistedSessionHeadChange<IdentifiedSessionHead>[];
       removedSessionIds: string[];
       meta: Record<string, SessionCacheMeta>;
       searchIndexOptions?: SearchIndexSyncOptions;
@@ -84,7 +84,7 @@ export interface SearchIndexWorkerRunRequest {
   jobs?: SearchIndexWorkerJob[];
   context: string;
   agentNames?: string[];
-  sessionsByAgent?: Record<string, SessionHead[]>;
+  sessionsByAgent?: Record<string, IdentifiedSessionHead[]>;
   metaByAgent?: Record<string, Record<string, SessionCacheMeta>>;
 }
 

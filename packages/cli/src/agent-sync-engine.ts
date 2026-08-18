@@ -13,6 +13,7 @@ import {
   sessionSignature,
   type BaseAgent,
   type AggregateSessionSourceCapability,
+  type IdentifiedSessionHead,
   type ScanOptions,
   type LiveSnapshot,
   type SessionHead,
@@ -51,7 +52,7 @@ export type { AgentOperationResult } from "./agent-operation-scheduler.js";
 
 export interface AgentSessionsChanged {
   agentName: string;
-  sessions: SessionHead[];
+  sessions: IdentifiedSessionHead[];
   event: SessionsUpdatedEvent | null;
 }
 
@@ -69,14 +70,14 @@ type StatusChangedListener = (event: ScanStatusEvent) => void;
 type CachedSessions = NonNullable<ReturnType<typeof loadCachedSessions>>;
 
 interface SessionPersistenceDiff {
-  changedSessions: PersistedSessionHeadChange[];
+  changedSessions: PersistedSessionHeadChange<IdentifiedSessionHead>[];
   removedSessionIds: string[];
 }
 
 interface SessionPublication {
   context: "scan.refresh" | "scan.backfill";
   agentName: string;
-  sessions: SessionHead[];
+  sessions: IdentifiedSessionHead[];
   candidateChangedIds: string[];
   indexJob: SearchIndexWorkerJob;
   onPublishing?: () => void;
@@ -96,8 +97,8 @@ interface RefreshResult {
 
 interface RefreshStrategyResult {
   status: "continue" | "unchanged";
-  nextSessions: SessionHead[];
-  fullScanSessions: SessionHead[] | null;
+  nextSessions: IdentifiedSessionHead[];
+  fullScanSessions: IdentifiedSessionHead[] | null;
   preciseChangedIds: string[] | null;
   persistenceDiff: SessionPersistenceDiff | null;
   checkDuration: number;
@@ -119,7 +120,7 @@ const SOURCE_FAILURE_SUMMARY_MAX_LENGTH = 160;
 
 function buildPersistenceDiff(
   previousSessions: SessionHead[],
-  nextSessions: SessionHead[],
+  nextSessions: IdentifiedSessionHead[],
   candidateChangedIds: string[] = [],
   completeness: SessionSnapshotCompleteness = "complete",
   explicitRemovedSessionIds: readonly string[] = [],
@@ -594,7 +595,7 @@ export class AgentSyncEngine {
 
   private async initializeAgent(
     agent: BaseAgent,
-    previousSessions: SessionHead[],
+    previousSessions: IdentifiedSessionHead[],
   ): Promise<RefreshStrategyResult> {
     this.statusReporter.setScanPhase("initializing");
     const scanStartedAt = performance.now();
@@ -654,7 +655,7 @@ export class AgentSyncEngine {
   private async refreshChangedAgent(
     agent: BaseAgent,
     source: AggregateSessionSourceCapability,
-    baseline: SessionHead[],
+    baseline: IdentifiedSessionHead[],
     cacheTimestamp: number,
     refreshStartedAt: number,
   ): Promise<RefreshStrategyResult> {
@@ -766,7 +767,7 @@ export class AgentSyncEngine {
 
   private async scanAgentFully(
     agent: BaseAgent,
-    previousSessions: SessionHead[],
+    previousSessions: IdentifiedSessionHead[],
   ): Promise<RefreshStrategyResult> {
     const scanStartedAt = performance.now();
     const scope = this.startupScanOptions();
@@ -783,7 +784,7 @@ export class AgentSyncEngine {
   }
 
   private refreshStrategyResult(
-    nextSessions: SessionHead[],
+    nextSessions: IdentifiedSessionHead[],
     completeness: SessionSnapshotCompleteness,
     scope: Pick<ScanOptions, "from" | "to">,
     overrides: Partial<Omit<RefreshStrategyResult, "nextSessions" | "completeness" | "scope">> = {},

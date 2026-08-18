@@ -3,6 +3,7 @@
  */
 import type {
   FileActivityKind,
+  IdentifiedSessionHead,
   Message,
   ProjectIdentityKind,
   SessionHead,
@@ -96,7 +97,7 @@ export {
 } from "./search-index-writer.js";
 export { sessionDetailVersion } from "./detail-version.js";
 
-export function sessionHeadFromSearchRow(row: SearchResultRow): SessionHead {
+export function sessionHeadFromSearchRow(row: SearchResultRow): IdentifiedSessionHead {
   return sessionFromRow(row as SessionRow);
 }
 

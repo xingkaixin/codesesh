@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { SessionCacheMeta, SessionHead } from "@codesesh/core";
+import type { IdentifiedSessionHead, SessionCacheMeta } from "@codesesh/core";
 import { PendingSearchIndexJobs } from "./pending-search-index-jobs.js";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 
-function makeSession(id: string, title: string): SessionHead {
+function makeSession(id: string, title: string): IdentifiedSessionHead {
   return {
     reference: { agentName: "agent", sessionId: id },
     id,
     slug: `agent/${id}`,
     title,
     directory: "/tmp/project",
+    project_identity: { kind: "path", key: "/tmp/project", displayName: "project" },
     time_created: 1,
     stats: {
       message_count: 1,

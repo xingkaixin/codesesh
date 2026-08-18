@@ -1,7 +1,7 @@
 import { availableParallelism } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BaseAgent, SessionCacheMeta } from "../../agents/index.js";
-import type { SessionHead } from "../../types/index.js";
+import type { IdentifiedSessionHead } from "../../types/index.js";
 import { setCoreDiagnostics } from "../../utils/index.js";
 
 const workers = vi.hoisted(() => {
@@ -50,13 +50,14 @@ vi.mock("node:worker_threads", () => ({ Worker: workers.FakeWorker }));
 
 import { finalizeAgentScan } from "../scanner.js";
 
-function makeSession(index: number): SessionHead {
+function makeSession(index: number): IdentifiedSessionHead {
   return {
     reference: { agentName: "test", sessionId: `session-${index}` },
     id: `session-${index}`,
     slug: `test/session-${index}`,
     title: `Session ${index}`,
     directory: "/workspace",
+    project_identity: { kind: "path", key: "/workspace", displayName: "workspace" },
     time_created: 1000,
     time_updated: 1000,
     stats: {

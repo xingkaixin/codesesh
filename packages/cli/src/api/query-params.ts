@@ -224,10 +224,10 @@ export function parseSearchOptions(
   };
 }
 
-export function filterSessionsByActivityWindow(
-  sessions: SessionHead[],
+export function filterSessionsByActivityWindow<T extends SessionHead>(
+  sessions: T[],
   from: number | undefined,
   to: number | undefined,
-): SessionHead[] {
+): T[] {
   return filterSessionTreeByActivityWindow(sessions, from, to);
 }

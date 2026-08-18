@@ -1,12 +1,12 @@
-import type { SessionDetail, SessionHead } from "../../../types/index.js";
+import type { IdentifiedSessionHead, SessionDetail } from "../../../types/index.js";
 import { createSessionIdentity } from "../../../contract/session-reference.js";
 
 export const TEST_NOW = 1_700_000_000_000;
 
 export function makeSessionHead(
   id: string,
-  overrides: Partial<SessionHead> = {},
-): SessionHead & Pick<SessionDetail, "reference"> {
+  overrides: Partial<IdentifiedSessionHead> = {},
+): IdentifiedSessionHead {
   const identity = createSessionIdentity(
     overrides.reference ?? { agentName: "codex", sessionId: id },
   );

@@ -5,7 +5,11 @@ import { existsSync, rmSync, unlinkSync } from "node:fs";
 import type { SessionCacheMeta } from "../../agents/base.js";
 import type { ReferencedSessionHead, SessionReference } from "../../contract/index.js";
 import { formatSessionReference, normalizeSessionReference } from "../../contract/index.js";
-import type { SessionDetail, SessionHead } from "../../types/index.js";
+import type {
+  IdentifiedSessionDetail,
+  IdentifiedSessionHead,
+  SessionHead,
+} from "../../types/index.js";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import { tableExists, type SQLiteDatabase } from "../../utils/sqlite.js";
 import {
@@ -69,18 +73,18 @@ const SESSION_HEAD_SELECT_COLUMNS = `
   s.meta_json
 `;
 export interface CachedResult {
-  sessions: SessionHead[];
+  sessions: IdentifiedSessionHead[];
   meta: Record<string, SessionCacheMeta>;
   timestamp: number;
 }
 
 export interface CachedSessionDataEntry {
-  data: SessionDetail;
+  data: IdentifiedSessionDetail;
   meta: SessionCacheMeta | null;
 }
 
 interface CachedSessionEntryBase {
-  data: Omit<SessionDetail, "messages">;
+  data: Omit<IdentifiedSessionDetail, "messages">;
   meta: SessionCacheMeta | null;
   detailVersion: string | null;
   pendingReindex: boolean;
@@ -159,7 +163,7 @@ export function readCachedSessions(agentName: string): CacheReadOutcome<CachedRe
       )
       .all(agentName) as SessionRow[];
 
-    const sessions: SessionHead[] = [];
+    const sessions: IdentifiedSessionHead[] = [];
     const meta: Record<string, SessionCacheMeta> = {};
 
     for (const row of rows) {
@@ -581,7 +585,10 @@ export function loadCachedSessionDataEntry(
   };
 }
 
-export function loadCachedSessionData(agentName: string, sessionId: string): SessionDetail | null {
+export function loadCachedSessionData(
+  agentName: string,
+  sessionId: string,
+): IdentifiedSessionDetail | null {
   return loadCachedSessionDataEntry(agentName, sessionId)?.data ?? null;
 }
 

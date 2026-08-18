@@ -69,7 +69,7 @@ worker 只读取该联合类型，不按具体类身份选择策略；包装 Age
 
 ```text
 loadCachedSessions()
-  -> 从 agent_cache + sessions 恢复 SessionHead[] / SessionCacheMeta
+  -> 从 agent_cache + sessions 恢复 IdentifiedSessionHead[] / SessionCacheMeta
   -> 启动 HTTP 服务
   -> startBackgroundRefresh()
   -> 逐 Agent 核对真实数据源并更新快照
@@ -146,7 +146,12 @@ last-known-good 顺序不会泄漏到编排器。
 
 ## 持久化与发布
 
-刷新结果先计算 `changedSessions` 和 `removedSessionIds`，再交给 search-index worker：
+Agent 适配器可以先产出尚无 Project Identity 的 `SessionHead`，但扫描编排必须在计算发布
+结果前补全身份。缓存读侧会拒绝缺少身份的损坏行，`LiveSessionIndex` 也会拒绝不完整输入，
+因此 SQLite、Live Snapshot 和公开列表只包含 `IdentifiedSessionHead`。
+
+刷新结果完成身份解析后计算 `changedSessions` 和 `removedSessionIds`，再交给
+search-index worker：
 
 ```text
 saveCachedSessionChanges()
@@ -171,7 +176,8 @@ saveCachedSessionChanges()
 3. 指纹不一致、消息缺失或会话待 reindex 时调用适配器 `getSessionData()` 回源。
 
 所以一致性模型是“materialized detail + 源指纹失效 + 回源兜底”，不是“详情永远实时
-读取源文件”。完整规则见 [sqlite-storage.md](./sqlite-storage.md#3-读取会话详情)。
+读取源文件”。Project Identity 已在快照发布前完成，详情 HTTP 请求不会再执行文件系统或
+Git 身份探测。完整规则见 [sqlite-storage.md](./sqlite-storage.md#3-读取会话详情)。
 
 ## 窗口扫描与 backfill
 
@@ -219,6 +225,7 @@ pnpm bench:perf -- --iterations 3
 ## 正确性不变量
 
 - 新快照只能在对应 SQLite 写入成功后发布。
+- Session Head 必须具备 Project Identity 后才能写入 SQLite 或进入 Live Snapshot。
 - 文件型会话是否变化由 source fingerprint 决定，不由全局 mtime 截断决定。
 - one-shot 与 worker 文件源路径必须消费同一 synchronization outcome，不能各自实现 diff/merge。
 - 数据库型 Agent 检测到数据库变化后必须全量重扫。

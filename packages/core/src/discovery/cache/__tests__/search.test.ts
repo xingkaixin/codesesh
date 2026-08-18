@@ -81,10 +81,13 @@ describe("cache search", () => {
   it("maps database rows through the canonical session decoder", () => {
     expect(
       sessionHeadFromSearchRow({
+        agent_name: "codex",
         session_id: "s1",
-        slug: "codex/s1",
         title: "One",
         directory: "/tmp/project",
+        project_identity_kind: "path",
+        project_identity_key: "/tmp/project",
+        project_display_name: "project",
         time_created: 1,
         message_count: 2,
         total_input_tokens: 3,

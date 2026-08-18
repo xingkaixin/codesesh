@@ -21,7 +21,7 @@ import { setSchemaEnsuredPath } from "../db.js";
 import { MESSAGE_PARTS_FORMAT_VERSION } from "../messages.js";
 import { withCacheDb, withSearchDb } from "../schema.js";
 import { setCoreDiagnostics } from "../../../utils/diagnostics.js";
-import type { SessionDetail, SessionHead } from "../../../types/index.js";
+import type { IdentifiedSessionHead, SessionDetail, SessionHead } from "../../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-test-"));
 const SEARCH_INDEX_BATCH_TEST_TIMEOUT_MS = 30_000;
@@ -49,10 +49,7 @@ function getCachePath(): string {
 // resolves to a "path" identity regardless of what manifests exist in /tmp.
 const FIXTURE_DIR = mkdtempSync(join(tmpdir(), "codesesh-identity-"));
 
-function makeAgentSession(
-  agentName: string,
-  id: string,
-): SessionHead & Pick<SessionDetail, "reference"> {
+function makeAgentSession(agentName: string, id: string): IdentifiedSessionHead {
   return {
     reference: { agentName, sessionId: id },
     id,

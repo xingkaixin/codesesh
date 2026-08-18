@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { SessionHead, SessionDetail } from "../../types/index.js";
+import type { IdentifiedSessionHead, SessionDetail, SessionHead } from "../../types/index.js";
 import {
   BaseAgent,
   FileSystemSessionSource,
@@ -38,7 +38,7 @@ function makeSession(
   };
 }
 
-function withCurrentIdentity(session: SessionHead): SessionHead {
+function withCurrentIdentity(session: SessionHead): IdentifiedSessionHead {
   const projection = computeIdentityProjection(session.directory, realFs);
   return {
     ...session,
@@ -387,7 +387,7 @@ describe("finalizeAgentScan", () => {
   });
 
   it("persists an incremental diff and marks the result refreshed", async () => {
-    const cachedSessions = [makeSession("old")];
+    const cachedSessions = [withCurrentIdentity(makeSession("old"))];
     const updatedSessions = [makeSession("new")];
     const agent = createTestAgent({ name: "test", available: true, sessions: updatedSessions });
 
@@ -421,7 +421,7 @@ describe("finalizeAgentScan", () => {
   });
 
   it("serves fresh heads without advancing the durable timestamp when an incremental write fails", async () => {
-    const cachedSessions = [makeSession("old")];
+    const cachedSessions = [withCurrentIdentity(makeSession("old"))];
     const updatedSessions = [makeSession("new")];
     const agent = createTestAgent({ name: "test", available: true, sessions: updatedSessions });
     const events: Array<{ event: string; detail?: Record<string, unknown> }> = [];
@@ -456,7 +456,7 @@ describe("finalizeAgentScan", () => {
   });
 
   it("does not advance an incremental durable timestamp when cache writes are disabled", async () => {
-    const cachedSessions = [makeSession("old")];
+    const cachedSessions = [withCurrentIdentity(makeSession("old"))];
     const updatedSessions = [makeSession("new")];
     const agent = createTestAgent({ name: "test", available: true, sessions: updatedSessions });
 
@@ -499,7 +499,13 @@ describe("finalizeAgentScan", () => {
   });
 
   it("persists refreshed identity provenance for an otherwise unchanged cache", async () => {
-    const sessions = [makeSession("cached")];
+    const sessions = [
+      {
+        ...withCurrentIdentity(makeSession("cached")),
+        project_identity_resolver_revision: "outdated",
+        project_identity_input_signature: "outdated",
+      },
+    ];
     const agent = createTestAgent({ name: "test", available: true, sessions });
 
     await finalizeAgentScan(agent, sessions, {
@@ -531,7 +537,7 @@ describe("finalizeAgentScan", () => {
   });
 
   it("persists tag maintenance for an otherwise unchanged cache", async () => {
-    const sessions = [makeSession("cached")];
+    const sessions = [withCurrentIdentity(makeSession("cached"))];
     const agent = createTestAgent({ name: "test", available: true, sessions });
 
     const result = await finalizeAgentScan(agent, sessions, {
@@ -583,7 +589,7 @@ describe("scanSessions", () => {
 
   it("retains cached sessions when an agent is unavailable", async () => {
     mockedLoadCachedSessions.mockReturnValue({
-      sessions: [makeSession("cached")],
+      sessions: [withCurrentIdentity(makeSession("cached"))],
       meta: {},
       timestamp: 123,
     });
@@ -706,7 +712,7 @@ describe("scanSessions", () => {
   });
 
   it("retains a cached baseline when source enumeration fails", async () => {
-    const cached = makeSession("cached");
+    const cached = withCurrentIdentity(makeSession("cached"));
     mockedLoadCachedSessions.mockReturnValue({
       sessions: [cached],
       meta: { cached: { id: "cached", sourcePath: "/sessions/cached" } },
@@ -750,7 +756,7 @@ describe("scanSessions", () => {
   });
 
   it("retains the cached baseline when change detection fails", async () => {
-    const cached = makeSession("cached");
+    const cached = withCurrentIdentity(makeSession("cached"));
     mockedLoadCachedSessions.mockReturnValue({ sessions: [cached], meta: {}, timestamp: 123 });
     const agent = createTestAgent({
       name: "test",
@@ -804,7 +810,7 @@ describe("scanSessions", () => {
   });
 
   it("uses an explicitly declared enumerated source without relying on class identity", async () => {
-    const cached = makeSession("cached");
+    const cached = withCurrentIdentity(makeSession("cached"));
     const refreshed = makeSession("refreshed");
     mockedLoadCachedSessions.mockReturnValue({
       sessions: [cached],
@@ -845,7 +851,7 @@ describe("scanSessions", () => {
   });
 
   it("does not publish a false empty baseline when a forced scan fails", async () => {
-    const cached = makeSession("cached");
+    const cached = withCurrentIdentity(makeSession("cached"));
     mockedLoadCachedSessions.mockReturnValue({ sessions: [cached], meta: {}, timestamp: 123 });
     mockedCreateRegisteredAgents.mockReturnValue([
       createTestAgent({ name: "test", available: true, sessions: [], shouldThrow: true }),
@@ -949,7 +955,7 @@ describe("scanSessions", () => {
   });
 
   it("retains a cached head and writes a partial snapshot when full parsing fails", async () => {
-    const cached = makeSession("cached", undefined, "files");
+    const cached = withCurrentIdentity(makeSession("cached", undefined, "files"));
     const meta = {
       cached: {
         id: "cached",
@@ -1031,10 +1037,12 @@ describe("scanSessions", () => {
   });
 
   it("filters agent-specific stale sessions from cache-only results", async () => {
-    const empty = makeSession("empty", {
-      stats: { message_count: 0, total_input_tokens: 0, total_output_tokens: 0, total_cost: 0 },
-    });
-    const visible = makeSession("visible");
+    const empty = withCurrentIdentity(
+      makeSession("empty", {
+        stats: { message_count: 0, total_input_tokens: 0, total_output_tokens: 0, total_cost: 0 },
+      }),
+    );
+    const visible = withCurrentIdentity(makeSession("visible"));
     const cachedSessions = [empty, visible];
     mockedLoadCachedSessions.mockReturnValue({
       sessions: cachedSessions,
@@ -1060,7 +1068,7 @@ describe("scanSessions", () => {
 
   it("uses cached sessions even when last refresh is old", async () => {
     mockedLoadCachedSessions.mockReturnValue({
-      sessions: [makeSession("cached")],
+      sessions: [withCurrentIdentity(makeSession("cached"))],
       meta: {},
       timestamp: 0,
     });
@@ -1081,7 +1089,7 @@ describe("scanSessions", () => {
   });
 
   it("refreshes stale cache before returning results", async () => {
-    const cachedSessions = [makeSession("cached")];
+    const cachedSessions = [withCurrentIdentity(makeSession("cached"))];
     const refreshedSessions = [makeSession("fresh")];
     mockedLoadCachedSessions.mockReturnValue({
       sessions: cachedSessions,
@@ -1139,7 +1147,7 @@ describe("scanSessions", () => {
   });
 
   it("retains the durable baseline after a failed incremental cache write", async () => {
-    const cachedSessions = [makeSession("cached")];
+    const cachedSessions = [withCurrentIdentity(makeSession("cached"))];
     const refreshedSessions = [makeSession("fresh")];
     const checkForChanges = vi.fn(() => ({
       hasChanges: true,
@@ -1182,8 +1190,8 @@ describe("scanSessions", () => {
       displayName: "project",
     };
     const keep = withCurrentIdentity(makeSession("keep", { project_identity: projectIdentity }));
-    const changed = makeSession("changed");
-    const removed = makeSession("removed");
+    const changed = withCurrentIdentity(makeSession("changed"));
+    const removed = withCurrentIdentity(makeSession("removed"));
     const updatedChanged = makeSession("changed", { title: "Updated changed" });
     const added = makeSession("added");
 

@@ -1,4 +1,5 @@
 import type {
+  IdentifiedSessionHead,
   PersistedSessionHeadChange,
   SearchIndexSyncOptions,
   SessionCacheMeta,
@@ -21,7 +22,7 @@ interface PendingChanges {
   context: string;
   agentName: string;
   publicationId?: string;
-  changesBySessionId: Map<string, PersistedSessionHeadChange>;
+  changesBySessionId: Map<string, PersistedSessionHeadChange<IdentifiedSessionHead>>;
   removedSessionIds: Set<string>;
   meta: Record<string, SessionCacheMeta>;
   searchIndexOptions?: SearchIndexSyncOptions;
