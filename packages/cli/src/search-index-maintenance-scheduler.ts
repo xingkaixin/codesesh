@@ -1,6 +1,7 @@
 import {
   loadCachedSessions,
   readPendingSearchIndexMaintenance,
+  type IdentifiedSessionHead,
   type PersistedSessionHeadChange,
 } from "@codesesh/core";
 import type { SearchIndexMaintenanceStatus } from "@codesesh/core/contract";
@@ -102,10 +103,12 @@ export class SearchIndexMaintenanceScheduler {
         { session, sortIndex },
       ]),
     );
-    const changes = pending.sessionIds.flatMap((sessionId): PersistedSessionHeadChange[] => {
-      const change = sessionsById.get(sessionId);
-      return change ? [change] : [];
-    });
+    const changes = pending.sessionIds.flatMap(
+      (sessionId): PersistedSessionHeadChange<IdentifiedSessionHead>[] => {
+        const change = sessionsById.get(sessionId);
+        return change ? [change] : [];
+      },
+    );
     if (changes.length === 0) {
       throw new Error(`No cached sessions matched pending maintenance for ${agentName}`);
     }

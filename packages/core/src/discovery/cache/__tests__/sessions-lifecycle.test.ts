@@ -252,6 +252,17 @@ describe("session identity persistence invariant", () => {
     expect(spawnSpy).not.toHaveBeenCalled();
     expect(existsSync(getCachePath())).toBe(false);
   });
+
+  it("rejects cached rows whose project identity is missing", () => {
+    saveCachedSessions("claudecode", [makeSession("corrupt-identity")]);
+    withCacheDb((db) => {
+      db.prepare(
+        "UPDATE sessions SET project_identity_key = '' WHERE agent_name = ? AND session_id = ?",
+      ).run("claudecode", "corrupt-identity");
+    });
+
+    expect(readCachedSessions("claudecode")).toEqual({ status: "failed" });
+  });
 });
 
 describe("withSearchIndexDb", () => {

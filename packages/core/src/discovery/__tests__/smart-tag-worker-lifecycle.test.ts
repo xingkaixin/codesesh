@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BaseAgent, SessionCacheMeta } from "../../agents/index.js";
-import type { SessionDetail, SessionHead } from "../../types/index.js";
+import type { IdentifiedSessionHead, SessionDetail } from "../../types/index.js";
 
 type WorkerBehavior = "clean-exit-without-message" | "empty-results" | "results";
 
@@ -61,13 +61,14 @@ vi.mock("node:worker_threads", () => ({ Worker: workers.FakeWorker }));
 
 import { finalizeAgentScan } from "../scanner.js";
 
-function makeSession(index: number): SessionHead {
+function makeSession(index: number): IdentifiedSessionHead {
   return {
     reference: { agentName: "test", sessionId: `session-${index}` },
     id: `session-${index}`,
     slug: `test/session-${index}`,
     title: `Session ${index}`,
     directory: "/workspace",
+    project_identity: { kind: "path", key: "/workspace", displayName: "workspace" },
     time_created: 1000,
     time_updated: 1000,
     stats: {
@@ -90,7 +91,7 @@ function makeAgent(): BaseAgent {
   } as unknown as BaseAgent;
 }
 
-async function runScan(agent: BaseAgent, sessions: SessionHead[]) {
+async function runScan(agent: BaseAgent, sessions: IdentifiedSessionHead[]) {
   return finalizeAgentScan(agent, sessions, {
     finalization: { kind: "unchanged", cached: { sessions, meta: {}, timestamp: 1 } },
     options: {

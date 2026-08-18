@@ -3,7 +3,9 @@
  * binders, and message-text builders shared by sessions/search/file-activity.
  */
 import type { SessionCacheMeta } from "../../agents/base.js";
+import { assertIdentifiedSessionHead } from "../../contract/session.js";
 import type {
+  IdentifiedSessionHead,
   Message,
   MessagePart,
   ProjectIdentity,
@@ -161,10 +163,8 @@ export function requireSessionProjectIdentity(
   session: SessionHead,
 ): ProjectIdentity {
   assertSessionIdentity(session, agentName);
-  if (session.project_identity) return session.project_identity;
-  throw new Error(
-    `Session ${session.reference.agentName}/${session.reference.sessionId} is missing project_identity`,
-  );
+  assertIdentifiedSessionHead(session);
+  return session.project_identity;
 }
 
 export function assertSessionProjectIdentities(
@@ -397,7 +397,7 @@ export function writeFileActivityRows(
   }
 }
 
-export function sessionFromRow(row: SessionRow): SessionHead {
+export function sessionFromRow(row: SessionRow): IdentifiedSessionHead {
   const session: SessionHead = {
     ...createSessionIdentity({
       agentName: String(row.agent_name),
@@ -465,6 +465,7 @@ export function sessionFromRow(row: SessionRow): SessionHead {
     session.smart_tags_classifier_revision = String(row.smart_tags_classifier_revision);
   }
 
+  assertIdentifiedSessionHead(session);
   return session;
 }
 

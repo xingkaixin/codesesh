@@ -7,6 +7,7 @@ import {
   FileSystemSessionSource,
   type AgentScanOptions,
   type ChangeCheckResult,
+  type IdentifiedSessionHead,
   type AgentRoots,
   type ScanOptions,
   type SessionCacheMeta,
@@ -494,7 +495,7 @@ function registerMockWatcher(
   };
 }
 
-function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
+function makeSession(id: string, overrides: Partial<SessionHead> = {}): IdentifiedSessionHead {
   const identity = createSessionIdentity(
     overrides.reference ?? { agentName: "codex", sessionId: id },
   );

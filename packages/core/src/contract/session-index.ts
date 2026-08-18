@@ -20,7 +20,7 @@ export function compareSessionActivityDesc(a: SessionHead, b: SessionHead): numb
   return (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created);
 }
 
-export function sortSessionsByActivity(sessions: SessionHead[]): SessionHead[] {
+export function sortSessionsByActivity<T extends SessionHead>(sessions: T[]): T[] {
   for (let index = 1; index < sessions.length; index += 1) {
     if (compareSessionActivityDesc(sessions[index - 1]!, sessions[index]!) > 0) {
       return [...sessions].sort(compareSessionActivityDesc);
@@ -37,13 +37,13 @@ export function sortSessionsByActivity(sessions: SessionHead[]): SessionHead[] {
  * would produce, so the result is element-for-element identical to
  * `sortSessionsByActivity(shards.flat())` at O(n·k) instead of O(n log n).
  */
-export function mergeSortedSessions(shards: SessionHead[][]): SessionHead[] {
+export function mergeSortedSessions<T extends SessionHead>(shards: T[][]): T[] {
   const active = shards.filter((shard) => shard.length > 0);
   if (active.length === 0) return [];
   if (active.length === 1) return [...active[0]!];
 
   const total = active.reduce((sum, shard) => sum + shard.length, 0);
-  const merged: SessionHead[] = [];
+  const merged: T[] = [];
   const cursors = Array.from({ length: active.length }, () => 0);
 
   for (let position = 0; position < total; position += 1) {

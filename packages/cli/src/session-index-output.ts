@@ -8,8 +8,8 @@
 import {
   filterSessionTreeByActivityWindow,
   getAgentInfoMap,
+  type IdentifiedSessionHead,
   type LiveSnapshot,
-  type SessionHead,
 } from "@codesesh/core";
 
 export interface SessionIndexAgent {
@@ -21,7 +21,7 @@ export interface SessionIndexAgent {
 
 export interface SessionIndexOutput {
   agents: SessionIndexAgent[];
-  sessions: SessionHead[];
+  sessions: IdentifiedSessionHead[];
 }
 
 export interface SessionIndexWindow {

@@ -1,18 +1,19 @@
 import { describe, expect, it } from "vitest";
-import type { LiveSnapshot, SessionHead } from "@codesesh/core";
+import type { IdentifiedSessionHead, LiveSnapshot } from "@codesesh/core";
 import {
   buildSessionIndexOutput,
   formatCacheFailureDiagnostics,
   formatScanFailureDiagnostics,
 } from "./session-index-output.js";
 
-function makeSession(id: string, activity: number): SessionHead {
+function makeSession(id: string, activity: number): IdentifiedSessionHead {
   return {
     reference: { agentName: "codex", sessionId: id },
     id,
     slug: `codex/${id}`,
     title: id,
     directory: "/workspace",
+    project_identity: { kind: "path", key: "/workspace", displayName: "workspace" },
     time_created: activity,
     time_updated: activity,
     stats: {
@@ -24,7 +25,9 @@ function makeSession(id: string, activity: number): SessionHead {
   };
 }
 
-function makeSnapshot(sessions: SessionHead[]): Pick<LiveSnapshot, "sessions" | "byAgent"> {
+function makeSnapshot(
+  sessions: IdentifiedSessionHead[],
+): Pick<LiveSnapshot, "sessions" | "byAgent"> {
   return { sessions, byAgent: { codex: sessions } };
 }
 
@@ -32,6 +35,7 @@ function makeSnapshot(sessions: SessionHead[]): Pick<LiveSnapshot, "sessions" | 
 const DOCUMENTED_SESSION_FIELDS = [
   "directory",
   "id",
+  "project_identity",
   "reference",
   "slug",
   "stats",

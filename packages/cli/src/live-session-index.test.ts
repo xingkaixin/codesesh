@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { BaseAgent, LiveSnapshot, SessionHead } from "@codesesh/core";
+import type { BaseAgent, IdentifiedSessionHead, LiveSnapshot } from "@codesesh/core";
 import { LiveSessionIndex } from "./live-session-index.js";
 
 function makeAgent(name: string): BaseAgent {
@@ -9,13 +9,19 @@ function makeAgent(name: string): BaseAgent {
   } as BaseAgent;
 }
 
-function makeSession(id: string, updatedAt: number, title = id, agentName = "codex"): SessionHead {
+function makeSession(
+  id: string,
+  updatedAt: number,
+  title = id,
+  agentName = "codex",
+): IdentifiedSessionHead {
   return {
     reference: { agentName, sessionId: id },
     id,
     slug: `${agentName}/${id}`,
     title,
     directory: "/workspace",
+    project_identity: { kind: "path", key: "/workspace", displayName: "workspace" },
     time_created: updatedAt,
     time_updated: updatedAt,
     stats: {
@@ -27,11 +33,32 @@ function makeSession(id: string, updatedAt: number, title = id, agentName = "cod
   };
 }
 
-function snapshot(agents: BaseAgent[], byAgent: Record<string, SessionHead[]>): LiveSnapshot {
+function snapshot(
+  agents: BaseAgent[],
+  byAgent: Record<string, IdentifiedSessionHead[]>,
+): LiveSnapshot {
   return { agents, byAgent, sessions: Object.values(byAgent).flat() };
 }
 
 describe("LiveSessionIndex", () => {
+  it("rejects unresolved project identities at snapshot boundaries", () => {
+    const codex = makeAgent("codex");
+    const unresolved = {
+      ...makeSession("unresolved", 1),
+      project_identity: undefined,
+    } as unknown as IdentifiedSessionHead;
+    const index = new LiveSessionIndex();
+
+    expect(() => index.initialize(snapshot([codex], { codex: [unresolved] }))).toThrow(
+      "Session codex/unresolved is missing project_identity",
+    );
+
+    index.initialize(snapshot([codex], { codex: [] }));
+    expect(() => index.commitAgentSessions("codex", [unresolved])).toThrow(
+      "Session codex/unresolved is missing project_identity",
+    );
+  });
+
   it("rejects conflicting session identities at snapshot boundaries", () => {
     const codex = makeAgent("codex");
     const conflicting = { ...makeSession("session", 1), id: "other" };

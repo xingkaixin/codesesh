@@ -22,7 +22,9 @@ export type {
   MessagePart,
   Message,
   SessionHead,
+  IdentifiedSessionHead,
   SessionDetail,
+  IdentifiedSessionDetail,
 } from "../contract/session.js";
 export type { SessionReference } from "../contract/session-reference.js";
 

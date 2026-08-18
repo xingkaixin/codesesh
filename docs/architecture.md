@@ -21,9 +21,11 @@ CLI Entry (packages/cli/src/index.ts)
        -> 后续文件事件继续触发对应 Agent 的 refresh
 ```
 
-初始 SQLite 快照可以立即被 API 读取。后台结果只有在对应持久化事务成功后才进入内存
-快照，因此客户端不会先看到无法从 SQLite 重建的状态。详细的变更检测、回填、失败保留
-和发布规则见 [scanning-and-caching.md](./scanning-and-caching.md)。
+初始 SQLite 快照可以立即被 API 读取。缓存行与后台扫描结果都必须先具备 Project
+Identity；SQLite 解码器与 `LiveSessionIndex` 分别在持久化恢复和内存发布边界拒绝不完整
+Session Head。后台结果只有在对应持久化事务成功后才进入内存快照，因此客户端不会先看到
+无法从 SQLite 重建的状态。详细的变更检测、回填、失败保留和发布规则见
+[scanning-and-caching.md](./scanning-and-caching.md)。
 
 ## 一次性 JSON 模式
 

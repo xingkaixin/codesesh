@@ -37,6 +37,12 @@ _Avoid_: Session Tree, parent-child graph
 用于列表、分组、搜索和统计的轻量 Session 摘要，不包含完整消息正文；其中的统计只归属于该 Session，不包含 descendant Session 的汇总。
 _Avoid_: Session metadata
 
+**Identified Session Head**:
+已具备 Project Identity 的 Session Head；只有这种完成态可以写入 SQLite、进入 Live Snapshot
+或通过公开列表契约返回。Agent 适配器刚解析出的 Session Head 可以暂时没有 Project
+Identity，但扫描编排必须先补全它。
+_Avoid_: Published session, resolved session
+
 **Inclusive Session Stats**:
 从 Session Hierarchy 派生的统计汇总，包含目标 Session 与每个可挂载 descendant Session 恰好一次。
 _Avoid_: Session stats, parent stats
@@ -54,7 +60,7 @@ _Avoid_: Project path, bare project key
 _Avoid_: Project folder, workspace
 
 **Live Snapshot**:
-CodeSesh 当前已发布、可供查询和浏览的一组 Session Head 及其派生统计。
+CodeSesh 当前已发布、可供查询和浏览的一组 Identified Session Head 及其派生统计。
 _Avoid_: Cache, session list
 
 **Session Alias**:

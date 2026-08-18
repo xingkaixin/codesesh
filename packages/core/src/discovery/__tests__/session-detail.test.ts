@@ -3,7 +3,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BaseAgent, type ChangeCheckResult, type SessionCacheMeta } from "../../agents/base.js";
-import type { SessionDetail, SessionHead } from "../../types/index.js";
+import type { IdentifiedSessionHead, SessionDetail, SessionHead } from "../../types/index.js";
 import { readCachedSessionCursor, saveCachedSessions } from "../cache/sessions.js";
 import { withCacheDb } from "../cache/schema.js";
 import { MESSAGE_CURSOR_VERSION } from "../cache/message-cursor.js";
@@ -79,7 +79,7 @@ class TestAgent extends BaseAgent {
   setSessionMetaMap(): void {}
 }
 
-function makeHead(overrides: Partial<SessionHead> = {}): SessionHead {
+function makeHead(overrides: Partial<IdentifiedSessionHead> = {}): IdentifiedSessionHead {
   return {
     reference: { agentName: "test", sessionId: "s1" },
     id: "s1",
@@ -136,7 +136,11 @@ function makeScanResult(agent: TestAgent, head = makeHead()): LiveSnapshot {
   };
 }
 
-function persistDetail(head: SessionHead, detail: SessionDetail, fingerprint: string): void {
+function persistDetail(
+  head: IdentifiedSessionHead,
+  detail: SessionDetail,
+  fingerprint: string,
+): void {
   saveCachedSessions("test", [head], { [head.id]: makeMeta(fingerprint) });
   syncSessionSearchIndex("test", [head], () => detail);
 }
@@ -305,28 +309,22 @@ describe("materializeSessionDetail", () => {
     ).toThrow("Session identity fields disagree");
   });
 
-  it("asks the caller to resolve identity instead of probing the filesystem", () => {
+  it("rejects an invalid snapshot instead of resolving identity during a detail request", () => {
     const detail = { ...makeDetail(), project_identity: undefined };
-    const head = { ...makeHead(), project_identity: undefined };
+    const head = {
+      ...makeHead(),
+      project_identity: undefined,
+    } as unknown as IdentifiedSessionHead;
     const agent = new TestAgent(detail, new Map([["s1", makeMeta("source")]]));
     const scanResult = makeScanResult(agent, head);
     const reference = { agentName: "test", sessionId: "s1" };
 
-    expect(materializeSessionDetail(scanResult, reference)).toEqual({
-      status: "needs-identity",
-      directory: "/workspace/project",
-    });
-    expect(materializeSessionDetailResponse(scanResult, reference, {})).toEqual({
-      status: "needs-identity",
-      directory: "/workspace/project",
-    });
-
-    const resolved = materializeSessionDetail(scanResult, reference, {
-      projectIdentityFallback: projectIdentity,
-    });
-    expect(resolved.status).toBe("found");
-    if (resolved.status !== "found") return;
-    expect(resolved.data.project_identity).toEqual(projectIdentity);
+    expect(() => materializeSessionDetail(scanResult, reference)).toThrow(
+      "Session test/s1 reached detail materialization without project_identity",
+    );
+    expect(() => materializeSessionDetailResponse(scanResult, reference, {})).toThrow(
+      "Session test/s1 reached detail materialization without project_identity",
+    );
   });
 
   it("derives the same file activity for cached and source details", () => {

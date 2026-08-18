@@ -163,8 +163,12 @@ export interface SessionHead extends SessionIdentity {
   smart_tags_classifier_revision?: string;
 }
 
+export interface IdentifiedSessionHead extends SessionHead {
+  project_identity: ProjectIdentity;
+}
+
 export interface SessionListPage {
-  sessions: SessionHead[];
+  sessions: IdentifiedSessionHead[];
   nextCursor?: string;
 }
 
@@ -195,4 +199,17 @@ export interface SessionDetail extends SessionIdentity {
   smart_tags_source_updated_at?: number;
   smart_tags_classifier_revision?: string;
   file_activity?: SessionFileActivity[];
+}
+
+export interface IdentifiedSessionDetail extends SessionDetail {
+  project_identity: ProjectIdentity;
+}
+
+export function assertIdentifiedSessionHead(
+  session: SessionHead,
+): asserts session is IdentifiedSessionHead {
+  if (session.project_identity) return;
+  throw new Error(
+    `Session ${session.reference.agentName}/${session.reference.sessionId} is missing project_identity`,
+  );
 }

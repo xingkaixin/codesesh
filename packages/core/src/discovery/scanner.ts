@@ -1,6 +1,12 @@
 import { availableParallelism } from "node:os";
 import { Worker } from "node:worker_threads";
-import type { SessionDetail, SessionHead, SmartTag } from "../types/index.js";
+import type {
+  IdentifiedSessionHead,
+  SessionDetail,
+  SessionHead,
+  SmartTag,
+} from "../types/index.js";
+import { assertIdentifiedSessionHead } from "../contract/session.js";
 import { assertSessionIdentity } from "../contract/session-reference.js";
 import { filterSessionTreeByActivityWindow } from "../contract/session-tree.js";
 import type {
@@ -69,8 +75,8 @@ export interface ScanOptions {
 }
 
 export interface LiveSnapshot {
-  sessions: SessionHead[];
-  byAgent: Record<string, SessionHead[]>;
+  sessions: IdentifiedSessionHead[];
+  byAgent: Record<string, IdentifiedSessionHead[]>;
   agents: BaseAgent[];
   timings?: Record<string, AgentScanTiming>;
   cacheTimestamps?: Record<string, number>;
@@ -91,7 +97,7 @@ export interface ScanProgress {
   changedCount?: number;
 }
 
-export function filterSessions(sessions: SessionHead[], options: ScanOptions): SessionHead[] {
+export function filterSessions<T extends SessionHead>(sessions: T[], options: ScanOptions): T[] {
   let result = sessions;
 
   if (options.cwd) {
@@ -148,7 +154,7 @@ type CachePersistence = "persisted" | "failed" | "not-requested";
 interface SuccessfulAgentScanResult {
   status: "complete" | "partial";
   agent: BaseAgent;
-  heads: SessionHead[];
+  heads: IdentifiedSessionHead[];
   cachePersistence: CachePersistence;
   fromCache?: boolean;
   refreshed?: boolean;
@@ -160,12 +166,19 @@ interface FailedAgentScanResult {
   status: "failed";
   agent: BaseAgent;
   failure: AgentScanFailure;
-  retainedHeads?: SessionHead[];
+  retainedHeads?: IdentifiedSessionHead[];
   cacheTimestamp?: number;
   timing: AgentScanTiming;
 }
 
 type AgentScanResult = SuccessfulAgentScanResult | FailedAgentScanResult;
+
+function identifiedSessionHeads(sessions: SessionHead[]): IdentifiedSessionHead[] {
+  return sessions.map((session) => {
+    assertIdentifiedSessionHead(session);
+    return session;
+  });
+}
 
 function finalizeAgentScanFailure(
   agent: BaseAgent,
@@ -176,7 +189,7 @@ function finalizeAgentScanFailure(
   startedAt: number,
 ): FailedAgentScanResult {
   const retainedHeads = cached
-    ? filterSessions(agent.filterCachedSessions(cached.sessions), options)
+    ? identifiedSessionHeads(filterSessions(agent.filterCachedSessions(cached.sessions), options))
     : undefined;
   reportAgentScanFailure(failure, retainedHeads !== undefined);
   timing.total = performance.now() - startedAt;
@@ -476,7 +489,9 @@ export async function finalizeAgentScan(
 
   const identityStart = performance.now();
   const sessionsWithIdentity =
-    finalization.kind === "cache-only" ? sessions : attachMissingProjectIdentities(sessions);
+    finalization.kind === "cache-only"
+      ? identifiedSessionHeads(sessions)
+      : attachMissingProjectIdentities(sessions);
   const identityChanged = sessionsWithIdentity.some(
     (session, index) => session !== sessions[index],
   );
@@ -485,10 +500,11 @@ export async function finalizeAgentScan(
   let tagged = { sessions: sessionsWithIdentity, changed: false };
   if (finalization.kind !== "cache-only") {
     const tagsStart = performance.now();
-    tagged =
+    const tagResult =
       options.includeSmartTags === false
         ? tagged
         : await ensureSessionTags(agent, sessionsWithIdentity, options.smartTagWorkerUrl);
+    tagged = { ...tagResult, sessions: identifiedSessionHeads(tagResult.sessions) };
     timing.tags = performance.now() - tagsStart;
   }
 
@@ -806,10 +822,11 @@ async function scanAgentFull(
     timing.identity = performance.now() - t1;
 
     const t2 = performance.now();
-    const tagged =
+    const tagResult =
       options.includeSmartTags === false
         ? { sessions: headsWithIdentity, changed: false }
         : await ensureSessionTags(agent, headsWithIdentity, options.smartTagWorkerUrl);
+    const tagged = { ...tagResult, sessions: identifiedSessionHeads(tagResult.sessions) };
     timing.tags = performance.now() - t2;
 
     // 收集元数据
@@ -886,8 +903,8 @@ export async function scanSessions(
 ): Promise<LiveSnapshot> {
   const scanMarker = perf.start("scanSessions");
   const agents = createRegisteredAgents();
-  const byAgent: Record<string, SessionHead[]> = {};
-  const allSessions: SessionHead[] = [];
+  const byAgent: Record<string, IdentifiedSessionHead[]> = {};
+  const allSessions: IdentifiedSessionHead[] = [];
   const availableAgents: BaseAgent[] = [];
   const cacheTimestamps: Record<string, number> = {};
   const cacheFailures: Record<string, AgentCacheFailure> = {};

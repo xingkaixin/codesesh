@@ -140,6 +140,11 @@ function createLargeSessionsStore() {
     slug: `codex/session-${index}`,
     title: `Session with a reasonably descriptive title ${index}`,
     directory: "/repo/some/nested/project/directory",
+    project_identity: {
+      kind: "path" as const,
+      key: "/repo/some/nested/project/directory",
+      displayName: "project",
+    },
     time_created: index,
     stats: {
       message_count: 1,

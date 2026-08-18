@@ -35,6 +35,7 @@ describe("contract browser-safety", () => {
         "agentRoutePath",
         "applySessionChanges",
         "applySessionWindowChanges",
+        "assertIdentifiedSessionHead",
         "assertSessionIdentity",
         "buildSessionTree",
         "createSessionProjectionContext",

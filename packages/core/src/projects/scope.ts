@@ -35,11 +35,11 @@ export function matchesProjectScope(session: SessionHead, scope: ProjectScopeMat
   return session.directory ? isPathScopeMatch(scope.path, session.directory) : false;
 }
 
-export function filterSessionsByProjectScope(
-  sessions: SessionHead[],
+export function filterSessionsByProjectScope<T extends SessionHead>(
+  sessions: T[],
   queryPath: string,
   fs?: IdentityFs,
-): SessionHead[] {
+): T[] {
   const scope = createProjectScopeMatcher(queryPath, fs);
   return sessions.filter((session) => matchesProjectScope(session, scope));
 }
