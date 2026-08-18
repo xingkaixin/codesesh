@@ -140,6 +140,12 @@ describe("buildAgentCacheMeta", () => {
   class MetaAgent extends BaseAgent {
     readonly name = "test";
     readonly displayName = "test";
+    readonly sessionSourceAccess = {
+      kind: "aggregate" as const,
+      checkForChanges: () => ({ hasChanges: false, changedIds: [], timestamp: 0 }),
+      commitChangeCheck: () => {},
+      incrementalScan: (cached: SessionHead[]) => cached,
+    };
     isAvailable() {
       return true;
     }

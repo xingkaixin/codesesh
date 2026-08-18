@@ -51,6 +51,18 @@ function withCurrentIdentity(session: SessionHead): SessionHead {
 class TestAgent extends BaseAgent {
   readonly name = "test";
   readonly displayName = "test";
+  readonly sessionSourceAccess = {
+    kind: "aggregate" as const,
+    checkForChanges: (sinceTimestamp: number, cachedSessions: SessionHead[]) =>
+      this.checkForChanges(sinceTimestamp, cachedSessions),
+    commitChangeCheck: () => this.commitChangeCheck(),
+    incrementalScan: (
+      cachedSessions: SessionHead[],
+      changedIds: string[],
+      refs?: SessionSourceRef[],
+      scanOptions?: Parameters<TestAgent["incrementalScan"]>[3],
+    ) => this.incrementalScan(cachedSessions, changedIds, refs, scanOptions),
+  };
 
   isAvailable(): boolean {
     return true;
@@ -68,11 +80,18 @@ class TestAgent extends BaseAgent {
     return { status: "not-needed" as const, reason: "scanner test adapter" };
   }
 
-  checkForChanges(): ChangeCheckResult {
+  checkForChanges(_sinceTimestamp?: number, _cachedSessions?: SessionHead[]): ChangeCheckResult {
     return { hasChanges: false, changedIds: [], timestamp: Date.now() };
   }
 
-  incrementalScan(cached: SessionHead[]): SessionHead[] {
+  commitChangeCheck(): void {}
+
+  incrementalScan(
+    cached: SessionHead[],
+    _changedIds?: string[],
+    _refs?: SessionSourceRef[],
+    _scanOptions?: Parameters<BaseAgent["scan"]>[0],
+  ): SessionHead[] {
     return cached;
   }
 
@@ -285,7 +304,7 @@ function createTestAgent(overrides: {
   if (overrides.incrementalScanResult) {
     agent.incrementalScan = () => overrides.incrementalScanResult!;
   }
-  return agent as BaseAgent;
+  return agent as TestAgent;
 }
 
 describe("ensureSessionTagsSync", () => {
@@ -782,6 +801,47 @@ describe("scanSessions", () => {
     } finally {
       setCoreDiagnostics(null);
     }
+  });
+
+  it("uses an explicitly declared enumerated source without relying on class identity", async () => {
+    const cached = makeSession("cached");
+    const refreshed = makeSession("refreshed");
+    mockedLoadCachedSessions.mockReturnValue({
+      sessions: [cached],
+      meta: {},
+      timestamp: 123,
+    });
+    const agent = createTestAgent({ name: "test", available: true, sessions: [] });
+    const synchronize = vi.fn(() => ({
+      sessions: [refreshed],
+      meta: {},
+      sources: [],
+      sourceOutcomes: [],
+      detectedSessionIds: ["refreshed"],
+      changedSessionIds: ["refreshed"],
+      explicitRemovedSessionIds: ["cached"],
+      finalizeSessionIds: ["refreshed"],
+      sourceFailures: [],
+      completeness: "complete" as const,
+      sourceCount: 1,
+      removedSourceCount: 1,
+    }));
+    Object.assign(agent, {
+      sessionSourceAccess: {
+        kind: "enumerated",
+        synchronize,
+        count: vi.fn(() => 1),
+      },
+      checkForChanges: vi.fn(() => {
+        throw new Error("class-identity fallback should not run");
+      }),
+    });
+    mockedCreateRegisteredAgents.mockReturnValue([agent]);
+
+    const result = await scanSessions({ useCache: true, includeSmartTags: false });
+
+    expect(result.sessions.map((session) => session.reference.sessionId)).toEqual(["refreshed"]);
+    expect(synchronize).toHaveBeenCalledOnce();
   });
 
   it("does not publish a false empty baseline when a forced scan fails", async () => {

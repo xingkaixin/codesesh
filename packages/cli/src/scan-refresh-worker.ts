@@ -7,12 +7,10 @@ import {
   computeSessionDiff,
   createRegisteredAgents,
   ensureSessionTagsSync,
-  FileSystemSessionSource,
   sessionSignature,
   SMART_TAG_CLASSIFIER_REVISION,
   sortSessions,
   synchronizePricingGeneration,
-  synchronizeSessionSources,
   type AgentScanProgress,
   type BaseAgent,
   type ScanOptions,
@@ -31,7 +29,6 @@ import {
 } from "./scan-refresh-error.js";
 import {
   isBackfillOperation,
-  synchronizesSessionSources,
   usesDurableCheckpoints,
   type ScanRefreshOperation,
 } from "./scan-refresh-operation.js";
@@ -367,8 +364,10 @@ async function run(
   const previousSessions = baseline.sessions;
   const previousMeta = baseline.meta;
   const operation = data.operation;
-  const sourceSynchronization = synchronizesSessionSources(operation);
   const backfill = isBackfillOperation(operation);
+  const sourceSynchronization =
+    operation.kind === "source-refresh" ||
+    (backfill && agent.sessionSourceAccess.kind === "enumerated");
   const durableCheckpoints = usesDurableCheckpoints(operation);
   const backfillCursor = backfill ? operation.cursor : undefined;
 
@@ -376,7 +375,6 @@ async function run(
     agent: data.agentName,
     operation: operation.kind,
     backfill_cursor: backfillCursor ?? undefined,
-    changed_ids: operation.kind === "incremental-scan" ? operation.changedIds.length : 0,
     previous_sessions: previousSessions.length,
   });
 
@@ -409,11 +407,10 @@ async function run(
   if (operation.kind === "recompute-derived") {
     sessions = previousSessions;
   } else if (sourceSynchronization) {
-    if (!(agent instanceof FileSystemSessionSource)) {
+    if (agent.sessionSourceAccess.kind !== "enumerated") {
       throw new Error(`Agent ${agent.name} does not support Session Source synchronization`);
     }
-    const result = synchronizeSessionSources(
-      agent,
+    const result = agent.sessionSourceAccess.synchronize(
       { sessions: previousSessions, meta: previousMeta },
       {
         kind: "refresh",
@@ -429,20 +426,8 @@ async function run(
     };
     sourceFailures = result.sourceFailures;
     explicitRemovedSessionIds = result.explicitRemovedSessionIds;
-  } else if (operation.kind === "incremental-scan") {
-    changedIds = operation.changedIds;
-    sessions = inheritSmartTags(
-      await Promise.resolve(
-        agent.incrementalScan(previousSessions, operation.changedIds, undefined, {
-          ...data.scanOptions,
-          onProgress: reportProgress,
-        }),
-      ),
-      previousSessions,
-    );
-  } else if (agent instanceof FileSystemSessionSource) {
-    const result = synchronizeSessionSources(
-      agent,
+  } else if (agent.sessionSourceAccess.kind === "enumerated") {
+    const result = agent.sessionSourceAccess.synchronize(
       { sessions: previousSessions, meta: previousMeta },
       {
         kind: "reload",

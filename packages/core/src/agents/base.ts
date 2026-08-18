@@ -201,6 +201,34 @@ export type CachedMetaLookup =
   | ReadonlyMap<string, SessionCacheMeta>
   | Record<string, SessionCacheMeta>;
 
+export interface EnumeratedSessionSourceCapability {
+  readonly kind: "enumerated";
+  synchronize(
+    baseline: SessionSourceSynchronizationBaseline,
+    request: SessionSourceSynchronizationRequest,
+  ): SessionSourceSynchronizationOutcome;
+  count(options?: AgentScanOptions): number;
+}
+
+export interface AggregateSessionSourceCapability {
+  readonly kind: "aggregate";
+  checkForChanges(
+    sinceTimestamp: number,
+    cachedSessions: SessionHead[],
+  ): Promise<ChangeCheckResult> | ChangeCheckResult;
+  commitChangeCheck(): void;
+  incrementalScan(
+    cachedSessions: SessionHead[],
+    changedIds: string[],
+    refs?: SessionSourceRef[],
+    scanOptions?: AgentScanOptions,
+  ): Promise<SessionHead[]> | SessionHead[];
+}
+
+export type SessionSourceCapability =
+  | EnumeratedSessionSourceCapability
+  | AggregateSessionSourceCapability;
+
 export function createAgentScanFailure(
   agentName: string,
   stage: string,
@@ -233,6 +261,7 @@ export function reportAgentScanFailure(failure: AgentScanFailure, baselineRetain
 export abstract class BaseAgent {
   abstract readonly name: string;
   abstract readonly displayName: string;
+  abstract readonly sessionSourceAccess: SessionSourceCapability;
 
   /** Check if this agent has data available on the local filesystem. */
   abstract isAvailable(): boolean;
@@ -246,25 +275,6 @@ export abstract class BaseAgent {
   /** Describe how changes to this agent's session sources can be observed. */
   abstract getSessionWatchPlan(): SessionWatchPlan;
 
-  /**
-   * 检查是否有变更（用于智能刷新）
-   * @param sinceTimestamp 上次缓存时间戳
-   * @param cachedSessions 缓存的会话列表
-   * @returns 变更检测结果
-   */
-  abstract checkForChanges(
-    sinceTimestamp: number,
-    cachedSessions: SessionHead[],
-  ): Promise<ChangeCheckResult> | ChangeCheckResult;
-
-  /**
-   * Commit the observation made by the latest checkForChanges. Called by the
-   * scan orchestrator only after the scan consuming that check succeeded, so
-   * a failed scan leaves the baseline behind and the next check re-detects
-   * the same change instead of silently skipping it.
-   */
-  commitChangeCheck(): void {}
-
   /** Wrap an enumeration/database read so failures follow the error taxonomy. */
   protected scanStep<T>(stage: string, sourcePath: string, read: () => T): T {
     try {
@@ -274,20 +284,6 @@ export abstract class BaseAgent {
       throw new SessionScanError(this.name, stage, { cause: error, sourcePath });
     }
   }
-
-  /**
-   * 增量扫描（仅扫描变更的会话）
-   * @param cachedSessions 缓存的会话列表
-   * @param changedIds 变更的会话 ID 列表
-   * @param scanOptions 扫描窗口与解析选项
-   * @returns 更新后的会话列表
-   */
-  abstract incrementalScan(
-    cachedSessions: SessionHead[],
-    changedIds: string[],
-    refs?: SessionSourceRef[],
-    scanOptions?: AgentScanOptions,
-  ): Promise<SessionHead[]> | SessionHead[];
 
   filterCachedSessions(sessions: SessionHead[]): SessionHead[] {
     return sessions;
@@ -327,6 +323,12 @@ export abstract class BaseAgent {
 export abstract class FileSystemSessionSource<
   TMeta extends SessionCacheMeta = SessionCacheMeta,
 > extends BaseAgent {
+  readonly sessionSourceAccess: EnumeratedSessionSourceCapability = {
+    kind: "enumerated",
+    synchronize: (baseline, request) => this.synchronizeSessionSources(baseline, request),
+    count: (options) => this.listSessionSources(options).length,
+  };
+
   protected sessionMetaMap = new Map<string, TMeta>();
   private sourceFileStats = new Map<string, Stats>();
 
@@ -681,6 +683,15 @@ function latestSqliteSourceMtime(dbPath: string): number {
 }
 
 export abstract class DatabaseSessionSource extends BaseAgent {
+  readonly sessionSourceAccess: AggregateSessionSourceCapability = {
+    kind: "aggregate",
+    checkForChanges: (sinceTimestamp, cachedSessions) =>
+      this.checkForChanges(sinceTimestamp, cachedSessions),
+    commitChangeCheck: () => this.commitChangeCheck(),
+    incrementalScan: (cachedSessions, changedIds, refs, scanOptions) =>
+      this.incrementalScan(cachedSessions, changedIds, refs, scanOptions),
+  };
+
   protected sessionMetaMap = new Map<string, SessionCacheMeta>();
   private lastSourceFingerprint: string | null = null;
   private pendingSourceFingerprint: string | null = null;
@@ -719,7 +730,7 @@ export abstract class DatabaseSessionSource extends BaseAgent {
     this.sessionMetaMap = meta;
   }
 
-  override commitChangeCheck(): void {
+  commitChangeCheck(): void {
     if (this.pendingSourceFingerprint == null) return;
     this.lastSourceFingerprint = this.pendingSourceFingerprint;
     this.pendingSourceFingerprint = null;

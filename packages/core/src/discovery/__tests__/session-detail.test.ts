@@ -32,6 +32,12 @@ vi.mock("node:os", async (importOriginal) => {
 class TestAgent extends BaseAgent {
   readonly name = "test";
   readonly displayName = "Test";
+  readonly sessionSourceAccess = {
+    kind: "aggregate" as const,
+    checkForChanges: () => ({ hasChanges: false, timestamp: 0 }),
+    commitChangeCheck: () => {},
+    incrementalScan: (sessions: SessionHead[]) => sessions,
+  };
   reads = 0;
 
   constructor(

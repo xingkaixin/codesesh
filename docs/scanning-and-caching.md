@@ -28,7 +28,7 @@ CLI
 |------|------|
 | `packages/core/src/discovery/scanner.ts` | 通用扫描、缓存恢复和 one-shot 调用策略 |
 | `packages/core/src/agents/session-source-synchronization.ts` | 文件源枚举、diff、解析、last-known-good、完整性与删除事实 |
-| `packages/core/src/agents/base.ts` | 文件型/数据库型 Agent adapter 原语与兼容入口 |
+| `packages/core/src/agents/base.ts` | Agent 原语与显式 Session Source Access 能力联合类型 |
 | `packages/cli/src/live-scan.ts` | 持有当前不可变快照，对外提供订阅 |
 | `packages/cli/src/agent-sync-engine.ts` | 串行化单个 Agent 的 refresh/backfill，并协调发布 |
 | `packages/cli/src/session-watcher.ts` | 跨平台文件监听、写入稳定性等待与事件归并 |
@@ -52,9 +52,14 @@ CLI
 排队。
 
 主线程与 scan-refresh worker 之间使用封闭 operation union：`full-scan`、
-`incremental-scan`、`source-refresh`、`recompute-derived`、`full-backfill` 和
-`source-backfill`。checkpoint 只能在支持它的 operation 上声明为 `durable`；协议不使用
+`source-refresh`、`recompute-derived` 和 `backfill`。checkpoint 只能在支持它的
+operation 上声明为 `durable`；协议不使用
 多个独立的同步、派生计算、回填与持久化布尔开关，以免表达非法组合。
+
+每个 `BaseAgent` 通过 `sessionSourceAccess` 显式声明行为能力：`enumerated` 提供统一同步操作与
+Source 计数，`aggregate` 提供整体变更检查、检查提交和增量/全量重扫入口。注册表会校验
+Catalog 的 `filesystem | sqlite` 存储事实与运行时能力一致。scanner、refresh engine 和
+worker 只读取该联合类型，不按具体类身份选择策略；包装 Agent 或测试替身因此不会被误分支。
 
 ## 启动流程
 
@@ -82,7 +87,7 @@ loadCachedSessions()
 
 ### 文件型 Agent：源枚举 + 指纹 diff
 
-文件型路径统一调用 `synchronizeSessionSources(adapter, baseline, request)`。adapter 只提供
+可枚举路径统一调用 `agent.sessionSourceAccess.synchronize(baseline, request)`。底层 adapter 只提供
 源枚举、单源解析、依赖扩展和 meta 访问原语；同步 module 先枚举当前
 `SessionSourceRef[]`：
 
@@ -112,12 +117,13 @@ meta、detected/applied ids、显式删除、source failures、finalization ids 
 
 解析失败保留 baseline 中的 Session Head 与 meta，并把 outcome 标为 `partial`；只有明确
 filtered、解析期间 missing，或完整枚举证明 source missing 时才产生显式删除。one-shot
-scanner 与 worker adapter 都跨这个 interface；`checkForChanges()` / `incrementalScan()` 仅作为
-现有 Agent interface 的兼容入口，同样委托给该 module。
+scanner 与 worker 都只跨 `enumerated` capability 调用该 module；Source 枚举、diff、解析和
+last-known-good 顺序不会泄漏到编排器。
 
 ### 数据库型 Agent：数据库 mtime + 全量重扫
 
-`DatabaseSessionSource.checkForChanges()` 比较数据库文件 mtime 与 `agent_cache.timestamp`。
+`aggregate` capability 的 `checkForChanges()` 比较数据库文件 mtime 与
+`agent_cache.timestamp`，当前由 `DatabaseSessionSource` 实现。
 由于多个会话共享一个数据库文件，当前无法从文件状态安全推导行级变化：
 
 - mtime 未推进：保持缓存；

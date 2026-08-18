@@ -7,16 +7,15 @@ import type {
   AgentScanFailure,
   AgentScanOptions,
   BaseAgent,
+  EnumeratedSessionSourceCapability,
   SessionCacheMeta,
   SessionSourceFailure,
 } from "../agents/index.js";
 import {
   createAgentScanFailure,
   createRegisteredAgents,
-  FileSystemSessionSource,
   reportAgentScanFailure,
   SessionScanError,
-  synchronizeSessionSources,
 } from "../agents/index.js";
 import { filterSessionsByProjectScope } from "../projects/index.js";
 import {
@@ -536,8 +535,9 @@ export async function finalizeAgentScan(
   };
 }
 
-async function refreshCachedFileAgent(
-  agent: FileSystemSessionSource,
+async function refreshCachedEnumeratedAgent(
+  agent: BaseAgent,
+  source: EnumeratedSessionSourceCapability,
   cached: CachedResult,
   options: ScanOptions,
   timing: AgentScanTiming,
@@ -545,8 +545,7 @@ async function refreshCachedFileAgent(
   onProgress?: (progress: ScanProgress) => void,
 ): Promise<SuccessfulAgentScanResult> {
   const scanStartedAt = performance.now();
-  const synchronization = synchronizeSessionSources(
-    agent,
+  const synchronization = source.synchronize(
     { sessions: cached.sessions, meta: cached.meta },
     {
       kind: "refresh",
@@ -667,13 +666,21 @@ async function scanAgentSmart(
 
       onProgress?.({ agent: agent.name, phase: "checking" });
 
-      if (agent instanceof FileSystemSessionSource) {
-        return refreshCachedFileAgent(agent, cached, options, timing, agentStart, onProgress);
+      if (agent.sessionSourceAccess.kind === "enumerated") {
+        return refreshCachedEnumeratedAgent(
+          agent,
+          agent.sessionSourceAccess,
+          cached,
+          options,
+          timing,
+          agentStart,
+          onProgress,
+        );
       }
 
       const t1 = performance.now();
       const checkResult = await Promise.resolve(
-        agent.checkForChanges(cached.timestamp, cached.sessions),
+        agent.sessionSourceAccess.checkForChanges(cached.timestamp, cached.sessions),
       );
       timing.checkChanges = performance.now() - t1;
 
@@ -704,7 +711,7 @@ async function scanAgentSmart(
         const t2 = performance.now();
         const scanOptions = buildAgentScanOptions(agent, options, onProgress);
         const updatedSessions = await Promise.resolve(
-          agent.incrementalScan(
+          agent.sessionSourceAccess.incrementalScan(
             cached.sessions,
             checkResult.changedIds || [],
             checkResult.refs,
@@ -712,7 +719,7 @@ async function scanAgentSmart(
           ),
         );
         timing.scan = performance.now() - t2;
-        agent.commitChangeCheck();
+        agent.sessionSourceAccess.commitChangeCheck();
 
         return finalizeAgentScan(agent, updatedSessions, {
           finalization: {
@@ -734,7 +741,7 @@ async function scanAgentSmart(
         });
       }
 
-      agent.commitChangeCheck();
+      agent.sessionSourceAccess.commitChangeCheck();
       return finalizeAgentScan(agent, cached.sessions, {
         finalization: { kind: "unchanged", cached },
         options,
@@ -779,10 +786,9 @@ async function scanAgentFull(
     const agentScanOptions = buildAgentScanOptions(agent, options, onProgress);
     let heads: SessionHead[];
     let sourceFailures: SessionSourceFailure[] = [];
-    if (agent instanceof FileSystemSessionSource) {
+    if (agent.sessionSourceAccess.kind === "enumerated") {
       const cached = loadCachedSessions(agent.name);
-      const synchronization = synchronizeSessionSources(
-        agent,
+      const synchronization = agent.sessionSourceAccess.synchronize(
         { sessions: cached?.sessions ?? [], meta: cached?.meta ?? new Map() },
         { kind: "reload", scanOptions: agentScanOptions },
       );

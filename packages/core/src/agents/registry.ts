@@ -14,7 +14,20 @@ export type AgentRoots = Readonly<Record<string, string | null>>;
 let registrations: AgentRegistration[] = [];
 
 export function registerAgent(reg: AgentRegistration): void {
-  registrations.push(reg);
+  const create = reg.create;
+  registrations.push({
+    ...reg,
+    create: () => {
+      const agent = create();
+      const expectedSource = reg.sourceKind === "filesystem" ? "enumerated" : "aggregate";
+      if (agent.sessionSourceAccess.kind !== expectedSource) {
+        throw new Error(
+          `Agent ${reg.name} declares ${reg.sourceKind} storage but provides ${agent.sessionSourceAccess.kind} source access`,
+        );
+      }
+      return agent;
+    },
+  });
 }
 
 export function createRegisteredAgents(): BaseAgent[] {

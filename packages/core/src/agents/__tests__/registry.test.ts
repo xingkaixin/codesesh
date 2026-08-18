@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { AGENT_CATALOG } from "../../contract/agent-catalog.js";
-import { DatabaseSessionSource, FileSystemSessionSource } from "../base.js";
 import "../register.js";
 import { getAgentInfoMap, getRegisteredAgents } from "../registry.js";
 
@@ -31,9 +30,8 @@ describe("agent registry", () => {
 
   it("keeps declared source kinds aligned with runtime implementations", () => {
     for (const registration of getRegisteredAgents()) {
-      const SourceClass =
-        registration.sourceKind === "sqlite" ? DatabaseSessionSource : FileSystemSessionSource;
-      expect(registration.create()).toBeInstanceOf(SourceClass);
+      const expectedAccess = registration.sourceKind === "filesystem" ? "enumerated" : "aggregate";
+      expect(registration.create().sessionSourceAccess.kind).toBe(expectedAccess);
     }
   });
 });
