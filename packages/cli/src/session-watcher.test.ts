@@ -247,10 +247,19 @@ describe("SessionWatcher", () => {
   it("consumes a newly registered adapter without watcher name changes", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "watcher-registered-adapter-"));
     try {
-      const adapter = source("registered-test-agent", {
-        status: "supported",
-        targets: [{ path: tempDir }],
-      }) as unknown as BaseAgent;
+      const adapter = Object.assign(
+        source("registered-test-agent", {
+          status: "supported",
+          targets: [{ path: tempDir }],
+        }),
+        {
+          sessionSourceAccess: {
+            kind: "enumerated" as const,
+            synchronize: vi.fn(),
+            count: () => 0,
+          },
+        },
+      ) as unknown as BaseAgent;
       registerAgent({
         name: "registered-test-agent",
         displayName: "Registered Test Agent",

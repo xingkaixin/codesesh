@@ -166,6 +166,12 @@ function makeMockContext(
 class MockAgent extends BaseAgent {
   readonly name = "claudecode";
   readonly displayName = "Claude Code";
+  readonly sessionSourceAccess = {
+    kind: "aggregate" as const,
+    checkForChanges: () => this.checkForChanges(),
+    commitChangeCheck: () => {},
+    incrementalScan: (sessions: SessionHead[]) => this.incrementalScan(sessions),
+  };
 
   isAvailable() {
     return true;

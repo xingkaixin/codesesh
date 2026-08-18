@@ -241,31 +241,21 @@ const workerThreads = vi.hoisted(() => ({
               agent?.setSessionMetaMap?.(new Map(Object.entries(runData.meta)));
               let sessions: SessionHead[] = [];
               let changedIds: string[] | undefined;
+              const sourceSynchronization =
+                runData.operation?.kind === "source-refresh" ||
+                (runData.operation?.kind === "backfill" &&
+                  agent?.sessionSourceAccess?.kind === "enumerated");
               if (agent?.isAvailable?.() !== false) {
                 if (runData.operation?.kind === "recompute-derived") {
                   sessions = runData.previousSessions;
                 } else if (
-                  (runData.operation?.kind === "source-refresh" ||
-                    runData.operation?.kind === "source-backfill") &&
+                  sourceSynchronization &&
                   agent?.listSessionSources &&
                   agent?.scanSessionSource
                 ) {
                   const result = runSourceSync(runData, agent);
                   sessions = result.sessions as SessionHead[];
                   changedIds = result.changedIds;
-                } else if (
-                  runData.operation?.kind === "incremental-scan" &&
-                  agent?.incrementalScan
-                ) {
-                  sessions = agent.incrementalScan(
-                    runData.previousSessions,
-                    runData.operation.changedIds,
-                    undefined,
-                    {
-                      ...runData.scanOptions,
-                      onProgress: () => undefined,
-                    },
-                  );
                 } else {
                   sessions = agent?.scan?.({
                     ...runData.scanOptions,
@@ -294,11 +284,7 @@ const workerThreads = vi.hoisted(() => ({
                   runData.scanOptions?.from == null && runData.scanOptions?.to == null
                     ? "complete"
                     : "partial",
-                explicitRemovedSessionIds:
-                  runData.operation?.kind === "source-refresh" ||
-                  runData.operation?.kind === "source-backfill"
-                    ? delta.removedSessionIds
-                    : [],
+                explicitRemovedSessionIds: sourceSynchronization ? delta.removedSessionIds : [],
                 durationMs: 0,
               });
               continue;
@@ -582,6 +568,14 @@ function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
   };
   agent.scan = vi.fn(() => []);
   Object.assign(agent, overrides);
+  agent.sessionSourceAccess ??= {
+    kind: "aggregate",
+    checkForChanges: (...args: unknown[]) =>
+      (agent.checkForChanges as (...values: unknown[]) => unknown)(...args),
+    commitChangeCheck: () => (agent.commitChangeCheck as () => void)(),
+    incrementalScan: (...args: unknown[]) =>
+      (agent.incrementalScan as (...values: unknown[]) => unknown)(...args),
+  };
   return agent;
 }
 
@@ -618,6 +612,15 @@ function makeFileSystemAgent(
     overrides.checkForChanges ??
     vi.fn(() => ({ hasChanges: false, changedIds: [], timestamp: Date.now() }));
   agent.incrementalScan = overrides.incrementalScan ?? vi.fn((cached: SessionHead[]) => cached);
+  Object.defineProperty(agent, "sessionSourceAccess", {
+    value: {
+      kind: "enumerated",
+      synchronize: (...args: Parameters<typeof agent.synchronizeSessionSources>) =>
+        agent.synchronizeSessionSources(...args),
+      count: (options?: AgentScanOptions) => agent.listSessionSources(options).length,
+    },
+    configurable: true,
+  });
   return agent;
 }
 

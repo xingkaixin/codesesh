@@ -1,5 +1,4 @@
 import {
-  FileSystemSessionSource,
   attachMissingProjectIdentities,
   buildAgentCacheMeta,
   getAgentFullSyncCursor,
@@ -13,6 +12,7 @@ import {
   readAgentLastFullSyncAt,
   sessionSignature,
   type BaseAgent,
+  type AggregateSessionSourceCapability,
   type ScanOptions,
   type LiveSnapshot,
   type SessionHead,
@@ -431,11 +431,19 @@ export class AgentSyncEngine {
       strategyResult = this.refreshUnavailableAgent(agentName);
     } else if (!isInitialized) {
       strategyResult = await this.initializeAgent(agent, previousSessions);
-    } else if (cached && agent instanceof FileSystemSessionSource) {
-      strategyResult = await this.syncAgentSources(agent, cached, startedAt);
+    } else if (agent.sessionSourceAccess.kind === "enumerated") {
+      strategyResult = await this.syncAgentSources(
+        agent,
+        cached ?? {
+          sessions: refreshBaseline,
+          meta: Object.fromEntries(durableMeta),
+        },
+        startedAt,
+      );
     } else if (refreshBaseline.length > 0) {
       strategyResult = await this.refreshChangedAgent(
         agent,
+        agent.sessionSourceAccess,
         refreshBaseline,
         cacheTimestamp,
         startedAt,
@@ -604,19 +612,25 @@ export class AgentSyncEngine {
   }
 
   private async syncAgentSources(
-    agent: FileSystemSessionSource,
-    cached: CachedSessions,
+    agent: BaseAgent,
+    baseline: Pick<CachedSessions, "sessions" | "meta">,
     refreshStartedAt: number,
   ): Promise<RefreshStrategyResult> {
     const scanStartedAt = performance.now();
     const scope = this.startupScanOptions();
-    const result = await this.runWorker(agent, cached.sessions, { kind: "source-refresh" }, scope, {
-      meta: cached.meta,
-    });
+    const result = await this.runWorker(
+      agent,
+      baseline.sessions,
+      { kind: "source-refresh" },
+      scope,
+      {
+        meta: baseline.meta,
+      },
+    );
     agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
     const sessions = attachMissingProjectIdentities(result.sessions);
     const preciseChangedIds = result.changedIds ?? [];
-    const persistenceDiff = buildPersistenceDiff(cached.sessions, sessions, preciseChangedIds);
+    const persistenceDiff = buildPersistenceDiff(baseline.sessions, sessions, preciseChangedIds);
     this.lastRefreshAtByAgent.set(agent.name, Date.now());
     if (
       persistenceDiff.changedSessions.length === 0 &&
@@ -639,13 +653,14 @@ export class AgentSyncEngine {
 
   private async refreshChangedAgent(
     agent: BaseAgent,
+    source: AggregateSessionSourceCapability,
     baseline: SessionHead[],
     cacheTimestamp: number,
     refreshStartedAt: number,
   ): Promise<RefreshStrategyResult> {
     const scope = this.startupScanOptions();
     const checkStartedAt = performance.now();
-    const checkResult = await Promise.resolve(agent.checkForChanges(cacheTimestamp, baseline));
+    const checkResult = await Promise.resolve(source.checkForChanges(cacheTimestamp, baseline));
     const checkDuration = performance.now() - checkStartedAt;
     if (checkResult.status === "failed") {
       appLogger.warn("scan.refresh.change_check_failed", {
@@ -666,7 +681,7 @@ export class AgentSyncEngine {
       const result = await this.runWorker(agent, baseline, { kind: "recompute-derived" }, {});
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const sessions = attachMissingProjectIdentities(result.sessions);
-      agent.commitChangeCheck();
+      source.commitChangeCheck();
       this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
       const persistenceDiff = buildPersistenceDiff(baseline, sessions);
       if (
@@ -703,7 +718,7 @@ export class AgentSyncEngine {
       const result = await this.runWorker(agent, baseline, { kind: "full-scan" }, scope);
       agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
       const sessions = attachMissingProjectIdentities(result.sessions);
-      agent.commitChangeCheck();
+      source.commitChangeCheck();
       this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
       return this.refreshStrategyResult(sessions, result.completeness, scope, {
         // Meta-only changes (e.g. a pricing capture epoch bump) leave the head
@@ -724,10 +739,10 @@ export class AgentSyncEngine {
     this.options.workerRunner.discard?.(agent.name);
     const sessions = attachMissingProjectIdentities(
       await Promise.resolve(
-        agent.incrementalScan(baseline, preciseChangedIds, checkResult.refs, scope),
+        source.incrementalScan(baseline, preciseChangedIds, checkResult.refs, scope),
       ),
     );
-    agent.commitChangeCheck();
+    source.commitChangeCheck();
     this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
     const sourceFailures = checkResult.sourceFailures ?? [];
     const completeness =
@@ -869,7 +884,7 @@ export class AgentSyncEngine {
     if (lastSyncAt == null || now - lastSyncAt > BACKFILL_INTERVAL_MS) {
       return agent.isAvailable();
     }
-    if (!(agent instanceof FileSystemSessionSource)) return false;
+    if (agent.sessionSourceAccess.kind !== "enumerated") return false;
     if (!agent.isAvailable()) return false;
 
     let cachedSessions = cached;
@@ -886,7 +901,7 @@ export class AgentSyncEngine {
       }
       cachedSessions = outcome.value;
     }
-    const sourceCount = agent.listSessionSources().length;
+    const sourceCount = agent.sessionSourceAccess.count();
     const cachedCount = cachedSessions?.sessions.length ?? 0;
     this.cacheIntegrityValidUntilByAgent.set(agent.name, lastSyncAt + BACKFILL_INTERVAL_MS);
     if (sourceCount > 0 && cachedCount / sourceCount < CACHE_TRUNCATION_COVERAGE) {
@@ -977,10 +992,11 @@ export class AgentSyncEngine {
           state: "full_sync_started",
         });
       }
-      const operation: BackfillScanRefreshOperation =
-        agent instanceof FileSystemSessionSource
-          ? { kind: "source-backfill", cursor: backfillCursor, checkpoint: "durable" }
-          : { kind: "full-backfill", cursor: backfillCursor, checkpoint: "durable" };
+      const operation: BackfillScanRefreshOperation = {
+        kind: "backfill",
+        cursor: backfillCursor,
+        checkpoint: "durable",
+      };
       appLogger.info("scan.backfill.started", {
         agent: agentName,
         cursor: backfillCursor ?? undefined,

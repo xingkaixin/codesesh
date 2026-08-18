@@ -5,6 +5,7 @@ import {
   SMART_TAG_CLASSIFIER_REVISION,
 } from "@codesesh/core";
 import type {
+  AggregateSessionSourceCapability,
   BaseAgent,
   loadCachedSessions,
   LiveSnapshot,
@@ -123,20 +124,40 @@ function makeSession(id: string, title = id): SessionHead {
   return attachMissingProjectIdentities([session])[0]!;
 }
 
-function makeAgent(overrides: Partial<BaseAgent> = {}): BaseAgent {
-  return {
+type TestAggregateAgent = BaseAgent & {
+  checkForChanges: AggregateSessionSourceCapability["checkForChanges"];
+  commitChangeCheck: AggregateSessionSourceCapability["commitChangeCheck"];
+  incrementalScan: AggregateSessionSourceCapability["incrementalScan"];
+};
+
+type TestAgentOverrides = Partial<BaseAgent> &
+  Partial<Pick<TestAggregateAgent, "checkForChanges" | "commitChangeCheck" | "incrementalScan">>;
+
+function makeAgent(overrides: TestAgentOverrides = {}): TestAggregateAgent {
+  const agent = {
     name: "codex",
     displayName: "Codex",
     isAvailable: () => true,
     scan: () => [],
     checkForChanges: () => ({ hasChanges: false, timestamp: Date.now() }),
     commitChangeCheck: () => undefined,
-    incrementalScan: (sessions) => sessions,
+    incrementalScan: (sessions: SessionHead[]) => sessions,
     getSessionData: () => ({ messages: [] }) as never,
+    getSessionWatchPlan: () => ({ status: "not-needed" as const, reason: "test adapter" }),
     getSessionMetaMap: () => new Map(),
     setSessionMetaMap: () => undefined,
     ...overrides,
-  } as BaseAgent;
+  } as unknown as TestAggregateAgent;
+  return Object.assign(agent, {
+    sessionSourceAccess: {
+      kind: "aggregate" as const,
+      checkForChanges: (...args: Parameters<TestAggregateAgent["checkForChanges"]>) =>
+        agent.checkForChanges(...args),
+      commitChangeCheck: () => agent.commitChangeCheck(),
+      incrementalScan: (...args: Parameters<TestAggregateAgent["incrementalScan"]>) =>
+        agent.incrementalScan(...args),
+    },
+  });
 }
 
 class FakeSyncAgent extends FileSystemSessionSource {
@@ -553,7 +574,7 @@ describe("AgentSyncEngine", () => {
       activeCount: 0,
       run: vi.fn(async (_agentName, payload) => {
         expect(payload.operation).toEqual({
-          kind: "source-backfill",
+          kind: "backfill",
           cursor: "previous",
           checkpoint: "durable",
         });
@@ -653,7 +674,7 @@ describe("AgentSyncEngine", () => {
     expect(workerRunner.run).toHaveBeenCalledWith(
       "codex",
       expect.objectContaining({
-        operation: { kind: "source-backfill", cursor: "cursor-1", checkpoint: "durable" },
+        operation: { kind: "backfill", cursor: "cursor-1", checkpoint: "durable" },
       }),
     );
     expect(core.markAgentFullSyncProgress).toHaveBeenCalledWith("codex", "cursor-2");

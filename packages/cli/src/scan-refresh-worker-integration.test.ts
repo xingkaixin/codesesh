@@ -1,5 +1,6 @@
 import {
   PRICING_CAPTURE_EPOCH,
+  synchronizeSessionSources,
   type BaseAgent,
   type SessionCacheMeta,
   type SessionHead,
@@ -129,7 +130,7 @@ function currentPricingMeta(meta: SessionCacheMeta): SessionCacheMeta {
 
 function makeAgent(overrides: Record<string, unknown> = {}) {
   let sessionMetaMap = new Map<string, SessionCacheMeta>();
-  return Object.assign(new mocks.FileSystemSessionSource(), {
+  const agent = Object.assign(new mocks.FileSystemSessionSource(), {
     name: "codex",
     isAvailable: vi.fn(() => true),
     scan: vi.fn(() => []),
@@ -145,10 +146,29 @@ function makeAgent(overrides: Record<string, unknown> = {}) {
     }),
     ...overrides,
   });
+  return Object.assign(agent, {
+    sessionSourceAccess: {
+      kind: "enumerated" as const,
+      synchronize: (
+        baseline: Parameters<typeof synchronizeSessionSources>[1],
+        request: Parameters<typeof synchronizeSessionSources>[2],
+      ) => synchronizeSessionSources(agent as never, baseline, request),
+      count: () => agent.listSessionSources().length,
+    },
+  });
 }
 
 function makeGenericAgent(overrides: Record<string, unknown> = {}) {
-  return { ...makeAgent(overrides) };
+  const agent = { ...makeAgent(overrides) };
+  return Object.assign(agent, {
+    sessionSourceAccess: {
+      kind: "aggregate" as const,
+      checkForChanges: () => ({ hasChanges: false, timestamp: 0 }),
+      commitChangeCheck: () => {},
+      incrementalScan: (...args: unknown[]) =>
+        (agent.incrementalScan as (...values: unknown[]) => unknown)(...args),
+    },
+  });
 }
 
 function setWorkerData(overrides: Record<string, unknown> = {}) {
@@ -696,7 +716,7 @@ describe("scan refresh worker entry", () => {
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({
-      operation: { kind: "source-backfill", cursor: cursor.id, checkpoint: "durable" },
+      operation: { kind: "backfill", cursor: cursor.id, checkpoint: "durable" },
       previousSessions: [newest, cursor, next],
       meta: Object.fromEntries(
         [newest, cursor, next].map((session) => [
@@ -816,33 +836,6 @@ describe("scan refresh worker entry", () => {
             sourceFingerprint: "new",
           },
         },
-        removedMetaIds: [],
-      }),
-    );
-  });
-
-  it("runs an incremental scan for explicit changed ids", async () => {
-    const previous = makeSession("previous");
-    const updated = makeSession("updated");
-    const incrementalScan = vi.fn(() => Promise.resolve([updated]));
-    const agent = makeAgent({ incrementalScan });
-    mocks.createRegisteredAgents.mockReturnValue([agent]);
-    setWorkerData({
-      previousSessions: [previous],
-      operation: { kind: "incremental-scan", changedIds: ["previous"] },
-    });
-
-    await runWorker();
-
-    expect(incrementalScan).toHaveBeenCalledWith([previous], ["previous"], undefined, {
-      fast: true,
-      onProgress: expect.any(Function),
-    });
-    expect(mocks.postMessage).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        type: "done",
-        changes: [{ session: updated, sortIndex: 0 }],
-        removedSessionIds: ["previous"],
         removedMetaIds: [],
       }),
     );

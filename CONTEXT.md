@@ -12,6 +12,11 @@ _Avoid_: Provider, source type
 Agent 持有的一份原生会话记录；它可以是文件、目录或数据库中的记录。
 _Avoid_: Transcript file
 
+**Session Source Access**:
+Agent 核对原生 Session Source 的行为能力。`enumerated` 可逐一枚举、指纹比较和解析
+Session Source；`aggregate` 只能先检查整体存储是否变化，再重扫受影响的数据。
+_Avoid_: Agent class type, storage class
+
 **Session**:
 由一个 Agent 产生、经 CodeSesh 归一化后可统一浏览的一段编码对话。
 _Avoid_: Conversation, chat
