@@ -51,12 +51,12 @@
   },
   "dependencies": {
     "@codesesh/core": "workspace:*",
-    "@hono/node-server": "^2.1.0",
+    "@hono/node-server": "^2.1.1",
     "better-sqlite3": "^13.0.3",
     "citty": "^0.2.2",
     "consola": "^3.4.2",
-    "hono": "^4.13.0",
-    "open": "^11.0.0"
+    "hono": "^4.13.2",
+    "open": "^11.0.1"
   },
   "devDependencies": {
     "@codesesh/web": "workspace:*",
