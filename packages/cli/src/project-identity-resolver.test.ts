@@ -17,8 +17,6 @@ const workerMocks = vi.hoisted(() => {
       return this;
     }
 
-    unref(): void {}
-
     postMessage(message: unknown): void {
       this.postedMessages.push(message);
     }

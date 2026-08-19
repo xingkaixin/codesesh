@@ -226,7 +226,6 @@ export class ThreadWorkerRunner implements WorkerRunner {
       awaitingCommit: null,
       closed: false,
     };
-    worker.unref();
     this.workers.set(agentName, slot);
     worker.on("message", (message: unknown) => {
       if (appLogger.consumeWorkerMessage(message)) return;

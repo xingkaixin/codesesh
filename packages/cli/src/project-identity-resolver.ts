@@ -251,7 +251,6 @@ export class ThreadProjectIdentityResolver implements ProjectIdentityResolver {
       retirement: null,
     };
     this.workers.add(slot);
-    worker.unref();
     worker.on("message", (message: unknown) => {
       if (appLogger.consumeWorkerMessage(message)) return;
       this.handleWorkerMessage(slot, message);
