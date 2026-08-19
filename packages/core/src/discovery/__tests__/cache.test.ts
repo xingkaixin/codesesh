@@ -1,3 +1,4 @@
+import Database from "better-sqlite3";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -10,6 +11,7 @@ import {
 } from "../cache/sessions.js";
 import { searchSessions, syncSessionSearchIndex } from "../cache/search.js";
 import { setSchemaEnsuredPath } from "../cache/db.js";
+import { searchIndexStateQuery } from "../cache/search-index-writer.js";
 import type { SessionDetail, SessionHead } from "../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-smoke-test-"));
@@ -72,6 +74,23 @@ describe("session cache integration", () => {
       id: "smoke",
       messages: [{ id: "message" }],
     });
+
+    // Every scan re-probes each cached session for index drift. content_text
+    // holds the whole session body, so a plan that reaches the document rows
+    // makes that probe cost the corpus size rather than the session count.
+    const db = new Database(join(testHomeDir, ".cache", "codesesh", "codesesh.db"), {
+      readonly: true,
+    });
+    try {
+      const plan = db
+        .prepare(`EXPLAIN QUERY PLAN ${searchIndexStateQuery(1)}`)
+        .all("smoke", "codex", "codex", "codex") as Array<{ detail: string }>;
+      expect(plan.map(({ detail }) => detail)).toContainEqual(
+        expect.stringContaining("COVERING INDEX idx_session_documents_state"),
+      );
+    } finally {
+      db.close();
+    }
   });
 
   it("merges a partial snapshot without deleting data outside its window", () => {

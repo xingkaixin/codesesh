@@ -259,6 +259,68 @@ function searchIndexStateFromRows(
   };
 }
 
+/**
+ * Freshness probe for a batch of sessions: is each one's indexed document still
+ * in step with its cached head?
+ *
+ * INDEXED BY is not a micro-optimisation. Without stats SQLite prefers the
+ * UNIQUE(agent_name, session_id) auto-index, and reaching content_hash then
+ * means reading each row past content_text through its overflow chain — proving
+ * an unchanged agent is up to date would cost the size of the indexed corpus.
+ * Pinning the covering index keeps the probe proportional to the session count.
+ */
+export function searchIndexStateQuery(sessionIdCount: number): string {
+  const requestedRows = Array.from({ length: sessionIdCount }, () => "(?)").join(", ");
+  return `
+    WITH requested_session_ids(session_id) AS (VALUES ${requestedRows})
+    SELECT
+      requested.session_id,
+      documents.content_hash,
+      documents.indexed_message_count,
+      documents.detail_version,
+      sessions.meta_json,
+      sessions.title AS session_title,
+      sessions.directory AS session_directory,
+      sessions.time_created AS session_time_created,
+      sessions.time_updated AS session_time_updated,
+      sessions.message_count AS session_message_count,
+      sessions.total_input_tokens AS session_total_input_tokens,
+      sessions.total_output_tokens AS session_total_output_tokens,
+      sessions.total_cache_read_tokens AS session_total_cache_read_tokens,
+      sessions.total_cache_create_tokens AS session_total_cache_create_tokens,
+      sessions.total_cost AS session_total_cost,
+      sessions.cost_source AS session_cost_source,
+      sessions.total_tokens AS session_total_tokens,
+      COUNT(messages.message_index) AS value
+    FROM requested_session_ids AS requested
+    LEFT JOIN session_documents AS documents
+      INDEXED BY idx_session_documents_state
+      ON documents.agent_name = ? AND documents.session_id = requested.session_id
+    LEFT JOIN messages
+      ON messages.agent_name = ? AND messages.session_id = requested.session_id
+    LEFT JOIN sessions
+      ON sessions.agent_name = ? AND sessions.session_id = requested.session_id
+    GROUP BY
+      requested.session_id,
+      documents.content_hash,
+      documents.indexed_message_count,
+      documents.detail_version,
+      sessions.meta_json,
+      sessions.title,
+      sessions.directory,
+      sessions.time_created,
+      sessions.time_updated,
+      sessions.message_count,
+      sessions.total_input_tokens,
+      sessions.total_output_tokens,
+      sessions.total_cache_read_tokens,
+      sessions.total_cache_create_tokens,
+      sessions.total_cost,
+      sessions.cost_source,
+      sessions.total_tokens
+  `;
+}
+
 function readSearchIndexState(
   db: SQLiteDatabase,
   agentName: string,
@@ -269,57 +331,8 @@ function readSearchIndexState(
 
   for (let offset = 0; offset < uniqueSessionIds.length; offset += SEARCH_INDEX_STATE_BATCH_SIZE) {
     const batch = uniqueSessionIds.slice(offset, offset + SEARCH_INDEX_STATE_BATCH_SIZE);
-    const requestedRows = batch.map(() => "(?)").join(", ");
     const batchRows = db
-      .prepare(
-        `
-          WITH requested_session_ids(session_id) AS (VALUES ${requestedRows})
-          SELECT
-            requested.session_id,
-            documents.content_hash,
-            documents.indexed_message_count,
-            documents.detail_version,
-            sessions.meta_json,
-            sessions.title AS session_title,
-            sessions.directory AS session_directory,
-            sessions.time_created AS session_time_created,
-            sessions.time_updated AS session_time_updated,
-            sessions.message_count AS session_message_count,
-            sessions.total_input_tokens AS session_total_input_tokens,
-            sessions.total_output_tokens AS session_total_output_tokens,
-            sessions.total_cache_read_tokens AS session_total_cache_read_tokens,
-            sessions.total_cache_create_tokens AS session_total_cache_create_tokens,
-            sessions.total_cost AS session_total_cost,
-            sessions.cost_source AS session_cost_source,
-            sessions.total_tokens AS session_total_tokens,
-            COUNT(messages.message_index) AS value
-          FROM requested_session_ids AS requested
-          LEFT JOIN session_documents AS documents
-            ON documents.agent_name = ? AND documents.session_id = requested.session_id
-          LEFT JOIN messages
-            ON messages.agent_name = ? AND messages.session_id = requested.session_id
-          LEFT JOIN sessions
-            ON sessions.agent_name = ? AND sessions.session_id = requested.session_id
-          GROUP BY
-            requested.session_id,
-            documents.content_hash,
-            documents.indexed_message_count,
-            documents.detail_version,
-            sessions.meta_json,
-            sessions.title,
-            sessions.directory,
-            sessions.time_created,
-            sessions.time_updated,
-            sessions.message_count,
-            sessions.total_input_tokens,
-            sessions.total_output_tokens,
-            sessions.total_cache_read_tokens,
-            sessions.total_cache_create_tokens,
-            sessions.total_cost,
-            sessions.cost_source,
-            sessions.total_tokens
-        `,
-      )
+      .prepare(searchIndexStateQuery(batch.length))
       .all(...batch, agentName, agentName, agentName) as SearchIndexStateRow[];
     rows.push(...batchRows);
   }
