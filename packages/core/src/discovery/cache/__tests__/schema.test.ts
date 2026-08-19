@@ -438,6 +438,8 @@ describe("cache schema boundary", () => {
     syncSessionSearchIndex("codex", [session], () => makeSessionData(session.id));
 
     const legacyDb = new Database(getCachePath());
+    // A real v18 database predates both the projection version and the index over it.
+    legacyDb.exec("DROP INDEX idx_session_documents_state");
     legacyDb.exec("ALTER TABLE session_documents DROP COLUMN detail_version");
     legacyDb.pragma("user_version = 18");
     legacyDb.prepare("UPDATE cache_meta SET value = '18' WHERE key = 'version'").run();

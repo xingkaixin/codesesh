@@ -251,6 +251,11 @@ function readMigratedFacts(): Record<string, unknown> {
       )
         .map((row) => row.name)
         .sort(),
+      documentStateIndexColumns: (
+        db.prepare("PRAGMA index_info(idx_session_documents_state)").all() as Array<{
+          name: string;
+        }>
+      ).map((row) => row.name),
       sessionColumns: (db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>)
         .map((row) => row.name)
         .sort(),
@@ -377,6 +382,13 @@ describe("sqlite migration release gate", () => {
           "indexed_message_count",
           "session_id",
           "title",
+        ],
+        documentStateIndexColumns: [
+          "agent_name",
+          "session_id",
+          "content_hash",
+          "indexed_message_count",
+          "detail_version",
         ],
         sessionColumns: [
           "activity_time",
