@@ -295,6 +295,10 @@ export function openDb(dbPath: string): SQLiteDatabase | null {
   }
   try {
     ensurePrivateDirectory(dirname(dbPath));
+    // TEMP tables can hold a full corpus of staged publication payloads, so they
+    // must spill to disk next to the database rather than to a $TMPDIR that may
+    // be RAM-backed.
+    if (!isInMemoryPath(dbPath)) process.env.SQLITE_TMPDIR ||= dirname(dbPath);
     const db = DatabaseConstructor(dbPath);
     // The sidecars only exist once the connection is established.
     restrictPrivateDatabase(dbPath);
@@ -305,6 +309,7 @@ export function openDb(dbPath: string): SQLiteDatabase | null {
       db.pragma("journal_mode = WAL");
       db.pragma("synchronous = NORMAL");
       db.pragma("foreign_keys = ON");
+      db.pragma("temp_store = FILE");
     } catch {
       // The database remains usable when SQLite rejects connection-level tuning.
     }
