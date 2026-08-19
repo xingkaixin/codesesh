@@ -72,6 +72,12 @@ TEMP 里让「进程被中断后留下孤儿暂存行」不可表达——连接
 系统，无需清理器兜底。TEMP 数据会溢写到数据库同目录的文件（`temp_store = FILE`、
 `SQLITE_TMPDIR` 指向缓存目录），因此暂存机制原本的内存上界仍然成立。
 
+`session_documents` 的 `content_text` 存的是整段会话正文，物理上排在 `content_hash` /
+`indexed_message_count` / `detail_version` 前面。每次扫描都要按会话核对索引是否过期，若从表行读
+这三列，SQLite 必须穿过每行的 overflow 链——核对一个没有变化的 Agent 也要读完整个已索引语料。
+`idx_session_documents_state` 覆盖这三列，`readSearchIndexState` 用 `INDEXED BY` 固定走它（没有
+统计信息时 SQLite 会优先选 `UNIQUE(agent_name, session_id)` 自动索引，从而退回读表行）。
+
 两个 FTS 表都由对应内容表的 insert/update/delete 触发器维护。批量变化达到阈值时，
 `runSearchIndexWrite()` 会在写事务中重建会话文档索引；文件路径索引仍由触发器增量维护。
 搜索先由会话文档索引召回和排序，再在候选会话的消息纯文本中定位首条命中消息，不再
