@@ -14,7 +14,6 @@ import { firstExisting, resolveHomePath } from "../discovery/paths.js";
 import { parseJsonlLines, readJsonlFile, readJsonlFileLines } from "../utils/jsonl.js";
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
 import { cleanInternalText, isInternalEventType } from "../utils/session-normalization.js";
-import { estimateTokenCost } from "../utils/cost.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import { parseAgentTimestamp } from "../utils/timestamp.js";
 import { asRecord, asString, narrowField } from "../utils/narrow.js";
@@ -28,6 +27,7 @@ import {
   splitExecToolName,
   stripExecOutputEnvelope,
 } from "./codex-exec-decode.js";
+import { CodexTokenUsageAccumulator } from "./codex-token-usage.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -95,11 +95,6 @@ function extractModelName(raw: unknown): string | null {
   return typeof raw === "string" && raw.trim() ? raw.trim() : null;
 }
 
-function extractCachedInputTokens(usage: Record<string, unknown> | undefined): number {
-  if (!usage) return 0;
-  return Number(usage["cached_input_tokens"] ?? usage["cache_read_input_tokens"] ?? 0);
-}
-
 function narrowRecordField(value: unknown, field: string): Record<string, unknown> | undefined {
   return narrowField("codex", field, value, asRecord);
 }
@@ -135,21 +130,6 @@ function readLeadingJsonlLines(filePath: string, limit: number): string[] {
     if (lines.length === limit) break;
   }
   return lines;
-}
-
-function extractTokenUsage(payload: Record<string, unknown>): {
-  totalUsage: Record<string, unknown> | undefined;
-  lastUsage: Record<string, unknown> | undefined;
-} {
-  const info = narrowRecordField(payload["info"], "token_count.info");
-  return {
-    totalUsage: info
-      ? narrowRecordField(info["total_token_usage"], "token_count.total_token_usage")
-      : undefined,
-    lastUsage: info
-      ? narrowRecordField(info["last_token_usage"], "token_count.last_token_usage")
-      : undefined,
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -529,17 +509,8 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   }
 
   private parseTokenStats(filePath: string): SessionHead["stats"] {
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-    let totalCacheReadTokens = 0;
-    let totalCost = 0;
+    const usage = new CodexTokenUsageAccumulator();
     let activeModel: string | null = null;
-
-    let prevCumulativeTotal = 0;
-    let prevInput = 0;
-    let prevOutput = 0;
-    let prevReasoning = 0;
-    let prevCachedInput = 0;
 
     for (const line of readJsonlFileLines(filePath)) {
       try {
@@ -554,58 +525,14 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
         }
 
         if (recordType === "event_msg" && String(payload["type"] ?? "") === "token_count") {
-          const { totalUsage, lastUsage } = extractTokenUsage(payload);
-          const cumulativeTotal = Number(totalUsage?.["total_tokens"] ?? 0);
-          if (cumulativeTotal <= 0 || cumulativeTotal === prevCumulativeTotal) continue;
-          prevCumulativeTotal = cumulativeTotal;
-
-          let inputTokens = 0;
-          let outputTokens = 0;
-          let reasoningTokens = 0;
-          let cacheReadTokens = 0;
-
-          if (lastUsage) {
-            inputTokens = Number(lastUsage["input_tokens"] ?? 0);
-            outputTokens = Number(lastUsage["output_tokens"] ?? 0);
-            reasoningTokens = Number(lastUsage["reasoning_output_tokens"] ?? 0);
-            cacheReadTokens = extractCachedInputTokens(lastUsage);
-          } else if (totalUsage) {
-            inputTokens = Number(totalUsage["input_tokens"] ?? 0) - prevInput;
-            outputTokens = Number(totalUsage["output_tokens"] ?? 0) - prevOutput;
-            reasoningTokens = Number(totalUsage["reasoning_output_tokens"] ?? 0) - prevReasoning;
-            cacheReadTokens = extractCachedInputTokens(totalUsage) - prevCachedInput;
-            prevInput = Number(totalUsage["input_tokens"] ?? 0);
-            prevOutput = Number(totalUsage["output_tokens"] ?? 0);
-            prevReasoning = Number(totalUsage["reasoning_output_tokens"] ?? 0);
-            prevCachedInput = extractCachedInputTokens(totalUsage);
-          }
-
-          const totalInput = Math.max(0, inputTokens);
-          const totalCacheRead = Math.max(0, cacheReadTokens);
-          totalInputTokens += totalInput;
-          totalOutputTokens += outputTokens + reasoningTokens;
-          totalCacheReadTokens += totalCacheRead;
-          totalCost +=
-            estimateTokenCost(activeModel, {
-              input: totalInput,
-              output: outputTokens,
-              reasoning: reasoningTokens || undefined,
-              cache_read: totalCacheRead || undefined,
-            }) ?? 0;
+          usage.consume(payload, activeModel);
         }
       } catch {
         // skip malformed records
       }
     }
 
-    return {
-      message_count: 0,
-      total_input_tokens: totalInputTokens,
-      total_output_tokens: totalOutputTokens,
-      total_cache_read_tokens: totalCacheReadTokens || undefined,
-      total_cost: totalCost,
-      cost_source: totalCost > 0 ? "estimated" : undefined,
-    };
+    return usage.stats();
   }
 
   getSessionData(sessionId: string): SessionDetail {
@@ -615,21 +542,10 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     this.basePath ??= this.findBasePath();
 
     const transcript = new TranscriptBuilder();
-
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-    let totalCacheReadTokens = 0;
-    let totalCost = 0;
+    const usage = new CodexTokenUsageAccumulator();
 
     let pendingPlan: MessagePart | null = null;
     let activeModel: string | null = null;
-
-    // Token-count dedup state (matches codeburn strategy)
-    let prevCumulativeTotal = 0;
-    let prevInput = 0;
-    let prevOutput = 0;
-    let prevReasoning = 0;
-    let prevCachedInput = 0;
 
     for (const record of readJsonlFile(meta.sourcePath)) {
       try {
@@ -645,58 +561,13 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
         if (recordType === "event_msg") {
           const payload = extractPayload(record);
           if (String(payload["type"] ?? "") === "token_count") {
-            const { totalUsage, lastUsage } = extractTokenUsage(payload);
-            const cumulativeTotal = Number(totalUsage?.["total_tokens"] ?? 0);
-
-            if (cumulativeTotal > 0 && cumulativeTotal === prevCumulativeTotal) {
-              // duplicate event
-            } else {
-              prevCumulativeTotal = cumulativeTotal;
-
-              let inputTokens = 0;
-              let outputTokens = 0;
-              let reasoningTokens = 0;
-              let cacheReadTokens = 0;
-
-              if (lastUsage) {
-                inputTokens = Number(lastUsage["input_tokens"] ?? 0);
-                outputTokens = Number(lastUsage["output_tokens"] ?? 0);
-                reasoningTokens = Number(lastUsage["reasoning_output_tokens"] ?? 0);
-                cacheReadTokens = extractCachedInputTokens(lastUsage);
-              } else if (cumulativeTotal > 0 && totalUsage) {
-                inputTokens = Number(totalUsage["input_tokens"] ?? 0) - prevInput;
-                outputTokens = Number(totalUsage["output_tokens"] ?? 0) - prevOutput;
-                reasoningTokens =
-                  Number(totalUsage["reasoning_output_tokens"] ?? 0) - prevReasoning;
-                cacheReadTokens = extractCachedInputTokens(totalUsage) - prevCachedInput;
-
-                prevInput = Number(totalUsage["input_tokens"] ?? 0);
-                prevOutput = Number(totalUsage["output_tokens"] ?? 0);
-                prevReasoning = Number(totalUsage["reasoning_output_tokens"] ?? 0);
-                prevCachedInput = extractCachedInputTokens(totalUsage);
-              }
-
-              const totalInput = Math.max(0, inputTokens);
-              const totalCacheRead = Math.max(0, cacheReadTokens);
-              if (totalInput || outputTokens || reasoningTokens) {
-                totalInputTokens += totalInput;
-                totalOutputTokens += outputTokens + reasoningTokens;
-                totalCacheReadTokens += totalCacheRead;
-
-                const tokens = {
-                  input: totalInput,
-                  output: outputTokens,
-                  reasoning: reasoningTokens || undefined,
-                  cache_read: totalCacheRead || undefined,
-                };
-                const cost = estimateTokenCost(activeModel, tokens);
-                transcript.attachUsageToLatestAssistant(tokens, {
-                  model: activeModel,
-                  cost: cost ?? undefined,
-                  costSource: cost === null ? undefined : "estimated",
-                });
-                totalCost += cost ?? 0;
-              }
+            const delta = usage.consume(payload, activeModel);
+            if (delta) {
+              transcript.attachUsageToLatestAssistant(delta.tokens, {
+                model: delta.model,
+                cost: delta.cost ?? undefined,
+                costSource: delta.cost === null ? undefined : "estimated",
+              });
             }
           }
         }
@@ -706,14 +577,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     }
 
     if (pendingPlan) transcript.appendToCurrentAssistant(pendingPlan);
-    const result = transcript.finish({
-      message_count: 0,
-      total_input_tokens: totalInputTokens,
-      total_output_tokens: totalOutputTokens,
-      total_cache_read_tokens: totalCacheReadTokens || undefined,
-      total_cost: totalCost,
-      cost_source: totalCost > 0 ? "estimated" : undefined,
-    });
+    const result = transcript.finish(usage.stats());
 
     this.applyChildStats(result.stats, meta.id);
 
@@ -1072,17 +936,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     let updatedAt = 0;
     let messageCount = 0;
     let activeModel: string | null = null;
-    const modelUsageMap: Record<string, number> = {};
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-    let totalCacheReadTokens = 0;
-    let totalCost = 0;
-
-    let scanPrevCumulativeTotal = 0;
-    let scanPrevInput = 0;
-    let scanPrevOutput = 0;
-    let scanPrevReasoning = 0;
-    let scanPrevCachedInput = 0;
+    const usage = new CodexTokenUsageAccumulator();
 
     const COUNTED_TYPES = new Set(["message", "function_call", "function_call_output"]);
 
@@ -1148,52 +1002,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
 
         if (recordType === "event_msg") {
           if (String(payload["type"] ?? "") === "token_count") {
-            const { totalUsage, lastUsage } = extractTokenUsage(payload);
-            const cumulativeTotal = Number(totalUsage?.["total_tokens"] ?? 0);
-
-            if (cumulativeTotal > 0 && cumulativeTotal !== scanPrevCumulativeTotal) {
-              scanPrevCumulativeTotal = cumulativeTotal;
-
-              let inputTokens = 0;
-              let outputTokens = 0;
-              let reasoningTokens = 0;
-              let cacheReadTokens = 0;
-
-              if (lastUsage) {
-                inputTokens = Number(lastUsage["input_tokens"] ?? 0);
-                outputTokens = Number(lastUsage["output_tokens"] ?? 0);
-                reasoningTokens = Number(lastUsage["reasoning_output_tokens"] ?? 0);
-                cacheReadTokens = extractCachedInputTokens(lastUsage);
-              } else if (cumulativeTotal > 0 && totalUsage) {
-                inputTokens = Number(totalUsage["input_tokens"] ?? 0) - scanPrevInput;
-                outputTokens = Number(totalUsage["output_tokens"] ?? 0) - scanPrevOutput;
-                reasoningTokens =
-                  Number(totalUsage["reasoning_output_tokens"] ?? 0) - scanPrevReasoning;
-                cacheReadTokens = extractCachedInputTokens(totalUsage) - scanPrevCachedInput;
-
-                scanPrevInput = Number(totalUsage["input_tokens"] ?? 0);
-                scanPrevOutput = Number(totalUsage["output_tokens"] ?? 0);
-                scanPrevReasoning = Number(totalUsage["reasoning_output_tokens"] ?? 0);
-                scanPrevCachedInput = extractCachedInputTokens(totalUsage);
-              }
-
-              const totalInput = Math.max(0, inputTokens);
-              const totalCacheRead = Math.max(0, cacheReadTokens);
-              totalInputTokens += totalInput;
-              totalOutputTokens += outputTokens + reasoningTokens;
-              totalCacheReadTokens += totalCacheRead;
-              const totalForModel = totalInput + outputTokens + reasoningTokens;
-              if (activeModel && totalForModel > 0) {
-                modelUsageMap[activeModel] = (modelUsageMap[activeModel] ?? 0) + totalForModel;
-              }
-              const cost = estimateTokenCost(activeModel, {
-                input: totalInput,
-                output: outputTokens,
-                reasoning: reasoningTokens || undefined,
-                cache_read: totalCacheRead || undefined,
-              });
-              if (cost !== null) totalCost += cost;
-            }
+            usage.consume(payload, activeModel);
           }
         }
       } catch {
@@ -1216,15 +1025,8 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
         parentThreadId == null ? undefined : { agentName: this.name, sessionId: parentThreadId },
       time_created: createdAt,
       time_updated: updatedAt,
-      stats: {
-        message_count: messageCount,
-        total_input_tokens: totalInputTokens,
-        total_output_tokens: totalOutputTokens,
-        total_cache_read_tokens: totalCacheReadTokens || undefined,
-        total_cost: totalCost,
-        cost_source: totalCost > 0 ? "estimated" : undefined,
-      },
-      model_usage: Object.keys(modelUsageMap).length > 0 ? modelUsageMap : undefined,
+      stats: usage.stats(messageCount),
+      model_usage: usage.modelUsage(),
     });
   }
 
