@@ -31,11 +31,11 @@ function collectDiagnostics(
 }
 
 describe("withCacheDb diagnostics", () => {
-  it("reports cache.write_failed when the callback throws", () => {
+  it("reports cache.write_failed when a SQLite callback throws", () => {
     const events = collectDiagnostics();
 
     const result = withCacheDb(() => {
-      throw new Error("disk full");
+      throw Object.assign(new Error("disk full"), { code: "SQLITE_FULL" });
     });
 
     expect(result).toBeNull();
@@ -44,7 +44,7 @@ describe("withCacheDb diagnostics", () => {
         event: "cache.write_failed",
         detail: {
           message: "disk full",
-          code: undefined,
+          code: "SQLITE_FULL",
           error_class: "Error",
           stack: expect.any(String),
         },
@@ -73,10 +73,36 @@ describe("withCacheDb diagnostics", () => {
     ]);
   });
 
+  it("rethrows programming errors from read-only callbacks", () => {
+    withCacheDb(() => undefined);
+    const events = collectDiagnostics();
+
+    expect(() =>
+      withCacheDbReadOnly(() => {
+        throw new TypeError("invalid row projection");
+      }),
+    ).toThrow(new TypeError("invalid row projection"));
+    expect(events).toEqual([]);
+  });
+
+  it("rethrows programming errors without discarding the connection", () => {
+    const events = collectDiagnostics();
+    const connection = withCacheDb((db) => db);
+
+    expect(() =>
+      withCacheDb(() => {
+        throw new TypeError("invalid cache projection");
+      }),
+    ).toThrow(new TypeError("invalid cache projection"));
+
+    expect(events).toEqual([]);
+    expect(withCacheDb((db) => db)).toBe(connection);
+  });
+
   it("stays silent when no diagnostics sink is injected", () => {
     expect(() =>
       withCacheDb(() => {
-        throw new Error("boom");
+        throw Object.assign(new Error("boom"), { code: "SQLITE_IOERR" });
       }),
     ).not.toThrow();
   });
