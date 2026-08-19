@@ -599,6 +599,26 @@ function createSearchTables(db: SQLiteDatabase): void {
   createSearchTriggers(db);
 }
 
+/**
+ * Covers the search-index freshness probe (see readSearchIndexState) so it never
+ * has to read past content_text in the document rows.
+ *
+ * Created only once the schema has reached the target version: createSearchTables
+ * doubles as the v4 migration and still sees the legacy column set there.
+ */
+function createSearchStateIndex(db: SQLiteDatabase): void {
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_session_documents_state
+      ON session_documents(
+        agent_name,
+        session_id,
+        content_hash,
+        indexed_message_count,
+        detail_version
+      )
+  `);
+}
+
 function createSearchTriggers(db: SQLiteDatabase): void {
   db.exec(`
     CREATE TRIGGER IF NOT EXISTS session_documents_ai AFTER INSERT ON session_documents BEGIN
@@ -1715,6 +1735,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
   const currentVersion = getCurrentCacheSchemaVersion(db);
   if (currentVersion === 0 && !hasAnyCacheSchema(db)) {
     createLatestCacheSchema(db);
+    createSearchStateIndex(db);
     setCacheSchemaVersion(db);
     migrateCodexExecDecode(db);
     migrateOpenCodeSubagentFold(db);
@@ -1805,6 +1826,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
   });
 
   createLatestCacheSchema(db);
+  createSearchStateIndex(db);
 
   // Only stamp when behind: every thread's first connection runs ensureSchema,
   // and an unconditional PRAGMA user_version write would contend for the write
