@@ -968,7 +968,7 @@ export function writePreparedSessionSearchIndex(
         publication.failures,
       );
       if (publication.publicationId) {
-        deletePublicationPayloads(db, publication.publicationId);
+        deletePublicationPayloads(db, publication.publicationId, publication.agentName);
       }
     },
     "caller",
@@ -988,9 +988,9 @@ export function writePreparedSessionSearchIndex(
   };
 }
 
-export function discardPreparedSessionSearchIndex(publicationId: string): void {
+export function discardPreparedSessionSearchIndex(publicationId: string, agentName: string): void {
   withSearchIndexDb((db) =>
-    db.transaction(() => discardPublicationStaging(db, publicationId)).immediate(),
+    db.transaction(() => discardPublicationStaging(db, publicationId, agentName)).immediate(),
   );
 }
 

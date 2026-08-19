@@ -25,13 +25,9 @@ function readPublicationCounts(db: SQLiteDatabase) {
   const documents = db
     .prepare("SELECT COUNT(*) AS value FROM session_documents WHERE agent_name = ?")
     .get("codex") as { value?: number };
-  const payloads = db
-    .prepare("SELECT COUNT(*) AS value FROM search_index_publication_entries")
-    .get() as { value?: number };
   return {
     sessions: Number(sessions.value ?? 0),
     documents: Number(documents.value ?? 0),
-    payloads: Number(payloads.value ?? 0),
   };
 }
 
@@ -76,11 +72,11 @@ describe("cache schema boundary", () => {
       "session_documents",
       "session_file_activity",
       "project_groups_v",
-      "search_index_publication_entries",
     ]) {
       expect(state?.names.has(name)).toBe(true);
     }
     expect(state?.names.has("messages_fts")).toBe(false);
+    expect(state?.names.has("search_index_publication_entries")).toBe(false);
     expect(state?.documentColumns).toEqual([
       "id",
       "agent_name",
@@ -102,7 +98,7 @@ describe("cache schema boundary", () => {
         "publication_id",
       ]),
     );
-    expect(state?.version).toBe(30);
+    expect(state?.version).toBe(31);
   });
 
   it("derives session identity from the composite key when upgrading schema 29", () => {
@@ -178,7 +174,7 @@ describe("cache schema boundary", () => {
       ),
     }));
 
-    expect(migrated).toEqual({ objects: [], version: 30 });
+    expect(migrated).toEqual({ objects: [], version: 31 });
   });
 
   it("adds an empty hash chain column when upgrading schema 24", () => {
@@ -207,7 +203,7 @@ describe("cache schema boundary", () => {
       ).content_chain_digest,
     }));
 
-    expect(migrated).toEqual({ version: 30, digest: null });
+    expect(migrated).toEqual({ version: 31, digest: null });
   });
 
   it("backfills session usage summaries when upgrading schema 28", () => {
@@ -295,7 +291,7 @@ describe("cache schema boundary", () => {
     }));
 
     expect(migrated).toEqual({
-      version: 30,
+      version: 31,
       summary: {
         message_count: 2,
         untimed_message_count: 1,
@@ -340,7 +336,7 @@ describe("cache schema boundary", () => {
     expect(secondProbeCount).toBe(firstProbeCount);
   });
 
-  it("defers orphaned publication cleanup until the first search-index write", () => {
+  it("defers orphaned v21 publication cleanup until the first search-index write", () => {
     const session = makeSessionHead("orphaned-publication");
     saveCachedSessions("codex", [session]);
     syncSessionSearchIndex("codex", [session], () => makeSessionData(session.id));
@@ -351,16 +347,6 @@ describe("cache schema boundary", () => {
         "orphaned",
         session.id,
       );
-      db.prepare(
-        `
-          INSERT INTO search_index_publication_entries(
-            publication_id,
-            agent_name,
-            session_id,
-            payload_json
-          ) VALUES (?, ?, ?, ?)
-        `,
-      ).run("orphaned", "codex", session.id, "{}");
     } finally {
       db.close();
     }
@@ -368,11 +354,11 @@ describe("cache schema boundary", () => {
 
     const beforeCleanup = schema.withCacheDb(readPublicationCounts);
 
-    expect(beforeCleanup).toEqual({ sessions: 1, documents: 1, payloads: 1 });
+    expect(beforeCleanup).toEqual({ sessions: 1, documents: 1 });
 
     const afterCleanup = schema.withSearchIndexDb(readPublicationCounts);
 
-    expect(afterCleanup).toEqual({ sessions: 0, documents: 0, payloads: 0 });
+    expect(afterCleanup).toEqual({ sessions: 0, documents: 0 });
   });
 
   it("skips cleanup scans after an empty staging probe", () => {
@@ -381,7 +367,7 @@ describe("cache schema boundary", () => {
 
     schema.withSearchIndexDb(() => undefined);
     const firstProbeCount = prepare.mock.calls.filter(([sql]) =>
-      String(sql).includes("SELECT 1 FROM search_index_publication_entries LIMIT 1"),
+      String(sql).includes("SELECT 1 FROM sessions WHERE publication_id IS NOT NULL LIMIT 1"),
     ).length;
     const cleanupStatementCount = prepare.mock.calls.filter(([sql]) =>
       String(sql).includes("DELETE FROM"),
@@ -389,7 +375,7 @@ describe("cache schema boundary", () => {
 
     schema.withSearchIndexDb(() => undefined);
     const secondProbeCount = prepare.mock.calls.filter(([sql]) =>
-      String(sql).includes("SELECT 1 FROM search_index_publication_entries LIMIT 1"),
+      String(sql).includes("SELECT 1 FROM sessions WHERE publication_id IS NOT NULL LIMIT 1"),
     ).length;
     prepare.mockRestore();
 
@@ -475,7 +461,7 @@ describe("cache schema boundary", () => {
           .get("codex", session.id) != null,
     }));
 
-    expect(migrated).toEqual({ version: 30, detailVersion: "", pending: true });
+    expect(migrated).toEqual({ version: 31, detailVersion: "", pending: true });
   });
 
   it("marks legacy project identities stale by leaving added provenance empty", () => {
@@ -514,7 +500,7 @@ describe("cache schema boundary", () => {
     });
 
     expect(migrated).toEqual({
-      version: 30,
+      version: 31,
       resolverRevision: null,
       inputSignature: null,
       classifierRevision: null,
@@ -584,7 +570,7 @@ describe("cache schema boundary", () => {
       });
 
       expect(migrated).toEqual({
-        version: 30,
+        version: 31,
         partsJson: legacyPartsJson,
         partsFormatVersion: 0,
       });

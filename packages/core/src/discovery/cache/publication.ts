@@ -167,7 +167,7 @@ export function commitDurableSessionPublication(
   });
 
   if (!searchIndex) {
-    discardPreparedSessionSearchIndex(publicationId);
+    discardPreparedSessionSearchIndex(publicationId, publication.agentName);
     diagnostics?.warn("search_index.publication_stage", {
       ...detail,
       stage: "rolled_back",

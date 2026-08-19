@@ -56,7 +56,6 @@ const CACHE_DATA_TABLES = [
   "cache_initialization",
   "cached_sessions",
   "pending_reindex",
-  "search_index_publication_entries",
   "session_documents",
   "session_file_activity",
   "message_tools",
@@ -279,7 +278,7 @@ describe("withCacheDb schema memo", () => {
   it("runs ensureSchema on the first open but skips it on later opens for the same path", () => {
     withCacheDb(() => undefined);
     expect(getSchemaEnsuredPath()).toBe(getCachePath());
-    expect(getUserVersion(getCachePath())).toBe(30);
+    expect(getUserVersion(getCachePath())).toBe(31);
 
     const db = new Database(getCachePath());
     db.pragma("user_version = 14");
@@ -290,7 +289,7 @@ describe("withCacheDb schema memo", () => {
 
     setSchemaEnsuredPath(null);
     withCacheDb(() => undefined);
-    expect(getUserVersion(getCachePath())).toBe(30);
+    expect(getUserVersion(getCachePath())).toBe(31);
   });
 });
 
@@ -298,7 +297,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(30);
+    expect(getUserVersion(getCachePath())).toBe(31);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -571,7 +570,7 @@ describe("saveCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
 
     expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(30);
+    expect(getUserVersion(getCachePath())).toBe(31);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
@@ -631,7 +630,7 @@ describe("saveCachedSessions", () => {
 
     try {
       expect(loadCachedSessions("claudecode")?.sessions).toEqual([]);
-      expect(getUserVersion(getCachePath())).toBe(30);
+      expect(getUserVersion(getCachePath())).toBe(31);
       expect(warnings).toContainEqual({
         event: "sqlite.migration.identity_precompute.missing_directory",
         detail: { agent_name: "claudecode", session_id: "legacy-null-directory" },
@@ -758,8 +757,6 @@ describe("clearCache", () => {
         INSERT INTO cache_initialization(agent_name, initialized_at, index_version, last_sync_at)
         VALUES ('codex', ${now}, 'index-v1', ${now});
         INSERT INTO pending_reindex(agent_name, session_id) VALUES ('orphan', 'clear-me');
-        INSERT INTO search_index_publication_entries(publication_id, agent_name, session_id, payload_json)
-        VALUES ('staged-publication', 'codex', 'clear-me', '{}');
         INSERT INTO session_documents(
           agent_name, session_id, title, content_text, content_hash,
           indexed_message_count, detail_version, indexed_at

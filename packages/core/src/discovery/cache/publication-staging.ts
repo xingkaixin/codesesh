@@ -6,15 +6,22 @@ interface StagedPublicationRow extends DatabaseRow {
 }
 
 const PUBLICATION_READ_BATCH_SIZE = 64;
+const STAGING_TABLE = "temp.search_index_publication_entries";
 
 export interface PublicationPayload {
   sessionId: string;
   json: string;
 }
 
-export function createPublicationStagingTable(db: SQLiteDatabase): void {
+/**
+ * Staged payloads are scratch for one in-process publication — nothing resumes
+ * one across processes. Holding them in the connection's TEMP schema makes an
+ * orphan unrepresentable: an abrupt exit returns the bytes to the OS instead of
+ * leaving a corpus-sized copy inside the durable cache for a sweeper to find.
+ */
+function ensureStagingTable(db: SQLiteDatabase): void {
   db.exec(`
-    CREATE TABLE IF NOT EXISTS search_index_publication_entries (
+    CREATE TEMP TABLE IF NOT EXISTS search_index_publication_entries (
       publication_id TEXT NOT NULL,
       agent_name TEXT NOT NULL,
       session_id TEXT NOT NULL,
@@ -30,8 +37,9 @@ export function stagePublicationPayloads(
   agentName: string,
   payloads: Iterable<PublicationPayload>,
 ): number {
+  ensureStagingTable(db);
   const upsert = db.prepare(`
-    INSERT INTO search_index_publication_entries(
+    INSERT INTO ${STAGING_TABLE}(
       publication_id,
       agent_name,
       session_id,
@@ -48,6 +56,11 @@ export function stagePublicationPayloads(
   return staged;
 }
 
+/**
+ * Deliberately does not create the table: staging and commit must share one
+ * connection, so a missing temp schema means that invariant broke and must fail
+ * loudly instead of silently indexing nothing.
+ */
 export function* readPublicationPayloads(
   db: SQLiteDatabase,
   publicationId: string,
@@ -55,7 +68,7 @@ export function* readPublicationPayloads(
 ): Generator<string> {
   const readBatch = db.prepare(`
         SELECT session_id, payload_json
-        FROM search_index_publication_entries
+        FROM ${STAGING_TABLE}
         WHERE publication_id = ? AND agent_name = ? AND session_id > ?
         ORDER BY session_id
         LIMIT ?
@@ -74,13 +87,19 @@ export function* readPublicationPayloads(
   }
 }
 
-export function deletePublicationPayloads(db: SQLiteDatabase, publicationId: string): void {
-  db.prepare("DELETE FROM search_index_publication_entries WHERE publication_id = ?").run(
+export function deletePublicationPayloads(
+  db: SQLiteDatabase,
+  publicationId: string,
+  agentName: string,
+): void {
+  ensureStagingTable(db);
+  db.prepare(`DELETE FROM ${STAGING_TABLE} WHERE publication_id = ? AND agent_name = ?`).run(
     publicationId,
+    agentName,
   );
 }
 
-function hasLegacyPublicationRows(db: SQLiteDatabase, publicationId?: string): boolean {
+export function hasLegacyPublicationRows(db: SQLiteDatabase, publicationId?: string): boolean {
   const predicate = publicationId ? "publication_id = ?" : "publication_id IS NOT NULL";
   const params = publicationId ? [publicationId] : [];
   return (
@@ -88,12 +107,7 @@ function hasLegacyPublicationRows(db: SQLiteDatabase, publicationId?: string): b
   );
 }
 
-export function hasPublicationStaging(db: SQLiteDatabase): boolean {
-  const payload = db.prepare("SELECT 1 FROM search_index_publication_entries LIMIT 1").get();
-  return payload !== undefined || hasLegacyPublicationRows(db);
-}
-
-function deleteLegacyPublicationRows(db: SQLiteDatabase, publicationId?: string): void {
+export function deleteLegacyPublicationRows(db: SQLiteDatabase, publicationId?: string): void {
   // Schema v21 could leave staged heads and their live detail rows after an interruption.
   const predicate = publicationId
     ? "staged.publication_id = ?"
@@ -124,13 +138,13 @@ function deleteLegacyPublicationRows(db: SQLiteDatabase, publicationId?: string)
   ).run(...params);
 }
 
-export function discardPublicationStaging(db: SQLiteDatabase, publicationId?: string): void {
+export function discardPublicationStaging(
+  db: SQLiteDatabase,
+  publicationId: string,
+  agentName: string,
+): void {
   if (hasLegacyPublicationRows(db, publicationId)) {
     deleteLegacyPublicationRows(db, publicationId);
   }
-  if (publicationId) {
-    deletePublicationPayloads(db, publicationId);
-  } else {
-    db.prepare("DELETE FROM search_index_publication_entries").run();
-  }
+  deletePublicationPayloads(db, publicationId, agentName);
 }
