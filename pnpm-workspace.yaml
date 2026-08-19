@@ -8,6 +8,12 @@ allowBuilds:
   sharp: true
 minimumReleaseAge: 1440
 
+# eslint-plugin-astro 3 requires ESLint 10 while its jsx-a11y peer has not yet
+# widened its compatible peer range. Keep the exception scoped to that edge.
+peerDependencyRules:
+  allowedVersions:
+    "eslint-plugin-jsx-a11y>eslint": "10"
+
 overrides:
   "esbuild@>=0.27.3 <0.28.1": "0.28.2"
   "nanoid@<3.3.18": "^3.3.18"
