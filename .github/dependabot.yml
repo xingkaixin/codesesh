@@ -9,6 +9,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Runtime packages compile against the minimum supported Node.js release.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types:
+          - version-update:semver-major
     groups:
       production-dependencies:
         dependency-type: production
