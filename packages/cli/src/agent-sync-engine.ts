@@ -9,7 +9,6 @@ import {
   markAgentFullSyncCompleted,
   readCachedSessions,
   readAgentCacheInitialization,
-  readAgentLastFullSyncAt,
   sessionSignature,
   type BaseAgent,
   type AggregateSessionSourceCapability,
@@ -21,11 +20,8 @@ import {
   type SessionSourceFailure,
   type SessionSnapshotCompleteness,
 } from "@codesesh/core";
-import type {
-  ScanCompletion,
-  ScanStatusEvent,
-  SessionsUpdatedEvent,
-} from "@codesesh/core/contract";
+import type { ScanCompletion, ScanStatusEvent } from "@codesesh/core/contract";
+import { AgentBackfillScheduler } from "./agent-backfill-scheduler.js";
 import { AgentOperationScheduler, type AgentOperationResult } from "./agent-operation-scheduler.js";
 import {
   BackfillLifecycle,
@@ -39,6 +35,11 @@ import { SearchIndexMaintenanceScheduler } from "./search-index-maintenance-sche
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 import { ScanStatusReporter } from "./scan-status-reporter.js";
 import { SearchIndexPublisher } from "./search-index-publisher.js";
+import {
+  SessionPublicationCoordinator,
+  type AgentSessionsChanged,
+  type SessionPublicationResult,
+} from "./session-publication.js";
 import type {
   BackfillScanRefreshOperation,
   ScanRefreshOperation,
@@ -49,12 +50,7 @@ import type { WorkerRunner } from "./worker-runner.js";
 import { toError } from "./errors.js";
 
 export type { AgentOperationResult } from "./agent-operation-scheduler.js";
-
-export interface AgentSessionsChanged {
-  agentName: string;
-  sessions: IdentifiedSessionHead[];
-  event: SessionsUpdatedEvent | null;
-}
+export type { AgentSessionsChanged } from "./session-publication.js";
 
 export interface AgentSyncEngineOptions {
   startupScanOptions?: Pick<ScanOptions, "from" | "to">;
@@ -74,47 +70,39 @@ interface SessionPersistenceDiff {
   removedSessionIds: string[];
 }
 
-interface SessionPublication {
-  context: "scan.refresh" | "scan.backfill";
-  agentName: string;
-  sessions: IdentifiedSessionHead[];
-  candidateChangedIds: string[];
-  indexJob: SearchIndexWorkerJob;
-  onPublishing?: () => void;
-  onCommitted?: (result: SessionPublicationResult) => void;
-}
-
-interface SessionPublicationResult {
-  durableCommitted: true;
-  event: SessionsUpdatedEvent | null;
-  diffDuration: number;
-}
-
 interface RefreshResult {
   result: Exclude<AgentOperationResult, "failed">;
   completion: ScanCompletion;
 }
 
-interface RefreshStrategyResult {
-  status: "continue" | "unchanged";
+interface RefreshStrategyBase {
   nextSessions: IdentifiedSessionHead[];
-  fullScanSessions: IdentifiedSessionHead[] | null;
-  preciseChangedIds: string[] | null;
-  persistenceDiff: SessionPersistenceDiff | null;
   checkDuration: number;
   scanDuration: number;
   sourceFailures: SessionSourceFailure[];
   completeness: SessionSnapshotCompleteness;
   scope: Pick<ScanOptions, "from" | "to">;
-  explicitRemovedSessionIds: string[];
 }
+
+type RefreshPublication =
+  | {
+      kind: "changes";
+      diff: SessionPersistenceDiff;
+      candidateChangedIds: string[];
+    }
+  | {
+      kind: "full";
+      sessions: IdentifiedSessionHead[];
+      explicitRemovedSessionIds: string[];
+    };
+
+type RefreshStrategyResult =
+  | (RefreshStrategyBase & { status: "unchanged" })
+  | (RefreshStrategyBase & { status: "continue"; publication: RefreshPublication });
 
 const REFRESH_DEBOUNCE_MS = 200;
 const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
 const SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD = 100;
-const BACKFILL_INTERVAL_MS = 24 * 60 * 60 * 1000;
-const PARTIAL_BACKFILL_RETRY_DELAY_MS = 5 * 60 * 1000;
-const CACHE_TRUNCATION_COVERAGE = 0.5;
 // SSE carries one compact summary; logs retain the complete failure list.
 const SOURCE_FAILURE_SUMMARY_MAX_LENGTH = 160;
 
@@ -168,14 +156,13 @@ export class AgentSyncEngine {
   private readonly scheduler: AgentOperationScheduler;
   private readonly sessionIndex = new LiveSessionIndex();
   private readonly backfills = new BackfillLifecycle();
-  private cacheIntegrityValidUntilByAgent = new Map<string, number>();
-  private sessionsChangedListeners = new Set<SessionsChangedListener>();
+  private readonly backfillScheduler: AgentBackfillScheduler;
   private readonly statusReporter: ScanStatusReporter;
   private readonly indexPublisher: SearchIndexPublisher;
+  private readonly sessionPublication: SessionPublicationCoordinator;
   private readonly searchIndexJobs: SearchIndexJobRunner;
   private readonly searchIndexMaintenance: SearchIndexMaintenanceScheduler;
   private backgroundRefreshTimer: NodeJS.Timeout | null = null;
-  private isShuttingDown = false;
 
   constructor(private readonly options: AgentSyncEngineOptions) {
     this.scheduler = new AgentOperationScheduler((agentName) => this.performRefresh(agentName));
@@ -188,6 +175,17 @@ export class AgentSyncEngine {
       jobs: this.searchIndexJobs,
       snapshot: () => this.sessionIndex.snapshot(),
       readCachedSessions: (agentName) => this.readCachedSessionsOrWarn("search.index", agentName),
+    });
+    this.sessionPublication = new SessionPublicationCoordinator(
+      this.indexPublisher,
+      this.sessionIndex,
+    );
+    this.backfillScheduler = new AgentBackfillScheduler({
+      lifecycle: this.backfills,
+      statusReporter: this.statusReporter,
+      startupScanOptions: this.startupScanOptions(),
+      runAttempt: (attempt) => this.runBackfill(attempt),
+      scheduleRefresh: (agentName, delayMs) => this.scheduler.schedule(agentName, delayMs),
     });
     this.searchIndexMaintenance = new SearchIndexMaintenanceScheduler(
       this.searchIndexJobs,
@@ -222,8 +220,7 @@ export class AgentSyncEngine {
   }
 
   subscribeSessionsChanged(listener: SessionsChangedListener): () => void {
-    this.sessionsChangedListeners.add(listener);
-    return () => this.sessionsChangedListeners.delete(listener);
+    return this.sessionPublication.subscribe(listener);
   }
 
   subscribeStatusChanged(listener: StatusChangedListener): () => void {
@@ -266,7 +263,7 @@ export class AgentSyncEngine {
   }
 
   async shutdown(): Promise<void> {
-    this.isShuttingDown = true;
+    this.sessionPublication.markShuttingDown();
     const schedulerSnapshot = this.scheduler.snapshot();
     const activeOperations = {
       agent_operations: schedulerSnapshot.activeOperations,
@@ -282,10 +279,9 @@ export class AgentSyncEngine {
       clearTimeout(this.backgroundRefreshTimer);
       this.backgroundRefreshTimer = null;
     }
-    this.backfills.cancelAll();
+    this.backfillScheduler.shutdown();
     this.searchIndexMaintenance.stop();
     this.statusReporter.markShuttingDown();
-    this.cacheIntegrityValidUntilByAgent.clear();
     const searchIndexSnapshot = this.searchIndexJobs.snapshot();
     appLogger.info("search_index.shutdown.started", {
       active_batch_id: searchIndexSnapshot.activeBatchId,
@@ -302,19 +298,8 @@ export class AgentSyncEngine {
     });
   }
 
-  private emitSessionsChanged(change: AgentSessionsChanged): void {
-    if (this.isShuttingDown) return;
-    for (const listener of this.sessionsChangedListeners) {
-      try {
-        listener(change);
-      } catch (error) {
-        this.reportPostCommitError("session.publication", change.agentName, error);
-      }
-    }
-  }
-
   private reportPostCommitError(
-    operation: "scan.refresh" | "scan.backfill" | "session.publication",
+    operation: "scan.refresh" | "scan.backfill",
     agentName: string,
     error: unknown,
   ): void {
@@ -463,8 +448,16 @@ export class AgentSyncEngine {
     const nextSessions = attachMissingProjectIdentities(strategyResult.nextSessions);
     const searchIndexOptions =
       pendingPathCount >= SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD ? { isBulk: true } : undefined;
-    const persistenceDiff = strategyResult.persistenceDiff;
-    const publicationSessions = strategyResult.fullScanSessions ?? nextSessions;
+    const persistenceDiff =
+      strategyResult.publication.kind === "changes" ? strategyResult.publication.diff : null;
+    const publicationSessions =
+      strategyResult.publication.kind === "full"
+        ? strategyResult.publication.sessions
+        : nextSessions;
+    const explicitRemovedSessionIds =
+      strategyResult.publication.kind === "full"
+        ? strategyResult.publication.explicitRemovedSessionIds
+        : [];
     const publicationSessionIds = new Set(
       publicationSessions.map((session) => session.reference.sessionId),
     );
@@ -476,7 +469,7 @@ export class AgentSyncEngine {
       ? persistenceDiff.removedSessionIds.length
       : strategyResult.completeness === "complete"
         ? missingBaselineSessions
-        : strategyResult.explicitRemovedSessionIds.length;
+        : explicitRemovedSessionIds.length;
     appLogger.info("scan.refresh.persistence_candidate", {
       agent: agentName,
       scope_from: strategyResult.scope.from,
@@ -507,7 +500,7 @@ export class AgentSyncEngine {
           sessions: publicationSessions,
           meta: buildAgentCacheMeta(agent),
           completeness: strategyResult.completeness,
-          removedSessionIds: strategyResult.explicitRemovedSessionIds,
+          removedSessionIds: explicitRemovedSessionIds,
           saveCache: true,
           ...(searchIndexOptions ? { searchIndexOptions } : {}),
         };
@@ -519,11 +512,14 @@ export class AgentSyncEngine {
     let publicationCommitted = false;
     let publication: SessionPublicationResult;
     try {
-      publication = await this.commitSessionPublication({
+      publication = await this.sessionPublication.commit({
         context: "scan.refresh",
         agentName,
         sessions: nextSessions,
-        candidateChangedIds: strategyResult.preciseChangedIds ?? [],
+        candidateChangedIds:
+          strategyResult.publication.kind === "changes"
+            ? strategyResult.publication.candidateChangedIds
+            : [],
         indexJob: persistentJob,
         onPublishing: () => this.statusReporter.beginAgentPublishing(agentName),
         onCommitted: () => {
@@ -588,9 +584,16 @@ export class AgentSyncEngine {
         agent: agentName,
         retained_sessions: previousSessions.length,
       });
-      return this.refreshStrategyResult(previousSessions, "partial", {}, { status: "unchanged" });
+      return {
+        ...this.refreshStrategyBase(previousSessions, "partial", {}),
+        status: "unchanged",
+      };
     }
-    return this.refreshStrategyResult([], "partial", {});
+    return {
+      ...this.refreshStrategyBase([], "partial", {}),
+      status: "continue",
+      publication: { kind: "full", sessions: [], explicitRemovedSessionIds: [] },
+    };
   }
 
   private async initializeAgent(
@@ -604,12 +607,18 @@ export class AgentSyncEngine {
     agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
     const sessions = attachMissingProjectIdentities(result.sessions);
     this.lastRefreshAtByAgent.set(agent.name, Date.now());
-    return this.refreshStrategyResult(sessions, result.completeness, scope, {
-      fullScanSessions: sessions,
-      explicitRemovedSessionIds: result.explicitRemovedSessionIds,
-      scanDuration: performance.now() - scanStartedAt,
-      sourceFailures: result.sourceFailures ?? [],
-    });
+    return {
+      ...this.refreshStrategyBase(sessions, result.completeness, scope, {
+        scanDuration: performance.now() - scanStartedAt,
+        sourceFailures: result.sourceFailures ?? [],
+      }),
+      status: "continue",
+      publication: {
+        kind: "full",
+        sessions,
+        explicitRemovedSessionIds: result.explicitRemovedSessionIds,
+      },
+    };
   }
 
   private async syncAgentSources(
@@ -639,17 +648,25 @@ export class AgentSyncEngine {
       (result.sourceFailures?.length ?? 0) === 0
     ) {
       this.logUnchangedRefresh(agent.name, refreshStartedAt);
-      return this.refreshStrategyResult(sessions, result.completeness, scope, {
+      return {
+        ...this.refreshStrategyBase(sessions, result.completeness, scope, {
+          scanDuration: performance.now() - scanStartedAt,
+        }),
         status: "unchanged",
-        scanDuration: performance.now() - scanStartedAt,
-      });
+      };
     }
-    return this.refreshStrategyResult(sessions, result.completeness, scope, {
-      preciseChangedIds,
-      persistenceDiff,
-      scanDuration: performance.now() - scanStartedAt,
-      sourceFailures: result.sourceFailures ?? [],
-    });
+    return {
+      ...this.refreshStrategyBase(sessions, result.completeness, scope, {
+        scanDuration: performance.now() - scanStartedAt,
+        sourceFailures: result.sourceFailures ?? [],
+      }),
+      status: "continue",
+      publication: {
+        kind: "changes",
+        diff: persistenceDiff,
+        candidateChangedIds: preciseChangedIds,
+      },
+    };
   }
 
   private async refreshChangedAgent(
@@ -670,12 +687,10 @@ export class AgentSyncEngine {
         error_class: checkResult.failure.errorClass,
         message: checkResult.failure.message,
       });
-      return this.refreshStrategyResult(
-        baseline,
-        "partial",
-        {},
-        { status: "unchanged", checkDuration },
-      );
+      return {
+        ...this.refreshStrategyBase(baseline, "partial", {}, { checkDuration }),
+        status: "unchanged",
+      };
     }
     if (!checkResult.hasChanges) {
       const scanStartedAt = performance.now();
@@ -690,28 +705,33 @@ export class AgentSyncEngine {
         persistenceDiff.removedSessionIds.length === 0
       ) {
         this.logUnchangedRefresh(agent.name, refreshStartedAt);
-        return this.refreshStrategyResult(
+        return {
+          ...this.refreshStrategyBase(
+            sessions,
+            result.completeness,
+            {},
+            {
+              checkDuration,
+              scanDuration: performance.now() - scanStartedAt,
+            },
+          ),
+          status: "unchanged",
+        };
+      }
+      return {
+        ...this.refreshStrategyBase(
           sessions,
           result.completeness,
           {},
           {
-            status: "unchanged",
             checkDuration,
             scanDuration: performance.now() - scanStartedAt,
+            sourceFailures: result.sourceFailures ?? [],
           },
-        );
-      }
-      return this.refreshStrategyResult(
-        sessions,
-        result.completeness,
-        {},
-        {
-          persistenceDiff,
-          checkDuration,
-          scanDuration: performance.now() - scanStartedAt,
-          sourceFailures: result.sourceFailures ?? [],
-        },
-      );
+        ),
+        status: "continue",
+        publication: { kind: "changes", diff: persistenceDiff, candidateChangedIds: [] },
+      };
     }
     const preciseChangedIds = checkResult.changedIds ?? null;
     const scanStartedAt = performance.now();
@@ -721,21 +741,28 @@ export class AgentSyncEngine {
       const sessions = attachMissingProjectIdentities(result.sessions);
       source.commitChangeCheck();
       this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
-      return this.refreshStrategyResult(sessions, result.completeness, scope, {
-        // Meta-only changes (e.g. a pricing capture epoch bump) leave the head
-        // signature intact; without the worker-reported ids they would never
-        // persist and checkForChanges would rescan on every startup.
-        persistenceDiff: buildPersistenceDiff(
-          baseline,
-          sessions,
-          result.changedIds ?? [],
-          result.completeness,
-          result.explicitRemovedSessionIds,
-        ),
-        checkDuration,
-        scanDuration: performance.now() - scanStartedAt,
-        sourceFailures: result.sourceFailures ?? [],
-      });
+      return {
+        ...this.refreshStrategyBase(sessions, result.completeness, scope, {
+          checkDuration,
+          scanDuration: performance.now() - scanStartedAt,
+          sourceFailures: result.sourceFailures ?? [],
+        }),
+        status: "continue",
+        publication: {
+          kind: "changes",
+          // Meta-only changes (e.g. a pricing capture epoch bump) leave the head
+          // signature intact; without the worker-reported ids they would never
+          // persist and checkForChanges would rescan on every startup.
+          diff: buildPersistenceDiff(
+            baseline,
+            sessions,
+            result.changedIds ?? [],
+            result.completeness,
+            result.explicitRemovedSessionIds,
+          ),
+          candidateChangedIds: [],
+        },
+      };
     }
     this.options.workerRunner.discard?.(agent.name);
     const sessions = attachMissingProjectIdentities(
@@ -750,19 +777,25 @@ export class AgentSyncEngine {
       scope.from == null && scope.to == null && sourceFailures.length === 0
         ? "complete"
         : "partial";
-    return this.refreshStrategyResult(sessions, completeness, scope, {
-      preciseChangedIds,
-      persistenceDiff: buildPersistenceDiff(
-        baseline,
-        sessions,
-        preciseChangedIds,
-        completeness,
-        preciseChangedIds,
-      ),
-      checkDuration,
-      scanDuration: performance.now() - scanStartedAt,
-      sourceFailures,
-    });
+    return {
+      ...this.refreshStrategyBase(sessions, completeness, scope, {
+        checkDuration,
+        scanDuration: performance.now() - scanStartedAt,
+        sourceFailures,
+      }),
+      status: "continue",
+      publication: {
+        kind: "changes",
+        diff: buildPersistenceDiff(
+          baseline,
+          sessions,
+          preciseChangedIds,
+          completeness,
+          preciseChangedIds,
+        ),
+        candidateChangedIds: preciseChangedIds,
+      },
+    };
   }
 
   private async scanAgentFully(
@@ -775,32 +808,33 @@ export class AgentSyncEngine {
     agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
     const sessions = attachMissingProjectIdentities(result.sessions);
     this.lastRefreshAtByAgent.set(agent.name, Date.now());
-    return this.refreshStrategyResult(sessions, result.completeness, scope, {
-      fullScanSessions: sessions,
-      explicitRemovedSessionIds: result.explicitRemovedSessionIds,
-      scanDuration: performance.now() - scanStartedAt,
-      sourceFailures: result.sourceFailures ?? [],
-    });
+    return {
+      ...this.refreshStrategyBase(sessions, result.completeness, scope, {
+        scanDuration: performance.now() - scanStartedAt,
+        sourceFailures: result.sourceFailures ?? [],
+      }),
+      status: "continue",
+      publication: {
+        kind: "full",
+        sessions,
+        explicitRemovedSessionIds: result.explicitRemovedSessionIds,
+      },
+    };
   }
 
-  private refreshStrategyResult(
+  private refreshStrategyBase(
     nextSessions: IdentifiedSessionHead[],
     completeness: SessionSnapshotCompleteness,
     scope: Pick<ScanOptions, "from" | "to">,
-    overrides: Partial<Omit<RefreshStrategyResult, "nextSessions" | "completeness" | "scope">> = {},
-  ): RefreshStrategyResult {
+    overrides: Partial<Omit<RefreshStrategyBase, "nextSessions" | "completeness" | "scope">> = {},
+  ): RefreshStrategyBase {
     return {
-      status: "continue",
       nextSessions,
-      fullScanSessions: null,
-      preciseChangedIds: null,
-      persistenceDiff: null,
       checkDuration: 0,
       scanDuration: 0,
       sourceFailures: [],
       completeness,
       scope,
-      explicitRemovedSessionIds: [],
       ...overrides,
     };
   }
@@ -869,105 +903,11 @@ export class AgentSyncEngine {
     cached?: CachedSessions | null,
     reloadCached = false,
   ): boolean {
-    const startupScanOptions = this.startupScanOptions();
-    if (startupScanOptions.from == null && startupScanOptions.to == null) return false;
-    const now = Date.now();
-    if ((this.cacheIntegrityValidUntilByAgent.get(agent.name) ?? 0) >= now) return false;
-    const lastSync = readAgentLastFullSyncAt(agent.name);
-    if (lastSync.status === "failed") {
-      appLogger.warn("scan.backfill.cache_state_unavailable", {
-        agent: agent.name,
-        state: "last_full_sync",
-      });
-      return false;
-    }
-    const lastSyncAt = lastSync.value;
-    if (lastSyncAt == null || now - lastSyncAt > BACKFILL_INTERVAL_MS) {
-      return agent.isAvailable();
-    }
-    if (agent.sessionSourceAccess.kind !== "enumerated") return false;
-    if (!agent.isAvailable()) return false;
-
-    let cachedSessions = cached;
-    if (reloadCached || cached === undefined) {
-      const outcome = readCachedSessions(agent.name);
-      if (outcome.status === "failed") {
-        // A broken cache read must not masquerade as a truncated cache and
-        // trigger a full-history backfill against unknown state.
-        appLogger.warn("scan.backfill.cache_state_unavailable", {
-          agent: agent.name,
-          state: "cached_sessions",
-        });
-        return false;
-      }
-      cachedSessions = outcome.value;
-    }
-    const sourceCount = agent.sessionSourceAccess.count();
-    const cachedCount = cachedSessions?.sessions.length ?? 0;
-    this.cacheIntegrityValidUntilByAgent.set(agent.name, lastSyncAt + BACKFILL_INTERVAL_MS);
-    if (sourceCount > 0 && cachedCount / sourceCount < CACHE_TRUNCATION_COVERAGE) {
-      appLogger.warn("scan.backfill.cache_truncated", {
-        agent: agent.name,
-        cached_sessions: cachedCount,
-        source_files: sourceCount,
-        last_sync_at: lastSyncAt,
-      });
-      return true;
-    }
-    return false;
+    return this.backfillScheduler.needsBackfill(agent, cached, reloadCached);
   }
 
   private enqueueBackfill(agentName: string): void {
-    if (this.isShuttingDown || !this.backfills.enqueue(agentName)) return;
-    this.statusReporter.publishBackfillStatus();
-    this.pumpBackfillQueue();
-  }
-
-  private pumpBackfillQueue(): void {
-    if (this.isShuttingDown) return;
-    const attempt = this.backfills.startNext();
-    if (!attempt) return;
-    this.statusReporter.publishBackfillStatus();
-    void this.runBackfill(attempt)
-      .then((result) => this.completeBackfillAttempt(attempt, result))
-      .catch((error) => this.rejectBackfillAttempt(attempt, error));
-  }
-
-  private completeBackfillAttempt(
-    attempt: BackfillAttemptRef,
-    result: BackfillTerminalStatus,
-  ): void {
-    if (this.isShuttingDown) return;
-    const current = this.backfills.stateFor(attempt.agentName);
-    if (current?.status === "running" && current.attemptId === attempt.attemptId) {
-      this.statusReporter.flushProgressStatus(`backfill:${attempt.agentName}`);
-      if (this.backfills.complete(attempt, result)) {
-        if (result === "failed") {
-          this.cacheIntegrityValidUntilByAgent.delete(attempt.agentName);
-        } else if (result === "committed") {
-          if (current.completion?.completeness === "partial") {
-            this.cacheIntegrityValidUntilByAgent.delete(attempt.agentName);
-            this.scheduler.schedule(attempt.agentName, PARTIAL_BACKFILL_RETRY_DELAY_MS);
-            appLogger.info("scan.backfill.retry_scheduled", {
-              agent: attempt.agentName,
-              delay_ms: PARTIAL_BACKFILL_RETRY_DELAY_MS,
-            });
-          } else {
-            this.cacheIntegrityValidUntilByAgent.set(
-              attempt.agentName,
-              Date.now() + BACKFILL_INTERVAL_MS,
-            );
-          }
-        }
-        this.statusReporter.publishBackfillStatus();
-      }
-    }
-    this.pumpBackfillQueue();
-  }
-
-  private rejectBackfillAttempt(attempt: BackfillAttemptRef, error: unknown): void {
-    appLogger.error("scan.backfill.queue_error", { agent: attempt.agentName, error });
-    this.completeBackfillAttempt(attempt, "failed");
+    this.backfillScheduler.enqueue(agentName);
   }
 
   private runBackfill(attempt: BackfillAttemptRef): Promise<BackfillTerminalStatus> {
@@ -1029,7 +969,7 @@ export class AgentSyncEngine {
         }
       };
       updatePublicationPhase("publish-queued");
-      const publication = await this.commitSessionPublication({
+      const publication = await this.sessionPublication.commit({
         context: "scan.backfill",
         agentName,
         sessions: fullSessions,
@@ -1085,42 +1025,6 @@ export class AgentSyncEngine {
       console.error(`[${agentName}] Backfill failed:`, error);
       return "failed";
     }
-  }
-
-  private async commitSessionPublication(
-    publication: SessionPublication,
-  ): Promise<SessionPublicationResult> {
-    const publicationId = this.indexPublisher.publicationId(
-      publication.context,
-      publication.agentName,
-    );
-    await this.indexPublisher.commitSearchIndex(publication.context, [publication.indexJob], {
-      publicationId,
-      agent: publication.agentName,
-      ...(publication.onPublishing ? { onStarted: publication.onPublishing } : {}),
-    });
-    const diffStartedAt = performance.now();
-    const event = this.sessionIndex.commitAgentSessions(
-      publication.agentName,
-      publication.sessions,
-      publication.candidateChangedIds,
-    );
-    const diffDuration = performance.now() - diffStartedAt;
-    const result: SessionPublicationResult = { durableCommitted: true, event, diffDuration };
-    publication.onCommitted?.(result);
-    this.emitSessionsChanged({
-      agentName: publication.agentName,
-      sessions: this.sessionIndex.snapshot().byAgent[publication.agentName] ?? [],
-      event,
-    });
-    appLogger.info("session.publication.published", {
-      publication_id: publicationId,
-      context: publication.context,
-      agent: publication.agentName,
-      sessions: publication.sessions.length,
-      has_event: event != null,
-    });
-    return result;
   }
 
   private findAgent(agentName: string): BaseAgent | undefined {
