@@ -19,7 +19,8 @@ import {
 } from "../search.js";
 import { setSchemaEnsuredPath } from "../db.js";
 import { MESSAGE_PARTS_FORMAT_VERSION } from "../messages.js";
-import { withCacheDb, withSearchDb } from "../schema.js";
+import { prepareSessionSnapshotSearchIndex } from "../search-index-writer.js";
+import { withCacheDb, withSearchDb, withSearchIndexDb } from "../schema.js";
 import { setCoreDiagnostics } from "../../../utils/diagnostics.js";
 import type { IdentifiedSessionHead, SessionDetail, SessionHead } from "../../../types/index.js";
 
@@ -418,7 +419,7 @@ describe("durable publication", () => {
       expect(searchSessions("bulk-42 bulk needle")).toHaveLength(1);
       expect(
         withCacheDb((db) =>
-          db.prepare("SELECT COUNT(*) AS value FROM search_index_publication_entries").get(),
+          db.prepare("SELECT COUNT(*) AS value FROM temp.search_index_publication_entries").get(),
         ),
       ).toEqual({ value: 0 });
 
@@ -443,6 +444,56 @@ describe("durable publication", () => {
         indexed: 0,
       });
       expect(loadAgain).not.toHaveBeenCalled();
+    },
+    SEARCH_INDEX_BATCH_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "leaves nothing durable when a pre-staged publication never commits",
+    () => {
+      const sessions = Array.from({ length: 70 }, (_, index) => makeSession(`abandoned-${index}`));
+      const payloadText = `abandoned needle ${"filler ".repeat(300)}`;
+      const durablePageCount = () => {
+        const db = new Database(getCachePath(), { readonly: true });
+        try {
+          return Number(db.pragma("page_count", { simple: true }));
+        } finally {
+          db.close();
+        }
+      };
+
+      withCacheDb(() => undefined);
+      const pagesBeforeStaging = durablePageCount();
+
+      withSearchIndexDb((db) =>
+        prepareSessionSnapshotSearchIndex(
+          db,
+          "codex",
+          sessions,
+          (sessionId) => makeSessionData(sessionId, `${sessionId} ${payloadText}`),
+          { publicationId: "abandoned" },
+        ),
+      );
+      // Dropping the prepared publication and closing every connection is what a
+      // SIGINT or worker.terminate() between staging and commit leaves behind.
+      setSchemaEnsuredPath(null);
+
+      expect(durablePageCount()).toBe(pagesBeforeStaging);
+
+      const reopened = new Database(getCachePath(), { readonly: true });
+      try {
+        expect(
+          reopened
+            .prepare(
+              `SELECT COUNT(*) AS value FROM sqlite_master
+               WHERE type = 'table' AND name = 'search_index_publication_entries'`,
+            )
+            .get(),
+        ).toEqual({ value: 0 });
+      } finally {
+        reopened.close();
+      }
+      expect(searchSessions("abandoned-42 abandoned needle")).toHaveLength(0);
     },
     SEARCH_INDEX_BATCH_TEST_TIMEOUT_MS,
   );
@@ -513,11 +564,13 @@ describe("durable publication", () => {
             .get("codex"),
         ).toEqual({ value: 1 });
         expect(
-          verifyDb
-            .prepare(
-              "SELECT COUNT(*) AS value FROM search_index_publication_entries WHERE publication_id = ?",
-            )
-            .get(result.publicationId),
+          withCacheDb((db) =>
+            db
+              .prepare(
+                "SELECT COUNT(*) AS value FROM temp.search_index_publication_entries WHERE publication_id = ?",
+              )
+              .get(result.publicationId),
+          ),
         ).toEqual({ value: 0 });
       } finally {
         verifyDb.close();
@@ -1365,7 +1418,7 @@ describe("searchSessions", () => {
     } finally {
       migratedDb.close();
     }
-    expect(getUserVersion(getCachePath())).toBe(30);
+    expect(getUserVersion(getCachePath())).toBe(31);
   });
 
   it("keeps small incremental updates searchable immediately", () => {
@@ -2158,7 +2211,7 @@ describe("searchSessions", () => {
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(30);
+    expect(getUserVersion(getCachePath())).toBe(31);
   });
 
   it("refreshes cached project identities when migrating to schema version 12", () => {

@@ -40,11 +40,7 @@ import {
   type SessionRow,
 } from "./messages.js";
 import { CACHE_SCHEMA_VERSION } from "./version.js";
-import {
-  createPublicationStagingTable,
-  discardPublicationStaging,
-  hasPublicationStaging,
-} from "./publication-staging.js";
+import { deleteLegacyPublicationRows, hasLegacyPublicationRows } from "./publication-staging.js";
 
 interface MessageToolBackfillRow extends DatabaseRow {
   agent_name?: string;
@@ -199,9 +195,9 @@ function cleanPublicationStaging(connection: CacheConnection): void {
   if (connection.publicationStagingCleaned) return;
 
   const startedAt = performance.now();
-  const reclaimed = hasPublicationStaging(connection.db);
+  const reclaimed = hasLegacyPublicationRows(connection.db);
   if (reclaimed) {
-    connection.db.transaction(() => discardPublicationStaging(connection.db)).immediate();
+    connection.db.transaction(() => deleteLegacyPublicationRows(connection.db)).immediate();
   }
   connection.publicationStagingCleaned = true;
   getCoreDiagnostics()?.info?.("sqlite.publication_staging_cleanup.completed", {
@@ -779,7 +775,6 @@ function createLatestCacheSchema(db: SQLiteDatabase): void {
   createSessionTables(db);
   createFileActivityTables(db);
   createProjectTables(db);
-  createPublicationStagingTable(db);
   ensureFtsReady(db);
 }
 
@@ -1236,7 +1231,6 @@ function invalidateSearchContentHashes(db: SQLiteDatabase): void {
 }
 
 function addAtomicPublicationStaging(db: SQLiteDatabase): void {
-  createPublicationStagingTable(db);
   invalidateSearchContentHashes(db);
   if (tableExists(db, "sessions") && tableExists(db, "pending_reindex")) {
     db.exec(`
@@ -1246,6 +1240,10 @@ function addAtomicPublicationStaging(db: SQLiteDatabase): void {
       WHERE publication_id IS NULL
     `);
   }
+}
+
+function dropDurablePublicationStaging(db: SQLiteDatabase): void {
+  db.exec("DROP TABLE IF EXISTS search_index_publication_entries");
 }
 
 function replaceSessionActivityIndex(db: SQLiteDatabase): void {
@@ -1802,6 +1800,7 @@ function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 28, migrate: addSessionCostSummary },
       { version: 29, migrate: addSessionUsageSummary },
       { version: 30, destructive: true, migrate: dropDerivedSessionSlug },
+      { version: 31, migrate: dropDurablePublicationStaging },
     ],
   });
 

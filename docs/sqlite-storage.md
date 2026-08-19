@@ -6,7 +6,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 
 - 路径：`~/.cache/codesesh/codesesh.db`
 <!-- repo-fact:cache-schema-version:start -->
-- 当前 schema：`CACHE_SCHEMA_VERSION = 30`
+- 当前 schema：`CACHE_SCHEMA_VERSION = 31`
 <!-- repo-fact:cache-schema-version:end -->
 - 稳定导出入口：`packages/core/src/discovery/index.ts`
 - 实现目录：`packages/core/src/discovery/cache/`
@@ -22,7 +22,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 | `cache/schema.ts` | 建表、迁移、事务边界、FTS 完整性检查 |
 | `cache/sessions.ts` | 会话列表和详情快照的读取、写入与清理 |
 | `cache/messages.ts` | `sessions` / `messages` 行与领域对象之间的转换 |
-| `cache/publication-staging.ts` | 大批量详情发布的影子载荷与中断回收 |
+| `cache/publication-staging.ts` | 大批量详情发布的连接级影子载荷与 v21 遗留中断回收 |
 | `cache/search-index-writer.ts` | 详情、工具、文件活动与全文索引的同步写入 |
 | `cache/search.ts` | 搜索查询与结构化过滤 |
 | `cache/search-query-parser.ts` | 搜索语法解析 |
@@ -32,7 +32,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 
 ## Schema 清单
 
-当前 schema 创建 16 张表（其中 2 张是 FTS5 虚表）和 1 个视图。
+当前 schema 创建 15 张表（其中 2 张是 FTS5 虚表）和 1 个视图。
 
 ### 生命周期与同步状态
 
@@ -65,16 +65,22 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 | `session_file_activity_path_fts` | trigram FTS5 虚表 | 文件路径匹配 |
 | `session_documents` | 普通表 | 会话标题、聚合文本、内容签名与已索引消息数 |
 | `session_documents_fts` | FTS5 虚表 | 会话级标题和聚合文本搜索 |
-| `search_index_publication_entries` | 普通表 | 大批量发布提交前暂存序列化详情；提交或回滚后清空 |
+
+大批量发布提交前暂存的序列化详情（`search_index_publication_entries`）建在连接的 TEMP schema
+上，不属于持久 schema。它的有效生命周期只有一次进程内发布，没有任何路径会跨进程续期；放在
+TEMP 里让「进程被中断后留下孤儿暂存行」不可表达——连接一断，SQLite 直接把这些字节还给操作
+系统，无需清理器兜底。TEMP 数据会溢写到数据库同目录的文件（`temp_store = FILE`、
+`SQLITE_TMPDIR` 指向缓存目录），因此暂存机制原本的内存上界仍然成立。
 
 两个 FTS 表都由对应内容表的 insert/update/delete 触发器维护。批量变化达到阈值时，
 `runSearchIndexWrite()` 会在写事务中重建会话文档索引；文件路径索引仍由触发器增量维护。
 搜索先由会话文档索引召回和排序，再在候选会话的消息纯文本中定位首条命中消息，不再
 为同一批内容维护第二套消息级倒排索引。
 
-Schema 24 删除旧消息索引后，SQLite 会把对应页计入 freelist，后续写入可以直接复用；
-数据库文件的字节大小不会因此立即下降。物理压缩需要重写整个数据库，因此不在启动迁移
-中自动执行，避免把一次性磁盘回收变成阻塞式维护。
+Schema 24 删除旧消息索引、schema 31 删除持久暂存表后，SQLite 会把对应页计入 freelist，
+后续写入可以直接复用；数据库文件的字节大小不会因此立即下降。物理压缩需要重写整个数据库，
+因此不在启动迁移中自动执行，避免把一次性磁盘回收变成阻塞式维护。需要真正缩小文件时手动执行
+`sqlite3 ~/.cache/codesesh/codesesh.db 'VACUUM'`。
 
 ### 项目聚合
 
