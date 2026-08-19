@@ -154,7 +154,6 @@ export class SearchIndexJobRunner {
       this.startNextBatch();
       return;
     }
-    worker.unref();
     this.worker = worker;
     this.activeBatch = batch;
 

@@ -81,7 +81,6 @@ const workerThreads = vi.hoisted(() => ({
     on: ReturnType<typeof vi.fn>;
     once: ReturnType<typeof vi.fn>;
     postMessage: ReturnType<typeof vi.fn>;
-    unref: ReturnType<typeof vi.fn>;
     terminate: ReturnType<typeof vi.fn>;
     emitMessage: (message: unknown) => void;
     emitDone: () => void;
@@ -340,7 +339,6 @@ const workerThreads = vi.hoisted(() => ({
       postMessage: vi.fn((data: unknown) => {
         if (!workerThreads.deferScanRefreshWorkers) dispatch(data);
       }),
-      unref: vi.fn(),
       terminate: vi.fn(async () => {
         for (const handler of exitHandlers) handler(0);
       }),
