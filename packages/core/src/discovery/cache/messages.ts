@@ -19,6 +19,7 @@ import { normalizeMessageParts } from "../../contract/message-part.js";
 import { assertSessionIdentity, createSessionIdentity } from "../../contract/session-reference.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import type { SQLiteStatement } from "./db.js";
+import { CacheDataIntegrityError } from "./errors.js";
 import type { MessageCursorContent } from "./message-cursor.js";
 
 export const MESSAGE_PARTS_FORMAT_VERSION = 1;
@@ -145,7 +146,12 @@ export function stringifyOptionalJson(value: unknown): string | null {
 }
 
 export function parseOptionalJson<T>(value: unknown): T | undefined {
-  return value == null ? undefined : (JSON.parse(String(value)) as T);
+  if (value == null) return undefined;
+  try {
+    return JSON.parse(String(value)) as T;
+  } catch (error) {
+    throw new CacheDataIntegrityError("Cached JSON field is malformed", { cause: error });
+  }
 }
 
 export function sourcePathFromMeta(meta: SessionCacheMeta | undefined): string | null {
@@ -154,8 +160,12 @@ export function sourcePathFromMeta(meta: SessionCacheMeta | undefined): string |
 
 export function sourcePathFromMetaJson(metaJson: string | null | undefined): string | null {
   if (!metaJson) return null;
-  const meta = JSON.parse(metaJson) as SessionCacheMeta;
-  return sourcePathFromMeta(meta);
+  try {
+    const meta = JSON.parse(metaJson) as SessionCacheMeta;
+    return sourcePathFromMeta(meta);
+  } catch (error) {
+    throw new CacheDataIntegrityError("Cached session metadata is malformed", { cause: error });
+  }
 }
 
 export function requireSessionProjectIdentity(
@@ -465,7 +475,11 @@ export function sessionFromRow(row: SessionRow): IdentifiedSessionHead {
     session.smart_tags_classifier_revision = String(row.smart_tags_classifier_revision);
   }
 
-  assertIdentifiedSessionHead(session);
+  try {
+    assertIdentifiedSessionHead(session);
+  } catch (error) {
+    throw new CacheDataIntegrityError("Cached session identity is incomplete", { cause: error });
+  }
   return session;
 }
 

@@ -26,6 +26,7 @@ import {
   type CacheConnection,
   type CacheRow,
 } from "./db.js";
+import { CacheDataIntegrityError } from "./errors.js";
 import {
   messageFromBackfillRow,
   prepareInsertFileActivity,
@@ -145,6 +146,33 @@ function getLegacySessionDirectory(session: SessionHead): string | null {
   return typeof session.directory === "string" ? session.directory : null;
 }
 
+function isRecoverableCacheError(error: unknown): boolean {
+  if (error instanceof CacheDataIntegrityError) return true;
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    error.code.startsWith("SQLITE_")
+  );
+}
+
+function reportCacheFailure(
+  cachePath: string,
+  connection: CacheConnection,
+  event: "cache.write_failed" | "cache.read_failed",
+  error: unknown,
+): null {
+  getCoreDiagnostics()?.warn(event, {
+    message: error instanceof Error ? error.message : String(error),
+    code: (error as { code?: string })?.code,
+    error_class: error instanceof Error ? error.name : typeof error,
+    ...(event === "cache.write_failed" && error instanceof Error ? { stack: error.stack } : {}),
+  });
+  discardCacheConnection(cachePath, connection);
+  return null;
+}
+
 function withCacheConnection<T>(fn: (connection: CacheConnection) => T): T | null {
   const cachePath = getCachePath();
   const connection = getCacheConnection(cachePath);
@@ -155,16 +183,15 @@ function withCacheConnection<T>(fn: (connection: CacheConnection) => T): T | nul
       ensureSchema(connection.db, cachePath);
       setSchemaEnsuredPath(cachePath);
     }
+  } catch (error) {
+    return reportCacheFailure(cachePath, connection, "cache.write_failed", error);
+  }
+
+  try {
     return fn(connection);
   } catch (error) {
-    getCoreDiagnostics()?.warn("cache.write_failed", {
-      message: error instanceof Error ? error.message : String(error),
-      code: (error as { code?: string })?.code,
-      error_class: error instanceof Error ? error.name : typeof error,
-      stack: error instanceof Error ? error.stack : undefined,
-    });
-    discardCacheConnection(cachePath, connection);
-    return null;
+    if (!isRecoverableCacheError(error)) throw error;
+    return reportCacheFailure(cachePath, connection, "cache.write_failed", error);
   }
 }
 
@@ -212,12 +239,8 @@ export function withCacheDbReadOnly<T>(fn: (db: SQLiteDatabase) => T): CacheRead
   try {
     return { status: "success", value: fn(connection.db) };
   } catch (error) {
-    getCoreDiagnostics()?.warn("cache.read_failed", {
-      message: error instanceof Error ? error.message : String(error),
-      code: (error as { code?: string })?.code,
-      error_class: error instanceof Error ? error.name : typeof error,
-    });
-    discardCacheConnection(cachePath, connection);
+    if (!isRecoverableCacheError(error)) throw error;
+    reportCacheFailure(cachePath, connection, "cache.read_failed", error);
     return { status: "failed" };
   }
 }
