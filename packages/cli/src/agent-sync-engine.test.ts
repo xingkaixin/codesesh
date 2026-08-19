@@ -648,7 +648,6 @@ describe("AgentSyncEngine", () => {
     core.getAgentFullSyncCursor.mockReturnValueOnce("cursor-1");
     const { engine } = makeEngine(new FakeSyncAgent(), [previous], workerRunner, { from: 1 });
     const internal = engine as unknown as {
-      cacheIntegrityValidUntilByAgent: Map<string, number>;
       enqueueBackfill(agentName: string): void;
       scheduler: { schedule(agentName: string, delayMs: number): void };
     };
@@ -680,7 +679,6 @@ describe("AgentSyncEngine", () => {
     );
     expect(core.markAgentFullSyncProgress).toHaveBeenCalledWith("codex", "cursor-2");
     expect(core.markAgentFullSyncCompleted).not.toHaveBeenCalled();
-    expect(internal.cacheIntegrityValidUntilByAgent.has("codex")).toBe(false);
     expect(schedule).toHaveBeenCalledWith("codex", 5 * 60 * 1000);
     expect(info).toHaveBeenCalledWith("scan.backfill.retry_scheduled", {
       agent: "codex",
