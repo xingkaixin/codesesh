@@ -63,21 +63,12 @@ export function attachMissingProjectIdentities(
   });
 }
 
-/** Serialize an agent's session meta map, optionally restricted to a set of ids. */
+/** Export an agent's cache metadata, optionally restricted to a set of ids. */
 export function buildAgentCacheMeta(
   agent: BaseAgent,
   sessionIds?: Set<string>,
 ): Record<string, SessionCacheMeta> {
-  const metaMap = agent.getSessionMetaMap?.();
-  const meta: Record<string, SessionCacheMeta> = {};
-  if (!metaMap) return meta;
-
-  for (const [id, data] of metaMap.entries()) {
-    if (sessionIds && !sessionIds.has(id)) continue;
-    meta[id] = { id, ...(data as Record<string, unknown>) } as SessionCacheMeta;
-  }
-
-  return meta;
+  return agent.snapshotSessionCacheMeta(sessionIds);
 }
 
 type SignatureValue = string | number | boolean | null | readonly SignatureValue[];

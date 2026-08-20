@@ -72,11 +72,17 @@ class TestAgent extends BaseAgent {
     return sessions;
   }
 
-  getSessionMetaMap(): Map<string, SessionCacheMeta> {
-    return this.meta;
+  getSessionCacheMeta(sessionId: string): SessionCacheMeta | undefined {
+    return this.meta.get(sessionId);
   }
 
-  setSessionMetaMap(): void {}
+  snapshotSessionCacheMeta(): Record<string, SessionCacheMeta> {
+    return Object.fromEntries(this.meta);
+  }
+
+  restoreSessionCacheMeta(): void {}
+
+  removeSessionCacheMeta(): void {}
 }
 
 function makeHead(overrides: Partial<IdentifiedSessionHead> = {}): IdentifiedSessionHead {

@@ -387,7 +387,7 @@ describe("CursorAgent scan outcomes", () => {
     const agent = makeScanningAgent(dbPath);
     const cached = agent.scan();
     expect(cached[0]?.stats.total_cost).toBe(0);
-    expect(agent.getSessionMetaMap().get("composer-1")?.unpricedModels).toEqual([model]);
+    expect(agent.getSessionCacheMeta("composer-1")?.unpricedModels).toEqual([model]);
     expect(agent.checkForChanges(Number.MAX_SAFE_INTEGER, cached).hasChanges).toBe(false);
 
     pricingAvailable = true;
@@ -396,7 +396,7 @@ describe("CursorAgent scan outcomes", () => {
 
     const refreshed = agent.incrementalScan(cached, []);
     expect(refreshed[0]?.stats.total_cost).toBeGreaterThan(0);
-    expect(agent.getSessionMetaMap().get("composer-1")?.unpricedModels).toBeUndefined();
+    expect(agent.getSessionCacheMeta("composer-1")?.unpricedModels).toBeUndefined();
     expect(agent.checkForChanges(Number.MAX_SAFE_INTEGER, refreshed).hasChanges).toBe(false);
   });
 });

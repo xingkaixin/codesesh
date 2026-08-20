@@ -36,8 +36,10 @@ function makeAgent(getSessionData: BaseAgent["getSessionData"]): BaseAgent {
     scan: () => [],
     incrementalScan: () => [],
     getSessionData,
-    getSessionMetaMap: () => new Map(),
-    setSessionMetaMap: () => undefined,
+    getSessionCacheMeta: () => undefined,
+    snapshotSessionCacheMeta: () => ({}),
+    restoreSessionCacheMeta: () => undefined,
+    removeSessionCacheMeta: () => undefined,
   } as unknown as BaseAgent;
 }
 

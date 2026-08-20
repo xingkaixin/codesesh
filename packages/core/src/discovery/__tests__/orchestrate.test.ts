@@ -138,6 +138,10 @@ describe("attachMissingProjectIdentities", () => {
 
 describe("buildAgentCacheMeta", () => {
   class MetaAgent extends BaseAgent {
+    private meta: Record<string, SessionCacheMeta> = {
+      a: { id: "a", sourcePath: "/a" },
+      b: { id: "b", sourcePath: "/b" },
+    };
     readonly name = "test";
     readonly displayName = "test";
     readonly sessionSourceAccess = {
@@ -164,13 +168,20 @@ describe("buildAgentCacheMeta", () => {
     incrementalScan(cached: SessionHead[]) {
       return cached;
     }
-    getSessionMetaMap() {
-      return new Map<string, SessionCacheMeta>([
-        ["a", { id: "a", sourcePath: "/a" }],
-        ["b", { id: "b", sourcePath: "/b" }],
-      ]);
+    getSessionCacheMeta(sessionId: string) {
+      return this.meta[sessionId];
     }
-    setSessionMetaMap() {}
+    snapshotSessionCacheMeta(sessionIds?: ReadonlySet<string>) {
+      return Object.fromEntries(
+        Object.entries(this.meta).filter(([sessionId]) => !sessionIds || sessionIds.has(sessionId)),
+      );
+    }
+    restoreSessionCacheMeta(meta: Readonly<Record<string, SessionCacheMeta>>) {
+      this.meta = { ...meta };
+    }
+    removeSessionCacheMeta(sessionIds: Iterable<string>) {
+      for (const sessionId of sessionIds) delete this.meta[sessionId];
+    }
   }
 
   it("serializes the full meta map", () => {

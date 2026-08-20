@@ -85,7 +85,7 @@ describe("smart tag worker logging", () => {
     const meta = new Map<string, SessionCacheMeta>();
     const agent = {
       name: "test",
-      getSessionMetaMap: () => meta,
+      snapshotSessionCacheMeta: () => Object.fromEntries(meta),
       getSessionData: vi.fn(),
     } as unknown as BaseAgent;
 

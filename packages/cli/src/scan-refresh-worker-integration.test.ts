@@ -129,7 +129,7 @@ function currentPricingMeta(meta: SessionCacheMeta): SessionCacheMeta {
 }
 
 function makeAgent(overrides: Record<string, unknown> = {}) {
-  let sessionMetaMap = new Map<string, SessionCacheMeta>();
+  let sessionMeta: Record<string, SessionCacheMeta> = {};
   const agent = Object.assign(new mocks.FileSystemSessionSource(), {
     name: "codex",
     isAvailable: vi.fn(() => true),
@@ -140,9 +140,13 @@ function makeAgent(overrides: Record<string, unknown> = {}) {
     expandChangedSessionIds: vi.fn((changedIds: string[]) => changedIds),
     filterCachedSessions: vi.fn((sessions: SessionHead[]) => sessions),
     getSessionData: vi.fn(),
-    getSessionMetaMap: vi.fn(() => sessionMetaMap),
-    setSessionMetaMap: vi.fn((next: Map<string, SessionCacheMeta>) => {
-      sessionMetaMap = new Map(next);
+    getSessionCacheMeta: vi.fn((sessionId: string) => sessionMeta[sessionId]),
+    snapshotSessionCacheMeta: vi.fn(() => structuredClone(sessionMeta)),
+    restoreSessionCacheMeta: vi.fn((next: Readonly<Record<string, SessionCacheMeta>>) => {
+      sessionMeta = structuredClone(next);
+    }),
+    removeSessionCacheMeta: vi.fn((sessionIds: Iterable<string>) => {
+      for (const sessionId of sessionIds) delete sessionMeta[sessionId];
     }),
     ...overrides,
   });
@@ -267,7 +271,7 @@ describe("scan refresh worker entry", () => {
     const meta = { steady: { id: "steady", sourcePath: "/database" } };
     const agent = makeGenericAgent({
       scan: vi.fn(() => [rebuilt]),
-      getSessionMetaMap: vi.fn(() => new Map(Object.entries(meta))),
+      snapshotSessionCacheMeta: vi.fn(() => meta),
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({ previousSessions: [tagged], meta });
@@ -306,7 +310,9 @@ describe("scan refresh worker entry", () => {
     );
     const agent = makeGenericAgent({
       scan,
-      getSessionMetaMap: vi.fn(() => new Map([["fresh", { sourcePath: "/fresh" }]])),
+      snapshotSessionCacheMeta: vi.fn(() => ({
+        fresh: { id: "fresh", sourcePath: "/fresh" },
+      })),
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
 
@@ -476,7 +482,7 @@ describe("scan refresh worker entry", () => {
         { sessionId: "fresh", sourcePath: "/fresh", fingerprint: "fresh" },
       ]),
       scanSessionSource: vi.fn(() => session),
-      getSessionMetaMap: vi.fn(() => new Map([["fresh", { sourcePath: "/fresh" }]])),
+      snapshotSessionCacheMeta: vi.fn(() => ({ fresh: { sourcePath: "/fresh" } })),
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({ operation: { kind: "full-scan", checkpoint: "durable" } });
@@ -795,19 +801,19 @@ describe("scan refresh worker entry", () => {
 
   it("returns a head when only its metadata changes", async () => {
     const session = makeSession("same");
-    let meta = new Map<string, SessionCacheMeta>();
+    let meta: Record<string, SessionCacheMeta> = {};
     const agent = makeGenericAgent({
       scan: vi.fn(() => {
-        meta.set("same", {
+        meta.same = {
           id: "same",
           sourcePath: "/same",
           sourceFingerprint: "new",
-        });
+        };
         return [session];
       }),
-      getSessionMetaMap: vi.fn(() => meta),
-      setSessionMetaMap: vi.fn((next: Map<string, SessionCacheMeta>) => {
-        meta = new Map(next);
+      snapshotSessionCacheMeta: vi.fn(() => meta),
+      restoreSessionCacheMeta: vi.fn((next: Readonly<Record<string, SessionCacheMeta>>) => {
+        meta = structuredClone(next);
       }),
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);

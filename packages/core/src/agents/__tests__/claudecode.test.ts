@@ -261,10 +261,10 @@ describe("ClaudeCodeAgent cache refresh", () => {
     const agent = new ClaudeCodeAgent() as any;
     agent.basePath = basePath;
     agent.scan();
-    const restoredMeta = new Map(agent.getSessionMetaMap());
+    const restoredMeta = agent.snapshotSessionCacheMeta();
     const walkSpy = vi.spyOn(agent, "walkFiles");
 
-    agent.setSessionMetaMap(restoredMeta);
+    agent.restoreSessionCacheMeta(restoredMeta);
     agent.ensureChildIndex();
 
     expect(walkSpy).not.toHaveBeenCalled();
@@ -296,7 +296,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
     refreshedAgent.scan();
     const walkSpy = vi.spyOn(agent, "walkFiles");
 
-    agent.setSessionMetaMap(new Map(refreshedAgent.getSessionMetaMap()));
+    agent.restoreSessionCacheMeta(refreshedAgent.snapshotSessionCacheMeta());
     agent.ensureChildIndex();
 
     expect(walkSpy).toHaveBeenCalledOnce();

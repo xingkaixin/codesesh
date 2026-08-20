@@ -11,6 +11,7 @@ import type {
   loadCachedSessions,
   LiveSnapshot,
   PendingSearchIndexMaintenance,
+  SessionCacheMeta,
   SessionHead,
   SessionSourceFailure,
 } from "@codesesh/core";
@@ -135,6 +136,7 @@ type TestAgentOverrides = Partial<BaseAgent> &
   Partial<Pick<TestAggregateAgent, "checkForChanges" | "commitChangeCheck" | "incrementalScan">>;
 
 function makeAgent(overrides: TestAgentOverrides = {}): TestAggregateAgent {
+  let meta: Record<string, SessionCacheMeta> = {};
   const agent = {
     name: "codex",
     displayName: "Codex",
@@ -145,8 +147,14 @@ function makeAgent(overrides: TestAgentOverrides = {}): TestAggregateAgent {
     incrementalScan: (sessions: SessionHead[]) => sessions,
     getSessionData: () => ({ messages: [] }) as never,
     getSessionWatchPlan: () => ({ status: "not-needed" as const, reason: "test adapter" }),
-    getSessionMetaMap: () => new Map(),
-    setSessionMetaMap: () => undefined,
+    getSessionCacheMeta: (sessionId: string) => meta[sessionId],
+    snapshotSessionCacheMeta: () => structuredClone(meta),
+    restoreSessionCacheMeta: (next: Readonly<Record<string, SessionCacheMeta>>) => {
+      meta = structuredClone(next);
+    },
+    removeSessionCacheMeta: (sessionIds: Iterable<string>) => {
+      for (const sessionId of sessionIds) delete meta[sessionId];
+    },
     ...overrides,
   } as unknown as TestAggregateAgent;
   return Object.assign(agent, {
@@ -1032,11 +1040,11 @@ describe("AgentSyncEngine", () => {
     searchIndex.enqueue.mockRejectedValueOnce(new Error("atomic publication failed"));
     const previous = makeSession("head", "before");
     const head = makeSession("head", "after");
-    const oldMeta = new Map([["head", { id: "head", sourcePath: "/old" }]]);
+    const oldMeta = { head: { id: "head", sourcePath: "/old" } };
     const nextMeta = { head: { id: "head", sourcePath: "/updated" } };
     let currentMeta = oldMeta;
-    const setSessionMetaMap = vi.fn((meta: Map<string, { id: string; sourcePath: string }>) => {
-      currentMeta = meta;
+    const restoreSessionCacheMeta = vi.fn((meta: typeof oldMeta) => {
+      currentMeta = structuredClone(meta);
     });
     const workerRunner: WorkerRunner = {
       activeCount: 0,
@@ -1044,8 +1052,8 @@ describe("AgentSyncEngine", () => {
       shutdown: vi.fn(async () => undefined),
     };
     const agent = makeAgent({
-      getSessionMetaMap: () => currentMeta,
-      setSessionMetaMap: setSessionMetaMap as BaseAgent["setSessionMetaMap"],
+      snapshotSessionCacheMeta: () => structuredClone(currentMeta),
+      restoreSessionCacheMeta: restoreSessionCacheMeta as BaseAgent["restoreSessionCacheMeta"],
     });
     const { engine } = makeEngine(agent, [previous], workerRunner);
     const sessionChanges = vi.fn();
@@ -1066,7 +1074,7 @@ describe("AgentSyncEngine", () => {
     await engine.refresh("codex");
 
     expect(workerRunner.run).toHaveBeenCalledTimes(2);
-    expect(currentMeta).toEqual(new Map(Object.entries(nextMeta)));
+    expect(currentMeta).toEqual(nextMeta);
     expect(engine.snapshot().sessions).toEqual([
       expect.objectContaining({ id: head.id, title: head.title }),
     ]);
@@ -1243,7 +1251,7 @@ describe("AgentSyncEngine", () => {
     const repairedMeta = {
       steady: { id: "steady", sourcePath: "/database", pricingCaptureEpoch: "pricing-capture-v1" },
     };
-    let currentMeta = new Map(Object.entries(staleMeta));
+    let currentMeta = staleMeta;
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async () =>
@@ -1253,10 +1261,10 @@ describe("AgentSyncEngine", () => {
     };
     const agent = makeAgent({
       checkForChanges: () => ({ hasChanges: true, timestamp: 2 }),
-      getSessionMetaMap: () => currentMeta,
-      setSessionMetaMap: ((meta: Map<string, never>) => {
-        currentMeta = meta;
-      }) as BaseAgent["setSessionMetaMap"],
+      snapshotSessionCacheMeta: () => currentMeta,
+      restoreSessionCacheMeta: ((meta: typeof staleMeta) => {
+        currentMeta = structuredClone(meta);
+      }) as BaseAgent["restoreSessionCacheMeta"],
     });
     const { engine } = makeEngine(agent, [steady], workerRunner);
 

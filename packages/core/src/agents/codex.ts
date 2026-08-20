@@ -456,8 +456,8 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     }));
   }
 
-  setSessionMetaMap(meta: Map<string, SessionCacheMeta>): void {
-    super.setSessionMetaMap(meta);
+  restoreSessionCacheMeta(meta: Readonly<Record<string, SessionCacheMeta>>): void {
+    super.restoreSessionCacheMeta(meta);
     this.subagentIndex = null;
     this.subagentStatsByParent.clear();
     this.childFinalMessagesByParent.clear();

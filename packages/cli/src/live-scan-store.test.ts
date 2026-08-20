@@ -162,8 +162,8 @@ const workerThreads = vi.hoisted(() => ({
 
       return { sessions: [...sessionMap.values()], changedIds: [...changedIds] };
     };
-    const serializeMeta = (agent: any) =>
-      Object.fromEntries(agent.getSessionMetaMap?.()?.entries?.() ?? []);
+    const serializeMeta = (agent: any): Record<string, SessionCacheMeta> =>
+      agent.snapshotSessionCacheMeta?.() ?? {};
     const computeDelta = (
       data: any,
       sessions: SessionHead[],
@@ -238,7 +238,7 @@ const workerThreads = vi.hoisted(() => ({
               const agent = (scanAgent ??= core
                 .createRegisteredAgents()
                 .find((item: any) => item.name === runData.agentName));
-              agent?.setSessionMetaMap?.(new Map(Object.entries(runData.meta)));
+              agent?.restoreSessionCacheMeta?.(runData.meta);
               let sessions: SessionHead[] = [];
               let changedIds: string[] | undefined;
               const sourceSynchronization =
@@ -557,8 +557,12 @@ function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
       messages: [],
     })),
     getSessionWatchPlan: vi.fn(() => watchPlanFor(name)),
-    getSessionMetaMap: vi.fn(() => new Map([["session", { id: "session", sourcePath: "/tmp/s" }]])),
-    setSessionMetaMap: vi.fn(),
+    getSessionCacheMeta: vi.fn(),
+    snapshotSessionCacheMeta: vi.fn(() => ({
+      session: { id: "session", sourcePath: "/tmp/s" },
+    })),
+    restoreSessionCacheMeta: vi.fn(),
+    removeSessionCacheMeta: vi.fn(),
     // Database-style agents detect changes via checkForChanges and rescan via
     // incrementalScan (which delegates to scan), mirroring DatabaseSessionSource.
     checkForChanges: vi.fn(() => ({ hasChanges: true, changedIds: [], timestamp: 0 })),
@@ -588,8 +592,10 @@ function makeFileSystemAgent(
   overrides: {
     listSessionSources?: (options?: AgentScanOptions) => SessionSourceRef[];
     scanSessionSource?: (sourcePath: string) => SessionHead | null;
-    getSessionMetaMap?: () => Map<string, SessionCacheMeta>;
-    setSessionMetaMap?: (meta: Map<string, SessionCacheMeta>) => void;
+    getSessionCacheMeta?: (sessionId: string) => SessionCacheMeta | undefined;
+    snapshotSessionCacheMeta?: () => Record<string, SessionCacheMeta>;
+    restoreSessionCacheMeta?: (meta: Readonly<Record<string, SessionCacheMeta>>) => void;
+    removeSessionCacheMeta?: (sessionIds: Iterable<string>) => void;
     checkForChanges?: (sinceTimestamp: number, cachedSessions: SessionHead[]) => ChangeCheckResult;
     incrementalScan?: (cachedSessions: SessionHead[], changedIds: string[]) => SessionHead[];
   } = {},
@@ -605,8 +611,10 @@ function makeFileSystemAgent(
   agent.getSessionWatchPlan = vi.fn(() => watchPlanFor(name));
   agent.listSessionSources = overrides.listSessionSources ?? vi.fn(() => []);
   agent.scanSessionSource = overrides.scanSessionSource ?? vi.fn(() => null);
-  agent.getSessionMetaMap = overrides.getSessionMetaMap ?? vi.fn(() => new Map());
-  agent.setSessionMetaMap = overrides.setSessionMetaMap ?? vi.fn();
+  agent.getSessionCacheMeta = overrides.getSessionCacheMeta ?? vi.fn();
+  agent.snapshotSessionCacheMeta = overrides.snapshotSessionCacheMeta ?? vi.fn(() => ({}));
+  agent.restoreSessionCacheMeta = overrides.restoreSessionCacheMeta ?? vi.fn();
+  agent.removeSessionCacheMeta = overrides.removeSessionCacheMeta ?? vi.fn();
   agent.checkForChanges =
     overrides.checkForChanges ??
     vi.fn(() => ({ hasChanges: false, changedIds: [], timestamp: Date.now() }));
@@ -831,7 +839,7 @@ describe("LiveScanStore", () => {
         timestamp: 2000,
       })),
       incrementalScan: vi.fn(() => [old, recent]),
-      setSessionMetaMap: vi.fn(),
+      restoreSessionCacheMeta: vi.fn(),
     });
 
     core.createRegisteredAgents.mockReturnValue([codex]);
@@ -870,12 +878,10 @@ describe("LiveScanStore", () => {
     await vi.advanceTimersByTimeAsync(250);
 
     expect(codex.checkForChanges).toHaveBeenCalledWith(1000, [old, recent]);
-    expect(codex.setSessionMetaMap).toHaveBeenCalledWith(
-      new Map([
-        ["old", { id: "old", sourcePath: "/tmp/old" }],
-        ["recent", { id: "recent", sourcePath: "/tmp/recent" }],
-      ]),
-    );
+    expect(codex.restoreSessionCacheMeta).toHaveBeenCalledWith({
+      old: { id: "old", sourcePath: "/tmp/old" },
+      recent: { id: "recent", sourcePath: "/tmp/recent" },
+    });
     expect(codex.scan).not.toHaveBeenCalled();
     expect(codex.incrementalScan).not.toHaveBeenCalled();
     expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent"]);
@@ -1367,9 +1373,9 @@ describe("LiveScanStore", () => {
         ]);
         return [added, retained];
       }),
-      getSessionMetaMap: vi.fn(() => meta),
-      setSessionMetaMap: vi.fn((next: Map<string, SessionCacheMeta>) => {
-        meta = new Map(next);
+      snapshotSessionCacheMeta: vi.fn(() => Object.fromEntries(meta)),
+      restoreSessionCacheMeta: vi.fn((next: Readonly<Record<string, SessionCacheMeta>>) => {
+        meta = new Map(Object.entries(next));
       }),
     });
     core.createRegisteredAgents.mockReturnValue([agent]);
@@ -1548,13 +1554,14 @@ describe("LiveScanStore", () => {
         timestamp: 2000,
       })),
       incrementalScan: vi.fn(() => [updatedOld, recent]),
-      setSessionMetaMap: vi.fn(),
-      getSessionMetaMap: vi.fn(
-        () =>
-          new Map([
-            ["old", { id: "old", sourcePath: "/tmp/old" }],
-            ["recent", { id: "recent", sourcePath: "/tmp/recent" }],
-          ]),
+      restoreSessionCacheMeta: vi.fn(),
+      snapshotSessionCacheMeta: vi.fn((sessionIds?: ReadonlySet<string>) =>
+        Object.fromEntries(
+          Object.entries({
+            old: { id: "old", sourcePath: "/tmp/old" },
+            recent: { id: "recent", sourcePath: "/tmp/recent" },
+          }).filter(([sessionId]) => !sessionIds || sessionIds.has(sessionId)),
+        ),
       ),
     });
 
@@ -1634,14 +1641,11 @@ describe("LiveScanStore", () => {
         { sessionId: "added", sourcePath: "/tmp/added", fingerprint: "new" },
       ]),
       scanSessionSource,
-      getSessionMetaMap: vi.fn(
-        () =>
-          new Map([
-            ["session", { id: "session", sourcePath: "/tmp/s", sourceFingerprint: "next" }],
-            ["added", { id: "added", sourcePath: "/tmp/added", sourceFingerprint: "new" }],
-          ]),
-      ),
-      setSessionMetaMap: vi.fn(),
+      snapshotSessionCacheMeta: vi.fn(() => ({
+        session: { id: "session", sourcePath: "/tmp/s", sourceFingerprint: "next" },
+        added: { id: "added", sourcePath: "/tmp/added", sourceFingerprint: "new" },
+      })),
+      restoreSessionCacheMeta: vi.fn(),
     });
 
     core.createRegisteredAgents.mockReturnValue([codex]);
@@ -1722,21 +1726,15 @@ describe("LiveScanStore", () => {
         },
       ]),
       scanSessionSource,
-      getSessionMetaMap: vi.fn(
-        () =>
-          new Map([
-            [
-              "session",
-              {
-                id: "session",
-                sourcePath: "/tmp/s",
-                sourceFingerprint: legacyFingerprint,
-                sourceMtimeMs: 1234,
-              },
-            ],
-          ]),
-      ),
-      setSessionMetaMap: vi.fn(),
+      snapshotSessionCacheMeta: vi.fn(() => ({
+        session: {
+          id: "session",
+          sourcePath: "/tmp/s",
+          sourceFingerprint: legacyFingerprint,
+          sourceMtimeMs: 1234,
+        },
+      })),
+      restoreSessionCacheMeta: vi.fn(),
     });
 
     core.createRegisteredAgents.mockReturnValue([codex]);
@@ -1782,12 +1780,13 @@ describe("LiveScanStore", () => {
         timestamp: 3000,
       })),
       incrementalScan: vi.fn(() => [updated, added]),
-      getSessionMetaMap: vi.fn(
-        () =>
-          new Map([
-            ["session", { id: "session", sourcePath: "/tmp/s" }],
-            ["unrelated", { id: "unrelated", sourcePath: "/tmp/unrelated" }],
-          ]),
+      snapshotSessionCacheMeta: vi.fn((sessionIds?: ReadonlySet<string>) =>
+        Object.fromEntries(
+          Object.entries({
+            session: { id: "session", sourcePath: "/tmp/s" },
+            unrelated: { id: "unrelated", sourcePath: "/tmp/unrelated" },
+          }).filter(([sessionId]) => !sessionIds || sessionIds.has(sessionId)),
+        ),
       ),
     });
 

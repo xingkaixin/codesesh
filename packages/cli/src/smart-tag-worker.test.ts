@@ -65,7 +65,7 @@ describe("smart tag worker", () => {
     const sessionData = { messages: [] };
     const agent = {
       name: "codex",
-      setSessionMetaMap: vi.fn(),
+      restoreSessionCacheMeta: vi.fn(),
       getSessionData: vi.fn((id: string) => {
         if (id === "broken") throw new Error("cannot parse");
         if (id === "invalid") throw "invalid session";
@@ -81,9 +81,9 @@ describe("smart tag worker", () => {
 
     await runWorker();
 
-    expect(agent.setSessionMetaMap).toHaveBeenCalledWith(
-      new Map([["ready", { sourcePath: "/ready" }]]),
-    );
+    expect(agent.restoreSessionCacheMeta).toHaveBeenCalledWith({
+      ready: { sourcePath: "/ready" },
+    });
     expect(mocks.classifySessionTags).toHaveBeenCalledWith(sessionData);
     expect(mocks.getSmartTagSourceTimestamp).toHaveBeenCalledWith(sessionData);
     expect(mocks.postMessage).toHaveBeenCalledWith([

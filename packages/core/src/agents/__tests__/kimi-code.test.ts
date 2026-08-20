@@ -69,7 +69,7 @@ describe("KimiCodeAgent", () => {
 
     const refs = agent.listSessionSources({ from });
     const [head] = agent.scan({ from });
-    const meta = agent.getSessionMetaMap().get(SESSION_ID);
+    const meta = agent.getSessionCacheMeta(SESSION_ID);
 
     expect(refs).toHaveLength(1);
     expect(head).toMatchObject({
@@ -113,7 +113,7 @@ describe("KimiCodeAgent", () => {
     ]);
     const agent = createAgent(dataRoot);
     const heads = agent.scan();
-    const currentMeta = agent.getSessionMetaMap().get(SESSION_ID)!;
+    const currentMeta = agent.getSessionCacheMeta(SESSION_ID)!;
     if (typeof currentMeta.sourceFingerprint !== "string") {
       throw new TypeError("Expected Kimi-Code source fingerprint");
     }
@@ -121,23 +121,18 @@ describe("KimiCodeAgent", () => {
     expect(fingerprint[0]).toBe("kimi-code-parser-v2");
     expect(fingerprint[2]).toBe(statSync(join(sessionDir, "state.json")).size);
     expect(fingerprint[4]).toBe(statSync(join(sessionDir, "agents", "main", "wire.jsonl")).size);
-    agent.setSessionMetaMap(
-      new Map([
-        [
-          SESSION_ID,
-          {
-            ...currentMeta,
-            sourceFingerprint: JSON.stringify(["kimi-code-parser-v0", ...fingerprint.slice(1)]),
-          },
-        ],
-      ]),
-    );
+    agent.restoreSessionCacheMeta({
+      [SESSION_ID]: {
+        ...currentMeta,
+        sourceFingerprint: JSON.stringify(["kimi-code-parser-v0", ...fingerprint.slice(1)]),
+      },
+    });
 
     const changes = agent.checkForChanges(0, heads);
     expect(changes.changedIds).toContain(SESSION_ID);
     const refreshed = agent.incrementalScan(heads, changes.changedIds ?? [], changes.refs);
     expect(refreshed).toMatchObject([{ id: SESSION_ID, title: "Refresh me" }]);
-    expect(agent.getSessionMetaMap().get(SESSION_ID)?.sourceFingerprint).toBe(
+    expect(agent.getSessionCacheMeta(SESSION_ID)?.sourceFingerprint).toBe(
       changes.refs?.[0]?.fingerprint,
     );
     expect(agent.getSessionData(SESSION_ID).messages[0]).toMatchObject({
@@ -380,7 +375,7 @@ describe("KimiCodeAgent", () => {
     const agent = createAgent(dataRoot);
 
     expect(agent.scan()).toEqual([]);
-    expect(agent.getSessionMetaMap().has(emptyId)).toBe(false);
+    expect(agent.getSessionCacheMeta(emptyId)).toBeUndefined();
 
     appendFileSync(
       join(sessionDir, "agents", "main", "wire.jsonl"),
@@ -414,12 +409,12 @@ describe("KimiCodeAgent", () => {
       time_created: 1767225600000,
       stats: { message_count: 0, total_input_tokens: 0, total_output_tokens: 0, total_cost: 0 },
     };
-    agent.setSessionMetaMap(
-      new Map([[SESSION_ID, { id: SESSION_ID, sourcePath: join(dataRoot, "sessions") }]]),
-    );
+    agent.restoreSessionCacheMeta({
+      [SESSION_ID]: { id: SESSION_ID, sourcePath: join(dataRoot, "sessions") },
+    });
 
     expect(agent.filterCachedSessions([stale])).toEqual([]);
-    expect(agent.getSessionMetaMap().has(SESSION_ID)).toBe(false);
+    expect(agent.getSessionCacheMeta(SESSION_ID)).toBeUndefined();
 
     const changes = agent.checkForChanges(0, [stale]);
     expect(changes.hasChanges).toBe(true);
