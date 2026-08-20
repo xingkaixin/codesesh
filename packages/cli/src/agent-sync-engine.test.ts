@@ -737,6 +737,32 @@ describe("AgentSyncEngine", () => {
     expect(checkForChanges).toHaveBeenCalledTimes(1);
   });
 
+  it("marks search index work as bulk after many pending signals", async () => {
+    vi.useFakeTimers();
+    const previous = makeSession("session", "before");
+    const updated = makeSession("session", "after");
+    const agent = makeAgent({
+      checkForChanges: () => ({ hasChanges: true, changedIds: [updated.id], timestamp: 2 }),
+      incrementalScan: () => [updated],
+    });
+    const { engine } = makeEngine(agent, [previous]);
+
+    engine.handleAgentsChanged(Array.from({ length: 101 }, () => "codex"));
+    await engine.refresh("codex");
+
+    expect(searchIndex.enqueue).toHaveBeenCalledWith(
+      "scan.refresh",
+      [
+        expect.objectContaining({
+          kind: "changes",
+          searchIndexOptions: { isBulk: true },
+        }),
+      ],
+      expect.any(Function),
+    );
+    await engine.shutdown();
+  });
+
   it("coalesces refreshes requested while one is running", async () => {
     vi.useFakeTimers();
     let finishFirst: (() => void) | undefined;
