@@ -1,6 +1,8 @@
 export { firstExisting, readEnvPath, resolveDataHome, resolveHomePath } from "./paths.js";
 export { ensureSessionTagsSync, filterSessions, scanSessions } from "./scanner.js";
 export type { AgentCacheFailure, LiveSnapshot, ScanOptions, SessionTagTiming } from "./scanner.js";
+export { planAgentScan } from "./agent-scan-plan.js";
+export type { AgentScanIntent, AgentScanPlan } from "./agent-scan-plan.js";
 export {
   materializeSessionDetail,
   materializeSessionDetailResponse,

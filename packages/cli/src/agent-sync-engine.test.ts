@@ -892,6 +892,24 @@ describe("AgentSyncEngine", () => {
     );
   });
 
+  it("checks an initialized empty aggregate baseline instead of forcing a reload", async () => {
+    const checkForChanges = vi.fn(() => ({ hasChanges: false, timestamp: 2 }));
+    const workerRunner = makeWorkerRunner();
+    const { engine } = makeEngine(makeAgent({ checkForChanges }), [], workerRunner);
+
+    await engine.refresh("codex");
+
+    expect(checkForChanges).toHaveBeenCalledWith(expect.any(Number), []);
+    expect(workerRunner.run).toHaveBeenCalledWith(
+      "codex",
+      expect.objectContaining({ operation: { kind: "recompute-derived" } }),
+    );
+    expect(workerRunner.run).not.toHaveBeenCalledWith(
+      "codex",
+      expect.objectContaining({ operation: { kind: "full-scan" } }),
+    );
+  });
+
   it("distinguishes queued and active publication before committing the refresh", async () => {
     let startIndex!: () => void;
     let commitIndex!: () => void;

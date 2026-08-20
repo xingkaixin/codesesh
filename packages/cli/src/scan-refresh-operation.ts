@@ -1,3 +1,5 @@
+import type { AgentScanIntent } from "@codesesh/core";
+
 type DurableCheckpoint = { checkpoint?: "durable" };
 
 export type ScanRefreshOperation =
@@ -16,4 +18,17 @@ export function isBackfillOperation(
 
 export function usesDurableCheckpoints(operation: ScanRefreshOperation): boolean {
   return "checkpoint" in operation && operation.checkpoint === "durable";
+}
+
+export function scanIntentForOperation(operation: ScanRefreshOperation): AgentScanIntent {
+  switch (operation.kind) {
+    case "full-scan":
+      return "reload";
+    case "source-refresh":
+      return "refresh";
+    case "recompute-derived":
+      return "recompute-derived";
+    case "backfill":
+      return "backfill";
+  }
 }
