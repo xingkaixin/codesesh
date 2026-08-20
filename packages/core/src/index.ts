@@ -1,6 +1,3 @@
-// Register all agent adapters (side effect import)
-import "./agents/register.js";
-
 export type {
   FileActivityKind,
   IdentifiedSessionDetail,
@@ -17,7 +14,6 @@ export {
   FileSystemSessionSource,
   getAgentInfoMap,
   getRegisteredAgents,
-  registerAgent,
   reportSessionSourceOutcome,
   synchronizeSessionSources,
 } from "./agents/index.js";
