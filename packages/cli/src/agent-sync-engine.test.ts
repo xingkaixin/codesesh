@@ -738,6 +738,7 @@ describe("AgentSyncEngine", () => {
   });
 
   it("marks search index work as bulk after many pending signals", async () => {
+    vi.useFakeTimers();
     const previous = makeSession("session", "before");
     const updated = makeSession("session", "after");
     const agent = makeAgent({
@@ -759,6 +760,7 @@ describe("AgentSyncEngine", () => {
       ],
       expect.any(Function),
     );
+    await engine.shutdown();
   });
 
   it("coalesces refreshes requested while one is running", async () => {
