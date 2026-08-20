@@ -2,12 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync, appendFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createRegisteredAgents,
-  registerAgent,
-  type BaseAgent,
-  type SessionWatchPlan,
-} from "@codesesh/core";
+import { type BaseAgent, type SessionWatchPlan } from "@codesesh/core";
 
 const fsWatch = vi.hoisted(() => ({
   watchers: [] as Array<{
@@ -244,7 +239,7 @@ describe("SessionWatcher", () => {
     });
   });
 
-  it("consumes a newly registered adapter without watcher name changes", async () => {
+  it("consumes a provided adapter without watcher name changes", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "watcher-registered-adapter-"));
     try {
       const adapter = Object.assign(
@@ -260,21 +255,9 @@ describe("SessionWatcher", () => {
           },
         },
       ) as unknown as BaseAgent;
-      registerAgent({
-        name: "registered-test-agent",
-        displayName: "Registered Test Agent",
-        icon: "/test-agent.svg",
-        resolveDataRoot: () => tempDir,
-        resumeCommandPrefix: null,
-        sourceKind: "filesystem",
-        toolStrategy: "default",
-        create: () => adapter,
-      });
       const watcher = new SessionWatcher();
 
-      watcher.start(
-        createRegisteredAgents().filter((agent) => agent.name === "registered-test-agent"),
-      );
+      watcher.start([adapter]);
 
       expect(fsWatch.watchers).toEqual([
         expect.objectContaining({

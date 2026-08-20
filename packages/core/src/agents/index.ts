@@ -47,7 +47,6 @@ export type {
 } from "./base.js";
 export type { ParseSessionResult } from "../types/index.js";
 export {
-  registerAgent,
   createRegisteredAgents,
   getRegisteredAgents,
   getAgentInfoMap,

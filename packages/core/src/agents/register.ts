@@ -1,5 +1,5 @@
 import { AGENT_CATALOG, type AgentName } from "../contract/agent-catalog.js";
-import { registerAgent, type AgentRegistration } from "./registry.js";
+import type { AgentRegistration } from "./registry.js";
 import { ClaudeCodeAgent, resolveClaudeCodeDataRoot } from "./claudecode.js";
 import { OpenCodeAgent, resolveOpenCodeDataRoot } from "./opencode.js";
 import { KimiAgent, resolveKimiDataRoot } from "./kimi.js";
@@ -56,6 +56,23 @@ const RUNTIME_REGISTRATIONS = {
   },
 } satisfies Record<AgentName, AgentRuntimeRegistration>;
 
-for (const catalogEntry of AGENT_CATALOG) {
-  registerAgent({ ...catalogEntry, ...RUNTIME_REGISTRATIONS[catalogEntry.name] });
-}
+export const AGENT_REGISTRATIONS: readonly AgentRegistration[] = Object.freeze(
+  AGENT_CATALOG.map((catalogEntry) => {
+    const runtime = RUNTIME_REGISTRATIONS[catalogEntry.name];
+    return Object.freeze({
+      ...catalogEntry,
+      ...runtime,
+      create: () => {
+        const agent = runtime.create();
+        const expectedSource =
+          catalogEntry.sourceKind === "filesystem" ? "enumerated" : "aggregate";
+        if (agent.sessionSourceAccess.kind !== expectedSource) {
+          throw new Error(
+            `Agent ${catalogEntry.name} declares ${catalogEntry.sourceKind} storage but provides ${agent.sessionSourceAccess.kind} source access`,
+          );
+        }
+        return agent;
+      },
+    });
+  }),
+);

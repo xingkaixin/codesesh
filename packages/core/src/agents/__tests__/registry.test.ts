@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { AGENT_CATALOG } from "../../contract/agent-catalog.js";
-import "../register.js";
 import { getAgentInfoMap, getRegisteredAgents } from "../registry.js";
 
 describe("agent registry", () => {
+  it("exposes an immutable registration list", () => {
+    expect(Object.isFrozen(getRegisteredAgents())).toBe(true);
+    expect(getRegisteredAgents().every((registration) => Object.isFrozen(registration))).toBe(true);
+  });
+
   it("projects public metadata from the catalog", () => {
     const counts: Record<string, number> = { claudecode: 2, codex: 1 };
 
