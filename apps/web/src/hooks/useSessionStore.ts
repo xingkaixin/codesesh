@@ -33,11 +33,14 @@ import {
 import {
   INITIAL_SESSION_STORE_LOAD_STATE,
   reduceSessionStoreLoad,
-  sessionStoreLoadSnapshot,
-  type SessionStoreSnapshot,
 } from "./session-store-load-state";
 
-export type { SessionStoreSnapshot } from "./session-store-load-state";
+export interface SessionStoreSnapshot {
+  window: AppConfig["window"];
+  agents: AgentInfo[];
+  sessions: SessionHead[];
+  dashboard: DashboardData;
+}
 
 export interface SessionProjection {
   window: AppConfig["window"];
@@ -278,31 +281,17 @@ export function useSessionStore() {
           }),
         ]);
         void queryClient.fetchQuery(projectsOptions(window)).catch(() => undefined);
-        let loadedAggregates: SnapshotAggregates | undefined;
-        let firstPage: SessionProjection | undefined;
-        const publishPreview = () => {
-          if (!loadedAggregates || !firstPage) return;
-          dispatchLoad({
-            type: "publish-preview",
-            requestId,
-            snapshot: createSnapshot(window, loadedAggregates, firstPage.sessions),
-          });
-        };
         const [aggregates, projection] = await Promise.all([
-          queryClient.fetchQuery(snapshotAggregatesOptions(window)).then((value) => {
-            loadedAggregates = value;
-            publishPreview();
-            return value;
-          }),
+          queryClient.fetchQuery(snapshotAggregatesOptions(window)),
           queryClient.fetchQuery(
             sessionProjectionOptions(window, (firstPageProjection) => {
-              firstPage = firstPageProjection;
-              publishPreview();
+              if (activeRequestRef.current?.requestId !== requestId) return;
+              queryClient.setQueryData(queryKeys.sessionProjection(window), firstPageProjection);
             }),
           ),
         ]);
         const snapshot = createSnapshot(window, aggregates, projection.sessions);
-        dispatchLoad({ type: "complete", requestId, snapshot });
+        dispatchLoad({ type: "complete", requestId });
         return snapshot;
       } catch (error) {
         if (isCancelledError(error)) return null;
@@ -411,10 +400,9 @@ export function useSessionStore() {
     }
   }, [configFailed, refetchConfig, reload]);
 
-  const currentSnapshot = sameWindow(querySnapshot?.window, requestedWindow) ? querySnapshot : null;
-  const loadSnapshot = sessionStoreLoadSnapshot(loadState);
-  const displayedSnapshot =
-    currentSnapshot ?? (sameWindow(loadSnapshot?.window, requestedWindow) ? loadSnapshot : null);
+  const displayedSnapshot = sameWindow(querySnapshot?.window, requestedWindow)
+    ? querySnapshot
+    : null;
   const agents = displayedSnapshot?.agents ?? EMPTY_AGGREGATES.agents;
   const projectPage = projectsQuery.data ?? EMPTY_PROJECT_PAGE;
   const projects = projectPage.projects;

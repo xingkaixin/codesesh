@@ -208,7 +208,7 @@ describe("useSessionStore", () => {
       progress?.onFirstPage?.([SAMPLE_SESSION_HEAD]);
       return completeSessions.promise;
     });
-    const { result } = await renderStore();
+    const { result, client } = await renderStore();
 
     let load!: ReturnType<typeof result.current.reload>;
     act(() => {
@@ -217,6 +217,9 @@ describe("useSessionStore", () => {
 
     await waitFor(() => expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]));
     expect(result.current.loading).toBe(false);
+    expect(
+      client.getQueryData<SessionProjection>(queryKeys.sessionProjection(config.window))?.sessions,
+    ).toEqual([SAMPLE_SESSION_HEAD]);
 
     completeSessions.resolve({ sessions: [SAMPLE_SESSION_HEAD, finalSession] });
     await act(() => load);
