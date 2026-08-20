@@ -413,46 +413,9 @@ vi.mock("node:worker_threads", () => ({
 }));
 
 import { LiveScanStore, type SessionsUpdatedEvent } from "./live-scan.js";
-import { AgentSyncEngine } from "./agent-sync-engine.js";
 import { appLogger } from "./logging.js";
 import { SearchIndexJobRunner } from "./search-index-job-runner.js";
-import { ThreadWorkerRunner, type WorkerResult, type WorkerRunner } from "./worker-runner.js";
-
-function makeWorkerRunner() {
-  return {
-    activeCount: 0,
-    run: vi.fn<WorkerRunner["run"]>(),
-    commit: vi.fn<NonNullable<WorkerRunner["commit"]>>(),
-    discard: vi.fn<NonNullable<WorkerRunner["discard"]>>(),
-    shutdown: vi.fn<WorkerRunner["shutdown"]>(async () => undefined),
-  } satisfies WorkerRunner;
-}
-
-function completeWorkerResult(
-  result: Omit<WorkerResult, "completeness" | "explicitRemovedSessionIds">,
-): WorkerResult {
-  return { ...result, completeness: "complete", explicitRemovedSessionIds: [] };
-}
-
-function syncEngineOf(store: LiveScanStore): AgentSyncEngine {
-  return (store as unknown as { syncEngine: AgentSyncEngine }).syncEngine;
-}
-
-function runBackfill(store: LiveScanStore, agentName: string) {
-  const engine = syncEngineOf(store) as unknown as {
-    runBackfill: (attempt: { agentName: string; attemptId: number }) => Promise<unknown>;
-  };
-  return engine.runBackfill({ agentName, attemptId: 0 });
-}
-
-function setRefreshDuration(store: LiveScanStore, agentName: string, durationMs: number): void {
-  const engine = syncEngineOf(store) as unknown as {
-    scheduler: {
-      recordRefreshDuration: (agentName: string, durationMs: number) => void;
-    };
-  };
-  engine.scheduler.recordRefreshDuration(agentName, durationMs);
-}
+import { ThreadWorkerRunner } from "./worker-runner.js";
 
 let restoreRuntime: (() => void) | null = null;
 
@@ -1003,217 +966,9 @@ describe("LiveScanStore", () => {
     });
     await store.initialize();
 
-    const needsBackfill = (
-      syncEngineOf(store) as unknown as {
-        needsBackfill: (agent: typeof codex) => boolean;
-      }
-    ).needsBackfill.bind(syncEngineOf(store));
-    expect(needsBackfill(codex)).toBe(true);
-  });
+    store.startBackgroundRefresh();
 
-  it("serializes refresh behind an in-flight backfill for the same agent", async () => {
-    const initial = makeSession("session", { title: "initial", time_updated: 1000 });
-    const stale = makeSession("session", { title: "stale backfill", time_updated: 2000 });
-    const fresh = makeSession("session", { title: "fresh refresh", time_updated: 3000 });
-    const codex = makeFileSystemAgent("codex");
-    let releaseBackfill: ((result: WorkerResult) => void) | undefined;
-
-    core.createRegisteredAgents.mockReturnValue([codex]);
-    core.scanSessions.mockResolvedValue({
-      sessions: [initial],
-      byAgent: { codex: [initial] },
-      agents: [codex],
-    });
-    core.loadCachedSessions.mockReturnValue({
-      sessions: [initial],
-      byAgent: { codex: [initial] },
-      meta: {},
-      timestamp: 1000,
-    });
-
-    const workerRunner = makeWorkerRunner();
-    workerRunner.run
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            releaseBackfill = resolve;
-          }),
-      )
-      .mockResolvedValueOnce(
-        completeWorkerResult({ sessions: [fresh], meta: {}, changedIds: [fresh.id] }),
-      );
-    const store = new LiveScanStore({ watchEnabled: false, workerRunner });
-    await store.initialize();
-    const logInfo = vi.spyOn(appLogger, "info").mockImplementation(() => undefined);
-
-    const backfill = runBackfill(store, "codex");
-    await vi.waitFor(() => expect(workerRunner.run).toHaveBeenCalledTimes(1));
-
-    const refresh = syncEngineOf(store).refresh("codex");
-    await Promise.resolve();
-    expect(workerRunner.run).toHaveBeenCalledTimes(1);
-
-    releaseBackfill!(completeWorkerResult({ sessions: [stale], meta: {}, changedIds: [stale.id] }));
-    await backfill;
-    await refresh;
-
-    expect(store.getSnapshot().sessions[0]?.title).toBe("fresh refresh");
-    expect(
-      logInfo.mock.calls
-        .filter(([event]) => String(event).startsWith("scan.agent_operation."))
-        .map(([event, fields]) => [event, fields?.operation, fields?.generation, fields?.result]),
-    ).toEqual([
-      ["scan.agent_operation.started", "backfill", 1, undefined],
-      ["scan.agent_operation.completed", "backfill", 1, "committed"],
-      ["scan.agent_operation.started", "refresh", 2, undefined],
-      ["scan.agent_operation.completed", "refresh", 2, "committed"],
-    ]);
-  });
-
-  it("runs a queued refresh after a backfill failure", async () => {
-    const initial = makeSession("session", { title: "initial", time_updated: 1000 });
-    const fresh = makeSession("session", { title: "fresh", time_updated: 2000 });
-    const codex = makeFileSystemAgent("codex");
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-    core.createRegisteredAgents.mockReturnValue([codex]);
-    core.scanSessions.mockResolvedValue({
-      sessions: [initial],
-      byAgent: { codex: [initial] },
-      agents: [codex],
-    });
-    core.loadCachedSessions.mockReturnValue({
-      sessions: [initial],
-      byAgent: { codex: [initial] },
-      meta: {},
-      timestamp: 1000,
-    });
-
-    const workerRunner = makeWorkerRunner();
-    workerRunner.run
-      .mockRejectedValueOnce(new Error("backfill failed"))
-      .mockResolvedValueOnce(
-        completeWorkerResult({ sessions: [fresh], meta: {}, changedIds: [fresh.id] }),
-      );
-    const store = new LiveScanStore({ watchEnabled: false, workerRunner });
-    await store.initialize();
-
-    const backfill = runBackfill(store, "codex");
-    const refresh = syncEngineOf(store).refresh("codex");
-    await Promise.all([backfill, refresh]);
-
-    expect(consoleError).toHaveBeenCalledWith("[codex] Backfill failed:", expect.any(Error));
-    expect(store.getSnapshot().sessions[0]?.title).toBe("fresh");
-  });
-
-  it("allows another agent to refresh while a backfill is in flight", async () => {
-    const codexInitial = makeSession("codex-session");
-    const kimiInitial = makeSession("kimi-session", {
-      reference: { agentName: "kimi", sessionId: "kimi-session" },
-      title: "kimi initial",
-    });
-    const kimiFresh = makeSession("kimi-session", {
-      reference: { agentName: "kimi", sessionId: "kimi-session" },
-      title: "kimi fresh",
-      time_updated: 2000,
-    });
-    const codex = makeFileSystemAgent("codex");
-    const kimi = makeAgent("kimi", {
-      checkForChanges: vi.fn(() => ({
-        hasChanges: true,
-        changedIds: [kimiFresh.id],
-        timestamp: 2000,
-      })),
-      incrementalScan: vi.fn(() => [kimiFresh]),
-    });
-    let releaseBackfill: ((result: WorkerResult) => void) | undefined;
-
-    core.createRegisteredAgents.mockReturnValue([codex, kimi]);
-    core.scanSessions.mockResolvedValue({
-      sessions: [codexInitial, kimiInitial],
-      byAgent: { codex: [codexInitial], kimi: [kimiInitial] },
-      agents: [codex, kimi],
-    });
-    core.loadCachedSessions.mockReturnValue(null);
-
-    const workerRunner = makeWorkerRunner();
-    workerRunner.run.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          releaseBackfill = resolve;
-        }),
-    );
-    const store = new LiveScanStore({ watchEnabled: false, workerRunner });
-    await store.initialize();
-
-    const backfill = runBackfill(store, "codex");
-    await vi.waitFor(() => expect(workerRunner.run).toHaveBeenCalledTimes(1));
-
-    await syncEngineOf(store).refresh("kimi");
-    expect(store.getSnapshot().byAgent.kimi![0]?.title).toBe("kimi fresh");
-
-    releaseBackfill!(completeWorkerResult({ sessions: [codexInitial], meta: {}, changedIds: [] }));
-    await backfill;
-  });
-
-  it("coalesces refresh schedules received while backfill is active", async () => {
-    vi.useFakeTimers();
-    const initial = makeSession("session", { title: "initial", time_updated: 1000 });
-    const backfilled = makeSession("session", { title: "backfilled", time_updated: 2000 });
-    const refreshed = makeSession("session", { title: "refreshed", time_updated: 3000 });
-    const rerun = makeSession("session", { title: "rerun", time_updated: 4000 });
-    const codex = makeFileSystemAgent("codex");
-    let releaseBackfill: ((result: WorkerResult) => void) | undefined;
-
-    core.createRegisteredAgents.mockReturnValue([codex]);
-    core.scanSessions.mockResolvedValue({
-      sessions: [initial],
-      byAgent: { codex: [initial] },
-      agents: [codex],
-    });
-    core.loadCachedSessions.mockReturnValue({
-      sessions: [initial],
-      byAgent: { codex: [initial] },
-      meta: {},
-      timestamp: 1000,
-    });
-
-    const workerRunner = makeWorkerRunner();
-    workerRunner.run
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            releaseBackfill = resolve;
-          }),
-      )
-      .mockResolvedValueOnce(
-        completeWorkerResult({ sessions: [refreshed], meta: {}, changedIds: [refreshed.id] }),
-      )
-      .mockResolvedValueOnce(
-        completeWorkerResult({ sessions: [rerun], meta: {}, changedIds: [rerun.id] }),
-      );
-    const store = new LiveScanStore({ watchEnabled: false, workerRunner });
-    await store.initialize();
-
-    const backfill = runBackfill(store, "codex");
-    await vi.waitFor(() => expect(workerRunner.run).toHaveBeenCalledTimes(1));
-
-    const refresh = syncEngineOf(store).refresh("codex");
-    await Promise.resolve();
-    await syncEngineOf(store).refresh("codex");
-    await syncEngineOf(store).refresh("codex");
-
-    expect(workerRunner.run).toHaveBeenCalledTimes(1);
-    releaseBackfill!(
-      completeWorkerResult({ sessions: [backfilled], meta: {}, changedIds: [backfilled.id] }),
-    );
-    await backfill;
-    await refresh;
-    await vi.waitFor(() => expect(workerRunner.run).toHaveBeenCalledTimes(2));
-
-    await vi.advanceTimersByTimeAsync(100);
-    await vi.waitFor(() => expect(workerRunner.run).toHaveBeenCalledTimes(3));
-    expect(store.getSnapshot().sessions[0]?.title).toBe("rerun");
+    await vi.waitFor(() => expect(core.markAgentFullSyncStarted).toHaveBeenCalledWith("codex"));
   });
 
   it("rejects a scan worker that exits successfully before sending done", async () => {
@@ -1666,7 +1421,9 @@ describe("LiveScanStore", () => {
     const events: unknown[] = [];
     store.subscribe((event) => events.push(event));
     await store.initialize();
-    await syncEngineOf(store).refresh("codex");
+    store.startBackgroundRefresh();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.waitFor(() => expect(store.getSnapshot().sessions).toHaveLength(2));
     await vi.advanceTimersByTimeAsync(250);
 
     expect(codex.checkForChanges).not.toHaveBeenCalled();
@@ -1759,7 +1516,8 @@ describe("LiveScanStore", () => {
     const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
     const workerCountBeforeRefresh = workerThreads.workers.length;
-    await syncEngineOf(store).refresh("codex");
+    store.startBackgroundRefresh();
+    await vi.waitFor(() => expect(workerThreads.workers.length).toBe(workerCountBeforeRefresh + 1));
 
     expect(scanSessionSource).not.toHaveBeenCalled();
     expect(workerThreads.workers).toHaveLength(workerCountBeforeRefresh + 1);
@@ -1801,7 +1559,9 @@ describe("LiveScanStore", () => {
     const events: unknown[] = [];
     store.subscribe((event) => events.push(event));
     await store.initialize();
-    await syncEngineOf(store).refresh("codex");
+    store.startBackgroundRefresh();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.waitFor(() => expect(store.getSnapshot().sessions).toHaveLength(2));
     await vi.advanceTimersByTimeAsync(250);
 
     expect(codex.checkForChanges).toHaveBeenCalledWith(expect.any(Number), [previous]);
@@ -1877,7 +1637,7 @@ describe("LiveScanStore", () => {
     const listener = vi.fn();
     store.subscribe(listener);
 
-    const refresh = syncEngineOf(store).refresh("codex");
+    store.startBackgroundRefresh();
     await vi.waitFor(() =>
       expect(
         workerThreads.workers.some(
@@ -1893,43 +1653,11 @@ describe("LiveScanStore", () => {
     expect(listener).not.toHaveBeenCalled();
 
     refreshWorker.emitDone();
-    await refresh;
+    await vi.waitFor(() => expect(store.getSnapshot().sessions[0]?.title).toBe("new"));
 
     expect(store.getSnapshot().sessions[0]?.title).toBe("new");
     expect(listener).toHaveBeenCalledWith(
       expect.objectContaining({ type: "sessions-updated", updatedSessions: 1 }),
-    );
-  });
-
-  it("marks search index sync as bulk when many paths are pending", async () => {
-    const previous = makeSession("session", { title: "old", time_updated: 1000 });
-    const updated = makeSession("session", { title: "new", time_updated: 2000 });
-    const codex = makeAgent("codex", {
-      checkForChanges: vi.fn(() => ({
-        hasChanges: true,
-        changedIds: ["session"],
-        timestamp: 3000,
-      })),
-      incrementalScan: vi.fn(() => [updated]),
-    });
-
-    core.createRegisteredAgents.mockReturnValue([codex]);
-    core.scanSessions.mockResolvedValue({
-      sessions: [previous],
-      byAgent: { codex: [previous] },
-      agents: [codex],
-    });
-
-    const store = new LiveScanStore({ watchEnabled: false });
-    await store.initialize();
-    syncEngineOf(store).handleAgentsChanged(Array.from({ length: 101 }, () => "codex"));
-    await syncEngineOf(store).refresh("codex");
-
-    expect(workerThreads.workers.at(-1)?.workerData.jobs[0]).toEqual(
-      expect.objectContaining({
-        kind: "changes",
-        searchIndexOptions: { isBulk: true },
-      }),
     );
   });
 
@@ -1956,7 +1684,8 @@ describe("LiveScanStore", () => {
     const events: unknown[] = [];
     store.subscribe((event) => events.push(event));
     await store.initialize();
-    await syncEngineOf(store).refresh("codex");
+    store.startBackgroundRefresh();
+    await vi.waitFor(() => expect(events).toHaveLength(1));
 
     expect(events).toEqual([
       expect.objectContaining({
@@ -1997,7 +1726,8 @@ describe("LiveScanStore", () => {
     store.subscribe((event) => events.push(event));
     await store.initialize();
     const workerCount = workerThreads.workers.length;
-    await syncEngineOf(store).refresh("codex");
+    store.startBackgroundRefresh();
+    await vi.waitFor(() => expect(store.getScanStatus().active).toBe(false));
 
     expect(core.saveCachedSessions).not.toHaveBeenCalled();
     expect(workerThreads.workers).toHaveLength(workerCount);
@@ -2197,19 +1927,25 @@ describe("LiveScanStore", () => {
       reference: { agentName: "kimi", sessionId: "kimi-old" },
     });
     const codex = makeAgent("codex", {
-      checkForChanges: vi.fn(() => ({
-        hasChanges: true,
-        changedIds: ["codex-new"],
-        timestamp: 3000,
-      })),
+      checkForChanges: vi
+        .fn()
+        .mockReturnValueOnce({
+          hasChanges: true,
+          changedIds: ["codex-new"],
+          timestamp: 3000,
+        })
+        .mockReturnValue({ hasChanges: false, timestamp: 4000 }),
       incrementalScan: vi.fn(() => [existingCodex, makeSession("codex-new")]),
     });
     const kimi = makeAgent("kimi", {
-      checkForChanges: vi.fn(() => ({
-        hasChanges: true,
-        changedIds: ["kimi-new"],
-        timestamp: 3000,
-      })),
+      checkForChanges: vi
+        .fn()
+        .mockReturnValueOnce({ hasChanges: false, timestamp: 3000 })
+        .mockReturnValue({
+          hasChanges: true,
+          changedIds: ["kimi-new"],
+          timestamp: 4000,
+        }),
       incrementalScan: vi.fn(() => [
         existingKimi,
         makeSession("kimi-new", {
@@ -2228,10 +1964,14 @@ describe("LiveScanStore", () => {
     const events: SessionsUpdatedEvent[] = [];
     store.subscribe((event) => events.push(event));
     await store.initialize();
-    await syncEngineOf(store).refresh("codex");
-    await syncEngineOf(store).refresh("kimi");
+    store.startBackgroundRefresh();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.waitFor(() => expect(store.getSnapshot().sessions).toHaveLength(3));
+    store.startBackgroundRefresh();
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(events).toEqual([]);
+    await vi.waitFor(() => expect(store.getSnapshot().sessions).toHaveLength(4));
     await vi.advanceTimersByTimeAsync(250);
 
     expect(events).toEqual([
@@ -2281,223 +2021,12 @@ describe("LiveScanStore", () => {
     const events: SessionsUpdatedEvent[] = [];
     store.subscribe((event) => events.push(event));
     await store.initialize();
-    await syncEngineOf(store).refresh("codex");
+    store.startBackgroundRefresh();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.waitFor(() => expect(store.getSnapshot().sessions).toHaveLength(2));
     await vi.advanceTimersByTimeAsync(250);
 
     expect(events).toEqual([expect.objectContaining({ changedAgents: ["codex"] })]);
-  });
-
-  it("coalesces refresh schedules for the same agent into a single run", async () => {
-    vi.useFakeTimers();
-    const existing = makeSession("existing");
-    const codex = makeAgent("codex", {
-      checkForChanges: vi.fn(() => ({
-        hasChanges: true,
-        changedIds: ["fresh"],
-        timestamp: 3000,
-      })),
-      incrementalScan: vi.fn(() => [existing, makeSession("fresh")]),
-    });
-
-    core.createRegisteredAgents.mockReturnValue([codex]);
-    core.scanSessions.mockResolvedValue({
-      sessions: [existing],
-      byAgent: { codex: [existing] },
-      agents: [codex],
-    });
-
-    const store = new LiveScanStore({ watchEnabled: false });
-    await store.initialize();
-
-    // Three schedule calls arrive within the debounce window; scheduleRefresh
-    // throttles (keeps the earliest deadline) rather than debouncing, so the
-    // later calls are no-ops and the run fires 200ms after the first call.
-    syncEngineOf(store).handleAgentsChanged(["codex"]);
-    await vi.advanceTimersByTimeAsync(50);
-    syncEngineOf(store).handleAgentsChanged(["codex"]);
-    await vi.advanceTimersByTimeAsync(50);
-    syncEngineOf(store).handleAgentsChanged(["codex"]);
-    await vi.advanceTimersByTimeAsync(99);
-    expect(codex.checkForChanges).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(1);
-    expect(codex.checkForChanges).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(500);
-    expect(codex.checkForChanges).toHaveBeenCalledTimes(1);
-  });
-
-  it("backs off the refresh delay after a slow scan to reduce scan duty cycle", async () => {
-    vi.useFakeTimers();
-    const existing = makeSession("existing");
-    const codex = makeAgent("codex", {
-      checkForChanges: vi.fn(() => ({
-        hasChanges: true,
-        changedIds: ["fresh"],
-        timestamp: 3000,
-      })),
-      incrementalScan: vi.fn(() => [existing, makeSession("fresh")]),
-    });
-
-    core.createRegisteredAgents.mockReturnValue([codex]);
-    core.scanSessions.mockResolvedValue({
-      sessions: [existing],
-      byAgent: { codex: [existing] },
-      agents: [codex],
-    });
-
-    const store = new LiveScanStore({ watchEnabled: false });
-    await store.initialize();
-
-    // Simulate a preceding scan that took 5s: the next refresh should be
-    // delayed to ~4x that cost, well beyond the 200ms debounce floor.
-    setRefreshDuration(store, "codex", 5_000);
-    syncEngineOf(store).handleAgentsChanged(["codex"]);
-
-    await vi.advanceTimersByTimeAsync(19_999);
-    expect(codex.checkForChanges).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(1);
-    expect(codex.checkForChanges).toHaveBeenCalledTimes(1);
-  });
-
-  it("still fires on a steady stream of events instead of being starved by the adaptive backoff", async () => {
-    vi.useFakeTimers();
-    const existing = makeSession("existing");
-    const codex = makeAgent("codex", {
-      checkForChanges: vi.fn(() => ({
-        hasChanges: true,
-        changedIds: ["fresh"],
-        timestamp: 3000,
-      })),
-      incrementalScan: vi.fn(() => [existing, makeSession("fresh")]),
-    });
-
-    core.createRegisteredAgents.mockReturnValue([codex]);
-    core.scanSessions.mockResolvedValue({
-      sessions: [existing],
-      byAgent: { codex: [existing] },
-      agents: [codex],
-    });
-
-    const store = new LiveScanStore({ watchEnabled: false });
-    await store.initialize();
-
-    setRefreshDuration(store, "codex", 5_000);
-
-    // Writes every 3s never leave a 20s quiet gap. A plain debounce (reset on
-    // every call) would push the deadline out forever; throttling on the
-    // earliest deadline guarantees a refresh still fires around the 20s mark.
-    for (let elapsed = 0; elapsed < 21_000; elapsed += 3_000) {
-      syncEngineOf(store).handleAgentsChanged(["codex"]);
-      await vi.advanceTimersByTimeAsync(3_000);
-    }
-
-    expect(codex.checkForChanges).toHaveBeenCalledTimes(1);
-  });
-
-  it("uses the slower empty-agent debounce when the agent has no known sessions", async () => {
-    vi.useFakeTimers();
-    // An agent with zero cached sessions has no baseline to run
-    // checkForChanges against, so a scheduled refresh falls through to a
-    // full worker scan instead.
-    const codex = makeAgent("codex", {
-      scan: vi.fn(() => []),
-    });
-
-    core.createRegisteredAgents.mockReturnValue([codex]);
-    core.scanSessions.mockResolvedValue({
-      sessions: [],
-      byAgent: { codex: [] },
-      agents: [codex],
-    });
-
-    const store = new LiveScanStore({ watchEnabled: false });
-    await store.initialize();
-
-    syncEngineOf(store).handleAgentsChanged(["codex"]);
-    await vi.advanceTimersByTimeAsync(200);
-    expect(codex.scan).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(29_800);
-    expect(codex.scan).toHaveBeenCalledTimes(1);
-  });
-
-  it("queues a refresh requested while one is in flight and runs it after completion", async () => {
-    vi.useFakeTimers();
-    const existing = makeSession("existing");
-    let resolveCheck:
-      | ((result: { hasChanges: boolean; changedIds: string[]; timestamp: number }) => void)
-      | null = null;
-    const checkForChanges = vi
-      .fn()
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            resolveCheck = resolve;
-          }),
-      )
-      .mockImplementationOnce(() => ({ hasChanges: false, timestamp: 4000 }));
-    const codex = makeAgent("codex", {
-      checkForChanges,
-      incrementalScan: vi.fn(() => [existing, makeSession("fresh")]),
-    });
-
-    core.createRegisteredAgents.mockReturnValue([codex]);
-    core.scanSessions.mockResolvedValue({
-      sessions: [existing],
-      byAgent: { codex: [existing] },
-      agents: [codex],
-    });
-
-    const store = new LiveScanStore({ watchEnabled: false });
-    await store.initialize();
-
-    const firstRefresh = syncEngineOf(store).refresh("codex");
-    await Promise.resolve();
-    expect(checkForChanges).toHaveBeenCalledTimes(1);
-
-    // A second refresh request arrives while the first is still in flight;
-    // it must be deferred rather than run concurrently.
-    const secondRefresh = syncEngineOf(store).refresh("codex");
-    await Promise.resolve();
-    expect(checkForChanges).toHaveBeenCalledTimes(1);
-
-    resolveCheck!({ hasChanges: true, changedIds: [existing.id], timestamp: 3500 });
-    await firstRefresh;
-    await secondRefresh;
-    expect(checkForChanges).toHaveBeenCalledTimes(1);
-
-    // The deferred run is scheduled after a short delay, not run inline.
-    await vi.advanceTimersByTimeAsync(99);
-    expect(checkForChanges).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(checkForChanges).toHaveBeenCalledTimes(2);
-  });
-
-  it("clears pending refresh timers on shutdown so no refresh runs afterward", async () => {
-    vi.useFakeTimers();
-    const existing = makeSession("existing");
-    const codex = makeAgent("codex", {
-      checkForChanges: vi.fn(() => ({ hasChanges: false, timestamp: 3000 })),
-    });
-
-    core.createRegisteredAgents.mockReturnValue([codex]);
-    core.scanSessions.mockResolvedValue({
-      sessions: [existing],
-      byAgent: { codex: [existing] },
-      agents: [codex],
-    });
-
-    const store = new LiveScanStore({ watchEnabled: false });
-    await store.initialize();
-
-    syncEngineOf(store).handleAgentsChanged(["codex"]);
-    await store.shutdown();
-
-    await vi.advanceTimersByTimeAsync(10_000);
-    expect(codex.checkForChanges).not.toHaveBeenCalled();
-    expect(core.closeCacheStorage).toHaveBeenCalledOnce();
   });
 
   it("terminates an active scan worker before shutdown completes", async () => {
@@ -2519,7 +2048,7 @@ describe("LiveScanStore", () => {
     await store.initialize();
     const listener = vi.fn();
     store.subscribe(listener);
-    const refresh = syncEngineOf(store).refresh("codex");
+    store.startBackgroundRefresh();
     await vi.waitFor(() =>
       expect(workerThreads.workers.some((worker) => worker.workerData.agentName)).toBe(true),
     );
@@ -2534,7 +2063,6 @@ describe("LiveScanStore", () => {
       scan_workers: 1,
     });
     expect(worker.terminate).toHaveBeenCalledTimes(1);
-    await refresh;
     expect(store.getSnapshot().sessions).toEqual([existing]);
     expect(listener).not.toHaveBeenCalled();
   });
@@ -2579,7 +2107,7 @@ describe("LiveScanStore", () => {
     workerThreads.deferSearchIndexWorkers = true;
     const listener = vi.fn();
     store.subscribe(listener);
-    const current = syncEngineOf(store).refresh("codex");
+    store.startBackgroundRefresh();
     await vi.waitFor(() =>
       expect(
         workerThreads.workers.some((worker) =>
@@ -2587,11 +2115,9 @@ describe("LiveScanStore", () => {
         ),
       ).toBe(true),
     );
-    const pending = syncEngineOf(store).refresh("kimi");
     await vi.waitFor(() => expect(kimi.incrementalScan).toHaveBeenCalledOnce());
 
     await store.shutdown();
-    await Promise.all([current, pending]);
 
     expect(
       workerThreads.workers.some((worker) =>
