@@ -57,6 +57,7 @@ export {
   listFileActivity,
   listModelCostDistribution,
   loadCachedSessions,
+  planAgentScan,
   readCachedSessions,
   loadCachedSessionHeads,
   markAgentCacheInitialized,
@@ -80,6 +81,8 @@ export type { CacheReadOutcome } from "./discovery/index.js";
 export { PRICING_CAPTURE_EPOCH } from "./pricing/index.js";
 export { filterSessionTreeByActivityWindow } from "./contract/index.js";
 export type {
+  AgentScanIntent,
+  AgentScanPlan,
   FileActivityResult,
   AgentCacheFailure,
   LiveSnapshot,

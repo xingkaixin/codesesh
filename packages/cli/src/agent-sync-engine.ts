@@ -7,6 +7,7 @@ import {
   markAgentFullSyncProgress,
   markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
+  planAgentScan,
   readCachedSessions,
   readAgentCacheInitialization,
   sessionSignature,
@@ -417,25 +418,26 @@ export class AgentSyncEngine {
       strategyResult = this.refreshUnavailableAgent(agentName);
     } else if (!isInitialized) {
       strategyResult = await this.initializeAgent(agent, previousSessions);
-    } else if (agent.sessionSourceAccess.kind === "enumerated") {
-      strategyResult = await this.syncAgentSources(
-        agent,
-        cached ?? {
-          sessions: refreshBaseline,
-          meta: durableMeta,
-        },
-        startedAt,
-      );
-    } else if (refreshBaseline.length > 0) {
-      strategyResult = await this.refreshChangedAgent(
-        agent,
-        agent.sessionSourceAccess,
-        refreshBaseline,
-        cacheTimestamp,
-        startedAt,
-      );
     } else {
-      strategyResult = await this.scanAgentFully(agent, previousSessions);
+      const scanPlan = planAgentScan(agent.sessionSourceAccess, "refresh");
+      if (scanPlan.kind === "synchronize") {
+        strategyResult = await this.syncAgentSources(
+          agent,
+          cached ?? {
+            sessions: refreshBaseline,
+            meta: durableMeta,
+          },
+          startedAt,
+        );
+      } else {
+        strategyResult = await this.refreshChangedAgent(
+          agent,
+          scanPlan.source,
+          refreshBaseline,
+          cacheTimestamp,
+          startedAt,
+        );
+      }
     }
     if (strategyResult.status === "unchanged") {
       this.options.workerRunner.commit?.(agentName);
@@ -794,30 +796,6 @@ export class AgentSyncEngine {
           preciseChangedIds,
         ),
         candidateChangedIds: preciseChangedIds,
-      },
-    };
-  }
-
-  private async scanAgentFully(
-    agent: BaseAgent,
-    previousSessions: IdentifiedSessionHead[],
-  ): Promise<RefreshStrategyResult> {
-    const scanStartedAt = performance.now();
-    const scope = this.startupScanOptions();
-    const result = await this.runWorker(agent, previousSessions, { kind: "full-scan" }, scope);
-    agent.restoreSessionCacheMeta(result.meta);
-    const sessions = attachMissingProjectIdentities(result.sessions);
-    this.lastRefreshAtByAgent.set(agent.name, Date.now());
-    return {
-      ...this.refreshStrategyBase(sessions, result.completeness, scope, {
-        scanDuration: performance.now() - scanStartedAt,
-        sourceFailures: result.sourceFailures ?? [],
-      }),
-      status: "continue",
-      publication: {
-        kind: "full",
-        sessions,
-        explicitRemovedSessionIds: result.explicitRemovedSessionIds,
       },
     };
   }

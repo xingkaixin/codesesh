@@ -97,6 +97,7 @@ vi.mock("@codesesh/core", async (importOriginal) => {
     PRICING_CAPTURE_EPOCH: actual.PRICING_CAPTURE_EPOCH,
     buildAgentCacheMeta: actual.buildAgentCacheMeta,
     computeSessionDiff: actual.computeSessionDiff,
+    planAgentScan: actual.planAgentScan,
     sessionSignature: actual.sessionSignature,
     SMART_TAG_CLASSIFIER_REVISION: "smart-tags-v1",
     sortSessions: actual.sortSessions,

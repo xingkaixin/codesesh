@@ -7,6 +7,7 @@ import {
   computeSessionDiff,
   createRegisteredAgents,
   ensureSessionTagsSync,
+  planAgentScan,
   sessionSignature,
   SMART_TAG_CLASSIFIER_REVISION,
   sortSessions,
@@ -29,6 +30,7 @@ import {
 } from "./scan-refresh-error.js";
 import {
   isBackfillOperation,
+  scanIntentForOperation,
   usesDurableCheckpoints,
   type ScanRefreshOperation,
 } from "./scan-refresh-operation.js";
@@ -365,9 +367,7 @@ async function run(
   const previousMeta = baseline.meta;
   const operation = data.operation;
   const backfill = isBackfillOperation(operation);
-  const sourceSynchronization =
-    operation.kind === "source-refresh" ||
-    (backfill && agent.sessionSourceAccess.kind === "enumerated");
+  const scanPlan = planAgentScan(agent.sessionSourceAccess, scanIntentForOperation(operation));
   const durableCheckpoints = usesDurableCheckpoints(operation);
   const backfillCursor = backfill ? operation.cursor : undefined;
 
@@ -404,16 +404,13 @@ async function run(
       }
     | undefined;
 
-  if (operation.kind === "recompute-derived") {
+  if (scanPlan.kind === "reuse-baseline") {
     sessions = previousSessions;
-  } else if (sourceSynchronization) {
-    if (agent.sessionSourceAccess.kind !== "enumerated") {
-      throw new Error(`Agent ${agent.name} does not support Session Source synchronization`);
-    }
-    const result = agent.sessionSourceAccess.synchronize(
+  } else if (scanPlan.kind === "synchronize") {
+    const result = scanPlan.source.synchronize(
       { sessions: previousSessions, meta: previousMeta },
       {
-        kind: "refresh",
+        kind: scanPlan.requestKind,
         scanOptions: { ...data.scanOptions, onProgress: reportProgress },
       },
     );
@@ -426,19 +423,7 @@ async function run(
     };
     sourceFailures = result.sourceFailures;
     explicitRemovedSessionIds = result.explicitRemovedSessionIds;
-  } else if (agent.sessionSourceAccess.kind === "enumerated") {
-    const result = agent.sessionSourceAccess.synchronize(
-      { sessions: previousSessions, meta: previousMeta },
-      {
-        kind: "reload",
-        scanOptions: { ...data.scanOptions, onProgress: reportProgress },
-      },
-    );
-    sessions = result.sessions;
-    finalizeSessionIds = new Set(result.finalizeSessionIds);
-    sourceFailures = result.sourceFailures;
-    explicitRemovedSessionIds = result.explicitRemovedSessionIds;
-  } else {
+  } else if (scanPlan.kind === "scan") {
     sessions = inheritSmartTags(
       await Promise.resolve(
         agent.scan({
@@ -448,6 +433,8 @@ async function run(
       ),
       previousSessions,
     );
+  } else {
+    throw new Error(`Change checks must run before dispatching Agent ${agent.name} to the worker`);
   }
 
   sessions = attachMissingProjectIdentities(sessions);

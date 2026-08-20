@@ -48,6 +48,7 @@ import {
   computeSessionDiff,
   sessionSignature,
 } from "./orchestrate.js";
+import { planAgentScan } from "./agent-scan-plan.js";
 
 export interface ScanOptions {
   /** Filter to specific agent name(s) */
@@ -682,10 +683,11 @@ async function scanAgentSmart(
 
       onProgress?.({ agent: agent.name, phase: "checking" });
 
-      if (agent.sessionSourceAccess.kind === "enumerated") {
+      const scanPlan = planAgentScan(agent.sessionSourceAccess, "refresh");
+      if (scanPlan.kind === "synchronize") {
         return refreshCachedEnumeratedAgent(
           agent,
-          agent.sessionSourceAccess,
+          scanPlan.source,
           cached,
           options,
           timing,
@@ -693,10 +695,9 @@ async function scanAgentSmart(
           onProgress,
         );
       }
-
       const t1 = performance.now();
       const checkResult = await Promise.resolve(
-        agent.sessionSourceAccess.checkForChanges(cached.timestamp, cached.sessions),
+        scanPlan.source.checkForChanges(cached.timestamp, cached.sessions),
       );
       timing.checkChanges = performance.now() - t1;
 
@@ -727,7 +728,7 @@ async function scanAgentSmart(
         const t2 = performance.now();
         const scanOptions = buildAgentScanOptions(agent, options, onProgress);
         const updatedSessions = await Promise.resolve(
-          agent.sessionSourceAccess.incrementalScan(
+          scanPlan.source.incrementalScan(
             cached.sessions,
             checkResult.changedIds || [],
             checkResult.refs,
@@ -735,7 +736,7 @@ async function scanAgentSmart(
           ),
         );
         timing.scan = performance.now() - t2;
-        agent.sessionSourceAccess.commitChangeCheck();
+        scanPlan.source.commitChangeCheck();
 
         return finalizeAgentScan(agent, updatedSessions, {
           finalization: {
@@ -757,7 +758,7 @@ async function scanAgentSmart(
         });
       }
 
-      agent.sessionSourceAccess.commitChangeCheck();
+      scanPlan.source.commitChangeCheck();
       return finalizeAgentScan(agent, cached.sessions, {
         finalization: { kind: "unchanged", cached },
         options,
@@ -802,11 +803,12 @@ async function scanAgentFull(
     const agentScanOptions = buildAgentScanOptions(agent, options, onProgress);
     let heads: SessionHead[];
     let sourceFailures: SessionSourceFailure[] = [];
-    if (agent.sessionSourceAccess.kind === "enumerated") {
+    const scanPlan = planAgentScan(agent.sessionSourceAccess, "reload");
+    if (scanPlan.kind === "synchronize") {
       const cached = loadCachedSessions(agent.name);
-      const synchronization = agent.sessionSourceAccess.synchronize(
+      const synchronization = scanPlan.source.synchronize(
         { sessions: cached?.sessions ?? [], meta: cached?.meta ?? {} },
-        { kind: "reload", scanOptions: agentScanOptions },
+        { kind: scanPlan.requestKind, scanOptions: agentScanOptions },
       );
       heads = synchronization.sessions;
       sourceFailures = synchronization.sourceFailures;
