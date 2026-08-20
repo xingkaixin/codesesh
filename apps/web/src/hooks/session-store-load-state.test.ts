@@ -1,58 +1,30 @@
-import { SAMPLE_DASHBOARD_DATA } from "@codesesh/core/test-fixtures";
 import { describe, expect, it } from "vitest";
-import type { SessionStoreSnapshot } from "./session-store-load-state";
 import {
   INITIAL_SESSION_STORE_LOAD_STATE,
   reduceSessionStoreLoad,
-  sessionStoreLoadSnapshot,
 } from "./session-store-load-state";
 
 const firstWindow = { from: 1, to: 2 };
 const secondWindow = { from: 3, to: 4 };
 
-function snapshot(window: { from: number; to: number }): SessionStoreSnapshot {
-  return {
-    window,
-    agents: [],
-    sessions: [],
-    dashboard: SAMPLE_DASHBOARD_DATA,
-  };
-}
-
 describe("session store load state", () => {
-  it("moves through loading, preview, and ready states", () => {
+  it("tracks the active request lifecycle without storing query data", () => {
     const loading = reduceSessionStoreLoad(INITIAL_SESSION_STORE_LOAD_STATE, {
       type: "begin",
       requestId: 1,
       window: firstWindow,
     });
-    const previewSnapshot = snapshot(firstWindow);
-    const preview = reduceSessionStoreLoad(loading, {
-      type: "publish-preview",
-      requestId: 1,
-      snapshot: previewSnapshot,
-    });
-    const readySnapshot = snapshot(firstWindow);
-    const ready = reduceSessionStoreLoad(preview, {
+    const ready = reduceSessionStoreLoad(loading, {
       type: "complete",
       requestId: 1,
-      snapshot: readySnapshot,
     });
 
     expect(loading).toEqual({ status: "loading", requestId: 1, window: firstWindow });
-    expect(preview).toEqual({
-      status: "preview",
-      requestId: 1,
-      window: firstWindow,
-      snapshot: previewSnapshot,
-    });
     expect(ready).toEqual({
       status: "ready",
       requestId: 1,
       window: firstWindow,
-      snapshot: readySnapshot,
     });
-    expect(sessionStoreLoadSnapshot(ready)).toBe(readySnapshot);
   });
 
   it("ignores late publications from an obsolete request", () => {
@@ -71,7 +43,6 @@ describe("session store load state", () => {
       reduceSessionStoreLoad(latestLoad, {
         type: "complete",
         requestId: 1,
-        snapshot: snapshot(firstWindow),
       }),
     ).toBe(latestLoad);
     expect(
@@ -102,12 +73,10 @@ describe("session store load state", () => {
       window: firstWindow,
       error,
     });
-    expect(sessionStoreLoadSnapshot(failed)).toBeNull();
     expect(
       reduceSessionStoreLoad(failed, {
-        type: "publish-preview",
+        type: "complete",
         requestId: 1,
-        snapshot: snapshot(firstWindow),
       }),
     ).toBe(failed);
   });
