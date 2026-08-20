@@ -12,7 +12,7 @@ interface SmartTagWorkerData {
   pricingGenerationId: number;
   agentName: string;
   sessionIds: string[];
-  meta: Record<string, Record<string, unknown>>;
+  meta: Record<string, SessionCacheMeta>;
 }
 
 interface SmartTagWorkerResult {
@@ -28,8 +28,8 @@ const agents = createRegisteredAgents();
 const agent = agents.find((a) => a.name === data.agentName);
 const results: SmartTagWorkerResult[] = [];
 
-if (agent && agent.setSessionMetaMap) {
-  agent.setSessionMetaMap(new Map(Object.entries(data.meta)) as Map<string, SessionCacheMeta>);
+if (agent) {
+  agent.restoreSessionCacheMeta(data.meta);
 
   for (const sessionId of data.sessionIds) {
     try {

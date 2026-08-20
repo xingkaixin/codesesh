@@ -137,7 +137,7 @@ describe("CodexAgent cache refresh", () => {
     agent.sessionIndexCache = new Map();
     const cached = agent.scan({ from: 0 }) as SessionHead[];
     expect(cached[0]?.stats.total_cost).toBe(0);
-    expect(agent.getSessionMetaMap().get(sessionId)?.unpricedModels).toEqual([model]);
+    expect(agent.getSessionCacheMeta(sessionId)?.unpricedModels).toEqual([model]);
     expect(agent.checkForChanges(Date.now(), cached).hasChanges).toBe(false);
 
     pricingAvailable = true;
@@ -146,7 +146,7 @@ describe("CodexAgent cache refresh", () => {
 
     const refreshed = agent.incrementalScan(cached, changed.changedIds ?? [], changed.refs);
     expect(refreshed[0]?.stats.total_cost).toBeGreaterThan(0);
-    expect(agent.getSessionMetaMap().get(sessionId)?.unpricedModels).toBeUndefined();
+    expect(agent.getSessionCacheMeta(sessionId)?.unpricedModels).toBeUndefined();
     expect(agent.checkForChanges(Date.now(), refreshed).hasChanges).toBe(false);
   });
 
@@ -312,7 +312,7 @@ describe("CodexAgent cache refresh", () => {
     expect(openSpy.mock.calls.length).toBe(3);
 
     // A new scan cycle drops the index but must rebuild it from cached meta.
-    agent.setSessionMetaMap(new Map());
+    agent.restoreSessionCacheMeta({});
     openSpy.mockClear();
     sources = agent.listScanSources(window);
     expect(sources).toHaveLength(3);
@@ -323,7 +323,7 @@ describe("CodexAgent cache refresh", () => {
       childFile,
       meta({ id: childId, thread_source: "subagent", parent_thread_id: otherParentId, v: 2 }),
     );
-    agent.setSessionMetaMap(new Map());
+    agent.restoreSessionCacheMeta({});
     openSpy.mockClear();
     agent.listScanSources(window);
     expect(openSpy.mock.calls.length).toBe(1);
@@ -1838,7 +1838,7 @@ describe("CodexAgent subagent folding", () => {
 
     const fresh = new CodexAgent() as any;
     fresh.findBasePath = () => tempDir;
-    fresh.setSessionMetaMap(new Map(scanned.getSessionMetaMap()));
+    fresh.restoreSessionCacheMeta(scanned.snapshotSessionCacheMeta());
 
     const data = fresh.getSessionData(PARENT_ID);
     expect(data.messages).toContainEqual(

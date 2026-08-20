@@ -350,7 +350,7 @@ function baselineFor(data: ScanRefreshWorkerRunRequest): WorkerBaseline {
     throw new Error(`Worker result ${workerBaseline.staged.requestId} is awaiting commit`);
   }
 
-  workerBaseline.agent.setSessionMetaMap(new Map(Object.entries(workerBaseline.meta)));
+  workerBaseline.agent.restoreSessionCacheMeta(workerBaseline.meta);
   return workerBaseline;
 }
 

@@ -113,12 +113,22 @@ class MemorySourceAdapter implements SessionSourceSynchronizationAdapter {
       : sessions;
   }
 
-  getSessionMetaMap(): Map<string, SessionCacheMeta> {
-    return this.meta;
+  getSessionCacheMeta(sessionId: string): SessionCacheMeta | undefined {
+    return this.meta.get(sessionId);
   }
 
-  setSessionMetaMap(metaMap: Map<string, SessionCacheMeta>): void {
-    this.meta = metaMap;
+  snapshotSessionCacheMeta(sessionIds?: ReadonlySet<string>): Record<string, SessionCacheMeta> {
+    return Object.fromEntries(
+      [...this.meta].filter(([sessionId]) => !sessionIds || sessionIds.has(sessionId)),
+    );
+  }
+
+  restoreSessionCacheMeta(meta: Readonly<Record<string, SessionCacheMeta>>): void {
+    this.meta = new Map(Object.entries(meta));
+  }
+
+  removeSessionCacheMeta(sessionIds: Iterable<string>): void {
+    for (const sessionId of sessionIds) this.meta.delete(sessionId);
   }
 }
 

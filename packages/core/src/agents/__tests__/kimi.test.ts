@@ -177,7 +177,7 @@ describe("KimiAgent cache refresh", () => {
     );
 
     expect(sessions.map((session) => session.id)).toEqual(["old-session"]);
-    expect(agent.getSessionMetaMap().has("deleted-session")).toBe(false);
+    expect(agent.getSessionCacheMeta("deleted-session")).toBeUndefined();
   });
 
   it("bounds listSessionSources to the activityAt window when options are passed", () => {
@@ -208,7 +208,7 @@ describe("KimiAgent cache refresh", () => {
 
     const agent = createAgent(basePath);
     const [head] = agent.scan();
-    const meta = agent.getSessionMetaMap().get("windowed");
+    const meta = agent.getSessionCacheMeta("windowed");
 
     expect(meta?.sourceMtimeMs).toBe(head?.time_updated);
   });
@@ -243,7 +243,7 @@ describe("KimiAgent cache refresh", () => {
     const refs = agent.listSessionSources(window);
     expect(refs.map((ref) => ref.sessionId)).toEqual(["recent-session"]);
 
-    const diff = diffSessionSources(refs, cached, agent.getSessionMetaMap(), window);
+    const diff = diffSessionSources(refs, cached, agent.snapshotSessionCacheMeta(), window);
 
     // old-session was simply never enumerated; removing it would delete the
     // session and its messages from the cache.

@@ -255,7 +255,7 @@ function materializeStructuredSessionDetail(
   cachedEntry = loadCachedSessionRawEntry(reference.agentName, reference.sessionId),
 ): SessionDetailResult {
   const { agent, head } = context;
-  const currentMeta = head ? agent.getSessionMetaMap().get(reference.sessionId) : undefined;
+  const currentMeta = head ? agent.getSessionCacheMeta(reference.sessionId) : undefined;
   const cacheState = cachedDetailState(
     cachedEntry,
     currentMeta,
@@ -354,7 +354,7 @@ export function materializeSessionDetailResponse(
   if (!context) return { status: "unknown-agent" };
 
   const currentMeta = context.head
-    ? context.agent.getSessionMetaMap().get(reference.sessionId)
+    ? context.agent.getSessionCacheMeta(reference.sessionId)
     : undefined;
   const startedAt = performance.now();
   const cursorRead = readCachedSessionCursor(

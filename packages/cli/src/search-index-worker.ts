@@ -265,9 +265,7 @@ function runBatch(request: SearchIndexWorkerRunRequest): void {
       continue;
     }
 
-    if (agent.setSessionMetaMap) {
-      agent.setSessionMetaMap(new Map(Object.entries(job.meta)));
-    }
+    agent.restoreSessionCacheMeta(job.meta);
 
     const failure = runJob(job, agent);
     if (failure) {

@@ -231,7 +231,7 @@ interface SmartTagWorkerResult {
 }
 
 function restoreAgentCacheMeta(agent: BaseAgent, cached: CachedResult): void {
-  agent.setSessionMetaMap(new Map(Object.entries(cached.meta)));
+  agent.restoreSessionCacheMeta(cached.meta);
 }
 
 function saveCachedSessionDiff(
@@ -805,7 +805,7 @@ async function scanAgentFull(
     if (agent.sessionSourceAccess.kind === "enumerated") {
       const cached = loadCachedSessions(agent.name);
       const synchronization = agent.sessionSourceAccess.synchronize(
-        { sessions: cached?.sessions ?? [], meta: cached?.meta ?? new Map() },
+        { sessions: cached?.sessions ?? [], meta: cached?.meta ?? {} },
         { kind: "reload", scanOptions: agentScanOptions },
       );
       heads = synchronization.sessions;

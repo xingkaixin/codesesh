@@ -262,9 +262,9 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
     });
   }
 
-  setSessionMetaMap(meta: Map<string, SessionCacheMeta>): void {
+  restoreSessionCacheMeta(meta: Readonly<Record<string, SessionCacheMeta>>): void {
     const childIndexInputsChanged = this.childIndexReady && this.didChildIndexInputsChange(meta);
-    super.setSessionMetaMap(meta);
+    super.restoreSessionCacheMeta(meta);
     if (!childIndexInputsChanged) return;
     this.childContextsBySource.clear();
     this.childSessionIdByToolUseId.clear();
@@ -337,10 +337,10 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
       .map((entry) => join(this.basePath!, entry.name));
   }
 
-  private didChildIndexInputsChange(meta: Map<string, SessionCacheMeta>): boolean {
-    if (meta.size !== this.sessionMetaMap.size) return true;
+  private didChildIndexInputsChange(meta: Readonly<Record<string, SessionCacheMeta>>): boolean {
+    if (Object.keys(meta).length !== this.sessionMetaMap.size) return true;
 
-    for (const [sessionId, next] of meta) {
+    for (const [sessionId, next] of Object.entries(meta)) {
       const current = this.sessionMetaMap.get(sessionId);
       if (!current || current.sourcePath !== next.sourcePath) return true;
       if (

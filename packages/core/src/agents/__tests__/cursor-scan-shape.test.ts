@@ -95,14 +95,14 @@ describe("CS-142: Cursor scan shape", () => {
       ]),
     ]);
     const agent = makeAgent(dbPath);
-    agent.setSessionMetaMap(
-      new Map([["legacy-request", { id: "legacy-request", sourcePath: dbPath }]]),
-    );
+    agent.restoreSessionCacheMeta({
+      "legacy-request": { id: "legacy-request", sourcePath: dbPath },
+    });
 
     agent.scan({ from: 0 });
 
-    expect(agent.getSessionMetaMap().has("legacy-request")).toBe(false);
-    expect(agent.getSessionMetaMap().get("c1")?.id).toBe("c1");
+    expect(agent.getSessionCacheMeta("legacy-request")).toBeUndefined();
+    expect(agent.getSessionCacheMeta("c1")?.id).toBe("c1");
   });
 
   it("keeps message order by insertion, not by key", () => {

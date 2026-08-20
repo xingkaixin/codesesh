@@ -325,14 +325,14 @@ describe("OpenCodeSqliteAgent", () => {
     agent.isAvailable();
     const heads = agent.scan({ from: 0 });
 
-    expect(agent.getSessionMetaMap().get("s1")).toMatchObject({
+    expect(agent.getSessionCacheMeta("s1")).toMatchObject({
       headParserVersion: "opencode-sqlite-head-v1",
     });
     expect(agent.checkForChanges(Number.MAX_SAFE_INTEGER, heads).hasChanges).toBe(false);
 
-    agent.setSessionMetaMap(
-      new Map([["s1", { id: "s1", sourcePath: dbPath, headParserVersion: "legacy" }]]),
-    );
+    agent.restoreSessionCacheMeta({
+      s1: { id: "s1", sourcePath: dbPath, headParserVersion: "legacy" },
+    });
     expect(agent.checkForChanges(Number.MAX_SAFE_INTEGER, heads).hasChanges).toBe(true);
   });
 
@@ -375,7 +375,7 @@ describe("OpenCodeSqliteAgent", () => {
     agent.isAvailable();
     const cached = agent.scan({ from: 0 });
     expect(cached[0]?.stats.total_cost).toBe(0);
-    expect(agent.getSessionMetaMap().get("s1")?.unpricedModels).toEqual([model]);
+    expect(agent.getSessionCacheMeta("s1")?.unpricedModels).toEqual([model]);
     expect(agent.checkForChanges(Number.MAX_SAFE_INTEGER, cached).hasChanges).toBe(false);
 
     pricingAvailable = true;
@@ -383,7 +383,7 @@ describe("OpenCodeSqliteAgent", () => {
 
     const refreshed = agent.incrementalScan(cached, []);
     expect(refreshed[0]?.stats.total_cost).toBeGreaterThan(0);
-    expect(agent.getSessionMetaMap().get("s1")?.unpricedModels).toBeUndefined();
+    expect(agent.getSessionCacheMeta("s1")?.unpricedModels).toBeUndefined();
     expect(agent.checkForChanges(Number.MAX_SAFE_INTEGER, refreshed).hasChanges).toBe(false);
   });
 

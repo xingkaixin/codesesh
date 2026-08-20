@@ -52,7 +52,7 @@ vi.mock("./logging.js", () => ({
 function makeAgent() {
   return {
     name: "codex",
-    setSessionMetaMap: vi.fn(),
+    restoreSessionCacheMeta: vi.fn(),
     getSessionData: vi.fn((id: string) => ({ id })),
   };
 }
@@ -130,7 +130,7 @@ describe("search index worker", () => {
 
     await runWorker();
 
-    expect(agent.setSessionMetaMap).toHaveBeenCalledWith(new Map([["s1", { id: "s1" }]]));
+    expect(agent.restoreSessionCacheMeta).toHaveBeenCalledWith({ s1: { id: "s1" } });
     expect(mocks.postMessage).toHaveBeenNthCalledWith(1, {
       type: "sync-result",
       context: "startup",

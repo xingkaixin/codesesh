@@ -49,6 +49,7 @@ function withCurrentIdentity(session: SessionHead): IdentifiedSessionHead {
 }
 
 class TestAgent extends BaseAgent {
+  private meta: Record<string, SessionCacheMeta> = {};
   readonly name = "test";
   readonly displayName = "test";
   readonly sessionSourceAccess = {
@@ -95,12 +96,20 @@ class TestAgent extends BaseAgent {
     return cached;
   }
 
-  getSessionMetaMap(): Map<string, SessionCacheMeta> {
-    return new Map();
+  getSessionCacheMeta(sessionId: string): SessionCacheMeta | undefined {
+    return this.meta[sessionId];
   }
 
-  setSessionMetaMap(): void {
-    // no-op
+  snapshotSessionCacheMeta(): Record<string, SessionCacheMeta> {
+    return { ...this.meta };
+  }
+
+  restoreSessionCacheMeta(meta: Readonly<Record<string, SessionCacheMeta>>): void {
+    this.meta = { ...meta };
+  }
+
+  removeSessionCacheMeta(sessionIds: Iterable<string>): void {
+    for (const sessionId of sessionIds) delete this.meta[sessionId];
   }
 }
 
@@ -297,7 +306,9 @@ function createTestAgent(overrides: {
       total_cost: 0,
     },
   });
-  agent.getSessionMetaMap = overrides.metaMap ? () => overrides.metaMap! : agent.getSessionMetaMap;
+  if (overrides.metaMap) {
+    agent.snapshotSessionCacheMeta = () => Object.fromEntries(overrides.metaMap!);
+  }
   if (overrides.checkForChangesResult) {
     agent.checkForChanges = () => overrides.checkForChangesResult!;
   }

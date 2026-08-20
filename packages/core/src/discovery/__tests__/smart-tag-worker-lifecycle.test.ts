@@ -84,7 +84,7 @@ function makeAgent(): BaseAgent {
   const meta = new Map<string, SessionCacheMeta>();
   return {
     name: "test",
-    getSessionMetaMap: () => meta,
+    snapshotSessionCacheMeta: () => Object.fromEntries(meta),
     getSessionData: vi.fn(
       (): SessionDetail => ({ ...makeSession(0), messages: [] }) as unknown as SessionDetail,
     ),

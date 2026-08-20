@@ -148,7 +148,7 @@ function buildScanCompletion(
 }
 
 function restoreAgentCacheMeta(agent: BaseAgent, cached: CachedSessions): void {
-  agent.setSessionMetaMap(new Map(Object.entries(cached.meta)));
+  agent.restoreSessionCacheMeta(cached.meta);
 }
 
 export class AgentSyncEngine {
@@ -398,7 +398,7 @@ export class AgentSyncEngine {
     const refreshBaseline = cached?.sessions ?? previousSessions;
     const cacheTimestamp = cached?.timestamp ?? this.lastRefreshAtByAgent.get(agentName) ?? 0;
     if (cached) restoreAgentCacheMeta(agent, cached);
-    const durableMeta = new Map(agent.getSessionMetaMap());
+    const durableMeta = agent.snapshotSessionCacheMeta();
     const durableLastRefreshAt = this.lastRefreshAtByAgent.get(agentName);
     const initialization = readAgentCacheInitialization(agentName);
     if (initialization.status === "failed") {
@@ -422,7 +422,7 @@ export class AgentSyncEngine {
         agent,
         cached ?? {
           sessions: refreshBaseline,
-          meta: Object.fromEntries(durableMeta),
+          meta: durableMeta,
         },
         startedAt,
       );
@@ -529,7 +529,7 @@ export class AgentSyncEngine {
       });
     } catch (error) {
       if (!publicationCommitted) {
-        agent.setSessionMetaMap(durableMeta);
+        agent.restoreSessionCacheMeta(durableMeta);
         if (durableLastRefreshAt == null) this.lastRefreshAtByAgent.delete(agentName);
         else this.lastRefreshAtByAgent.set(agentName, durableLastRefreshAt);
       }
@@ -604,7 +604,7 @@ export class AgentSyncEngine {
     const scanStartedAt = performance.now();
     const scope = this.startupScanOptions();
     const result = await this.runWorker(agent, previousSessions, { kind: "full-scan" }, scope);
-    agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
+    agent.restoreSessionCacheMeta(result.meta);
     const sessions = attachMissingProjectIdentities(result.sessions);
     this.lastRefreshAtByAgent.set(agent.name, Date.now());
     return {
@@ -637,7 +637,7 @@ export class AgentSyncEngine {
         meta: baseline.meta,
       },
     );
-    agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
+    agent.restoreSessionCacheMeta(result.meta);
     const sessions = attachMissingProjectIdentities(result.sessions);
     const preciseChangedIds = result.changedIds ?? [];
     const persistenceDiff = buildPersistenceDiff(baseline.sessions, sessions, preciseChangedIds);
@@ -695,7 +695,7 @@ export class AgentSyncEngine {
     if (!checkResult.hasChanges) {
       const scanStartedAt = performance.now();
       const result = await this.runWorker(agent, baseline, { kind: "recompute-derived" }, {});
-      agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
+      agent.restoreSessionCacheMeta(result.meta);
       const sessions = attachMissingProjectIdentities(result.sessions);
       source.commitChangeCheck();
       this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
@@ -737,7 +737,7 @@ export class AgentSyncEngine {
     const scanStartedAt = performance.now();
     if (preciseChangedIds === null) {
       const result = await this.runWorker(agent, baseline, { kind: "full-scan" }, scope);
-      agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
+      agent.restoreSessionCacheMeta(result.meta);
       const sessions = attachMissingProjectIdentities(result.sessions);
       source.commitChangeCheck();
       this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
@@ -805,7 +805,7 @@ export class AgentSyncEngine {
     const scanStartedAt = performance.now();
     const scope = this.startupScanOptions();
     const result = await this.runWorker(agent, previousSessions, { kind: "full-scan" }, scope);
-    agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
+    agent.restoreSessionCacheMeta(result.meta);
     const sessions = attachMissingProjectIdentities(result.sessions);
     this.lastRefreshAtByAgent.set(agent.name, Date.now());
     return {
@@ -954,7 +954,7 @@ export class AgentSyncEngine {
           onCheckpoint: (checkpoint) => this.handleBackfillCheckpoint(agentName, checkpoint),
         },
       );
-      agent.setSessionMetaMap(new Map(Object.entries(result.meta)));
+      agent.restoreSessionCacheMeta(result.meta);
       const fullSessions = attachMissingProjectIdentities(result.sessions);
       const completion = buildScanCompletion(result.completeness, result.sourceFailures ?? []);
       this.statusReporter.flushProgressStatus(`backfill:${agentName}`);
@@ -1019,7 +1019,7 @@ export class AgentSyncEngine {
         this.reportPostCommitError("scan.backfill", agentName, error);
         return "committed";
       }
-      agent.setSessionMetaMap(new Map(Object.entries(meta)));
+      agent.restoreSessionCacheMeta(meta);
       this.options.workerRunner.discard?.(agentName);
       appLogger.error("scan.backfill.error", { agent: agentName, error });
       console.error(`[${agentName}] Backfill failed:`, error);

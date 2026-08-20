@@ -222,11 +222,17 @@ class MockAgent extends BaseAgent {
     return cachedSessions;
   }
 
-  getSessionMetaMap(): Map<string, SessionCacheMeta> {
-    return new Map();
+  getSessionCacheMeta(): SessionCacheMeta | undefined {
+    return undefined;
   }
 
-  setSessionMetaMap(): void {}
+  snapshotSessionCacheMeta(): Record<string, SessionCacheMeta> {
+    return {};
+  }
+
+  restoreSessionCacheMeta(): void {}
+
+  removeSessionCacheMeta(): void {}
 }
 
 function makeScanResult(overrides?: Partial<LiveSnapshot>): LiveSnapshot {

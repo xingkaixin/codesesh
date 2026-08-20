@@ -5,8 +5,8 @@ import type { SessionHead } from "../types/index.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import type {
   AgentScanOptions,
-  CachedMetaLookup,
   SessionCacheMeta,
+  SessionCacheMetaSnapshot,
   SessionSourceAbsenceOutcome,
   SessionSourceDiff,
   SessionSourceFailure,
@@ -23,13 +23,15 @@ export interface SessionSourceSynchronizationAdapter {
   ): SessionSourceOutcome;
   expandChangedSessionIds(changedIds: string[], refs?: SessionSourceRef[]): string[];
   filterCachedSessions(sessions: SessionHead[]): SessionHead[];
-  getSessionMetaMap(): Map<string, SessionCacheMeta>;
-  setSessionMetaMap(meta: Map<string, SessionCacheMeta>): void;
+  getSessionCacheMeta(sessionId: string): SessionCacheMeta | undefined;
+  snapshotSessionCacheMeta(sessionIds?: ReadonlySet<string>): Record<string, SessionCacheMeta>;
+  restoreSessionCacheMeta(meta: SessionCacheMetaSnapshot): void;
+  removeSessionCacheMeta(sessionIds: Iterable<string>): void;
 }
 
 export interface SessionSourceSynchronizationBaseline {
   sessions: SessionHead[];
-  meta: CachedMetaLookup;
+  meta: SessionCacheMetaSnapshot;
 }
 
 export type SessionSourceSynchronizationRequest =
@@ -56,11 +58,6 @@ export interface SessionSourceSynchronizationOutcome {
   completeness: SessionSnapshotCompleteness;
   sourceCount: number;
   removedSourceCount: number;
-}
-
-function readCachedMeta(meta: CachedMetaLookup, sessionId: string): SessionCacheMeta | undefined {
-  if (meta instanceof Map) return meta.get(sessionId);
-  return (meta as Record<string, SessionCacheMeta>)[sessionId];
 }
 
 /** Parser/index revisions live inside the fingerprint, so comparison must be exact. */
@@ -163,7 +160,7 @@ export function reportSessionSourceOutcome(agentName: string, outcome: SessionSo
 export function diffSessionSources(
   refs: SessionSourceRef[],
   cachedSessions: SessionHead[],
-  cachedMeta: CachedMetaLookup,
+  cachedMeta: SessionCacheMetaSnapshot,
   options?: AgentScanOptions,
 ): SessionSourceDiff {
   const cachedIds = new Set(cachedSessions.map((session) => session.reference.sessionId));
@@ -172,7 +169,7 @@ export function diffSessionSources(
 
   for (const ref of refs) {
     enumeratedIds.add(ref.sessionId);
-    const meta = readCachedMeta(cachedMeta, ref.sessionId);
+    const meta = cachedMeta[ref.sessionId];
     const unchanged =
       cachedIds.has(ref.sessionId) &&
       meta?.sourcePath === ref.sourcePath &&
@@ -188,7 +185,7 @@ export function diffSessionSources(
   for (const session of cachedSessions) {
     const sessionId = session.reference.sessionId;
     if (enumeratedIds.has(sessionId)) continue;
-    const meta = readCachedMeta(cachedMeta, sessionId);
+    const meta = cachedMeta[sessionId];
     if (!wasEnumeratedThisPass(meta, options)) continue;
     const source = {
       sessionId,
@@ -231,37 +228,19 @@ export function diffSessionSources(
   return { changedIds, removedIds, failedIds, sourceOutcomes };
 }
 
-function cloneMeta(meta: CachedMetaLookup): Map<string, SessionCacheMeta> {
-  return meta instanceof Map ? new Map(meta) : new Map(Object.entries(meta));
-}
-
 function unique(values: Iterable<string>): string[] {
   return [...new Set(values)];
 }
 
 function sourceForMissingId(
   sessionId: string,
-  meta: Map<string, SessionCacheMeta>,
+  cached: SessionCacheMeta | undefined,
 ): SessionSourceRef {
-  const cached = meta.get(sessionId);
   return {
     sessionId,
     sourcePath: typeof cached?.sourcePath === "string" ? cached.sourcePath : "",
     fingerprint: typeof cached?.sourceFingerprint === "string" ? cached.sourceFingerprint : "",
   };
-}
-
-function buildMeta(
-  sessions: SessionHead[],
-  metaMap: Map<string, SessionCacheMeta>,
-): Record<string, SessionCacheMeta> {
-  const meta: Record<string, SessionCacheMeta> = {};
-  for (const session of sessions) {
-    const sessionId = session.reference.sessionId;
-    const value = metaMap.get(sessionId);
-    if (value) meta[sessionId] = value;
-  }
-  return meta;
 }
 
 function isWindowed(options: AgentScanOptions | undefined): boolean {
@@ -273,9 +252,8 @@ export function synchronizeSessionSources(
   baseline: SessionSourceSynchronizationBaseline,
   request: SessionSourceSynchronizationRequest,
 ): SessionSourceSynchronizationOutcome {
-  adapter.setSessionMetaMap(cloneMeta(baseline.meta));
-  const metaMap = adapter.getSessionMetaMap();
-  const baselineMeta = new Map(metaMap);
+  adapter.restoreSessionCacheMeta(baseline.meta);
+  const baselineMeta = adapter.snapshotSessionCacheMeta();
   const baselineSessions = adapter.filterCachedSessions(baseline.sessions);
   const visibleBaselineIds = new Set(
     baselineSessions.map((session) => session.reference.sessionId),
@@ -285,10 +263,10 @@ export function synchronizeSessionSources(
     .filter((sessionId) => !visibleBaselineIds.has(sessionId));
   const filteredBaselineOutcomes: SessionSourceOutcome[] = filteredBaselineIds.map((sessionId) => ({
     status: "filtered",
-    source: sourceForMissingId(sessionId, baselineMeta),
+    source: sourceForMissingId(sessionId, baselineMeta[sessionId]),
     reason: "cached session rejected by adapter",
   }));
-  for (const sessionId of filteredBaselineIds) metaMap.delete(sessionId);
+  adapter.removeSessionCacheMeta(filteredBaselineIds);
   const scanOptions = request.scanOptions;
   const sources =
     request.kind === "known-changes" && request.refs
@@ -298,7 +276,12 @@ export function synchronizeSessionSources(
   const diff =
     request.kind === "known-changes"
       ? { changedIds: request.changedIds, removedIds: [], failedIds: [], sourceOutcomes: [] }
-      : diffSessionSources(sources, baselineSessions, metaMap, scanOptions);
+      : diffSessionSources(
+          sources,
+          baselineSessions,
+          adapter.snapshotSessionCacheMeta(),
+          scanOptions,
+        );
   const detectedSessionIds = unique([
     ...filteredBaselineIds,
     ...diff.changedIds,
@@ -316,7 +299,7 @@ export function synchronizeSessionSources(
   if (request.kind === "inspect") {
     return {
       sessions: baselineSessions,
-      meta: buildMeta(baselineSessions, metaMap),
+      meta: adapter.snapshotSessionCacheMeta(visibleBaselineIds),
       sources,
       sourceOutcomes,
       detectedSessionIds,
@@ -338,7 +321,7 @@ export function synchronizeSessionSources(
   for (const outcome of diff.sourceOutcomes) {
     if (outcome.status !== "missing") continue;
     sessionsById.delete(outcome.source.sessionId);
-    metaMap.delete(outcome.source.sessionId);
+    adapter.removeSessionCacheMeta([outcome.source.sessionId]);
     changedSessionIds.add(outcome.source.sessionId);
     explicitRemovedSessionIds.add(outcome.source.sessionId);
   }
@@ -364,12 +347,12 @@ export function synchronizeSessionSources(
       if (!changedSessionIds.has(sessionId)) {
         const missing: SessionSourceOutcome = {
           status: "missing",
-          source: sourceForMissingId(sessionId, metaMap),
+          source: sourceForMissingId(sessionId, adapter.getSessionCacheMeta(sessionId)),
         };
         sourceOutcomes.push(missing);
         reportSessionSourceOutcome(adapter.name, missing);
         sessionsById.delete(sessionId);
-        metaMap.delete(sessionId);
+        adapter.removeSessionCacheMeta([sessionId]);
         changedSessionIds.add(sessionId);
         explicitRemovedSessionIds.add(sessionId);
       }
@@ -380,13 +363,14 @@ export function synchronizeSessionSources(
         const parsedSessionId = outcome.session.reference.sessionId;
         if (parsedSessionId !== source.sessionId) sessionsById.delete(source.sessionId);
         sessionsById.set(parsedSessionId, outcome.session);
-        if (parsedSessionId !== source.sessionId) metaMap.delete(source.sessionId);
+        if (parsedSessionId !== source.sessionId)
+          adapter.removeSessionCacheMeta([source.sessionId]);
         if (parsedSessionId === source.sessionId)
           explicitRemovedSessionIds.delete(source.sessionId);
         changedSessionIds.add(source.sessionId);
       } else if (outcome.status === "filtered" || outcome.status === "missing") {
         sessionsById.delete(source.sessionId);
-        metaMap.delete(source.sessionId);
+        adapter.removeSessionCacheMeta([source.sessionId]);
         changedSessionIds.add(source.sessionId);
         explicitRemovedSessionIds.add(source.sessionId);
         reportSessionSourceOutcome(adapter.name, outcome);
@@ -415,7 +399,7 @@ export function synchronizeSessionSources(
 
   return {
     sessions,
-    meta: buildMeta(sessions, metaMap),
+    meta: adapter.snapshotSessionCacheMeta(new Set(sessionsById.keys())),
     sources,
     sourceOutcomes,
     detectedSessionIds,
