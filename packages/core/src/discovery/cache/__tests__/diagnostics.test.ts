@@ -4,7 +4,13 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../../utils/diagnostics.js";
 import { closeCacheStorage } from "../db.js";
-import { withCacheDb, withCacheDbReadOnly, withSearchIndexDb } from "../schema.js";
+import {
+  withCacheDb,
+  withCacheDbOutcome,
+  withCacheDbReadOnly,
+  withSearchDb,
+  withSearchIndexDb,
+} from "../schema.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-diag-test-"));
 
@@ -28,6 +34,10 @@ function collectDiagnostics(
   };
   setCoreDiagnostics(diagnostics);
   return events;
+}
+
+function failingRead(): never {
+  throw Object.assign(new Error("database unavailable"), { code: "SQLITE_IOERR" });
 }
 
 describe("withCacheDb diagnostics", () => {
@@ -71,6 +81,23 @@ describe("withCacheDb diagnostics", () => {
         },
       },
     ]);
+  });
+
+  it.each([
+    ["schema-ensuring reads", (): unknown => withCacheDbOutcome(failingRead), { status: "failed" }],
+    ["search reads", (): unknown => withSearchDb(failingRead), null],
+  ] as const)("reports cache.read_failed for %s", (_label, read, expected) => {
+    const events = collectDiagnostics();
+
+    expect(read()).toEqual(expected);
+    expect(events).toContainEqual({
+      event: "cache.read_failed",
+      detail: {
+        message: "database unavailable",
+        code: "SQLITE_IOERR",
+        error_class: "Error",
+      },
+    });
   });
 
   it("rethrows programming errors from read-only callbacks", () => {

@@ -156,7 +156,7 @@ function isRecoverableCacheError(error: unknown): boolean {
 function reportCacheFailure(
   cachePath: string,
   connection: CacheConnection,
-  event: "cache.write_failed" | "cache.read_failed",
+  event: CacheFailureEvent,
   error: unknown,
 ): null {
   getCoreDiagnostics()?.warn(event, {
@@ -169,7 +169,12 @@ function reportCacheFailure(
   return null;
 }
 
-function withCacheConnection<T>(fn: (connection: CacheConnection) => T): T | null {
+type CacheFailureEvent = "cache.write_failed" | "cache.read_failed";
+
+function withCacheConnection<T>(
+  callbackFailureEvent: CacheFailureEvent,
+  fn: (connection: CacheConnection) => T,
+): T | null {
   const cachePath = getCachePath();
   const connection = getCacheConnection(cachePath);
   if (!connection) return null;
@@ -187,7 +192,7 @@ function withCacheConnection<T>(fn: (connection: CacheConnection) => T): T | nul
     return fn(connection);
   } catch (error) {
     if (!isRecoverableCacheError(error)) throw error;
-    return reportCacheFailure(cachePath, connection, "cache.write_failed", error);
+    return reportCacheFailure(cachePath, connection, callbackFailureEvent, error);
   }
 }
 
@@ -207,7 +212,7 @@ function cleanPublicationStaging(connection: CacheConnection): void {
 }
 
 export function withCacheDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
-  return withCacheConnection(({ db }) => fn(db));
+  return withCacheConnection("cache.write_failed", ({ db }) => fn(db));
 }
 
 export type CacheReadOutcome<T> = { status: "success"; value: T } | { status: "failed" };
@@ -219,7 +224,7 @@ export type CacheReadOutcome<T> = { status: "success"; value: T } | { status: "f
  */
 export function withCacheDbOutcome<T>(fn: (db: SQLiteDatabase) => T): CacheReadOutcome<T> {
   let result: CacheReadOutcome<T> = { status: "failed" };
-  withCacheConnection(({ db }) => {
+  withCacheConnection("cache.read_failed", ({ db }) => {
     result = { status: "success", value: fn(db) };
   });
   return result;
@@ -242,11 +247,13 @@ export function withCacheDbReadOnly<T>(fn: (db: SQLiteDatabase) => T): CacheRead
 }
 
 export function withSearchDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
-  return withCacheConnection((connection) => runWithFtsRecovery(connection, fn));
+  return withCacheConnection("cache.read_failed", (connection) =>
+    runWithFtsRecovery(connection, fn),
+  );
 }
 
 export function withSearchIndexDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
-  return withCacheConnection((connection) => {
+  return withCacheConnection("cache.write_failed", (connection) => {
     cleanPublicationStaging(connection);
     return runWithFtsRecovery(connection, fn);
   });
