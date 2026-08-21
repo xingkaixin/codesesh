@@ -56,7 +56,7 @@ describe("cli routes stay wire-compatible with @codesesh/core/contract", () => {
 
     expect(body.results).toEqual([
       {
-        reference: { agentName: "claudecode", sessionId: SAMPLE_SESSION_HEAD.id },
+        reference: { agentName: "claudecode", sessionId: SAMPLE_SESSION_HEAD.reference.sessionId },
         session: SAMPLE_SESSION_HEAD,
         snippet: `Recent session · ${SAMPLE_SESSION_HEAD.directory}`,
         snippetHighlights: [],

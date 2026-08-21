@@ -35,7 +35,7 @@ describe("cached sessions", () => {
     });
 
     expect(loadCachedSessions("codex")).toMatchObject({
-      sessions: [{ id: "one" }],
+      sessions: [{ reference: { agentName: "codex", sessionId: "one" } }],
       meta: { one: { sourcePath: "/transcripts/one.jsonl" } },
     });
     expect(getCacheInfo().size).toBe(1);
@@ -48,7 +48,10 @@ describe("cached sessions", () => {
     saveCachedSessionChanges("codex", [{ session: changed, sortIndex: 0 }], ["remove"]);
 
     expect(loadCachedSessions("codex")?.sessions).toEqual([
-      expect.objectContaining({ id: "keep", title: "Updated" }),
+      expect.objectContaining({
+        reference: { agentName: "codex", sessionId: "keep" },
+        title: "Updated",
+      }),
     ]);
   });
 
@@ -96,7 +99,7 @@ describe("cached sessions", () => {
     saveCachedSessions("codex", [makeSessionHead("parent"), child]);
 
     const restoredChild = loadCachedSessions("codex")?.sessions.find(
-      (session) => session.id === "child",
+      (session) => session.reference.sessionId === "child",
     );
     expect(restoredChild?.parent_reference).toEqual({
       agentName: "codex",

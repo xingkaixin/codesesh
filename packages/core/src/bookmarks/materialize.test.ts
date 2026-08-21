@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import type { BookmarkRecord, ReferencedSessionHead, SessionHead } from "../contract/index.js";
+import {
+  getSessionReferenceKey,
+  type BookmarkRecord,
+  type ReferencedSessionHead,
+  type SessionHead,
+} from "../contract/index.js";
 import { materializeBookmarkViews } from "./materialize.js";
 
 function makeBookmark(sessionId: string, agentName = "codex", bookmarkedAt = 1): BookmarkRecord {
@@ -9,8 +14,6 @@ function makeBookmark(sessionId: string, agentName = "codex", bookmarkedAt = 1):
 function makeSession(sessionId: string, agentName = "codex", timeUpdated = 1): SessionHead {
   return {
     reference: { agentName, sessionId },
-    id: sessionId,
-    slug: `${agentName}/${sessionId}`,
     title: `${sessionId} title`,
     directory: "/workspace",
     time_created: 1,
@@ -67,7 +70,10 @@ describe("materializeBookmarkViews", () => {
     expect(views[0]).toMatchObject({
       availability: "available",
       reference: { agentName: "codex", sessionId: "old" },
-      session: { id: "old", slug: "codex/old", title: "Cached title" },
+      session: {
+        reference: { agentName: "codex", sessionId: "old" },
+        title: "Cached title",
+      },
     });
   });
 
@@ -96,7 +102,7 @@ describe("materializeBookmarkViews", () => {
     const live = new Map(
       Array.from({ length: 10_000 }, (_, index) => {
         const session = makeSession(`unrelated-${index}`);
-        return [session.slug, session] as const;
+        return [getSessionReferenceKey(session.reference), session] as const;
       }),
     );
     live.set("codex/first", makeSession("first"));

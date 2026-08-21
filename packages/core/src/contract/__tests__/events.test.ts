@@ -26,11 +26,11 @@ describe("mergeSessionsUpdatedEvents", () => {
     const reference = { agentName: "claudecode", sessionId: "session-1" };
     const first = {
       reference,
-      session: { id: "session-1", display_title: "Before" },
+      session: { display_title: "Before" },
     } as ReferencedSessionHead;
     const latest = {
       reference,
-      session: { id: "session-1", display_title: "After" },
+      session: { display_title: "After" },
     } as ReferencedSessionHead;
 
     const merged = mergeSessionsUpdatedEvents(event([first]), event([latest]));
@@ -40,7 +40,7 @@ describe("mergeSessionsUpdatedEvents", () => {
 
   it("lets the latest removal replace an earlier change", () => {
     const reference = { agentName: "claudecode", sessionId: "session-1" };
-    const changed = { reference, session: { id: "session-1" } } as ReferencedSessionHead;
+    const changed = { reference, session: {} } as ReferencedSessionHead;
 
     const merged = mergeSessionsUpdatedEvents(event([changed]), event([], [reference]));
 
@@ -53,11 +53,11 @@ describe("mergeSessionsUpdatedEvents", () => {
     const relatedReference = { agentName: "claudecode", sessionId: "related" };
     const changed = {
       reference: changedReference,
-      session: { id: "changed" },
+      session: {},
     } as ReferencedSessionHead;
     const related = {
       reference: relatedReference,
-      session: { id: "related" },
+      session: {},
     } as ReferencedSessionHead;
 
     const merged = mergeSessionsUpdatedEvents(event([], [], [related]), event([changed]));
@@ -68,10 +68,10 @@ describe("mergeSessionsUpdatedEvents", () => {
 
   it("lets a later change or removal replace a projection-related head", () => {
     const reference = { agentName: "claudecode", sessionId: "session-1" };
-    const related = { reference, session: { id: "session-1" } } as ReferencedSessionHead;
+    const related = { reference, session: {} } as ReferencedSessionHead;
     const changed = {
       reference,
-      session: { id: "session-1", display_title: "changed" },
+      session: { display_title: "changed" },
     } as ReferencedSessionHead;
 
     const changedMerge = mergeSessionsUpdatedEvents(event([], [], [related]), event([changed]));

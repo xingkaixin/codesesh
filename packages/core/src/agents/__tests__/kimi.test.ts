@@ -26,8 +26,6 @@ const KIMI_FIXTURE_ROOT = new URL("./fixtures/kimi/", import.meta.url);
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {
     reference: { agentName: "kimi", sessionId: id },
-    id,
-    slug: `kimi/${id}`,
     title: id,
     directory: PROJECT_DIR,
     time_created: 1000,
@@ -111,7 +109,7 @@ describe("KimiAgent configuration", () => {
     const assistant = detail.messages.find((message) => message.role === "assistant");
 
     expect(head).toMatchObject({
-      id: "fixture-session",
+      reference: { agentName: "kimi", sessionId: "fixture-session" },
       directory: projectDir,
       stats: {
         total_input_tokens: 1_000,
@@ -157,12 +155,17 @@ describe("KimiAgent cache refresh", () => {
     const agent = createAgent(basePath);
     const sessions = agent.incrementalScan([makeSession("old-session")], ["new-session"]);
 
-    expect(sessions.map((session) => session.id).sort()).toEqual(["new-session", "old-session"]);
-    expect(sessions.find((session) => session.id === "new-session")).toMatchObject({
-      slug: "kimi/new-session",
-      title: "New",
-      directory: PROJECT_DIR,
-    });
+    expect(sessions.map((session) => session.reference.sessionId).sort()).toEqual([
+      "new-session",
+      "old-session",
+    ]);
+    expect(sessions.find((session) => session.reference.sessionId === "new-session")).toMatchObject(
+      {
+        reference: { agentName: "kimi", sessionId: "new-session" },
+        title: "New",
+        directory: PROJECT_DIR,
+      },
+    );
   });
 
   it("removes deleted sessions during incremental scan", () => {
@@ -176,7 +179,7 @@ describe("KimiAgent cache refresh", () => {
       ["deleted-session"],
     );
 
-    expect(sessions.map((session) => session.id)).toEqual(["old-session"]);
+    expect(sessions.map((session) => session.reference.sessionId)).toEqual(["old-session"]);
     expect(agent.getSessionCacheMeta("deleted-session")).toBeUndefined();
   });
 
@@ -237,7 +240,10 @@ describe("KimiAgent cache refresh", () => {
 
     const agent = createAgent(basePath);
     const cached = agent.scan();
-    expect(cached.map((session) => session.id).sort()).toEqual(["old-session", "recent-session"]);
+    expect(cached.map((session) => session.reference.sessionId).sort()).toEqual([
+      "old-session",
+      "recent-session",
+    ]);
 
     const window = { from: recent - 7 * 24 * 60 * 60 * 1000 };
     const refs = agent.listSessionSources(window);

@@ -12,7 +12,7 @@ const sessionDetailRender = vi.hoisted(() => vi.fn());
 vi.mock("../SessionDetail", () => ({
   SessionDetail: (props: { session: SessionDetail; childSessions: SessionDetail[] }) => {
     sessionDetailRender(props);
-    return <div data-testid="session-detail">{props.session.id}</div>;
+    return <div data-testid="session-detail">{props.session.reference.sessionId}</div>;
   },
 }));
 
@@ -113,8 +113,6 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
 function makeSession(id: string): SessionDetail {
   return {
     reference: { agentName: "claudecode", sessionId: id },
-    id,
-    slug: `claudecode/${id}`,
     title: `Session ${id}`,
     directory: "/repo",
     time_created: 1,
@@ -131,8 +129,6 @@ function makeSession(id: string): SessionDetail {
 function makeLandingSession(agentKey: string, sessionId: string, title: string): IndexedSession {
   return {
     reference: { agentName: agentKey, sessionId },
-    id: sessionId,
-    slug: `${agentKey}/${sessionId}`,
     title,
     directory: "/repo",
     time_created: 1,
@@ -296,13 +292,12 @@ describe("AppRouteContent", () => {
     const parent = makeSession("parent");
     const child = {
       ...makeSession("child"),
-      slug: "claudecode/child",
       parent_reference: parent.reference,
     };
     props.viewState = {
       mode: "session",
       activeAgentKey: "claudecode",
-      activeSessionId: parent.id,
+      activeSessionId: parent.reference.sessionId,
     };
     props.sessionDetail.session = parent;
     props.childSessionsByParentRouteKey = new Map([

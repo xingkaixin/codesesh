@@ -180,11 +180,11 @@ describe("buildDashboard", () => {
     const result = buildDashboard(
       [
         makeSession("a", {
-          slug: "claudecode/a",
+          reference: { agentName: "claudecode", sessionId: "a" },
           stats: { message_count: 2, total_input_tokens: 5, total_output_tokens: 5, total_cost: 0 },
         }),
         makeSession("b", {
-          slug: "claudecode/b",
+          reference: { agentName: "claudecode", sessionId: "b" },
           stats: { message_count: 1, total_input_tokens: 3, total_output_tokens: 2, total_cost: 0 },
         }),
       ],
@@ -251,7 +251,7 @@ describe("buildDashboard", () => {
       sessions: [
         {
           ...EMPTY_SESSION_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           messageCost: 6,
           untimedMessageCost: 0,
           modelCosts: [{ model: "sonnet", cost: 6, costRecorded: 0 }],
@@ -260,7 +260,7 @@ describe("buildDashboard", () => {
       messages: [
         {
           ...EMPTY_MESSAGE_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           time: day1 + 1_000,
           model: "sonnet",
           cost: 1,
@@ -268,7 +268,7 @@ describe("buildDashboard", () => {
         },
         {
           ...EMPTY_MESSAGE_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           time: day2 + 1_000,
           model: "sonnet",
           cost: 2,
@@ -276,7 +276,7 @@ describe("buildDashboard", () => {
         },
         {
           ...EMPTY_MESSAGE_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           time: day3 + 1_000,
           model: "sonnet",
           cost: 3,
@@ -325,7 +325,7 @@ describe("buildDashboard", () => {
       sessions: [
         {
           ...EMPTY_SESSION_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           messageCount: 2,
           inputTokens: 150,
           outputTokens: 30,
@@ -338,7 +338,7 @@ describe("buildDashboard", () => {
       messages: [
         {
           ...EMPTY_MESSAGE_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           time: day1 + 1_000,
           inputTokens: 100,
           outputTokens: 20,
@@ -348,7 +348,7 @@ describe("buildDashboard", () => {
         },
         {
           ...EMPTY_MESSAGE_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           time: day2 + 1_000,
           inputTokens: 50,
           outputTokens: 10,
@@ -396,7 +396,7 @@ describe("buildDashboard", () => {
       sessions: [
         {
           ...EMPTY_SESSION_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           messageCount: 2,
           untimedMessageCount: 1,
           inputTokens: 150,
@@ -411,7 +411,7 @@ describe("buildDashboard", () => {
       messages: [
         {
           ...EMPTY_MESSAGE_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           time: day1 + 1_000,
           inputTokens: 50,
           outputTokens: 10,
@@ -462,7 +462,7 @@ describe("buildDashboard", () => {
     });
     const summary = (session: SessionHead, outputTokens: number, reasoningTokens: number) => ({
       ...EMPTY_SESSION_USAGE,
-      reference: { agentName: "claudecode", sessionId: session.id },
+      reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
       messageCount: 1,
       inputTokens: 10,
       outputTokens,
@@ -473,7 +473,7 @@ describe("buildDashboard", () => {
     });
     const message = (session: SessionHead, outputTokens: number, reasoningTokens: number) => ({
       ...EMPTY_MESSAGE_USAGE,
-      reference: { agentName: "claudecode", sessionId: session.id },
+      reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
       time,
       inputTokens: 10,
       outputTokens,
@@ -515,7 +515,7 @@ describe("buildDashboard", () => {
       sessions: [
         {
           ...EMPTY_SESSION_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           messageCost: 6,
           untimedMessageCost: 3,
           modelCosts: [{ model: "sonnet", cost: 6, costRecorded: 0 }],
@@ -524,7 +524,7 @@ describe("buildDashboard", () => {
       messages: [
         {
           ...EMPTY_MESSAGE_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           time: day1 + 1_000,
           model: "sonnet",
           cost: 3,
@@ -859,7 +859,7 @@ describe("buildDashboard compare window", () => {
       sessions: [
         {
           ...EMPTY_SESSION_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           messageCost: 3,
           untimedMessageCost: 0,
           modelCosts: [],
@@ -868,14 +868,14 @@ describe("buildDashboard compare window", () => {
       messages: [
         {
           ...EMPTY_MESSAGE_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           time: 150,
           cost: 1,
           costSource: "estimated",
         },
         {
           ...EMPTY_MESSAGE_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           time: 250,
           cost: 2,
           costSource: "estimated",

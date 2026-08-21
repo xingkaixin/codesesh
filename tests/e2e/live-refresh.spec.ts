@@ -41,8 +41,10 @@ test("refreshes an open session when its source file changes", async ({ page }, 
   const searchResponse = await page.request.get(`/api/search?q=${searchNeedle}`);
   expect(searchResponse.ok()).toBe(true);
   const searchBody = (await searchResponse.json()) as {
-    results?: Array<{ session?: { id?: string } }>;
+    results?: Array<{ session?: { reference?: { sessionId?: string } } }>;
   };
-  expect(searchBody.results?.some((result) => result.session?.id === "e2e-dashboard")).toBe(true);
+  expect(
+    searchBody.results?.some((result) => result.session?.reference?.sessionId === "e2e-dashboard"),
+  ).toBe(true);
   expect(mainFrameNavigations).toBe(0);
 });

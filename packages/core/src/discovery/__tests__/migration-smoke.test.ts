@@ -4,7 +4,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listBookmarks, type BookmarkRecord } from "../../state/bookmarks.js";
-import { createSessionIdentity } from "../../contract/index.js";
+import { createSessionIdentity, formatSessionReference } from "../../contract/index.js";
 import { setStateSchemaEnsuredPath } from "../../state/database.js";
 import type { SessionHead } from "../../types/index.js";
 import { setSchemaEnsuredPath } from "../cache/db.js";
@@ -159,8 +159,8 @@ function createLegacyStateFixture(version: 1 | 2): void {
       `,
     ).run(
       "claudecode",
-      session.id,
-      session.slug,
+      session.reference.sessionId,
+      formatSessionReference(session.reference),
       session.title,
       session.directory,
       session.time_created,
@@ -272,7 +272,7 @@ function expectMigratedBehavior(structured: boolean): void {
   const projects = listCachedProjectGroups();
   const results = searchSessions("needle");
 
-  expect(cached?.sessions.map((session) => session.id)).toEqual(["legacy-smoke"]);
+  expect(cached?.sessions.map((session) => session.reference.sessionId)).toEqual(["legacy-smoke"]);
   expect(cached?.sessions[0]?.reference).toEqual({
     agentName: "claudecode",
     sessionId: "legacy-smoke",
@@ -283,7 +283,7 @@ function expectMigratedBehavior(structured: boolean): void {
     total_output_tokens: 5,
     total_tokens: 15,
   });
-  expect(detail?.id).toBe("legacy-smoke");
+  expect(detail?.reference.sessionId).toBe("legacy-smoke");
   expect(detail?.messages).toEqual([]);
   expect(rawDetail?.pendingReindex).toBe(true);
   expect(rawDetail?.messageRows).toHaveLength(structured ? 1 : 0);
@@ -303,14 +303,18 @@ function expectMigratedBehavior(structured: boolean): void {
     },
   ]);
   expect(results).toHaveLength(1);
-  expect(results[0]?.session.id).toBe("legacy-smoke");
+  expect(results[0]?.session.reference.sessionId).toBe("legacy-smoke");
   expect(highlightedText(results[0])).toContain("needle");
 
   if (structured) {
     const toolResults = searchSessions("tool:read");
     const fileResults = searchFileActivitySessions("legacy.ts");
-    expect(toolResults.map((result) => result.session.id)).toEqual(["legacy-smoke"]);
-    expect(fileResults.map((result) => result.session.id)).toEqual(["legacy-smoke"]);
+    expect(toolResults.map((result) => result.session.reference.sessionId)).toEqual([
+      "legacy-smoke",
+    ]);
+    expect(fileResults.map((result) => result.session.reference.sessionId)).toEqual([
+      "legacy-smoke",
+    ]);
     expect(highlightedText(fileResults[0])).toContain("legacy.ts");
   }
 }
@@ -453,7 +457,12 @@ describe("sqlite migration release gate", () => {
         entries: {
           claudecode: {
             sessions: [session],
-            meta: { [session.id]: { id: session.id, sourcePath: "legacy.jsonl" } },
+            meta: {
+              [session.reference.sessionId]: {
+                id: session.reference.sessionId,
+                sourcePath: "legacy.jsonl",
+              },
+            },
             timestamp: now,
             version: 2,
           },
@@ -465,9 +474,9 @@ describe("sqlite migration release gate", () => {
     expect(loadCachedSessions("claudecode")).toBeNull();
     expect(saveCachedSessions("claudecode", [session])).toBe(true);
     expect(existsSync(getLegacyCachePath())).toBe(false);
-    expect(loadCachedSessions("claudecode")?.sessions.map(({ id }) => id)).toEqual([
-      "legacy-smoke",
-    ]);
+    expect(
+      loadCachedSessions("claudecode")?.sessions.map(({ reference: { sessionId: id } }) => id),
+    ).toEqual(["legacy-smoke"]);
     expect(getUserVersion(getCachePath())).toBe(EXPECTED_CACHE_SCHEMA_VERSION);
   });
 

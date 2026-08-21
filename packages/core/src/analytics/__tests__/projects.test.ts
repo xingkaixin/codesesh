@@ -198,7 +198,7 @@ describe("attachProjectMetrics", () => {
       sessions: [
         {
           ...EMPTY_SESSION_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           messageCount: 1,
           inputTokens: 10,
           outputTokens: 5,
@@ -210,7 +210,7 @@ describe("attachProjectMetrics", () => {
       messages: [
         {
           ...EMPTY_MESSAGE_USAGE,
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           time: 150,
           inputTokens: 10,
           outputTokens: 5,

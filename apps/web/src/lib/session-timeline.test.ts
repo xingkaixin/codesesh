@@ -19,12 +19,12 @@ function at(day: number, hour: number, minute = 0): number {
 function createSession(
   overrides: Partial<SessionHead> & { id: string; time_updated: number },
 ): SessionHead {
+  const { id, ...sessionOverrides } = overrides;
   return {
-    reference: { agentName: "codex", sessionId: overrides.id },
-    slug: `codex/${overrides.id}`,
-    title: overrides.id,
+    reference: { agentName: "codex", sessionId: id },
+    title: id,
     directory: "/workspace/a",
-    time_created: overrides.time_updated,
+    time_created: sessionOverrides.time_updated,
     stats: {
       message_count: 1,
       total_input_tokens: 10,
@@ -32,7 +32,7 @@ function createSession(
       total_tokens: 15,
       total_cost: 0.5,
     },
-    ...overrides,
+    ...sessionOverrides,
   };
 }
 

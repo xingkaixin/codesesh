@@ -67,8 +67,8 @@ describe("CS-142: Cursor scan shape", () => {
     const fastHeads = makeAgent(dbPath).scan({ from: 0, fast: true });
     const fullHeads = makeAgent(dbPath).scan({ from: 0 });
 
-    expect(fastHeads.map((head) => head.id)).toEqual(["c1"]);
-    expect(fullHeads.map((head) => head.id)).toEqual(["c1"]);
+    expect(fastHeads.map((head) => head.reference.sessionId)).toEqual(["c1"]);
+    expect(fullHeads.map((head) => head.reference.sessionId)).toEqual(["c1"]);
   });
 
   it("resolves legacy request ids to the canonical composer id", () => {
@@ -82,9 +82,8 @@ describe("CS-142: Cursor scan shape", () => {
 
     const detail = agent.getSessionData("legacy-request");
 
-    expect(detail.id).toBe("c1");
+    expect(detail.reference.sessionId).toBe("c1");
     expect(detail.reference).toEqual({ agentName: "cursor", sessionId: "c1" });
-    expect(detail.slug).toBe("cursor/c1");
   });
 
   it("migrates cached request-id metadata during a full scan", () => {
@@ -117,7 +116,10 @@ describe("CS-142: Cursor scan shape", () => {
 
     const heads = agent.scan({ from: 0 });
 
-    expect(textOf(agent, heads[0]!.id)).toEqual(["written first", "written second"]);
+    expect(textOf(agent, heads[0]!.reference.sessionId)).toEqual([
+      "written first",
+      "written second",
+    ]);
   });
 
   it("drops a composer whose bubbles are all malformed or internal", () => {
@@ -130,7 +132,7 @@ describe("CS-142: Cursor scan shape", () => {
 
     const heads = makeAgent(dbPath).scan({ from: 0 });
 
-    expect(heads.map((head) => head.id)).toEqual(["kept"]);
+    expect(heads.map((head) => head.reference.sessionId)).toEqual(["kept"]);
   });
 
   it("keeps a composer that only has subagents", () => {
@@ -138,7 +140,7 @@ describe("CS-142: Cursor scan shape", () => {
 
     const heads = makeAgent(dbPath).scan({ from: 0 });
 
-    expect(heads.map((head) => head.id)).toEqual(["sub"]);
+    expect(heads.map((head) => head.reference.sessionId)).toEqual(["sub"]);
   });
 
   it("applies the scan window to the composer's update time", () => {
@@ -151,7 +153,7 @@ describe("CS-142: Cursor scan shape", () => {
 
     const heads = makeAgent(dbPath).scan({ from: 1_000 });
 
-    expect(heads.map((head) => head.id)).toEqual(["new"]);
+    expect(heads.map((head) => head.reference.sessionId)).toEqual(["new"]);
   });
 
   it("releases composers excluded from the next scan", () => {
@@ -178,7 +180,7 @@ describe("CS-142: Cursor scan shape", () => {
     const agent = makeAgent(dbPath);
 
     const [head] = agent.scan({ from: 0 });
-    const detail = agent.getSessionData(head!.id);
+    const detail = agent.getSessionData(head!.reference.sessionId);
 
     expect(head?.time_updated).toBe(2_500);
     expect(detail.time_updated).toBe(head?.time_updated);

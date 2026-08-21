@@ -88,8 +88,6 @@ class TestAgent extends BaseAgent {
 function makeHead(overrides: Partial<IdentifiedSessionHead> = {}): IdentifiedSessionHead {
   return {
     reference: { agentName: "test", sessionId: "s1" },
-    id: "s1",
-    slug: "test/s1",
     title: "Cached Session",
     directory: "/workspace/project",
     project_identity: projectIdentity,
@@ -147,7 +145,7 @@ function persistDetail(
   detail: SessionDetail,
   fingerprint: string,
 ): void {
-  saveCachedSessions("test", [head], { [head.id]: makeMeta(fingerprint) });
+  saveCachedSessions("test", [head], { [head.reference.sessionId]: makeMeta(fingerprint) });
   syncSessionSearchIndex("test", [head], () => detail);
 }
 
@@ -312,7 +310,7 @@ describe("materializeSessionDetail", () => {
         agentName: "test",
         sessionId: "s1",
       }),
-    ).toThrow("Session identity fields disagree");
+    ).toThrow("Session reference does not match expected session");
   });
 
   it("rejects an invalid snapshot instead of resolving identity during a detail request", () => {
@@ -766,8 +764,6 @@ describe("materializeSessionDetail", () => {
       const sessionId = `s${index}`;
       return makeHead({
         reference: { agentName: "test", sessionId },
-        id: sessionId,
-        slug: `test/${sessionId}`,
       });
     });
     const target = heads.at(-1)!;
@@ -775,8 +771,6 @@ describe("materializeSessionDetail", () => {
       {
         ...makeDetail(),
         reference: target.reference,
-        id: target.id,
-        slug: target.slug,
       },
       new Map(),
     );
@@ -789,11 +783,11 @@ describe("materializeSessionDetail", () => {
 
     const first = materializeSessionDetail(scanResult, {
       agentName: "test",
-      sessionId: target.id,
+      sessionId: target.reference.sessionId,
     });
     const second = materializeSessionDetail(scanResult, {
       agentName: "test",
-      sessionId: target.id,
+      sessionId: target.reference.sessionId,
     });
 
     expect(first.status).toBe("found");

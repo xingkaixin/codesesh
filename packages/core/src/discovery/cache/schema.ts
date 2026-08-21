@@ -128,6 +128,13 @@ function getLegacySessionDirectory(session: SessionHead): string | null {
   return typeof session.directory === "string" ? session.directory : null;
 }
 
+function removeLegacySessionIdentityFields(session: SessionHead): SessionHead {
+  const normalized = { ...session } as SessionHead & { id?: unknown; slug?: unknown };
+  delete normalized.id;
+  delete normalized.slug;
+  return normalized;
+}
+
 interface SearchIndexWriteResult<T> {
   value: T;
   rebuildDurationMs?: number;
@@ -942,7 +949,7 @@ function backfillStructuredSessions(
         const directory = getLegacySessionDirectory(parsed);
         if (directory == null) continue;
         const session = {
-          ...parsed,
+          ...removeLegacySessionIdentityFields(parsed),
           ...createSessionIdentity({
             agentName: String(row.agent_name),
             sessionId: String(row.session_id),

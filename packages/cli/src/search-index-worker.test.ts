@@ -53,8 +53,14 @@ function makeAgent() {
   return {
     name: "codex",
     restoreSessionCacheMeta: vi.fn(),
-    getSessionData: vi.fn((id: string) => ({ id })),
+    getSessionData: vi.fn((sessionId: string) => ({
+      reference: { agentName: "codex", sessionId },
+    })),
   };
+}
+
+function makeSession(sessionId: string, agentName = "codex") {
+  return { reference: { agentName, sessionId } };
 }
 
 async function runWorker() {
@@ -117,14 +123,14 @@ describe("search index worker", () => {
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     mocks.syncSessionSearchIndex.mockImplementation(
       (_name: string, _sessions: unknown[], readSession: (id: string) => unknown) => {
-        expect(readSession("s1")).toEqual({ id: "s1" });
+        expect(readSession("s1")).toEqual(makeSession("s1"));
         return { indexed: 1, skipped: 0 };
       },
     );
     mocks.workerData = {
       context: "startup",
       agentNames: ["codex"],
-      sessionsByAgent: { codex: [{ id: "s1" }] },
+      sessionsByAgent: { codex: [makeSession("s1")] },
       metaByAgent: { codex: { s1: { id: "s1" } } },
     };
 
@@ -153,7 +159,7 @@ describe("search index worker", () => {
           kind: "full",
           context: "scan.refresh",
           agentName: "unknown",
-          sessions: [{ id: "s1" }],
+          sessions: [makeSession("s1", "unknown")],
           meta: {},
           completeness: "complete",
           removedSessionIds: [],
@@ -180,12 +186,12 @@ describe("search index worker", () => {
 
   it("saves a full cache and marks a completely indexed agent initialized", async () => {
     const agent = makeAgent();
-    const sessions = [{ id: "s1" }, { id: "s2" }];
+    const sessions = [makeSession("s1"), makeSession("s2")];
     const meta = { s1: { id: "s1" } };
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     mocks.commitDurableSessionPublication.mockImplementation(
       (_publication: unknown, readSession: (id: string) => unknown) => {
-        expect(readSession("s1")).toEqual({ id: "s1" });
+        expect(readSession("s1")).toEqual(makeSession("s1"));
         return {
           status: "committed",
           publicationId: "publication-full",
@@ -235,7 +241,7 @@ describe("search index worker", () => {
 
   it("passes partial scope and explicit removals to both durable indexes", async () => {
     const agent = makeAgent();
-    const sessions = [{ id: "recent" }];
+    const sessions = [makeSession("recent")];
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     mocks.commitDurableSessionPublication.mockReturnValue({
       status: "committed",
@@ -279,7 +285,7 @@ describe("search index worker", () => {
 
   it("CS-73 regression: still marks the agent initialized when a session couldn't be indexed, but warns", async () => {
     const agent = makeAgent();
-    const sessions = [{ id: "s1" }, { id: "broken" }];
+    const sessions = [makeSession("s1"), makeSession("broken")];
     const meta = { s1: { id: "s1" } };
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     // One session (e.g. its data failed to load) is left unindexed.
@@ -320,12 +326,12 @@ describe("search index worker", () => {
 
   it("applies incremental index changes and reports processed sessions", async () => {
     const agent = makeAgent();
-    const changes = [{ id: "updated", session: { id: "updated" } }];
+    const changes = [{ session: makeSession("updated"), sortIndex: 0 }];
     const removedSessionIds = ["removed"];
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     mocks.commitDurableSessionPublication.mockImplementation(
       (_publication: unknown, readSession: (id: string) => unknown) => {
-        expect(readSession("updated")).toEqual({ id: "updated" });
+        expect(readSession("updated")).toEqual(makeSession("updated"));
         return {
           status: "committed",
           publicationId: "publication-changes",
@@ -371,7 +377,7 @@ describe("search index worker", () => {
 
   it("updates maintenance rows without rewriting the session cache", async () => {
     const agent = makeAgent();
-    const changes = [{ session: { id: "legacy" }, sortIndex: 0 }];
+    const changes = [{ session: makeSession("legacy"), sortIndex: 0 }];
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     mocks.syncSessionSearchIndexChanges.mockReturnValue({ indexed: 1, skipped: 0 });
     mocks.workerData = {
@@ -425,7 +431,7 @@ describe("search index worker", () => {
           kind: "changes",
           context: "scan.refresh",
           agentName: "codex",
-          changes: [{ session: { id: "s1" }, sortIndex: 0 }],
+          changes: [{ session: makeSession("s1"), sortIndex: 0 }],
           removedSessionIds: [],
           meta: {},
         },
@@ -466,7 +472,7 @@ describe("search index worker", () => {
           kind: "full",
           context: "scan.refresh",
           agentName: "codex",
-          sessions: [{ id: "s1" }, { id: "s2" }],
+          sessions: [makeSession("s1"), makeSession("s2")],
           meta: {},
           completeness: "complete",
           removedSessionIds: [],
@@ -476,7 +482,7 @@ describe("search index worker", () => {
           kind: "full",
           context: "scan.refresh",
           agentName: "codex",
-          sessions: [{ id: "s3" }],
+          sessions: [makeSession("s3")],
           meta: {},
           completeness: "complete",
           removedSessionIds: [],
@@ -521,7 +527,7 @@ describe("search index worker", () => {
       kind: "full",
       context: "scan.initial",
       agentName,
-      sessions: [{ id: `${agentName}-s1` }],
+      sessions: [makeSession(`${agentName}-s1`, agentName)],
       meta: {},
       completeness: "complete",
       removedSessionIds: [],
@@ -560,7 +566,7 @@ describe("search index worker", () => {
           kind: "full",
           context: "scan.refresh",
           agentName: "codex",
-          sessions: [{ id: "s1" }],
+          sessions: [makeSession("s1")],
           meta: {},
           completeness: "complete",
           removedSessionIds: [],

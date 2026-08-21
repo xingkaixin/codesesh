@@ -43,9 +43,11 @@ test("searches and opens the aggregated Codex session", async ({ page }) => {
     .poll(async () => {
       const response = await page.request.get("/api/search?q=codex-shared-needle");
       const body = (await response.json()) as {
-        results?: Array<{ session?: { id?: string } }>;
+        results?: Array<{ session?: { reference?: { sessionId?: string } } }>;
       };
-      return body.results?.some((result) => result.session?.id === CODEX_SESSION_ID);
+      return body.results?.some(
+        (result) => result.session?.reference?.sessionId === CODEX_SESSION_ID,
+      );
     })
     .toBe(true);
 

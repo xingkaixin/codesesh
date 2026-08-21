@@ -262,8 +262,7 @@ describe("OpenCodeSqliteAgent", () => {
     expect(agent.isAvailable()).toBe(true);
     expect(agent.scan({ from: 0 })).toEqual([
       expect.objectContaining({
-        id: "s1",
-        slug: "test-agent/s1",
+        reference: { agentName: "test-agent", sessionId: "s1" },
         title: "Implement cache tests",
         stats: expect.objectContaining({
           message_count: 1,
@@ -469,7 +468,7 @@ describe("CS-206: database scans preserve the requested window", () => {
       to: 20_000,
     });
 
-    expect(heads.map((head) => head.id)).toEqual(["child-0", "root-0"]);
+    expect(heads.map((head) => head.reference.sessionId)).toEqual(["child-0", "root-0"]);
   });
 });
 
@@ -491,7 +490,7 @@ describe("CS-180: related session reads stay inside the selected roots", () => {
 
     const heads = agent.scan({ from: 15_000 });
 
-    expect(heads.map((head) => head.id)).toEqual([
+    expect(heads.map((head) => head.reference.sessionId)).toEqual([
       "recent-root",
       "child",
       "grandchild",
@@ -524,7 +523,7 @@ describe("CS-180: related session reads stay inside the selected roots", () => {
     agent.isAvailable();
 
     const heads = agent.scan({ from: 15_000 });
-    const ids = new Set(heads.map((head) => head.id));
+    const ids = new Set(heads.map((head) => head.reference.sessionId));
 
     expect(heads).toHaveLength(1_002);
     expect(ids.size).toBe(1_002);
@@ -556,7 +555,9 @@ describe("CS-180: related session reads stay inside the selected roots", () => {
     agent.isAvailable();
 
     expect(
-      agent.scan({ from: 15_000, includeRelatedSessions: false }).map((head) => head.id),
+      agent
+        .scan({ from: 15_000, includeRelatedSessions: false })
+        .map((head) => head.reference.sessionId),
     ).toEqual(["root-1", "root-0"]);
     expect(agent.scan({ from: 30_000 })).toEqual([]);
     expect(diagnostics).toEqual([]);
@@ -832,7 +833,7 @@ describe("subagent folding degrades when task_type/parent_id are absent", () => 
     const heads = agent.scan({ from: 0 });
     expect(heads).toHaveLength(1);
     expect(heads[0]).toMatchObject({
-      id: "s1",
+      reference: { agentName: "opencode", sessionId: "s1" },
       stats: expect.objectContaining({
         message_count: 1,
         total_input_tokens: 1_000,

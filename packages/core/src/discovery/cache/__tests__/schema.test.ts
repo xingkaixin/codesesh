@@ -126,8 +126,8 @@ describe("cache schema boundary", () => {
       );
 
       expect(restored?.reference).toEqual({ agentName: "codex", sessionId: "identity" });
-      expect(restored?.id).toBe("identity");
-      expect(restored?.slug).toBe("codex/identity");
+      expect(restored).not.toHaveProperty("id");
+      expect(restored).not.toHaveProperty("slug");
       expect(columns).not.toContain("slug");
       expect(warnings).toContainEqual({
         event: "sqlite.migration.session_identity.mismatch",
@@ -182,7 +182,7 @@ describe("cache schema boundary", () => {
   it("adds an empty hash chain column when upgrading schema 24", () => {
     const session = makeSessionHead("legacy-chain");
     saveCachedSessions("codex", [session]);
-    syncSessionSearchIndex("codex", [session], () => makeSessionData(session.id));
+    syncSessionSearchIndex("codex", [session], () => makeSessionData(session.reference.sessionId));
 
     const legacyDb = new Database(getCachePath());
     try {
@@ -201,7 +201,7 @@ describe("cache schema boundary", () => {
       digest: (
         db
           .prepare("SELECT content_chain_digest FROM messages WHERE session_id = ?")
-          .get(session.id) as { content_chain_digest?: string | null }
+          .get(session.reference.sessionId) as { content_chain_digest?: string | null }
       ).content_chain_digest,
     }));
 
@@ -220,7 +220,7 @@ describe("cache schema boundary", () => {
     });
     saveCachedSessions("codex", [session]);
     syncSessionSearchIndex("codex", [session], () => ({
-      ...makeSessionData(session.id),
+      ...makeSessionData(session.reference.sessionId),
       ...session,
       messages: [
         {
@@ -285,7 +285,7 @@ describe("cache schema boundary", () => {
           FROM session_cost_summary
           WHERE agent_name = ? AND session_id = ?`,
         )
-        .get("codex", session.id),
+        .get("codex", session.reference.sessionId),
       hasIndex:
         db
           .prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?")
@@ -341,13 +341,13 @@ describe("cache schema boundary", () => {
   it("defers orphaned v21 publication cleanup until the first search-index write", () => {
     const session = makeSessionHead("orphaned-publication");
     saveCachedSessions("codex", [session]);
-    syncSessionSearchIndex("codex", [session], () => makeSessionData(session.id));
+    syncSessionSearchIndex("codex", [session], () => makeSessionData(session.reference.sessionId));
 
     const db = new Database(getCachePath());
     try {
       db.prepare("UPDATE sessions SET publication_id = ? WHERE session_id = ?").run(
         "orphaned",
-        session.id,
+        session.reference.sessionId,
       );
     } finally {
       db.close();
@@ -389,13 +389,13 @@ describe("cache schema boundary", () => {
   it("invalidates v21 detail rows so inconsistent publications rebuild", () => {
     const session = makeSessionHead("publication-rebuild");
     saveCachedSessions("codex", [session]);
-    syncSessionSearchIndex("codex", [session], () => makeSessionData(session.id));
+    syncSessionSearchIndex("codex", [session], () => makeSessionData(session.reference.sessionId));
 
     const db = new Database(getCachePath());
     try {
       db.prepare("UPDATE session_documents SET content_hash = ? WHERE session_id = ?").run(
         "stale-but-matching",
-        session.id,
+        session.reference.sessionId,
       );
       db.pragma("user_version = 21");
       db.prepare("UPDATE cache_meta SET value = '21' WHERE key = 'version'").run();
@@ -409,13 +409,13 @@ describe("cache schema boundary", () => {
         (
           ready
             .prepare("SELECT content_hash FROM session_documents WHERE session_id = ?")
-            .get(session.id) as { content_hash?: string }
+            .get(session.reference.sessionId) as { content_hash?: string }
         ).content_hash ?? "missing",
       ),
       pending:
         ready
           .prepare("SELECT 1 FROM pending_reindex WHERE agent_name = ? AND session_id = ?")
-          .get("codex", session.id) != null,
+          .get("codex", session.reference.sessionId) != null,
     }));
 
     expect(migrated).toEqual({ contentHash: "", pending: true });
@@ -434,9 +434,13 @@ describe("cache schema boundary", () => {
   it("marks existing details for validation when adding projection versions", () => {
     const session = makeSessionHead("legacy-detail");
     saveCachedSessions("codex", [session], {
-      [session.id]: { id: session.id, sourcePath: "/legacy", sourceFingerprint: "legacy" },
+      [session.reference.sessionId]: {
+        id: session.reference.sessionId,
+        sourcePath: "/legacy",
+        sourceFingerprint: "legacy",
+      },
     });
-    syncSessionSearchIndex("codex", [session], () => makeSessionData(session.id));
+    syncSessionSearchIndex("codex", [session], () => makeSessionData(session.reference.sessionId));
 
     const legacyDb = new Database(getCachePath());
     // A real v18 database predates both the projection version and the index over it.
@@ -456,12 +460,12 @@ describe("cache schema boundary", () => {
           .prepare(
             "SELECT detail_version FROM session_documents WHERE agent_name = ? AND session_id = ?",
           )
-          .get("codex", session.id) as { detail_version?: string }
+          .get("codex", session.reference.sessionId) as { detail_version?: string }
       ).detail_version,
       pending:
         db
           .prepare("SELECT 1 FROM pending_reindex WHERE agent_name = ? AND session_id = ?")
-          .get("codex", session.id) != null,
+          .get("codex", session.reference.sessionId) != null,
     }));
 
     expect(migrated).toEqual({ version: 31, detailVersion: "", pending: true });
@@ -487,7 +491,7 @@ describe("cache schema boundary", () => {
                   smart_tags_classifier_revision
            FROM sessions WHERE session_id = ?`,
         )
-        .get(session.id) as {
+        .get(session.reference.sessionId) as {
         project_identity_resolver_revision?: string | null;
         project_identity_input_signature?: string | null;
         smart_tags_classifier_revision?: string | null;

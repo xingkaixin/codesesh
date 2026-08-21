@@ -10,8 +10,6 @@ afterEach(cleanup);
 function makeSession(id: string): SessionHead {
   return {
     reference: { agentName: "codex", sessionId: id },
-    id,
-    slug: `codex/${id}`,
     title: id,
     directory: "/workspace",
     time_created: 1,
@@ -26,7 +24,7 @@ function makeSession(id: string): SessionHead {
 
 const sessions = [makeSession("s1"), makeSession("s2"), makeSession("s3")];
 const searchResults: SearchResult[] = sessions.slice(0, 2).map((session) => ({
-  reference: { agentName: "Codex", sessionId: session.id },
+  reference: { agentName: "Codex", sessionId: session.reference.sessionId },
   session,
   snippet: session.title,
   snippetHighlights: [],

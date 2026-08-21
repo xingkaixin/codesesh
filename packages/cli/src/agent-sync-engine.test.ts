@@ -110,8 +110,6 @@ import { AgentSyncEngine } from "./agent-sync-engine.js";
 function makeSession(id: string, title = id): IdentifiedSessionHead {
   const session: SessionHead = {
     reference: { agentName: "codex", sessionId: id },
-    id,
-    slug: `codex/${id}`,
     title,
     directory: "/workspace",
     time_created: 1,
@@ -261,7 +259,7 @@ describe("AgentSyncEngine", () => {
       timestamp: Date.now(),
     });
     core.readPendingSearchIndexMaintenance
-      .mockReturnValueOnce({ sessionIds: [session.id], total: 1 })
+      .mockReturnValueOnce({ sessionIds: [session.reference.sessionId], total: 1 })
       .mockReturnValueOnce({ sessionIds: [], total: 0 });
     const { engine } = makeEngine(makeAgent(), [session]);
 
@@ -493,7 +491,7 @@ describe("AgentSyncEngine", () => {
           stage: "finalizing",
           changes: [{ session: next, sortIndex: 0 }],
           meta: {},
-          backfillCursor: next.id,
+          backfillCursor: next.reference.sessionId,
         });
         return workerResult({ sessions: [next], meta: {} });
       }),
@@ -510,7 +508,7 @@ describe("AgentSyncEngine", () => {
     await vi.waitFor(() => expect(statuses.at(-1)?.backfill.completedAgents).toEqual(["codex"]));
 
     expect(core.markAgentFullSyncProgress).toHaveBeenCalledOnce();
-    expect(core.markAgentFullSyncProgress).toHaveBeenCalledWith("codex", next.id);
+    expect(core.markAgentFullSyncProgress).toHaveBeenCalledWith("codex", next.reference.sessionId);
     expect(core.markAgentFullSyncCompleted).toHaveBeenCalledWith("codex");
   });
 
@@ -518,7 +516,7 @@ describe("AgentSyncEngine", () => {
     const previous = makeSession("session", "before");
     const updated = makeSession("session", "after");
     const failure: SessionSourceFailure = {
-      sessionId: previous.id,
+      sessionId: previous.reference.sessionId,
       sourcePath: "/session",
       stage: "parsing",
       errorClass: "SyntaxError",
@@ -544,7 +542,7 @@ describe("AgentSyncEngine", () => {
           {
             sessions: [updated],
             meta: {},
-            changedIds: [updated.id],
+            changedIds: [updated.reference.sessionId],
             sourceFailures: [failure],
           },
           "partial",
@@ -604,7 +602,11 @@ describe("AgentSyncEngine", () => {
     const previous = makeSession("session", "before");
     const updated = makeSession("session", "after");
     const agent = makeAgent({
-      checkForChanges: () => ({ hasChanges: true, changedIds: [updated.id], timestamp: 2 }),
+      checkForChanges: () => ({
+        hasChanges: true,
+        changedIds: [updated.reference.sessionId],
+        timestamp: 2,
+      }),
       incrementalScan: () => [updated],
     });
     const { engine } = makeEngine(agent, [previous]);
@@ -656,7 +658,11 @@ describe("AgentSyncEngine", () => {
     const workerRunner = makeWorkerRunner();
     const incrementalScan = vi.fn(() => [updated]);
     const agent = makeAgent({
-      checkForChanges: () => ({ hasChanges: true, changedIds: [updated.id], timestamp: 2 }),
+      checkForChanges: () => ({
+        hasChanges: true,
+        changedIds: [updated.reference.sessionId],
+        timestamp: 2,
+      }),
       incrementalScan,
     });
     const { engine } = makeEngine(agent, [previous], workerRunner, { from: 1, to: 2 });
@@ -671,17 +677,22 @@ describe("AgentSyncEngine", () => {
     expect(sessionChanges).toHaveBeenCalledWith(
       expect.objectContaining({
         agentName: "codex",
-        sessions: [expect.objectContaining({ id: updated.id, title: updated.title })],
+        sessions: [expect.objectContaining({ reference: updated.reference, title: updated.title })],
       }),
     );
     expect(statusChanges).toHaveBeenCalledWith(
       expect.objectContaining({ type: "scan-status", active: false }),
     );
     expect(workerRunner.discard).toHaveBeenCalledWith("codex");
-    expect(incrementalScan).toHaveBeenCalledWith([previous], [updated.id], undefined, {
-      from: 1,
-      to: 2,
-    });
+    expect(incrementalScan).toHaveBeenCalledWith(
+      [previous],
+      [updated.reference.sessionId],
+      undefined,
+      {
+        from: 1,
+        to: 2,
+      },
+    );
   });
 
   it("bounds progress broadcasts while preserving phase and completion", async () => {
@@ -815,7 +826,11 @@ describe("AgentSyncEngine", () => {
     const updated = makeSession("session", "after");
     const { engine } = makeEngine(
       makeAgent({
-        checkForChanges: () => ({ hasChanges: true, changedIds: [updated.id], timestamp: 2 }),
+        checkForChanges: () => ({
+          hasChanges: true,
+          changedIds: [updated.reference.sessionId],
+          timestamp: 2,
+        }),
         incrementalScan: () => [updated],
       }),
       [previous],
@@ -982,7 +997,7 @@ describe("AgentSyncEngine", () => {
     expect(workerRunner.run).toHaveBeenCalledTimes(2);
     expect(currentMeta).toEqual(nextMeta);
     expect(engine.snapshot().sessions).toEqual([
-      expect.objectContaining({ id: head.id, title: head.title }),
+      expect.objectContaining({ reference: head.reference, title: head.title }),
     ]);
     expect(sessionChanges.mock.calls.filter(([change]) => change.event != null)).toHaveLength(1);
   });
@@ -1087,7 +1102,10 @@ describe("AgentSyncEngine", () => {
           agentName: "codex",
           changes: [
             expect.objectContaining({
-              session: expect.objectContaining({ id: "changed", title: "after" }),
+              session: expect.objectContaining({
+                reference: { agentName: "codex", sessionId: "changed" },
+                title: "after",
+              }),
             }),
           ],
           removedSessionIds: [],
@@ -1132,7 +1150,10 @@ describe("AgentSyncEngine", () => {
       }),
     );
     expect(engine.snapshot().sessions).toEqual([
-      expect.objectContaining({ id: "recent", title: "after" }),
+      expect.objectContaining({
+        reference: { agentName: "codex", sessionId: "recent" },
+        title: "after",
+      }),
     ]);
     expect(searchIndex.enqueue).toHaveBeenCalledWith(
       "scan.refresh",
@@ -1161,7 +1182,11 @@ describe("AgentSyncEngine", () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async () =>
-        workerResult({ sessions: [steady], meta: repairedMeta, changedIds: [steady.id] }),
+        workerResult({
+          sessions: [steady],
+          meta: repairedMeta,
+          changedIds: [steady.reference.sessionId],
+        }),
       ),
       shutdown: vi.fn(async () => undefined),
     };
@@ -1183,7 +1208,11 @@ describe("AgentSyncEngine", () => {
           kind: "changes",
           agentName: "codex",
           changes: [
-            expect.objectContaining({ session: expect.objectContaining({ id: "steady" }) }),
+            expect.objectContaining({
+              session: expect.objectContaining({
+                reference: { agentName: "codex", sessionId: "steady" },
+              }),
+            }),
           ],
           meta: repairedMeta,
         }),
@@ -1197,7 +1226,7 @@ describe("AgentSyncEngine", () => {
     const updated = makeSession("changed", "after");
     const retained = makeSession("retained");
     const failure: SessionSourceFailure = {
-      sessionId: retained.id,
+      sessionId: retained.reference.sessionId,
       sourcePath: "/retained",
       stage: "parsing",
       errorClass: "SyntaxError",
@@ -1221,7 +1250,7 @@ describe("AgentSyncEngine", () => {
               changed: { id: "changed", sourcePath: "/changed", sourceFingerprint: "new" },
               retained: { id: "retained", sourcePath: "/retained", sourceFingerprint: "old" },
             },
-            changedIds: [changed.id],
+            changedIds: [changed.reference.sessionId],
             sourceFailures: [failure],
           },
           "partial",
@@ -1236,8 +1265,8 @@ describe("AgentSyncEngine", () => {
     await engine.refresh("codex");
 
     expect(engine.snapshot().sessions).toEqual([
-      expect.objectContaining({ id: updated.id, title: updated.title }),
-      expect.objectContaining({ id: retained.id, title: retained.title }),
+      expect.objectContaining({ reference: updated.reference, title: updated.title }),
+      expect.objectContaining({ reference: retained.reference, title: retained.title }),
     ]);
     expect(searchIndex.enqueue).toHaveBeenCalledWith(
       "scan.refresh",
@@ -1246,7 +1275,10 @@ describe("AgentSyncEngine", () => {
           kind: "changes",
           changes: [
             expect.objectContaining({
-              session: expect.objectContaining({ id: updated.id, title: updated.title }),
+              session: expect.objectContaining({
+                reference: updated.reference,
+                title: updated.title,
+              }),
             }),
           ],
           removedSessionIds: [],
@@ -1280,7 +1312,7 @@ describe("AgentSyncEngine", () => {
         workerResult({
           sessions: [updated],
           meta: { session: { id: "session", sourcePath: "/session", sourceFingerprint: "new" } },
-          changedIds: [updated.id],
+          changedIds: [updated.reference.sessionId],
         }),
       ),
       commit: vi.fn(),
@@ -1306,7 +1338,7 @@ describe("AgentSyncEngine", () => {
       await engine.refresh("codex");
 
       expect(engine.snapshot().byAgent.codex).toEqual([
-        expect.objectContaining({ id: updated.id, title: updated.title }),
+        expect.objectContaining({ reference: updated.reference, title: updated.title }),
       ]);
       expect(engine.status().agentStatuses.codex).toMatchObject({ status: "complete" });
       expect(workerRunner.commit).toHaveBeenCalledWith("codex");
@@ -1332,7 +1364,11 @@ describe("AgentSyncEngine", () => {
     const workerRunner = makeWorkerRunner();
     const { engine } = makeEngine(
       makeAgent({
-        checkForChanges: () => ({ hasChanges: true, changedIds: [updated.id], timestamp: 2 }),
+        checkForChanges: () => ({
+          hasChanges: true,
+          changedIds: [updated.reference.sessionId],
+          timestamp: 2,
+        }),
         incrementalScan: () => [updated],
       }),
       [previous],
@@ -1385,7 +1421,7 @@ describe("AgentSyncEngine", () => {
       .fn()
       .mockRejectedValueOnce(new AgentUnavailableDuringScanError("codex"))
       .mockResolvedValueOnce(
-        workerResult({ sessions: [updated], meta: {}, changedIds: [updated.id] }),
+        workerResult({ sessions: [updated], meta: {}, changedIds: [updated.reference.sessionId] }),
       );
     const warn = vi.spyOn(appLogger, "warn");
     const { engine } = makeEngine(
@@ -1466,7 +1502,7 @@ describe("AgentSyncEngine", () => {
     const agent = makeAgent({
       checkForChanges: () => ({
         hasChanges: true,
-        changedIds: [session.id],
+        changedIds: [session.reference.sessionId],
         timestamp: Date.now(),
       }),
       incrementalScan: () => [session],
@@ -1609,7 +1645,7 @@ describe("AgentSyncEngine", () => {
 
     expect(engine.snapshot().sessions).toEqual([
       expect.objectContaining({
-        id: newSession.id,
+        reference: newSession.reference,
         smart_tags_source_updated_at: newSession.smart_tags_source_updated_at,
       }),
     ]);

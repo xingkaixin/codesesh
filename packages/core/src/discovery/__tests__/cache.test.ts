@@ -31,8 +31,6 @@ describe("session cache integration", () => {
   it("persists, indexes, searches, and restores one session", () => {
     const session: SessionHead = {
       reference: { agentName: "codex", sessionId: "smoke" },
-      id: "smoke",
-      slug: "codex/smoke",
       title: "Cache smoke",
       directory: "/workspace/project",
       project_identity: {
@@ -50,7 +48,7 @@ describe("session cache integration", () => {
     };
     const data: SessionDetail = {
       ...session,
-      reference: { agentName: "codex", sessionId: session.id },
+      reference: { agentName: "codex", sessionId: session.reference.sessionId },
       messages: [
         {
           id: "message",
@@ -67,11 +65,13 @@ describe("session cache integration", () => {
     expect(searchSessions("needle")).toEqual([
       expect.objectContaining({
         reference: { agentName: "codex", sessionId: "smoke" },
-        session: expect.objectContaining({ id: "smoke" }),
+        session: expect.objectContaining({
+          reference: { agentName: "codex", sessionId: "smoke" },
+        }),
       }),
     ]);
     expect(loadCachedSessionData("codex", "smoke")).toMatchObject({
-      id: "smoke",
+      reference: { agentName: "codex", sessionId: "smoke" },
       messages: [{ id: "message" }],
     });
 
@@ -96,8 +96,6 @@ describe("session cache integration", () => {
   it("merges a partial snapshot without deleting data outside its window", () => {
     const old: SessionHead = {
       reference: { agentName: "codex", sessionId: "old" },
-      id: "old",
-      slug: "codex/old",
       title: "Old session",
       directory: "/workspace/project",
       project_identity: {
@@ -117,8 +115,6 @@ describe("session cache integration", () => {
     const recent: SessionHead = {
       ...old,
       reference: { agentName: "codex", sessionId: "recent" },
-      id: "recent",
-      slug: "codex/recent",
       title: "Recent session",
       time_created: 2,
       time_updated: 2,
@@ -165,14 +161,20 @@ describe("session cache integration", () => {
     saveCachedSessions("codex", [updatedRecent], {}, { completeness: "partial" });
 
     expect(loadCachedSessions("codex")).toMatchObject({
-      sessions: [{ id: "recent", title: "Updated recent" }, { id: "old" }],
+      sessions: [
+        {
+          reference: { agentName: "codex", sessionId: "recent" },
+          title: "Updated recent",
+        },
+        { reference: { agentName: "codex", sessionId: "old" } },
+      ],
       meta: { old: { sourcePath: "/sessions/old.jsonl" } },
     });
     expect(loadCachedSessionData("codex", "old")).toMatchObject({
       messages: [{ id: "old-user" }, { id: "old-tool" }],
       file_activity: [{ path: "src/legacy.ts" }],
     });
-    expect(searchSessions("historical-window-needle")[0]?.session.id).toBe("old");
+    expect(searchSessions("historical-window-needle")[0]?.session.reference.sessionId).toBe("old");
 
     saveCachedSessions("codex", [updatedRecent]);
 

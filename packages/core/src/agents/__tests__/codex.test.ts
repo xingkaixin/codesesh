@@ -35,8 +35,6 @@ let tempDirs: string[] = [];
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {
     reference: { agentName: "codex", sessionId: id },
-    id,
-    slug: `codex/${id}`,
     title: id,
     directory: "/tmp/project",
     time_created: 1000,
@@ -513,7 +511,7 @@ describe("CodexAgent cache refresh", () => {
       ["019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb", "019dcccc-cccc-7ccc-cccc-cccccccccccc"],
     );
 
-    expect(sessions.map((session: SessionHead) => session.id).sort()).toEqual([
+    expect(sessions.map((session: SessionHead) => session.reference.sessionId).sort()).toEqual([
       "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
       "019dcccc-cccc-7ccc-cccc-cccccccccccc",
     ]);
@@ -1134,7 +1132,7 @@ describe("CodexAgent cache refresh", () => {
     );
 
     expect(head).toMatchObject({
-      id: sessionId,
+      reference: { agentName: "codex", sessionId },
       title: "Implement parser coverage",
       directory: "/tmp/project",
       stats: {
@@ -1560,7 +1558,7 @@ describe("CodexAgent subagent folding", () => {
     agent.sessionIndexCache = new Map();
 
     const heads = agent.scan({ from: 0 });
-    expect(heads.map((h: SessionHead) => h.id)).toEqual([PARENT_ID, CHILD_ID]);
+    expect(heads.map((h: SessionHead) => h.reference.sessionId)).toEqual([PARENT_ID, CHILD_ID]);
     expect(heads[0].stats.total_input_tokens).toBe(100);
     expect(heads[0].stats.total_output_tokens).toBe(20);
     expect(heads[1].parent_reference).toEqual({ agentName: "codex", sessionId: PARENT_ID });
@@ -1839,7 +1837,7 @@ describe("CodexAgent subagent folding", () => {
     agent.sessionIndexCache = new Map();
 
     const [head] = agent.scan({ from: 0 });
-    expect(head.id).toBe(PARENT_ID);
+    expect(head.reference.sessionId).toBe(PARENT_ID);
     expect(head.stats.total_input_tokens).toBe(100);
     expect(head.stats.total_output_tokens).toBe(20);
   });
@@ -1919,7 +1917,7 @@ describe("CodexAgent subagent folding", () => {
 
     const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
     expect(agent.scanSessionSource(childFile)).toMatchObject({
-      id: CHILD_ID,
+      reference: { agentName: "codex", sessionId: CHILD_ID },
       parent_reference: { agentName: "codex", sessionId: PARENT_ID },
     });
   });
@@ -1952,7 +1950,7 @@ describe("CodexAgent subagent folding", () => {
     agent.sessionIndexCache = new Map();
 
     const heads = agent.scan({ from: 0, fast: true });
-    expect(heads.find((head: SessionHead) => head.id === CHILD_ID)).toMatchObject({
+    expect(heads.find((head: SessionHead) => head.reference.sessionId === CHILD_ID)).toMatchObject({
       parent_reference: { agentName: "codex", sessionId: PARENT_ID },
     });
   });

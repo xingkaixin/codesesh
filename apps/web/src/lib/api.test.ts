@@ -46,8 +46,6 @@ describe("fetchSessions", () => {
   it("collects cursor pages and publishes the first page", async () => {
     const nextSession = {
       ...SAMPLE_SESSION_HEAD,
-      id: "next-session",
-      slug: "claudecode/next-session",
     };
     const fetchMock = vi
       .fn()
@@ -75,8 +73,6 @@ describe("fetchSessions", () => {
   it("restarts pagination when the server snapshot changes", async () => {
     const latestSession = {
       ...SAMPLE_SESSION_HEAD,
-      id: "latest-session",
-      slug: "claudecode/latest-session",
     };
     const fetchMock = vi
       .fn()

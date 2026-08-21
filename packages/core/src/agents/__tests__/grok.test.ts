@@ -215,8 +215,7 @@ describe("GrokAgent", () => {
 
     const [head] = agent.scan();
     expect(head).toMatchObject({
-      id: SESSION_ID,
-      slug: `grok/${SESSION_ID}`,
+      reference: { agentName: "grok", sessionId: SESSION_ID },
       title: "Grok session support",
       directory: "/tmp/grok-project",
       parent_reference: { agentName: "grok", sessionId: PARENT_SESSION_ID },

@@ -171,7 +171,9 @@ describe("KimiCodeAgent", () => {
     const changes = agent.checkForChanges(0, heads);
     expect(changes.changedIds).toContain(SESSION_ID);
     const refreshed = agent.incrementalScan(heads, changes.changedIds ?? [], changes.refs);
-    expect(refreshed).toMatchObject([{ id: SESSION_ID, title: "Refresh me" }]);
+    expect(refreshed).toMatchObject([
+      { reference: { agentName: "kimi-code", sessionId: SESSION_ID }, title: "Refresh me" },
+    ]);
     expect(agent.getSessionCacheMeta(SESSION_ID)?.sourceFingerprint).toBe(
       changes.refs?.[0]?.fingerprint,
     );
@@ -288,8 +290,7 @@ describe("KimiCodeAgent", () => {
 
     const [head] = agent.scan();
     expect(head).toMatchObject({
-      id: SESSION_ID,
-      slug: `kimi-code/${SESSION_ID}`,
+      reference: { agentName: "kimi-code", sessionId: SESSION_ID },
       title: "Read package.json",
       directory: "/tmp/renamed-project",
       time_created: 1767225600000,
@@ -428,7 +429,10 @@ describe("KimiCodeAgent", () => {
 
     const refs = agent.listSessionSources();
     expect(agent.incrementalScan([], [emptyId], refs)).toMatchObject([
-      { id: emptyId, stats: { message_count: 1 } },
+      {
+        reference: { agentName: "kimi-code", sessionId: emptyId },
+        stats: { message_count: 1 },
+      },
     ]);
   });
 
@@ -442,8 +446,6 @@ describe("KimiCodeAgent", () => {
     const agent = createAgent(dataRoot);
     const stale = {
       reference: { agentName: "kimi-code", sessionId: SESSION_ID },
-      id: SESSION_ID,
-      slug: `kimi-code/${SESSION_ID}`,
       title: "New Session",
       directory: WORK_DIR,
       time_created: 1767225600000,

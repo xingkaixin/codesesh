@@ -14,8 +14,6 @@ import { buildDashboard } from "../dashboard.js";
 function makeSession(id: string, activity: number): SessionHead {
   return {
     reference: { agentName: "codex", sessionId: id },
-    id,
-    slug: `codex/${id}`,
     title: id,
     directory: "/project",
     time_created: activity,

@@ -194,8 +194,6 @@ class MockAgent extends BaseAgent {
   getSessionData(_sessionId: string): SessionDetail {
     return {
       reference: { agentName: "claudecode", sessionId: "s1" },
-      id: "s1",
-      slug: "claudecode/s1",
       title: "Test Session",
       directory: "/home/user/project",
       time_created: 1000,
@@ -440,7 +438,7 @@ describe("handleGetSessions", () => {
     handleGetSessions(firstContext, source);
 
     const firstPage = firstContext.json.mock.calls[0]![0];
-    expect(firstPage.sessions.map((session: SessionHead) => session.id)).toEqual([
+    expect(firstPage.sessions.map((session: SessionHead) => session.reference.sessionId)).toEqual([
       "first",
       "second",
     ]);
@@ -554,7 +552,7 @@ describe("handleGetSessions", () => {
     handleGetSessions(c, makeScanSource());
     const response = c.json.mock.calls[0]![0];
     expect(response.sessions).toHaveLength(1);
-    expect(response.sessions[0].id).toBe("s1");
+    expect(response.sessions[0].reference.sessionId).toBe("s1");
   });
 
   it("projects a persisted alias without changing the source title", () => {
@@ -576,12 +574,11 @@ describe("handleGetSessions", () => {
     });
   });
 
-  it("uses the authoritative reference when a legacy slug is malformed", () => {
+  it("uses the structured reference to resolve aliases", () => {
     const session = {
       ...makeSession("legacy", {
         reference: { agentName: "unknown", sessionId: "legacy" },
       }),
-      slug: "",
     };
     coreMocks.listSessionAliases.mockReturnValue([
       {
@@ -624,7 +621,7 @@ describe("handleGetSessions", () => {
       resolver,
     );
     const response = c.json.mock.calls[0]![0];
-    expect(response.sessions.map((session: SessionHead) => session.id)).toEqual([
+    expect(response.sessions.map((session: SessionHead) => session.reference.sessionId)).toEqual([
       "exact",
       "child",
       "parent",
@@ -698,7 +695,9 @@ describe("handleGetSessions", () => {
     });
     handleGetSessions(c, makeScanSource({ sessions, byAgent: { claudecode: sessions } }));
     const response = c.json.mock.calls[0]![0];
-    expect(response.sessions.map((session: SessionHead) => session.id)).toEqual(["a"]);
+    expect(response.sessions.map((session: SessionHead) => session.reference.sessionId)).toEqual([
+      "a",
+    ]);
   });
 
   it("filters by from date", () => {
@@ -721,7 +720,7 @@ describe("handleGetSessions", () => {
     );
     const response = c.json.mock.calls[0]![0];
     expect(response.sessions).toHaveLength(1);
-    expect(response.sessions[0].id).toBe("new");
+    expect(response.sessions[0].reference.sessionId).toBe("new");
   });
 
   it("uses activity time instead of creation time for session filters", () => {
@@ -745,7 +744,7 @@ describe("handleGetSessions", () => {
     );
     const response = c.json.mock.calls[0]![0];
     expect(response.sessions).toHaveLength(1);
-    expect(response.sessions[0].id).toBe("old-active");
+    expect(response.sessions[0].reference.sessionId).toBe("old-active");
   });
 
   it("rejects an invalid from date", () => {
@@ -832,12 +831,18 @@ describe("handleSearchSessions", () => {
     );
     coreMocks.executeSessionSearch.mockReturnValue(
       rankedSessions.map((session) => ({
-        reference: { agentName: "claudecode", sessionId: session.id },
+        reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
         session,
       })),
     );
     coreMocks.listSessionAliases.mockReturnValue(
-      aliasSessions.map((session) => makeAlias("claudecode", session.id, `Needle ${session.id}`)),
+      aliasSessions.map((session) =>
+        makeAlias(
+          "claudecode",
+          session.reference.sessionId,
+          `Needle ${session.reference.sessionId}`,
+        ),
+      ),
     );
     const sessions = [...rankedSessions, ...aliasSessions];
     const c = makeMockContext({ query: { q: "needle", limit: "3" } });
@@ -845,7 +850,9 @@ describe("handleSearchSessions", () => {
     handleSearchSessions(c, makeScanSource({ sessions, byAgent: { claudecode: sessions } }));
 
     expect(
-      c.json.mock.calls[0]![0].results.map((result: SearchResult) => result.session.id),
+      c.json.mock.calls[0]![0].results.map(
+        (result: SearchResult) => result.session.reference.sessionId,
+      ),
     ).toEqual(["ranked-1", "ranked-2", "alias-1"]);
   });
 
@@ -859,7 +866,7 @@ describe("handleSearchSessions", () => {
     });
     coreMocks.executeSessionSearch.mockReturnValue(
       rankedSessions.map((session) => ({
-        reference: { agentName: "claudecode", sessionId: session.id },
+        reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
         session,
         snippet: "Ranked match",
         snippetHighlights: [],
@@ -876,7 +883,11 @@ describe("handleSearchSessions", () => {
     handleSearchSessions(c, makeScanSource({ sessions, byAgent: { claudecode: sessions } }));
 
     const results = c.json.mock.calls[0]![0].results as SearchResult[];
-    expect(results.map((result) => result.session.id)).toEqual(["ranked-1", "ranked-2", "alias-1"]);
+    expect(results.map((result) => result.session.reference.sessionId)).toEqual([
+      "ranked-1",
+      "ranked-2",
+      "alias-1",
+    ]);
     expect(results[1]?.matchType).toBe("assistant_reply");
   });
 
@@ -988,7 +999,7 @@ describe("handleSearchSessions", () => {
       expect.objectContaining({ limit: 50 }),
       expect.anything(),
     );
-    expect(c.json.mock.calls[0]![0].results[0].session.id).toBe("s1000");
+    expect(c.json.mock.calls[0]![0].results[0].session.reference.sessionId).toBe("s1000");
   });
 
   it("excludes alias hits outside the requested time window", () => {
@@ -1360,7 +1371,7 @@ describe("handleGetProjects", () => {
     coreMocks.listDashboardCostFacts.mockReturnValue({
       sessions: [
         {
-          reference: { agentName: "agent", sessionId: session.id },
+          reference: { agentName: "agent", sessionId: session.reference.sessionId },
           messageCount: 1,
           untimedMessageCount: 0,
           inputTokens: 10,
@@ -1380,7 +1391,7 @@ describe("handleGetProjects", () => {
       ],
       messages: [
         {
-          reference: { agentName: "agent", sessionId: session.id },
+          reference: { agentName: "agent", sessionId: session.reference.sessionId },
           time: 150,
           inputTokens: 10,
           outputTokens: 5,
@@ -1640,7 +1651,9 @@ describe("handleGetDashboard", () => {
     expect(response.perAgent).toHaveLength(1);
     expect(response.perAgent[0]?.name).toBe("codex");
     expect(
-      response.recentSessions.map((item: { session: SessionHead }) => item.session.id),
+      response.recentSessions.map(
+        (item: { session: SessionHead }) => item.session.reference.sessionId,
+      ),
     ).toEqual(["app-codex"]);
   });
 
@@ -1692,8 +1705,10 @@ describe("handleGetDashboard", () => {
       },
     ]);
     expect(
-      response.recentSessions.map((item: { session: SessionHead }) => item.session.id),
-    ).toEqual(codexSessions.slice(0, 10).map((session) => session.id));
+      response.recentSessions.map(
+        (item: { session: SessionHead }) => item.session.reference.sessionId,
+      ),
+    ).toEqual(codexSessions.slice(0, 10).map((session) => session.reference.sessionId));
   });
 
   it("marks dashboard totals as estimated when any session uses estimated cost", () => {
@@ -1750,7 +1765,7 @@ describe("handleGetDashboard", () => {
 
     const response = c.json.mock.calls[0]![0];
     expect(response.totals.sessions).toBe(1);
-    expect(response.recentSessions[0]?.session.id).toBe("old");
+    expect(response.recentSessions[0]?.session.reference.sessionId).toBe("old");
     expect(response.dailyActivity).toEqual([
       {
         date: "2026-04-20",
@@ -1845,7 +1860,7 @@ describe("handleGetDashboard", () => {
     const response = c.json.mock.calls[0]![0];
     expect(response.totals.sessions).toBe(2);
     expect(response.totals.latestActivity).toBe(staleCreatedRecentlyUpdated.time_updated);
-    expect(response.recentSessions[0]?.session.id).toBe("old-active");
+    expect(response.recentSessions[0]?.session.reference.sessionId).toBe("old-active");
 
     const todayKey = toLocalDateKey(now);
     const todayBucket = response.dailyActivity.find(
@@ -2006,8 +2021,6 @@ describe("handleGetDashboard", () => {
 describe("handleGetSessionData", () => {
   const detail: SessionDetail = {
     reference: { agentName: "claudecode", sessionId: "s1" },
-    id: "s1",
-    slug: "claudecode/s1",
     title: "Test Session",
     directory: "/home/user/project",
     time_created: 1000,
@@ -2116,7 +2129,7 @@ describe("handleGetSessionData", () => {
     }
     json += decoder.decode();
     const payload = JSON.parse(json);
-    expect(payload.id).toBe("s1");
+    expect(payload.reference).toEqual({ agentName: "claudecode", sessionId: "s1" });
     expect(payload.display_title).toBe("Local Alias");
     expect(payload.messages[0].id).toBe("m0");
     expect(payload.messages).toHaveLength(200);

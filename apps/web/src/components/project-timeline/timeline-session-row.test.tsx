@@ -35,8 +35,6 @@ function createRow(overrides: Partial<TimelineRow> = {}): TimelineRow {
 const CHILD = buildSessionTree([
   {
     reference: { agentName: "codex", sessionId: "child" },
-    id: "child",
-    slug: "codex/child",
     title: "Probe the cache",
     directory: "/workspace/a",
     time_created: new Date(2026, 7, 6, 9, 30).getTime(),

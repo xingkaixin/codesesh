@@ -57,14 +57,14 @@ const projectView = {
 const sessionView = {
   mode: "session",
   activeAgentKey: "codex",
-  activeSessionId: codexSession.id,
+  activeSessionId: codexSession.reference.sessionId,
 } satisfies ViewState;
 
 afterEach(cleanup);
 
 function renderModel(initialViewState: ViewState = rootView, indexes = sessionIndexes) {
   const isSessionBookmarked = vi.fn((agentKey, sessionId) => {
-    return agentKey === "codex" && sessionId === codexSession.id;
+    return agentKey === "codex" && sessionId === codexSession.reference.sessionId;
   });
   return renderHook(
     ({ viewState, selectedProjectAgent }) =>

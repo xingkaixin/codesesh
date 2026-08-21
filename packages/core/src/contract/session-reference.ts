@@ -4,12 +4,7 @@ export interface SessionReference {
 }
 
 export interface SessionIdentity {
-  /** The only authoritative session identity. */
   readonly reference: SessionReference;
-  /** @deprecated Compatibility projection of `reference.sessionId`. */
-  readonly id: string;
-  /** @deprecated Compatibility projection serialized from `reference`. */
-  readonly slug: string;
 }
 
 export const UNKNOWN_AGENT_NAME = "unknown";
@@ -44,24 +39,21 @@ export function getSessionReferenceKey(reference: SessionReference): string {
 }
 
 export function createSessionIdentity(reference: SessionReference): SessionIdentity {
-  const normalized = normalizeSessionReference(reference);
   return {
-    reference: normalized,
-    id: normalized.sessionId,
-    slug: formatSessionReference(normalized),
+    reference: normalizeSessionReference(reference),
   };
 }
 
 export function assertSessionIdentity(identity: SessionIdentity, agentName?: string): void {
   const normalized = normalizeSessionReference(identity.reference);
   const expectedAgentName = agentName?.trim().toLowerCase();
-  if (
-    identity.reference.agentName !== normalized.agentName ||
-    identity.id !== normalized.sessionId ||
-    identity.slug !== formatSessionReference(normalized) ||
-    (expectedAgentName != null && normalized.agentName !== expectedAgentName)
-  ) {
-    throw new Error("Session identity fields disagree");
+  if (identity.reference.agentName !== normalized.agentName) {
+    throw new Error("Session reference is not normalized");
+  }
+  if (expectedAgentName != null && normalized.agentName !== expectedAgentName) {
+    throw new Error(
+      `Session reference agent "${normalized.agentName}" does not match "${expectedAgentName}"`,
+    );
   }
 }
 

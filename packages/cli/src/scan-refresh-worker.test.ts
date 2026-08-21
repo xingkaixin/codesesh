@@ -12,8 +12,6 @@ const FIXTURE_DIR = mkdtempSync(join(tmpdir(), "codesesh-scan-refresh-worker-"))
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {
     reference: { agentName: "codex", sessionId: id },
-    id,
-    slug: `codex/${id}`,
     title: id,
     directory: FIXTURE_DIR,
     time_created: 1000,
@@ -114,10 +112,16 @@ describe("finalizeSessions", () => {
     const selected = makeSession("selected");
     const retained = makeSession("retained");
 
-    finalizeSessions(agent, [selected, retained], undefined, undefined, new Set([selected.id]));
+    finalizeSessions(
+      agent,
+      [selected, retained],
+      undefined,
+      undefined,
+      new Set([selected.reference.sessionId]),
+    );
 
     expect(getSessionData).toHaveBeenCalledTimes(1);
-    expect(getSessionData).toHaveBeenCalledWith(selected.id);
+    expect(getSessionData).toHaveBeenCalledWith(selected.reference.sessionId);
   });
 
   it("checkpoints settled sessions from newest to oldest", () => {
@@ -128,7 +132,7 @@ describe("finalizeSessions", () => {
 
     finalizeSessions(agent, [oldest, newest], undefined, (checkpoint) => {
       if (checkpoint.stage === "finalizing") {
-        checkpoints.push(checkpoint.changes.map(({ session }) => session.id));
+        checkpoints.push(checkpoint.changes.map(({ session }) => session.reference.sessionId));
       }
     });
 
@@ -162,7 +166,7 @@ describe("finalizeSessions", () => {
 
     expect(getSessionData).toHaveBeenCalledTimes(1);
     expect(getSessionData).toHaveBeenCalledWith("settled");
-    expect(result.map((session) => session.id)).toEqual(["hot", "settled"]);
+    expect(result.map((session) => session.reference.sessionId)).toEqual(["hot", "settled"]);
     expect(result[0]?.smart_tags).toBeUndefined();
   });
 });

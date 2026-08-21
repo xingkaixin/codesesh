@@ -18,8 +18,6 @@ function createSession(
 ): SessionHead {
   return {
     reference: { agentName: "codex", sessionId: id },
-    id,
-    slug: `codex/${id}`,
     title: id,
     directory: "/workspace/app",
     time_created: activity,
@@ -35,7 +33,7 @@ function createSession(
 }
 
 function sessionIds(sessions: SessionHead[] | undefined): string[] {
-  return sessions?.map((session) => session.id) ?? [];
+  return sessions?.map((session) => session.reference.sessionId) ?? [];
 }
 
 describe("canonical session index", () => {
@@ -59,7 +57,7 @@ describe("canonical session index", () => {
       },
     });
     const path = createSession("path", 200, {
-      slug: "claude/path",
+      reference: { agentName: "claude", sessionId: "path" },
       project_identity: {
         kind: "path",
         key: "github.com/acme/app",
@@ -87,7 +85,7 @@ describe("canonical session index", () => {
       parent_reference: { agentName: "codex", sessionId: "shared-parent" },
     });
     const claudeChild = createSession("claude-child", 200, {
-      slug: "claude/claude-child",
+      reference: { agentName: "claude", sessionId: "claude-child" },
       parent_reference: { agentName: "claude", sessionId: "shared-parent" },
     });
 
@@ -101,30 +99,32 @@ describe("canonical session index", () => {
     ).toEqual([claudeChild]);
   });
 
-  it("indexes by the authoritative reference instead of the compatibility slug", () => {
-    const malformed = createSession("malformed", 100, { slug: "" });
+  it("indexes sessions by their structured reference", () => {
+    const session = createSession("session", 100);
 
-    const index = createSessionIndex([malformed]);
+    const index = createSessionIndex([session]);
 
-    expect(index.byAgent.get("codex")).toEqual([malformed]);
-    expect(index.byRouteKey.get(getSessionRouteKey("codex", "malformed"))).toBe(malformed);
+    expect(index.byAgent.get("codex")).toEqual([session]);
+    expect(index.byRouteKey.get(getSessionRouteKey("codex", "session"))).toBe(session);
   });
 
   it("applies route-keyed changes and removals with wire-event semantics", () => {
     const old = createSession("old", 100);
     const replaced = createSession("same", 200, { title: "Old title" });
     const replacement = createSession("same", 400, { title: "New title" });
-    const added = createSession("added", 300, { slug: "claude/added" });
+    const added = createSession("added", 300, {
+      reference: { agentName: "claude", sessionId: "added" },
+    });
 
     const sessions = applySessionChanges(
       [old, replaced],
       [
         {
-          reference: { agentName: "codex", sessionId: replacement.id },
+          reference: { agentName: "codex", sessionId: replacement.reference.sessionId },
           session: replacement,
         },
         {
-          reference: { agentName: "claude", sessionId: added.id },
+          reference: { agentName: "claude", sessionId: added.reference.sessionId },
           session: added,
         },
       ],
@@ -142,7 +142,10 @@ describe("canonical session index", () => {
     for (let batch = 0; batch < 20; batch += 1) {
       const changedId = `session-${(batch * 7) % 40}`;
       const added = createSession(`added-${batch}`, 1_000 + batch, {
-        slug: `${batch % 2 === 0 ? "codex" : "claude"}/added-${batch}`,
+        reference: {
+          agentName: batch % 2 === 0 ? "codex" : "claude",
+          sessionId: `added-${batch}`,
+        },
       });
       const changes = [
         {
@@ -150,7 +153,7 @@ describe("canonical session index", () => {
           session: createSession(changedId, 500 + batch),
         },
         {
-          reference: { agentName: getSessionAgentKey(added), sessionId: added.id },
+          reference: { agentName: getSessionAgentKey(added), sessionId: added.reference.sessionId },
           session: added,
         },
       ];
@@ -212,9 +215,9 @@ describe("mergeSortedSessions", () => {
       const sorted = sortSessionsByActivity(shards.flat());
 
       // Reference equality, so a tie resolved to a different shard fails here.
-      expect({ seed, ids: merged.map((session) => session.id) }).toEqual({
+      expect({ seed, ids: merged.map((session) => session.reference.sessionId) }).toEqual({
         seed,
-        ids: sorted.map((session) => session.id),
+        ids: sorted.map((session) => session.reference.sessionId),
       });
       expect(merged.every((session, index) => session === sorted[index])).toBe(true);
     }

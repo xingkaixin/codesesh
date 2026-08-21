@@ -22,8 +22,6 @@ function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead 
   const timeCreated = overrides?.time_created ?? 1000;
   return {
     reference: { agentName: "agent", sessionId: id },
-    id,
-    slug: `agent/${id}`,
     title: `Session ${id}`,
     directory: "/home/user/project",
     time_created: timeCreated,
@@ -275,7 +273,6 @@ describe("sessionSignature", () => {
     expectSessionChange((session) => ({
       ...session,
       reference: { agentName: "changed", sessionId: session.reference.sessionId },
-      slug: `changed/${session.reference.sessionId}`,
     }));
   });
 
@@ -345,7 +342,7 @@ describe("sortSessions", () => {
       makeSession("mid", { time_updated: 3000 }),
     ];
     const sorted = sortSessions(sessions);
-    expect(sorted.map((s) => s.id)).toEqual(["new", "mid", "old"]);
+    expect(sorted.map((s) => s.reference.sessionId)).toEqual(["new", "mid", "old"]);
   });
 
   it("falls back to time_created when time_updated is missing", () => {
@@ -354,14 +351,16 @@ describe("sortSessions", () => {
       makeSession("b", { time_created: 1000, time_updated: undefined }),
     ];
     const sorted = sortSessions(sessions);
-    expect(sorted.map((s) => s.id)).toEqual(["a", "b"]);
+    expect(sorted.map((s) => s.reference.sessionId)).toEqual(["a", "b"]);
   });
 
   it("does not mutate the input array", () => {
     const sessions = [makeSession("a", { time_updated: 1 }), makeSession("b", { time_updated: 2 })];
     const original = [...sessions];
     sortSessions(sessions);
-    expect(sessions.map((s) => s.id)).toEqual(original.map((s) => s.id));
+    expect(sessions.map((s) => s.reference.sessionId)).toEqual(
+      original.map((s) => s.reference.sessionId),
+    );
   });
 });
 
@@ -379,7 +378,7 @@ describe("computeSessionDiff", () => {
     const updated = [makeSession("a"), makeSession("b")];
     const diff = computeSessionDiff(cached, updated);
     expect(diff.counts).toEqual({ new: 1, updated: 0, removed: 0 });
-    expect(diff.changes.map((c) => c.session.id)).toEqual(["b"]);
+    expect(diff.changes.map((c) => c.session.reference.sessionId)).toEqual(["b"]);
     expect(diff.changes[0]!.sortIndex).toBe(1);
   });
 
@@ -403,16 +402,17 @@ describe("computeSessionDiff", () => {
     const updated = [makeSession("a")];
     const diff = computeSessionDiff(cached, updated, ["a"]);
     expect(diff.counts.updated).toBe(1);
-    expect(diff.changes.map((c) => c.session.id)).toEqual(["a"]);
+    expect(diff.changes.map((c) => c.session.reference.sessionId)).toEqual(["a"]);
   });
 
   it("accepts a custom signature function", () => {
     const cached = [makeSession("a", { title: "old" })];
     const updated = [makeSession("a", { title: "new" })];
     expect(computeSessionDiff(cached, updated).counts.updated).toBe(1);
-    expect(computeSessionDiff(cached, updated, [], (session) => session.slug).counts.updated).toBe(
-      0,
-    );
+    expect(
+      computeSessionDiff(cached, updated, [], (session) => session.reference.sessionId).counts
+        .updated,
+    ).toBe(0);
   });
 
   describe("signatureCache", () => {

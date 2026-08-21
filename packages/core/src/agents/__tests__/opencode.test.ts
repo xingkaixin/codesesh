@@ -76,7 +76,7 @@ describe("OpenCodeAgent parsing", () => {
     const [head] = agent.scan({ from: 0 });
 
     expect(head).toMatchObject({
-      id: "legacy-session",
+      reference: { agentName: "opencode", sessionId: "legacy-session" },
       title: "Legacy session",
       stats: { message_count: 0 },
     });

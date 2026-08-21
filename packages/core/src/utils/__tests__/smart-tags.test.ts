@@ -5,8 +5,6 @@ import type { SessionDetail } from "../../types/index.js";
 function makeSession(messages: SessionDetail["messages"]): SessionDetail {
   return {
     reference: { agentName: "test", sessionId: "s1" },
-    id: "s1",
-    slug: "test/s1",
     title: "Session",
     directory: "/repo",
     time_created: 1,
