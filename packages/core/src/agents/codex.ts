@@ -1,13 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, basename } from "node:path";
 import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
-import {
-  SingleFileSessionSource,
-  filteredSession,
-  getParsedSession,
-  parsedSession,
-  skippedSession,
-} from "./base.js";
+import { SingleFileSessionSource, filteredSession, parsedSession, skippedSession } from "./base.js";
 import type { ParseSessionResult } from "./base.js";
 import type { Message, SessionHead, SessionDetail, MessagePart } from "../types/index.js";
 import { firstExisting, resolveHomePath } from "../discovery/paths.js";
@@ -905,14 +899,6 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   }
 
   // ---- Session head parsing ----
-
-  protected parseFileSessionHead(filePath: string, options?: AgentScanOptions): SessionHead | null {
-    return this.parseSessionHead(filePath, options);
-  }
-
-  private parseSessionHead(filePath: string, options?: AgentScanOptions): SessionHead | null {
-    return getParsedSession(this.parseFileSessionHeadResult(filePath, options));
-  }
 
   protected override parseFileSessionHeadResult(
     filePath: string,
