@@ -1,6 +1,8 @@
 import { AGENT_CATALOG } from "@codesesh/core/contract";
 
-export type Locale = "en" | "zh";
+export const locales = ["en", "zh"] as const;
+
+export type Locale = (typeof locales)[number];
 
 export type HeadingCopy = string | string[];
 
@@ -21,6 +23,7 @@ export type IconName =
 export interface ProductScene {
   title: string;
   description: string;
+  hint: string;
 }
 
 export interface FeatureItem {
@@ -73,6 +76,18 @@ interface LandingCopy {
   tour: {
     previewLabel: string;
     sampleLabel: string;
+    search: string;
+    range: string;
+    overview: string;
+    projects: string;
+    replay: string;
+    filters: string;
+    visibleStatus: string;
+    userMessages: string;
+    agentResponses: string;
+    toolCalls: string;
+    sampleProjects: string;
+    sampleSessions: string;
   };
   scenes: ProductScene[];
   features: {
@@ -103,10 +118,36 @@ interface LandingCopy {
 
 export const siteUrl = "https://codesesh.xingkaixin.me";
 
-export const localeRoutes = {
-  en: "/",
-  zh: "/zh/",
-} satisfies Record<Locale, string>;
+interface LocaleConfig {
+  route: string;
+  language: string;
+  ogLocale: string;
+  switchLabel: string;
+  primaryNavigationLabel: string;
+  siteControlsLabel: string;
+  footerNavigationLabel: string;
+}
+
+export const localeConfig = {
+  en: {
+    route: "/",
+    language: "en",
+    ogLocale: "en_US",
+    switchLabel: "EN",
+    primaryNavigationLabel: "Primary navigation",
+    siteControlsLabel: "Site controls",
+    footerNavigationLabel: "Footer navigation",
+  },
+  zh: {
+    route: "/zh/",
+    language: "zh-CN",
+    ogLocale: "zh_CN",
+    switchLabel: "中文",
+    primaryNavigationLabel: "主导航",
+    siteControlsLabel: "站点控制",
+    footerNavigationLabel: "页脚导航",
+  },
+} satisfies Record<Locale, LocaleConfig>;
 
 const agentDisplayNames = AGENT_CATALOG.map(({ displayName }) => displayName);
 const agentCount = agentDisplayNames.length;
@@ -153,22 +194,37 @@ export const copy = {
     tour: {
       previewLabel: "CodeSesh 交互式产品示例",
       sampleLabel: "示例数据",
+      search: "搜索示例会话",
+      range: "示例数据时间范围",
+      overview: "概览示例界面",
+      projects: "项目树示例界面",
+      replay: "会话回放示例界面",
+      filters: "切换消息类型的显示与隐藏",
+      visibleStatus: "当前显示 {count} 条消息",
+      userMessages: "用户消息",
+      agentResponses: "Agent 回复",
+      toolCalls: "工具调用",
+      sampleProjects: "示例项目",
+      sampleSessions: "{label}：{count} 个示例会话",
     },
     scenes: [
       {
         title: "打开就知道这周花在哪儿了",
         description:
           "会话、消息、Token、成本与最近活跃都来自同一个本地索引。切换时间窗口，概览同步重算。",
+        hint: "切换时间范围，观察整块面板同步重算",
       },
       {
         title: "会话回到它该在的项目里",
         description:
           "按仓库和项目身份归组，子 Agent 会话保留在父会话下，消息、Token 与成本按层级汇总。",
+        hint: "展开带有 sub 标记的会话，查看子 Agent 记录",
       },
       {
         title: "一次任务的完整路径逐条还原",
         description:
           "消息、工具调用和文件变更按发生顺序呈现，类型过滤与文件追踪帮助你快速定位关键上下文。",
+        hint: "展开工具调用查看输出，也可以从 TOC 隐藏消息类型",
       },
     ],
     features: {
@@ -335,22 +391,37 @@ export const copy = {
     tour: {
       previewLabel: "Interactive CodeSesh product sample",
       sampleLabel: "Sample data",
+      search: "Search sample sessions",
+      range: "Sample data time range",
+      overview: "Overview demo interface",
+      projects: "Project tree demo interface",
+      replay: "Session replay demo interface",
+      filters: "Toggle message types on or off",
+      visibleStatus: "Showing {count} messages",
+      userMessages: "User",
+      agentResponses: "Agent responses",
+      toolCalls: "Tools",
+      sampleProjects: "Sample projects",
+      sampleSessions: "{label}: {count} sample sessions",
     },
     scenes: [
       {
         title: "Open it and see where the week went",
         description:
           "Sessions, messages, tokens, cost, and recent activity come from one local index. Change the time window and the overview recomputes.",
+        hint: "Switch the time range and watch the whole panel recompute",
       },
       {
         title: "Sessions go back where they belong",
         description:
           "Group history by repository and project, keep subagent sessions under their parent, and aggregate messages, tokens, and cost by hierarchy.",
+        hint: "Expand a session marked sub to inspect its child agent work",
       },
       {
         title: "Replay the complete path of a task",
         description:
           "Read messages, tool calls, and file changes in sequence, then use type filters and file tracking to find the context that matters.",
+        hint: "Expand tool calls for output, or use the TOC to hide message types",
       },
     ],
     features: {
