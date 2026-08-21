@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { join, basename } from "node:path";
+import { join, basename, dirname } from "node:path";
 import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import { SingleFileSessionSource, filteredSession, parsedSession, skippedSession } from "./base.js";
 import type { ParseSessionResult } from "./base.js";
@@ -403,7 +403,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   readonly name = AGENT_METADATA.name;
   readonly displayName = AGENT_METADATA.displayName;
 
-  private basePath: string | null = null;
+  private basePath: string | null = this.configuredSourceRoot;
   private sessionIndexCache = new Map<string, string>();
   private sessionIndexMtime: number | null | undefined;
   private sessionIndexPath: string | undefined;
@@ -420,10 +420,20 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   // ---- BaseAgent implementation ----
 
   private findBasePath(): string | null {
-    return firstExisting(join(resolveCodexDataRoot(), "sessions"));
+    return this.configuredSourceRoot ?? firstExisting(join(resolveCodexDataRoot(), "sessions"));
   }
 
   getSessionWatchPlan() {
+    if (this.configuredSourceRoot) {
+      const root = dirname(this.configuredSourceRoot);
+      return {
+        status: "supported" as const,
+        targets: [
+          { root, path: this.configuredSourceRoot },
+          { root, path: join(root, "session_index.jsonl") },
+        ],
+      };
+    }
     const dataRoot = resolveCodexDataRoot();
     return {
       status: "supported" as const,

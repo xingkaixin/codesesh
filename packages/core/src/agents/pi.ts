@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import { SingleFileSessionSource, filteredSession, parsedSession } from "./base.js";
 import type {
@@ -133,13 +133,22 @@ export class PiAgent extends SingleFileSessionSource<SessionMeta> {
   readonly name = AGENT_METADATA.name;
   readonly displayName = AGENT_METADATA.displayName;
 
-  private basePath: string | null = null;
+  private basePath: string | null = this.configuredSourceRoot;
 
   private findBasePath(): string | null {
-    return firstExisting(join(resolvePiDataRoot(), "agent", "sessions"), "data/pi");
+    return (
+      this.configuredSourceRoot ??
+      firstExisting(join(resolvePiDataRoot(), "agent", "sessions"), "data/pi")
+    );
   }
 
   getSessionWatchPlan() {
+    if (this.configuredSourceRoot) {
+      return {
+        status: "supported" as const,
+        targets: [{ root: dirname(this.configuredSourceRoot), path: this.configuredSourceRoot }],
+      };
+    }
     const dataRoot = resolvePiDataRoot();
     return {
       status: "supported" as const,

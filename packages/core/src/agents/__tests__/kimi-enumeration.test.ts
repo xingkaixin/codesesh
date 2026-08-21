@@ -35,13 +35,10 @@ const mockedOpenSync = vi.mocked(openSync);
 let tempDirs: string[] = [];
 
 function createAgent(basePath: string): KimiAgent {
-  const agent = new KimiAgent() as never as {
-    basePath: string;
-    projectMap: Map<string, string>;
-  };
-  agent.basePath = basePath;
-  agent.projectMap = new Map([[PROJECT_HASH, PROJECT_DIR]]);
-  return agent as never as KimiAgent;
+  return new KimiAgent({
+    sourceRoot: basePath,
+    projectDirectories: new Map([[PROJECT_HASH, PROJECT_DIR]]),
+  });
 }
 
 function createSessionDir(basePath: string, id: string, customTitle: string): string {
@@ -249,8 +246,11 @@ describe("KimiAgent stats extraction", () => {
       ].join("\n"),
     );
 
-    const agent = createAgent(basePath);
-    (agent as unknown as { defaultModel: string | null }).defaultModel = "kimi-for-coding";
+    const agent = new KimiAgent({
+      sourceRoot: basePath,
+      projectDirectories: new Map([[PROJECT_HASH, PROJECT_DIR]]),
+      defaultModel: "kimi-for-coding",
+    });
     const [head] = agent.scan();
     const marks = markReads();
     const detail = agent.getSessionData("detail-reads");

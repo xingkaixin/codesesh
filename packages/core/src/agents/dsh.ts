@@ -8,7 +8,7 @@
  * those fields say it does.
  */
 import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import {
   FileSystemSessionSource,
@@ -95,10 +95,10 @@ export class DshAgent extends FileSystemSessionSource<DshSessionMeta> {
   readonly displayName = AGENT_METADATA.displayName;
 
   getSessionWatchPlan(): SessionWatchPlan {
-    const dataRoot = resolveDshDataRoot();
+    const dataRoot = this.dataRoot();
     return {
       status: "supported",
-      targets: [{ root: dataRoot, path: dshSessionsRoot(dataRoot) }],
+      targets: [{ root: dataRoot, path: this.sessionsRoot() }],
     };
   }
 
@@ -113,7 +113,7 @@ export class DshAgent extends FileSystemSessionSource<DshSessionMeta> {
   }
 
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {
-    const sessionsRoot = dshSessionsRoot(resolveDshDataRoot());
+    const sessionsRoot = this.sessionsRoot();
     const refs: SessionSourceRef[] = [];
     const seenIds = new Map<string, string>();
 
@@ -233,7 +233,7 @@ export class DshAgent extends FileSystemSessionSource<DshSessionMeta> {
   }
 
   private parseSession(sourcePath: string, encoding: DshEncoding): ParsedDshSession {
-    const dataRoot = resolveDshDataRoot();
+    const dataRoot = this.dataRoot();
     const { header, events } = readDshSessionLog(sourcePath, encoding);
     return {
       header,
@@ -256,7 +256,7 @@ export class DshAgent extends FileSystemSessionSource<DshSessionMeta> {
    * holding both physical encodings (which one is current is unknowable).
    */
   private listArtifacts(): DshArtifact[] {
-    const sessionsRoot = dshSessionsRoot(resolveDshDataRoot());
+    const sessionsRoot = this.sessionsRoot();
     const artifacts: DshArtifact[] = [];
     let rootEncoding: DshEncoding | null = null;
 
@@ -286,6 +286,14 @@ export class DshAgent extends FileSystemSessionSource<DshSessionMeta> {
     }
 
     return artifacts;
+  }
+
+  private dataRoot(): string {
+    return this.configuredSourceRoot ? dirname(this.configuredSourceRoot) : resolveDshDataRoot();
+  }
+
+  private sessionsRoot(): string {
+    return this.configuredSourceRoot ?? dshSessionsRoot(this.dataRoot());
   }
 
   private listDirectories(directory: string, tolerateMissing: boolean): string[] {

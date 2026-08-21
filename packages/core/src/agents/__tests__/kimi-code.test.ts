@@ -29,9 +29,7 @@ let tempDirs: string[] = [];
 const mockedReadFileSync = vi.mocked(readFileSync);
 
 function createAgent(dataRoot: string): KimiCodeAgent {
-  const agent = new KimiCodeAgent() as never as { basePath: string };
-  agent.basePath = join(dataRoot, "sessions");
-  return agent as never as KimiCodeAgent;
+  return new KimiCodeAgent({ sourceRoot: join(dataRoot, "sessions") });
 }
 
 function createSession(

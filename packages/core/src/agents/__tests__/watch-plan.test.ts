@@ -1,13 +1,54 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "../register.js";
 import { createRegisteredAgents, resolveAgentRoots } from "../registry.js";
+import { ClaudeCodeAgent } from "../claudecode.js";
+import { CodexAgent } from "../codex.js";
+import { DshAgent } from "../dsh.js";
+import { GrokAgent } from "../grok.js";
+import { KimiAgent } from "../kimi.js";
+import { KimiCodeAgent } from "../kimi-code.js";
+import { PiAgent } from "../pi.js";
 
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
 describe("registered agent session watch plans", () => {
+  it("watches explicitly configured source roots", () => {
+    const root = "/tmp/custom-agent-root";
+    const sourceRoot = join(root, "sessions");
+    const watchRoot = dirname(sourceRoot);
+
+    expect(new CodexAgent({ sourceRoot }).getSessionWatchPlan()).toEqual({
+      status: "supported",
+      targets: [
+        { root: watchRoot, path: sourceRoot },
+        { root: watchRoot, path: join(watchRoot, "session_index.jsonl") },
+      ],
+    });
+    expect(new KimiCodeAgent({ sourceRoot }).getSessionWatchPlan()).toEqual({
+      status: "supported",
+      targets: [
+        { root: watchRoot, path: sourceRoot },
+        { root: watchRoot, path: join(watchRoot, "session_index.jsonl") },
+      ],
+    });
+
+    for (const agent of [
+      new ClaudeCodeAgent({ sourceRoot }),
+      new DshAgent({ sourceRoot }),
+      new GrokAgent({ sourceRoot }),
+      new KimiAgent({ sourceRoot }),
+      new PiAgent({ sourceRoot }),
+    ]) {
+      expect(agent.getSessionWatchPlan()).toEqual({
+        status: "supported",
+        targets: [{ root: watchRoot, path: sourceRoot }],
+      });
+    }
+  });
+
   it("requires every adapter to declare a closed watch capability state", () => {
     const agents = createRegisteredAgents();
 
