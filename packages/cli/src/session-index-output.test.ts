@@ -117,10 +117,18 @@ describe("cache failure diagnostics", () => {
   it("reports degraded persistence without treating the scan as failed", () => {
     expect(
       formatCacheFailureDiagnostics({
-        cacheFailures: { codex: { agentName: "codex" } },
+        cacheFailures: { codex: { agentName: "codex", operation: "write" } },
       }),
     ).toEqual([
       "[codex] Cache persistence failed; serving in-memory results without advancing the durable baseline",
     ]);
+  });
+
+  it("reports a cache read failure separately from an empty cache", () => {
+    expect(
+      formatCacheFailureDiagnostics({
+        cacheFailures: { codex: { agentName: "codex", operation: "read" } },
+      }),
+    ).toEqual(["[codex] Cache read failed; durable baseline is unavailable"]);
   });
 });

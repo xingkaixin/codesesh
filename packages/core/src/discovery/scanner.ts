@@ -35,9 +35,9 @@ import {
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import { getPricingGeneration } from "../pricing/index.js";
 import {
-  loadCachedSessions,
   markAgentCacheInitialized,
   markAgentFullSyncCompleted,
+  readCachedSessions,
   saveCachedSessionChanges,
   saveCachedSessions,
   type CachedResult,
@@ -87,6 +87,7 @@ export interface LiveSnapshot {
 
 export interface AgentCacheFailure {
   agentName: string;
+  operation: "read" | "write";
 }
 
 /** 扫描状态更新回调 */
@@ -173,6 +174,17 @@ interface FailedAgentScanResult {
 }
 
 type AgentScanResult = SuccessfulAgentScanResult | FailedAgentScanResult;
+
+interface AgentScanExecution {
+  agentName: string;
+  result: AgentScanResult | null;
+  cacheReadFailed: boolean;
+}
+
+interface CacheReadState {
+  attempted: boolean;
+  failed: boolean;
+}
 
 function identifiedSessionHeads(sessions: SessionHead[]): IdentifiedSessionHead[] {
   return sessions.map((session) => {
@@ -624,6 +636,7 @@ async function refreshCachedEnumeratedAgent(
 async function scanAgentSmart(
   agent: BaseAgent,
   options: ScanOptions,
+  cacheReadState: CacheReadState,
   onProgress?: (progress: ScanProgress) => void,
 ): Promise<AgentScanResult | null> {
   const agentStart = performance.now();
@@ -631,10 +644,17 @@ async function scanAgentSmart(
   const useCache = options.useCache ?? true;
 
   // 1. 尝试加载缓存
+  let cached: CachedResult | null = null;
   if (useCache) {
     const t0 = performance.now();
-    const cached = loadCachedSessions(agent.name);
+    cacheReadState.attempted = true;
+    const outcome = readCachedSessions(agent.name);
     timing.cacheLoad = performance.now() - t0;
+    if (outcome.status === "failed") {
+      cacheReadState.failed = true;
+    } else {
+      cached = outcome.value;
+    }
 
     if (cached !== null) {
       // 恢复元数据
@@ -776,7 +796,7 @@ async function scanAgentSmart(
   }
 
   // 无缓存或缓存失效，执行完整扫描
-  return scanAgentFull(agent, options, onProgress, timing, agentStart);
+  return scanAgentFull(agent, options, cached, cacheReadState, onProgress, timing, agentStart);
 }
 
 /**
@@ -785,6 +805,8 @@ async function scanAgentSmart(
 async function scanAgentFull(
   agent: BaseAgent,
   options: ScanOptions,
+  cached: CachedResult | null,
+  cacheReadState: CacheReadState,
   onProgress?: (progress: ScanProgress) => void,
   timing: AgentScanTiming = { total: 0 },
   agentStart = performance.now(),
@@ -805,7 +827,15 @@ async function scanAgentFull(
     let sourceFailures: SessionSourceFailure[] = [];
     const scanPlan = planAgentScan(agent.sessionSourceAccess, "reload");
     if (scanPlan.kind === "synchronize") {
-      const cached = loadCachedSessions(agent.name);
+      if (!cacheReadState.attempted) {
+        cacheReadState.attempted = true;
+        const outcome = readCachedSessions(agent.name);
+        if (outcome.status === "failed") {
+          cacheReadState.failed = true;
+        } else {
+          cached = outcome.value;
+        }
+      }
       const synchronization = scanPlan.source.synchronize(
         { sessions: cached?.sessions ?? [], meta: cached?.meta ?? {} },
         { kind: scanPlan.requestKind, scanOptions: agentScanOptions },
@@ -884,15 +914,33 @@ async function scanAgentOutcome(
   agent: BaseAgent,
   options: ScanOptions,
   onProgress?: (progress: ScanProgress) => void,
-): Promise<AgentScanResult | null> {
+): Promise<AgentScanExecution> {
   const startedAt = performance.now();
+  const cacheReadState: CacheReadState = { attempted: false, failed: false };
   try {
-    return await scanAgentSmart(agent, options, onProgress);
+    return {
+      agentName: agent.name,
+      result: await scanAgentSmart(agent, options, cacheReadState, onProgress),
+      cacheReadFailed: cacheReadState.failed,
+    };
   } catch (error) {
-    const cached = (options.useCache ?? true) ? loadCachedSessions(agent.name) : null;
+    let cached: CachedResult | null = null;
+    if (options.useCache ?? true) {
+      cacheReadState.attempted = true;
+      const outcome = readCachedSessions(agent.name);
+      if (outcome.status === "failed") {
+        cacheReadState.failed = true;
+      } else {
+        cached = outcome.value;
+      }
+    }
     if (cached) restoreAgentCacheMeta(agent, cached);
     const failure = createAgentScanFailure(agent.name, "scanning sessions", error);
-    return finalizeAgentScanFailure(agent, failure, options, cached, { total: 0 }, startedAt);
+    return {
+      agentName: agent.name,
+      result: finalizeAgentScanFailure(agent, failure, options, cached, { total: 0 }, startedAt),
+      cacheReadFailed: cacheReadState.failed,
+    };
   }
 }
 
@@ -931,7 +979,14 @@ export async function scanSessions(
 
   // 处理结果
   const timings: Record<string, AgentScanTiming> = {};
-  for (const result of results) {
+  for (const execution of results) {
+    const { result } = execution;
+    if (execution.cacheReadFailed) {
+      cacheFailures[execution.agentName] = {
+        agentName: execution.agentName,
+        operation: "read",
+      };
+    }
     if (result) {
       availableAgents.push(result.agent);
       if (result.status === "failed") {
@@ -944,7 +999,10 @@ export async function scanSessions(
         byAgent[result.agent.name] = result.heads;
         allSessions.push(...result.heads);
         if (result.cachePersistence === "failed") {
-          cacheFailures[result.agent.name] = { agentName: result.agent.name };
+          cacheFailures[result.agent.name] = {
+            agentName: result.agent.name,
+            operation: "write",
+          };
         }
       }
       if (result.timing) {

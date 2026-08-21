@@ -8,9 +8,10 @@ import { commitDurableSessionPublication } from "../publication.js";
 import { listCachedProjectGroups } from "../project-groups.js";
 import {
   loadCachedSessionData,
-  loadCachedSessions,
+  readCachedSessions,
   saveCachedSessionChanges,
   saveCachedSessions,
+  type CachedResult,
 } from "../sessions.js";
 import {
   searchSessions,
@@ -26,6 +27,12 @@ import type { IdentifiedSessionHead, SessionDetail, SessionHead } from "../../..
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-test-"));
 const SEARCH_INDEX_BATCH_TEST_TIMEOUT_MS = 30_000;
+
+function readCachedValue(agentName: string): CachedResult | null {
+  const outcome = readCachedSessions(agentName);
+  expect(outcome.status).toBe("success");
+  return outcome.status === "success" ? outcome.value : null;
+}
 
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
@@ -246,7 +253,7 @@ describe("durable publication", () => {
     );
 
     expect(result).toMatchObject({ status: "rolled-back", stage: "cache" });
-    expect(loadCachedSessions("codex")?.sessions[0]?.title).toBe(original.title);
+    expect(readCachedValue("codex")?.sessions[0]?.title).toBe(original.title);
     expect(searchSessions("head old content")).toHaveLength(1);
     expect(searchSessions("head updated content")).toHaveLength(0);
   });
@@ -300,8 +307,8 @@ describe("durable publication", () => {
       publicationId: "scan.refresh:codex:1",
     });
 
-    expect(loadCachedSessions("codex")?.sessions[0]?.title).toBe(original.title);
-    expect(loadCachedSessions("codex")?.meta.atomic?.sourcePath).toBe("/old");
+    expect(readCachedValue("codex")?.sessions[0]?.title).toBe(original.title);
+    expect(readCachedValue("codex")?.meta.atomic?.sourcePath).toBe("/old");
     expect(searchSessions("old content")).toHaveLength(1);
     expect(searchSessions("updated content")).toHaveLength(0);
     expect(diagnosticEvents).toContainEqual({
@@ -332,8 +339,8 @@ describe("durable publication", () => {
     );
 
     expect(retried.status).toBe("committed");
-    expect(loadCachedSessions("codex")?.sessions[0]?.title).toBe(updated.title);
-    expect(loadCachedSessions("codex")?.meta.atomic?.sourcePath).toBe("/updated");
+    expect(readCachedValue("codex")?.sessions[0]?.title).toBe(updated.title);
+    expect(readCachedValue("codex")?.meta.atomic?.sourcePath).toBe("/updated");
     expect(searchSessions("updated content")).toHaveLength(1);
   });
 
@@ -377,7 +384,7 @@ describe("durable publication", () => {
     );
 
     expect(result).toMatchObject({ status: "rolled-back", stage: "commit" });
-    expect(loadCachedSessions("codex")?.sessions[0]?.title).toBe(original.title);
+    expect(readCachedValue("codex")?.sessions[0]?.title).toBe(original.title);
     expect(searchSessions("commit old content")).toHaveLength(1);
     expect(searchSessions("commit updated content")).toHaveLength(0);
     const verifyDb = new Database(getCachePath(), { readonly: true });
@@ -413,7 +420,7 @@ describe("durable publication", () => {
         indexed: 70,
         skipped: 0,
       });
-      expect(loadCachedSessions("codex")?.sessions).toHaveLength(70);
+      expect(readCachedValue("codex")?.sessions).toHaveLength(70);
       expect(searchSessions("bulk-42 bulk needle")).toHaveLength(1);
       expect(
         withCacheDb((db) =>
@@ -542,7 +549,7 @@ describe("durable publication", () => {
 
       expect(result).toMatchObject({ status: "rolled-back", stage: "cache" });
       expect(
-        loadCachedSessions("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
+        readCachedValue("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
       ).toEqual([historical.reference.sessionId]);
       expect(searchSessions("rollback-42 rollback content")).toHaveLength(0);
       const verifyDb = new Database(getCachePath(), { readonly: true });
@@ -623,7 +630,7 @@ describe("durable publication", () => {
       );
 
       expect(failed).toMatchObject({ status: "rolled-back", stage: "cache" });
-      expect(loadCachedSessions("codex")?.sessions[0]?.title).toBe(originals[0]?.title);
+      expect(readCachedValue("codex")?.sessions[0]?.title).toBe(originals[0]?.title);
       expect(loadCachedSessionData("codex", "aligned-0")?.messages[0]?.parts).toEqual([
         { type: "text", text: "aligned-0 old detail" },
       ]);
@@ -740,10 +747,10 @@ describe("durable publication", () => {
 
     expect(partial.status).toBe("committed");
     expect(
-      loadCachedSessions("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
+      readCachedValue("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
     ).toEqual(expect.arrayContaining([recent.reference.sessionId, historical.reference.sessionId]));
     expect(
-      loadCachedSessions("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
+      readCachedValue("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
     ).not.toContain(removed.reference.sessionId);
     expect(searchSessions("historical publication")).toHaveLength(1);
     expect(searchSessions("removed publication")).toHaveLength(0);
@@ -762,7 +769,7 @@ describe("durable publication", () => {
 
     expect(incremental.status).toBe("committed");
     expect(
-      loadCachedSessions("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
+      readCachedValue("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
     ).toEqual([historical.reference.sessionId]);
     expect(searchSessions("historical incremental")).toHaveLength(1);
     expect(searchSessions("recent partial")).toHaveLength(0);
@@ -2267,10 +2274,10 @@ describe("searchSessions", () => {
     }
     setSchemaEnsuredPath(null);
 
-    // loadCachedSessions opens the writable connection, so it's what actually
+    // readCachedSessions opens the writable connection, so it's what actually
     // runs the pending migration; listCachedProjectGroups now reads through
     // the read-only connection and must not trigger migrations itself.
-    expect(loadCachedSessions("codex")?.sessions[0]?.project_identity).toEqual({
+    expect(readCachedValue("codex")?.sessions[0]?.project_identity).toEqual({
       kind: "synthetic",
       key: "codex:scratch",
       displayName: "Chats",
@@ -2438,12 +2445,12 @@ describe("searchSessions", () => {
     );
 
     expect(
-      loadCachedSessions("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
+      readCachedValue("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
     ).toEqual(expect.arrayContaining(["old", "recent"]));
     expect(
-      loadCachedSessions("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
+      readCachedValue("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
     ).not.toContain("removed");
-    expect(loadCachedSessions("codex")?.meta.old).toEqual(meta.old);
+    expect(readCachedValue("codex")?.meta.old).toEqual(meta.old);
     expect(loadCachedSessionData("codex", "old")?.messages).toHaveLength(1);
     expect(
       searchSessions("historicalscope").map(({ session }) => session.reference.sessionId),

@@ -1,6 +1,7 @@
 import {
-  loadCachedSessions,
+  readCachedSessions,
   readPendingSearchIndexMaintenance,
+  type CachedResult,
   type IdentifiedSessionHead,
   type PersistedSessionHeadChange,
 } from "@codesesh/core/runtime";
@@ -18,10 +19,7 @@ export class SearchIndexMaintenanceScheduler {
   private readonly pendingAgents = new Set<string>();
   private readonly completedAgents = new Set<string>();
   private readonly failedAgents = new Set<string>();
-  private readonly cachedSessionsByAgent = new Map<
-    string,
-    NonNullable<ReturnType<typeof loadCachedSessions>>
-  >();
+  private readonly cachedSessionsByAgent = new Map<string, CachedResult>();
   private currentAgent: string | undefined;
   private remaining: number | undefined;
   private pumpPromise: Promise<void> | null = null;
@@ -94,7 +92,14 @@ export class SearchIndexMaintenanceScheduler {
     this.remaining = pending.total;
     this.publishStatus();
 
-    const cached = this.cachedSessionsByAgent.get(agentName) ?? loadCachedSessions(agentName);
+    let cached = this.cachedSessionsByAgent.get(agentName);
+    if (!cached) {
+      const outcome = readCachedSessions(agentName);
+      if (outcome.status === "failed") {
+        throw new Error(`Session cache read failed for ${agentName}`);
+      }
+      cached = outcome.value ?? undefined;
+    }
     if (!cached) throw new Error(`Session cache is unavailable for ${agentName}`);
     this.cachedSessionsByAgent.set(agentName, cached);
     const sessionsById = new Map(

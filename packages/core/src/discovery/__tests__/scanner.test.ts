@@ -235,7 +235,7 @@ describe("filterSessions", () => {
 // Mock cache and perf to isolate scanner logic
 
 vi.mock("../cache/sessions.js", () => ({
-  loadCachedSessions: vi.fn(() => null),
+  readCachedSessions: vi.fn(() => ({ status: "success", value: null })),
   markAgentCacheInitialized: vi.fn(),
   markAgentFullSyncCompleted: vi.fn(),
   saveCachedSessionChanges: vi.fn(),
@@ -261,22 +261,27 @@ vi.mock("../../agents/index.js", async (importOriginal) => {
 import { ensureSessionTagsSync, finalizeAgentScan, scanSessions } from "../scanner.js";
 import { createRegisteredAgents } from "../../agents/index.js";
 import {
-  loadCachedSessions,
+  readCachedSessions,
+  type CachedResult,
   saveCachedSessionChanges,
   saveCachedSessions,
 } from "../cache/sessions.js";
 
 const mockedCreateRegisteredAgents = vi.mocked(createRegisteredAgents);
-const mockedLoadCachedSessions = vi.mocked(loadCachedSessions);
+const mockedReadCachedSessions = vi.mocked(readCachedSessions);
 const mockedSaveCachedSessionChanges = vi.mocked(saveCachedSessionChanges);
 const mockedSaveCachedSessions = vi.mocked(saveCachedSessions);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedLoadCachedSessions.mockReturnValue(null);
+  mockCachedSessions(null);
   mockedSaveCachedSessionChanges.mockReturnValue(true);
   mockedSaveCachedSessions.mockReturnValue(true);
 });
+
+function mockCachedSessions(value: CachedResult | null): void {
+  mockedReadCachedSessions.mockReturnValue({ status: "success", value });
+}
 
 function createTestAgent(overrides: {
   name: string;
@@ -608,7 +613,7 @@ describe("scanSessions", () => {
   });
 
   it("retains cached sessions when an agent is unavailable", async () => {
-    mockedLoadCachedSessions.mockReturnValue({
+    mockCachedSessions({
       sessions: [withCurrentIdentity(makeSession("cached"))],
       meta: {},
       timestamp: 123,
@@ -735,7 +740,7 @@ describe("scanSessions", () => {
 
   it("retains a cached baseline when source enumeration fails", async () => {
     const cached = withCurrentIdentity(makeSession("cached"));
-    mockedLoadCachedSessions.mockReturnValue({
+    mockCachedSessions({
       sessions: [cached],
       meta: { cached: { id: "cached", sourcePath: "/sessions/cached" } },
       timestamp: 123,
@@ -781,7 +786,7 @@ describe("scanSessions", () => {
 
   it("retains the cached baseline when change detection fails", async () => {
     const cached = withCurrentIdentity(makeSession("cached"));
-    mockedLoadCachedSessions.mockReturnValue({ sessions: [cached], meta: {}, timestamp: 123 });
+    mockCachedSessions({ sessions: [cached], meta: {}, timestamp: 123 });
     const agent = createTestAgent({
       name: "test",
       available: true,
@@ -838,7 +843,7 @@ describe("scanSessions", () => {
   it("uses an explicitly declared enumerated source without relying on class identity", async () => {
     const cached = withCurrentIdentity(makeSession("cached"));
     const refreshed = makeSession("refreshed");
-    mockedLoadCachedSessions.mockReturnValue({
+    mockCachedSessions({
       sessions: [cached],
       meta: {},
       timestamp: 123,
@@ -878,7 +883,7 @@ describe("scanSessions", () => {
 
   it("does not publish a false empty baseline when a forced scan fails", async () => {
     const cached = withCurrentIdentity(makeSession("cached"));
-    mockedLoadCachedSessions.mockReturnValue({ sessions: [cached], meta: {}, timestamp: 123 });
+    mockCachedSessions({ sessions: [cached], meta: {}, timestamp: 123 });
     mockedCreateRegisteredAgents.mockReturnValue([
       createTestAgent({ name: "test", available: true, sessions: [], shouldThrow: true }),
     ]);
@@ -991,7 +996,7 @@ describe("scanSessions", () => {
         sourceFingerprint: "old",
       },
     };
-    mockedLoadCachedSessions.mockReturnValue({
+    mockCachedSessions({
       sessions: [cached],
       meta,
       timestamp: Date.now(),
@@ -1014,7 +1019,7 @@ describe("scanSessions", () => {
 
   it("uses cache when available", async () => {
     const cachedSessions = [withCurrentIdentity(makeSession("cached"))];
-    mockedLoadCachedSessions.mockReturnValue({
+    mockCachedSessions({
       sessions: cachedSessions,
       meta: {},
       timestamp: Date.now(),
@@ -1034,7 +1039,7 @@ describe("scanSessions", () => {
 
   it("can return cached sessions without validating agent availability", async () => {
     const cachedSessions = [withCurrentIdentity(makeSession("cached"))];
-    mockedLoadCachedSessions.mockReturnValue({
+    mockCachedSessions({
       sessions: cachedSessions,
       meta: {},
       timestamp: Date.now(),
@@ -1074,7 +1079,7 @@ describe("scanSessions", () => {
     );
     const visible = withCurrentIdentity(makeSession("visible"));
     const cachedSessions = [empty, visible];
-    mockedLoadCachedSessions.mockReturnValue({
+    mockCachedSessions({
       sessions: cachedSessions,
       meta: {},
       timestamp: Date.now(),
@@ -1097,7 +1102,7 @@ describe("scanSessions", () => {
   });
 
   it("uses cached sessions even when last refresh is old", async () => {
-    mockedLoadCachedSessions.mockReturnValue({
+    mockCachedSessions({
       sessions: [withCurrentIdentity(makeSession("cached"))],
       meta: {},
       timestamp: 0,
@@ -1112,7 +1117,7 @@ describe("scanSessions", () => {
 
     const result = await scanSessions({ useCache: true, cacheOnly: true });
 
-    expect(mockedLoadCachedSessions).toHaveBeenCalledWith("test");
+    expect(mockedReadCachedSessions).toHaveBeenCalledWith("test");
     expect(result.sessions.map((session) => session.reference.sessionId)).toEqual(["cached"]);
     expect(mockedSaveCachedSessionChanges).not.toHaveBeenCalled();
     expect(mockedSaveCachedSessions).not.toHaveBeenCalled();
@@ -1121,7 +1126,7 @@ describe("scanSessions", () => {
   it("refreshes stale cache before returning results", async () => {
     const cachedSessions = [withCurrentIdentity(makeSession("cached"))];
     const refreshedSessions = [makeSession("fresh")];
-    mockedLoadCachedSessions.mockReturnValue({
+    mockCachedSessions({
       sessions: cachedSessions,
       meta: {},
       timestamp: Date.now(),
@@ -1191,7 +1196,7 @@ describe("scanSessions", () => {
       incrementalScanResult: refreshedSessions,
     });
     agent.checkForChanges = checkForChanges;
-    mockedLoadCachedSessions.mockReturnValue({
+    mockCachedSessions({
       sessions: cachedSessions,
       meta: {},
       timestamp: 123,
@@ -1204,13 +1209,29 @@ describe("scanSessions", () => {
 
     expect(failed.sessions.map((session) => session.reference.sessionId)).toEqual(["fresh"]);
     expect(failed.cacheTimestamps).toEqual({ test: 123 });
-    expect(failed.cacheFailures).toEqual({ test: { agentName: "test" } });
+    expect(failed.cacheFailures).toEqual({
+      test: { agentName: "test", operation: "write" },
+    });
     expect(failed.scanFailures).toBeUndefined();
     expect(recovered.sessions.map((session) => session.reference.sessionId)).toEqual(["fresh"]);
     expect(recovered.cacheTimestamps).toEqual({ test: 456 });
     expect(recovered.cacheFailures).toBeUndefined();
     expect(checkForChanges).toHaveBeenNthCalledWith(1, 123, cachedSessions);
     expect(checkForChanges).toHaveBeenNthCalledWith(2, 123, cachedSessions);
+  });
+
+  it("reports a failed cache read separately from an empty cache", async () => {
+    mockedReadCachedSessions.mockReturnValue({ status: "failed" });
+    mockedCreateRegisteredAgents.mockReturnValue([
+      createTestAgent({ name: "test", available: true, sessions: [makeSession("fresh")] }),
+    ]);
+
+    const result = await scanSessions({ useCache: true, includeSmartTags: false });
+
+    expect(result.sessions.map((session) => session.reference.sessionId)).toEqual(["fresh"]);
+    expect(result.cacheFailures).toEqual({
+      test: { agentName: "test", operation: "read" },
+    });
   });
 
   it("writes only changed sessions after smart refresh", async () => {
@@ -1225,7 +1246,7 @@ describe("scanSessions", () => {
     const updatedChanged = makeSession("changed", { title: "Updated changed" });
     const added = makeSession("added");
 
-    mockedLoadCachedSessions.mockReturnValue({
+    mockCachedSessions({
       sessions: [keep, changed, removed],
       meta: {},
       timestamp: Date.now(),

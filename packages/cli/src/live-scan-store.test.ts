@@ -36,11 +36,11 @@ const fsWatch = vi.hoisted(() => ({
 }));
 
 const core = vi.hoisted(() => {
-  const loadCachedSessions = vi.fn();
+  const cachedSessions = vi.fn();
   return {
     readCachedSessions: vi.fn((agentName: string) => ({
       status: "success" as const,
-      value: loadCachedSessions(agentName),
+      value: cachedSessions(agentName),
     })),
     closeCacheStorage: vi.fn(),
     createRegisteredAgents: vi.fn(),
@@ -59,7 +59,7 @@ const core = vi.hoisted(() => {
       zcode: "/tmp/zcode",
     })),
     isAgentCacheInitialized: vi.fn(),
-    loadCachedSessions,
+    cachedSessions,
     markAgentCacheInitialized: vi.fn(),
     markAgentFullSyncProgress: vi.fn(() => true),
     markAgentFullSyncStarted: vi.fn(() => true),
@@ -399,7 +399,6 @@ vi.mock("@codesesh/core/runtime", async (importOriginal) => {
     isAgentCacheInitialized: core.isAgentCacheInitialized,
     readAgentCacheInitialization: core.readAgentCacheInitialization,
     readAgentLastFullSyncAt: core.readAgentLastFullSyncAt,
-    loadCachedSessions: core.loadCachedSessions,
     readCachedSessions: core.readCachedSessions,
     markAgentCacheInitialized: core.markAgentCacheInitialized,
     markAgentFullSyncProgress: core.markAgentFullSyncProgress,
@@ -622,7 +621,7 @@ describe("LiveScanStore", () => {
       status: "success",
       value: core.getAgentLastFullSyncAt(),
     }));
-    core.loadCachedSessions.mockReturnValue(null);
+    core.cachedSessions.mockReturnValue(null);
     core.markAgentCacheInitialized.mockReset();
     core.markAgentFullSyncStarted.mockReset();
     core.resolveAgentRoots.mockReturnValue({
@@ -707,14 +706,16 @@ describe("LiveScanStore", () => {
       sessions: [fresh],
       byAgent: { codex: [fresh] },
       agents: [codex],
-      cacheFailures: { codex: { agentName: "codex" } },
+      cacheFailures: { codex: { agentName: "codex", operation: "write" } },
     });
 
     const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
 
     expect(store.getSnapshot().sessions).toEqual([fresh]);
-    expect(store.getSnapshot().cacheFailures).toEqual({ codex: { agentName: "codex" } });
+    expect(store.getSnapshot().cacheFailures).toEqual({
+      codex: { agentName: "codex", operation: "write" },
+    });
   });
 
   it("can initialize from cache and refresh sessions in the background", async () => {
@@ -826,7 +827,7 @@ describe("LiveScanStore", () => {
       agents: [codex],
       cacheTimestamps: { codex: 1000 },
     });
-    core.loadCachedSessions.mockReturnValue({
+    core.cachedSessions.mockReturnValue({
       sessions: [old, recent],
       byAgent: { codex: [old, recent] },
       meta: {
@@ -911,7 +912,7 @@ describe("LiveScanStore", () => {
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(250);
 
-    expect(core.loadCachedSessions).toHaveBeenCalledWith("codex");
+    expect(core.cachedSessions).toHaveBeenCalledWith("codex");
     expect(codex.scan).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
@@ -966,7 +967,7 @@ describe("LiveScanStore", () => {
       ),
     });
     core.getAgentLastFullSyncAt.mockReturnValue(Date.now());
-    core.loadCachedSessions.mockReturnValue({
+    core.cachedSessions.mockReturnValue({
       sessions: [cached],
       meta: {},
       timestamp: Date.now(),
@@ -1346,7 +1347,7 @@ describe("LiveScanStore", () => {
       agents: [codex],
       cacheTimestamps: { codex: 1000 },
     });
-    core.loadCachedSessions.mockReturnValue({
+    core.cachedSessions.mockReturnValue({
       sessions: [old, recent],
       byAgent: { codex: [old, recent] },
       meta: {
@@ -1431,7 +1432,7 @@ describe("LiveScanStore", () => {
       byAgent: { codex: [previous] },
       agents: [codex],
     });
-    core.loadCachedSessions.mockReturnValue({
+    core.cachedSessions.mockReturnValue({
       sessions: [previous],
       meta: {
         session: { id: "session", sourcePath: "/tmp/s", sourceFingerprint: "old" },
@@ -1522,7 +1523,7 @@ describe("LiveScanStore", () => {
       byAgent: { codex: [previous] },
       agents: [codex],
     });
-    core.loadCachedSessions.mockReturnValue({
+    core.cachedSessions.mockReturnValue({
       sessions: [previous],
       meta: {
         session: {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FileSystemSessionSource, type loadCachedSessions } from "@codesesh/core/runtime";
+import { FileSystemSessionSource, type CachedResult } from "@codesesh/core/runtime";
 import type { ScanStatusEvent } from "@codesesh/core/contract";
 import {
   BackfillLifecycle,
@@ -10,8 +10,7 @@ import { AgentBackfillScheduler } from "./agent-backfill-scheduler.js";
 import { appLogger } from "./logging.js";
 import { ScanStatusReporter } from "./scan-status-reporter.js";
 
-type CachedSessions = ReturnType<typeof loadCachedSessions>;
-type CacheReadResult = { status: "success"; value: CachedSessions } | { status: "failed" };
+type CacheReadResult = { status: "success"; value: CachedResult | null } | { status: "failed" };
 type LastFullSyncReadResult = { status: "success"; value: number | null } | { status: "failed" };
 
 const core = vi.hoisted(() => ({

@@ -7,15 +7,22 @@ import {
   clearCache,
   getCacheInfo,
   loadCachedSessionHeads,
-  loadCachedSessions,
+  readCachedSessions,
   saveCachedSessionChanges,
   saveCachedSessions,
+  type CachedResult,
 } from "../sessions.js";
 import { setSchemaEnsuredPath } from "../db.js";
 import { withCacheDb } from "../connection.js";
 import { makeSessionHead } from "./fixtures.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-sessions-test-"));
+
+function readCachedValue(agentName: string): CachedResult | null {
+  const outcome = readCachedSessions(agentName);
+  expect(outcome.status).toBe("success");
+  return outcome.status === "success" ? outcome.value : null;
+}
 
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
@@ -34,7 +41,7 @@ describe("cached sessions", () => {
       one: { id: "one", sourcePath: "/transcripts/one.jsonl" },
     });
 
-    expect(loadCachedSessions("codex")).toMatchObject({
+    expect(readCachedValue("codex")).toMatchObject({
       sessions: [{ reference: { agentName: "codex", sessionId: "one" } }],
       meta: { one: { sourcePath: "/transcripts/one.jsonl" } },
     });
@@ -47,7 +54,7 @@ describe("cached sessions", () => {
 
     saveCachedSessionChanges("codex", [{ session: changed, sortIndex: 0 }], ["remove"]);
 
-    expect(loadCachedSessions("codex")?.sessions).toEqual([
+    expect(readCachedValue("codex")?.sessions).toEqual([
       expect.objectContaining({
         reference: { agentName: "codex", sessionId: "keep" },
         title: "Updated",
@@ -68,7 +75,7 @@ describe("cached sessions", () => {
       [],
     );
 
-    const cached = loadCachedSessions("codex");
+    const cached = readCachedValue("codex");
     expect(cached?.sessions[0]?.title).toBe("Updated");
     expect(cached?.meta.one).toEqual({
       id: "one",
@@ -98,7 +105,7 @@ describe("cached sessions", () => {
     });
     saveCachedSessions("codex", [makeSessionHead("parent"), child]);
 
-    const restoredChild = loadCachedSessions("codex")?.sessions.find(
+    const restoredChild = readCachedValue("codex")?.sessions.find(
       (session) => session.reference.sessionId === "child",
     );
     expect(restoredChild?.parent_reference).toEqual({
@@ -170,7 +177,7 @@ describe("cached sessions", () => {
     saveCachedSessions("codex", [makeSessionHead("one")]);
     clearCache();
 
-    expect(loadCachedSessions("codex")).toBeNull();
+    expect(readCachedValue("codex")).toBeNull();
     expect(getCacheInfo()).toEqual({ lastScanTime: null, size: 0 });
   });
 });
