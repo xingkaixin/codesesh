@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, renderHook, waitFor } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
+import { createElement, createRef, Profiler, useImperativeHandle, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import type { ScanStatusEvent } from "../lib/api";
 import * as api from "../lib/api";
@@ -106,21 +106,20 @@ describe("useScanStatus", () => {
   });
 
   it("does not rerender unrelated siblings for 10,000 status updates", () => {
-    let publish: (status: ScanStatusEvent) => void = () => {};
-    let statusRenders = 0;
-    let unrelatedRenders = 0;
+    const publisherRef = createRef<{ publish: (status: ScanStatusEvent) => void }>();
+    const statusRender = vi.fn();
+    const unrelatedRender = vi.fn();
 
     function Publisher() {
-      publish = useScanStatusPublisher();
+      const publish = useScanStatusPublisher();
+      useImperativeHandle(publisherRef, () => ({ publish }), [publish]);
       return null;
     }
     function StatusConsumer() {
       useScanStatus();
-      statusRenders += 1;
       return null;
     }
     function UnrelatedSurface() {
-      unrelatedRenders += 1;
       return null;
     }
 
@@ -129,16 +128,26 @@ describe("useScanStatus", () => {
         ScanStatusProvider,
         { initialStatus: sample },
         createElement(Publisher, { key: "publisher" }),
-        createElement(StatusConsumer, { key: "consumer" }),
-        createElement(UnrelatedSurface, { key: "unrelated" }),
+        createElement(
+          Profiler,
+          { key: "consumer", id: "status", onRender: statusRender },
+          createElement(StatusConsumer),
+        ),
+        createElement(
+          Profiler,
+          { key: "unrelated", id: "unrelated", onRender: unrelatedRender },
+          createElement(UnrelatedSurface),
+        ),
       ),
     );
 
+    const publish = publisherRef.current?.publish;
+    if (!publish) throw new Error("Scan status publisher is not mounted");
     for (let index = 1; index <= 10_000; index += 1) {
       flushSync(() => publish({ ...sample, updatedAt: sample.updatedAt + index }));
     }
 
-    expect(statusRenders).toBe(10_001);
-    expect(unrelatedRenders).toBe(1);
+    expect(statusRender).toHaveBeenCalledTimes(10_001);
+    expect(unrelatedRender).toHaveBeenCalledTimes(1);
   });
 });

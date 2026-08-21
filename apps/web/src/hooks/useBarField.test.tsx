@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { createRef, useImperativeHandle, useRef } from "react";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stubAnimationFrames, stubCanvas, type StubbedCanvas } from "../test/canvas-stub";
@@ -13,8 +13,13 @@ async function nextFrame() {
   });
 }
 
-let hitTest: (x: number, y: number) => BarHover | null;
+const harnessRef = createRef<{ hitTest: (x: number, y: number) => BarHover | null }>();
 let canvas: StubbedCanvas;
+
+function hitTest(x: number, y: number) {
+  if (!harnessRef.current) throw new Error("Bar field harness is not mounted");
+  return harnessRef.current.hitTest(x, y);
+}
 
 function Harness({
   values,
@@ -35,7 +40,7 @@ function Harness({
     layout: DEFAULT_BAR_LAYOUT,
     reducedMotion,
   });
-  hitTest = field.hitTest;
+  useImperativeHandle(harnessRef, () => ({ hitTest: field.hitTest }), [field.hitTest]);
 
   return (
     <div>

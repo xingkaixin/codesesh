@@ -138,6 +138,7 @@ function CommitLatencyProfiler({
   detail?: Record<string, unknown>;
   children: ReactNode;
 }) {
+  // oxlint-disable-next-line react/purity -- Profiling intentionally samples the render boundary.
   const renderStartedAt = performance.now();
   const commitCountRef = useRef(0);
 

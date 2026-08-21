@@ -248,7 +248,7 @@ export function SessionMessageTimeline({
   const minimapCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const minimapDragRef = useRef<{ pointerId: number; grabOffset: number } | null>(null);
   const pendingFocusIndexRef = useRef<number | null>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeAnchorId, setActiveAnchorId] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<TimelineTooltip | null>(null);
   const [scrollAvailability, setScrollAvailability] = useState({ left: false, right: false });
   const [minimapWindow, setMinimapWindow] = useState<MinimapWindow | null>(null);
@@ -259,6 +259,7 @@ export function SessionMessageTimeline({
     () => new Map(entries.map((entry, index) => [entry.anchorId, index])),
     [entries],
   );
+  const activeIndex = activeAnchorId == null ? 0 : (entryIndexes.get(activeAnchorId) ?? 0);
   const trackLayout = getTrackLayout(entries.length);
   const virtualized = entries.length > VIRTUALIZED_TIMELINE_THRESHOLD;
   const renderStart = virtualized ? Math.min(renderRange.start, entries.length) : 0;
@@ -332,7 +333,6 @@ export function SessionMessageTimeline({
   }, [entries.length, updateScrollAvailability]);
 
   useEffect(() => {
-    setActiveIndex(0);
     const root = rootRef.current;
     if (!root || entries.length === 0) return;
 
@@ -366,8 +366,9 @@ export function SessionMessageTimeline({
       );
       const positions = intersectionObserver ? scanVisibleAnchors() : scanAllAnchors();
       const nextIndex = edgeIndex ?? findActiveTimelineIndex(positions, viewport.center);
-      if (nextIndex != null) {
-        setActiveIndex((current) => (current === nextIndex ? current : nextIndex));
+      const nextAnchorId = nextIndex == null ? null : entries[nextIndex]?.anchorId;
+      if (nextAnchorId != null) {
+        setActiveAnchorId((current) => (current === nextAnchorId ? current : nextAnchorId));
       }
     };
     const scheduleUpdate = () => {
@@ -433,7 +434,7 @@ export function SessionMessageTimeline({
       scrollParent.removeEventListener("scroll", scheduleUpdate);
       window.removeEventListener("resize", scheduleUpdate);
     };
-  }, [anchorRegistry, entries.length, entryIndexes]);
+  }, [anchorRegistry, entries, entryIndexes]);
 
   useEffect(() => {
     const scrollViewport = scrollRef.current;

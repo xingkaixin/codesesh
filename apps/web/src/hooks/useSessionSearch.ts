@@ -1,5 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import {
   type AppConfig,
   type SearchRequestOptions,
@@ -32,7 +40,7 @@ export function useSessionSearch(
   const [activeSearchQuery, setActiveSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState(false);
   const [searchFilters, setSearchFilters] = useState<SearchFilterState>({});
-  const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
+  const [requestedSearchIndex, setRequestedSearchIndex] = useState(0);
   const searchResultRefs = useRef(new Map<string, HTMLAnchorElement>());
 
   const costMin = useMemo(
@@ -99,6 +107,18 @@ export function useSessionSearch(
     () => (searchState.status === "loaded" ? searchState.results : EMPTY_SEARCH_RESULTS),
     [searchState],
   );
+  const maxSearchIndex = Math.max(0, searchResults.length - 1);
+  const selectedSearchIndex = Math.min(requestedSearchIndex, maxSearchIndex);
+  const setSelectedSearchIndex = useCallback<Dispatch<SetStateAction<number>>>(
+    (next) => {
+      setRequestedSearchIndex((current) => {
+        const boundedCurrent = Math.min(current, maxSearchIndex);
+        const nextIndex = typeof next === "function" ? next(boundedCurrent) : next;
+        return Math.max(0, Math.min(nextIndex, maxSearchIndex));
+      });
+    },
+    [maxSearchIndex],
+  );
   const searchLoading = searchState.status === "loading";
   const projectOptions = useMemo(
     () =>
@@ -120,14 +140,6 @@ export function useSessionSearch(
 
   useEffect(() => {
     if (!searchMode) return;
-    setSelectedSearchIndex((current) => {
-      if (searchResults.length === 0) return 0;
-      return Math.min(current, searchResults.length - 1);
-    });
-  }, [searchMode, searchResults.length]);
-
-  useEffect(() => {
-    if (!searchMode) return;
     const selectedResult = searchResults[selectedSearchIndex];
     if (!selectedResult) return;
     const key = `${selectedResult.reference.agentName}/${selectedResult.reference.sessionId}`;
@@ -141,7 +153,7 @@ export function useSessionSearch(
   const submitSearch = useCallback((query: string) => {
     setActiveSearchQuery(query.trim());
     setSearchMode(true);
-    setSelectedSearchIndex(0);
+    setRequestedSearchIndex(0);
   }, []);
 
   const closeSearch = useCallback(() => {

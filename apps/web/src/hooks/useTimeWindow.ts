@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import {
   resolveTimeWindow,
@@ -37,24 +37,30 @@ export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
   const [searchParams, setSearchParams] = useSearchParams();
   const search = searchParams.toString();
   const hasRange = searchParams.has("range");
-  const previousPath = useRef(location.pathname);
-  const rememberedRange = useRef<string | null>(null);
+  const selectedRangeSearch = hasRange ? selectedTimeWindowSearch(searchParams) : null;
+  const [selectionMemory, setSelectionMemory] = useState(() => ({
+    pathname: location.pathname,
+    rangeSearch: selectedRangeSearch,
+  }));
   const [nextPresetRefreshAt, setNextPresetRefreshAt] = useState(nextLocalMidnight);
-  if (hasRange) {
-    rememberedRange.current = selectedTimeWindowSearch(searchParams);
+  const pathChanged = selectionMemory.pathname !== location.pathname;
+  if (
+    selectedRangeSearch !== null &&
+    (pathChanged || selectionMemory.rangeSearch !== selectedRangeSearch)
+  ) {
+    setSelectionMemory({ pathname: location.pathname, rangeSearch: selectedRangeSearch });
   }
-  const pathChanged = previousPath.current !== location.pathname;
   const effectiveSearch = useMemo(() => {
-    if (hasRange || !pathChanged || !rememberedRange.current) {
+    if (hasRange || !pathChanged || !selectionMemory.rangeSearch) {
       return search;
     }
     const next = new URLSearchParams(search);
-    const remembered = new URLSearchParams(rememberedRange.current);
+    const remembered = new URLSearchParams(selectionMemory.rangeSearch);
     for (const [key, value] of remembered) {
       next.set(key, value);
     }
     return next.toString();
-  }, [hasRange, pathChanged, search]);
+  }, [hasRange, pathChanged, search, selectionMemory.rangeSearch]);
   const effectiveParams = useMemo(() => new URLSearchParams(effectiveSearch), [effectiveSearch]);
   const selectedWindowSearch = selectedTimeWindowSearch(effectiveParams);
   const selectedWindowParams = useMemo(
@@ -65,10 +71,8 @@ export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
   useEffect(() => {
     if (effectiveSearch !== search) {
       setSearchParams(effectiveParams, { replace: true });
-      return;
     }
-    previousPath.current = location.pathname;
-  }, [effectiveParams, effectiveSearch, location.pathname, search, setSearchParams]);
+  }, [effectiveParams, effectiveSearch, search, setSearchParams]);
 
   const resolved = useMemo(
     () =>

@@ -27,22 +27,21 @@ export function useSidebarKeyboardNavigation({
   dismissShortcutHint,
   onOpenSession,
 }: SidebarKeyboardNavigationOptions) {
-  const [selectedSessionReference, setSelectedSessionReference] = useState<string | null>(null);
+  const routeSessionReference =
+    viewState.mode === "session"
+      ? getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionId)
+      : null;
+  const selectionScope = routeSessionReference ?? viewState.mode;
+  const [selection, setSelection] = useState<{ scope: string; reference: string } | null>(null);
+  const selectedSessionReference =
+    selection?.scope === selectionScope ? selection.reference : routeSessionReference;
 
-  useEffect(() => {
-    if (isSearchMode) return;
-    if (viewState.mode === "session") {
-      setSelectedSessionReference(
-        getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionId),
-      );
-      return;
-    }
-    setSelectedSessionReference(null);
-  }, [isSearchMode, viewState.mode, viewState.activeAgentKey, viewState.activeSessionId]);
-
-  const selectSession = useCallback((session: SessionHead) => {
-    setSelectedSessionReference(getSessionReferenceKey(session));
-  }, []);
+  const selectSession = useCallback(
+    (session: SessionHead) => {
+      setSelection({ scope: selectionScope, reference: getSessionReferenceKey(session) });
+    },
+    [selectionScope],
+  );
 
   const handleKeydown = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -58,7 +57,9 @@ export function useSidebarKeyboardNavigation({
       const baseIndex = currentIndex >= 0 ? currentIndex : offset >= 0 ? -1 : sessions.length;
       const nextIndex = Math.max(0, Math.min(baseIndex + offset, sessions.length - 1));
       const nextSession = sessions[nextIndex];
-      setSelectedSessionReference(nextSession ? getSessionReferenceKey(nextSession) : null);
+      if (nextSession) {
+        setSelection({ scope: selectionScope, reference: getSessionReferenceKey(nextSession) });
+      }
     };
 
     if (event.key === "j") {
@@ -75,14 +76,18 @@ export function useSidebarKeyboardNavigation({
       event.preventDefault();
       dismissShortcutHint();
       const first = sessions[0];
-      setSelectedSessionReference(first ? getSessionReferenceKey(first) : null);
+      if (first) {
+        setSelection({ scope: selectionScope, reference: getSessionReferenceKey(first) });
+      }
       return;
     }
     if (event.key === "G") {
       event.preventDefault();
       dismissShortcutHint();
       const last = sessions.at(-1);
-      setSelectedSessionReference(last ? getSessionReferenceKey(last) : null);
+      if (last) {
+        setSelection({ scope: selectionScope, reference: getSessionReferenceKey(last) });
+      }
       return;
     }
     if (event.key !== "Enter" || selectedSessionReference == null) return;

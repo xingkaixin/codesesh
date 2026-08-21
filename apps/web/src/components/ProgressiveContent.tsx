@@ -82,19 +82,16 @@ export function useProgressiveRenderBudget(
   initialBudget: ContentRenderBudget,
   totals: ProgressiveRenderTotals,
 ) {
-  const [state, setState] = useState(() => ({ source, budget: initialBudget }));
-  const budget = Object.is(state.source, source) ? state.budget : initialBudget;
-
-  useEffect(() => {
-    setState((current) =>
-      Object.is(current.source, source) ? current : { source, budget: initialBudget },
-    );
-  }, [initialBudget, source]);
+  const [expanded, setExpanded] = useState<{
+    source: unknown;
+    budget: ContentRenderBudget;
+  } | null>(null);
+  const budget = expanded && Object.is(expanded.source, source) ? expanded.budget : initialBudget;
 
   return {
     budget,
     renderMore: () =>
-      setState({
+      setExpanded({
         source,
         budget: growContentRenderBudget(
           budget,

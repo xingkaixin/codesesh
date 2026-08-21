@@ -147,7 +147,7 @@ export function SessionDetail({
     () => new Map(childSessions.map((child) => [child.reference.sessionId, child])),
     [childSessions],
   );
-  const anchorRegistry = useMemo(createTimelineAnchorRegistry, [sessionReference]);
+  const [anchorRegistry] = useState(createTimelineAnchorRegistry);
   const virtualListRef = useRef<MessageListHandle | null>(null);
   const scrollRequestRef = useRef(0);
   const handleJumpToMessageAnchor = useCallback(

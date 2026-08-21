@@ -68,9 +68,15 @@ export default function App() {
     reload,
   });
 
+  const location = useLocation();
   const setScanStatus = useScanStatusPublisher();
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
-  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const [mobileNavigationPath, setMobileNavigationPath] = useState<string | null>(null);
+  const mobileNavigationOpen = mobileNavigationPath === location.pathname;
+  const setMobileNavigationOpen = useCallback(
+    (open: boolean) => setMobileNavigationPath(open ? location.pathname : null),
+    [location.pathname],
+  );
   const {
     shortcutHintDismissed,
     sidebarCollapsed,
@@ -82,7 +88,6 @@ export default function App() {
   const resolvedTheme = useTheme(theme);
   const [aliasTarget, setAliasTarget] = useState<SessionAliasTarget | null>(null);
 
-  const location = useLocation();
   const routeMatches = useMatches();
   const viewState = useMemo(
     () => viewStateFromRouteMatches(routeMatches, validAgentKeys),
@@ -100,10 +105,6 @@ export default function App() {
       session: viewState.activeSessionId,
     });
   }, [location.pathname, viewState.mode, viewState.activeAgentKey, viewState.activeSessionId]);
-
-  useEffect(() => {
-    setMobileNavigationOpen(false);
-  }, [location.pathname]);
 
   const sessionIndexes = useMemo(
     () => buildSessionIndexes(sessions, activeAgents),
