@@ -235,15 +235,6 @@ function makeEngine(
   return { engine };
 }
 
-function expectValidBackfillStatus(status: ScanStatusEvent["backfill"]): void {
-  const terminalAgents = new Set([...status.completedAgents, ...status.failedAgents]);
-  expect(terminalAgents.size).toBe(status.completedAgents.length + status.failedAgents.length);
-  expect(status.progress == null || status.currentAgent != null).toBe(true);
-  expect(status.currentAgent == null || !status.pendingAgents.includes(status.currentAgent)).toBe(
-    true,
-  );
-}
-
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
@@ -312,36 +303,6 @@ describe("AgentSyncEngine", () => {
     expect(core.loadCachedSessions).toHaveBeenCalledOnce();
   });
 
-  it("skips source availability work until the full-sync interval expires", () => {
-    vi.useFakeTimers();
-    const now = new Date("2026-08-12T00:00:00.000Z").getTime();
-    vi.setSystemTime(now);
-    core.getAgentLastFullSyncAt.mockReturnValue(now);
-    const agent = new FakeSyncAgent();
-    const isAvailable = vi.spyOn(agent, "isAvailable");
-    const listSessionSources = vi.spyOn(agent, "listSessionSources");
-    const { engine } = makeEngine(agent, [], makeWorkerRunner(), { from: 1 });
-    const internal = engine as unknown as {
-      needsBackfill(candidate: BaseAgent, cached: ReturnType<typeof loadCachedSessions>): boolean;
-    };
-    const cached = { sessions: [], meta: {}, timestamp: Date.now() };
-
-    expect(internal.needsBackfill(agent, cached)).toBe(false);
-    expect(internal.needsBackfill(agent, cached)).toBe(false);
-
-    expect(isAvailable).toHaveBeenCalledOnce();
-    expect(listSessionSources).toHaveBeenCalledOnce();
-    expect(core.readAgentLastFullSyncAt).toHaveBeenCalledOnce();
-    expect(core.loadCachedSessions).not.toHaveBeenCalled();
-
-    vi.advanceTimersByTime(24 * 60 * 60 * 1000 + 1);
-
-    expect(internal.needsBackfill(agent, cached)).toBe(true);
-    expect(isAvailable).toHaveBeenCalledTimes(2);
-    expect(listSessionSources).toHaveBeenCalledOnce();
-    expect(core.readAgentLastFullSyncAt).toHaveBeenCalledTimes(2);
-  });
-
   it("keeps the current snapshot when cache initialization cannot be read", async () => {
     core.readAgentCacheInitialization.mockReturnValueOnce({ status: "failed" });
     const previous = makeSession("session", "retained");
@@ -379,11 +340,10 @@ describe("AgentSyncEngine", () => {
 
   it("completes the refresh when the backfill probe throws", async () => {
     const warn = vi.spyOn(appLogger, "warn");
-    const { engine } = makeEngine(makeAgent(), []);
-    const internal = engine as unknown as { needsBackfill: () => boolean };
-    internal.needsBackfill = () => {
+    core.readAgentLastFullSyncAt.mockImplementationOnce(() => {
       throw new Error("probe boom");
-    };
+    });
+    const { engine } = makeEngine(makeAgent(), [], makeWorkerRunner(), { from: 1 });
 
     await expect(engine.refresh("codex")).resolves.toBeUndefined();
 
@@ -393,51 +353,33 @@ describe("AgentSyncEngine", () => {
     );
   });
 
-  it("does not enqueue a backfill when cached sessions cannot be read", () => {
-    core.readCachedSessions.mockReturnValueOnce({ status: "failed" });
-    const agent = new FakeSyncAgent();
-    const warn = vi.spyOn(appLogger, "warn");
-    const { engine } = makeEngine(agent, [], makeWorkerRunner(), { from: 1 });
-    const internal = engine as unknown as { needsBackfill(candidate: BaseAgent): boolean };
-
-    expect(internal.needsBackfill(agent)).toBe(false);
-    expect(warn).toHaveBeenCalledWith("scan.backfill.cache_state_unavailable", {
-      agent: "codex",
-      state: "cached_sessions",
-    });
-  });
-
-  it("does not report a backfill checkpoint that failed to persist", () => {
+  it("does not report a backfill checkpoint that failed to persist", async () => {
     core.markAgentFullSyncProgress.mockReturnValueOnce(false);
     const warn = vi.spyOn(appLogger, "warn");
-    const { engine } = makeEngine(makeAgent());
-    const internal = engine as unknown as {
-      handleBackfillCheckpoint(agentName: string, checkpoint: unknown): void;
+    core.readAgentLastFullSyncAt.mockReturnValueOnce({ status: "success", value: null });
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async (_agentName, payload) => {
+        if (payload.operation.kind === "backfill") {
+          payload.onCheckpoint?.({
+            stage: "finalizing",
+            backfillCursor: "cursor-1",
+            changes: [],
+            meta: {},
+          });
+        }
+        return workerResult({ sessions: [], meta: {} });
+      }),
+      shutdown: vi.fn(async () => undefined),
     };
+    const { engine } = makeEngine(new FakeSyncAgent(), [], workerRunner, { from: 1 });
 
-    internal.handleBackfillCheckpoint("codex", {
-      stage: "finalizing",
-      backfillCursor: "cursor-1",
-      changes: [],
-    });
+    await engine.refresh("codex");
+    await vi.waitFor(() => expect(core.markAgentFullSyncProgress).toHaveBeenCalledOnce());
 
     expect(warn).toHaveBeenCalledWith("scan.backfill.checkpoint_not_durable", {
       agent: "codex",
       cursor: "cursor-1",
-    });
-  });
-
-  it("does not enqueue a backfill when the full-sync timestamp cannot be read", () => {
-    core.readAgentLastFullSyncAt.mockReturnValueOnce({ status: "failed" });
-    const agent = makeAgent();
-    const warn = vi.spyOn(appLogger, "warn");
-    const { engine } = makeEngine(agent, [], makeWorkerRunner(), { from: 1 });
-    const internal = engine as unknown as { needsBackfill(candidate: BaseAgent): boolean };
-
-    expect(internal.needsBackfill(agent)).toBe(false);
-    expect(warn).toHaveBeenCalledWith("scan.backfill.cache_state_unavailable", {
-      agent: "codex",
-      state: "last_full_sync",
     });
   });
 
@@ -474,72 +416,17 @@ describe("AgentSyncEngine", () => {
     });
   });
 
-  it("publishes only the latest backfill attempt terminal", async () => {
-    const { engine } = makeEngine(makeAgent());
-    const internal = engine as unknown as {
-      enqueueBackfill(agentName: string): void;
-      runBackfill(attempt: { agentName: string; attemptId: number }): Promise<unknown>;
-    };
-    vi.spyOn(internal, "runBackfill")
-      .mockResolvedValueOnce("committed")
-      .mockResolvedValueOnce("failed");
-    const statuses: ScanStatusEvent[] = [];
-    engine.subscribeStatusChanged((status) => statuses.push(status));
-
-    internal.enqueueBackfill("codex");
-    await vi.waitFor(() => expect(statuses.at(-1)?.backfill.completedAgents).toEqual(["codex"]));
-    internal.enqueueBackfill("codex");
-    await vi.waitFor(() => expect(statuses.at(-1)?.backfill.failedAgents).toEqual(["codex"]));
-
-    for (const status of statuses) expectValidBackfillStatus(status.backfill);
-    expect(statuses.at(-1)?.backfill).toEqual({
-      active: false,
-      pendingAgents: [],
-      completedAgents: [],
-      failedAgents: ["codex"],
-    });
-  });
-
-  it("marks a rejected backfill failed and continues the queue", async () => {
-    const { engine } = makeEngine(makeAgent());
-    const internal = engine as unknown as {
-      backfills: { stateFor(agentName: string): { status: string } | undefined };
-      enqueueBackfill(agentName: string): void;
-      runBackfill(attempt: { agentName: string; attemptId: number }): Promise<unknown>;
-    };
-    const runBackfill = vi
-      .spyOn(internal, "runBackfill")
-      .mockRejectedValueOnce(new Error("backfill callback rejected"))
-      .mockResolvedValueOnce("committed");
-    const logError = vi.spyOn(appLogger, "error").mockImplementation(() => undefined);
-    engine.subscribeStatusChanged(() => {
-      throw new Error("status listener rejected");
-    });
-
-    try {
-      internal.enqueueBackfill("codex");
-      internal.enqueueBackfill("kimi");
-      await vi.waitFor(() => expect(internal.backfills.stateFor("kimi")?.status).toBe("committed"));
-      expect(logError).toHaveBeenCalledWith(
-        "scan.backfill.queue_error",
-        expect.objectContaining({ agent: "codex", error: expect.any(Error) }),
-      );
-      expect(logError).toHaveBeenCalledWith(
-        "scan.status_listener.error",
-        expect.objectContaining({ error: expect.any(Error) }),
-      );
-    } finally {
-      logError.mockRestore();
-    }
-
-    expect(internal.backfills.stateFor("codex")?.status).toBe("failed");
-    expect(runBackfill).toHaveBeenCalledTimes(2);
-  });
-
   it("bounds backfill progress and publishes its terminal immediately", async () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async (_agentName, payload) => {
+        if (payload.operation.kind !== "backfill") {
+          return workerResult({
+            sessions: payload.previousSessions,
+            meta: payload.meta,
+            changedIds: [],
+          });
+        }
         for (let processed = 1; processed <= 10_000; processed += 1) {
           payload.onProgress?.({ phase: "scanning", total: 10_000, processed });
         }
@@ -548,12 +435,12 @@ describe("AgentSyncEngine", () => {
       }),
       shutdown: vi.fn(async () => undefined),
     };
-    const { engine } = makeEngine(makeAgent(), [], workerRunner);
-    const internal = engine as unknown as { enqueueBackfill(agentName: string): void };
+    core.readAgentLastFullSyncAt.mockReturnValueOnce({ status: "success", value: null });
+    const { engine } = makeEngine(makeAgent(), [], workerRunner, { from: 1 });
     const statuses: ScanStatusEvent[] = [];
     engine.subscribeStatusChanged((status) => statuses.push(status));
 
-    internal.enqueueBackfill("codex");
+    await engine.refresh("codex");
     await vi.waitFor(() => expect(statuses.at(-1)?.backfill.completedAgents).toEqual(["codex"]));
 
     const progress = statuses.flatMap((status) =>
@@ -582,6 +469,13 @@ describe("AgentSyncEngine", () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async (_agentName, payload) => {
+        if (payload.operation.kind !== "backfill") {
+          return workerResult({
+            sessions: payload.previousSessions,
+            meta: payload.meta,
+            changedIds: [],
+          });
+        }
         expect(payload.operation).toEqual({
           kind: "backfill",
           cursor: "previous",
@@ -607,12 +501,12 @@ describe("AgentSyncEngine", () => {
       discard: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
-    const { engine } = makeEngine(new FakeSyncAgent(), [], workerRunner);
-    const internal = engine as unknown as { enqueueBackfill(agentName: string): void };
+    core.readAgentLastFullSyncAt.mockReturnValueOnce({ status: "success", value: null });
+    const { engine } = makeEngine(new FakeSyncAgent(), [], workerRunner, { from: 1 });
     const statuses: ScanStatusEvent[] = [];
     engine.subscribeStatusChanged((status) => statuses.push(status));
 
-    internal.enqueueBackfill("codex");
+    await engine.refresh("codex");
     await vi.waitFor(() => expect(statuses.at(-1)?.backfill.completedAgents).toEqual(["codex"]));
 
     expect(core.markAgentFullSyncProgress).toHaveBeenCalledOnce();
@@ -633,6 +527,13 @@ describe("AgentSyncEngine", () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async (_agentName, payload) => {
+        if (payload.operation.kind !== "backfill") {
+          return workerResult({
+            sessions: payload.previousSessions,
+            meta: payload.meta,
+            changedIds: [],
+          });
+        }
         payload.onCheckpoint?.({
           stage: "finalizing",
           changes: [{ session: updated, sortIndex: 0 }],
@@ -654,15 +555,10 @@ describe("AgentSyncEngine", () => {
       shutdown: vi.fn(async () => undefined),
     };
     core.getAgentFullSyncCursor.mockReturnValueOnce("cursor-1");
+    core.readAgentLastFullSyncAt.mockReturnValueOnce({ status: "success", value: null });
     const { engine } = makeEngine(new FakeSyncAgent(), [previous], workerRunner, { from: 1 });
-    const internal = engine as unknown as {
-      enqueueBackfill(agentName: string): void;
-      scheduler: { schedule(agentName: string, delayMs: number): void };
-    };
-    const schedule = vi.spyOn(internal.scheduler, "schedule").mockImplementation(() => undefined);
-    const info = vi.spyOn(appLogger, "info");
 
-    internal.enqueueBackfill("codex");
+    await engine.refresh("codex");
     await vi.waitFor(() => expect(engine.status().backfill.completedAgents).toEqual(["codex"]));
 
     expect(engine.snapshot().byAgent.codex).toEqual([expect.objectContaining({ title: "after" })]);
@@ -687,40 +583,6 @@ describe("AgentSyncEngine", () => {
     );
     expect(core.markAgentFullSyncProgress).toHaveBeenCalledWith("codex", "cursor-2");
     expect(core.markAgentFullSyncCompleted).not.toHaveBeenCalled();
-    expect(schedule).toHaveBeenCalledWith("codex", 5 * 60 * 1000);
-    expect(info).toHaveBeenCalledWith("scan.backfill.retry_scheduled", {
-      agent: "codex",
-      delay_ms: 5 * 60 * 1000,
-    });
-  });
-
-  it("cancels backfill lifecycle before awaiting shutdown", async () => {
-    let resolveBackfill!: (result: "committed") => void;
-    const { engine } = makeEngine(makeAgent());
-    const internal = engine as unknown as {
-      backfills: { stateFor(agentName: string): { status: string } | undefined };
-      enqueueBackfill(agentName: string): void;
-      runBackfill(attempt: { agentName: string; attemptId: number }): Promise<unknown>;
-    };
-    const runBackfill = vi.spyOn(internal, "runBackfill").mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveBackfill = resolve as (result: "committed") => void;
-        }),
-    );
-    const statuses: ScanStatusEvent[] = [];
-    engine.subscribeStatusChanged((status) => statuses.push(status));
-    internal.enqueueBackfill("codex");
-    await vi.waitFor(() => expect(statuses.at(-1)?.backfill.currentAgent).toBe("codex"));
-
-    await engine.shutdown();
-    const statusCountAtShutdown = statuses.length;
-    resolveBackfill("committed");
-    await Promise.resolve();
-
-    expect(internal.backfills.stateFor("codex")?.status).toBe("cancelled");
-    expect(runBackfill).toHaveBeenCalledOnce();
-    expect(statuses).toHaveLength(statusCountAtShutdown);
   });
   it("keeps the earliest refresh deadline", async () => {
     vi.useFakeTimers();
