@@ -1,5 +1,5 @@
 ---
-import { copy, localeRoutes, type Locale } from "../data/landing";
+import { copy, localeConfig, locales, type Locale } from "../data/landing";
 import Icon from "./Icon.astro";
 
 interface Props {
@@ -23,12 +23,12 @@ const themes = [
     class="mx-auto flex h-[60px] max-w-[1180px] items-center px-4 sm:px-6 lg:px-7"
   >
     <a
-      href={localeRoutes[locale]}
+      href={localeConfig[locale].route}
       class="motion-hover flex shrink-0 items-center gap-2.5 rounded-sm text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
     >
       <img src="/logo.svg?v=3" alt="CodeSesh" class="size-6 rounded-sm" />
       <span
-        class="console-display hidden text-sm font-bold tracking-[0.06em] min-[360px]:inline"
+        class="console-display hidden text-sm font-bold tracking-[0.06em] sm:inline"
       >
         CODESESH
       </span>
@@ -36,7 +36,7 @@ const themes = [
 
     <nav
       class="ml-8 hidden items-center gap-6 md:flex"
-      aria-label={locale === "zh" ? "主导航" : "Primary navigation"}
+      aria-label={localeConfig[locale].primaryNavigationLabel}
     >
       <a class="landing-nav-link" href="#tour">{t.tour}</a>
       <a class="landing-nav-link" href="#capabilities">{t.capabilities}</a>
@@ -46,7 +46,7 @@ const themes = [
 
     <nav
       class="ml-auto flex items-center gap-1.5 sm:gap-2"
-      aria-label={locale === "zh" ? "站点控制" : "Site controls"}
+      aria-label={localeConfig[locale].siteControlsLabel}
     >
       <div
         class="flex min-h-9 items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-0.5"
@@ -54,9 +54,9 @@ const themes = [
         aria-label={t.languageLabel}
       >
         {
-          (["zh", "en"] as const).map((item) => (
+          locales.map((item) => (
             <a
-              href={localeRoutes[item]}
+              href={localeConfig[item].route}
               class:list={[
                 "motion-hover console-mono inline-flex min-h-8 items-center rounded-sm px-2 text-[10px] font-medium focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
                 locale === item
@@ -65,7 +65,7 @@ const themes = [
               ]}
               aria-current={locale === item ? "page" : undefined}
             >
-              {item === "zh" ? "中文" : "EN"}
+              {localeConfig[item].switchLabel}
             </a>
           ))
         }

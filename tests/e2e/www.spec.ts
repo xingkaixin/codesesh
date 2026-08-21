@@ -7,6 +7,7 @@ const supportedAgents = AGENT_CATALOG.map(({ displayName }) => displayName);
 const locales = [
   { route: "/", language: "en", canonical: `${siteUrl}/` },
   { route: "/zh/", language: "zh-CN", canonical: `${siteUrl}/zh/` },
+  { route: "/ja/", language: "ja", canonical: `${siteUrl}/ja/` },
 ] as const;
 
 interface JsonLdNode {
@@ -44,6 +45,10 @@ for (const locale of locales) {
       "href",
       `${siteUrl}/zh/`,
     );
+    await expect(page.locator('link[rel="alternate"][hreflang="ja"]')).toHaveAttribute(
+      "href",
+      `${siteUrl}/ja/`,
+    );
     await expect(page.locator('link[rel="alternate"][hreflang="x-default"]')).toHaveAttribute(
       "href",
       `${siteUrl}/`,
@@ -55,6 +60,12 @@ for (const locale of locales) {
     await expect(page.locator('meta[name="twitter:image:alt"]')).toHaveAttribute(
       "content",
       await page.title(),
+    );
+    await expect(page.locator('meta[property="og:locale:alternate"]')).toHaveCount(2);
+    await expect(page.locator("header [role=group] a")).toHaveCount(3);
+    await expect(page.locator('header [role=group] a[aria-current="page"]')).toHaveAttribute(
+      "href",
+      locale.route,
     );
 
     const faqItems = page.locator("#faq details");
@@ -190,21 +201,23 @@ test("explores each interactive product preview", async ({ page }) => {
   await expect(tool).toContainText("buildClauses(filters)");
 });
 
-test("keeps the landing page within a 390px mobile viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
-  await page.evaluate(async () => {
-    await document.fonts.ready;
-  });
+for (const route of ["/", "/ja/"]) {
+  test(`keeps ${route} within a 390px mobile viewport`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(route);
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+    });
 
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
-      ),
-    )
-    .toBe(true);
-});
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        ),
+      )
+      .toBe(true);
+  });
+}
 
 test("removes landing and product preview motion when reduced motion is requested", async ({
   page,

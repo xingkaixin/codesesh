@@ -6,6 +6,7 @@
 
 - [English landing page](https://codesesh.xingkaixin.me/)
 - [Chinese landing page](https://codesesh.xingkaixin.me/zh/)
+- [Japanese landing page](https://codesesh.xingkaixin.me/ja/)
 - [Markdown landing page](https://codesesh.xingkaixin.me/index.md)
 - [Full product knowledge](https://codesesh.xingkaixin.me/llms-full.txt)
 - [GitHub repository](https://github.com/xingkaixin/codesesh)

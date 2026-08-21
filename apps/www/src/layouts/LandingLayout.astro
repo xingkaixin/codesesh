@@ -2,7 +2,13 @@
 import "@fontsource-variable/ibm-plex-sans";
 import "@fontsource-variable/jetbrains-mono";
 import "@fontsource-variable/space-grotesk";
-import { copy, localeRoutes, siteUrl, type Locale } from "../data/landing";
+import {
+  copy,
+  localeConfig,
+  locales,
+  siteUrl,
+  type Locale,
+} from "../data/landing";
 import analyticsLoader from "../scripts/analytics-loader.js?raw";
 import "../styles/global.css";
 
@@ -12,12 +18,15 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = copy[locale];
-const canonicalUrl = new URL(localeRoutes[locale], siteUrl).toString();
-const englishUrl = new URL(localeRoutes.en, siteUrl).toString();
-const chineseUrl = new URL(localeRoutes.zh, siteUrl).toString();
-const language = locale === "zh" ? "zh-CN" : "en";
-const ogLocale = locale === "zh" ? "zh_CN" : "en_US";
-const ogLocaleAlternate = locale === "zh" ? "en_US" : "zh_CN";
+const currentLocale = localeConfig[locale];
+const canonicalUrl = new URL(currentLocale.route, siteUrl).toString();
+const alternateLocales = locales.map((key) => ({
+  ...localeConfig[key],
+  url: new URL(localeConfig[key].route, siteUrl).toString(),
+}));
+const ogLocaleAlternates = alternateLocales.filter(
+  (alternate) => alternate.ogLocale !== currentLocale.ogLocale,
+);
 // The token is a public-by-design client-side site ID, but it belongs in
 // deploy configuration, not source: rotating or re-pointing analytics must
 // not require a code change. A missing token disables analytics.
@@ -55,7 +64,7 @@ const jsonLd = {
       publisher: {
         "@id": `${siteUrl}/#organization`,
       },
-      inLanguage: ["en", "zh-CN"],
+      inLanguage: alternateLocales.map(({ language }) => language),
     },
     {
       "@type": "ImageObject",
@@ -72,7 +81,7 @@ const jsonLd = {
       url: canonicalUrl,
       name: t.meta.title,
       description: t.meta.description,
-      inLanguage: language,
+      inLanguage: currentLocale.language,
       isPartOf: {
         "@id": websiteId,
       },
@@ -130,7 +139,7 @@ const jsonLd = {
 ---
 
 <!doctype html>
-<html lang={language}>
+<html lang={currentLocale.language}>
   <head>
     <meta charset="UTF-8" />
     <script is:inline>
@@ -243,9 +252,22 @@ const jsonLd = {
       content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
     />
     <link rel="canonical" href={canonicalUrl} />
-    <link rel="alternate" hreflang="en" href={englishUrl} />
-    <link rel="alternate" hreflang="zh-CN" href={chineseUrl} />
-    <link rel="alternate" hreflang="x-default" href={englishUrl} />
+    <Fragment>
+      {
+        alternateLocales.map((alternate) => (
+          <link
+            rel="alternate"
+            hreflang={alternate.language}
+            href={alternate.url}
+          />
+        ))
+      }
+    </Fragment>
+    <link
+      rel="alternate"
+      hreflang="x-default"
+      href={new URL(localeConfig.en.route, siteUrl).toString()}
+    />
     <link rel="alternate" type="text/markdown" href="/index.md" />
     <link
       rel="alternate"
@@ -271,8 +293,14 @@ const jsonLd = {
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content={t.meta.title} />
     <meta property="og:site_name" content="CodeSesh" />
-    <meta property="og:locale" content={ogLocale} />
-    <meta property="og:locale:alternate" content={ogLocaleAlternate} />
+    <meta property="og:locale" content={currentLocale.ogLocale} />
+    <Fragment>
+      {
+        ogLocaleAlternates.map((alternate) => (
+          <meta property="og:locale:alternate" content={alternate.ogLocale} />
+        ))
+      }
+    </Fragment>
 
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={t.meta.title} />

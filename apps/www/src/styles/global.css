@@ -127,9 +127,31 @@
     font-family: var(--font-sans);
   }
 
+  :lang(ja) .console-ui {
+    font-family:
+      "Hiragino Sans",
+      "Yu Gothic UI",
+      "Yu Gothic",
+      Meiryo,
+      "Noto Sans JP",
+      -apple-system,
+      sans-serif;
+  }
+
   .console-display {
     font-family: var(--font-display);
     letter-spacing: var(--tracking-display);
+  }
+
+  :lang(ja) .console-display {
+    font-family:
+      "Hiragino Sans",
+      "Yu Gothic UI",
+      "Yu Gothic",
+      Meiryo,
+      "Noto Sans JP",
+      -apple-system,
+      sans-serif;
   }
 
   .console-mono {
@@ -150,6 +172,11 @@
     text-wrap: balance;
     word-break: keep-all;
     overflow-wrap: normal;
+  }
+
+  :lang(ja) .landing-heading {
+    word-break: normal;
+    overflow-wrap: anywhere;
   }
 
   .landing-nav-link,

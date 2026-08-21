@@ -1,5 +1,5 @@
 ---
-import { copy, type Locale } from "../data/landing";
+import { copy, localeConfig, type Locale } from "../data/landing";
 
 interface Props {
   locale: Locale;
@@ -14,7 +14,7 @@ const t = copy[locale].footer;
     class="mx-auto flex max-w-[1180px] flex-col gap-5 border-t border-[var(--console-border)] pt-6 sm:flex-row sm:items-center"
   >
     <a
-      href={locale === "zh" ? "/zh/" : "/"}
+      href={localeConfig[locale].route}
       class="flex items-center gap-2.5 rounded-sm text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
     >
       <img
@@ -31,7 +31,10 @@ const t = copy[locale].footer;
     <span class="console-mono text-[10px] leading-5 text-[var(--console-muted)]"
       >{t.note}</span
     >
-    <nav class="flex gap-5 sm:ml-auto" aria-label="Footer navigation">
+    <nav
+      class="flex gap-5 sm:ml-auto"
+      aria-label={localeConfig[locale].footerNavigationLabel}
+    >
       <a class="footer-link" href="https://github.com/xingkaixin/codesesh"
         >GitHub</a
       >

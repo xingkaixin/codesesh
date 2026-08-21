@@ -31,27 +31,6 @@ interface RangeDatum {
 const { locale, id, scene } = Astro.props;
 const t = copy[locale].tour;
 
-const labels =
-  locale === "zh"
-    ? {
-        search: "搜索示例会话",
-        range: "示例数据时间范围",
-        overview: "概览示例界面",
-        projects: "项目树示例界面",
-        replay: "会话回放示例界面",
-        filters: "切换消息类型的显示与隐藏",
-        visibleStatus: "当前显示 {count} 条消息",
-      }
-    : {
-        search: "Search sample sessions",
-        range: "Sample data time range",
-        overview: "Overview demo interface",
-        projects: "Project tree demo interface",
-        replay: "Session replay demo interface",
-        filters: "Toggle message types on or off",
-        visibleStatus: "Showing {count} messages",
-      };
-
 const overviewRanges = {
   "7d": {
     chip: "Last 7d / Apr 16-23, 2026",
@@ -224,26 +203,28 @@ const defaultBarMax = Math.max(...defaultRange.bars.map((bar) => bar.value));
 const rangePayload = JSON.stringify(overviewRanges).replaceAll("<", "\\u003c");
 const previewLabel =
   scene === "overview"
-    ? labels.overview
+    ? t.overview
     : scene === "projects"
-      ? labels.projects
-      : labels.replay;
+      ? t.projects
+      : t.replay;
 const sampleLabel = `${t.sampleLabel} / DEMO`;
 
 const replayFilters = [
-  { key: "user", label: locale === "zh" ? "用户消息" : "User", count: 4 },
-  {
-    key: "agent",
-    label: locale === "zh" ? "Agent 回复" : "Agent responses",
-    count: 15,
-  },
-  { key: "tools", label: locale === "zh" ? "工具调用" : "Tools", count: 22 },
+  { key: "user", label: t.userMessages, count: 4 },
+  { key: "agent", label: t.agentResponses, count: 15 },
+  { key: "tools", label: t.toolCalls, count: 22 },
   { key: "bash", label: "bash", count: 8 },
   { key: "edit-file", label: "edit_file", count: 6 },
 ] as const;
 ---
 
-<div id={id} class="product-demo" data-product-demo={scene} data-scene={scene}>
+<div
+  id={id}
+  class="product-demo"
+  data-product-demo={scene}
+  data-scene={scene}
+  data-sample-sessions-template={t.sampleSessions}
+>
   <div
     class="demo-viewport"
     role="region"
@@ -260,11 +241,11 @@ const replayFilters = [
                 <strong>CODESESH</strong>
               </div>
               <label class="demo-search">
-                <span class="sr-only">{labels.search}</span>
+                <span class="sr-only">{t.search}</span>
                 <input
                   type="search"
                   placeholder="Search sessions"
-                  aria-label={labels.search}
+                  aria-label={t.search}
                 />
                 <kbd>/</kbd>
               </label>
@@ -276,7 +257,7 @@ const replayFilters = [
             </header>
 
             <div class="demo-frame">
-              <aside class="demo-sidebar" aria-label="Sample projects">
+              <aside class="demo-sidebar" aria-label={t.sampleProjects}>
                 <nav>
                   <ul class="demo-nav-list">
                     <li aria-current="page" class="is-active">
@@ -332,7 +313,7 @@ const replayFilters = [
                   <div
                     class="demo-range-tabs"
                     role="group"
-                    aria-label={labels.range}
+                    aria-label={t.range}
                   >
                     <button
                       type="button"
@@ -383,7 +364,9 @@ const replayFilters = [
                     {defaultRange.bars.map((bar, index) => (
                       <li
                         data-demo-bar={index}
-                        aria-label={`${bar.label}: ${bar.value} sample sessions`}
+                        aria-label={t.sampleSessions
+                          .replace("{label}", bar.label)
+                          .replace("{count}", String(bar.value))}
                       >
                         <span class="demo-bar-track" aria-hidden="true">
                           <span
@@ -464,7 +447,7 @@ const replayFilters = [
             </header>
 
             <div class="demo-frame demo-project-frame">
-              <aside class="demo-sidebar" aria-label="Sample projects">
+              <aside class="demo-sidebar" aria-label={t.sampleProjects}>
                 <nav>
                   <ul class="demo-nav-list">
                     <li>
@@ -646,7 +629,7 @@ const replayFilters = [
               <aside class="demo-replay-sidebar">
                 <fieldset class="demo-toc">
                   <legend>Session TOC</legend>
-                  <div role="group" aria-label={labels.filters}>
+                  <div role="group" aria-label={t.filters}>
                     {replayFilters.map((filter) => (
                       <label>
                         <input
@@ -691,9 +674,9 @@ const replayFilters = [
                   class="sr-only"
                   aria-live="polite"
                   data-replay-status
-                  data-status-template={labels.visibleStatus}
+                  data-status-template={t.visibleStatus}
                 >
-                  {labels.visibleStatus.replace("{count}", "3")}
+                  {t.visibleStatus.replace("{count}", "3")}
                 </span>
                 <ol id={`${id}-messages`} class="demo-message-list">
                   <li data-replay-item="user" data-replay-message>
@@ -869,6 +852,8 @@ const replayFilters = [
   function initializeOverviewDemo(root: HTMLElement) {
     const source = root.querySelector<HTMLScriptElement>("[data-demo-ranges]");
     if (!source?.textContent) return;
+    const sampleSessionsTemplate =
+      root.dataset.sampleSessionsTemplate ?? "{label}: {count} sample sessions";
 
     let ranges: Record<string, DemoRange>;
     try {
@@ -919,7 +904,9 @@ const replayFilters = [
         if (label) label.textContent = bar.label;
         item.setAttribute(
           "aria-label",
-          `${bar.label}: ${bar.value} sample sessions`,
+          sampleSessionsTemplate
+            .replace("{label}", bar.label)
+            .replace("{count}", String(bar.value)),
         );
       });
 

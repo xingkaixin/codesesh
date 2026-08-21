@@ -7,56 +7,26 @@ interface Props {
 }
 
 const { locale } = Astro.props;
-const metadata = {
-  zh: [
-    {
-      number: "01 / Overview",
-      path: "apps/web / dashboard",
-      hint: "切换时间范围，观察整块面板同步重算",
-    },
-    {
-      number: "02 / Project tree",
-      path: "apps/web / project timeline",
-      hint: "展开带有 sub 标记的会话，查看子 Agent 记录",
-    },
-    {
-      number: "03 / Replay",
-      path: "apps/web / session detail",
-      hint: "展开工具调用查看输出，也可以从 TOC 隐藏消息类型",
-    },
-  ],
-  en: [
-    {
-      number: "01 / Overview",
-      path: "apps/web / dashboard",
-      hint: "Switch the time range and watch the whole panel recompute",
-    },
-    {
-      number: "02 / Project tree",
-      path: "apps/web / project timeline",
-      hint: "Expand a session marked sub to inspect its child agent work",
-    },
-    {
-      number: "03 / Replay",
-      path: "apps/web / session detail",
-      hint: "Expand tool calls for output, or use the TOC to hide message types",
-    },
-  ],
-} as const;
-
-const sceneTypes = ["overview", "projects", "replay"] as const;
-const sceneCopy = copy[locale].scenes;
-const sceneMetadata = metadata[locale];
-const scenes = [
-  { scene: sceneTypes[0], copy: sceneCopy[0], meta: sceneMetadata[0] },
-  { scene: sceneTypes[1], copy: sceneCopy[1], meta: sceneMetadata[1] },
-  { scene: sceneTypes[2], copy: sceneCopy[2], meta: sceneMetadata[2] },
+const sceneMetadata = [
+  { scene: "overview", number: "01 / Overview", path: "apps/web / dashboard" },
+  {
+    scene: "projects",
+    number: "02 / Project tree",
+    path: "apps/web / project timeline",
+  },
+  { scene: "replay", number: "03 / Replay", path: "apps/web / session detail" },
 ] as const;
+const sceneCopy = copy[locale].scenes;
+const scenes = sceneMetadata.map((meta, index) => ({
+  copy: sceneCopy[index],
+  meta,
+}));
 ---
 
 <div class="product-showcase">
   {
-    scenes.map(({ scene, copy: sceneCopy, meta }, index) => {
+    scenes.map(({ copy: sceneCopy, meta }, index) => {
+      const { scene } = meta;
       const sectionId = index === 0 ? "tour" : `tour-${scene}`;
       const headingId = `${sectionId}-heading`;
       const descriptionId = `${sectionId}-description`;
@@ -80,7 +50,7 @@ const scenes = [
                 <p id={descriptionId}>{sceneCopy?.description}</p>
                 <p class="showcase-hint">
                   <span aria-hidden="true">↓</span>
-                  {meta.hint}
+                  {sceneCopy?.hint}
                 </p>
               </div>
 
