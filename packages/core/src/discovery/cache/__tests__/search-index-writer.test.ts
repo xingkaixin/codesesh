@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { searchSessions } from "../search.js";
+import { listFileActivity } from "../file-activity.js";
 import {
   readPendingSearchIndexMaintenance,
   syncSessionSearchIndex,
@@ -51,6 +52,66 @@ describe("search index writer", () => {
       changed: 0,
       indexed: 0,
     });
+  });
+
+  it("reindexes file activity when only the project identity changes", () => {
+    const initial = makeSessionHead("identity-change");
+    const detail = (session: typeof initial) => ({
+      ...makeSessionData(session.id),
+      ...session,
+      messages: [
+        {
+          id: "identity-change-message",
+          role: "assistant" as const,
+          time_created: session.time_created,
+          parts: [
+            {
+              type: "tool" as const,
+              tool: "Read",
+              state: { status: "completed" as const, input: { file_path: "src/App.tsx" } },
+            },
+          ],
+        },
+      ],
+    });
+    saveCachedSessions("codex", [initial]);
+    syncSessionSearchIndex("codex", [initial], () => detail(initial));
+
+    const updated = {
+      ...initial,
+      project_identity: {
+        kind: "git_remote" as const,
+        key: "github.com/acme/project",
+        displayName: "project",
+      },
+      project_identity_resolver_revision: "git-identity-v2",
+      project_identity_input_signature: "remote:github.com/acme/project",
+    };
+    const loadSession = vi.fn(() => detail(updated));
+
+    const publication = commitDurableSessionPublication(
+      {
+        kind: "changes",
+        agentName: "codex",
+        changes: [{ session: updated, sortIndex: 0 }],
+        removedSessionIds: [],
+        meta: {},
+      },
+      loadSession,
+    );
+
+    expect(publication).toMatchObject({
+      status: "committed",
+      searchIndex: { changed: 1, indexed: 1 },
+    });
+    expect(loadSession).toHaveBeenCalledOnce();
+    expect(
+      listFileActivity({
+        projectKind: "git_remote",
+        projectKey: "github.com/acme/project",
+      }),
+    ).toHaveLength(1);
+    expect(listFileActivity({ projectKind: "path", projectKey: "/workspace/project" })).toEqual([]);
   });
 
   it("recomputes the message hash chain when an indexed prefix changes", () => {
