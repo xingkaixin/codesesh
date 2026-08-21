@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync, appendFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type BaseAgent, type SessionWatchPlan } from "@codesesh/core";
+import { type BaseAgent, type SessionWatchPlan } from "@codesesh/core/runtime";
 
 const fsWatch = vi.hoisted(() => ({
   watchers: [] as Array<{

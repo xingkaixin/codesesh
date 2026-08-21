@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { getRegisteredAgents } from "@codesesh/core";
+import { getRegisteredAgents } from "@codesesh/core/runtime";
 import { describe, expect, it } from "vitest";
 import { hasCustomToolStrategy } from "../src/components/session-detail/tool-strategy";
 

@@ -4,7 +4,7 @@ import {
   type BaseAgent,
   type loadCachedSessions,
   type ScanOptions,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import type {
   BackfillAttemptRef,
   BackfillLifecycle,

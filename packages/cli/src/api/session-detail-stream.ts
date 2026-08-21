@@ -1,4 +1,4 @@
-import type { SessionDetail } from "@codesesh/core";
+import type { SessionDetail } from "@codesesh/core/runtime";
 
 const SESSION_DETAIL_STREAM_BATCH_CHARS = 64 * 1024;
 

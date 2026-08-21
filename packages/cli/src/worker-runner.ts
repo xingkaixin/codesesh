@@ -8,7 +8,7 @@ import {
   type PersistedSessionHeadChange,
   type SessionSourceFailure,
   type SessionSnapshotCompleteness,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import { appLogger } from "./logging.js";
 import type {
   ScanRefreshWorkerCommitRequest,

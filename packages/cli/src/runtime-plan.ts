@@ -1,4 +1,4 @@
-import type { ScanOptions } from "@codesesh/core";
+import type { ScanOptions } from "@codesesh/core/runtime";
 import { sessionRoutePath } from "@codesesh/core/contract";
 import { resolveTimeWindow, type TimeWindow } from "./time-window-resolution.js";
 

@@ -25,7 +25,7 @@ vi.mock("./logging.js", () => ({
   },
 }));
 
-vi.mock("@codesesh/core", () => ({
+vi.mock("@codesesh/core/runtime", () => ({
   createRegisteredAgents: mocks.createRegisteredAgents,
   classifySessionTags: mocks.classifySessionTags,
   getSmartTagSourceTimestamp: mocks.getSmartTagSourceTimestamp,

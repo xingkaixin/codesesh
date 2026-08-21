@@ -8,7 +8,7 @@ import {
   type BaseAgent,
   type IdentifiedSessionHead,
   type LiveSnapshot,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import {
   assertIdentifiedSessionHead,
   assertSessionIdentity,

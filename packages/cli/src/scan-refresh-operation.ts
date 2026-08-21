@@ -1,4 +1,4 @@
-import type { AgentScanIntent } from "@codesesh/core";
+import type { AgentScanIntent } from "@codesesh/core/runtime";
 
 type DurableCheckpoint = { checkpoint?: "durable" };
 

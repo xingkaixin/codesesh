@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { IdentifiedSessionHead, SessionHead, SmartTag } from "@codesesh/core";
+import type { IdentifiedSessionHead, SessionHead, SmartTag } from "@codesesh/core/runtime";
 import {
   addCalendarDays,
   countCalendarDays,
@@ -29,7 +29,7 @@ import {
   type DashboardData,
   type DashboardScope,
   type ProjectScopeMatcher,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import { appLogger } from "../logging.js";
 import {
   ProjectIdentityQueueFullError,

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionRoutePath } from "@codesesh/core/contract";
-import type { LiveSnapshot, SessionReference } from "@codesesh/core";
+import type { LiveSnapshot, SessionReference } from "@codesesh/core/runtime";
 
 const received = vi.hoisted(() => ({
   detail: vi.fn(),
@@ -9,8 +9,8 @@ const received = vi.hoisted(() => ({
   deleteAlias: vi.fn(),
 }));
 
-vi.mock("@codesesh/core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@codesesh/core")>();
+vi.mock("@codesesh/core/runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core/runtime")>();
   return {
     ...actual,
     materializeSessionDetailResponse: (_snapshot: unknown, reference: SessionReference) => {

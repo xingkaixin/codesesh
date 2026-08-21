@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentScanProgress, BaseAgent, SessionHead } from "@codesesh/core";
+import type { AgentScanProgress, BaseAgent, SessionHead } from "@codesesh/core/runtime";
 import { finalizeSessions } from "./scan-refresh-worker.js";
 
 // Isolated temp directory so computeIdentity resolves a stable "path" identity

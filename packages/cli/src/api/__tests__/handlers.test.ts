@@ -33,8 +33,8 @@ const coreMocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("@codesesh/core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@codesesh/core")>();
+vi.mock("@codesesh/core/runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core/runtime")>();
   return {
     ...actual,
     attachProjectMetrics: (...args: Parameters<typeof actual.attachProjectMetrics>) => {
@@ -107,9 +107,9 @@ import type {
   SessionCacheMeta,
   SessionHead,
   SessionDetail,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import type { SearchResult } from "@codesesh/core/contract";
-import { BaseAgent } from "@codesesh/core";
+import { BaseAgent } from "@codesesh/core/runtime";
 import { appLogger } from "../../logging.js";
 
 // --- Helpers ---

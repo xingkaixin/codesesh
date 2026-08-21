@@ -2,7 +2,7 @@
  * Session aliases as a read model for the HTTP layer: load the user's local
  * renames once, then decorate outgoing records with `display_title`.
  */
-import type { BookmarkView, SessionAlias, SessionHead } from "@codesesh/core";
+import type { BookmarkView, SessionAlias, SessionHead } from "@codesesh/core/runtime";
 import type { SearchResult, SessionReference } from "@codesesh/core/contract";
 import {
   filterSessionSearchCandidates,
@@ -14,7 +14,7 @@ import {
   type LiveSnapshot,
   type SessionSearchContext,
   type SearchOptions,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import { appLogger } from "../logging.js";
 
 /** Anything the API returns that can carry a locally-renamed title. */

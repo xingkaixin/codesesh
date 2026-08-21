@@ -21,7 +21,7 @@ import {
   type SessionSourceFailure,
   type SessionSnapshotCompleteness,
   type SessionTagTiming,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import { appLogger } from "./logging.js";
 import { MonotonicValueSampler } from "./monotonic-value-sampler.js";
 import {

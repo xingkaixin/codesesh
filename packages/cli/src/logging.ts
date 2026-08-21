@@ -9,8 +9,8 @@ import {
   WORKER_LOG_MESSAGE_TYPE,
   type WorkerLogLevel,
   type WorkerLogMessage,
-} from "@codesesh/core";
-import type { SearchIndexSyncResult } from "@codesesh/core";
+} from "@codesesh/core/runtime";
+import type { SearchIndexSyncResult } from "@codesesh/core/runtime";
 
 type LogLevel = WorkerLogLevel;
 

@@ -16,7 +16,7 @@ import {
   type PersistedSessionHeadChange,
   type SessionSnapshotCompleteness,
   type DurableSessionPublicationFailureStage,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import { appLogger } from "./logging.js";
 
 export type SearchIndexPersistStage = DurableSessionPublicationFailureStage;

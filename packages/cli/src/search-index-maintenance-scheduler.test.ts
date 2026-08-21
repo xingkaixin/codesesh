@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionHead } from "@codesesh/core";
+import type { SessionHead } from "@codesesh/core/runtime";
 import type { SearchIndexMaintenanceStatus } from "@codesesh/core/contract";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 
@@ -8,7 +8,7 @@ const core = vi.hoisted(() => ({
   readPendingSearchIndexMaintenance: vi.fn(),
 }));
 
-vi.mock("@codesesh/core", () => core);
+vi.mock("@codesesh/core/runtime", () => core);
 vi.mock("./logging.js", () => ({
   appLogger: {
     info: vi.fn(),

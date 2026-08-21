@@ -1,4 +1,4 @@
-import type { BookmarkRecord } from "@codesesh/core";
+import type { BookmarkRecord } from "@codesesh/core/runtime";
 import { normalizeSessionReference, type SessionReference } from "@codesesh/core/contract";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
