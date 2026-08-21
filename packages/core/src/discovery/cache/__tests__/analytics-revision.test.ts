@@ -41,7 +41,7 @@ describe("analytics revision", () => {
   it("advances for durable session, message, activity, and deletion commits", () => {
     const session = makeSessionHead("one");
     const detail = {
-      ...makeSessionData(session.id),
+      ...makeSessionData(session.reference.sessionId),
       messages: [
         {
           id: "one-message",
@@ -69,7 +69,9 @@ describe("analytics revision", () => {
     });
     expect(getAnalyticsRevision()).toBe("2");
 
-    expect(syncSessionSearchIndexChanges("codex", [], [session.id], () => detail)).toMatchObject({
+    expect(
+      syncSessionSearchIndexChanges("codex", [], [session.reference.sessionId], () => detail),
+    ).toMatchObject({
       deleted: 1,
     });
     expect(getAnalyticsRevision()).toBe("3");
@@ -109,7 +111,7 @@ describe("analytics revision", () => {
           completeness: "complete",
           removedSessionIds: [],
         },
-        () => makeSessionData(session.id),
+        () => makeSessionData(session.reference.sessionId),
       ),
     ).toMatchObject({ status: "committed", searchIndex: { indexed: 1 } });
     expect(getAnalyticsRevision()).toBe("1");

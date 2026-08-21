@@ -9,8 +9,6 @@ import {
 function makeSession(id: string, activity: number): IdentifiedSessionHead {
   return {
     reference: { agentName: "codex", sessionId: id },
-    id,
-    slug: `codex/${id}`,
     title: id,
     directory: "/workspace",
     project_identity: { kind: "path", key: "/workspace", displayName: "workspace" },
@@ -34,10 +32,8 @@ function makeSnapshot(
 /** Fields the README promises; anything beyond this would make --json an archive. */
 const DOCUMENTED_SESSION_FIELDS = [
   "directory",
-  "id",
   "project_identity",
   "reference",
-  "slug",
   "stats",
   "time_created",
   "time_updated",
@@ -68,7 +64,7 @@ describe("CS-150: --json is a session index", () => {
       { from: 1_000 },
     );
 
-    expect(output.sessions.map((session) => session.id)).toEqual(["new"]);
+    expect(output.sessions.map((session) => session.reference.sessionId)).toEqual(["new"]);
   });
 
   it("filters by parent activity while retaining child sessions", () => {
@@ -80,7 +76,10 @@ describe("CS-150: --json is a session index", () => {
 
     const output = buildSessionIndexOutput(makeSnapshot([parent, child]), { from: 1_000 });
 
-    expect(output.sessions.map((session) => session.id)).toEqual(["parent", "child"]);
+    expect(output.sessions.map((session) => session.reference.sessionId)).toEqual([
+      "parent",
+      "child",
+    ]);
     expect(output.agents.find((agent) => agent.name === "codex")?.count).toBe(2);
   });
 

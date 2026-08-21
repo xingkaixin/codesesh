@@ -30,8 +30,6 @@ let tempDirs: string[] = [];
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {
     reference: { agentName: "claudecode", sessionId: id },
-    id,
-    slug: `claudecode/${id}`,
     title: id,
     directory: "/tmp/project",
     time_created: 1000,
@@ -485,7 +483,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
     );
 
     expect(head).toMatchObject({
-      id: sessionId,
+      reference: { agentName: "claudecode", sessionId },
       title: "Indexed summary",
       directory: "/tmp/project",
       stats: {
@@ -654,17 +652,19 @@ describe("ClaudeCodeAgent cache refresh", () => {
     const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
 
     const heads = agent.scan();
-    const parent = heads.find((head: SessionHead) => head.id === parentId);
-    const child = heads.find((head: SessionHead) => head.id === childId);
+    const parent = heads.find((head: SessionHead) => head.reference.sessionId === parentId);
+    const child = heads.find((head: SessionHead) => head.reference.sessionId === childId);
 
-    expect(heads.map((head: SessionHead) => head.id).sort()).toEqual(
+    expect(heads.map((head: SessionHead) => head.reference.sessionId).sort()).toEqual(
       [parentId, childId, nestedChildId].sort(),
     );
     expect(child).toMatchObject({
       title: "repository-check",
       parent_reference: { agentName: "claudecode", sessionId: parentId },
     });
-    expect(heads.find((head: SessionHead) => head.id === nestedChildId)).toMatchObject({
+    expect(
+      heads.find((head: SessionHead) => head.reference.sessionId === nestedChildId),
+    ).toMatchObject({
       title: "Nested repository check",
       parent_reference: { agentName: "claudecode", sessionId: childId },
     });
@@ -676,7 +676,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
     );
     expect(agentMessage?.subagent_id).toBe(childId);
     expect(agent.getSessionData(childId)).toMatchObject({
-      id: childId,
+      reference: { agentName: "claudecode", sessionId: childId },
       parent_reference: { agentName: "claudecode", sessionId: parentId },
       messages: [
         { role: "user" },
@@ -1035,7 +1035,7 @@ describe("ClaudeCodeAgent head parsing", () => {
 
     expect(agent.scan()).toMatchObject([
       {
-        id: childId,
+        reference: { agentName: "claudecode", sessionId: childId },
         title: "Orphan child",
         parent_reference: undefined,
       },

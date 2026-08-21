@@ -53,8 +53,6 @@ import { finalizeAgentScan } from "../scanner.js";
 function makeSession(index: number): IdentifiedSessionHead {
   return {
     reference: { agentName: "test", sessionId: `session-${index}` },
-    id: `session-${index}`,
-    slug: `test/session-${index}`,
     title: `Session ${index}`,
     directory: "/workspace",
     project_identity: { kind: "path", key: "/workspace", displayName: "workspace" },

@@ -123,8 +123,8 @@ const SESSION_STATS_SIGNATURE_SPEC = {
   total_cache_create_tokens: (stats) => stats.total_cache_create_tokens ?? 0,
 } satisfies ObjectSignatureSpec<SessionStats>;
 
-/** Compatibility projections are derived from `reference`; `display_title` is API decoration. */
-type SessionHeadSignatureExcludedField = "id" | "slug" | "display_title";
+/** `display_title` is local API decoration, not a source-session fact. */
+type SessionHeadSignatureExcludedField = "display_title";
 
 type SessionHeadSignatureField = Exclude<keyof SessionHead, SessionHeadSignatureExcludedField>;
 

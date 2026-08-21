@@ -164,7 +164,7 @@ function assertSessionMatchesReference(
 ): void {
   assertSessionIdentity(session, reference.agentName);
   if (session.reference.sessionId !== reference.sessionId) {
-    throw new Error("Session identity fields disagree");
+    throw new Error("Session reference does not match expected session");
   }
 }
 

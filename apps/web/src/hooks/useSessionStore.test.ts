@@ -286,7 +286,7 @@ describe("useSessionStore", () => {
         ...SAMPLE_SESSIONS_UPDATED_EVENT,
         changedSessionHeads: [
           {
-            reference: { agentName: "claudecode", sessionId: changedSession.id },
+            reference: { agentName: "claudecode", sessionId: changedSession.reference.sessionId },
             session: changedSession,
           },
         ],
@@ -313,7 +313,7 @@ describe("useSessionStore", () => {
         ...SAMPLE_SESSIONS_UPDATED_EVENT,
         changedSessionHeads: [
           {
-            reference: { agentName: "claudecode", sessionId: changedSession.id },
+            reference: { agentName: "claudecode", sessionId: changedSession.reference.sessionId },
             session: changedSession,
           },
         ],
@@ -378,11 +378,11 @@ describe("useSessionStore", () => {
         newSessions: historicalSessions.length,
         newSessionRefs: historicalSessions.map((session) => ({
           agentName: "claudecode",
-          sessionId: session.id,
+          sessionId: session.reference.sessionId,
         })),
         totalSessions: historicalSessions.length + 1,
         changedSessionHeads: historicalSessions.map((session) => ({
-          reference: { agentName: "claudecode", sessionId: session.id },
+          reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           session,
         })),
       });
@@ -413,10 +413,10 @@ describe("useSessionStore", () => {
     await act(async () => {
       update = await result.current.applyLiveEvent({
         ...SAMPLE_SESSIONS_UPDATED_EVENT,
-        newSessionRefs: [{ agentName: "claudecode", sessionId: addedSession.id }],
+        newSessionRefs: [{ agentName: "claudecode", sessionId: addedSession.reference.sessionId }],
         changedSessionHeads: [
           {
-            reference: { agentName: "claudecode", sessionId: addedSession.id },
+            reference: { agentName: "claudecode", sessionId: addedSession.reference.sessionId },
             session: addedSession,
           },
         ],
@@ -453,10 +453,13 @@ describe("useSessionStore", () => {
   it("invalidates only session details changed by a live event", async () => {
     const { result, client } = await renderStore();
     await act(() => result.current.reload(config.window));
-    const changedDetailKey = queryKeys.sessionDetail("claudecode", SAMPLE_SESSION_HEAD.id);
+    const changedDetailKey = queryKeys.sessionDetail(
+      "claudecode",
+      SAMPLE_SESSION_HEAD.reference.sessionId,
+    );
     const unchangedDetailKey = queryKeys.sessionDetail("claudecode", "unchanged-session");
     const relatedDetailKey = queryKeys.sessionDetail("claudecode", "related-session");
-    client.setQueryData(changedDetailKey, { id: SAMPLE_SESSION_HEAD.id });
+    client.setQueryData(changedDetailKey, { id: SAMPLE_SESSION_HEAD.reference.sessionId });
     client.setQueryData(unchangedDetailKey, { id: "unchanged-session" });
     client.setQueryData(relatedDetailKey, { id: "related-session" });
 
@@ -624,7 +627,7 @@ describe("useSessionStore", () => {
         ...SAMPLE_SESSIONS_UPDATED_EVENT,
         changedSessionHeads: [
           {
-            reference: { agentName: "claudecode", sessionId: changedSession.id },
+            reference: { agentName: "claudecode", sessionId: changedSession.reference.sessionId },
             session: changedSession,
           },
         ],

@@ -97,8 +97,6 @@ const FIXTURE_DIR_NAME = FIXTURE_DIR.split(/[\\/]/).pop()!;
 function makeSession(id: string, agentName = "claudecode"): SessionHead {
   return {
     reference: { agentName, sessionId: id },
-    id,
-    slug: `${agentName}/${id}`,
     title: `Session ${id}`,
     directory: FIXTURE_DIR,
     project_identity: {
@@ -154,7 +152,7 @@ function createLegacyCachedSessionDb(version: number, session = makeSession("leg
         INSERT INTO cached_sessions(agent_name, session_id, session_json, meta_json)
         VALUES (?, ?, ?, ?)
       `,
-    ).run("claudecode", session.id, JSON.stringify(session), null);
+    ).run("claudecode", session.reference.sessionId, JSON.stringify(session), null);
   } finally {
     db.close();
   }
@@ -267,7 +265,9 @@ describe("loadCachedSessions", () => {
   it("returns cached sessions even when last refresh is old", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     dateNowSpy.mockReturnValue(now + 8 * 24 * 60 * 60 * 1000);
-    expect(loadCachedSessions("claudecode")?.sessions.map((session) => session.id)).toEqual(["s1"]);
+    expect(
+      loadCachedSessions("claudecode")?.sessions.map((session) => session.reference.sessionId),
+    ).toEqual(["s1"]);
   });
 
   it("returns cached sessions and meta when valid", () => {
@@ -280,7 +280,7 @@ describe("loadCachedSessions", () => {
     const result = loadCachedSessions("claudecode");
     expect(result).not.toBeNull();
     expect(result?.sessions).toHaveLength(1);
-    expect(result?.sessions[0]?.id).toBe("s1");
+    expect(result?.sessions[0]?.reference.sessionId).toBe("s1");
     expect(result?.meta.s1?.sourcePath).toBe("/path/to/source");
     expect(result?.timestamp).toBe(now);
   });
@@ -297,11 +297,11 @@ describe("loadCachedSessions", () => {
 });
 
 describe("session identity persistence invariant", () => {
-  it("rejects conflicting session identities before opening the cache", () => {
-    const session = { ...makeSession("session"), slug: "codex/other" };
+  it("rejects a session owned by another agent before opening the cache", () => {
+    const session = makeSession("session", "codex");
 
     expect(() => saveCachedSessions("claudecode", [session])).toThrow(
-      "Session identity fields disagree",
+      'Session reference agent "codex" does not match "claudecode"',
     );
     expect(existsSync(getCachePath())).toBe(false);
   });
@@ -463,7 +463,7 @@ describe("saveCachedSessions", () => {
     }
 
     const result = loadCachedSessions("claudecode");
-    expect(result?.sessions.map((session) => session.id)).toEqual(["s1"]);
+    expect(result?.sessions.map((session) => session.reference.sessionId)).toEqual(["s1"]);
   });
 
   it("overwrites cached rows for the same agent", () => {
@@ -471,7 +471,7 @@ describe("saveCachedSessions", () => {
     saveCachedSessions("claudecode", [makeSession("new")]);
 
     const result = loadCachedSessions("claudecode");
-    expect(result?.sessions.map((session) => session.id)).toEqual(["new"]);
+    expect(result?.sessions.map((session) => session.reference.sessionId)).toEqual(["new"]);
   });
 
   it("preserves cached rows for an empty partial snapshot", () => {
@@ -479,9 +479,9 @@ describe("saveCachedSessions", () => {
 
     saveCachedSessions("claudecode", [], {}, { completeness: "partial" });
 
-    expect(loadCachedSessions("claudecode")?.sessions.map((session) => session.id)).toEqual([
-      "existing",
-    ]);
+    expect(
+      loadCachedSessions("claudecode")?.sessions.map((session) => session.reference.sessionId),
+    ).toEqual(["existing"]);
   });
 
   it("derives restored order from session activity", () => {
@@ -490,10 +490,9 @@ describe("saveCachedSessions", () => {
 
     saveCachedSessions("claudecode", [older, newer]);
 
-    expect(loadCachedSessions("claudecode")?.sessions.map((session) => session.id)).toEqual([
-      "newer",
-      "older",
-    ]);
+    expect(
+      loadCachedSessions("claudecode")?.sessions.map((session) => session.reference.sessionId),
+    ).toEqual(["newer", "older"]);
   });
 
   it("does not rewrite retained sort indexes for a partial snapshot", () => {
@@ -552,12 +551,12 @@ describe("saveCachedSessions", () => {
     saveCachedSessions("cursor", [makeSession("cursor-1", "cursor")]);
     saveCachedSessions("claudecode", [makeSession("claude-1")]);
 
-    expect(loadCachedSessions("cursor")?.sessions.map((session) => session.id)).toEqual([
-      "cursor-1",
-    ]);
-    expect(loadCachedSessions("claudecode")?.sessions.map((session) => session.id)).toEqual([
-      "claude-1",
-    ]);
+    expect(
+      loadCachedSessions("cursor")?.sessions.map((session) => session.reference.sessionId),
+    ).toEqual(["cursor-1"]);
+    expect(
+      loadCachedSessions("claudecode")?.sessions.map((session) => session.reference.sessionId),
+    ).toEqual(["claude-1"]);
   });
 
   it("removes legacy json cache file after sqlite write", () => {
@@ -634,7 +633,7 @@ describe("saveCachedSessions", () => {
 
     const result = loadCachedSessions("claudecode");
 
-    expect(result?.sessions.map((session) => session.id)).toEqual(["legacy"]);
+    expect(result?.sessions.map((session) => session.reference.sessionId)).toEqual(["legacy"]);
     expect(getUserVersion(getCachePath())).toBe(31);
     expect(listCachedProjectGroups()).toEqual([
       {
@@ -668,9 +667,9 @@ describe("saveCachedSessions", () => {
     });
 
     try {
-      expect(loadCachedSessions("claudecode")?.sessions.map((session) => session.id)).toEqual([
-        "legacy-without-identity",
-      ]);
+      expect(
+        loadCachedSessions("claudecode")?.sessions.map((session) => session.reference.sessionId),
+      ).toEqual(["legacy-without-identity"]);
       expect(events.indexOf("identity")).toBeGreaterThanOrEqual(0);
       expect(events.indexOf("identity")).toBeLessThan(events.indexOf("migration"));
     } finally {
@@ -708,9 +707,9 @@ describe("saveCachedSessions", () => {
   it("backs up populated cache before destructive migration", () => {
     createLegacyCachedSessionDb(2);
 
-    expect(loadCachedSessions("claudecode")?.sessions.map((session) => session.id)).toEqual([
-      "legacy",
-    ]);
+    expect(
+      loadCachedSessions("claudecode")?.sessions.map((session) => session.reference.sessionId),
+    ).toEqual(["legacy"]);
 
     const backups = getMigrationBackups();
     expect(backups).toHaveLength(1);
@@ -796,7 +795,10 @@ describe("saveCachedSessionChanges", () => {
     });
 
     const cached = loadCachedSessions("claudecode");
-    expect(cached?.sessions.map((session) => session.id)).toEqual(["changed", "unchanged"]);
+    expect(cached?.sessions.map((session) => session.reference.sessionId)).toEqual([
+      "changed",
+      "unchanged",
+    ]);
     expect(cached?.sessions[0]?.title).toBe("Changed updated");
     expect(cached?.meta.changed?.sourcePath).toBe("/tmp/changed-new");
     expect(cached?.meta.unchanged?.sourcePath).toBe("/tmp/unchanged");

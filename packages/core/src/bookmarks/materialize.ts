@@ -23,7 +23,7 @@ function canonicalSession(reference: SessionReference, session: SessionHead): Se
   const normalized = normalizeSessionReference(reference);
   assertSessionIdentity(session, normalized.agentName);
   if (session.reference.sessionId !== normalized.sessionId) {
-    throw new Error("Session identity fields disagree");
+    throw new Error("Session reference does not match expected session");
   }
   return session;
 }

@@ -45,7 +45,9 @@ describe("search index writer", () => {
     expect(searchSessions("needle")).toEqual([
       expect.objectContaining({
         reference: { agentName: "codex", sessionId: "one" },
-        session: expect.objectContaining({ id: "one" }),
+        session: expect.objectContaining({
+          reference: { agentName: "codex", sessionId: "one" },
+        }),
       }),
     ]);
     expect(syncSessionSearchIndex("codex", [session], loadSession)).toMatchObject({
@@ -57,7 +59,7 @@ describe("search index writer", () => {
   it("reindexes file activity when only the project identity changes", () => {
     const initial = makeSessionHead("identity-change");
     const detail = (session: typeof initial) => ({
-      ...makeSessionData(session.id),
+      ...makeSessionData(session.reference.sessionId),
       ...session,
       messages: [
         {
@@ -119,10 +121,14 @@ describe("search index writer", () => {
       ...makeSessionHead("chain"),
       stats: { ...makeSessionHead("chain").stats, message_count: 2 },
     };
-    const firstMeta = { id: session.id, sourcePath: "/chain", sourceFingerprint: "first" };
+    const firstMeta = {
+      id: session.reference.sessionId,
+      sourcePath: "/chain",
+      sourceFingerprint: "first",
+    };
     const nextMeta = { ...firstMeta, sourceFingerprint: "next" };
     const detail = (firstText: string, secondText: string) => ({
-      ...makeSessionData(session.id),
+      ...makeSessionData(session.reference.sessionId),
       ...session,
       messages: [
         {
@@ -146,14 +152,16 @@ describe("search index writer", () => {
             .prepare(
               "SELECT content_chain_digest FROM messages WHERE agent_name = ? AND session_id = ? ORDER BY message_index",
             )
-            .all("codex", session.id) as Array<{ content_chain_digest?: string | null }>,
+            .all("codex", session.reference.sessionId) as Array<{
+            content_chain_digest?: string | null;
+          }>,
       )?.map((row) => row.content_chain_digest);
 
-    saveCachedSessions("codex", [session], { [session.id]: firstMeta });
+    saveCachedSessions("codex", [session], { [session.reference.sessionId]: firstMeta });
     syncSessionSearchIndex("codex", [session], () => detail("first", "second"));
     const firstDigests = readDigests();
 
-    saveCachedSessions("codex", [session], { [session.id]: nextMeta });
+    saveCachedSessions("codex", [session], { [session.reference.sessionId]: nextMeta });
     syncSessionSearchIndex("codex", [session], () => detail("rewritten", "second"));
     const nextDigests = readDigests();
 
@@ -168,10 +176,14 @@ describe("search index writer", () => {
       ...makeSessionHead("rollback"),
       stats: { ...makeSessionHead("rollback").stats, message_count: 2 },
     };
-    const firstMeta = { id: session.id, sourcePath: "/rollback", sourceFingerprint: "first" };
+    const firstMeta = {
+      id: session.reference.sessionId,
+      sourcePath: "/rollback",
+      sourceFingerprint: "first",
+    };
     const nextMeta = { ...firstMeta, sourceFingerprint: "next" };
     const detail = (firstText: string, secondText: string) => ({
-      ...makeSessionData(session.id),
+      ...makeSessionData(session.reference.sessionId),
       ...session,
       messages: [
         {
@@ -189,12 +201,14 @@ describe("search index writer", () => {
       ],
     });
 
-    saveCachedSessions("codex", [session], { [session.id]: firstMeta });
+    saveCachedSessions("codex", [session], { [session.reference.sessionId]: firstMeta });
     syncSessionSearchIndex("codex", [session], () => detail("first", "second"));
-    const before = loadCachedSessionRawEntry("codex", session.id)?.messageRows.map((row) => ({
-      partsJson: row.parts_json,
-      digest: row.content_chain_digest,
-    }));
+    const before = loadCachedSessionRawEntry("codex", session.reference.sessionId)?.messageRows.map(
+      (row) => ({
+        partsJson: row.parts_json,
+        digest: row.content_chain_digest,
+      }),
+    );
     withCacheDb((db) => {
       db.exec(`
         CREATE TRIGGER reject_message_chain_update
@@ -205,15 +219,17 @@ describe("search index writer", () => {
         END;
       `);
     });
-    saveCachedSessions("codex", [session], { [session.id]: nextMeta });
+    saveCachedSessions("codex", [session], { [session.reference.sessionId]: nextMeta });
 
     expect(
       syncSessionSearchIndex("codex", [session], () => detail("rewritten", "second")),
     ).toBeNull();
-    const after = loadCachedSessionRawEntry("codex", session.id)?.messageRows.map((row) => ({
-      partsJson: row.parts_json,
-      digest: row.content_chain_digest,
-    }));
+    const after = loadCachedSessionRawEntry("codex", session.reference.sessionId)?.messageRows.map(
+      (row) => ({
+        partsJson: row.parts_json,
+        digest: row.content_chain_digest,
+      }),
+    );
 
     expect(after).toEqual(before);
   });
@@ -226,16 +242,16 @@ describe("search index writer", () => {
     withCacheDb((db) => {
       db.prepare("INSERT INTO pending_reindex(agent_name, session_id) VALUES (?, ?)").run(
         "codex",
-        session.id,
+        session.reference.sessionId,
       );
       db.prepare(
         "UPDATE session_documents SET content_hash = '' WHERE agent_name = ? AND session_id = ?",
-      ).run("codex", session.id);
+      ).run("codex", session.reference.sessionId);
     });
     loadSession.mockClear();
 
     expect(readPendingSearchIndexMaintenance("codex", 16)).toEqual({
-      sessionIds: [session.id],
+      sessionIds: [session.reference.sessionId],
       total: 1,
     });
     const foregroundPublication = commitDurableSessionPublication(
@@ -273,11 +289,11 @@ describe("search index writer", () => {
     withCacheDb((db) => {
       db.prepare("INSERT INTO pending_reindex(agent_name, session_id) VALUES (?, ?)").run(
         "codex",
-        session.id,
+        session.reference.sessionId,
       );
       db.prepare(
         "UPDATE session_documents SET content_hash = '' WHERE agent_name = ? AND session_id = ?",
-      ).run("codex", session.id);
+      ).run("codex", session.reference.sessionId);
     });
     const updated = { ...session, title: "Updated head" };
     const loadSession = vi.fn(() => ({ ...makeSessionData("one", "new detail"), ...updated }));
@@ -318,16 +334,17 @@ describe("search index writer", () => {
       ["updated", "removed"].map((id) => ({
         ...makeSessionHead(id),
         reference: { agentName, sessionId: id },
-        slug: `${agentName}/${id}`,
       }));
     const detailFor = (session: ReturnType<typeof makeSessionHead>, text: string) => ({
-      ...makeSessionData(session.id, text),
+      ...makeSessionData(session.reference.sessionId, text),
       ...session,
     });
 
     for (const agentName of [directAgent, durableAgent]) {
       const initial = initialFor(agentName);
-      const sessionsById = new Map(initial.map((session) => [session.id, session]));
+      const sessionsById = new Map(
+        initial.map((session) => [session.reference.sessionId, session]),
+      );
       saveCachedSessions(agentName, initial);
       syncSessionSearchIndex(agentName, initial, (sessionId) =>
         detailFor(sessionsById.get(sessionId)!, `${agentName} initial ${sessionId}`),

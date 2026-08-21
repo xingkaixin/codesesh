@@ -56,7 +56,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 
 `messages` 和 `session_file_activity` 通过复合外键关联 `sessions`，删除会话时级联清理。
 `sessions` 的 `(agent_name, session_id)` 复合主键是会话身份的持久化事实来源；领域对象的
-`reference` 由这两列恢复，`id` 与 `slug` 仅在序列化时作为兼容字段派生，不单独存储。
+`reference` 由这两列恢复，是会话模型中唯一的身份表示。
 
 ### 搜索索引
 

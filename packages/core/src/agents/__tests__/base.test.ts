@@ -146,8 +146,6 @@ class ReentrantSingleFileSource extends SingleFileSessionSource {
 function makeSession(id: string): SessionHead {
   return {
     reference: { agentName: "fake", sessionId: id },
-    id,
-    slug: `fake/${id}`,
     title: id,
     directory: "/tmp",
     time_created: 1000,
@@ -186,12 +184,10 @@ describe("BaseAgent", () => {
     expect(agent.getUri("abc123")).toBe("fake://abc123");
   });
 
-  it("formats session slugs from its normalized registered identity", () => {
+  it("normalizes session references from its registered identity", () => {
     const agent = new NormalizedNameSource();
     expect(agent.sessionIdentityForTest("nested/session")).toEqual({
       reference: { agentName: "fake", sessionId: "nested/session" },
-      id: "nested/session",
-      slug: "fake/nested/session",
     });
   });
 });
@@ -251,7 +247,7 @@ describe("FileSystemSessionSource.scan", () => {
     };
     const sessions = agent.scan(options);
 
-    expect(sessions.map((session) => session.id)).toEqual(["a", "b"]);
+    expect(sessions.map((session) => session.reference.sessionId)).toEqual(["a", "b"]);
     expect(agent.lastScanOptions).toBe(options);
     expect(progress).toEqual([
       { total: 3, processed: 0, sessions: 0 },
@@ -274,7 +270,7 @@ describe("FileSystemSessionSource.scan", () => {
 
     try {
       const sessions = agent.scan();
-      expect(sessions.map((session) => session.id)).toEqual(["a"]);
+      expect(sessions.map((session) => session.reference.sessionId)).toEqual(["a"]);
       expect(events).toEqual([
         {
           event: "agent.session_source_outcome",
@@ -643,20 +639,20 @@ describe("FileSystemSessionSource.incrementalScan", () => {
     ]);
 
     const updated = agent.incrementalScan([makeSession("a"), makeSession("b")], ["a"]);
-    expect(updated.map((s) => s.id).sort()).toEqual(["a", "b"]);
+    expect(updated.map((s) => s.reference.sessionId).sort()).toEqual(["a", "b"]);
     expect(agent.getSessionCacheMeta("a")?.sourceFingerprint).toBe("fp-1");
   });
 
   it("adds new sources when listed but missing from cache", () => {
     const agent = new FakeFileSystemSource([source("a"), source("b")]);
     const updated = agent.incrementalScan([makeSession("a")], ["b"]);
-    expect(updated.map((s) => s.id).sort()).toEqual(["a", "b"]);
+    expect(updated.map((s) => s.reference.sessionId).sort()).toEqual(["a", "b"]);
   });
 
   it("retains the last-known-good session when a source no longer parses", () => {
     const agent = new FakeFileSystemSource([source("a"), source("b", "fp-1", { head: null })]);
     const updated = agent.incrementalScan([makeSession("a"), makeSession("b")], ["b"]);
-    expect(updated.map((s) => s.id)).toEqual(["a", "b"]);
+    expect(updated.map((s) => s.reference.sessionId)).toEqual(["a", "b"]);
     expect(agent.getSessionCacheMeta("b")).toBeUndefined();
   });
 
@@ -722,7 +718,9 @@ describe("FileSystemSessionSource.incrementalScan", () => {
     const withRefs = agent.incrementalScan(cached, changedIds, refs);
 
     expect(listSpy).toHaveBeenCalledTimes(0);
-    expect(withRefs.map((s) => s.id).sort()).toEqual(fallback.map((s) => s.id).sort());
+    expect(withRefs.map((s) => s.reference.sessionId).sort()).toEqual(
+      fallback.map((s) => s.reference.sessionId).sort(),
+    );
   });
 });
 
@@ -892,7 +890,7 @@ describe("DatabaseSessionSource", () => {
     const sessions = agent.incrementalScan([makeSession("stale")], ["stale"], undefined, options);
     expect(agent.scanCount).toBe(1);
     expect(agent.lastScanOptions).toEqual(options);
-    expect(sessions.map((s) => s.id)).toEqual(["db-1"]);
+    expect(sessions.map((s) => s.reference.sessionId)).toEqual(["db-1"]);
   });
 
   it("rememberSession records meta keyed by db path", () => {

@@ -99,7 +99,7 @@ describe("buildLocalRecentResults", () => {
       {
         reference: {
           agentName: "claudecode",
-          sessionId: sBugfixApp.id,
+          sessionId: sBugfixApp.reference.sessionId,
         },
         session: sBugfixApp,
         snippet: `Recent session · ${sBugfixApp.directory}`,
@@ -118,7 +118,7 @@ describe("buildLocalRecentResults", () => {
       undefined,
     );
 
-    expect(results.map((r) => r.session.id)).toEqual(["s-bugfix-other"]);
+    expect(results.map((r) => r.session.reference.sessionId)).toEqual(["s-bugfix-other"]);
   });
 
   it("filters by costMin (>= costMin, not strictly greater)", () => {
@@ -127,7 +127,7 @@ describe("buildLocalRecentResults", () => {
     // one_plus = costMin 1; sBugfixApp (0.5) is excluded, the other two (2, 5) pass.
     const results = buildLocalRecentResults(indexes, {}, 1);
 
-    expect(results.map((r) => r.session.id).sort()).toEqual(
+    expect(results.map((r) => r.session.reference.sessionId).sort()).toEqual(
       ["s-feature-app", "s-bugfix-other"].sort(),
     );
   });
@@ -135,7 +135,7 @@ describe("buildLocalRecentResults", () => {
   it("includes a parent when descendant cost reaches costMin", () => {
     const parent = makeSession("parent");
     const child = makeSession("child", {
-      parent_reference: { agentName: "claudecode", sessionId: parent.id },
+      parent_reference: { agentName: "claudecode", sessionId: parent.reference.sessionId },
       stats: {
         message_count: 1,
         total_input_tokens: 0,
@@ -145,7 +145,10 @@ describe("buildLocalRecentResults", () => {
     });
     const results = buildLocalRecentResults(buildIndexes([parent, child]), {}, 1);
 
-    expect(results.map((result) => result.session.id)).toEqual(["parent", "child"]);
+    expect(results.map((result) => result.session.reference.sessionId)).toEqual([
+      "parent",
+      "child",
+    ]);
   });
 
   it("caps results at 50", () => {

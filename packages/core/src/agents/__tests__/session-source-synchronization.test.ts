@@ -38,8 +38,6 @@ describe("failure normalization", () => {
 function session(id: string, title = id): SessionHead {
   return {
     reference: { agentName: "test", sessionId: id },
-    id,
-    slug: `test/${id}`,
     title,
     directory: "/workspace",
     time_created: 1,
@@ -109,7 +107,7 @@ class MemorySourceAdapter implements SessionSourceSynchronizationAdapter {
 
   filterCachedSessions(sessions: SessionHead[]): SessionHead[] {
     return this.visibleIds
-      ? sessions.filter((session) => this.visibleIds!.has(session.id))
+      ? sessions.filter((session) => this.visibleIds!.has(session.reference.sessionId))
       : sessions;
   }
 
@@ -175,8 +173,14 @@ describe("synchronizeSessionSources", () => {
 
     expect(adapter.scannedIds).toEqual(["changed", "parent"]);
     expect(adapter.listCalls).toBe(1);
-    expect(outcome.sessions.map(({ id }) => id)).toEqual(["unchanged", "changed", "parent"]);
-    expect(outcome.sessions.find(({ id }) => id === "changed")?.title).toBe("updated");
+    expect(outcome.sessions.map(({ reference: { sessionId: id } }) => id)).toEqual([
+      "unchanged",
+      "changed",
+      "parent",
+    ]);
+    expect(
+      outcome.sessions.find(({ reference: { sessionId: id } }) => id === "changed")?.title,
+    ).toBe("updated");
     expect(outcome.detectedSessionIds).toEqual(["changed", "removed"]);
     expect(outcome.changedSessionIds).toEqual(["removed", "changed", "parent"]);
     expect(outcome.explicitRemovedSessionIds).toEqual(["removed"]);
@@ -203,7 +207,10 @@ describe("synchronizeSessionSources", () => {
       { kind: "refresh", scanOptions: { from: 100 } },
     );
 
-    expect(outcome.sessions.map(({ id }) => id)).toEqual(["recent", "outside"]);
+    expect(outcome.sessions.map(({ reference: { sessionId: id } }) => id)).toEqual([
+      "recent",
+      "outside",
+    ]);
     expect(outcome.explicitRemovedSessionIds).toEqual([]);
     expect(outcome.finalizeSessionIds).toEqual(["recent"]);
     expect(outcome.completeness).toBe("partial");
@@ -267,7 +274,7 @@ describe("synchronizeSessionSources", () => {
       { kind: "refresh" },
     );
 
-    expect(outcome.sessions.map(({ id }) => id)).toEqual(["good"]);
+    expect(outcome.sessions.map(({ reference: { sessionId: id } }) => id)).toEqual(["good"]);
     expect(outcome.sourceFailures).toEqual([]);
     expect(outcome.completeness).toBe("complete");
     expect(outcome.sourceOutcomes).toContainEqual({ status: "failed", failure });

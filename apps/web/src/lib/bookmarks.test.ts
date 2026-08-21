@@ -10,8 +10,6 @@ import {
 function createSession(overrides: Partial<SessionHead> = {}): SessionHead {
   return {
     reference: { agentName: "codex", sessionId: "s1" },
-    id: "s1",
-    slug: "codex/s1",
     title: "Bookmark me",
     directory: "/tmp/project",
     time_created: 100,

@@ -23,12 +23,12 @@ function at(day: number, hour: number): number {
 function createSession(
   overrides: Partial<SessionHead> & { id: string; time_updated: number },
 ): SessionHead {
+  const { id, ...sessionOverrides } = overrides;
   return {
-    reference: { agentName: "codex", sessionId: overrides.id },
-    slug: `codex/${overrides.id}`,
-    title: overrides.id,
+    reference: { agentName: "codex", sessionId: id },
+    title: id,
     directory: "/workspace/a",
-    time_created: overrides.time_updated,
+    time_created: sessionOverrides.time_updated,
     stats: {
       message_count: 4,
       total_input_tokens: 100,
@@ -36,7 +36,7 @@ function createSession(
       total_tokens: 150,
       total_cost: 1,
     },
-    ...overrides,
+    ...sessionOverrides,
   };
 }
 
@@ -97,7 +97,7 @@ describe("ProjectTimeline", () => {
       createSession({
         id: `large-child-${index}`,
         time_updated: at(6, 9) + index,
-        parent_reference: { agentName: "codex", sessionId: parent.id },
+        parent_reference: { agentName: "codex", sessionId: parent.reference.sessionId },
       }),
     );
 

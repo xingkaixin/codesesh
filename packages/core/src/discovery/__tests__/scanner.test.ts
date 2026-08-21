@@ -22,8 +22,6 @@ function makeSession(
   const timeCreated = overrides?.time_created ?? 1000;
   return {
     reference: { agentName, sessionId: id },
-    id,
-    slug: `${agentName}/${id}`,
     title: `Session ${id}`,
     directory: "/home/user/project",
     time_created: timeCreated,
@@ -160,7 +158,12 @@ describe("filterSessions", () => {
       makeSession("sibling", { directory: "/home/user/projectile" }),
     ];
     const result = filterSessions(sessions, { cwd: "/home/user/project" });
-    expect(result.map((s) => s.id)).toEqual(["exact", "child", "parent", "identity"]);
+    expect(result.map((s) => s.reference.sessionId)).toEqual([
+      "exact",
+      "child",
+      "parent",
+      "identity",
+    ]);
   });
 
   it("filters by cwd excluding non-matching directories", () => {
@@ -170,7 +173,7 @@ describe("filterSessions", () => {
     ];
     const result = filterSessions(sessions, { cwd: "/home/user/other" });
     expect(result).toHaveLength(1);
-    expect(result[0]!.id).toBe("b");
+    expect(result[0]!.reference.sessionId).toBe("b");
   });
 
   it("returns empty when cwd matches nothing", () => {
@@ -187,7 +190,7 @@ describe("filterSessions", () => {
     ];
     const result = filterSessions(sessions, { from: 200 });
     expect(result).toHaveLength(2);
-    expect(result.map((s) => s.id)).toEqual(["b", "c"]);
+    expect(result.map((s) => s.reference.sessionId)).toEqual(["b", "c"]);
   });
 
   it("filters by to timestamp", () => {
@@ -198,7 +201,7 @@ describe("filterSessions", () => {
     ];
     const result = filterSessions(sessions, { to: 200 });
     expect(result).toHaveLength(2);
-    expect(result.map((s) => s.id)).toEqual(["a", "b"]);
+    expect(result.map((s) => s.reference.sessionId)).toEqual(["a", "b"]);
   });
 
   it("filters by activity timestamp", () => {
@@ -207,7 +210,7 @@ describe("filterSessions", () => {
       makeSession("active", { time_created: 100, time_updated: 300 }),
     ];
     const result = filterSessions(sessions, { from: 200 });
-    expect(result.map((s) => s.id)).toEqual(["active"]);
+    expect(result.map((s) => s.reference.sessionId)).toEqual(["active"]);
   });
 
   it("combines cwd and time filters", () => {
@@ -218,7 +221,7 @@ describe("filterSessions", () => {
     ];
     const result = filterSessions(sessions, { cwd: "/home/user/project", from: 200 });
     expect(result).toHaveLength(1);
-    expect(result[0]!.id).toBe("b");
+    expect(result[0]!.reference.sessionId).toBe("b");
   });
 
   it("returns empty for null directory with cwd filter", () => {
@@ -384,7 +387,7 @@ describe("finalizeAgentScan", () => {
       onProgress,
     });
 
-    expect(result.heads.map((session) => session.id)).toEqual(["current"]);
+    expect(result.heads.map((session) => session.reference.sessionId)).toEqual(["current"]);
     expect(result.heads[0]?.project_identity).toBeDefined();
     expect(result.cachePersistence).toBe("not-requested");
     expect(result.cacheTimestamp).toBe(123);
@@ -422,7 +425,10 @@ describe("finalizeAgentScan", () => {
       "test",
       [
         {
-          session: expect.objectContaining({ id: "new", project_identity: expect.any(Object) }),
+          session: expect.objectContaining({
+            reference: { agentName: "test", sessionId: "new" },
+            project_identity: expect.any(Object),
+          }),
           sortIndex: 0,
         },
       ],
@@ -453,7 +459,7 @@ describe("finalizeAgentScan", () => {
         completeness: "complete",
       });
 
-      expect(result.heads.map((session) => session.id)).toEqual(["new"]);
+      expect(result.heads.map((session) => session.reference.sessionId)).toEqual(["new"]);
       expect(result.refreshed).toBe(true);
       expect(result.cachePersistence).toBe("failed");
       expect(result.cacheTimestamp).toBe(123);
@@ -535,7 +541,7 @@ describe("finalizeAgentScan", () => {
       [
         {
           session: expect.objectContaining({
-            id: "cached",
+            reference: { agentName: "test", sessionId: "cached" },
             project_identity_resolver_revision: expect.any(String),
             project_identity_input_signature: expect.any(String),
           }),
@@ -563,7 +569,7 @@ describe("finalizeAgentScan", () => {
     });
 
     expect(result.heads[0]).toMatchObject({
-      id: "cached",
+      reference: { agentName: "test", sessionId: "cached" },
       smart_tags: [],
       smart_tags_source_updated_at: 1000,
     });
@@ -571,7 +577,10 @@ describe("finalizeAgentScan", () => {
       "test",
       [
         {
-          session: expect.objectContaining({ id: "cached", smart_tags: [] }),
+          session: expect.objectContaining({
+            reference: { agentName: "test", sessionId: "cached" },
+            smart_tags: [],
+          }),
           sortIndex: 0,
         },
       ],
@@ -613,8 +622,10 @@ describe("scanSessions", () => {
     try {
       const result = await scanSessions({ useCache: true });
 
-      expect(result.sessions.map((session) => session.id)).toEqual(["cached"]);
-      expect(result.byAgent.test?.map((session) => session.id)).toEqual(["cached"]);
+      expect(result.sessions.map((session) => session.reference.sessionId)).toEqual(["cached"]);
+      expect(result.byAgent.test?.map((session) => session.reference.sessionId)).toEqual([
+        "cached",
+      ]);
       expect(result.cacheTimestamps).toEqual({ test: 123 });
       expect(result.scanFailures?.test).toEqual({
         agentName: "test",
@@ -652,8 +663,8 @@ describe("scanSessions", () => {
     expect(result.byAgent.test).toHaveLength(2);
   });
 
-  it("reports a scan failure when an adapter publishes a conflicting identity", async () => {
-    const conflicting = { ...makeSession("session"), id: "other" };
+  it("reports a scan failure when an adapter publishes another agent's session", async () => {
+    const conflicting = makeSession("session", undefined, "codex");
     mockedCreateRegisteredAgents.mockReturnValue([
       createTestAgent({ name: "test", available: true, sessions: [conflicting] }),
     ]);
@@ -664,7 +675,7 @@ describe("scanSessions", () => {
     expect(result.scanFailures?.test).toMatchObject({
       agentName: "test",
       stage: "scanning sessions",
-      message: "Session identity fields disagree",
+      message: 'Session reference agent "codex" does not match "test"',
     });
   });
 
@@ -716,7 +727,7 @@ describe("scanSessions", () => {
 
     const result = await scanSessions({});
 
-    expect(result.sessions.map((session) => session.id)).toEqual(["ok"]);
+    expect(result.sessions.map((session) => session.reference.sessionId)).toEqual(["ok"]);
     expect(result.byAgent.healthy).toHaveLength(1);
     expect(result.byAgent.failed).toBeUndefined();
     expect(result.scanFailures?.failed).toBeDefined();
@@ -743,8 +754,10 @@ describe("scanSessions", () => {
     try {
       const result = await scanSessions({ useCache: true });
 
-      expect(result.sessions.map((session) => session.id)).toEqual(["cached"]);
-      expect(result.byAgent.test?.map((session) => session.id)).toEqual(["cached"]);
+      expect(result.sessions.map((session) => session.reference.sessionId)).toEqual(["cached"]);
+      expect(result.byAgent.test?.map((session) => session.reference.sessionId)).toEqual([
+        "cached",
+      ]);
       expect(result.scanFailures?.test).toEqual({
         agentName: "test",
         stage: "enumerating session sources",
@@ -792,8 +805,10 @@ describe("scanSessions", () => {
     try {
       const result = await scanSessions({ useCache: true });
 
-      expect(result.sessions.map((session) => session.id)).toEqual(["cached"]);
-      expect(result.byAgent.test?.map((session) => session.id)).toEqual(["cached"]);
+      expect(result.sessions.map((session) => session.reference.sessionId)).toEqual(["cached"]);
+      expect(result.byAgent.test?.map((session) => session.reference.sessionId)).toEqual([
+        "cached",
+      ]);
       expect(result.cacheTimestamps).toEqual({ test: 123 });
       expect(result.scanFailures?.test).toEqual({
         agentName: "test",
@@ -892,7 +907,9 @@ describe("scanSessions", () => {
     expect(failed.scanFailures?.test?.stage).toBe("opening the database");
     expect(failed.byAgent.test).toBeUndefined();
     expect(recovered.scanFailures).toBeUndefined();
-    expect(recovered.byAgent.test?.map((session) => session.id)).toEqual(["recovered"]);
+    expect(recovered.byAgent.test?.map((session) => session.reference.sessionId)).toEqual([
+      "recovered",
+    ]);
   });
 
   it("calls onProgress for complete phase", async () => {
@@ -941,7 +958,7 @@ describe("scanSessions", () => {
     ]);
     const result = await scanSessions({ from: 200 });
     expect(result.sessions).toHaveLength(1);
-    expect(result.sessions[0]!.id).toBe("new");
+    expect(result.sessions[0]!.reference.sessionId).toBe("new");
   });
 
   it("persists a windowed scan as a partial snapshot", async () => {
@@ -959,7 +976,7 @@ describe("scanSessions", () => {
 
     expect(mockedSaveCachedSessions).toHaveBeenCalledWith(
       "test",
-      [expect.objectContaining({ id: "recent" })],
+      [expect.objectContaining({ reference: { agentName: "test", sessionId: "recent" } })],
       {},
       { completeness: "partial" },
     );
@@ -984,10 +1001,12 @@ describe("scanSessions", () => {
 
     const result = await scanSessions({ useCache: false, includeSmartTags: false });
 
-    expect(result.sessions).toEqual([expect.objectContaining({ id: "cached" })]);
+    expect(result.sessions).toEqual([
+      expect.objectContaining({ reference: { agentName: "files", sessionId: "cached" } }),
+    ]);
     expect(mockedSaveCachedSessions).toHaveBeenCalledWith(
       "files",
-      [expect.objectContaining({ id: "cached" })],
+      [expect.objectContaining({ reference: { agentName: "files", sessionId: "cached" } })],
       meta,
       { completeness: "partial" },
     );
@@ -1010,7 +1029,7 @@ describe("scanSessions", () => {
     const result = await scanSessions({ useCache: true });
     // Should use cached sessions
     expect(result.sessions).toHaveLength(1);
-    expect(result.sessions[0]!.id).toBe("cached");
+    expect(result.sessions[0]!.reference.sessionId).toBe("cached");
   });
 
   it("can return cached sessions without validating agent availability", async () => {
@@ -1037,7 +1056,7 @@ describe("scanSessions", () => {
     const result = await scanSessions({ useCache: true, cacheOnly: true });
 
     expect(result.sessions).toHaveLength(1);
-    expect(result.sessions[0]!.id).toBe("cached");
+    expect(result.sessions[0]!.reference.sessionId).toBe("cached");
     expect(result.sessions[0]!.project_identity).toEqual({
       kind: "path",
       key: "/home/user/project",
@@ -1072,7 +1091,7 @@ describe("scanSessions", () => {
     const result = await scanSessions({ useCache: true, cacheOnly: true });
 
     expect(filterCachedSessions).toHaveBeenCalledWith(cachedSessions);
-    expect(result.sessions.map((session) => session.id)).toEqual(["visible"]);
+    expect(result.sessions.map((session) => session.reference.sessionId)).toEqual(["visible"]);
     expect(mockedSaveCachedSessionChanges).not.toHaveBeenCalled();
     expect(mockedSaveCachedSessions).not.toHaveBeenCalled();
   });
@@ -1094,7 +1113,7 @@ describe("scanSessions", () => {
     const result = await scanSessions({ useCache: true, cacheOnly: true });
 
     expect(mockedLoadCachedSessions).toHaveBeenCalledWith("test");
-    expect(result.sessions.map((session) => session.id)).toEqual(["cached"]);
+    expect(result.sessions.map((session) => session.reference.sessionId)).toEqual(["cached"]);
     expect(mockedSaveCachedSessionChanges).not.toHaveBeenCalled();
     expect(mockedSaveCachedSessions).not.toHaveBeenCalled();
   });
@@ -1130,7 +1149,7 @@ describe("scanSessions", () => {
     });
 
     expect(result.sessions).toHaveLength(1);
-    expect(result.sessions[0]!.id).toBe("fresh");
+    expect(result.sessions[0]!.reference.sessionId).toBe("fresh");
     expect(incrementalScan).toHaveBeenCalledWith(cachedSessions, ["fresh"], undefined, {
       from: 500,
       to: 1_500,
@@ -1183,11 +1202,11 @@ describe("scanSessions", () => {
     const failed = await scanSessions({ useCache: true, includeSmartTags: false });
     const recovered = await scanSessions({ useCache: true, includeSmartTags: false });
 
-    expect(failed.sessions.map((session) => session.id)).toEqual(["fresh"]);
+    expect(failed.sessions.map((session) => session.reference.sessionId)).toEqual(["fresh"]);
     expect(failed.cacheTimestamps).toEqual({ test: 123 });
     expect(failed.cacheFailures).toEqual({ test: { agentName: "test" } });
     expect(failed.scanFailures).toBeUndefined();
-    expect(recovered.sessions.map((session) => session.id)).toEqual(["fresh"]);
+    expect(recovered.sessions.map((session) => session.reference.sessionId)).toEqual(["fresh"]);
     expect(recovered.cacheTimestamps).toEqual({ test: 456 });
     expect(recovered.cacheFailures).toBeUndefined();
     expect(checkForChanges).toHaveBeenNthCalledWith(1, 123, cachedSessions);
@@ -1233,7 +1252,7 @@ describe("scanSessions", () => {
       [
         {
           session: expect.objectContaining({
-            id: "changed",
+            reference: { agentName: "test", sessionId: "changed" },
             title: "Updated changed",
             project_identity: expect.objectContaining({ kind: "path", key: "/home/user/project" }),
           }),
@@ -1241,7 +1260,7 @@ describe("scanSessions", () => {
         },
         {
           session: expect.objectContaining({
-            id: "added",
+            reference: { agentName: "test", sessionId: "added" },
             project_identity: expect.objectContaining({ kind: "path", key: "/home/user/project" }),
           }),
           sortIndex: 2,

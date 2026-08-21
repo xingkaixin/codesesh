@@ -19,7 +19,19 @@ const sessionView: ViewState = {
   activeSessionId: "claudecode/abc",
 };
 
-const sample = { id: "abc", messages: [] } as unknown as SessionDetail;
+function makeSessionDetail(
+  agentName: string,
+  sessionId: string,
+  overrides: Record<string, unknown> = {},
+): SessionDetail {
+  return {
+    reference: { agentName, sessionId },
+    messages: [],
+    ...overrides,
+  } as unknown as SessionDetail;
+}
+
+const sample = makeSessionDetail("claudecode", "abc");
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -110,7 +122,7 @@ describe("useSessionDetail", () => {
     const { result } = renderSessionDetail();
     await waitFor(() => expect(result.current.session).toEqual(sample));
 
-    const updated = { id: "abc", messages: [1] } as unknown as SessionDetail;
+    const updated = makeSessionDetail("claudecode", "abc", { messages: [1] });
     vi.mocked(api.fetchSessionData).mockResolvedValue(updated);
     await act(async () => {
       await result.current.refresh();
@@ -149,18 +161,16 @@ describe("useSessionDetail", () => {
   it("requests and merges only messages appended by a live update", async () => {
     const firstMessage = { id: "m1" };
     const nextMessage = { id: "m2" };
-    const initial = {
-      id: "abc",
+    const initial = makeSessionDetail("claudecode", "abc", {
       messages: [firstMessage],
       message_cursor: "cursor-1",
       message_update: "reset",
-    } as unknown as SessionDetail;
-    const appended = {
-      id: "abc",
+    });
+    const appended = makeSessionDetail("claudecode", "abc", {
       messages: [nextMessage],
       message_cursor: "cursor-2",
       message_update: "append",
-    } as unknown as SessionDetail;
+    });
     vi.mocked(api.fetchSessionData).mockResolvedValueOnce(initial).mockResolvedValueOnce(appended);
     const { client, result } = renderSessionDetail();
     await waitFor(() => expect(result.current.session).toEqual(initial));
@@ -191,8 +201,8 @@ describe("useSessionDetail", () => {
       activeAgentKey: "codex",
       activeSessionId: "def",
     };
-    const sessionA = { id: "a", messages: [] } as unknown as SessionDetail;
-    const sessionB = { id: "b", messages: [] } as unknown as SessionDetail;
+    const sessionA = makeSessionDetail("claudecode", "a");
+    const sessionB = makeSessionDetail("codex", "b");
     vi.mocked(api.fetchSessionData).mockImplementation((_agent, sessionId) =>
       sessionId === viewA.activeSessionId ? requestA.promise : requestB.promise,
     );
@@ -206,7 +216,7 @@ describe("useSessionDetail", () => {
     await act(async () => requestA.resolve(sessionA));
 
     expect({
-      sessionId: result.current.session?.id,
+      sessionId: result.current.session?.reference.sessionId,
       lifecycle: vi
         .mocked(api.logClientEvent)
         .mock.calls.map(([event, fields]) => `${event}:${fields?.request_key}`),
@@ -227,7 +237,7 @@ describe("useSessionDetail", () => {
       activeAgentKey: "codex",
       activeSessionId: "def",
     };
-    const sessionB = { id: "b", messages: [] } as unknown as SessionDetail;
+    const sessionB = makeSessionDetail("codex", "b");
     vi.mocked(api.fetchSessionData).mockImplementation((agent, _sessionId, options) => {
       if (agent === "codex") return Promise.resolve(sessionB);
       return new Promise((_resolve, reject) => {
@@ -259,7 +269,7 @@ describe("useSessionDetail", () => {
       activeAgentKey: "codex",
       activeSessionId: "def",
     };
-    const sessionB = { id: "b", messages: [] } as unknown as SessionDetail;
+    const sessionB = makeSessionDetail("codex", "b");
     vi.mocked(api.fetchSessionData).mockImplementation((_agent, sessionId) =>
       sessionId === sessionView.activeSessionId ? requestA.promise : requestB.promise,
     );
@@ -300,8 +310,8 @@ describe("useSessionDetail", () => {
 
   it("does not let an old refresh overwrite a navigated session", async () => {
     const refreshRequest = deferred<SessionDetail>();
-    const refreshedA = { id: "a-refreshed", messages: [] } as unknown as SessionDetail;
-    const sessionB = { id: "b", messages: [] } as unknown as SessionDetail;
+    const refreshedA = makeSessionDetail("claudecode", "a-refreshed");
+    const sessionB = makeSessionDetail("codex", "b");
     const viewB: ViewState = {
       mode: "session",
       activeAgentKey: "codex",

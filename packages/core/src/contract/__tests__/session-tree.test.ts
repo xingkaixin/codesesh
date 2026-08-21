@@ -23,8 +23,6 @@ interface SessionOverrides {
 function makeSession(id: string, time: number, overrides: SessionOverrides = {}): SessionHead {
   return {
     reference: { agentName: "codex", sessionId: id },
-    id,
-    slug: `codex/${id}`,
     title: id,
     directory: "/repo",
     time_created: time,
@@ -44,12 +42,12 @@ function makeSession(id: string, time: number, overrides: SessionOverrides = {})
 }
 
 function ids(nodes: { session: SessionHead }[]): string[] {
-  return nodes.map((node) => node.session.id);
+  return nodes.map((node) => node.session.reference.sessionId);
 }
 
 function referenced(session: SessionHead) {
   return {
-    reference: { agentName: "codex", sessionId: session.id },
+    reference: { agentName: "codex", sessionId: session.reference.sessionId },
     session,
   };
 }
@@ -90,11 +88,13 @@ describe("buildSessionTree", () => {
 
     while (pending.length > 0) {
       const node = pending.pop()!;
-      visible.push(node.session.id);
+      visible.push(node.session.reference.sessionId);
       pending.push(...node.children);
     }
 
-    expect([...visible].sort()).toEqual(sessions.map((session) => session.id).sort());
+    expect([...visible].sort()).toEqual(
+      sessions.map((session) => session.reference.sessionId).sort(),
+    );
     expect(new Set(visible).size).toBe(sessions.length);
   });
 
@@ -241,7 +241,9 @@ describe("session tree window filtering", () => {
     const sessions = [makeSession("a", 100, { parent: "b" }), makeSession("b", 1, { parent: "a" })];
 
     expect(
-      filterSessionTreeByActivityWindow(sessions, 90, 110).map((session) => session.id),
+      filterSessionTreeByActivityWindow(sessions, 90, 110).map(
+        (session) => session.reference.sessionId,
+      ),
     ).toEqual(["a"]);
   });
 
@@ -254,7 +256,9 @@ describe("session tree window filtering", () => {
     ];
 
     expect(
-      filterSessionTreeByActivityWindow(sessions, 90, 110).map((session) => session.id),
+      filterSessionTreeByActivityWindow(sessions, 90, 110).map(
+        (session) => session.reference.sessionId,
+      ),
     ).toEqual(["parent", "child-old", "child-new"]);
   });
 
@@ -266,7 +270,9 @@ describe("session tree window filtering", () => {
     ];
 
     expect(
-      filterSessionTreeByActivityWindow(sessions, 100, 100).map((session) => session.id),
+      filterSessionTreeByActivityWindow(sessions, 100, 100).map(
+        (session) => session.reference.sessionId,
+      ),
     ).toEqual(["grandchild", "child", "parent"]);
   });
 
@@ -277,7 +283,9 @@ describe("session tree window filtering", () => {
     ];
 
     expect(
-      filterSessionTreeByActivityWindow(sessions, 90, 110).map((session) => session.id),
+      filterSessionTreeByActivityWindow(sessions, 90, 110).map(
+        (session) => session.reference.sessionId,
+      ),
     ).toEqual(["orphan"]);
   });
 
@@ -289,7 +297,9 @@ describe("session tree window filtering", () => {
     ];
 
     expect(
-      filterSessionTreeByActivityWindow(sessions, 90, 110).map((session) => session.id),
+      filterSessionTreeByActivityWindow(sessions, 90, 110).map(
+        (session) => session.reference.sessionId,
+      ),
     ).toEqual(["orphan", "child", "grandchild"]);
   });
 
@@ -306,7 +316,7 @@ describe("session tree window filtering", () => {
         [recentRoot, child, grandchild, unrelated],
         [referenced(recentRoot)],
         [],
-      ).relatedSessionHeads.map(({ session }) => session.id),
+      ).relatedSessionHeads.map(({ session }) => session.reference.sessionId),
     ).toEqual(["child", "grandchild"]);
     expect(
       createSessionProjectionContext(
@@ -314,7 +324,7 @@ describe("session tree window filtering", () => {
         [child, grandchild],
         [],
         [{ agentName: "codex", sessionId: "root" }],
-      ).relatedSessionHeads.map(({ session }) => session.id),
+      ).relatedSessionHeads.map(({ session }) => session.reference.sessionId),
     ).toEqual(["child", "grandchild"]);
   });
 
@@ -331,7 +341,7 @@ describe("session tree window filtering", () => {
         [root, changedChild, grandchild, sibling],
         [referenced(changedChild)],
         [],
-      ).relatedSessionHeads.map(({ session }) => session.id),
+      ).relatedSessionHeads.map(({ session }) => session.reference.sessionId),
     ).toEqual(["root", "grandchild"]);
   });
 
@@ -383,7 +393,7 @@ describe("session tree window filtering", () => {
     const sortedNext = sortSessionsByActivity(next);
     const previousProjection = filterSessionTreeByActivityWindow(sortedPrevious, 90, 110);
     const changedSessionHeads = changedIds.map((id) =>
-      referenced(sortedNext.find((session) => session.id === id)!),
+      referenced(sortedNext.find((session) => session.reference.sessionId === id)!),
     );
     const removedSessionRefs = removedIds.map((sessionId) => ({
       agentName: "codex",
@@ -432,7 +442,7 @@ describe("session tree window filtering", () => {
       historical,
     ]);
     const afterHiddenRootRemoval = afterHiddenRootEnters.filter(
-      (session) => session.id !== "hidden-root",
+      (session) => session.reference.sessionId !== "hidden-root",
     );
     const transitions = [
       { next: afterBackfill, changedIds: ["historical"], removedIds: [] },
@@ -445,7 +455,7 @@ describe("session tree window filtering", () => {
 
     for (const transition of transitions) {
       const changedSessionHeads = transition.changedIds.map((id) =>
-        referenced(transition.next.find((session) => session.id === id)!),
+        referenced(transition.next.find((session) => session.reference.sessionId === id)!),
       );
       const removedSessionRefs = transition.removedIds.map((sessionId) => ({
         agentName: "codex",

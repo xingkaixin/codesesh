@@ -36,8 +36,6 @@ function createDeferred<T>(): Deferred<T> {
 function createSession(title: string): SessionDetail {
   return {
     reference: { agentName: "codex", sessionId: "session-1" },
-    id: "session-1",
-    slug: "codex/session-1",
     title,
     directory: "/repo",
     time_created: 1,

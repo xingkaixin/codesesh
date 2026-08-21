@@ -23,8 +23,6 @@ function makeSearchResult(id: string): SearchResult {
     reference: { agentName: "cc", sessionId: id },
     session: {
       reference: { agentName: "cc", sessionId: id },
-      id,
-      slug: `cc/${id}`,
       title: id,
       directory: "/workspace",
       time_created: 1,

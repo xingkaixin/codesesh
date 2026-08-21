@@ -44,8 +44,6 @@ function makeSessionHead(id: string, title: string, timeUpdated: number): Sessio
   const directory = `/fixtures/${id}`;
   return {
     reference: { agentName: "claudecode", sessionId: id },
-    id,
-    slug: `claudecode/${id}`,
     title,
     directory,
     project_identity: { kind: "path", key: directory, displayName: id },
@@ -75,7 +73,11 @@ function makeScanSource(): ScanResultSource {
 async function search(app: ReturnType<typeof createApiRoutes>, qs: string) {
   const res = await app.request(`/search${qs}`);
   const body = (await res.json()) as {
-    results?: Array<{ agentName: string; session: { id: string }; matchType: string }>;
+    results?: Array<{
+      agentName: string;
+      session: { reference: { agentName: string; sessionId: string } };
+      matchType: string;
+    }>;
     error?: string;
   };
   return { status: res.status, body };
@@ -86,8 +88,10 @@ beforeAll(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
   syncSessionSearchIndex("claudecode", [ftsTitle], () => ({
     ...ftsTitle,
-    reference: { agentName: "claudecode", sessionId: ftsTitle.id },
-    messages: [{ id: `${ftsTitle.id}-m1`, role: "assistant", time_created: now, parts: [] }],
+    reference: { agentName: "claudecode", sessionId: ftsTitle.reference.sessionId },
+    messages: [
+      { id: `${ftsTitle.reference.sessionId}-m1`, role: "assistant", time_created: now, parts: [] },
+    ],
   }));
 });
 
@@ -107,7 +111,10 @@ describe("search route: smoke wiring", () => {
   it("honors limit= on the recent-session path", async () => {
     const app = createApiRoutes(makeScanSource());
     const { body } = await search(app, "?limit=2");
-    expect(body.results!.map((r) => r.session.id)).toEqual(["recent-new", "recent-mid"]);
+    expect(body.results!.map((r) => r.session.reference.sessionId)).toEqual([
+      "recent-new",
+      "recent-mid",
+    ]);
   });
 
   it("normalizes a known agent and returns no results for an unknown agent", async () => {
@@ -134,7 +141,7 @@ describe("search route: smoke wiring", () => {
   it("routes a text q to the indexed FTS path and resolves matchType", async () => {
     const app = createApiRoutes(makeScanSource());
     const { body } = await search(app, "?q=uniquetitleneedle");
-    expect(body.results!.map((r) => r.session.id)).toEqual(["fts-title"]);
+    expect(body.results!.map((r) => r.session.reference.sessionId)).toEqual(["fts-title"]);
     expect(body.results![0]!.matchType).toBe("title");
   });
 });

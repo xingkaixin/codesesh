@@ -53,8 +53,6 @@ const FIXTURE_DIR = mkdtempSync(join(tmpdir(), "codesesh-identity-"));
 function makeAgentSession(agentName: string, id: string): IdentifiedSessionHead {
   return {
     reference: { agentName, sessionId: id },
-    id,
-    slug: `${agentName}/${id}`,
     title: `Session ${id}`,
     directory: FIXTURE_DIR,
     project_identity: {
@@ -218,7 +216,7 @@ describe("durable publication", () => {
     const original = makeSession("head-failure");
     saveCachedSessions("codex", [original]);
     syncSessionSearchIndex("codex", [original], () =>
-      makeSessionData(original.id, "head old content"),
+      makeSessionData(original.reference.sessionId, "head old content"),
     );
 
     const db = new Database(getCachePath());
@@ -244,7 +242,7 @@ describe("durable publication", () => {
         completeness: "complete",
         removedSessionIds: [],
       },
-      () => makeSessionData(original.id, "head updated content"),
+      () => makeSessionData(original.reference.sessionId, "head updated content"),
     );
 
     expect(result).toMatchObject({ status: "rolled-back", stage: "cache" });
@@ -343,7 +341,7 @@ describe("durable publication", () => {
     const original = makeSession("commit-failure");
     saveCachedSessions("codex", [original]);
     syncSessionSearchIndex("codex", [original], () =>
-      makeSessionData(original.id, "commit old content"),
+      makeSessionData(original.reference.sessionId, "commit old content"),
     );
 
     const db = new Database(getCachePath());
@@ -375,7 +373,7 @@ describe("durable publication", () => {
         completeness: "complete",
         removedSessionIds: [],
       },
-      () => makeSessionData(original.id, "commit updated content"),
+      () => makeSessionData(original.reference.sessionId, "commit updated content"),
     );
 
     expect(result).toMatchObject({ status: "rolled-back", stage: "commit" });
@@ -503,15 +501,18 @@ describe("durable publication", () => {
     () => {
       const historical = makeSession("historical");
       saveCachedSessions("codex", [historical], {
-        historical: { id: historical.id, sourcePath: "/historical" },
+        historical: { id: historical.reference.sessionId, sourcePath: "/historical" },
       });
       syncSessionSearchIndex("codex", [historical], () =>
-        makeSessionData(historical.id, "historical content"),
+        makeSessionData(historical.reference.sessionId, "historical content"),
       );
 
       const sessions = Array.from({ length: 70 }, (_, index) => makeSession(`rollback-${index}`));
       const meta = Object.fromEntries(
-        sessions.map((session) => [session.id, { id: session.id, sourcePath: `/${session.id}` }]),
+        sessions.map((session) => [
+          session.reference.sessionId,
+          { id: session.reference.sessionId, sourcePath: `/${session.reference.sessionId}` },
+        ]),
       );
       const db = new Database(getCachePath());
       try {
@@ -540,7 +541,9 @@ describe("durable publication", () => {
       );
 
       expect(result).toMatchObject({ status: "rolled-back", stage: "cache" });
-      expect(loadCachedSessions("codex")?.sessions.map(({ id }) => id)).toEqual([historical.id]);
+      expect(
+        loadCachedSessions("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
+      ).toEqual([historical.reference.sessionId]);
       expect(searchSessions("rollback-42 rollback content")).toHaveLength(0);
       const verifyDb = new Database(getCachePath(), { readonly: true });
       try {
@@ -590,7 +593,7 @@ describe("durable publication", () => {
 
       const updated = originals.map((session) => ({
         ...session,
-        title: `Updated ${session.id}`,
+        title: `Updated ${session.reference.sessionId}`,
       }));
       const db = new Database(getCachePath());
       try {
@@ -730,16 +733,18 @@ describe("durable publication", () => {
         sessions: [updatedRecent],
         meta: {},
         completeness: "partial",
-        removedSessionIds: [removed.id],
+        removedSessionIds: [removed.reference.sessionId],
       },
-      () => makeSessionData(recent.id, "recent partial content"),
+      () => makeSessionData(recent.reference.sessionId, "recent partial content"),
     );
 
     expect(partial.status).toBe("committed");
-    expect(loadCachedSessions("codex")?.sessions.map(({ id }) => id)).toEqual(
-      expect.arrayContaining([recent.id, historical.id]),
-    );
-    expect(loadCachedSessions("codex")?.sessions.map(({ id }) => id)).not.toContain(removed.id);
+    expect(
+      loadCachedSessions("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
+    ).toEqual(expect.arrayContaining([recent.reference.sessionId, historical.reference.sessionId]));
+    expect(
+      loadCachedSessions("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
+    ).not.toContain(removed.reference.sessionId);
     expect(searchSessions("historical publication")).toHaveLength(1);
     expect(searchSessions("removed publication")).toHaveLength(0);
 
@@ -749,14 +754,16 @@ describe("durable publication", () => {
         kind: "changes",
         agentName: "codex",
         changes: [{ session: updatedHistorical, sortIndex: 0 }],
-        removedSessionIds: [recent.id],
+        removedSessionIds: [recent.reference.sessionId],
         meta: {},
       },
-      () => makeSessionData(historical.id, "historical incremental content"),
+      () => makeSessionData(historical.reference.sessionId, "historical incremental content"),
     );
 
     expect(incremental.status).toBe("committed");
-    expect(loadCachedSessions("codex")?.sessions.map(({ id }) => id)).toEqual([historical.id]);
+    expect(
+      loadCachedSessions("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
+    ).toEqual([historical.reference.sessionId]);
     expect(searchSessions("historical incremental")).toHaveLength(1);
     expect(searchSessions("recent partial")).toHaveLength(0);
   });
@@ -786,13 +793,17 @@ describe("searchSessions", () => {
 
     saveCachedSessions("codex", [below, boundary, above]);
 
-    expect(searchSessions("cost:>1").map((result) => result.session.id)).toEqual(["above"]);
-    expect(searchSessions("cost:<1").map((result) => result.session.id)).toEqual(["below"]);
-    expect(searchSessions("cost:>=1").map((result) => result.session.id)).toEqual([
+    expect(searchSessions("cost:>1").map((result) => result.session.reference.sessionId)).toEqual([
+      "above",
+    ]);
+    expect(searchSessions("cost:<1").map((result) => result.session.reference.sessionId)).toEqual([
+      "below",
+    ]);
+    expect(searchSessions("cost:>=1").map((result) => result.session.reference.sessionId)).toEqual([
       "above",
       "boundary",
     ]);
-    expect(searchSessions("cost:<=1").map((result) => result.session.id)).toEqual([
+    expect(searchSessions("cost:<=1").map((result) => result.session.reference.sessionId)).toEqual([
       "boundary",
       "below",
     ]);
@@ -810,7 +821,7 @@ describe("searchSessions", () => {
     };
     const details = new Map<string, SessionDetail>([
       [
-        parent.id,
+        parent.reference.sessionId,
         {
           ...parent,
           messages: [
@@ -824,7 +835,7 @@ describe("searchSessions", () => {
         },
       ],
       [
-        child.id,
+        child.reference.sessionId,
         {
           ...child,
           messages: [],
@@ -834,7 +845,9 @@ describe("searchSessions", () => {
     syncSessionSearchIndex("codex", [parent, child], (sessionId) => details.get(sessionId)!);
 
     expect(
-      searchSessions("inclusivecostneedle cost:>1").map((result) => result.session.id),
+      searchSessions("inclusivecostneedle cost:>1").map(
+        (result) => result.session.reference.sessionId,
+      ),
     ).toEqual(["inclusive-parent"]);
   });
 
@@ -882,7 +895,7 @@ describe("searchSessions", () => {
     const data = loadCachedSessionData("codex", "cached-detail");
 
     expect(data).toMatchObject({
-      id: "cached-detail",
+      reference: { agentName: "codex", sessionId: "cached-detail" },
       title: "Session cached-detail",
       stats: {
         message_count: 1,
@@ -922,7 +935,7 @@ describe("searchSessions", () => {
     const results = searchSessions("sqlite");
     expect(results).toHaveLength(1);
     expect(results[0]?.reference.agentName).toBe("claudecode");
-    expect(results[0]?.session.id).toBe("s1");
+    expect(results[0]?.session.reference.sessionId).toBe("s1");
     expect(results[0]?.session.stats).toMatchObject({
       message_count: 1,
       total_input_tokens: 11,
@@ -965,7 +978,7 @@ describe("searchSessions", () => {
     const sessions = [remote, path];
     saveCachedSessions("claudecode", sessions);
     syncSessionSearchIndex("claudecode", sessions, (sessionId) => ({
-      ...sessions.find((session) => session.id === sessionId)!,
+      ...sessions.find((session) => session.reference.sessionId === sessionId)!,
       messages: makeSessionData(sessionId, "identity collision needle").messages,
     }));
 
@@ -973,7 +986,7 @@ describe("searchSessions", () => {
       searchSessions("collision", {
         projectKind: "git_remote",
         projectKey: "github.com/acme/app",
-      }).map((result) => result.session.id),
+      }).map((result) => result.session.reference.sessionId),
     ).toEqual(["remote"]);
     expect(searchSessions("collision", { projectKey: "github.com/acme/app" })).toEqual([]);
   });
@@ -1126,11 +1139,11 @@ describe("searchSessions", () => {
     expect(highlightedText(searchSessions('"quoted phrase"')[0])).toContain("quoted phrase");
 
     const allTermResults = searchSessions("assistantneedle reply");
-    expect(allTermResults[0]?.session.id).toBe("assistant");
+    expect(allTermResults[0]?.session.reference.sessionId).toBe("assistant");
     expect(allTermResults[0]?.matchType).toBe("assistant_reply");
 
     const orResults = searchSessions("alphaneedle OR betaneedle");
-    expect(orResults[0]?.session.id).toBe("or-first");
+    expect(orResults[0]?.session.reference.sessionId).toBe("or-first");
     expect(orResults[0]?.matchType).toBe("assistant_reply");
     expect(highlightedText(orResults[0])).toContain("betaneedle");
 
@@ -1147,7 +1160,7 @@ describe("searchSessions", () => {
 
     saveCachedSessions("claudecode", sessions);
     syncSessionSearchIndex("claudecode", sessions, (sessionId) => ({
-      ...sessions.find((session) => session.id === sessionId)!,
+      ...sessions.find((session) => session.reference.sessionId === sessionId)!,
       messages: Array.from({ length: 30 }, (_, messageIndex) => ({
         id: `${sessionId}-m${messageIndex}`,
         role: "user" as const,
@@ -1231,7 +1244,7 @@ describe("searchSessions", () => {
       }
       return session;
     });
-    const sessionMap = new Map(sessions.map((session) => [session.id, session]));
+    const sessionMap = new Map(sessions.map((session) => [session.reference.sessionId, session]));
 
     saveCachedSessions("claudecode", sessions);
     const result = syncSessionSearchIndex("claudecode", sessions, (sessionId) => ({
@@ -1275,7 +1288,7 @@ describe("searchSessions", () => {
       },
     });
     expect(filteredResults).toHaveLength(1);
-    expect(filteredResults[0]?.session.id).toBe("bulk-42");
+    expect(filteredResults[0]?.session.reference.sessionId).toBe("bulk-42");
     expect(highlightedText(filteredResults[0])).toContain("needle");
   });
 
@@ -1310,7 +1323,7 @@ describe("searchSessions", () => {
         },
       },
     ];
-    const sessionById = new Map(sessions.map((session) => [session.id, session]));
+    const sessionById = new Map(sessions.map((session) => [session.reference.sessionId, session]));
 
     saveCachedSessions("claudecode", sessions);
     syncSessionSearchIndex("claudecode", sessions, (sessionId) => ({
@@ -1332,7 +1345,7 @@ describe("searchSessions", () => {
           path: `${scopeRoot}/child`,
         },
       })
-        .map(({ session }) => session.id)
+        .map(({ session }) => session.reference.sessionId)
         .sort(),
     ).toEqual(["scope-ancestor", "scope-descendant"]);
   });
@@ -1379,7 +1392,8 @@ describe("searchSessions", () => {
     };
     const loadSession = vi.fn(() => ({
       ...session,
-      messages: makeAgentSessionData("codex", session.id, "normalized content").messages,
+      messages: makeAgentSessionData("codex", session.reference.sessionId, "normalized content")
+        .messages,
     }));
 
     syncSessionSearchIndex("codex", [session], loadSession);
@@ -1394,7 +1408,7 @@ describe("searchSessions", () => {
   it("backfills normalized message counts when migrating existing search documents", () => {
     const session = makeAgentSession("codex", "normalized-count-migration");
     syncSessionSearchIndex("codex", [session], () =>
-      makeAgentSessionData("codex", session.id, "normalized migration content"),
+      makeAgentSessionData("codex", session.reference.sessionId, "normalized migration content"),
     );
 
     const db = new Database(getCachePath());
@@ -1476,19 +1490,19 @@ describe("searchSessions", () => {
       stats: { ...makeSession("removed").stats, message_count: 2 },
     };
     const sessions = [keep, changed, removed];
-    const sessionMap = new Map(sessions.map((session) => [session.id, session]));
+    const sessionMap = new Map(sessions.map((session) => [session.reference.sessionId, session]));
     const makeIndexedData = (session: SessionHead, text: string, path: string): SessionDetail => ({
       ...session,
-      reference: { agentName: "claudecode", sessionId: session.id },
+      reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
       messages: [
         {
-          id: `${session.id}-m1`,
+          id: `${session.reference.sessionId}-m1`,
           role: "user",
           time_created: now,
           parts: [{ type: "text", text }],
         },
         {
-          id: `${session.id}-m2`,
+          id: `${session.reference.sessionId}-m2`,
           role: "assistant",
           time_created: now + 1,
           parts: [
@@ -1534,10 +1548,14 @@ describe("searchSessions", () => {
       deleted: 1,
       indexed: 1,
     });
-    expect(searchSessions("updatedtoken").map((item) => item.session.id)).toEqual(["changed"]);
+    expect(searchSessions("updatedtoken").map((item) => item.session.reference.sessionId)).toEqual([
+      "changed",
+    ]);
     expect(searchSessions("changedtoken")).toHaveLength(0);
     expect(searchSessions("removedtoken")).toHaveLength(0);
-    expect(searchSessions("keeptoken").map((item) => item.session.id)).toEqual(["keep"]);
+    expect(searchSessions("keeptoken").map((item) => item.session.reference.sessionId)).toEqual([
+      "keep",
+    ]);
     expect(
       listFileActivity({ agent: "claudecode" })
         .map((item) => item.path)
@@ -1552,11 +1570,11 @@ describe("searchSessions", () => {
       const sessions = Array.from({ length: multiBatchSessionCount }, (_, index) =>
         makeSession(`batch-${index}`),
       );
-      const sessionMap = new Map(sessions.map((session) => [session.id, session]));
+      const sessionMap = new Map(sessions.map((session) => [session.reference.sessionId, session]));
 
       saveCachedSessions("claudecode", sessions);
       syncSessionSearchIndex("claudecode", sessions, (sessionId) =>
-        makeSessionData(sessionMap.get(sessionId)!.id, `content ${sessionId}`),
+        makeSessionData(sessionMap.get(sessionId)!.reference.sessionId, `content ${sessionId}`),
       );
 
       let stateQueryExecutions = 0;
@@ -1620,23 +1638,26 @@ describe("searchSessions", () => {
       stats: { ...makeSession("zero-messages").stats, message_count: 0 },
     };
     const sessions = [missingDocument, missingMessages, zeroMessages];
-    const sessionMap = new Map(sessions.map((session) => [session.id, session]));
+    const sessionMap = new Map(sessions.map((session) => [session.reference.sessionId, session]));
 
     saveCachedSessions("claudecode", sessions);
     syncSessionSearchIndex("claudecode", sessions, (sessionId) => ({
       ...sessionMap.get(sessionId)!,
-      messages: sessionId === zeroMessages.id ? [] : makeSessionData(sessionId, sessionId).messages,
+      messages:
+        sessionId === zeroMessages.reference.sessionId
+          ? []
+          : makeSessionData(sessionId, sessionId).messages,
     }));
 
     const db = new Database(getCachePath());
     try {
       db.prepare("DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?").run(
         "claudecode",
-        missingDocument.id,
+        missingDocument.reference.sessionId,
       );
       db.prepare("DELETE FROM messages WHERE agent_name = ? AND session_id = ?").run(
         "claudecode",
-        missingMessages.id,
+        missingMessages.reference.sessionId,
       );
     } finally {
       db.close();
@@ -1664,9 +1685,9 @@ describe("searchSessions", () => {
       skipped: 0,
     });
     expect(loadSession.mock.calls.map(([sessionId]) => sessionId)).toEqual([
-      missingDocument.id,
-      missingMessages.id,
-      missingMessages.id,
+      missingDocument.reference.sessionId,
+      missingMessages.reference.sessionId,
+      missingMessages.reference.sessionId,
     ]);
   });
 
@@ -1816,7 +1837,7 @@ describe("searchSessions", () => {
 
     saveCachedSessions("claudecode", [target, other]);
     syncSessionSearchIndex("claudecode", [target, other], (sessionId) => ({
-      ...(sessionId === target.id ? target : other),
+      ...(sessionId === target.reference.sessionId ? target : other),
       messages: [
         {
           id: `${sessionId}-tool`,
@@ -1825,7 +1846,7 @@ describe("searchSessions", () => {
           parts: [
             {
               type: "tool",
-              tool: sessionId === target.id ? "apply_patch" : "grep",
+              tool: sessionId === target.reference.sessionId ? "apply_patch" : "grep",
               state: { status: "completed" },
             },
           ],
@@ -1833,9 +1854,9 @@ describe("searchSessions", () => {
       ],
     }));
 
-    expect(searchSessions("tool:apply_patch").map((result) => result.session.id)).toEqual([
-      "tool-target",
-    ]);
+    expect(
+      searchSessions("tool:apply_patch").map((result) => result.session.reference.sessionId),
+    ).toEqual(["tool-target"]);
 
     const db = new Database(getCachePath(), { readonly: true });
     try {
@@ -1955,7 +1976,7 @@ describe("searchSessions", () => {
 
     const searchResults = searchFileActivitySessions("src/new.ts");
     expect(searchResults).toHaveLength(1);
-    expect(searchResults[0]?.session.id).toBe("files");
+    expect(searchResults[0]?.session.reference.sessionId).toBe("files");
     expect(highlightedText(searchResults[0])).toContain("src/new.ts");
 
     const directWriteResults = searchFileActivitySessions("src/direct.ts");
@@ -1989,7 +2010,7 @@ describe("searchSessions", () => {
       "claudecode",
       sessions.map(({ session }) => session),
       (sessionId) => {
-        const entry = sessions.find(({ session }) => session.id === sessionId)!;
+        const entry = sessions.find(({ session }) => session.reference.sessionId === sessionId)!;
         return {
           ...entry.session,
           messages: [
@@ -2008,7 +2029,10 @@ describe("searchSessions", () => {
     // limit would spend the whole budget there and never reach "sparse".
     const results = searchFileActivitySessions("src/shared/module", { limit: 2 });
 
-    expect(results.map((result) => result.session.id)).toEqual(["dense", "sparse"]);
+    expect(results.map((result) => result.session.reference.sessionId)).toEqual([
+      "dense",
+      "sparse",
+    ]);
   });
 
   it("CS-134: keeps same-id sessions from different agents apart", () => {
@@ -2323,7 +2347,7 @@ describe("searchSessions", () => {
     );
 
     expect(results).toHaveLength(1);
-    expect(results[0]?.session.id).toBe("structured");
+    expect(results[0]?.session.reference.sessionId).toBe("structured");
     expect(results[0]?.matchType).toBe("user_message");
     expect(results[0]?.session.smart_tags).toEqual(["feature-dev"]);
   });
@@ -2348,7 +2372,7 @@ describe("searchSessions", () => {
     const results = searchSessions("agent:codex tag:testing");
 
     expect(results).toHaveLength(1);
-    expect(results[0]?.session.id).toBe("recent");
+    expect(results[0]?.session.reference.sessionId).toBe("recent");
     expect(results[0]?.matchType).toBe("recent");
   });
 
@@ -2359,13 +2383,13 @@ describe("searchSessions", () => {
     const sessions = [old, recent, removed];
     const meta = Object.fromEntries(
       sessions.map((session) => [
-        session.id,
-        { id: session.id, sourcePath: `/${session.id}.jsonl` },
+        session.reference.sessionId,
+        { id: session.reference.sessionId, sourcePath: `/${session.reference.sessionId}.jsonl` },
       ]),
     );
     saveCachedSessions("codex", sessions, meta);
     syncSessionSearchIndex("codex", sessions, (sessionId) => {
-      const session = sessions.find(({ id }) => id === sessionId)!;
+      const session = sessions.find(({ reference: { sessionId: id } }) => id === sessionId)!;
       const text =
         sessionId === "old"
           ? "historicalscope"
@@ -2404,22 +2428,26 @@ describe("searchSessions", () => {
       "codex",
       [updatedRecent],
       { recent: meta.recent! },
-      { completeness: "partial", removedSessionIds: [removed.id] },
+      { completeness: "partial", removedSessionIds: [removed.reference.sessionId] },
     );
     syncSessionSearchIndex(
       "codex",
       [updatedRecent],
       () => makeAgentSessionData("codex", "recent", "recentscope updated"),
-      { completeness: "partial", removedSessionIds: [removed.id] },
+      { completeness: "partial", removedSessionIds: [removed.reference.sessionId] },
     );
 
-    expect(loadCachedSessions("codex")?.sessions.map(({ id }) => id)).toEqual(
-      expect.arrayContaining(["old", "recent"]),
-    );
-    expect(loadCachedSessions("codex")?.sessions.map(({ id }) => id)).not.toContain("removed");
+    expect(
+      loadCachedSessions("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
+    ).toEqual(expect.arrayContaining(["old", "recent"]));
+    expect(
+      loadCachedSessions("codex")?.sessions.map(({ reference: { sessionId: id } }) => id),
+    ).not.toContain("removed");
     expect(loadCachedSessions("codex")?.meta.old).toEqual(meta.old);
     expect(loadCachedSessionData("codex", "old")?.messages).toHaveLength(1);
-    expect(searchSessions("historicalscope").map(({ session }) => session.id)).toEqual(["old"]);
+    expect(
+      searchSessions("historicalscope").map(({ session }) => session.reference.sessionId),
+    ).toEqual(["old"]);
     expect(searchSessions("deletedscope")).toEqual([]);
     expect(
       listFileActivity({ agent: "codex", sessionId: "old", limit: 10 }).map(({ path }) => path),
@@ -2447,7 +2475,7 @@ describe("searchSessions", () => {
 
     const results = searchSessions("windowed");
     expect(results).toHaveLength(1);
-    expect(results[0]?.session.id).toBe("windowed");
+    expect(results[0]?.session.reference.sessionId).toBe("windowed");
 
     const db = new Database(getCachePath(), { readonly: true });
     try {
@@ -2551,7 +2579,7 @@ describe("searchSessions", () => {
     const results = searchSessions("orphan");
 
     expect(results).toHaveLength(1);
-    expect(results[0]?.session.id).toBe("fts-empty");
+    expect(results[0]?.session.reference.sessionId).toBe("fts-empty");
     expect(highlightedText(results[0])).toContain("orphan");
   });
 
@@ -2567,7 +2595,7 @@ describe("searchSessions", () => {
       db.exec("DROP TRIGGER session_documents_au");
       db.prepare(
         "UPDATE session_documents SET content_text = ? WHERE agent_name = ? AND session_id = ?",
-      ).run("documentrepairneedle", "claudecode", session.id);
+      ).run("documentrepairneedle", "claudecode", session.reference.sessionId);
     } finally {
       db.close();
     }
@@ -2600,7 +2628,9 @@ describe("searchSessions", () => {
     }
     setSchemaEnsuredPath(null);
 
-    expect(searchSessions("tablerepairneedle")[0]?.session.id).toBe(session.id);
+    expect(searchSessions("tablerepairneedle")[0]?.session.reference.sessionId).toBe(
+      session.reference.sessionId,
+    );
   });
 
   it("validates and rebuilds FTS indexes after SQLite reports corruption", () => {
@@ -2641,6 +2671,8 @@ describe("searchSessions", () => {
     });
 
     expect(result).toBe("recovered");
-    expect(searchSessions("recoverytoken42")[0]?.session.id).toBe(session.id);
+    expect(searchSessions("recoverytoken42")[0]?.session.reference.sessionId).toBe(
+      session.reference.sessionId,
+    );
   });
 });

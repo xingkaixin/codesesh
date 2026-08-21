@@ -131,7 +131,10 @@ const workerThreads = vi.hoisted(() => ({
         );
       };
       const sessionMap = new Map(
-        (data.previousSessions ?? []).map((session: SessionHead) => [session.id, session]),
+        (data.previousSessions ?? []).map((session: SessionHead) => [
+          session.reference.sessionId,
+          session,
+        ]),
       );
       const changedIds = new Set<string>();
       const sources = agent.listSessionSources();
@@ -149,14 +152,14 @@ const workerThreads = vi.hoisted(() => ({
         }
         const next = agent.scanSessionSource(source.sourcePath);
         changedIds.add(source.sessionId);
-        if (next) sessionMap.set(next.id, next);
+        if (next) sessionMap.set(next.reference.sessionId, next);
         else sessionMap.delete(source.sessionId);
       }
 
       for (const session of data.previousSessions ?? []) {
-        if (!currentIds.has(session.id)) {
-          sessionMap.delete(session.id);
-          changedIds.add(session.id);
+        if (!currentIds.has(session.reference.sessionId)) {
+          sessionMap.delete(session.reference.sessionId);
+          changedIds.add(session.reference.sessionId);
         }
       }
 
@@ -171,9 +174,12 @@ const workerThreads = vi.hoisted(() => ({
       meta: Record<string, SessionCacheMeta>,
     ) => {
       const previousById = new Map(
-        (data.previousSessions ?? []).map((session: SessionHead) => [session.id, session]),
+        (data.previousSessions ?? []).map((session: SessionHead) => [
+          session.reference.sessionId,
+          session,
+        ]),
       );
-      const updatedIds = new Set(sessions.map((session) => session.id));
+      const updatedIds = new Set(sessions.map((session) => session.reference.sessionId));
       const nextMeta = Object.fromEntries(
         Object.entries(meta).filter(([sessionId]) => updatedIds.has(sessionId)),
       ) as Record<string, SessionCacheMeta>;
@@ -191,16 +197,16 @@ const workerThreads = vi.hoisted(() => ({
         ...removedMetaIds,
       ]);
       const changes = sessions.flatMap((session, sortIndex) => {
-        const previous = previousById.get(session.id);
+        const previous = previousById.get(session.reference.sessionId);
         return !previous ||
-          changedIdSet.has(session.id) ||
+          changedIdSet.has(session.reference.sessionId) ||
           JSON.stringify(previous) !== JSON.stringify(session)
           ? [{ session, sortIndex }]
           : [];
       });
       const removedSessionIds = (data.previousSessions ?? [])
-        .filter((session: SessionHead) => !updatedIds.has(session.id))
-        .map((session: SessionHead) => session.id);
+        .filter((session: SessionHead) => !updatedIds.has(session.reference.sessionId))
+        .map((session: SessionHead) => session.reference.sessionId);
       return { changes, removedSessionIds, meta: changedMeta, removedMetaIds };
     };
     const dispatch = (data: any) => {
@@ -265,7 +271,7 @@ const workerThreads = vi.hoisted(() => ({
               }
               const serializedMeta = serializeMeta(agent);
               const delta = computeDelta(runData, sessions, changedIds, serializedMeta);
-              const sessionIds = new Set(sessions.map((session) => session.id));
+              const sessionIds = new Set(sessions.map((session) => session.reference.sessionId));
               stagedScanBaseline = {
                 requestId: runData.requestId,
                 sessions,
@@ -505,9 +511,7 @@ function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
     isAvailable: vi.fn(() => true),
     getSessionData: vi.fn(() => ({
       reference: { agentName: name, sessionId: "session" },
-      id: "session",
       title: "session",
-      slug: `${name}/session`,
       directory: FIXTURE_DIR,
       time_created: 1000,
       time_updated: 1000,
@@ -670,9 +674,15 @@ describe("LiveScanStore", () => {
       }),
     );
     expect(snapshot.agents.map((agent) => agent.name)).toEqual(["codex", "kimi"]);
-    expect(snapshot.byAgent.codex!.map((session) => session.id)).toEqual(["newer", "older"]);
+    expect(snapshot.byAgent.codex!.map((session) => session.reference.sessionId)).toEqual([
+      "newer",
+      "older",
+    ]);
     expect(snapshot.byAgent.kimi).toEqual([]);
-    expect(snapshot.sessions.map((session) => session.id)).toEqual(["newer", "older"]);
+    expect(snapshot.sessions.map((session) => session.reference.sessionId)).toEqual([
+      "newer",
+      "older",
+    ]);
     expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
       expect.objectContaining({
         kind: "full",
@@ -742,7 +752,9 @@ describe("LiveScanStore", () => {
       }),
     );
     expect(workerThreads.workers).toHaveLength(0);
-    expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["cached"]);
+    expect(store.getSnapshot().sessions.map((session) => session.reference.sessionId)).toEqual([
+      "cached",
+    ]);
 
     store.startBackgroundRefresh();
     expect(statusEvents.at(-1)).toEqual(
@@ -769,7 +781,9 @@ describe("LiveScanStore", () => {
         }),
       ],
     );
-    expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["fresh"]);
+    expect(store.getSnapshot().sessions.map((session) => session.reference.sessionId)).toEqual([
+      "fresh",
+    ]);
     await vi.advanceTimersByTimeAsync(250);
     expect(events).toEqual([
       expect.objectContaining({
@@ -847,7 +861,9 @@ describe("LiveScanStore", () => {
     });
     expect(codex.scan).not.toHaveBeenCalled();
     expect(codex.incrementalScan).not.toHaveBeenCalled();
-    expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent"]);
+    expect(store.getSnapshot().sessions.map((session) => session.reference.sessionId)).toEqual([
+      "recent",
+    ]);
     expect(workerThreads.workers).toHaveLength(1);
     expect(workerThreads.workers[0]?.workerData).toMatchObject({
       operation: { kind: "recompute-derived" },
@@ -905,7 +921,10 @@ describe("LiveScanStore", () => {
     );
     expect((codex.scan as ReturnType<typeof vi.fn>).mock.calls[1]?.[0]?.from).toBeUndefined();
     await vi.waitFor(() =>
-      expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent", "old"]),
+      expect(store.getSnapshot().sessions.map((session) => session.reference.sessionId)).toEqual([
+        "recent",
+        "old",
+      ]),
     );
     const backfillJob = workerThreads.workers.filter((worker) => worker.workerData.jobs).at(-1)
       ?.workerData.jobs;
@@ -1361,7 +1380,10 @@ describe("LiveScanStore", () => {
     expect(codex.incrementalScan).toHaveBeenCalledWith([old, recent], ["old"], undefined, {
       from: 3000,
     });
-    expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["recent", "old"]);
+    expect(store.getSnapshot().sessions.map((session) => session.reference.sessionId)).toEqual([
+      "recent",
+      "old",
+    ]);
     expect(events).toEqual([]);
     expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
       {
@@ -1599,18 +1621,21 @@ describe("LiveScanStore", () => {
         totalSessions: 2,
         changedSessionHeads: [
           {
-            reference: { agentName: "codex", sessionId: updatedWithProject.id },
+            reference: { agentName: "codex", sessionId: updatedWithProject.reference.sessionId },
             session: updatedWithProject,
           },
           {
-            reference: { agentName: "codex", sessionId: addedWithProject.id },
+            reference: { agentName: "codex", sessionId: addedWithProject.reference.sessionId },
             session: addedWithProject,
           },
         ],
         removedSessionRefs: [],
       }),
     ]);
-    expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(["session", "added"]);
+    expect(store.getSnapshot().sessions.map((session) => session.reference.sessionId)).toEqual([
+      "session",
+      "added",
+    ]);
   });
 
   it("keeps the previous snapshot private until the refresh index commits", async () => {
@@ -1696,7 +1721,7 @@ describe("LiveScanStore", () => {
         removedSessions: 0,
         changedSessionHeads: [
           {
-            reference: { agentName: "codex", sessionId: previousWithProject.id },
+            reference: { agentName: "codex", sessionId: previousWithProject.reference.sessionId },
             session: previousWithProject,
           },
         ],
@@ -1984,11 +2009,15 @@ describe("LiveScanStore", () => {
         changedSessionHeads: [
           {
             reference: { agentName: "codex", sessionId: "codex-new" },
-            session: expect.objectContaining({ id: "codex-new" }),
+            session: expect.objectContaining({
+              reference: { agentName: "codex", sessionId: "codex-new" },
+            }),
           },
           {
             reference: { agentName: "kimi", sessionId: "kimi-new" },
-            session: expect.objectContaining({ id: "kimi-new" }),
+            session: expect.objectContaining({
+              reference: { agentName: "kimi", sessionId: "kimi-new" },
+            }),
           },
         ],
         removedSessionRefs: [],
@@ -2081,7 +2110,7 @@ describe("LiveScanStore", () => {
     const codex = makeAgent("codex", {
       checkForChanges: vi.fn(() => ({
         hasChanges: true,
-        changedIds: [codexAfter.id],
+        changedIds: [codexAfter.reference.sessionId],
         timestamp: 3000,
       })),
       incrementalScan: vi.fn(() => [codexAfter]),
@@ -2089,7 +2118,7 @@ describe("LiveScanStore", () => {
     const kimi = makeAgent("kimi", {
       checkForChanges: vi.fn(() => ({
         hasChanges: true,
-        changedIds: [kimiAfter.id],
+        changedIds: [kimiAfter.reference.sessionId],
         timestamp: 3000,
       })),
       incrementalScan: vi.fn(() => [kimiAfter]),
@@ -2183,7 +2212,10 @@ describe("LiveScanStore", () => {
         kind: "changes",
         changes: [
           expect.objectContaining({
-            session: expect.objectContaining({ id: "active", title: "version 3" }),
+            session: expect.objectContaining({
+              reference: { agentName: "codex", sessionId: "active" },
+              title: "version 3",
+            }),
           }),
         ],
       }),

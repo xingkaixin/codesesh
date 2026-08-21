@@ -136,8 +136,6 @@ function createStore() {
 function createLargeSessionsStore() {
   const sessions = Array.from({ length: 200 }, (_, index) => ({
     reference: { agentName: "codex", sessionId: `session-${index}` },
-    id: `session-${index}`,
-    slug: `codex/session-${index}`,
     title: `Session with a reasonably descriptive title ${index}`,
     directory: "/repo/some/nested/project/directory",
     project_identity: {

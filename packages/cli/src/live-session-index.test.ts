@@ -17,8 +17,6 @@ function makeSession(
 ): IdentifiedSessionHead {
   return {
     reference: { agentName, sessionId: id },
-    id,
-    slug: `${agentName}/${id}`,
     title,
     directory: "/workspace",
     project_identity: { kind: "path", key: "/workspace", displayName: "workspace" },
@@ -59,18 +57,18 @@ describe("LiveSessionIndex", () => {
     );
   });
 
-  it("rejects conflicting session identities at snapshot boundaries", () => {
+  it("rejects another agent's session at snapshot boundaries", () => {
     const codex = makeAgent("codex");
-    const conflicting = { ...makeSession("session", 1), id: "other" };
+    const conflicting = makeSession("session", 1, "session", "cursor");
     const index = new LiveSessionIndex();
 
     expect(() => index.initialize(snapshot([codex], { codex: [conflicting] }))).toThrow(
-      "Session identity fields disagree",
+      'Session reference agent "cursor" does not match "codex"',
     );
 
     index.initialize(snapshot([codex], { codex: [] }));
     expect(() => index.commitAgentSessions("codex", [conflicting])).toThrow(
-      "Session identity fields disagree",
+      'Session reference agent "cursor" does not match "codex"',
     );
   });
 
@@ -154,7 +152,11 @@ describe("LiveSessionIndex", () => {
     const index = new LiveSessionIndex();
     index.initialize(snapshot([codex, kimi], { codex: [previous], kimi: [other] }));
 
-    const event = index.commitAgentSessions("codex", [added, updated], [updated.id]);
+    const event = index.commitAgentSessions(
+      "codex",
+      [added, updated],
+      [updated.reference.sessionId],
+    );
 
     expect(index.snapshot().byAgent.codex).toEqual([updated, added]);
     expect(index.snapshot().sessions).toEqual([updated, other, added]);
@@ -197,7 +199,11 @@ describe("LiveSessionIndex", () => {
     const index = new LiveSessionIndex();
     index.initialize(snapshot([codex], { codex: [root, child] }));
 
-    const event = index.commitAgentSessions("codex", [changedRoot, child], [changedRoot.id]);
+    const event = index.commitAgentSessions(
+      "codex",
+      [changedRoot, child],
+      [changedRoot.reference.sessionId],
+    );
 
     expect(event?.projectionRelatedSessionHeads).toEqual([
       {

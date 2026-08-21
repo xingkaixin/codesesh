@@ -25,7 +25,10 @@ function makeClient() {
 
 /** Stand-in for a full transcript; only its identity matters here. */
 function transcript(id: string) {
-  return { id, messages: [{ id: `${id}-m1`, parts: [] }] };
+  return {
+    reference: { agentName: "codex", sessionId: id },
+    messages: [{ id: `${id}-m1`, parts: [] }],
+  };
 }
 
 async function openDetail(active: QueryClient, sessionId: string) {

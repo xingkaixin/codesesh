@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 describe("SessionDetail identity", () => {
-  it("uses the authoritative reference when slug is absent", () => {
+  it("uses the structured session reference", () => {
     displayModelMocks.build.mockReturnValue({
       messages: [],
       toc: { filterIds: [] },
@@ -29,8 +29,6 @@ describe("SessionDetail identity", () => {
     });
     const session: Api.SessionDetail = {
       reference: { agentName: "codex", sessionId: "s1" },
-      id: "s1",
-      slug: "codex/s1",
       title: "Session",
       directory: "/repo",
       time_created: 1,
@@ -63,8 +61,6 @@ describe("SessionDetail identity", () => {
     });
     const session: Api.SessionDetail = {
       reference: { agentName: "codex", sessionId: "parent" },
-      id: "parent",
-      slug: "codex/parent",
       title: "Parent",
       directory: "/repo",
       parent_reference: { agentName: "codex", sessionId: "root" },
@@ -79,8 +75,6 @@ describe("SessionDetail identity", () => {
     };
     const child: Api.SessionHead = {
       reference: { agentName: "codex", sessionId: "child" },
-      id: "child",
-      slug: "codex/child",
       title: "Child",
       directory: "/repo",
       time_created: 1,
@@ -129,8 +123,6 @@ describe("SessionDetail content filtering", () => {
     });
     const session: Api.SessionDetail = {
       reference: { agentName: "codex", sessionId: "s1" },
-      id: "s1",
-      slug: "codex/s1",
       title: "Session",
       directory: "/repo",
       time_created: 1,

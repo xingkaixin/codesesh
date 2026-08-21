@@ -188,8 +188,7 @@ describe("ZCodeAgent parsing", () => {
 
     expect(agent.getUri("sess_1")).toBe("zcode://sess_1");
     expect(head).toMatchObject({
-      id: "sess_1",
-      slug: "zcode/sess_1",
+      reference: { agentName: "zcode", sessionId: "sess_1" },
       title: "Build the ZCode adapter",
       directory: "/tmp/project",
       stats: {
@@ -201,8 +200,7 @@ describe("ZCodeAgent parsing", () => {
       },
     });
     expect(data).toMatchObject({
-      id: "sess_1",
-      slug: "zcode/sess_1",
+      reference: { agentName: "zcode", sessionId: "sess_1" },
       title: "Build the ZCode adapter",
       version: "0.14.8",
       summary_files: 3,
@@ -343,7 +341,7 @@ describe("ZCodeAgent subagent folding", () => {
     agent.dbPath = dbPath;
 
     const heads = agent.scan({ from: 0 });
-    expect(heads.map((h: any) => h.id)).toEqual(["parent", "child"]);
+    expect(heads.map((head: any) => head.reference.sessionId)).toEqual(["parent", "child"]);
     const [head] = heads;
     expect(head.stats).toMatchObject({
       message_count: 1,
@@ -552,7 +550,7 @@ describe("ZCodeAgent subagent folding", () => {
     agent.dbPath = dbPath;
 
     const [head] = agent.scan({ from: 0 });
-    expect(head.id).toBe("only");
+    expect(head.reference.sessionId).toBe("only");
     expect(head.stats).toMatchObject({ total_input_tokens: 10, total_output_tokens: 0 });
     expect(agent.getSessionData("only").stats.total_input_tokens).toBe(10);
   });

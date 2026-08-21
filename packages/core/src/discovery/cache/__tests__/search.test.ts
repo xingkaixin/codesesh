@@ -94,6 +94,9 @@ describe("cache search", () => {
         total_output_tokens: 4,
         total_cost: 0.5,
       }),
-    ).toMatchObject({ id: "s1", stats: { message_count: 2, total_cost: 0.5 } });
+    ).toMatchObject({
+      reference: { agentName: "codex", sessionId: "s1" },
+      stats: { message_count: 2, total_cost: 0.5 },
+    });
   });
 });

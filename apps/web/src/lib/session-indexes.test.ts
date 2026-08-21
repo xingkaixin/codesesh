@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { formatSessionReference } from "@codesesh/core/contract";
 import type { AgentInfo, SessionHead } from "./api";
 import {
   buildSessionIndexes,
@@ -31,8 +30,6 @@ function createSession(
 ): SessionHead {
   return {
     reference: overrides.reference,
-    id: overrides.reference.sessionId,
-    slug: formatSessionReference(overrides.reference),
     title: overrides.title,
     directory: overrides.directory ?? "/workspace/a",
     project_identity: overrides.project_identity,
@@ -81,36 +78,36 @@ describe("session indexes", () => {
     const indexes = buildSessionIndexes([oldCodex, claude, newCodex, otherCodex], agents);
 
     expect(indexes.byRouteKey.get(getSessionRouteKey("CoDeX", "old"))).toBe(oldCodex);
-    expect(indexes.byAgent.get("codex")?.map((session) => session.id)).toEqual([
+    expect(indexes.byAgent.get("codex")?.map((session) => session.reference.sessionId)).toEqual([
       "other",
       "new",
       "old",
     ]);
     expect(
-      indexes.byProjectIdentityKey.get("path:/workspace/a")?.map((session) => session.id),
+      indexes.byProjectIdentityKey
+        .get("path:/workspace/a")
+        ?.map((session) => session.reference.sessionId),
     ).toEqual(["new", "claude", "old"]);
     expect(
       indexes.byProjectAgentKey
         .get(getProjectAgentKey("path:/workspace/a", "codex"))
-        ?.map((session) => session.id),
+        ?.map((session) => session.reference.sessionId),
     ).toEqual(["new", "old"]);
-    expect(indexes.sessionsByActivity.map((session) => session.id)).toEqual([
+    expect(indexes.sessionsByActivity.map((session) => session.reference.sessionId)).toEqual([
       "other",
       "new",
       "claude",
       "old",
     ]);
-    expect(indexes.landingSessions.map((session) => session.id)).toEqual([
+    expect(indexes.landingSessions.map((session) => session.reference.sessionId)).toEqual([
       "old",
       "claude",
       "new",
       "other",
     ]);
-    expect(indexes.byLandingAgent.get("codex")?.map((session) => session.id)).toEqual([
-      "old",
-      "new",
-      "other",
-    ]);
+    expect(
+      indexes.byLandingAgent.get("codex")?.map((session) => session.reference.sessionId),
+    ).toEqual(["old", "new", "other"]);
     expect(indexes.projectOptions).toEqual([
       {
         key: "path:/workspace/a",

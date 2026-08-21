@@ -18,7 +18,7 @@ import {
 import { appLogger } from "../logging.js";
 
 /** Anything the API returns that can carry a locally-renamed title. */
-type Titled = { id: string; title: string; display_title?: string };
+type Titled = { title: string; display_title?: string };
 
 export interface AliasView {
   readonly size: number;

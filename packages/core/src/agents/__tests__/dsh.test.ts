@@ -502,7 +502,7 @@ describe("DSH storage records", () => {
     });
 
     const { agent, heads } = scanHeads();
-    const detail = agent.getSessionData(heads[0]!.id);
+    const detail = agent.getSessionData(heads[0]!.reference.sessionId);
     const assistant = detail.messages[1]!;
     expect(assistant.parts).toEqual([
       expect.objectContaining({ type: "reasoning", text: "thinking!" }),
@@ -624,7 +624,7 @@ describe("DSH transcript projection", () => {
     writeSession({ batches: [log.events] });
 
     const { agent, heads } = scanHeads();
-    const detail = agent.getSessionData(heads[0]!.id);
+    const detail = agent.getSessionData(heads[0]!.reference.sessionId);
     expect(detail.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
     expect(detail.messages[0]?.parts).toEqual([
       expect.objectContaining({ text: "what does this project do" }),
@@ -648,7 +648,7 @@ describe("DSH transcript projection", () => {
     writeSession({ batches: [log.events] });
 
     const { agent, heads } = scanHeads();
-    const detail = agent.getSessionData(heads[0]!.id);
+    const detail = agent.getSessionData(heads[0]!.reference.sessionId);
     expect(detail.messages).toHaveLength(2);
     expect(JSON.stringify(detail.messages)).not.toContain("compacted summary");
   });
@@ -683,7 +683,7 @@ describe("DSH transcript projection", () => {
     writeSession({ batches: [log.events] });
 
     const { agent, heads } = scanHeads();
-    const detail = agent.getSessionData(heads[0]!.id);
+    const detail = agent.getSessionData(heads[0]!.reference.sessionId);
     const parts = detail.messages[1]!.parts;
     expect(parts.filter((part) => part.type === "tool")).toHaveLength(2);
     expect(parts.map((part) => (part.type === "tool" ? part.state.status : part.type))).toEqual([
@@ -702,7 +702,7 @@ describe("DSH transcript projection", () => {
     writeSession({ batches: [log.events] });
 
     const { agent, heads } = scanHeads();
-    const tool = agent.getSessionData(heads[0]!.id).messages[1]!.parts[0];
+    const tool = agent.getSessionData(heads[0]!.reference.sessionId).messages[1]!.parts[0];
     expect(tool).toMatchObject({
       type: "tool",
       tool: "read",
@@ -751,7 +751,7 @@ describe("DSH transcript projection", () => {
     writeSession({ batches: [log.events] });
 
     const { agent, heads } = scanHeads();
-    const detail = agent.getSessionData(heads[0]!.id);
+    const detail = agent.getSessionData(heads[0]!.reference.sessionId);
     expect(detail.messages).toHaveLength(2);
     expect(detail.messages[1]?.parts).toEqual([
       expect.objectContaining({ type: "text", text: "settled answer" }),
@@ -773,7 +773,7 @@ describe("DSH transcript projection", () => {
     writeSession({ batches: [log.events] });
 
     const { agent, heads } = scanHeads();
-    const detail = agent.getSessionData(heads[0]!.id);
+    const detail = agent.getSessionData(heads[0]!.reference.sessionId);
     expect(detail.messages[1]).toMatchObject({
       role: "assistant",
       model: "deepseek-v4-flash",
@@ -794,7 +794,7 @@ describe("DSH transcript projection", () => {
     writeSession({ batches: [log.events] });
 
     const { agent, heads } = scanHeads();
-    expect(agent.getSessionData(heads[0]!.id).messages[1]?.parts).toEqual([
+    expect(agent.getSessionData(heads[0]!.reference.sessionId).messages[1]?.parts).toEqual([
       expect.objectContaining({ text: "assembled" }),
     ]);
   });
@@ -860,10 +860,9 @@ describe("DSH lineage", () => {
     });
     // The inherited title only applies when the child names nothing itself.
     expect(head.title).toBe("own question");
-    expect(agent.getSessionData(head.id).messages.map((message) => message.role)).toEqual([
-      "user",
-      "assistant",
-    ]);
+    expect(
+      agent.getSessionData(head.reference.sessionId).messages.map((message) => message.role),
+    ).toEqual(["user", "assistant"]);
   });
 
   it("uses an inherited title when the child has none of its own", () => {
@@ -913,7 +912,7 @@ describe("DSH token accounting", () => {
       total_cache_create_tokens: 500,
     });
     expect(heads[0]?.model_usage).toEqual({ "deepseek-v4-flash": 5_800 });
-    expect(agent.getSessionData(heads[0]!.id).messages[1]?.tokens).toEqual({
+    expect(agent.getSessionData(heads[0]!.reference.sessionId).messages[1]?.tokens).toEqual({
       input: 5_500,
       output: 200,
       reasoning: 100,
@@ -929,7 +928,7 @@ describe("DSH token accounting", () => {
     writeSession({ batches: [log.events] });
 
     const { agent, heads } = scanHeads();
-    expect(agent.getSessionData(heads[0]!.id).messages[1]?.tokens).toMatchObject({
+    expect(agent.getSessionData(heads[0]!.reference.sessionId).messages[1]?.tokens).toMatchObject({
       output: 0,
       reasoning: 5,
     });
@@ -983,7 +982,7 @@ describe("DSH image attachments", () => {
     writeSession({ batches: [log.events] });
 
     const { agent, heads } = scanHeads();
-    expect(agent.getSessionData(heads[0]!.id).messages[0]?.parts).toEqual([
+    expect(agent.getSessionData(heads[0]!.reference.sessionId).messages[0]?.parts).toEqual([
       expect.objectContaining({ type: "text", text: "look" }),
       expect.objectContaining({
         type: "image",
@@ -1009,7 +1008,7 @@ describe("DSH image attachments", () => {
     writeSession({ batches: [log.events] });
 
     const { agent, heads } = scanHeads();
-    const messages = agent.getSessionData(heads[0]!.id).messages;
+    const messages = agent.getSessionData(heads[0]!.reference.sessionId).messages;
     expect(messages[0]?.parts).toEqual([expect.objectContaining({ text: "look" })]);
     // An image-only message keeps its slot with a placeholder instead of vanishing.
     expect(messages[1]?.parts).toEqual([
@@ -1081,8 +1080,6 @@ describe("DSH source synchronization", () => {
       agent.filterCachedSessions([
         {
           reference: { agentName: "dsh", sessionId: "a" },
-          id: "a",
-          slug: "dsh/a",
           title: "a",
           directory: "/tmp",
           time_created: 1,
@@ -1090,8 +1087,6 @@ describe("DSH source synchronization", () => {
         },
         {
           reference: { agentName: "dsh", sessionId: "b" },
-          id: "b",
-          slug: "dsh/b",
           title: "b",
           directory: "/tmp",
           time_created: 1,

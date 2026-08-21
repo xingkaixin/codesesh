@@ -46,17 +46,19 @@ describe("session references", () => {
     expect(parseSessionReference(value)).toBeNull();
   });
 
-  it("derives compatibility fields from one canonical reference", () => {
+  it("normalizes and validates the canonical reference", () => {
     const identity = createSessionIdentity({ agentName: " CoDeX ", sessionId: "nested/session" });
 
     expect(identity).toEqual({
       reference: { agentName: "codex", sessionId: "nested/session" },
-      id: "nested/session",
-      slug: "codex/nested/session",
     });
     expect(getSessionAgentKey(identity)).toBe("codex");
-    expect(() => assertSessionIdentity({ ...identity, id: "different" }, "codex")).toThrow(
-      "Session identity fields disagree",
+    expect(() => assertSessionIdentity(identity, "codex")).not.toThrow();
+    expect(() =>
+      assertSessionIdentity({ reference: { ...identity.reference, agentName: " CoDeX " } }),
+    ).toThrow("Session reference is not normalized");
+    expect(() => assertSessionIdentity(identity, "claudecode")).toThrow(
+      'Session reference agent "codex" does not match "claudecode"',
     );
   });
 });

@@ -19,8 +19,6 @@ describe("DetailLanding", () => {
     const sessions: IndexedSession[] = [
       {
         reference: { agentName: "codex", sessionId: "session-1" },
-        id: "session-1",
-        slug: "codex/session-1",
         title: "Session",
         directory: "/repo",
         time_created: 1,

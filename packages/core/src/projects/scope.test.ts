@@ -6,8 +6,6 @@ import { createProjectScopeMatcherFromIdentity, filterSessionsByProjectScope } f
 function makeSession(id: string, overrides?: Partial<SessionHead>): SessionHead {
   return {
     reference: { agentName: "agent", sessionId: id },
-    id,
-    slug: `agent/${id}`,
     title: `Session ${id}`,
     directory: "/repo",
     time_created: 1000,
@@ -57,7 +55,7 @@ describe("filterSessionsByProjectScope", () => {
 
     const result = filterSessionsByProjectScope(sessions, "/home/user/project");
 
-    expect(result.map((session) => session.id)).toEqual([
+    expect(result.map((session) => session.reference.sessionId)).toEqual([
       "exact",
       "child",
       "parent",

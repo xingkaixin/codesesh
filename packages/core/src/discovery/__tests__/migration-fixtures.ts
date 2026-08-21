@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { formatSessionReference } from "../../contract/index.js";
 import type { SessionHead } from "../../types/index.js";
 
 export const EXPECTED_CACHE_SCHEMA_VERSION = 31;
@@ -499,14 +500,17 @@ function stampVersion(db: Database.Database, version: number): void {
 
 function seedSharedRows(db: Database.Database, version: number, seed: MigrationFixtureSeed): void {
   const sessionJson = JSON.stringify(seed.session);
-  const metaJson = JSON.stringify({ id: seed.session.id, sourcePath: seed.sourcePath });
+  const metaJson = JSON.stringify({
+    id: seed.session.reference.sessionId,
+    sourcePath: seed.sourcePath,
+  });
   db.prepare("INSERT INTO agent_cache(agent_name, timestamp) VALUES (?, ?)").run(
     seed.agentName,
     seed.now,
   );
   db.prepare(
     "INSERT INTO cached_sessions(agent_name, session_id, session_json, meta_json) VALUES (?, ?, ?, ?)",
-  ).run(seed.agentName, seed.session.id, sessionJson, metaJson);
+  ).run(seed.agentName, seed.session.reference.sessionId, sessionJson, metaJson);
 
   if (version >= 13) {
     db.prepare(
@@ -531,8 +535,8 @@ function seedLegacyRows(db: Database.Database, version: number, seed: MigrationF
       `,
     ).run(
       seed.agentName,
-      session.id,
-      session.slug,
+      session.reference.sessionId,
+      formatSessionReference(session.reference),
       session.title,
       session.directory,
       session.project_identity?.kind ?? "path",
@@ -558,8 +562,8 @@ function seedLegacyRows(db: Database.Database, version: number, seed: MigrationF
     `,
   ).run(
     seed.agentName,
-    session.id,
-    session.slug,
+    session.reference.sessionId,
+    formatSessionReference(session.reference),
     session.title,
     session.directory,
     session.time_created,
@@ -600,8 +604,8 @@ function seedNormalizedRows(
     `,
   ).run({
     agentName: seed.agentName,
-    sessionId: session.id,
-    slug: session.slug,
+    sessionId: session.reference.sessionId,
+    slug: formatSessionReference(session.reference),
     title: session.title,
     sourcePath: seed.sourcePath,
     directory: session.directory,
@@ -616,7 +620,7 @@ function seedNormalizedRows(
     outputTokens: session.stats.total_output_tokens,
     totalCost: session.stats.total_cost,
     totalTokens: session.stats.total_tokens ?? null,
-    metaJson: JSON.stringify({ id: session.id, sourcePath: seed.sourcePath }),
+    metaJson: JSON.stringify({ id: session.reference.sessionId, sourcePath: seed.sourcePath }),
   });
 
   const partsFormatColumn = version >= 17 ? "parts_format_version," : "";
@@ -630,8 +634,8 @@ function seedNormalizedRows(
     `,
   ).run(
     seed.agentName,
-    session.id,
-    `${session.id}-message`,
+    session.reference.sessionId,
+    `${session.reference.sessionId}-message`,
     session.time_created,
     JSON.stringify([{ type: "text", text: seed.messageText }]),
     seed.messageText,
@@ -644,7 +648,7 @@ function seedNormalizedRows(
         INSERT INTO message_tools(agent_name, session_id, message_index, tool_name)
         VALUES (?, ?, 0, 'read')
       `,
-    ).run(seed.agentName, session.id);
+    ).run(seed.agentName, session.reference.sessionId);
   }
 
   db.prepare(
@@ -655,7 +659,7 @@ function seedNormalizedRows(
     `,
   ).run(
     seed.agentName,
-    session.id,
+    session.reference.sessionId,
     session.project_identity?.key ?? session.directory,
     seed.filePath,
     seed.now,
@@ -679,7 +683,7 @@ function seedNormalizedSearchDocument(
           indexed_message_count, indexed_at
         ) VALUES (?, ?, ?, ?, 'normalized-content-hash', 1, ?)
       `,
-    ).run(seed.agentName, session.id, session.title, seed.searchContent, seed.now);
+    ).run(seed.agentName, session.reference.sessionId, session.title, seed.searchContent, seed.now);
     return;
   }
 
@@ -695,8 +699,8 @@ function seedNormalizedSearchDocument(
     `,
   ).run(
     seed.agentName,
-    session.id,
-    session.slug,
+    session.reference.sessionId,
+    formatSessionReference(session.reference),
     session.title,
     session.directory,
     session.time_created,
@@ -721,7 +725,7 @@ function seedProjectSession(db: Database.Database, seed: MigrationFixtureSeed): 
     `,
   ).run(
     seed.agentName,
-    session.id,
+    session.reference.sessionId,
     session.project_identity?.kind ?? "path",
     session.project_identity?.key ?? session.directory,
     session.project_identity?.displayName ?? session.directory,

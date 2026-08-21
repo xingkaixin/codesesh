@@ -111,8 +111,6 @@ function makeSessionHead(spec: FixtureSpec): SessionHead {
   const directory = spec.project ? `/projects/${spec.project.key}` : `/fixtures/${spec.id}`;
   return {
     reference: { agentName: spec.agent, sessionId: spec.id },
-    id: spec.id,
-    slug: `${spec.agent}/${spec.id}`,
     title: spec.title ?? "plain",
     directory,
     project_identity: spec.project ?? { kind: "path", key: directory, displayName: spec.id },
@@ -399,7 +397,7 @@ function legacyRecentResultKeys(snapshot: SessionSearchSnapshot, options: Search
     )
     .sort((left, right) => compareSessionActivityDesc(left.session, right.session))
     .slice(0, limit)
-    .map(({ agentName, session }) => `${agentName}/${session.id}`);
+    .map(({ agentName, session }) => `${agentName}/${session.reference.sessionId}`);
 }
 
 function makeRandomSnapshot(seed: number): SessionSearchSnapshot {
@@ -416,8 +414,6 @@ function makeRandomSnapshot(seed: number): SessionSearchSnapshot {
       const sessionId = `${agentName}-${index}`;
       return {
         reference: { agentName, sessionId },
-        id: sessionId,
-        slug: `${agentName}/${sessionId}`,
         title: `${agentName}-${index}`,
         directory: `/fixtures/${agentName}`,
         time_created: activity,
@@ -475,13 +471,13 @@ describe("search characterization: source selection", () => {
 
   it("routes a text query to the indexed FTS path", () => {
     const results = search("uniquetitleneedle", { limit: 50 });
-    expect(results.map((r) => r.session.id)).toEqual(["fts-title"]);
+    expect(results.map((r) => r.session.reference.sessionId)).toEqual(["fts-title"]);
     expect(results[0]!.matchType).toBe("title");
   });
 
   it("routes a file= filter (no text) to the indexed file-activity path", () => {
     const results = search("", { file: "app.tsx", limit: 50 });
-    expect(results.map((r) => r.session.id)).toEqual(["file-only"]);
+    expect(results.map((r) => r.session.reference.sessionId)).toEqual(["file-only"]);
     expect(results[0]!.matchType).toBe("file_path");
   });
 
@@ -492,7 +488,10 @@ describe("search characterization: source selection", () => {
     // just like the recent path -- except results now come from the SQLite
     // index instead of the snapshot.
     const results = search("", { tools: ["bash"], limit: 50 });
-    expect(results.map((r) => r.session.id)).toEqual(["fts-tool", "file-qualifier-match"]);
+    expect(results.map((r) => r.session.reference.sessionId)).toEqual([
+      "fts-tool",
+      "file-qualifier-match",
+    ]);
     expect(results[0]!.matchType).toBe("recent");
   });
 
@@ -502,7 +501,7 @@ describe("search characterization: source selection", () => {
     // treated identically to an empty query as far as source selection goes.
     const results = search("tag:bugfix", { limit: 50 });
     expect(results.every((r) => r.matchType === "recent")).toBe(true);
-    expect(results.map((r) => r.session.id).sort()).toEqual(
+    expect(results.map((r) => r.session.reference.sessionId).sort()).toEqual(
       ["lagging-session", "recent-mid"].sort(),
     );
   });
@@ -511,17 +510,20 @@ describe("search characterization: source selection", () => {
 describe("search characterization: recent (empty-query) path", () => {
   it("orders by activity time descending and applies limit", () => {
     const results = search("", { limit: 2 });
-    expect(results.map((r) => r.session.id)).toEqual(["recent-new", "lagging-session"]);
+    expect(results.map((r) => r.session.reference.sessionId)).toEqual([
+      "recent-new",
+      "lagging-session",
+    ]);
   });
 
   it("applies the from/to activity window", () => {
     const results = search("", { from: now - 15_000, limit: 50 });
-    expect(results.map((r) => r.session.id)).not.toContain("recent-old");
+    expect(results.map((r) => r.session.reference.sessionId)).not.toContain("recent-old");
   });
 
   it("filters by agent", () => {
     const results = search("", { agent: "codex", limit: 50 });
-    expect(results.map((r) => r.session.id)).toEqual(["codex-session"]);
+    expect(results.map((r) => r.session.reference.sessionId)).toEqual(["codex-session"]);
   });
 
   it("filters by projectKind+projectKey pair", () => {
@@ -530,19 +532,19 @@ describe("search characterization: recent (empty-query) path", () => {
       projectKey: PROJ_OTHER.key,
       limit: 50,
     });
-    expect(results.map((r) => r.session.id).sort()).toEqual(
+    expect(results.map((r) => r.session.reference.sessionId).sort()).toEqual(
       ["recent-mid", "lagging-session", "file-qualifier-mismatch"].sort(),
     );
   });
 
   it("filters by tag", () => {
     const results = search("", { tags: ["testing"], limit: 50 });
-    expect(results.map((r) => r.session.id)).toEqual(["codex-session"]);
+    expect(results.map((r) => r.session.reference.sessionId)).toEqual(["codex-session"]);
   });
 
   it("filters by costMin", () => {
     const results = search("", { costMin: 1, limit: 50 });
-    expect(results.map((r) => r.session.id).sort()).toEqual(
+    expect(results.map((r) => r.session.reference.sessionId).sort()).toEqual(
       ["recent-mid", "lagging-session", "file-qualifier-match"].sort(),
     );
   });
@@ -570,7 +572,10 @@ describe("search characterization: recent (empty-query) path", () => {
 
     const results = executeSessionSearch("", { costMin: 1 }, snapshot);
 
-    expect(results.map((result) => result.session.id)).toEqual(["cost-parent", "cost-child"]);
+    expect(results.map((result) => result.session.reference.sessionId)).toEqual([
+      "cost-parent",
+      "cost-child",
+    ]);
   });
 
   it("reads the global ordered snapshot only until the result limit", () => {
@@ -598,7 +603,7 @@ describe("search characterization: recent (empty-query) path", () => {
       { sessions: tracked.sessions, byAgent: inaccessibleShards },
     );
 
-    expect(results.map((result) => result.session.id)).toEqual([
+    expect(results.map((result) => result.session.reference.sessionId)).toEqual([
       "bounded-0",
       "bounded-1",
       "bounded-2",
@@ -628,7 +633,7 @@ describe("search characterization: recent (empty-query) path", () => {
       { sessions: inaccessibleGlobal, byAgent: { codex: tracked.sessions } },
     );
 
-    expect(results.map((result) => result.session.id)).toEqual([
+    expect(results.map((result) => result.session.reference.sessionId)).toEqual([
       "agent-bounded-0",
       "agent-bounded-1",
     ]);
@@ -670,26 +675,29 @@ describe("search characterization: recent (empty-query) path", () => {
 describe("search characterization: FTS path", () => {
   it("resolves matchType per hit location: title / user_message / assistant_reply / tool_output", () => {
     expect(search("uniquetitleneedle", { limit: 50 })[0]).toMatchObject({
-      session: { id: "fts-title" },
+      session: { reference: { agentName: "claudecode", sessionId: "fts-title" } },
       matchType: "title",
     });
     expect(search("uniqueusermessageneedle", { limit: 50 })[0]).toMatchObject({
-      session: { id: "fts-user" },
+      session: { reference: { agentName: "claudecode", sessionId: "fts-user" } },
       matchType: "user_message",
     });
     expect(search("uniqueassistantneedle", { limit: 50 })[0]).toMatchObject({
-      session: { id: "fts-assistant" },
+      session: { reference: { agentName: "claudecode", sessionId: "fts-assistant" } },
       matchType: "assistant_reply",
     });
     expect(search("uniquetoolneedle", { limit: 50 })[0]).toMatchObject({
-      session: { id: "fts-tool" },
+      session: { reference: { agentName: "claudecode", sessionId: "fts-tool" } },
       matchType: "tool_output",
     });
   });
 
   it("supports OR queries across sessions, breaking bm25 ties by activity time", () => {
     const results = search("alphaonlyneedle OR betaonlyneedle", { limit: 50 });
-    expect(results.map((r) => r.session.id)).toEqual(["or-session-a", "or-session-b"]);
+    expect(results.map((r) => r.session.reference.sessionId)).toEqual([
+      "or-session-a",
+      "or-session-b",
+    ]);
   });
 
   it("merges a tag: qualifier from q with a tags option using AND (intersection), not override", () => {
@@ -698,25 +706,25 @@ describe("search characterization: FTS path", () => {
     // AND's every tag in the merged list. So combining a qualifier tag with an
     // options tag requires sessions to have BOTH tags, not either.
     const results = search("tagneedle tag:refactoring", { tags: ["feature-dev"], limit: 50 });
-    expect(results.map((r) => r.session.id)).toEqual(["tagmerge-both"]);
+    expect(results.map((r) => r.session.reference.sessionId)).toEqual(["tagmerge-both"]);
   });
 
   it("keeps an explicit inclusive cost bound independent from a strict qualifier", () => {
     const results = search("needle cost:>0.1", { costMin: 3.5, limit: 50 });
-    expect(results.map((r) => r.session.id)).toContain("recent-mid");
+    expect(results.map((r) => r.session.reference.sessionId)).toContain("recent-mid");
   });
 });
 
 describe("search characterization: file activity path", () => {
   it("returns file_path matches for a file option", () => {
     const results = search("", { file: "app.tsx", limit: 50 });
-    expect(results.map((r) => r.session.id)).toEqual(["file-only"]);
+    expect(results.map((r) => r.session.reference.sessionId)).toEqual(["file-only"]);
     expect(results[0]!.matchType).toBe("file_path");
   });
 
   it("dedupes a session hit by both file and FTS search, keeping the file_path match first", () => {
     const results = search("sharedneedle", { file: "shared.ts", limit: 50 });
-    const matches = results.filter((r) => r.session.id === "file-and-text");
+    const matches = results.filter((r) => r.session.reference.sessionId === "file-and-text");
     expect(matches).toHaveLength(1);
     expect(matches[0]!.matchType).toBe("file_path");
   });
@@ -775,9 +783,9 @@ describe("search characterization: file activity path", () => {
       ["file-qualifier-match"],
     ],
   ])("applies complete search semantics for %s", (_label, options, expectedIds) => {
-    expect(search("", { ...options, limit: 50 }).map((result) => result.session.id)).toEqual(
-      expectedIds,
-    );
+    expect(
+      search("", { ...options, limit: 50 }).map((result) => result.session.reference.sessionId),
+    ).toEqual(expectedIds);
   });
 
   it("requires both text and an explicit file qualifier to match", () => {
@@ -785,7 +793,9 @@ describe("search characterization: file activity path", () => {
       file: "qualifier-matrix.ts",
       limit: 50,
     });
-    expect(results.map((result) => result.session.id)).toEqual(["file-qualifier-match"]);
+    expect(results.map((result) => result.session.reference.sessionId)).toEqual([
+      "file-qualifier-match",
+    ]);
   });
 });
 
@@ -794,7 +804,9 @@ describe("search candidate filtering", () => {
     const snapshot = makeSnapshot();
     const candidates = [fileQualifierMatch, fileQualifierMismatch].map((spec) => ({
       reference: { agentName: spec.agent, sessionId: spec.id },
-      session: snapshot.byAgent[spec.agent]!.find((session) => session.id === spec.id)!,
+      session: snapshot.byAgent[spec.agent]!.find(
+        (session) => session.reference.sessionId === spec.id,
+      )!,
       snippet: "Alias",
       snippetHighlights: [],
       matchType: "title" as const,
@@ -805,7 +817,9 @@ describe("search candidate filtering", () => {
       tools: ["bash"],
     });
 
-    expect(results.map((result) => result.session.id)).toEqual(["file-qualifier-match"]);
+    expect(results.map((result) => result.session.reference.sessionId)).toEqual([
+      "file-qualifier-match",
+    ]);
   });
 
   it("uses the full snapshot for alias-style inclusive cost filters", () => {
@@ -822,11 +836,11 @@ describe("search candidate filtering", () => {
         cost: 2,
         messages: [],
       }),
-      parent_reference: { agentName: "codex", sessionId: parent.id },
+      parent_reference: { agentName: "codex", sessionId: parent.reference.sessionId },
     };
     const candidates: SearchResult[] = [
       {
-        reference: { agentName: "codex", sessionId: parent.id },
+        reference: { agentName: "codex", sessionId: parent.reference.sessionId },
         session: parent,
         snippet: "Alias",
         snippetHighlights: [],
@@ -842,7 +856,9 @@ describe("search candidate filtering", () => {
       },
     );
 
-    expect(results.map((result) => result.session.id)).toEqual([parent.id]);
+    expect(results.map((result) => result.session.reference.sessionId)).toEqual([
+      parent.reference.sessionId,
+    ]);
   });
 
   it("uses a supplied session tree for inclusive cost filters", () => {
@@ -859,18 +875,20 @@ describe("search candidate filtering", () => {
         cost: 0,
         messages: [],
       }),
-      parent_reference: { agentName: "codex", sessionId: parent.id },
+      parent_reference: { agentName: "codex", sessionId: parent.reference.sessionId },
     };
     const snapshot = {
       sessions: [parent, child],
       byAgent: { codex: [parent, child] },
     };
     const sessionTree = buildSessionTree([parent, child]);
-    sessionTree.byRouteKey.get(`codex/${parent.id}`)!.inclusiveStats.cost = 1;
+    sessionTree.byRouteKey.get(`codex/${parent.reference.sessionId}`)!.inclusiveStats.cost = 1;
 
     const results = executeSessionSearch("", { costMin: 1 }, snapshot, { sessionTree });
 
-    expect(results.map((result) => result.session.id)).toEqual([parent.id]);
+    expect(results.map((result) => result.session.reference.sessionId)).toEqual([
+      parent.reference.sessionId,
+    ]);
   });
 });
 
@@ -878,7 +896,11 @@ describe("search characterization: limit", () => {
   it("truncates FTS results to the requested limit, preserving order", () => {
     const results = search("docneedle", { limit: 3 });
     expect(results).toHaveLength(3);
-    expect(results.map((r) => r.session.id)).toEqual(["limit-1", "limit-2", "limit-3"]);
+    expect(results.map((r) => r.session.reference.sessionId)).toEqual([
+      "limit-1",
+      "limit-2",
+      "limit-3",
+    ]);
   });
 });
 
@@ -907,14 +929,14 @@ describe("search characterization: recent vs SQLite-indexed equivalence (tag fil
     // only sees the one it indexed. Current behavior: NOT equivalent -- the
     // recent path's result set is a strict superset of the indexed path's.
     const indexedIds = searchSessions("", { tags: ["bugfix"] })
-      .map((r) => r.session.id)
+      .map((r) => r.session.reference.sessionId)
       .sort();
     expect(indexedIds).toEqual(["recent-mid"]);
   });
 
   it("recent-path result set for the same tag filter includes the un-synced session too", () => {
     const results = search("", { tags: ["bugfix"], limit: 50 });
-    expect(results.map((r) => r.session.id).sort()).toEqual(
+    expect(results.map((r) => r.session.reference.sessionId).sort()).toEqual(
       ["recent-mid", "lagging-session"].sort(),
     );
   });
@@ -952,7 +974,7 @@ describe("search characterization: skip redundant sessions query for file-only s
     const { result, sql } = withPreparedSqlCapture(() =>
       search("", { file: "app.tsx", limit: 50 }),
     );
-    expect(result.map((r) => r.session.id)).toEqual(["file-only"]);
+    expect(result.map((r) => r.session.reference.sessionId)).toEqual(["file-only"]);
     expect(ranSearchSessions(sql)).toBe(false);
   });
 
@@ -960,7 +982,7 @@ describe("search characterization: skip redundant sessions query for file-only s
     const { result, sql } = withPreparedSqlCapture(() =>
       search("", { fileKind: "edit", limit: 50 }),
     );
-    expect(result.map((r) => r.session.id)).toContain("file-only");
+    expect(result.map((r) => r.session.reference.sessionId)).toContain("file-only");
     expect(ranSearchSessions(sql)).toBe(true);
   });
 
@@ -968,7 +990,7 @@ describe("search characterization: skip redundant sessions query for file-only s
     const { result, sql } = withPreparedSqlCapture(() =>
       search("", { file: "tagcheck.ts", tags: ["docs"], limit: 50 }),
     );
-    expect(result.map((r) => r.session.id)).toEqual(["file-tag-docs"]);
+    expect(result.map((r) => r.session.reference.sessionId)).toEqual(["file-tag-docs"]);
     expect(result[0]?.session.smart_tags).toEqual(["docs"]);
     expect(ranSearchSessions(sql)).toBe(false);
   });

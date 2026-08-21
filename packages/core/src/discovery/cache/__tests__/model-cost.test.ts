@@ -34,11 +34,13 @@ const OTHER_PROJECT = {
 
 function seedAgent(agent: string, seeds: Array<[SessionHead, SeedMessage[]]>): void {
   const sessions = seeds.map(([session]) => session);
-  const messagesById = new Map(seeds.map(([session, messages]) => [session.id, messages]));
+  const messagesById = new Map(
+    seeds.map(([session, messages]) => [session.reference.sessionId, messages]),
+  );
 
   saveCachedSessions(agent, sessions);
   syncSessionSearchIndex(agent, sessions, (sessionId) => {
-    const session = sessions.find((candidate) => candidate.id === sessionId)!;
+    const session = sessions.find((candidate) => candidate.reference.sessionId === sessionId)!;
     const messages: Message[] = (messagesById.get(sessionId) ?? []).map((seed, index) => ({
       id: `${sessionId}-m${index}`,
       role: "assistant",

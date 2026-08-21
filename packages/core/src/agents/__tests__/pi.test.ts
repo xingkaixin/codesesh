@@ -147,8 +147,7 @@ describe("PiAgent", () => {
     const tool = data.messages[1]?.parts.find((part: MessagePart) => part.type === "tool");
 
     expect(head).toMatchObject({
-      id: sessionId,
-      slug: `pi/${sessionId}`,
+      reference: { agentName: "pi", sessionId },
       title: "Inspect package metadata",
       directory: "/tmp/project",
       stats: {
@@ -216,7 +215,7 @@ describe("PiAgent", () => {
       },
     ]);
 
-    expect(agent.listSessionSources()[0]?.sessionId).toBe(agent.scan()[0]?.id);
+    expect(agent.listSessionSources()[0]?.sessionId).toBe(agent.scan()[0]?.reference.sessionId);
   });
 
   it("stats each session file once during a scan", () => {
@@ -383,8 +382,7 @@ describe("PiAgent", () => {
     const tool = assistant?.parts.find((part: MessagePart) => part.type === "tool");
 
     expect(head).toMatchObject({
-      id: sessionId,
-      slug: `pi/${sessionId}`,
+      reference: { agentName: "pi", sessionId },
       title: "Package inspection",
       directory: "/tmp/project",
       stats: {
@@ -593,7 +591,7 @@ describe("PiAgent", () => {
 
     const [head] = agent.scan();
 
-    expect(head?.id).toBe(sessionId);
+    expect(head?.reference.sessionId).toBe(sessionId);
     expect(head?.directory).toBe("/tmp/first");
   });
 

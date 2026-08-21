@@ -33,8 +33,6 @@ function fact(id: string, bookmarkedAt = 1): BookmarkRecord {
 function session(id: string, updated = 1): SessionHead {
   return {
     reference: { agentName: "cc", sessionId: id },
-    id,
-    slug: `cc/${id}`,
     title: id,
     directory: "/d",
     time_created: 1,
@@ -308,7 +306,7 @@ describe("useBookmarks", () => {
     expect(result.current.bookmarkedSessions[0]).toMatchObject({
       availability: "available",
       reference: { agentName: "cc", sessionId: "live" },
-      session: { id: "live", slug: "cc/live" },
+      session: { reference: { agentName: "cc", sessionId: "live" } },
     });
 
     request.resolve({ bookmark: fact("live") });

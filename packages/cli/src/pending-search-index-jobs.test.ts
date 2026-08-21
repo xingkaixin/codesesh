@@ -3,11 +3,9 @@ import type { IdentifiedSessionHead, SessionCacheMeta } from "@codesesh/core/run
 import { PendingSearchIndexJobs } from "./pending-search-index-jobs.js";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 
-function makeSession(id: string, title: string): IdentifiedSessionHead {
+function makeSession(agentName: string, id: string, title: string): IdentifiedSessionHead {
   return {
-    reference: { agentName: "agent", sessionId: id },
-    id,
-    slug: `agent/${id}`,
+    reference: { agentName, sessionId: id },
     title,
     directory: "/tmp/project",
     project_identity: { kind: "path", key: "/tmp/project", displayName: "project" },
@@ -36,7 +34,7 @@ function changesJob(
     context: "scan.refresh",
     agentName,
     changes: changes.map(({ id, version }, sortIndex) => ({
-      session: makeSession(id, `version ${version}`),
+      session: makeSession(agentName, id, `version ${version}`),
       sortIndex,
     })),
     removedSessionIds,
@@ -46,13 +44,13 @@ function changesJob(
 }
 
 function fullJob(agentName: string, version: number): SearchIndexWorkerJob {
-  const session = makeSession("full", `version ${version}`);
+  const session = makeSession(agentName, "full", `version ${version}`);
   return {
     kind: "full",
     context: "scan.backfill",
     agentName,
     sessions: [session],
-    meta: { [session.id]: makeMeta(session.id, version) },
+    meta: { [session.reference.sessionId]: makeMeta(session.reference.sessionId, version) },
     completeness: "complete",
     removedSessionIds: [],
     saveCache: true,
@@ -140,7 +138,13 @@ describe("PendingSearchIndexJobs", () => {
       }),
       expect.objectContaining({
         kind: "changes",
-        changes: [expect.objectContaining({ session: expect.objectContaining({ id: "new" }) })],
+        changes: [
+          expect.objectContaining({
+            session: expect.objectContaining({
+              reference: { agentName: "codex", sessionId: "new" },
+            }),
+          }),
+        ],
       }),
     ]);
     pending.settle(batch);

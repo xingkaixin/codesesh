@@ -21,8 +21,6 @@ import { SearchIndexMaintenanceScheduler } from "./search-index-maintenance-sche
 function makeSession(id: string): SessionHead {
   return {
     reference: { agentName: "codex", sessionId: id },
-    id,
-    slug: `codex/${id}`,
     title: id,
     directory: "/workspace",
     time_created: 1,
@@ -48,7 +46,9 @@ beforeEach(() => {
   const sessions = [makeSession("one"), makeSession("two"), makeSession("three")];
   core.loadCachedSessions.mockReturnValue({
     sessions,
-    meta: Object.fromEntries(sessions.map((session) => [session.id, { id: session.id }])),
+    meta: Object.fromEntries(
+      sessions.map((session) => [session.reference.sessionId, { id: session.reference.sessionId }]),
+    ),
     timestamp: 1,
   });
 });

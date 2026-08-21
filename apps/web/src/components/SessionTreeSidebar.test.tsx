@@ -8,11 +8,13 @@ import {
   SessionTreeSidebar,
 } from "./SessionTreeSidebar";
 
-function makeSession(overrides: Partial<SessionHead> & { id: string }): SessionHead {
+function makeSession(
+  input: Partial<SessionHead> & { sessionId: string; agentName?: string },
+): SessionHead {
+  const { sessionId, agentName = "codex", ...overrides } = input;
   return {
-    reference: { agentName: "codex", sessionId: overrides.id },
-    slug: `codex/${overrides.id}`,
-    title: overrides.id,
+    reference: { agentName, sessionId },
+    title: sessionId,
     directory: "/repo/unused",
     time_created: 0,
     stats: {
@@ -39,7 +41,7 @@ describe("buildSessionTreeModel group sorting", () => {
     const depth = 12_000;
     const sessions = Array.from({ length: depth }, (_, index) =>
       makeSession({
-        id: `deep-${index}`,
+        sessionId: `deep-${index}`,
         title: "x",
         ...(index > 0
           ? { parent_reference: { agentName: "codex", sessionId: `deep-${index - 1}` } }
@@ -65,11 +67,11 @@ describe("buildSessionTreeModel group sorting", () => {
 
   it("renders every cycle member once under the Unmounted group", () => {
     const a = makeSession({
-      id: "a",
+      sessionId: "a",
       parent_reference: { agentName: "codex", sessionId: "b" },
     });
     const b = makeSession({
-      id: "b",
+      sessionId: "b",
       parent_reference: { agentName: "codex", sessionId: "a" },
     });
 
@@ -86,23 +88,23 @@ describe("buildSessionTreeModel group sorting", () => {
   it("orders groups by most recent session time, descending", () => {
     const sessions = [
       makeSession({
-        id: "old-1",
+        sessionId: "old-1",
         directory: "/repo/old",
         time_created: 100,
       }),
       makeSession({
-        id: "new-1",
+        sessionId: "new-1",
         directory: "/repo/new",
         time_created: 300,
       }),
       makeSession({
-        id: "mid-1",
+        sessionId: "mid-1",
         directory: "/repo/mid",
         time_created: 200,
       }),
       // A second, older session in the "new" group should not pull its maxTime down.
       makeSession({
-        id: "new-2",
+        sessionId: "new-2",
         directory: "/repo/new",
         time_created: 10,
       }),
@@ -115,8 +117,8 @@ describe("buildSessionTreeModel group sorting", () => {
 
   it("always places the unknown group last, regardless of session recency", () => {
     const sessions = [
-      makeSession({ id: "known-1", directory: "/repo/known", time_created: 10 }),
-      makeSession({ id: "unknown-1", directory: "", time_created: 9999 }),
+      makeSession({ sessionId: "known-1", directory: "/repo/known", time_created: 10 }),
+      makeSession({ sessionId: "unknown-1", directory: "", time_created: 9999 }),
     ];
 
     const { paths } = buildSessionTreeModel(sessions);
@@ -129,14 +131,14 @@ describe("buildSessionTreeModel group sorting", () => {
     // stack, so this only passes if the comparator avoids spreading.
     const bigGroup: SessionHead[] = Array.from({ length: 200_000 }, (_, index) =>
       makeSession({
-        id: `big-${index}`,
+        sessionId: `big-${index}`,
         directory: "/repo/big",
         time_created: index,
       }),
     );
     const sessions = [
       ...bigGroup,
-      makeSession({ id: "small-1", directory: "/repo/small", time_created: 999_999 }),
+      makeSession({ sessionId: "small-1", directory: "/repo/small", time_created: 999_999 }),
     ];
 
     const { paths } = buildSessionTreeModel(sessions);
@@ -146,8 +148,8 @@ describe("buildSessionTreeModel group sorting", () => {
   }, 30_000);
 
   it("keeps paths for equal session ids from different agents", () => {
-    const codex = makeSession({ id: "same", slug: "codex/same" });
-    const claude = makeSession({ id: "same", slug: "claude/same" });
+    const codex = makeSession({ sessionId: "same" });
+    const claude = makeSession({ sessionId: "same", agentName: "claude" });
 
     const model = buildSessionTreeModel([codex, claude]);
 
@@ -156,9 +158,9 @@ describe("buildSessionTreeModel group sorting", () => {
   });
 
   it("mounts child sessions below their parent path", () => {
-    const parent = makeSession({ id: "parent", title: "Main" });
+    const parent = makeSession({ sessionId: "parent", title: "Main" });
     const child = makeSession({
-      id: "child",
+      sessionId: "child",
       title: "Worker",
       parent_reference: { agentName: "codex", sessionId: "parent" },
     });
@@ -175,9 +177,9 @@ describe("buildSessionTreeModel group sorting", () => {
   });
 
   it("renders a child without its parent under the Unmounted group", () => {
-    const rooted = makeSession({ id: "rooted", directory: "/repo/known" });
+    const rooted = makeSession({ sessionId: "rooted", directory: "/repo/known" });
     const child = makeSession({
-      id: "orphan",
+      sessionId: "orphan",
       parent_reference: { agentName: "codex", sessionId: "missing" },
     });
 
@@ -192,11 +194,11 @@ describe("buildSessionTreeModel group sorting", () => {
 
   it("keeps a grandchild mounted under its orphaned parent", () => {
     const orphan = makeSession({
-      id: "orphan",
+      sessionId: "orphan",
       parent_reference: { agentName: "codex", sessionId: "missing" },
     });
     const grandchild = makeSession({
-      id: "grandchild",
+      sessionId: "grandchild",
       parent_reference: { agentName: "codex", sessionId: "orphan" },
     });
 
@@ -215,7 +217,7 @@ describe("buildSessionTreeModel path allocation", () => {
     // path. A restart-from-2 probe is O(N²) here and cannot finish in time.
     const sessions = Array.from({ length: 20_000 }, (_, index) =>
       makeSession({
-        id: `deadbeef-${index}`,
+        sessionId: `deadbeef-${index}`,
         title: "Same title",
         directory: "/repo/one",
       }),
@@ -233,9 +235,9 @@ describe("buildSessionTreeModel path allocation", () => {
 
   it("CS-145: keeps groups with the same label distinct", () => {
     const sessions = [
-      makeSession({ id: "a", directory: "/repo/one/shared" }),
-      makeSession({ id: "b", directory: "/repo/two/shared" }),
-      makeSession({ id: "c", directory: "/repo/three/shared" }),
+      makeSession({ sessionId: "a", directory: "/repo/one/shared" }),
+      makeSession({ sessionId: "b", directory: "/repo/two/shared" }),
+      makeSession({ sessionId: "c", directory: "/repo/three/shared" }),
     ];
 
     const { paths } = buildSessionTreeModel(sessions);
@@ -245,9 +247,9 @@ describe("buildSessionTreeModel path allocation", () => {
 
   it("CS-145: does not reuse a numbered label already taken by another title", () => {
     const sessions = [
-      makeSession({ id: "a", title: "Report (2)" }),
-      makeSession({ id: "b", title: "Report" }),
-      makeSession({ id: "c", title: "Report" }),
+      makeSession({ sessionId: "a", title: "Report (2)" }),
+      makeSession({ sessionId: "b", title: "Report" }),
+      makeSession({ sessionId: "c", title: "Report" }),
     ];
 
     const { paths } = buildSessionTreeModel(sessions);
@@ -272,7 +274,7 @@ function patchShadowEventRetargeting() {
   document.addEventListener("keydown", retarget, true);
 }
 
-function renderSessionTreeSidebar(sessions = [makeSession({ id: "s1" })]) {
+function renderSessionTreeSidebar(sessions = [makeSession({ sessionId: "s1" })]) {
   const session = sessions[0]!;
   const onToggleBookmark = vi.fn();
   const onRenameSession = vi.fn();
@@ -328,7 +330,7 @@ describe("CS-275: untrusted session titles stay inert", () => {
 
   it("renders HTML metacharacters in titles as text, not markup", async () => {
     const hostileTitle = '<img src=x onerror="globalThis.__cs275 = true"> <b>bold';
-    renderSessionTreeSidebar([makeSession({ id: "hostile", title: hostileTitle })]);
+    renderSessionTreeSidebar([makeSession({ sessionId: "hostile", title: hostileTitle })]);
 
     // The full title survives verbatim as escaped text (the visible label is
     // split by MiddleTruncate, so assert on the row's aria-label instead).
@@ -345,8 +347,8 @@ describe("SessionTreeSidebar selection state", () => {
   afterEach(cleanup);
 
   it("keeps one active row and hides its fill while keyboard focus is elsewhere", async () => {
-    const first = makeSession({ id: "first", title: "First session" });
-    const second = makeSession({ id: "second", title: "Second session" });
+    const first = makeSession({ sessionId: "first", title: "First session" });
+    const second = makeSession({ sessionId: "second", title: "Second session" });
     const sessions = [first, second];
     const firstReference = getSessionReferenceKey(first);
     const secondReference = getSessionReferenceKey(second);
@@ -411,7 +413,7 @@ describe("SessionTreeSidebar session options menu", () => {
 
   it("scrolls an overflowing title once while hovered", async () => {
     const title = "A deliberately long session title that needs a marquee";
-    const { shadowRoot } = renderSessionTreeSidebar([makeSession({ id: "long", title })]);
+    const { shadowRoot } = renderSessionTreeSidebar([makeSession({ sessionId: "long", title })]);
     const content = await waitFor(() => {
       const element = shadowRoot.querySelector<HTMLElement>(
         '[data-item-type="file"] [data-item-section="content"]',
@@ -492,9 +494,9 @@ describe("SessionTreeSidebar session options menu", () => {
   });
 
   it("shows and opens the parent row options when it has a child session", async () => {
-    const parent = makeSession({ id: "parent", title: "Main parent session with child" });
+    const parent = makeSession({ sessionId: "parent", title: "Main parent session with child" });
     const child = makeSession({
-      id: "child",
+      sessionId: "child",
       title: "Worker",
       parent_reference: { agentName: "codex", sessionId: "parent" },
     });

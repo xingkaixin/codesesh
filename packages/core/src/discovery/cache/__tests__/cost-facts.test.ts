@@ -79,7 +79,7 @@ describe("listDashboardCostFacts", () => {
     saveCachedSessions("codex", [session]);
     syncSessionSearchIndex("codex", [session], () => ({
       ...session,
-      reference: { agentName: "codex", sessionId: session.id },
+      reference: { agentName: "codex", sessionId: session.reference.sessionId },
       messages,
     }));
 

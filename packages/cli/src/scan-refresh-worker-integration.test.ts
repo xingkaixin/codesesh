@@ -109,8 +109,6 @@ vi.mock("@codesesh/core/runtime", async (importOriginal) => {
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {
     reference: { agentName: "codex", sessionId: id },
-    id,
-    slug: `codex/${id}`,
     title: id,
     directory: "/workspace",
     time_created: Date.now(),
@@ -616,22 +614,25 @@ describe("scan refresh worker entry", () => {
     const agent = makeAgent({
       scanSessionSource,
       listSessionSources: vi.fn(() => [
-        { sessionId: unchanged.id, sourcePath: "/unchanged", fingerprint: "same" },
-        { sessionId: changed.id, sourcePath: "/changed", fingerprint: "new" },
+        { sessionId: unchanged.reference.sessionId, sourcePath: "/unchanged", fingerprint: "same" },
+        { sessionId: changed.reference.sessionId, sourcePath: "/changed", fingerprint: "new" },
       ]),
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({
       operation: { kind: "source-refresh", checkpoint: "durable" },
-      previousSessions: [unchanged, makeSession(changed.id, { time_created: 1, time_updated: 1 })],
+      previousSessions: [
+        unchanged,
+        makeSession(changed.reference.sessionId, { time_created: 1, time_updated: 1 }),
+      ],
       meta: {
         unchanged: currentPricingMeta({
-          id: unchanged.id,
+          id: unchanged.reference.sessionId,
           sourcePath: "/unchanged",
           sourceFingerprint: "same",
         }),
         changed: {
-          id: changed.id,
+          id: changed.reference.sessionId,
           sourcePath: "/changed",
           sourceFingerprint: "old",
         },
@@ -646,7 +647,7 @@ describe("scan refresh worker entry", () => {
       .find((message) => message?.type === "checkpoint" && message.checkpoint.stage === "scanned");
     expect(scannedCheckpoint?.checkpoint.sessions).toContainEqual(
       expect.objectContaining({
-        id: unchanged.id,
+        reference: unchanged.reference,
         smart_tags: ["bugfix"],
         smart_tags_source_updated_at: 1,
       }),
@@ -715,22 +716,22 @@ describe("scan refresh worker entry", () => {
     const agent = makeAgent({
       listSessionSources: vi.fn(() =>
         [newest, cursor, next].map((session) => ({
-          sessionId: session.id,
-          sourcePath: `/${session.id}`,
+          sessionId: session.reference.sessionId,
+          sourcePath: `/${session.reference.sessionId}`,
           fingerprint: "same",
         })),
       ),
     });
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     setWorkerData({
-      operation: { kind: "backfill", cursor: cursor.id, checkpoint: "durable" },
+      operation: { kind: "backfill", cursor: cursor.reference.sessionId, checkpoint: "durable" },
       previousSessions: [newest, cursor, next],
       meta: Object.fromEntries(
         [newest, cursor, next].map((session) => [
-          session.id,
+          session.reference.sessionId,
           {
-            id: session.id,
-            sourcePath: `/${session.id}`,
+            id: session.reference.sessionId,
+            sourcePath: `/${session.reference.sessionId}`,
             sourceFingerprint: "same",
           },
         ]),
@@ -749,7 +750,7 @@ describe("scan refresh worker entry", () => {
         type: "checkpoint",
         checkpoint: expect.objectContaining({
           stage: "finalizing",
-          backfillCursor: next.id,
+          backfillCursor: next.reference.sessionId,
         }),
       }),
     );
