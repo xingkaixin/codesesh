@@ -37,14 +37,14 @@
   },
   "devDependencies": {
     "@codesesh/core": "workspace:*",
-    "@types/node": "22.20.1",
-    "@typescript/native": "npm:typescript@^7.0.2",
+    "@types/node": "catalog:",
+    "@typescript/native": "catalog:",
     "@vitest/coverage-v8": "^4.1.10",
     "oxfmt": "^0.63.0",
     "oxlint": "^1.78.0",
     "playwright": "^1.62.1",
     "turbo": "^2.10.10",
-    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript": "catalog:",
     "vitest": "^4.1.10"
   },
   "packageManager": "pnpm@11.20.0"

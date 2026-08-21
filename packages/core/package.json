@@ -43,13 +43,13 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
-    "@types/node": "22.20.1",
-    "@typescript/native": "npm:typescript@^7.0.2",
+    "@types/node": "catalog:",
+    "@typescript/native": "catalog:",
     "node-gyp": "^13.0.1",
-    "tsup": "^8.5.1",
-    "typescript": "npm:@typescript/typescript6@^6.0.2"
+    "tsup": "catalog:",
+    "typescript": "catalog:"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3"
+    "better-sqlite3": "catalog:"
   }
 }
