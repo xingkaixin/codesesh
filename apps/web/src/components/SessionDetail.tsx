@@ -31,6 +31,10 @@ import {
   resolveReducedMotionScrollBehavior,
   type SessionAnchorScrollBehavior,
 } from "./session-detail/scroll-behavior";
+import {
+  createTimelineAnchorRegistry,
+  type TimelineAnchorRegistry,
+} from "./session-detail/timeline-anchor-registry";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,11 +54,13 @@ interface SessionDetailProps {
 function scrollToSessionAnchor({
   anchorId,
   behavior,
+  anchorRegistry,
   prepareAnchor,
   isCurrent,
 }: {
   anchorId: string;
   behavior: SessionAnchorScrollBehavior;
+  anchorRegistry: TimelineAnchorRegistry;
   prepareAnchor?: () => void;
   isCurrent: () => boolean;
 }) {
@@ -63,13 +69,13 @@ function scrollToSessionAnchor({
     behavior,
     window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
-  let element = document.getElementById(anchorId);
+  let element = anchorRegistry.get(anchorId);
   if (!element && prepareAnchor) {
     prepareAnchor();
     let attempts = 0;
     const retryScroll = () => {
       if (!isCurrent()) return;
-      element = document.getElementById(anchorId);
+      element = anchorRegistry.get(anchorId);
       if (element) {
         element.scrollIntoView({ behavior: scrollBehavior, block: "center" });
         return;
@@ -126,10 +132,8 @@ export function SessionDetail({
     [session.file_activity, session.messages, sessionAgentKey],
   );
   const { messages: messageModels, toc, fileChangeSummary } = displayModel;
-  const { state: filterState, actions: filterActions } = useSessionFilters(
-    toc,
-    formatSessionReference(session.reference),
-  );
+  const sessionReference = formatSessionReference(session.reference);
+  const { state: filterState, actions: filterActions } = useSessionFilters(toc, sessionReference);
   const [openAuxPanel, setOpenAuxPanel] = useState<"toc" | "files" | null>(null);
   const selection = useMemo(
     () =>
@@ -143,6 +147,7 @@ export function SessionDetail({
     () => new Map(childSessions.map((child) => [child.reference.sessionId, child])),
     [childSessions],
   );
+  const anchorRegistry = useMemo(createTimelineAnchorRegistry, [sessionReference]);
   const virtualListRef = useRef<MessageListHandle | null>(null);
   const scrollRequestRef = useRef(0);
   const handleJumpToMessageAnchor = useCallback(
@@ -153,12 +158,13 @@ export function SessionDetail({
       scrollToSessionAnchor({
         anchorId,
         behavior,
+        anchorRegistry,
         prepareAnchor:
           listIndex == null ? undefined : () => virtualListRef.current?.scrollToIndex(listIndex),
         isCurrent: () => scrollRequestRef.current === requestId,
       });
     },
-    [selection],
+    [anchorRegistry, selection],
   );
   const handleJumpToAnchor = useCallback(
     (anchorId: string, behavior: SessionAnchorScrollBehavior) => {
@@ -222,6 +228,7 @@ export function SessionDetail({
             <>
               <SessionMessageTimeline
                 entries={timelineEntries}
+                anchorRegistry={anchorRegistry}
                 onNavigate={(entry, behavior) =>
                   handleJumpToMessageAnchor(entry.anchorId, entry.messageIndex, behavior)
                 }
@@ -234,7 +241,7 @@ export function SessionDetail({
                 }}
               >
                 <MessageList
-                  key={formatSessionReference(session.reference)}
+                  key={sessionReference}
                   messages={filteredMessages}
                   sessionAgentKey={sessionAgentKey}
                   agent={sessionAgent}
@@ -242,6 +249,7 @@ export function SessionDetail({
                   highlightQuery={highlightQuery}
                   childSessionById={childSessionById}
                   apiRef={virtualListRef}
+                  anchorRegistry={anchorRegistry}
                 />
               </RenderProfiler>
             </>

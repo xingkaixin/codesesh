@@ -18,12 +18,20 @@ import {
   type SessionTimelineEntry,
   type SessionTimelineEntryKind,
 } from "./timeline";
-import { getActivationScrollBehavior, type SessionAnchorScrollBehavior } from "./scroll-behavior";
-
-type ScrollParent = HTMLElement | Window;
+import {
+  findScrollParent,
+  getScrollHeight,
+  getScrollTop,
+  getViewportHeight,
+  isWindowScrollParent,
+  getActivationScrollBehavior,
+  type SessionAnchorScrollBehavior,
+} from "./scroll-behavior";
+import type { TimelineAnchorRegistry } from "./timeline-anchor-registry";
 
 interface SessionMessageTimelineProps {
   entries: SessionTimelineEntry[];
+  anchorRegistry: TimelineAnchorRegistry;
   onNavigate: (entry: SessionTimelineEntry, behavior: SessionAnchorScrollBehavior) => void;
 }
 
@@ -168,40 +176,15 @@ const TimelineSegment = memo(function TimelineSegment({
   );
 });
 
-function findScrollParent(node: HTMLElement): ScrollParent {
-  let parent = node.parentElement;
-
-  while (parent) {
-    const { overflowY } = window.getComputedStyle(parent);
-    if (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") return parent;
-    parent = parent.parentElement;
-  }
-
-  return window;
-}
-
-function isWindowScrollParent(parent: ScrollParent): parent is Window {
-  return parent === window;
-}
-
-function getScrollViewport(parent: ScrollParent) {
-  if (isWindowScrollParent(parent)) {
-    const viewportHeight = window.innerHeight || 900;
-    const scrollingElement = document.scrollingElement ?? document.documentElement;
-    return {
-      center: viewportHeight / 2,
-      scrollTop: window.scrollY || scrollingElement.scrollTop,
-      viewportHeight,
-      scrollHeight: scrollingElement.scrollHeight,
-    };
-  }
-
-  const rect = parent.getBoundingClientRect();
+function getScrollViewport(parent: HTMLElement | Window) {
+  const viewportHeight = getViewportHeight(parent);
   return {
-    center: rect.top + parent.clientHeight / 2,
-    scrollTop: parent.scrollTop,
-    viewportHeight: parent.clientHeight,
-    scrollHeight: parent.scrollHeight,
+    center: isWindowScrollParent(parent)
+      ? viewportHeight / 2
+      : parent.getBoundingClientRect().top + viewportHeight / 2,
+    scrollTop: getScrollTop(parent),
+    viewportHeight,
+    scrollHeight: getScrollHeight(parent),
   };
 }
 
@@ -250,7 +233,11 @@ function scrollTimelineIndexIntoView(
   }
 }
 
-export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTimelineProps) {
+export function SessionMessageTimeline({
+  entries,
+  anchorRegistry,
+  onNavigate,
+}: SessionMessageTimelineProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -349,28 +336,25 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
     const root = rootRef.current;
     if (!root || entries.length === 0) return;
 
-    const detail = root.closest<HTMLElement>('[data-testid="session-detail"]');
     const scrollParent = findScrollParent(root);
     let frame = 0;
 
-    // jsdom (test env) has no IntersectionObserver; fall back to the pre-CS-80 full-scan
-    // path so existing tests keep exercising real layout without a polyfill.
-    const anchorSelector = "[data-session-timeline-anchor]";
-    const readAnchorPosition = (anchor: HTMLElement) => {
-      const anchorId = anchor.dataset.sessionTimelineAnchor;
-      const index = anchorId ? entryIndexes.get(anchorId) : undefined;
+    const readAnchorPosition = (anchorId: string, anchor: HTMLElement) => {
+      const index = entryIndexes.get(anchorId);
       return index == null ? null : { index, top: anchor.getBoundingClientRect().top };
     };
     const scanAllAnchors = () =>
-      Array.from(detail?.querySelectorAll<HTMLElement>(anchorSelector) ?? []).flatMap(
-        (anchor) => readAnchorPosition(anchor) ?? [],
+      Array.from(anchorRegistry.entries()).flatMap(
+        ([anchorId, anchor]) => readAnchorPosition(anchorId, anchor) ?? [],
       );
 
     // Only intersecting anchors are re-measured per frame; IO keeps this set updated
     // so scroll frames read O(visible) rects instead of O(total anchors).
     const visibleAnchors = new Map<string, HTMLElement>();
     const scanVisibleAnchors = () =>
-      Array.from(visibleAnchors.values()).flatMap((anchor) => readAnchorPosition(anchor) ?? []);
+      Array.from(visibleAnchors).flatMap(
+        ([anchorId, anchor]) => readAnchorPosition(anchorId, anchor) ?? [],
+      );
 
     const updateActiveEntry = () => {
       const viewport = getScrollViewport(scrollParent);
@@ -394,6 +378,9 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
       });
     };
 
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate);
+    const observedAnchorIds = new WeakMap<HTMLElement, string>();
     const intersectionObserver =
       typeof IntersectionObserver === "undefined"
         ? null
@@ -401,7 +388,7 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
             (ioEntries) => {
               for (const entry of ioEntries) {
                 const anchor = entry.target as HTMLElement;
-                const anchorId = anchor.dataset.sessionTimelineAnchor;
+                const anchorId = observedAnchorIds.get(anchor);
                 if (!anchorId) continue;
                 if (entry.isIntersecting) visibleAnchors.set(anchorId, anchor);
                 else visibleAnchors.delete(anchorId);
@@ -411,57 +398,42 @@ export function SessionMessageTimeline({ entries, onNavigate }: SessionMessageTi
             { root: isWindowScrollParent(scrollParent) ? null : scrollParent, threshold: 0 },
           );
 
-    const observeAnchor = (anchor: HTMLElement) => intersectionObserver?.observe(anchor);
-    const unobserveAnchor = (anchor: HTMLElement) => {
+    const observeAnchor = (anchorId: string, anchor: HTMLElement) => {
+      observedAnchorIds.set(anchor, anchorId);
+      intersectionObserver?.observe(anchor);
+      resizeObserver?.observe(anchor);
+    };
+    const unobserveAnchor = (anchorId: string, anchor: HTMLElement) => {
       intersectionObserver?.unobserve(anchor);
-      const anchorId = anchor.dataset.sessionTimelineAnchor;
-      if (anchorId) visibleAnchors.delete(anchorId);
+      resizeObserver?.unobserve(anchor);
+      observedAnchorIds.delete(anchor);
+      visibleAnchors.delete(anchorId);
     };
-    const forEachAnchorIn = (node: Node, visit: (anchor: HTMLElement) => void) => {
-      if (!(node instanceof HTMLElement)) return;
-      if (node.matches(anchorSelector)) visit(node);
-      node.querySelectorAll<HTMLElement>(anchorSelector).forEach(visit);
-    };
-
-    if (intersectionObserver && detail) {
-      detail.querySelectorAll<HTMLElement>(anchorSelector).forEach(observeAnchor);
+    if (intersectionObserver) {
+      Array.from(anchorRegistry.entries()).forEach(([anchorId, anchor]) =>
+        observeAnchor(anchorId, anchor),
+      );
     }
 
     scheduleUpdate();
     scrollParent.addEventListener("scroll", scheduleUpdate, { passive: true });
     window.addEventListener("resize", scheduleUpdate);
 
-    const resizeObserver =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate);
-    if (detail) resizeObserver?.observe(detail);
-
-    // Converged to registration bookkeeping only: mutations register/unregister IO targets
-    // for added/removed anchors instead of forcing a full-scan recompute on every DOM change.
-    const mutationObserver =
-      typeof MutationObserver === "undefined"
-        ? null
-        : new MutationObserver((records) => {
-            if (!intersectionObserver) {
-              scheduleUpdate();
-              return;
-            }
-            for (const record of records) {
-              record.addedNodes.forEach((node) => forEachAnchorIn(node, observeAnchor));
-              record.removedNodes.forEach((node) => forEachAnchorIn(node, unobserveAnchor));
-            }
-            scheduleUpdate();
-          });
-    if (detail) mutationObserver?.observe(detail, { childList: true, subtree: true });
+    const unsubscribe = anchorRegistry.subscribe((anchorId, element, previous) => {
+      if (previous && previous !== element) unobserveAnchor(anchorId, previous);
+      if (element) observeAnchor(anchorId, element);
+      scheduleUpdate();
+    });
 
     return () => {
       if (frame) cancelAnimationFrame(frame);
       intersectionObserver?.disconnect();
       resizeObserver?.disconnect();
-      mutationObserver?.disconnect();
+      unsubscribe();
       scrollParent.removeEventListener("scroll", scheduleUpdate);
       window.removeEventListener("resize", scheduleUpdate);
     };
-  }, [entries.length, entryIndexes]);
+  }, [anchorRegistry, entries.length, entryIndexes]);
 
   useEffect(() => {
     const scrollViewport = scrollRef.current;
