@@ -2,7 +2,7 @@ import {
   readAgentLastFullSyncAt,
   readCachedSessions,
   type BaseAgent,
-  type loadCachedSessions,
+  type CachedResult,
   type ScanOptions,
 } from "@codesesh/core/runtime";
 import type {
@@ -13,7 +13,7 @@ import type {
 import { appLogger } from "./logging.js";
 import type { ScanStatusReporter } from "./scan-status-reporter.js";
 
-type CachedSessions = NonNullable<ReturnType<typeof loadCachedSessions>>;
+type CachedSessions = CachedResult;
 
 export interface AgentBackfillSchedulerOptions {
   lifecycle: BackfillLifecycle;

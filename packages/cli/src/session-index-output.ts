@@ -41,9 +41,10 @@ export function formatScanFailureDiagnostics(
 export function formatCacheFailureDiagnostics(
   snapshot: Pick<LiveSnapshot, "cacheFailures">,
 ): string[] {
-  return Object.values(snapshot.cacheFailures ?? {}).map(
-    (failure) =>
-      `[${failure.agentName}] Cache persistence failed; serving in-memory results without advancing the durable baseline`,
+  return Object.values(snapshot.cacheFailures ?? {}).map((failure) =>
+    failure.operation === "read"
+      ? `[${failure.agentName}] Cache read failed; durable baseline is unavailable`
+      : `[${failure.agentName}] Cache persistence failed; serving in-memory results without advancing the durable baseline`,
   );
 }
 

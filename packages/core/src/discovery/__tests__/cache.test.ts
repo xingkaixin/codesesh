@@ -6,8 +6,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearCache,
   loadCachedSessionData,
-  loadCachedSessions,
+  readCachedSessions,
   saveCachedSessions,
+  type CachedResult,
 } from "../cache/sessions.js";
 import { searchSessions, syncSessionSearchIndex } from "../cache/search.js";
 import { setSchemaEnsuredPath } from "../cache/db.js";
@@ -15,6 +16,12 @@ import { searchIndexStateQuery } from "../cache/search-index-writer.js";
 import type { SessionDetail, SessionHead } from "../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-smoke-test-"));
+
+function readCachedValue(agentName: string): CachedResult | null {
+  const outcome = readCachedSessions(agentName);
+  expect(outcome.status).toBe("success");
+  return outcome.status === "success" ? outcome.value : null;
+}
 
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
@@ -160,7 +167,7 @@ describe("session cache integration", () => {
     const updatedRecent = { ...recent, title: "Updated recent", time_updated: 3 };
     saveCachedSessions("codex", [updatedRecent], {}, { completeness: "partial" });
 
-    expect(loadCachedSessions("codex")).toMatchObject({
+    expect(readCachedValue("codex")).toMatchObject({
       sessions: [
         {
           reference: { agentName: "codex", sessionId: "recent" },

@@ -3,7 +3,6 @@ import {
   buildAgentCacheMeta,
   getAgentFullSyncCursor,
   computeSessionDiff,
-  loadCachedSessions,
   inspectAgentRefresh,
   markAgentFullSyncProgress,
   markAgentFullSyncStarted,
@@ -13,6 +12,7 @@ import {
   sessionSignature,
   type BaseAgent,
   type AgentRefreshInspection,
+  type CachedResult,
   type IdentifiedSessionHead,
   type ScanOptions,
   type LiveSnapshot,
@@ -64,7 +64,7 @@ export interface AgentSyncEngineInitializationOptions extends LiveSessionIndexOp
 
 type SessionsChangedListener = (change: AgentSessionsChanged) => void;
 type StatusChangedListener = (event: ScanStatusEvent) => void;
-type CachedSessions = NonNullable<ReturnType<typeof loadCachedSessions>>;
+type CachedSessions = CachedResult;
 
 interface SessionPersistenceDiff {
   changedSessions: PersistedSessionHeadChange<IdentifiedSessionHead>[];

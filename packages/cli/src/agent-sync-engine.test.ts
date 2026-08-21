@@ -7,8 +7,8 @@ import {
 import type {
   AggregateSessionSourceCapability,
   BaseAgent,
+  CachedResult,
   IdentifiedSessionHead,
-  loadCachedSessions,
   LiveSnapshot,
   PendingSearchIndexMaintenance,
   SessionCacheMeta,
@@ -24,9 +24,7 @@ import type { ScanStatusModel } from "./scan-status-model.js";
 const core = vi.hoisted(() => {
   const getAgentLastFullSyncAt = vi.fn(() => Date.now());
   const isAgentCacheInitialized = vi.fn(() => true);
-  const loadCachedSessionsMock = vi.fn(
-    (_agentName?: string): ReturnType<typeof loadCachedSessions> => null,
-  );
+  const cachedSessions = vi.fn((_agentName?: string): CachedResult | null => null);
   return {
     getAgentFullSyncCursor: vi.fn(() => null as string | null),
     getAgentLastFullSyncAt,
@@ -43,15 +41,15 @@ const core = vi.hoisted(() => {
       status: "success",
       value: getAgentLastFullSyncAt(),
     })),
-    loadCachedSessions: loadCachedSessionsMock,
+    cachedSessions,
     readCachedSessions: vi.fn(
       (
         agentName: string,
       ):
-        | { status: "success"; value: ReturnType<typeof loadCachedSessions> }
+        | { status: "success"; value: CachedResult | null }
         | {
             status: "failed";
-          } => ({ status: "success", value: loadCachedSessionsMock(agentName) }),
+          } => ({ status: "success", value: cachedSessions(agentName) }),
     ),
     readPendingSearchIndexMaintenance: vi.fn<
       (_agentName: string, _limit: number) => PendingSearchIndexMaintenance | null
@@ -85,7 +83,6 @@ vi.mock("@codesesh/core/runtime", async (importOriginal) => {
     isAgentCacheInitialized: core.isAgentCacheInitialized,
     readAgentCacheInitialization: core.readAgentCacheInitialization,
     readAgentLastFullSyncAt: core.readAgentLastFullSyncAt,
-    loadCachedSessions: core.loadCachedSessions,
     readCachedSessions: core.readCachedSessions,
     readPendingSearchIndexMaintenance: core.readPendingSearchIndexMaintenance,
     markAgentFullSyncStarted: core.markAgentFullSyncStarted,
@@ -238,7 +235,7 @@ afterEach(() => {
   vi.clearAllMocks();
   core.getAgentLastFullSyncAt.mockReturnValue(Date.now());
   core.isAgentCacheInitialized.mockReturnValue(true);
-  core.loadCachedSessions.mockReturnValue(null);
+  core.cachedSessions.mockReturnValue(null);
   core.readPendingSearchIndexMaintenance.mockReturnValue({ sessionIds: [], total: 0 });
   core.markAgentFullSyncStarted.mockClear();
   core.markAgentFullSyncProgress.mockClear();
@@ -253,7 +250,7 @@ afterEach(() => {
 describe("AgentSyncEngine", () => {
   it("schedules migration reindex work as separate background maintenance", async () => {
     const session = makeSession("legacy");
-    core.loadCachedSessions.mockReturnValue({
+    core.cachedSessions.mockReturnValue({
       sessions: [session],
       meta: { legacy: { id: "legacy", sourcePath: "/legacy" } },
       timestamp: Date.now(),
@@ -278,7 +275,7 @@ describe("AgentSyncEngine", () => {
 
   it("loads cached sessions once across a refresh and its backfill decision", async () => {
     const session = makeSession("cached");
-    core.loadCachedSessions.mockReturnValue({
+    core.cachedSessions.mockReturnValue({
       sessions: [session],
       meta: {},
       timestamp: Date.now(),
@@ -298,7 +295,7 @@ describe("AgentSyncEngine", () => {
 
     await engine.refresh("codex");
 
-    expect(core.loadCachedSessions).toHaveBeenCalledOnce();
+    expect(core.cachedSessions).toHaveBeenCalledOnce();
   });
 
   it("keeps the current snapshot when cache initialization cannot be read", async () => {
@@ -915,7 +912,7 @@ describe("AgentSyncEngine", () => {
     core.isAgentCacheInitialized.mockReturnValue(false);
     const old = makeSession("old");
     const recent = makeSession("recent", "updated");
-    core.loadCachedSessions.mockReturnValue({
+    core.cachedSessions.mockReturnValue({
       sessions: [old, recent],
       meta: {},
       timestamp: Date.now(),
@@ -1052,7 +1049,7 @@ describe("AgentSyncEngine", () => {
 
     await engine.syncInitialIndex();
 
-    expect(core.loadCachedSessions).not.toHaveBeenCalled();
+    expect(core.cachedSessions).not.toHaveBeenCalled();
     expect(searchIndex.enqueue).toHaveBeenCalledWith("scan.initial", []);
   });
 
@@ -1232,7 +1229,7 @@ describe("AgentSyncEngine", () => {
       errorClass: "SyntaxError",
       message: "Unexpected end of JSON input",
     };
-    core.loadCachedSessions.mockReturnValue({
+    core.cachedSessions.mockReturnValue({
       sessions: [changed, retained],
       meta: {
         changed: { id: "changed", sourcePath: "/changed", sourceFingerprint: "old" },
@@ -1301,7 +1298,7 @@ describe("AgentSyncEngine", () => {
   it("keeps a committed refresh complete when post-commit notifications throw", async () => {
     const previous = makeSession("session", "before");
     const updated = makeSession("session", "after");
-    core.loadCachedSessions.mockReturnValue({
+    core.cachedSessions.mockReturnValue({
       sessions: [previous],
       meta: { session: { id: "session", sourcePath: "/session", sourceFingerprint: "old" } },
       timestamp: 1,
@@ -1545,7 +1542,7 @@ describe("AgentSyncEngine", () => {
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(agent, [session], workerRunner);
-    core.loadCachedSessions.mockReturnValue({
+    core.cachedSessions.mockReturnValue({
       sessions: [session],
       meta: {},
       timestamp: Date.now(),
@@ -1588,7 +1585,7 @@ describe("AgentSyncEngine", () => {
     const engine = new AgentSyncEngine({ workerRunner });
     engine.initialize(state);
 
-    core.loadCachedSessions.mockReturnValue({
+    core.cachedSessions.mockReturnValue({
       sessions: [oldSession],
       meta: {},
       timestamp: Date.now(),
@@ -1626,7 +1623,7 @@ describe("AgentSyncEngine", () => {
       byAgent: { codex: [oldSession] },
       sessions: [oldSession],
     });
-    core.loadCachedSessions.mockReturnValue({
+    core.cachedSessions.mockReturnValue({
       sessions: [oldSession],
       meta: {},
       timestamp: Date.now(),

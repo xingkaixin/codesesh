@@ -1,18 +1,12 @@
-import {
-  buildAgentCacheMeta,
-  type LiveSnapshot,
-  type loadCachedSessions,
-} from "@codesesh/core/runtime";
+import { buildAgentCacheMeta, type CachedResult, type LiveSnapshot } from "@codesesh/core/runtime";
 import { appLogger } from "./logging.js";
 import type { SearchIndexJobRunner } from "./search-index-job-runner.js";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 
-type CachedSessions = NonNullable<ReturnType<typeof loadCachedSessions>>;
-
 export interface SearchIndexPublisherOptions {
   jobs: SearchIndexJobRunner;
   snapshot(): LiveSnapshot;
-  readCachedSessions(agentName: string): CachedSessions | null;
+  readCachedSessions(agentName: string): CachedResult | null;
 }
 
 /**

@@ -128,7 +128,7 @@ Status: Complete
 - 中。涉及 SQLite 多表一致性：`sessions`、`cached_sessions`、`project_sessions`、`session_documents`、`messages`、`session_file_activity`。
 
 验收标准：
-- 增量更新后 `loadCachedSessions()` 与全量保存结果一致。
+- 增量更新后 `readCachedSessions()` 的成功结果与全量保存结果一致。
 - 删除 session 时对应 FTS、messages、file activity、project_sessions 均清理。
 - `pnpm bench:perf -- --iterations 3` 的 refresh 路径应下降，冷启动不回退。
 

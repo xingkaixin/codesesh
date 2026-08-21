@@ -68,7 +68,7 @@ worker 只读取该联合类型，不按具体类身份选择策略；包装 Age
 `LiveScanStore` 以 `deferInitialRefresh: true` 启动：
 
 ```text
-loadCachedSessions()
+readCachedSessions()
   -> 从 agent_cache + sessions 恢复 IdentifiedSessionHead[] / SessionCacheMeta
   -> 启动 HTTP 服务
   -> startBackgroundRefresh()
@@ -77,6 +77,8 @@ loadCachedSessions()
 
 缓存不存在时，初始快照可以为空；服务启动后后台初始化对应 Agent。缓存存在时，UI 先
 看到已持久化快照，再通过 SSE 收到刷新结果。
+`readCachedSessions()` 用 `{ status: "success", value: null }` 表示缓存尚不存在，
+用 `{ status: "failed" }` 表示读取故障；调用方不得把两者合并处理。
 
 ### JSON 模式
 

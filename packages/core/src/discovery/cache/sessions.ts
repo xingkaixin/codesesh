@@ -191,11 +191,6 @@ export function readCachedSessions(agentName: string): CacheReadOutcome<CachedRe
   });
 }
 
-export function loadCachedSessions(agentName: string): CachedResult | null {
-  const outcome = readCachedSessions(agentName);
-  return outcome.status === "success" ? outcome.value : null;
-}
-
 export function loadCachedSessionHeads(
   references: readonly SessionReference[],
 ): ReferencedSessionHead[] {

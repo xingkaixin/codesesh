@@ -17,7 +17,6 @@ import {
   getAgentLastFullSyncAt,
   getCacheInfo,
   isAgentCacheInitialized,
-  loadCachedSessions,
   markAgentCacheInitialized,
   markAgentFullSyncProgress,
   markAgentFullSyncStarted,
@@ -27,6 +26,7 @@ import {
   readCachedSessions,
   saveCachedSessionChanges,
   saveCachedSessions,
+  type CachedResult,
 } from "../sessions.js";
 import { listCachedProjectGroups } from "../project-groups.js";
 import type { SessionCacheMeta } from "../../../agents/base.js";
@@ -87,6 +87,12 @@ function getCachePath(): string {
 
 function getLegacyCachePath(): string {
   return join(getCacheDir(), "scan-cache.json");
+}
+
+function readCachedValue(agentName: string): CachedResult | null {
+  const outcome = readCachedSessions(agentName);
+  expect(outcome.status).toBe("success");
+  return outcome.status === "success" ? outcome.value : null;
 }
 
 // Isolated temp directory for session fixtures so computeIdentity always
@@ -252,21 +258,21 @@ afterEach(() => {
   rmSync(getCacheDir(), { recursive: true, force: true });
   setCoreDiagnostics(null);
 });
-describe("loadCachedSessions", () => {
+describe("readCachedSessions", () => {
   it("returns null when cache db does not exist", () => {
-    expect(loadCachedSessions("claudecode")).toBeNull();
+    expect(readCachedValue("claudecode")).toBeNull();
   });
 
   it("returns null when agent is not cached", () => {
     saveCachedSessions("cursor", [makeSession("s1", "cursor")]);
-    expect(loadCachedSessions("claudecode")).toBeNull();
+    expect(readCachedValue("claudecode")).toBeNull();
   });
 
   it("returns cached sessions even when last refresh is old", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     dateNowSpy.mockReturnValue(now + 8 * 24 * 60 * 60 * 1000);
     expect(
-      loadCachedSessions("claudecode")?.sessions.map((session) => session.reference.sessionId),
+      readCachedValue("claudecode")?.sessions.map((session) => session.reference.sessionId),
     ).toEqual(["s1"]);
   });
 
@@ -277,7 +283,7 @@ describe("loadCachedSessions", () => {
 
     saveCachedSessions("claudecode", [makeSession("s1")], meta);
 
-    const result = loadCachedSessions("claudecode");
+    const result = readCachedValue("claudecode");
     expect(result).not.toBeNull();
     expect(result?.sessions).toHaveLength(1);
     expect(result?.sessions[0]?.reference.sessionId).toBe("s1");
@@ -287,7 +293,7 @@ describe("loadCachedSessions", () => {
 
   it("preserves empty cached results", () => {
     saveCachedSessions("claudecode", []);
-    const result = loadCachedSessions("claudecode");
+    const result = readCachedValue("claudecode");
     expect(result).toEqual({
       sessions: [],
       meta: {},
@@ -411,7 +417,7 @@ describe("saveCachedSessions", () => {
       expect(row.smart_tags_classifier_revision).toBe("smart-tags-v1");
       expect(row.project_identity_resolver_revision).toBe("resolver-v1");
       expect(row.project_identity_input_signature).toBe("identity-input-v1");
-      expect(loadCachedSessions("claudecode")?.sessions[0]).toMatchObject({
+      expect(readCachedValue("claudecode")?.sessions[0]).toMatchObject({
         project_identity_resolver_revision: "resolver-v1",
         project_identity_input_signature: "identity-input-v1",
         smart_tags_classifier_revision: "smart-tags-v1",
@@ -462,7 +468,7 @@ describe("saveCachedSessions", () => {
       db.close();
     }
 
-    const result = loadCachedSessions("claudecode");
+    const result = readCachedValue("claudecode");
     expect(result?.sessions.map((session) => session.reference.sessionId)).toEqual(["s1"]);
   });
 
@@ -470,7 +476,7 @@ describe("saveCachedSessions", () => {
     saveCachedSessions("claudecode", [makeSession("old")]);
     saveCachedSessions("claudecode", [makeSession("new")]);
 
-    const result = loadCachedSessions("claudecode");
+    const result = readCachedValue("claudecode");
     expect(result?.sessions.map((session) => session.reference.sessionId)).toEqual(["new"]);
   });
 
@@ -480,7 +486,7 @@ describe("saveCachedSessions", () => {
     saveCachedSessions("claudecode", [], {}, { completeness: "partial" });
 
     expect(
-      loadCachedSessions("claudecode")?.sessions.map((session) => session.reference.sessionId),
+      readCachedValue("claudecode")?.sessions.map((session) => session.reference.sessionId),
     ).toEqual(["existing"]);
   });
 
@@ -491,7 +497,7 @@ describe("saveCachedSessions", () => {
     saveCachedSessions("claudecode", [older, newer]);
 
     expect(
-      loadCachedSessions("claudecode")?.sessions.map((session) => session.reference.sessionId),
+      readCachedValue("claudecode")?.sessions.map((session) => session.reference.sessionId),
     ).toEqual(["newer", "older"]);
   });
 
@@ -552,10 +558,10 @@ describe("saveCachedSessions", () => {
     saveCachedSessions("claudecode", [makeSession("claude-1")]);
 
     expect(
-      loadCachedSessions("cursor")?.sessions.map((session) => session.reference.sessionId),
+      readCachedValue("cursor")?.sessions.map((session) => session.reference.sessionId),
     ).toEqual(["cursor-1"]);
     expect(
-      loadCachedSessions("claudecode")?.sessions.map((session) => session.reference.sessionId),
+      readCachedValue("claudecode")?.sessions.map((session) => session.reference.sessionId),
     ).toEqual(["claude-1"]);
   });
 
@@ -631,7 +637,7 @@ describe("saveCachedSessions", () => {
   it("migrates legacy sqlite cache rows to the current schema", () => {
     createLegacyCachedSessionDb(3);
 
-    const result = loadCachedSessions("claudecode");
+    const result = readCachedValue("claudecode");
 
     expect(result?.sessions.map((session) => session.reference.sessionId)).toEqual(["legacy"]);
     expect(getUserVersion(getCachePath())).toBe(31);
@@ -668,7 +674,7 @@ describe("saveCachedSessions", () => {
 
     try {
       expect(
-        loadCachedSessions("claudecode")?.sessions.map((session) => session.reference.sessionId),
+        readCachedValue("claudecode")?.sessions.map((session) => session.reference.sessionId),
       ).toEqual(["legacy-without-identity"]);
       expect(events.indexOf("identity")).toBeGreaterThanOrEqual(0);
       expect(events.indexOf("identity")).toBeLessThan(events.indexOf("migration"));
@@ -693,7 +699,7 @@ describe("saveCachedSessions", () => {
     });
 
     try {
-      expect(loadCachedSessions("claudecode")?.sessions).toEqual([]);
+      expect(readCachedValue("claudecode")?.sessions).toEqual([]);
       expect(getUserVersion(getCachePath())).toBe(31);
       expect(warnings).toContainEqual({
         event: "sqlite.migration.identity_precompute.missing_directory",
@@ -708,7 +714,7 @@ describe("saveCachedSessions", () => {
     createLegacyCachedSessionDb(2);
 
     expect(
-      loadCachedSessions("claudecode")?.sessions.map((session) => session.reference.sessionId),
+      readCachedValue("claudecode")?.sessions.map((session) => session.reference.sessionId),
     ).toEqual(["legacy"]);
 
     const backups = getMigrationBackups();
@@ -737,7 +743,7 @@ describe("saveCachedSessions", () => {
       db.close();
     }
 
-    expect(loadCachedSessions("claudecode")).toBeNull();
+    expect(readCachedValue("claudecode")).toBeNull();
     expect(getMigrationBackups()).toEqual([]);
   });
 });
@@ -766,11 +772,11 @@ describe("session removal", () => {
 describe("saveCachedSessionChanges", () => {
   it("advances the cache timestamp for a successful no-op refresh", () => {
     saveCachedSessions("claudecode", [makeSession("unchanged")]);
-    expect(loadCachedSessions("claudecode")?.timestamp).toBe(now);
+    expect(readCachedValue("claudecode")?.timestamp).toBe(now);
 
     dateNowSpy.mockReturnValue(now + 1_000);
     expect(saveCachedSessionChanges("claudecode", [], [])).toBe(true);
-    expect(loadCachedSessions("claudecode")?.timestamp).toBe(now + 1_000);
+    expect(readCachedValue("claudecode")?.timestamp).toBe(now + 1_000);
   });
 
   it("updates changed sessions and removes deleted sessions", () => {
@@ -794,7 +800,7 @@ describe("saveCachedSessionChanges", () => {
       changed: { id: "changed", sourcePath: "/tmp/changed-new" },
     });
 
-    const cached = loadCachedSessions("claudecode");
+    const cached = readCachedValue("claudecode");
     expect(cached?.sessions.map((session) => session.reference.sessionId)).toEqual([
       "changed",
       "unchanged",
@@ -826,7 +832,7 @@ describe("clearCache", () => {
     const reopened = withCacheDb((db) => db);
 
     expect(reopened).not.toBe(connection);
-    expect(loadCachedSessions("claudecode")).toBeNull();
+    expect(readCachedValue("claudecode")).toBeNull();
     expect(getCacheInfo()).toEqual({ lastScanTime: null, size: 0 });
   });
 
@@ -967,7 +973,8 @@ describe("cache initialization tracking", () => {
   });
 
   it("distinguishes cached-session read failures from an empty cache", () => {
-    expect(readCachedSessions("claudecode")).toEqual({ status: "success", value: null });
+    const emptyCache = readCachedSessions("claudecode");
+    expect(emptyCache).toEqual({ status: "success", value: null });
 
     markAgentCacheInitialized("claudecode");
     withCacheDb((db) => {
@@ -981,7 +988,6 @@ describe("cache initialization tracking", () => {
     setCoreDiagnostics({ warn: (event) => events.push({ event }) });
 
     expect(readCachedSessions("claudecode")).toEqual({ status: "failed" });
-    expect(loadCachedSessions("claudecode")).toBeNull();
     setCoreDiagnostics(null);
   });
 

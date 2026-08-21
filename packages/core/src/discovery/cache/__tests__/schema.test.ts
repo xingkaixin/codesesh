@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SQLiteDatabase } from "../../../utils/sqlite.js";
 import { getCachePath, setSchemaEnsuredPath } from "../db.js";
 import * as connection from "../connection.js";
-import { loadCachedSessions, saveCachedSessions } from "../sessions.js";
+import { readCachedSessions, saveCachedSessions } from "../sessions.js";
 import { syncSessionSearchIndex } from "../search-index-writer.js";
 import { makeSessionData, makeSessionHead } from "./fixtures.js";
 import { setCoreDiagnostics } from "../../../utils/diagnostics.js";
@@ -14,6 +14,12 @@ import { setCoreDiagnostics } from "../../../utils/diagnostics.js";
 const schema = connection;
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-schema-test-"));
+
+function readCachedValue(agentName: string) {
+  const outcome = readCachedSessions(agentName);
+  expect(outcome.status).toBe("success");
+  return outcome.status === "success" ? outcome.value : null;
+}
 
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
@@ -118,7 +124,7 @@ describe("cache schema boundary", () => {
     setCoreDiagnostics({ warn: (event, detail) => warnings.push({ event, detail }) });
 
     try {
-      const restored = loadCachedSessions("codex")?.sessions[0];
+      const restored = readCachedValue("codex")?.sessions[0];
       const columns = schema.withCacheDb((db) =>
         (db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>).map(
           (row) => row.name,

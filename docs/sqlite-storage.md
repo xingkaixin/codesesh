@@ -111,7 +111,7 @@ Schema 24 删除旧消息索引、schema 31 删除持久暂存表后，SQLite �
 ```text
 LiveScanStore.initialize()
   -> scanSessions({ cacheOnly: true })
-  -> loadCachedSessions(agentName)
+  -> readCachedSessions(agentName)
   -> agent_cache + sessions
   -> 恢复 SessionHead[] 与 SessionCacheMeta
 ```

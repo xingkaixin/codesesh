@@ -13,8 +13,9 @@ import { listCachedProjectGroups } from "../cache/project-groups.js";
 import {
   loadCachedSessionData,
   loadCachedSessionRawEntry,
-  loadCachedSessions,
+  readCachedSessions,
   saveCachedSessions,
+  type CachedResult,
 } from "../cache/sessions.js";
 import { searchSessions } from "../cache/search.js";
 import {
@@ -32,6 +33,12 @@ const FIXTURE_DIR_NAME = FIXTURE_DIR.split(/[\\/]/).pop()!;
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-migration-smoke-"));
 const now = 1_700_000_000_000;
 const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
+
+function readCachedValue(agentName: string): CachedResult | null {
+  const outcome = readCachedSessions(agentName);
+  expect(outcome.status).toBe("success");
+  return outcome.status === "success" ? outcome.value : null;
+}
 
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
@@ -266,7 +273,7 @@ function readMigratedFacts(): Record<string, unknown> {
 }
 
 function expectMigratedBehavior(structured: boolean): void {
-  const cached = loadCachedSessions("claudecode");
+  const cached = readCachedValue("claudecode");
   const detail = loadCachedSessionData("claudecode", "legacy-smoke");
   const rawDetail = loadCachedSessionRawEntry("claudecode", "legacy-smoke");
   const projects = listCachedProjectGroups();
@@ -442,7 +449,7 @@ describe("sqlite migration release gate", () => {
     const fixture = RELEASE_CACHE_FIXTURES.find(({ version }) => version === 14)!;
     createCacheFixture(fixture, false);
 
-    expect(loadCachedSessions("claudecode")).toBeNull();
+    expect(readCachedValue("claudecode")).toBeNull();
     expect(getUserVersion(getCachePath())).toBe(EXPECTED_CACHE_SCHEMA_VERSION);
     expect(getMigrationBackups()).toEqual([]);
   });
@@ -471,11 +478,11 @@ describe("sqlite migration release gate", () => {
       }),
     );
 
-    expect(loadCachedSessions("claudecode")).toBeNull();
+    expect(readCachedValue("claudecode")).toBeNull();
     expect(saveCachedSessions("claudecode", [session])).toBe(true);
     expect(existsSync(getLegacyCachePath())).toBe(false);
     expect(
-      loadCachedSessions("claudecode")?.sessions.map(({ reference: { sessionId: id } }) => id),
+      readCachedValue("claudecode")?.sessions.map(({ reference: { sessionId: id } }) => id),
     ).toEqual(["legacy-smoke"]);
     expect(getUserVersion(getCachePath())).toBe(EXPECTED_CACHE_SCHEMA_VERSION);
   });

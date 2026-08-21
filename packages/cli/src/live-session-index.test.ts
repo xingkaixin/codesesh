@@ -108,10 +108,12 @@ describe("LiveSessionIndex", () => {
       agents: [codex],
       byAgent: { codex: [cached] },
       sessions: [cached],
-      cacheFailures: { codex: { agentName: "codex" } },
+      cacheFailures: { codex: { agentName: "codex", operation: "write" } },
     });
 
-    expect(index.snapshot().cacheFailures).toEqual({ codex: { agentName: "codex" } });
+    expect(index.snapshot().cacheFailures).toEqual({
+      codex: { agentName: "codex", operation: "write" },
+    });
     expect(index.snapshot().byAgent.codex).toEqual([cached]);
 
     index.commitAgentSessions("codex", [refreshed]);

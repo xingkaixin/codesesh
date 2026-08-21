@@ -29,7 +29,6 @@ export {
   loadCachedSessionData,
   loadCachedSessionDataEntry,
   loadCachedSessionHeads,
-  loadCachedSessions,
   readCachedSessions,
   markAgentCacheInitialized,
   markAgentFullSyncProgress,
@@ -39,6 +38,7 @@ export {
   saveCachedSessions,
 } from "./cache/sessions.js";
 export type {
+  CachedResult,
   CachedSessionDataEntry,
   SaveCachedSessionsOptions,
   SessionSnapshotCompleteness,
