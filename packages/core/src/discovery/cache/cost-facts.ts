@@ -3,7 +3,7 @@ import type {
   MessageCostFact,
   SessionCostSummary,
 } from "../../analytics/cost-facts.js";
-import type { CostSource } from "../../contract/index.js";
+import { getSessionReferenceKey, type CostSource } from "../../contract/index.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import { hasCacheStorage } from "./db.js";
 import { withCacheDbReadOnly } from "./schema.js";
@@ -59,10 +59,6 @@ const EFFECTIVE_COST_TIME = `CASE
   WHEN m.time_completed > 0 THEN m.time_completed
   WHEN m.time_created > 0 THEN m.time_created
 END`;
-
-function sessionKey(agentName: string, sessionId: string): string {
-  return `${agentName}\u0000${sessionId}`;
-}
 
 function costSource(value: string | null | undefined): CostSource | undefined {
   return value === "recorded" || value === "estimated" ? value : undefined;
@@ -125,7 +121,7 @@ function readCostFacts(db: SQLiteDatabase, options: CostFactOptions): DashboardC
       untimedMessageCost: Number(row.untimed_message_cost ?? 0),
       modelCosts: [],
     };
-    bySession.set(sessionKey(agentName, sessionId), summary);
+    bySession.set(getSessionReferenceKey({ agentName, sessionId }), summary);
   }
 
   const modelRows =
@@ -151,7 +147,10 @@ function readCostFacts(db: SQLiteDatabase, options: CostFactOptions): DashboardC
           .all() as ModelCostRow[]);
   for (const row of modelRows) {
     const summary = bySession.get(
-      sessionKey(String(row.agent_name ?? ""), String(row.session_id ?? "")),
+      getSessionReferenceKey({
+        agentName: String(row.agent_name ?? ""),
+        sessionId: String(row.session_id ?? ""),
+      }),
     );
     if (!summary) continue;
     summary.modelCosts.push({

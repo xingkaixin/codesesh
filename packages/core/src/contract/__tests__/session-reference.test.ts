@@ -5,6 +5,7 @@ import {
   createSessionIdentity,
   formatSessionReference,
   getSessionAgentKey,
+  getSessionReferenceKey,
   getSessionRoutePath,
   normalizeSessionReference,
   parseSessionReference,
@@ -36,6 +37,9 @@ describe("session references", () => {
     expect(
       normalizeSessionReference({ agentName: " CoDeX ", sessionId: "nested/session" }),
     ).toEqual(reference);
+    expect(getSessionReferenceKey({ agentName: " CoDeX ", sessionId: "nested/session" })).toBe(
+      "codex/nested/session",
+    );
   });
 
   it.each(["", "codex", "/session", "codex/"])("rejects malformed value %j", (value) => {

@@ -49,6 +49,7 @@ describe("contract browser-safety", () => {
         "getProjectAgentKey",
         "getProjectIdentityKey",
         "getSessionAgentKey",
+        "getSessionReferenceKey",
         "getSessionRouteKey",
         "getSessionRoutePath",
         "groupSessionsByCalendarDay",

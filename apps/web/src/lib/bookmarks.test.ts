@@ -33,9 +33,7 @@ describe("bookmarks", () => {
   });
 
   it("uses normalized agent + opaque session id as bookmark key", () => {
-    expect(getSessionBookmarkKey({ agentName: " CoDeX ", sessionId: "a/b" })).toBe(
-      '["codex","a/b"]',
-    );
+    expect(getSessionBookmarkKey({ agentName: " CoDeX ", sessionId: "a/b" })).toBe("codex/a/b");
   });
 
   it("builds an optimistic available view from a live session", () => {

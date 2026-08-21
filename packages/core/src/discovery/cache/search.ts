@@ -9,7 +9,12 @@ import type {
   SessionHead,
   SmartTag,
 } from "../../types/index.js";
-import type { SearchHighlightRange, SearchMatchType, SearchResult } from "../../contract/index.js";
+import {
+  getSessionReferenceKey,
+  type SearchHighlightRange,
+  type SearchMatchType,
+  type SearchResult,
+} from "../../contract/index.js";
 import { normalizeProjectScopePath, type ProjectScopeMatcher } from "../../projects/scope.js";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
@@ -449,7 +454,10 @@ function messageMatchType(row: MessageSearchRow): SearchMatchType {
 }
 
 function searchResultRowKey(row: Pick<SearchResultRow, "agent_name" | "session_id">): string {
-  return `${String(row.agent_name)}\u0000${String(row.session_id)}`;
+  return getSessionReferenceKey({
+    agentName: String(row.agent_name),
+    sessionId: String(row.session_id),
+  });
 }
 
 function fetchMessageSearchMatches(

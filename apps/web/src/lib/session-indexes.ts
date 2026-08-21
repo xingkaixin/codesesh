@@ -4,6 +4,7 @@ import {
   createSessionIndex,
   getProjectAgentKey,
   getSessionAgentKey,
+  getSessionReferenceKey as referenceKey,
   getSessionRoutePath,
   getSessionRouteKey,
   sessionRoutePath,
@@ -48,7 +49,7 @@ export {
 };
 
 export function getSessionReferenceKey(session: Pick<SessionHead, "reference">): string {
-  return getSessionRouteKey(session.reference.agentName, session.reference.sessionId);
+  return referenceKey(session.reference);
 }
 
 function pushMapValue<K, V>(map: Map<K, V[]>, key: K, value: V): void {

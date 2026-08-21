@@ -1,6 +1,6 @@
 import type { ReferencedSessionHead, SessionHead } from "./session.js";
 import { getProjectAgentKey, getProjectIdentityKey } from "./project-identity.js";
-import { formatSessionReference, type SessionReference } from "./session-reference.js";
+import { getSessionReferenceKey, type SessionReference } from "./session-reference.js";
 
 export type SessionHeadChange = ReferencedSessionHead;
 
@@ -65,8 +65,9 @@ export function mergeSortedSessions<T extends SessionHead>(shards: T[][]): T[] {
   return merged;
 }
 
+/** @deprecated Pass a SessionReference to getSessionReferenceKey instead. */
 export function getSessionRouteKey(agentName: string, sessionId: string): string {
-  return formatSessionReference({ agentName, sessionId });
+  return getSessionReferenceKey({ agentName, sessionId });
 }
 
 function pushMapValue<K, V>(map: Map<K, V[]>, key: K, value: V): void {
@@ -86,13 +87,12 @@ export function createSessionIndex(sourceSessions: SessionHead[]): CanonicalSess
   const byProjectAgentKey = new Map<string, SessionHead[]>();
 
   for (const session of sourceSessions) {
-    const { agentName, sessionId } = session.reference;
-    const routeKey = getSessionRouteKey(agentName, sessionId);
+    const routeKey = getSessionReferenceKey(session.reference);
     if (!byRouteKey.has(routeKey)) byRouteKey.set(routeKey, session);
     if (session.parent_reference) {
       pushMapValue(
         childrenByParentRouteKey,
-        getSessionRouteKey(session.parent_reference.agentName, session.parent_reference.sessionId),
+        getSessionReferenceKey(session.parent_reference),
         session,
       );
     }
@@ -129,20 +129,14 @@ export function applySessionChanges(
 ): SessionHead[] {
   const byRouteKey = new Map<string, SessionHead>();
   for (const session of sessions) {
-    byRouteKey.set(
-      getSessionRouteKey(session.reference.agentName, session.reference.sessionId),
-      session,
-    );
+    byRouteKey.set(getSessionReferenceKey(session.reference), session);
   }
 
   for (const removal of removals) {
-    byRouteKey.delete(getSessionRouteKey(removal.agentName, removal.sessionId));
+    byRouteKey.delete(getSessionReferenceKey(removal));
   }
   for (const change of changes) {
-    byRouteKey.set(
-      getSessionRouteKey(change.reference.agentName, change.reference.sessionId),
-      change.session,
-    );
+    byRouteKey.set(getSessionReferenceKey(change.reference), change.session);
   }
 
   return sortSessionsByActivity([...byRouteKey.values()]);

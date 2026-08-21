@@ -8,11 +8,10 @@ import { startOfCalendarDay, toCalendarDayKey } from "./calendar-day.js";
 import {
   applySessionChanges,
   compareSessionActivityDesc,
-  getSessionRouteKey,
   type SessionHeadChange,
   type SessionHeadRemoval,
 } from "./session-index.js";
-import { formatSessionReference, type SessionReference } from "./session-reference.js";
+import { getSessionReferenceKey, type SessionReference } from "./session-reference.js";
 
 /**
  * Where a session sits relative to its parent, with orphans distinguished
@@ -64,11 +63,11 @@ export interface SessionDayGroup {
 }
 
 function sessionKey(session: SessionHead): string {
-  return getSessionRouteKey(session.reference.agentName, session.reference.sessionId);
+  return getSessionReferenceKey(session.reference);
 }
 
 function parentKey(session: SessionHead): string | null {
-  return session.parent_reference ? formatSessionReference(session.parent_reference) : null;
+  return session.parent_reference ? getSessionReferenceKey(session.parent_reference) : null;
 }
 
 function activityTime(session: SessionHead): number {
@@ -348,13 +347,9 @@ export function createSessionProjectionContext(
   removedSessionRefs: SessionReference[],
 ): SessionProjectionContext {
   const changedKeys = new Set(
-    changedSessionHeads.map(({ reference }) =>
-      getSessionRouteKey(reference.agentName, reference.sessionId),
-    ),
+    changedSessionHeads.map(({ reference }) => getSessionReferenceKey(reference)),
   );
-  const removedKeys = removedSessionRefs.map(({ agentName, sessionId }) =>
-    getSessionRouteKey(agentName, sessionId),
-  );
+  const removedKeys = removedSessionRefs.map(getSessionReferenceKey);
   const affectedKeys = new Set<string>();
   const previousGraph = createSessionHierarchyGraph(previousSessions);
   const nextGraph = createSessionHierarchyGraph(nextSessions);
@@ -408,16 +403,13 @@ export function applySessionWindowChanges(
     ...changes.changedSessionHeads,
   ];
   const upsertsByKey = new Map(
-    upserts.map((change) => [
-      getSessionRouteKey(change.reference.agentName, change.reference.sessionId),
-      change,
-    ]),
+    upserts.map((change) => [getSessionReferenceKey(change.reference), change]),
   );
   const sessionsByKey = new Map(sessions.map((session) => [sessionKey(session), session]));
   const orderedUpserts: SessionHeadChange[] = [];
   const reorderedRefs: SessionReference[] = [];
   for (const reference of changes.projectionSessionOrder ?? []) {
-    const key = getSessionRouteKey(reference.agentName, reference.sessionId);
+    const key = getSessionReferenceKey(reference);
     const change = upsertsByKey.get(key);
     const session = change?.session ?? sessionsByKey.get(key);
     if (!session) continue;

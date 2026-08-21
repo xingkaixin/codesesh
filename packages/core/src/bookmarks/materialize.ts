@@ -7,7 +7,7 @@ import type {
 } from "../contract/index.js";
 import {
   assertSessionIdentity,
-  formatSessionReference,
+  getSessionReferenceKey,
   normalizeSessionReference,
 } from "../contract/index.js";
 
@@ -17,10 +17,6 @@ export interface BookmarkMaterializationOptions {
   resolveCachedSessions?: (
     references: readonly SessionReference[],
   ) => readonly ReferencedSessionHead[];
-}
-
-function referenceKey(reference: SessionReference): string {
-  return formatSessionReference(normalizeSessionReference(reference));
 }
 
 function canonicalSession(reference: SessionReference, session: SessionHead): SessionHead {
@@ -47,7 +43,7 @@ export function compareBookmarkViews(left: BookmarkView, right: BookmarkView): n
   return (
     compareDescending(getBookmarkViewTime(left), getBookmarkViewTime(right)) ||
     compareDescending(left.bookmarkedAt, right.bookmarkedAt) ||
-    referenceKey(left.reference).localeCompare(referenceKey(right.reference))
+    getSessionReferenceKey(left.reference).localeCompare(getSessionReferenceKey(right.reference))
   );
 }
 
@@ -61,7 +57,7 @@ export function materializeBookmarkViews(
     const reference = normalizeSessionReference(bookmark.reference);
     return {
       bookmark: { reference, bookmarkedAt: bookmark.bookmarkedAt },
-      key: referenceKey(reference),
+      key: getSessionReferenceKey(reference),
     };
   });
 
@@ -76,7 +72,7 @@ export function materializeBookmarkViews(
   if (missingByKey.size > 0 && options.resolveCachedSessions) {
     for (const cached of options.resolveCachedSessions([...missingByKey.values()])) {
       const reference = normalizeSessionReference(cached.reference);
-      const key = referenceKey(reference);
+      const key = getSessionReferenceKey(reference);
       if (missingByKey.has(key) && !cachedByKey.has(key)) {
         cachedByKey.set(key, canonicalSession(reference, cached.session));
       }
