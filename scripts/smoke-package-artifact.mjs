@@ -104,8 +104,9 @@ function assertInstalledManifest(manifest) {
   ]) {
     for (const [name, value] of Object.entries(manifest[field] ?? {})) {
       assert(
-        typeof value !== "string" || !value.startsWith("workspace:"),
-        `Installed manifest leaked ${field}.${name}`,
+        typeof value !== "string" ||
+          (!value.startsWith("workspace:") && !value.startsWith("catalog:")),
+        `Installed manifest leaked local dependency reference ${field}.${name}`,
       );
     }
   }
