@@ -329,9 +329,9 @@ function applyUsage(
   });
 }
 
-function readState(stateFile: string): Record<string, unknown> | null {
+function parseState(content: string): Record<string, unknown> | null {
   try {
-    return asRecord(JSON.parse(readFileSync(stateFile, "utf-8"))) ?? null;
+    return asRecord(JSON.parse(content)) ?? null;
   } catch {
     return null;
   }
@@ -405,47 +405,49 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
   }
 
   private resolveSessionSourceResult(sessionDir: string): ParseSessionResult<SessionSource> {
-    try {
-      const stateFile = join(sessionDir, "state.json");
-      const wireFile = join(sessionDir, "agents", "main", "wire.jsonl");
-      if (!existsSync(stateFile) || !existsSync(wireFile)) return skippedSession("missing wire");
+    const stateFile = join(sessionDir, "state.json");
+    const wireFile = join(sessionDir, "agents", "main", "wire.jsonl");
+    if (!existsSync(stateFile) || !existsSync(wireFile)) return skippedSession("missing wire");
 
-      const state = readState(stateFile);
-      if (!state) return skippedSession("malformed state");
+    const content = this.scanStep("reading session state", stateFile, () =>
+      readFileSync(stateFile, "utf-8"),
+    );
+    const state = parseState(content);
+    if (!state) return skippedSession("malformed state");
 
-      const stateStat = statSync(stateFile);
-      const wireStat = statSync(wireFile);
-      const createdAt =
-        parseTimestamp(state.createdAt) ?? parseTimestamp(state.created_at) ?? stateStat.mtimeMs;
-      const activityAt = Math.max(
-        parseTimestamp(state.updatedAt) ?? parseTimestamp(state.updated_at) ?? createdAt,
-        wireStat.mtimeMs,
-      );
-      const custom = asRecord(state.custom);
-      const workDir =
-        asString(state.workDir) ??
-        asString(custom?.cwd) ??
-        this.workDirBySessionPath.get(resolve(sessionDir)) ??
-        "";
-      const explicitTitle = asString(state.title) ?? asString(state.customTitle) ?? "";
+    const [stateStat, wireStat] = this.scanStep(
+      "reading session source metadata",
+      sessionDir,
+      () => [statSync(stateFile), statSync(wireFile)] as const,
+    );
+    const createdAt =
+      parseTimestamp(state.createdAt) ?? parseTimestamp(state.created_at) ?? stateStat.mtimeMs;
+    const activityAt = Math.max(
+      parseTimestamp(state.updatedAt) ?? parseTimestamp(state.updated_at) ?? createdAt,
+      wireStat.mtimeMs,
+    );
+    const custom = asRecord(state.custom);
+    const workDir =
+      asString(state.workDir) ??
+      asString(custom?.cwd) ??
+      this.workDirBySessionPath.get(resolve(sessionDir)) ??
+      "";
+    const explicitTitle = asString(state.title) ?? asString(state.customTitle) ?? "";
 
-      return parsedSession({
-        id: basename(sessionDir),
-        sourcePath: sessionDir,
-        stateFile,
-        wireFile,
-        workDir,
-        createdAt,
-        activityAt,
-        stateMtimeMs: stateStat.mtimeMs,
-        stateSize: stateStat.size,
-        wireMtimeMs: wireStat.mtimeMs,
-        wireSize: wireStat.size,
-        explicitTitle,
-      });
-    } catch {
-      return skippedSession("malformed session");
-    }
+    return parsedSession({
+      id: basename(sessionDir),
+      sourcePath: sessionDir,
+      stateFile,
+      wireFile,
+      workDir,
+      createdAt,
+      activityAt,
+      stateMtimeMs: stateStat.mtimeMs,
+      stateSize: stateStat.size,
+      wireMtimeMs: wireStat.mtimeMs,
+      wireSize: wireStat.size,
+      explicitTitle,
+    });
   }
 
   private sourceFingerprint(source: SessionSource): string {
