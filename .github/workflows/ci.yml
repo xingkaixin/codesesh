@@ -63,7 +63,7 @@ jobs:
       - name: Verify documented repository facts
         run: node scripts/check-docs-facts.mjs
 
-      - name: Smoke test CLI on minimum Node version
+      - name: Smoke test CLI on Node 22 toolchain
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == 22
         run: node packages/cli/dist/index.js --version
 
@@ -164,7 +164,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [22, 24]
+        node-version: ["22.0.0", 24]
     runs-on: ubuntu-latest
 
     steps:
