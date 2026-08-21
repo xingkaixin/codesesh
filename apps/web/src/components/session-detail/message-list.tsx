@@ -12,6 +12,19 @@ import { formatTokens } from "../../lib/format";
 import type { FilteredSessionMessage } from "./toc";
 import { MessageItem } from "./message-rendering";
 import { HeightIndex } from "./height-index";
+import {
+  findScrollParent,
+  getElementTop,
+  getScrollTop,
+  getViewportHeight,
+  isWindowScrollParent,
+  scrollParentTo,
+  type ScrollParent,
+} from "./scroll-behavior";
+import {
+  TimelineAnchorRegistryProvider,
+  type TimelineAnchorRegistry,
+} from "./timeline-anchor-registry";
 
 const MESSAGE_LIST_GAP_PX = 32;
 export const VIRTUALIZED_MESSAGE_THRESHOLD = 80;
@@ -30,49 +43,7 @@ interface MessageListProps {
   highlightQuery?: string;
   childSessionById?: ReadonlyMap<string, SessionHead>;
   apiRef: { current: MessageListHandle | null };
-}
-
-type ScrollParent = HTMLElement | Window;
-
-function isWindowScrollParent(parent: ScrollParent): parent is Window {
-  return parent === window;
-}
-
-function findScrollParent(node: HTMLElement): ScrollParent {
-  let parent = node.parentElement;
-
-  while (parent) {
-    const { overflowY } = window.getComputedStyle(parent);
-    if (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") return parent;
-    parent = parent.parentElement;
-  }
-
-  return window;
-}
-
-function getScrollTop(parent: ScrollParent) {
-  return isWindowScrollParent(parent) ? window.scrollY : parent.scrollTop;
-}
-
-function getViewportHeight(parent: ScrollParent) {
-  return isWindowScrollParent(parent) ? window.innerHeight || 900 : parent.clientHeight;
-}
-
-function getListTop(node: HTMLElement, parent: ScrollParent) {
-  if (isWindowScrollParent(parent)) return node.getBoundingClientRect().top + window.scrollY;
-
-  const parentRect = parent.getBoundingClientRect();
-  const nodeRect = node.getBoundingClientRect();
-  return parent.scrollTop + nodeRect.top - parentRect.top;
-}
-
-function scrollParentTo(parent: ScrollParent, top: number) {
-  if (isWindowScrollParent(parent)) {
-    window.scrollTo({ top, behavior: "auto" });
-    return;
-  }
-
-  parent.scrollTo({ top, behavior: "auto" });
+  anchorRegistry: TimelineAnchorRegistry;
 }
 
 export function MessageList({
@@ -83,6 +54,7 @@ export function MessageList({
   highlightQuery,
   childSessionById,
   apiRef,
+  anchorRegistry,
 }: MessageListProps) {
   const shouldVirtualize = messages.length > VIRTUALIZED_MESSAGE_THRESHOLD;
 
@@ -100,27 +72,30 @@ export function MessageList({
         highlightQuery={highlightQuery}
         childSessionById={childSessionById}
         apiRef={apiRef}
+        anchorRegistry={anchorRegistry}
       />
     );
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-8">
-      {messages.map(({ msg, blocks, index }) => (
-        <MessageItem
-          key={`${msg.id}:${index}`}
-          messageIndex={index}
-          msg={msg}
-          blocks={blocks}
-          formatTokens={formatTokens}
-          sessionAgentKey={sessionAgentKey}
-          agent={agent}
-          baseDirectory={baseDirectory}
-          highlightQuery={highlightQuery}
-          childSessionById={childSessionById}
-        />
-      ))}
-    </div>
+    <TimelineAnchorRegistryProvider registry={anchorRegistry}>
+      <div className="flex min-w-0 flex-col gap-8">
+        {messages.map(({ msg, blocks, index }) => (
+          <MessageItem
+            key={`${msg.id}:${index}`}
+            messageIndex={index}
+            msg={msg}
+            blocks={blocks}
+            formatTokens={formatTokens}
+            sessionAgentKey={sessionAgentKey}
+            agent={agent}
+            baseDirectory={baseDirectory}
+            highlightQuery={highlightQuery}
+            childSessionById={childSessionById}
+          />
+        ))}
+      </div>
+    </TimelineAnchorRegistryProvider>
   );
 }
 
@@ -132,6 +107,7 @@ function VirtualizedMessageList({
   highlightQuery,
   childSessionById,
   apiRef,
+  anchorRegistry,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollParentRef = useRef<ScrollParent | null>(null);
@@ -158,7 +134,7 @@ function VirtualizedMessageList({
     const node = containerRef.current;
     const scrollParent = node ? findScrollParent(node) : window;
     scrollParentRef.current = scrollParent;
-    const listTop = node ? getListTop(node, scrollParent) : 0;
+    const listTop = node ? getElementTop(scrollParent, node) : 0;
     const next = {
       scrollTop: getScrollTop(scrollParent),
       height: getViewportHeight(scrollParent),
@@ -315,7 +291,7 @@ function VirtualizedMessageList({
       const node = containerRef.current;
       const scrollParent = node ? findScrollParent(node) : (scrollParentRef.current ?? window);
       scrollParentRef.current = scrollParent;
-      const listTop = node ? getListTop(node, scrollParent) : 0;
+      const listTop = node ? getElementTop(scrollParent, node) : 0;
       const nextTop = Math.max(0, listTop + heightIndex.startAt(index) - 24);
       scrollParentTo(scrollParent, nextTop);
       const nextViewport = {
@@ -337,37 +313,39 @@ function VirtualizedMessageList({
   }, [apiRef, scrollToIndex]);
 
   return (
-    <div
-      ref={containerRef}
-      className="relative min-w-0"
-      style={{ height: Math.max(1, heightIndex.totalSize) }}
-    >
-      {virtualItems.map(({ index, start }) => {
-        const item = messages[index];
-        if (!item) return null;
+    <TimelineAnchorRegistryProvider registry={anchorRegistry}>
+      <div
+        ref={containerRef}
+        className="relative min-w-0"
+        style={{ height: Math.max(1, heightIndex.totalSize) }}
+      >
+        {virtualItems.map(({ index, start }) => {
+          const item = messages[index];
+          if (!item) return null;
 
-        return (
-          <VirtualizedMessageRow
-            key={`${item.msg.id}:${item.index}`}
-            index={index}
-            top={start}
-            onMeasure={measureItem}
-          >
-            <MessageItem
-              messageIndex={item.index}
-              msg={item.msg}
-              blocks={item.blocks}
-              formatTokens={formatTokens}
-              sessionAgentKey={sessionAgentKey}
-              agent={agent}
-              baseDirectory={baseDirectory}
-              highlightQuery={highlightQuery}
-              childSessionById={childSessionById}
-            />
-          </VirtualizedMessageRow>
-        );
-      })}
-    </div>
+          return (
+            <VirtualizedMessageRow
+              key={`${item.msg.id}:${item.index}`}
+              index={index}
+              top={start}
+              onMeasure={measureItem}
+            >
+              <MessageItem
+                messageIndex={item.index}
+                msg={item.msg}
+                blocks={item.blocks}
+                formatTokens={formatTokens}
+                sessionAgentKey={sessionAgentKey}
+                agent={agent}
+                baseDirectory={baseDirectory}
+                highlightQuery={highlightQuery}
+                childSessionById={childSessionById}
+              />
+            </VirtualizedMessageRow>
+          );
+        })}
+      </div>
+    </TimelineAnchorRegistryProvider>
   );
 }
 

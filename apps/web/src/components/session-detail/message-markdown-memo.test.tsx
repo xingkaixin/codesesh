@@ -2,7 +2,10 @@ import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MarkdownContent } from "../MarkdownContent";
 import { MessageList, VIRTUALIZED_MESSAGE_THRESHOLD } from "./message-list";
+import { createTimelineAnchorRegistry } from "./timeline-anchor-registry";
 import type { FilteredSessionMessage } from "./toc";
+
+const anchorRegistry = createTimelineAnchorRegistry();
 
 const { markdownRender } = vi.hoisted(() => ({
   markdownRender: vi.fn(),
@@ -84,6 +87,7 @@ describe("message markdown memoization", () => {
         sessionAgentKey="codex"
         baseDirectory="/tmp/project"
         apiRef={{ current: null }}
+        anchorRegistry={anchorRegistry}
       />,
       { container: scrollContainer },
     );
@@ -104,6 +108,7 @@ describe("message markdown memoization", () => {
         baseDirectory="/tmp/project"
         highlightQuery="Message"
         apiRef={{ current: null }}
+        anchorRegistry={anchorRegistry}
       />,
     );
     expect(markdownRender.mock.calls.length).toBeGreaterThan(initialRenderCount);

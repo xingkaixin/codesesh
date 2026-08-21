@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionMessageTimeline, VIRTUALIZED_TIMELINE_THRESHOLD } from "./session-message-timeline";
 import type { SessionTimelineEntry } from "./timeline";
+import { createTimelineAnchorRegistry } from "./timeline-anchor-registry";
 
 // Mirrors the ResizeObserverMock pattern used in message-list.test.tsx: a controllable
 // stand-in so tests can drive which anchors are "visible" without a real layout engine.
@@ -65,7 +66,13 @@ afterEach(() => {
 
 function renderTimeline(timelineEntries = entries) {
   const onNavigate = vi.fn();
-  const view = render(<SessionMessageTimeline entries={timelineEntries} onNavigate={onNavigate} />);
+  const view = render(
+    <SessionMessageTimeline
+      entries={timelineEntries}
+      anchorRegistry={createTimelineAnchorRegistry()}
+      onNavigate={onNavigate}
+    />,
+  );
   const timeline = view.getByRole("navigation", { name: "Session message timeline" });
   const track = view.getByTestId("session-timeline-track");
   Object.defineProperties(track, {
@@ -372,15 +379,22 @@ describe("SessionMessageTimeline", () => {
     const anchorElements = new Map(
       entries.map((entry) => {
         const anchor = document.createElement("div");
-        anchor.dataset.sessionTimelineAnchor = entry.anchorId;
+        anchor.id = entry.anchorId;
         detail.appendChild(anchor);
         return [entry.anchorId, anchor] as const;
       }),
     );
 
-    render(<SessionMessageTimeline entries={entries} onNavigate={vi.fn()} />, {
-      container: detail,
-    });
+    const anchorRegistry = createTimelineAnchorRegistry();
+    anchorElements.forEach((anchor, anchorId) => anchorRegistry.register(anchorId, anchor));
+    render(
+      <SessionMessageTimeline
+        entries={entries}
+        anchorRegistry={anchorRegistry}
+        onNavigate={vi.fn()}
+      />,
+      { container: detail },
+    );
 
     const observer = IntersectionObserverMock.instances[0]!;
     const agentAnchor = anchorElements.get("agent-1")!;
@@ -419,6 +433,27 @@ describe("SessionMessageTimeline", () => {
     detail.remove();
   });
 
+  it("tracks anchors mounted and unmounted by the virtual message list", () => {
+    IntersectionObserverMock.instances = [];
+    vi.stubGlobal("IntersectionObserver", IntersectionObserverMock);
+    const anchorRegistry = createTimelineAnchorRegistry();
+    render(
+      <SessionMessageTimeline
+        entries={entries}
+        anchorRegistry={anchorRegistry}
+        onNavigate={vi.fn()}
+      />,
+    );
+    const observer = IntersectionObserverMock.instances[0]!;
+    const anchor = document.createElement("div");
+
+    act(() => anchorRegistry.register("agent-1", anchor));
+    expect(observer.targets.has(anchor)).toBe(true);
+
+    act(() => anchorRegistry.register("agent-1", null));
+    expect(observer.targets.has(anchor)).toBe(false);
+  });
+
   it("reveals an active entry outside the virtualized render range", async () => {
     IntersectionObserverMock.instances = [];
     vi.stubGlobal("IntersectionObserver", IntersectionObserverMock);
@@ -436,14 +471,21 @@ describe("SessionMessageTimeline", () => {
     const detail = document.createElement("div");
     detail.setAttribute("data-testid", "session-detail");
     const anchor = document.createElement("div");
-    anchor.dataset.sessionTimelineAnchor = "entry-1500";
+    anchor.id = "entry-1500";
     anchor.getBoundingClientRect = () => ({ top: 100 }) as DOMRect;
     detail.appendChild(anchor);
     document.body.appendChild(detail);
 
-    const view = render(<SessionMessageTimeline entries={longEntries} onNavigate={vi.fn()} />, {
-      container: detail,
-    });
+    const anchorRegistry = createTimelineAnchorRegistry();
+    anchorRegistry.register("entry-1500", anchor);
+    const view = render(
+      <SessionMessageTimeline
+        entries={longEntries}
+        anchorRegistry={anchorRegistry}
+        onNavigate={vi.fn()}
+      />,
+      { container: detail },
+    );
     const timeline = view.getByRole("navigation", { name: "Session message timeline" });
     const track = view.getByTestId("session-timeline-track");
     Object.defineProperties(timeline, {

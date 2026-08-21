@@ -3,6 +3,9 @@ import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FilteredSessionMessage } from "./toc";
 import { MessageList, type MessageListHandle, VIRTUALIZED_MESSAGE_THRESHOLD } from "./message-list";
+import { createTimelineAnchorRegistry } from "./timeline-anchor-registry";
+
+const anchorRegistry = createTimelineAnchorRegistry();
 
 vi.mock("./message-rendering", () => ({
   MessageItem: ({ messageIndex }: { messageIndex: number }) => (
@@ -62,6 +65,7 @@ describe("MessageList virtualization", () => {
         sessionAgentKey="claudecode"
         baseDirectory="/tmp/project"
         apiRef={apiRef}
+        anchorRegistry={anchorRegistry}
       />,
     );
 
@@ -78,6 +82,7 @@ describe("MessageList virtualization", () => {
         sessionAgentKey="claudecode"
         baseDirectory="/tmp/project"
         apiRef={{ current: null }}
+        anchorRegistry={anchorRegistry}
       />,
     );
 
@@ -94,6 +99,7 @@ describe("MessageList virtualization", () => {
         sessionAgentKey="claudecode"
         baseDirectory="/tmp/project"
         apiRef={apiRef}
+        anchorRegistry={anchorRegistry}
       />,
     );
     await waitFor(() => expect(apiRef.current).not.toBeNull());
@@ -127,6 +133,7 @@ describe("MessageList virtualization", () => {
         sessionAgentKey="claudecode"
         baseDirectory="/tmp/project"
         apiRef={apiRef}
+        anchorRegistry={anchorRegistry}
       />,
       { container: scrollContainer },
     );
@@ -149,6 +156,7 @@ describe("MessageList virtualization", () => {
         sessionAgentKey="claudecode"
         baseDirectory="/tmp/project"
         apiRef={{ current: null }}
+        anchorRegistry={anchorRegistry}
       />,
     );
 
@@ -178,6 +186,7 @@ describe("MessageList virtualization", () => {
         sessionAgentKey="claudecode"
         baseDirectory="/tmp/project"
         apiRef={{ current: null }}
+        anchorRegistry={anchorRegistry}
       />,
       { container: scrollContainer },
     );
@@ -203,6 +212,7 @@ describe("MessageList virtualization", () => {
         sessionAgentKey="claudecode"
         baseDirectory="/tmp/project"
         apiRef={{ current: null }}
+        anchorRegistry={anchorRegistry}
       />,
     );
     const list = view.container.firstElementChild as HTMLElement;
@@ -233,6 +243,7 @@ describe("MessageList virtualization", () => {
           sessionAgentKey="claudecode"
           baseDirectory="/tmp/project"
           apiRef={{ current: null }}
+          anchorRegistry={anchorRegistry}
         />
       </Profiler>,
     );

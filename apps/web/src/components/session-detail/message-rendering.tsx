@@ -26,6 +26,7 @@ import { isCodexTurnAbortedMessage } from "./codex-abort";
 import { buildCodexPlanDisplay } from "./codex-plan";
 import { getDisplayTextWithRelativePaths } from "./path-extract";
 import { buildBlockTimelineAnchorId, buildMessageTimelineAnchorId } from "./timeline";
+import { useTimelineAnchorRef } from "./timeline-anchor-registry";
 import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
 import {
   type ToolStatus,
@@ -99,6 +100,8 @@ export const MessageItem = memo(function MessageItem({
 }) {
   const isUser = msg.role === "user";
   const isAbortMessage = isCodexTurnAbortedMessage(msg, sessionAgentKey);
+  const messageAnchorId = isUser ? buildMessageTimelineAnchorId(messageIndex) : undefined;
+  const messageAnchorRef = useTimelineAnchorRef(messageAnchorId);
 
   const getAgentAvatar = () => {
     const agentName = agent?.displayName ?? sessionAgentKey;
@@ -127,8 +130,8 @@ export const MessageItem = memo(function MessageItem({
 
   return (
     <article
-      id={isUser ? buildMessageTimelineAnchorId(messageIndex) : undefined}
-      data-session-timeline-anchor={isUser ? buildMessageTimelineAnchorId(messageIndex) : undefined}
+      ref={messageAnchorRef}
+      id={messageAnchorId}
       className="w-full scroll-mt-20 border-l-2 border-[var(--console-thread)] pl-4 pr-3 md:pr-5"
     >
       <div className="flex gap-4">
@@ -207,22 +210,12 @@ export const MessageItem = memo(function MessageItem({
                 );
               }
               return (
-                <div
+                <MessageTextSection
                   key={index}
-                  id={timelineAnchorId}
-                  data-session-timeline-anchor={timelineAnchorId}
-                  className="scroll-mt-20 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-4 shadow-[var(--shadow-raised)]"
-                >
-                  <div className="console-markdown text-sm leading-relaxed text-[var(--console-text)]">
-                    {block.parts.map((part, partIndex) => (
-                      <MessageMarkdown
-                        key={partIndex}
-                        text={part.text}
-                        highlightQuery={highlightQuery}
-                      />
-                    ))}
-                  </div>
-                </div>
+                  anchorId={timelineAnchorId}
+                  parts={block.parts}
+                  highlightQuery={highlightQuery}
+                />
               );
             })
           )}
@@ -257,6 +250,32 @@ export const MessageItem = memo(function MessageItem({
   );
 });
 
+const MessageTextSection = memo(function MessageTextSection({
+  anchorId,
+  parts,
+  highlightQuery,
+}: {
+  anchorId: string;
+  parts: Array<{ text: string }>;
+  highlightQuery?: string;
+}) {
+  const anchorRef = useTimelineAnchorRef(anchorId);
+
+  return (
+    <div
+      ref={anchorRef}
+      id={anchorId}
+      className="scroll-mt-20 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-4 shadow-[var(--shadow-raised)]"
+    >
+      <div className="console-markdown text-sm leading-relaxed text-[var(--console-text)]">
+        {parts.map((part, index) => (
+          <MessageMarkdown key={index} text={part.text} highlightQuery={highlightQuery} />
+        ))}
+      </div>
+    </div>
+  );
+});
+
 function AbortToolItem() {
   return (
     <div className="space-y-2">
@@ -286,6 +305,7 @@ const ReasoningSection = memo(function ReasoningSection({
   highlightQuery?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const anchorRef = useTimelineAnchorRef(anchorId);
   const fullText = useMemo(
     () =>
       parts
@@ -297,8 +317,8 @@ const ReasoningSection = memo(function ReasoningSection({
 
   return (
     <div
+      ref={anchorRef}
       id={anchorId}
-      data-session-timeline-anchor={anchorId}
       className="scroll-mt-20 overflow-hidden rounded-lg border border-[var(--console-thinking-border)] bg-[var(--console-thinking-bg)]"
     >
       <button
@@ -372,8 +392,10 @@ const PlansSection = memo(function PlansSection({
   parts: PlanPart[];
   highlightQuery?: string;
 }) {
+  const anchorRef = useTimelineAnchorRef(anchorId);
+
   return (
-    <div id={anchorId} data-session-timeline-anchor={anchorId} className="scroll-mt-20 space-y-2">
+    <div ref={anchorRef} id={anchorId} className="scroll-mt-20 space-y-2">
       {parts.map((plan, i) => (
         <PlanItem key={i} part={plan} highlightQuery={highlightQuery} />
       ))}
@@ -475,6 +497,7 @@ const ToolItem = memo(function ToolItem({
   highlightQuery?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const anchorRef = useTimelineAnchorRef(anchorId);
   const state = useMemo(() => normalizeToolState(tool), [tool]);
   const strategy = useMemo(
     () => getToolDisplayStrategy(sessionAgentKey, tool, state, baseDirectory),
@@ -489,7 +512,7 @@ const ToolItem = memo(function ToolItem({
   const ToolIcon = strategy.Icon;
 
   return (
-    <div id={anchorId} data-session-timeline-anchor={anchorId} className="scroll-mt-20">
+    <div ref={anchorRef} id={anchorId} className="scroll-mt-20">
       <div className="flex flex-wrap items-start gap-2">
         <div
           className={`w-full max-w-[720px] rounded-lg border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-2.5 text-left shadow-[var(--shadow-raised)] ${
