@@ -299,64 +299,71 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
    * 只读小 JSON 文件与 statSync，不触碰 transcript——枚举路径依赖这一点。
    */
   private resolveSessionSourceResult(sessionDir: string): ParseSessionResult<SessionSource> {
-    try {
-      const sessionId = basename(sessionDir);
-      const projectHash = basename(dirname(sessionDir));
-      const contextFile = join(sessionDir, "context.jsonl");
-      const wireFile = join(sessionDir, "wire.jsonl");
+    const sessionId = basename(sessionDir);
+    const projectHash = basename(dirname(sessionDir));
+    const contextFile = join(sessionDir, "context.jsonl");
+    const wireFile = join(sessionDir, "wire.jsonl");
 
-      const existingContextFile = existsSync(contextFile) ? contextFile : null;
-      const existingWireFile = existsSync(wireFile) ? wireFile : null;
-      if (!existingContextFile && !existingWireFile) {
-        return skippedSession("missing transcript");
-      }
-
-      const statePath = join(sessionDir, "state.json");
-      const metaPath = join(sessionDir, "metadata.json");
-
-      let explicitTitle = "";
-      let wireMtime: number | null = null;
-      let metaFile = "";
-      let metadata: Record<string, unknown> = {};
-
-      if (existsSync(statePath)) {
-        metadata = asRecord(JSON.parse(readFileSync(statePath, "utf-8"))) ?? {};
-        explicitTitle = String(metadata.custom_title ?? "");
-        wireMtime = readWireMtime(metadata);
-        metaFile = statePath;
-      } else if (existsSync(metaPath)) {
-        metadata = asRecord(JSON.parse(readFileSync(metaPath, "utf-8"))) ?? {};
-        explicitTitle = String(metadata.title ?? "");
-        wireMtime = readWireMtime(metadata);
-        metaFile = metaPath;
-      }
-
-      const sessionStat = statSync(sessionDir);
-      const createdAt =
-        parseTimestamp(metadata.createdAt) ??
-        parseTimestamp(metadata.created_at) ??
-        (sessionStat.birthtimeMs > 0 ? sessionStat.birthtimeMs : sessionStat.ctimeMs);
-      const activityAt = Math.max(
-        createdAt,
-        wireMtime === null ? 0 : wireMtime * 1000,
-        existingContextFile ? statSync(existingContextFile).mtimeMs : 0,
-        existingWireFile ? statSync(existingWireFile).mtimeMs : 0,
-      );
-
-      return parsedSession({
-        id: sessionId,
-        sourcePath: sessionDir,
-        cwd: this.projectMap.get(projectHash) || "",
-        contextFile: existingContextFile,
-        wireFile: existingWireFile,
-        createdAt,
-        activityAt,
-        metaFile,
-        explicitTitle,
-      });
-    } catch {
-      return skippedSession("malformed metadata");
+    const existingContextFile = existsSync(contextFile) ? contextFile : null;
+    const existingWireFile = existsSync(wireFile) ? wireFile : null;
+    if (!existingContextFile && !existingWireFile) {
+      return skippedSession("missing transcript");
     }
+
+    const statePath = join(sessionDir, "state.json");
+    const metaPath = join(sessionDir, "metadata.json");
+    const metaFile = existsSync(statePath) ? statePath : existsSync(metaPath) ? metaPath : "";
+    let metadata: Record<string, unknown> = {};
+
+    if (metaFile) {
+      const content = this.scanStep("reading session metadata", metaFile, () =>
+        readFileSync(metaFile, "utf-8"),
+      );
+      try {
+        metadata = asRecord(JSON.parse(content)) ?? {};
+      } catch {
+        return skippedSession("malformed metadata");
+      }
+    }
+
+    const explicitTitle = String(
+      metaFile === statePath ? (metadata.custom_title ?? "") : (metadata.title ?? ""),
+    );
+    const wireMtime = readWireMtime(metadata);
+    const [sessionStat, contextMtimeMs, wireMtimeMs] = this.scanStep(
+      "reading session source metadata",
+      sessionDir,
+      () => {
+        const sessionStat = statSync(sessionDir);
+        return [
+          sessionStat,
+          existingContextFile ? statSync(existingContextFile).mtimeMs : 0,
+          existingWireFile ? statSync(existingWireFile).mtimeMs : 0,
+        ] as const;
+      },
+    );
+    const createdAt =
+      parseTimestamp(metadata.createdAt) ??
+      parseTimestamp(metadata.created_at) ??
+      (sessionStat.birthtimeMs > 0 ? sessionStat.birthtimeMs : sessionStat.ctimeMs);
+    const activityAt = Math.max(
+      createdAt,
+      wireMtime === null ? 0 : wireMtime * 1000,
+      contextMtimeMs,
+      wireMtimeMs,
+    );
+
+    return parsedSession({
+      id: sessionId,
+      sourcePath: sessionDir,
+      cwd: this.projectMap.get(projectHash) || "",
+      contextFile: existingContextFile,
+      wireFile: existingWireFile,
+      createdAt,
+      activityAt,
+      metaFile,
+      explicitTitle,
+    });
   }
 
   /**

@@ -1,7 +1,18 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    readFileSync: vi.fn(actual.readFileSync),
+  };
+});
+
 import {
   appendFileSync,
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   rmSync,
   statSync,
   utimesSync,
@@ -9,13 +20,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
 import { KimiCodeAgent } from "../kimi-code.js";
 
 const SESSION_ID = "ses_test-kimi-code";
 const WORK_DIR = "/tmp/kimi-code-project";
 
 let tempDirs: string[] = [];
+const mockedReadFileSync = vi.mocked(readFileSync);
 
 function createAgent(dataRoot: string): KimiCodeAgent {
   const agent = new KimiCodeAgent() as never as { basePath: string };
@@ -52,9 +63,40 @@ function createSession(
 afterEach(() => {
   for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
   tempDirs = [];
+  mockedReadFileSync.mockClear();
 });
 
 describe("KimiCodeAgent", () => {
+  it("surfaces state read failures instead of treating them as malformed sessions", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "codesesh-kimi-code-test-"));
+    tempDirs.push(dataRoot);
+    const sessionDir = createSession(dataRoot, []);
+    const statePath = join(sessionDir, "state.json");
+    const error = Object.assign(new Error("permission denied"), { code: "EACCES" });
+    mockedReadFileSync.mockImplementationOnce(() => {
+      throw error;
+    });
+
+    expect(() => createAgent(dataRoot).listSessionSources()).toThrowError(
+      expect.objectContaining({
+        name: "SessionScanError",
+        agentName: "kimi-code",
+        stage: "reading session state",
+        sourcePath: statePath,
+        cause: error,
+      }),
+    );
+  });
+
+  it("skips readable state files with malformed JSON", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "codesesh-kimi-code-test-"));
+    tempDirs.push(dataRoot);
+    const sessionDir = createSession(dataRoot, []);
+    writeFileSync(join(sessionDir, "state.json"), "not-json");
+
+    expect(createAgent(dataRoot).listSessionSources()).toEqual([]);
+  });
+
   it("enumerates an old session by recent wire activity", () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "codesesh-kimi-code-test-"));
     tempDirs.push(dataRoot);

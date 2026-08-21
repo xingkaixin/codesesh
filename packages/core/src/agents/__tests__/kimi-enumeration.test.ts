@@ -83,6 +83,36 @@ afterEach(() => {
 });
 
 describe("KimiAgent source enumeration", () => {
+  it("surfaces state read failures instead of treating them as malformed metadata", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-enum-"));
+    tempDirs.push(basePath);
+    const sessionDir = createSessionDir(basePath, "unreadable", "Unreadable");
+    const statePath = join(sessionDir, "state.json");
+    const error = Object.assign(new Error("permission denied"), { code: "EACCES" });
+    mockedReadFileSync.mockImplementationOnce(() => {
+      throw error;
+    });
+
+    expect(() => createAgent(basePath).listSessionSources()).toThrowError(
+      expect.objectContaining({
+        name: "SessionScanError",
+        agentName: "kimi",
+        stage: "reading session metadata",
+        sourcePath: statePath,
+        cause: error,
+      }),
+    );
+  });
+
+  it("skips readable state files with malformed JSON", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-enum-"));
+    tempDirs.push(basePath);
+    const sessionDir = createSessionDir(basePath, "malformed", "Malformed");
+    writeFileSync(join(sessionDir, "state.json"), "not-json");
+
+    expect(createAgent(basePath).listSessionSources()).toEqual([]);
+  });
+
   it("does not read transcripts while enumerating sources", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-enum-"));
     tempDirs.push(basePath);
