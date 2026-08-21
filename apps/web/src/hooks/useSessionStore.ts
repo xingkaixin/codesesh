@@ -295,7 +295,7 @@ export function useSessionStore() {
         return snapshot;
       } catch (error) {
         if (isCancelledError(error)) return null;
-        dispatchLoad({ type: "fail", requestId, error });
+        dispatchLoad({ type: "fail", requestId });
         throw error;
       }
     },
