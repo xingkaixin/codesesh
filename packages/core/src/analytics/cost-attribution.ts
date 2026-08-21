@@ -1,6 +1,9 @@
 import type { CostSource, SessionHead } from "../types/session.js";
-import type { SessionTree, SessionTreeNode } from "../contract/index.js";
-import { getSessionRouteKey } from "../contract/index.js";
+import {
+  getSessionReferenceKey,
+  type SessionTree,
+  type SessionTreeNode,
+} from "../contract/index.js";
 import type {
   DashboardCostFacts,
   MessageCostFact,
@@ -44,23 +47,16 @@ export interface AttributedUsage {
 
 export type UsageAttributionOptions = CostAttributionOptions;
 
-function costFactKey(agentName: string, sessionId: string): string {
-  return getSessionRouteKey(agentName, sessionId);
-}
-
 function indexFacts(facts: DashboardCostFacts | null | undefined): MetricFactIndex {
   const messagesBySession = new Map<string, MessageCostFact[]>();
   const summariesBySession = new Map<string, SessionCostSummary>();
   if (!facts) return { messagesBySession, summariesBySession };
 
   for (const summary of facts.sessions) {
-    summariesBySession.set(
-      costFactKey(summary.reference.agentName, summary.reference.sessionId),
-      summary,
-    );
+    summariesBySession.set(getSessionReferenceKey(summary.reference), summary);
   }
   for (const message of facts.messages) {
-    const key = costFactKey(message.reference.agentName, message.reference.sessionId);
+    const key = getSessionReferenceKey(message.reference);
     const messages = messagesBySession.get(key);
     if (messages) messages.push(message);
     else messagesBySession.set(key, [message]);
@@ -176,7 +172,7 @@ export function visitAttributedCosts(
       const session = node.session;
       const totalCost = Math.max(0, session.stats.total_cost);
       if (totalCost <= 0) continue;
-      const key = costFactKey(session.reference.agentName, session.reference.sessionId);
+      const key = getSessionReferenceKey(session.reference);
       const summary = factIndex.summariesBySession.get(key);
 
       if (factsAvailable && hasDetailedCost(session, summary)) {
@@ -232,7 +228,7 @@ export function visitAttributedUsage(
       for (const child of node.children) pending.push(child);
 
       const session = node.session;
-      const key = costFactKey(session.reference.agentName, session.reference.sessionId);
+      const key = getSessionReferenceKey(session.reference);
       const summary = factIndex.summariesBySession.get(key);
       const detailedMessages = factsAvailable && hasDetailedMessages(session, summary);
       const outputIncludesReasoning = factsAvailable

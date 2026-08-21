@@ -7,7 +7,7 @@
 import type { SessionHead } from "../types/index.js";
 import {
   buildSessionTree,
-  getSessionRouteKey,
+  getSessionReferenceKey,
   type SearchResult,
   type SessionTree,
 } from "../contract/index.js";
@@ -115,10 +115,6 @@ export function matchesSessionSearchFilters(
   return matchesRecentSearchFilters(session, options, projectScope, inclusiveCost);
 }
 
-function sessionReferenceKey(agentName: string, sessionId: string): string {
-  return `${agentName}\u0000${sessionId}`;
-}
-
 export function filterSessionSearchCandidates(
   candidates: SearchResult[],
   options: SearchOptions,
@@ -151,9 +147,7 @@ export function filterSessionSearchCandidates(
     },
   );
   return headMatches.filter((candidate) =>
-    indexedMatches.has(
-      sessionReferenceKey(candidate.reference.agentName, candidate.reference.sessionId),
-    ),
+    indexedMatches.has(getSessionReferenceKey(candidate.reference)),
   );
 }
 
@@ -211,8 +205,8 @@ function inclusiveCostFor(
   lookup: ReturnType<typeof buildSessionTree>["byRouteKey"] | null,
 ): number {
   return (
-    lookup?.get(getSessionRouteKey(agentName, session.reference.sessionId))?.inclusiveStats.cost ??
-    session.stats.total_cost
+    lookup?.get(getSessionReferenceKey({ agentName, sessionId: session.reference.sessionId }))
+      ?.inclusiveStats.cost ?? session.stats.total_cost
   );
 }
 
@@ -235,7 +229,7 @@ function mergeSearchResultSources(results: SearchResult[], limit: number): Searc
   const merged: SearchResult[] = [];
 
   for (const result of results) {
-    const key = sessionReferenceKey(result.reference.agentName, result.reference.sessionId);
+    const key = getSessionReferenceKey(result.reference);
     if (seen.has(key)) continue;
     seen.add(key);
     merged.push(result);
@@ -262,17 +256,11 @@ function searchIndexedSessions(
     : searchSessions(query, options);
   const textMatchReferences =
     textQuery && options.file
-      ? new Set(
-          sessionResults.map((result) =>
-            sessionReferenceKey(result.reference.agentName, result.reference.sessionId),
-          ),
-        )
+      ? new Set(sessionResults.map((result) => getSessionReferenceKey(result.reference)))
       : null;
   const matchingFileResults = textMatchReferences
     ? fileResults.filter((result) =>
-        textMatchReferences.has(
-          sessionReferenceKey(result.reference.agentName, result.reference.sessionId),
-        ),
+        textMatchReferences.has(getSessionReferenceKey(result.reference)),
       )
     : fileResults;
 

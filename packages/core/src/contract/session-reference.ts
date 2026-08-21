@@ -38,6 +38,11 @@ export function formatSessionReference(reference: SessionReference): string {
   return `${normalized.agentName}/${normalized.sessionId}`;
 }
 
+/** Canonical key for maps and sets keyed by session identity. */
+export function getSessionReferenceKey(reference: SessionReference): string {
+  return formatSessionReference(reference);
+}
+
 export function createSessionIdentity(reference: SessionReference): SessionIdentity {
   const normalized = normalizeSessionReference(reference);
   return {

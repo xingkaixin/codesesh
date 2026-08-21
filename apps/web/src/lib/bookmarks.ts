@@ -1,6 +1,7 @@
 import type { BookmarkRecord, BookmarkView, SessionHead } from "./api";
 import {
   assertSessionIdentity,
+  getSessionReferenceKey,
   normalizeSessionReference,
   type SessionReference,
 } from "@codesesh/core/contract";
@@ -55,8 +56,7 @@ function parseLegacyBookmark(value: unknown): BookmarkRecord | null {
 }
 
 export function getSessionBookmarkKey(reference: SessionReference): string {
-  const normalized = normalizeSessionReference(reference);
-  return JSON.stringify([normalized.agentName, normalized.sessionId]);
+  return getSessionReferenceKey(reference);
 }
 
 export function toBookmarkView(session: SessionHead, agentKey: string): BookmarkView {

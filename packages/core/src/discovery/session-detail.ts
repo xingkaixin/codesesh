@@ -1,5 +1,9 @@
 import type { BaseAgent, SessionCacheMeta } from "../agents/index.js";
-import { assertSessionIdentity, type SessionReference } from "../contract/index.js";
+import {
+  assertSessionIdentity,
+  getSessionReferenceKey,
+  type SessionReference,
+} from "../contract/index.js";
 import type {
   IdentifiedSessionDetail,
   IdentifiedSessionHead,
@@ -154,10 +158,6 @@ function loadCachedMessageStream(
   };
 }
 
-function sessionReferenceKey(agentName: string, sessionId: string): string {
-  return `${agentName}\0${sessionId}`;
-}
-
 function assertSessionMatchesReference(
   session: IdentifiedSessionHead | SessionDetail,
   reference: SessionReference,
@@ -183,7 +183,7 @@ function getSessionDetailLookup(scanResult: LiveSnapshot): SessionDetailLookup {
   const headsByReference = new Map<string, IdentifiedSessionHead>();
   for (const sessions of Object.values(scanResult.byAgent)) {
     for (const session of sessions) {
-      const key = sessionReferenceKey(session.reference.agentName, session.reference.sessionId);
+      const key = getSessionReferenceKey(session.reference);
       if (!headsByReference.has(key)) headsByReference.set(key, session);
     }
   }
@@ -202,9 +202,7 @@ function getSessionDetailContext(
   if (!agent) return null;
   return {
     agent,
-    head: lookup.headsByReference.get(
-      sessionReferenceKey(reference.agentName, reference.sessionId),
-    ),
+    head: lookup.headsByReference.get(getSessionReferenceKey(reference)),
   };
 }
 
