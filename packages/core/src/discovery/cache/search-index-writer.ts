@@ -95,6 +95,11 @@ interface PublishedSessionRow {
   session_total_cost?: number | null;
   session_cost_source?: string | null;
   session_total_tokens?: number | null;
+  session_project_identity_kind?: string | null;
+  session_project_identity_key?: string | null;
+  session_project_display_name?: string | null;
+  session_project_identity_resolver_revision?: string | null;
+  session_project_identity_input_signature?: string | null;
 }
 
 interface MessageCountRow {
@@ -184,39 +189,77 @@ function shouldBulkSyncSearchIndex(options: SearchIndexSyncOptions, changedCount
   return threshold > 0 && changedCount >= threshold;
 }
 
+interface SearchIndexSessionFacts {
+  title: string;
+  directory: string;
+  timeCreated: number;
+  timeUpdated: number;
+  messageCount: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReadTokens: number;
+  totalCacheCreateTokens: number;
+  totalCost: number;
+  costSource: string;
+  totalTokens: number;
+  projectIdentityKind: string;
+  projectIdentityKey: string;
+  projectDisplayName: string;
+  projectIdentityResolverRevision: string;
+  projectIdentityInputSignature: string;
+}
+
+function searchIndexSessionFacts(session: SessionHead): SearchIndexSessionFacts {
+  return {
+    title: session.title,
+    directory: session.directory,
+    timeCreated: session.time_created,
+    timeUpdated: session.time_updated ?? session.time_created,
+    messageCount: session.stats.message_count,
+    totalInputTokens: session.stats.total_input_tokens,
+    totalOutputTokens: session.stats.total_output_tokens,
+    totalCacheReadTokens: session.stats.total_cache_read_tokens ?? 0,
+    totalCacheCreateTokens: session.stats.total_cache_create_tokens ?? 0,
+    totalCost: session.stats.total_cost,
+    costSource: session.stats.cost_source ?? "",
+    totalTokens: session.stats.total_tokens ?? 0,
+    projectIdentityKind: session.project_identity?.kind ?? "",
+    projectIdentityKey: session.project_identity?.key ?? "",
+    projectDisplayName: session.project_identity?.displayName ?? "",
+    projectIdentityResolverRevision: session.project_identity_resolver_revision ?? "",
+    projectIdentityInputSignature: session.project_identity_input_signature ?? "",
+  };
+}
+
+function hashSearchIndexSessionFacts(facts: SearchIndexSessionFacts): string {
+  return JSON.stringify(facts);
+}
+
 function sessionContentHash(session: SessionHead): string {
-  return JSON.stringify([
-    session.title,
-    session.directory,
-    session.time_created,
-    session.time_updated ?? session.time_created,
-    session.stats.message_count,
-    session.stats.total_input_tokens,
-    session.stats.total_output_tokens,
-    session.stats.total_cache_read_tokens ?? 0,
-    session.stats.total_cache_create_tokens ?? 0,
-    session.stats.total_cost,
-    session.stats.cost_source ?? "",
-    session.stats.total_tokens ?? 0,
-  ]);
+  return hashSearchIndexSessionFacts(searchIndexSessionFacts(session));
 }
 
 function publishedSessionContentHash(row: PublishedSessionRow): string | null {
   if (row.session_title == null) return null;
-  return JSON.stringify([
-    row.session_title ?? "",
-    row.session_directory ?? "",
-    Number(row.session_time_created ?? 0),
-    Number(row.session_time_updated ?? row.session_time_created ?? 0),
-    Number(row.session_message_count ?? 0),
-    Number(row.session_total_input_tokens ?? 0),
-    Number(row.session_total_output_tokens ?? 0),
-    Number(row.session_total_cache_read_tokens ?? 0),
-    Number(row.session_total_cache_create_tokens ?? 0),
-    Number(row.session_total_cost ?? 0),
-    row.session_cost_source ?? "",
-    Number(row.session_total_tokens ?? 0),
-  ]);
+  return hashSearchIndexSessionFacts({
+    title: row.session_title,
+    directory: row.session_directory ?? "",
+    timeCreated: Number(row.session_time_created ?? 0),
+    timeUpdated: Number(row.session_time_updated ?? row.session_time_created ?? 0),
+    messageCount: Number(row.session_message_count ?? 0),
+    totalInputTokens: Number(row.session_total_input_tokens ?? 0),
+    totalOutputTokens: Number(row.session_total_output_tokens ?? 0),
+    totalCacheReadTokens: Number(row.session_total_cache_read_tokens ?? 0),
+    totalCacheCreateTokens: Number(row.session_total_cache_create_tokens ?? 0),
+    totalCost: Number(row.session_total_cost ?? 0),
+    costSource: row.session_cost_source ?? "",
+    totalTokens: Number(row.session_total_tokens ?? 0),
+    projectIdentityKind: row.session_project_identity_kind ?? "",
+    projectIdentityKey: row.session_project_identity_key ?? "",
+    projectDisplayName: row.session_project_display_name ?? "",
+    projectIdentityResolverRevision: row.session_project_identity_resolver_revision ?? "",
+    projectIdentityInputSignature: row.session_project_identity_input_signature ?? "",
+  });
 }
 
 function detailVersionFromMetaJson(value: string | null | undefined): string {
@@ -291,6 +334,11 @@ export function searchIndexStateQuery(sessionIdCount: number): string {
       sessions.total_cost AS session_total_cost,
       sessions.cost_source AS session_cost_source,
       sessions.total_tokens AS session_total_tokens,
+      sessions.project_identity_kind AS session_project_identity_kind,
+      sessions.project_identity_key AS session_project_identity_key,
+      sessions.project_display_name AS session_project_display_name,
+      sessions.project_identity_resolver_revision AS session_project_identity_resolver_revision,
+      sessions.project_identity_input_signature AS session_project_identity_input_signature,
       COUNT(messages.message_index) AS value
     FROM requested_session_ids AS requested
     LEFT JOIN session_documents AS documents
@@ -317,7 +365,12 @@ export function searchIndexStateQuery(sessionIdCount: number): string {
       sessions.total_cache_create_tokens,
       sessions.total_cost,
       sessions.cost_source,
-      sessions.total_tokens
+      sessions.total_tokens,
+      sessions.project_identity_kind,
+      sessions.project_identity_key,
+      sessions.project_display_name,
+      sessions.project_identity_resolver_revision,
+      sessions.project_identity_input_signature
   `;
 }
 
