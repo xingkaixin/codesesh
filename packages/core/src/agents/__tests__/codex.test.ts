@@ -507,12 +507,15 @@ describe("CodexAgent cache refresh", () => {
 
     const agent = new CodexAgent() as any;
     agent.basePath = tempDir;
-    // Drive the new primitives directly: listSessionSources enumerates the
-    // on-disk files, scanSessionSource parses each head.
-    agent.scanSessionSource = (file: string) => {
-      if (file === oldA) return makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa");
-      if (file === newC) return makeSession("019dcccc-cccc-7ccc-cccc-cccccccccccc");
-      return null;
+    // Replace the single-file parser while keeping the shared scan lifecycle intact.
+    agent.parseFileSessionHeadResult = (file: string) => {
+      if (file === oldA) {
+        return { status: "parsed", data: makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa") };
+      }
+      if (file === newC) {
+        return { status: "parsed", data: makeSession("019dcccc-cccc-7ccc-cccc-cccccccccccc") };
+      }
+      return { status: "skipped", reason: "unknown fixture" };
     };
 
     const sessions = agent.incrementalScan(
@@ -550,7 +553,7 @@ describe("CodexAgent cache refresh", () => {
     const agent = new CodexAgent() as any;
     agent.sessionIndexCache = new Map();
 
-    const head = agent.parseSessionHead(sessionFile);
+    const head = agent.scanSessionSource(sessionFile);
 
     expect(head?.time_created).toBe(new Date("2026-04-20T10:00:00Z").getTime());
     expect(head?.time_updated).toBe(new Date("2026-04-20T10:02:30Z").getTime());
@@ -574,7 +577,7 @@ describe("CodexAgent cache refresh", () => {
 
     const agent = new CodexAgent() as any;
     agent.sessionIndexCache = new Map();
-    const head = agent.parseSessionHead(sessionFile);
+    const head = agent.scanSessionSource(sessionFile);
 
     expect(head?.time_created).toBe(Date.parse("2026-04-20T10:00:00+08:00"));
     expect(head?.time_updated).toBe(Date.parse("2026-04-20T10:02:30+08:00"));
@@ -599,7 +602,7 @@ describe("CodexAgent cache refresh", () => {
     const agent = new CodexAgent() as any;
     agent.sessionIndexCache = new Map();
 
-    const head = agent.parseSessionHead(sessionFile);
+    const head = agent.scanSessionSource(sessionFile);
 
     expect(head?.stats.total_input_tokens).toBe(100);
     expect(head?.stats.total_output_tokens).toBe(25);
@@ -682,7 +685,7 @@ describe("CodexAgent cache refresh", () => {
     const agent = new CodexAgent() as any;
     agent.sessionIndexCache = new Map();
 
-    const head = agent.parseSessionHead(sessionFile);
+    const head = agent.scanSessionSource(sessionFile);
 
     expect(head?.stats.total_input_tokens).toBe(1000);
     expect(head?.stats.total_cache_read_tokens).toBe(800);
@@ -712,7 +715,7 @@ describe("CodexAgent cache refresh", () => {
     const agent = new CodexAgent() as any;
     agent.sessionIndexCache = new Map();
 
-    const head = agent.parseSessionHead(sessionFile);
+    const head = agent.scanSessionSource(sessionFile);
 
     expect(head?.model_usage).toEqual({ "gpt-5.5": 120, "gpt-5.4": 50 });
   });
@@ -736,7 +739,7 @@ describe("CodexAgent cache refresh", () => {
     const agent = new CodexAgent() as any;
     agent.sessionIndexCache = new Map();
 
-    const head = agent.parseSessionHead(sessionFile);
+    const head = agent.scanSessionSource(sessionFile);
 
     expect(head?.title).toBe("Untitled Session");
   });
@@ -1456,7 +1459,7 @@ describe("CodexAgent field shape mismatches", () => {
     const agent = new CodexAgent() as any;
     agent.sessionIndexCache = new Map();
 
-    const head = agent.parseSessionHead(sessionFile);
+    const head = agent.scanSessionSource(sessionFile);
 
     expect(head?.stats.total_input_tokens).toBe(0);
     expect(head?.stats.total_output_tokens).toBe(0);

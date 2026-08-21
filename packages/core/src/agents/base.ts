@@ -562,53 +562,36 @@ export abstract class FileSystemSessionSource<
 export abstract class SingleFileSessionSource<
   TMeta extends FileSessionMeta = FileSessionMeta,
 > extends FileSystemSessionSource<TMeta> {
-  private readonly pendingParseResults = new Map<
-    string,
-    ParseSessionResult<SessionHead> | undefined
-  >();
-
-  protected abstract parseFileSessionHead(
+  protected abstract parseFileSessionHeadResult(
     sourcePath: string,
     options?: AgentScanOptions,
-  ): SessionHead | null;
-
-  protected parseFileSessionHeadResult(
-    sourcePath: string,
-    options?: AgentScanOptions,
-  ): ParseSessionResult<SessionHead> {
-    const head = this.parseFileSessionHead(sourcePath, options);
-    return head ? parsedSession(head) : skippedSession("source produced no session");
-  }
+  ): ParseSessionResult<SessionHead>;
 
   protected abstract createFileSessionMeta(head: SessionHead, source: SessionSourceFile): TMeta;
 
-  scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null {
+  private parseSessionSource(
+    sourcePath: string,
+    options?: AgentScanOptions,
+  ): ParseSessionResult<SessionHead> {
     const result = this.parseFileSessionHeadResult(sourcePath, options);
-    if (this.pendingParseResults.has(sourcePath)) {
-      this.pendingParseResults.set(sourcePath, result);
-    }
     if (result.status === "parsed") {
       this.sessionMetaMap.set(
         result.data.reference.sessionId,
         this.createFileSessionMeta(result.data, this.sessionSourceFile(sourcePath)),
       );
     }
-    return getParsedSession(result);
+    return result;
+  }
+
+  scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null {
+    return getParsedSession(this.parseSessionSource(sourcePath, options));
   }
 
   protected override scanSessionSourceResult(
     source: SessionSourceRef,
     options?: AgentScanOptions,
   ): ParseSessionResult<SessionHead> {
-    this.pendingParseResults.set(source.sourcePath, undefined);
-    try {
-      const head = this.scanSessionSource(source.sourcePath, options);
-      const result = this.pendingParseResults.get(source.sourcePath);
-      if (head) return result?.status === "parsed" ? result : parsedSession(head);
-      return result ?? skippedSession("source produced no session");
-    } finally {
-      this.pendingParseResults.delete(source.sourcePath);
-    }
+    return this.parseSessionSource(source.sourcePath, options);
   }
 
   protected buildFileSessionMeta<TExtra extends object>({

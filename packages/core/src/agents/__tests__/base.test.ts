@@ -8,8 +8,15 @@ import {
   diffSessionSources,
   FileSystemSessionSource,
   filteredSession,
+  SingleFileSessionSource,
 } from "../base.js";
-import type { AgentScanOptions, SessionCacheMeta, SessionSourceRef } from "../base.js";
+import type {
+  AgentScanOptions,
+  FileSessionMeta,
+  SessionCacheMeta,
+  SessionSourceFile,
+  SessionSourceRef,
+} from "../base.js";
 import type { SessionDetail, SessionHead } from "../../types/index.js";
 import { PRICING_CAPTURE_EPOCH } from "../../pricing/cost.js";
 import type { ModelPricing } from "../../pricing/fetcher.js";
@@ -97,6 +104,45 @@ class NormalizedNameSource extends FakeFileSystemSource {
   override readonly name = " FaKe ";
 }
 
+class ReentrantSingleFileSource extends SingleFileSessionSource {
+  readonly name = "reentrant";
+  readonly displayName = "Reentrant";
+  readonly source = {
+    sessionId: "filtered",
+    sourcePath: "/tmp/filtered.jsonl",
+    fingerprint: "fp-1",
+  };
+  nestedOutcomeStatus: string | undefined;
+  private parsing = false;
+
+  isAvailable(): boolean {
+    return true;
+  }
+
+  getSessionWatchPlan() {
+    return { status: "not-needed" as const, reason: "in-memory test source" };
+  }
+
+  getSessionData(_sessionId: string): SessionDetail {
+    return {} as SessionDetail;
+  }
+
+  listSessionSources(): SessionSourceRef[] {
+    return [this.source];
+  }
+
+  protected override parseFileSessionHeadResult() {
+    if (this.parsing) return filteredSession<SessionHead>("nested filter");
+    this.parsing = true;
+    this.nestedOutcomeStatus = this.scanSessionSourceOutcome(this.source).status;
+    return filteredSession<SessionHead>("outer filter");
+  }
+
+  protected createFileSessionMeta(head: SessionHead, source: SessionSourceFile): FileSessionMeta {
+    return this.buildFileSessionMeta({ head, source, fingerprint: "fp-1", extras: {} });
+  }
+}
+
 function makeSession(id: string): SessionHead {
   return {
     reference: { agentName: "fake", sessionId: id },
@@ -151,6 +197,15 @@ describe("BaseAgent", () => {
 });
 
 describe("FileSystemSessionSource.scan", () => {
+  it("keeps a rich parse result isolated during a nested scan of the same source", () => {
+    const agent = new ReentrantSingleFileSource();
+
+    const outcome = agent.scanSessionSourceOutcome(agent.source);
+
+    expect(agent.nestedOutcomeStatus).toBe("filtered");
+    expect(outcome).toMatchObject({ status: "filtered", reason: "outer filter" });
+  });
+
   it("ignores a session-file symlink outside the scan root", () => {
     const directory = mkdtempSync(join(tmpdir(), "codesesh-walk-symlink-"));
     const root = join(directory, "root");

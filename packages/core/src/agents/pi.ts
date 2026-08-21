@@ -1,12 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
-import {
-  SingleFileSessionSource,
-  filteredSession,
-  getParsedSession,
-  parsedSession,
-} from "./base.js";
+import { SingleFileSessionSource, filteredSession, parsedSession } from "./base.js";
 import type {
   AgentScanOptions,
   FileSessionMeta,
@@ -221,10 +216,6 @@ export class PiAgent extends SingleFileSessionSource<SessionMeta> {
   /** Fingerprint depends on an already-fetched stat to avoid re-statting the same file. */
   private sourceFingerprint(stat: { mtimeMs: number; size: number }): string {
     return JSON.stringify([HEAD_INDEX_VERSION, PARSER_VERSION, stat.mtimeMs, stat.size]);
-  }
-
-  protected parseFileSessionHead(filePath: string): SessionHead | null {
-    return getParsedSession(this.parseFileSessionHeadResult(filePath));
   }
 
   protected override parseFileSessionHeadResult(filePath: string): ParseSessionResult<SessionHead> {

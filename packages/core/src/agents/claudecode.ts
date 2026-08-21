@@ -1,13 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
 import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
-import {
-  SingleFileSessionSource,
-  filteredSession,
-  getParsedSession,
-  parsedSession,
-  skippedSession,
-} from "./base.js";
+import { SingleFileSessionSource, filteredSession, parsedSession, skippedSession } from "./base.js";
 import type { ParseSessionResult } from "./base.js";
 import type {
   SessionHead,
@@ -269,10 +263,6 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
     this.childContextsBySource.clear();
     this.childSessionIdByToolUseId.clear();
     this.childIndexReady = false;
-  }
-
-  protected parseFileSessionHead(sourcePath: string): SessionHead | null {
-    return getParsedSession(this.parseFileSessionHeadResult(sourcePath));
   }
 
   protected override parseFileSessionHeadResult(
