@@ -66,6 +66,7 @@ export {
   markAgentFullSyncCompleted,
   materializeSessionDetailResponse,
   mergeSearchQueryOptions,
+  inspectAgentRefresh,
   readPendingSearchIndexMaintenance,
   mergeSortedSessions,
   saveCachedSessionChanges,
@@ -83,6 +84,7 @@ export { filterSessionTreeByActivityWindow } from "./contract/index.js";
 export type {
   AgentScanIntent,
   AgentScanPlan,
+  AgentRefreshInspection,
   FileActivityResult,
   AgentCacheFailure,
   LiveSnapshot,

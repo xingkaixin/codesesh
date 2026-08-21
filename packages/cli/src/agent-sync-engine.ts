@@ -4,15 +4,15 @@ import {
   getAgentFullSyncCursor,
   computeSessionDiff,
   loadCachedSessions,
+  inspectAgentRefresh,
   markAgentFullSyncProgress,
   markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
-  planAgentScan,
   readCachedSessions,
   readAgentCacheInitialization,
   sessionSignature,
   type BaseAgent,
-  type AggregateSessionSourceCapability,
+  type AgentRefreshInspection,
   type IdentifiedSessionHead,
   type ScanOptions,
   type LiveSnapshot,
@@ -419,8 +419,12 @@ export class AgentSyncEngine {
     } else if (!isInitialized) {
       strategyResult = await this.initializeAgent(agent, previousSessions);
     } else {
-      const scanPlan = planAgentScan(agent.sessionSourceAccess, "refresh");
-      if (scanPlan.kind === "synchronize") {
+      const refresh = await inspectAgentRefresh(
+        agent.sessionSourceAccess,
+        cacheTimestamp,
+        refreshBaseline,
+      );
+      if (refresh.kind === "synchronize") {
         strategyResult = await this.syncAgentSources(
           agent,
           cached ?? {
@@ -430,13 +434,7 @@ export class AgentSyncEngine {
           startedAt,
         );
       } else {
-        strategyResult = await this.refreshChangedAgent(
-          agent,
-          scanPlan.source,
-          refreshBaseline,
-          cacheTimestamp,
-          startedAt,
-        );
+        strategyResult = await this.refreshChangedAgent(agent, refresh, refreshBaseline, startedAt);
       }
     }
     if (strategyResult.status === "unchanged") {
@@ -673,28 +671,33 @@ export class AgentSyncEngine {
 
   private async refreshChangedAgent(
     agent: BaseAgent,
-    source: AggregateSessionSourceCapability,
+    refresh: Exclude<AgentRefreshInspection, { kind: "synchronize" }>,
     baseline: IdentifiedSessionHead[],
-    cacheTimestamp: number,
     refreshStartedAt: number,
   ): Promise<RefreshStrategyResult> {
     const scope = this.startupScanOptions();
-    const checkStartedAt = performance.now();
-    const checkResult = await Promise.resolve(source.checkForChanges(cacheTimestamp, baseline));
-    const checkDuration = performance.now() - checkStartedAt;
-    if (checkResult.status === "failed") {
+    if (refresh.kind === "failed") {
       appLogger.warn("scan.refresh.change_check_failed", {
         agent: agent.name,
-        source_path: checkResult.failure.sourcePath,
-        error_class: checkResult.failure.errorClass,
-        message: checkResult.failure.message,
+        source_path: refresh.failure.sourcePath,
+        error_class: refresh.failure.errorClass,
+        message: refresh.failure.message,
       });
       return {
-        ...this.refreshStrategyBase(baseline, "partial", {}, { checkDuration }),
+        ...this.refreshStrategyBase(
+          baseline,
+          "partial",
+          {},
+          {
+            checkDuration: refresh.checkDurationMs,
+          },
+        ),
         status: "unchanged",
       };
     }
-    if (!checkResult.hasChanges) {
+    const { check: checkResult, source } = refresh;
+    const checkDuration = refresh.checkDurationMs;
+    if (refresh.kind === "unchanged") {
       const scanStartedAt = performance.now();
       const result = await this.runWorker(agent, baseline, { kind: "recompute-derived" }, {});
       agent.restoreSessionCacheMeta(result.meta);

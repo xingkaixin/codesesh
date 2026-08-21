@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { planAgentScan, type AgentScanIntent } from "../agent-scan-plan.js";
+import { inspectAgentRefresh, planAgentScan, type AgentScanIntent } from "../agent-scan-plan.js";
 import type {
   AggregateSessionSourceCapability,
+  ChangeCheckResult,
   EnumeratedSessionSourceCapability,
 } from "../../agents/index.js";
 
@@ -74,5 +75,55 @@ describe("planAgentScan", () => {
     if (plan.kind === "synchronize" || plan.kind === "check-for-changes") {
       expect(plan.source).toBe(source);
     }
+  });
+});
+
+describe("inspectAgentRefresh", () => {
+  it("returns enumerated sources without running an aggregate change check", async () => {
+    await expect(inspectAgentRefresh(enumerated, 10, [])).resolves.toEqual({
+      kind: "synchronize",
+      source: enumerated,
+    });
+  });
+
+  it.each<{ result: ChangeCheckResult; expectedKind: "unchanged" | "scan" }>([
+    {
+      result: { hasChanges: false, timestamp: 11 },
+      expectedKind: "unchanged",
+    },
+    {
+      result: { hasChanges: true, changedIds: ["changed"], timestamp: 11 },
+      expectedKind: "scan",
+    },
+  ])("classifies a successful check as $expectedKind", async ({ result, expectedKind }) => {
+    const source: AggregateSessionSourceCapability = {
+      ...aggregate,
+      checkForChanges: () => result,
+    };
+
+    const inspection = await inspectAgentRefresh(source, 10, []);
+
+    expect(inspection).toMatchObject({ kind: expectedKind, source, check: result });
+  });
+
+  it("preserves a failed change check as a distinct recovery class", async () => {
+    const failure = {
+      sourcePath: "/sessions.db",
+      errorClass: "SqliteError",
+      message: "database is locked",
+    };
+    const source: AggregateSessionSourceCapability = {
+      ...aggregate,
+      checkForChanges: () => ({
+        status: "failed",
+        hasChanges: false,
+        timestamp: 10,
+        failure,
+      }),
+    };
+
+    const inspection = await inspectAgentRefresh(source, 10, []);
+
+    expect(inspection).toMatchObject({ kind: "failed", failure });
   });
 });

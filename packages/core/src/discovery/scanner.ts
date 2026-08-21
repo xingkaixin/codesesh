@@ -48,7 +48,7 @@ import {
   computeSessionDiff,
   sessionSignature,
 } from "./orchestrate.js";
-import { planAgentScan } from "./agent-scan-plan.js";
+import { inspectAgentRefresh, planAgentScan } from "./agent-scan-plan.js";
 
 export interface ScanOptions {
   /** Filter to specific agent name(s) */
@@ -683,11 +683,16 @@ async function scanAgentSmart(
 
       onProgress?.({ agent: agent.name, phase: "checking" });
 
-      const scanPlan = planAgentScan(agent.sessionSourceAccess, "refresh");
-      if (scanPlan.kind === "synchronize") {
+      const refresh = await inspectAgentRefresh(
+        agent.sessionSourceAccess,
+        cached.timestamp,
+        cached.sessions,
+      );
+      if (refresh.kind !== "synchronize") timing.checkChanges = refresh.checkDurationMs;
+      if (refresh.kind === "synchronize") {
         return refreshCachedEnumeratedAgent(
           agent,
-          scanPlan.source,
+          refresh.source,
           cached,
           options,
           timing,
@@ -695,21 +700,15 @@ async function scanAgentSmart(
           onProgress,
         );
       }
-      const t1 = performance.now();
-      const checkResult = await Promise.resolve(
-        scanPlan.source.checkForChanges(cached.timestamp, cached.sessions),
-      );
-      timing.checkChanges = performance.now() - t1;
-
-      if (checkResult.status === "failed") {
+      if (refresh.kind === "failed") {
         return finalizeAgentScanFailure(
           agent,
           {
             agentName: agent.name,
             stage: "checking for changes",
-            sourcePath: checkResult.failure.sourcePath,
-            errorClass: checkResult.failure.errorClass,
-            message: checkResult.failure.message,
+            sourcePath: refresh.failure.sourcePath,
+            errorClass: refresh.failure.errorClass,
+            message: refresh.failure.message,
           },
           options,
           cached,
@@ -718,7 +717,8 @@ async function scanAgentSmart(
         );
       }
 
-      if (checkResult.hasChanges) {
+      if (refresh.kind === "scan") {
+        const checkResult = refresh.check;
         onProgress?.({
           agent: agent.name,
           phase: "incremental",
@@ -728,7 +728,7 @@ async function scanAgentSmart(
         const t2 = performance.now();
         const scanOptions = buildAgentScanOptions(agent, options, onProgress);
         const updatedSessions = await Promise.resolve(
-          scanPlan.source.incrementalScan(
+          refresh.source.incrementalScan(
             cached.sessions,
             checkResult.changedIds || [],
             checkResult.refs,
@@ -736,7 +736,7 @@ async function scanAgentSmart(
           ),
         );
         timing.scan = performance.now() - t2;
-        scanPlan.source.commitChangeCheck();
+        refresh.source.commitChangeCheck();
 
         return finalizeAgentScan(agent, updatedSessions, {
           finalization: {
@@ -758,7 +758,7 @@ async function scanAgentSmart(
         });
       }
 
-      scanPlan.source.commitChangeCheck();
+      refresh.source.commitChangeCheck();
       return finalizeAgentScan(agent, cached.sessions, {
         finalization: { kind: "unchanged", cached },
         options,
