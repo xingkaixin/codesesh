@@ -73,7 +73,8 @@ More agents coming soon. See the [extension checklist](#extending).
 
 <!-- repo-fact:node-version:start -->
 
-- Node.js 22+ for the published CLI and building from source
+- Node.js 22+ for the published CLI; use the Node 24 toolchain pinned in `mise.toml` when
+  building from source
 
 <!-- repo-fact:node-version:end -->
 

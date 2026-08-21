@@ -73,7 +73,7 @@ CodeSesh 认为，你的会话历史属于**你** —— 你应该在一个地�
 
 <!-- repo-fact:node-version:start -->
 
-- 发布后的 CLI 和源码构建均需要 Node.js 22+
+- 发布后的 CLI 支持 Node.js 22+；源码构建请使用 `mise.toml` 固定的 Node 24 工具链
 
 <!-- repo-fact:node-version:end -->
 
