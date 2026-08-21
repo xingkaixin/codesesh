@@ -1,12 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCallback } from "react";
-import {
-  type AppConfig,
-  type DashboardData,
-  type DashboardFilters,
-  fetchDashboard,
-} from "../lib/api";
-import { queryKeys } from "../lib/query-keys";
+import { type AppConfig, type DashboardData, type DashboardFilters } from "../lib/api";
+import { dashboardQueryOptions } from "../lib/dashboard-query";
 
 export type { DashboardFilters };
 
@@ -22,17 +17,8 @@ export function useDashboard(
   const isEnabled = window !== null;
 
   const query = useQuery({
-    queryKey: queryKeys.dashboard(window ?? {}, filters),
+    ...dashboardQueryOptions(window ?? {}, filters),
     enabled: isEnabled,
-    queryFn: async ({ signal }) => {
-      if (!window) throw new Error("Dashboard window is required");
-      try {
-        return await fetchDashboard(window, filters, { signal });
-      } catch (error) {
-        if (!signal.aborted) console.error("Failed to load dashboard:", error);
-        throw error;
-      }
-    },
   });
   const refetch = query.refetch;
   const retry = useCallback(async () => {

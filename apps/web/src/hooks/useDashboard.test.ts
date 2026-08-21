@@ -75,6 +75,9 @@ describe("useDashboard", () => {
       JSON.stringify(queryKeys.dashboard(window, scope)),
     );
     expect(new Set(keys).size).toBe(keys.length);
+    expect(queryKeys.dashboard(window, globalScope)).toEqual(
+      queryKeys.dashboard(window, { project: undefined, agent: undefined }),
+    );
   });
 
   it("ignores an earlier response after the dashboard scope changes", async () => {

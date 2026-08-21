@@ -10,12 +10,21 @@ function normalizeWindow(window: TimeWindow) {
   };
 }
 
+function normalizeDashboardFilters(filters: DashboardFilters): DashboardFilters {
+  return {
+    ...(filters.project ? { project: filters.project } : {}),
+    ...(filters.agent ? { agent: filters.agent } : {}),
+  };
+}
+
 export const queryKeys = {
   bookmarks: ["bookmarks"] as const,
   config: ["config"] as const,
   dashboards: ["dashboard"] as const,
   dashboard: (window: TimeWindow, filters: DashboardFilters) =>
-    ["dashboard", normalizeWindow(window), filters] as const,
+    ["dashboard", normalizeWindow(window), normalizeDashboardFilters(filters)] as const,
+  agentCatalogs: ["agent-catalog"] as const,
+  agentCatalog: (window: TimeWindow) => ["agent-catalog", normalizeWindow(window)] as const,
   projects: ["projects"] as const,
   projectPage: (window: TimeWindow, cursor?: string) =>
     ["projects", "page", normalizeWindow(window), cursor ?? null] as const,
@@ -29,7 +38,4 @@ export const queryKeys = {
   sessionProjections: ["session-projection"] as const,
   sessionProjection: (window: TimeWindow) =>
     ["session-projection", normalizeWindow(window)] as const,
-  sessionAggregates: ["session-aggregates"] as const,
-  sessionAggregate: (window: TimeWindow) =>
-    ["session-aggregates", normalizeWindow(window)] as const,
 } as const;
