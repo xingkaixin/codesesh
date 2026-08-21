@@ -16,7 +16,7 @@ import {
   readAnalyticsRevision,
 } from "../analytics-revision.js";
 import { getCachePath, setSchemaEnsuredPath } from "../db.js";
-import { withCacheDb } from "../schema.js";
+import { withCacheDb } from "../connection.js";
 import { commitDurableSessionPublication } from "../publication.js";
 import { clearCache, saveCachedSessionChanges, saveCachedSessions } from "../sessions.js";
 import { syncSessionSearchIndex, syncSessionSearchIndexChanges } from "../search.js";

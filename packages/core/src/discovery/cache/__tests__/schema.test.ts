@@ -5,11 +5,13 @@ import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SQLiteDatabase } from "../../../utils/sqlite.js";
 import { getCachePath, setSchemaEnsuredPath } from "../db.js";
-import * as schema from "../schema.js";
+import * as connection from "../connection.js";
 import { loadCachedSessions, saveCachedSessions } from "../sessions.js";
 import { syncSessionSearchIndex } from "../search-index-writer.js";
 import { makeSessionData, makeSessionHead } from "./fixtures.js";
 import { setCoreDiagnostics } from "../../../utils/diagnostics.js";
+
+const schema = connection;
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-schema-test-"));
 
@@ -419,9 +421,8 @@ describe("cache schema boundary", () => {
     expect(migrated).toEqual({ contentHash: "", pending: true });
   });
 
-  it("exposes capabilities instead of migration steps", () => {
+  it("exposes connection capabilities instead of schema internals", () => {
     expect(Object.keys(schema).sort()).toEqual([
-      "runSearchIndexWrite",
       "withCacheDb",
       "withCacheDbOutcome",
       "withCacheDbReadOnly",

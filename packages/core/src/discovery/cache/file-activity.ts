@@ -11,7 +11,7 @@ import type { FileActivityResult, SearchHighlightRange } from "../../contract/in
 import { normalizeProjectScopePath, type ProjectScopeMatcher } from "../../projects/scope.js";
 import type { SQLiteDatabase } from "../../utils/sqlite.js";
 import { filePathFtsQuery, hasCacheStorage, likePattern, normalizeFilePathSearch } from "./db.js";
-import { withCacheDb, withCacheDbReadOnly } from "./schema.js";
+import { withCacheDb, withCacheDbReadOnly } from "./connection.js";
 import {
   buildSessionSearchFilters,
   mergeSearchQueryOptions,

@@ -33,7 +33,7 @@ import type { SessionCacheMeta } from "../../../agents/base.js";
 import { setCoreDiagnostics } from "../../../utils/diagnostics.js";
 import { clearIdentityCache } from "../../../projects/identity.js";
 import { realFs } from "../../../projects/fs.js";
-import { withCacheDb, withSearchIndexDb } from "../schema.js";
+import { withCacheDb, withSearchIndexDb } from "../connection.js";
 import { getSchemaEnsuredPath, setSchemaEnsuredPath } from "../db.js";
 import { CACHE_SCHEMA_VERSION } from "../version.js";
 import type { SessionHead } from "../../../types/index.js";

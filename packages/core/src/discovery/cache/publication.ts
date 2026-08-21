@@ -14,7 +14,7 @@ import {
   type SearchIndexSyncOptions,
   type SearchIndexSyncResult,
 } from "./search-index-writer.js";
-import { withSearchIndexDb } from "./schema.js";
+import { withSearchIndexDb } from "./connection.js";
 import {
   deleteLegacyCacheFile,
   writeCachedSessionChanges,
