@@ -1,6 +1,6 @@
 import { AGENT_CATALOG } from "@codesesh/core/contract";
 
-export const locales = ["en", "zh"] as const;
+export const locales = ["en", "zh", "ja"] as const;
 
 export type Locale = (typeof locales)[number];
 
@@ -147,12 +147,22 @@ export const localeConfig = {
     siteControlsLabel: "站点控制",
     footerNavigationLabel: "页脚导航",
   },
+  ja: {
+    route: "/ja/",
+    language: "ja",
+    ogLocale: "ja_JP",
+    switchLabel: "日本語",
+    primaryNavigationLabel: "メインナビゲーション",
+    siteControlsLabel: "サイト設定",
+    footerNavigationLabel: "フッターナビゲーション",
+  },
 } satisfies Record<Locale, LocaleConfig>;
 
 const agentDisplayNames = AGENT_CATALOG.map(({ displayName }) => displayName);
 const agentCount = agentDisplayNames.length;
 const agentNamesEn = `${agentDisplayNames.slice(0, -1).join(", ")}, and ${agentDisplayNames.at(-1)}`;
 const agentNamesZh = `${agentDisplayNames.slice(0, -1).join("、")}和${agentDisplayNames.at(-1)}`;
+const agentNamesJa = agentDisplayNames.join("、");
 
 export const agents = AGENT_CATALOG.map((entry) => ({
   name: entry.displayName,
@@ -555,6 +565,216 @@ export const copy = {
       note: "MIT licensed, with session data and indexes kept local",
       docs: "Docs",
       issues: "Issues",
+    },
+  },
+  ja: {
+    meta: {
+      title: "CodeSesh：ローカルのAIコーディング履歴を検索・再生",
+      description: `CodeSeshは、${agentCount}種類のAIコーディングエージェントのローカルセッションをプロジェクト別に整理し、構造化検索、完全な再生、ローカルSQLiteインデックスを提供します。`,
+    },
+    header: {
+      tour: "製品ツアー",
+      capabilities: "機能",
+      agents: "対応エージェント",
+      faq: "FAQ",
+      github: "GitHub",
+      languageLabel: "言語",
+      themeLabel: "テーマ",
+      themeLight: "ライト",
+      themeDark: "ダーク",
+      themeSystem: "システム",
+      themeSwitchTo: "。クリックして{next}に切り替えます。",
+    },
+    hero: {
+      eyebrow: `ローカル実行 / 設定不要 / ${agentCount}エージェント`,
+      title: ["AIとの開発履歴を、", "すべてここに。"],
+      body: `CodeSeshは${agentCount}種類のAIコーディングエージェントのローカル履歴をスキャンし、1つのインデックスに集約します。プロジェクト別に整理し、構造化検索とメッセージ単位の再生を可能にします。`,
+      privacy:
+        "セッション内容とインデックスはローカルに保持されます。アカウント、クラウド同期、セッションのテレメトリは不要です。",
+      command: "npx codesesh",
+      endpoint: "http://localhost:4521",
+      agentsLabel: "セッションの読み取り元",
+      copied: "コピーしました",
+      copyFailed: "コピーできませんでした。コマンドを手動でコピーしてください。",
+      copyCommand: "コピー",
+    },
+    tour: {
+      previewLabel: "CodeSeshのインタラクティブ製品デモ",
+      sampleLabel: "サンプルデータ",
+      search: "サンプルセッションを検索",
+      range: "サンプルデータの期間",
+      overview: "概要のデモ画面",
+      projects: "プロジェクトツリーのデモ画面",
+      replay: "セッション再生のデモ画面",
+      filters: "メッセージ種別の表示と非表示を切り替える",
+      visibleStatus: "{count}件のメッセージを表示中",
+      userMessages: "ユーザーメッセージ",
+      agentResponses: "エージェントの応答",
+      toolCalls: "ツール呼び出し",
+      sampleProjects: "サンプルプロジェクト",
+      sampleSessions: "{label}：サンプルセッション{count}件",
+    },
+    scenes: [
+      {
+        title: "今週、何に時間を使ったかがひと目でわかる",
+        description:
+          "セッション、メッセージ、トークン、コスト、最近のアクティビティを1つのローカルインデックスから表示。期間を変えると、概要全体が再集計されます。",
+        hint: "期間を切り替えて、パネル全体が再集計される様子を確認",
+      },
+      {
+        title: "セッションを、本来のプロジェクトへ",
+        description:
+          "リポジトリとプロジェクト単位で履歴をまとめ、サブエージェントのセッションを親セッションの下に保持。メッセージ、トークン、コストを階層ごとに集計します。",
+        hint: "subラベルの付いたセッションを展開し、子エージェントの作業を確認",
+      },
+      {
+        title: "タスクの全工程を時系列で再現",
+        description:
+          "メッセージ、ツール呼び出し、ファイル変更を発生順に表示。種別フィルターとファイル追跡で、必要なコンテキストをすばやく見つけられます。",
+        hint: "ツール呼び出しの出力を展開し、TOCでメッセージ種別を切り替え",
+      },
+    ],
+    features: {
+      title: [
+        "取り込む、整理する、見つける、振り返る。",
+        "4つがそろって、履歴は使える資産になる。",
+      ],
+      body: "CodeSeshは、AIと進める実際の開発サイクルに沿って機能を構成しています。",
+      groups: [
+        {
+          title: "取り込む",
+          description: "異なるエージェントのローカルセッションを1つのインデックスに集約します。",
+          items: [
+            {
+              icon: "settings",
+              title: "設定不要",
+              description:
+                "コマンドを1つ実行するだけで、ファイルシステム上の対応エージェントのセッションを自動検出します。",
+            },
+            {
+              icon: "eye",
+              title: "統合タイムライン",
+              description: `${agentCount}種類のAIコーディングエージェントの履歴を1つの画面で確認できます。`,
+            },
+            {
+              icon: "timer",
+              title: "リアルタイム更新",
+              description:
+                "ローカルセッションの変更を自動的にインデックスへ反映し、画面を再起動せずに更新します。",
+            },
+          ],
+        },
+        {
+          title: "整理する",
+          description: "セッションをプロジェクト、タスク、開発コンテキストに結び付けます。",
+          items: [
+            {
+              icon: "list-tree",
+              title: "プロジェクトとセッションツリー",
+              description:
+                "リポジトリ別にグループ化し、サブエージェントのセッションを親セッションの下に保持します。",
+            },
+            {
+              icon: "tags",
+              title: "スマートタグ",
+              description:
+                "修正、リファクタリング、機能、テスト、ドキュメント、計画などの作業を自動で分類します。",
+            },
+            {
+              icon: "bookmark",
+              title: "セッションの別名",
+              description:
+                "重要なセッションに覚えやすい名前を付け、検索やブックマークでも同じ名前を使えます。",
+            },
+          ],
+        },
+        {
+          title: "見つける",
+          description: "過去の判断、手順、コンテキストを現在のタスクに呼び戻します。",
+          items: [
+            {
+              icon: "search",
+              title: "構造化グローバル検索",
+              description:
+                "タイトル、メッセージ、ツール出力、ファイルパスを検索し、プロジェクト、タグ、ツールで絞り込めます。",
+            },
+            {
+              icon: "list-tree",
+              title: "ファイルアクティビティ索引",
+              description:
+                "ファイルを起点に、そのファイルを読み取りまたは変更したセッションを探せます。",
+            },
+            {
+              icon: "keyboard",
+              title: "キーボード操作",
+              description:
+                "表示の切り替え、検索へのフォーカス、グループ間の移動をキーボードだけで行えます。",
+            },
+          ],
+        },
+        {
+          title: "振り返る",
+          description: "問題の発見から結果に至るまで、タスクの全工程を再現します。",
+          items: [
+            {
+              icon: "terminal",
+              title: "会話全体の再生",
+              description: "メッセージ、ツール呼び出し、推論ステップを発生順に確認できます。",
+            },
+            {
+              icon: "bar-chart-3",
+              title: "コストとトークンの可視化",
+              description:
+                "トークン、キャッシュヒット、記録済みコスト、モデル別の推定値を並べて確認できます。",
+            },
+            {
+              icon: "database",
+              title: "ローカルSQLiteインデックス",
+              description:
+                "1つのローカルデータベースで、高速な復元、検索、スキーマ移行を支えます。",
+            },
+          ],
+        },
+      ],
+    },
+    agents: {
+      title: ["ローカルのAIコーディング環境を", "まとめてカバー"],
+      body: "各エージェントはコアアダプターを通じて接続され、セッション、プロジェクト、検索、ファイルアクティビティを1つのインデックスに集約します。",
+    },
+    faq: {
+      title: "よくある質問",
+      body: "CodeSeshの用途、インストール方法、データの取り扱い、大規模な履歴について説明します。",
+      items: [
+        {
+          question: "CodeSeshとは何ですか？",
+          answer: `CodeSeshは、AIコーディングのセッション履歴を検出、集約、検索、再生するためのローカル開発者ツールです。${agentNamesJa}のローカル記録を、プロジェクトに結び付いた開発履歴として整理します。`,
+        },
+        {
+          question: "CodeSeshはローカルのAIセッションデータをアップロードしますか？",
+          answer:
+            "いいえ。CodeSeshはローカルSQLiteインデックスとlocalhostで動作するWeb UIを使用します。セッション内容、ファイルパス、トークン統計、記録済みコストは端末内に保持されます。アカウント、クラウド同期、セッションのテレメトリは必要ありません。",
+        },
+        {
+          question: "CodeSeshをインストールして起動するには？",
+          answer:
+            "ターミナルでnpx codeseshを実行してください。対応するローカルAIコーディングセッションをスキャンし、http://localhost:4521 でWeb UIを開きます。既定のポートが使用中の場合は、次に利用可能なポートを試します。公開版CLIにはNode.js 22以降が必要です。",
+        },
+        {
+          question: "大量の履歴があっても快適に動作しますか？",
+          answer:
+            "初回スキャンではバックフィルの進捗を保存し、中断後も再開できます。次回以降はローカルSQLiteキャッシュから復元し、ファイル監視によって変更されたセッションだけを増分更新します。長い会話は、すべてのメッセージを一度に描画せず、表示領域に合わせて仮想化されます。",
+        },
+      ],
+    },
+    cta: {
+      title: "コーディング履歴を、今すぐ取り戻そう",
+      body: "オープンソースで無料。セッションデータはローカルに保持されます。コマンド1つで、AIとの開発履歴を検索できるようになります。",
+      github: "GitHubで見る",
+    },
+    footer: {
+      note: "MITライセンス。セッションデータとインデックスはローカルに保持",
+      docs: "ドキュメント",
+      issues: "問題を報告",
     },
   },
 } satisfies Record<Locale, LandingCopy>;
