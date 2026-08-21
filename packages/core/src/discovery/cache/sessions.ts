@@ -42,6 +42,18 @@ import { fileActivityFromRow, type FileActivityRow } from "./file-activity.js";
 export const CACHE_INITIALIZATION_VERSION = "session-cache-v2";
 const FULL_SYNC_CURSOR_PREFIX = "full_sync_cursor:";
 const SESSION_REFERENCE_QUERY_CHUNK_SIZE = 400;
+const SESSION_ROW_DELETE_ORDER = [
+  "pending_reindex",
+  "session_documents",
+  "message_tools",
+  "messages",
+  "session_model_cost",
+  "session_cost_summary",
+  "session_file_activity",
+  "cached_sessions",
+  "project_sessions",
+  "sessions",
+] as const;
 const SESSION_HEAD_SELECT_COLUMNS = `
   s.agent_name,
   s.session_id,
@@ -623,23 +635,6 @@ export function writeCachedSessionSnapshot(
   options: SaveCachedSessionsOptions = {},
 ): void {
   const completeness = options.completeness ?? "complete";
-  const deleteSession = db.prepare("DELETE FROM sessions WHERE agent_name = ? AND session_id = ?");
-  const deleteSearchDocument = db.prepare(
-    "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
-  );
-  const deleteMessages = db.prepare("DELETE FROM messages WHERE agent_name = ? AND session_id = ?");
-  const deleteModelCost = db.prepare(
-    "DELETE FROM session_model_cost WHERE agent_name = ? AND session_id = ?",
-  );
-  const deleteCostSummary = db.prepare(
-    "DELETE FROM session_cost_summary WHERE agent_name = ? AND session_id = ?",
-  );
-  const deleteMessageTools = db.prepare(
-    "DELETE FROM message_tools WHERE agent_name = ? AND session_id = ?",
-  );
-  const deleteFileActivity = db.prepare(
-    "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
-  );
   const upsertAgent = db.prepare(`
     INSERT INTO agent_cache(agent_name, timestamp)
     VALUES (?, ?)
@@ -660,15 +655,7 @@ export function writeCachedSessionSnapshot(
       if (!sessionIds.has(sessionId)) sessionIdsToDelete.add(sessionId);
     }
   }
-  for (const sessionId of sessionIdsToDelete) {
-    deleteSearchDocument.run(agentName, sessionId);
-    deleteMessageTools.run(agentName, sessionId);
-    deleteMessages.run(agentName, sessionId);
-    deleteModelCost.run(agentName, sessionId);
-    deleteCostSummary.run(agentName, sessionId);
-    deleteFileActivity.run(agentName, sessionId);
-    deleteSession.run(agentName, sessionId);
-  }
+  deleteCachedSessionRows(db, agentName, sessionIdsToDelete);
 
   sessions.forEach((session, index) => {
     const sessionMeta = meta[session.reference.sessionId];
@@ -719,23 +706,6 @@ export function writeCachedSessionChanges(
   removedSessionIds: string[],
   meta: Record<string, SessionCacheMeta> = {},
 ): void {
-  const deleteSession = db.prepare("DELETE FROM sessions WHERE agent_name = ? AND session_id = ?");
-  const deleteSearchDocument = db.prepare(
-    "DELETE FROM session_documents WHERE agent_name = ? AND session_id = ?",
-  );
-  const deleteMessages = db.prepare("DELETE FROM messages WHERE agent_name = ? AND session_id = ?");
-  const deleteModelCost = db.prepare(
-    "DELETE FROM session_model_cost WHERE agent_name = ? AND session_id = ?",
-  );
-  const deleteCostSummary = db.prepare(
-    "DELETE FROM session_cost_summary WHERE agent_name = ? AND session_id = ?",
-  );
-  const deleteMessageTools = db.prepare(
-    "DELETE FROM message_tools WHERE agent_name = ? AND session_id = ?",
-  );
-  const deleteFileActivity = db.prepare(
-    "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
-  );
   const upsertAgent = db.prepare(`
     INSERT INTO agent_cache(agent_name, timestamp)
     VALUES (?, ?)
@@ -745,15 +715,7 @@ export function writeCachedSessionChanges(
 
   upsertAgent.run(agentName, Date.now());
 
-  for (const sessionId of new Set(removedSessionIds)) {
-    deleteSearchDocument.run(agentName, sessionId);
-    deleteMessageTools.run(agentName, sessionId);
-    deleteMessages.run(agentName, sessionId);
-    deleteModelCost.run(agentName, sessionId);
-    deleteCostSummary.run(agentName, sessionId);
-    deleteFileActivity.run(agentName, sessionId);
-    deleteSession.run(agentName, sessionId);
-  }
+  deleteCachedSessionRows(db, agentName, removedSessionIds);
 
   for (const { session, sortIndex } of changes) {
     const sessionId = session.reference.sessionId;
@@ -773,6 +735,19 @@ export function writeCachedSessionChanges(
       sortIndex,
       sourcePathFromMeta(sessionMeta),
     );
+  }
+}
+
+function deleteCachedSessionRows(
+  db: SQLiteDatabase,
+  agentName: string,
+  sessionIds: Iterable<string>,
+): void {
+  const deleteStatements = SESSION_ROW_DELETE_ORDER.map((table) =>
+    db.prepare(`DELETE FROM ${table} WHERE agent_name = ? AND session_id = ?`),
+  );
+  for (const sessionId of new Set(sessionIds)) {
+    for (const statement of deleteStatements) statement.run(agentName, sessionId);
   }
 }
 

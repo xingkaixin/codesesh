@@ -64,6 +64,19 @@ const CACHE_DATA_TABLES = [
   "project_sessions",
 ] as const;
 
+const SESSION_OWNED_DATA_TABLES = [
+  "cached_sessions",
+  "pending_reindex",
+  "session_documents",
+  "session_file_activity",
+  "message_tools",
+  "messages",
+  "session_model_cost",
+  "session_cost_summary",
+  "sessions",
+  "project_sessions",
+] as const;
+
 function getCacheDir(): string {
   return join(testHomeDir, ".cache", "codesesh");
 }
@@ -176,6 +189,58 @@ function emptyCacheDataTableCounts(): Record<(typeof CACHE_DATA_TABLES)[number],
     (typeof CACHE_DATA_TABLES)[number],
     number
   >;
+}
+
+function seedSessionOwnedRows(): void {
+  saveCachedSessions("claudecode", [makeSession("removed")]);
+  withCacheDb((db) => {
+    db.exec(`
+      INSERT INTO cached_sessions(agent_name, session_id, session_json)
+      VALUES ('claudecode', 'removed', '{}');
+      INSERT INTO pending_reindex(agent_name, session_id)
+      VALUES ('claudecode', 'removed');
+      INSERT INTO session_documents(
+        agent_name, session_id, title, content_text, content_hash,
+        indexed_message_count, detail_version, indexed_at
+      ) VALUES ('claudecode', 'removed', 'title', 'content', 'hash', 1, 'detail-v1', ${now});
+      INSERT INTO messages(
+        agent_name, session_id, message_index, message_id, role, time_created,
+        parts_json, content_text
+      ) VALUES ('claudecode', 'removed', 0, 'message-1', 'assistant', ${now}, '[]', 'content');
+      INSERT INTO message_tools(agent_name, session_id, message_index, tool_name)
+      VALUES ('claudecode', 'removed', 0, 'write');
+      INSERT INTO session_model_cost(
+        agent_name, session_id, model, cost, cost_recorded
+      ) VALUES ('claudecode', 'removed', 'test-model', 1, 1);
+      INSERT INTO session_cost_summary(
+        agent_name, session_id, message_cost, untimed_message_cost
+      ) VALUES ('claudecode', 'removed', 1, 0);
+      INSERT INTO session_file_activity(
+        agent_name, session_id, project_identity_key, path, kind, count, latest_time
+      ) VALUES ('claudecode', 'removed', '${FIXTURE_DIR}', 'src/index.ts', 'write', 1, ${now});
+      INSERT INTO project_sessions(
+        agent_name, session_id, identity_kind, identity_key, display_name,
+        directory, activity_time
+      ) VALUES (
+        'claudecode', 'removed', 'path', '${FIXTURE_DIR}', '${FIXTURE_DIR_NAME}',
+        '${FIXTURE_DIR}', ${now}
+      );
+    `);
+  });
+}
+
+function sessionOwnedDataTableCounts(): Record<(typeof SESSION_OWNED_DATA_TABLES)[number], number> {
+  return withCacheDb(
+    (db) =>
+      Object.fromEntries(
+        SESSION_OWNED_DATA_TABLES.map((table) => {
+          const row = db.prepare(`SELECT COUNT(*) AS value FROM ${table}`).get() as {
+            value?: number;
+          };
+          return [table, Number(row.value ?? 0)];
+        }),
+      ) as Record<(typeof SESSION_OWNED_DATA_TABLES)[number], number>,
+  )!;
 }
 
 beforeEach(() => {
@@ -675,6 +740,27 @@ describe("saveCachedSessions", () => {
 
     expect(loadCachedSessions("claudecode")).toBeNull();
     expect(getMigrationBackups()).toEqual([]);
+  });
+});
+
+describe("session removal", () => {
+  it.each([
+    {
+      name: "complete snapshot",
+      remove: () => saveCachedSessions("claudecode", []),
+    },
+    {
+      name: "incremental changes",
+      remove: () => saveCachedSessionChanges("claudecode", [], ["removed"]),
+    },
+  ])("removes every session-owned row through $name", ({ remove }) => {
+    seedSessionOwnedRows();
+
+    expect(remove()).toBe(true);
+
+    expect(sessionOwnedDataTableCounts()).toEqual(
+      Object.fromEntries(SESSION_OWNED_DATA_TABLES.map((table) => [table, 0])),
+    );
   });
 });
 
