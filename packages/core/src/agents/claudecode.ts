@@ -116,7 +116,7 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
   readonly name = AGENT_METADATA.name;
   readonly displayName = AGENT_METADATA.displayName;
 
-  private basePath: string | null = null;
+  private basePath: string | null = this.configuredSourceRoot;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private sessionsIndexCache: Record<string, any> = {};
   private sessionsIndexMtime: Record<string, number | null> = {};
@@ -126,10 +126,19 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
   private childIndexReady = false;
 
   private findBasePath(): string | null {
-    return firstExisting(join(resolveClaudeCodeDataRoot(), "projects"), "data/claudecode");
+    return (
+      this.configuredSourceRoot ??
+      firstExisting(join(resolveClaudeCodeDataRoot(), "projects"), "data/claudecode")
+    );
   }
 
   getSessionWatchPlan() {
+    if (this.configuredSourceRoot) {
+      return {
+        status: "supported" as const,
+        targets: [{ root: dirname(this.configuredSourceRoot), path: this.configuredSourceRoot }],
+      };
+    }
     const dataRoot = resolveClaudeCodeDataRoot();
     return {
       status: "supported" as const,

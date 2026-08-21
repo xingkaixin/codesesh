@@ -11,6 +11,7 @@ import {
 } from "./base.js";
 import type {
   AgentScanOptions,
+  AgentSourceOptions,
   ParseSessionResult,
   SessionCacheMeta,
   SessionSourceRef,
@@ -221,19 +222,40 @@ function extractFirstUserTitle(contextFile: string | null, wireFile: string | nu
 
 const AGENT_METADATA = getAgentCatalogEntry("kimi");
 
+export interface KimiAgentOptions extends AgentSourceOptions {
+  projectDirectories?: ReadonlyMap<string, string>;
+  defaultModel?: string | null;
+}
+
 export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
   readonly name = AGENT_METADATA.name;
   readonly displayName = AGENT_METADATA.displayName;
 
-  private basePath: string | null = null;
-  private projectMap = new Map<string, string>();
-  private defaultModel: string | null = null;
+  private basePath: string | null;
+  private projectMap: Map<string, string>;
+  private defaultModel: string | null;
+
+  constructor(options: KimiAgentOptions = {}) {
+    super(options);
+    this.basePath = this.configuredSourceRoot;
+    this.projectMap = new Map(options.projectDirectories);
+    this.defaultModel = options.defaultModel ?? null;
+  }
 
   private findBasePath(): string | null {
-    return firstExisting(join(resolveKimiDataRoot(), "sessions"), "data/kimi");
+    return (
+      this.configuredSourceRoot ??
+      firstExisting(join(resolveKimiDataRoot(), "sessions"), "data/kimi")
+    );
   }
 
   getSessionWatchPlan() {
+    if (this.configuredSourceRoot) {
+      return {
+        status: "supported" as const,
+        targets: [{ root: dirname(this.configuredSourceRoot), path: this.configuredSourceRoot }],
+      };
+    }
     const dataRoot = resolveKimiDataRoot();
     return {
       status: "supported" as const,

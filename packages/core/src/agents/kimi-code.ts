@@ -343,15 +343,26 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
   readonly name = AGENT_METADATA.name;
   readonly displayName = AGENT_METADATA.displayName;
 
-  private basePath: string | null = null;
+  private basePath: string | null = this.configuredSourceRoot;
   private workDirBySessionPath = new Map<string, string>();
 
   private findBasePath(): string | null {
+    if (this.configuredSourceRoot) return this.configuredSourceRoot;
     const sessionsPath = join(resolveKimiCodeDataRoot(), "sessions");
     return existsSync(sessionsPath) ? sessionsPath : null;
   }
 
   getSessionWatchPlan() {
+    if (this.configuredSourceRoot) {
+      const root = dirname(this.configuredSourceRoot);
+      return {
+        status: "supported" as const,
+        targets: [
+          { root, path: this.configuredSourceRoot },
+          { root, path: join(root, "session_index.jsonl") },
+        ],
+      };
+    }
     const dataRoot = resolveKimiCodeDataRoot();
     return {
       status: "supported" as const,

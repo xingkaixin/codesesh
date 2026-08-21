@@ -43,10 +43,10 @@ function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionH
 }
 
 function createAgent(basePath: string): KimiAgent {
-  const agent = new KimiAgent() as any;
-  agent.basePath = basePath;
-  agent.projectMap = new Map([[PROJECT_HASH, PROJECT_DIR]]);
-  return agent as KimiAgent;
+  return new KimiAgent({
+    sourceRoot: basePath,
+    projectDirectories: new Map([[PROJECT_HASH, PROJECT_DIR]]),
+  });
 }
 
 function createSessionDir(

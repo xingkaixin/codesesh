@@ -78,6 +78,10 @@ export interface AgentScanProgress {
   sessions?: number;
 }
 
+export interface AgentSourceOptions {
+  readonly sourceRoot?: string;
+}
+
 export interface FileWalkOptions {
   recursive?: boolean;
   scanWindow?: Pick<AgentScanOptions, "from" | "to">;
@@ -342,6 +346,13 @@ export abstract class BaseAgent {
 export abstract class FileSystemSessionSource<
   TMeta extends SessionCacheMeta = SessionCacheMeta,
 > extends BaseAgent {
+  protected readonly configuredSourceRoot: string | null;
+
+  constructor(options: AgentSourceOptions = {}) {
+    super();
+    this.configuredSourceRoot = options.sourceRoot ?? null;
+  }
+
   readonly sessionSourceAccess: EnumeratedSessionSourceCapability = {
     kind: "enumerated",
     synchronize: (baseline, request) => this.synchronizeSessionSources(baseline, request),

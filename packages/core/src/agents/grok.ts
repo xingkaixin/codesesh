@@ -824,10 +824,13 @@ export class GrokAgent extends FileSystemSessionSource<GrokSessionMeta> {
   readonly name = AGENT_METADATA.name;
   readonly displayName = AGENT_METADATA.displayName;
 
-  private basePath: string | null = null;
+  private basePath: string | null = this.configuredSourceRoot;
 
   private findBasePath(): string | null {
-    return firstExisting(join(resolveGrokDataRoot(), "sessions"), "data/grok");
+    return (
+      this.configuredSourceRoot ??
+      firstExisting(join(resolveGrokDataRoot(), "sessions"), "data/grok")
+    );
   }
 
   isAvailable(): boolean {
@@ -836,6 +839,12 @@ export class GrokAgent extends FileSystemSessionSource<GrokSessionMeta> {
   }
 
   getSessionWatchPlan() {
+    if (this.configuredSourceRoot) {
+      return {
+        status: "supported" as const,
+        targets: [{ root: dirname(this.configuredSourceRoot), path: this.configuredSourceRoot }],
+      };
+    }
     const dataRoot = resolveGrokDataRoot();
     return {
       status: "supported" as const,
