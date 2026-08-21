@@ -9,12 +9,12 @@ export type SessionStoreLoadState =
   | { status: "idle" }
   | (ActiveSessionStoreLoad & { status: "loading" })
   | (ActiveSessionStoreLoad & { status: "ready" })
-  | (ActiveSessionStoreLoad & { status: "failed"; error: unknown });
+  | (ActiveSessionStoreLoad & { status: "failed" });
 
 export type SessionStoreLoadAction =
   | (ActiveSessionStoreLoad & { type: "begin" })
   | { type: "complete"; requestId: number }
-  | { type: "fail"; requestId: number; error: unknown };
+  | { type: "fail"; requestId: number };
 
 export const INITIAL_SESSION_STORE_LOAD_STATE: SessionStoreLoadState = { status: "idle" };
 
@@ -36,6 +36,6 @@ export function reduceSessionStoreLoad(
     case "complete":
       return { ...state, status: "ready" };
     case "fail":
-      return { ...state, status: "failed", error: action.error };
+      return { ...state, status: "failed" };
   }
 }

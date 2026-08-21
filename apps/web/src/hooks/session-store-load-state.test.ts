@@ -49,13 +49,11 @@ describe("session store load state", () => {
       reduceSessionStoreLoad(latestLoad, {
         type: "fail",
         requestId: 1,
-        error: new Error("late failure"),
       }),
     ).toBe(latestLoad);
   });
 
-  it("records only a failure for the active in-flight request", () => {
-    const error = new Error("unavailable");
+  it("records a failure only for the active in-flight request", () => {
     const loading = reduceSessionStoreLoad(INITIAL_SESSION_STORE_LOAD_STATE, {
       type: "begin",
       requestId: 1,
@@ -64,14 +62,12 @@ describe("session store load state", () => {
     const failed = reduceSessionStoreLoad(loading, {
       type: "fail",
       requestId: 1,
-      error,
     });
 
     expect(failed).toEqual({
       status: "failed",
       requestId: 1,
       window: firstWindow,
-      error,
     });
     expect(
       reduceSessionStoreLoad(failed, {
