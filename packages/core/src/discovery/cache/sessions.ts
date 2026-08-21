@@ -26,7 +26,7 @@ import {
   withCacheDbOutcome,
   withCacheDbReadOnly,
   type CacheReadOutcome,
-} from "./schema.js";
+} from "./connection.js";
 import {
   assertSessionProjectIdentities,
   messageFromCachedRow,

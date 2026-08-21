@@ -12,7 +12,7 @@ import {
   saveCachedSessions,
 } from "../sessions.js";
 import { setSchemaEnsuredPath } from "../db.js";
-import { withCacheDb } from "../schema.js";
+import { withCacheDb } from "../connection.js";
 import { makeSessionHead } from "./fixtures.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-sessions-test-"));

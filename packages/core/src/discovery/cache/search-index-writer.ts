@@ -20,7 +20,8 @@ import {
   type StructuredMessageRecord,
 } from "./messages.js";
 import { advanceMessageCursorDigest, initialMessageCursorDigest } from "./message-cursor.js";
-import { runSearchIndexWrite, withCacheDbReadOnly, withSearchIndexDb } from "./schema.js";
+import { withCacheDbReadOnly, withSearchIndexDb } from "./connection.js";
+import { runSearchIndexWrite } from "./schema.js";
 import { sessionDetailVersion } from "./detail-version.js";
 import type { SessionSnapshotCompleteness } from "./sessions.js";
 import {

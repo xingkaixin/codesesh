@@ -6,7 +6,7 @@ import type { ProjectGroup, ProjectIdentityKind, SessionHead } from "../../types
 import { buildProjectGroups } from "../../projects/index.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import { hasCacheStorage } from "./db.js";
-import { withCacheDb, withCacheDbReadOnly } from "./schema.js";
+import { withCacheDb, withCacheDbReadOnly } from "./connection.js";
 
 export interface ProjectGroupRow extends DatabaseRow {
   identity_kind?: ProjectIdentityKind;

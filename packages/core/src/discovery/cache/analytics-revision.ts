@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from "../../utils/sqlite.js";
 import { hasCacheStorage } from "./db.js";
-import { withCacheDbReadOnly } from "./schema.js";
+import { withCacheDbReadOnly } from "./connection.js";
 
 const ANALYTICS_REVISION_KEY = "analytics_revision";
 

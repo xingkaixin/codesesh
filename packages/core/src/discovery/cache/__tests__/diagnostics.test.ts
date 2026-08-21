@@ -10,7 +10,7 @@ import {
   withCacheDbReadOnly,
   withSearchDb,
   withSearchIndexDb,
-} from "../schema.js";
+} from "../connection.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-diag-test-"));
 

@@ -15,14 +15,14 @@ vi.mock("node:os", async (importOriginal) => {
 
 // Wrap (not replace) withCacheDb so the writable-fallback path is still
 // exercised for real, while letting the test assert whether it ran.
-vi.mock("../schema.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../schema.js")>();
+vi.mock("../connection.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../connection.js")>();
   return { ...actual, withCacheDb: vi.fn(actual.withCacheDb) };
 });
 
 import { listCachedProjectGroups } from "../project-groups.js";
 import { saveCachedSessions } from "../sessions.js";
-import { withCacheDb } from "../schema.js";
+import { withCacheDb } from "../connection.js";
 import { setSchemaEnsuredPath } from "../db.js";
 import { makeSessionHead, TEST_NOW } from "./fixtures.js";
 

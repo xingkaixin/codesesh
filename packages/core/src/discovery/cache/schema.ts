@@ -1,7 +1,4 @@
-/**
- * Cache storage boundary. Callers request a ready database capability while
- * schema creation, migrations, and search-index maintenance stay internal.
- */
+/** Cache schema creation, migration, and search-index repair. */
 import type { ProjectIdentity, ProjectIdentityKind, SessionHead } from "../../types/index.js";
 import { createSessionIdentity } from "../../contract/index.js";
 import { computeIdentity, realFs } from "../../projects/index.js";
@@ -16,17 +13,7 @@ import {
   type DatabaseRow,
   type SQLiteDatabase,
 } from "../../utils/sqlite.js";
-import {
-  discardCacheConnection,
-  getCacheConnection,
-  getCachePath,
-  getSchemaEnsuredPath,
-  hasCacheStorage,
-  setSchemaEnsuredPath,
-  type CacheConnection,
-  type CacheRow,
-} from "./db.js";
-import { CacheDataIntegrityError } from "./errors.js";
+import { type CacheConnection, type CacheRow } from "./db.js";
 import {
   messageFromBackfillRow,
   prepareInsertFileActivity,
@@ -40,7 +27,6 @@ import {
   type SessionRow,
 } from "./messages.js";
 import { CACHE_SCHEMA_VERSION } from "./version.js";
-import { deleteLegacyPublicationRows, hasLegacyPublicationRows } from "./publication-staging.js";
 
 interface MessageToolBackfillRow extends DatabaseRow {
   agent_name?: string;
@@ -140,123 +126,6 @@ function prepareLegacyProjectIdentityResolver(
 
 function getLegacySessionDirectory(session: SessionHead): string | null {
   return typeof session.directory === "string" ? session.directory : null;
-}
-
-function isRecoverableCacheError(error: unknown): boolean {
-  if (error instanceof CacheDataIntegrityError) return true;
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof error.code === "string" &&
-    error.code.startsWith("SQLITE_")
-  );
-}
-
-function reportCacheFailure(
-  cachePath: string,
-  connection: CacheConnection,
-  event: CacheFailureEvent,
-  error: unknown,
-): null {
-  getCoreDiagnostics()?.warn(event, {
-    message: error instanceof Error ? error.message : String(error),
-    code: (error as { code?: string })?.code,
-    error_class: error instanceof Error ? error.name : typeof error,
-    ...(event === "cache.write_failed" && error instanceof Error ? { stack: error.stack } : {}),
-  });
-  discardCacheConnection(cachePath, connection);
-  return null;
-}
-
-type CacheFailureEvent = "cache.write_failed" | "cache.read_failed";
-
-function withCacheConnection<T>(
-  callbackFailureEvent: CacheFailureEvent,
-  fn: (connection: CacheConnection) => T,
-): T | null {
-  const cachePath = getCachePath();
-  const connection = getCacheConnection(cachePath);
-  if (!connection) return null;
-
-  try {
-    if (getSchemaEnsuredPath() !== cachePath) {
-      ensureSchema(connection.db, cachePath);
-      setSchemaEnsuredPath(cachePath);
-    }
-  } catch (error) {
-    return reportCacheFailure(cachePath, connection, "cache.write_failed", error);
-  }
-
-  try {
-    return fn(connection);
-  } catch (error) {
-    if (!isRecoverableCacheError(error)) throw error;
-    return reportCacheFailure(cachePath, connection, callbackFailureEvent, error);
-  }
-}
-
-function cleanPublicationStaging(connection: CacheConnection): void {
-  if (connection.publicationStagingCleaned) return;
-
-  const startedAt = performance.now();
-  const reclaimed = hasLegacyPublicationRows(connection.db);
-  if (reclaimed) {
-    connection.db.transaction(() => deleteLegacyPublicationRows(connection.db)).immediate();
-  }
-  connection.publicationStagingCleaned = true;
-  getCoreDiagnostics()?.info?.("sqlite.publication_staging_cleanup.completed", {
-    duration_ms: Math.round(performance.now() - startedAt),
-    reclaimed,
-  });
-}
-
-export function withCacheDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
-  return withCacheConnection("cache.write_failed", ({ db }) => fn(db));
-}
-
-export type CacheReadOutcome<T> = { status: "success"; value: T } | { status: "failed" };
-
-/**
- * Like withCacheDb (schema-ensuring, so it can be the first cache touch at
- * startup and still run migrations) but with an explicit failure outcome
- * instead of a null that shadows legitimate empty results.
- */
-export function withCacheDbOutcome<T>(fn: (db: SQLiteDatabase) => T): CacheReadOutcome<T> {
-  let result: CacheReadOutcome<T> = { status: "failed" };
-  withCacheConnection("cache.read_failed", ({ db }) => {
-    result = { status: "success", value: fn(db) };
-  });
-  return result;
-}
-
-export function withCacheDbReadOnly<T>(fn: (db: SQLiteDatabase) => T): CacheReadOutcome<T> {
-  const cachePath = getCachePath();
-  if (!hasCacheStorage()) return { status: "failed" };
-
-  const connection = getCacheConnection(cachePath);
-  if (!connection) return { status: "failed" };
-
-  try {
-    return { status: "success", value: fn(connection.db) };
-  } catch (error) {
-    if (!isRecoverableCacheError(error)) throw error;
-    reportCacheFailure(cachePath, connection, "cache.read_failed", error);
-    return { status: "failed" };
-  }
-}
-
-export function withSearchDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
-  return withCacheConnection("cache.read_failed", (connection) =>
-    runWithFtsRecovery(connection, fn),
-  );
-}
-
-export function withSearchIndexDb<T>(fn: (db: SQLiteDatabase) => T): T | null {
-  return withCacheConnection("cache.write_failed", (connection) => {
-    cleanPublicationStaging(connection);
-    return runWithFtsRecovery(connection, fn);
-  });
 }
 
 interface SearchIndexWriteResult<T> {
@@ -1678,7 +1547,10 @@ function isFtsCorruptionError(error: unknown): boolean {
   );
 }
 
-function runWithFtsRecovery<T>(connection: CacheConnection, fn: (db: SQLiteDatabase) => T): T {
+export function runWithFtsRecovery<T>(
+  connection: CacheConnection,
+  fn: (db: SQLiteDatabase) => T,
+): T {
   const { db } = connection;
   if (!connection.ftsReady) {
     ensureFtsReady(db);
@@ -1738,7 +1610,7 @@ function setCacheSchemaVersion(db: SQLiteDatabase): void {
   setCacheMetaVersion(db);
 }
 
-function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
+export function ensureCacheSchema(db: SQLiteDatabase, dbPath: string): void {
   const currentVersion = getCurrentCacheSchemaVersion(db);
   if (currentVersion === 0 && !hasAnyCacheSchema(db)) {
     createLatestCacheSchema(db);

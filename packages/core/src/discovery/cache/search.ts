@@ -20,7 +20,7 @@ import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import { escapeRegExp, filePathFtsQuery, hasCacheStorage, likePattern } from "./db.js";
 import { normalizeToolName, sessionFromRow, type SessionRow } from "./messages.js";
-import { withSearchDb } from "./schema.js";
+import { withSearchDb } from "./connection.js";
 import {
   parseSearchQuery,
   splitSearchTokens,

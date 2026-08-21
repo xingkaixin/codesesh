@@ -11,7 +11,7 @@ import {
 } from "../search-index-writer.js";
 import { setSchemaEnsuredPath } from "../db.js";
 import { commitDurableSessionPublication } from "../publication.js";
-import { withCacheDb } from "../schema.js";
+import { withCacheDb } from "../connection.js";
 import {
   loadCachedSessionRawEntry,
   saveCachedSessionChanges,

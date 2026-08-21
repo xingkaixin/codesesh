@@ -6,7 +6,7 @@ import type {
 import { getSessionReferenceKey, type CostSource } from "../../contract/index.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import { hasCacheStorage } from "./db.js";
-import { withCacheDbReadOnly } from "./schema.js";
+import { withCacheDbReadOnly } from "./connection.js";
 
 export interface CostFactOptions {
   from?: number;

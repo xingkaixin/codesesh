@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BaseAgent, type ChangeCheckResult, type SessionCacheMeta } from "../../agents/base.js";
 import type { IdentifiedSessionHead, SessionDetail, SessionHead } from "../../types/index.js";
 import { readCachedSessionCursor, saveCachedSessions } from "../cache/sessions.js";
-import { withCacheDb } from "../cache/schema.js";
+import { withCacheDb } from "../cache/connection.js";
 import { MESSAGE_CURSOR_VERSION } from "../cache/message-cursor.js";
 import { syncSessionSearchIndex } from "../cache/search.js";
 import { materializeSessionDetail, materializeSessionDetailResponse } from "../session-detail.js";

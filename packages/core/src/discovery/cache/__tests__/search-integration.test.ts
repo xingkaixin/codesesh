@@ -20,7 +20,7 @@ import {
 import { setSchemaEnsuredPath } from "../db.js";
 import { MESSAGE_PARTS_FORMAT_VERSION } from "../messages.js";
 import { prepareSessionSnapshotSearchIndex } from "../search-index-writer.js";
-import { withCacheDb, withSearchDb, withSearchIndexDb } from "../schema.js";
+import { withCacheDb, withSearchDb, withSearchIndexDb } from "../connection.js";
 import { setCoreDiagnostics } from "../../../utils/diagnostics.js";
 import type { IdentifiedSessionHead, SessionDetail, SessionHead } from "../../../types/index.js";
 
