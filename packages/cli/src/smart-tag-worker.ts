@@ -6,7 +6,7 @@ import {
   getSmartTagSourceTimestamp,
   synchronizePricingGeneration,
   type SessionCacheMeta,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 
 interface SmartTagWorkerData {
   pricingGenerationId: number;

@@ -20,7 +20,7 @@ import {
   type PersistedSessionHeadChange,
   type SessionSourceFailure,
   type SessionSnapshotCompleteness,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import type { ScanCompletion, ScanStatusEvent } from "@codesesh/core/contract";
 import { AgentBackfillScheduler } from "./agent-backfill-scheduler.js";
 import { AgentOperationScheduler, type AgentOperationResult } from "./agent-operation-scheduler.js";

@@ -19,8 +19,8 @@ const loggerMocks = vi.hoisted(() => ({
   warn: vi.fn(),
 }));
 
-vi.mock("@codesesh/core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@codesesh/core")>();
+vi.mock("@codesesh/core/runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core/runtime")>();
   return {
     ...actual,
     deleteBookmark: coreMocks.deleteBookmark,
@@ -45,7 +45,7 @@ import {
   type BookmarkView,
   type LiveSnapshot,
   type SessionHead,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import {
   handleGetAgents,
   handleGetDashboard,

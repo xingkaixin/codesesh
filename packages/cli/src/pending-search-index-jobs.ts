@@ -3,7 +3,7 @@ import type {
   PersistedSessionHeadChange,
   SearchIndexSyncOptions,
   SessionCacheMeta,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 
 type FullSearchIndexJob = Extract<SearchIndexWorkerJob, { kind: "full" }>;

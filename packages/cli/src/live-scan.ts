@@ -6,7 +6,7 @@ import {
   scanSessions,
   type LiveSnapshot,
   type ScanOptions,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import type {
   AgentScanStatus,
   BackfillStatus,

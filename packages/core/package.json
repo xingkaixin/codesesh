@@ -1,18 +1,23 @@
 {
   "name": "@codesesh/core",
   "version": "1.0.3",
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
-  "files": [
-    "dist"
-  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "import": "./dist/runtime/index.mjs",
+      "require": "./dist/runtime/index.js"
     },
     "./contract": {
       "types": "./dist/contract/index.d.ts",
@@ -41,6 +46,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.node22.json"
   },
+  "dependencies": {
+    "better-sqlite3": "catalog:"
+  },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "catalog:",
@@ -48,8 +56,5 @@
     "node-gyp": "^13.0.1",
     "tsup": "catalog:",
     "typescript": "catalog:"
-  },
-  "dependencies": {
-    "better-sqlite3": "catalog:"
   }
 }

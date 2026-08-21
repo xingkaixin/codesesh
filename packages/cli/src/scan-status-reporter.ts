@@ -3,7 +3,7 @@ import type {
   ScanStatusEvent,
   SearchIndexMaintenanceStatus,
 } from "@codesesh/core/contract";
-import type { AgentScanProgress } from "@codesesh/core";
+import type { AgentScanProgress } from "@codesesh/core/runtime";
 import type { BackfillAttemptRef, BackfillLifecycle } from "./backfill-lifecycle.js";
 
 import { LatestValueThrottle } from "./latest-value-throttle.js";

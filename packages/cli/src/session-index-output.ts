@@ -10,7 +10,7 @@ import {
   getAgentInfoMap,
   type IdentifiedSessionHead,
   type LiveSnapshot,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 
 export interface SessionIndexAgent {
   name: string;

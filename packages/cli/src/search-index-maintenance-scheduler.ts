@@ -3,7 +3,7 @@ import {
   readPendingSearchIndexMaintenance,
   type IdentifiedSessionHead,
   type PersistedSessionHeadChange,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import type { SearchIndexMaintenanceStatus } from "@codesesh/core/contract";
 import { toError } from "./errors.js";
 import { appLogger } from "./logging.js";

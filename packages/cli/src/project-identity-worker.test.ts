@@ -21,7 +21,7 @@ vi.mock("node:worker_threads", () => ({
   threadId: 17,
 }));
 
-vi.mock("@codesesh/core", () => ({
+vi.mock("@codesesh/core/runtime", () => ({
   computeIdentityProjection: mocks.computeIdentityProjection,
   setCoreDiagnostics: vi.fn(),
 }));

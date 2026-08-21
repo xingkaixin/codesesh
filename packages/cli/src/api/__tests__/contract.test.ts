@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { SAMPLE_SCAN_STATUS_EVENT, SAMPLE_SESSION_HEAD } from "@codesesh/core/test-fixtures";
-import type { LiveSnapshot } from "@codesesh/core";
+import type { LiveSnapshot } from "@codesesh/core/runtime";
 import { createApiRoutes } from "../routes.js";
 import type { ScanResultSource } from "../handlers.js";
 import type { ScanEventSource } from "../../scan-source.js";

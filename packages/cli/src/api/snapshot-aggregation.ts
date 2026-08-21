@@ -5,7 +5,7 @@ import {
   type DashboardData,
   type DashboardScope,
   type SessionHead,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import { buildSessionTree, type SessionTree } from "@codesesh/core/contract";
 import { appLogger } from "../logging.js";
 import type { ScanResultSource } from "./scan-sources.js";

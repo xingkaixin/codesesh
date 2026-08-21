@@ -14,7 +14,7 @@ import {
   type SessionDetail,
   type SessionHead,
   type SessionSourceRef,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import { createSessionIdentity } from "@codesesh/core/contract";
 import { AgentUnavailableDuringScanError } from "./scan-refresh-error.js";
 
@@ -381,8 +381,8 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
-vi.mock("@codesesh/core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@codesesh/core")>();
+vi.mock("@codesesh/core/runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core/runtime")>();
   return {
     ...actual,
     closeCacheStorage: core.closeCacheStorage,

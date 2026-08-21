@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { IdentifiedSessionHead, LiveSnapshot } from "@codesesh/core";
+import type { IdentifiedSessionHead, LiveSnapshot } from "@codesesh/core/runtime";
 import {
   buildSessionIndexOutput,
   formatCacheFailureDiagnostics,

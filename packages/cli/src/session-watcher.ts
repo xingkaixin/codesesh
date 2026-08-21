@@ -10,7 +10,7 @@
  */
 import { existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import type { SessionWatchPlan } from "@codesesh/core";
+import type { SessionWatchPlan } from "@codesesh/core/runtime";
 import { appLogger } from "./logging.js";
 
 const WRITE_STABILITY_THRESHOLD_MS = 250;

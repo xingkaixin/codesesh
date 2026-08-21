@@ -6,6 +6,7 @@ const isWatch = process.argv.includes("--watch");
 export default defineConfig({
   entry: [
     "src/index.ts",
+    "src/runtime/index.ts",
     "src/contract/index.ts",
     "src/repository-facts.ts",
     "src/test-fixtures.ts",

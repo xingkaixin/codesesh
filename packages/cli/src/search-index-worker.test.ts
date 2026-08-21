@@ -28,7 +28,7 @@ vi.mock("node:worker_threads", () => ({
   },
 }));
 
-vi.mock("@codesesh/core", () => ({
+vi.mock("@codesesh/core/runtime", () => ({
   commitDurableSessionPublication: mocks.commitDurableSessionPublication,
   createRegisteredAgents: mocks.createRegisteredAgents,
   markAgentCacheInitialized: mocks.markAgentCacheInitialized,

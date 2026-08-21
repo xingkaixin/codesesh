@@ -5,7 +5,7 @@ import {
   type SessionCacheMeta,
   type SessionHead,
   type SessionSourceRef,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
@@ -86,8 +86,8 @@ vi.mock("node:worker_threads", () => ({
 
 vi.mock("./logging.js", () => ({ appLogger: mocks.appLogger }));
 
-vi.mock("@codesesh/core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@codesesh/core")>();
+vi.mock("@codesesh/core/runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core/runtime")>();
   return {
     attachMissingProjectIdentities: mocks.attachMissingProjectIdentities,
     createRegisteredAgents: mocks.createRegisteredAgents,

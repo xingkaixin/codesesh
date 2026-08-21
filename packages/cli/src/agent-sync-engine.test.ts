@@ -3,7 +3,7 @@ import {
   attachMissingProjectIdentities,
   FileSystemSessionSource,
   SMART_TAG_CLASSIFIER_REVISION,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import type {
   AggregateSessionSourceCapability,
   BaseAgent,
@@ -14,7 +14,7 @@ import type {
   SessionCacheMeta,
   SessionHead,
   SessionSourceFailure,
-} from "@codesesh/core";
+} from "@codesesh/core/runtime";
 import type { ScanStatusEvent } from "@codesesh/core/contract";
 import type { WorkerResult, WorkerRunner } from "./worker-runner.js";
 import { appLogger } from "./logging.js";
@@ -74,8 +74,8 @@ const searchIndex = vi.hoisted(() => ({
   snapshot: vi.fn(() => ({ activeBatchId: undefined, pendingBatches: 0 })),
 }));
 
-vi.mock("@codesesh/core", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@codesesh/core")>();
+vi.mock("@codesesh/core/runtime", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@codesesh/core/runtime")>();
   // Spy that still delegates to the real implementation, so diff behavior is unchanged.
   core.sessionSignature.mockImplementation(original.sessionSignature);
   return {
