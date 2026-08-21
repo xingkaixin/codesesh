@@ -13,6 +13,7 @@ import {
   type DatabaseRow,
   type SQLiteDatabase,
 } from "../../utils/sqlite.js";
+import { runCacheContentMigrations } from "./content-migrations.js";
 import { type CacheConnection, type CacheRow } from "./db.js";
 import {
   messageFromBackfillRow,
@@ -1405,73 +1406,6 @@ function addSessionParentReference(db: SQLiteDatabase): void {
   recreateProjectGroupsView(db);
 }
 
-const CODEX_EXEC_DECODE_MIGRATION_KEY = "codex_exec_decode_migrated_v3";
-
-/**
- * One-time: mark every cached Codex detail as pending re-index so code-mode
- * exec decoding takes effect on upgrade. The search content hash derives only
- * from head-level fields, none of which the decoder touches, so nothing would
- * otherwise trigger a refresh. Session rows carry huge content_text, so
- * rewriting them (or clearing a hash) is slow; instead we record just the
- * session ids in the lightweight pending_reindex table. loadCachedSessionData
- * treats a marked session as pending and re-parses its detail fresh on view;
- * the search index clears the marker as it repopulates each one. Gated by a
- * cache_meta flag; a fresh cache just records it.
- */
-function migrateCodexExecDecode(db: SQLiteDatabase): void {
-  if (!tableExists(db, "cache_meta")) return;
-  const done = db
-    .prepare("SELECT value FROM cache_meta WHERE key = ?")
-    .get(CODEX_EXEC_DECODE_MIGRATION_KEY);
-  if (done) return;
-
-  if (tableExists(db, "sessions") && tableExists(db, "pending_reindex")) {
-    db.exec(
-      "INSERT OR IGNORE INTO pending_reindex(agent_name, session_id) " +
-        "SELECT agent_name, session_id FROM sessions WHERE agent_name = 'codex'",
-    );
-  }
-  db.prepare(
-    "INSERT INTO cache_meta(key, value) VALUES (?, '1') ON CONFLICT(key) DO UPDATE SET value = '1'",
-  ).run(CODEX_EXEC_DECODE_MIGRATION_KEY);
-}
-
-const OPENCODE_SUBAGENT_FOLD_KEY = "opencode_subagent_fold_v1";
-const SUBAGENT_TREE_KEY = "subagent_tree_v1";
-
-/**
- * One-time: invalidate cached OpenCode-family (zcode/opencode) heads after the
- * subagent relation format changed. The next scan rebuilds parent references
- * and folded token totals from the source database.
- */
-function migrateOpenCodeSubagentFold(db: SQLiteDatabase): void {
-  if (!tableExists(db, "cache_meta")) return;
-  const done = db
-    .prepare("SELECT value FROM cache_meta WHERE key = ?")
-    .get(OPENCODE_SUBAGENT_FOLD_KEY);
-  if (done) return;
-
-  if (tableExists(db, "agent_cache")) {
-    db.prepare("DELETE FROM agent_cache WHERE agent_name IN ('zcode', 'opencode')").run();
-  }
-  db.prepare(
-    "INSERT INTO cache_meta(key, value) VALUES (?, '1') ON CONFLICT(key) DO UPDATE SET value = '1'",
-  ).run(OPENCODE_SUBAGENT_FOLD_KEY);
-}
-
-function migrateSubagentTree(db: SQLiteDatabase): void {
-  if (!tableExists(db, "cache_meta")) return;
-  const done = db.prepare("SELECT value FROM cache_meta WHERE key = ?").get(SUBAGENT_TREE_KEY);
-  if (done) return;
-
-  if (tableExists(db, "agent_cache")) {
-    db.prepare("DELETE FROM agent_cache WHERE agent_name IN ('codex', 'zcode', 'opencode')").run();
-  }
-  db.prepare(
-    "INSERT INTO cache_meta(key, value) VALUES (?, '1') ON CONFLICT(key) DO UPDATE SET value = '1'",
-  ).run(SUBAGENT_TREE_KEY);
-}
-
 function rebuildSearchIndex(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents_fts")) {
     return;
@@ -1623,9 +1557,7 @@ export function ensureCacheSchema(db: SQLiteDatabase, dbPath: string): void {
     createLatestCacheSchema(db);
     createSearchStateIndex(db);
     setCacheSchemaVersion(db);
-    migrateCodexExecDecode(db);
-    migrateOpenCodeSubagentFold(db);
-    migrateSubagentTree(db);
+    runCacheContentMigrations(db);
     return;
   }
 
@@ -1727,7 +1659,5 @@ export function ensureCacheSchema(db: SQLiteDatabase, dbPath: string): void {
     setCacheMetaVersion(db);
   }
 
-  migrateCodexExecDecode(db);
-  migrateOpenCodeSubagentFold(db);
-  migrateSubagentTree(db);
+  runCacheContentMigrations(db);
 }
