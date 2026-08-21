@@ -111,12 +111,12 @@ function VirtualizedMessageList({
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollParentRef = useRef<ScrollParent | null>(null);
-  // Heights live outside React state: a measurement mutates the index in place
-  // and a single version bump per frame tells the view to re-read it.
-  const heightIndexRef = useRef<HeightIndex | null>(null);
   const [measurementVersion, setMeasurementVersion] = useState(0);
   const pendingMeasureFrameRef = useRef(0);
-  const [forcedIndex, setForcedIndex] = useState<number | null>(null);
+  const [forcedItem, setForcedItem] = useState<{
+    heightIndex: HeightIndex;
+    index: number;
+  } | null>(null);
   const [viewport, setViewport] = useState(() => ({
     scrollTop: 0,
     height: 900,
@@ -220,18 +220,10 @@ function VirtualizedMessageList({
   }, [updateViewport]);
 
   const heightIndex = useMemo(() => {
-    const index = new HeightIndex(
-      messages.length,
-      VIRTUALIZED_MESSAGE_ESTIMATE_PX,
-      MESSAGE_LIST_GAP_PX,
-    );
-    heightIndexRef.current = index;
-    return index;
+    return new HeightIndex(messages.length, VIRTUALIZED_MESSAGE_ESTIMATE_PX, MESSAGE_LIST_GAP_PX);
   }, [messages]);
 
   useEffect(() => {
-    setForcedIndex(null);
-    setMeasurementVersion(0);
     updateViewport();
   }, [messages, updateViewport]);
 
@@ -242,15 +234,18 @@ function VirtualizedMessageList({
     };
   }, []);
 
-  const measureItem = useCallback((index: number, height: number) => {
-    if (!heightIndexRef.current?.setHeight(index, height)) return;
-    // Every row mounting in one frame would otherwise commit its own render.
-    if (pendingMeasureFrameRef.current) return;
-    pendingMeasureFrameRef.current = requestAnimationFrame(() => {
-      pendingMeasureFrameRef.current = 0;
-      setMeasurementVersion((version) => version + 1);
-    });
-  }, []);
+  const measureItem = useCallback(
+    (index: number, height: number) => {
+      if (!heightIndex.setHeight(index, height)) return;
+      // Every row mounting in one frame would otherwise commit its own render.
+      if (pendingMeasureFrameRef.current) return;
+      pendingMeasureFrameRef.current = requestAnimationFrame(() => {
+        pendingMeasureFrameRef.current = 0;
+        setMeasurementVersion((version) => version + 1);
+      });
+    },
+    [heightIndex],
+  );
 
   const virtualItems = useMemo(() => {
     if (messages.length === 0) return [];
@@ -272,6 +267,7 @@ function VirtualizedMessageList({
       items.push({ index, start: heightIndex.startAt(index) });
     }
 
+    const forcedIndex = forcedItem?.heightIndex === heightIndex ? forcedItem.index : null;
     if (forcedIndex != null && forcedIndex >= 0 && forcedIndex < messages.length) {
       if (!items.some((item) => item.index === forcedIndex)) {
         items.push({ index: forcedIndex, start: heightIndex.startAt(forcedIndex) });
@@ -280,14 +276,14 @@ function VirtualizedMessageList({
     }
 
     return items;
-  }, [forcedIndex, heightIndex, measurementVersion, messages.length, viewport]);
+  }, [forcedItem, heightIndex, measurementVersion, messages.length, viewport]);
 
   const scrollToIndex = useCallback(
     (index: number) => {
       if (typeof window === "undefined") return;
       if (index < 0 || index >= messages.length) return;
 
-      setForcedIndex(index);
+      setForcedItem({ heightIndex, index });
       const node = containerRef.current;
       const scrollParent = node ? findScrollParent(node) : (scrollParentRef.current ?? window);
       scrollParentRef.current = scrollParent;

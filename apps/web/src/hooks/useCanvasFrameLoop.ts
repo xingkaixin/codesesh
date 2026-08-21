@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 
 export type CanvasFrameDemand = "active" | "idle" | "stop";
 
@@ -77,9 +77,7 @@ export function useCanvasFrameLoop(
   targetRef: RefObject<Element | null>,
   reducedMotion: boolean,
 ): FrameLoopApi {
-  const controllerRef = useRef<FrameLoopController | null>(null);
-  if (controllerRef.current === null) controllerRef.current = createFrameLoopController();
-  const controller = controllerRef.current;
+  const [controller] = useState(createFrameLoopController);
 
   useEffect(() => {
     const target = targetRef.current;

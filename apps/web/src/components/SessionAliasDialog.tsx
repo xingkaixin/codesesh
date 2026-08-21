@@ -1,5 +1,5 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export interface SessionAliasTarget {
   agentKey: string;
@@ -8,28 +8,31 @@ export interface SessionAliasTarget {
   displayTitle?: string;
 }
 
-export function SessionAliasDialog({
-  target,
-  onClose,
-  onSave,
-  onRemove,
-}: {
+interface SessionAliasDialogProps {
   target: SessionAliasTarget | null;
   onClose: () => void;
   onSave: (alias: string) => Promise<void>;
   onRemove: () => Promise<void>;
-}) {
-  const [alias, setAlias] = useState("");
+}
+
+export function SessionAliasDialog(props: SessionAliasDialogProps) {
+  const { target } = props;
+  const stateKey = target ? `${target.agentKey}/${target.sessionId}` : "closed";
+  return <SessionAliasDialogState key={stateKey} {...props} />;
+}
+
+function SessionAliasDialogState({ target, onClose, onSave, onRemove }: SessionAliasDialogProps) {
+  const [alias, setAlias] = useState(() => target?.displayTitle ?? target?.title ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const activeRequest = useRef<symbol | null>(null);
 
-  useLayoutEffect(() => {
-    activeRequest.current = null;
-    setAlias(target?.displayTitle ?? target?.title ?? "");
-    setError(null);
-    setSaving(false);
-  }, [target]);
+  useEffect(
+    () => () => {
+      activeRequest.current = null;
+    },
+    [],
+  );
 
   const runOperation = async (operation: () => Promise<void>, fallbackError: string) => {
     if (activeRequest.current) return;

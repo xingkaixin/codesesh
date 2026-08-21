@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useState } from "react";
 import { useScanStatus } from "../../hooks/useScanStatus";
 import { formatScanStatusLabel } from "../../lib/scan-format";
 
@@ -17,11 +17,6 @@ export function ScanStatusNotice({ visible }: { visible: boolean }) {
         scanStatus.backfill.failedAgents.length,
       ].join("|")
     : null;
-  const announced = useRef({ milestoneKey, label });
-  if (announced.current.milestoneKey !== milestoneKey) {
-    announced.current = { milestoneKey, label };
-  }
-
   return (
     <>
       <div>
@@ -31,9 +26,16 @@ export function ScanStatusNotice({ visible }: { visible: boolean }) {
           </p>
         ) : null}
       </div>
-      <div className="sr-only" aria-live="polite" aria-atomic="true">
-        {visible ? announced.current.label : null}
-      </div>
+      <ScanStatusAnnouncement key={milestoneKey ?? "idle"} visible={visible} label={label} />
     </>
+  );
+}
+
+function ScanStatusAnnouncement({ visible, label }: { visible: boolean; label: string | null }) {
+  const [announcedLabel] = useState(label);
+  return (
+    <div className="sr-only" aria-live="polite" aria-atomic="true">
+      {visible ? announcedLabel : null}
+    </div>
   );
 }

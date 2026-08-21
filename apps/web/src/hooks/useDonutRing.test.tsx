@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { createRef, useImperativeHandle, useRef } from "react";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stubAnimationFrames, stubCanvas, type StubbedCanvas } from "../test/canvas-stub";
@@ -16,8 +16,13 @@ async function nextFrame() {
   });
 }
 
-let hitTest: (x: number, y: number) => number | null;
+const harnessRef = createRef<{ hitTest: (x: number, y: number) => number | null }>();
 let canvas: StubbedCanvas;
+
+function hitTest(x: number, y: number) {
+  if (!harnessRef.current) throw new Error("Donut ring harness is not mounted");
+  return harnessRef.current.hitTest(x, y);
+}
 
 function Harness({
   shares,
@@ -35,7 +40,7 @@ function Harness({
     hovered,
     reducedMotion,
   });
-  hitTest = ring.hitTest;
+  useImperativeHandle(harnessRef, () => ({ hitTest: ring.hitTest }), [ring.hitTest]);
 
   return (
     <div>
