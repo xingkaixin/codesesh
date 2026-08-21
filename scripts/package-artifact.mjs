@@ -47,18 +47,29 @@ function run(executable, args, options = {}) {
   });
 }
 
-function isWorkspaceReference(value) {
-  return typeof value === "string" && value.startsWith("workspace:");
+function isLocalDependencyReference(value) {
+  return (
+    typeof value === "string" && (value.startsWith("workspace:") || value.startsWith("catalog:"))
+  );
 }
 
-export function createPublishManifest(source) {
+export function createPublishManifest(source, catalog) {
   const manifest = structuredClone(source);
+  delete manifest.devDependencies;
   for (const field of dependencyFields) {
     const dependencies = manifest[field];
     if (!dependencies || typeof dependencies !== "object") continue;
     for (const [name, value] of Object.entries(dependencies)) {
-      if (!isWorkspaceReference(value)) continue;
-      if (field === "devDependencies" || name === "@codesesh/core") {
+      if (typeof value === "string" && value.startsWith("catalog:")) {
+        const catalogValue = catalog[name];
+        if (value !== "catalog:" || typeof catalogValue !== "string") {
+          throw new Error(`Cannot resolve catalog dependency ${name} from ${field}`);
+        }
+        dependencies[name] = catalogValue;
+        continue;
+      }
+      if (typeof value !== "string" || !value.startsWith("workspace:")) continue;
+      if (name === "@codesesh/core") {
         delete dependencies[name];
         continue;
       }
@@ -68,11 +79,11 @@ export function createPublishManifest(source) {
   return manifest;
 }
 
-export function assertNoWorkspaceReferences(manifest) {
+export function assertNoLocalDependencyReferences(manifest) {
   for (const field of dependencyFields) {
     for (const [name, value] of Object.entries(manifest[field] ?? {})) {
-      if (isWorkspaceReference(value)) {
-        throw new Error(`Packed manifest contains workspace dependency ${field}.${name}`);
+      if (isLocalDependencyReference(value)) {
+        throw new Error(`Packed manifest contains local dependency reference ${field}.${name}`);
       }
     }
   }
@@ -133,8 +144,14 @@ function packPackage() {
     cpSync(join(cliDir, "dist"), join(stageDir, "dist"), { recursive: true });
     cpSync(join(cliDir, "README.md"), join(stageDir, "README.md"));
     const sourceManifest = JSON.parse(readFileSync(join(cliDir, "package.json"), "utf8"));
-    const publishManifest = createPublishManifest(sourceManifest);
-    assertNoWorkspaceReferences(publishManifest);
+    const catalog = JSON.parse(
+      execFileSync(command("pnpm"), ["config", "get", "catalog"], {
+        cwd: rootDir,
+        encoding: "utf8",
+      }),
+    );
+    const publishManifest = createPublishManifest(sourceManifest, catalog);
+    assertNoLocalDependencyReferences(publishManifest);
     writeFileSync(join(stageDir, "package.json"), `${JSON.stringify(publishManifest, null, 2)}\n`);
 
     if (relative(rootDir, artifactDir) !== "artifacts/npm") {

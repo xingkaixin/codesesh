@@ -18,10 +18,10 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
-    "@fontsource-variable/ibm-plex-sans": "^5.3.0",
-    "@fontsource-variable/jetbrains-mono": "^5.3.0",
-    "@fontsource-variable/space-grotesk": "^5.3.0",
-    "@hugeicons/core-free-icons": "^4.2.3",
+    "@fontsource-variable/ibm-plex-sans": "catalog:",
+    "@fontsource-variable/jetbrains-mono": "catalog:",
+    "@fontsource-variable/space-grotesk": "catalog:",
+    "@hugeicons/core-free-icons": "catalog:",
     "@hugeicons/react": "^1.1.9",
     "@pierre/trees": "1.0.0-beta.6",
     "@tanstack/react-query": "^5.101.4",
@@ -39,18 +39,18 @@
   "devDependencies": {
     "@codesesh/core": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
-    "@tailwindcss/vite": "^4.3.3",
+    "@tailwindcss/vite": "catalog:",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
-    "@types/node": "22.20.1",
+    "@types/node": "catalog:",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
-    "@typescript/native": "npm:typescript@^7.0.2",
+    "@typescript/native": "catalog:",
     "@vitejs/plugin-react": "^6.0.5",
     "happy-dom": "^20.11.2",
     "postcss": "^8.5.26",
-    "tailwindcss": "^4.3.3",
-    "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vite": "^8.2.1"
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
   }
 }

@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
-  assertNoWorkspaceReferences,
+  assertNoLocalDependencyReferences,
   createPublishManifest,
   validatePackedFiles,
 } from "./package-artifact.mjs";
@@ -14,6 +14,9 @@ const sourceManifest = JSON.parse(
   readFileSync(resolve(scriptDir, "../packages/cli/package.json"), "utf8"),
 );
 const publishedReadme = readFileSync(resolve(scriptDir, "../packages/cli/README.md"), "utf8");
+const catalog = {
+  "better-sqlite3": "^13.0.3",
+};
 const validFiles = [
   "README.md",
   "package.json",
@@ -28,12 +31,17 @@ const validFiles = [
 
 test("creates an installable publish manifest without mutating the source", () => {
   const source = structuredClone(sourceManifest);
-  const publish = createPublishManifest(source);
+  const publish = createPublishManifest(source, catalog);
 
   assert.equal(publish.dependencies["@codesesh/core"], undefined);
-  assert.equal(publish.devDependencies["@codesesh/web"], undefined);
-  assertNoWorkspaceReferences(publish);
+  assert.equal(publish.dependencies["better-sqlite3"], catalog["better-sqlite3"]);
+  assert.equal(publish.devDependencies, undefined);
+  assertNoLocalDependencyReferences(publish);
   assert.deepEqual(source, sourceManifest);
+});
+
+test("rejects unresolved catalog dependencies", () => {
+  assert.throws(() => createPublishManifest(sourceManifest, {}), /better-sqlite3/);
 });
 
 test("accepts the complete npm artifact allowlist", () => {

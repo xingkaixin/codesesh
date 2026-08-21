@@ -52,7 +52,7 @@
   "dependencies": {
     "@codesesh/core": "workspace:*",
     "@hono/node-server": "^2.1.1",
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3": "catalog:",
     "citty": "^0.2.2",
     "consola": "^3.4.2",
     "hono": "^4.13.2",
@@ -60,10 +60,10 @@
   },
   "devDependencies": {
     "@codesesh/web": "workspace:*",
-    "@types/node": "22.20.1",
-    "@typescript/native": "npm:typescript@^7.0.2",
-    "tsup": "^8.5.1",
-    "typescript": "npm:@typescript/typescript6@^6.0.2"
+    "@types/node": "catalog:",
+    "@typescript/native": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
   },
   "engines": {
     "node": ">=22.0.0"
