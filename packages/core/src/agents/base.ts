@@ -273,10 +273,12 @@ export function reportAgentScanFailure(failure: AgentScanFailure, baselineRetain
   });
 }
 
-export abstract class BaseAgent {
+export abstract class BaseAgent<TMeta extends SessionCacheMeta = SessionCacheMeta> {
   abstract readonly name: string;
   abstract readonly displayName: string;
   abstract readonly sessionSourceAccess: SessionSourceCapability;
+
+  protected sessionMetaMap = new Map<string, TMeta>();
 
   /** Check if this agent has data available on the local filesystem. */
   abstract isAvailable(): boolean;
@@ -305,18 +307,30 @@ export abstract class BaseAgent {
   }
 
   /** Read one isolated session metadata value. */
-  abstract getSessionCacheMeta(sessionId: string): SessionCacheMeta | undefined;
+  getSessionCacheMeta(sessionId: string): SessionCacheMeta | undefined {
+    const meta = this.sessionMetaMap.get(sessionId);
+    return meta ? cloneSessionCacheMeta(meta) : undefined;
+  }
 
   /** Export an isolated cache snapshot, optionally restricted to selected sessions. */
-  abstract snapshotSessionCacheMeta(
-    sessionIds?: ReadonlySet<string>,
-  ): Record<string, SessionCacheMeta>;
+  snapshotSessionCacheMeta(sessionIds?: ReadonlySet<string>): Record<string, SessionCacheMeta> {
+    return snapshotSessionCacheMeta(this.sessionMetaMap, sessionIds);
+  }
 
   /** Restore session metadata from cache. */
-  abstract restoreSessionCacheMeta(meta: SessionCacheMetaSnapshot): void;
+  restoreSessionCacheMeta(meta: SessionCacheMetaSnapshot): void {
+    this.sessionMetaMap = new Map(
+      Object.entries(meta).map(([sessionId, value]) => [
+        sessionId,
+        cloneSessionCacheMeta({ ...value, id: sessionId }) as TMeta,
+      ]),
+    );
+  }
 
   /** Remove metadata for sessions that are no longer retained. */
-  abstract removeSessionCacheMeta(sessionIds: Iterable<string>): void;
+  removeSessionCacheMeta(sessionIds: Iterable<string>): void {
+    for (const sessionId of sessionIds) this.sessionMetaMap.delete(sessionId);
+  }
 
   getUri(sessionId: string): string {
     return `${this.name}://${sessionId}`;
@@ -345,7 +359,7 @@ export abstract class BaseAgent {
  */
 export abstract class FileSystemSessionSource<
   TMeta extends SessionCacheMeta = SessionCacheMeta,
-> extends BaseAgent {
+> extends BaseAgent<TMeta> {
   protected readonly configuredSourceRoot: string | null;
 
   constructor(options: AgentSourceOptions = {}) {
@@ -359,7 +373,6 @@ export abstract class FileSystemSessionSource<
     count: (options) => this.listSessionSources(options).length,
   };
 
-  protected sessionMetaMap = new Map<string, TMeta>();
   private sourceFileStats = new Map<string, Stats>();
 
   /** 枚举所有会话源及其指纹。传入 options 时按 mtime 限定扫描窗口。 */
@@ -450,28 +463,6 @@ export abstract class FileSystemSessionSource<
       outcomes: outcome.sourceOutcomes,
       sessions: outcome.sessions,
     };
-  }
-
-  getSessionCacheMeta(sessionId: string): SessionCacheMeta | undefined {
-    const meta = this.sessionMetaMap.get(sessionId);
-    return meta ? cloneSessionCacheMeta(meta) : undefined;
-  }
-
-  snapshotSessionCacheMeta(sessionIds?: ReadonlySet<string>): Record<string, SessionCacheMeta> {
-    return snapshotSessionCacheMeta(this.sessionMetaMap, sessionIds);
-  }
-
-  restoreSessionCacheMeta(meta: SessionCacheMetaSnapshot): void {
-    this.sessionMetaMap = new Map(
-      Object.entries(meta).map(([sessionId, value]) => [
-        sessionId,
-        cloneSessionCacheMeta({ ...value, id: sessionId }) as TMeta,
-      ]),
-    );
-  }
-
-  removeSessionCacheMeta(sessionIds: Iterable<string>): void {
-    for (const sessionId of sessionIds) this.sessionMetaMap.delete(sessionId);
   }
 
   protected walkFiles(
@@ -719,7 +710,6 @@ export abstract class DatabaseSessionSource extends BaseAgent {
       this.incrementalScan(cachedSessions, changedIds, refs, scanOptions),
   };
 
-  protected sessionMetaMap = new Map<string, SessionCacheMeta>();
   private lastSourceFingerprint: string | null = null;
   private pendingSourceFingerprint: string | null = null;
 
@@ -747,28 +737,6 @@ export abstract class DatabaseSessionSource extends BaseAgent {
       );
     }
     return result;
-  }
-
-  getSessionCacheMeta(sessionId: string): SessionCacheMeta | undefined {
-    const meta = this.sessionMetaMap.get(sessionId);
-    return meta ? cloneSessionCacheMeta(meta) : undefined;
-  }
-
-  snapshotSessionCacheMeta(sessionIds?: ReadonlySet<string>): Record<string, SessionCacheMeta> {
-    return snapshotSessionCacheMeta(this.sessionMetaMap, sessionIds);
-  }
-
-  restoreSessionCacheMeta(meta: SessionCacheMetaSnapshot): void {
-    this.sessionMetaMap = new Map(
-      Object.entries(meta).map(([sessionId, value]) => [
-        sessionId,
-        cloneSessionCacheMeta({ ...value, id: sessionId }),
-      ]),
-    );
-  }
-
-  removeSessionCacheMeta(sessionIds: Iterable<string>): void {
-    for (const sessionId of sessionIds) this.sessionMetaMap.delete(sessionId);
   }
 
   commitChangeCheck(): void {
