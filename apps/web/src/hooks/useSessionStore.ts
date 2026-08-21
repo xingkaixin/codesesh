@@ -19,11 +19,11 @@ import {
   type SessionsUpdatedEvent,
   fetchAgents,
   fetchConfig,
-  fetchDashboard,
   fetchProjects,
   fetchSessions,
 } from "../lib/api";
 import { createAgentCatalog } from "../lib/agents";
+import { DASHBOARD_STALE_TIME_MS, dashboardQueryOptions } from "../lib/dashboard-query";
 import { queryKeys } from "../lib/query-keys";
 import {
   invalidateLiveSessionCollections,
@@ -63,7 +63,7 @@ interface ActiveLoadRequest {
   window: AppConfig["window"];
 }
 
-const LIVE_AGGREGATE_REFRESH_INTERVAL_MS = 2_000;
+const LIVE_AGGREGATE_REFRESH_INTERVAL_MS = DASHBOARD_STALE_TIME_MS;
 const EMPTY_PROJECTS: ApiProjectGroup[] = [];
 const EMPTY_PROJECT_PAGE: ApiProjectPage = {
   projects: EMPTY_PROJECTS,
@@ -91,23 +91,23 @@ function projectsOptions(window: AppConfig["window"]) {
   });
 }
 
-async function fetchSnapshotAggregates(
-  window: AppConfig["window"],
-  signal: AbortSignal,
-): Promise<SnapshotAggregates> {
-  const [agents, dashboard] = await Promise.all([
-    fetchAgents(window, { signal }),
-    fetchDashboard(window, {}, { signal }),
-  ]);
-  return { window, agents, dashboard };
-}
-
-function snapshotAggregatesOptions(window: AppConfig["window"]) {
+function agentCatalogOptions(window: AppConfig["window"]) {
   return queryOptions({
-    queryKey: queryKeys.sessionAggregate(window),
-    queryFn: ({ signal }) => fetchSnapshotAggregates(window, signal),
+    queryKey: queryKeys.agentCatalog(window),
+    queryFn: ({ signal }) => fetchAgents(window, { signal }),
     staleTime: LIVE_AGGREGATE_REFRESH_INTERVAL_MS,
   });
+}
+
+async function fetchSnapshotAggregates(
+  queryClient: QueryClient,
+  window: AppConfig["window"],
+): Promise<SnapshotAggregates> {
+  const [agents, dashboard] = await Promise.all([
+    queryClient.fetchQuery(agentCatalogOptions(window)),
+    queryClient.fetchQuery(dashboardQueryOptions(window, {})),
+  ]);
+  return { window, agents, dashboard };
 }
 
 function sessionProjectionOptions(
@@ -156,26 +156,31 @@ async function fetchLiveSnapshotAggregates(
   window: AppConfig["window"],
   forceRefresh: boolean,
 ): Promise<SnapshotAggregates> {
-  const options = snapshotAggregatesOptions(window);
-  const state = queryClient.getQueryState(options.queryKey);
+  const agentOptions = agentCatalogOptions(window);
+  const dashboardOptions = dashboardQueryOptions(window, {});
+  const agentState = queryClient.getQueryState(agentOptions.queryKey);
+  const dashboardState = queryClient.getQueryState(dashboardOptions.queryKey);
   const needsRefresh =
     forceRefresh ||
-    !state ||
-    state.data === undefined ||
-    state.isInvalidated ||
-    Date.now() - state.dataUpdatedAt >= LIVE_AGGREGATE_REFRESH_INTERVAL_MS;
-  if (forceRefresh) {
-    await queryClient.invalidateQueries({
-      queryKey: options.queryKey,
-      exact: true,
-      refetchType: "none",
-    });
+    !agentState ||
+    agentState.data === undefined ||
+    agentState.isInvalidated ||
+    Date.now() - agentState.dataUpdatedAt >= LIVE_AGGREGATE_REFRESH_INTERVAL_MS ||
+    !dashboardState ||
+    dashboardState.data === undefined ||
+    dashboardState.isInvalidated ||
+    Date.now() - dashboardState.dataUpdatedAt >= LIVE_AGGREGATE_REFRESH_INTERVAL_MS;
+  if (needsRefresh) {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: agentOptions.queryKey,
+        exact: true,
+        refetchType: "none",
+      }),
+      invalidateLiveSessionCollections(queryClient),
+    ]);
   }
-  const [aggregates] = await Promise.all([
-    queryClient.fetchQuery(options),
-    needsRefresh ? invalidateLiveSessionCollections(queryClient) : Promise.resolve(),
-  ]);
-  return aggregates;
+  return fetchSnapshotAggregates(queryClient, window);
 }
 
 function refreshLiveProjects(queryClient: QueryClient, window: AppConfig["window"]): void {
@@ -230,8 +235,12 @@ export function useSessionStore() {
     ...sessionProjectionOptions(requestedWindow ?? {}),
     enabled: false,
   });
-  const aggregatesQuery = useQuery({
-    ...snapshotAggregatesOptions(requestedWindow ?? {}),
+  const agentsQuery = useQuery({
+    ...agentCatalogOptions(requestedWindow ?? {}),
+    enabled: false,
+  });
+  const dashboardQuery = useQuery({
+    ...dashboardQueryOptions(requestedWindow ?? {}, {}),
     enabled: false,
   });
   const projectsQuery = useQuery({
@@ -241,13 +250,18 @@ export function useSessionStore() {
   });
   const configFailed = configQuery.isError;
   const refetchConfig = configQuery.refetch;
+  const dashboard = dashboardQuery.data;
   const querySnapshot =
     requestedWindow !== null &&
     projectionQuery.data &&
-    aggregatesQuery.data &&
-    sameWindow(projectionQuery.data.window, requestedWindow) &&
-    sameWindow(aggregatesQuery.data.window, requestedWindow)
-      ? createSnapshot(requestedWindow, aggregatesQuery.data, projectionQuery.data.sessions)
+    agentsQuery.data !== undefined &&
+    dashboard !== undefined &&
+    sameWindow(projectionQuery.data.window, requestedWindow)
+      ? createSnapshot(
+          requestedWindow,
+          { window: requestedWindow, agents: agentsQuery.data, dashboard },
+          projectionQuery.data.sessions,
+        )
       : null;
 
   const reload = useCallback(
@@ -259,7 +273,7 @@ export function useSessionStore() {
       try {
         await Promise.all([
           queryClient.cancelQueries({ queryKey: queryKeys.sessionProjections }),
-          queryClient.cancelQueries({ queryKey: queryKeys.sessionAggregates }),
+          queryClient.cancelQueries({ queryKey: queryKeys.agentCatalogs }),
           queryClient.cancelQueries({ queryKey: queryKeys.projects }),
         ]);
         removeOtherSessionProjections(queryClient, window);
@@ -270,7 +284,12 @@ export function useSessionStore() {
             refetchType: "none",
           }),
           queryClient.invalidateQueries({
-            queryKey: queryKeys.sessionAggregate(window),
+            queryKey: queryKeys.agentCatalog(window),
+            exact: true,
+            refetchType: "none",
+          }),
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.dashboard(window, {}),
             exact: true,
             refetchType: "none",
           }),
@@ -282,7 +301,7 @@ export function useSessionStore() {
         ]);
         void queryClient.fetchQuery(projectsOptions(window)).catch(() => undefined);
         const [aggregates, projection] = await Promise.all([
-          queryClient.fetchQuery(snapshotAggregatesOptions(window)),
+          fetchSnapshotAggregates(queryClient, window),
           queryClient.fetchQuery(
             sessionProjectionOptions(window, (firstPageProjection) => {
               if (activeRequestRef.current?.requestId !== requestId) return;
@@ -308,10 +327,12 @@ export function useSessionStore() {
       if (!activeRequest) return null;
       const { window: activeWindow } = activeRequest;
       const projectionKey = queryKeys.sessionProjection(activeWindow);
-      const aggregateKey = queryKeys.sessionAggregate(activeWindow);
+      const agentCatalogKey = queryKeys.agentCatalog(activeWindow);
+      const dashboardKey = queryKeys.dashboard(activeWindow, {});
       const currentProjection = queryClient.getQueryData<SessionProjection>(projectionKey);
-      const currentAggregates = queryClient.getQueryData<SnapshotAggregates>(aggregateKey);
-      if (!currentProjection || !currentAggregates) {
+      const currentAgents = queryClient.getQueryData<AgentInfo[]>(agentCatalogKey);
+      const currentDashboard = queryClient.getQueryData<DashboardData>(dashboardKey);
+      if (!currentProjection || currentAgents === undefined || currentDashboard === undefined) {
         const refreshed = await reload(activeWindow);
         await Promise.all([
           invalidateLiveSessionDerivedQueries(queryClient, event),
@@ -319,6 +340,11 @@ export function useSessionStore() {
         ]);
         return refreshed ? { snapshot: refreshed, visibleNewSessions: 0 } : null;
       }
+      const currentAggregates = {
+        window: activeWindow,
+        agents: currentAgents,
+        dashboard: currentDashboard,
+      };
 
       const projection = applySessionWindowChanges(currentProjection.sessions, {
         changedSessionHeads: event.changedSessionHeads,

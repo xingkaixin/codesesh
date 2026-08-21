@@ -22,6 +22,7 @@ import {
   type SessionProjection,
   type SessionStoreSnapshot,
 } from "./useSessionStore";
+import { useDashboard } from "./useDashboard";
 
 vi.mock("../lib/api", () => ({
   fetchAgents: vi.fn(),
@@ -196,6 +197,21 @@ describe("useSessionStore", () => {
     expect(result.current.validAgentKeys.has("codex")).toBe(false);
     expect(result.current.agentNameMap.get("claudecode")).toBe("Claude Code");
     expect(result.current.version).toBeGreaterThan(0);
+  });
+
+  it("shares the global dashboard query with dashboard consumers", async () => {
+    const { Wrapper } = createQueryWrapper();
+    const store = renderHook(() => useSessionStore(), { wrapper: Wrapper });
+    await waitFor(() => expect(store.result.current.config).toEqual(config));
+    await act(() => store.result.current.reload(config.window));
+
+    const dashboard = renderHook(
+      () => useDashboard(config.window, { project: undefined, agent: undefined }),
+      { wrapper: Wrapper },
+    );
+
+    await waitFor(() => expect(dashboard.result.current.dashboard).toEqual(SAMPLE_DASHBOARD_DATA));
+    expect(api.fetchDashboard).toHaveBeenCalledOnce();
   });
 
   it("renders the first session page while the complete window keeps loading", async () => {
@@ -419,13 +435,10 @@ describe("useSessionStore", () => {
       project: { kind: "path", key: "p1" },
     });
     const searchKey = queryKeys.search("needle", {});
-    const inactiveAggregateKey = queryKeys.sessionAggregate({ from: 10, to: 20 });
+    const inactiveAgentCatalogKey = queryKeys.agentCatalog({ from: 10, to: 20 });
     client.setQueryData(projectDashboardKey, SAMPLE_DASHBOARD_DATA);
     client.setQueryData(searchKey, []);
-    client.setQueryData(inactiveAggregateKey, {
-      agents,
-      dashboard: SAMPLE_DASHBOARD_DATA,
-    });
+    client.setQueryData(inactiveAgentCatalogKey, agents);
     now += 2_001;
 
     await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
@@ -434,7 +447,7 @@ describe("useSessionStore", () => {
       expect(client.getQueryState(projectDashboardKey)?.isInvalidated).toBe(true),
     );
     await waitFor(() => expect(client.getQueryState(searchKey)?.isInvalidated).toBe(true));
-    expect(client.getQueryState(inactiveAggregateKey)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(inactiveAgentCatalogKey)?.isInvalidated).toBe(false);
   });
 
   it("invalidates only session details changed by a live event", async () => {
@@ -578,6 +591,7 @@ describe("useSessionStore", () => {
 
   it("keeps the projection available when a live aggregate refresh fails", async () => {
     const error = new Error("dashboard unavailable");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
     let now = Date.now();
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const { result } = await renderStore();

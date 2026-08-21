@@ -4,7 +4,7 @@ import { queryKeys } from "./query-keys";
 
 function invalidateSessionCollections(queryClient: QueryClient) {
   return [
-    queryClient.invalidateQueries({ queryKey: queryKeys.sessionAggregates }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.agentCatalogs }),
     queryClient.invalidateQueries({ queryKey: queryKeys.dashboards }),
     queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
   ];
