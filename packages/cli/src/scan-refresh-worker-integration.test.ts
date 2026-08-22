@@ -96,6 +96,7 @@ vi.mock("@codesesh/core/runtime", async (importOriginal) => {
     FileSystemSessionSource: mocks.FileSystemSessionSource,
     PRICING_CAPTURE_EPOCH: actual.PRICING_CAPTURE_EPOCH,
     buildAgentCacheMeta: actual.buildAgentCacheMeta,
+    buildSessionPersistenceDiff: actual.buildSessionPersistenceDiff,
     computeSessionDiff: actual.computeSessionDiff,
     planAgentScan: actual.planAgentScan,
     sessionSignature: actual.sessionSignature,

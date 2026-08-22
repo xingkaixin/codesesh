@@ -42,6 +42,7 @@ export type {
 export {
   attachMissingProjectIdentities,
   buildAgentCacheMeta,
+  buildSessionPersistenceDiff,
   clearCache,
   closeCacheStorage,
   commitDurableSessionPublication,
@@ -101,6 +102,8 @@ export type {
   SearchOptions,
   SearchRequestOptions,
   PersistedSessionHeadChange,
+  SessionPersistenceDiff,
+  SessionPersistenceDiffOptions,
   SessionTagTiming,
 } from "../discovery/index.js";
 export {

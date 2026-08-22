@@ -13,10 +13,12 @@ export type { SessionReference } from "../contract/index.js";
 export {
   attachMissingProjectIdentities,
   buildAgentCacheMeta,
+  buildSessionPersistenceDiff,
   computeSessionDiff,
   sessionSignature,
   sortSessions,
 } from "./orchestrate.js";
+export type { SessionPersistenceDiff, SessionPersistenceDiffOptions } from "./orchestrate.js";
 export { mergeSortedSessions } from "../contract/session-index.js";
 export {
   clearCache,

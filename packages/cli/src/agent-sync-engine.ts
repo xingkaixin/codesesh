@@ -1,15 +1,14 @@
 import {
   attachMissingProjectIdentities,
   buildAgentCacheMeta,
+  buildSessionPersistenceDiff,
   getAgentFullSyncCursor,
-  computeSessionDiff,
   inspectAgentRefresh,
   markAgentFullSyncProgress,
   markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
   readCachedSessions,
   readAgentCacheInitialization,
-  sessionSignature,
   type BaseAgent,
   type AgentRefreshInspection,
   type CachedResult,
@@ -17,7 +16,7 @@ import {
   type ScanOptions,
   type LiveSnapshot,
   type SessionHead,
-  type PersistedSessionHeadChange,
+  type SessionPersistenceDiff,
   type SessionSourceFailure,
   type SessionSnapshotCompleteness,
 } from "@codesesh/core/runtime";
@@ -66,11 +65,6 @@ type SessionsChangedListener = (change: AgentSessionsChanged) => void;
 type StatusChangedListener = (event: ScanStatusEvent) => void;
 type CachedSessions = CachedResult;
 
-interface SessionPersistenceDiff {
-  changedSessions: PersistedSessionHeadChange<IdentifiedSessionHead>[];
-  removedSessionIds: string[];
-}
-
 interface RefreshResult {
   result: Exclude<AgentOperationResult, "failed">;
   completion: ScanCompletion;
@@ -88,7 +82,7 @@ interface RefreshStrategyBase {
 type RefreshPublication =
   | {
       kind: "changes";
-      diff: SessionPersistenceDiff;
+      diff: SessionPersistenceDiff<IdentifiedSessionHead>;
       candidateChangedIds: string[];
     }
   | {
@@ -107,30 +101,6 @@ const SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD = 100;
 // SSE carries one compact summary; logs retain the complete failure list.
 const SOURCE_FAILURE_SUMMARY_MAX_LENGTH = 160;
 
-function buildPersistenceDiff(
-  previousSessions: SessionHead[],
-  nextSessions: IdentifiedSessionHead[],
-  candidateChangedIds: string[] = [],
-  completeness: SessionSnapshotCompleteness = "complete",
-  explicitRemovedSessionIds: readonly string[] = [],
-): SessionPersistenceDiff {
-  const { changes, removedSessionIds } = computeSessionDiff(
-    previousSessions,
-    nextSessions,
-    candidateChangedIds,
-    sessionSignature,
-  );
-  if (completeness === "complete") {
-    return { changedSessions: changes, removedSessionIds };
-  }
-  // A bounded or failed scan cannot prove that an omitted session disappeared.
-  const explicitRemovals = new Set(explicitRemovedSessionIds);
-  return {
-    changedSessions: changes,
-    removedSessionIds: removedSessionIds.filter((sessionId) => explicitRemovals.has(sessionId)),
-  };
-}
-
 function buildScanCompletion(
   completeness: SessionSnapshotCompleteness,
   sourceFailures: readonly SessionSourceFailure[],
@@ -146,10 +116,6 @@ function buildScanCompletion(
         ? `${summary.slice(0, SOURCE_FAILURE_SUMMARY_MAX_LENGTH - 1)}…`
         : summary,
   };
-}
-
-function restoreAgentCacheMeta(agent: BaseAgent, cached: CachedSessions): void {
-  agent.restoreSessionCacheMeta(cached.meta);
 }
 
 export class AgentSyncEngine {
@@ -398,7 +364,7 @@ export class AgentSyncEngine {
     const previousSessions = this.sessionIndex.snapshot().byAgent[agentName] ?? [];
     const refreshBaseline = cached?.sessions ?? previousSessions;
     const cacheTimestamp = cached?.timestamp ?? this.lastRefreshAtByAgent.get(agentName) ?? 0;
-    if (cached) restoreAgentCacheMeta(agent, cached);
+    if (cached) agent.restoreSessionCacheMeta(cached.meta);
     const durableMeta = agent.snapshotSessionCacheMeta();
     const durableLastRefreshAt = this.lastRefreshAtByAgent.get(agentName);
     const initialization = readAgentCacheInitialization(agentName);
@@ -640,7 +606,9 @@ export class AgentSyncEngine {
     agent.restoreSessionCacheMeta(result.meta);
     const sessions = attachMissingProjectIdentities(result.sessions);
     const preciseChangedIds = result.changedIds ?? [];
-    const persistenceDiff = buildPersistenceDiff(baseline.sessions, sessions, preciseChangedIds);
+    const persistenceDiff = buildSessionPersistenceDiff(baseline.sessions, sessions, {
+      candidateChangedIds: preciseChangedIds,
+    });
     this.lastRefreshAtByAgent.set(agent.name, Date.now());
     if (
       persistenceDiff.changedSessions.length === 0 &&
@@ -704,7 +672,7 @@ export class AgentSyncEngine {
       const sessions = attachMissingProjectIdentities(result.sessions);
       source.commitChangeCheck();
       this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
-      const persistenceDiff = buildPersistenceDiff(baseline, sessions);
+      const persistenceDiff = buildSessionPersistenceDiff(baseline, sessions);
       if (
         persistenceDiff.changedSessions.length === 0 &&
         persistenceDiff.removedSessionIds.length === 0
@@ -758,13 +726,11 @@ export class AgentSyncEngine {
           // Meta-only changes (e.g. a pricing capture epoch bump) leave the head
           // signature intact; without the worker-reported ids they would never
           // persist and checkForChanges would rescan on every startup.
-          diff: buildPersistenceDiff(
-            baseline,
-            sessions,
-            result.changedIds ?? [],
-            result.completeness,
-            result.explicitRemovedSessionIds,
-          ),
+          diff: buildSessionPersistenceDiff(baseline, sessions, {
+            candidateChangedIds: result.changedIds ?? [],
+            completeness: result.completeness,
+            explicitRemovedSessionIds: result.explicitRemovedSessionIds,
+          }),
           candidateChangedIds: [],
         },
       };
@@ -791,13 +757,11 @@ export class AgentSyncEngine {
       status: "continue",
       publication: {
         kind: "changes",
-        diff: buildPersistenceDiff(
-          baseline,
-          sessions,
-          preciseChangedIds,
+        diff: buildSessionPersistenceDiff(baseline, sessions, {
+          candidateChangedIds: preciseChangedIds,
           completeness,
-          preciseChangedIds,
-        ),
+          explicitRemovedSessionIds: preciseChangedIds,
+        }),
         candidateChangedIds: preciseChangedIds,
       },
     };
@@ -905,7 +869,7 @@ export class AgentSyncEngine {
     const baseline = cached?.sessions ?? snapshot.byAgent[agentName] ?? [];
     const meta = cached?.meta ?? buildAgentCacheMeta(agent);
     const backfillCursor = getAgentFullSyncCursor(agentName);
-    if (cached) restoreAgentCacheMeta(agent, cached);
+    if (cached) agent.restoreSessionCacheMeta(cached.meta);
     let durableCommitted = false;
     try {
       if (!markAgentFullSyncStarted(agentName)) {

@@ -6,6 +6,7 @@ import { clearIdentityCache } from "../../projects/index.js";
 import {
   attachMissingProjectIdentities,
   buildAgentCacheMeta,
+  buildSessionPersistenceDiff,
   computeSessionDiff,
   sessionSignature,
   sortSessions,
@@ -457,5 +458,36 @@ describe("computeSessionDiff", () => {
 
       expect(diff.counts.updated).toBe(1);
     });
+  });
+});
+
+describe("buildSessionPersistenceDiff", () => {
+  it("removes every missing session from a complete snapshot", () => {
+    const previous = [makeSession("retained"), makeSession("removed")];
+
+    expect(buildSessionPersistenceDiff(previous, [previous[0]!]).removedSessionIds).toEqual([
+      "removed",
+    ]);
+  });
+
+  it("only removes explicitly deleted sessions from a partial snapshot", () => {
+    const previous = [makeSession("retained"), makeSession("explicit"), makeSession("unknown")];
+
+    const diff = buildSessionPersistenceDiff(previous, [previous[0]!], {
+      completeness: "partial",
+      explicitRemovedSessionIds: ["explicit"],
+    });
+
+    expect(diff.removedSessionIds).toEqual(["explicit"]);
+  });
+
+  it("persists candidate changes even when their head signature is unchanged", () => {
+    const session = makeSession("changed");
+
+    const diff = buildSessionPersistenceDiff([session], [session], {
+      candidateChangedIds: [session.reference.sessionId],
+    });
+
+    expect(diff.changedSessions).toEqual([{ session, sortIndex: 0 }]);
   });
 });
