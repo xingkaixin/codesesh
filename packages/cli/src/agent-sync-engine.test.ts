@@ -442,7 +442,13 @@ describe("AgentSyncEngine", () => {
       status.backfill.progress ? [status.backfill.progress] : [],
     );
     expect(progress).toHaveLength(5);
-    expect(progress.map((item) => item.processed)).toEqual([1, 10_000, 10_000, 10_000, 10_000]);
+    expect(progress.map((item) => item.processed)).toEqual([
+      1,
+      10_000,
+      10_000,
+      undefined,
+      undefined,
+    ]);
     expect(progress.map((item) => item.phase)).toEqual([
       "scanning",
       "scanning",
