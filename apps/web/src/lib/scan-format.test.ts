@@ -208,7 +208,25 @@ describe("formatScanStatusLabel", () => {
           failedAgents: [],
         },
       } as unknown as ScanStatusEvent),
-    ).toBe("Publishing full-history sessions · zcode");
+    ).toBe("Preparing full-history publication · zcode");
+  });
+
+  it("distinguishes writing and committing a full-history index", () => {
+    const status = {
+      active: false,
+      backfill: {
+        active: true,
+        currentAgent: "codex",
+        pendingAgents: [],
+        progress: { phase: "indexing" },
+        completedAgents: [],
+        failedAgents: [],
+      },
+    } as unknown as ScanStatusEvent;
+
+    expect(formatScanStatusLabel(status)).toBe("Writing full-history search index · codex");
+    status.backfill.progress = { phase: "committing" };
+    expect(formatScanStatusLabel(status)).toBe("Committing full-history publication · codex");
   });
 
   it("does not describe a queued full-history publication as active", () => {

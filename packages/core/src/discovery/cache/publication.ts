@@ -21,6 +21,7 @@ import {
   writeCachedSessionSnapshot,
 } from "./sessions.js";
 import type { SessionSnapshotCompleteness } from "./snapshot-types.js";
+import type { SearchIndexPublicationStage } from "./search-index-state.js";
 
 export type DurableSessionPublication =
   | {
@@ -57,6 +58,17 @@ export type DurableSessionPublicationCommitResult =
 
 function publicationSessionCount(publication: DurableSessionPublication): number {
   return publication.kind === "snapshot" ? publication.sessions.length : publication.changes.length;
+}
+
+function reportPublicationStage(
+  detail: Record<string, unknown>,
+  stage: SearchIndexPublicationStage,
+  options: SearchIndexSyncOptions,
+): void {
+  getCoreDiagnostics()?.info?.("search_index.publication_stage", { ...detail, stage });
+  try {
+    options.onPublicationStage?.(stage);
+  } catch {}
 }
 
 function publicationSearchOptions(
@@ -96,13 +108,12 @@ export function commitDurableSessionPublication(
   );
   const publicationId = publication.publicationId ?? randomUUID();
   let failureStage: DurableSessionPublicationFailureStage = "prepare";
-  const diagnostics = getCoreDiagnostics();
   const detail = {
     agent: publication.agentName,
     publication_id: publicationId,
     sessions: publicationSessionCount(publication),
   };
-  diagnostics?.info?.("search_index.publication_stage", { ...detail, stage: "started" });
+  reportPublicationStage(detail, "started", searchOptions);
 
   const searchIndex = withSearchIndexDb((db) => {
     const options = publicationSearchOptions(publication, searchOptions, publicationId);
@@ -123,7 +134,7 @@ export function commitDurableSessionPublication(
             loadSessionData,
             options,
           );
-    diagnostics?.info?.("search_index.publication_stage", { ...detail, stage: "prepared" });
+    reportPublicationStage(detail, "prepared", options);
 
     return db
       .transaction(() => {
@@ -148,17 +159,11 @@ export function commitDurableSessionPublication(
             publication.meta,
           );
         }
-        diagnostics?.info?.("search_index.publication_stage", {
-          ...detail,
-          stage: "cache_staged",
-        });
+        reportPublicationStage(detail, "cache_staged", options);
 
         failureStage = "search_index";
         const result = writePreparedSessionSearchIndex(db, prepared);
-        diagnostics?.info?.("search_index.publication_stage", {
-          ...detail,
-          stage: "search_staged",
-        });
+        reportPublicationStage(detail, "search_staged", options);
         advanceAnalyticsRevision(db);
         failureStage = "commit";
         return result;
@@ -168,7 +173,7 @@ export function commitDurableSessionPublication(
 
   if (!searchIndex) {
     discardPreparedSessionSearchIndex(publicationId, publication.agentName);
-    diagnostics?.warn("search_index.publication_stage", {
+    getCoreDiagnostics()?.warn("search_index.publication_stage", {
       ...detail,
       stage: "rolled_back",
       failure_stage: failureStage,
@@ -177,6 +182,6 @@ export function commitDurableSessionPublication(
   }
 
   deleteLegacyCacheFile();
-  diagnostics?.info?.("search_index.publication_stage", { ...detail, stage: "committed" });
+  reportPublicationStage(detail, "committed", searchOptions);
   return { status: "committed", publicationId, searchIndex };
 }

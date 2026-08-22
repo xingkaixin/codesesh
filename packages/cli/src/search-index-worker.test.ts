@@ -190,8 +190,13 @@ describe("search index worker", () => {
     const meta = { s1: { id: "s1" } };
     mocks.createRegisteredAgents.mockReturnValue([agent]);
     mocks.commitDurableSessionPublication.mockImplementation(
-      (_publication: unknown, readSession: (id: string) => unknown) => {
+      (
+        _publication: unknown,
+        readSession: (id: string) => unknown,
+        options: { onPublicationStage?: (stage: string) => void },
+      ) => {
         expect(readSession("s1")).toEqual(makeSession("s1"));
+        options.onPublicationStage?.("prepared");
         return {
           status: "committed",
           publicationId: "publication-full",
@@ -233,8 +238,16 @@ describe("search index worker", () => {
         publicationId: "scan.refresh:codex:1",
       },
       expect.any(Function),
-      { force: true },
+      expect.objectContaining({
+        force: true,
+        onPublicationStage: expect.any(Function),
+      }),
     );
+    expect(mocks.postMessage).toHaveBeenCalledWith({
+      type: "publication-progress",
+      agentName: "codex",
+      stage: "prepared",
+    });
     expect(mocks.markAgentCacheInitialized).toHaveBeenCalledWith("codex");
     expect(mocks.appLoggerWarn).not.toHaveBeenCalled();
   });
@@ -279,7 +292,7 @@ describe("search index worker", () => {
         removedSessionIds: ["removed"],
       },
       expect.any(Function),
-      undefined,
+      { onPublicationStage: expect.any(Function) },
     );
   });
 
@@ -368,7 +381,10 @@ describe("search index worker", () => {
         meta: {},
       },
       expect.any(Function),
-      { force: true },
+      expect.objectContaining({
+        force: true,
+        onPublicationStage: expect.any(Function),
+      }),
     );
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({ type: "done", sessions: 1 }),

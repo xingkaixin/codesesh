@@ -895,7 +895,9 @@ export class AgentSyncEngine {
       const fullSessions = attachMissingProjectIdentities(result.sessions);
       const completion = buildScanCompletion(result.completeness, result.sourceFailures ?? []);
       this.statusReporter.flushProgressStatus(`backfill:${agentName}`);
-      const updatePublicationPhase = (phase: "publish-queued" | "publishing") => {
+      const updatePublicationPhase = (
+        phase: "publish-queued" | "publishing" | "indexing" | "committing",
+      ) => {
         if (
           this.backfills.updateProgress(attempt, {
             phase,
@@ -922,6 +924,10 @@ export class AgentSyncEngine {
           saveCache: true,
         },
         onPublishing: () => updatePublicationPhase("publishing"),
+        onPublicationProgress: ({ stage }) => {
+          if (stage === "prepared") updatePublicationPhase("indexing");
+          if (stage === "search_staged") updatePublicationPhase("committing");
+        },
         onCommitted: () => {
           durableCommitted = true;
           if (completion.completeness === "partial") {

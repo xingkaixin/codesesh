@@ -99,6 +99,7 @@ export type {
   DurableSessionPublicationCommitResult,
   DurableSessionPublicationFailureStage,
   PendingSearchIndexMaintenance,
+  SearchIndexPublicationStage,
   SearchIndexSyncOptions,
   SearchIndexSyncFailure,
   SearchIndexSyncResult,

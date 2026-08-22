@@ -5,6 +5,13 @@ import { withCacheDbReadOnly } from "./connection.js";
 import { sessionDetailVersion } from "./detail-version.js";
 import type { SessionSnapshotCompleteness } from "./snapshot-types.js";
 
+export type SearchIndexPublicationStage =
+  | "started"
+  | "prepared"
+  | "cache_staged"
+  | "search_staged"
+  | "committed";
+
 export interface SearchIndexSyncOptions {
   isBulk?: boolean;
   bulkThreshold?: number;
@@ -13,6 +20,7 @@ export interface SearchIndexSyncOptions {
   completeness?: SessionSnapshotCompleteness;
   removedSessionIds?: readonly string[];
   publicationId?: string;
+  onPublicationStage?: (stage: SearchIndexPublicationStage) => void;
 }
 
 export interface PendingSearchIndexMaintenance {

@@ -326,6 +326,7 @@ describe("durable publication", () => {
     } finally {
       retryDb.close();
     }
+    const publicationStages: string[] = [];
     const retried = commitDurableSessionPublication(
       {
         kind: "snapshot",
@@ -336,9 +337,17 @@ describe("durable publication", () => {
         removedSessionIds: [],
       },
       () => makeSessionData("atomic", "updated content"),
+      { onPublicationStage: (stage) => publicationStages.push(stage) },
     );
 
     expect(retried.status).toBe("committed");
+    expect(publicationStages).toEqual([
+      "started",
+      "prepared",
+      "cache_staged",
+      "search_staged",
+      "committed",
+    ]);
     expect(readCachedValue("codex")?.sessions[0]?.title).toBe(updated.title);
     expect(readCachedValue("codex")?.meta.atomic?.sourcePath).toBe("/updated");
     expect(searchSessions("updated content")).toHaveLength(1);

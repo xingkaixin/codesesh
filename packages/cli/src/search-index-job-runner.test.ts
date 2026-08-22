@@ -41,7 +41,9 @@ const workerMocks = vi.hoisted(() => {
 
 vi.mock("node:worker_threads", () => ({ Worker: workerMocks.FakeWorker }));
 vi.mock("node:fs", () => ({ existsSync: () => workerMocks.workerExists }));
-vi.mock("@codesesh/core/runtime", () => ({ getPricingGeneration: () => ({ id: 17 }) }));
+vi.mock("@codesesh/core/runtime", () => ({
+  getPricingGeneration: () => ({ id: 17 }),
+}));
 vi.mock("./logging.js", () => ({
   appLogger: {
     debug: vi.fn(),
@@ -109,6 +111,24 @@ describe("SearchIndexJobRunner", () => {
 
     expect(workerMocks.consumeWorkerMessage).toHaveBeenNthCalledWith(1, logMessage);
     await expect(completion).resolves.toBeUndefined();
+  });
+
+  it("reports durable publication stages from the worker", async () => {
+    const runner = new SearchIndexJobRunner();
+    const progress = vi.fn();
+    const completion = runner.enqueue("scan.backfill", [makeJob()], undefined, progress);
+    const worker = startedWorker();
+    worker.post({ type: "publication-progress", agentName: "codex", stage: "prepared" });
+
+    expect(progress).toHaveBeenCalledWith({ agentName: "codex", stage: "prepared" });
+    worker.post({
+      type: "done",
+      context: "scan.backfill",
+      durationMs: 1,
+      sessions: 1,
+      failedAgents: [],
+    });
+    await completion;
   });
 
   it("pins each worker batch to the current pricing generation", async () => {

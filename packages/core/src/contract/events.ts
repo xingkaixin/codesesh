@@ -122,7 +122,7 @@ export interface ScanCompletion {
  * (capped at one agent at a time) periodically re-checks the rest of history.
  */
 export interface BackfillProgress {
-  phase?: "scanning" | "finalizing" | "publish-queued" | "publishing" | "indexing";
+  phase?: "scanning" | "finalizing" | "publish-queued" | "publishing" | "indexing" | "committing";
   total?: number;
   processed?: number;
   sessions?: number;

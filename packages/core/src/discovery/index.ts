@@ -85,6 +85,7 @@ export {
 } from "./cache/search.js";
 export type {
   ParsedSearchQuery,
+  SearchIndexPublicationStage,
   SearchIndexSyncOptions,
   PendingSearchIndexMaintenance,
   SearchIndexSyncFailure,

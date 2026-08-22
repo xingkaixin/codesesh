@@ -43,6 +43,7 @@ export {
   readPendingSearchIndexMaintenance,
   searchIndexStateQuery,
   type PendingSearchIndexMaintenance,
+  type SearchIndexPublicationStage,
   type SearchIndexSyncOptions,
 } from "./search-index-state.js";
 

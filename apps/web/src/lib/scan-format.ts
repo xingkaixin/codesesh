@@ -60,11 +60,15 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
     const stageLabel =
       progress?.phase === "publish-queued"
         ? "Full-history publication queued"
-        : progress?.phase === "publishing" || progress?.phase === "indexing"
-          ? "Publishing full-history sessions"
-          : progress?.phase === "finalizing"
-            ? "Finalizing full-history metadata"
-            : "Scanning full session history";
+        : progress?.phase === "committing"
+          ? "Committing full-history publication"
+          : progress?.phase === "indexing"
+            ? "Writing full-history search index"
+            : progress?.phase === "publishing"
+              ? "Preparing full-history publication"
+              : progress?.phase === "finalizing"
+                ? "Finalizing full-history metadata"
+                : "Scanning full session history";
     return current
       ? `${stageLabel} · ${current}${progressLabel}${pending > 0 ? ` · ${pending} history scan queued` : ""}`
       : `${stageLabel}${progressLabel}`;
