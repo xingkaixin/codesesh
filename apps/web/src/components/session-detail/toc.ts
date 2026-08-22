@@ -1,5 +1,5 @@
 import type { ToolPart } from "../../lib/api";
-import type { MessageDisplayModel } from "./display-model";
+import type { FilteredSessionMessage, MessageDisplayModel } from "./display-model-types";
 import type { MessageBlock } from "./blocks";
 import { classifyToolOperation, type ToolOperationKind } from "./file-change";
 
@@ -34,11 +34,7 @@ export interface SessionDetailToc {
   totalUnitCount: number;
 }
 
-export interface FilteredSessionMessage {
-  msg: MessageDisplayModel["msg"];
-  blocks: MessageBlock[];
-  index: number;
-}
+export type { FilteredSessionMessage } from "./display-model-types";
 
 type ToolMessageBlock = Extract<MessageBlock, { type: "tool" }>;
 

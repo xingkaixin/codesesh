@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { SessionCacheMeta } from "../../agents/base.js";
+import type { SessionCacheMeta } from "../../agents/session-source-types.js";
 import type { IdentifiedSessionHead, SessionDetail } from "../../types/index.js";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import type { PersistedSessionHeadChange } from "./db.js";
@@ -19,8 +19,8 @@ import {
   deleteLegacyCacheFile,
   writeCachedSessionChanges,
   writeCachedSessionSnapshot,
-  type SessionSnapshotCompleteness,
 } from "./sessions.js";
+import type { SessionSnapshotCompleteness } from "./snapshot-types.js";
 
 export type DurableSessionPublication =
   | {

@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import type { SessionSnapshotCompleteness } from "../discovery/cache/sessions.js";
+import type { SessionSnapshotCompleteness } from "../discovery/cache/snapshot-types.js";
 import { PRICING_CAPTURE_EPOCH, pricingBecameAvailable } from "../pricing/cost.js";
 import type { SessionHead } from "../types/index.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
@@ -12,7 +12,7 @@ import type {
   SessionSourceFailure,
   SessionSourceOutcome,
   SessionSourceRef,
-} from "./base.js";
+} from "./session-source-types.js";
 
 export interface SessionSourceSynchronizationAdapter {
   readonly name: string;

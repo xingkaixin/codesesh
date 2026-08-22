@@ -89,7 +89,8 @@ describe("CS-173: quality task coverage", () => {
   it("keeps root sources in every repository quality command", () => {
     const scripts = {
       lint: "pnpm lint:root && turbo run lint",
-      "lint:root": "oxlint scripts tests playwright.config.ts vitest.config.ts",
+      "lint:root":
+        "node scripts/check-import-cycles.mjs && oxlint scripts tests playwright.config.ts vitest.config.ts",
       "lint:fix": "pnpm lint:fix:root && turbo run lint:fix",
       "lint:fix:root": "oxlint scripts tests playwright.config.ts vitest.config.ts --fix",
       format: "pnpm format:root && turbo run format",
@@ -105,7 +106,11 @@ describe("CS-173: quality task coverage", () => {
     );
     expect(
       findCommandCoverageGaps(
-        { ...scripts, "lint:root": "oxlint scripts playwright.config.ts vitest.config.ts" },
+        {
+          ...scripts,
+          "lint:root":
+            "node scripts/check-import-cycles.mjs && oxlint scripts playwright.config.ts vitest.config.ts",
+        },
         ROOT_TASK_REQUIREMENTS,
         "codesesh-monorepo",
       ),

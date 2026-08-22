@@ -1,5 +1,9 @@
-import { AGENT_CATALOG, type AgentName } from "../contract/agent-catalog.js";
-import type { AgentRegistration } from "./registry.js";
+import {
+  AGENT_CATALOG,
+  type AgentCatalogEntry,
+  type AgentName,
+} from "../contract/agent-catalog.js";
+import type { BaseAgent } from "./base.js";
 import { ClaudeCodeAgent, resolveClaudeCodeDataRoot } from "./claudecode.js";
 import { OpenCodeAgent, resolveOpenCodeDataRoot } from "./opencode.js";
 import { KimiAgent, resolveKimiDataRoot } from "./kimi.js";
@@ -10,6 +14,11 @@ import { PiAgent, resolvePiDataRoot } from "./pi.js";
 import { ZCodeAgent, resolveZCodeDataRoot } from "./zcode.js";
 import { GrokAgent, resolveGrokDataRoot } from "./grok.js";
 import { DshAgent, resolveDshDataRoot } from "./dsh.js";
+
+export interface AgentRegistration extends AgentCatalogEntry {
+  create: () => BaseAgent;
+  resolveDataRoot: () => string | null;
+}
 
 type AgentRuntimeRegistration = Pick<AgentRegistration, "create" | "resolveDataRoot">;
 

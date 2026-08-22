@@ -26,7 +26,14 @@ export const SCRIPT_PACKAGE_TASK_REQUIREMENTS = {
 };
 export const ROOT_TASK_REQUIREMENTS = {
   lint: ["pnpm lint:root", "turbo run lint"],
-  "lint:root": ["oxlint", "scripts", "tests", "playwright.config.ts", "vitest.config.ts"],
+  "lint:root": [
+    "node scripts/check-import-cycles.mjs",
+    "oxlint",
+    "scripts",
+    "tests",
+    "playwright.config.ts",
+    "vitest.config.ts",
+  ],
   "lint:fix": ["pnpm lint:fix:root", "turbo run lint:fix"],
   "lint:fix:root": [
     "oxlint",

@@ -1,4 +1,4 @@
-import type { SessionCacheMeta } from "../../agents/base.js";
+import type { SessionCacheMeta } from "../../agents/session-source-types.js";
 
 const DETAIL_PROJECTION_VERSION = "session-detail-v1";
 

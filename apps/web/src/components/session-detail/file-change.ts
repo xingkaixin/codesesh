@@ -4,7 +4,7 @@
  * per-path summaries (with anchor ids for click-to-scroll).
  */
 import type { Message, SessionFileActivity, ToolPart } from "../../lib/api";
-import type { MessageDisplayModel } from "./display-model";
+import type { MessageDisplayModel } from "./display-model-types";
 import { getCodexPatchEntries } from "./codex-patch";
 import { normalizeToolLabel, normalizeToolName } from "./tool-normalize";
 import { extractPathsFromToolInput, getToolInputValue } from "./path-extract";

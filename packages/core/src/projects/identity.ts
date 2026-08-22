@@ -3,13 +3,9 @@ import * as path from "node:path";
 import { createHash } from "node:crypto";
 import type { ProjectIdentity, ProjectIdentityKind } from "../types/index.js";
 import { fallbackDisplayName } from "./display-name.js";
-import { realFs } from "./fs.js";
+import { realFs, type IdentityFs } from "./fs.js";
 
-export interface IdentityFs {
-  exists(path: string): boolean;
-  readText(path: string): string | null;
-  spawn(cmd: string, args: string[], opts: { cwd: string }): { stdout: string; exitCode: number };
-}
+export type { IdentityFs } from "./fs.js";
 
 export const PROJECT_IDENTITY_RESOLVER_REVISION = "project-identity-v2";
 
