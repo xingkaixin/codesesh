@@ -6,28 +6,33 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type KeyboardEvent,
 } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight } from "../ui/icons";
 import {
-  findActiveTimelineIndex,
-  findTimelineEdgeIndex,
   findTimelineIndexAtPointer,
   type SessionTimelineEntry,
   type SessionTimelineEntryKind,
 } from "./timeline";
-import {
-  findScrollParent,
-  getScrollHeight,
-  getScrollTop,
-  getViewportHeight,
-  isWindowScrollParent,
-  getActivationScrollBehavior,
-  type SessionAnchorScrollBehavior,
-} from "./scroll-behavior";
+import { getActivationScrollBehavior, type SessionAnchorScrollBehavior } from "./scroll-behavior";
 import type { TimelineAnchorRegistry } from "./timeline-anchor-registry";
+import {
+  getInitialTimelineRenderRange,
+  getTimelineRenderRange,
+  getTrackLayout,
+  getVirtualizedSegmentStyle,
+  scrollTimelineIndexIntoView,
+  TIMELINE_SEGMENT_MIN_WIDTH,
+  VIRTUALIZED_TIMELINE_THRESHOLD,
+} from "./session-message-timeline-layout";
+import {
+  SessionMessageTimelineMinimap,
+  type MinimapWindow,
+} from "./session-message-timeline-minimap";
+import { useActiveTimelineIndex } from "./use-active-timeline-index";
+
+export { VIRTUALIZED_TIMELINE_THRESHOLD } from "./session-message-timeline-layout";
 
 interface SessionMessageTimelineProps {
   entries: SessionTimelineEntry[];
@@ -44,11 +49,8 @@ interface TimelineTooltip {
   source: "focus" | "pointer";
 }
 
-const TIMELINE_SEGMENT_MIN_WIDTH = 10;
 const TIMELINE_SCROLL_EDGE_TOLERANCE = 1;
 const TIMELINE_TOOLTIP_VIEWPORT_PADDING = 8;
-export const VIRTUALIZED_TIMELINE_THRESHOLD = 80;
-const VIRTUALIZED_TIMELINE_OVERSCAN = 6;
 
 const KIND_CLASS: Record<SessionTimelineEntryKind, string> = {
   user: "bg-[var(--timeline-user)]",
@@ -57,26 +59,6 @@ const KIND_CLASS: Record<SessionTimelineEntryKind, string> = {
   "tool-write": "bg-[var(--timeline-tool-write)]",
   "tool-execute": "bg-[var(--timeline-tool-execute)]",
 };
-
-// The canvas minimap cannot resolve var(), so it reads the same tokens KIND_CLASS
-// paints with. Tailwind needs the classes above as literals, hence the two maps.
-const KIND_TOKEN: Record<SessionTimelineEntryKind, string> = {
-  user: "--timeline-user",
-  agent: "--timeline-agent",
-  "tool-read": "--timeline-tool-read",
-  "tool-write": "--timeline-tool-write",
-  "tool-execute": "--timeline-tool-execute",
-};
-
-interface MinimapWindow {
-  start: number;
-  size: number;
-}
-
-interface TimelineRenderRange {
-  start: number;
-  end: number;
-}
 
 interface TimelineSegmentProps {
   entry: SessionTimelineEntry;
@@ -92,54 +74,6 @@ interface TimelineSegmentProps {
     source: TimelineTooltip["source"],
   ) => void;
   onHideTooltip: (entryId: string) => void;
-}
-
-function getInitialTimelineRenderRange(entryCount: number): TimelineRenderRange {
-  return {
-    start: 0,
-    end: Math.min(entryCount, VIRTUALIZED_TIMELINE_THRESHOLD),
-  };
-}
-
-function getTimelineRenderRange(
-  entryCount: number,
-  scrollLeft: number,
-  clientWidth: number,
-  scrollWidth: number,
-): TimelineRenderRange {
-  if (entryCount <= VIRTUALIZED_TIMELINE_THRESHOLD) {
-    return { start: 0, end: entryCount };
-  }
-  if (clientWidth <= 0 || scrollWidth <= 0) {
-    return getInitialTimelineRenderRange(entryCount);
-  }
-  if (clientWidth >= scrollWidth) {
-    return { start: 0, end: entryCount };
-  }
-
-  const visibleStart = Math.floor((Math.max(0, scrollLeft) / scrollWidth) * entryCount);
-  const visibleEnd = Math.ceil(
-    (Math.min(scrollWidth, scrollLeft + clientWidth) / scrollWidth) * entryCount,
-  );
-  return {
-    start: Math.max(0, visibleStart - VIRTUALIZED_TIMELINE_OVERSCAN),
-    end: Math.min(entryCount, visibleEnd + VIRTUALIZED_TIMELINE_OVERSCAN),
-  };
-}
-
-function getVirtualizedSegmentStyle(
-  index: number,
-  entryCount: number,
-  gapWidth: number,
-): CSSProperties {
-  const segmentWidth = 100 / entryCount;
-  return {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: `calc(${index * segmentWidth}% + ${(index * gapWidth) / entryCount}px)`,
-    width: `calc(${segmentWidth}% - ${((entryCount - 1) * gapWidth) / entryCount}px)`,
-  };
 }
 
 const TimelineSegment = memo(function TimelineSegment({
@@ -176,63 +110,6 @@ const TimelineSegment = memo(function TimelineSegment({
   );
 });
 
-function getScrollViewport(parent: HTMLElement | Window) {
-  const viewportHeight = getViewportHeight(parent);
-  return {
-    center: isWindowScrollParent(parent)
-      ? viewportHeight / 2
-      : parent.getBoundingClientRect().top + viewportHeight / 2,
-    scrollTop: getScrollTop(parent),
-    viewportHeight,
-    scrollHeight: getScrollHeight(parent),
-  };
-}
-
-function getTrackLayout(entryCount: number) {
-  const gap =
-    entryCount > 80
-      ? { className: "gap-px", width: 1 }
-      : entryCount > 40
-        ? { className: "gap-0.5", width: 2 }
-        : { className: "gap-1", width: 4 };
-  return {
-    gapClassName: gap.className,
-    gapWidth: gap.width,
-    minWidth: entryCount * TIMELINE_SEGMENT_MIN_WIDTH + Math.max(0, entryCount - 1) * gap.width,
-  };
-}
-
-function scrollTimelineIndexIntoView(
-  viewport: HTMLElement,
-  track: HTMLElement,
-  index: number,
-  entryCount: number,
-  gapWidth: number,
-) {
-  if (entryCount === 0 || viewport.clientWidth <= 0) return;
-  const trackWidth = Math.max(
-    viewport.scrollWidth,
-    track.scrollWidth,
-    track.getBoundingClientRect().width,
-  );
-  if (trackWidth <= 0) return;
-
-  const segmentWidth = Math.max(
-    0,
-    (trackWidth - Math.max(0, entryCount - 1) * gapWidth) / entryCount,
-  );
-  const segmentStart = index * (segmentWidth + gapWidth);
-  const segmentEnd = segmentStart + segmentWidth;
-  const viewportStart = viewport.scrollLeft;
-  const viewportEnd = viewportStart + viewport.clientWidth;
-
-  if (segmentStart < viewportStart) {
-    viewport.scrollLeft = segmentStart;
-  } else if (segmentEnd > viewportEnd) {
-    viewport.scrollLeft = segmentEnd - viewport.clientWidth;
-  }
-}
-
 export function SessionMessageTimeline({
   entries,
   anchorRegistry,
@@ -245,21 +122,14 @@ export function SessionMessageTimeline({
   const tooltipTriggerRef = useRef<HTMLElement | null>(null);
   const dragRef = useRef({ active: false, moved: false, startX: 0, lastIndex: -1 });
   const suppressClickRef = useRef(false);
-  const minimapCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const minimapDragRef = useRef<{ pointerId: number; grabOffset: number } | null>(null);
   const pendingFocusIndexRef = useRef<number | null>(null);
-  const [activeAnchorId, setActiveAnchorId] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<TimelineTooltip | null>(null);
   const [scrollAvailability, setScrollAvailability] = useState({ left: false, right: false });
   const [minimapWindow, setMinimapWindow] = useState<MinimapWindow | null>(null);
   const [renderRange, setRenderRange] = useState(() =>
     getInitialTimelineRenderRange(entries.length),
   );
-  const entryIndexes = useMemo(
-    () => new Map(entries.map((entry, index) => [entry.anchorId, index])),
-    [entries],
-  );
-  const activeIndex = activeAnchorId == null ? 0 : (entryIndexes.get(activeAnchorId) ?? 0);
+  const activeIndex = useActiveTimelineIndex({ rootRef, entries, anchorRegistry });
   const trackLayout = getTrackLayout(entries.length);
   const virtualized = entries.length > VIRTUALIZED_TIMELINE_THRESHOLD;
   const renderStart = virtualized ? Math.min(renderRange.start, entries.length) : 0;
@@ -333,110 +203,6 @@ export function SessionMessageTimeline({
   }, [entries.length, updateScrollAvailability]);
 
   useEffect(() => {
-    const root = rootRef.current;
-    if (!root || entries.length === 0) return;
-
-    const scrollParent = findScrollParent(root);
-    let frame = 0;
-
-    const readAnchorPosition = (anchorId: string, anchor: HTMLElement) => {
-      const index = entryIndexes.get(anchorId);
-      return index == null ? null : { index, top: anchor.getBoundingClientRect().top };
-    };
-    const scanAllAnchors = () =>
-      Array.from(anchorRegistry.entries()).flatMap(
-        ([anchorId, anchor]) => readAnchorPosition(anchorId, anchor) ?? [],
-      );
-
-    // Only intersecting anchors are re-measured per frame; IO keeps this set updated
-    // so scroll frames read O(visible) rects instead of O(total anchors).
-    const visibleAnchors = new Map<string, HTMLElement>();
-    const scanVisibleAnchors = () =>
-      Array.from(visibleAnchors).flatMap(
-        ([anchorId, anchor]) => readAnchorPosition(anchorId, anchor) ?? [],
-      );
-
-    const updateActiveEntry = () => {
-      const viewport = getScrollViewport(scrollParent);
-      const edgeIndex = findTimelineEdgeIndex(
-        viewport.scrollTop,
-        viewport.viewportHeight,
-        viewport.scrollHeight,
-        entries.length,
-      );
-      const positions = intersectionObserver ? scanVisibleAnchors() : scanAllAnchors();
-      const nextIndex = edgeIndex ?? findActiveTimelineIndex(positions, viewport.center);
-      const nextAnchorId = nextIndex == null ? null : entries[nextIndex]?.anchorId;
-      if (nextAnchorId != null) {
-        setActiveAnchorId((current) => (current === nextAnchorId ? current : nextAnchorId));
-      }
-    };
-    const scheduleUpdate = () => {
-      if (frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        updateActiveEntry();
-      });
-    };
-
-    const resizeObserver =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate);
-    const observedAnchorIds = new WeakMap<HTMLElement, string>();
-    const intersectionObserver =
-      typeof IntersectionObserver === "undefined"
-        ? null
-        : new IntersectionObserver(
-            (ioEntries) => {
-              for (const entry of ioEntries) {
-                const anchor = entry.target as HTMLElement;
-                const anchorId = observedAnchorIds.get(anchor);
-                if (!anchorId) continue;
-                if (entry.isIntersecting) visibleAnchors.set(anchorId, anchor);
-                else visibleAnchors.delete(anchorId);
-              }
-              scheduleUpdate();
-            },
-            { root: isWindowScrollParent(scrollParent) ? null : scrollParent, threshold: 0 },
-          );
-
-    const observeAnchor = (anchorId: string, anchor: HTMLElement) => {
-      observedAnchorIds.set(anchor, anchorId);
-      intersectionObserver?.observe(anchor);
-      resizeObserver?.observe(anchor);
-    };
-    const unobserveAnchor = (anchorId: string, anchor: HTMLElement) => {
-      intersectionObserver?.unobserve(anchor);
-      resizeObserver?.unobserve(anchor);
-      observedAnchorIds.delete(anchor);
-      visibleAnchors.delete(anchorId);
-    };
-    if (intersectionObserver) {
-      Array.from(anchorRegistry.entries()).forEach(([anchorId, anchor]) =>
-        observeAnchor(anchorId, anchor),
-      );
-    }
-
-    scheduleUpdate();
-    scrollParent.addEventListener("scroll", scheduleUpdate, { passive: true });
-    window.addEventListener("resize", scheduleUpdate);
-
-    const unsubscribe = anchorRegistry.subscribe((anchorId, element, previous) => {
-      if (previous && previous !== element) unobserveAnchor(anchorId, previous);
-      if (element) observeAnchor(anchorId, element);
-      scheduleUpdate();
-    });
-
-    return () => {
-      if (frame) cancelAnimationFrame(frame);
-      intersectionObserver?.disconnect();
-      resizeObserver?.disconnect();
-      unsubscribe();
-      scrollParent.removeEventListener("scroll", scheduleUpdate);
-      window.removeEventListener("resize", scheduleUpdate);
-    };
-  }, [anchorRegistry, entries, entryIndexes]);
-
-  useEffect(() => {
     const scrollViewport = scrollRef.current;
     const track = trackRef.current;
     if (!scrollViewport || !track) return;
@@ -461,82 +227,6 @@ export function SessionMessageTimeline({
     pendingFocusIndexRef.current = null;
     segment.focus();
   }, [renderEnd, renderStart]);
-
-  const minimapVisible = minimapWindow != null;
-
-  useEffect(() => {
-    const canvas = minimapCanvasRef.current;
-    if (!canvas || !minimapVisible) return;
-
-    const draw = () => {
-      const context = canvas.getContext("2d");
-      const width = canvas.clientWidth;
-      const height = canvas.clientHeight;
-      if (!context || !width || !height || entries.length === 0) return;
-      const ratio = window.devicePixelRatio || 1;
-      canvas.width = Math.round(width * ratio);
-      canvas.height = Math.round(height * ratio);
-      context.scale(ratio, ratio);
-      context.clearRect(0, 0, width, height);
-      const styles = window.getComputedStyle(canvas);
-      // Canvas cannot parse `currentColor`, so the fallback is its resolved value.
-      const colors = Object.fromEntries(
-        Object.entries(KIND_TOKEN).map(([kind, token]) => [
-          kind,
-          styles.getPropertyValue(token).trim() || styles.color,
-        ]),
-      ) as Record<SessionTimelineEntryKind, string>;
-      entries.forEach((entry, index) => {
-        const x0 = (index / entries.length) * width;
-        const x1 = ((index + 1) / entries.length) * width;
-        context.fillStyle = colors[entry.kind];
-        context.fillRect(x0, 0, Math.max(x1 - x0, 0.5), height);
-      });
-    };
-
-    draw();
-    // The palette read above is resolved once per draw; toggling .dark on
-    // <html> changes the resolved --timeline-* values without resizing the
-    // canvas, so redraw must also be triggered by that class flip.
-    const themeObserver = new MutationObserver(draw);
-    themeObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class"],
-    });
-    if (typeof ResizeObserver === "undefined") return () => themeObserver.disconnect();
-    const resizeObserver = new ResizeObserver(draw);
-    resizeObserver.observe(canvas);
-    return () => {
-      themeObserver.disconnect();
-      resizeObserver.disconnect();
-    };
-  }, [entries, minimapVisible]);
-
-  const scrollToMinimapRatio = useCallback((ratio: number, grabOffset: number) => {
-    const viewport = scrollRef.current;
-    if (!viewport) return;
-    viewport.scrollLeft = (ratio - grabOffset) * viewport.scrollWidth;
-  }, []);
-
-  const handleMinimapKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
-    const viewport = scrollRef.current;
-    if (!viewport) return;
-    const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
-    const step = Math.max(40, viewport.clientWidth * 0.1);
-    const page = Math.max(120, viewport.clientWidth * 0.75);
-    let next: number | null = null;
-
-    if (event.key === "ArrowLeft") next = viewport.scrollLeft - step;
-    if (event.key === "ArrowRight") next = viewport.scrollLeft + step;
-    if (event.key === "PageUp") next = viewport.scrollLeft - page;
-    if (event.key === "PageDown") next = viewport.scrollLeft + page;
-    if (event.key === "Home") next = 0;
-    if (event.key === "End") next = maxScrollLeft;
-    if (next == null) return;
-
-    event.preventDefault();
-    viewport.scrollLeft = Math.min(maxScrollLeft, Math.max(0, next));
-  }, []);
 
   const showTooltip = useCallback(
     (entry: SessionTimelineEntry, trigger: HTMLElement, source: TimelineTooltip["source"]) => {
@@ -762,65 +452,11 @@ export function SessionMessageTimeline({
           )}
         </div>
         {minimapWindow && (
-          <div
-            data-testid="session-timeline-minimap"
-            role="scrollbar"
-            aria-controls="session-timeline-viewport"
-            aria-orientation="horizontal"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round((minimapWindow.start / (1 - minimapWindow.size)) * 100)}
-            aria-label="Timeline scroll position"
-            tabIndex={0}
-            className="session-timeline-minimap relative mt-2 h-2.5 cursor-pointer touch-none select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]"
-            onKeyDown={handleMinimapKeyDown}
-            onPointerDown={(event) => {
-              if (event.button !== 0) return;
-              const rect = event.currentTarget.getBoundingClientRect();
-              if (rect.width <= 0) return;
-              const ratio = (event.clientX - rect.left) / rect.width;
-              const withinWindow =
-                ratio >= minimapWindow.start && ratio <= minimapWindow.start + minimapWindow.size;
-              const grabOffset = withinWindow
-                ? ratio - minimapWindow.start
-                : minimapWindow.size / 2;
-              minimapDragRef.current = { pointerId: event.pointerId, grabOffset };
-              event.currentTarget.setPointerCapture(event.pointerId);
-              scrollToMinimapRatio(ratio, grabOffset);
-            }}
-            onPointerMove={(event) => {
-              const drag = minimapDragRef.current;
-              if (!drag || drag.pointerId !== event.pointerId) return;
-              const rect = event.currentTarget.getBoundingClientRect();
-              if (rect.width <= 0) return;
-              scrollToMinimapRatio((event.clientX - rect.left) / rect.width, drag.grabOffset);
-            }}
-            onPointerUp={(event) => {
-              minimapDragRef.current = null;
-              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-                event.currentTarget.releasePointerCapture(event.pointerId);
-              }
-            }}
-            onPointerCancel={() => {
-              minimapDragRef.current = null;
-            }}
-          >
-            <div className="relative h-full w-full overflow-hidden rounded-[2px]">
-              <canvas
-                ref={minimapCanvasRef}
-                aria-hidden="true"
-                className="absolute inset-0 h-full w-full"
-              />
-              <div
-                data-testid="session-timeline-minimap-window"
-                className="session-timeline-minimap-window absolute inset-y-0"
-                style={{
-                  left: `${minimapWindow.start * 100}%`,
-                  width: `${minimapWindow.size * 100}%`,
-                }}
-              />
-            </div>
-          </div>
+          <SessionMessageTimelineMinimap
+            entries={entries}
+            viewportRef={scrollRef}
+            visibleWindow={minimapWindow}
+          />
         )}
         {tooltip &&
           createPortal(
