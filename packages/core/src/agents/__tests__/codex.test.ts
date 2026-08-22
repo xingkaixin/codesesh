@@ -322,6 +322,78 @@ describe("CodexAgent cache refresh", () => {
     expect(agent.ensureSubagentIndex().childFilesByParent.get(otherParentId)).toEqual([childFile]);
   });
 
+  it("rebuilds the subagent index from persisted session metadata", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const parentId = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+    const childId = "019dcccc-cccc-7ccc-cccc-cccccccccccc";
+    const parentFile = join(tempDir, `rollout-2026-04-20T10-00-00-${parentId}.jsonl`);
+    const childFile = join(tempDir, `rollout-2026-04-20T10-05-00-${childId}.jsonl`);
+    writeFileSync(
+      parentFile,
+      `${JSON.stringify({ type: "session_meta", payload: { id: parentId } })}\n`,
+    );
+    writeFileSync(
+      childFile,
+      `${JSON.stringify({
+        type: "session_meta",
+        payload: { id: childId, thread_source: "subagent", parent_thread_id: parentId },
+      })}\n`,
+    );
+
+    const firstAgent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    firstAgent.scan();
+    const cachedMeta = firstAgent.snapshotSessionCacheMeta();
+    expect(cachedMeta[childId]).toMatchObject({ isSubagent: true, parentThreadId: parentId });
+
+    const restoredAgent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    restoredAgent.restoreSessionCacheMeta(cachedMeta);
+    const openSpy = vi.mocked(openSync);
+    openSpy.mockClear();
+    const readDirectorySpy = vi.spyOn(restoredAgent, "readSessionSourceDirectory");
+
+    const sources = restoredAgent.listScanSources({ from: 0 });
+
+    expect(sources.map((source: { file: string }) => source.file).sort()).toEqual(
+      [parentFile, childFile].sort(),
+    );
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(readDirectorySpy).toHaveBeenCalledOnce();
+    expect(restoredAgent.ensureSubagentIndex().childFilesByParent.get(parentId)).toEqual([
+      childFile,
+    ]);
+  });
+
+  it("upgrades legacy session metadata while rebuilding the subagent index", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const parentId = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+    const childId = "019dcccc-cccc-7ccc-cccc-cccccccccccc";
+    const childFile = join(tempDir, `rollout-2026-04-20T10-05-00-${childId}.jsonl`);
+    writeFileSync(
+      childFile,
+      `${JSON.stringify({
+        type: "session_meta",
+        payload: { id: childId, thread_source: "subagent", parent_thread_id: parentId },
+      })}\n`,
+    );
+
+    const firstAgent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    firstAgent.scan();
+    const cachedMeta = firstAgent.snapshotSessionCacheMeta();
+    delete cachedMeta[childId].isSubagent;
+    delete cachedMeta[childId].parentThreadId;
+
+    const restoredAgent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    restoredAgent.restoreSessionCacheMeta(cachedMeta);
+    restoredAgent.listScanSources({ from: 0 });
+
+    expect(restoredAgent.snapshotSessionCacheMeta()[childId]).toMatchObject({
+      isSubagent: true,
+      parentThreadId: parentId,
+    });
+  });
+
   it("keeps source references and fingerprints byte-for-byte stable", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-fingerprint-"));
     tempDirs.push(tempDir);
