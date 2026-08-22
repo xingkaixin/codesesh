@@ -1,6 +1,13 @@
 export { firstExisting, readEnvPath, resolveDataHome, resolveHomePath } from "./paths.js";
-export { ensureSessionTagsSync, filterSessions, scanSessions } from "./scanner.js";
-export type { AgentCacheFailure, LiveSnapshot, ScanOptions, SessionTagTiming } from "./scanner.js";
+export { filterSessions, scanSessions } from "./scanner.js";
+export {
+  ensureSessionTags,
+  ensureSessionTagsSync,
+  hasStaleSessionTags,
+  inheritSessionTags,
+} from "./session-tags.js";
+export type { AgentCacheFailure, LiveSnapshot, ScanOptions } from "./scanner.js";
+export type { SessionTagTiming } from "./session-tags.js";
 export { inspectAgentRefresh, planAgentScan } from "./agent-scan-plan.js";
 export type { AgentRefreshInspection, AgentScanIntent, AgentScanPlan } from "./agent-scan-plan.js";
 export {

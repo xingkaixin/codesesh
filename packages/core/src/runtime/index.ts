@@ -48,6 +48,8 @@ export {
   commitDurableSessionPublication,
   computeSessionDiff,
   ensureSessionTagsSync,
+  hasStaleSessionTags,
+  inheritSessionTags,
   getAgentFullSyncCursor,
   getAnalyticsRevision,
   getSearchProjectDirectory,

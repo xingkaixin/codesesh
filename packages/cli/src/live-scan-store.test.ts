@@ -667,7 +667,6 @@ describe("LiveScanStore", () => {
       expect.objectContaining({
         agents: ["codex", "kimi"],
         useCache: true,
-        smartRefresh: false,
         writeCache: undefined,
         includeSmartTags: undefined,
       }),
@@ -746,7 +745,6 @@ describe("LiveScanStore", () => {
       1,
       expect.objectContaining({
         useCache: true,
-        smartRefresh: false,
         cacheOnly: true,
         writeCache: false,
         includeSmartTags: false,

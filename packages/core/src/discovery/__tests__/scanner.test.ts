@@ -258,7 +258,8 @@ vi.mock("../../agents/index.js", async (importOriginal) => {
   return { ...actual, createRegisteredAgents: vi.fn(() => []) };
 });
 
-import { ensureSessionTagsSync, finalizeAgentScan, scanSessions } from "../scanner.js";
+import { finalizeAgentScan, scanSessions } from "../scanner.js";
+import { ensureSessionTagsSync } from "../session-tags.js";
 import { createRegisteredAgents } from "../../agents/index.js";
 import {
   readCachedSessions,
@@ -1147,7 +1148,6 @@ describe("scanSessions", () => {
 
     const result = await scanSessions({
       useCache: true,
-      smartRefresh: false,
       from: 500,
       to: 1_500,
       fast: true,

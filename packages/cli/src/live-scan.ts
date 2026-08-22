@@ -84,7 +84,6 @@ export class LiveScanStore {
     const initialResult = await scanSessions({
       ...this.scanOptions,
       useCache: this.scanOptions.useCache ?? true,
-      smartRefresh: false,
       cacheOnly: this.deferInitialRefresh,
       writeCache: this.deferInitialRefresh ? false : this.scanOptions.writeCache,
       smartTagWorkerUrl: this.getSmartTagWorkerUrl() ?? undefined,
