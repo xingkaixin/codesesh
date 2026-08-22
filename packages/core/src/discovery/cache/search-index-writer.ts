@@ -12,7 +12,7 @@ import {
   normalizeMessages,
   prepareInsertFileActivity,
   prepareInsertMessageTool,
-  prepareUpsertIndexedSession,
+  prepareUpsertSession,
   assertSessionProjectIdentities,
   requireSessionProjectIdentity,
   upsertSessionRow,
@@ -618,7 +618,7 @@ function writeSearchIndexRows(
     FROM normalized
     GROUP BY agent_name, session_id
   `);
-  const writeIndexedSession = prepareUpsertIndexedSession(db);
+  const writeMaterializedSession = prepareUpsertSession(db, "materialization");
   const insertFileActivity = prepareInsertFileActivity(db);
   const insertMessageTool = prepareInsertMessageTool(db);
   const upsertMessage = db.prepare(`
@@ -715,7 +715,14 @@ function writeSearchIndexRows(
         continue;
       }
     }
-    upsertSessionRow(writeIndexedSession, agentName, entry.session, null, entry.sortIndex, null);
+    upsertSessionRow(
+      writeMaterializedSession,
+      agentName,
+      entry.session,
+      null,
+      entry.sortIndex,
+      null,
+    );
     deleteFileActivity.run(agentName, sessionId);
     deleteMessageTools.run(agentName, sessionId, 0);
     clearPendingReindex.run(agentName, sessionId);

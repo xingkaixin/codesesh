@@ -116,6 +116,43 @@ describe("search index writer", () => {
     expect(listFileActivity({ projectKind: "path", projectKey: "/workspace/project" })).toEqual([]);
   });
 
+  it("keeps cache-owned fields when materializing an indexed head", () => {
+    const other = makeSessionHead("other");
+    const session = makeSessionHead("materialized");
+    const meta = {
+      id: session.reference.sessionId,
+      sourcePath: "/cached/materialized.jsonl",
+      sourceFingerprint: "cached-version",
+    };
+    saveCachedSessions("codex", [other, session], { [session.reference.sessionId]: meta });
+
+    const updated = { ...session, title: "Materialized title" };
+    syncSessionSearchIndexChanges("codex", [{ session: updated, sortIndex: 0 }], [], () => ({
+      ...makeSessionData(session.reference.sessionId),
+      ...updated,
+    }));
+
+    const row = withCacheDb(
+      (db) =>
+        db
+          .prepare(
+            "SELECT sort_index, title, source_path, meta_json FROM sessions WHERE agent_name = ? AND session_id = ?",
+          )
+          .get("codex", session.reference.sessionId) as {
+          sort_index: number;
+          title: string;
+          source_path: string;
+          meta_json: string;
+        },
+    );
+    expect(row).toEqual({
+      sort_index: 1,
+      title: updated.title,
+      source_path: meta.sourcePath,
+      meta_json: JSON.stringify(meta),
+    });
+  });
+
   it("recomputes the message hash chain when an indexed prefix changes", () => {
     const session = {
       ...makeSessionHead("chain"),
