@@ -2,9 +2,14 @@ import type { SessionDetail, SessionHead } from "../../types/index.js";
 import { extractSessionFileActivity } from "../../utils/file-activity.js";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import type { SQLiteDatabase } from "../../utils/sqlite.js";
-import { SEARCH_INDEX_BULK_SYNC_THRESHOLD, type PersistedSessionHeadChange } from "./db.js";
+import {
+  SEARCH_INDEX_BULK_SYNC_THRESHOLD,
+  type PersistedSessionHeadChange,
+  type SQLiteStatement,
+} from "./db.js";
 import { advanceAnalyticsRevision } from "./analytics-revision.js";
 import {
+  appendPlainText,
   buildSessionContentFromMessages,
   normalizeMessages,
   assertSessionProjectIdentities,
@@ -28,6 +33,7 @@ import {
   readSearchIndexState,
   searchIndexEntryNeedsUpdate,
   sessionContentHash,
+  sessionDetailFactsHash,
   targetDetailVersion,
   type SearchIndexState,
   type SearchIndexSyncOptions,
@@ -37,6 +43,7 @@ export {
   readPendingSearchIndexMaintenance,
   searchIndexStateQuery,
   type PendingSearchIndexMaintenance,
+  type SearchIndexPublicationStage,
   type SearchIndexSyncOptions,
 } from "./search-index-state.js";
 
@@ -57,18 +64,43 @@ export interface SearchIndexSyncResult {
   failures?: SearchIndexSyncFailure[];
   durationMs: number;
   rebuildDurationMs?: number;
+  planningDurationMs: number;
+  getSessionDataCalls: number;
+  reusedMaterializations: number;
+  getSessionDataDurationMs: number;
+  materializationDurationMs: number;
 }
 
 const SEARCH_INDEX_COMMIT_CHUNK_SIZE = 64;
 
-interface LoadedSearchIndexEntry extends SessionMaterializationEntry {
+interface LoadedSearchIndexEntryBase {
+  session: SessionHead;
   contentText: string;
   contentHash: string;
   detailVersion: string;
+  sortIndex: number;
+  messageCount: number;
 }
+
+interface ParsedSearchIndexEntry extends LoadedSearchIndexEntryBase, SessionMaterializationEntry {
+  materialization: "replace";
+}
+
+interface ReusedSearchIndexEntry extends LoadedSearchIndexEntryBase {
+  materialization: "reuse";
+}
+
+type LoadedSearchIndexEntry = ParsedSearchIndexEntry | ReusedSearchIndexEntry;
 
 interface SearchIndexRowWriteOptions {
   verifySupersession?: boolean;
+}
+
+interface SearchIndexLoadTiming {
+  calls: number;
+  reused: number;
+  getSessionDataMs: number;
+  materializationMs: number;
 }
 
 type SearchIndexPlanRequest =
@@ -86,6 +118,7 @@ interface SearchIndexPlan {
   changes: PersistedSessionHeadChange[];
   removedSessionIds: string[];
   detailVersionBySessionId: Map<string, string>;
+  reusableMessageCountBySessionId: Map<string, number>;
   needsRebuild: boolean;
   startedAt: number;
 }
@@ -116,6 +149,12 @@ interface PreparedSearchIndexPublication {
   failures: SearchIndexSyncFailure[];
   needsRebuild: boolean;
   startedAt: number;
+  planningDurationMs: number;
+  loadTiming: SearchIndexLoadTiming;
+}
+
+function createSearchIndexLoadTiming(): SearchIndexLoadTiming {
+  return { calls: 0, reused: 0, getSessionDataMs: 0, materializationMs: 0 };
 }
 
 function shouldBulkSyncSearchIndex(options: SearchIndexSyncOptions, changedCount: number): boolean {
@@ -133,21 +172,36 @@ function loadSearchIndexEntry(
   loadSessionData: (sessionId: string) => SessionDetail,
   detailVersion: string,
   failures: SearchIndexSyncFailure[],
+  timing: SearchIndexLoadTiming,
 ): LoadedSearchIndexEntry | null {
   const sessionId = change.session.reference.sessionId;
   try {
-    const data = loadSessionData(sessionId);
-    const messages = normalizeMessages(data);
-    const identity = requireSessionProjectIdentity(agentName, change.session);
-    return {
-      session: change.session,
-      messages,
-      contentText: buildSessionContentFromMessages(data.title ?? change.session.title, messages),
-      contentHash: sessionContentHash(change.session),
-      fileActivity: extractSessionFileActivity(agentName, sessionId, identity.key, data.messages),
-      sortIndex: change.sortIndex,
-      detailVersion,
-    };
+    timing.calls += 1;
+    const loadStartedAt = performance.now();
+    let data: SessionDetail;
+    try {
+      data = loadSessionData(sessionId);
+    } finally {
+      timing.getSessionDataMs += performance.now() - loadStartedAt;
+    }
+    const materializationStartedAt = performance.now();
+    try {
+      const messages = normalizeMessages(data);
+      const identity = requireSessionProjectIdentity(agentName, change.session);
+      return {
+        session: change.session,
+        materialization: "replace",
+        messages,
+        contentText: buildSessionContentFromMessages(data.title ?? change.session.title, messages),
+        contentHash: sessionContentHash(change.session),
+        fileActivity: extractSessionFileActivity(agentName, sessionId, identity.key, data.messages),
+        sortIndex: change.sortIndex,
+        messageCount: messages.length,
+        detailVersion,
+      };
+    } finally {
+      timing.materializationMs += performance.now() - materializationStartedAt;
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     failures.push({ sessionId, reason: "parse-failed", message });
@@ -160,21 +214,78 @@ function loadSearchIndexEntry(
   }
 }
 
+function loadReusedSearchIndexEntry(
+  readCachedContent: SQLiteStatement,
+  agentName: string,
+  change: PersistedSessionHeadChange,
+  detailVersion: string,
+  expectedMessageCount: number,
+  timing: SearchIndexLoadTiming,
+): ReusedSearchIndexEntry | null {
+  const sessionId = change.session.reference.sessionId;
+  const startedAt = performance.now();
+  try {
+    const rows = readCachedContent.all(agentName, sessionId) as Array<{
+      content_text?: string | null;
+    }>;
+    if (rows.length !== expectedMessageCount) return null;
+
+    const chunks: string[] = [];
+    appendPlainText(change.session.title, chunks);
+    for (const row of rows) appendPlainText(row.content_text, chunks);
+    timing.reused += 1;
+    return {
+      session: change.session,
+      materialization: "reuse",
+      contentText: chunks.join("\n"),
+      contentHash: sessionContentHash(change.session),
+      detailVersion,
+      sortIndex: change.sortIndex,
+      messageCount: rows.length,
+    };
+  } finally {
+    timing.materializationMs += performance.now() - startedAt;
+  }
+}
+
 function* loadSearchIndexEntries(
+  db: SQLiteDatabase,
   agentName: string,
   changes: Iterable<PersistedSessionHeadChange>,
   loadSessionData: (sessionId: string) => SessionDetail,
   detailVersionFor: (sessionId: string) => string,
   failures: SearchIndexSyncFailure[],
+  timing: SearchIndexLoadTiming,
+  reusableMessageCountBySessionId: ReadonlyMap<string, number>,
 ): Generator<LoadedSearchIndexEntry> {
+  const readCachedContent = db.prepare(
+    "SELECT content_text FROM messages WHERE agent_name = ? AND session_id = ? ORDER BY message_index",
+  );
   for (const change of changes) {
     const sessionId = change.session.reference.sessionId;
+    const detailVersion = detailVersionFor(sessionId);
+    const reusableMessageCount = reusableMessageCountBySessionId.get(sessionId);
+    if (reusableMessageCount !== undefined) {
+      const reused = loadReusedSearchIndexEntry(
+        readCachedContent,
+        agentName,
+        change,
+        detailVersion,
+        reusableMessageCount,
+        timing,
+      );
+      if (reused) {
+        yield reused;
+        continue;
+      }
+    }
     const entry = loadSearchIndexEntry(
       agentName,
       change,
       loadSessionData,
-      detailVersionFor(sessionId),
+      detailVersion,
       failures,
+      timing,
     );
     if (entry) yield entry;
   }
@@ -240,14 +351,18 @@ function writeSearchIndexRows(
       }
     }
     clearPendingReindex.run(agentName, sessionId);
-    materialization.writeSession(entry);
+    if (entry.materialization === "reuse") {
+      materialization.reuseSessionHead(entry.session, entry.sortIndex);
+    } else {
+      materialization.writeSession(entry);
+    }
     upsertRow.run(
       agentName,
       sessionId,
       entry.session.title,
       entry.contentText,
       entry.contentHash,
-      entry.messages.length,
+      entry.messageCount,
       entry.detailVersion,
       Date.now(),
     );
@@ -271,12 +386,23 @@ function loadOrPreStageEntries(
   loadSessionData: (sessionId: string) => SessionDetail,
   detailVersionFor: (sessionId: string) => string,
   failures: SearchIndexSyncFailure[],
+  timing: SearchIndexLoadTiming,
+  reusableMessageCountBySessionId: ReadonlyMap<string, number>,
   publicationId?: string,
 ): { entries: LoadedSearchIndexEntry[]; preStaged: number } {
   if (changes.length <= SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
     return {
       entries: [
-        ...loadSearchIndexEntries(agentName, changes, loadSessionData, detailVersionFor, failures),
+        ...loadSearchIndexEntries(
+          db,
+          agentName,
+          changes,
+          loadSessionData,
+          detailVersionFor,
+          failures,
+          timing,
+          reusableMessageCountBySessionId,
+        ),
       ],
       preStaged: 0,
     };
@@ -291,11 +417,14 @@ function loadOrPreStageEntries(
     const chunk = changes.slice(offset, offset + SEARCH_INDEX_COMMIT_CHUNK_SIZE);
     runSearchIndexWrite(db, false, () => {
       const entries = loadSearchIndexEntries(
+        db,
         agentName,
         chunk,
         loadSessionData,
         detailVersionFor,
         failures,
+        timing,
+        reusableMessageCountBySessionId,
       );
       preStaged += stagePublicationPayloads(
         db,
@@ -388,6 +517,26 @@ function createSearchIndexPlan(input: SearchIndexPlanInput): SearchIndexPlan {
       return [sessionId, targetDetailVersion(input.state, sessionId, input.options)];
     }),
   );
+  const unversionedDetail = sessionDetailVersion(null);
+  // Reuse is safe only when the source-backed detail version, normalized message rows,
+  // and every message-derived head fact still match.
+  const reusableMessageCountBySessionId = new Map(
+    changes.flatMap(({ session }) => {
+      const sessionId = session.reference.sessionId;
+      const targetVersion = detailVersionBySessionId.get(sessionId);
+      const storedMessageCount = input.state.messageCountBySessionId.get(sessionId);
+      const canReuse =
+        typeof targetVersion === "string" &&
+        targetVersion !== unversionedDetail &&
+        typeof storedMessageCount === "number" &&
+        input.state.detailVersionBySessionId.get(sessionId) === targetVersion &&
+        input.state.indexedMessageCountBySessionId.get(sessionId) === storedMessageCount &&
+        input.state.publishedDetailFactsHashBySessionId.get(sessionId) ===
+          sessionDetailFactsHash(session) &&
+        !input.state.pendingReindexSessionIds.has(sessionId);
+      return canReuse ? ([[sessionId, storedMessageCount]] as const) : [];
+    }),
+  );
   const changedCount = input.removedSessionIds.length + changes.length;
   const isBulk = shouldBulkSyncSearchIndex(input.options, changedCount);
 
@@ -398,6 +547,7 @@ function createSearchIndexPlan(input: SearchIndexPlanInput): SearchIndexPlan {
     changes,
     removedSessionIds: input.removedSessionIds,
     detailVersionBySessionId,
+    reusableMessageCountBySessionId,
     needsRebuild: isBulk && changedCount > 0,
     startedAt: input.startedAt,
   };
@@ -431,6 +581,8 @@ function prepareSearchIndexPublication(
     planning_ms: Math.round(performance.now() - plan.startedAt),
   });
   const failures: SearchIndexSyncFailure[] = [];
+  const planningDurationMs = performance.now() - plan.startedAt;
+  const loadTiming = createSearchIndexLoadTiming();
   const { entries, preStaged } = loadOrPreStageEntries(
     db,
     plan.agentName,
@@ -438,6 +590,8 @@ function prepareSearchIndexPublication(
     loadSessionData,
     (sessionId) => detailVersionForPlan(plan, sessionId),
     failures,
+    loadTiming,
+    plan.reusableMessageCountBySessionId,
     publicationId,
   );
 
@@ -453,6 +607,8 @@ function prepareSearchIndexPublication(
     failures,
     needsRebuild: plan.needsRebuild,
     startedAt: plan.startedAt,
+    planningDurationMs,
+    loadTiming,
   };
 }
 
@@ -532,6 +688,11 @@ export function writePreparedSessionSearchIndex(
     failures: publication.failures.length > 0 ? publication.failures : undefined,
     durationMs: performance.now() - publication.startedAt,
     rebuildDurationMs,
+    planningDurationMs: publication.planningDurationMs,
+    getSessionDataCalls: publication.loadTiming.calls,
+    reusedMaterializations: publication.loadTiming.reused,
+    getSessionDataDurationMs: publication.loadTiming.getSessionDataMs,
+    materializationDurationMs: publication.loadTiming.materializationMs,
   };
 }
 
@@ -545,6 +706,8 @@ function searchIndexSyncResult(
   plan: SearchIndexPlan,
   indexed: number,
   failures: SearchIndexSyncFailure[],
+  planningDurationMs: number,
+  loadTiming: SearchIndexLoadTiming,
   rebuildDurationMs?: number,
   mode = plan.mode,
 ): SearchIndexSyncResult {
@@ -559,6 +722,11 @@ function searchIndexSyncResult(
     failures: failures.length > 0 ? failures : undefined,
     durationMs: performance.now() - plan.startedAt,
     rebuildDurationMs,
+    planningDurationMs,
+    getSessionDataCalls: loadTiming.calls,
+    reusedMaterializations: loadTiming.reused,
+    getSessionDataDurationMs: loadTiming.getSessionDataMs,
+    materializationDurationMs: loadTiming.materializationMs,
   };
 }
 
@@ -570,13 +738,18 @@ function executeSearchIndexPlan(
 ): SearchIndexSyncResult {
   let indexed = 0;
   const failures: SearchIndexSyncFailure[] = [];
+  const planningDurationMs = performance.now() - plan.startedAt;
+  const loadTiming = createSearchIndexLoadTiming();
   const loadEntries = (changes: PersistedSessionHeadChange[]) =>
     loadSearchIndexEntries(
+      db,
       plan.agentName,
       changes,
       loadSessionData,
       (sessionId) => detailVersionForPlan(plan, sessionId),
       failures,
+      loadTiming,
+      plan.reusableMessageCountBySessionId,
     );
 
   if (largeBacklogStrategy === "chunked" && plan.changes.length > SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
@@ -598,7 +771,15 @@ function executeSearchIndexPlan(
         if (chunkIndexed > 0) advanceAnalyticsRevision(db);
       });
     }
-    return searchIndexSyncResult(plan, indexed, failures, undefined, "incremental");
+    return searchIndexSyncResult(
+      plan,
+      indexed,
+      failures,
+      planningDurationMs,
+      loadTiming,
+      undefined,
+      "incremental",
+    );
   }
 
   const { rebuildDurationMs } = runSearchIndexWrite(db, plan.needsRebuild, () => {
@@ -611,7 +792,14 @@ function executeSearchIndexPlan(
     );
     if (indexed > 0 || plan.removedSessionIds.length > 0) advanceAnalyticsRevision(db);
   });
-  return searchIndexSyncResult(plan, indexed, failures, rebuildDurationMs);
+  return searchIndexSyncResult(
+    plan,
+    indexed,
+    failures,
+    planningDurationMs,
+    loadTiming,
+    rebuildDurationMs,
+  );
 }
 
 export function syncSessionSearchIndex(
@@ -648,6 +836,11 @@ export function syncSessionSearchIndexChanges(
       indexed: 0,
       skipped: 0,
       durationMs: 0,
+      planningDurationMs: 0,
+      getSessionDataCalls: 0,
+      reusedMaterializations: 0,
+      getSessionDataDurationMs: 0,
+      materializationDurationMs: 0,
     };
   }
 

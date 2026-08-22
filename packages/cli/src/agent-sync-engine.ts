@@ -334,12 +334,12 @@ export class AgentSyncEngine {
       if (!durableCommitted) throw error;
       this.reportPostCommitError("scan.refresh", agentName, error);
     }
-    // The backfill probe touches the agent's filesystem (isAvailable /
-    // listSessionSources) and may throw on transient errors; that must not
+    // The backfill probe touches cache state and may check agent availability;
+    // either operation can throw on transient errors, but that must not
     // fail — let alone reject — an otherwise finished refresh.
     try {
       const agent = this.findAgent(agentName);
-      if (agent && this.needsBackfill(agent, cached, failed || result === "committed")) {
+      if (agent && this.backfillScheduler.needsBackfill(agent)) {
         this.enqueueBackfill(agentName);
       }
       if (agent) this.searchIndexMaintenance.enqueue(agentName);
@@ -843,14 +843,6 @@ export class AgentSyncEngine {
     return outcome.value;
   }
 
-  private needsBackfill(
-    agent: BaseAgent,
-    cached?: CachedSessions | null,
-    reloadCached = false,
-  ): boolean {
-    return this.backfillScheduler.needsBackfill(agent, cached, reloadCached);
-  }
-
   private enqueueBackfill(agentName: string): void {
     this.backfillScheduler.enqueue(agentName);
   }
@@ -903,7 +895,9 @@ export class AgentSyncEngine {
       const fullSessions = attachMissingProjectIdentities(result.sessions);
       const completion = buildScanCompletion(result.completeness, result.sourceFailures ?? []);
       this.statusReporter.flushProgressStatus(`backfill:${agentName}`);
-      const updatePublicationPhase = (phase: "publish-queued" | "publishing") => {
+      const updatePublicationPhase = (
+        phase: "publish-queued" | "publishing" | "indexing" | "committing",
+      ) => {
         if (
           this.backfills.updateProgress(attempt, {
             phase,
@@ -930,6 +924,10 @@ export class AgentSyncEngine {
           saveCache: true,
         },
         onPublishing: () => updatePublicationPhase("publishing"),
+        onPublicationProgress: ({ stage }) => {
+          if (stage === "prepared") updatePublicationPhase("indexing");
+          if (stage === "search_staged") updatePublicationPhase("committing");
+        },
         onCommitted: () => {
           durableCommitted = true;
           if (completion.completeness === "partial") {

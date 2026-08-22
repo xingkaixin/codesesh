@@ -58,6 +58,17 @@ export interface SessionSourceSynchronizationOutcome {
   completeness: SessionSnapshotCompleteness;
   sourceCount: number;
   removedSourceCount: number;
+  timing: SessionSourceSynchronizationTiming;
+}
+
+export interface SessionSourceSynchronizationTiming {
+  totalMs: number;
+  enumerationMs: number;
+  diffMs: number;
+  parseMs: number;
+  enumeratedSourceCount: number;
+  changedSourceCount: number;
+  processedSourceCount: number;
 }
 
 /** Parser/index revisions live inside the fingerprint, so comparison must be exact. */
@@ -252,6 +263,7 @@ export function synchronizeSessionSources(
   baseline: SessionSourceSynchronizationBaseline,
   request: SessionSourceSynchronizationRequest,
 ): SessionSourceSynchronizationOutcome {
+  const startedAt = performance.now();
   adapter.restoreSessionCacheMeta(baseline.meta);
   const baselineMeta = adapter.snapshotSessionCacheMeta();
   const baselineSessions = adapter.filterCachedSessions(baseline.sessions);
@@ -268,11 +280,12 @@ export function synchronizeSessionSources(
   }));
   adapter.removeSessionCacheMeta(filteredBaselineIds);
   const scanOptions = request.scanOptions;
-  const sources =
-    request.kind === "known-changes" && request.refs
-      ? request.refs
-      : adapter.listSessionSources(scanOptions);
+  const suppliedSources = request.kind === "known-changes" ? request.refs : undefined;
+  const enumerationStartedAt = performance.now();
+  const sources = suppliedSources ?? adapter.listSessionSources(scanOptions);
+  const enumerationMs = suppliedSources ? 0 : performance.now() - enumerationStartedAt;
   const sourceById = new Map(sources.map((source) => [source.sessionId, source]));
+  const diffStartedAt = performance.now();
   const diff =
     request.kind === "known-changes"
       ? { changedIds: request.changedIds, removedIds: [], failedIds: [], sourceOutcomes: [] }
@@ -282,6 +295,7 @@ export function synchronizeSessionSources(
           adapter.snapshotSessionCacheMeta(),
           scanOptions,
         );
+  const diffMs = performance.now() - diffStartedAt;
   const detectedSessionIds = unique([
     ...filteredBaselineIds,
     ...diff.changedIds,
@@ -310,6 +324,15 @@ export function synchronizeSessionSources(
       completeness: isWindowed(scanOptions) || sourceFailures.length > 0 ? "partial" : "complete",
       sourceCount: sources.length,
       removedSourceCount: diff.removedIds.length,
+      timing: {
+        totalMs: performance.now() - startedAt,
+        enumerationMs,
+        diffMs,
+        parseMs: 0,
+        enumeratedSourceCount: sources.length,
+        changedSourceCount: diff.changedIds.length,
+        processedSourceCount: 0,
+      },
     };
   }
 
@@ -341,6 +364,7 @@ export function synchronizeSessionSources(
     });
   }
 
+  const parseStartedAt = performance.now();
   synchronizationIds.forEach((sessionId, index) => {
     const source = sourceById.get(sessionId);
     if (!source) {
@@ -388,6 +412,7 @@ export function synchronizeSessionSources(
       sessions: sessionsById.size,
     });
   });
+  const parseMs = performance.now() - parseStartedAt;
 
   const failedIds = new Set(sourceFailures.map((failure) => failure.sessionId));
   const finalizeSessionIds = (
@@ -410,5 +435,14 @@ export function synchronizeSessionSources(
     completeness: isWindowed(scanOptions) || sourceFailures.length > 0 ? "partial" : "complete",
     sourceCount: sources.length,
     removedSourceCount: diff.removedIds.length,
+    timing: {
+      totalMs: performance.now() - startedAt,
+      enumerationMs,
+      diffMs,
+      parseMs,
+      enumeratedSourceCount: sources.length,
+      changedSourceCount: diff.changedIds.length,
+      processedSourceCount: synchronizationIds.length,
+    },
   };
 }

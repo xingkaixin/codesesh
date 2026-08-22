@@ -52,9 +52,10 @@ export class BackfillLifecycle {
   updateProgress(attempt: BackfillAttemptRef, progress: BackfillProgress): boolean {
     const current = this.matchingRunningAttempt(attempt);
     if (!current) return false;
+    const phaseChanged = progress.phase != null && progress.phase !== current.progress?.phase;
     this.attempts.set(attempt.agentName, {
       ...current,
-      progress: { ...current.progress, ...progress },
+      progress: phaseChanged ? { ...progress } : { ...current.progress, ...progress },
     });
     return true;
   }

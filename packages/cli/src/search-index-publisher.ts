@@ -1,7 +1,10 @@
 import { buildAgentCacheMeta, type CachedResult, type LiveSnapshot } from "@codesesh/core/runtime";
 import { appLogger } from "./logging.js";
 import type { SearchIndexJobRunner } from "./search-index-job-runner.js";
-import type { SearchIndexWorkerJob } from "./search-index-worker.js";
+import type {
+  SearchIndexPublicationProgress,
+  SearchIndexWorkerJob,
+} from "./search-index-worker.js";
 
 export interface SearchIndexPublisherOptions {
   jobs: SearchIndexJobRunner;
@@ -62,6 +65,7 @@ export class SearchIndexPublisher {
       agent?: string;
       agents?: string[];
       onStarted?: () => void;
+      onProgress?: (progress: SearchIndexPublicationProgress) => void;
     },
   ): Promise<void> {
     appLogger.info("session.publication.prepared", {
@@ -76,9 +80,11 @@ export class SearchIndexPublisher {
         ...job,
         publicationId: details.publicationId,
       }));
-      await (details.onStarted
-        ? this.options.jobs.enqueue(context, publicationJobs, details.onStarted)
-        : this.options.jobs.enqueue(context, publicationJobs));
+      await (details.onProgress
+        ? this.options.jobs.enqueue(context, publicationJobs, details.onStarted, details.onProgress)
+        : details.onStarted
+          ? this.options.jobs.enqueue(context, publicationJobs, details.onStarted)
+          : this.options.jobs.enqueue(context, publicationJobs));
     } catch (error) {
       appLogger.error("session.publication.failed", {
         publication_id: details.publicationId,

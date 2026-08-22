@@ -117,6 +117,23 @@ describe("formatScanStatusLabel", () => {
     );
   });
 
+  it("does not warn when a completed refresh is partial only because it is windowed", () => {
+    expect(
+      formatScanStatusLabel({
+        active: false,
+        backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
+        agentStatuses: {
+          claudecode: {
+            agentName: "claudecode",
+            status: "complete",
+            completeness: "partial",
+            updatedAt: 1,
+          },
+        },
+      } as unknown as ScanStatusEvent),
+    ).toBeNull();
+  });
+
   it("shows a completed partial full-history refresh", () => {
     expect(
       formatScanStatusLabel({
@@ -191,7 +208,25 @@ describe("formatScanStatusLabel", () => {
           failedAgents: [],
         },
       } as unknown as ScanStatusEvent),
-    ).toBe("Publishing full-history sessions · zcode");
+    ).toBe("Preparing full-history publication · zcode");
+  });
+
+  it("distinguishes writing and committing a full-history index", () => {
+    const status = {
+      active: false,
+      backfill: {
+        active: true,
+        currentAgent: "codex",
+        pendingAgents: [],
+        progress: { phase: "indexing" },
+        completedAgents: [],
+        failedAgents: [],
+      },
+    } as unknown as ScanStatusEvent;
+
+    expect(formatScanStatusLabel(status)).toBe("Writing full-history search index · codex");
+    status.backfill.progress = { phase: "committing" };
+    expect(formatScanStatusLabel(status)).toBe("Committing full-history publication · codex");
   });
 
   it("does not describe a queued full-history publication as active", () => {

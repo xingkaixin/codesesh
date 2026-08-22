@@ -124,6 +124,17 @@ export class LiveScanStore {
                 scan_ms: timing.scan != null ? Math.round(timing.scan) : undefined,
                 identity_ms: timing.identity != null ? Math.round(timing.identity) : undefined,
                 tags_ms: timing.tags != null ? Math.round(timing.tags) : undefined,
+                source_enumeration_ms:
+                  timing.sourceEnumeration != null
+                    ? Math.round(timing.sourceEnumeration)
+                    : undefined,
+                source_diff_ms:
+                  timing.sourceDiff != null ? Math.round(timing.sourceDiff) : undefined,
+                source_parse_ms:
+                  timing.sourceParse != null ? Math.round(timing.sourceParse) : undefined,
+                enumerated_sources: timing.enumeratedSources,
+                changed_sources: timing.changedSources,
+                processed_sources: timing.processedSources,
               },
             ]),
           )

@@ -953,7 +953,7 @@ describe("LiveScanStore", () => {
     expect(core.markAgentFullSyncStarted).toHaveBeenCalledWith("codex");
   });
 
-  it("queues a backfill when a recent full-sync marker has a truncated file cache", async () => {
+  it("does not infer cache truncation from raw source and session counts", async () => {
     const cached = makeSession("cached");
     const codex = makeFileSystemAgent("codex", {
       listSessionSources: vi.fn(() =>
@@ -986,7 +986,8 @@ describe("LiveScanStore", () => {
 
     store.startBackgroundRefresh();
 
-    await vi.waitFor(() => expect(core.markAgentFullSyncStarted).toHaveBeenCalledWith("codex"));
+    await vi.waitFor(() => expect(store.getScanStatus().active).toBe(false));
+    expect(core.markAgentFullSyncStarted).not.toHaveBeenCalled();
   });
 
   it("rejects a scan worker that exits successfully before sending done", async () => {

@@ -3,7 +3,10 @@ import type { SessionsUpdatedEvent } from "@codesesh/core/contract";
 import type { LiveSessionIndex } from "./live-session-index.js";
 import { appLogger } from "./logging.js";
 import type { SearchIndexPublisher } from "./search-index-publisher.js";
-import type { SearchIndexWorkerJob } from "./search-index-worker.js";
+import type {
+  SearchIndexPublicationProgress,
+  SearchIndexWorkerJob,
+} from "./search-index-worker.js";
 
 export interface AgentSessionsChanged {
   agentName: string;
@@ -18,6 +21,7 @@ export interface SessionPublication {
   candidateChangedIds: string[];
   indexJob: SearchIndexWorkerJob;
   onPublishing?: () => void;
+  onPublicationProgress?: (progress: SearchIndexPublicationProgress) => void;
   onCommitted?: (result: SessionPublicationResult) => void;
 }
 
@@ -60,6 +64,9 @@ export class SessionPublicationCoordinator {
       publicationId,
       agent: publication.agentName,
       ...(publication.onPublishing ? { onStarted: publication.onPublishing } : {}),
+      ...(publication.onPublicationProgress
+        ? { onProgress: publication.onPublicationProgress }
+        : {}),
     });
     const diffStartedAt = performance.now();
     const event = this.sessionIndex.commitAgentSessions(

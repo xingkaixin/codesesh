@@ -8,6 +8,7 @@ import { PendingSearchIndexJobs, type SearchIndexJobBatch } from "./pending-sear
 import type {
   SearchIndexWorkerJob,
   SearchIndexWorkerMessage,
+  SearchIndexPublicationProgress,
   SearchIndexWorkerRunRequest,
 } from "./search-index-worker.js";
 
@@ -30,8 +31,13 @@ export class SearchIndexJobRunner {
   private pendingMaintenanceJobs = new PendingSearchIndexJobs();
   private isShuttingDown = false;
 
-  enqueue(context: string, jobs: SearchIndexWorkerJob[], onStarted?: () => void): Promise<void> {
-    return this.enqueueIn(this.pendingJobs, context, jobs, onStarted);
+  enqueue(
+    context: string,
+    jobs: SearchIndexWorkerJob[],
+    onStarted?: () => void,
+    onProgress?: (progress: SearchIndexPublicationProgress) => void,
+  ): Promise<void> {
+    return this.enqueueIn(this.pendingJobs, context, jobs, onStarted, onProgress);
   }
 
   enqueueMaintenance(context: string, jobs: SearchIndexWorkerJob[]): Promise<void> {
@@ -43,12 +49,13 @@ export class SearchIndexJobRunner {
     context: string,
     jobs: SearchIndexWorkerJob[],
     onStarted?: () => void,
+    onProgress?: (progress: SearchIndexPublicationProgress) => void,
   ): Promise<void> {
     if (jobs.length === 0) return Promise.resolve();
     if (this.isShuttingDown) return Promise.reject(new Error(SHUTDOWN_ERROR_MESSAGE));
 
     const batchId = this.nextBatchId++;
-    const completion = queue.enqueue(batchId, context, jobs, onStarted);
+    const completion = queue.enqueue(batchId, context, jobs, onStarted, onProgress);
     if (this.activeBatch) {
       const snapshot = this.snapshot();
       appLogger.debug("search_index.worker_queued", {
@@ -162,6 +169,17 @@ export class SearchIndexJobRunner {
       if (this.worker !== worker) return;
       const activeBatch = this.activeBatch;
       if (!activeBatch) return;
+      if (message.type === "publication-progress") {
+        const { agentName, stage } = message;
+        activeBatch.progress({ agentName, stage }, (error) => {
+          appLogger.error("search_index.worker_progress_listener_failed", {
+            batch_id: activeBatch.id,
+            context: activeBatch.context,
+            error: toError(error),
+          });
+        });
+        return;
+      }
       if (message.type === "sync-result") {
         logSearchIndexSync(message.context, message.result);
         return;

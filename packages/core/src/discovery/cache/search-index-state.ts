@@ -5,6 +5,13 @@ import { withCacheDbReadOnly } from "./connection.js";
 import { sessionDetailVersion } from "./detail-version.js";
 import type { SessionSnapshotCompleteness } from "./snapshot-types.js";
 
+export type SearchIndexPublicationStage =
+  | "started"
+  | "prepared"
+  | "cache_staged"
+  | "search_staged"
+  | "committed";
+
 export interface SearchIndexSyncOptions {
   isBulk?: boolean;
   bulkThreshold?: number;
@@ -13,6 +20,7 @@ export interface SearchIndexSyncOptions {
   completeness?: SessionSnapshotCompleteness;
   removedSessionIds?: readonly string[];
   publicationId?: string;
+  onPublicationStage?: (stage: SearchIndexPublicationStage) => void;
 }
 
 export interface PendingSearchIndexMaintenance {
@@ -23,6 +31,7 @@ export interface PendingSearchIndexMaintenance {
 export interface SearchIndexState {
   contentHashBySessionId: Map<string, string>;
   publishedContentHashBySessionId: Map<string, string>;
+  publishedDetailFactsHashBySessionId: Map<string, string>;
   indexedMessageCountBySessionId: Map<string, number>;
   messageCountBySessionId: Map<string, number>;
   detailVersionBySessionId: Map<string, string>;
@@ -85,6 +94,20 @@ interface SearchIndexSessionFacts {
   projectIdentityInputSignature: string;
 }
 
+type SearchIndexDetailFacts = Pick<
+  SearchIndexSessionFacts,
+  | "timeCreated"
+  | "timeUpdated"
+  | "messageCount"
+  | "totalInputTokens"
+  | "totalOutputTokens"
+  | "totalCacheReadTokens"
+  | "totalCacheCreateTokens"
+  | "totalCost"
+  | "costSource"
+  | "totalTokens"
+>;
+
 const SEARCH_INDEX_STATE_BATCH_SIZE = 900;
 
 function readPendingReindexIds(db: SQLiteDatabase, agentName: string): Set<string> {
@@ -120,14 +143,42 @@ function hashSearchIndexSessionFacts(facts: SearchIndexSessionFacts): string {
   return JSON.stringify(facts);
 }
 
+function searchIndexDetailFacts(facts: SearchIndexSessionFacts): SearchIndexDetailFacts {
+  return {
+    timeCreated: facts.timeCreated,
+    timeUpdated: facts.timeUpdated,
+    messageCount: facts.messageCount,
+    totalInputTokens: facts.totalInputTokens,
+    totalOutputTokens: facts.totalOutputTokens,
+    totalCacheReadTokens: facts.totalCacheReadTokens,
+    totalCacheCreateTokens: facts.totalCacheCreateTokens,
+    totalCost: facts.totalCost,
+    costSource: facts.costSource,
+    totalTokens: facts.totalTokens,
+  };
+}
+
+function hashSearchIndexDetailFacts(facts: SearchIndexSessionFacts): string {
+  return JSON.stringify(searchIndexDetailFacts(facts));
+}
+
 export function sessionContentHash(session: SessionHead): string {
   return hashSearchIndexSessionFacts(searchIndexSessionFacts(session));
 }
 
 function publishedSessionContentHash(row: PublishedSessionRow): string | null {
   if (row.session_title == null) return null;
-  return hashSearchIndexSessionFacts({
-    title: row.session_title,
+  return hashSearchIndexSessionFacts(searchIndexSessionFactsFromRow(row));
+}
+
+function publishedSessionDetailFactsHash(row: PublishedSessionRow): string | null {
+  if (row.session_title == null) return null;
+  return hashSearchIndexDetailFacts(searchIndexSessionFactsFromRow(row));
+}
+
+function searchIndexSessionFactsFromRow(row: PublishedSessionRow): SearchIndexSessionFacts {
+  return {
+    title: String(row.session_title),
     directory: row.session_directory ?? "",
     timeCreated: Number(row.session_time_created ?? 0),
     timeUpdated: Number(row.session_time_updated ?? row.session_time_created ?? 0),
@@ -144,7 +195,11 @@ function publishedSessionContentHash(row: PublishedSessionRow): string | null {
     projectDisplayName: row.session_project_display_name ?? "",
     projectIdentityResolverRevision: row.session_project_identity_resolver_revision ?? "",
     projectIdentityInputSignature: row.session_project_identity_input_signature ?? "",
-  });
+  };
+}
+
+export function sessionDetailFactsHash(session: SessionHead): string {
+  return hashSearchIndexDetailFacts(searchIndexSessionFacts(session));
 }
 
 export function detailVersionFromMetaJson(value: string | null | undefined): string {
@@ -169,6 +224,12 @@ function searchIndexStateFromRows(
       indexedRows.flatMap((row) => {
         const contentHash = publishedSessionContentHash(row);
         return contentHash == null ? [] : [[String(row.session_id), contentHash]];
+      }),
+    ),
+    publishedDetailFactsHashBySessionId: new Map(
+      indexedRows.flatMap((row) => {
+        const detailFactsHash = publishedSessionDetailFactsHash(row);
+        return detailFactsHash == null ? [] : [[String(row.session_id), detailFactsHash]];
       }),
     ),
     indexedMessageCountBySessionId: new Map(
@@ -224,38 +285,18 @@ export function searchIndexStateQuery(sessionIdCount: number): string {
       sessions.project_display_name AS session_project_display_name,
       sessions.project_identity_resolver_revision AS session_project_identity_resolver_revision,
       sessions.project_identity_input_signature AS session_project_identity_input_signature,
-      COUNT(messages.message_index) AS value
+      (
+        SELECT COUNT(*)
+        FROM messages
+        WHERE messages.agent_name = ?
+          AND messages.session_id = requested.session_id
+      ) AS value
     FROM requested_session_ids AS requested
     LEFT JOIN session_documents AS documents
       INDEXED BY idx_session_documents_state
       ON documents.agent_name = ? AND documents.session_id = requested.session_id
-    LEFT JOIN messages
-      ON messages.agent_name = ? AND messages.session_id = requested.session_id
     LEFT JOIN sessions
       ON sessions.agent_name = ? AND sessions.session_id = requested.session_id
-    GROUP BY
-      requested.session_id,
-      documents.content_hash,
-      documents.indexed_message_count,
-      documents.detail_version,
-      sessions.meta_json,
-      sessions.title,
-      sessions.directory,
-      sessions.time_created,
-      sessions.time_updated,
-      sessions.message_count,
-      sessions.total_input_tokens,
-      sessions.total_output_tokens,
-      sessions.total_cache_read_tokens,
-      sessions.total_cache_create_tokens,
-      sessions.total_cost,
-      sessions.cost_source,
-      sessions.total_tokens,
-      sessions.project_identity_kind,
-      sessions.project_identity_key,
-      sessions.project_display_name,
-      sessions.project_identity_resolver_revision,
-      sessions.project_identity_input_signature
   `;
 }
 

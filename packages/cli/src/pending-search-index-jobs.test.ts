@@ -167,6 +167,36 @@ describe("PendingSearchIndexJobs", () => {
     await Promise.all(waiters);
   });
 
+  it("sends publication progress only to waiters for the matching agent", async () => {
+    const pending = new PendingSearchIndexJobs();
+    const codexProgress: string[] = [];
+    const kimiProgress: string[] = [];
+    const waiters = [
+      pending.enqueue(
+        1,
+        "codex",
+        [changesJob("codex", [{ id: "one", version: 1 }])],
+        undefined,
+        ({ stage }) => codexProgress.push(stage),
+      ),
+      pending.enqueue(
+        2,
+        "kimi",
+        [changesJob("kimi", [{ id: "two", version: 1 }])],
+        undefined,
+        ({ stage }) => kimiProgress.push(stage),
+      ),
+    ];
+
+    const batch = pending.take()!;
+    batch.progress({ agentName: "codex", stage: "prepared" }, () => undefined);
+
+    expect(codexProgress).toEqual(["prepared"]);
+    expect(kimiProgress).toEqual([]);
+    pending.settle(batch);
+    await Promise.all(waiters);
+  });
+
   it("bounds queued work by unique session count", async () => {
     const pending = new PendingSearchIndexJobs();
     const waiters = Array.from({ length: 1_000 }, (_, index) =>

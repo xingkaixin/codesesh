@@ -1,10 +1,4 @@
-import {
-  readAgentLastFullSyncAt,
-  readCachedSessions,
-  type BaseAgent,
-  type CachedResult,
-  type ScanOptions,
-} from "@codesesh/core/runtime";
+import { readAgentLastFullSyncAt, type BaseAgent, type ScanOptions } from "@codesesh/core/runtime";
 import type {
   BackfillAttemptRef,
   BackfillLifecycle,
@@ -12,8 +6,6 @@ import type {
 } from "./backfill-lifecycle.js";
 import { appLogger } from "./logging.js";
 import type { ScanStatusReporter } from "./scan-status-reporter.js";
-
-type CachedSessions = CachedResult;
 
 export interface AgentBackfillSchedulerOptions {
   lifecycle: BackfillLifecycle;
@@ -25,10 +17,9 @@ export interface AgentBackfillSchedulerOptions {
 
 const BACKFILL_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const PARTIAL_BACKFILL_RETRY_DELAY_MS = 5 * 60 * 1000;
-const CACHE_TRUNCATION_COVERAGE = 0.5;
 
 /**
- * Owns backfill eligibility, queue progression, retries, and cache-integrity
+ * Owns backfill eligibility, queue progression, retries, and full-sync
  * validity windows. The sync engine supplies only the actual scan operation.
  */
 export class AgentBackfillScheduler {
@@ -37,7 +28,7 @@ export class AgentBackfillScheduler {
 
   constructor(private readonly options: AgentBackfillSchedulerOptions) {}
 
-  needsBackfill(agent: BaseAgent, cached?: CachedSessions | null, reloadCached = false): boolean {
+  needsBackfill(agent: BaseAgent): boolean {
     const { from, to } = this.options.startupScanOptions;
     if (from == null && to == null) return false;
     const now = Date.now();
@@ -54,33 +45,7 @@ export class AgentBackfillScheduler {
     if (lastSyncAt == null || now - lastSyncAt > BACKFILL_INTERVAL_MS) {
       return agent.isAvailable();
     }
-    if (agent.sessionSourceAccess.kind !== "enumerated") return false;
-    if (!agent.isAvailable()) return false;
-
-    let cachedSessions = cached;
-    if (reloadCached || cached === undefined) {
-      const outcome = readCachedSessions(agent.name);
-      if (outcome.status === "failed") {
-        appLogger.warn("scan.backfill.cache_state_unavailable", {
-          agent: agent.name,
-          state: "cached_sessions",
-        });
-        return false;
-      }
-      cachedSessions = outcome.value;
-    }
-    const sourceCount = agent.sessionSourceAccess.count();
-    const cachedCount = cachedSessions?.sessions.length ?? 0;
     this.cacheIntegrityValidUntilByAgent.set(agent.name, lastSyncAt + BACKFILL_INTERVAL_MS);
-    if (sourceCount > 0 && cachedCount / sourceCount < CACHE_TRUNCATION_COVERAGE) {
-      appLogger.warn("scan.backfill.cache_truncated", {
-        agent: agent.name,
-        cached_sessions: cachedCount,
-        source_files: sourceCount,
-        last_sync_at: lastSyncAt,
-      });
-      return true;
-    }
     return false;
   }
 

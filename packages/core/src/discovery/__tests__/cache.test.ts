@@ -95,6 +95,9 @@ describe("session cache integration", () => {
       expect(plan.map(({ detail }) => detail)).toContainEqual(
         expect.stringContaining("COVERING INDEX idx_session_documents_state"),
       );
+      expect(plan.map(({ detail }) => detail)).toContainEqual(
+        expect.stringMatching(/COVERING INDEX .*messages/),
+      );
     } finally {
       db.close();
     }

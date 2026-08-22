@@ -412,6 +412,16 @@ describe("AgentSyncEngine", () => {
   });
 
   it("bounds backfill progress and publishes its terminal immediately", async () => {
+    searchIndex.enqueue.mockImplementationOnce(async (...args: unknown[]) => {
+      const onStarted = args[2];
+      const onProgress = args[3];
+      if (typeof onStarted === "function") onStarted();
+      if (typeof onProgress === "function") {
+        onProgress({ agentName: "codex", stage: "prepared" });
+        onProgress({ agentName: "codex", stage: "search_staged" });
+      }
+      return undefined;
+    });
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async (_agentName, payload) => {
@@ -441,14 +451,24 @@ describe("AgentSyncEngine", () => {
     const progress = statuses.flatMap((status) =>
       status.backfill.progress ? [status.backfill.progress] : [],
     );
-    expect(progress).toHaveLength(5);
-    expect(progress.map((item) => item.processed)).toEqual([1, 10_000, 10_000, 10_000, 10_000]);
+    expect(progress).toHaveLength(7);
+    expect(progress.map((item) => item.processed)).toEqual([
+      1,
+      10_000,
+      10_000,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
     expect(progress.map((item) => item.phase)).toEqual([
       "scanning",
       "scanning",
       "finalizing",
       "publish-queued",
       "publishing",
+      "indexing",
+      "committing",
     ]);
     expect(statuses.at(-1)?.backfill).toEqual({
       active: false,

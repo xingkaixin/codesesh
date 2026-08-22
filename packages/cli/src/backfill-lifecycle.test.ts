@@ -26,7 +26,6 @@ describe("BackfillLifecycle", () => {
       expect(lifecycle.updateProgress(attempt, { phase: "publishing", sessions: 3 })).toBe(true);
       expect(lifecycle.status().progress).toEqual({
         phase: "publishing",
-        processed: 2,
         sessions: 3,
       });
       expect(lifecycle.complete(attempt, terminal)).toBe(true);

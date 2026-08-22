@@ -322,6 +322,78 @@ describe("CodexAgent cache refresh", () => {
     expect(agent.ensureSubagentIndex().childFilesByParent.get(otherParentId)).toEqual([childFile]);
   });
 
+  it("rebuilds the subagent index from persisted session metadata", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const parentId = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+    const childId = "019dcccc-cccc-7ccc-cccc-cccccccccccc";
+    const parentFile = join(tempDir, `rollout-2026-04-20T10-00-00-${parentId}.jsonl`);
+    const childFile = join(tempDir, `rollout-2026-04-20T10-05-00-${childId}.jsonl`);
+    writeFileSync(
+      parentFile,
+      `${JSON.stringify({ type: "session_meta", payload: { id: parentId } })}\n`,
+    );
+    writeFileSync(
+      childFile,
+      `${JSON.stringify({
+        type: "session_meta",
+        payload: { id: childId, thread_source: "subagent", parent_thread_id: parentId },
+      })}\n`,
+    );
+
+    const firstAgent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    firstAgent.scan();
+    const cachedMeta = firstAgent.snapshotSessionCacheMeta();
+    expect(cachedMeta[childId]).toMatchObject({ isSubagent: true, parentThreadId: parentId });
+
+    const restoredAgent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    restoredAgent.restoreSessionCacheMeta(cachedMeta);
+    const openSpy = vi.mocked(openSync);
+    openSpy.mockClear();
+    const readDirectorySpy = vi.spyOn(restoredAgent, "readSessionSourceDirectory");
+
+    const sources = restoredAgent.listScanSources({ from: 0 });
+
+    expect(sources.map((source: { file: string }) => source.file).sort()).toEqual(
+      [parentFile, childFile].sort(),
+    );
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(readDirectorySpy).toHaveBeenCalledOnce();
+    expect(restoredAgent.ensureSubagentIndex().childFilesByParent.get(parentId)).toEqual([
+      childFile,
+    ]);
+  });
+
+  it("upgrades legacy session metadata while rebuilding the subagent index", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-test-"));
+    tempDirs.push(tempDir);
+    const parentId = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+    const childId = "019dcccc-cccc-7ccc-cccc-cccccccccccc";
+    const childFile = join(tempDir, `rollout-2026-04-20T10-05-00-${childId}.jsonl`);
+    writeFileSync(
+      childFile,
+      `${JSON.stringify({
+        type: "session_meta",
+        payload: { id: childId, thread_source: "subagent", parent_thread_id: parentId },
+      })}\n`,
+    );
+
+    const firstAgent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    firstAgent.scan();
+    const cachedMeta = firstAgent.snapshotSessionCacheMeta();
+    delete cachedMeta[childId].isSubagent;
+    delete cachedMeta[childId].parentThreadId;
+
+    const restoredAgent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    restoredAgent.restoreSessionCacheMeta(cachedMeta);
+    restoredAgent.listScanSources({ from: 0 });
+
+    expect(restoredAgent.snapshotSessionCacheMeta()[childId]).toMatchObject({
+      isSubagent: true,
+      parentThreadId: parentId,
+    });
+  });
+
   it("keeps source references and fingerprints byte-for-byte stable", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-codex-fingerprint-"));
     tempDirs.push(tempDir);
@@ -1706,6 +1778,7 @@ describe("CodexAgent subagent folding", () => {
       threadSource: "subagent",
       parentThreadId: PARENT_ID,
       extra: [
+        tokenCountLine(40, 60, 100),
         '{"timestamp":"2026-04-20T10:03:00Z","type":"response_item","phase":"final_answer","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"first child result"}]}}',
       ],
     });
@@ -1714,14 +1787,17 @@ describe("CodexAgent subagent folding", () => {
     const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
     agent.sessionIndexCache = new Map();
     agent.scan({ from: 0 });
-    agent.getSessionData(PARENT_ID);
-
     const openSpy = vi.mocked(openSync);
+    openSpy.mockClear();
+    const initial = agent.getSessionData(PARENT_ID);
+    expect(childOpenCount(childFile)).toBe(1);
+    expect(initial.stats.total_input_tokens).toBe(40);
+
     openSpy.mockClear();
     agent.getSessionData(PARENT_ID);
     expect(childOpenCount(childFile)).toBe(0);
 
-    const cacheEntry = agent.childFinalMessagesByParent.get(PARENT_ID)?.get(childFile);
+    const cacheEntry = agent.childSessionSummariesByParent.get(PARENT_ID)?.get(childFile);
     expect(cacheEntry).toBeDefined();
     cacheEntry.parserVersion = "codex-parser-old";
     openSpy.mockClear();
@@ -1732,12 +1808,14 @@ describe("CodexAgent subagent folding", () => {
       threadSource: "subagent",
       parentThreadId: PARENT_ID,
       extra: [
+        tokenCountLine(50, 70, 120),
         '{"timestamp":"2026-04-20T10:03:00Z","type":"response_item","phase":"final_answer","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"updated child result"}]}}',
       ],
     });
     openSpy.mockClear();
     const refreshed = agent.getSessionData(PARENT_ID);
     expect(childOpenCount(childFile)).toBeGreaterThan(0);
+    expect(refreshed.stats.total_input_tokens).toBe(50);
     expect(refreshed.messages).toContainEqual(
       expect.objectContaining({
         parts: [expect.objectContaining({ type: "text", text: "updated child result" })],
@@ -1782,12 +1860,12 @@ describe("CodexAgent subagent folding", () => {
     agent.sessionIndexCache = new Map();
     agent.scan({ from: 0 });
     agent.getSessionData(PARENT_ID);
-    expect(agent.childFinalMessagesByParent.get(PARENT_ID)?.has(childFile)).toBe(true);
+    expect(agent.childSessionSummariesByParent.get(PARENT_ID)?.has(childFile)).toBe(true);
 
     rmSync(childFile);
     agent.subagentIndex = null;
     agent.getSessionData(PARENT_ID);
-    expect(agent.childFinalMessagesByParent.has(PARENT_ID)).toBe(false);
+    expect(agent.childSessionSummariesByParent.has(PARENT_ID)).toBe(false);
   });
 
   it("finds child rollouts when detail parsing starts from cached metadata", () => {

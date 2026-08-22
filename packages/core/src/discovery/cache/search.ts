@@ -96,6 +96,7 @@ export {
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
   type PendingSearchIndexMaintenance,
+  type SearchIndexPublicationStage,
   type SearchIndexSyncOptions,
   type SearchIndexSyncFailure,
   type SearchIndexSyncResult,

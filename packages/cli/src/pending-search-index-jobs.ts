@@ -1,10 +1,13 @@
 import type {
   IdentifiedSessionHead,
   PersistedSessionHeadChange,
-  SearchIndexSyncOptions,
   SessionCacheMeta,
 } from "@codesesh/core/runtime";
-import type { SearchIndexWorkerJob } from "./search-index-worker.js";
+import type {
+  SearchIndexPublicationProgress,
+  SearchIndexWorkerJob,
+  SearchIndexWorkerOptions,
+} from "./search-index-worker.js";
 
 type FullSearchIndexJob = Extract<SearchIndexWorkerJob, { kind: "full" }>;
 type ChangesSearchIndexJob = Extract<SearchIndexWorkerJob, { kind: "changes" }>;
@@ -15,6 +18,8 @@ interface JobWaiter {
   resolve: () => void;
   reject: (error: Error) => void;
   onStarted?: () => void;
+  onProgress?: (progress: SearchIndexPublicationProgress) => void;
+  agentNames: Set<string>;
 }
 
 interface PendingChanges {
@@ -25,7 +30,7 @@ interface PendingChanges {
   changesBySessionId: Map<string, PersistedSessionHeadChange<IdentifiedSessionHead>>;
   removedSessionIds: Set<string>;
   meta: Record<string, SessionCacheMeta>;
-  searchIndexOptions?: SearchIndexSyncOptions;
+  searchIndexOptions?: SearchIndexWorkerOptions;
 }
 
 interface PendingAgentJobs {
@@ -38,6 +43,7 @@ export interface SearchIndexJobBatch {
   readonly context: string;
   readonly jobs: SearchIndexWorkerJob[];
   start(onError: (error: unknown) => void): void;
+  progress(progress: SearchIndexPublicationProgress, onError: (error: unknown) => void): void;
 }
 
 class PendingSearchIndexJobBatch implements SearchIndexJobBatch {
@@ -81,6 +87,17 @@ class PendingSearchIndexJobBatch implements SearchIndexJobBatch {
     for (const waiter of this.waiters) {
       try {
         waiter.onStarted?.();
+      } catch (error) {
+        onError(error);
+      }
+    }
+  }
+
+  progress(progress: SearchIndexPublicationProgress, onError: (error: unknown) => void): void {
+    for (const waiter of this.waiters) {
+      if (!waiter.agentNames.has(progress.agentName)) continue;
+      try {
+        waiter.onProgress?.(progress);
       } catch (error) {
         onError(error);
       }
@@ -140,11 +157,18 @@ export class PendingSearchIndexJobs {
     context: string,
     jobs: SearchIndexWorkerJob[],
     onStarted?: () => void,
+    onProgress?: (progress: SearchIndexPublicationProgress) => void,
   ): Promise<void> {
     if (jobs.length === 0) return Promise.resolve();
 
     return new Promise((resolve, reject) => {
-      const waiter = { resolve, reject, onStarted };
+      const waiter = {
+        resolve,
+        reject,
+        onStarted,
+        onProgress,
+        agentNames: new Set(jobs.map((job) => job.agentName)),
+      };
       if (this.pendingBatch) {
         this.pendingBatch.merge(context, jobs, waiter);
       } else {
@@ -216,9 +240,9 @@ function mergeChanges(pending: PendingChanges, job: IncrementalSearchIndexJob): 
 }
 
 function mergeSearchIndexOptions(
-  current: SearchIndexSyncOptions | undefined,
-  incoming: SearchIndexSyncOptions | undefined,
-): SearchIndexSyncOptions | undefined {
+  current: SearchIndexWorkerOptions | undefined,
+  incoming: SearchIndexWorkerOptions | undefined,
+): SearchIndexWorkerOptions | undefined {
   if (!current) return incoming;
   if (!incoming) return current;
   return { ...current, ...incoming };

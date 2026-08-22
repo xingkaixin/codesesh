@@ -369,6 +369,11 @@ async function run(
     | {
         sourceCount: number;
         removedCount: number;
+        enumerationMs: number;
+        diffMs: number;
+        parseMs: number;
+        changedCount: number;
+        processedCount: number;
       }
     | undefined;
 
@@ -388,6 +393,11 @@ async function run(
     sourceSynchronizationDetails = {
       sourceCount: result.sourceCount,
       removedCount: result.removedSourceCount,
+      enumerationMs: result.timing.enumerationMs,
+      diffMs: result.timing.diffMs,
+      parseMs: result.timing.parseMs,
+      changedCount: result.timing.changedSourceCount,
+      processedCount: result.timing.processedSourceCount,
     };
     sourceFailures = result.sourceFailures;
     explicitRemovedSessionIds = result.explicitRemovedSessionIds;
@@ -446,6 +456,11 @@ async function run(
     changed_ids: changedIds?.length ?? 0,
     source_count: sourceSynchronizationDetails?.sourceCount,
     removed_count: sourceSynchronizationDetails?.removedCount,
+    source_enumeration_ms: roundMilliseconds(sourceSynchronizationDetails?.enumerationMs ?? 0),
+    source_diff_ms: roundMilliseconds(sourceSynchronizationDetails?.diffMs ?? 0),
+    source_parse_ms: roundMilliseconds(sourceSynchronizationDetails?.parseMs ?? 0),
+    changed_sources: sourceSynchronizationDetails?.changedCount,
+    processed_sources: sourceSynchronizationDetails?.processedCount,
     failed_sources: sourceFailures.length,
     duration_ms: Math.round(scanDuration),
   });

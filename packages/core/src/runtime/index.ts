@@ -37,6 +37,7 @@ export type {
   SessionSourceSynchronizationBaseline,
   SessionSourceSynchronizationOutcome,
   SessionSourceSynchronizationRequest,
+  SessionSourceSynchronizationTiming,
   SessionWatchPlan,
 } from "../agents/index.js";
 export {
@@ -98,6 +99,7 @@ export type {
   DurableSessionPublicationCommitResult,
   DurableSessionPublicationFailureStage,
   PendingSearchIndexMaintenance,
+  SearchIndexPublicationStage,
   SearchIndexSyncOptions,
   SearchIndexSyncFailure,
   SearchIndexSyncResult,

@@ -15,6 +15,15 @@ function formatPartialCompletion(
   return [countLabel, completion.sourceFailureSummary].filter((value) => value != null).join(" · ");
 }
 
+function hasSourceFailures(
+  completion: Pick<
+    NonNullable<ScanStatusEvent["agentStatuses"][string]>,
+    "sourceFailureCount" | "sourceFailureSummary"
+  >,
+): boolean {
+  return (completion.sourceFailureCount ?? 0) > 0 || completion.sourceFailureSummary != null;
+}
+
 export function formatIsoDate(ts: number): string {
   const d = new Date(ts);
   const y = d.getFullYear();
@@ -51,11 +60,15 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
     const stageLabel =
       progress?.phase === "publish-queued"
         ? "Full-history publication queued"
-        : progress?.phase === "publishing" || progress?.phase === "indexing"
-          ? "Publishing full-history sessions"
-          : progress?.phase === "finalizing"
-            ? "Finalizing full-history metadata"
-            : "Scanning full session history";
+        : progress?.phase === "committing"
+          ? "Committing full-history publication"
+          : progress?.phase === "indexing"
+            ? "Writing full-history search index"
+            : progress?.phase === "publishing"
+              ? "Preparing full-history publication"
+              : progress?.phase === "finalizing"
+                ? "Finalizing full-history metadata"
+                : "Scanning full session history";
     return current
       ? `${stageLabel} · ${current}${progressLabel}${pending > 0 ? ` · ${pending} history scan queued` : ""}`
       : `${stageLabel}${progressLabel}`;
@@ -112,7 +125,7 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
   }
 
   const partialBackfill = Object.entries(status.backfill?.partialAgents ?? {}).find(
-    ([, completion]) => completion.completeness === "partial",
+    ([, completion]) => completion.completeness === "partial" && hasSourceFailures(completion),
   );
   if (partialBackfill) {
     const [agentName, completion] = partialBackfill;
@@ -120,7 +133,10 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
     return `Full-history refresh completed with partial data · ${agentName}${detail ? ` · ${detail}` : ""}`;
   }
   const partialAgent = Object.values(status.agentStatuses ?? {}).find(
-    (agentStatus) => agentStatus.status === "complete" && agentStatus.completeness === "partial",
+    (agentStatus) =>
+      agentStatus.status === "complete" &&
+      agentStatus.completeness === "partial" &&
+      hasSourceFailures(agentStatus),
   );
   if (partialAgent) {
     const detail = formatPartialCompletion(partialAgent);

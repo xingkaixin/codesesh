@@ -12,6 +12,7 @@ import {
   type IdentifiedSessionHead,
   type SearchIndexSyncResult,
   type SearchIndexSyncOptions,
+  type SearchIndexPublicationStage,
   type SessionCacheMeta,
   type PersistedSessionHeadChange,
   type SessionSnapshotCompleteness,
@@ -20,6 +21,13 @@ import {
 import { appLogger } from "./logging.js";
 
 export type SearchIndexPersistStage = DurableSessionPublicationFailureStage;
+
+export interface SearchIndexPublicationProgress {
+  agentName: string;
+  stage: SearchIndexPublicationStage;
+}
+
+export type SearchIndexWorkerOptions = Omit<SearchIndexSyncOptions, "onPublicationStage">;
 
 export type SearchIndexWorkerMessage =
   | {
@@ -37,6 +45,7 @@ export type SearchIndexWorkerMessage =
       /** True when the job carries a durable publication whose staged state must be rolled back. */
       fatal: boolean;
     }
+  | ({ type: "publication-progress" } & SearchIndexPublicationProgress)
   | {
       type: "done";
       context: string;
@@ -56,7 +65,7 @@ export type SearchIndexWorkerJob =
       removedSessionIds: string[];
       publicationId?: string;
       saveCache?: boolean;
-      searchIndexOptions?: SearchIndexSyncOptions;
+      searchIndexOptions?: SearchIndexWorkerOptions;
     }
   | {
       kind: "changes";
@@ -66,7 +75,7 @@ export type SearchIndexWorkerJob =
       removedSessionIds: string[];
       meta: Record<string, SessionCacheMeta>;
       publicationId?: string;
-      searchIndexOptions?: SearchIndexSyncOptions;
+      searchIndexOptions?: SearchIndexWorkerOptions;
     }
   | {
       kind: "maintenance";
@@ -75,7 +84,7 @@ export type SearchIndexWorkerJob =
       changes: PersistedSessionHeadChange<IdentifiedSessionHead>[];
       removedSessionIds: string[];
       meta: Record<string, SessionCacheMeta>;
-      searchIndexOptions?: SearchIndexSyncOptions;
+      searchIndexOptions?: SearchIndexWorkerOptions;
     };
 
 export interface SearchIndexWorkerRunRequest {
@@ -162,7 +171,7 @@ function runJob(
         ...(job.publicationId ? { publicationId: job.publicationId } : {}),
       },
       (sessionId) => agent.getSessionData(sessionId),
-      job.searchIndexOptions,
+      publicationSearchIndexOptions(job),
     );
     if (publication.status === "rolled-back") return publication;
     postSyncResult(job.context, publication.searchIndex);
@@ -181,7 +190,7 @@ function runJob(
         ...(job.publicationId ? { publicationId: job.publicationId } : {}),
       },
       (sessionId) => agent.getSessionData(sessionId),
-      job.searchIndexOptions,
+      publicationSearchIndexOptions(job),
     );
     if (publication.status === "rolled-back") return publication;
     const result = publication.searchIndex;
@@ -208,6 +217,19 @@ function runJob(
   if (!result) return { stage: "search_index", publicationId };
   postSyncResult(job.context, result);
   return null;
+}
+
+function publicationSearchIndexOptions(job: SearchIndexWorkerJob): SearchIndexSyncOptions {
+  return {
+    ...job.searchIndexOptions,
+    onPublicationStage: (stage) => {
+      parentPort?.postMessage({
+        type: "publication-progress",
+        agentName: job.agentName,
+        stage,
+      } satisfies SearchIndexWorkerMessage);
+    },
+  };
 }
 
 function postSyncResult(context: string, result: SearchIndexSyncResult): void {

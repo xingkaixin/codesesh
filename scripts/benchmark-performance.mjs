@@ -247,20 +247,48 @@ async function findFreePort() {
   return typeof address === "object" && address ? address.port : 4521;
 }
 
-async function waitForServer(url, child, timeoutMs) {
+export function findStartupUrl(output, expectedOrigin) {
+  for (const match of output.matchAll(/https?:\/\/\S+/g)) {
+    try {
+      const candidate = new URL(match[0]);
+      if (candidate.origin === expectedOrigin && candidate.searchParams.has("access_token")) {
+        return candidate;
+      }
+    } catch {}
+  }
+  return null;
+}
+
+export function authenticatedApiUrl(startupUrl, pathname) {
+  const requestUrl = new URL(pathname, startupUrl);
+  const accessToken = startupUrl.searchParams.get("access_token");
+  if (accessToken) requestUrl.searchParams.set("access_token", accessToken);
+  return requestUrl;
+}
+
+export function benchmarkSessionPath(session) {
+  const { agentName, sessionId } = session.reference;
+  return `/${encodeURIComponent(agentName.trim().toLowerCase())}/${encodeURIComponent(sessionId)}`;
+}
+
+async function waitForServer(url, cli, timeoutMs) {
   const startedAt = performance.now();
   let lastError = null;
 
   while (performance.now() - startedAt < timeoutMs) {
-    if (child.exitCode !== null) {
-      throw new Error(`CLI exited early with code ${child.exitCode}`);
+    if (cli.child.exitCode !== null) {
+      throw new Error(`CLI exited early with code ${cli.child.exitCode}`);
     }
 
-    try {
-      const response = await fetch(`${url}/api/config`);
-      if (response.ok) return;
-    } catch (error) {
-      lastError = error;
+    const startupUrl = findStartupUrl(cli.getOutput(), url);
+    if (startupUrl) {
+      try {
+        const response = await fetch(authenticatedApiUrl(startupUrl, "/api/config"));
+        if (response.ok) return startupUrl;
+        lastError = new Error(`health check returned ${response.status}`);
+      } catch (error) {
+        lastError = error;
+      }
     }
 
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
@@ -375,20 +403,20 @@ async function launchBrowser(headless) {
   }
 }
 
-async function getWindowedSessions(url) {
-  const response = await fetch(`${url}/api/sessions`);
+async function getWindowedSessions(startupUrl) {
+  const response = await fetch(authenticatedApiUrl(startupUrl, "/api/sessions"));
   if (!response.ok) {
     throw new Error(`Failed to fetch sessions: ${response.status}`);
   }
   return response.json();
 }
 
-async function waitForWindowedSessions(url, timeoutMs) {
+async function waitForWindowedSessions(startupUrl, timeoutMs) {
   const startedAt = performance.now();
   let lastResult = { sessions: [] };
 
   while (performance.now() - startedAt < timeoutMs) {
-    lastResult = await getWindowedSessions(url);
+    lastResult = await getWindowedSessions(startupUrl);
     if (Array.isArray(lastResult.sessions) && lastResult.sessions.length > 0) {
       return lastResult;
     }
@@ -425,8 +453,7 @@ function createFixtureData(sessionCount) {
   const sessions = Array.from({ length: sessionCount }, (_, index) => {
     const id = `benchmark-${String(index).padStart(4, "0")}`;
     return {
-      id,
-      slug: `codex/${id}`,
+      reference: { agentName: "codex", sessionId: id },
       title: `Benchmark session ${index}`,
       directory: "/benchmark/project",
       project_identity: {
@@ -490,12 +517,12 @@ function createFixtureData(sessionCount) {
 }
 
 function createFixtureSessionDetail(session) {
+  const sessionId = session.reference.sessionId;
   return {
     ...session,
-    reference: { agentName: "codex", sessionId: session.id },
     messages: [
       {
-        id: `${session.id}-message`,
+        id: `${sessionId}-message`,
         role: "user",
         time_created: session.time_created,
         parts: [{ type: "text", text: session.title }],
@@ -536,7 +563,9 @@ async function installFixtureRoutes(context, fixture) {
     if (pathname === "/api/sessions") return json({ sessions: fixture.sessions });
     if (pathname.startsWith("/api/sessions/")) {
       const sessionId = decodeURIComponent(pathname.split("/").at(-1) ?? "");
-      const session = fixture.sessions.find((candidate) => candidate.id === sessionId);
+      const session = fixture.sessions.find(
+        (candidate) => candidate.reference.sessionId === sessionId,
+      );
       return session
         ? json(createFixtureSessionDetail(session))
         : route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
@@ -665,8 +694,8 @@ async function openSidebarProject(page, timeoutMs) {
 }
 
 function createLiveEvent(session, index, totalSessions) {
-  const [agentName] = String(session.slug).split("/");
-  const reference = { agentName, sessionId: session.id };
+  const reference = session.reference;
+  const { agentName } = reference;
   return {
     type: "sessions-updated",
     changedAgents: [agentName],
@@ -793,7 +822,7 @@ async function runIteration(iteration, options) {
     const startedAt = performance.now();
     cli = spawnCli(port, options.days, options.coldStart);
 
-    await waitForServer(url, cli.child, options.timeoutMs);
+    const startupUrl = await waitForServer(url, cli, options.timeoutMs);
     const serverReadyMs = performance.now() - startedAt;
     console.log(`#${iteration} server ready in ${formatMs(serverReadyMs)}`);
 
@@ -808,7 +837,10 @@ async function runIteration(iteration, options) {
     }
     const page = await context.newPage();
 
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: options.timeoutMs });
+    await page.goto(startupUrl.href, {
+      waitUntil: "domcontentloaded",
+      timeout: options.timeoutMs,
+    });
     await page.locator('[data-testid="dashboard"]').waitFor({
       state: "visible",
       timeout: options.timeoutMs,
@@ -816,7 +848,7 @@ async function runIteration(iteration, options) {
     const dashboardReadyMs = performance.now() - startedAt;
     console.log(`#${iteration} dashboard visible in ${formatMs(dashboardReadyMs)}`);
 
-    const { sessions } = fixture ?? (await waitForWindowedSessions(url, options.timeoutMs));
+    const { sessions } = fixture ?? (await waitForWindowedSessions(startupUrl, options.timeoutMs));
     if (!Array.isArray(sessions) || sessions.length === 0) {
       const windowLabel = options.days === 0 ? "all time" : `the last ${options.days} days`;
       const retryHint =
@@ -831,9 +863,9 @@ async function runIteration(iteration, options) {
       options.profileScenarios.length > 0 ? await runProfileScenarios(page, sessions, options) : [];
 
     const target = selectBenchmarkTarget(sessions, options.target);
-    const [agentKey, sessionId] = String(target.slug).split("/");
-    const targetPath = `/${target.slug}`;
-    const sessionApiPath = `/api/sessions/${agentKey}/${sessionId}`;
+    const { agentName: agentKey, sessionId } = target.reference;
+    const targetPath = benchmarkSessionPath(target);
+    const sessionApiPath = `/api/sessions/${encodeURIComponent(agentKey)}/${encodeURIComponent(sessionId)}`;
     console.log(
       `#${iteration} opening ${targetPath} (${getSessionMessageCount(target)} messages, ${formatSessionTokenCount(target)} tokens, target=${options.target}, navigation=${options.navigation})`,
     );
@@ -847,6 +879,7 @@ async function runIteration(iteration, options) {
         },
         { timeout: options.timeoutMs },
       );
+      void responsePromise.catch(() => undefined);
 
       const clicked = await clickSessionLink(page, targetPath);
       console.log(`#${iteration} click dispatched`);
@@ -863,8 +896,9 @@ async function runIteration(iteration, options) {
         },
         { timeout: options.timeoutMs },
       );
+      void responsePromise.catch(() => undefined);
 
-      await page.goto(`${url}${targetPath}`, {
+      await page.goto(authenticatedApiUrl(startupUrl, targetPath).href, {
         waitUntil: "domcontentloaded",
         timeout: options.timeoutMs,
       });
@@ -897,7 +931,7 @@ async function runIteration(iteration, options) {
     return {
       iteration,
       sessions: sessions.length,
-      target: target.slug,
+      target: `${agentKey}/${sessionId}`,
       serverReadyMs,
       dashboardReadyMs,
       sessionClickMs,
@@ -961,7 +995,9 @@ async function main() {
   console.log(JSON.stringify({ options, results }, null, 2));
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+if (process.argv[1]?.endsWith("benchmark-performance.mjs")) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}
