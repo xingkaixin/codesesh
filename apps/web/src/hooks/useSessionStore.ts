@@ -8,7 +8,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import { useCallback, useMemo, useReducer, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   type AgentInfo,
   type AppConfig,
@@ -30,10 +30,6 @@ import {
   invalidateLiveSessionDerivedQueries,
   invalidateSessionDerivedQueries,
 } from "../lib/session-query-consistency";
-import {
-  INITIAL_SESSION_STORE_LOAD_STATE,
-  reduceSessionStoreLoad,
-} from "./session-store-load-state";
 
 export interface SessionStoreSnapshot {
   window: AppConfig["window"];
@@ -59,7 +55,6 @@ interface SnapshotAggregates {
 }
 
 interface ActiveLoadRequest {
-  requestId: number;
   window: AppConfig["window"];
 }
 
@@ -210,14 +205,10 @@ function sameWindow(
 
 export function useSessionStore() {
   const queryClient = useQueryClient();
-  const [loadState, dispatchLoad] = useReducer(
-    reduceSessionStoreLoad,
-    INITIAL_SESSION_STORE_LOAD_STATE,
-  );
+  const [requestedWindow, setRequestedWindow] = useState<AppConfig["window"] | null>(null);
+  const [reloadFailed, setReloadFailed] = useState(false);
   const activeRequestRef = useRef<ActiveLoadRequest | null>(null);
   const liveAggregateWindowRef = useRef<AppConfig["window"] | null>(null);
-  const nextRequestIdRef = useRef(1);
-  const requestedWindow = loadState.status === "idle" ? null : loadState.window;
   const configQuery = useQuery({
     queryKey: queryKeys.config,
     retry: 2,
@@ -266,10 +257,11 @@ export function useSessionStore() {
 
   const reload = useCallback(
     async (window: AppConfig["window"]): Promise<SessionStoreSnapshot | null> => {
-      const requestId = nextRequestIdRef.current++;
-      activeRequestRef.current = { requestId, window };
+      const request = { window };
+      activeRequestRef.current = request;
       liveAggregateWindowRef.current = null;
-      dispatchLoad({ type: "begin", requestId, window });
+      setRequestedWindow(window);
+      setReloadFailed(false);
       try {
         await Promise.all([
           queryClient.cancelQueries({ queryKey: queryKeys.sessionProjections }),
@@ -304,17 +296,15 @@ export function useSessionStore() {
           fetchSnapshotAggregates(queryClient, window),
           queryClient.fetchQuery(
             sessionProjectionOptions(window, (firstPageProjection) => {
-              if (activeRequestRef.current?.requestId !== requestId) return;
+              if (activeRequestRef.current !== request) return;
               queryClient.setQueryData(queryKeys.sessionProjection(window), firstPageProjection);
             }),
           ),
         ]);
-        const snapshot = createSnapshot(window, aggregates, projection.sessions);
-        dispatchLoad({ type: "complete", requestId });
-        return snapshot;
+        return createSnapshot(window, aggregates, projection.sessions);
       } catch (error) {
         if (isCancelledError(error)) return null;
-        dispatchLoad({ type: "fail", requestId });
+        if (activeRequestRef.current === request) setReloadFailed(true);
         throw error;
       }
     },
@@ -382,15 +372,11 @@ export function useSessionStore() {
       });
       await invalidateLiveSessionDerivedQueries(queryClient, event);
       refreshLiveProjects(queryClient, activeWindow);
-      const liveRefreshRequestId = activeRequest.requestId;
       const forceAggregateRefresh = !sameWindow(liveAggregateWindowRef.current, activeWindow);
       void fetchLiveSnapshotAggregates(queryClient, activeWindow, forceAggregateRefresh)
         .then(() => {
           const latestRequest = activeRequestRef.current;
-          if (
-            latestRequest?.requestId === liveRefreshRequestId &&
-            sameWindow(latestRequest.window, activeWindow)
-          ) {
+          if (latestRequest === activeRequest) {
             liveAggregateWindowRef.current = activeWindow;
           }
         })
@@ -420,8 +406,7 @@ export function useSessionStore() {
     try {
       await reload(activeRequest.window);
     } catch {
-      // reload already recorded the failure in the load state and the retry
-      // surface re-renders from it; rethrowing would only leak an
+      // reload already exposed the failure; rethrowing would only leak an
       // unhandled rejection from the button handler.
     }
   }, [configFailed, refetchConfig, reload]);
@@ -450,7 +435,7 @@ export function useSessionStore() {
   );
   const error = configQuery.isError
     ? "Failed to load configuration. The CLI may be restarting or unavailable."
-    : loadState.status === "failed"
+    : reloadFailed
       ? "Failed to load session data for the selected time window."
       : null;
 
@@ -467,8 +452,7 @@ export function useSessionStore() {
     loading:
       configQuery.isPending ||
       (!configQuery.isError &&
-        (requestedWindow === null ||
-          (loadState.status === "loading" && displayedSnapshot === null))),
+        (requestedWindow === null || (!reloadFailed && displayedSnapshot === null))),
     error,
     version: projectionQuery.dataUpdatedAt,
     activeAgents: agentCatalog.active,
