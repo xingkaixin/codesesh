@@ -117,7 +117,7 @@ interface SearchIndexPlan {
   changes: PersistedSessionHeadChange[];
   removedSessionIds: string[];
   detailVersionBySessionId: Map<string, string>;
-  reusableSessionIds: Set<string>;
+  reusableMessageCountBySessionId: Map<string, number>;
   needsRebuild: boolean;
   startedAt: number;
 }
@@ -218,6 +218,7 @@ function loadReusedSearchIndexEntry(
   agentName: string,
   change: PersistedSessionHeadChange,
   detailVersion: string,
+  expectedMessageCount: number,
   timing: SearchIndexLoadTiming,
 ): ReusedSearchIndexEntry | null {
   const sessionId = change.session.reference.sessionId;
@@ -226,7 +227,7 @@ function loadReusedSearchIndexEntry(
     const rows = readCachedContent.all(agentName, sessionId) as Array<{
       content_text?: string | null;
     }>;
-    if (rows.length !== change.session.stats.message_count) return null;
+    if (rows.length !== expectedMessageCount) return null;
 
     const chunks: string[] = [];
     appendPlainText(change.session.title, chunks);
@@ -254,7 +255,7 @@ function* loadSearchIndexEntries(
   detailVersionFor: (sessionId: string) => string,
   failures: SearchIndexSyncFailure[],
   timing: SearchIndexLoadTiming,
-  reusableSessionIds: ReadonlySet<string>,
+  reusableMessageCountBySessionId: ReadonlyMap<string, number>,
 ): Generator<LoadedSearchIndexEntry> {
   const readCachedContent = db.prepare(
     "SELECT content_text FROM messages WHERE agent_name = ? AND session_id = ? ORDER BY message_index",
@@ -262,12 +263,14 @@ function* loadSearchIndexEntries(
   for (const change of changes) {
     const sessionId = change.session.reference.sessionId;
     const detailVersion = detailVersionFor(sessionId);
-    if (reusableSessionIds.has(sessionId)) {
+    const reusableMessageCount = reusableMessageCountBySessionId.get(sessionId);
+    if (reusableMessageCount !== undefined) {
       const reused = loadReusedSearchIndexEntry(
         readCachedContent,
         agentName,
         change,
         detailVersion,
+        reusableMessageCount,
         timing,
       );
       if (reused) {
@@ -383,7 +386,7 @@ function loadOrPreStageEntries(
   detailVersionFor: (sessionId: string) => string,
   failures: SearchIndexSyncFailure[],
   timing: SearchIndexLoadTiming,
-  reusableSessionIds: ReadonlySet<string>,
+  reusableMessageCountBySessionId: ReadonlyMap<string, number>,
   publicationId?: string,
 ): { entries: LoadedSearchIndexEntry[]; preStaged: number } {
   if (changes.length <= SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
@@ -397,7 +400,7 @@ function loadOrPreStageEntries(
           detailVersionFor,
           failures,
           timing,
-          reusableSessionIds,
+          reusableMessageCountBySessionId,
         ),
       ],
       preStaged: 0,
@@ -420,7 +423,7 @@ function loadOrPreStageEntries(
         detailVersionFor,
         failures,
         timing,
-        reusableSessionIds,
+        reusableMessageCountBySessionId,
       );
       preStaged += stagePublicationPayloads(
         db,
@@ -514,9 +517,9 @@ function createSearchIndexPlan(input: SearchIndexPlanInput): SearchIndexPlan {
     }),
   );
   const unversionedDetail = sessionDetailVersion(null);
-  // Reuse is safe only when a source-backed version and every message-derived
-  // head fact still match; title, directory, and project identity can then change independently.
-  const reusableSessionIds = new Set(
+  // Reuse is safe only when the source-backed detail version, normalized message rows,
+  // and every message-derived head fact still match.
+  const reusableMessageCountBySessionId = new Map(
     changes.flatMap(({ session }) => {
       const sessionId = session.reference.sessionId;
       const targetVersion = detailVersionBySessionId.get(sessionId);
@@ -524,13 +527,13 @@ function createSearchIndexPlan(input: SearchIndexPlanInput): SearchIndexPlan {
       const canReuse =
         typeof targetVersion === "string" &&
         targetVersion !== unversionedDetail &&
+        typeof storedMessageCount === "number" &&
         input.state.detailVersionBySessionId.get(sessionId) === targetVersion &&
         input.state.indexedMessageCountBySessionId.get(sessionId) === storedMessageCount &&
-        storedMessageCount === session.stats.message_count &&
         input.state.publishedDetailFactsHashBySessionId.get(sessionId) ===
           sessionDetailFactsHash(session) &&
         !input.state.pendingReindexSessionIds.has(sessionId);
-      return canReuse ? [sessionId] : [];
+      return canReuse ? ([[sessionId, storedMessageCount]] as const) : [];
     }),
   );
   const changedCount = input.removedSessionIds.length + changes.length;
@@ -543,7 +546,7 @@ function createSearchIndexPlan(input: SearchIndexPlanInput): SearchIndexPlan {
     changes,
     removedSessionIds: input.removedSessionIds,
     detailVersionBySessionId,
-    reusableSessionIds,
+    reusableMessageCountBySessionId,
     needsRebuild: isBulk && changedCount > 0,
     startedAt: input.startedAt,
   };
@@ -587,7 +590,7 @@ function prepareSearchIndexPublication(
     (sessionId) => detailVersionForPlan(plan, sessionId),
     failures,
     loadTiming,
-    plan.reusableSessionIds,
+    plan.reusableMessageCountBySessionId,
     publicationId,
   );
 
@@ -745,7 +748,7 @@ function executeSearchIndexPlan(
       (sessionId) => detailVersionForPlan(plan, sessionId),
       failures,
       loadTiming,
-      plan.reusableSessionIds,
+      plan.reusableMessageCountBySessionId,
     );
 
   if (largeBacklogStrategy === "chunked" && plan.changes.length > SEARCH_INDEX_COMMIT_CHUNK_SIZE) {

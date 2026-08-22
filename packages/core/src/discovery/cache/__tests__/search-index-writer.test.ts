@@ -175,6 +175,50 @@ describe("search index writer", () => {
     );
   });
 
+  it("reuses normalized Codex messages when raw head counts differ", () => {
+    const base = makeSessionHead("normalized-head-only");
+    const initial = {
+      ...base,
+      stats: { ...base.stats, message_count: 5 },
+    };
+    const meta = {
+      id: initial.reference.sessionId,
+      sourcePath: "/normalized-head-only",
+      sourceFingerprint: "stable-source",
+    };
+    saveCachedSessions("codex", [initial], { [initial.reference.sessionId]: meta });
+    syncSessionSearchIndex("codex", [initial], () =>
+      makeSessionData(initial.reference.sessionId, "normalized message body"),
+    );
+
+    const updated = { ...initial, title: "Renamed normalized session" };
+    const loadSession = vi.fn(() => {
+      throw new Error("source detail should not be loaded");
+    });
+    const publication = commitDurableSessionPublication(
+      {
+        kind: "changes",
+        agentName: "codex",
+        changes: [{ session: updated, sortIndex: 0 }],
+        removedSessionIds: [],
+        meta: { [initial.reference.sessionId]: meta },
+      },
+      loadSession,
+    );
+
+    expect(publication).toMatchObject({
+      status: "committed",
+      searchIndex: {
+        changed: 1,
+        indexed: 1,
+        getSessionDataCalls: 0,
+        reusedMaterializations: 1,
+      },
+    });
+    expect(loadSession).not.toHaveBeenCalled();
+    expect(searchSessions("normalized message body")).toHaveLength(1);
+  });
+
   it("keeps cache-owned fields when materializing an indexed head", () => {
     const other = makeSessionHead("other");
     const session = makeSessionHead("materialized");
