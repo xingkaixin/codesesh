@@ -1,0 +1,322 @@
+.demo-replay-toolbar {
+  padding: 0.7rem 0.9rem;
+}
+
+.demo-replay-toolbar > p {
+  margin: 0;
+  overflow: hidden;
+  color: var(--console-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.56rem;
+}
+
+.demo-replay-toolbar > div {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.45rem;
+}
+
+.demo-replay-toolbar > div > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+}
+
+.demo-replay-toolbar > div > small {
+  margin-left: auto;
+  color: var(--console-muted);
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  white-space: nowrap;
+}
+
+.demo-replay-frame {
+  display: grid;
+  grid-template-columns: 11.8rem minmax(0, 1fr);
+  gap: 0.8rem;
+  min-height: 32rem;
+  padding: 0.85rem;
+  background: var(--console-bg);
+}
+
+.demo-replay-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.demo-toc {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.demo-toc legend,
+.demo-file-tracker > p {
+  width: 100%;
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--console-border);
+  color: var(--console-muted);
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.demo-toc > div {
+  display: grid;
+  padding: 0.45rem 0.7rem 0.6rem;
+}
+
+.demo-toc label {
+  display: grid;
+  grid-template-columns: 0.9rem minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  align-items: center;
+  min-height: 1.7rem;
+  cursor: pointer;
+}
+
+.demo-toc input {
+  width: 0.78rem;
+  height: 0.78rem;
+  margin: 0;
+  accent-color: var(--brand);
+}
+
+.demo-toc label span,
+.demo-toc label small {
+  font-family: var(--font-mono);
+  font-size: 0.54rem;
+}
+
+.demo-toc label small {
+  color: var(--console-muted);
+}
+
+.demo-file-tracker {
+  overflow: hidden;
+}
+
+.demo-file-tracker dl {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+}
+
+.demo-file-tracker dl > div {
+  display: flex;
+  padding: 0.42rem 0.5rem;
+  border: 1px solid var(--console-border);
+  border-radius: var(--radius-sm);
+  color: var(--console-muted);
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+}
+
+.demo-file-tracker dd {
+  margin-left: auto;
+}
+
+.demo-message-main {
+  min-width: 0;
+}
+
+.demo-message-list {
+  display: grid;
+  gap: 1.05rem;
+}
+
+.demo-message-list > li[hidden],
+.demo-tool-call[hidden] {
+  display: none;
+}
+
+.demo-message {
+  display: grid;
+  grid-template-columns: 1.8rem minmax(0, 1fr);
+  gap: 0.7rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--console-border);
+}
+
+.demo-avatar {
+  width: 1.8rem;
+  height: 1.8rem;
+  color: var(--console-muted);
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+}
+
+.demo-message > div {
+  min-width: 0;
+}
+
+.demo-message header {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--console-muted);
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+}
+
+.demo-message header > strong {
+  color: var(--console-text);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+}
+
+.demo-message header small {
+  padding: 0.12rem 0.3rem;
+  border: 1px solid var(--console-border);
+  border-radius: var(--radius-xs);
+  background: var(--console-surface-muted);
+}
+
+.demo-message-box,
+.demo-agent-response {
+  margin: 0.48rem 0 0;
+  font-size: 0.65rem;
+  line-height: 1.55;
+}
+
+.demo-message-box,
+.demo-agent-response > p {
+  padding: 0.65rem 0.75rem;
+}
+
+.demo-agent-response {
+  overflow: hidden;
+}
+
+.demo-agent-response > p {
+  margin: 0;
+}
+
+.demo-tool-call {
+  border-top: 1px solid var(--console-border);
+}
+
+.demo-tool-call summary,
+.demo-write-row {
+  display: grid;
+  grid-template-columns: 3.7rem minmax(0, 1fr) auto auto;
+  gap: 0.55rem;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0.45rem 0.75rem;
+  background: var(--console-surface-muted);
+}
+
+.demo-tool-call summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.demo-tool-call summary::after {
+  grid-column: 5;
+  color: var(--console-muted);
+  content: ">";
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.demo-tool-call[open] summary::after {
+  transform: rotate(90deg);
+}
+
+.demo-tool-call summary span,
+.demo-tool-call summary code,
+.demo-tool-call summary strong,
+.demo-tool-call summary small,
+.demo-write-row span,
+.demo-write-row code,
+.demo-write-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+}
+
+.demo-tool-call summary code,
+.demo-write-row code {
+  color: var(--console-muted);
+}
+
+.demo-tool-call summary strong {
+  color: var(--console-text-secondary);
+}
+
+.demo-tool-call summary strong.is-success,
+.demo-write-row strong,
+.demo-tool-result strong,
+.demo-tool-call ins {
+  color: var(--success-text);
+}
+
+.demo-tool-call del {
+  color: var(--brand-text);
+}
+
+.demo-tool-call pre {
+  margin: 0;
+  overflow-x: auto;
+  padding: 0.6rem 0.75rem;
+  border-top: 1px solid var(--console-border);
+  color: var(--console-text-secondary);
+  background: var(--console-surface-sunken);
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  line-height: 1.7;
+}
+
+.demo-tool-call pre span,
+.demo-tool-call pre ins,
+.demo-tool-call pre del {
+  display: block;
+  text-decoration: none;
+}
+
+.demo-tool-call pre span {
+  color: var(--console-muted);
+}
+
+.demo-tool-result {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border-top: 1px solid var(--console-border);
+  background: var(--console-surface-sunken);
+  font-family: var(--font-mono);
+  font-size: 0.53rem;
+}
+
+.demo-tool-result span {
+  margin-left: auto;
+  color: var(--console-muted);
+}
+
+.demo-write-row {
+  grid-template-columns: 3.7rem minmax(0, 1fr) auto;
+  border-top: 1px solid var(--console-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .demo-tool-call summary::after {
+    transition: none;
+  }
+}
