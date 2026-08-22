@@ -1,0 +1,180 @@
+---
+import { copy, type Locale } from "../../data/landing";
+import "./base.css";
+import "./projects.css";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = copy[locale].tour;
+const sampleLabel = `${t.sampleLabel} / DEMO`;
+---
+
+<header class="demo-toolbar demo-toolbar-simple">
+  <div class="demo-brand">
+    <img src="/logo.svg?v=3" alt="" width="18" height="18" />
+    <strong>CODESESH</strong>
+  </div>
+  <span class="demo-breadcrumb">Dashboard / webapp</span>
+  <span class="demo-range-chip">Last 7d / Apr 16-23</span>
+  <span class="demo-sample-label">{sampleLabel}</span>
+</header>
+
+<div class="demo-frame demo-project-frame">
+  <aside class="demo-sidebar" aria-label={t.sampleProjects}>
+    <nav>
+      <ul class="demo-nav-list">
+        <li>
+          <img src="/logo.svg?v=3" alt="" width="13" height="13" />
+          <span>Dashboard</span>
+        </li>
+        <li aria-current="page" class="is-active">
+          <>
+            <span>webapp</span>
+            <small>96</small>
+          </>
+        </li>
+        <li>
+          <>
+            <span>data-pipeline</span>
+            <small>54</small>
+          </>
+        </li>
+        <li>
+          <>
+            <span>integration-svc</span>
+            <small>38</small>
+          </>
+        </li>
+      </ul>
+    </nav>
+  </aside>
+
+  <div class="demo-main demo-project-main">
+    <header class="demo-project-heading">
+      <p role="heading" aria-level="3">webapp</p>
+      <span>96 sessions / 4 agents / /projects/webapp</span>
+    </header>
+    <p class="demo-date">APR 23, 2026 / THURSDAY</p>
+
+    <div class="demo-session-list">
+      <details class="demo-session-card" data-demo-subsession>
+        <summary>
+          <time>10:22</time>
+          <span class="demo-agent-frame">
+            <img
+              src="/icon/agent/claudecode.svg"
+              alt=""
+              width="13"
+              height="13"
+              loading="lazy"
+            />
+          </span>
+          <span class="demo-session-copy">
+            <strong>Implement onboarding wizard flow</strong>
+            <small> Claude Code / 84 msgs / 412K tok / 3 sub-sessions </small>
+          </span>
+          <span class="demo-sub-count">3 sub</span>
+          <span class="demo-cost">$1.86 incl. sub</span>
+        </summary>
+        <ol class="demo-sub-sessions">
+          <li>
+            <>
+              <time>10:26</time>
+              <span>Generate step validation schema</span>
+              <small>22 msgs / 96K tok</small>
+            </>
+          </li>
+          <li>
+            <>
+              <time>10:41</time>
+              <span>Write WelcomeStep component tests</span>
+              <small>17 msgs / 71K tok</small>
+            </>
+          </li>
+          <li>
+            <>
+              <time>11:03</time>
+              <span>Audit a11y on the wizard stepper</span>
+              <small>9 msgs / 38K tok</small>
+            </>
+          </li>
+        </ol>
+      </details>
+
+      <article class="demo-session-card demo-session-static">
+        <time>09:48</time>
+        <span class="demo-agent-frame">
+          <img
+            class="demo-agent-icon"
+            src="/icon/agent/codex.svg"
+            alt=""
+            width="13"
+            height="13"
+            loading="lazy"
+            data-monochrome
+          />
+        </span>
+        <span class="demo-session-copy">
+          <strong>Refactor query building for readability</strong>
+          <small>Codex / 41 msgs / 188K tok</small>
+        </span>
+        <span class="demo-cost">$0.74</span>
+      </article>
+
+      <details class="demo-session-card" data-demo-subsession>
+        <summary>
+          <time>08:15</time>
+          <span class="demo-agent-frame">
+            <img
+              class="demo-agent-icon"
+              src="/icon/agent/opencode.svg"
+              alt=""
+              width="13"
+              height="13"
+              loading="lazy"
+              data-monochrome
+            />
+          </span>
+          <span class="demo-session-copy">
+            <strong>Fix webhook signature verification bug</strong>
+            <small> OpenCode / 29 msgs / 104K tok / 1 sub-session </small>
+          </span>
+          <span class="demo-sub-count">1 sub</span>
+          <span class="demo-cost">$0.41 incl. sub</span>
+        </summary>
+        <ol class="demo-sub-sessions">
+          <li>
+            <>
+              <time>08:31</time>
+              <span>Reproduce the HMAC mismatch locally</span>
+              <small>11 msgs / 34K tok</small>
+            </>
+          </li>
+        </ol>
+      </details>
+
+      <article class="demo-session-card demo-session-static">
+        <time>07:02</time>
+        <span class="demo-agent-frame">
+          <img
+            class="demo-agent-icon"
+            src="/icon/agent/cursor.svg"
+            alt=""
+            width="13"
+            height="13"
+            loading="lazy"
+            data-monochrome
+          />
+        </span>
+        <span class="demo-session-copy">
+          <strong>Tune session list virtualization</strong>
+          <small>Cursor / 18 msgs / 63K tok</small>
+        </span>
+        <span class="demo-cost">$0.22</span>
+      </article>
+    </div>
+  </div>
+</div>

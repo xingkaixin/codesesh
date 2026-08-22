@@ -1,0 +1,259 @@
+---
+import { copy, type Locale } from "../../data/landing";
+import "./base.css";
+import "./replay.css";
+
+interface Props {
+  id: string;
+  locale: Locale;
+}
+
+const { id, locale } = Astro.props;
+const t = copy[locale].tour;
+const sampleLabel = `${t.sampleLabel} / DEMO`;
+const replayFilters = [
+  { key: "user", label: t.userMessages, count: 4 },
+  { key: "agent", label: t.agentResponses, count: 15 },
+  { key: "tools", label: t.toolCalls, count: 22 },
+  { key: "bash", label: "bash", count: 8 },
+  { key: "edit-file", label: "edit_file", count: 6 },
+] as const;
+---
+
+<header class="demo-replay-toolbar">
+  <p>Dashboard / Codex / Refactor query building for readability</p>
+  <div>
+    <span class="demo-context-label">Session</span>
+    <strong>Refactor query building for readability</strong>
+    <small>#9c7a2d1b / updated 7h ago</small>
+    <span class="demo-sample-label">{sampleLabel}</span>
+  </div>
+</header>
+
+<div class="demo-replay-frame">
+  <aside class="demo-replay-sidebar">
+    <fieldset class="demo-toc">
+      <legend>Session TOC</legend>
+      <div role="group" aria-label={t.filters}>
+        {
+          replayFilters.map((filter) => (
+            <label>
+              <input
+                type="checkbox"
+                checked
+                data-replay-filter={filter.key}
+                aria-controls={`${id}-messages`}
+              />
+              <span>{filter.label}</span>
+              <small>{filter.count}</small>
+            </label>
+          ))
+        }
+      </div>
+    </fieldset>
+
+    <section class="demo-file-tracker" aria-labelledby={`${id}-files`}>
+      <p id={`${id}-files`} role="heading" aria-level="3">File Tracker</p>
+      <dl>
+        <div>
+          <>
+            <dt>EDIT</dt>
+            <dd>2</dd>
+          </>
+        </div>
+        <div>
+          <>
+            <dt>WRITE</dt>
+            <dd>8</dd>
+          </>
+        </div>
+      </dl>
+    </section>
+  </aside>
+
+  <div class="demo-message-main">
+    <span
+      class="sr-only"
+      aria-live="polite"
+      data-replay-status
+      data-status-template={t.visibleStatus}
+    >
+      {t.visibleStatus.replace("{count}", "3")}
+    </span>
+    <ol id={`${id}-messages`} class="demo-message-list">
+      <li data-replay-item="user" data-replay-message>
+        <article class="demo-message">
+          <span class="demo-avatar" aria-hidden="true"> U </span>
+          <div>
+            <header>
+              <>
+                <strong>USER</strong>
+                <time>10:22:13</time>
+              </>
+            </header>
+            <p class="demo-message-box">
+              The current query builder is hard to follow. Refactor it into
+              composable helpers and document the intent of each step.
+            </p>
+          </div>
+        </article>
+      </li>
+
+      <li data-replay-item="agent" data-replay-message>
+        <article class="demo-message">
+          <span class="demo-avatar">
+            <img
+              class="demo-agent-icon"
+              src="/icon/agent/codex.svg"
+              alt="Codex"
+              width="15"
+              height="15"
+              loading="lazy"
+              data-monochrome
+            />
+          </span>
+          <div>
+            <header>
+              <>
+                <strong>AGENT</strong>
+                <time>10:22:18</time>
+                <small>gpt-5.4</small>
+              </>
+            </header>
+            <div class="demo-agent-response">
+              <p>
+                I will split the builder into focused functions and keep its
+                behavior intact.
+              </p>
+
+              <details
+                class="demo-tool-call"
+                data-demo-tool="edit_file"
+                data-replay-item="tools edit-file"
+              >
+                <summary>
+                  <span>edit_file</span>
+                  <code>src/db/queryBuilder.ts</code>
+                  <strong>EDITED</strong>
+                  <small>
+                    <ins>+128</ins>
+                    <del>-46</del>
+                  </small>
+                </summary>
+                <pre>
+                              <code>
+                                <span>@@ buildQuery()</span>
+                                <del>- const parts = [];</del>
+                                <del>
+                                  - return appendFilters(parts, filters);
+                                </del>
+                                <ins>
+                                  + const clauses = buildClauses(filters);
+                                </ins>
+                                <ins>
+                                  + return clauses.filter(Boolean).join(" AND
+                                  ");
+                                </ins>
+                              </code>
+                            </pre>
+              </details>
+
+              <details
+                class="demo-tool-call"
+                data-demo-tool="bash"
+                data-replay-item="tools bash"
+              >
+                <summary>
+                  <span>bash</span>
+                  <code>pnpm test:unit</code>
+                  <strong class="is-success">SUCCESS</strong>
+                </summary>
+                <p class="demo-tool-result">
+                  <>
+                    <strong>148 passed</strong>
+                    <span>0 failed / 2.34s</span>
+                  </>
+                </p>
+              </details>
+            </div>
+          </div>
+        </article>
+      </li>
+
+      <li data-replay-item="agent" data-replay-message>
+        <article class="demo-message">
+          <span class="demo-avatar">
+            <img
+              class="demo-agent-icon"
+              src="/icon/agent/codex.svg"
+              alt="Codex"
+              width="15"
+              height="15"
+              loading="lazy"
+              data-monochrome
+            />
+          </span>
+          <div>
+            <header>
+              <>
+                <strong>AGENT</strong>
+                <time>10:24:31</time>
+              </>
+            </header>
+            <div class="demo-agent-response">
+              <p>
+                Updated the builder, added types and focused comments, and kept
+                behavior intact.
+              </p>
+              <div class="demo-write-row">
+                <span>write</span>
+                <code>src/db/queryBuilder.spec.ts</code>
+                <strong>+86 lines</strong>
+              </div>
+            </div>
+          </div>
+        </article>
+      </li>
+    </ol>
+  </div>
+</div>
+<script>
+  function initializeReplayDemo(root: HTMLElement) {
+    const filters = Array.from(
+      root.querySelectorAll<HTMLInputElement>("[data-replay-filter]"),
+    );
+    const items = Array.from(
+      root.querySelectorAll<HTMLElement>("[data-replay-item]"),
+    );
+    const status = root.querySelector<HTMLElement>("[data-replay-status]");
+
+    function renderFilters() {
+      const disabled = new Set(
+        filters
+          .filter((filter) => !filter.checked)
+          .map((filter) => filter.dataset.replayFilter),
+      );
+      items.forEach((item) => {
+        const types = item.dataset.replayItem?.split(" ") ?? [];
+        item.hidden = types.some((type) => disabled.has(type));
+      });
+
+      const visibleCount = root.querySelectorAll<HTMLElement>(
+        "[data-replay-message]:not([hidden])",
+      ).length;
+      if (status) {
+        status.textContent = (
+          status.dataset.statusTemplate ?? "{count}"
+        ).replace("{count}", String(visibleCount));
+      }
+    }
+
+    filters.forEach((filter) =>
+      filter.addEventListener("change", renderFilters),
+    );
+  }
+
+  document
+    .querySelectorAll<HTMLElement>('[data-product-demo="replay"]')
+    .forEach(initializeReplayDemo);
+</script>

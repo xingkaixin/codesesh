@@ -1,0 +1,162 @@
+.demo-toolbar-simple .demo-breadcrumb {
+  margin-left: 0.2rem;
+}
+
+.demo-breadcrumb {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--console-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+}
+
+.demo-project-frame {
+  min-height: 29rem;
+}
+
+.demo-project-heading {
+  align-items: baseline;
+}
+
+.demo-project-heading p {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.demo-project-heading span {
+  color: var(--console-muted);
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+}
+
+.demo-date {
+  margin-top: 0.9rem;
+}
+
+.demo-session-list {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+}
+
+.demo-session-card {
+  overflow: hidden;
+}
+
+.demo-session-card summary,
+.demo-session-static {
+  display: grid;
+  grid-template-columns: 2.3rem 1.55rem minmax(0, 1fr) auto 5.8rem;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3.65rem;
+  padding: 0.65rem 0.8rem;
+}
+
+.demo-session-card summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.demo-session-card summary::after {
+  position: absolute;
+  content: "";
+}
+
+.demo-session-card time,
+.demo-cost,
+.demo-sub-count,
+.demo-sub-sessions time,
+.demo-sub-sessions small {
+  color: var(--console-muted);
+  font-family: var(--font-mono);
+  font-size: 0.53rem;
+  white-space: nowrap;
+}
+
+.demo-agent-frame {
+  width: 1.55rem;
+  height: 1.55rem;
+}
+
+.demo-session-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.18rem;
+}
+
+.demo-session-copy strong {
+  overflow: hidden;
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.demo-session-copy small {
+  overflow: hidden;
+  color: var(--console-muted);
+  font-family: var(--font-mono);
+  font-size: 0.49rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.demo-sub-count {
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--brand-line);
+  border-radius: var(--radius-pill);
+  color: var(--brand-text);
+  background: var(--brand-soft);
+}
+
+.demo-session-card summary .demo-sub-count::after {
+  display: inline-block;
+  margin-left: 0.3rem;
+  content: ">";
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.demo-session-card[open] summary .demo-sub-count::after {
+  transform: rotate(90deg);
+}
+
+.demo-cost {
+  text-align: right;
+}
+
+.demo-session-static .demo-cost {
+  grid-column: 5;
+}
+
+.demo-sub-sessions {
+  display: grid;
+  padding: 0.3rem 0.9rem 0.45rem 3.8rem;
+  border-top: 1px solid var(--console-border);
+  background: var(--console-surface-muted);
+}
+
+.demo-sub-sessions li {
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+  min-height: 2.25rem;
+  color: var(--console-text-secondary);
+  font-size: 0.62rem;
+}
+
+.demo-sub-sessions li + li {
+  border-top: 1px solid var(--console-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .demo-session-card summary .demo-sub-count::after {
+    transition: none;
+  }
+}

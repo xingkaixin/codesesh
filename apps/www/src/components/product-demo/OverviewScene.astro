@@ -1,0 +1,508 @@
+---
+import { copy, type Locale } from "../../data/landing";
+import "./base.css";
+import "./overview.css";
+
+interface Props {
+  id: string;
+  locale: Locale;
+}
+
+interface RangeDatum {
+  chip: string;
+  meta: string;
+  kpis: Array<{
+    label: string;
+    value: string;
+    trend: string;
+    hint: string;
+    emphasis?: boolean;
+  }>;
+  bars: Array<{ label: string; value: number }>;
+  distribution: Array<{
+    name: string;
+    icon: string;
+    count: number;
+    pct: number;
+  }>;
+}
+
+const { id, locale } = Astro.props;
+const t = copy[locale].tour;
+const overviewRanges = {
+  "7d": {
+    chip: "Last 7d / Apr 16-23, 2026",
+    meta: "212 sessions / last 7 days",
+    kpis: [
+      { label: "Sessions", value: "212", trend: "+18.4%", hint: "30.3/day" },
+      {
+        label: "Messages",
+        value: "32,764",
+        trend: "+12.1%",
+        hint: "154.5/session",
+      },
+      {
+        label: "Tokens",
+        value: "1.58B",
+        trend: "+9.7%",
+        hint: "Cache hit 61%",
+      },
+      {
+        label: "Cost",
+        value: "$84.20",
+        trend: "+7.2%",
+        hint: "$18.40 estimated",
+        emphasis: true,
+      },
+      {
+        label: "Last activity",
+        value: "2h",
+        trend: "",
+        hint: "webapp / Claude Code",
+      },
+    ],
+    bars: [
+      { label: "Apr 17", value: 62 },
+      { label: "Apr 18", value: 31 },
+      { label: "Apr 19", value: 57 },
+      { label: "Apr 20", value: 44 },
+      { label: "Apr 21", value: 33 },
+      { label: "Apr 22", value: 22 },
+      { label: "Apr 23", value: 19 },
+    ],
+    distribution: [
+      {
+        name: "Claude Code",
+        icon: "/icon/agent/claudecode.svg",
+        count: 142,
+        pct: 67,
+      },
+      { name: "Codex", icon: "/icon/agent/codex.svg", count: 39, pct: 18.4 },
+      {
+        name: "OpenCode",
+        icon: "/icon/agent/opencode.svg",
+        count: 18,
+        pct: 8.5,
+      },
+      { name: "Kimi", icon: "/icon/agent/kimi.svg", count: 11, pct: 5.2 },
+      { name: "Cursor", icon: "/icon/agent/cursor.svg", count: 2, pct: 0.9 },
+    ],
+  },
+  "30d": {
+    chip: "Last 30d / Mar 25-Apr 23, 2026",
+    meta: "863 sessions / last 30 days",
+    kpis: [
+      { label: "Sessions", value: "863", trend: "+24.0%", hint: "28.8/day" },
+      {
+        label: "Messages",
+        value: "128,410",
+        trend: "+21.6%",
+        hint: "148.8/session",
+      },
+      {
+        label: "Tokens",
+        value: "6.42B",
+        trend: "+16.3%",
+        hint: "Cache hit 58%",
+      },
+      {
+        label: "Cost",
+        value: "$341.90",
+        trend: "+19.5%",
+        hint: "$71.20 estimated",
+        emphasis: true,
+      },
+      {
+        label: "Last activity",
+        value: "2h",
+        trend: "",
+        hint: "webapp / Claude Code",
+      },
+    ],
+    bars: [
+      { label: "W13", value: 38 },
+      { label: "W14", value: 54 },
+      { label: "W15", value: 47 },
+      { label: "W16", value: 66 },
+      { label: "W17", value: 72 },
+      { label: "W18", value: 58 },
+      { label: "W19", value: 41 },
+    ],
+    distribution: [
+      {
+        name: "Claude Code",
+        icon: "/icon/agent/claudecode.svg",
+        count: 502,
+        pct: 58.2,
+      },
+      { name: "Codex", icon: "/icon/agent/codex.svg", count: 173, pct: 20.1 },
+      {
+        name: "OpenCode",
+        icon: "/icon/agent/opencode.svg",
+        count: 90,
+        pct: 10.4,
+      },
+      { name: "Kimi", icon: "/icon/agent/kimi.svg", count: 59, pct: 6.8 },
+      { name: "Cursor", icon: "/icon/agent/cursor.svg", count: 39, pct: 4.5 },
+    ],
+  },
+  all: {
+    chip: "All time / since Jun 2025",
+    meta: "2,417 sessions / all history",
+    kpis: [
+      { label: "Sessions", value: "2,417", trend: "", hint: "11 months" },
+      { label: "Messages", value: "371,205", trend: "", hint: "153.6/session" },
+      { label: "Tokens", value: "18.9B", trend: "", hint: "Cache hit 55%" },
+      {
+        label: "Cost",
+        value: "$1,024.60",
+        trend: "",
+        hint: "$204.80 estimated",
+        emphasis: true,
+      },
+      {
+        label: "Last activity",
+        value: "2h",
+        trend: "",
+        hint: "webapp / Claude Code",
+      },
+    ],
+    bars: [
+      { label: "Sep", value: 24 },
+      { label: "Oct", value: 36 },
+      { label: "Nov", value: 45 },
+      { label: "Dec", value: 39 },
+      { label: "Jan", value: 58 },
+      { label: "Feb", value: 71 },
+      { label: "Mar", value: 88 },
+    ],
+    distribution: [
+      {
+        name: "Claude Code",
+        icon: "/icon/agent/claudecode.svg",
+        count: 1242,
+        pct: 51.4,
+      },
+      { name: "Codex", icon: "/icon/agent/codex.svg", count: 524, pct: 21.7 },
+      {
+        name: "OpenCode",
+        icon: "/icon/agent/opencode.svg",
+        count: 295,
+        pct: 12.2,
+      },
+      { name: "Kimi", icon: "/icon/agent/kimi.svg", count: 215, pct: 8.9 },
+      { name: "Cursor", icon: "/icon/agent/cursor.svg", count: 141, pct: 5.8 },
+    ],
+  },
+} satisfies Record<"7d" | "30d" | "all", RangeDatum>;
+
+const defaultRange = overviewRanges["7d"];
+const defaultBarMax = Math.max(...defaultRange.bars.map((bar) => bar.value));
+const rangePayload = JSON.stringify(overviewRanges).replaceAll("<", "\\u003c");
+const sampleLabel = `${t.sampleLabel} / DEMO`;
+---
+
+<header class="demo-toolbar">
+  <div class="demo-brand">
+    <img src="/logo.svg?v=3" alt="" width="18" height="18" />
+    <strong>CODESESH</strong>
+  </div>
+  <label class="demo-search">
+    <span class="sr-only">{t.search}</span>
+    <input type="search" placeholder="Search sessions" aria-label={t.search} />
+    <kbd>/</kbd>
+  </label>
+  <kbd class="demo-shortcut">? Shortcuts</kbd>
+  <span class="demo-range-chip" data-demo-range-chip>
+    {defaultRange.chip}
+  </span>
+  <span class="demo-sample-label">{sampleLabel}</span>
+</header>
+
+<div class="demo-frame">
+  <aside class="demo-sidebar" aria-label={t.sampleProjects}>
+    <nav>
+      <ul class="demo-nav-list">
+        <li aria-current="page" class="is-active">
+          <img src="/logo.svg?v=3" alt="" width="13" height="13" />
+          <span>Dashboard</span>
+        </li>
+        <li>
+          <>
+            <span>webapp</span>
+            <small>96</small>
+          </>
+        </li>
+        <li>
+          <>
+            <span>data-pipeline</span>
+            <small>54</small>
+          </>
+        </li>
+        <li>
+          <>
+            <span>integration-svc</span>
+            <small>38</small>
+          </>
+        </li>
+        <li>
+          <>
+            <span>internal-tools</span>
+            <small>24</small>
+          </>
+        </li>
+      </ul>
+    </nav>
+    <section aria-labelledby={`${id}-bookmarks`}>
+      <p id={`${id}-bookmarks`} class="demo-mini-heading">Bookmarks</p>
+      <ul class="demo-bookmarks">
+        <li>
+          <span>Refactor data ingestion pipeline</span>
+          <small>Codex</small>
+        </li>
+        <li>
+          <span>Implement onboarding wizard</span>
+          <small>Claude Code</small>
+        </li>
+      </ul>
+    </section>
+  </aside>
+
+  <div class="demo-main">
+    <header class="demo-panel-heading">
+      <span class="demo-context-label">Dashboard</span>
+      <div class="demo-range-tabs" role="group" aria-label={t.range}>
+        <button type="button" data-demo-range="7d" aria-pressed="true">
+          Last 7d
+        </button>
+        <button type="button" data-demo-range="30d" aria-pressed="false">
+          Last 30d
+        </button>
+        <button type="button" data-demo-range="all" aria-pressed="false">
+          All time
+        </button>
+      </div>
+    </header>
+
+    <dl class="demo-kpis">
+      {
+        defaultRange.kpis.map((kpi, index) => (
+          <div
+            class:list={["demo-kpi", kpi.emphasis && "is-emphasis"]}
+            data-demo-kpi={index}
+          >
+            <dt>{kpi.label}</dt>
+            <dd data-demo-kpi-value>{kpi.value}</dd>
+            <dd class="demo-kpi-meta">
+              <span data-demo-kpi-trend>{kpi.trend}</span>{" "}
+              <span data-demo-kpi-hint>{kpi.hint}</span>
+            </dd>
+          </div>
+        ))
+      }
+    </dl>
+
+    <figure class="demo-panel demo-activity">
+      <figcaption>
+        <strong>Daily Activity</strong>
+        <span data-demo-chart-meta>{defaultRange.meta}</span>
+      </figcaption>
+      <ol class="demo-bars">
+        {
+          defaultRange.bars.map((bar, index) => (
+            <li
+              data-demo-bar={index}
+              aria-label={t.sampleSessions
+                .replace("{label}", bar.label)
+                .replace("{count}", String(bar.value))}
+            >
+              <span class="demo-bar-track" aria-hidden="true">
+                <span
+                  class="demo-bar-fill"
+                  style={`--bar-scale:${bar.value / defaultBarMax}`}
+                />
+              </span>
+              <small data-demo-bar-label>{bar.label}</small>
+            </li>
+          ))
+        }
+      </ol>
+    </figure>
+
+    <section
+      class="demo-panel demo-distribution"
+      aria-labelledby={`${id}-distribution`}
+    >
+      <header>
+        <p id={`${id}-distribution`} role="heading" aria-level="3">
+          Agent Distribution
+        </p>
+        <span>5 agents / 212 sessions</span>
+      </header>
+      <ul>
+        {
+          defaultRange.distribution.map((agent, index) => (
+            <li data-demo-agent={index}>
+              <img
+                class="demo-agent-icon"
+                src={agent.icon}
+                alt=""
+                width="14"
+                height="14"
+                loading="lazy"
+                data-monochrome={agent.name === "Claude Code" ? undefined : ""}
+              />
+              <span data-demo-agent-name>{agent.name}</span>
+              <span class="demo-agent-meter" aria-hidden="true">
+                <span
+                  style={`--agent-scale:${agent.pct / 100}`}
+                  data-demo-agent-fill
+                />
+              </span>
+              <progress value={agent.pct} max={100}>
+                {agent.pct}%
+              </progress>
+              <small
+                data-demo-agent-stat
+              >{`${agent.count} / ${agent.pct.toFixed(1)}%`}</small>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
+  </div>
+</div>
+<script
+  is:inline
+  type="application/json"
+  data-demo-ranges
+  set:html={rangePayload}
+/>
+<script>
+  interface DemoKpi {
+    value: string;
+    trend: string;
+    hint: string;
+  }
+
+  interface DemoBar {
+    label: string;
+    value: number;
+  }
+
+  interface DemoAgent {
+    count: number;
+    pct: number;
+  }
+
+  interface DemoRange {
+    chip: string;
+    meta: string;
+    kpis: DemoKpi[];
+    bars: DemoBar[];
+    distribution: DemoAgent[];
+  }
+
+  function initializeOverviewDemo(root: HTMLElement) {
+    const source = root.querySelector<HTMLScriptElement>("[data-demo-ranges]");
+    if (!source?.textContent) return;
+    const sampleSessionsTemplate =
+      root.dataset.sampleSessionsTemplate ?? "{label}: {count} sample sessions";
+
+    let ranges: Record<string, DemoRange>;
+    try {
+      ranges = JSON.parse(source.textContent) as Record<string, DemoRange>;
+    } catch {
+      return;
+    }
+
+    const buttons = Array.from(
+      root.querySelectorAll<HTMLButtonElement>("[data-demo-range]"),
+    );
+    const chip = root.querySelector<HTMLElement>("[data-demo-range-chip]");
+    const meta = root.querySelector<HTMLElement>("[data-demo-chart-meta]");
+
+    function renderRange(key: string) {
+      const range = ranges[key];
+      if (!range) return;
+
+      buttons.forEach((button) => {
+        button.setAttribute(
+          "aria-pressed",
+          String(button.dataset.demoRange === key),
+        );
+      });
+      if (chip) chip.textContent = range.chip;
+      if (meta) meta.textContent = range.meta;
+
+      root.querySelectorAll<HTMLElement>("[data-demo-kpi]").forEach((item) => {
+        const index = Number(item.dataset.demoKpi);
+        const kpi = range.kpis[index];
+        if (!kpi) return;
+        const value = item.querySelector<HTMLElement>("[data-demo-kpi-value]");
+        const trend = item.querySelector<HTMLElement>("[data-demo-kpi-trend]");
+        const hint = item.querySelector<HTMLElement>("[data-demo-kpi-hint]");
+        if (value) value.textContent = kpi.value;
+        if (trend) trend.textContent = kpi.trend;
+        if (hint) hint.textContent = kpi.hint;
+      });
+
+      const barMax = Math.max(...range.bars.map((bar) => bar.value));
+      root.querySelectorAll<HTMLElement>("[data-demo-bar]").forEach((item) => {
+        const index = Number(item.dataset.demoBar);
+        const bar = range.bars[index];
+        if (!bar) return;
+        const fill = item.querySelector<HTMLElement>(".demo-bar-fill");
+        const label = item.querySelector<HTMLElement>("[data-demo-bar-label]");
+        fill?.style.setProperty("--bar-scale", String(bar.value / barMax));
+        if (label) label.textContent = bar.label;
+        item.setAttribute(
+          "aria-label",
+          sampleSessionsTemplate
+            .replace("{label}", bar.label)
+            .replace("{count}", String(bar.value)),
+        );
+      });
+
+      root
+        .querySelectorAll<HTMLElement>("[data-demo-agent]")
+        .forEach((item) => {
+          const index = Number(item.dataset.demoAgent);
+          const agent = range.distribution[index];
+          if (!agent) return;
+          const fill = item.querySelector<HTMLElement>(
+            "[data-demo-agent-fill]",
+          );
+          const progress = item.querySelector<HTMLProgressElement>("progress");
+          const stat = item.querySelector<HTMLElement>(
+            "[data-demo-agent-stat]",
+          );
+          fill?.style.setProperty("--agent-scale", String(agent.pct / 100));
+          if (progress) progress.value = agent.pct;
+          if (stat)
+            stat.textContent = `${agent.count.toLocaleString()} / ${agent.pct.toFixed(1)}%`;
+        });
+
+      const total = range.distribution.reduce(
+        (sum, agent) => sum + agent.count,
+        0,
+      );
+      const distributionMeta = root.querySelector<HTMLElement>(
+        ".demo-distribution header > span",
+      );
+      if (distributionMeta)
+        distributionMeta.textContent = `5 agents / ${total.toLocaleString()} sessions`;
+    }
+
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const key = button.dataset.demoRange;
+        if (key) renderRange(key);
+      });
+    });
+  }
+
+  document
+    .querySelectorAll<HTMLElement>('[data-product-demo="overview"]')
+    .forEach(initializeOverviewDemo);
+</script>
