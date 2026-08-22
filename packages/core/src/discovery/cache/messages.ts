@@ -184,7 +184,19 @@ export function assertSessionProjectIdentities(
   for (const session of sessions) requireSessionProjectIdentity(agentName, session);
 }
 
-export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
+export function prepareUpsertSession(
+  db: SQLiteDatabase,
+  mode: "cache" | "materialization" = "cache",
+): SQLiteStatement {
+  const cacheAssignments =
+    mode === "cache"
+      ? `sort_index = excluded.sort_index,
+      source_path = CASE
+        WHEN excluded.meta_json IS NULL THEN sessions.source_path
+        ELSE excluded.source_path
+      END,
+      meta_json = COALESCE(excluded.meta_json, sessions.meta_json),`
+      : "";
   return db.prepare(`
     INSERT INTO sessions(
       agent_name,
@@ -219,12 +231,8 @@ export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
       publication_id
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(agent_name, session_id) DO UPDATE SET
-      sort_index = excluded.sort_index,
+      ${cacheAssignments}
       title = excluded.title,
-      source_path = CASE
-        WHEN excluded.meta_json IS NULL THEN sessions.source_path
-        ELSE excluded.source_path
-      END,
       directory = excluded.directory,
       parent_agent_name = excluded.parent_agent_name,
       parent_session_id = excluded.parent_session_id,
@@ -248,77 +256,8 @@ export function prepareUpsertSession(db: SQLiteDatabase): SQLiteStatement {
       smart_tags_json = excluded.smart_tags_json,
       smart_tags_source_updated_at = excluded.smart_tags_source_updated_at,
       smart_tags_classifier_revision = excluded.smart_tags_classifier_revision,
-      meta_json = COALESCE(excluded.meta_json, sessions.meta_json),
       publication_id = excluded.publication_id
   `);
-}
-
-function prepareIndexedSession(db: SQLiteDatabase): SQLiteStatement {
-  const onConflict = `DO UPDATE SET
-          title = excluded.title,
-          directory = excluded.directory,
-          parent_agent_name = excluded.parent_agent_name,
-          parent_session_id = excluded.parent_session_id,
-          project_identity_kind = excluded.project_identity_kind,
-          project_identity_key = excluded.project_identity_key,
-          project_display_name = excluded.project_display_name,
-          project_identity_resolver_revision = excluded.project_identity_resolver_revision,
-          project_identity_input_signature = excluded.project_identity_input_signature,
-          time_created = excluded.time_created,
-          time_updated = excluded.time_updated,
-          activity_time = excluded.activity_time,
-          message_count = excluded.message_count,
-          total_input_tokens = excluded.total_input_tokens,
-          total_output_tokens = excluded.total_output_tokens,
-          total_cache_read_tokens = excluded.total_cache_read_tokens,
-          total_cache_create_tokens = excluded.total_cache_create_tokens,
-          total_cost = excluded.total_cost,
-          cost_source = excluded.cost_source,
-          total_tokens = excluded.total_tokens,
-          model_usage_json = excluded.model_usage_json,
-          smart_tags_json = excluded.smart_tags_json,
-          smart_tags_source_updated_at = excluded.smart_tags_source_updated_at,
-          smart_tags_classifier_revision = excluded.smart_tags_classifier_revision,
-          publication_id = excluded.publication_id`;
-  return db.prepare(`
-    INSERT INTO sessions(
-      agent_name,
-      session_id,
-      sort_index,
-      title,
-      source_path,
-      directory,
-      parent_agent_name,
-      parent_session_id,
-      project_identity_kind,
-      project_identity_key,
-      project_display_name,
-      project_identity_resolver_revision,
-      project_identity_input_signature,
-      time_created,
-      time_updated,
-      activity_time,
-      message_count,
-      total_input_tokens,
-      total_output_tokens,
-      total_cache_read_tokens,
-      total_cache_create_tokens,
-      total_cost,
-      cost_source,
-      total_tokens,
-      model_usage_json,
-      smart_tags_json,
-      smart_tags_source_updated_at,
-      smart_tags_classifier_revision,
-      meta_json,
-      publication_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(agent_name, session_id) ${onConflict}
-  `);
-}
-
-export function prepareUpsertIndexedSession(db: SQLiteDatabase): SQLiteStatement {
-  return prepareIndexedSession(db);
 }
 
 export function upsertSessionRow(
