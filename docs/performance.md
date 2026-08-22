@@ -13,6 +13,7 @@
 | 一次 Session Detail 只发一条 part 查询 | `packages/core/src/agents/__tests__/opencode-sqlite.test.ts` |
 | 文件活动搜索的 limit 作用于 Session | `packages/core/src/discovery/cache/__tests__/search-integration.test.ts` |
 | 关键查询走预期索引（`EXPLAIN QUERY PLAN`） | 同上两处 |
+| 仅会话头元数据变化时复用已物化消息 | `packages/core/src/discovery/cache/__tests__/search-index-writer.test.ts` |
 | 首屏 JS gzip 预算与延迟依赖 | `apps/web/tests/initial-bundle.test.ts` |
 | Session Detail 缓存基数上界 | `apps/web/src/lib/session-detail-cache.test.ts` |
 | 一帧测量只产生一次 commit | `apps/web/src/components/session-detail/message-list.test.tsx` |

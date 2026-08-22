@@ -263,6 +263,7 @@ export function logSearchIndexSync(
     duration_ms: Math.round(result.durationMs),
     planning_ms: Math.round(result.planningDurationMs),
     get_session_data_calls: result.getSessionDataCalls,
+    reused_materializations: result.reusedMaterializations,
     get_session_data_ms: Math.round(result.getSessionDataDurationMs),
     materialization_ms: Math.round(result.materializationDurationMs),
     rebuild_duration_ms:

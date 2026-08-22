@@ -63,6 +63,11 @@ describe("search index writer", () => {
 
   it("reindexes file activity when only the project identity changes", () => {
     const initial = makeSessionHead("identity-change");
+    const meta = {
+      id: initial.reference.sessionId,
+      sourcePath: "/identity-change",
+      sourceFingerprint: "stable-source",
+    };
     const detail = (session: typeof initial) => ({
       ...makeSessionData(session.reference.sessionId),
       ...session,
@@ -81,7 +86,7 @@ describe("search index writer", () => {
         },
       ],
     });
-    saveCachedSessions("codex", [initial]);
+    saveCachedSessions("codex", [initial], { [initial.reference.sessionId]: meta });
     syncSessionSearchIndex("codex", [initial], () => detail(initial));
 
     const updated = {
@@ -102,16 +107,21 @@ describe("search index writer", () => {
         agentName: "codex",
         changes: [{ session: updated, sortIndex: 0 }],
         removedSessionIds: [],
-        meta: {},
+        meta: { [initial.reference.sessionId]: meta },
       },
       loadSession,
     );
 
     expect(publication).toMatchObject({
       status: "committed",
-      searchIndex: { changed: 1, indexed: 1 },
+      searchIndex: {
+        changed: 1,
+        indexed: 1,
+        getSessionDataCalls: 0,
+        reusedMaterializations: 1,
+      },
     });
-    expect(loadSession).toHaveBeenCalledOnce();
+    expect(loadSession).not.toHaveBeenCalled();
     expect(
       listFileActivity({
         projectKind: "git_remote",
@@ -119,6 +129,50 @@ describe("search index writer", () => {
       }),
     ).toHaveLength(1);
     expect(listFileActivity({ projectKind: "path", projectKey: "/workspace/project" })).toEqual([]);
+  });
+
+  it("reuses materialized messages when only indexed head metadata changes", () => {
+    const initial = makeSessionHead("head-only");
+    const meta = {
+      id: initial.reference.sessionId,
+      sourcePath: "/head-only",
+      sourceFingerprint: "stable-source",
+    };
+    saveCachedSessions("codex", [initial], { [initial.reference.sessionId]: meta });
+    syncSessionSearchIndex("codex", [initial], () =>
+      makeSessionData(initial.reference.sessionId, "preserved message body"),
+    );
+
+    const updated = { ...initial, title: "Renamed without reparsing" };
+    const loadSession = vi.fn(() => {
+      throw new Error("source detail should not be loaded");
+    });
+    const publication = commitDurableSessionPublication(
+      {
+        kind: "changes",
+        agentName: "codex",
+        changes: [{ session: updated, sortIndex: 0 }],
+        removedSessionIds: [],
+        meta: { [initial.reference.sessionId]: meta },
+      },
+      loadSession,
+    );
+
+    expect(publication).toMatchObject({
+      status: "committed",
+      searchIndex: {
+        changed: 1,
+        indexed: 1,
+        getSessionDataCalls: 0,
+        reusedMaterializations: 1,
+      },
+    });
+    expect(loadSession).not.toHaveBeenCalled();
+    expect(searchSessions("Renamed without reparsing")).toHaveLength(1);
+    expect(searchSessions("preserved message body")).toHaveLength(1);
+    expect(loadCachedSessionRawEntry("codex", initial.reference.sessionId)?.data.title).toBe(
+      updated.title,
+    );
   });
 
   it("keeps cache-owned fields when materializing an indexed head", () => {

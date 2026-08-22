@@ -23,6 +23,7 @@ export interface PendingSearchIndexMaintenance {
 export interface SearchIndexState {
   contentHashBySessionId: Map<string, string>;
   publishedContentHashBySessionId: Map<string, string>;
+  publishedDetailFactsHashBySessionId: Map<string, string>;
   indexedMessageCountBySessionId: Map<string, number>;
   messageCountBySessionId: Map<string, number>;
   detailVersionBySessionId: Map<string, string>;
@@ -85,6 +86,20 @@ interface SearchIndexSessionFacts {
   projectIdentityInputSignature: string;
 }
 
+type SearchIndexDetailFacts = Pick<
+  SearchIndexSessionFacts,
+  | "timeCreated"
+  | "timeUpdated"
+  | "messageCount"
+  | "totalInputTokens"
+  | "totalOutputTokens"
+  | "totalCacheReadTokens"
+  | "totalCacheCreateTokens"
+  | "totalCost"
+  | "costSource"
+  | "totalTokens"
+>;
+
 const SEARCH_INDEX_STATE_BATCH_SIZE = 900;
 
 function readPendingReindexIds(db: SQLiteDatabase, agentName: string): Set<string> {
@@ -120,14 +135,42 @@ function hashSearchIndexSessionFacts(facts: SearchIndexSessionFacts): string {
   return JSON.stringify(facts);
 }
 
+function searchIndexDetailFacts(facts: SearchIndexSessionFacts): SearchIndexDetailFacts {
+  return {
+    timeCreated: facts.timeCreated,
+    timeUpdated: facts.timeUpdated,
+    messageCount: facts.messageCount,
+    totalInputTokens: facts.totalInputTokens,
+    totalOutputTokens: facts.totalOutputTokens,
+    totalCacheReadTokens: facts.totalCacheReadTokens,
+    totalCacheCreateTokens: facts.totalCacheCreateTokens,
+    totalCost: facts.totalCost,
+    costSource: facts.costSource,
+    totalTokens: facts.totalTokens,
+  };
+}
+
+function hashSearchIndexDetailFacts(facts: SearchIndexSessionFacts): string {
+  return JSON.stringify(searchIndexDetailFacts(facts));
+}
+
 export function sessionContentHash(session: SessionHead): string {
   return hashSearchIndexSessionFacts(searchIndexSessionFacts(session));
 }
 
 function publishedSessionContentHash(row: PublishedSessionRow): string | null {
   if (row.session_title == null) return null;
-  return hashSearchIndexSessionFacts({
-    title: row.session_title,
+  return hashSearchIndexSessionFacts(searchIndexSessionFactsFromRow(row));
+}
+
+function publishedSessionDetailFactsHash(row: PublishedSessionRow): string | null {
+  if (row.session_title == null) return null;
+  return hashSearchIndexDetailFacts(searchIndexSessionFactsFromRow(row));
+}
+
+function searchIndexSessionFactsFromRow(row: PublishedSessionRow): SearchIndexSessionFacts {
+  return {
+    title: String(row.session_title),
     directory: row.session_directory ?? "",
     timeCreated: Number(row.session_time_created ?? 0),
     timeUpdated: Number(row.session_time_updated ?? row.session_time_created ?? 0),
@@ -144,7 +187,11 @@ function publishedSessionContentHash(row: PublishedSessionRow): string | null {
     projectDisplayName: row.session_project_display_name ?? "",
     projectIdentityResolverRevision: row.session_project_identity_resolver_revision ?? "",
     projectIdentityInputSignature: row.session_project_identity_input_signature ?? "",
-  });
+  };
+}
+
+export function sessionDetailFactsHash(session: SessionHead): string {
+  return hashSearchIndexDetailFacts(searchIndexSessionFacts(session));
 }
 
 export function detailVersionFromMetaJson(value: string | null | undefined): string {
@@ -169,6 +216,12 @@ function searchIndexStateFromRows(
       indexedRows.flatMap((row) => {
         const contentHash = publishedSessionContentHash(row);
         return contentHash == null ? [] : [[String(row.session_id), contentHash]];
+      }),
+    ),
+    publishedDetailFactsHashBySessionId: new Map(
+      indexedRows.flatMap((row) => {
+        const detailFactsHash = publishedSessionDetailFactsHash(row);
+        return detailFactsHash == null ? [] : [[String(row.session_id), detailFactsHash]];
       }),
     ),
     indexedMessageCountBySessionId: new Map(

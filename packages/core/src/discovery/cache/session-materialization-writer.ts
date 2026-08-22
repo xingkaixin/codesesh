@@ -6,6 +6,7 @@ import {
   prepareInsertFileActivity,
   prepareInsertMessageTool,
   prepareUpsertSession,
+  requireSessionProjectIdentity,
   upsertSessionRow,
   writeFileActivityRows,
   type StructuredMessageRecord,
@@ -21,6 +22,7 @@ export interface SessionMaterializationEntry {
 
 export interface SessionMaterializationWriter {
   deleteSession(sessionId: string): void;
+  reuseSessionHead(session: SessionHead, sortIndex: number): void;
   writeSession(entry: SessionMaterializationEntry): void;
 }
 
@@ -36,6 +38,9 @@ export function prepareSessionMaterializationWriter(
   );
   const deleteFileActivity = db.prepare(
     "DELETE FROM session_file_activity WHERE agent_name = ? AND session_id = ?",
+  );
+  const updateFileActivityIdentity = db.prepare(
+    "UPDATE session_file_activity SET project_identity_key = ? WHERE agent_name = ? AND session_id = ?",
   );
   const deleteModelCost = db.prepare(
     "DELETE FROM session_model_cost WHERE agent_name = ? AND session_id = ?",
@@ -158,6 +163,10 @@ export function prepareSessionMaterializationWriter(
       tool_metadata_json = excluded.tool_metadata_json
   `);
 
+  const writeSessionHead = (session: SessionHead, sortIndex: number): void => {
+    upsertSessionRow(writeMaterializedSession, agentName, session, null, sortIndex, null);
+  };
+
   return {
     deleteSession(sessionId) {
       deleteFileActivity.run(agentName, sessionId);
@@ -166,16 +175,17 @@ export function prepareSessionMaterializationWriter(
       deleteModelCost.run(agentName, sessionId);
       deleteCostSummary.run(agentName, sessionId);
     },
+    reuseSessionHead(session, sortIndex) {
+      writeSessionHead(session, sortIndex);
+      updateFileActivityIdentity.run(
+        requireSessionProjectIdentity(agentName, session).key,
+        agentName,
+        session.reference.sessionId,
+      );
+    },
     writeSession(entry) {
       const sessionId = entry.session.reference.sessionId;
-      upsertSessionRow(
-        writeMaterializedSession,
-        agentName,
-        entry.session,
-        null,
-        entry.sortIndex,
-        null,
-      );
+      writeSessionHead(entry.session, entry.sortIndex);
       deleteFileActivity.run(agentName, sessionId);
       deleteMessageTools.run(agentName, sessionId, 0);
       writeFileActivityRows(insertFileActivity, entry.fileActivity);
