@@ -7,19 +7,11 @@ import {
   type FileChangeSummary,
 } from "./file-change";
 import { buildSessionTimelineEntries, type SessionTimelineEntry } from "./timeline";
-import {
-  buildSessionDetailToc,
-  filterSessionMessages,
-  type FilteredSessionMessage,
-  type SessionDetailToc,
-} from "./toc";
+import { buildSessionDetailToc, filterSessionMessages, type SessionDetailToc } from "./toc";
 import { normalizeMessagesForDisplay } from "./tool-strategy";
+import type { FilteredSessionMessage, MessageDisplayModel } from "./display-model-types";
 
-export interface MessageDisplayModel {
-  msg: Message;
-  blocks: MessageBlock[];
-  index: number;
-}
+export type { MessageDisplayModel } from "./display-model-types";
 
 export interface SessionDetailSelection {
   messages: FilteredSessionMessage[];

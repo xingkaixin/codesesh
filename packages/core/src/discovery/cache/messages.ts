@@ -2,7 +2,7 @@
  * Structured message storage: row ↔ domain mapping, prepared-statement
  * binders, and message-text builders shared by sessions/search/file-activity.
  */
-import type { SessionCacheMeta } from "../../agents/base.js";
+import type { SessionCacheMeta } from "../../agents/session-source-types.js";
 import { assertIdentifiedSessionHead } from "../../contract/session.js";
 import type {
   IdentifiedSessionHead,

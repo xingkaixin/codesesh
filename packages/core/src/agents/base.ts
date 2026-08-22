@@ -20,6 +20,15 @@ import type {
   SessionSourceSynchronizationOutcome,
   SessionSourceSynchronizationRequest,
 } from "./session-source-synchronization.js";
+import type {
+  AgentScanOptions,
+  SessionCacheMeta,
+  SessionCacheMetaSnapshot,
+  SessionSourceFailure,
+  SessionSourceOutcome,
+  SessionSourceRef,
+  SessionSourceScanBatch,
+} from "./session-source-types.js";
 
 export {
   createSessionSourceFailure,
@@ -36,6 +45,18 @@ export type {
 } from "./session-source-synchronization.js";
 
 export type { ParseSessionResult };
+export type {
+  AgentScanOptions,
+  AgentScanProgress,
+  SessionCacheMeta,
+  SessionCacheMetaSnapshot,
+  SessionSourceAbsenceOutcome,
+  SessionSourceDiff,
+  SessionSourceFailure,
+  SessionSourceOutcome,
+  SessionSourceRef,
+  SessionSourceScanBatch,
+} from "./session-source-types.js";
 
 export function parsedSession<T>(session: T): ParseSessionResult<T> {
   return { status: "parsed", data: session };
@@ -51,31 +72,6 @@ export function filteredSession<T>(reason: string): ParseSessionResult<T> {
 
 export function getParsedSession<T>(result: ParseSessionResult<T>): T | null {
   return result.status === "parsed" ? result.data : null;
-}
-
-export interface SessionCacheMeta {
-  id: string;
-  sourcePath: string;
-  /** Models the head parse could not price; their arrival invalidates the cache. */
-  unpricedModels?: string[];
-  /** Pricing-miss capture semantics used when this head was parsed. */
-  pricingCaptureEpoch?: string;
-  [key: string]: unknown;
-}
-
-export interface AgentScanOptions {
-  from?: number;
-  to?: number;
-  fast?: boolean;
-  includeRelatedSessions?: boolean;
-  onProgress?: (progress: AgentScanProgress) => void;
-}
-
-export interface AgentScanProgress {
-  phase?: "scanning" | "finalizing";
-  total?: number;
-  processed?: number;
-  sessions?: number;
 }
 
 export interface AgentSourceOptions {
@@ -120,43 +116,12 @@ interface FailedChangeCheck {
 /** 变更检测结果 */
 export type ChangeCheckResult = SuccessfulChangeCheck | FailedChangeCheck;
 
-export interface SessionSourceRef {
-  sessionId: string;
-  sourcePath: string;
-  fingerprint: string;
-}
-
-export interface SessionSourceFailure {
-  sessionId: string;
-  sourcePath: string;
-  stage: "enumeration" | "parsing";
-  errorClass: string;
-  message: string;
-}
-
 export interface AgentScanFailure {
   agentName: string;
   stage: string;
   sourcePath?: string;
   errorClass: string;
   message: string;
-}
-
-export type SessionSourceOutcome =
-  | { status: "parsed"; session: SessionHead; source: SessionSourceRef }
-  | { status: "filtered"; reason: string; source: SessionSourceRef }
-  | { status: "missing"; source: SessionSourceRef }
-  | { status: "failed"; failure: SessionSourceFailure };
-
-export type SessionSourceAbsenceOutcome = Extract<
-  SessionSourceOutcome,
-  { status: "missing" | "failed" }
->;
-
-export interface SessionSourceScanBatch {
-  sources: SessionSourceRef[];
-  outcomes: SessionSourceOutcome[];
-  sessions: SessionHead[];
 }
 
 export interface SessionSourceFile {
@@ -190,16 +155,6 @@ export type SessionWatchPlan =
   | { status: "not-needed"; reason: string };
 
 /** What a source enumeration says needs re-parsing and what disappeared. */
-export interface SessionSourceDiff {
-  changedIds: string[];
-  removedIds: string[];
-  failedIds: string[];
-  sourceOutcomes: SessionSourceAbsenceOutcome[];
-}
-
-/** Cache metadata crosses process and persistence boundaries as an isolated plain object. */
-export type SessionCacheMetaSnapshot = Readonly<Record<string, SessionCacheMeta>>;
-
 function cloneSessionCacheMeta(meta: SessionCacheMeta): SessionCacheMeta {
   return structuredClone(meta);
 }

@@ -1,7 +1,7 @@
 import type { MessagePart, ToolPart } from "../../lib/api";
 import { classifyToolOperation } from "./file-change";
 import { normalizeToolLabel } from "./tool-normalize";
-import type { FilteredSessionMessage } from "./toc";
+import type { FilteredSessionMessage } from "./display-model-types";
 
 const TIMELINE_SUMMARY_LENGTH = 48;
 const TIMELINE_SCROLL_EDGE_TOLERANCE = 1;

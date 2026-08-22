@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import type { IdentityFs } from "./identity.js";
+
+export interface IdentityFs {
+  exists(path: string): boolean;
+  readText(path: string): string | null;
+  spawn(cmd: string, args: string[], opts: { cwd: string }): { stdout: string; exitCode: number };
+}
 
 export const realFs: IdentityFs = {
   exists(path) {

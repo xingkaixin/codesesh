@@ -1,4 +1,4 @@
-import type { SessionCacheMeta } from "../../agents/base.js";
+import type { SessionCacheMeta } from "../../agents/session-source-types.js";
 import type { SessionDetail, SessionFileActivity, SessionHead } from "../../types/index.js";
 import { extractSessionFileActivity } from "../../utils/file-activity.js";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
@@ -23,7 +23,7 @@ import { advanceMessageCursorDigest, initialMessageCursorDigest } from "./messag
 import { withCacheDbReadOnly, withSearchIndexDb } from "./connection.js";
 import { runSearchIndexWrite } from "./schema.js";
 import { sessionDetailVersion } from "./detail-version.js";
-import type { SessionSnapshotCompleteness } from "./sessions.js";
+import type { SessionSnapshotCompleteness } from "./snapshot-types.js";
 import {
   deletePublicationPayloads,
   discardPublicationStaging,

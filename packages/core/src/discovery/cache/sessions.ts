@@ -2,7 +2,7 @@
  * Cache persistence: load / save / clear / info / initialization tracking.
  */
 import { existsSync, rmSync, unlinkSync } from "node:fs";
-import type { SessionCacheMeta } from "../../agents/base.js";
+import type { SessionCacheMeta } from "../../agents/session-source-types.js";
 import type { ReferencedSessionHead, SessionReference } from "../../contract/index.js";
 import { formatSessionReference, normalizeSessionReference } from "../../contract/index.js";
 import type {
@@ -116,7 +116,8 @@ export interface CachedSessionCursorReader {
   messageRows(startIndex: number): CachedMessageRow[];
 }
 
-export type SessionSnapshotCompleteness = "complete" | "partial";
+export type { SessionSnapshotCompleteness } from "./snapshot-types.js";
+import type { SessionSnapshotCompleteness } from "./snapshot-types.js";
 
 export interface SaveCachedSessionsOptions {
   completeness?: SessionSnapshotCompleteness;
