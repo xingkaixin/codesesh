@@ -117,6 +117,23 @@ describe("formatScanStatusLabel", () => {
     );
   });
 
+  it("does not warn when a completed refresh is partial only because it is windowed", () => {
+    expect(
+      formatScanStatusLabel({
+        active: false,
+        backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
+        agentStatuses: {
+          claudecode: {
+            agentName: "claudecode",
+            status: "complete",
+            completeness: "partial",
+            updatedAt: 1,
+          },
+        },
+      } as unknown as ScanStatusEvent),
+    ).toBeNull();
+  });
+
   it("shows a completed partial full-history refresh", () => {
     expect(
       formatScanStatusLabel({
