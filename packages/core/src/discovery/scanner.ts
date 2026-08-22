@@ -45,8 +45,7 @@ import {
 import {
   attachMissingProjectIdentities,
   buildAgentCacheMeta,
-  computeSessionDiff,
-  sessionSignature,
+  buildSessionPersistenceDiff,
 } from "./orchestrate.js";
 import { inspectAgentRefresh, planAgentScan } from "./agent-scan-plan.js";
 
@@ -243,10 +242,6 @@ interface SmartTagWorkerResult {
   error?: string;
 }
 
-function restoreAgentCacheMeta(agent: BaseAgent, cached: CachedResult): void {
-  agent.restoreSessionCacheMeta(cached.meta);
-}
-
 function saveCachedSessionDiff(
   agent: BaseAgent,
   cachedSessions: SessionHead[],
@@ -255,23 +250,22 @@ function saveCachedSessionDiff(
   completeness: "complete" | "partial" = "complete",
   explicitRemovedSessionIds: readonly string[] = [],
 ): boolean {
-  const diff = computeSessionDiff(cachedSessions, updatedSessions, changedIds, sessionSignature);
-  const explicitRemovals = new Set(explicitRemovedSessionIds);
-  const removedSessionIds =
-    completeness === "complete"
-      ? diff.removedSessionIds
-      : diff.removedSessionIds.filter((sessionId) => explicitRemovals.has(sessionId));
+  const diff = buildSessionPersistenceDiff(cachedSessions, updatedSessions, {
+    candidateChangedIds: changedIds,
+    completeness,
+    explicitRemovedSessionIds,
+  });
   const persisted = saveCachedSessionChanges(
     agent.name,
-    diff.changes,
-    removedSessionIds,
+    diff.changedSessions,
+    diff.removedSessionIds,
     buildAgentCacheMeta(agent),
   );
   if (persisted === false) {
     getCoreDiagnostics()?.warn("cache.save_failed", {
       agent: agent.name,
-      changed_sessions: diff.changes.length,
-      removed_sessions: removedSessionIds.length,
+      changed_sessions: diff.changedSessions.length,
+      removed_sessions: diff.removedSessionIds.length,
     });
   }
   return persisted;
@@ -658,7 +652,7 @@ async function scanAgentSmart(
 
     if (cached !== null) {
       // 恢复元数据
-      restoreAgentCacheMeta(agent, cached);
+      agent.restoreSessionCacheMeta(cached.meta);
 
       if (options.cacheOnly) {
         const visibleSessions = agent.filterCachedSessions(cached.sessions);
@@ -934,7 +928,7 @@ async function scanAgentOutcome(
         cached = outcome.value;
       }
     }
-    if (cached) restoreAgentCacheMeta(agent, cached);
+    if (cached) agent.restoreSessionCacheMeta(cached.meta);
     const failure = createAgentScanFailure(agent.name, "scanning sessions", error);
     return {
       agentName: agent.name,

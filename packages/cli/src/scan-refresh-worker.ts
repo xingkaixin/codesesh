@@ -4,11 +4,10 @@ import { isDeepStrictEqual } from "node:util";
 import {
   attachMissingProjectIdentities,
   buildAgentCacheMeta,
-  computeSessionDiff,
+  buildSessionPersistenceDiff,
   createRegisteredAgents,
   ensureSessionTagsSync,
   planAgentScan,
-  sessionSignature,
   SMART_TAG_CLASSIFIER_REVISION,
   sortSessions,
   synchronizePricingGeneration,
@@ -574,12 +573,15 @@ async function run(
     new Set(sessions.map((session) => session.reference.sessionId)),
   );
   const metaDiff = computeCacheMetaDiff(previousMeta, nextMeta);
-  const diff = computeSessionDiff(
-    previousSessions,
-    sessions,
-    [...(changedIds ?? []), ...Object.keys(metaDiff.changes), ...metaDiff.removedIds],
-    sessionSignature,
-  );
+  const diff = buildSessionPersistenceDiff(previousSessions, sessions, {
+    candidateChangedIds: [
+      ...(changedIds ?? []),
+      ...Object.keys(metaDiff.changes),
+      ...metaDiff.removedIds,
+    ],
+    completeness,
+    explicitRemovedSessionIds,
+  });
 
   baseline.staged = {
     requestId: data.requestId,
@@ -592,7 +594,7 @@ async function run(
     type: "done",
     requestId: data.requestId,
     generation: baseline.generation,
-    changes: diff.changes,
+    changes: diff.changedSessions,
     removedSessionIds: diff.removedSessionIds,
     meta: metaDiff.changes,
     removedMetaIds: metaDiff.removedIds,

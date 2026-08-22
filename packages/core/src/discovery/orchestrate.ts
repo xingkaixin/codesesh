@@ -18,6 +18,7 @@ import type {
   SessionStats,
 } from "../types/index.js";
 import type { PersistedSessionHeadChange } from "./cache/db.js";
+import type { SessionSnapshotCompleteness } from "./cache/sessions.js";
 import {
   computeIdentityProjection,
   normalizeProjectDirectory,
@@ -195,7 +196,7 @@ export interface SessionDiffResult<T extends SessionHead = SessionHead> {
 export function computeSessionDiff<T extends SessionHead>(
   cachedSessions: SessionHead[],
   updatedSessions: T[],
-  changedIds: string[] = [],
+  changedIds: readonly string[] = [],
   signature: (session: SessionHead) => string = sessionSignature,
   signatureCache?: Map<string, string>,
 ): SessionDiffResult<T> {
@@ -238,5 +239,38 @@ export function computeSessionDiff<T extends SessionHead>(
     changes,
     removedSessionIds,
     counts: { new: newCount, updated: updatedCount, removed: removedSessionIds.length },
+  };
+}
+
+export interface SessionPersistenceDiff<T extends SessionHead> {
+  changedSessions: PersistedSessionHeadChange<T>[];
+  removedSessionIds: string[];
+}
+
+export interface SessionPersistenceDiffOptions {
+  candidateChangedIds?: readonly string[];
+  completeness?: SessionSnapshotCompleteness;
+  explicitRemovedSessionIds?: readonly string[];
+}
+
+export function buildSessionPersistenceDiff<T extends SessionHead>(
+  previousSessions: SessionHead[],
+  nextSessions: T[],
+  options: SessionPersistenceDiffOptions = {},
+): SessionPersistenceDiff<T> {
+  const { changes, removedSessionIds } = computeSessionDiff(
+    previousSessions,
+    nextSessions,
+    options.candidateChangedIds,
+    sessionSignature,
+  );
+  if ((options.completeness ?? "complete") === "complete") {
+    return { changedSessions: changes, removedSessionIds };
+  }
+
+  const explicitRemovals = new Set(options.explicitRemovedSessionIds);
+  return {
+    changedSessions: changes,
+    removedSessionIds: removedSessionIds.filter((sessionId) => explicitRemovals.has(sessionId)),
   };
 }
