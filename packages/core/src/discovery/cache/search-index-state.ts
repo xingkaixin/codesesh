@@ -224,38 +224,18 @@ export function searchIndexStateQuery(sessionIdCount: number): string {
       sessions.project_display_name AS session_project_display_name,
       sessions.project_identity_resolver_revision AS session_project_identity_resolver_revision,
       sessions.project_identity_input_signature AS session_project_identity_input_signature,
-      COUNT(messages.message_index) AS value
+      (
+        SELECT COUNT(*)
+        FROM messages
+        WHERE messages.agent_name = ?
+          AND messages.session_id = requested.session_id
+      ) AS value
     FROM requested_session_ids AS requested
     LEFT JOIN session_documents AS documents
       INDEXED BY idx_session_documents_state
       ON documents.agent_name = ? AND documents.session_id = requested.session_id
-    LEFT JOIN messages
-      ON messages.agent_name = ? AND messages.session_id = requested.session_id
     LEFT JOIN sessions
       ON sessions.agent_name = ? AND sessions.session_id = requested.session_id
-    GROUP BY
-      requested.session_id,
-      documents.content_hash,
-      documents.indexed_message_count,
-      documents.detail_version,
-      sessions.meta_json,
-      sessions.title,
-      sessions.directory,
-      sessions.time_created,
-      sessions.time_updated,
-      sessions.message_count,
-      sessions.total_input_tokens,
-      sessions.total_output_tokens,
-      sessions.total_cache_read_tokens,
-      sessions.total_cache_create_tokens,
-      sessions.total_cost,
-      sessions.cost_source,
-      sessions.total_tokens,
-      sessions.project_identity_kind,
-      sessions.project_identity_key,
-      sessions.project_display_name,
-      sessions.project_identity_resolver_revision,
-      sessions.project_identity_input_signature
   `;
 }
 
