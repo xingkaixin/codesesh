@@ -632,6 +632,22 @@ describe("FileSystemSessionSource.checkForChanges", () => {
 });
 
 describe("FileSystemSessionSource.incrementalScan", () => {
+  it("reports source enumeration, change, and processing workload", () => {
+    const agent = new FakeFileSystemSource([source("a"), source("b")]);
+
+    const result = agent.synchronizeSessionSources({ sessions: [], meta: {} }, { kind: "reload" });
+
+    expect(result.timing).toMatchObject({
+      totalMs: expect.any(Number),
+      enumerationMs: expect.any(Number),
+      diffMs: expect.any(Number),
+      parseMs: expect.any(Number),
+      enumeratedSourceCount: 2,
+      changedSourceCount: 2,
+      processedSourceCount: 2,
+    });
+  });
+
   it("re-parses changed sources and merges into cached sessions", () => {
     const agent = new FakeFileSystemSource([
       source("a", "fp-1", { head: makeSession("a") }),

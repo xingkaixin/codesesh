@@ -42,6 +42,7 @@ export type {
   SessionSourceSynchronizationBaseline,
   SessionSourceSynchronizationOutcome,
   SessionSourceSynchronizationRequest,
+  SessionSourceSynchronizationTiming,
   SessionWatchPlan,
   SessionWatchTarget,
 } from "./base.js";

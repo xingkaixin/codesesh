@@ -41,6 +41,10 @@ describe("search index writer", () => {
       mode: "incremental",
       changed: 1,
       indexed: 1,
+      planningDurationMs: expect.any(Number),
+      getSessionDataCalls: 1,
+      getSessionDataDurationMs: expect.any(Number),
+      materializationDurationMs: expect.any(Number),
     });
     expect(searchSessions("needle")).toEqual([
       expect.objectContaining({
@@ -53,6 +57,7 @@ describe("search index writer", () => {
     expect(syncSessionSearchIndex("codex", [session], loadSession)).toMatchObject({
       changed: 0,
       indexed: 0,
+      getSessionDataCalls: 0,
     });
   });
 

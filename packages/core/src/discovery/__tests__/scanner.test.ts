@@ -863,6 +863,15 @@ describe("scanSessions", () => {
       completeness: "complete" as const,
       sourceCount: 1,
       removedSourceCount: 1,
+      timing: {
+        totalMs: 1,
+        enumerationMs: 0.2,
+        diffMs: 0.1,
+        parseMs: 0.5,
+        enumeratedSourceCount: 1,
+        changedSourceCount: 1,
+        processedSourceCount: 1,
+      },
     }));
     Object.assign(agent, {
       sessionSourceAccess: {

@@ -249,11 +249,9 @@ export function logSearchIndexSync(
       failures: result.failures,
     });
   }
-  if (!result || result.mode !== "bulk" || result.rebuildDurationMs == null) {
-    return;
-  }
+  if (!result) return;
 
-  appLogger.info("search_index.sync", {
+  const detail = {
     context,
     agent: result.agentName,
     mode: result.mode,
@@ -263,7 +261,14 @@ export function logSearchIndexSync(
     indexed: result.indexed,
     skipped: result.skipped,
     duration_ms: Math.round(result.durationMs),
-    rebuild_duration_ms: Math.round(result.rebuildDurationMs),
+    planning_ms: Math.round(result.planningDurationMs),
+    get_session_data_calls: result.getSessionDataCalls,
+    get_session_data_ms: Math.round(result.getSessionDataDurationMs),
+    materialization_ms: Math.round(result.materializationDurationMs),
+    rebuild_duration_ms:
+      result.rebuildDurationMs != null ? Math.round(result.rebuildDurationMs) : undefined,
     ...data,
-  });
+  };
+  if (result.mode === "bulk") appLogger.info("search_index.sync", detail);
+  else appLogger.debug("search_index.sync", detail);
 }

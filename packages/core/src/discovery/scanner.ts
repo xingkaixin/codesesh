@@ -8,6 +8,7 @@ import type {
   BaseAgent,
   EnumeratedSessionSourceCapability,
   SessionSourceFailure,
+  SessionSourceSynchronizationTiming,
 } from "../agents/index.js";
 import {
   createAgentScanFailure,
@@ -97,7 +98,25 @@ export interface AgentScanTiming {
   scan?: number;
   identity?: number;
   tags?: number;
+  sourceEnumeration?: number;
+  sourceDiff?: number;
+  sourceParse?: number;
+  enumeratedSources?: number;
+  changedSources?: number;
+  processedSources?: number;
   total: number;
+}
+
+function applySessionSourceTiming(
+  target: AgentScanTiming,
+  source: SessionSourceSynchronizationTiming,
+): void {
+  target.sourceEnumeration = source.enumerationMs;
+  target.sourceDiff = source.diffMs;
+  target.sourceParse = source.parseMs;
+  target.enumeratedSources = source.enumeratedSourceCount;
+  target.changedSources = source.changedSourceCount;
+  target.processedSources = source.processedSourceCount;
 }
 
 function buildAgentScanOptions(
@@ -341,6 +360,7 @@ async function refreshCachedEnumeratedAgent(
     },
   );
   timing.scan = performance.now() - scanStartedAt;
+  applySessionSourceTiming(timing, synchronization.timing);
   const hasSourceChanges =
     synchronization.detectedSessionIds.length > 0 || synchronization.sourceFailures.length > 0;
 
@@ -591,6 +611,7 @@ async function scanAgentFull(
       );
       heads = synchronization.sessions;
       sourceFailures = synchronization.sourceFailures;
+      applySessionSourceTiming(timing, synchronization.timing);
     } else {
       heads = agent.scan(agentScanOptions);
     }

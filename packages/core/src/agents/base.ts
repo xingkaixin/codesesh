@@ -42,6 +42,7 @@ export type {
   SessionSourceSynchronizationBaseline,
   SessionSourceSynchronizationOutcome,
   SessionSourceSynchronizationRequest,
+  SessionSourceSynchronizationTiming,
 } from "./session-source-synchronization.js";
 
 export type { ParseSessionResult };

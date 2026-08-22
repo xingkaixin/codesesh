@@ -37,6 +37,7 @@ export type {
   SessionSourceSynchronizationBaseline,
   SessionSourceSynchronizationOutcome,
   SessionSourceSynchronizationRequest,
+  SessionSourceSynchronizationTiming,
   SessionWatchPlan,
 } from "../agents/index.js";
 export {

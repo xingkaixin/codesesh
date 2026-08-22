@@ -57,6 +57,10 @@ export interface SearchIndexSyncResult {
   failures?: SearchIndexSyncFailure[];
   durationMs: number;
   rebuildDurationMs?: number;
+  planningDurationMs: number;
+  getSessionDataCalls: number;
+  getSessionDataDurationMs: number;
+  materializationDurationMs: number;
 }
 
 const SEARCH_INDEX_COMMIT_CHUNK_SIZE = 64;
@@ -69,6 +73,12 @@ interface LoadedSearchIndexEntry extends SessionMaterializationEntry {
 
 interface SearchIndexRowWriteOptions {
   verifySupersession?: boolean;
+}
+
+interface SearchIndexLoadTiming {
+  calls: number;
+  getSessionDataMs: number;
+  materializationMs: number;
 }
 
 type SearchIndexPlanRequest =
@@ -116,6 +126,12 @@ interface PreparedSearchIndexPublication {
   failures: SearchIndexSyncFailure[];
   needsRebuild: boolean;
   startedAt: number;
+  planningDurationMs: number;
+  loadTiming: SearchIndexLoadTiming;
+}
+
+function createSearchIndexLoadTiming(): SearchIndexLoadTiming {
+  return { calls: 0, getSessionDataMs: 0, materializationMs: 0 };
 }
 
 function shouldBulkSyncSearchIndex(options: SearchIndexSyncOptions, changedCount: number): boolean {
@@ -133,21 +149,34 @@ function loadSearchIndexEntry(
   loadSessionData: (sessionId: string) => SessionDetail,
   detailVersion: string,
   failures: SearchIndexSyncFailure[],
+  timing: SearchIndexLoadTiming,
 ): LoadedSearchIndexEntry | null {
   const sessionId = change.session.reference.sessionId;
   try {
-    const data = loadSessionData(sessionId);
-    const messages = normalizeMessages(data);
-    const identity = requireSessionProjectIdentity(agentName, change.session);
-    return {
-      session: change.session,
-      messages,
-      contentText: buildSessionContentFromMessages(data.title ?? change.session.title, messages),
-      contentHash: sessionContentHash(change.session),
-      fileActivity: extractSessionFileActivity(agentName, sessionId, identity.key, data.messages),
-      sortIndex: change.sortIndex,
-      detailVersion,
-    };
+    timing.calls += 1;
+    const loadStartedAt = performance.now();
+    let data: SessionDetail;
+    try {
+      data = loadSessionData(sessionId);
+    } finally {
+      timing.getSessionDataMs += performance.now() - loadStartedAt;
+    }
+    const materializationStartedAt = performance.now();
+    try {
+      const messages = normalizeMessages(data);
+      const identity = requireSessionProjectIdentity(agentName, change.session);
+      return {
+        session: change.session,
+        messages,
+        contentText: buildSessionContentFromMessages(data.title ?? change.session.title, messages),
+        contentHash: sessionContentHash(change.session),
+        fileActivity: extractSessionFileActivity(agentName, sessionId, identity.key, data.messages),
+        sortIndex: change.sortIndex,
+        detailVersion,
+      };
+    } finally {
+      timing.materializationMs += performance.now() - materializationStartedAt;
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     failures.push({ sessionId, reason: "parse-failed", message });
@@ -166,6 +195,7 @@ function* loadSearchIndexEntries(
   loadSessionData: (sessionId: string) => SessionDetail,
   detailVersionFor: (sessionId: string) => string,
   failures: SearchIndexSyncFailure[],
+  timing: SearchIndexLoadTiming,
 ): Generator<LoadedSearchIndexEntry> {
   for (const change of changes) {
     const sessionId = change.session.reference.sessionId;
@@ -175,6 +205,7 @@ function* loadSearchIndexEntries(
       loadSessionData,
       detailVersionFor(sessionId),
       failures,
+      timing,
     );
     if (entry) yield entry;
   }
@@ -271,12 +302,20 @@ function loadOrPreStageEntries(
   loadSessionData: (sessionId: string) => SessionDetail,
   detailVersionFor: (sessionId: string) => string,
   failures: SearchIndexSyncFailure[],
+  timing: SearchIndexLoadTiming,
   publicationId?: string,
 ): { entries: LoadedSearchIndexEntry[]; preStaged: number } {
   if (changes.length <= SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
     return {
       entries: [
-        ...loadSearchIndexEntries(agentName, changes, loadSessionData, detailVersionFor, failures),
+        ...loadSearchIndexEntries(
+          agentName,
+          changes,
+          loadSessionData,
+          detailVersionFor,
+          failures,
+          timing,
+        ),
       ],
       preStaged: 0,
     };
@@ -296,6 +335,7 @@ function loadOrPreStageEntries(
         loadSessionData,
         detailVersionFor,
         failures,
+        timing,
       );
       preStaged += stagePublicationPayloads(
         db,
@@ -431,6 +471,8 @@ function prepareSearchIndexPublication(
     planning_ms: Math.round(performance.now() - plan.startedAt),
   });
   const failures: SearchIndexSyncFailure[] = [];
+  const planningDurationMs = performance.now() - plan.startedAt;
+  const loadTiming = createSearchIndexLoadTiming();
   const { entries, preStaged } = loadOrPreStageEntries(
     db,
     plan.agentName,
@@ -438,6 +480,7 @@ function prepareSearchIndexPublication(
     loadSessionData,
     (sessionId) => detailVersionForPlan(plan, sessionId),
     failures,
+    loadTiming,
     publicationId,
   );
 
@@ -453,6 +496,8 @@ function prepareSearchIndexPublication(
     failures,
     needsRebuild: plan.needsRebuild,
     startedAt: plan.startedAt,
+    planningDurationMs,
+    loadTiming,
   };
 }
 
@@ -532,6 +577,10 @@ export function writePreparedSessionSearchIndex(
     failures: publication.failures.length > 0 ? publication.failures : undefined,
     durationMs: performance.now() - publication.startedAt,
     rebuildDurationMs,
+    planningDurationMs: publication.planningDurationMs,
+    getSessionDataCalls: publication.loadTiming.calls,
+    getSessionDataDurationMs: publication.loadTiming.getSessionDataMs,
+    materializationDurationMs: publication.loadTiming.materializationMs,
   };
 }
 
@@ -545,6 +594,8 @@ function searchIndexSyncResult(
   plan: SearchIndexPlan,
   indexed: number,
   failures: SearchIndexSyncFailure[],
+  planningDurationMs: number,
+  loadTiming: SearchIndexLoadTiming,
   rebuildDurationMs?: number,
   mode = plan.mode,
 ): SearchIndexSyncResult {
@@ -559,6 +610,10 @@ function searchIndexSyncResult(
     failures: failures.length > 0 ? failures : undefined,
     durationMs: performance.now() - plan.startedAt,
     rebuildDurationMs,
+    planningDurationMs,
+    getSessionDataCalls: loadTiming.calls,
+    getSessionDataDurationMs: loadTiming.getSessionDataMs,
+    materializationDurationMs: loadTiming.materializationMs,
   };
 }
 
@@ -570,6 +625,8 @@ function executeSearchIndexPlan(
 ): SearchIndexSyncResult {
   let indexed = 0;
   const failures: SearchIndexSyncFailure[] = [];
+  const planningDurationMs = performance.now() - plan.startedAt;
+  const loadTiming = createSearchIndexLoadTiming();
   const loadEntries = (changes: PersistedSessionHeadChange[]) =>
     loadSearchIndexEntries(
       plan.agentName,
@@ -577,6 +634,7 @@ function executeSearchIndexPlan(
       loadSessionData,
       (sessionId) => detailVersionForPlan(plan, sessionId),
       failures,
+      loadTiming,
     );
 
   if (largeBacklogStrategy === "chunked" && plan.changes.length > SEARCH_INDEX_COMMIT_CHUNK_SIZE) {
@@ -598,7 +656,15 @@ function executeSearchIndexPlan(
         if (chunkIndexed > 0) advanceAnalyticsRevision(db);
       });
     }
-    return searchIndexSyncResult(plan, indexed, failures, undefined, "incremental");
+    return searchIndexSyncResult(
+      plan,
+      indexed,
+      failures,
+      planningDurationMs,
+      loadTiming,
+      undefined,
+      "incremental",
+    );
   }
 
   const { rebuildDurationMs } = runSearchIndexWrite(db, plan.needsRebuild, () => {
@@ -611,7 +677,14 @@ function executeSearchIndexPlan(
     );
     if (indexed > 0 || plan.removedSessionIds.length > 0) advanceAnalyticsRevision(db);
   });
-  return searchIndexSyncResult(plan, indexed, failures, rebuildDurationMs);
+  return searchIndexSyncResult(
+    plan,
+    indexed,
+    failures,
+    planningDurationMs,
+    loadTiming,
+    rebuildDurationMs,
+  );
 }
 
 export function syncSessionSearchIndex(
@@ -648,6 +721,10 @@ export function syncSessionSearchIndexChanges(
       indexed: 0,
       skipped: 0,
       durationMs: 0,
+      planningDurationMs: 0,
+      getSessionDataCalls: 0,
+      getSessionDataDurationMs: 0,
+      materializationDurationMs: 0,
     };
   }
 
