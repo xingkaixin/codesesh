@@ -114,10 +114,14 @@ interface SessionMeta extends FileSessionMeta {
   parentThreadId: string | null;
 }
 
-interface ChildFinalMessageCacheEntry {
+interface ChildSessionSummary {
+  stats: SessionHead["stats"];
+  message: Message | null;
+}
+
+interface ChildSessionSummaryCacheEntry extends ChildSessionSummary {
   sourceFingerprint: string;
   parserVersion: string;
-  message: Message | null;
 }
 
 class ChildMessageVisibilityIndex {
@@ -198,8 +202,10 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     string,
     { fingerprint: string; meta: ThreadMeta | null }
   >();
-  private subagentStatsByParent = new Map<string, SessionHead["stats"][]>();
-  private childFinalMessagesByParent = new Map<string, Map<string, ChildFinalMessageCacheEntry>>();
+  private childSessionSummariesByParent = new Map<
+    string,
+    Map<string, ChildSessionSummaryCacheEntry>
+  >();
 
   // ---- BaseAgent implementation ----
 
@@ -247,8 +253,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
   restoreSessionCacheMeta(meta: Readonly<Record<string, SessionCacheMeta>>): void {
     super.restoreSessionCacheMeta(meta);
     this.subagentIndex = null;
-    this.subagentStatsByParent.clear();
-    this.childFinalMessagesByParent.clear();
+    this.childSessionSummariesByParent.clear();
   }
 
   /**
@@ -271,8 +276,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       if (!parentId) continue;
       expanded.add(parentId);
       this.subagentIndex = null;
-      this.subagentStatsByParent.delete(parentId);
-      this.childFinalMessagesByParent.delete(parentId);
+      this.childSessionSummariesByParent.delete(parentId);
     }
     return [...expanded];
   }
@@ -297,33 +301,6 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       });
       return null;
     }
-  }
-
-  private parseTokenStats(filePath: string): SessionHead["stats"] {
-    const usage = new CodexTokenUsageAccumulator();
-    let activeModel: string | null = null;
-
-    for (const line of readJsonlFileLines(filePath)) {
-      try {
-        const data = JSON.parse(line);
-        const recordType = String(data["type"] ?? "");
-        const payload = extractCodexPayload(data);
-
-        if (recordType === "session_meta" || recordType === "turn_context") {
-          const nextModel = extractModelName(payload["model"]);
-          if (nextModel) activeModel = nextModel;
-          continue;
-        }
-
-        if (recordType === "event_msg" && String(payload["type"] ?? "") === "token_count") {
-          usage.consume(payload, activeModel);
-        }
-      } catch {
-        // skip malformed records
-      }
-    }
-
-    return usage.stats();
   }
 
   getSessionData(sessionId: string): SessionDetail {
@@ -375,9 +352,12 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     if (pendingPlan) transcript.appendToCurrentAssistant(pendingPlan);
     const result = transcript.finish(usage.stats());
 
-    this.applyChildStats(result.stats, meta.id);
+    const childSummaries = this.collectChildSummaries(meta.id);
+    this.applyChildStats(result.stats, childSummaries);
 
-    const childMessages = this.collectChildMessages(meta.id);
+    const childMessages = childSummaries
+      .flatMap(({ message }) => (message ? [message] : []))
+      .sort((left, right) => left.time_created - right.time_created);
     this.mergeChildMessages(result.messages, childMessages);
     result.stats.message_count = result.messages.length;
 
@@ -446,8 +426,8 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     return index;
   }
 
-  private applyChildStats(target: SessionHead["stats"], sessionId: string): void {
-    for (const stats of this.collectChildStats(sessionId)) {
+  private applyChildStats(target: SessionHead["stats"], summaries: ChildSessionSummary[]): void {
+    for (const { stats } of summaries) {
       target.total_input_tokens += stats.total_input_tokens ?? 0;
       target.total_output_tokens += stats.total_output_tokens ?? 0;
       target.total_cost += stats.total_cost ?? 0;
@@ -456,17 +436,6 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
           (target.total_cache_read_tokens ?? 0) + stats.total_cache_read_tokens;
       }
     }
-  }
-
-  private collectChildStats(parentSessionId: string): SessionHead["stats"][] {
-    const files = this.collectChildFiles(parentSessionId);
-    if (files.length === 0) return [];
-    const cached = this.subagentStatsByParent.get(parentSessionId);
-    if (cached) return cached;
-
-    const stats = files.map((file) => this.parseTokenStats(file));
-    this.subagentStatsByParent.set(parentSessionId, stats);
-    return stats;
   }
 
   private collectChildFiles(parentSessionId: string): string[] {
@@ -482,23 +451,19 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     }
   }
 
-  private collectChildMessages(parentSessionId: string): Message[] {
+  private collectChildSummaries(parentSessionId: string): ChildSessionSummary[] {
     const childFiles = this.collectChildFiles(parentSessionId);
-    this.reconcileChildFinalMessageCache(parentSessionId, childFiles);
-    return childFiles
-      .flatMap((file) => {
-        const message = this.getChildFinalMessage(parentSessionId, file);
-        return message ? [message] : [];
-      })
-      .sort((left, right) => left.time_created - right.time_created);
+    this.reconcileChildSummaryCache(parentSessionId, childFiles);
+    return childFiles.map((file) => this.getChildSummary(parentSessionId, file));
   }
 
-  private getChildFinalMessage(parentSessionId: string, filePath: string): Message | null {
-    const sourceFingerprint = this.childFinalMessageFingerprint(filePath);
-    let cache = this.childFinalMessagesByParent.get(parentSessionId);
+  private getChildSummary(parentSessionId: string, filePath: string): ChildSessionSummary {
+    const { mtimeMs, size } = statSync(filePath);
+    const sourceFingerprint = JSON.stringify([mtimeMs, size]);
+    let cache = this.childSessionSummariesByParent.get(parentSessionId);
     if (!cache) {
       cache = new Map();
-      this.childFinalMessagesByParent.set(parentSessionId, cache);
+      this.childSessionSummariesByParent.set(parentSessionId, cache);
     }
 
     const cached = cache.get(filePath);
@@ -506,43 +471,51 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
       cached?.sourceFingerprint === sourceFingerprint &&
       cached.parserVersion === PARSER_VERSION
     ) {
-      return cached.message;
+      return cached;
     }
 
-    const message = this.readChildFinalMessage(filePath);
-    cache.set(filePath, { sourceFingerprint, parserVersion: PARSER_VERSION, message });
-    return message;
+    const summary = this.readChildSummary(filePath, mtimeMs, size);
+    cache.set(filePath, { sourceFingerprint, parserVersion: PARSER_VERSION, ...summary });
+    return summary;
   }
 
-  private reconcileChildFinalMessageCache(parentSessionId: string, childFiles: string[]): void {
-    const cache = this.childFinalMessagesByParent.get(parentSessionId);
+  private reconcileChildSummaryCache(parentSessionId: string, childFiles: string[]): void {
+    const cache = this.childSessionSummariesByParent.get(parentSessionId);
     if (!cache) return;
 
     const activeFiles = new Set(childFiles);
     for (const filePath of cache.keys()) {
       if (!activeFiles.has(filePath)) cache.delete(filePath);
     }
-    if (cache.size === 0) this.childFinalMessagesByParent.delete(parentSessionId);
+    if (cache.size === 0) this.childSessionSummariesByParent.delete(parentSessionId);
   }
 
-  private childFinalMessageFingerprint(filePath: string): string {
-    const { mtimeMs, size } = statSync(filePath);
-    return JSON.stringify([mtimeMs, size]);
-  }
-
-  private readChildFinalMessage(filePath: string): Message | null {
+  private readChildSummary(
+    filePath: string,
+    fallbackMtimeMs: number,
+    size: number,
+  ): ChildSessionSummary {
     const sessionId = extractSessionId(filePath);
-    const threadMeta = this.readThreadMeta(filePath);
+    const threadMeta = this.readThreadMeta(filePath, { mtimeMs: fallbackMtimeMs, size });
+    const usage = new CodexTokenUsageAccumulator();
+    let activeModel: string | null = null;
     type ChildOutput = { id: string; text: string; timestampMs: number; isFinal: boolean };
     let latestOutput: ChildOutput | null = null;
     let finalOutput: ChildOutput | null = null;
-    let fallbackMtimeMs: number | null = null;
 
     for (const record of readJsonlFile(filePath)) {
       try {
         const recordType = String(record["type"] ?? "");
-        if (recordType !== "response_item") continue;
         const payload = extractCodexPayload(record);
+        if (recordType === "session_meta" || recordType === "turn_context") {
+          activeModel = extractModelName(payload["model"]) ?? activeModel;
+          continue;
+        }
+        if (recordType === "event_msg" && String(payload["type"] ?? "") === "token_count") {
+          usage.consume(payload, activeModel);
+          continue;
+        }
+        if (recordType !== "response_item") continue;
         if (String(payload["type"] ?? "") !== "message") continue;
         if (String(payload["role"] ?? "") !== "assistant") continue;
 
@@ -553,9 +526,7 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
           id: asString(payload["id"]) ?? `codex-subagent-${sessionId}`,
           text,
           timestampMs:
-            parseCodexTimestampMs(record) ||
-            parseCodexTimestampMs(payload) ||
-            (fallbackMtimeMs ??= statSync(filePath).mtimeMs),
+            parseCodexTimestampMs(record) || parseCodexTimestampMs(payload) || fallbackMtimeMs,
           isFinal:
             String(record["phase"] ?? "") === "final_answer" ||
             String(payload["phase"] ?? "") === "final_answer",
@@ -568,20 +539,23 @@ export class CodexAgent extends SingleFileSessionSource<SessionMeta> {
     }
 
     const selected = finalOutput ?? latestOutput;
-    if (!selected) return null;
-
     return {
-      id: selected.id,
-      role: "assistant",
-      agent: "codex",
-      time_created: selected.timestampMs,
-      mode: null,
-      model: null,
-      provider: null,
-      cost: 0,
-      subagent_id: sessionId,
-      nickname: threadMeta?.agentNickname ?? undefined,
-      parts: [{ type: "text", text: selected.text, time_created: selected.timestampMs }],
+      stats: usage.stats(),
+      message: selected
+        ? {
+            id: selected.id,
+            role: "assistant",
+            agent: "codex",
+            time_created: selected.timestampMs,
+            mode: null,
+            model: null,
+            provider: null,
+            cost: 0,
+            subagent_id: sessionId,
+            nickname: threadMeta?.agentNickname ?? undefined,
+            parts: [{ type: "text", text: selected.text, time_created: selected.timestampMs }],
+          }
+        : null,
     };
   }
 
