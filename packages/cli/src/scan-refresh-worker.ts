@@ -7,8 +7,9 @@ import {
   buildSessionPersistenceDiff,
   createRegisteredAgents,
   ensureSessionTagsSync,
+  hasStaleSessionTags,
+  inheritSessionTags,
   planAgentScan,
-  SMART_TAG_CLASSIFIER_REVISION,
   sortSessions,
   synchronizePricingGeneration,
   type AgentScanProgress,
@@ -139,15 +140,6 @@ function computeCacheMetaDiff(
   return { changes, removedIds };
 }
 
-function hasStaleSmartTags(session: SessionHead): boolean {
-  const sourceUpdatedAt = session.time_updated ?? session.time_created;
-  return (
-    !Array.isArray(session.smart_tags) ||
-    session.smart_tags_source_updated_at !== sourceUpdatedAt ||
-    session.smart_tags_classifier_revision !== SMART_TAG_CLASSIFIER_REVISION
-  );
-}
-
 interface BackfillSelection {
   orderedSessions: SessionHead[];
   finalizeSessionIds: ReadonlySet<string>;
@@ -176,33 +168,10 @@ function selectBackfillSessions(
   // the next pass so it is not permanently skipped when it becomes idle.
   for (let index = 0; index <= cursorIndex; index += 1) {
     const session = orderedSessions[index]!;
-    if (hasStaleSmartTags(session)) finalizeSessionIds.add(session.reference.sessionId);
+    if (hasStaleSessionTags(session)) finalizeSessionIds.add(session.reference.sessionId);
   }
 
   return { orderedSessions, finalizeSessionIds, cursorIndex };
-}
-
-/**
- * scan() rebuilds heads from the source without smart tags, which would force
- * a full reclassification pass (one getSessionData() per session). Carry the
- * previous tags over and let the staleness check in ensureSessionTagsSync —
- * smart_tags_source_updated_at vs time_updated — decide what to recompute.
- */
-function inheritSmartTags(sessions: SessionHead[], previousSessions: SessionHead[]): SessionHead[] {
-  const previousById = new Map(
-    previousSessions.map((session) => [session.reference.sessionId, session]),
-  );
-  return sessions.map((session) => {
-    if (Array.isArray(session.smart_tags)) return session;
-    const previous = previousById.get(session.reference.sessionId);
-    if (!previous || !Array.isArray(previous.smart_tags)) return session;
-    return {
-      ...session,
-      smart_tags: previous.smart_tags,
-      smart_tags_source_updated_at: previous.smart_tags_source_updated_at,
-      smart_tags_classifier_revision: previous.smart_tags_classifier_revision,
-    };
-  });
 }
 
 /**
@@ -423,7 +392,7 @@ async function run(
     sourceFailures = result.sourceFailures;
     explicitRemovedSessionIds = result.explicitRemovedSessionIds;
   } else if (scanPlan.kind === "scan") {
-    sessions = inheritSmartTags(
+    sessions = inheritSessionTags(
       await Promise.resolve(
         agent.scan({
           ...data.scanOptions,
