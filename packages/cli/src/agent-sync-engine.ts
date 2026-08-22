@@ -334,12 +334,12 @@ export class AgentSyncEngine {
       if (!durableCommitted) throw error;
       this.reportPostCommitError("scan.refresh", agentName, error);
     }
-    // The backfill probe touches the agent's filesystem (isAvailable /
-    // listSessionSources) and may throw on transient errors; that must not
+    // The backfill probe touches cache state and may check agent availability;
+    // either operation can throw on transient errors, but that must not
     // fail — let alone reject — an otherwise finished refresh.
     try {
       const agent = this.findAgent(agentName);
-      if (agent && this.needsBackfill(agent, cached, failed || result === "committed")) {
+      if (agent && this.backfillScheduler.needsBackfill(agent)) {
         this.enqueueBackfill(agentName);
       }
       if (agent) this.searchIndexMaintenance.enqueue(agentName);
@@ -841,14 +841,6 @@ export class AgentSyncEngine {
       return null;
     }
     return outcome.value;
-  }
-
-  private needsBackfill(
-    agent: BaseAgent,
-    cached?: CachedSessions | null,
-    reloadCached = false,
-  ): boolean {
-    return this.backfillScheduler.needsBackfill(agent, cached, reloadCached);
   }
 
   private enqueueBackfill(agentName: string): void {

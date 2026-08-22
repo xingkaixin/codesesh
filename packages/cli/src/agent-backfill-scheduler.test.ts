@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FileSystemSessionSource, type CachedResult } from "@codesesh/core/runtime";
+import { FileSystemSessionSource } from "@codesesh/core/runtime";
 import type { ScanStatusEvent } from "@codesesh/core/contract";
 import {
   BackfillLifecycle,
@@ -10,7 +10,6 @@ import { AgentBackfillScheduler } from "./agent-backfill-scheduler.js";
 import { appLogger } from "./logging.js";
 import { ScanStatusReporter } from "./scan-status-reporter.js";
 
-type CacheReadResult = { status: "success"; value: CachedResult | null } | { status: "failed" };
 type LastFullSyncReadResult = { status: "success"; value: number | null } | { status: "failed" };
 
 const core = vi.hoisted(() => ({
@@ -18,16 +17,11 @@ const core = vi.hoisted(() => ({
     status: "success",
     value: Date.now(),
   })),
-  readCachedSessions: vi.fn<() => CacheReadResult>(() => ({
-    status: "success",
-    value: null,
-  })),
 }));
 
 vi.mock("@codesesh/core/runtime", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@codesesh/core/runtime")>()),
   readAgentLastFullSyncAt: core.readAgentLastFullSyncAt,
-  readCachedSessions: core.readCachedSessions,
 }));
 
 class FakeSyncAgent extends FileSystemSessionSource {
@@ -76,46 +70,37 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   core.readAgentLastFullSyncAt.mockReturnValue({ status: "success", value: Date.now() });
-  core.readCachedSessions.mockReturnValue({ status: "success", value: null });
 });
 
 describe("AgentBackfillScheduler", () => {
-  it("caches source-integrity checks until the full-sync interval expires", () => {
+  it("caches a recent full-sync marker until its interval expires", () => {
     vi.useFakeTimers();
     const now = new Date("2026-08-12T00:00:00.000Z").getTime();
     vi.setSystemTime(now);
     core.readAgentLastFullSyncAt.mockReturnValue({ status: "success", value: now });
     const agent = new FakeSyncAgent();
     const isAvailable = vi.spyOn(agent, "isAvailable");
-    const listSessionSources = vi.spyOn(agent, "listSessionSources");
     const { scheduler } = makeScheduler();
-    const cached = { sessions: [], meta: {}, timestamp: now };
 
-    expect(scheduler.needsBackfill(agent, cached)).toBe(false);
-    expect(scheduler.needsBackfill(agent, cached)).toBe(false);
-    expect(isAvailable).toHaveBeenCalledOnce();
-    expect(listSessionSources).toHaveBeenCalledOnce();
+    expect(scheduler.needsBackfill(agent)).toBe(false);
+    expect(scheduler.needsBackfill(agent)).toBe(false);
+    expect(isAvailable).not.toHaveBeenCalled();
     expect(core.readAgentLastFullSyncAt).toHaveBeenCalledOnce();
-    expect(core.readCachedSessions).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(24 * 60 * 60 * 1000 + 1);
 
-    expect(scheduler.needsBackfill(agent, cached)).toBe(true);
-    expect(isAvailable).toHaveBeenCalledTimes(2);
-    expect(listSessionSources).toHaveBeenCalledOnce();
+    expect(scheduler.needsBackfill(agent)).toBe(true);
+    expect(isAvailable).toHaveBeenCalledOnce();
     expect(core.readAgentLastFullSyncAt).toHaveBeenCalledTimes(2);
   });
 
-  it("skips backfill when cached sessions cannot be read", () => {
-    core.readCachedSessions.mockReturnValueOnce({ status: "failed" });
-    const warn = vi.spyOn(appLogger, "warn");
+  it("does not enumerate raw sources after a recent full sync", () => {
+    const agent = new FakeSyncAgent();
+    const listSessionSources = vi.spyOn(agent, "listSessionSources");
     const { scheduler } = makeScheduler();
 
-    expect(scheduler.needsBackfill(new FakeSyncAgent())).toBe(false);
-    expect(warn).toHaveBeenCalledWith("scan.backfill.cache_state_unavailable", {
-      agent: "codex",
-      state: "cached_sessions",
-    });
+    expect(scheduler.needsBackfill(agent)).toBe(false);
+    expect(listSessionSources).not.toHaveBeenCalled();
   });
 
   it("skips backfill when the full-sync timestamp cannot be read", () => {
