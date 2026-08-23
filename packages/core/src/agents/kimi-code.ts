@@ -550,7 +550,7 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
     if (result.status !== "parsed") return result;
     const source = result.data;
 
-    const parsed = this.parseWire(source);
+    const parsed = this.parseWire(source, "head");
     const transcript = parsed.builder.finish(parsed.stats);
     if (transcript.messages.length === 0) {
       this.sessionMetaMap.delete(source.id);
@@ -598,8 +598,13 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
     };
   }
 
-  private parseWire(source: Pick<SessionSource, "wireFile">): ParsedWire {
-    const builder = new TranscriptBuilder();
+  private parseWire(
+    source: Pick<SessionSource, "wireFile">,
+    projection: "head" | "detail" = "detail",
+  ): ParsedWire {
+    const builder = new TranscriptBuilder({
+      contentRetention: projection === "head" ? "structure" : "full",
+    });
     const totals = buildUsageTotals();
     const ignoredToolCallIds = new Set<string>();
     let activeModel: string | null = null;

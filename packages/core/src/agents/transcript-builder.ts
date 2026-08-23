@@ -37,6 +37,13 @@ export interface TranscriptResult {
   stats: SessionStats;
 }
 
+interface TranscriptBuilderOptions {
+  messageDefaults?: "nullable" | "sparse";
+  contentRetention?: "full" | "structure";
+}
+
+const RETAINED_CONTENT = "[content]";
+
 function mergeTokens(base: Message["tokens"], extra: Message["tokens"]): Message["tokens"] {
   if (!base) return extra;
   if (!extra) return base;
@@ -62,7 +69,7 @@ export class TranscriptBuilder {
   private currentAssistant: Message | null = null;
   private latestTextAssistant: Message | null = null;
 
-  constructor(private readonly options: { messageDefaults?: "nullable" | "sparse" } = {}) {}
+  constructor(private readonly options: TranscriptBuilderOptions = {}) {}
 
   beginTurn(): void {
     this.currentAssistant = null;
@@ -149,10 +156,10 @@ export class TranscriptBuilder {
         });
 
     if (target) {
-      this.pushPart(message, part);
+      const retainedPart = this.pushPart(message, part);
       this.applyMissingMetadata(message, input);
       if (options.markModeAsTool) message.mode = "tool";
-      this.registerToolCall(part);
+      this.registerToolCall(retainedPart);
     }
 
     this.currentAssistant = message;
@@ -175,12 +182,16 @@ export class TranscriptBuilder {
   resolveToolCall(callId: string, resolution: ToolResolution): boolean {
     return this.updateToolCall(callId, (part) => {
       const state = part.state;
-      if (resolution.output !== undefined) state.output = resolution.output;
+      if (resolution.output !== undefined && this.options.contentRetention !== "structure") {
+        state.output = resolution.output;
+      }
       if (resolution.status !== undefined) state.status = resolution.status;
       else if (resolution.output !== undefined && state.status === "running") {
         state.status = "completed";
       }
-      if (resolution.metadata !== undefined) state.metadata = resolution.metadata;
+      if (resolution.metadata !== undefined && this.options.contentRetention !== "structure") {
+        state.metadata = resolution.metadata;
+      }
       if (resolution.consume) this.pendingToolCalls.delete(callId);
     });
   }
@@ -245,7 +256,7 @@ export class TranscriptBuilder {
       tokens: input.tokens,
       cost: sparse ? input.cost : (input.cost ?? 0),
       cost_source: input.costSource,
-      parts: input.parts ?? [],
+      parts: (input.parts ?? []).map((part) => this.retainPart(part)),
       subagent_id: input.subagentId,
       nickname: input.nickname,
     };
@@ -265,9 +276,30 @@ export class TranscriptBuilder {
     this.pushPart(message, part);
   }
 
-  private pushPart(message: Message, part: MessagePart): void {
-    message.parts.push(part);
-    this.notePart(message, part);
+  private pushPart(message: Message, part: MessagePart): MessagePart {
+    const retainedPart = this.retainPart(part);
+    message.parts.push(retainedPart);
+    this.notePart(message, retainedPart);
+    return retainedPart;
+  }
+
+  private retainPart(part: MessagePart): MessagePart {
+    if (this.options.contentRetention !== "structure") return part;
+    if (part.type === "text" || part.type === "reasoning") {
+      return { ...part, text: RETAINED_CONTENT };
+    }
+    if (part.type === "plan") return { ...part, text: RETAINED_CONTENT };
+    if (part.type === "image") {
+      return { type: "image", url: RETAINED_CONTENT, time_created: part.time_created };
+    }
+    return {
+      type: "tool",
+      tool: part.tool,
+      title: part.title,
+      callID: part.callID,
+      state: { status: part.state.status },
+      time_created: part.time_created,
+    };
   }
 
   private notePart(message: Message, part: MessagePart): void {
