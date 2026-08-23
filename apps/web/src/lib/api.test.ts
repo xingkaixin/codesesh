@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SAMPLE_DASHBOARD_DATA, SAMPLE_SESSION_HEAD } from "@codesesh/core/test-fixtures";
+import {
+  SAMPLE_DASHBOARD_DATA,
+  SAMPLE_SESSIONS_UPDATED_EVENT,
+  SAMPLE_SESSION_HEAD,
+} from "@codesesh/core/test-fixtures";
 import type { DashboardFilters } from "./api";
 import {
   ApiRequestError,
@@ -348,10 +352,10 @@ describe("subscribeSessionUpdates", () => {
     const onScanStatus = vi.fn();
     subscribeSessionUpdates(onUpdate, onScanStatus);
 
-    latest().emit("sessions-updated", { type: "sessions-updated", newSessions: 1 });
+    latest().emit("sessions-updated", SAMPLE_SESSIONS_UPDATED_EVENT);
     latest().emit("scan-status", { type: "scan-status", active: true });
 
-    expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ newSessions: 1 }));
+    expect(onUpdate).toHaveBeenCalledWith(SAMPLE_SESSIONS_UPDATED_EVENT);
     expect(onScanStatus).toHaveBeenCalledWith(expect.objectContaining({ active: true }));
   });
 

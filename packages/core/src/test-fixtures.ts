@@ -70,10 +70,7 @@ export const SAMPLE_SCAN_STATUS_EVENT = {
 export const SAMPLE_SESSIONS_UPDATED_EVENT = {
   type: "sessions-updated",
   changedAgents: ["claudecode"],
-  newSessions: 1,
   newSessionRefs: [SAMPLE_SESSION_HEAD.reference],
-  updatedSessions: 0,
-  removedSessions: 0,
   totalSessions: 43,
   timestamp: 1_700_000_020_000,
   changedSessionHeads: [

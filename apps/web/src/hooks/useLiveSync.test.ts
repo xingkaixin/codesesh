@@ -71,7 +71,7 @@ describe("useLiveSync", () => {
     const { result } = renderHook(() => useLiveSync(makeDeps(3)));
 
     await act(async () => {
-      sessionsCallback?.({ ...SAMPLE_SESSIONS_UPDATED_EVENT, newSessions: 3 });
+      sessionsCallback?.(SAMPLE_SESSIONS_UPDATED_EVENT);
       await vi.advanceTimersByTimeAsync(500);
     });
 
@@ -83,7 +83,7 @@ describe("useLiveSync", () => {
     const { result } = renderHook(() => useLiveSync(makeDeps()));
 
     await act(async () => {
-      sessionsCallback?.({ ...SAMPLE_SESSIONS_UPDATED_EVENT, newSessions: 3 });
+      sessionsCallback?.(SAMPLE_SESSIONS_UPDATED_EVENT);
       await vi.advanceTimersByTimeAsync(500);
     });
 
@@ -94,12 +94,20 @@ describe("useLiveSync", () => {
     vi.useFakeTimers();
     const deps = makeDeps();
     renderHook(() => useLiveSync(deps));
+    const first = { agentName: "claudecode", sessionId: "first" };
+    const second = { agentName: "claudecode", sessionId: "second" };
+    const third = { agentName: "claudecode", sessionId: "third" };
 
     await act(async () => {
-      sessionsCallback?.({ ...SAMPLE_SESSIONS_UPDATED_EVENT, newSessions: 1 });
       sessionsCallback?.({
         ...SAMPLE_SESSIONS_UPDATED_EVENT,
-        newSessions: 2,
+        newSessionRefs: [first],
+        changedSessionHeads: [],
+      });
+      sessionsCallback?.({
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        newSessionRefs: [second, third],
+        changedSessionHeads: [],
         timestamp: SAMPLE_SESSIONS_UPDATED_EVENT.timestamp + 1,
       });
       await vi.advanceTimersByTimeAsync(500);
@@ -108,7 +116,7 @@ describe("useLiveSync", () => {
     expect(deps.applyLiveEvent).toHaveBeenCalledOnce();
     expect(deps.applyLiveEvent).toHaveBeenCalledWith(
       expect.objectContaining({
-        newSessions: 3,
+        newSessionRefs: [first, second, third],
         timestamp: SAMPLE_SESSIONS_UPDATED_EVENT.timestamp + 1,
       }),
     );

@@ -375,7 +375,6 @@ describe("useSessionStore", () => {
     await act(async () => {
       update = await result.current.applyLiveEvent({
         ...SAMPLE_SESSIONS_UPDATED_EVENT,
-        newSessions: historicalSessions.length,
         newSessionRefs: historicalSessions.map((session) => ({
           agentName: "claudecode",
           sessionId: session.reference.sessionId,

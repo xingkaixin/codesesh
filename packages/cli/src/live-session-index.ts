@@ -120,10 +120,7 @@ export class LiveSessionIndex {
     return {
       type: "sessions-updated",
       changedAgents: [agentName],
-      newSessions: counts.new,
       newSessionRefs,
-      updatedSessions: counts.updated,
-      removedSessions: counts.removed,
       totalSessions: this.sessions.length,
       timestamp: Date.now(),
       changedSessionHeads: changedSessionHeads.map(toPublicReferencedSessionHead),

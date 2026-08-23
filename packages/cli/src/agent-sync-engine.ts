@@ -20,7 +20,11 @@ import {
   type SessionSourceFailure,
   type SessionSnapshotCompleteness,
 } from "@codesesh/core/runtime";
-import type { ScanCompletion, ScanStatusEvent } from "@codesesh/core/contract";
+import type {
+  ScanCompletion,
+  ScanStatusEvent,
+  SessionsUpdatedEvent,
+} from "@codesesh/core/contract";
 import { AgentBackfillScheduler } from "./agent-backfill-scheduler.js";
 import { AgentOperationScheduler, type AgentOperationResult } from "./agent-operation-scheduler.js";
 import {
@@ -68,6 +72,19 @@ type CachedSessions = CachedResult;
 interface RefreshResult {
   result: Exclude<AgentOperationResult, "failed">;
   completion: ScanCompletion;
+}
+
+function countSessionUpdates(event: SessionsUpdatedEvent | null): {
+  newSessions: number;
+  updatedSessions: number;
+  removedSessions: number;
+} {
+  if (!event) return { newSessions: 0, updatedSessions: 0, removedSessions: 0 };
+  return {
+    newSessions: event.newSessionRefs.length,
+    updatedSessions: event.changedSessionHeads.length - event.newSessionRefs.length,
+    removedSessions: event.removedSessionRefs.length,
+  };
 }
 
 interface RefreshStrategyBase {
@@ -520,15 +537,16 @@ export class AgentSyncEngine {
 
     const totalDurationMs = performance.now() - startedAt;
     this.scheduler.recordRefreshDuration(agentName, totalDurationMs);
+    const sessionUpdateCounts = countSessionUpdates(publication.event);
     appLogger.info(
       strategyResult.sourceFailures.length > 0 ? "scan.refresh.partial" : "scan.refresh.done",
       {
         agent: agentName,
         duration_ms: Math.round(totalDurationMs),
         sessions: nextSessions.length,
-        new_sessions: publication.event?.newSessions ?? 0,
-        updated_sessions: publication.event?.updatedSessions ?? 0,
-        removed_sessions: publication.event?.removedSessions ?? 0,
+        new_sessions: sessionUpdateCounts.newSessions,
+        updated_sessions: sessionUpdateCounts.updatedSessions,
+        removed_sessions: sessionUpdateCounts.removedSessions,
         pending_paths: pendingPathCount,
         availability_ms: Math.round(availabilityDuration),
         check_ms: Math.round(strategyResult.checkDuration),

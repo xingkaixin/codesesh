@@ -350,7 +350,7 @@ export function useSessionStore() {
       const previousSessionKeys = new Set(
         currentProjection.sessions.map((session) => formatSessionReference(session.reference)),
       );
-      const visibleNewSessions = (event.newSessionRefs ?? []).filter((reference) => {
+      const visibleNewSessions = event.newSessionRefs.filter((reference) => {
         const key = formatSessionReference(reference);
         return !previousSessionKeys.has(key) && visibleSessionKeys.has(key);
       }).length;
