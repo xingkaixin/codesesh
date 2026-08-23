@@ -480,9 +480,17 @@ describe("useSessionStore", () => {
     const error = new Error("projects unavailable");
     vi.mocked(api.fetchProjects).mockRejectedValue(error);
     const { result } = await renderStore();
+    let reloadFailure: unknown;
 
-    await act(() => result.current.reload());
+    await act(async () => {
+      try {
+        await result.current.reload();
+      } catch (caught) {
+        reloadFailure = caught;
+      }
+    });
 
+    expect(reloadFailure).toBe(error);
     await waitFor(() => expect(result.current.projectsError).toBe("projects unavailable"));
     expect(result.current.projects).toEqual([]);
     expect(result.current.error).toBeNull();
