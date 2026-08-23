@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { CostSource, Message, MessageTokens, SessionStats } from "../types/index.js";
 import { pricingResolver } from "./resolver.js";
 
@@ -14,7 +15,7 @@ function positive(value: number | undefined): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
-let pricingMissCapture: Set<string> | null = null;
+const pricingMissCapture = new AsyncLocalStorage<Set<string>>();
 
 export const PRICING_CAPTURE_EPOCH = "pricing-capture-v1";
 
@@ -31,15 +32,24 @@ export function pricingBecameAvailable(unpricedModels: unknown): boolean {
  * `run`. Cached session heads carry these misses so they can be re-parsed once
  * pricing for those models becomes available.
  */
-export function capturePricingMisses<T>(run: () => T): { result: T; unpricedModels: string[] } {
-  const previous = pricingMissCapture;
+interface PricingMissCaptureResult<T> {
+  result: T;
+  unpricedModels: string[];
+}
+
+export function capturePricingMisses<T>(
+  run: () => Promise<T>,
+): Promise<PricingMissCaptureResult<T>>;
+export function capturePricingMisses<T>(run: () => T): PricingMissCaptureResult<T>;
+export function capturePricingMisses<T>(
+  run: () => T | Promise<T>,
+): PricingMissCaptureResult<T> | Promise<PricingMissCaptureResult<T>> {
   const capture = new Set<string>();
-  pricingMissCapture = capture;
-  try {
-    return { result: run(), unpricedModels: [...capture] };
-  } finally {
-    pricingMissCapture = previous;
+  const result = pricingMissCapture.run(capture, run);
+  if (result instanceof Promise) {
+    return result.then((resolved) => ({ result: resolved, unpricedModels: [...capture] }));
   }
+  return { result, unpricedModels: [...capture] };
 }
 
 export function estimateCostForTokens(
@@ -50,7 +60,7 @@ export function estimateCostForTokens(
 
   const pricing = pricingResolver.resolve(model);
   if (!pricing) {
-    pricingMissCapture?.add(model);
+    pricingMissCapture.getStore()?.add(model);
     return null;
   }
 
