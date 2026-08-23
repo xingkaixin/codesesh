@@ -477,10 +477,9 @@ function makeFileSystemAgent(
     removeSessionCacheMeta?: (sessionIds: Iterable<string>) => void;
   } = {},
 ) {
-  const agent = Object.create(FileSystemSessionSource.prototype) as InstanceType<
+  const agent = Reflect.construct(FileSystemSessionSource, []) as InstanceType<
     typeof FileSystemSessionSource
   >;
-  Object.defineProperty(agent, "sessionMetaMap", { value: new Map(), writable: true });
   Object.defineProperty(agent, "name", { value: name, configurable: true });
   Object.defineProperty(agent, "displayName", { value: name, configurable: true });
   agent.isAvailable = vi.fn(() => true);
@@ -493,15 +492,6 @@ function makeFileSystemAgent(
   agent.snapshotSessionCacheMeta = overrides.snapshotSessionCacheMeta ?? vi.fn(() => ({}));
   agent.restoreSessionCacheMeta = overrides.restoreSessionCacheMeta ?? vi.fn();
   agent.removeSessionCacheMeta = overrides.removeSessionCacheMeta ?? vi.fn();
-  Object.defineProperty(agent, "sessionSourceAccess", {
-    value: {
-      kind: "enumerated",
-      synchronize: (...args: Parameters<typeof agent.synchronizeSessionSources>) =>
-        agent.synchronizeSessionSources(...args),
-      count: (options?: AgentScanOptions) => agent.listSessionSources(options).length,
-    },
-    configurable: true,
-  });
   return agent;
 }
 

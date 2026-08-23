@@ -15,7 +15,6 @@ export {
   getAgentInfoMap,
   getRegisteredAgents,
   reportSessionSourceOutcome,
-  synchronizeSessionSources,
 } from "../agents/index.js";
 export type {
   AgentScanFailure,
@@ -33,7 +32,6 @@ export type {
   SessionSourceScanBatch,
   SessionSourceCapability,
   SessionSourceRef,
-  SessionSourceSynchronizationAdapter,
   SessionSourceSynchronizationBaseline,
   SessionSourceSynchronizationOutcome,
   SessionSourceSynchronizationRequest,

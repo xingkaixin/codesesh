@@ -6,12 +6,13 @@ import type { SessionHead } from "../../types/index.js";
 import {
   createAgentScanFailure,
   createSessionSourceFailure,
-  synchronizeSessionSources,
   type SessionCacheMeta,
   type SessionSourceOutcome,
   type SessionSourceRef,
-  type SessionSourceSynchronizationAdapter,
 } from "../base.js";
+import { synchronizeSessionSources } from "../session-source-synchronization.js";
+
+type SessionSourceSynchronizationAdapter = Parameters<typeof synchronizeSessionSources>[0];
 
 describe("failure normalization", () => {
   it("describes agent and source failures with the same bounded fields", () => {

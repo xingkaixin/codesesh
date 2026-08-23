@@ -35,10 +35,8 @@ export {
   diffSessionSources,
   matchesScanWindow,
   reportSessionSourceOutcome,
-  synchronizeSessionSources,
 } from "./session-source-synchronization.js";
 export type {
-  SessionSourceSynchronizationAdapter,
   SessionSourceSynchronizationBaseline,
   SessionSourceSynchronizationOutcome,
   SessionSourceSynchronizationRequest,
@@ -309,7 +307,7 @@ export abstract class BaseAgent<TMeta extends SessionCacheMeta = SessionCacheMet
  * 例如 KimiAgent。
  *
  * 源同步与 metaMap 管理由本基类统一提供：
- *   synchronizeSessionSources 用 listSessionSources 的指纹与缓存 metaMap 比对，
+ *   同步流程用 listSessionSources 的指纹与缓存 metaMap 比对，
  *   并对变更集合调用 scanSessionSource 重解析。
  * 两原语在各子类中复用同一个 sourceFingerprint 计算，故指纹精确比对即等价于变更检测。
  */
@@ -325,7 +323,7 @@ export abstract class FileSystemSessionSource<
 
   readonly sessionSourceAccess: EnumeratedSessionSourceCapability = {
     kind: "enumerated",
-    synchronize: (baseline, request) => this.synchronizeSessionSources(baseline, request),
+    synchronize: (baseline, request) => runSessionSourceSynchronization(this, baseline, request),
     count: (options) => this.listSessionSources(options).length,
   };
 
@@ -398,19 +396,12 @@ export abstract class FileSystemSessionSource<
     return changedIds;
   }
 
-  synchronizeSessionSources(
-    baseline: SessionSourceSynchronizationBaseline,
-    request: SessionSourceSynchronizationRequest,
-  ): SessionSourceSynchronizationOutcome {
-    return runSessionSourceSynchronization(this, baseline, request);
-  }
-
   scan(options?: AgentScanOptions): SessionHead[] {
     return this.scanSessionSources(options).sessions;
   }
 
   scanSessionSources(options?: AgentScanOptions): SessionSourceScanBatch {
-    const outcome = this.synchronizeSessionSources(
+    const outcome = this.sessionSourceAccess.synchronize(
       { sessions: [], meta: this.snapshotSessionCacheMeta() },
       { kind: "reload", scanOptions: options },
     );
