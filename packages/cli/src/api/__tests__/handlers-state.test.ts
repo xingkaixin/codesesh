@@ -19,21 +19,25 @@ const loggerMocks = vi.hoisted(() => ({
   warn: vi.fn(),
 }));
 
-vi.mock("@codesesh/core/runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@codesesh/core/runtime")>();
+vi.mock("@codesesh/core/runtime/state", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core/runtime/state")>();
   return {
     ...actual,
     deleteBookmark: coreMocks.deleteBookmark,
     deleteSessionAlias: coreMocks.deleteSessionAlias,
     importBookmarks: coreMocks.importBookmarks,
     listBookmarks: coreMocks.listBookmarks,
-    listDashboardCostFacts: coreMocks.listDashboardCostFacts,
-    listFileActivity: coreMocks.listFileActivity,
     listSessionAliases: coreMocks.listSessionAliases,
     upsertBookmark: coreMocks.upsertBookmark,
     upsertSessionAlias: coreMocks.upsertSessionAlias,
   };
 });
+
+vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@codesesh/core/runtime/discovery")>()),
+  listDashboardCostFacts: coreMocks.listDashboardCostFacts,
+  listFileActivity: coreMocks.listFileActivity,
+}));
 
 vi.mock("../../logging.js", () => ({ appLogger: loggerMocks }));
 
@@ -43,9 +47,8 @@ import {
   StateStorageUnavailableError,
   type BookmarkRecord,
   type BookmarkView,
-  type LiveSnapshot,
-  type SessionHead,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/state";
+import { type LiveSnapshot, type SessionHead } from "@codesesh/core/runtime/discovery";
 import {
   handleGetAgents,
   handleGetDashboard,

@@ -1,11 +1,13 @@
 import {
   listFileActivity,
   listDashboardCostFacts,
+  type SessionHead,
+} from "@codesesh/core/runtime/discovery";
+import {
   type DashboardCostFacts,
   type DashboardData,
   type DashboardScope,
-  type SessionHead,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/analytics";
 import { buildSessionTree, type SessionTree } from "@codesesh/core/contract";
 import { appLogger } from "../logging.js";
 import type { ScanResultSource } from "./scan-sources.js";

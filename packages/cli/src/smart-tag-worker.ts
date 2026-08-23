@@ -1,12 +1,11 @@
 import "./diagnostics-bridge.js";
 import { parentPort, workerData } from "node:worker_threads";
+import { createRegisteredAgents, type SessionCacheMeta } from "@codesesh/core/runtime/agents";
 import {
-  createRegisteredAgents,
   classifySessionTags,
   getSmartTagSourceTimestamp,
-  synchronizePricingGeneration,
-  type SessionCacheMeta,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/diagnostics";
+import { synchronizePricingGeneration } from "@codesesh/core/runtime/pricing";
 
 interface SmartTagWorkerData {
   pricingGenerationId: number;

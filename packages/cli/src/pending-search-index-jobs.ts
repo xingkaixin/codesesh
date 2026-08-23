@@ -1,8 +1,8 @@
 import type {
   IdentifiedSessionHead,
   PersistedSessionHeadChange,
-  SessionCacheMeta,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/discovery";
+import type { SessionCacheMeta } from "@codesesh/core/runtime/agents";
 import type {
   SearchIndexPublicationProgress,
   SearchIndexWorkerJob,

@@ -7,10 +7,10 @@
  */
 import {
   filterSessionTreeByActivityWindow,
-  getAgentInfoMap,
   type IdentifiedSessionHead,
   type LiveSnapshot,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/discovery";
+import { getAgentInfoMap } from "@codesesh/core/runtime/agents";
 
 export interface SessionIndexAgent {
   name: string;

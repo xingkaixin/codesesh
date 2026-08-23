@@ -1,4 +1,8 @@
-import { buildAgentCacheMeta, type CachedResult, type LiveSnapshot } from "@codesesh/core/runtime";
+import {
+  buildAgentCacheMeta,
+  type CachedResult,
+  type LiveSnapshot,
+} from "@codesesh/core/runtime/discovery";
 import { appLogger } from "./logging.js";
 import type { SearchIndexJobRunner } from "./search-index-job-runner.js";
 import type {

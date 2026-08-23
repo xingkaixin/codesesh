@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { BookmarkRecord, BookmarkView } from "@codesesh/core/runtime";
+import type { BookmarkRecord, BookmarkView } from "@codesesh/core/runtime/state";
 import { createSessionIndex, toPublicSessionHead } from "@codesesh/core/contract";
 import {
   SessionAliasValidationError,
@@ -8,11 +8,11 @@ import {
   deleteSessionAlias,
   importBookmarks,
   listBookmarks,
-  loadCachedSessionHeads,
   materializeBookmarkViews,
   upsertBookmark,
   upsertSessionAlias,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/state";
+import { loadCachedSessionHeads } from "@codesesh/core/runtime/discovery";
 import { KNOWN_AGENT_NAME_SET } from "./handlers.js";
 import { parseBookmarkImport, parseBookmarkReference } from "./request-payloads.js";
 import { getSnapshotAggregation } from "./snapshot-aggregation.js";

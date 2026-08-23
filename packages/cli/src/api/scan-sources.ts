@@ -1,4 +1,4 @@
-import type { LiveSnapshot } from "@codesesh/core/runtime";
+import type { LiveSnapshot } from "@codesesh/core/runtime/discovery";
 import type { ScanStatusEvent } from "@codesesh/core/contract";
 
 export interface ScanResultSource {

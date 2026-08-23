@@ -1,4 +1,4 @@
-import { setCoreDiagnostics } from "@codesesh/core/runtime";
+import { setCoreDiagnostics } from "@codesesh/core/runtime/diagnostics";
 import { parentPort, threadId } from "node:worker_threads";
 import { appLogger } from "./logging.js";
 

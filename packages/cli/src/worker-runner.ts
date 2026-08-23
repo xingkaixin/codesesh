@@ -1,14 +1,16 @@
 import { Worker } from "node:worker_threads";
+import { getPricingGeneration } from "@codesesh/core/runtime/pricing";
 import {
-  getPricingGeneration,
   type AgentScanProgress,
-  type ScanOptions,
   type SessionCacheMeta,
+  type SessionSourceFailure,
+} from "@codesesh/core/runtime/agents";
+import {
+  type ScanOptions,
   type SessionHead,
   type PersistedSessionHeadChange,
-  type SessionSourceFailure,
   type SessionSnapshotCompleteness,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/discovery";
 import { appLogger } from "./logging.js";
 import type {
   ScanRefreshWorkerCommitRequest,

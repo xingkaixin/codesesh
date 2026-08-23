@@ -14,10 +14,45 @@
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
     },
-    "./runtime": {
-      "types": "./dist/runtime/index.d.ts",
-      "import": "./dist/runtime/index.mjs",
-      "require": "./dist/runtime/index.js"
+    "./runtime/agents": {
+      "types": "./dist/runtime/agents.d.ts",
+      "import": "./dist/runtime/agents.mjs",
+      "require": "./dist/runtime/agents.js"
+    },
+    "./runtime/analytics": {
+      "types": "./dist/runtime/analytics.d.ts",
+      "import": "./dist/runtime/analytics.mjs",
+      "require": "./dist/runtime/analytics.js"
+    },
+    "./runtime/diagnostics": {
+      "types": "./dist/runtime/diagnostics.d.ts",
+      "import": "./dist/runtime/diagnostics.mjs",
+      "require": "./dist/runtime/diagnostics.js"
+    },
+    "./runtime/discovery": {
+      "types": "./dist/runtime/discovery.d.ts",
+      "import": "./dist/runtime/discovery.mjs",
+      "require": "./dist/runtime/discovery.js"
+    },
+    "./runtime/pricing": {
+      "types": "./dist/runtime/pricing.d.ts",
+      "import": "./dist/runtime/pricing.mjs",
+      "require": "./dist/runtime/pricing.js"
+    },
+    "./runtime/projects": {
+      "types": "./dist/runtime/projects.d.ts",
+      "import": "./dist/runtime/projects.mjs",
+      "require": "./dist/runtime/projects.js"
+    },
+    "./runtime/search": {
+      "types": "./dist/runtime/search.d.ts",
+      "import": "./dist/runtime/search.mjs",
+      "require": "./dist/runtime/search.js"
+    },
+    "./runtime/state": {
+      "types": "./dist/runtime/state.d.ts",
+      "import": "./dist/runtime/state.mjs",
+      "require": "./dist/runtime/state.js"
     },
     "./contract": {
       "types": "./dist/contract/index.d.ts",

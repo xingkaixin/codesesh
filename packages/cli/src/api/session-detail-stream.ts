@@ -1,4 +1,4 @@
-import type { SessionDetail } from "@codesesh/core/runtime";
+import type { SessionDetail } from "@codesesh/core/runtime/discovery";
 
 const SESSION_DETAIL_STREAM_BATCH_CHARS = 64 * 1024;
 

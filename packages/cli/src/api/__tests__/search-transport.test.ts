@@ -13,7 +13,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
-import type { LiveSnapshot, SessionHead } from "@codesesh/core/runtime";
+import type { LiveSnapshot, SessionHead } from "@codesesh/core/runtime/discovery";
 import type { ScanResultSource } from "../handlers.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-search-transport-"));
@@ -31,7 +31,8 @@ vi.mock("node:os", async (importOriginal) => {
 // must only be imported dynamically, after the node:os mock above is
 // registered and testHomeDir exists, or that eager read races the mock and
 // throws (accessing testHomeDir before its own initialization).
-const { closeCacheStorage, syncSessionSearchIndex } = await import("@codesesh/core/runtime");
+const { closeCacheStorage, syncSessionSearchIndex } =
+  await import("@codesesh/core/runtime/discovery");
 const { createApiRoutes } = await import("../routes.js");
 
 function getCacheDir(): string {

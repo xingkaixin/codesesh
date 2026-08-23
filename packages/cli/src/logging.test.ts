@@ -15,8 +15,8 @@ import { AppLogger } from "./logging.js";
 
 const coreMocks = vi.hoisted(() => ({ restrictPrivateFile: vi.fn() }));
 
-vi.mock("@codesesh/core/runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@codesesh/core/runtime")>();
+vi.mock("@codesesh/core/runtime/diagnostics", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core/runtime/diagnostics")>();
   coreMocks.restrictPrivateFile.mockImplementation(actual.restrictPrivateFile);
   return { ...actual, restrictPrivateFile: coreMocks.restrictPrivateFile };
 });

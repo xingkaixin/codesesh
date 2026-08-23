@@ -3,23 +3,25 @@ import { parentPort, workerData } from "node:worker_threads";
 import {
   attachMissingProjectIdentities,
   buildAgentCacheMeta,
-  createRegisteredAgents,
   ensureSessionTagsSync,
   executeAgentScanPlan,
   hasStaleSessionTags,
   planAgentScan,
   sortSessions,
-  synchronizePricingGeneration,
-  type AgentScanProgress,
-  type BaseAgent,
   type ScanOptions,
-  type SessionCacheMeta,
   type SessionHead,
   type PersistedSessionHeadChange,
-  type SessionSourceFailure,
   type SessionSnapshotCompleteness,
   type SessionTagTiming,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/discovery";
+import {
+  createRegisteredAgents,
+  type AgentScanProgress,
+  type BaseAgent,
+  type SessionCacheMeta,
+  type SessionSourceFailure,
+} from "@codesesh/core/runtime/agents";
+import { synchronizePricingGeneration } from "@codesesh/core/runtime/pricing";
 import { appLogger } from "./logging.js";
 import { MonotonicValueSampler } from "./monotonic-value-sampler.js";
 import { buildScanRefreshDelta } from "./scan-refresh-delta.js";

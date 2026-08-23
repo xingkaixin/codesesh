@@ -1,14 +1,14 @@
+import { PRICING_CAPTURE_EPOCH } from "@codesesh/core/runtime/pricing";
 import {
-  PRICING_CAPTURE_EPOCH,
   type BaseAgent,
   type SessionCacheMeta,
-  type SessionHead,
   type SessionSourceRef,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/agents";
+import { type SessionHead } from "@codesesh/core/runtime/discovery";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type FileSystemSourceConstructor = new () => InstanceType<
-  typeof import("@codesesh/core/runtime").FileSystemSessionSource
+  typeof import("@codesesh/core/runtime/agents").FileSystemSessionSource
 >;
 
 const mocks = vi.hoisted(() => {
@@ -55,28 +55,37 @@ vi.mock("node:worker_threads", () => ({
 
 vi.mock("./logging.js", () => ({ appLogger: mocks.appLogger }));
 
-vi.mock("@codesesh/core/runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@codesesh/core/runtime")>();
+vi.mock("@codesesh/core/runtime/agents", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core/runtime/agents")>();
   mocks.FileSystemSessionSource = actual.FileSystemSessionSource as FileSystemSourceConstructor;
   return {
-    attachMissingProjectIdentities: mocks.attachMissingProjectIdentities,
     createRegisteredAgents: mocks.createRegisteredAgents,
-    synchronizePricingGeneration: mocks.synchronizePricingGeneration,
+    FileSystemSessionSource: actual.FileSystemSessionSource,
+  };
+});
+
+vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core/runtime/discovery")>();
+  return {
+    ...actual,
+    attachMissingProjectIdentities: mocks.attachMissingProjectIdentities,
     ensureSessionTagsSync: mocks.ensureSessionTagsSync,
     executeAgentScanPlan: actual.executeAgentScanPlan,
     hasStaleSessionTags: actual.hasStaleSessionTags,
     inheritSessionTags: actual.inheritSessionTags,
-    FileSystemSessionSource: actual.FileSystemSessionSource,
-    PRICING_CAPTURE_EPOCH: actual.PRICING_CAPTURE_EPOCH,
     buildAgentCacheMeta: actual.buildAgentCacheMeta,
     buildSessionPersistenceDiff: actual.buildSessionPersistenceDiff,
     computeSessionDiff: actual.computeSessionDiff,
     planAgentScan: actual.planAgentScan,
     sessionSignature: actual.sessionSignature,
     sortSessions: actual.sortSessions,
-    setCoreDiagnostics: actual.setCoreDiagnostics,
   };
 });
+
+vi.mock("@codesesh/core/runtime/pricing", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@codesesh/core/runtime/pricing")>()),
+  synchronizePricingGeneration: mocks.synchronizePricingGeneration,
+}));
 
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {

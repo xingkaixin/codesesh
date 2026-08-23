@@ -1,5 +1,9 @@
 import type { Context } from "hono";
-import type { IdentifiedSessionHead, SessionHead, SmartTag } from "@codesesh/core/runtime";
+import type {
+  IdentifiedSessionHead,
+  SessionHead,
+  SmartTag,
+} from "@codesesh/core/runtime/discovery";
 import {
   addCalendarDays,
   countCalendarDays,
@@ -13,25 +17,29 @@ import {
 import {
   attachProjectMetricsFromTree,
   createProjectScopeMatcherFromIdentity,
-  getAgentInfoMap,
-  getAnalyticsRevision,
-  mergeSearchQueryOptions,
-  executeSessionSearch,
-  getSearchProjectDirectory,
-  listDashboardCostFacts,
-  listFileActivity,
-  listCachedProjectGroups,
-  materializeSessionDetailResponse,
   matchesProjectScope as sessionMatchesProjectScope,
   matchesProjectIdentity,
   normalizeProjectDirectory,
   PROJECT_IDENTITY_RESOLVER_REVISION,
   summarizeProjects,
+  type ProjectScopeMatcher,
+} from "@codesesh/core/runtime/projects";
+import { getAgentInfoMap } from "@codesesh/core/runtime/agents";
+import {
+  getAnalyticsRevision,
+  mergeSearchQueryOptions,
+  getSearchProjectDirectory,
+  listDashboardCostFacts,
+  listFileActivity,
+  listCachedProjectGroups,
+  materializeSessionDetailResponse,
+} from "@codesesh/core/runtime/discovery";
+import { executeSessionSearch } from "@codesesh/core/runtime/search";
+import {
   buildDashboard,
   type DashboardData,
   type DashboardScope,
-  type ProjectScopeMatcher,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/analytics";
 import { appLogger } from "../logging.js";
 import {
   ProjectIdentityQueueFullError,

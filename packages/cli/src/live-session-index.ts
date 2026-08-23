@@ -4,11 +4,10 @@ import {
   sessionSignature,
   type AgentCacheFailure,
   sortSessions,
-  type AgentScanFailure,
-  type BaseAgent,
   type IdentifiedSessionHead,
   type LiveSnapshot,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/discovery";
+import { type AgentScanFailure, type BaseAgent } from "@codesesh/core/runtime/agents";
 import {
   assertIdentifiedSessionHead,
   assertSessionIdentity,
