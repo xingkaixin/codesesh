@@ -1,5 +1,5 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,7 +19,9 @@ interface BubbleSpec {
 function createDb(entries: Array<[string, unknown]>): string {
   const dir = mkdtempSync(join(tmpdir(), "codesesh-cursor-shape-"));
   tempDirs.push(dir);
-  const dbPath = join(dir, "state.vscdb");
+  const databaseDir = join(dir, "globalStorage");
+  mkdirSync(databaseDir, { recursive: true });
+  const dbPath = join(databaseDir, "state.vscdb");
   const db = new Database(dbPath);
   db.exec("CREATE TABLE cursorDiskKV (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
   const insert = db.prepare("INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)");
@@ -43,9 +45,7 @@ function bubbles(composerId: string, specs: BubbleSpec[]): Array<[string, unknow
 }
 
 function makeAgent(dbPath: string) {
-  const agent = new CursorAgent();
-  (agent as unknown as { dbPath: string }).dbPath = dbPath;
-  return agent;
+  return new CursorAgent({ sourceRoot: dirname(dirname(dbPath)) });
 }
 
 function textOf(agent: CursorAgent, sessionId: string): string[] {

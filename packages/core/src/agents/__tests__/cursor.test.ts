@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,7 +19,9 @@ let tempDirs: string[] = [];
 const CURSOR_FIXTURE_ROOT = new URL("./fixtures/cursor/", import.meta.url);
 
 function createCursorDb(tempDir: string): string {
-  const dbPath = join(tempDir, "state.vscdb");
+  const databaseDir = join(tempDir, "globalStorage");
+  mkdirSync(databaseDir, { recursive: true });
+  const dbPath = join(databaseDir, "state.vscdb");
   const db = new Database(dbPath);
   db.exec("CREATE TABLE cursorDiskKV (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
   db.close();
@@ -91,8 +93,7 @@ describe("CursorAgent parsing", () => {
       },
     });
 
-    const agent = new CursorAgent() as any;
-    agent.dbPath = dbPath;
+    const agent = new CursorAgent({ sourceRoot: tempDir }) as any;
     agent.composerCache.set("composer-1", {
       id: "composer-1",
       text: "Fallback title",
@@ -135,8 +136,7 @@ describe("CursorAgent parsing", () => {
       },
     });
 
-    const agent = new CursorAgent() as any;
-    agent.dbPath = dbPath;
+    const agent = new CursorAgent({ sourceRoot: tempDir }) as any;
     agent.composerCache.set("composer-1", { id: "composer-1", createdAt: 1_000 });
 
     const tool = agent
@@ -162,8 +162,7 @@ describe("CursorAgent parsing", () => {
     );
     insertKv(dbPath, "bubble:sub-1", fixture);
 
-    const agent = new CursorAgent() as any;
-    agent.dbPath = dbPath;
+    const agent = new CursorAgent({ sourceRoot: tempDir }) as any;
     agent.composerCache.set("composer-1", {
       id: "composer-1",
       createdAt: 1_000,
@@ -201,8 +200,7 @@ describe("CursorAgent parsing", () => {
       createdAt: 1_000,
     });
 
-    const agent = new CursorAgent() as any;
-    agent.dbPath = dbPath;
+    const agent = new CursorAgent({ sourceRoot: tempDir }) as any;
     agent.composerCache.set("composer-1", {
       id: "composer-1",
       createdAt: 1_000,
@@ -232,8 +230,7 @@ describe("CursorAgent parsing", () => {
     setCoreDiagnostics(sink);
 
     try {
-      const agent = new CursorAgent() as any;
-      agent.dbPath = dbPath;
+      const agent = new CursorAgent({ sourceRoot: tempDir }) as any;
       agent.composerCache.set("composer-1", {
         id: "composer-1",
         createdAt: 1_000,
@@ -271,8 +268,7 @@ describe("CursorAgent parsing", () => {
     setCoreDiagnostics(sink);
 
     try {
-      const agent = new CursorAgent() as any;
-      agent.dbPath = dbPath;
+      const agent = new CursorAgent({ sourceRoot: tempDir }) as any;
       agent.composerCache.set("composer-1", {
         id: "composer-1",
         createdAt: 1_000,
@@ -296,9 +292,7 @@ describe("CursorAgent parsing", () => {
 
 describe("CursorAgent scan outcomes", () => {
   function makeScanningAgent(dbPath: string): CursorAgent {
-    const agent = new CursorAgent();
-    Object.assign(agent, { dbPath });
-    return agent;
+    return new CursorAgent({ sourceRoot: dirname(dirname(dbPath)) });
   }
 
   it("reports a corrupt database as a failure", () => {

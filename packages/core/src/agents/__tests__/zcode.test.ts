@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
@@ -10,7 +10,9 @@ import { buildSessionTree } from "../../contract/session-tree.js";
 let tempDirs: string[] = [];
 
 function createZCodeDb(tempDir: string): string {
-  const dbPath = join(tempDir, "db.sqlite");
+  const databaseDir = join(tempDir, "cli", "db");
+  mkdirSync(databaseDir, { recursive: true });
+  const dbPath = join(databaseDir, "db.sqlite");
   const db = new Database(dbPath);
   db.exec(`
     CREATE TABLE session (
@@ -53,7 +55,9 @@ afterEach(() => {
 });
 
 function createZCodeDbWithSubagent(tempDir: string): string {
-  const dbPath = join(tempDir, "db.sqlite");
+  const databaseDir = join(tempDir, "cli", "db");
+  mkdirSync(databaseDir, { recursive: true });
+  const dbPath = join(databaseDir, "db.sqlite");
   const db = new Database(dbPath);
   db.exec(`
     CREATE TABLE session (
@@ -180,8 +184,7 @@ describe("ZCodeAgent parsing", () => {
     );
     db.close();
 
-    const agent = new ZCodeAgent() as any;
-    agent.dbPath = dbPath;
+    const agent = new ZCodeAgent({ sourceRoot: tempDir });
 
     const [head] = agent.scan({ from: 0 });
     const data = agent.getSessionData("sess_1");
@@ -246,8 +249,7 @@ describe("ZCodeAgent parsing", () => {
     const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
     setCoreDiagnostics(sink);
 
-    const agent = new ZCodeAgent() as any;
-    agent.dbPath = dbPath;
+    const agent = new ZCodeAgent({ sourceRoot: tempDir });
 
     const data = agent.getSessionData("sess_drift");
 
@@ -337,20 +339,19 @@ describe("ZCodeAgent subagent folding", () => {
       info: (event, detail) => diagnostics.push({ event, detail }),
       warn: () => {},
     });
-    const agent = new ZCodeAgent() as any;
-    agent.dbPath = dbPath;
+    const agent = new ZCodeAgent({ sourceRoot: tempDir });
 
     const heads = agent.scan({ from: 0 });
     expect(heads.map((head: any) => head.reference.sessionId)).toEqual(["parent", "child"]);
-    const [head] = heads;
+    const head = heads[0]!;
     expect(head.stats).toMatchObject({
       message_count: 1,
       total_input_tokens: 10,
       total_output_tokens: 0,
     });
     expect(head.parent_reference).toBeUndefined();
-    expect(heads[1].parent_reference).toEqual({ agentName: "zcode", sessionId: "parent" });
-    expect(heads[1].stats).toMatchObject({ message_count: 1, total_input_tokens: 40 });
+    expect(heads[1]!.parent_reference).toEqual({ agentName: "zcode", sessionId: "parent" });
+    expect(heads[1]!.stats).toMatchObject({ message_count: 1, total_input_tokens: 40 });
     expect(buildSessionTree(heads).roots[0]?.inclusiveStats).toMatchObject({
       inputTokens: 50,
       outputTokens: 60,
@@ -419,8 +420,7 @@ describe("ZCodeAgent subagent folding", () => {
     insertTextPart(db, "part_child", "msg_child", "child", "working", 1_200);
     db.close();
 
-    const agent = new ZCodeAgent() as any;
-    agent.dbPath = dbPath;
+    const agent = new ZCodeAgent({ sourceRoot: tempDir });
 
     const data = agent.getSessionData("parent");
     expect(data.stats).toMatchObject({
@@ -429,7 +429,7 @@ describe("ZCodeAgent subagent folding", () => {
       total_output_tokens: 60,
     });
     expect(data.messages).toHaveLength(1);
-    expect(data.messages[0].id).toBe("msg_parent");
+    expect(data.messages[0]!.id).toBe("msg_parent");
 
     const child = agent.getSessionData("child");
     expect(child.parent_reference).toEqual({ agentName: "zcode", sessionId: "parent" });
@@ -511,10 +511,9 @@ describe("ZCodeAgent subagent folding", () => {
     insertTextPart(db, "part_b", "msg_b", "child_b", "b", 2_100);
     db.close();
 
-    const agent = new ZCodeAgent() as any;
-    agent.dbPath = dbPath;
+    const agent = new ZCodeAgent({ sourceRoot: tempDir });
 
-    const [head] = agent.scan({ from: 0 });
+    const head = agent.scan({ from: 0 })[0]!;
     expect(head.stats).toMatchObject({
       message_count: 1,
       total_input_tokens: 5,
@@ -546,10 +545,9 @@ describe("ZCodeAgent subagent folding", () => {
     insertTextPart(db, "part_only", "msg_only", "only", "hi", 1_000);
     db.close();
 
-    const agent = new ZCodeAgent() as any;
-    agent.dbPath = dbPath;
+    const agent = new ZCodeAgent({ sourceRoot: tempDir });
 
-    const [head] = agent.scan({ from: 0 });
+    const head = agent.scan({ from: 0 })[0]!;
     expect(head.reference.sessionId).toBe("only");
     expect(head.stats).toMatchObject({ total_input_tokens: 10, total_output_tokens: 0 });
     expect(agent.getSessionData("only").stats.total_input_tokens).toBe(10);

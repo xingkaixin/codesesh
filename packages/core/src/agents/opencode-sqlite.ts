@@ -149,9 +149,10 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
   }
 
   scan(options?: AgentScanOptions): SessionHead[] {
-    if (!this.dbPath) return [];
+    const dbPath = this.getDatabasePath();
+    if (!dbPath) return [];
 
-    const db = openDbReadOnly(this.dbPath);
+    const db = openDbReadOnly(dbPath);
     if (!db) throw new SessionScanError(this.name, "opening the database");
 
     try {

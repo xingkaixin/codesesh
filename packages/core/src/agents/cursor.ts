@@ -10,7 +10,7 @@ import {
   parsedSession,
   SessionScanError,
 } from "./base.js";
-import type { AgentScanOptions } from "./base.js";
+import type { AgentScanOptions, AgentSourceOptions } from "./base.js";
 import type {
   SessionHead,
   SessionDetail,
@@ -85,6 +85,14 @@ export class CursorAgent extends DatabaseSessionSource {
   private composerCache = new Map<string, ComposerData>();
   private directoryCache = new Map<string, string>();
 
+  constructor(private readonly options: AgentSourceOptions = {}) {
+    super();
+  }
+
+  private getDataRoot(): string | null {
+    return this.options.sourceRoot ?? resolveCursorDataRoot();
+  }
+
   protected getDatabasePath(): string | null {
     if (!this.dbPath) {
       this.dbPath = this.findDbPath();
@@ -94,13 +102,13 @@ export class CursorAgent extends DatabaseSessionSource {
 
   private findDbPath(): string | null {
     if (!isSqliteAvailable()) return null;
-    const dataPath = resolveCursorDataRoot();
+    const dataPath = this.getDataRoot();
     if (!dataPath) return null;
     return join(dataPath, "globalStorage", "state.vscdb");
   }
 
   getSessionWatchPlan() {
-    const dataPath = resolveCursorDataRoot();
+    const dataPath = this.getDataRoot();
     return {
       status: "supported" as const,
       targets: dataPath
@@ -121,7 +129,7 @@ export class CursorAgent extends DatabaseSessionSource {
    */
   private buildWorkspacePathMap(): Map<string, string> {
     const map = new Map<string, string>();
-    const dataPath = resolveCursorDataRoot();
+    const dataPath = this.getDataRoot();
     if (!dataPath) return map;
 
     const wsStoragePath = join(dataPath, "workspaceStorage");
@@ -200,7 +208,7 @@ export class CursorAgent extends DatabaseSessionSource {
   scan(options?: AgentScanOptions): SessionHead[] {
     this.composerCache.clear();
     this.directoryCache.clear();
-    if (!this.dbPath) return [];
+    if (!this.getDatabasePath()) return [];
 
     const scanMarker = perf.start("cursor:scan");
 
