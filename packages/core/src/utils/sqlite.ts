@@ -102,6 +102,44 @@ export interface RunSchemaMigrationsOptions {
   backupLabel: string;
 }
 
+export class SchemaMigrationPlanError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SchemaMigrationPlanError";
+  }
+}
+
+function validateSchemaVersion(value: number, label: string): void {
+  if (Number.isSafeInteger(value) && value >= 0) return;
+  throw new SchemaMigrationPlanError(`${label} must be a non-negative safe integer`);
+}
+
+function validateMigrationPlan(options: RunSchemaMigrationsOptions): void {
+  let previousVersion = -1;
+  let reachesTarget = false;
+
+  for (const migration of options.migrations) {
+    if (!Number.isSafeInteger(migration.version) || migration.version < 0) {
+      throw new SchemaMigrationPlanError(
+        `${options.backupLabel} migration version must be a non-negative safe integer`,
+      );
+    }
+    if (migration.version <= previousVersion) {
+      throw new SchemaMigrationPlanError(
+        `${options.backupLabel} migrations must be ordered by strictly increasing version`,
+      );
+    }
+    previousVersion = migration.version;
+    reachesTarget ||= migration.version === options.targetVersion;
+  }
+
+  if (!reachesTarget) {
+    throw new SchemaMigrationPlanError(
+      `${options.backupLabel} has no migration for target version ${options.targetVersion}`,
+    );
+  }
+}
+
 function quoteIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
@@ -194,6 +232,10 @@ export function runSchemaMigrations(
 ): string[] {
   const backups: string[] = [];
   let currentVersion = options.currentVersion;
+  validateSchemaVersion(currentVersion, `${options.backupLabel} current version`);
+  validateSchemaVersion(options.targetVersion, `${options.backupLabel} target version`);
+  if (currentVersion >= options.targetVersion) return backups;
+  validateMigrationPlan(options);
 
   for (const migration of options.migrations) {
     if (migration.version <= currentVersion) {
@@ -254,8 +296,10 @@ export function runSchemaMigrations(
     }
   }
 
-  if (currentVersion < options.targetVersion) {
-    setUserVersion(db, options.targetVersion);
+  if (currentVersion !== options.targetVersion) {
+    throw new SchemaMigrationPlanError(
+      `${options.backupLabel} stopped at version ${currentVersion}, expected ${options.targetVersion}`,
+    );
   }
 
   return backups;
