@@ -41,10 +41,7 @@ describe("resolveTimeWindow", () => {
     expect(
       resolveTimeWindow({
         mode: "dashboard",
-        query: {
-          from: "2026-07-10T00:00:00.000Z",
-          to: "2026-07-13T00:00:00.000Z",
-        },
+        window: { from, to, hasExplicitFrom: true },
       }),
     ).toEqual({ from, to, days: 4 });
   });
@@ -55,8 +52,9 @@ describe("resolveTimeWindow", () => {
     expect(
       resolveTimeWindow({
         mode: "dashboard",
-        query: { days: "3" },
-        defaults: { from: defaultFrom, days: 7 },
+        window: { from: defaultFrom, hasExplicitFrom: false },
+        days: "3",
+        defaultDays: 7,
         now: NOW,
       }),
     ).toEqual({ from: defaultFrom, to: NOW, days: 3 });
@@ -66,29 +64,36 @@ describe("resolveTimeWindow", () => {
     expect(
       resolveTimeWindow({
         mode: "dashboard",
-        query: { days: "0" },
-        defaults: { from: NOW - 7 * DAY_MS, days: 7 },
+        window: { from: NOW - 7 * DAY_MS, hasExplicitFrom: false },
+        days: "0",
+        defaultDays: 7,
         now: NOW,
       }),
     ).toEqual({ to: NOW, days: 0 });
   });
 
   it("uses the 30-day dashboard fallback from the local day boundary", () => {
-    expect(resolveTimeWindow({ mode: "dashboard", query: {}, now: NOW })).toEqual({
+    expect(
+      resolveTimeWindow({
+        mode: "dashboard",
+        window: { hasExplicitFrom: false },
+        now: NOW,
+      }),
+    ).toEqual({
       from: addCalendarDays(startOfCalendarDay(NOW), -29),
       to: NOW,
       days: 30,
     });
   });
 
-  it("falls back from invalid dashboard query dates", () => {
+  it("uses validated dashboard defaults without parsing dates again", () => {
     const defaultFrom = NOW - 5 * DAY_MS;
 
     expect(
       resolveTimeWindow({
         mode: "dashboard",
-        query: { from: "invalid", to: "invalid" },
-        defaults: { from: defaultFrom, to: NOW, days: 5 },
+        window: { from: defaultFrom, to: NOW, hasExplicitFrom: false },
+        defaultDays: 5,
       }),
     ).toEqual({ from: defaultFrom, to: NOW, days: 5 });
   });
@@ -112,7 +117,8 @@ describe("CS-133: dashboard windows are calendar ranges", () => {
 
     const resolved = resolveTimeWindow({
       mode: "dashboard",
-      query: { days: String(days) },
+      window: { hasExplicitFrom: false },
+      days: String(days),
       now: nowMs,
     });
 
@@ -128,7 +134,7 @@ describe("CS-133: dashboard windows are calendar ranges", () => {
     expect(
       resolveTimeWindow({
         mode: "dashboard",
-        query: { from: new Date(from).toISOString() },
+        window: { from, hasExplicitFrom: true },
         now: to,
       }).days,
     ).toBe(3);

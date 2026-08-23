@@ -54,7 +54,12 @@ export type DateParamOutcome =
   | { kind: "invalid"; error: string };
 
 export type DateWindowOutcome =
-  | { kind: "valid"; from: number | undefined; to: number | undefined }
+  | {
+      kind: "valid";
+      from: number | undefined;
+      to: number | undefined;
+      hasExplicitFrom: boolean;
+    }
   | { kind: "invalid"; parameter: "from" | "to"; error: string };
 
 export interface SessionQuery {
@@ -111,7 +116,12 @@ export function parseDateWindow(
     return { kind: "invalid", parameter: "from", error: "must not be after to" };
   }
 
-  return { kind: "valid", from: from.value, to: to.value };
+  return {
+    kind: "valid",
+    from: from.value,
+    to: to.value,
+    hasExplicitFrom: from.kind === "valid",
+  };
 }
 
 export function parseNumberParam(value: string | undefined): number | undefined {

@@ -1489,6 +1489,15 @@ describe("handleGetProjects", () => {
 });
 
 describe("handleGetDashboard", () => {
+  it("rejects invalid dates instead of silently using defaults", () => {
+    const c = makeMockContext({ query: { from: "invalid", to: "invalid" } });
+
+    handleGetDashboard(c, makeScanSource(), { from: 1, to: 2, days: 5 });
+
+    expect(c.json).toHaveBeenCalledWith({ error: "from must be a valid date" }, 400);
+    expect(coreMocks.buildDashboard).not.toHaveBeenCalled();
+  });
+
   it("reuses matching snapshot aggregates and invalidates them with the sessions array", () => {
     let snapshot = makeScanResult();
     const source: ScanResultSource = { getSnapshot: () => snapshot };
