@@ -49,6 +49,13 @@ function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionH
   };
 }
 
+function refresh(agent: CodexAgent, sessions: SessionHead[]) {
+  return agent.sessionSourceAccess.synchronize(
+    { sessions, meta: agent.snapshotSessionCacheMeta() },
+    { kind: "refresh" },
+  );
+}
+
 describe("CodexAgent cache refresh", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -92,13 +99,12 @@ describe("CodexAgent cache refresh", () => {
       { file: newC, stat: statSync(newC) },
     ];
 
-    const result = agent.checkForChanges(Date.now(), [
+    const result = refresh(agent, [
       makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa"),
       makeSession("019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb"),
     ]);
 
-    expect(result.hasChanges).toBe(true);
-    expect(result.changedIds).toContain("019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb");
+    expect(result.detectedSessionIds).toContain("019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb");
   });
 
   it("re-prices a cached head after missing model pricing arrives", () => {
@@ -134,16 +140,16 @@ describe("CodexAgent cache refresh", () => {
     const cached = agent.scan({ from: 0 }) as SessionHead[];
     expect(cached[0]?.stats.total_cost).toBe(0);
     expect(agent.getSessionCacheMeta(sessionId)?.unpricedModels).toEqual([model]);
-    expect(agent.checkForChanges(Date.now(), cached).hasChanges).toBe(false);
+    expect(refresh(agent, cached).detectedSessionIds).toEqual([]);
 
     pricingAvailable = true;
-    const changed = agent.checkForChanges(Date.now(), cached);
-    expect(changed.changedIds).toEqual([sessionId]);
+    const result = refresh(agent, cached);
+    expect(result.detectedSessionIds).toEqual([sessionId]);
 
-    const refreshed = agent.incrementalScan(cached, changed.changedIds ?? [], changed.refs);
+    const refreshed = result.sessions;
     expect(refreshed[0]?.stats.total_cost).toBeGreaterThan(0);
     expect(agent.getSessionCacheMeta(sessionId)?.unpricedModels).toBeUndefined();
-    expect(agent.checkForChanges(Date.now(), refreshed).hasChanges).toBe(false);
+    expect(refresh(agent, refreshed).detectedSessionIds).toEqual([]);
   });
 
   it("ignores unrelated session index changes during cache validation", () => {
@@ -181,12 +187,9 @@ describe("CodexAgent cache refresh", () => {
     );
     utimesSync(indexFile, later, later);
 
-    const result = agent.checkForChanges(Date.now(), [
-      makeSession(sessionId, { title: "Old title" }),
-    ]);
+    const result = refresh(agent, [makeSession(sessionId, { title: "Old title" })]);
 
-    expect(result.hasChanges).toBe(false);
-    expect(result.changedIds).toEqual([]);
+    expect(result.detectedSessionIds).toEqual([]);
     expect(agent.listSessionSources()[0]?.fingerprint).toBe(baselineFingerprint);
   });
 
@@ -540,12 +543,9 @@ describe("CodexAgent cache refresh", () => {
     ]);
     agent.listRolloutFiles = () => [{ file: sessionFile, stat: statSync(sessionFile) }];
 
-    const result = agent.checkForChanges(Date.now(), [
-      makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa"),
-    ]);
+    const result = refresh(agent, [makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa")]);
 
-    expect(result.hasChanges).toBe(true);
-    expect(result.changedIds).toContain("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa");
+    expect(result.detectedSessionIds).toContain("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa");
   });
 
   it("removes deleted sessions and adds new sessions during incremental scan", () => {
@@ -575,13 +575,10 @@ describe("CodexAgent cache refresh", () => {
       return { status: "skipped", reason: "unknown fixture" };
     };
 
-    const sessions = agent.incrementalScan(
-      [
-        makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa"),
-        makeSession("019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb"),
-      ],
-      ["019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb", "019dcccc-cccc-7ccc-cccc-cccccccccccc"],
-    );
+    const sessions = refresh(agent, [
+      makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa"),
+      makeSession("019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb"),
+    ]).sessions;
 
     expect(sessions.map((session: SessionHead) => session.reference.sessionId).sort()).toEqual([
       "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",

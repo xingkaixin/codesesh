@@ -6,7 +6,6 @@ import {
   attachMissingProjectIdentities,
   FileSystemSessionSource,
   type AgentScanOptions,
-  type ChangeCheckResult,
   type IdentifiedSessionHead,
   type AgentRoots,
   type ScanOptions,
@@ -476,8 +475,6 @@ function makeFileSystemAgent(
     snapshotSessionCacheMeta?: () => Record<string, SessionCacheMeta>;
     restoreSessionCacheMeta?: (meta: Readonly<Record<string, SessionCacheMeta>>) => void;
     removeSessionCacheMeta?: (sessionIds: Iterable<string>) => void;
-    checkForChanges?: (sinceTimestamp: number, cachedSessions: SessionHead[]) => ChangeCheckResult;
-    incrementalScan?: (cachedSessions: SessionHead[], changedIds: string[]) => SessionHead[];
   } = {},
 ) {
   const agent = Object.create(FileSystemSessionSource.prototype) as InstanceType<
@@ -496,10 +493,6 @@ function makeFileSystemAgent(
   agent.snapshotSessionCacheMeta = overrides.snapshotSessionCacheMeta ?? vi.fn(() => ({}));
   agent.restoreSessionCacheMeta = overrides.restoreSessionCacheMeta ?? vi.fn();
   agent.removeSessionCacheMeta = overrides.removeSessionCacheMeta ?? vi.fn();
-  agent.checkForChanges =
-    overrides.checkForChanges ??
-    vi.fn(() => ({ hasChanges: false, changedIds: [], timestamp: Date.now() }));
-  agent.incrementalScan = overrides.incrementalScan ?? vi.fn((cached: SessionHead[]) => cached);
   Object.defineProperty(agent, "sessionSourceAccess", {
     value: {
       kind: "enumerated",
@@ -1325,10 +1318,6 @@ describe("LiveScanStore", () => {
       sourcePath === "/tmp/s" ? updated : added,
     );
     const codex = makeFileSystemAgent("codex", {
-      checkForChanges: vi.fn(() => {
-        throw new Error("checkForChanges should not run for source-backed agents");
-      }),
-      incrementalScan: vi.fn(),
       listSessionSources: vi.fn(() => [
         { sessionId: "session", sourcePath: "/tmp/s", fingerprint: "next" },
         { sessionId: "added", sourcePath: "/tmp/added", fingerprint: "new" },
@@ -1364,8 +1353,6 @@ describe("LiveScanStore", () => {
     await vi.waitFor(() => expect(store.getSnapshot().sessions).toHaveLength(2));
     await vi.advanceTimersByTimeAsync(250);
 
-    expect(codex.checkForChanges).not.toHaveBeenCalled();
-    expect(codex.incrementalScan).not.toHaveBeenCalled();
     expect(scanSessionSource).toHaveBeenCalledTimes(2);
     expect(scanSessionSource).toHaveBeenCalledWith("/tmp/s", expect.any(Object));
     expect(scanSessionSource).toHaveBeenCalledWith("/tmp/added", expect.any(Object));

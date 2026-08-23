@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { KimiCodeAgent } from "../kimi-code.js";
 import { TranscriptBuilder } from "../transcript-builder.js";
+import type { SessionHead } from "../../types/index.js";
 
 const SESSION_ID = "ses_test-kimi-code";
 const WORK_DIR = "/tmp/kimi-code-project";
@@ -31,6 +32,13 @@ const mockedReadFileSync = vi.mocked(readFileSync);
 
 function createAgent(dataRoot: string): KimiCodeAgent {
   return new KimiCodeAgent({ sourceRoot: join(dataRoot, "sessions") });
+}
+
+function refresh(agent: KimiCodeAgent, sessions: SessionHead[]) {
+  return agent.sessionSourceAccess.synchronize(
+    { sessions, meta: agent.snapshotSessionCacheMeta() },
+    { kind: "refresh" },
+  );
 }
 
 function createSession(
@@ -193,14 +201,13 @@ describe("KimiCodeAgent", () => {
       },
     });
 
-    const changes = agent.checkForChanges(0, heads);
-    expect(changes.changedIds).toContain(SESSION_ID);
-    const refreshed = agent.incrementalScan(heads, changes.changedIds ?? [], changes.refs);
-    expect(refreshed).toMatchObject([
+    const result = refresh(agent, heads);
+    expect(result.detectedSessionIds).toContain(SESSION_ID);
+    expect(result.sessions).toMatchObject([
       { reference: { agentName: "kimi-code", sessionId: SESSION_ID }, title: "Refresh me" },
     ]);
     expect(agent.getSessionCacheMeta(SESSION_ID)?.sourceFingerprint).toBe(
-      changes.refs?.[0]?.fingerprint,
+      result.sources[0]?.fingerprint,
     );
     expect(agent.getSessionData(SESSION_ID).messages[0]).toMatchObject({
       role: "user",
@@ -452,8 +459,7 @@ describe("KimiCodeAgent", () => {
       })}\n`,
     );
 
-    const refs = agent.listSessionSources();
-    expect(agent.incrementalScan([], [emptyId], refs)).toMatchObject([
+    expect(refresh(agent, []).sessions).toMatchObject([
       {
         reference: { agentName: "kimi-code", sessionId: emptyId },
         stats: { message_count: 1 },
@@ -483,10 +489,9 @@ describe("KimiCodeAgent", () => {
     expect(agent.filterCachedSessions([stale])).toEqual([]);
     expect(agent.getSessionCacheMeta(SESSION_ID)).toBeUndefined();
 
-    const changes = agent.checkForChanges(0, [stale]);
-    expect(changes.hasChanges).toBe(true);
-    expect(changes.changedIds).toContain(SESSION_ID);
-    expect(agent.incrementalScan([stale], changes.changedIds ?? [], changes.refs)).toEqual([]);
+    const result = refresh(agent, [stale]);
+    expect(result.detectedSessionIds).toContain(SESSION_ID);
+    expect(result.sessions).toEqual([]);
   });
 
   it("keeps a missing record timestamp unavailable", () => {
