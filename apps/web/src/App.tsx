@@ -18,9 +18,10 @@ import { useSessionSearch } from "./hooks/useSessionSearch";
 import { useBookmarks } from "./hooks/useBookmarks";
 import { useSidebarModel } from "./hooks/useSidebarModel";
 import { useSessionStore } from "./hooks/useSessionStore";
+import { useAppConfig } from "./hooks/useAppConfig";
 import { useProjectLookup } from "./hooks/useProjects";
 import { useSessionAliasMutations } from "./hooks/useSessionAliasMutations";
-import { useWindowedDataLoad } from "./hooks/useWindowedDataLoad";
+import { useWindowLoadTelemetry } from "./hooks/useWindowLoadTelemetry";
 import { useLiveSync } from "./hooks/useLiveSync";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useTimeWindow } from "./hooks/useTimeWindow";
@@ -40,9 +41,10 @@ import { buildSessionIndexes, getSessionAgentKey } from "./lib/session-indexes";
 
 export default function App() {
   const navigate = useNavigate();
-  const sessionStore = useSessionStore();
-  const timeWindowController = useTimeWindow(sessionStore.config?.window);
+  const appConfig = useAppConfig();
+  const timeWindowController = useTimeWindow(appConfig.config?.window);
   const { timeWindow } = timeWindowController;
+  const sessionStore = useSessionStore(timeWindow);
   const {
     activeAgents,
     agentCatalog,
@@ -55,17 +57,20 @@ export default function App() {
     window: loadedWindow,
     validAgentKeys,
     agentNameMap,
-    loading,
-    error,
     reload,
     applyLiveEvent,
     resyncLiveState,
-    retryLoad,
     retryProjects,
   } = sessionStore;
-  useWindowedDataLoad({
+  const loading = appConfig.loading || (!appConfig.error && sessionStore.loading);
+  const error = appConfig.error ?? sessionStore.error;
+  const retryLoad = appConfig.error ? appConfig.retry : sessionStore.retryLoad;
+  useWindowLoadTelemetry({
     window: timeWindow,
-    reload,
+    pending: appConfig.loading || (!appConfig.error && sessionStore.loadPending),
+    error,
+    agentCount: sessionStore.agents.length,
+    sessionCount: sessionStore.sessions.length,
   });
 
   const location = useLocation();
@@ -251,8 +256,8 @@ export default function App() {
   });
 
   const refreshAliasViews = useCallback(async () => {
-    await Promise.all([timeWindow ? reload(timeWindow) : undefined, refreshBookmarks()]);
-  }, [refreshBookmarks, reload, timeWindow]);
+    await Promise.all([reload(), refreshBookmarks()]);
+  }, [refreshBookmarks, reload]);
   const { saveAlias, removeAlias } = useSessionAliasMutations(refreshAliasViews);
 
   const saveSessionAlias = useCallback(

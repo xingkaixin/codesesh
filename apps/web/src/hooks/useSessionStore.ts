@@ -1,14 +1,13 @@
 import { applySessionWindowChanges, formatSessionReference } from "@codesesh/core/contract";
 import {
   hashKey,
-  isCancelledError,
   keepPreviousData,
   queryOptions,
   useQuery,
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   type AgentInfo,
   type AppConfig,
@@ -18,7 +17,6 @@ import {
   type SessionHead,
   type SessionsUpdatedEvent,
   fetchAgents,
-  fetchConfig,
   fetchProjects,
   fetchSessions,
 } from "../lib/api";
@@ -39,7 +37,6 @@ interface SessionStoreSnapshot {
 }
 
 export interface SessionProjection {
-  window: AppConfig["window"];
   sessions: SessionHead[];
 }
 
@@ -47,18 +44,9 @@ export interface LiveSessionApplyResult {
   visibleNewSessions: number;
 }
 
-export interface SessionReloadResult {
-  agentCount: number;
-  sessionCount: number;
-}
-
 interface SnapshotAggregates {
   agents: AgentInfo[];
   dashboard: DashboardData;
-}
-
-interface ActiveLoadRequest {
-  window: AppConfig["window"];
 }
 
 const LIVE_AGGREGATE_REFRESH_INTERVAL_MS = DASHBOARD_STALE_TIME_MS;
@@ -108,10 +96,7 @@ async function fetchSnapshotAggregates(
   return { agents, dashboard };
 }
 
-function sessionProjectionOptions(
-  window: AppConfig["window"],
-  onFirstPage?: (projection: SessionProjection) => void,
-) {
+function sessionProjectionOptions(queryClient: QueryClient, window: AppConfig["window"]) {
   return queryOptions({
     queryKey: queryKeys.sessionProjection(window),
     staleTime: Infinity,
@@ -121,11 +106,13 @@ function sessionProjectionOptions(
         { signal },
         {
           onFirstPage(sessions) {
-            onFirstPage?.({ window, sessions });
+            if (!signal.aborted) {
+              queryClient.setQueryData(queryKeys.sessionProjection(window), { sessions });
+            }
           },
         },
       );
-      return { window, sessions: sessionResult.sessions };
+      return { sessions: sessionResult.sessions };
     },
   });
 }
@@ -175,7 +162,11 @@ async function fetchLiveSnapshotAggregates(
         exact: true,
         refetchType: "none",
       }),
-      invalidateLiveSessionCollections(queryClient),
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.dashboards,
+        refetchType: "none",
+      }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
     ]);
   }
   return fetchSnapshotAggregates(queryClient, window);
@@ -206,122 +197,63 @@ function sameWindow(
   );
 }
 
-export function useSessionStore() {
+export function useSessionStore(window: AppConfig["window"] | null) {
   const queryClient = useQueryClient();
-  const [requestedWindow, setRequestedWindow] = useState<AppConfig["window"] | null>(null);
-  const [reloadFailed, setReloadFailed] = useState(false);
-  const activeRequestRef = useRef<ActiveLoadRequest | null>(null);
   const liveAggregateWindowRef = useRef<AppConfig["window"] | null>(null);
-  const configQuery = useQuery({
-    queryKey: queryKeys.config,
-    retry: 2,
-    retryDelay: 250,
-    queryFn: async ({ signal }) => {
-      try {
-        return await fetchConfig({ signal });
-      } catch (error) {
-        if (!signal.aborted) console.error("Failed to load config:", error);
-        throw error;
-      }
-    },
-  });
   const projectionQuery = useQuery({
-    ...sessionProjectionOptions(requestedWindow ?? {}),
-    enabled: false,
+    ...sessionProjectionOptions(queryClient, window ?? {}),
+    enabled: window !== null,
   });
   const agentsQuery = useQuery({
-    ...agentCatalogOptions(requestedWindow ?? {}),
-    enabled: false,
+    ...agentCatalogOptions(window ?? {}),
+    enabled: window !== null,
   });
   const dashboardQuery = useQuery({
-    ...dashboardQueryOptions(requestedWindow ?? {}, {}),
-    enabled: false,
+    ...dashboardQueryOptions(window ?? {}, {}),
+    enabled: window !== null,
   });
   const projectsQuery = useQuery({
-    ...projectsOptions(requestedWindow ?? {}),
-    enabled: requestedWindow !== null,
+    ...projectsOptions(window ?? {}),
+    enabled: window !== null,
     placeholderData: keepPreviousData,
   });
-  const configFailed = configQuery.isError;
-  const refetchConfig = configQuery.refetch;
+  const refetchProjection = projectionQuery.refetch;
+  const refetchAgents = agentsQuery.refetch;
+  const refetchDashboard = dashboardQuery.refetch;
+  const refetchProjects = projectsQuery.refetch;
   const dashboard = dashboardQuery.data;
   const querySnapshot =
-    requestedWindow !== null &&
+    window !== null &&
     projectionQuery.data &&
     agentsQuery.data !== undefined &&
-    dashboard !== undefined &&
-    sameWindow(projectionQuery.data.window, requestedWindow)
+    dashboard !== undefined
       ? createSnapshot(
-          requestedWindow,
+          window,
           { agents: agentsQuery.data, dashboard },
           projectionQuery.data.sessions,
         )
       : null;
 
-  const reload = useCallback(
-    async (window: AppConfig["window"]): Promise<SessionReloadResult | null> => {
-      const request = { window };
-      activeRequestRef.current = request;
-      liveAggregateWindowRef.current = null;
-      setRequestedWindow(window);
-      setReloadFailed(false);
-      try {
-        await Promise.all([
-          queryClient.cancelQueries({ queryKey: queryKeys.sessionProjections }),
-          queryClient.cancelQueries({ queryKey: queryKeys.agentCatalogs }),
-          queryClient.cancelQueries({ queryKey: queryKeys.projects }),
-        ]);
-        removeOtherSessionProjections(queryClient, window);
-        await Promise.all([
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.sessionProjection(window),
-            exact: true,
-            refetchType: "none",
-          }),
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.agentCatalog(window),
-            exact: true,
-            refetchType: "none",
-          }),
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.dashboard(window, {}),
-            exact: true,
-            refetchType: "none",
-          }),
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.projectPage(window),
-            exact: true,
-            refetchType: "none",
-          }),
-        ]);
-        void queryClient.fetchQuery(projectsOptions(window)).catch(() => undefined);
-        const [aggregates, projection] = await Promise.all([
-          fetchSnapshotAggregates(queryClient, window),
-          queryClient.fetchQuery(
-            sessionProjectionOptions(window, (firstPageProjection) => {
-              if (activeRequestRef.current !== request) return;
-              queryClient.setQueryData(queryKeys.sessionProjection(window), firstPageProjection);
-            }),
-          ),
-        ]);
-        return {
-          agentCount: aggregates.agents.length,
-          sessionCount: projection.sessions.length,
-        };
-      } catch (error) {
-        if (isCancelledError(error)) return null;
-        if (activeRequestRef.current === request) setReloadFailed(true);
-        throw error;
-      }
-    },
-    [queryClient],
-  );
+  useEffect(() => {
+    if (window) removeOtherSessionProjections(queryClient, window);
+  }, [queryClient, window]);
+
+  const reload = useCallback(async (): Promise<void> => {
+    if (!window) return;
+    const [agentsResult, projectionResult, dashboardResult] = await Promise.all([
+      refetchAgents({ cancelRefetch: true }),
+      refetchProjection({ cancelRefetch: true }),
+      refetchDashboard({ cancelRefetch: true }),
+      refetchProjects({ cancelRefetch: true }),
+    ]);
+    const failure = agentsResult.error ?? projectionResult.error ?? dashboardResult.error;
+    if (failure) throw failure;
+  }, [refetchAgents, refetchDashboard, refetchProjection, refetchProjects, window]);
 
   const applyLiveEvent = useCallback(
     async (event: SessionsUpdatedEvent): Promise<LiveSessionApplyResult | null> => {
-      const activeRequest = activeRequestRef.current;
-      if (!activeRequest) return null;
-      const { window: activeWindow } = activeRequest;
+      if (!window) return null;
+      const activeWindow = window;
       const projectionKey = queryKeys.sessionProjection(activeWindow);
       const agentCatalogKey = queryKeys.agentCatalog(activeWindow);
       const dashboardKey = queryKeys.dashboard(activeWindow, {});
@@ -329,12 +261,12 @@ export function useSessionStore() {
       const currentAgents = queryClient.getQueryData<AgentInfo[]>(agentCatalogKey);
       const currentDashboard = queryClient.getQueryData<DashboardData>(dashboardKey);
       if (!currentProjection || currentAgents === undefined || currentDashboard === undefined) {
-        const refreshed = await reload(activeWindow);
+        await reload();
         await Promise.all([
           invalidateLiveSessionDerivedQueries(queryClient, event),
           invalidateLiveSessionCollections(queryClient),
         ]);
-        return refreshed ? { visibleNewSessions: 0 } : null;
+        return { visibleNewSessions: 0 };
       }
 
       const projection = applySessionWindowChanges(currentProjection.sessions, {
@@ -376,68 +308,57 @@ export function useSessionStore() {
       const forceAggregateRefresh = !sameWindow(liveAggregateWindowRef.current, activeWindow);
       void fetchLiveSnapshotAggregates(queryClient, activeWindow, forceAggregateRefresh)
         .then(() => {
-          const latestRequest = activeRequestRef.current;
-          if (latestRequest === activeRequest) {
-            liveAggregateWindowRef.current = activeWindow;
-          }
+          liveAggregateWindowRef.current = activeWindow;
         })
         .catch(() => undefined);
       return { visibleNewSessions };
     },
-    [queryClient, reload],
+    [queryClient, reload, window],
   );
 
   const resyncLiveState = useCallback(async (): Promise<void> => {
-    const activeRequest = activeRequestRef.current;
-    if (!activeRequest) return;
-    await reload(activeRequest.window);
+    if (!window) return;
+    await reload();
     await invalidateSessionDerivedQueries(queryClient);
-  }, [queryClient, reload]);
+  }, [queryClient, reload, window]);
 
   const retryLoad = useCallback(async (): Promise<void> => {
-    const activeRequest = activeRequestRef.current;
-    if (configFailed || !activeRequest) {
-      await refetchConfig();
-      return;
-    }
+    if (!window) return;
     try {
-      await reload(activeRequest.window);
+      await reload();
     } catch {
       // reload already exposed the failure; rethrowing would only leak an
       // unhandled rejection from the button handler.
     }
-  }, [configFailed, refetchConfig, reload]);
+  }, [reload, window]);
 
-  const displayedSnapshot = sameWindow(querySnapshot?.window, requestedWindow)
-    ? querySnapshot
-    : null;
+  const displayedSnapshot = querySnapshot;
   const agents = displayedSnapshot?.agents ?? EMPTY_AGGREGATES.agents;
   const projectPage = projectsQuery.data ?? EMPTY_PROJECT_PAGE;
   const projects = projectPage.projects;
-  const projectsLoading = requestedWindow === null || projectsQuery.isPending;
+  const projectsLoading = window === null || projectsQuery.isPending;
   const projectsError =
-    requestedWindow !== null && projectsQuery.isError
+    window !== null && projectsQuery.isError
       ? projectsQuery.error instanceof Error
         ? projectsQuery.error.message
         : "Unable to load projects."
       : null;
   const retryProjects = useCallback(async (): Promise<void> => {
-    if (!activeRequestRef.current) return;
-    await projectsQuery.refetch({ cancelRefetch: true });
-  }, [projectsQuery]);
+    if (!window) return;
+    await refetchProjects({ cancelRefetch: true });
+  }, [refetchProjects, window]);
   const agentCatalog = useMemo(() => createAgentCatalog(agents), [agents]);
   const validAgentKeys = useMemo(
     () => new Set(agentCatalog.active.map((agent) => agent.name.toLowerCase())),
     [agentCatalog.active],
   );
-  const error = configQuery.isError
-    ? "Failed to load configuration. The CLI may be restarting or unavailable."
-    : reloadFailed
-      ? "Failed to load session data for the selected time window."
-      : null;
+  const loadFailed =
+    (projectionQuery.isError && projectionQuery.data === undefined) ||
+    (agentsQuery.isError && agentsQuery.data === undefined) ||
+    (dashboardQuery.isError && dashboardQuery.data === undefined);
+  const error = loadFailed ? "Failed to load session data for the selected time window." : null;
 
   return {
-    config: configQuery.data ?? null,
     window: displayedSnapshot?.window ?? null,
     agents,
     sessions: displayedSnapshot?.sessions ?? EMPTY_SESSIONS,
@@ -446,10 +367,12 @@ export function useSessionStore() {
     projectsError,
     projectsLoading,
     dashboard: displayedSnapshot?.dashboard ?? EMPTY_AGGREGATES.dashboard,
-    loading:
-      configQuery.isPending ||
-      (!configQuery.isError &&
-        (requestedWindow === null || (!reloadFailed && displayedSnapshot === null))),
+    loading: window === null || (!loadFailed && displayedSnapshot === null),
+    loadPending:
+      window === null ||
+      projectionQuery.isFetching ||
+      agentsQuery.isFetching ||
+      dashboardQuery.isFetching,
     error,
     version: projectionQuery.dataUpdatedAt,
     activeAgents: agentCatalog.active,

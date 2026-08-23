@@ -20,13 +20,11 @@ import {
   useSessionStore,
   type LiveSessionApplyResult,
   type SessionProjection,
-  type SessionReloadResult,
 } from "./useSessionStore";
 import { useDashboard } from "./useDashboard";
 
 vi.mock("../lib/api", () => ({
   fetchAgents: vi.fn(),
-  fetchConfig: vi.fn(),
   fetchDashboard: vi.fn(),
   fetchProjects: vi.fn(),
   fetchSessions: vi.fn(),
@@ -61,7 +59,6 @@ function deferred<T>() {
 
 beforeEach(() => {
   vi.spyOn(console, "debug").mockImplementation(() => undefined);
-  vi.mocked(api.fetchConfig).mockResolvedValue(config);
   vi.mocked(api.fetchAgents).mockResolvedValue(agents);
   vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [SAMPLE_SESSION_HEAD] });
   vi.mocked(api.fetchProjects).mockResolvedValue(projectPage);
@@ -74,57 +71,33 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function renderStore() {
+async function renderStore(window: AppConfig["window"] = config.window) {
   const { client, Wrapper } = createQueryWrapper();
-  const hook = renderHook(() => useSessionStore(), { wrapper: Wrapper });
-  await waitFor(() => expect(hook.result.current.config).toEqual(config));
+  const hook = renderHook(({ selectedWindow }) => useSessionStore(selectedWindow), {
+    wrapper: Wrapper,
+    initialProps: { selectedWindow: window },
+  });
+  await waitFor(() => expect(hook.result.current.loading).toBe(false));
   return { ...hook, client };
 }
 
 describe("useSessionStore", () => {
-  it("loads config before a window snapshot is requested", async () => {
-    const { result } = await renderStore();
+  it("stays idle until a window is selected", () => {
+    const { Wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useSessionStore(null), { wrapper: Wrapper });
 
     expect(result.current.loading).toBe(true);
     expect(result.current.sessions).toEqual([]);
-    expect(api.fetchConfig).toHaveBeenCalledWith({ signal: expect.any(AbortSignal) });
     expect(api.fetchSessions).not.toHaveBeenCalled();
-  });
-
-  it("surfaces config failures", async () => {
-    const error = new Error("config unavailable");
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-    vi.mocked(api.fetchConfig).mockRejectedValue(error);
-    const { Wrapper } = createQueryWrapper();
-    const { result } = renderHook(() => useSessionStore(), { wrapper: Wrapper });
-
-    await waitFor(() => expect(result.current.error).toContain("Failed to load configuration"), {
-      timeout: 2_000,
-    });
-
-    expect(result.current.loading).toBe(false);
-    expect(api.fetchConfig).toHaveBeenCalledTimes(3);
-    expect(console.error).toHaveBeenCalledWith("Failed to load config:", error);
-
-    vi.mocked(api.fetchConfig).mockResolvedValue(config);
-    await act(() => result.current.retryLoad());
-
-    await waitFor(() => expect(result.current.config).toEqual(config));
-    expect(result.current.error).toBeNull();
-    expect(api.fetchConfig).toHaveBeenCalledTimes(4);
   });
 
   it("CS-276: resolves retryLoad even when the reload fails again", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.mocked(api.fetchSessions).mockRejectedValue(new Error("api down"));
     const { Wrapper } = createQueryWrapper();
-    const { result } = renderHook(() => useSessionStore(), { wrapper: Wrapper });
+    const { result } = renderHook(() => useSessionStore(config.window), { wrapper: Wrapper });
 
-    await waitFor(() => expect(result.current.config).toEqual(config), { timeout: 2_000 });
-    // Register the active window with a first load that fails.
-    await act(async () => {
-      await result.current.reload(config.window).catch(() => {});
-    });
+    await waitFor(() => expect(result.current.error).not.toBeNull());
 
     // The server is still down; the retry must record the failure in state
     // instead of rejecting out of the button handler.
@@ -136,21 +109,9 @@ describe("useSessionStore", () => {
     );
   });
 
-  it("recovers from a transient config failure automatically", async () => {
-    const error = new Error("config unavailable");
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-    vi.mocked(api.fetchConfig).mockRejectedValueOnce(error).mockResolvedValue(config);
-    const { Wrapper } = createQueryWrapper();
-    const { result } = renderHook(() => useSessionStore(), { wrapper: Wrapper });
-
-    await waitFor(() => expect(result.current.config).toEqual(config));
-
-    expect(result.current.error).toBeNull();
-    expect(api.fetchConfig).toHaveBeenCalledTimes(2);
-  });
-
   it("ignores live events until a window has been selected", async () => {
-    const { result } = await renderStore();
+    const { Wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useSessionStore(null), { wrapper: Wrapper });
     let update: Awaited<ReturnType<typeof result.current.applyLiveEvent>> | undefined;
 
     await act(async () => {
@@ -162,29 +123,24 @@ describe("useSessionStore", () => {
   });
 
   it("handles a live event that arrives before the first window load completes", async () => {
-    const { result } = await renderStore();
-    let initialLoad!: ReturnType<typeof result.current.reload>;
+    const { Wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useSessionStore(config.window), { wrapper: Wrapper });
     let liveUpdate!: ReturnType<typeof result.current.applyLiveEvent>;
 
     act(() => {
-      initialLoad = result.current.reload(config.window);
       liveUpdate = result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT);
     });
-    let results!: [LiveSessionApplyResult | null, SessionReloadResult | null];
+    let liveResult!: LiveSessionApplyResult | null;
     await act(async () => {
-      results = await Promise.all([liveUpdate, initialLoad]);
+      liveResult = await liveUpdate;
     });
-    const [liveResult, reloadResult] = results;
 
     expect(liveResult).toEqual({ visibleNewSessions: 0 });
-    expect(reloadResult).toEqual({ agentCount: 2, sessionCount: 1 });
     await waitFor(() => expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]));
   });
 
   it("keeps projects available alongside the session snapshot", async () => {
     const { result } = await renderStore();
-
-    await act(() => result.current.reload(config.window));
 
     await waitFor(() => expect(result.current.projects).toEqual(projects));
 
@@ -202,9 +158,8 @@ describe("useSessionStore", () => {
 
   it("shares the global dashboard query with dashboard consumers", async () => {
     const { Wrapper } = createQueryWrapper();
-    const store = renderHook(() => useSessionStore(), { wrapper: Wrapper });
-    await waitFor(() => expect(store.result.current.config).toEqual(config));
-    await act(() => store.result.current.reload(config.window));
+    const store = renderHook(() => useSessionStore(config.window), { wrapper: Wrapper });
+    await waitFor(() => expect(store.result.current.loading).toBe(false));
 
     const dashboard = renderHook(
       () => useDashboard(config.window, { project: undefined, agent: undefined }),
@@ -225,11 +180,9 @@ describe("useSessionStore", () => {
       progress?.onFirstPage?.([SAMPLE_SESSION_HEAD]);
       return completeSessions.promise;
     });
-    const { result, client } = await renderStore();
-
-    let load!: ReturnType<typeof result.current.reload>;
-    act(() => {
-      load = result.current.reload(config.window);
+    const { client, Wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useSessionStore(config.window), {
+      wrapper: Wrapper,
     });
 
     await waitFor(() => expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]));
@@ -239,7 +192,7 @@ describe("useSessionStore", () => {
     ).toEqual([SAMPLE_SESSION_HEAD]);
 
     completeSessions.resolve({ sessions: [SAMPLE_SESSION_HEAD, finalSession] });
-    await act(() => load);
+    await act(async () => completeSessions.promise);
 
     await waitFor(() =>
       expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD, finalSession]),
@@ -252,17 +205,25 @@ describe("useSessionStore", () => {
     vi.mocked(api.fetchAgents)
       .mockReturnValueOnce(firstAgents.promise)
       .mockResolvedValueOnce(latestAgents);
-    const { result } = await renderStore();
     const firstWindow = { from: 1, to: 2 };
     const latestWindow = { from: 3, to: 4 };
+    const { Wrapper } = createQueryWrapper();
+    const { result, rerender } = renderHook(
+      ({ selectedWindow }) => useSessionStore(selectedWindow),
+      {
+        wrapper: Wrapper,
+        initialProps: { selectedWindow: firstWindow },
+      },
+    );
+    await waitFor(() => expect(api.fetchAgents).toHaveBeenCalledOnce());
 
-    let firstReload!: ReturnType<typeof result.current.reload>;
-    act(() => {
-      firstReload = result.current.reload(firstWindow);
+    rerender({ selectedWindow: latestWindow });
+    await waitFor(() => {
+      expect(result.current.window).toEqual(latestWindow);
+      expect(result.current.agents).toEqual(latestAgents);
     });
-    await act(() => result.current.reload(latestWindow));
     firstAgents.resolve(agents);
-    await act(() => firstReload);
+    await act(async () => firstAgents.promise);
 
     expect(result.current.window).toEqual(latestWindow);
     expect(result.current.agents).toEqual(latestAgents);
@@ -270,11 +231,11 @@ describe("useSessionStore", () => {
   });
 
   it("releases inactive projections and applies live events to the latest window", async () => {
-    const { result, client } = await renderStore();
     const firstWindow = { from: 1_700_000_000_000, to: 1_700_004_000_000 };
     const latestWindow = { from: 1_699_999_000_000, to: 1_700_005_000_000 };
-    await act(() => result.current.reload(firstWindow));
-    await act(() => result.current.reload(latestWindow));
+    const { result, client, rerender } = await renderStore(firstWindow);
+    rerender({ selectedWindow: latestWindow });
+    await waitFor(() => expect(result.current.window).toEqual(latestWindow));
     await waitFor(() =>
       expect(
         client.getQueryCache().findAll({ queryKey: queryKeys.sessionProjections }),
@@ -304,7 +265,7 @@ describe("useSessionStore", () => {
 
   it("applies an incremental live session diff without re-fetching sessions", async () => {
     const { result } = await renderStore();
-    await act(() => result.current.reload(config.window));
+    await act(() => result.current.reload());
     vi.mocked(api.fetchSessions).mockClear();
     vi.mocked(api.fetchAgents).mockClear();
     const changedSession = { ...SAMPLE_SESSION_HEAD, display_title: "Renamed" };
@@ -330,7 +291,7 @@ describe("useSessionStore", () => {
     let now = Date.now();
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const { result } = await renderStore();
-    await act(() => result.current.reload(config.window));
+    await act(() => result.current.reload());
     vi.mocked(api.fetchAgents).mockClear();
     vi.mocked(api.fetchProjects).mockClear();
     vi.mocked(api.fetchDashboard).mockClear();
@@ -369,8 +330,7 @@ describe("useSessionStore", () => {
       time_updated: 10,
     }));
     vi.mocked(api.fetchSessions).mockResolvedValueOnce({ sessions: [recentSession] });
-    const { result } = await renderStore();
-    await act(() => result.current.reload(window));
+    const { result } = await renderStore(window);
     let update!: LiveSessionApplyResult | null;
 
     await act(async () => {
@@ -406,8 +366,7 @@ describe("useSessionStore", () => {
       time_updated: 160,
     };
     vi.mocked(api.fetchSessions).mockResolvedValueOnce({ sessions: [recentSession] });
-    const { result } = await renderStore();
-    await act(() => result.current.reload(window));
+    const { result } = await renderStore(window);
     let update!: LiveSessionApplyResult | null;
 
     await act(async () => {
@@ -430,7 +389,7 @@ describe("useSessionStore", () => {
     let now = Date.now();
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const { result, client } = await renderStore();
-    await act(() => result.current.reload(config.window));
+    await act(() => result.current.reload());
     const projectDashboardKey = queryKeys.dashboard(config.window, {
       project: { kind: "path", key: "p1" },
     });
@@ -452,7 +411,7 @@ describe("useSessionStore", () => {
 
   it("invalidates only session details changed by a live event", async () => {
     const { result, client } = await renderStore();
-    await act(() => result.current.reload(config.window));
+    await act(() => result.current.reload());
     const changedDetailKey = queryKeys.sessionDetail(
       "claudecode",
       SAMPLE_SESSION_HEAD.reference.sessionId,
@@ -488,7 +447,7 @@ describe("useSessionStore", () => {
 
   it("performs an explicit full reload when live state reconnects", async () => {
     const { result } = await renderStore();
-    await act(() => result.current.reload(config.window));
+    await act(() => result.current.reload());
     vi.mocked(api.fetchSessions).mockClear();
 
     await act(() => result.current.resyncLiveState());
@@ -499,7 +458,7 @@ describe("useSessionStore", () => {
 
   it("keeps overlapping live events on the incremental path", async () => {
     const { result } = await renderStore();
-    await act(() => result.current.reload(config.window));
+    await act(() => result.current.reload());
     vi.mocked(api.fetchSessions).mockClear();
     const firstAgents = deferred<AgentInfo[]>();
     vi.mocked(api.fetchAgents).mockReturnValueOnce(firstAgents.promise).mockResolvedValue(agents);
@@ -522,7 +481,7 @@ describe("useSessionStore", () => {
     vi.mocked(api.fetchProjects).mockRejectedValue(error);
     const { result } = await renderStore();
 
-    await act(() => result.current.reload(config.window));
+    await act(() => result.current.reload());
 
     await waitFor(() => expect(result.current.projectsError).toBe("projects unavailable"));
     expect(result.current.projects).toEqual([]);
@@ -540,7 +499,7 @@ describe("useSessionStore", () => {
   it("retains the last project list when a refresh fails", async () => {
     const error = new Error("projects unavailable");
     const { result } = await renderStore();
-    await act(() => result.current.reload(config.window));
+    await act(() => result.current.reload());
     await waitFor(() => expect(result.current.projects).toEqual(projects));
     vi.mocked(api.fetchProjects).mockRejectedValueOnce(error);
 
@@ -563,31 +522,31 @@ describe("useSessionStore", () => {
           }),
       )
       .mockResolvedValue(projectPage);
-    const { result } = await renderStore();
     const firstWindow = { from: 1, to: 2 };
     const nextWindow = { from: 3, to: 4 };
-
-    act(() => {
-      void result.current.reload(firstWindow);
-    });
+    const { Wrapper } = createQueryWrapper();
+    const { result, rerender } = renderHook(
+      ({ selectedWindow }) => useSessionStore(selectedWindow),
+      {
+        wrapper: Wrapper,
+        initialProps: { selectedWindow: firstWindow },
+      },
+    );
     await waitFor(() => expect(firstSignal).toBeDefined());
-    await act(() => result.current.reload(nextWindow));
+    rerender({ selectedWindow: nextWindow });
 
     await waitFor(() => expect(result.current.projects).toEqual(projects));
     expect(firstSignal?.aborted).toBe(true);
     expect(result.current.projectsError).toBeNull();
   });
 
-  it("surfaces full reload failures without replacing the snapshot", async () => {
+  it("surfaces initial window load failures", async () => {
     const error = new Error("agents unavailable");
     vi.mocked(api.fetchAgents).mockRejectedValueOnce(error);
-    const { result } = await renderStore();
+    const { Wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useSessionStore(config.window), { wrapper: Wrapper });
 
-    await act(async () => {
-      await expect(result.current.reload(config.window)).rejects.toBe(error);
-    });
-
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(result.current.error).toContain("Failed to load session data"));
     expect(result.current.error).toContain("Failed to load session data");
     expect(result.current.sessions).toEqual([]);
   });
@@ -598,7 +557,7 @@ describe("useSessionStore", () => {
     let now = Date.now();
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const { result } = await renderStore();
-    await act(() => result.current.reload(config.window));
+    await act(() => result.current.reload());
     vi.mocked(api.fetchDashboard).mockClear();
     now += 2_001;
     vi.mocked(api.fetchDashboard).mockRejectedValueOnce(error);
@@ -615,7 +574,7 @@ describe("useSessionStore", () => {
     let now = Date.now();
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const { result, client } = await renderStore();
-    await act(() => result.current.reload(config.window));
+    await act(() => result.current.reload());
     const changedSession = { ...SAMPLE_SESSION_HEAD, display_title: "Renamed" };
     const liveAgents = deferred<AgentInfo[]>();
     vi.mocked(api.fetchAgents).mockClear().mockReturnValueOnce(liveAgents.promise);
