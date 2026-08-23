@@ -67,6 +67,8 @@ describe("contract browser-safety", () => {
         "sortSessionsByActivity",
         "startOfCalendarDay",
         "toCalendarDayKey",
+        "toPublicReferencedSessionHead",
+        "toPublicSessionHead",
         "updateSessionIndex",
       ].sort(),
     );

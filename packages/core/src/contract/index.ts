@@ -1,5 +1,9 @@
 export type * from "./session.js";
-export { assertIdentifiedSessionHead } from "./session.js";
+export {
+  assertIdentifiedSessionHead,
+  toPublicReferencedSessionHead,
+  toPublicSessionHead,
+} from "./session.js";
 export * from "./message-part.js";
 export type * from "./agent.js";
 export * from "./agent-catalog.js";

@@ -15,7 +15,7 @@ import {
   type SessionHead,
   type SessionSourceRef,
 } from "@codesesh/core/runtime";
-import { createSessionIdentity } from "@codesesh/core/contract";
+import { createSessionIdentity, toPublicSessionHead } from "@codesesh/core/contract";
 import { AgentUnavailableDuringScanError } from "./scan-refresh-error.js";
 import { buildScanRefreshDelta } from "./scan-refresh-delta.js";
 
@@ -1560,11 +1560,11 @@ describe("LiveScanStore", () => {
         changedSessionHeads: [
           {
             reference: { agentName: "codex", sessionId: updatedWithProject.reference.sessionId },
-            session: updatedWithProject,
+            session: toPublicSessionHead(updatedWithProject),
           },
           {
             reference: { agentName: "codex", sessionId: addedWithProject.reference.sessionId },
-            session: addedWithProject,
+            session: toPublicSessionHead(addedWithProject),
           },
         ],
         removedSessionRefs: [],
@@ -1660,7 +1660,7 @@ describe("LiveScanStore", () => {
         changedSessionHeads: [
           {
             reference: { agentName: "codex", sessionId: previousWithProject.reference.sessionId },
-            session: previousWithProject,
+            session: toPublicSessionHead(previousWithProject),
           },
         ],
         removedSessionRefs: [],

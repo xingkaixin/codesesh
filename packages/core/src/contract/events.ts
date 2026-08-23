@@ -1,4 +1,4 @@
-import type { ReferencedSessionHead } from "./session.js";
+import type { PublicReferencedSessionHead } from "./session.js";
 import type { SessionReference } from "./session-reference.js";
 
 export interface SessionsUpdatedEvent {
@@ -11,9 +11,9 @@ export interface SessionsUpdatedEvent {
   removedSessions: number;
   totalSessions: number;
   timestamp: number;
-  changedSessionHeads: ReferencedSessionHead[];
+  changedSessionHeads: PublicReferencedSessionHead[];
   /** Unchanged hierarchy context; it must not count as an update or invalidate session detail. */
-  projectionRelatedSessionHeads?: ReferencedSessionHead[];
+  projectionRelatedSessionHeads?: PublicReferencedSessionHead[];
   /** Canonical global order for affected activity-time ties. */
   projectionSessionOrder?: SessionReference[];
   removedSessionRefs: SessionReference[];
@@ -23,19 +23,19 @@ export function mergeSessionsUpdatedEvents(
   previous: SessionsUpdatedEvent,
   next: SessionsUpdatedEvent,
 ): SessionsUpdatedEvent {
-  const changedSessionHeads = new Map<string, ReferencedSessionHead>();
-  const projectionRelatedSessionHeads = new Map<string, ReferencedSessionHead>();
+  const changedSessionHeads = new Map<string, PublicReferencedSessionHead>();
+  const projectionRelatedSessionHeads = new Map<string, PublicReferencedSessionHead>();
   const projectionSessionOrder = new Map<string, SessionReference>();
   const newSessionRefs = new Map<string, SessionReference>();
   const removedSessionRefs = new Map<string, SessionReference>();
   const sessionKey = (agentName: string, sessionId: string) => `${agentName}\0${sessionId}`;
-  const addChanged = (item: ReferencedSessionHead) => {
+  const addChanged = (item: PublicReferencedSessionHead) => {
     const key = sessionKey(item.reference.agentName, item.reference.sessionId);
     removedSessionRefs.delete(key);
     projectionRelatedSessionHeads.delete(key);
     changedSessionHeads.set(key, item);
   };
-  const addProjectionRelated = (item: ReferencedSessionHead) => {
+  const addProjectionRelated = (item: PublicReferencedSessionHead) => {
     const key = sessionKey(item.reference.agentName, item.reference.sessionId);
     if (changedSessionHeads.has(key) || removedSessionRefs.has(key)) return;
     projectionRelatedSessionHeads.set(key, item);

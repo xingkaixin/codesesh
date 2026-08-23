@@ -190,6 +190,25 @@ describe("LiveSessionIndex", () => {
     });
   });
 
+  it("omits internal metadata from published session heads", () => {
+    const codex = makeAgent("codex");
+    const session = {
+      ...makeSession("session", 1),
+      model_usage: { "gpt-5.5": 5 },
+      project_identity_resolver_revision: "resolver-v2",
+      project_identity_input_signature: "signature",
+      smart_tags_source_updated_at: 2,
+      smart_tags_classifier_revision: "classifier-v2",
+    };
+    const index = new LiveSessionIndex();
+    index.initialize(snapshot([codex], { codex: [] }));
+
+    const event = index.commitAgentSessions("codex", [session]);
+
+    expect(event?.changedSessionHeads[0]?.session).toEqual(makeSession("session", 1));
+    expect(index.snapshot().sessions[0]).toBe(session);
+  });
+
   it("publishes unchanged hierarchy members needed to project a changed root", () => {
     const codex = makeAgent("codex");
     const root = makeSession("root", 1, "before");

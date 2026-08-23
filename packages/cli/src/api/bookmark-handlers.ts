@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type { BookmarkRecord, BookmarkView } from "@codesesh/core/runtime";
-import { createSessionIndex } from "@codesesh/core/contract";
+import { createSessionIndex, toPublicSessionHead } from "@codesesh/core/contract";
 import {
   SessionAliasValidationError,
   StateStorageUnavailableError,
@@ -58,7 +58,12 @@ function materializeStoredBookmarks(
     liveSessionsByReference: sessionIndex.byRouteKey,
     knownAgentNames: KNOWN_AGENT_NAME_SET,
     resolveCachedSessions: loadCachedSessionHeads,
-  }).map((bookmark) => decorateBookmark(bookmark, aliases));
+  }).map((bookmark) => {
+    const decorated = decorateBookmark(bookmark, aliases);
+    return decorated.availability === "available"
+      ? { ...decorated, session: toPublicSessionHead(decorated.session) }
+      : decorated;
+  });
 }
 
 export function handleGetBookmarks(c: Context, scanSource: ScanResultSource) {
