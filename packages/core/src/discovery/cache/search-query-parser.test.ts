@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SMART_TAGS } from "../../contract/index.js";
 import { parseSearchQuery } from "./search-query-parser.js";
 
 describe("parseSearchQuery", () => {
@@ -32,6 +33,16 @@ describe("parseSearchQuery", () => {
     expect(parseSearchQuery("cost:>1 cost:<5 cost:2").filters).toEqual({
       costMin: 2,
       costMax: 2,
+    });
+  });
+
+  it("recognizes every tag in the public catalog", () => {
+    const query = SMART_TAGS.map((tag) => `tag:${tag}`).join(" ");
+
+    expect(parseSearchQuery(query)).toEqual({
+      text: "",
+      filters: { tags: SMART_TAGS },
+      hasQualifiers: true,
     });
   });
 });

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { SMART_TAGS } from "@codesesh/core/contract";
 import {
   parseDateParam,
   parseDateWindow,
   parseSessionQuery,
+  parseSmartTags,
   SEARCH_LIMIT_POLICY,
 } from "../query-params.js";
 
@@ -87,5 +89,9 @@ describe("session query contract", () => {
     expect(
       parseSessionQuery(new URLSearchParams({ limit }), [], SEARCH_LIMIT_POLICY).limit,
     ).toEqual({ kind: "invalid", error: "limit must be a positive integer" });
+  });
+
+  it("accepts every public smart tag and rejects unknown values", () => {
+    expect(parseSmartTags([...SMART_TAGS, "BUGFIX", "unknown"])).toEqual(SMART_TAGS);
   });
 });

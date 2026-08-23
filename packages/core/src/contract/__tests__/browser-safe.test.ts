@@ -30,6 +30,7 @@ describe("contract browser-safety", () => {
       [
         "AGENT_CATALOG",
         "PROJECT_IDENTITY_KINDS",
+        "SMART_TAGS",
         "UNKNOWN_AGENT_NAME",
         "addCalendarDays",
         "agentRoutePath",
@@ -57,6 +58,7 @@ describe("contract browser-safety", () => {
         "groupSessionsByCalendarDay",
         "getAgentCatalogEntry",
         "isProjectIdentityKind",
+        "isSmartTag",
         "matchesProjectIdentity",
         "mergeSessionsUpdatedEvents",
         "mergeSortedSessions",

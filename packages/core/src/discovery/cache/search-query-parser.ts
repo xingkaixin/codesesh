@@ -1,4 +1,5 @@
-import type { FileActivityKind, ProjectIdentityKind, SmartTag } from "../../types/index.js";
+import { isSmartTag, type SmartTag } from "../../contract/index.js";
+import type { FileActivityKind, ProjectIdentityKind } from "../../types/index.js";
 import { isProjectIdentityKind } from "../../projects/index.js";
 
 export interface SearchQueryFilters {
@@ -102,20 +103,6 @@ function setCostMaximum(filters: SearchQueryFilters, value: number, exclusive: b
 function appendUnique<T>(values: T[] | undefined, value: T): T[] {
   if (values?.includes(value)) return values;
   return [...(values ?? []), value];
-}
-
-function isSmartTag(value: string): value is SmartTag {
-  return (
-    value === "bugfix" ||
-    value === "refactoring" ||
-    value === "feature-dev" ||
-    value === "testing" ||
-    value === "docs" ||
-    value === "git-ops" ||
-    value === "build-deploy" ||
-    value === "exploration" ||
-    value === "planning"
-  );
 }
 
 export function parseSearchQuery(input: string): ParsedSearchQuery {

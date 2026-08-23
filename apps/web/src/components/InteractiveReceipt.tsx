@@ -8,7 +8,6 @@ import {
   type ReceiptLineItem,
   type ReceiptPayload,
 } from "./interactive-receipt-simulation";
-import { SMART_TAG_LABELS } from "./SmartTagChips";
 import type { SessionDetailToc } from "./session-detail/toc";
 
 interface InteractiveReceiptProps {
@@ -43,7 +42,7 @@ function buildReceiptItems(toc: SessionDetailToc): ReceiptLineItem[] {
 
 function formatReceiptSubtitle(tags?: SessionDetail["smart_tags"]) {
   if (!tags || tags.length === 0) return "SESSION ACTIVITY RECEIPT";
-  return tags.map((tag) => SMART_TAG_LABELS[tag]).join(" / ");
+  return tags.join(" / ");
 }
 
 function createReceiptPayload(session: SessionDetail, toc: SessionDetailToc): ReceiptPayload {
