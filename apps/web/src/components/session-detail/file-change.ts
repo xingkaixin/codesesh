@@ -3,13 +3,16 @@
  * Classifies tool calls into read/edit/write/delete kinds and builds
  * per-path summaries (with anchor ids for click-to-scroll).
  */
+import {
+  classifyFileTool,
+  extractFileToolOperations,
+  type FileActivityKind,
+} from "@codesesh/core/contract";
 import type { Message, SessionFileActivity, ToolPart } from "../../lib/api";
 import type { MessageDisplayModel } from "./display-model-types";
-import { getCodexPatchEntries } from "./codex-patch";
-import { normalizeToolLabel, normalizeToolName } from "./tool-normalize";
-import { extractPathsFromToolInput, getToolInputValue } from "./path-extract";
+import { normalizeToolLabel } from "./tool-normalize";
 
-export type FileChangeKind = "read" | "edit" | "write" | "delete";
+export type FileChangeKind = FileActivityKind;
 
 /** Coarse operation class shared by the reader's tool filter and the timeline. */
 export type ToolOperationKind = "read" | "write" | "execute";
@@ -38,40 +41,12 @@ export interface FileChangeSummary {
   delete: FileChangeSummaryItem[];
 }
 
-const FILE_READ_TOOLS = new Set([
-  "read",
-  "read_file",
-  "read_file_v2",
-  "read_text_file",
-  "readfile",
-  "view_image",
-]);
-const FILE_EDIT_TOOLS = new Set([
-  "apply_patch",
-  "edit",
-  "edit_file",
-  "edit_file_v2",
-  "editfile",
-  "multiedit",
-  "notebookedit",
-  "patch",
-  "search_replace",
-  "str_replace",
-]);
-const FILE_WRITE_TOOLS = new Set(["create_file", "write", "write_file", "writefile"]);
-const FILE_DELETE_TOOLS = new Set(["delete", "delete_file"]);
-
 export function buildToolAnchorId(messageIndex: number, toolIndex: number) {
   return `tool-${messageIndex}-${toolIndex}`;
 }
 
 export function classifyToolKind(part: ToolPart): FileChangeKind | null {
-  const toolName = normalizeToolName(part);
-  if (FILE_READ_TOOLS.has(toolName)) return "read";
-  if (FILE_EDIT_TOOLS.has(toolName)) return "edit";
-  if (FILE_WRITE_TOOLS.has(toolName)) return "write";
-  if (FILE_DELETE_TOOLS.has(toolName)) return "delete";
-  return null;
+  return classifyFileTool(part);
 }
 
 export function classifyToolOperation(part: ToolPart): ToolOperationKind {
@@ -145,32 +120,10 @@ export function buildFileChangeSummary(messages: MessageDisplayModel[]): {
         toolIndex += 1;
         anchorMessageIndexes.set(anchorId, messageIndex);
 
-        const inputValue = getToolInputValue(part);
         const toolLabel = normalizeToolLabel(part);
         const time = part.time_created ?? message.time_created;
 
-        const patchEntries = getCodexPatchEntries(inputValue);
-        if (patchEntries.length > 0) {
-          for (const entry of patchEntries) {
-            const path = (entry.path || entry.oldPath).trim();
-            if (!path) continue;
-
-            const kind =
-              entry.type === "write_file"
-                ? "write"
-                : entry.type === "delete_file"
-                  ? "delete"
-                  : "edit";
-            fileChanges[kind].push({ kind, path, anchorId, time, toolLabel });
-          }
-          continue;
-        }
-
-        const kind = classifyToolKind(part);
-        if (!kind) continue;
-
-        const paths = extractPathsFromToolInput(inputValue);
-        for (const path of paths) {
+        for (const { kind, path } of extractFileToolOperations(part)) {
           fileChanges[kind].push({ kind, path, anchorId, time, toolLabel });
         }
       }

@@ -3,6 +3,33 @@ import { extractFileActivityOccurrences, extractSessionFileActivity } from "../f
 import type { Message } from "../../types/index.js";
 
 describe("file activity extraction", () => {
+  it("extracts Cursor v2 file tools consistently", () => {
+    const messages: Message[] = [
+      {
+        id: "m1",
+        role: "assistant",
+        time_created: 10,
+        parts: [
+          {
+            type: "tool",
+            tool: "read_file_v2",
+            state: { status: "completed", input: { path: "src/a.ts" } },
+          },
+          {
+            type: "tool",
+            tool: "edit_file_v2",
+            state: { status: "completed", input: { targetPath: "src/b.ts" } },
+          },
+        ],
+      },
+    ];
+
+    expect(extractFileActivityOccurrences(messages)).toEqual([
+      expect.objectContaining({ path: "src/a.ts", kind: "read" }),
+      expect.objectContaining({ path: "src/b.ts", kind: "edit" }),
+    ]);
+  });
+
   it("extracts paths only from recognized file tool arguments", () => {
     const messages: Message[] = [
       {
