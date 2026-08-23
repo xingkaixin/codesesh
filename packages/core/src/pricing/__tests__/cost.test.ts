@@ -50,6 +50,23 @@ describe("pricing", () => {
     expect(outside.unpricedModels).toEqual([]);
   });
 
+  it("isolates pricing misses between concurrent async captures", async () => {
+    const [first, second] = await Promise.all([
+      capturePricingMisses(async () => {
+        await Promise.resolve();
+        estimateCostForTokens("unknown-first", { input: 1, output: 1 });
+      }),
+      capturePricingMisses(async () => {
+        estimateCostForTokens("unknown-second", { input: 1, output: 1 });
+        await Promise.resolve();
+        estimateCostForTokens("unknown-second", { input: 2, output: 2 });
+      }),
+    ]);
+
+    expect(first.unpricedModels).toEqual(["unknown-first"]);
+    expect(second.unpricedModels).toEqual(["unknown-second"]);
+  });
+
   it("marks existing message costs as recorded", () => {
     const message = {
       id: "m1",
