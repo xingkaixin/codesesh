@@ -309,57 +309,36 @@ export class AgentSyncEngine {
   private async performRefresh(agentName: string): Promise<AgentOperationResult> {
     this.statusReporter.beginAgentScan(agentName);
     const startedAt = performance.now();
-    let failed = false;
-    let durableCommitted = false;
     let cached: CachedSessions | null = null;
-    let result: AgentOperationResult = "failed";
-    let completion: ScanCompletion = { completeness: "complete" };
-    let stagedRun: StagedWorkerRun | undefined;
+    let refresh: { result: AgentOperationResult; completion: ScanCompletion } = {
+      result: "failed",
+      completion: { completeness: "complete" },
+    };
     try {
       if (this.findAgent(agentName))
         cached = this.readCachedSessionsOrWarn("scan.refresh", agentName);
-      const refresh = await this.runRefresh(
-        agentName,
-        cached,
-        startedAt,
-        (committedCompletion) => {
-          durableCommitted = true;
-          completion = committedCompletion;
-          result = "committed";
-        },
-        (run) => {
-          stagedRun = run;
-        },
-      );
-      result = refresh.result;
-      completion = refresh.completion;
+      refresh = await this.runRefresh(agentName, cached, startedAt);
     } catch (error) {
-      if (durableCommitted) {
-        this.reportPostCommitError("scan.refresh", agentName, error);
-        result = "committed";
+      const failure = toError(error);
+      if (failure instanceof AgentUnavailableDuringScanError) {
+        appLogger.warn("scan.refresh.worker_agent_unavailable", {
+          agent: agentName,
+          error: failure.message,
+        });
       } else {
-        stagedRun?.discard();
-        failed = true;
-        const failure = toError(error);
-        if (failure instanceof AgentUnavailableDuringScanError) {
-          appLogger.warn("scan.refresh.worker_agent_unavailable", {
-            agent: agentName,
-            error: failure.message,
-          });
-        } else {
-          appLogger.error("scan.refresh.error", { agent: agentName, error });
-        }
-        console.error(`[${agentName}] Session refresh failed:`, error);
-        this.statusReporter.failAgent(agentName, failure.message);
+        appLogger.error("scan.refresh.error", { agent: agentName, error });
       }
+      console.error(`[${agentName}] Session refresh failed:`, error);
+      this.statusReporter.failAgent(agentName, failure.message);
     }
     try {
-      if (!failed) {
-        if (durableCommitted) this.finishCommittedAgentScan(agentName, completion);
-        else this.statusReporter.finishAgentScan(agentName, completion);
+      if (refresh.result !== "failed") {
+        if (refresh.result === "committed")
+          this.finishCommittedAgentScan(agentName, refresh.completion);
+        else this.statusReporter.finishAgentScan(agentName, refresh.completion);
       }
     } catch (error) {
-      if (!durableCommitted) throw error;
+      if (refresh.result !== "committed") throw error;
       this.reportPostCommitError("scan.refresh", agentName, error);
     }
     // The backfill probe touches cache state and may check agent availability;
@@ -374,15 +353,13 @@ export class AgentSyncEngine {
     } catch (error) {
       appLogger.warn("scan.refresh.backfill_probe_failed", { agent: agentName, error });
     }
-    return result;
+    return refresh.result;
   }
 
   private async runRefresh(
     agentName: string,
     cached: CachedSessions | null,
     startedAt: number,
-    onDurableCommit: (completion: ScanCompletion) => void,
-    onWorkerRun: (run: StagedWorkerRun | undefined) => void,
   ): Promise<RefreshResult> {
     const pendingPathCount = this.scheduler.takePendingSignalCount(agentName);
     const agent = this.findAgent(agentName);
@@ -433,7 +410,6 @@ export class AgentSyncEngine {
       }
     }
     const stagedRun = strategyResult.workerRun;
-    onWorkerRun(stagedRun);
     if (strategyResult.status === "unchanged") {
       stagedRun?.commit();
       return {
@@ -506,7 +482,6 @@ export class AgentSyncEngine {
       strategyResult.sourceFailures,
     );
     this.statusReporter.queueAgentPublication(agentName);
-    let publicationCommitted = false;
     let publication: SessionPublicationResult;
     try {
       publication = await this.sessionPublication.commit({
@@ -518,52 +493,50 @@ export class AgentSyncEngine {
             ? strategyResult.publication.candidateChangedIds
             : [],
         indexJob: persistentJob,
+        stagedRun,
         onPublishing: () => this.statusReporter.beginAgentPublishing(agentName),
-        onCommitted: () => {
-          stagedRun?.commit();
-          publicationCommitted = true;
-          onDurableCommit(completion);
-        },
       });
     } catch (error) {
-      if (!publicationCommitted) {
-        agent.restoreSessionCacheMeta(durableMeta);
-        if (durableLastRefreshAt == null) this.lastRefreshAtByAgent.delete(agentName);
-        else this.lastRefreshAtByAgent.set(agentName, durableLastRefreshAt);
-      }
+      stagedRun?.discard();
+      agent.restoreSessionCacheMeta(durableMeta);
+      if (durableLastRefreshAt == null) this.lastRefreshAtByAgent.delete(agentName);
+      else this.lastRefreshAtByAgent.set(agentName, durableLastRefreshAt);
       throw error;
     }
     const persistDuration = performance.now() - persistStartedAt;
-    logSearchIndexSync("scan.refresh", null, { pending_paths: pendingPathCount });
-
     const totalDurationMs = performance.now() - startedAt;
-    this.scheduler.recordRefreshDuration(agentName, totalDurationMs);
-    const sessionUpdateCounts = countSessionUpdates(publication.event);
-    appLogger.info(
-      strategyResult.sourceFailures.length > 0 ? "scan.refresh.partial" : "scan.refresh.done",
-      {
-        agent: agentName,
-        duration_ms: Math.round(totalDurationMs),
-        sessions: nextSessions.length,
-        new_sessions: sessionUpdateCounts.newSessions,
-        updated_sessions: sessionUpdateCounts.updatedSessions,
-        removed_sessions: sessionUpdateCounts.removedSessions,
-        pending_paths: pendingPathCount,
-        availability_ms: Math.round(availabilityDuration),
-        check_ms: Math.round(strategyResult.checkDuration),
-        scan_ms: Math.round(strategyResult.scanDuration),
-        diff_ms: Math.round(publication.diffDuration),
-        persist_ms: Math.round(persistDuration),
-        search_index_ms: Math.round(persistDuration),
-        persistent_index_worker_job: persistentJob.kind,
-        failed_sources: strategyResult.sourceFailures.length,
-      },
-    );
-    if (strategyResult.sourceFailures.length > 0) {
-      appLogger.warn("scan.refresh.source_failures", {
-        agent: agentName,
-        failures: strategyResult.sourceFailures,
-      });
+    try {
+      logSearchIndexSync("scan.refresh", null, { pending_paths: pendingPathCount });
+      this.scheduler.recordRefreshDuration(agentName, totalDurationMs);
+      const sessionUpdateCounts = countSessionUpdates(publication.event);
+      appLogger.info(
+        strategyResult.sourceFailures.length > 0 ? "scan.refresh.partial" : "scan.refresh.done",
+        {
+          agent: agentName,
+          duration_ms: Math.round(totalDurationMs),
+          sessions: nextSessions.length,
+          new_sessions: sessionUpdateCounts.newSessions,
+          updated_sessions: sessionUpdateCounts.updatedSessions,
+          removed_sessions: sessionUpdateCounts.removedSessions,
+          pending_paths: pendingPathCount,
+          availability_ms: Math.round(availabilityDuration),
+          check_ms: Math.round(strategyResult.checkDuration),
+          scan_ms: Math.round(strategyResult.scanDuration),
+          diff_ms: Math.round(publication.diffDuration),
+          persist_ms: Math.round(persistDuration),
+          search_index_ms: Math.round(persistDuration),
+          persistent_index_worker_job: persistentJob.kind,
+          failed_sources: strategyResult.sourceFailures.length,
+        },
+      );
+      if (strategyResult.sourceFailures.length > 0) {
+        appLogger.warn("scan.refresh.source_failures", {
+          agent: agentName,
+          failures: strategyResult.sourceFailures,
+        });
+      }
+    } catch (error) {
+      this.reportPostCommitError("scan.refresh", agentName, error);
     }
     return { result: "committed", completion };
   }
@@ -920,7 +893,6 @@ export class AgentSyncEngine {
     const meta = cached?.meta ?? buildAgentCacheMeta(agent);
     const backfillCursor = getAgentFullSyncCursor(agentName);
     if (cached) agent.restoreSessionCacheMeta(cached.meta);
-    let durableCommitted = false;
     let workerRun: StagedWorkerRun | undefined;
     try {
       if (!markAgentFullSyncStarted(agentName)) {
@@ -968,7 +940,7 @@ export class AgentSyncEngine {
         }
       };
       updatePublicationPhase("publish-queued");
-      const publication = await this.sessionPublication.commit({
+      await this.sessionPublication.commit({
         context: "scan.backfill",
         agentName,
         sessions: fullSessions,
@@ -983,47 +955,43 @@ export class AgentSyncEngine {
           removedSessionIds: result.explicitRemovedSessionIds,
           saveCache: true,
         },
+        stagedRun: workerRun,
         onPublishing: () => updatePublicationPhase("publishing"),
         onPublicationProgress: ({ stage }) => {
           if (stage === "prepared") updatePublicationPhase("indexing");
           if (stage === "search_staged") updatePublicationPhase("committing");
         },
         onCommitted: () => {
-          workerRun?.commit();
-          durableCommitted = true;
           if (completion.completeness === "partial") {
             this.backfills.recordCompletion(attempt, completion);
           }
         },
       });
-      durableCommitted = publication.durableCommitted;
-      workerRun.commit();
-      if (completion.completeness === "complete" && !markAgentFullSyncCompleted(agentName)) {
-        appLogger.warn("scan.backfill.completion_not_durable", { agent: agentName });
-      }
-      appLogger.info(
-        completion.completeness === "partial" ? "scan.backfill.partial" : "scan.backfill.done",
-        {
-          agent: agentName,
-          duration_ms: Math.round(performance.now() - startedAt),
-          sessions: fullSessions.length,
-          changed: result.changedIds?.length ?? 0,
-          failed_sources: result.sourceFailures?.length ?? 0,
-        },
-      );
-      if (result.sourceFailures?.length) {
-        appLogger.warn("scan.backfill.source_failures", {
-          agent: agentName,
-          failures: result.sourceFailures,
-        });
+      try {
+        if (completion.completeness === "complete" && !markAgentFullSyncCompleted(agentName)) {
+          appLogger.warn("scan.backfill.completion_not_durable", { agent: agentName });
+        }
+        appLogger.info(
+          completion.completeness === "partial" ? "scan.backfill.partial" : "scan.backfill.done",
+          {
+            agent: agentName,
+            duration_ms: Math.round(performance.now() - startedAt),
+            sessions: fullSessions.length,
+            changed: result.changedIds?.length ?? 0,
+            failed_sources: result.sourceFailures?.length ?? 0,
+          },
+        );
+        if (result.sourceFailures?.length) {
+          appLogger.warn("scan.backfill.source_failures", {
+            agent: agentName,
+            failures: result.sourceFailures,
+          });
+        }
+      } catch (error) {
+        this.reportPostCommitError("scan.backfill", agentName, error);
       }
       return "committed";
     } catch (error) {
-      if (durableCommitted) {
-        workerRun?.commit();
-        this.reportPostCommitError("scan.backfill", agentName, error);
-        return "committed";
-      }
       agent.restoreSessionCacheMeta(meta);
       workerRun?.discard();
       appLogger.error("scan.backfill.error", { agent: agentName, error });

@@ -7,6 +7,7 @@ import type {
   SearchIndexPublicationProgress,
   SearchIndexWorkerJob,
 } from "./search-index-worker.js";
+import type { StagedWorkerRun } from "./worker-runner.js";
 
 export interface AgentSessionsChanged {
   agentName: string;
@@ -20,6 +21,7 @@ export interface SessionPublication {
   sessions: IdentifiedSessionHead[];
   candidateChangedIds: string[];
   indexJob: SearchIndexWorkerJob;
+  stagedRun?: StagedWorkerRun;
   onPublishing?: () => void;
   onPublicationProgress?: (progress: SearchIndexPublicationProgress) => void;
   onCommitted?: (result: SessionPublicationResult) => void;
@@ -76,20 +78,44 @@ export class SessionPublicationCoordinator {
     );
     const diffDuration = performance.now() - diffStartedAt;
     const result: SessionPublicationResult = { durableCommitted: true, event, diffDuration };
-    publication.onCommitted?.(result);
-    this.emit({
-      agentName: publication.agentName,
-      sessions: this.sessionIndex.snapshot().byAgent[publication.agentName] ?? [],
-      event,
-    });
-    appLogger.info("session.publication.published", {
-      publication_id: publicationId,
-      context: publication.context,
-      agent: publication.agentName,
-      sessions: publication.sessions.length,
-      has_event: event != null,
-    });
+    this.runPostCommit(publication, "worker_commit", () => publication.stagedRun?.commit());
+    this.runPostCommit(publication, "callback", () => publication.onCommitted?.(result));
+    this.runPostCommit(publication, "notification", () =>
+      this.emit({
+        agentName: publication.agentName,
+        sessions: this.sessionIndex.snapshot().byAgent[publication.agentName] ?? [],
+        event,
+      }),
+    );
+    this.runPostCommit(publication, "logging", () =>
+      appLogger.info("session.publication.published", {
+        publication_id: publicationId,
+        context: publication.context,
+        agent: publication.agentName,
+        sessions: publication.sessions.length,
+        has_event: event != null,
+      }),
+    );
     return result;
+  }
+
+  private runPostCommit(
+    publication: SessionPublication,
+    stage: "worker_commit" | "callback" | "notification" | "logging",
+    action: () => void,
+  ): void {
+    try {
+      action();
+    } catch (error) {
+      try {
+        appLogger.error("session.publication.post_commit_error", {
+          context: publication.context,
+          agent: publication.agentName,
+          stage,
+          error,
+        });
+      } catch {}
+    }
   }
 
   private emit(change: AgentSessionsChanged): void {
