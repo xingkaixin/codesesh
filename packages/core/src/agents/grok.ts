@@ -261,13 +261,61 @@ function messagePartFromContentBlock(value: unknown, timestampMs: number): Messa
   return text ? { type: "text", text, time_created: timestampMs } : null;
 }
 
+function visibleMessagePartFromContentBlock(
+  value: unknown,
+  timestampMs: number,
+): MessagePart | null {
+  const part = messagePartFromContentBlock(value, timestampMs);
+  if (part?.type === "text" && !cleanInternalText(part.text)) return null;
+  return part;
+}
+
+type GrokMessageTransition = "ignored" | "started" | "continued";
+
+type ActiveGrokMessage =
+  | { role: "user"; promptIndex: number | null }
+  | { role: "assistant"; promptId: string | null };
+
+class GrokMessageGrouping {
+  private active: ActiveGrokMessage | null = null;
+
+  appendUser(envelope: GrokUpdate, hasVisibleContent: boolean): GrokMessageTransition {
+    if (isHostTurn(envelope.update) || !hasVisibleContent) return "ignored";
+
+    const promptIndexValue = asNumber(asRecord(envelope.update._meta)?.promptIndex);
+    const promptIndex =
+      promptIndexValue !== undefined && Number.isSafeInteger(promptIndexValue)
+        ? promptIndexValue
+        : null;
+    const canReuse =
+      this.active?.role === "user" &&
+      (promptIndex === null ||
+        this.active.promptIndex === null ||
+        promptIndex === this.active.promptIndex);
+
+    this.active = { role: "user", promptIndex };
+    return canReuse ? "continued" : "started";
+  }
+
+  appendAssistant(envelope: GrokUpdate, hasVisibleContent: boolean): GrokMessageTransition {
+    if (!hasVisibleContent) return "ignored";
+
+    const promptId = asString(asRecord(envelope.params._meta)?.promptId)?.trim() || null;
+    const canReuse =
+      this.active?.role === "assistant" &&
+      !(promptId && this.active.promptId && promptId !== this.active.promptId);
+    const activePromptId =
+      promptId || (this.active?.role === "assistant" ? this.active.promptId : null);
+
+    this.active = { role: "assistant", promptId: activePromptId };
+    return canReuse ? "continued" : "started";
+  }
+}
+
 class GrokMessageCounter {
   firstUserText: string | null = null;
   messageCount = 0;
-  private activeAssistant = false;
-  private activeAssistantPromptId: string | null = null;
-  private activeUser = false;
-  private activeUserPromptIndex: number | null = null;
+  private readonly grouping = new GrokMessageGrouping();
 
   process(envelope: GrokUpdate): void {
     if (envelope.method === XAI_UPDATE_METHOD) return;
@@ -278,57 +326,35 @@ class GrokMessageCounter {
         break;
       case "agent_thought_chunk":
       case "agent_message_chunk":
-        if (cleanInternalText(textFromContentBlock(envelope.update.content))) {
-          this.appendAssistant(envelope);
-        }
+        this.appendAssistant(
+          envelope,
+          Boolean(cleanInternalText(textFromContentBlock(envelope.update.content))),
+        );
         break;
       case "tool_call":
-        if (asString(envelope.update.toolCallId)?.trim()) this.appendAssistant(envelope);
+        this.appendAssistant(envelope, Boolean(asString(envelope.update.toolCallId)?.trim()));
         break;
       case "plan":
-        if (planPart(envelope.update, envelope.timestampMs)) this.appendAssistant(envelope);
+        this.appendAssistant(envelope, Boolean(planPart(envelope.update, envelope.timestampMs)));
         break;
     }
   }
 
   private appendUser(envelope: GrokUpdate): void {
-    if (isHostTurn(envelope.update)) return;
-    const part = messagePartFromContentBlock(envelope.update.content, envelope.timestampMs);
-    if (!part) return;
-    if (part.type === "text" && !cleanInternalText(part.text)) return;
-
-    const promptIndexValue = asNumber(asRecord(envelope.update._meta)?.promptIndex);
-    const promptIndex =
-      promptIndexValue !== undefined && Number.isSafeInteger(promptIndexValue)
-        ? promptIndexValue
-        : null;
-    const canReuse =
-      this.activeUser &&
-      (promptIndex === null ||
-        this.activeUserPromptIndex === null ||
-        promptIndex === this.activeUserPromptIndex);
-    if (!canReuse) this.messageCount += 1;
+    const part = visibleMessagePartFromContentBlock(envelope.update.content, envelope.timestampMs);
+    const transition = this.grouping.appendUser(envelope, part !== null);
+    if (!part || transition === "ignored") return;
+    if (transition === "started") this.messageCount += 1;
 
     if (this.firstUserText === null && part.type === "text") {
       this.firstUserText = cleanInternalText(part.text) || null;
     }
-    this.activeUser = true;
-    this.activeUserPromptIndex = promptIndex;
-    this.activeAssistant = false;
-    this.activeAssistantPromptId = null;
   }
 
-  private appendAssistant(envelope: GrokUpdate): void {
-    const promptId = asString(asRecord(envelope.params._meta)?.promptId)?.trim() || null;
-    if (promptId && this.activeAssistantPromptId && promptId !== this.activeAssistantPromptId) {
-      this.activeAssistant = false;
+  private appendAssistant(envelope: GrokUpdate, hasVisibleContent: boolean): void {
+    if (this.grouping.appendAssistant(envelope, hasVisibleContent) === "started") {
+      this.messageCount += 1;
     }
-    if (promptId) this.activeAssistantPromptId = promptId;
-    this.activeUser = false;
-    this.activeUserPromptIndex = null;
-
-    if (!this.activeAssistant) this.messageCount += 1;
-    this.activeAssistant = true;
   }
 }
 
@@ -482,10 +508,9 @@ function planPart(update: Record<string, unknown>, timestampMs: number): PlanPar
 
 class GrokTranscriptReducer {
   private readonly builder = new TranscriptBuilder();
+  private readonly grouping = new GrokMessageGrouping();
   private activeAssistant: Message | null = null;
-  private activeAssistantPromptId: string | null = null;
   private activeUser: Message | null = null;
-  private activeUserPromptIndex: number | null = null;
   private latestPlan: PlanPart | null = null;
   private currentMode: string | null = null;
   private currentModel: string | null;
@@ -566,22 +591,11 @@ class GrokTranscriptReducer {
   }
 
   private appendUserChunk(envelope: GrokUpdate): void {
-    if (isHostTurn(envelope.update)) return;
-    const part = messagePartFromContentBlock(envelope.update.content, envelope.timestampMs);
-    if (!part) return;
+    const part = visibleMessagePartFromContentBlock(envelope.update.content, envelope.timestampMs);
+    const transition = this.grouping.appendUser(envelope, part !== null);
+    if (!part || transition === "ignored") return;
 
-    const promptIndexValue = asNumber(asRecord(envelope.update._meta)?.promptIndex);
-    const promptIndex =
-      promptIndexValue !== undefined && Number.isSafeInteger(promptIndexValue)
-        ? promptIndexValue
-        : null;
-    const canReuse =
-      this.activeUser !== null &&
-      (promptIndex === null ||
-        this.activeUserPromptIndex === null ||
-        promptIndex === this.activeUserPromptIndex);
-
-    if (canReuse) {
+    if (transition === "continued") {
       const tail = this.activeUser!.parts.at(-1);
       if (tail?.type === "text" && part.type === "text") tail.text += part.text;
       else this.activeUser!.parts.push(part);
@@ -595,22 +609,20 @@ class GrokTranscriptReducer {
       });
     }
 
-    this.activeUserPromptIndex = promptIndex;
     this.activeAssistant = null;
-    this.activeAssistantPromptId = null;
     this.latestPlan = null;
   }
 
-  private prepareAssistant(envelope: GrokUpdate): void {
-    const promptId = asString(asRecord(envelope.params._meta)?.promptId)?.trim() || null;
-    if (promptId && this.activeAssistantPromptId && promptId !== this.activeAssistantPromptId) {
+  private prepareAssistant(envelope: GrokUpdate, hasVisibleContent: boolean): boolean {
+    const transition = this.grouping.appendAssistant(envelope, hasVisibleContent);
+    if (transition === "ignored") return false;
+    if (transition === "started") {
       this.builder.beginTurn();
       this.activeAssistant = null;
       this.latestPlan = null;
     }
-    if (promptId) this.activeAssistantPromptId = promptId;
     this.activeUser = null;
-    this.activeUserPromptIndex = null;
+    return true;
   }
 
   private assistantInput(envelope: GrokUpdate) {
@@ -630,8 +642,7 @@ class GrokTranscriptReducer {
 
   private appendAssistantText(envelope: GrokUpdate, type: "text" | "reasoning"): void {
     const text = textFromContentBlock(envelope.update.content);
-    if (!text) return;
-    this.prepareAssistant(envelope);
+    if (!this.prepareAssistant(envelope, Boolean(cleanInternalText(text)))) return;
 
     const tail = this.activeAssistant?.parts.at(-1);
     if (tail?.type === type) {
@@ -652,9 +663,7 @@ class GrokTranscriptReducer {
     const nativeTool = asRecord(updateMeta?.["x.ai/tool"]);
     const name =
       asString(nativeTool?.name)?.trim() || asString(envelope.update.title)?.trim() || "tool";
-    if (!callId) return;
-
-    this.prepareAssistant(envelope);
+    if (!this.prepareAssistant(envelope, Boolean(callId))) return;
     const metadata = {
       kind: asString(nativeTool?.kind) ?? asString(envelope.update.kind),
       locations: envelope.update.locations,
@@ -702,8 +711,7 @@ class GrokTranscriptReducer {
 
   private updatePlan(envelope: GrokUpdate): void {
     const part = planPart(envelope.update, envelope.timestampMs);
-    if (!part) return;
-    this.prepareAssistant(envelope);
+    if (!this.prepareAssistant(envelope, part !== null) || !part) return;
 
     if (this.latestPlan) {
       this.latestPlan.text = part.text;

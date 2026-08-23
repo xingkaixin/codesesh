@@ -280,6 +280,35 @@ describe("GrokAgent", () => {
     expect(detail.stats).toMatchObject(head!.stats);
   });
 
+  it("keeps head and detail message grouping aligned for invisible chunks", () => {
+    const updates = [
+      acpUpdate(CREATED_AT_MS + 1_000, "prompt-0", "user_message_chunk", {
+        content: { type: "text", text: "Visible prompt" },
+        _meta: { promptIndex: 0 },
+      }),
+      acpUpdate(CREATED_AT_MS + 2_000, "prompt-0", "agent_message_chunk", {
+        content: { type: "text", text: "First" },
+      }),
+      acpUpdate(CREATED_AT_MS + 3_000, "prompt-0", "user_message_chunk", {
+        content: { type: "text", text: "   " },
+        _meta: { promptIndex: 0 },
+      }),
+      acpUpdate(CREATED_AT_MS + 4_000, "prompt-0", "agent_message_chunk", {
+        content: { type: "text", text: " response" },
+      }),
+    ];
+    const { agent } = writeGrokSession({ updates });
+
+    const [head] = agent.scan();
+    const detail = agent.getSessionData(SESSION_ID);
+
+    expect(head?.stats.message_count).toBe(detail.messages.length);
+    expect(detail.messages).toMatchObject([
+      { role: "user", parts: [{ type: "text", text: "Visible prompt" }] },
+      { role: "assistant", parts: [{ type: "text", text: "First response" }] },
+    ]);
+  });
+
   it("uses the first visible prompt as title and removes rewound branches", () => {
     const updates = [
       acpUpdate(CREATED_AT_MS + 500, "host", "user_message_chunk", {
