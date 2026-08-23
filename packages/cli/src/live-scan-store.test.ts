@@ -17,6 +17,7 @@ import {
 } from "@codesesh/core/runtime";
 import { createSessionIdentity } from "@codesesh/core/contract";
 import { AgentUnavailableDuringScanError } from "./scan-refresh-error.js";
+import { buildScanRefreshDelta } from "./scan-refresh-delta.js";
 
 // Isolated temp directory for session fixtures so computeIdentity always
 // resolves to a "path" identity regardless of manifests in /tmp.
@@ -111,104 +112,6 @@ const workerThreads = vi.hoisted(() => ({
       generation: number;
     } | null = null;
     let scanAgent: any;
-    const runSourceSync = (data: any, agent: any) => {
-      const parseSourceFingerprint = (fingerprint: string) => {
-        try {
-          const parsed = JSON.parse(fingerprint);
-          return Array.isArray(parsed) ? parsed : null;
-        } catch {
-          return null;
-        }
-      };
-      const sourceFingerprintMatches = (source: any, cachedSession: SessionHead, cached: any) => {
-        if (cached?.sourceFingerprint === source.fingerprint) return true;
-        const current = parseSourceFingerprint(source.fingerprint);
-        return (
-          Boolean(current) &&
-          typeof cached?.sourceMtimeMs === "number" &&
-          cached.sourceMtimeMs === current![2] &&
-          (current![4] == null || cachedSession.title === current![4])
-        );
-      };
-      const sessionMap = new Map(
-        (data.previousSessions ?? []).map((session: SessionHead) => [
-          session.reference.sessionId,
-          session,
-        ]),
-      );
-      const changedIds = new Set<string>();
-      const sources = agent.listSessionSources();
-      const currentIds = new Set(sources.map((source: any) => source.sessionId));
-
-      for (const source of sources) {
-        const cachedSession = sessionMap.get(source.sessionId);
-        const cached = data.meta?.[source.sessionId];
-        if (
-          cachedSession &&
-          cached?.sourcePath === source.sourcePath &&
-          sourceFingerprintMatches(source, cachedSession as SessionHead, cached)
-        ) {
-          continue;
-        }
-        const next = agent.scanSessionSource(source.sourcePath);
-        changedIds.add(source.sessionId);
-        if (next) sessionMap.set(next.reference.sessionId, next);
-        else sessionMap.delete(source.sessionId);
-      }
-
-      for (const session of data.previousSessions ?? []) {
-        if (!currentIds.has(session.reference.sessionId)) {
-          sessionMap.delete(session.reference.sessionId);
-          changedIds.add(session.reference.sessionId);
-        }
-      }
-
-      return { sessions: [...sessionMap.values()], changedIds: [...changedIds] };
-    };
-    const serializeMeta = (agent: any): Record<string, SessionCacheMeta> =>
-      agent.snapshotSessionCacheMeta?.() ?? {};
-    const computeDelta = (
-      data: any,
-      sessions: SessionHead[],
-      changedIds: string[] | undefined,
-      meta: Record<string, SessionCacheMeta>,
-    ) => {
-      const previousById = new Map(
-        (data.previousSessions ?? []).map((session: SessionHead) => [
-          session.reference.sessionId,
-          session,
-        ]),
-      );
-      const updatedIds = new Set(sessions.map((session) => session.reference.sessionId));
-      const nextMeta = Object.fromEntries(
-        Object.entries(meta).filter(([sessionId]) => updatedIds.has(sessionId)),
-      ) as Record<string, SessionCacheMeta>;
-      const changedMeta = Object.fromEntries(
-        Object.entries(nextMeta).filter(
-          ([sessionId, value]) => JSON.stringify(data.meta?.[sessionId]) !== JSON.stringify(value),
-        ),
-      );
-      const removedMetaIds = Object.keys(data.meta ?? {}).filter(
-        (sessionId) => !Object.hasOwn(nextMeta, sessionId),
-      );
-      const changedIdSet = new Set([
-        ...(changedIds ?? []),
-        ...Object.keys(changedMeta),
-        ...removedMetaIds,
-      ]);
-      const changes = sessions.flatMap((session, sortIndex) => {
-        const previous = previousById.get(session.reference.sessionId);
-        return !previous ||
-          changedIdSet.has(session.reference.sessionId) ||
-          JSON.stringify(previous) !== JSON.stringify(session)
-          ? [{ session, sortIndex }]
-          : [];
-      });
-      const removedSessionIds = (data.previousSessions ?? [])
-        .filter((session: SessionHead) => !updatedIds.has(session.reference.sessionId))
-        .map((session: SessionHead) => session.reference.sessionId);
-      return { changes, removedSessionIds, meta: changedMeta, removedMetaIds };
-    };
     const dispatch = (data: any) => {
       queueMicrotask(() => {
         if (data?.type === "commit") {
@@ -247,21 +150,23 @@ const workerThreads = vi.hoisted(() => ({
               agent?.restoreSessionCacheMeta?.(runData.meta);
               let sessions: SessionHead[] = [];
               let changedIds: string[] | undefined;
-              const sourceSynchronization =
-                runData.operation?.kind === "source-refresh" ||
-                (runData.operation?.kind === "backfill" &&
-                  agent?.sessionSourceAccess?.kind === "enumerated");
+              let sourceFailures = [];
+              let explicitRemovedSessionIds: string[] = [];
               if (agent?.isAvailable?.() !== false) {
                 if (runData.operation?.kind === "recompute-derived") {
                   sessions = runData.previousSessions;
-                } else if (
-                  sourceSynchronization &&
-                  agent?.listSessionSources &&
-                  agent?.scanSessionSource
-                ) {
-                  const result = runSourceSync(runData, agent);
-                  sessions = result.sessions as SessionHead[];
-                  changedIds = result.changedIds;
+                } else if (agent?.sessionSourceAccess?.kind === "enumerated") {
+                  const result = agent.sessionSourceAccess.synchronize(
+                    { sessions: runData.previousSessions, meta: runData.meta },
+                    {
+                      kind: runData.operation?.kind === "full-scan" ? "reload" : "refresh",
+                      scanOptions: runData.scanOptions,
+                    },
+                  );
+                  sessions = result.sessions;
+                  changedIds = result.changedSessionIds;
+                  sourceFailures = result.sourceFailures;
+                  explicitRemovedSessionIds = result.explicitRemovedSessionIds;
                 } else {
                   sessions = agent?.scan?.({
                     ...runData.scanOptions,
@@ -269,15 +174,27 @@ const workerThreads = vi.hoisted(() => ({
                   });
                 }
               }
-              const serializedMeta = serializeMeta(agent);
-              const delta = computeDelta(runData, sessions, changedIds, serializedMeta);
               const sessionIds = new Set(sessions.map((session) => session.reference.sessionId));
+              const nextMeta = agent?.snapshotSessionCacheMeta?.(sessionIds) ?? {};
+              const completeness =
+                runData.scanOptions?.from == null &&
+                runData.scanOptions?.to == null &&
+                sourceFailures.length === 0
+                  ? "complete"
+                  : "partial";
+              const delta = buildScanRefreshDelta({
+                previousSessions: runData.previousSessions,
+                sessions,
+                previousMeta: runData.meta,
+                nextMeta,
+                changedIds,
+                completeness,
+                explicitRemovedSessionIds,
+              });
               stagedScanBaseline = {
                 requestId: runData.requestId,
                 sessions,
-                meta: Object.fromEntries(
-                  Object.entries(serializedMeta).filter(([sessionId]) => sessionIds.has(sessionId)),
-                ),
+                meta: nextMeta,
                 generation: runData.generation ?? 0,
               };
               handler({
@@ -285,12 +202,9 @@ const workerThreads = vi.hoisted(() => ({
                 requestId: runData.requestId,
                 generation: runData.generation ?? 0,
                 ...delta,
-                sourceFailures: [],
-                completeness:
-                  runData.scanOptions?.from == null && runData.scanOptions?.to == null
-                    ? "complete"
-                    : "partial",
-                explicitRemovedSessionIds: sourceSynchronization ? delta.removedSessionIds : [],
+                sourceFailures,
+                completeness,
+                explicitRemovedSessionIds,
                 durationMs: 0,
               });
               continue;
@@ -569,6 +483,7 @@ function makeFileSystemAgent(
   const agent = Object.create(FileSystemSessionSource.prototype) as InstanceType<
     typeof FileSystemSessionSource
   >;
+  Object.defineProperty(agent, "sessionMetaMap", { value: new Map(), writable: true });
   Object.defineProperty(agent, "name", { value: name, configurable: true });
   Object.defineProperty(agent, "displayName", { value: name, configurable: true });
   agent.isAvailable = vi.fn(() => true);
@@ -1451,8 +1366,8 @@ describe("LiveScanStore", () => {
     expect(codex.checkForChanges).not.toHaveBeenCalled();
     expect(codex.incrementalScan).not.toHaveBeenCalled();
     expect(scanSessionSource).toHaveBeenCalledTimes(2);
-    expect(scanSessionSource).toHaveBeenCalledWith("/tmp/s");
-    expect(scanSessionSource).toHaveBeenCalledWith("/tmp/added");
+    expect(scanSessionSource).toHaveBeenCalledWith("/tmp/s", expect.any(Object));
+    expect(scanSessionSource).toHaveBeenCalledWith("/tmp/added", expect.any(Object));
     expect(workerThreads.workers.at(-1)?.workerData.jobs).toEqual([
       {
         kind: "changes",
@@ -1479,9 +1394,8 @@ describe("LiveScanStore", () => {
     ]);
   });
 
-  it("does not rescan legacy Codex cache entries when only the fingerprint format changed", async () => {
+  it("rescans Codex cache entries when the fingerprint format changes", async () => {
     const previous = makeSession("session", { title: "same title", time_updated: 1000 });
-    const scanSessionSource = vi.fn(() => makeSession("session", { title: "same title" }));
     const legacyFingerprint = JSON.stringify([
       "codex-head-v1",
       "codex-parser-v3",
@@ -1496,6 +1410,25 @@ describe("LiveScanStore", () => {
       5678,
       "same title",
     ]);
+    let meta: Record<string, SessionCacheMeta> = {
+      session: {
+        id: "session",
+        sourcePath: "/tmp/s",
+        sourceFingerprint: legacyFingerprint,
+        sourceMtimeMs: 1234,
+      },
+    };
+    const scanSessionSource = vi.fn(() => {
+      meta = {
+        session: {
+          id: "session",
+          sourcePath: "/tmp/s",
+          sourceFingerprint: currentFingerprint,
+          sourceMtimeMs: 1234,
+        },
+      };
+      return makeSession("session", { title: "same title" });
+    });
     const codex = makeFileSystemAgent("codex", {
       listSessionSources: vi.fn(() => [
         {
@@ -1505,15 +1438,10 @@ describe("LiveScanStore", () => {
         },
       ]),
       scanSessionSource,
-      snapshotSessionCacheMeta: vi.fn(() => ({
-        session: {
-          id: "session",
-          sourcePath: "/tmp/s",
-          sourceFingerprint: legacyFingerprint,
-          sourceMtimeMs: 1234,
-        },
-      })),
-      restoreSessionCacheMeta: vi.fn(),
+      snapshotSessionCacheMeta: vi.fn(() => meta),
+      restoreSessionCacheMeta: vi.fn((next) => {
+        meta = { ...next };
+      }),
     });
 
     core.createRegisteredAgents.mockReturnValue([codex]);
@@ -1537,13 +1465,22 @@ describe("LiveScanStore", () => {
 
     const store = new LiveScanStore({ watchEnabled: false });
     await store.initialize();
-    const workerCountBeforeRefresh = workerThreads.workers.length;
+    const scanWorkerCountBeforeRefresh = workerThreads.workers.filter(
+      (worker) => worker.workerData.agentName,
+    ).length;
     store.startBackgroundRefresh();
-    await vi.waitFor(() => expect(workerThreads.workers.length).toBe(workerCountBeforeRefresh + 1));
+    await vi.waitFor(() =>
+      expect(workerThreads.workers.filter((worker) => worker.workerData.agentName)).toHaveLength(
+        scanWorkerCountBeforeRefresh + 1,
+      ),
+    );
+    await vi.waitFor(() => expect(scanSessionSource).toHaveBeenCalledOnce());
 
-    expect(scanSessionSource).not.toHaveBeenCalled();
-    expect(workerThreads.workers).toHaveLength(workerCountBeforeRefresh + 1);
-    expect(workerThreads.workers.at(-1)?.workerData.agentName).toBe("codex");
+    expect(scanSessionSource).toHaveBeenCalledWith("/tmp/s", expect.any(Object));
+    expect(
+      workerThreads.workers.filter((worker) => worker.workerData.agentName).at(-1)?.workerData
+        .agentName,
+    ).toBe("codex");
   });
 
   it("emits refresh events and persists changed agent sessions", async () => {

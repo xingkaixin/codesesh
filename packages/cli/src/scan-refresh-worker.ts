@@ -1,10 +1,8 @@
 import "./diagnostics-bridge.js";
 import { parentPort, workerData } from "node:worker_threads";
-import { isDeepStrictEqual } from "node:util";
 import {
   attachMissingProjectIdentities,
   buildAgentCacheMeta,
-  buildSessionPersistenceDiff,
   createRegisteredAgents,
   ensureSessionTagsSync,
   hasStaleSessionTags,
@@ -24,6 +22,7 @@ import {
 } from "@codesesh/core/runtime";
 import { appLogger } from "./logging.js";
 import { MonotonicValueSampler } from "./monotonic-value-sampler.js";
+import { buildScanRefreshDelta } from "./scan-refresh-delta.js";
 import {
   AgentUnavailableDuringScanError,
   type ScanRefreshWorkerErrorCode,
@@ -118,26 +117,6 @@ interface WorkerBaseline {
   sessions: SessionHead[];
   meta: Record<string, SessionCacheMeta>;
   staged: StagedWorkerBaseline | null;
-}
-
-interface CacheMetaDiff {
-  changes: Record<string, SessionCacheMeta>;
-  removedIds: string[];
-}
-
-function computeCacheMetaDiff(
-  previous: Record<string, SessionCacheMeta>,
-  next: Record<string, SessionCacheMeta>,
-): CacheMetaDiff {
-  const changes: Record<string, SessionCacheMeta> = {};
-  const removedIds: string[] = [];
-  for (const [id, meta] of Object.entries(next)) {
-    if (!isDeepStrictEqual(previous[id], meta)) changes[id] = meta;
-  }
-  for (const id of Object.keys(previous)) {
-    if (!Object.hasOwn(next, id)) removedIds.push(id);
-  }
-  return { changes, removedIds };
 }
 
 interface BackfillSelection {
@@ -556,13 +535,12 @@ async function run(
     agent,
     new Set(sessions.map((session) => session.reference.sessionId)),
   );
-  const metaDiff = computeCacheMetaDiff(previousMeta, nextMeta);
-  const diff = buildSessionPersistenceDiff(previousSessions, sessions, {
-    candidateChangedIds: [
-      ...(changedIds ?? []),
-      ...Object.keys(metaDiff.changes),
-      ...metaDiff.removedIds,
-    ],
+  const delta = buildScanRefreshDelta({
+    previousSessions,
+    sessions,
+    previousMeta,
+    nextMeta,
+    changedIds,
     completeness,
     explicitRemovedSessionIds,
   });
@@ -578,10 +556,7 @@ async function run(
     type: "done",
     requestId: data.requestId,
     generation: baseline.generation,
-    changes: diff.changedSessions,
-    removedSessionIds: diff.removedSessionIds,
-    meta: metaDiff.changes,
-    removedMetaIds: metaDiff.removedIds,
+    ...delta,
     sourceFailures,
     completeness,
     explicitRemovedSessionIds,
