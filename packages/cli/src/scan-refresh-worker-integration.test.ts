@@ -93,6 +93,7 @@ vi.mock("@codesesh/core/runtime", async (importOriginal) => {
     createRegisteredAgents: mocks.createRegisteredAgents,
     synchronizePricingGeneration: mocks.synchronizePricingGeneration,
     ensureSessionTagsSync: mocks.ensureSessionTagsSync,
+    executeAgentScanPlan: actual.executeAgentScanPlan,
     hasStaleSessionTags: actual.hasStaleSessionTags,
     inheritSessionTags: actual.inheritSessionTags,
     FileSystemSessionSource: mocks.FileSystemSessionSource,

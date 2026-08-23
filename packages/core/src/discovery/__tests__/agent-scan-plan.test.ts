@@ -1,10 +1,18 @@
-import { describe, expect, it } from "vitest";
-import { inspectAgentRefresh, planAgentScan, type AgentScanIntent } from "../agent-scan-plan.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  executeAgentScanPlan,
+  inspectAgentRefresh,
+  planAgentScan,
+  resolveSessionSnapshotCompleteness,
+  type AgentScanIntent,
+} from "../agent-scan-plan.js";
 import type {
   AggregateSessionSourceCapability,
+  BaseAgent,
   ChangeCheckResult,
   EnumeratedSessionSourceCapability,
 } from "../../agents/index.js";
+import type { SessionHead } from "../../types/index.js";
 
 const enumerated: EnumeratedSessionSourceCapability = {
   kind: "enumerated",
@@ -18,6 +26,26 @@ const aggregate: AggregateSessionSourceCapability = {
   commitChangeCheck: () => undefined,
   incrementalScan: (sessions) => sessions,
 };
+
+function session(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
+  return {
+    reference: { agentName: "test", sessionId: id },
+    title: id,
+    directory: "/tmp",
+    time_created: 1,
+    ...overrides,
+  } as SessionHead;
+}
+
+function agent(
+  source: AggregateSessionSourceCapability | EnumeratedSessionSourceCapability,
+  sessions: SessionHead[] = [],
+): BaseAgent {
+  return {
+    sessionSourceAccess: source,
+    scan: vi.fn(() => sessions),
+  } as unknown as BaseAgent;
+}
 
 describe("planAgentScan", () => {
   it.each<{
@@ -125,5 +153,112 @@ describe("inspectAgentRefresh", () => {
     const inspection = await inspectAgentRefresh(source, 10, []);
 
     expect(inspection).toMatchObject({ kind: "failed", failure });
+  });
+});
+
+describe("executeAgentScanPlan", () => {
+  it("preserves baseline tags when an aggregate reload omits derived fields", () => {
+    const cached = session("same", {
+      smart_tags: ["refactoring"],
+      smart_tags_source_updated_at: 1,
+      smart_tags_classifier_revision: "smart-tags-v1",
+    });
+    const scanned = session("same", { title: "updated" });
+    const target = agent(aggregate, [scanned]);
+
+    const result = executeAgentScanPlan(
+      target,
+      planAgentScan(aggregate, "reload"),
+      { sessions: [cached], meta: {} },
+      {},
+    );
+
+    expect(target.scan).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      sessions: [
+        expect.objectContaining({
+          title: "updated",
+          smart_tags: ["refactoring"],
+          smart_tags_source_updated_at: 1,
+          smart_tags_classifier_revision: "smart-tags-v1",
+        }),
+      ],
+      changedSessionIds: [],
+      sourceFailures: [],
+      completeness: "complete",
+    });
+  });
+
+  it("normalizes an enumerated synchronization result", () => {
+    const updated = session("updated");
+    const timing = {
+      totalMs: 8,
+      enumerationMs: 1,
+      diffMs: 2,
+      parseMs: 5,
+      enumeratedSourceCount: 2,
+      changedSourceCount: 1,
+      processedSourceCount: 1,
+    };
+    const failure = {
+      sessionId: "failed",
+      sourcePath: "/tmp/failed",
+      stage: "parsing" as const,
+      errorClass: "SyntaxError",
+      message: "invalid session",
+    };
+    const source: EnumeratedSessionSourceCapability = {
+      kind: "enumerated",
+      count: () => 2,
+      synchronize: () => ({
+        sessions: [updated],
+        meta: {},
+        sources: [],
+        sourceOutcomes: [],
+        detectedSessionIds: ["updated"],
+        changedSessionIds: ["updated"],
+        explicitRemovedSessionIds: ["removed"],
+        finalizeSessionIds: ["updated"],
+        sourceFailures: [failure],
+        completeness: "partial",
+        sourceCount: 2,
+        removedSourceCount: 1,
+        timing,
+      }),
+    };
+
+    const result = executeAgentScanPlan(agent(source), planAgentScan(source, "reload"), {
+      sessions: [],
+      meta: {},
+    });
+
+    expect(result).toEqual({
+      sessions: [updated],
+      detectedSessionIds: ["updated"],
+      changedSessionIds: ["updated"],
+      finalizeSessionIds: ["updated"],
+      explicitRemovedSessionIds: ["removed"],
+      sourceFailures: [failure],
+      completeness: "partial",
+      sourceSynchronization: { sourceCount: 2, removedSourceCount: 1, timing },
+    });
+  });
+});
+
+describe("resolveSessionSnapshotCompleteness", () => {
+  it("requires a full window without source failures", () => {
+    expect(resolveSessionSnapshotCompleteness({}, [])).toBe("complete");
+    expect(resolveSessionSnapshotCompleteness({ from: 1 }, [])).toBe("partial");
+    expect(
+      resolveSessionSnapshotCompleteness({}, [
+        {
+          sessionId: "failed",
+          sourcePath: "/tmp/failed",
+          stage: "parsing",
+          errorClass: "SyntaxError",
+          message: "invalid session",
+        },
+      ]),
+    ).toBe("partial");
   });
 });

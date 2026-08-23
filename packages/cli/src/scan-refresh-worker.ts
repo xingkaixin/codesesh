@@ -5,8 +5,8 @@ import {
   buildAgentCacheMeta,
   createRegisteredAgents,
   ensureSessionTagsSync,
+  executeAgentScanPlan,
   hasStaleSessionTags,
-  inheritSessionTags,
   planAgentScan,
   sortSessions,
   synchronizePricingGeneration,
@@ -337,68 +337,37 @@ async function run(
     throw new AgentUnavailableDuringScanError(data.agentName);
   }
 
-  let sessions: SessionHead[];
-  let changedIds: string[] | undefined;
-  let sourceFailures: SessionSourceFailure[] = [];
-  let explicitRemovedSessionIds: string[] = [];
-  let finalizeSessionIds: ReadonlySet<string> | undefined;
-  let backfillOrder: SessionHead[] | undefined;
-  let backfillCursorIndex = -1;
-  let sourceSynchronizationDetails:
-    | {
-        sourceCount: number;
-        removedCount: number;
-        enumerationMs: number;
-        diffMs: number;
-        parseMs: number;
-        changedCount: number;
-        processedCount: number;
-      }
-    | undefined;
-
-  if (scanPlan.kind === "reuse-baseline") {
-    sessions = previousSessions;
-  } else if (scanPlan.kind === "synchronize") {
-    const result = scanPlan.source.synchronize(
-      { sessions: previousSessions, meta: previousMeta },
-      {
-        kind: scanPlan.requestKind,
-        scanOptions: { ...data.scanOptions, onProgress: reportProgress },
-      },
-    );
-    sessions = result.sessions;
-    changedIds = result.changedSessionIds;
-    finalizeSessionIds = new Set(result.finalizeSessionIds);
-    sourceSynchronizationDetails = {
-      sourceCount: result.sourceCount,
-      removedCount: result.removedSourceCount,
-      enumerationMs: result.timing.enumerationMs,
-      diffMs: result.timing.diffMs,
-      parseMs: result.timing.parseMs,
-      changedCount: result.timing.changedSourceCount,
-      processedCount: result.timing.processedSourceCount,
-    };
-    sourceFailures = result.sourceFailures;
-    explicitRemovedSessionIds = result.explicitRemovedSessionIds;
-  } else if (scanPlan.kind === "scan") {
-    sessions = inheritSessionTags(
-      await Promise.resolve(
-        agent.scan({
-          ...data.scanOptions,
-          onProgress: reportProgress,
-        }),
-      ),
-      previousSessions,
-    );
-  } else {
+  if (scanPlan.kind === "check-for-changes") {
     throw new Error(`Change checks must run before dispatching Agent ${agent.name} to the worker`);
   }
+  const execution = executeAgentScanPlan(
+    agent,
+    scanPlan,
+    { sessions: previousSessions, meta: previousMeta },
+    { ...data.scanOptions, onProgress: reportProgress },
+  );
+  let sessions = execution.sessions;
+  const changedIds = execution.changedSessionIds;
+  const sourceFailures = execution.sourceFailures;
+  const explicitRemovedSessionIds = execution.explicitRemovedSessionIds;
+  let finalizeSessionIds: ReadonlySet<string> | undefined =
+    execution.finalizeSessionIds === undefined ? undefined : new Set(execution.finalizeSessionIds);
+  let backfillOrder: SessionHead[] | undefined;
+  let backfillCursorIndex = -1;
+  const sourceSynchronizationDetails = execution.sourceSynchronization
+    ? {
+        sourceCount: execution.sourceSynchronization.sourceCount,
+        removedCount: execution.sourceSynchronization.removedSourceCount,
+        enumerationMs: execution.sourceSynchronization.timing.enumerationMs,
+        diffMs: execution.sourceSynchronization.timing.diffMs,
+        parseMs: execution.sourceSynchronization.timing.parseMs,
+        changedCount: execution.sourceSynchronization.timing.changedSourceCount,
+        processedCount: execution.sourceSynchronization.timing.processedSourceCount,
+      }
+    : undefined;
 
   sessions = attachMissingProjectIdentities(sessions);
-  const completeness: SessionSnapshotCompleteness =
-    data.scanOptions.from == null && data.scanOptions.to == null && sourceFailures.length === 0
-      ? "complete"
-      : "partial";
+  const completeness = execution.completeness;
   if (durableCheckpoints) {
     const ordered = sortSessions(sessions);
     parentPort?.postMessage({
