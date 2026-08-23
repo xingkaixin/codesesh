@@ -647,7 +647,10 @@ describe("FileSystemSessionSource source synchronization", () => {
   it("reports source enumeration, change, and processing workload", () => {
     const agent = new FakeFileSystemSource([source("a"), source("b")]);
 
-    const result = agent.synchronizeSessionSources({ sessions: [], meta: {} }, { kind: "reload" });
+    const result = agent.sessionSourceAccess.synchronize(
+      { sessions: [], meta: {} },
+      { kind: "reload" },
+    );
 
     expect(result.timing).toMatchObject({
       totalMs: expect.any(Number),

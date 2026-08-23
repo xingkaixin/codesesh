@@ -14,7 +14,7 @@ import type {
   SessionSourceRef,
 } from "./session-source-types.js";
 
-export interface SessionSourceSynchronizationAdapter {
+interface SessionSourceSynchronizationAdapter {
   readonly name: string;
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[];
   scanSessionSourceOutcome(

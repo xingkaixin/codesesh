@@ -1,6 +1,5 @@
 import {
   PRICING_CAPTURE_EPOCH,
-  synchronizeSessionSources,
   type BaseAgent,
   type SessionCacheMeta,
   type SessionHead,
@@ -8,41 +7,11 @@ import {
 } from "@codesesh/core/runtime";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => {
-  class FileSystemSessionSource {
-    scanSessionSourceOutcome(source: SessionSourceRef) {
-      try {
-        const session = (
-          this as unknown as { scanSessionSource(path: string): SessionHead | null }
-        ).scanSessionSource(source.sourcePath);
-        if (session) return { status: "parsed" as const, source, session };
-        return {
-          status: "failed" as const,
-          source,
-          failure: {
-            sessionId: source.sessionId,
-            sourcePath: source.sourcePath,
-            stage: "parsing" as const,
-            errorClass: "Error",
-            message: "source produced no session",
-          },
-        };
-      } catch (error) {
-        return {
-          status: "failed" as const,
-          source,
-          failure: {
-            sessionId: source.sessionId,
-            sourcePath: source.sourcePath,
-            stage: "parsing" as const,
-            errorClass: error instanceof Error ? error.name : typeof error,
-            message: error instanceof Error ? error.message : String(error),
-          },
-        };
-      }
-    }
-  }
+type FileSystemSourceConstructor = new () => InstanceType<
+  typeof import("@codesesh/core/runtime").FileSystemSessionSource
+>;
 
+const mocks = vi.hoisted(() => {
   return {
     workerData: {} as Record<string, unknown>,
     workerMessageHandler: undefined as ((message: unknown) => void) | undefined,
@@ -60,7 +29,7 @@ const mocks = vi.hoisted(() => {
         return { sessions };
       },
     ),
-    FileSystemSessionSource,
+    FileSystemSessionSource: undefined as unknown as FileSystemSourceConstructor,
     appLogger: {
       debug: vi.fn(),
       info: vi.fn(),
@@ -88,6 +57,7 @@ vi.mock("./logging.js", () => ({ appLogger: mocks.appLogger }));
 
 vi.mock("@codesesh/core/runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core/runtime")>();
+  mocks.FileSystemSessionSource = actual.FileSystemSessionSource as FileSystemSourceConstructor;
   return {
     attachMissingProjectIdentities: mocks.attachMissingProjectIdentities,
     createRegisteredAgents: mocks.createRegisteredAgents,
@@ -96,7 +66,7 @@ vi.mock("@codesesh/core/runtime", async (importOriginal) => {
     executeAgentScanPlan: actual.executeAgentScanPlan,
     hasStaleSessionTags: actual.hasStaleSessionTags,
     inheritSessionTags: actual.inheritSessionTags,
-    FileSystemSessionSource: mocks.FileSystemSessionSource,
+    FileSystemSessionSource: actual.FileSystemSessionSource,
     PRICING_CAPTURE_EPOCH: actual.PRICING_CAPTURE_EPOCH,
     buildAgentCacheMeta: actual.buildAgentCacheMeta,
     buildSessionPersistenceDiff: actual.buildSessionPersistenceDiff,
@@ -104,7 +74,6 @@ vi.mock("@codesesh/core/runtime", async (importOriginal) => {
     planAgentScan: actual.planAgentScan,
     sessionSignature: actual.sessionSignature,
     sortSessions: actual.sortSessions,
-    synchronizeSessionSources: actual.synchronizeSessionSources,
     setCoreDiagnostics: actual.setCoreDiagnostics,
   };
 });
@@ -152,16 +121,7 @@ function makeAgent(overrides: Record<string, unknown> = {}) {
     }),
     ...overrides,
   });
-  return Object.assign(agent, {
-    sessionSourceAccess: {
-      kind: "enumerated" as const,
-      synchronize: (
-        baseline: Parameters<typeof synchronizeSessionSources>[1],
-        request: Parameters<typeof synchronizeSessionSources>[2],
-      ) => synchronizeSessionSources(agent as never, baseline, request),
-      count: () => agent.listSessionSources().length,
-    },
-  });
+  return agent;
 }
 
 function makeGenericAgent(overrides: Record<string, unknown> = {}) {
@@ -596,7 +556,7 @@ describe("scan refresh worker entry", () => {
     await runWorker();
 
     expect(agent.scan).not.toHaveBeenCalled();
-    expect(scanSessionSource).toHaveBeenCalledWith("/changed");
+    expect(scanSessionSource).toHaveBeenCalledWith("/changed", expect.any(Object));
     expect(mocks.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "progress",
@@ -696,8 +656,8 @@ describe("scan refresh worker entry", () => {
       ["child"],
       expect.arrayContaining([expect.objectContaining({ sessionId: "parent" })]),
     );
-    expect(scanSessionSource).toHaveBeenCalledWith("/child");
-    expect(scanSessionSource).toHaveBeenCalledWith("/parent");
+    expect(scanSessionSource).toHaveBeenCalledWith("/child", expect.any(Object));
+    expect(scanSessionSource).toHaveBeenCalledWith("/parent", expect.any(Object));
   });
 
   it("resumes backfill finalization after the durable cursor", async () => {
@@ -792,7 +752,7 @@ describe("scan refresh worker entry", () => {
 
     await runWorker();
 
-    expect(scanSessionSource).toHaveBeenCalledWith("/recent");
+    expect(scanSessionSource).toHaveBeenCalledWith("/recent", expect.any(Object));
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({
         type: "done",
@@ -975,9 +935,9 @@ describe("scan refresh worker entry", () => {
     await runWorker();
 
     expect(scanSessionSource).toHaveBeenCalledTimes(3);
-    expect(scanSessionSource).toHaveBeenCalledWith("/changed");
-    expect(scanSessionSource).toHaveBeenCalledWith("/moved-to");
-    expect(scanSessionSource).toHaveBeenCalledWith("/missing");
+    expect(scanSessionSource).toHaveBeenCalledWith("/changed", expect.any(Object));
+    expect(scanSessionSource).toHaveBeenCalledWith("/moved-to", expect.any(Object));
+    expect(scanSessionSource).toHaveBeenCalledWith("/missing", expect.any(Object));
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({
         type: "done",
@@ -1029,7 +989,7 @@ describe("scan refresh worker entry", () => {
 
     await runWorker();
 
-    expect(scanSessionSource).toHaveBeenCalledWith("/legacy");
+    expect(scanSessionSource).toHaveBeenCalledWith("/legacy", expect.any(Object));
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({
         type: "done",
