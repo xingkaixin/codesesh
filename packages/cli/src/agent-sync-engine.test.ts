@@ -1366,6 +1366,9 @@ describe("AgentSyncEngine", () => {
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(new FakeSyncAgent(), [previous], workerRunner);
+    workerLifecycle.commit.mockImplementationOnce(() => {
+      throw new Error("worker commit notification failed");
+    });
     engine.subscribeSessionsChanged(() => {
       throw new Error("session event broadcast failed");
     });
