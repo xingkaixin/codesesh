@@ -16,7 +16,7 @@ import type {
   SessionSourceFailure,
 } from "@codesesh/core/runtime";
 import type { ScanStatusEvent } from "@codesesh/core/contract";
-import type { WorkerResult, WorkerRunner } from "./worker-runner.js";
+import type { StagedWorkerRun, WorkerResult, WorkerRunner } from "./worker-runner.js";
 import { appLogger } from "./logging.js";
 import { AgentUnavailableDuringScanError } from "./scan-refresh-error.js";
 import type { ScanStatusModel } from "./scan-status-model.js";
@@ -189,11 +189,29 @@ class FakeSyncAgent extends FileSystemSessionSource {
   }
 }
 
+const workerLifecycle = {
+  commit: vi.fn(),
+  discard: vi.fn(),
+};
+
 function workerResult(
   result: Omit<WorkerResult, "completeness" | "explicitRemovedSessionIds">,
   completeness: WorkerResult["completeness"] = "complete",
-): WorkerResult {
-  return { ...result, completeness, explicitRemovedSessionIds: [] };
+): StagedWorkerRun {
+  let finalized = false;
+  return {
+    result: { ...result, completeness, explicitRemovedSessionIds: [] },
+    commit: () => {
+      if (finalized) return;
+      finalized = true;
+      workerLifecycle.commit();
+    },
+    discard: () => {
+      if (finalized) return;
+      finalized = true;
+      workerLifecycle.discard();
+    },
+  };
 }
 
 function makeWorkerRunner(): WorkerRunner {
@@ -208,8 +226,7 @@ function makeWorkerRunner(): WorkerRunner {
         payload.scanOptions.from == null && payload.scanOptions.to == null ? "complete" : "partial",
       ),
     ),
-    commit: vi.fn(),
-    discard: vi.fn(),
+    reset: vi.fn(),
     shutdown: vi.fn(async () => undefined),
   };
 }
@@ -289,6 +306,7 @@ describe("AgentSyncEngine", () => {
           changedIds: [],
         }),
       ),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(new FakeSyncAgent(), [session], workerRunner, { from: 1 });
@@ -365,6 +383,7 @@ describe("AgentSyncEngine", () => {
         }
         return workerResult({ sessions: [], meta: {} });
       }),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(new FakeSyncAgent(), [], workerRunner, { from: 1 });
@@ -438,6 +457,7 @@ describe("AgentSyncEngine", () => {
         payload.onProgress?.({ phase: "finalizing", total: 10_000, processed: 10_000 });
         return workerResult({ sessions: [], meta: {} });
       }),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     core.readAgentLastFullSyncAt.mockReturnValueOnce({ status: "success", value: null });
@@ -512,8 +532,7 @@ describe("AgentSyncEngine", () => {
         });
         return workerResult({ sessions: [next], meta: {} });
       }),
-      commit: vi.fn(),
-      discard: vi.fn(),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     core.readAgentLastFullSyncAt.mockReturnValueOnce({ status: "success", value: null });
@@ -565,8 +584,7 @@ describe("AgentSyncEngine", () => {
           "partial",
         );
       }),
-      commit: vi.fn(),
-      discard: vi.fn(),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     core.getAgentFullSyncCursor.mockReturnValueOnce("cursor-1");
@@ -588,8 +606,8 @@ describe("AgentSyncEngine", () => {
         },
       },
     });
-    expect(workerRunner.commit).toHaveBeenCalledWith("codex");
-    expect(workerRunner.discard).not.toHaveBeenCalled();
+    expect(workerLifecycle.commit).toHaveBeenCalledTimes(2);
+    expect(workerLifecycle.discard).not.toHaveBeenCalled();
     expect(workerRunner.run).toHaveBeenCalledWith(
       "codex",
       expect.objectContaining({
@@ -700,7 +718,7 @@ describe("AgentSyncEngine", () => {
     expect(statusChanges).toHaveBeenCalledWith(
       expect.objectContaining({ type: "scan-status", active: false }),
     );
-    expect(workerRunner.discard).toHaveBeenCalledWith("codex");
+    expect(workerRunner.reset).toHaveBeenCalledWith("codex");
     expect(incrementalScan).toHaveBeenCalledWith(
       [previous],
       [updated.reference.sessionId],
@@ -722,6 +740,7 @@ describe("AgentSyncEngine", () => {
         payload.onProgress?.({ phase: "finalizing", total: 10_000, processed: 10_000 });
         return workerResult({ sessions: [], meta: {} });
       }),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(makeAgent(), [], workerRunner);
@@ -768,6 +787,7 @@ describe("AgentSyncEngine", () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async () => workerResult({ sessions: [updated], meta: {} })),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(
@@ -901,6 +921,7 @@ describe("AgentSyncEngine", () => {
         expect(payload.onCheckpoint).toBeUndefined();
         return workerResult({ sessions: [tagged], meta });
       }),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(makeAgent(), [], workerRunner);
@@ -941,6 +962,7 @@ describe("AgentSyncEngine", () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async () => workerResult({ sessions: [recent], meta: {} }, "partial")),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const state: LiveSnapshot = {
@@ -987,6 +1009,7 @@ describe("AgentSyncEngine", () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async () => workerResult({ sessions: [head], meta: nextMeta })),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const agent = makeAgent({
@@ -1090,6 +1113,7 @@ describe("AgentSyncEngine", () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: runWorker,
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(
@@ -1147,6 +1171,7 @@ describe("AgentSyncEngine", () => {
           "partial",
         ),
       ),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const agent = makeAgent({
@@ -1205,6 +1230,7 @@ describe("AgentSyncEngine", () => {
           changedIds: [steady.reference.sessionId],
         }),
       ),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const agent = makeAgent({
@@ -1273,8 +1299,7 @@ describe("AgentSyncEngine", () => {
           "partial",
         ),
       ),
-      commit: vi.fn(),
-      discard: vi.fn(),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(new FakeSyncAgent(), [changed, retained], workerRunner);
@@ -1311,8 +1336,8 @@ describe("AgentSyncEngine", () => {
         sourceFailureSummary: "SyntaxError: Unexpected end of JSON input",
       }),
     );
-    expect(workerRunner.commit).toHaveBeenCalledWith("codex");
-    expect(workerRunner.discard).not.toHaveBeenCalled();
+    expect(workerLifecycle.commit).toHaveBeenCalledOnce();
+    expect(workerLifecycle.discard).not.toHaveBeenCalled();
   });
 
   it("keeps a committed refresh complete when post-commit notifications throw", async () => {
@@ -1332,8 +1357,7 @@ describe("AgentSyncEngine", () => {
           changedIds: [updated.reference.sessionId],
         }),
       ),
-      commit: vi.fn(),
-      discard: vi.fn(),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(new FakeSyncAgent(), [previous], workerRunner);
@@ -1358,8 +1382,8 @@ describe("AgentSyncEngine", () => {
         expect.objectContaining({ reference: updated.reference, title: updated.title }),
       ]);
       expect(engine.status().agentStatuses.codex).toMatchObject({ status: "complete" });
-      expect(workerRunner.commit).toHaveBeenCalledWith("codex");
-      expect(workerRunner.discard).not.toHaveBeenCalled();
+      expect(workerLifecycle.commit).toHaveBeenCalledOnce();
+      expect(workerLifecycle.discard).not.toHaveBeenCalled();
       expect(finishAgent).toHaveBeenCalledTimes(2);
       expect(logError).toHaveBeenCalledWith(
         "scan.refresh.post_commit_error",
@@ -1402,8 +1426,9 @@ describe("AgentSyncEngine", () => {
       "[codex] Session refresh failed:",
       expect.objectContaining({ message: "index failed" }),
     );
-    expect(workerRunner.commit).not.toHaveBeenCalled();
-    expect(workerRunner.discard).toHaveBeenCalledWith("codex");
+    expect(workerLifecycle.commit).not.toHaveBeenCalled();
+    expect(workerLifecycle.discard).not.toHaveBeenCalled();
+    expect(workerRunner.reset).toHaveBeenCalledWith("codex");
     expect(engine.status().agentStatuses.codex).toMatchObject({ status: "failed" });
   });
 
@@ -1457,8 +1482,8 @@ describe("AgentSyncEngine", () => {
     expect(refreshState.lastRefreshAtByAgent.get("codex")).toBe(baselineTimestamp);
     expect(sessionChanges).not.toHaveBeenCalled();
     expect(searchIndex.enqueue).not.toHaveBeenCalled();
-    expect(workerRunner.commit).not.toHaveBeenCalled();
-    expect(workerRunner.discard).toHaveBeenCalledWith("codex");
+    expect(workerLifecycle.commit).not.toHaveBeenCalled();
+    expect(workerLifecycle.discard).not.toHaveBeenCalled();
     expect(engine.status().agentStatuses.codex).toMatchObject({ status: "failed" });
     expect(warn).toHaveBeenCalledWith("scan.refresh.worker_agent_unavailable", {
       agent: "codex",
@@ -1593,6 +1618,7 @@ describe("AgentSyncEngine", () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async () => workerResult({ sessions: [session], meta: {}, changedIds: [] })),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const { engine } = makeEngine(agent, [session], workerRunner);
@@ -1629,6 +1655,7 @@ describe("AgentSyncEngine", () => {
       // changed — mirrors an out-of-band reclassification the file-fingerprint
       // check can't see.
       run: vi.fn(async () => workerResult({ sessions: [newSession], meta: {}, changedIds: [] })),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const state: LiveSnapshot = {
@@ -1667,8 +1694,7 @@ describe("AgentSyncEngine", () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async () => workerResult({ sessions: [newSession], meta: {}, changedIds: [] })),
-      commit: vi.fn(),
-      discard: vi.fn(),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const engine = new AgentSyncEngine({ workerRunner });
@@ -1689,8 +1715,8 @@ describe("AgentSyncEngine", () => {
 
     expect(engine.snapshot().sessions).toEqual([oldSession]);
     expect(sessionChanges).not.toHaveBeenCalled();
-    expect(workerRunner.commit).not.toHaveBeenCalled();
-    expect(workerRunner.discard).toHaveBeenCalledTimes(1);
+    expect(workerLifecycle.commit).not.toHaveBeenCalled();
+    expect(workerLifecycle.discard).toHaveBeenCalledTimes(1);
 
     await engine.refresh("codex");
 
@@ -1705,7 +1731,7 @@ describe("AgentSyncEngine", () => {
         event: expect.objectContaining({ updatedSessions: 1 }),
       }),
     );
-    expect(workerRunner.commit).toHaveBeenCalledTimes(1);
+    expect(workerLifecycle.commit).toHaveBeenCalledTimes(1);
   });
 
   it("CS-73 regression: a windowed startup scan with one unindexed session still switches to the incremental refresh path", async () => {
@@ -1732,6 +1758,7 @@ describe("AgentSyncEngine", () => {
     const workerRunner: WorkerRunner = {
       activeCount: 0,
       run: vi.fn(async () => workerResult({ sessions: scanResult, meta: {} }, "partial")),
+      reset: vi.fn(),
       shutdown: vi.fn(async () => undefined),
     };
     const state: LiveSnapshot = { agents: [agent], byAgent: { codex: [] }, sessions: [] };

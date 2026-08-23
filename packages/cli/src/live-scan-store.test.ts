@@ -928,14 +928,13 @@ describe("LiveScanStore", () => {
     });
 
     workerThreads.deferScanRefreshWorkers = false;
-    await expect(
-      runner.run(agent.name, {
-        previousSessions: [],
-        operation: { kind: "full-scan" },
-        scanOptions: {},
-        meta: {},
-      }),
-    ).resolves.toEqual({
+    const retry = await runner.run(agent.name, {
+      previousSessions: [],
+      operation: { kind: "full-scan" },
+      scanOptions: {},
+      meta: {},
+    });
+    expect(retry.result).toEqual({
       sessions: [],
       meta: {},
       changedIds: [],
@@ -943,6 +942,7 @@ describe("LiveScanStore", () => {
       completeness: "complete",
       explicitRemovedSessionIds: [],
     });
+    retry.commit();
   });
 
   it("rehydrates an unavailable-agent error from the scan worker", async () => {
@@ -1008,7 +1008,8 @@ describe("LiveScanStore", () => {
       durationMs: 0,
     });
 
-    await expect(refresh).resolves.toEqual({
+    const run = await refresh;
+    expect(run.result).toEqual({
       sessions: [],
       meta: {},
       changedIds: [],
@@ -1016,7 +1017,7 @@ describe("LiveScanStore", () => {
       completeness: "complete",
       explicitRemovedSessionIds: [],
     });
-    runner.commit("codex");
+    run.commit();
     await runner.shutdown();
   });
 
@@ -1070,7 +1071,7 @@ describe("LiveScanStore", () => {
     core.createRegisteredAgents.mockReturnValue([agent]);
     const runner = new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
 
-    const result = await runner.run("codex", {
+    const run = await runner.run("codex", {
       previousSessions: [removed, retained],
       operation: { kind: "full-scan" },
       scanOptions: {},
@@ -1080,7 +1081,7 @@ describe("LiveScanStore", () => {
       },
     });
 
-    expect(result).toEqual({
+    expect(run.result).toEqual({
       sessions: [added, retained],
       meta: {
         added: { id: "added", sourcePath: "/added" },
@@ -1092,7 +1093,7 @@ describe("LiveScanStore", () => {
       explicitRemovedSessionIds: [],
     });
     expect(runner.activeCount).toBe(1);
-    runner.commit("codex");
+    run.commit();
     expect(runner.activeCount).toBe(0);
     await runner.shutdown();
   });
@@ -1111,20 +1112,20 @@ describe("LiveScanStore", () => {
     });
     await expect(
       runner.run("codex", {
-        previousSessions: first.sessions,
+        previousSessions: first.result.sessions,
         operation: { kind: "recompute-derived" },
         scanOptions: {},
-        meta: first.meta,
+        meta: first.result.meta,
       }),
     ).rejects.toThrow("Scan refresh worker for codex is busy");
-    runner.commit("codex");
+    first.commit();
     const worker = workerThreads.workers.at(-1)!;
 
     const second = await runner.run("codex", {
-      previousSessions: first.sessions,
+      previousSessions: first.result.sessions,
       operation: { kind: "recompute-derived" },
       scanOptions: {},
-      meta: first.meta,
+      meta: first.result.meta,
     });
     const runRequest = worker.postMessage.mock.calls
       .map(([request]) => request)
@@ -1138,21 +1139,21 @@ describe("LiveScanStore", () => {
     });
     expect(runRequest).not.toHaveProperty("previousSessions");
     expect(runRequest).not.toHaveProperty("meta");
-    expect(second.sessions).toEqual([session]);
+    expect(second.result.sessions).toEqual([session]);
     expect(core.createRegisteredAgents).toHaveBeenCalledTimes(1);
 
-    runner.commit("codex");
+    second.commit();
     worker.emitExit(1);
-    await runner.run("codex", {
-      previousSessions: second.sessions,
+    const replacement = await runner.run("codex", {
+      previousSessions: second.result.sessions,
       operation: { kind: "full-scan" },
       scanOptions: {},
-      meta: second.meta,
+      meta: second.result.meta,
     });
     const replacementWorker = workerThreads.workers.at(-1)!;
     expect(replacementWorker).not.toBe(worker);
-    expect(replacementWorker.workerData.previousSessions).toEqual(second.sessions);
-    runner.commit("codex");
+    expect(replacementWorker.workerData.previousSessions).toEqual(second.result.sessions);
+    replacement.commit();
     await runner.shutdown();
   });
 
@@ -1163,17 +1164,17 @@ describe("LiveScanStore", () => {
     core.createRegisteredAgents.mockReturnValue([agent]);
     const runner = new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
 
-    await runner.run("codex", {
+    const candidateRun = await runner.run("codex", {
       previousSessions: [lastKnownGood],
       operation: { kind: "full-scan" },
       scanOptions: {},
       meta: {},
     });
     const discardedWorker = workerThreads.workers.at(-1)!;
-    runner.discard("codex");
+    candidateRun.discard();
 
     expect(discardedWorker.terminate).toHaveBeenCalledTimes(1);
-    await runner.run("codex", {
+    const replacementRun = await runner.run("codex", {
       previousSessions: [lastKnownGood],
       operation: { kind: "full-scan" },
       scanOptions: {},
@@ -1184,7 +1185,7 @@ describe("LiveScanStore", () => {
     expect(replacementWorker.workerData.previousSessions).toEqual([lastKnownGood]);
     expect(replacementWorker.workerData.generation).toBe(0);
 
-    runner.commit("codex");
+    replacementRun.commit();
     await runner.shutdown();
   });
 
@@ -1219,14 +1220,14 @@ describe("LiveScanStore", () => {
     expect(staleWorker.terminate).toHaveBeenCalledTimes(1);
 
     workerThreads.deferScanRefreshWorkers = false;
-    await runner.run("codex", {
+    const replacementRun = await runner.run("codex", {
       previousSessions: [],
       operation: { kind: "full-scan" },
       scanOptions: {},
       meta: {},
     });
     expect(workerThreads.workers.at(-1)).not.toBe(staleWorker);
-    runner.commit("codex");
+    replacementRun.commit();
     await runner.shutdown();
   });
 

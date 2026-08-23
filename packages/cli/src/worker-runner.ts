@@ -41,16 +41,21 @@ export interface WorkerResult {
   explicitRemovedSessionIds: string[];
 }
 
+export interface StagedWorkerRun {
+  readonly result: WorkerResult;
+  commit(): void;
+  discard(): void;
+}
+
 export interface WorkerRunner {
   readonly activeCount: number;
-  run(agentName: string, payload: WorkerPayload): Promise<WorkerResult>;
-  commit?(agentName: string): void;
-  discard?(agentName: string): void;
+  run(agentName: string, payload: WorkerPayload): Promise<StagedWorkerRun>;
+  reset(agentName: string): void;
   shutdown(): Promise<void>;
 }
 
 interface PendingRequest {
-  resolve: (result: WorkerResult) => void;
+  resolve: (run: StagedWorkerRun) => void;
   reject: (error: Error) => void;
   payload: WorkerPayload;
   generation: number;
@@ -128,7 +133,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
     return count;
   }
 
-  run(agentName: string, payload: WorkerPayload): Promise<WorkerResult> {
+  run(agentName: string, payload: WorkerPayload): Promise<StagedWorkerRun> {
     if (this.isShuttingDown) return Promise.reject(new Error(SHUTDOWN_ERROR_MESSAGE));
 
     const existingSlot = this.workers.get(agentName);
@@ -180,25 +185,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
     });
   }
 
-  commit(agentName: string): void {
-    const slot = this.workers.get(agentName);
-    const awaiting = slot?.awaitingCommit;
-    if (!slot || !awaiting) return;
-    const request: ScanRefreshWorkerCommitRequest = {
-      type: "commit",
-      requestId: awaiting.requestId,
-      generation: awaiting.generation,
-    };
-    try {
-      slot.worker.postMessage(request);
-      slot.awaitingCommit = null;
-      slot.generation += 1;
-    } catch {
-      this.invalidateWorker(agentName, slot);
-    }
-  }
-
-  discard(agentName: string): void {
+  reset(agentName: string): void {
     const slot = this.workers.get(agentName);
     if (slot) this.invalidateWorker(agentName, slot);
   }
@@ -302,9 +289,65 @@ export class ThreadWorkerRunner implements WorkerRunner {
         requestId: message.requestId,
         generation: message.generation,
       };
-      pending.resolve(result);
+      pending.resolve(this.createStagedRun(slot, message.requestId, message.generation, result));
     } catch (error) {
       pending.reject(toError(error));
+      this.invalidateWorker(slot.agentName, slot);
+    }
+  }
+
+  private createStagedRun(
+    slot: WorkerSlot,
+    requestId: number,
+    generation: number,
+    result: WorkerResult,
+  ): StagedWorkerRun {
+    let finalized = false;
+    return {
+      result,
+      commit: () => {
+        if (finalized) return;
+        finalized = true;
+        this.commitStagedRun(slot, requestId, generation);
+      },
+      discard: () => {
+        if (finalized) return;
+        finalized = true;
+        this.discardStagedRun(slot, requestId, generation);
+      },
+    };
+  }
+
+  private commitStagedRun(slot: WorkerSlot, requestId: number, generation: number): void {
+    const awaiting = slot.awaitingCommit;
+    if (
+      this.workers.get(slot.agentName) !== slot ||
+      awaiting?.requestId !== requestId ||
+      awaiting.generation !== generation
+    ) {
+      return;
+    }
+    const request: ScanRefreshWorkerCommitRequest = {
+      type: "commit",
+      requestId,
+      generation,
+    };
+    try {
+      slot.worker.postMessage(request);
+      slot.awaitingCommit = null;
+      slot.generation += 1;
+    } catch {
+      this.invalidateWorker(slot.agentName, slot);
+    }
+  }
+
+  private discardStagedRun(slot: WorkerSlot, requestId: number, generation: number): void {
+    const awaiting = slot.awaitingCommit;
+    if (
+      this.workers.get(slot.agentName) === slot &&
+      awaiting?.requestId === requestId &&
+      awaiting.generation === generation
+    ) {
       this.invalidateWorker(slot.agentName, slot);
     }
   }
