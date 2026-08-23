@@ -6,19 +6,29 @@ import type {
   SearchIndexMaintenanceStatus,
 } from "@codesesh/core/contract";
 
-type ScanStatus = Omit<ScanStatusEvent, "type" | "searchIndexMaintenance"> & {
+type ScanStatus = Omit<
+  ScanStatusEvent,
+  | "type"
+  | "active"
+  | "pendingAgents"
+  | "scanningAgents"
+  | "completedAgents"
+  | "totalAgents"
+  | "searchIndexMaintenance"
+> & {
   searchIndexMaintenance: SearchIndexMaintenanceStatus;
 };
 
+interface AgentLists {
+  pendingAgents: string[];
+  scanningAgents: string[];
+  completedAgents: string[];
+}
+
 export class ScanStatusModel {
   private status: ScanStatus = {
-    active: false,
     phase: "idle",
-    pendingAgents: [],
-    scanningAgents: [],
-    completedAgents: [],
     agentStatuses: {},
-    totalAgents: 0,
     updatedAt: Date.now(),
     backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
     searchIndexMaintenance: {
@@ -30,6 +40,8 @@ export class ScanStatusModel {
   };
 
   snapshot(): ScanStatusEvent {
+    const agentLists = this.agentLists(this.status.agentStatuses);
+    const active = this.hasActiveAgents(this.status.agentStatuses);
     const backfill = {
       ...this.status.backfill,
       pendingAgents: [...this.status.backfill.pendingAgents],
@@ -54,9 +66,9 @@ export class ScanStatusModel {
     return {
       type: "scan-status",
       ...this.status,
-      pendingAgents: [...this.status.pendingAgents],
-      scanningAgents: [...this.status.scanningAgents],
-      completedAgents: [...this.status.completedAgents],
+      active,
+      ...agentLists,
+      totalAgents: Object.keys(this.status.agentStatuses).length,
       agentStatuses: Object.fromEntries(
         Object.entries(this.status.agentStatuses).map(([agentName, status]) => [
           agentName,
@@ -94,13 +106,8 @@ export class ScanStatusModel {
     );
     return this.set({
       ...this.status,
-      active: uniqueAgentNames.length > 0,
       phase: uniqueAgentNames.length > 0 ? phase : "idle",
-      pendingAgents: uniqueAgentNames,
-      scanningAgents: [],
-      completedAgents: [],
       agentStatuses,
-      totalAgents: uniqueAgentNames.length,
       startedAt: uniqueAgentNames.length > 0 ? now : undefined,
       updatedAt: now,
       completedAt: uniqueAgentNames.length > 0 ? undefined : now,
@@ -108,26 +115,20 @@ export class ScanStatusModel {
   }
 
   setPhase(phase: ScanStatusEvent["phase"]): ScanStatusEvent | null {
-    if (!this.status.active) return null;
+    if (!this.hasActiveAgents(this.status.agentStatuses)) return null;
     return this.set({ ...this.status, phase, updatedAt: Date.now() });
   }
 
   beginAgent(agentName: string, sessionCount: number): ScanStatusEvent {
-    if (!this.status.active)
+    if (!this.hasActiveAgents(this.status.agentStatuses)) {
       this.startBatch([agentName], "scanning", { [agentName]: sessionCount });
+    }
 
-    const pendingAgents = this.status.pendingAgents.filter((agent) => agent !== agentName);
-    const scanningAgents = [...new Set([...this.status.scanningAgents, agentName])];
-    const completedAgents = this.status.completedAgents.filter((agent) => agent !== agentName);
     const existingStatus = this.status.agentStatuses[agentName];
     const now = Date.now();
     return this.set({
       ...this.status,
-      active: true,
       phase: this.status.phase === "initializing" ? "initializing" : "scanning",
-      pendingAgents,
-      scanningAgents,
-      completedAgents,
       agentStatuses: {
         ...this.status.agentStatuses,
         [agentName]: {
@@ -140,7 +141,6 @@ export class ScanStatusModel {
           updatedAt: now,
         },
       },
-      totalAgents: Math.max(this.status.totalAgents, pendingAgents.length + scanningAgents.length),
       updatedAt: now,
       completedAt: undefined,
     });
@@ -173,7 +173,7 @@ export class ScanStatusModel {
     };
     return this.set({
       ...this.status,
-      phase: this.activePhase(this.status.pendingAgents, this.status.scanningAgents, agentStatuses),
+      phase: this.activePhase(agentStatuses),
       agentStatuses,
       updatedAt: now,
     });
@@ -182,7 +182,7 @@ export class ScanStatusModel {
   queueAgentPublication(agentName: string): ScanStatusEvent | null {
     const status = this.status.agentStatuses[agentName];
     if (
-      !this.status.active ||
+      !this.hasActiveAgents(this.status.agentStatuses) ||
       !status ||
       (status.status !== "scanning" && status.status !== "finalizing")
     ) {
@@ -196,7 +196,7 @@ export class ScanStatusModel {
     };
     return this.set({
       ...this.status,
-      phase: this.activePhase(this.status.pendingAgents, this.status.scanningAgents, agentStatuses),
+      phase: this.activePhase(agentStatuses),
       agentStatuses,
       updatedAt: now,
     });
@@ -205,7 +205,7 @@ export class ScanStatusModel {
   publishAgent(agentName: string): ScanStatusEvent | null {
     const status = this.status.agentStatuses[agentName];
     if (
-      !this.status.active ||
+      !this.hasActiveAgents(this.status.agentStatuses) ||
       !status ||
       (status.status !== "scanning" &&
         status.status !== "finalizing" &&
@@ -221,7 +221,7 @@ export class ScanStatusModel {
     };
     return this.set({
       ...this.status,
-      phase: this.activePhase(this.status.pendingAgents, this.status.scanningAgents, agentStatuses),
+      phase: this.activePhase(agentStatuses),
       agentStatuses,
       updatedAt: now,
     });
@@ -232,10 +232,6 @@ export class ScanStatusModel {
     sessionCount?: number,
     completion: ScanCompletion = { completeness: "complete" },
   ): ScanStatusEvent {
-    const pendingAgents = this.status.pendingAgents.filter((agent) => agent !== agentName);
-    const scanningAgents = this.status.scanningAgents.filter((agent) => agent !== agentName);
-    const completedAgents = [...new Set([...this.status.completedAgents, agentName])];
-    const isActive = pendingAgents.length > 0 || scanningAgents.length > 0;
     const now = Date.now();
     const previousStatus = this.status.agentStatuses[agentName];
     const total = previousStatus?.total ?? previousStatus?.processed;
@@ -253,14 +249,11 @@ export class ScanStatusModel {
         completedAt: now,
       },
     };
+    const isActive = this.hasActiveAgents(agentStatuses);
 
     return this.set({
       ...this.status,
-      active: isActive,
-      phase: isActive ? this.activePhase(pendingAgents, scanningAgents, agentStatuses) : "idle",
-      pendingAgents,
-      scanningAgents,
-      completedAgents,
+      phase: isActive ? this.activePhase(agentStatuses) : "idle",
       agentStatuses,
       updatedAt: now,
       completedAt: isActive ? undefined : now,
@@ -268,35 +261,27 @@ export class ScanStatusModel {
   }
 
   failAgent(agentName: string, error: string, sessionCount?: number): ScanStatusEvent {
-    const pendingAgents = this.status.pendingAgents.filter((agent) => agent !== agentName);
-    const scanningAgents = this.status.scanningAgents.filter((agent) => agent !== agentName);
-    const completedAgents = this.status.completedAgents.filter((agent) => agent !== agentName);
-    const isActive = pendingAgents.length > 0 || scanningAgents.length > 0;
     const now = Date.now();
     const previousStatus = this.status.agentStatuses[agentName];
+    const agentStatuses = {
+      ...this.status.agentStatuses,
+      [agentName]: {
+        agentName,
+        status: "failed" as const,
+        error,
+        total: previousStatus?.total,
+        processed: previousStatus?.processed,
+        sessions: sessionCount ?? previousStatus?.sessions ?? 0,
+        startedAt: previousStatus?.startedAt,
+        updatedAt: now,
+        completedAt: now,
+      },
+    };
+    const isActive = this.hasActiveAgents(agentStatuses);
     return this.set({
       ...this.status,
-      active: isActive,
-      phase: isActive
-        ? this.activePhase(pendingAgents, scanningAgents, this.status.agentStatuses)
-        : "idle",
-      pendingAgents,
-      scanningAgents,
-      completedAgents,
-      agentStatuses: {
-        ...this.status.agentStatuses,
-        [agentName]: {
-          agentName,
-          status: "failed",
-          error,
-          total: previousStatus?.total,
-          processed: previousStatus?.processed,
-          sessions: sessionCount ?? previousStatus?.sessions ?? 0,
-          startedAt: previousStatus?.startedAt,
-          updatedAt: now,
-          completedAt: now,
-        },
-      },
+      phase: isActive ? this.activePhase(agentStatuses) : "idle",
+      agentStatuses,
       updatedAt: now,
       completedAt: isActive ? undefined : now,
     });
@@ -306,10 +291,7 @@ export class ScanStatusModel {
     const now = Date.now();
     return this.set({
       ...this.status,
-      active: false,
       phase: "idle",
-      pendingAgents: [],
-      scanningAgents: [],
       agentStatuses: Object.fromEntries(
         Object.entries(this.status.agentStatuses).map(([agentName, status]) => [
           agentName,
@@ -368,11 +350,8 @@ export class ScanStatusModel {
     });
   }
 
-  private activePhase(
-    pendingAgents: string[],
-    scanningAgents: string[],
-    agentStatuses: ScanStatus["agentStatuses"],
-  ): ScanStatusEvent["phase"] {
+  private activePhase(agentStatuses: ScanStatus["agentStatuses"]): ScanStatusEvent["phase"] {
+    const { pendingAgents, scanningAgents } = this.agentLists(agentStatuses);
     if (
       pendingAgents.length === 0 &&
       scanningAgents.length > 0 &&
@@ -384,6 +363,26 @@ export class ScanStatusModel {
       return "publishing";
     }
     return this.status.phase === "initializing" ? "initializing" : "scanning";
+  }
+
+  private agentLists(agentStatuses: ScanStatus["agentStatuses"]): AgentLists {
+    const pendingAgents: string[] = [];
+    const scanningAgents: string[] = [];
+    const completedAgents: string[] = [];
+
+    for (const [agentName, status] of Object.entries(agentStatuses)) {
+      if (status.status === "pending") pendingAgents.push(agentName);
+      else if (status.status === "complete") completedAgents.push(agentName);
+      else if (status.status !== "failed") scanningAgents.push(agentName);
+    }
+
+    return { pendingAgents, scanningAgents, completedAgents };
+  }
+
+  private hasActiveAgents(agentStatuses: ScanStatus["agentStatuses"]): boolean {
+    return Object.values(agentStatuses).some(
+      (status) => status.status !== "complete" && status.status !== "failed",
+    );
   }
 
   private set(status: ScanStatus): ScanStatusEvent {
