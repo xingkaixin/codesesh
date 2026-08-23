@@ -240,13 +240,14 @@ export function useSessionStore(window: AppConfig["window"] | null) {
 
   const reload = useCallback(async (): Promise<void> => {
     if (!window) return;
-    const [agentsResult, projectionResult, dashboardResult] = await Promise.all([
+    const [agentsResult, projectionResult, dashboardResult, projectsResult] = await Promise.all([
       refetchAgents({ cancelRefetch: true }),
       refetchProjection({ cancelRefetch: true }),
       refetchDashboard({ cancelRefetch: true }),
       refetchProjects({ cancelRefetch: true }),
     ]);
-    const failure = agentsResult.error ?? projectionResult.error ?? dashboardResult.error;
+    const failure =
+      agentsResult.error ?? projectionResult.error ?? dashboardResult.error ?? projectsResult.error;
     if (failure) throw failure;
   }, [refetchAgents, refetchDashboard, refetchProjection, refetchProjects, window]);
 
