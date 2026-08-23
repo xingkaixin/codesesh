@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -20,7 +20,9 @@ describe("SQLite-backed agent parse contracts", () => {
   it("cleans Cursor messages and resolves title/tool names consistently", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-cursor-test-"));
     tempDirs.push(tempDir);
-    const dbPath = join(tempDir, "state.vscdb");
+    const databaseDir = join(tempDir, "globalStorage");
+    mkdirSync(databaseDir, { recursive: true });
+    const dbPath = join(databaseDir, "state.vscdb");
     const db = new Database(dbPath);
     try {
       db.exec("CREATE TABLE cursorDiskKV (key TEXT PRIMARY KEY, value TEXT)");
@@ -56,8 +58,7 @@ describe("SQLite-backed agent parse contracts", () => {
       db.close();
     }
 
-    const agent = new CursorAgent() as any;
-    agent.dbPath = dbPath;
+    const agent = new CursorAgent({ sourceRoot: tempDir }) as any;
     agent.buildWorkspacePathMap = () => new Map([["composer-1", "/tmp/project"]]);
 
     const [head] = agent.scan({ from: 0 });
@@ -171,8 +172,7 @@ describe("SQLite-backed agent parse contracts", () => {
       db.close();
     }
 
-    const agent = new OpenCodeAgent() as any;
-    agent.dbPath = dbPath;
+    const agent = new OpenCodeAgent({ sourceRoot: tempDir });
 
     const [head] = agent.scan({ from: 0 });
     const data = agent.getSessionData("session-1");

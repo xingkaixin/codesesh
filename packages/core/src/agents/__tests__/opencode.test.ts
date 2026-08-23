@@ -70,8 +70,7 @@ describe("OpenCodeAgent parsing", () => {
     ).run("legacy-session", "Legacy session", 1_000, 2_000, "/tmp/project");
     db.close();
 
-    const agent = new OpenCodeAgent() as any;
-    agent.dbPath = dbPath;
+    const agent = new OpenCodeAgent({ sourceRoot: tempDir });
 
     const [head] = agent.scan({ from: 0 });
 
@@ -140,8 +139,7 @@ describe("OpenCodeAgent parsing", () => {
     );
     db.close();
 
-    const agent = new OpenCodeAgent() as any;
-    agent.dbPath = dbPath;
+    const agent = new OpenCodeAgent({ sourceRoot: tempDir });
 
     const data = agent.getSessionData("session-1");
 
@@ -186,8 +184,7 @@ describe("OpenCodeAgent parsing", () => {
     const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
     setCoreDiagnostics(sink);
 
-    const agent = new OpenCodeAgent() as any;
-    agent.dbPath = dbPath;
+    const agent = new OpenCodeAgent({ sourceRoot: tempDir });
 
     const data = agent.getSessionData("session-drift");
 

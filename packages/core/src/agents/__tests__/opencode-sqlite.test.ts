@@ -250,7 +250,7 @@ afterEach(() => {
 });
 
 describe("OpenCodeSqliteAgent", () => {
-  it("builds matching heads and details through the shared SQLite adapter", () => {
+  it("scans without a prior availability check", () => {
     const dbPath = createDatabase();
     const agent = new OpenCodeSqliteAgent({
       name: "test-agent",
@@ -259,7 +259,6 @@ describe("OpenCodeSqliteAgent", () => {
       getSessionWatchPlan: () => ({ status: "not-needed", reason: "test adapter" }),
     });
 
-    expect(agent.isAvailable()).toBe(true);
     expect(agent.scan({ from: 0 })).toEqual([
       expect.objectContaining({
         reference: { agentName: "test-agent", sessionId: "s1" },
