@@ -7,7 +7,6 @@ import type {
   AgentScanOptions,
   BaseAgent,
   EnumeratedSessionSourceCapability,
-  SessionSourceFailure,
   SessionSourceSynchronizationTiming,
 } from "../agents/index.js";
 import {
@@ -32,7 +31,12 @@ import {
   buildAgentCacheMeta,
   buildSessionPersistenceDiff,
 } from "./orchestrate.js";
-import { inspectAgentRefresh, planAgentScan } from "./agent-scan-plan.js";
+import {
+  executeAgentScanPlan,
+  inspectAgentRefresh,
+  planAgentScan,
+  resolveSessionSnapshotCompleteness,
+} from "./agent-scan-plan.js";
 import { ensureSessionTags } from "./session-tags.js";
 
 export interface ScanOptions {
@@ -342,35 +346,34 @@ async function refreshCachedEnumeratedAgent(
   onProgress?: (progress: ScanProgress) => void,
 ): Promise<SuccessfulAgentScanResult> {
   const scanStartedAt = performance.now();
-  const synchronization = source.synchronize(
+  const execution = executeAgentScanPlan(
+    agent,
+    { kind: "synchronize", requestKind: "refresh", source },
     { sessions: cached.sessions, meta: cached.meta },
     {
-      kind: "refresh",
-      scanOptions: {
-        onProgress: (progress) => {
-          onProgress?.({
-            agent: agent.name,
-            phase: "incremental",
-            cachedCount: progress.total,
-            newCount: progress.sessions,
-            changedCount: progress.processed,
-          });
-        },
+      onProgress: (progress) => {
+        onProgress?.({
+          agent: agent.name,
+          phase: "incremental",
+          cachedCount: progress.total,
+          newCount: progress.sessions,
+          changedCount: progress.processed,
+        });
       },
     },
   );
   timing.scan = performance.now() - scanStartedAt;
-  applySessionSourceTiming(timing, synchronization.timing);
+  applySessionSourceTiming(timing, execution.sourceSynchronization!.timing);
   const hasSourceChanges =
-    synchronization.detectedSessionIds.length > 0 || synchronization.sourceFailures.length > 0;
+    execution.detectedSessionIds.length > 0 || execution.sourceFailures.length > 0;
 
   if (!hasSourceChanges) {
-    return finalizeAgentScan(agent, synchronization.sessions, {
+    return finalizeAgentScan(agent, execution.sessions, {
       finalization: { kind: "unchanged", cached },
       options,
       timing,
       agentStart,
-      completeness: synchronization.completeness,
+      completeness: execution.completeness,
       onProgress,
     });
   }
@@ -378,20 +381,20 @@ async function refreshCachedEnumeratedAgent(
   onProgress?.({
     agent: agent.name,
     phase: "incremental",
-    changedCount: synchronization.detectedSessionIds.length,
+    changedCount: execution.detectedSessionIds.length,
   });
-  return finalizeAgentScan(agent, synchronization.sessions, {
+  return finalizeAgentScan(agent, execution.sessions, {
     finalization: {
       kind: "incremental",
       cached,
-      changedIds: synchronization.changedSessionIds,
-      explicitRemovedSessionIds: synchronization.explicitRemovedSessionIds,
+      changedIds: execution.changedSessionIds,
+      explicitRemovedSessionIds: execution.explicitRemovedSessionIds,
       cacheTimestamp: Date.now(),
     },
     options,
     timing,
     agentStart,
-    completeness: synchronization.completeness,
+    completeness: execution.completeness,
     onProgress,
   });
 }
@@ -537,12 +540,10 @@ async function scanAgentSmart(
           options,
           timing,
           agentStart,
-          completeness:
-            options.from == null &&
-            options.to == null &&
-            (checkResult.sourceFailures?.length ?? 0) === 0
-              ? "complete"
-              : "partial",
+          completeness: resolveSessionSnapshotCompleteness(
+            options,
+            checkResult.sourceFailures ?? [],
+          ),
           onProgress,
         });
       }
@@ -592,28 +593,26 @@ async function scanAgentFull(
     const scanMarker = perf.start(`agent:${agent.name}:scan`);
     const t0 = performance.now();
     const agentScanOptions = buildAgentScanOptions(agent, options, onProgress);
-    let heads: SessionHead[];
-    let sourceFailures: SessionSourceFailure[] = [];
     const scanPlan = planAgentScan(agent.sessionSourceAccess, "reload");
-    if (scanPlan.kind === "synchronize") {
-      if (!cacheReadState.attempted) {
-        cacheReadState.attempted = true;
-        const outcome = readCachedSessions(agent.name);
-        if (outcome.status === "failed") {
-          cacheReadState.failed = true;
-        } else {
-          cached = outcome.value;
-        }
+    if (scanPlan.kind === "synchronize" && !cacheReadState.attempted) {
+      cacheReadState.attempted = true;
+      const outcome = readCachedSessions(agent.name);
+      if (outcome.status === "failed") {
+        cacheReadState.failed = true;
+      } else {
+        cached = outcome.value;
       }
-      const synchronization = scanPlan.source.synchronize(
-        { sessions: cached?.sessions ?? [], meta: cached?.meta ?? {} },
-        { kind: scanPlan.requestKind, scanOptions: agentScanOptions },
-      );
-      heads = synchronization.sessions;
-      sourceFailures = synchronization.sourceFailures;
-      applySessionSourceTiming(timing, synchronization.timing);
-    } else {
-      heads = agent.scan(agentScanOptions);
+    }
+    const execution = executeAgentScanPlan(
+      agent,
+      scanPlan,
+      { sessions: cached?.sessions ?? [], meta: cached?.meta ?? {} },
+      agentScanOptions,
+    );
+    const heads = execution.sessions;
+    const sourceFailures = execution.sourceFailures;
+    if (execution.sourceSynchronization) {
+      applySessionSourceTiming(timing, execution.sourceSynchronization.timing);
     }
     for (const session of heads) assertSessionIdentity(session, agent.name);
     perf.end(scanMarker);
@@ -638,7 +637,7 @@ async function scanAgentFull(
     if (options.writeCache !== false) {
       const isFullWindow = options.from == null && options.to == null;
       const persisted = saveCachedSessions(agent.name, tagged.sessions, meta, {
-        completeness: isFullWindow && sourceFailures.length === 0 ? "complete" : "partial",
+        completeness: execution.completeness,
       });
       if (persisted !== false) {
         cachePersistence = "persisted";
@@ -664,10 +663,7 @@ async function scanAgentFull(
     const filtered = filterSessions(tagged.sessions, options);
     timing.total = performance.now() - agentStart;
     return {
-      status:
-        options.from == null && options.to == null && sourceFailures.length === 0
-          ? "complete"
-          : "partial",
+      status: execution.completeness,
       agent,
       heads: filtered,
       cachePersistence,

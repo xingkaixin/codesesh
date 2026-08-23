@@ -9,6 +9,7 @@ import {
   markAgentFullSyncCompleted,
   readCachedSessions,
   readAgentCacheInitialization,
+  resolveSessionSnapshotCompleteness,
   type BaseAgent,
   type AgentRefreshInspection,
   type CachedResult,
@@ -804,10 +805,7 @@ export class AgentSyncEngine {
     source.commitChangeCheck();
     this.lastRefreshAtByAgent.set(agent.name, checkResult.timestamp);
     const sourceFailures = checkResult.sourceFailures ?? [];
-    const completeness =
-      scope.from == null && scope.to == null && sourceFailures.length === 0
-        ? "complete"
-        : "partial";
+    const completeness = resolveSessionSnapshotCompleteness(scope, sourceFailures);
     return {
       ...this.refreshStrategyBase(sessions, completeness, scope, {
         checkDuration,

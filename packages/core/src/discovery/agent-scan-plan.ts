@@ -1,10 +1,17 @@
 import type {
   AggregateSessionSourceCapability,
+  AgentScanOptions,
+  BaseAgent,
   ChangeCheckResult,
   EnumeratedSessionSourceCapability,
+  SessionSourceFailure,
   SessionSourceCapability,
+  SessionSourceSynchronizationBaseline,
+  SessionSourceSynchronizationTiming,
 } from "../agents/index.js";
 import type { SessionHead } from "../types/index.js";
+import type { SessionSnapshotCompleteness } from "./cache/snapshot-types.js";
+import { inheritSessionTags } from "./session-tags.js";
 
 export type AgentScanIntent = "reload" | "refresh" | "backfill" | "recompute-derived";
 
@@ -21,8 +28,75 @@ export type AgentScanPlan =
 type SourceScanPlan = Extract<AgentScanPlan, { kind: "scan" | "synchronize" }>;
 type RefreshScanPlan = Extract<AgentScanPlan, { kind: "synchronize" | "check-for-changes" }>;
 type RecomputeScanPlan = Extract<AgentScanPlan, { kind: "reuse-baseline" }>;
+export type ExecutableAgentScanPlan = Exclude<AgentScanPlan, { kind: "check-for-changes" }>;
+
+export interface AgentScanPlanExecution {
+  sessions: SessionHead[];
+  detectedSessionIds: string[];
+  changedSessionIds: string[];
+  finalizeSessionIds?: string[];
+  explicitRemovedSessionIds: string[];
+  sourceFailures: SessionSourceFailure[];
+  completeness: SessionSnapshotCompleteness;
+  sourceSynchronization?: {
+    sourceCount: number;
+    removedSourceCount: number;
+    timing: SessionSourceSynchronizationTiming;
+  };
+}
 
 type SuccessfulChangeCheck = Exclude<ChangeCheckResult, { status: "failed" }>;
+
+export function resolveSessionSnapshotCompleteness(
+  options: Pick<AgentScanOptions, "from" | "to">,
+  sourceFailures: readonly SessionSourceFailure[],
+): SessionSnapshotCompleteness {
+  return options.from == null && options.to == null && sourceFailures.length === 0
+    ? "complete"
+    : "partial";
+}
+
+export function executeAgentScanPlan(
+  agent: BaseAgent,
+  plan: ExecutableAgentScanPlan,
+  baseline: SessionSourceSynchronizationBaseline,
+  scanOptions: AgentScanOptions = {},
+): AgentScanPlanExecution {
+  if (plan.kind === "synchronize") {
+    const result = plan.source.synchronize(baseline, {
+      kind: plan.requestKind,
+      scanOptions,
+    });
+    return {
+      sessions: result.sessions,
+      detectedSessionIds: result.detectedSessionIds,
+      changedSessionIds: result.changedSessionIds,
+      finalizeSessionIds: result.finalizeSessionIds,
+      explicitRemovedSessionIds: result.explicitRemovedSessionIds,
+      sourceFailures: result.sourceFailures,
+      completeness: result.completeness,
+      sourceSynchronization: {
+        sourceCount: result.sourceCount,
+        removedSourceCount: result.removedSourceCount,
+        timing: result.timing,
+      },
+    };
+  }
+
+  const sessions =
+    plan.kind === "reuse-baseline"
+      ? baseline.sessions
+      : inheritSessionTags(agent.scan(scanOptions), baseline.sessions);
+  const sourceFailures: SessionSourceFailure[] = [];
+  return {
+    sessions,
+    detectedSessionIds: [],
+    changedSessionIds: [],
+    explicitRemovedSessionIds: [],
+    sourceFailures,
+    completeness: resolveSessionSnapshotCompleteness(scanOptions, sourceFailures),
+  };
+}
 
 export type AgentRefreshInspection =
   | {

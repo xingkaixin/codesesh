@@ -8,8 +8,19 @@ export {
 } from "./session-tags.js";
 export type { AgentCacheFailure, LiveSnapshot, ScanOptions } from "./scanner.js";
 export type { SessionTagTiming } from "./session-tags.js";
-export { inspectAgentRefresh, planAgentScan } from "./agent-scan-plan.js";
-export type { AgentRefreshInspection, AgentScanIntent, AgentScanPlan } from "./agent-scan-plan.js";
+export {
+  executeAgentScanPlan,
+  inspectAgentRefresh,
+  planAgentScan,
+  resolveSessionSnapshotCompleteness,
+} from "./agent-scan-plan.js";
+export type {
+  AgentRefreshInspection,
+  AgentScanIntent,
+  AgentScanPlan,
+  AgentScanPlanExecution,
+  ExecutableAgentScanPlan,
+} from "./agent-scan-plan.js";
 export {
   materializeSessionDetail,
   materializeSessionDetailResponse,
