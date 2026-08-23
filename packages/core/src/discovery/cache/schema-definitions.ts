@@ -1,6 +1,6 @@
 import { columnExists, tableExists, type SQLiteDatabase } from "../../utils/sqlite.js";
 
-export function createCacheTables(db: SQLiteDatabase): void {
+export function createCacheMetadataTables(db: SQLiteDatabase): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS cache_meta (
       key TEXT PRIMARY KEY,
@@ -10,14 +10,6 @@ export function createCacheTables(db: SQLiteDatabase): void {
     CREATE TABLE IF NOT EXISTS agent_cache (
       agent_name TEXT PRIMARY KEY,
       timestamp INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS cached_sessions (
-      agent_name TEXT NOT NULL,
-      session_id TEXT NOT NULL,
-      session_json TEXT NOT NULL,
-      meta_json TEXT,
-      PRIMARY KEY (agent_name, session_id)
     );
 
     CREATE TABLE IF NOT EXISTS cache_initialization (
@@ -30,6 +22,19 @@ export function createCacheTables(db: SQLiteDatabase): void {
     CREATE TABLE IF NOT EXISTS pending_reindex (
       agent_name TEXT NOT NULL,
       session_id TEXT NOT NULL,
+      PRIMARY KEY (agent_name, session_id)
+    );
+  `);
+}
+
+export function createLegacyCacheTables(db: SQLiteDatabase): void {
+  createCacheMetadataTables(db);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cached_sessions (
+      agent_name TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      session_json TEXT NOT NULL,
+      meta_json TEXT,
       PRIMARY KEY (agent_name, session_id)
     );
   `);
@@ -379,7 +384,7 @@ export function addIndexedMessageCount(db: SQLiteDatabase): void {
 
 export function addDetailVersion(db: SQLiteDatabase): void {
   if (!tableExists(db, "session_documents")) return;
-  createCacheTables(db);
+  createCacheMetadataTables(db);
   if (!columnExists(db, "session_documents", "detail_version")) {
     db.exec("ALTER TABLE session_documents ADD COLUMN detail_version TEXT NOT NULL DEFAULT ''");
   }
@@ -443,7 +448,7 @@ export function ensureLegacySessionDocumentColumns(db: SQLiteDatabase): void {
   }
 }
 
-export function createProjectTables(db: SQLiteDatabase): void {
+export function createLegacyProjectTables(db: SQLiteDatabase): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS project_sessions (
       agent_name TEXT NOT NULL,

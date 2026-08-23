@@ -54,18 +54,15 @@ const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
 const CACHE_DATA_TABLES = [
   "agent_cache",
   "cache_initialization",
-  "cached_sessions",
   "pending_reindex",
   "session_documents",
   "session_file_activity",
   "message_tools",
   "messages",
   "sessions",
-  "project_sessions",
 ] as const;
 
 const SESSION_OWNED_DATA_TABLES = [
-  "cached_sessions",
   "pending_reindex",
   "session_documents",
   "session_file_activity",
@@ -74,7 +71,6 @@ const SESSION_OWNED_DATA_TABLES = [
   "session_model_cost",
   "session_cost_summary",
   "sessions",
-  "project_sessions",
 ] as const;
 
 function getCacheDir(): string {
@@ -199,8 +195,6 @@ function seedSessionOwnedRows(): void {
   saveCachedSessions("claudecode", [makeSession("removed")]);
   withCacheDb((db) => {
     db.exec(`
-      INSERT INTO cached_sessions(agent_name, session_id, session_json)
-      VALUES ('claudecode', 'removed', '{}');
       INSERT INTO pending_reindex(agent_name, session_id)
       VALUES ('claudecode', 'removed');
       INSERT INTO session_documents(
@@ -222,13 +216,6 @@ function seedSessionOwnedRows(): void {
       INSERT INTO session_file_activity(
         agent_name, session_id, project_identity_key, path, kind, count, latest_time
       ) VALUES ('claudecode', 'removed', '${FIXTURE_DIR}', 'src/index.ts', 'write', 1, ${now});
-      INSERT INTO project_sessions(
-        agent_name, session_id, identity_kind, identity_key, display_name,
-        directory, activity_time
-      ) VALUES (
-        'claudecode', 'removed', 'path', '${FIXTURE_DIR}', '${FIXTURE_DIR_NAME}',
-        '${FIXTURE_DIR}', ${now}
-      );
     `);
   });
 }
@@ -349,7 +336,7 @@ describe("withCacheDb schema memo", () => {
   it("runs ensureSchema on the first open but skips it on later opens for the same path", () => {
     withCacheDb(() => undefined);
     expect(getSchemaEnsuredPath()).toBe(getCachePath());
-    expect(getUserVersion(getCachePath())).toBe(31);
+    expect(getUserVersion(getCachePath())).toBe(CACHE_SCHEMA_VERSION);
 
     const db = new Database(getCachePath());
     db.pragma("user_version = 14");
@@ -360,7 +347,7 @@ describe("withCacheDb schema memo", () => {
 
     setSchemaEnsuredPath(null);
     withCacheDb(() => undefined);
-    expect(getUserVersion(getCachePath())).toBe(31);
+    expect(getUserVersion(getCachePath())).toBe(CACHE_SCHEMA_VERSION);
   });
 });
 
@@ -368,7 +355,7 @@ describe("saveCachedSessions", () => {
   it("creates sqlite cache db", () => {
     saveCachedSessions("claudecode", [makeSession("s1")]);
     expect(readFileSync(getCachePath()).byteLength).toBeGreaterThan(0);
-    expect(getUserVersion(getCachePath())).toBe(31);
+    expect(getUserVersion(getCachePath())).toBe(CACHE_SCHEMA_VERSION);
   });
 
   it("writes structured session rows for cache restores", () => {
@@ -437,39 +424,17 @@ describe("saveCachedSessions", () => {
 
     const db = new Database(getCachePath(), { readonly: true });
     try {
-      const rowCounts = Object.fromEntries(
-        ["sessions", "cached_sessions", "project_sessions"].map((table) => {
-          const row = db.prepare(`SELECT COUNT(*) AS value FROM ${table}`).get() as {
-            value?: number;
-          };
-          return [table, Number(row.value ?? 0)];
-        }),
-      );
-      expect(rowCounts).toEqual({
-        sessions: 1,
-        cached_sessions: 0,
-        project_sessions: 0,
-      });
+      const row = db.prepare("SELECT COUNT(*) AS value FROM sessions").get() as { value?: number };
+      const legacyTableCount = db
+        .prepare(
+          "SELECT COUNT(*) AS value FROM sqlite_master WHERE type = 'table' AND name IN ('cached_sessions', 'project_sessions')",
+        )
+        .get() as { value?: number };
+      expect(Number(row.value ?? 0)).toBe(1);
+      expect(Number(legacyTableCount.value ?? 0)).toBe(0);
     } finally {
       db.close();
     }
-  });
-
-  it("ignores malformed legacy snapshot rows when restoring structured heads", () => {
-    saveCachedSessions("claudecode", [makeSession("s1")]);
-
-    const db = new Database(getCachePath());
-    try {
-      db.prepare(
-        `INSERT INTO cached_sessions(agent_name, session_id, session_json)
-         VALUES (?, ?, ?)`,
-      ).run("claudecode", "s1", "{");
-    } finally {
-      db.close();
-    }
-
-    const result = readCachedValue("claudecode");
-    expect(result?.sessions.map((session) => session.reference.sessionId)).toEqual(["s1"]);
   });
 
   it("overwrites cached rows for the same agent", () => {
@@ -615,13 +580,6 @@ describe("saveCachedSessions", () => {
 
     saveCachedSessions("claudecode", [session]);
 
-    const db = new Database(getCachePath());
-    try {
-      db.prepare("DELETE FROM project_sessions").run();
-    } finally {
-      db.close();
-    }
-
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "git_remote",
@@ -640,7 +598,7 @@ describe("saveCachedSessions", () => {
     const result = readCachedValue("claudecode");
 
     expect(result?.sessions.map((session) => session.reference.sessionId)).toEqual(["legacy"]);
-    expect(getUserVersion(getCachePath())).toBe(31);
+    expect(getUserVersion(getCachePath())).toBe(CACHE_SCHEMA_VERSION);
     expect(listCachedProjectGroups()).toEqual([
       {
         identityKind: "path",
@@ -700,7 +658,7 @@ describe("saveCachedSessions", () => {
 
     try {
       expect(readCachedValue("claudecode")?.sessions).toEqual([]);
-      expect(getUserVersion(getCachePath())).toBe(31);
+      expect(getUserVersion(getCachePath())).toBe(CACHE_SCHEMA_VERSION);
       expect(warnings).toContainEqual({
         event: "sqlite.migration.identity_precompute.missing_directory",
         detail: { agent_name: "claudecode", session_id: "legacy-null-directory" },
@@ -812,12 +770,10 @@ describe("saveCachedSessionChanges", () => {
 
     const db = new Database(getCachePath(), { readonly: true });
     try {
-      for (const table of ["cached_sessions", "sessions", "project_sessions"]) {
-        const row = db
-          .prepare(`SELECT COUNT(*) AS value FROM ${table} WHERE session_id = ?`)
-          .get("removed") as { value?: number };
-        expect(Number(row.value ?? 0)).toBe(0);
-      }
+      const row = db
+        .prepare("SELECT COUNT(*) AS value FROM sessions WHERE session_id = ?")
+        .get("removed") as { value?: number };
+      expect(Number(row.value ?? 0)).toBe(0);
     } finally {
       db.close();
     }

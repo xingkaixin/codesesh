@@ -6,7 +6,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 
 - 路径：`~/.cache/codesesh/codesesh.db`
 <!-- repo-fact:cache-schema-version:start -->
-- 当前 schema：`CACHE_SCHEMA_VERSION = 31`
+- 当前 schema：`CACHE_SCHEMA_VERSION = 32`
 <!-- repo-fact:cache-schema-version:end -->
 - 稳定导出入口：`packages/core/src/discovery/index.ts`
 - 实现目录：`packages/core/src/discovery/cache/`
@@ -32,7 +32,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 
 ## Schema 清单
 
-当前 schema 创建 15 张表（其中 2 张是 FTS5 虚表）和 1 个视图。
+当前 schema 创建 13 张表（其中 2 张是 FTS5 虚表）和 1 个视图。
 
 ### 生命周期与同步状态
 
@@ -83,7 +83,8 @@ TEMP 里让「进程被中断后留下孤儿暂存行」不可表达——连接
 搜索先由会话文档索引召回和排序，再在候选会话的消息纯文本中定位首条命中消息，不再
 为同一批内容维护第二套消息级倒排索引。
 
-Schema 24 删除旧消息索引、schema 31 删除持久暂存表后，SQLite 会把对应页计入 freelist，
+Schema 24 删除旧消息索引，schema 31 删除持久暂存表，schema 32 删除旧会话缓存与项目映射表；
+SQLite 会把对应页计入 freelist，
 后续写入可以直接复用；数据库文件的字节大小不会因此立即下降。物理压缩需要重写整个数据库，
 因此不在启动迁移中自动执行，避免把一次性磁盘回收变成阻塞式维护。需要真正缩小文件时手动执行
 `sqlite3 ~/.cache/codesesh/codesesh.db 'VACUUM'`。
@@ -94,15 +95,10 @@ Schema 24 删除旧消息索引、schema 31 删除持久暂存表后，SQLite �
 |------|------|------|
 | `project_groups_v` | 视图 | 从 `sessions` 按项目身份聚合来源、会话数与最近活动时间 |
 
-### 迁移兼容表
+### 历史迁移数据
 
-| 表 | 状态 |
-|----|------|
-| `cached_sessions` | 旧 JSON 会话缓存；迁移到 `sessions` 时读取，当前运行时不再写入 |
-| `project_sessions` | 旧项目映射；仅供旧 schema 迁移与兼容，当前视图读取 `sessions` |
-
-这两张表仍由最新 schema 创建，以保证旧数据库可以原地升级；不能据此把它们当作当前
-读写路径。
+旧 schema 中的 `cached_sessions` JSON 会话缓存和 `project_sessions` 项目映射只在升级过程
+中读取。Schema 32 在结构化数据迁移完成后删除这两张表；全新数据库不再创建它们。
 
 ## 数据流
 

@@ -31,11 +31,12 @@ import {
   addIndexedMessageCount,
   addProjectIdentityProvenance,
   addSessionPublicationId,
-  createCacheTables,
+  createCacheMetadataTables,
+  createLegacyCacheTables,
   createFileActivityPathSearchTables,
   createFileActivityTables,
   createMessageToolTables,
-  createProjectTables,
+  createLegacyProjectTables,
   createSearchStateIndex,
   createSearchTables,
   createSessionTables,
@@ -101,10 +102,10 @@ function removeLegacySessionIdentityFields(session: SessionHead): SessionHead {
 }
 
 function createLatestCacheSchema(db: SQLiteDatabase): void {
-  createCacheTables(db);
+  createCacheMetadataTables(db);
   createSessionTables(db);
   createFileActivityTables(db);
-  createProjectTables(db);
+  recreateProjectGroupsView(db);
   ensureFtsReady(db);
 }
 
@@ -207,7 +208,7 @@ function migrateProjectIdentity(
   resolveIdentity: LegacyProjectIdentityResolver,
 ): void {
   ensureLegacySessionDocumentColumns(db);
-  createProjectTables(db);
+  createLegacyProjectTables(db);
   backfillProjectSessions(db, resolveIdentity);
   backfillSessionDocumentProjects(db, resolveIdentity);
 }
@@ -783,8 +784,17 @@ function dropDerivedSessionSlug(db: SQLiteDatabase): void {
   db.exec("ALTER TABLE sessions DROP COLUMN slug");
 }
 
+function dropLegacyCacheTables(db: SQLiteDatabase): void {
+  db.exec(`
+    DROP VIEW IF EXISTS project_groups_v;
+    DROP TABLE IF EXISTS cached_sessions;
+    DROP TABLE IF EXISTS project_sessions;
+  `);
+  recreateProjectGroupsView(db);
+}
+
 function setCacheMetaVersion(db: SQLiteDatabase): void {
-  createCacheTables(db);
+  createCacheMetadataTables(db);
   db.prepare(
     `
       INSERT INTO cache_meta(key, value)
@@ -831,7 +841,7 @@ export function ensureCacheSchema(db: SQLiteDatabase, dbPath: string): void {
       "project_sessions",
     ],
     migrations: [
-      { version: 3, migrate: createCacheTables },
+      { version: 3, migrate: createLegacyCacheTables },
       { version: 4, migrate: createSearchTables },
       {
         version: 5,
@@ -873,7 +883,7 @@ export function ensureCacheSchema(db: SQLiteDatabase, dbPath: string): void {
           refreshProjectIdentities(db, resolveLegacyProjectIdentity);
         },
       },
-      { version: 13, migrate: createCacheTables },
+      { version: 13, migrate: createLegacyCacheTables },
       { version: 14, migrate: addIndexedMessageCount },
       { version: 15, destructive: true, migrate: compactSessionDocuments },
       { version: 17, migrate: addMessagePartsFormatVersion },
@@ -891,6 +901,7 @@ export function ensureCacheSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 29, migrate: addSessionUsageSummary },
       { version: 30, destructive: true, migrate: dropDerivedSessionSlug },
       { version: 31, migrate: dropDurablePublicationStaging },
+      { version: 32, destructive: true, migrate: dropLegacyCacheTables },
     ],
   });
 

@@ -20,6 +20,7 @@ import {
 } from "../search.js";
 import { setSchemaEnsuredPath } from "../db.js";
 import { MESSAGE_PARTS_FORMAT_VERSION } from "../messages.js";
+import { CACHE_SCHEMA_VERSION } from "../version.js";
 import { prepareSessionSnapshotSearchIndex } from "../search-index-writer.js";
 import { withCacheDb, withSearchDb, withSearchIndexDb } from "../connection.js";
 import { setCoreDiagnostics } from "../../../utils/diagnostics.js";
@@ -1448,7 +1449,7 @@ describe("searchSessions", () => {
     } finally {
       migratedDb.close();
     }
-    expect(getUserVersion(getCachePath())).toBe(31);
+    expect(getUserVersion(getCachePath())).toBe(CACHE_SCHEMA_VERSION);
   });
 
   it("keeps small incremental updates searchable immediately", () => {
@@ -2251,7 +2252,7 @@ describe("searchSessions", () => {
     expect(listFileActivity({ path: "migrated/App", limit: 10 }).map((item) => item.path)).toEqual([
       "src/migrated/App.tsx",
     ]);
-    expect(getUserVersion(getCachePath())).toBe(31);
+    expect(getUserVersion(getCachePath())).toBe(CACHE_SCHEMA_VERSION);
   });
 
   it("refreshes cached project identities when migrating to schema version 12", () => {
@@ -2266,14 +2267,6 @@ describe("searchSessions", () => {
           SET project_identity_kind = 'path',
               project_identity_key = ?,
               project_display_name = 'new-chat'
-        `,
-      ).run(directory);
-      db.prepare(
-        `
-          UPDATE project_sessions
-          SET identity_kind = 'path',
-              identity_key = ?,
-              display_name = 'new-chat'
         `,
       ).run(directory);
       db.pragma("user_version = 11");
