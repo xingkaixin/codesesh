@@ -696,8 +696,8 @@ describe("LiveScanStore", () => {
       expect.objectContaining({
         type: "sessions-updated",
         changedAgents: ["codex"],
-        newSessions: 1,
-        removedSessions: 1,
+        newSessionRefs: [{ agentName: "codex", sessionId: "fresh" }],
+        removedSessionRefs: [{ agentName: "codex", sessionId: "cached" }],
         totalSessions: 1,
       }),
     ]);
@@ -1375,9 +1375,8 @@ describe("LiveScanStore", () => {
     ]);
     expect(events).toEqual([
       expect.objectContaining({
-        newSessions: 1,
-        updatedSessions: 1,
-        removedSessions: 0,
+        newSessionRefs: [{ agentName: "codex", sessionId: "added" }],
+        removedSessionRefs: [],
       }),
     ]);
   });
@@ -1540,9 +1539,7 @@ describe("LiveScanStore", () => {
       expect.objectContaining({
         type: "sessions-updated",
         changedAgents: ["codex"],
-        newSessions: 1,
-        updatedSessions: 1,
-        removedSessions: 0,
+        newSessionRefs: [{ agentName: "codex", sessionId: "added" }],
         totalSessions: 2,
         changedSessionHeads: [
           {
@@ -1607,7 +1604,15 @@ describe("LiveScanStore", () => {
 
     expect(store.getSnapshot().sessions[0]?.title).toBe("new");
     expect(listener).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "sessions-updated", updatedSessions: 1 }),
+      expect.objectContaining({
+        type: "sessions-updated",
+        newSessionRefs: [],
+        changedSessionHeads: [
+          expect.objectContaining({
+            reference: { agentName: "codex", sessionId: "session" },
+          }),
+        ],
+      }),
     );
   });
 
@@ -1641,9 +1646,7 @@ describe("LiveScanStore", () => {
       expect.objectContaining({
         type: "sessions-updated",
         changedAgents: ["codex"],
-        newSessions: 0,
-        updatedSessions: 1,
-        removedSessions: 0,
+        newSessionRefs: [],
         changedSessionHeads: [
           {
             reference: { agentName: "codex", sessionId: previousWithProject.reference.sessionId },
@@ -1751,7 +1754,7 @@ describe("LiveScanStore", () => {
     expect(events).toEqual([
       expect.objectContaining({
         changedAgents: ["codex"],
-        newSessions: 1,
+        newSessionRefs: [{ agentName: "codex", sessionId: "new" }],
       }),
     ]);
 
@@ -1927,9 +1930,10 @@ describe("LiveScanStore", () => {
     expect(events).toEqual([
       expect.objectContaining({
         changedAgents: ["codex", "kimi"],
-        newSessions: 2,
-        updatedSessions: 0,
-        removedSessions: 0,
+        newSessionRefs: [
+          { agentName: "codex", sessionId: "codex-new" },
+          { agentName: "kimi", sessionId: "kimi-new" },
+        ],
         totalSessions: 4,
         changedSessionHeads: [
           {

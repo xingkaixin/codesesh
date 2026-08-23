@@ -161,7 +161,6 @@ describe("App live updates", () => {
       liveSubscription.onUpdate?.({
         ...SAMPLE_SESSIONS_UPDATED_EVENT,
         changedAgents: ["claudecode"],
-        newSessions: 0,
         newSessionRefs: [],
         totalSessions: 1,
         changedSessionHeads: [

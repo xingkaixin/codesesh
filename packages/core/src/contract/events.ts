@@ -4,11 +4,8 @@ import type { SessionReference } from "./session-reference.js";
 export interface SessionsUpdatedEvent {
   type: "sessions-updated";
   changedAgents: string[];
-  newSessions: number;
   /** Exact new-session subset for consumers that project the global event into a local view. */
-  newSessionRefs?: SessionReference[];
-  updatedSessions: number;
-  removedSessions: number;
+  newSessionRefs: SessionReference[];
   totalSessions: number;
   timestamp: number;
   changedSessionHeads: PublicReferencedSessionHead[];
@@ -59,12 +56,12 @@ export function mergeSessionsUpdatedEvents(
     removedSessionRefs.set(key, item);
   };
 
-  for (const item of previous.newSessionRefs ?? []) addNew(item);
+  for (const item of previous.newSessionRefs) addNew(item);
   for (const item of previous.projectionRelatedSessionHeads ?? []) addProjectionRelated(item);
   for (const item of previous.projectionSessionOrder ?? []) addProjectionOrder(item);
   for (const item of previous.changedSessionHeads) addChanged(item);
   for (const item of previous.removedSessionRefs) addRemoved(item);
-  for (const item of next.newSessionRefs ?? []) addNew(item);
+  for (const item of next.newSessionRefs) addNew(item);
   for (const item of next.projectionRelatedSessionHeads ?? []) addProjectionRelated(item);
   for (const item of next.projectionSessionOrder ?? []) addProjectionOrder(item);
   for (const item of next.changedSessionHeads) addChanged(item);
@@ -73,10 +70,7 @@ export function mergeSessionsUpdatedEvents(
   return {
     type: "sessions-updated",
     changedAgents: Array.from(new Set([...previous.changedAgents, ...next.changedAgents])),
-    newSessions: previous.newSessions + next.newSessions,
     newSessionRefs: [...newSessionRefs.values()],
-    updatedSessions: previous.updatedSessions + next.updatedSessions,
-    removedSessions: previous.removedSessions + next.removedSessions,
     totalSessions: next.totalSessions,
     timestamp: next.timestamp,
     changedSessionHeads: [...changedSessionHeads.values()],

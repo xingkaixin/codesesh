@@ -824,7 +824,12 @@ describe("AgentSyncEngine", () => {
       expect.any(Function),
     );
     expect(sessionChanges).toHaveBeenCalledWith(
-      expect.objectContaining({ event: expect.objectContaining({ updatedSessions: 1 }) }),
+      expect.objectContaining({
+        event: expect.objectContaining({
+          newSessionRefs: [],
+          changedSessionHeads: [expect.objectContaining({ reference: updated.reference })],
+        }),
+      }),
     );
   });
 
@@ -1680,7 +1685,10 @@ describe("AgentSyncEngine", () => {
     expect(sessionChanges).toHaveBeenCalledWith(
       expect.objectContaining({
         agentName: "codex",
-        event: expect.objectContaining({ updatedSessions: 1 }),
+        event: expect.objectContaining({
+          newSessionRefs: [],
+          changedSessionHeads: [expect.objectContaining({ reference: oldSession.reference })],
+        }),
       }),
     );
   });
@@ -1728,7 +1736,10 @@ describe("AgentSyncEngine", () => {
     ]);
     expect(sessionChanges).toHaveBeenCalledWith(
       expect.objectContaining({
-        event: expect.objectContaining({ updatedSessions: 1 }),
+        event: expect.objectContaining({
+          newSessionRefs: [],
+          changedSessionHeads: [expect.objectContaining({ reference: newSession.reference })],
+        }),
       }),
     );
     expect(workerLifecycle.commit).toHaveBeenCalledTimes(1);

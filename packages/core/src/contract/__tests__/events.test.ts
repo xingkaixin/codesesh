@@ -6,13 +6,12 @@ function event(
   changedSessionHeads: ReferencedSessionHead[],
   removedSessionRefs: SessionsUpdatedEvent["removedSessionRefs"] = [],
   projectionRelatedSessionHeads: ReferencedSessionHead[] = [],
+  newSessionRefs: SessionsUpdatedEvent["newSessionRefs"] = [],
 ): SessionsUpdatedEvent {
   return {
     type: "sessions-updated",
     changedAgents: ["claudecode"],
-    newSessions: 0,
-    updatedSessions: changedSessionHeads.length,
-    removedSessions: removedSessionRefs.length,
+    newSessionRefs,
     totalSessions: 2,
     timestamp: 1,
     changedSessionHeads,
@@ -89,9 +88,7 @@ describe("mergeSessionsUpdatedEvents", () => {
   it("removes a coalesced new-session reference when that session is removed", () => {
     const reference = { agentName: "claudecode", sessionId: "session-1" };
     const added = {
-      ...event([]),
-      newSessions: 1,
-      newSessionRefs: [reference],
+      ...event([], [], [], [reference]),
       projectionSessionOrder: [reference],
     };
 
@@ -99,6 +96,41 @@ describe("mergeSessionsUpdatedEvents", () => {
 
     expect(merged.newSessionRefs).toEqual([]);
     expect(merged.projectionSessionOrder).toEqual([]);
+  });
+
+  it("keeps a coalesced addition classified as new after a later update", () => {
+    const reference = { agentName: "claudecode", sessionId: "session-1" };
+    const added = { reference, session: { display_title: "Added" } } as ReferencedSessionHead;
+    const updated = {
+      reference,
+      session: { display_title: "Updated" },
+    } as ReferencedSessionHead;
+
+    const merged = mergeSessionsUpdatedEvents(
+      event([added], [], [], [reference]),
+      event([updated]),
+    );
+
+    expect(merged.newSessionRefs).toEqual([reference]);
+    expect(merged.changedSessionHeads).toEqual([updated]);
+    expect(merged.removedSessionRefs).toEqual([]);
+  });
+
+  it("treats a re-created removed session as the latest change", () => {
+    const reference = { agentName: "claudecode", sessionId: "session-1" };
+    const recreated = {
+      reference,
+      session: { display_title: "Re-created" },
+    } as ReferencedSessionHead;
+
+    const merged = mergeSessionsUpdatedEvents(
+      event([], [reference]),
+      event([recreated], [], [], [reference]),
+    );
+
+    expect(merged.newSessionRefs).toEqual([reference]);
+    expect(merged.changedSessionHeads).toEqual([recreated]);
+    expect(merged.removedSessionRefs).toEqual([]);
   });
 
   it("uses the latest canonical order for an affected activity tie", () => {

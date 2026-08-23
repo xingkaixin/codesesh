@@ -165,10 +165,7 @@ describe("LiveSessionIndex", () => {
     expect(event).toEqual({
       type: "sessions-updated",
       changedAgents: ["codex"],
-      newSessions: 1,
       newSessionRefs: [{ agentName: "codex", sessionId: "added" }],
-      updatedSessions: 1,
-      removedSessions: 0,
       totalSessions: 3,
       timestamp: expect.any(Number),
       changedSessionHeads: [
@@ -291,9 +288,7 @@ describe("LiveSessionIndex", () => {
     expect(index.snapshot().sessions).toEqual([]);
     expect(event).toEqual(
       expect.objectContaining({
-        newSessions: 0,
-        updatedSessions: 0,
-        removedSessions: 1,
+        newSessionRefs: [],
         totalSessions: 0,
         changedSessionHeads: [],
         removedSessionRefs: [{ agentName: "codex", sessionId: "removed" }],

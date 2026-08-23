@@ -189,7 +189,7 @@ export class LiveScanStore {
 
   private emit(event: SessionsUpdatedEvent): void {
     if (this.shuttingDown) return;
-    if (this.pendingEvent || event.newSessions > 0) {
+    if (this.pendingEvent || event.newSessionRefs.length > 0) {
       this.queueEvent(event);
       return;
     }
