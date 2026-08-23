@@ -124,7 +124,37 @@ export type AgentRefreshInspection =
 export type AgentRefreshSelection =
   | { kind: "unavailable"; availabilityDurationMs: number }
   | { kind: "initialize"; availabilityDurationMs: number }
-  | (AgentRefreshInspection & { availabilityDurationMs: number });
+  | ({ kind: "synchronize"; source: EnumeratedSessionSourceCapability } & {
+      availabilityDurationMs: number;
+    })
+  | ({
+      kind: "failed";
+      failure: Extract<ChangeCheckResult, { status: "failed" }>["failure"];
+      checkDurationMs: number;
+    } & { availabilityDurationMs: number })
+  | ({
+      kind: "recompute-derived";
+      source: AggregateSessionSourceCapability;
+      check: SuccessfulChangeCheck;
+      checkDurationMs: number;
+    } & { availabilityDurationMs: number })
+  | ({
+      kind: "full-scan";
+      source: AggregateSessionSourceCapability;
+      check: SuccessfulChangeCheck;
+      checkDurationMs: number;
+    } & { availabilityDurationMs: number })
+  | ({
+      kind: "incremental-scan";
+      source: AggregateSessionSourceCapability;
+      check: SuccessfulChangeCheck & { changedIds: string[] };
+      checkDurationMs: number;
+    } & { availabilityDurationMs: number });
+
+type CommittableAgentRefresh = Extract<
+  AgentRefreshSelection,
+  { kind: "recompute-derived" | "full-scan" | "incremental-scan" }
+>;
 
 export function planAgentScan(
   source: SessionSourceCapability,
@@ -191,12 +221,27 @@ export async function selectAgentRefresh(
   if (!available) return { kind: "unavailable", availabilityDurationMs };
   if (!options.initialized) return { kind: "initialize", availabilityDurationMs };
 
-  return {
-    ...(await inspectAgentRefresh(
-      agent.sessionSourceAccess,
-      options.sinceTimestamp,
-      options.cachedSessions,
-    )),
-    availabilityDurationMs,
-  };
+  const inspection = await inspectAgentRefresh(
+    agent.sessionSourceAccess,
+    options.sinceTimestamp,
+    options.cachedSessions,
+  );
+  if (inspection.kind === "unchanged") {
+    return { ...inspection, kind: "recompute-derived", availabilityDurationMs };
+  }
+  if (inspection.kind === "scan") {
+    return inspection.check.changedIds === undefined
+      ? { ...inspection, kind: "full-scan", availabilityDurationMs }
+      : {
+          ...inspection,
+          kind: "incremental-scan",
+          check: { ...inspection.check, changedIds: inspection.check.changedIds },
+          availabilityDurationMs,
+        };
+  }
+  return { ...inspection, availabilityDurationMs };
+}
+
+export function commitAgentRefreshCheck(refresh: CommittableAgentRefresh): void {
+  refresh.source.commitChangeCheck();
 }
