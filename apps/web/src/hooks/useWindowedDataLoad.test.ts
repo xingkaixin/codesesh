@@ -1,20 +1,13 @@
-import { SAMPLE_DASHBOARD_DATA } from "@codesesh/core/test-fixtures";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "../lib/api";
 import * as api from "../lib/api";
-import type { SessionStoreSnapshot } from "./useSessionStore";
 import { useWindowedDataLoad } from "./useWindowedDataLoad";
 
 vi.mock("../lib/api", () => ({ logClientEvent: vi.fn() }));
 
 const window = { from: 1, to: 2 } as AppConfig["window"];
-const snapshot = {
-  window,
-  agents: [],
-  sessions: [],
-  dashboard: SAMPLE_DASHBOARD_DATA,
-} satisfies SessionStoreSnapshot;
+const result = { agentCount: 0, sessionCount: 0 };
 
 afterEach(() => {
   cleanup();
@@ -29,7 +22,7 @@ describe("useWindowedDataLoad", () => {
   });
 
   it("reloads the store and records the snapshot counts", async () => {
-    const reload = vi.fn().mockResolvedValue(snapshot);
+    const reload = vi.fn().mockResolvedValue(result);
     renderHook(() => useWindowedDataLoad({ window, reload }));
 
     await waitFor(() => expect(reload).toHaveBeenCalledWith(window));
@@ -43,7 +36,7 @@ describe("useWindowedDataLoad", () => {
   });
 
   it("reloads once for each selected window", async () => {
-    const reload = vi.fn().mockResolvedValue(snapshot);
+    const reload = vi.fn().mockResolvedValue(result);
     const { rerender } = renderHook(
       ({ selectedWindow }) => useWindowedDataLoad({ window: selectedWindow, reload }),
       { initialProps: { selectedWindow: window } },

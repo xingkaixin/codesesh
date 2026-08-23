@@ -31,7 +31,7 @@ import {
   invalidateSessionDerivedQueries,
 } from "../lib/session-query-consistency";
 
-export interface SessionStoreSnapshot {
+interface SessionStoreSnapshot {
   window: AppConfig["window"];
   agents: AgentInfo[];
   sessions: SessionHead[];
@@ -44,12 +44,15 @@ export interface SessionProjection {
 }
 
 export interface LiveSessionApplyResult {
-  snapshot: SessionStoreSnapshot;
   visibleNewSessions: number;
 }
 
+export interface SessionReloadResult {
+  agentCount: number;
+  sessionCount: number;
+}
+
 interface SnapshotAggregates {
-  window: AppConfig["window"];
   agents: AgentInfo[];
   dashboard: DashboardData;
 }
@@ -102,7 +105,7 @@ async function fetchSnapshotAggregates(
     queryClient.fetchQuery(agentCatalogOptions(window)),
     queryClient.fetchQuery(dashboardQueryOptions(window, {})),
   ]);
-  return { window, agents, dashboard };
+  return { agents, dashboard };
 }
 
 function sessionProjectionOptions(
@@ -250,13 +253,13 @@ export function useSessionStore() {
     sameWindow(projectionQuery.data.window, requestedWindow)
       ? createSnapshot(
           requestedWindow,
-          { window: requestedWindow, agents: agentsQuery.data, dashboard },
+          { agents: agentsQuery.data, dashboard },
           projectionQuery.data.sessions,
         )
       : null;
 
   const reload = useCallback(
-    async (window: AppConfig["window"]): Promise<SessionStoreSnapshot | null> => {
+    async (window: AppConfig["window"]): Promise<SessionReloadResult | null> => {
       const request = { window };
       activeRequestRef.current = request;
       liveAggregateWindowRef.current = null;
@@ -301,7 +304,10 @@ export function useSessionStore() {
             }),
           ),
         ]);
-        return createSnapshot(window, aggregates, projection.sessions);
+        return {
+          agentCount: aggregates.agents.length,
+          sessionCount: projection.sessions.length,
+        };
       } catch (error) {
         if (isCancelledError(error)) return null;
         if (activeRequestRef.current === request) setReloadFailed(true);
@@ -328,13 +334,8 @@ export function useSessionStore() {
           invalidateLiveSessionDerivedQueries(queryClient, event),
           invalidateLiveSessionCollections(queryClient),
         ]);
-        return refreshed ? { snapshot: refreshed, visibleNewSessions: 0 } : null;
+        return refreshed ? { visibleNewSessions: 0 } : null;
       }
-      const currentAggregates = {
-        window: activeWindow,
-        agents: currentAgents,
-        dashboard: currentDashboard,
-      };
 
       const projection = applySessionWindowChanges(currentProjection.sessions, {
         changedSessionHeads: event.changedSessionHeads,
@@ -381,20 +382,16 @@ export function useSessionStore() {
           }
         })
         .catch(() => undefined);
-      return {
-        snapshot: createSnapshot(activeWindow, currentAggregates, projection.sessions),
-        visibleNewSessions,
-      };
+      return { visibleNewSessions };
     },
     [queryClient, reload],
   );
 
-  const resyncLiveState = useCallback(async (): Promise<SessionStoreSnapshot | null> => {
+  const resyncLiveState = useCallback(async (): Promise<void> => {
     const activeRequest = activeRequestRef.current;
-    if (!activeRequest) return null;
-    const refreshed = await reload(activeRequest.window);
+    if (!activeRequest) return;
+    await reload(activeRequest.window);
     await invalidateSessionDerivedQueries(queryClient);
-    return refreshed;
   }, [queryClient, reload]);
 
   const retryLoad = useCallback(async (): Promise<void> => {

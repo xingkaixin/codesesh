@@ -20,7 +20,7 @@ import {
   useSessionStore,
   type LiveSessionApplyResult,
   type SessionProjection,
-  type SessionStoreSnapshot,
+  type SessionReloadResult,
 } from "./useSessionStore";
 import { useDashboard } from "./useDashboard";
 
@@ -151,13 +151,13 @@ describe("useSessionStore", () => {
 
   it("ignores live events until a window has been selected", async () => {
     const { result } = await renderStore();
-    let snapshot: Awaited<ReturnType<typeof result.current.applyLiveEvent>> | undefined;
+    let update: Awaited<ReturnType<typeof result.current.applyLiveEvent>> | undefined;
 
     await act(async () => {
-      snapshot = await result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT);
+      update = await result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT);
     });
 
-    expect(snapshot).toBeNull();
+    expect(update).toBeNull();
     expect(api.fetchAgents).not.toHaveBeenCalled();
   });
 
@@ -170,13 +170,14 @@ describe("useSessionStore", () => {
       initialLoad = result.current.reload(config.window);
       liveUpdate = result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT);
     });
-    let snapshots!: [LiveSessionApplyResult | null, SessionStoreSnapshot | null];
+    let results!: [LiveSessionApplyResult | null, SessionReloadResult | null];
     await act(async () => {
-      snapshots = await Promise.all([liveUpdate, initialLoad]);
+      results = await Promise.all([liveUpdate, initialLoad]);
     });
-    const [liveSnapshot] = snapshots;
+    const [liveResult, reloadResult] = results;
 
-    expect(liveSnapshot?.snapshot.window).toEqual(config.window);
+    expect(liveResult).toEqual({ visibleNewSessions: 0 });
+    expect(reloadResult).toEqual({ agentCount: 2, sessionCount: 1 });
     await waitFor(() => expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]));
   });
 
