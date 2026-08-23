@@ -164,6 +164,7 @@ describe("ScanStatusModel", () => {
         phase: "idle",
         pendingAgents: [],
         scanningAgents: [],
+        completedAgents: ["codex", "claude"],
         completedAt: expect.any(Number),
       }),
     );
