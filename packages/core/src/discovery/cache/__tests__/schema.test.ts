@@ -10,6 +10,9 @@ import { readCachedSessions, saveCachedSessions } from "../sessions.js";
 import { syncSessionSearchIndex } from "../search-index-writer.js";
 import { makeSessionData, makeSessionHead } from "./fixtures.js";
 import { setCoreDiagnostics } from "../../../utils/diagnostics.js";
+import { ensureCacheSchema } from "../schema.js";
+import { CACHE_SCHEMA_VERSION } from "../version.js";
+import { UnsupportedCacheSchemaVersionError } from "../errors.js";
 
 const schema = connection;
 
@@ -107,6 +110,30 @@ describe("cache schema boundary", () => {
       ]),
     );
     expect(state?.version).toBe(31);
+  });
+
+  it("refuses a newer cache schema without mutating it", () => {
+    schema.withCacheDb(() => undefined);
+    setSchemaEnsuredPath(null);
+    const db = new Database(getCachePath());
+    const newerVersion = CACHE_SCHEMA_VERSION + 1;
+    try {
+      db.exec(`
+        CREATE TABLE newer_schema_marker(value TEXT NOT NULL);
+        INSERT INTO newer_schema_marker(value) VALUES ('preserve-me');
+        PRAGMA user_version = ${newerVersion};
+      `);
+
+      expect(() => ensureCacheSchema(db as unknown as SQLiteDatabase, getCachePath())).toThrow(
+        new UnsupportedCacheSchemaVersionError(newerVersion, CACHE_SCHEMA_VERSION),
+      );
+      expect(Number(db.pragma("user_version", { simple: true }))).toBe(newerVersion);
+      expect(db.prepare("SELECT value FROM newer_schema_marker").all()).toEqual([
+        { value: "preserve-me" },
+      ]);
+    } finally {
+      db.close();
+    }
   });
 
   it("derives session identity from the composite key when upgrading schema 29", () => {

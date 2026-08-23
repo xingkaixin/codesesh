@@ -9,6 +9,7 @@ import {
   openDb,
   openDbReadOnly,
   runSchemaMigrations,
+  SchemaMigrationPlanError,
   type SQLiteDatabase,
 } from "../sqlite.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../diagnostics.js";
@@ -88,6 +89,57 @@ describe("sqlite migration helpers", () => {
           }),
         },
       ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rejects an incomplete plan before applying migrations", () => {
+    const db = new Database(":memory:") as unknown as SQLiteDatabase;
+    let migrationRan = false;
+    try {
+      expect(() =>
+        runSchemaMigrations(db, {
+          dbPath: ":memory:",
+          currentVersion: 0,
+          targetVersion: 2,
+          migrations: [
+            {
+              version: 1,
+              migrate: () => {
+                migrationRan = true;
+              },
+            },
+          ],
+          backupTables: [],
+          backupLabel: "incomplete",
+        }),
+      ).toThrow(new SchemaMigrationPlanError("incomplete has no migration for target version 2"));
+
+      expect(migrationRan).toBe(false);
+      expect(getUserVersion(db)).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rejects unordered migration plans", () => {
+    const db = new Database(":memory:") as unknown as SQLiteDatabase;
+    try {
+      expect(() =>
+        runSchemaMigrations(db, {
+          dbPath: ":memory:",
+          currentVersion: 0,
+          targetVersion: 2,
+          migrations: [
+            { version: 2, migrate: () => {} },
+            { version: 1, migrate: () => {} },
+          ],
+          backupTables: [],
+          backupLabel: "unordered",
+        }),
+      ).toThrow("unordered migrations must be ordered by strictly increasing version");
+      expect(getUserVersion(db)).toBe(0);
     } finally {
       db.close();
     }

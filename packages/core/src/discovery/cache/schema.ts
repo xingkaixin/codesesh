@@ -56,6 +56,7 @@ import {
   type ProjectBackfillSessionRow,
 } from "./schema-version.js";
 import { CACHE_SCHEMA_VERSION } from "./version.js";
+import { UnsupportedCacheSchemaVersionError } from "./errors.js";
 
 export { runSearchIndexWrite, runWithFtsRecovery } from "./schema-fts.js";
 
@@ -800,6 +801,9 @@ function setCacheSchemaVersion(db: SQLiteDatabase): void {
 
 export function ensureCacheSchema(db: SQLiteDatabase, dbPath: string): void {
   const currentVersion = getCurrentCacheSchemaVersion(db);
+  if (currentVersion > CACHE_SCHEMA_VERSION) {
+    throw new UnsupportedCacheSchemaVersionError(currentVersion, CACHE_SCHEMA_VERSION);
+  }
   if (currentVersion === 0 && !hasAnyCacheSchema(db)) {
     createLatestCacheSchema(db);
     createSearchStateIndex(db);

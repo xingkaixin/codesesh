@@ -146,6 +146,7 @@ function setStateSchemaVersion(db: SQLiteDatabase): void {
 
 function ensureSchema(db: SQLiteDatabase, dbPath: string): void {
   const currentVersion = getCurrentStateSchemaVersion(db);
+  if (currentVersion > STATE_SCHEMA_VERSION) return;
   if (currentVersion === 0 && !hasAnyStateSchema(db)) {
     setStateSchemaVersion(db);
     return;
