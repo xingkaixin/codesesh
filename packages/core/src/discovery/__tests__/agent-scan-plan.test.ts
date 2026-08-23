@@ -4,6 +4,7 @@ import {
   inspectAgentRefresh,
   planAgentScan,
   resolveSessionSnapshotCompleteness,
+  selectAgentRefresh,
   type AgentScanIntent,
 } from "../agent-scan-plan.js";
 import type {
@@ -43,6 +44,7 @@ function agent(
 ): BaseAgent {
   return {
     sessionSourceAccess: source,
+    isAvailable: () => true,
     scan: vi.fn(() => sessions),
   } as unknown as BaseAgent;
 }
@@ -103,6 +105,49 @@ describe("planAgentScan", () => {
     if (plan.kind === "synchronize" || plan.kind === "check-for-changes") {
       expect(plan.source).toBe(source);
     }
+  });
+});
+
+describe("selectAgentRefresh", () => {
+  it("stops before change detection when the agent is unavailable", async () => {
+    const checkForChanges = vi.fn(aggregate.checkForChanges);
+    const target = agent({ ...aggregate, checkForChanges });
+    target.isAvailable = () => false;
+
+    const selection = await selectAgentRefresh(target, {
+      initialized: true,
+      sinceTimestamp: 10,
+      cachedSessions: [],
+    });
+
+    expect(selection).toMatchObject({ kind: "unavailable" });
+    expect(checkForChanges).not.toHaveBeenCalled();
+  });
+
+  it("selects initialization before change detection", async () => {
+    const checkForChanges = vi.fn(aggregate.checkForChanges);
+    const target = agent({ ...aggregate, checkForChanges });
+
+    const selection = await selectAgentRefresh(target, {
+      initialized: false,
+      sinceTimestamp: 10,
+      cachedSessions: [],
+    });
+
+    expect(selection).toMatchObject({ kind: "initialize" });
+    expect(checkForChanges).not.toHaveBeenCalled();
+  });
+
+  it("inspects an available initialized agent", async () => {
+    const target = agent(aggregate);
+
+    await expect(
+      selectAgentRefresh(target, {
+        initialized: true,
+        sinceTimestamp: 10,
+        cachedSessions: [],
+      }),
+    ).resolves.toMatchObject({ kind: "unchanged", availabilityDurationMs: expect.any(Number) });
   });
 });
 
