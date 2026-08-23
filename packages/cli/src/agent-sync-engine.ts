@@ -543,7 +543,6 @@ export class AgentSyncEngine {
    * empty database.
    */
   private refreshUnavailableAgent(agentName: string): RefreshStrategyResult {
-    this.lastRefreshAtByAgent.set(agentName, Date.now());
     const previousSessions = this.sessionIndex.snapshot().byAgent[agentName] ?? [];
     if (previousSessions.length > 0) {
       appLogger.warn("scan.refresh.agent_unavailable", {

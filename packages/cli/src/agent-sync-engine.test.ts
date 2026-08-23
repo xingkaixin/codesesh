@@ -1485,6 +1485,40 @@ describe("AgentSyncEngine", () => {
     expect(searchIndex.enqueue).not.toHaveBeenCalled();
   });
 
+  it("detects database changes after an unavailable agent recovers", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    let available = false;
+    const previous = makeSession("session", "before");
+    const updated = makeSession("session", "after");
+    const checkForChanges = vi.fn((sinceTimestamp: number) => ({
+      hasChanges: sinceTimestamp < 1_500,
+      timestamp: Date.now(),
+    }));
+    const agent = makeAgent({
+      isAvailable: () => available,
+      checkForChanges,
+    });
+    const workerRunner = makeWorkerRunner();
+    vi.mocked(workerRunner.run).mockImplementation(async (_agentName, payload) =>
+      workerResult({
+        sessions: payload.operation.kind === "full-scan" ? [updated] : payload.previousSessions,
+        meta: payload.meta,
+        changedIds: payload.operation.kind === "full-scan" ? [updated.reference.sessionId] : [],
+      }),
+    );
+    const { engine } = makeEngine(agent, [previous], workerRunner);
+
+    vi.setSystemTime(2_000);
+    await engine.refresh("codex");
+    available = true;
+    await engine.refresh("codex");
+
+    expect(checkForChanges).toHaveBeenCalledOnce();
+    expect(checkForChanges).toHaveBeenCalledWith(1_000, [previous]);
+    expect(engine.snapshot().byAgent.codex).toEqual([updated]);
+  });
+
   it("CS-138: still publishes a genuinely empty scan as removals", async () => {
     const workerRunner = makeWorkerRunner();
     const previous = makeSession("session", "before");
