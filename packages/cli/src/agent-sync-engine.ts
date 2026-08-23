@@ -3,13 +3,13 @@ import {
   buildAgentCacheMeta,
   buildSessionPersistenceDiff,
   getAgentFullSyncCursor,
-  inspectAgentRefresh,
   markAgentFullSyncProgress,
   markAgentFullSyncStarted,
   markAgentFullSyncCompleted,
   readCachedSessions,
   readAgentCacheInitialization,
   resolveSessionSnapshotCompleteness,
+  selectAgentRefresh,
   type BaseAgent,
   type AgentRefreshInspection,
   type CachedResult,
@@ -382,32 +382,28 @@ export class AgentSyncEngine {
       return { result: "unchanged", completion: { completeness: "complete" } };
     }
     const isInitialized = initialization.value;
-    const availabilityStartedAt = performance.now();
-    const isAvailable = agent.isAvailable();
-    const availabilityDuration = performance.now() - availabilityStartedAt;
+    const refresh = await selectAgentRefresh(agent, {
+      initialized: isInitialized,
+      sinceTimestamp: cacheTimestamp,
+      cachedSessions: refreshBaseline,
+    });
+    const availabilityDuration = refresh.availabilityDurationMs;
     let strategyResult: RefreshStrategyResult;
-    if (!isAvailable) {
+    if (refresh.kind === "unavailable") {
       strategyResult = this.refreshUnavailableAgent(agentName);
-    } else if (!isInitialized) {
+    } else if (refresh.kind === "initialize") {
       strategyResult = await this.initializeAgent(agent, previousSessions);
-    } else {
-      const refresh = await inspectAgentRefresh(
-        agent.sessionSourceAccess,
-        cacheTimestamp,
-        refreshBaseline,
+    } else if (refresh.kind === "synchronize") {
+      strategyResult = await this.syncAgentSources(
+        agent,
+        cached ?? {
+          sessions: refreshBaseline,
+          meta: durableMeta,
+        },
+        startedAt,
       );
-      if (refresh.kind === "synchronize") {
-        strategyResult = await this.syncAgentSources(
-          agent,
-          cached ?? {
-            sessions: refreshBaseline,
-            meta: durableMeta,
-          },
-          startedAt,
-        );
-      } else {
-        strategyResult = await this.refreshChangedAgent(agent, refresh, refreshBaseline, startedAt);
-      }
+    } else {
+      strategyResult = await this.refreshChangedAgent(agent, refresh, refreshBaseline, startedAt);
     }
     const stagedRun = strategyResult.workerRun;
     if (strategyResult.status === "unchanged") {

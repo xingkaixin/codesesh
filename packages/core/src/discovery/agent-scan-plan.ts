@@ -121,6 +121,11 @@ export type AgentRefreshInspection =
       checkDurationMs: number;
     };
 
+export type AgentRefreshSelection =
+  | { kind: "unavailable"; availabilityDurationMs: number }
+  | { kind: "initialize"; availabilityDurationMs: number }
+  | (AgentRefreshInspection & { availabilityDurationMs: number });
+
 export function planAgentScan(
   source: SessionSourceCapability,
   intent: "reload" | "backfill",
@@ -170,4 +175,28 @@ export async function inspectAgentRefresh(
   return check.hasChanges
     ? { kind: "scan", source: plan.source, check, checkDurationMs }
     : { kind: "unchanged", source: plan.source, check, checkDurationMs };
+}
+
+export async function selectAgentRefresh(
+  agent: Pick<BaseAgent, "isAvailable" | "sessionSourceAccess">,
+  options: {
+    initialized: boolean;
+    sinceTimestamp: number;
+    cachedSessions: SessionHead[];
+  },
+): Promise<AgentRefreshSelection> {
+  const availabilityStartedAt = performance.now();
+  const available = agent.isAvailable();
+  const availabilityDurationMs = performance.now() - availabilityStartedAt;
+  if (!available) return { kind: "unavailable", availabilityDurationMs };
+  if (!options.initialized) return { kind: "initialize", availabilityDurationMs };
+
+  return {
+    ...(await inspectAgentRefresh(
+      agent.sessionSourceAccess,
+      options.sinceTimestamp,
+      options.cachedSessions,
+    )),
+    availabilityDurationMs,
+  };
 }

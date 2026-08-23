@@ -13,9 +13,11 @@ export {
   inspectAgentRefresh,
   planAgentScan,
   resolveSessionSnapshotCompleteness,
+  selectAgentRefresh,
 } from "./agent-scan-plan.js";
 export type {
   AgentRefreshInspection,
+  AgentRefreshSelection,
   AgentScanIntent,
   AgentScanPlan,
   AgentScanPlanExecution,

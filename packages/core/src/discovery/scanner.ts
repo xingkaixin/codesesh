@@ -33,9 +33,9 @@ import {
 } from "./orchestrate.js";
 import {
   executeAgentScanPlan,
-  inspectAgentRefresh,
   planAgentScan,
   resolveSessionSnapshotCompleteness,
+  selectAgentRefresh,
 } from "./agent-scan-plan.js";
 import { ensureSessionTags } from "./session-tags.js";
 
@@ -449,8 +449,12 @@ async function scanAgentSmart(
         });
       }
 
-      const isAvail = agent.isAvailable();
-      if (!isAvail) {
+      const refresh = await selectAgentRefresh(agent, {
+        initialized: true,
+        sinceTimestamp: cached.timestamp,
+        cachedSessions: cached.sessions,
+      });
+      if (refresh.kind === "unavailable") {
         return finalizeAgentScanFailure(
           agent,
           {
@@ -465,6 +469,17 @@ async function scanAgentSmart(
           agentStart,
         );
       }
+      if (refresh.kind === "initialize") {
+        return scanAgentFull(
+          agent,
+          options,
+          cached,
+          cacheReadState,
+          onProgress,
+          timing,
+          agentStart,
+        );
+      }
 
       // 通知缓存已加载
       onProgress?.({
@@ -475,11 +490,6 @@ async function scanAgentSmart(
 
       onProgress?.({ agent: agent.name, phase: "checking" });
 
-      const refresh = await inspectAgentRefresh(
-        agent.sessionSourceAccess,
-        cached.timestamp,
-        cached.sessions,
-      );
       if (refresh.kind !== "synchronize") timing.checkChanges = refresh.checkDurationMs;
       if (refresh.kind === "synchronize") {
         return refreshCachedEnumeratedAgent(
