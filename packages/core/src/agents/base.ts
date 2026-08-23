@@ -308,9 +308,9 @@ export abstract class BaseAgent<TMeta extends SessionCacheMeta = SessionCacheMet
  * 的会话或 null 转成 parsed/skipped 结果；需要保留 filtered 等结果时可覆写，
  * 例如 KimiAgent。
  *
- * 变更检测 / 增量扫描 / metaMap 管理由本基类统一提供：
- *   checkForChanges 用 listSessionSources 的指纹与缓存 metaMap 比对，
- *   incrementalScan 对变更集合调用 scanSessionSource 重解析。
+ * 源同步与 metaMap 管理由本基类统一提供：
+ *   synchronizeSessionSources 用 listSessionSources 的指纹与缓存 metaMap 比对，
+ *   并对变更集合调用 scanSessionSource 重解析。
  * 两原语在各子类中复用同一个 sourceFingerprint 计算，故指纹精确比对即等价于变更检测。
  */
 export abstract class FileSystemSessionSource<
@@ -486,33 +486,6 @@ export abstract class FileSystemSessionSource<
     } catch {
       return null;
     }
-  }
-
-  checkForChanges(_sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
-    const outcome = this.synchronizeSessionSources(
-      { sessions: cachedSessions, meta: this.snapshotSessionCacheMeta() },
-      { kind: "inspect" },
-    );
-
-    return {
-      hasChanges: outcome.detectedSessionIds.length > 0 || outcome.sourceFailures.length > 0,
-      changedIds: outcome.detectedSessionIds,
-      timestamp: Date.now(),
-      refs: outcome.sources,
-      sourceFailures: outcome.sourceFailures,
-    };
-  }
-
-  incrementalScan(
-    cachedSessions: SessionHead[],
-    changedIds: string[],
-    refs?: SessionSourceRef[],
-    _scanOptions?: AgentScanOptions,
-  ): SessionHead[] {
-    return this.synchronizeSessionSources(
-      { sessions: cachedSessions, meta: this.snapshotSessionCacheMeta() },
-      { kind: "known-changes", changedIds, refs },
-    ).sessions;
   }
 }
 

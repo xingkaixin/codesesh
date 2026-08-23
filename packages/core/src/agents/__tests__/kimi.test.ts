@@ -47,6 +47,13 @@ function createAgent(basePath: string): KimiAgent {
   });
 }
 
+function refresh(agent: KimiAgent, sessions: SessionHead[]) {
+  return agent.sessionSourceAccess.synchronize(
+    { sessions, meta: agent.snapshotSessionCacheMeta() },
+    { kind: "refresh" },
+  );
+}
+
 function createSessionDir(
   basePath: string,
   id: string,
@@ -140,20 +147,19 @@ describe("KimiAgent cache refresh", () => {
     // A new session appears on disk after the baseline scan.
     createSessionDir(basePath, "new-session", "New", 1_000);
 
-    const result = agent.checkForChanges(Date.now(), [makeSession("old-session")]);
+    const result = refresh(agent, [makeSession("old-session")]);
 
-    expect(result.hasChanges).toBe(true);
-    expect(result.changedIds).toEqual(["new-session"]);
+    expect(result.detectedSessionIds).toEqual(["new-session"]);
   });
 
   it("adds changed session directories during incremental scan", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-kimi-test-"));
     tempDirs.push(basePath);
     createSessionDir(basePath, "old-session", "Old", 1_000);
-    createSessionDir(basePath, "new-session", "New", 1_000);
-
     const agent = createAgent(basePath);
-    const sessions = agent.incrementalScan([makeSession("old-session")], ["new-session"]);
+    const baseline = agent.scan();
+    createSessionDir(basePath, "new-session", "New", 1_000);
+    const sessions = refresh(agent, baseline).sessions;
 
     expect(sessions.map((session) => session.reference.sessionId).sort()).toEqual([
       "new-session",
@@ -174,10 +180,11 @@ describe("KimiAgent cache refresh", () => {
     createSessionDir(basePath, "old-session", "Old", 1_000);
 
     const agent = createAgent(basePath);
-    const sessions = agent.incrementalScan(
-      [makeSession("old-session"), makeSession("deleted-session")],
-      ["deleted-session"],
-    );
+    agent.scan();
+    const sessions = refresh(agent, [
+      makeSession("old-session"),
+      makeSession("deleted-session"),
+    ]).sessions;
 
     expect(sessions.map((session) => session.reference.sessionId)).toEqual(["old-session"]);
     expect(agent.getSessionCacheMeta("deleted-session")).toBeUndefined();

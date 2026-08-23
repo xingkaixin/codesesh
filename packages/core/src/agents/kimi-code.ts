@@ -11,7 +11,6 @@ import {
 } from "./base.js";
 import type {
   AgentScanOptions,
-  ChangeCheckResult,
   ParseSessionResult,
   SessionCacheMeta,
   SessionSourceRef,
@@ -493,33 +492,8 @@ export class KimiCodeAgent extends FileSystemSessionSource<SessionMeta> {
     return refs;
   }
 
-  checkForChanges(sinceTimestamp: number, cachedSessions: SessionHead[]): ChangeCheckResult {
-    const result = super.checkForChanges(sinceTimestamp, cachedSessions);
-    if (result.status === "failed") return result;
-    const emptySessionIds = cachedSessions
-      .filter((session) => !this.hasMessages(session))
-      .map((session) => session.reference.sessionId);
-    if (emptySessionIds.length === 0) return result;
-
-    return {
-      ...result,
-      hasChanges: true,
-      changedIds: [...new Set([...(result.changedIds ?? []), ...emptySessionIds])],
-    };
-  }
-
   filterCachedSessions(sessions: SessionHead[]): SessionHead[] {
     return this.removeEmptyCachedSessions(sessions);
-  }
-
-  incrementalScan(
-    cachedSessions: SessionHead[],
-    changedIds: string[],
-    refs?: SessionSourceRef[],
-    scanOptions?: AgentScanOptions,
-  ): SessionHead[] {
-    const visibleSessions = this.removeEmptyCachedSessions(cachedSessions);
-    return super.incrementalScan(visibleSessions, changedIds, refs, scanOptions);
   }
 
   private hasMessages(session: SessionHead): boolean {

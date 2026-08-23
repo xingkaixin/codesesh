@@ -44,6 +44,13 @@ function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionH
   };
 }
 
+function refresh(agent: ClaudeCodeAgent, sessions: SessionHead[]) {
+  return agent.sessionSourceAccess.synchronize(
+    { sessions, meta: agent.snapshotSessionCacheMeta() },
+    { kind: "refresh" },
+  );
+}
+
 function writeMinimalClaudeSession(filePath: string): void {
   writeFileSync(
     filePath,
@@ -91,8 +98,8 @@ describe("ClaudeCodeAgent cache refresh", () => {
     expect(baselineFingerprint).toBeDefined();
 
     // No changes yet.
-    const unchanged = agent.checkForChanges(Date.now(), [makeSession("session-1")]);
-    expect(unchanged.hasChanges).toBe(false);
+    const unchanged = refresh(agent, [makeSession("session-1")]);
+    expect(unchanged.detectedSessionIds).toEqual([]);
 
     // Rewrite the index file (bumps its mtime → fingerprint changes).
     const later = new Date(Date.now() + 2000);
@@ -101,9 +108,8 @@ describe("ClaudeCodeAgent cache refresh", () => {
     });
     utimesSync(indexFile, later, later);
 
-    const changed = agent.checkForChanges(Date.now(), [makeSession("session-1")]);
-    expect(changed.hasChanges).toBe(true);
-    expect(changed.changedIds).toContain("session-1");
+    const changed = refresh(agent, [makeSession("session-1")]);
+    expect(changed.detectedSessionIds).toContain("session-1");
     // The fingerprint now reflects the new index mtime.
     expect(agent.listSessionSources()[0]?.fingerprint).not.toBe(baselineFingerprint);
   });

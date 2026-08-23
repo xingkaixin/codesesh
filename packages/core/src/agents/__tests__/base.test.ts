@@ -16,6 +16,7 @@ import type {
   SessionCacheMeta,
   SessionSourceFile,
   SessionSourceRef,
+  SessionSourceSynchronizationRequest,
 } from "../base.js";
 import type { SessionDetail, SessionHead } from "../../types/index.js";
 import { PRICING_CAPTURE_EPOCH } from "../../pricing/cost.js";
@@ -102,6 +103,17 @@ class FakeFileSystemSource extends FileSystemSessionSource {
 
 class NormalizedNameSource extends FakeFileSystemSource {
   override readonly name = " FaKe ";
+}
+
+function synchronizeFileSource(
+  agent: FakeFileSystemSource,
+  sessions: SessionHead[],
+  request: SessionSourceSynchronizationRequest,
+) {
+  return agent.sessionSourceAccess.synchronize(
+    { sessions, meta: agent.snapshotSessionCacheMeta() },
+    request,
+  );
 }
 
 class ReentrantSingleFileSource extends SingleFileSessionSource {
@@ -539,7 +551,7 @@ describe("diffSessionSources", () => {
   });
 });
 
-describe("FileSystemSessionSource.checkForChanges", () => {
+describe("FileSystemSessionSource source inspection", () => {
   it("reports no changes when fingerprints and paths match", () => {
     const agent = new FakeFileSystemSource([source("a"), source("b")]);
     // Seed metaMap as if a prior scan populated it.
@@ -554,9 +566,10 @@ describe("FileSystemSessionSource.checkForChanges", () => {
       fingerprint: "fp-1",
     });
 
-    const result = agent.checkForChanges(Date.now(), [makeSession("a"), makeSession("b")]);
-    expect(result.hasChanges).toBe(false);
-    expect(result.changedIds).toEqual([]);
+    const result = synchronizeFileSource(agent, [makeSession("a"), makeSession("b")], {
+      kind: "inspect",
+    });
+    expect(result.detectedSessionIds).toEqual([]);
   });
 
   it("detects added sources", () => {
@@ -567,9 +580,8 @@ describe("FileSystemSessionSource.checkForChanges", () => {
       fingerprint: "fp-1",
     });
 
-    const result = agent.checkForChanges(Date.now(), [makeSession("a")]);
-    expect(result.hasChanges).toBe(true);
-    expect(result.changedIds).toEqual(["b"]);
+    const result = synchronizeFileSource(agent, [makeSession("a")], { kind: "inspect" });
+    expect(result.detectedSessionIds).toEqual(["b"]);
   });
 
   it("detects removed sources", () => {
@@ -584,9 +596,10 @@ describe("FileSystemSessionSource.checkForChanges", () => {
       ghost: { id: "ghost", sourcePath: "/tmp/ghost-does-not-exist.jsonl" },
     });
 
-    const result = agent.checkForChanges(Date.now(), [makeSession("a"), makeSession("ghost")]);
-    expect(result.hasChanges).toBe(true);
-    expect(result.changedIds).toEqual(["ghost"]);
+    const result = synchronizeFileSource(agent, [makeSession("a"), makeSession("ghost")], {
+      kind: "inspect",
+    });
+    expect(result.detectedSessionIds).toEqual(["ghost"]);
   });
 
   it("detects changed fingerprints", () => {
@@ -596,9 +609,8 @@ describe("FileSystemSessionSource.checkForChanges", () => {
       a: { id: "a", sourcePath: "/tmp/a.jsonl", sourceFingerprint: "fp-1" },
     });
 
-    const result = agent.checkForChanges(Date.now(), [makeSession("a")]);
-    expect(result.hasChanges).toBe(true);
-    expect(result.changedIds).toEqual(["a"]);
+    const result = synchronizeFileSource(agent, [makeSession("a")], { kind: "inspect" });
+    expect(result.detectedSessionIds).toEqual(["a"]);
   });
 
   it("detects changed source paths even with identical fingerprints", () => {
@@ -607,18 +619,16 @@ describe("FileSystemSessionSource.checkForChanges", () => {
       a: { id: "a", sourcePath: "/tmp/old-a.jsonl", sourceFingerprint: "fp-1" },
     });
 
-    const result = agent.checkForChanges(Date.now(), [makeSession("a")]);
-    expect(result.hasChanges).toBe(true);
-    expect(result.changedIds).toEqual(["a"]);
+    const result = synchronizeFileSource(agent, [makeSession("a")], { kind: "inspect" });
+    expect(result.detectedSessionIds).toEqual(["a"]);
   });
 
   it("treats missing fingerprint as changed", () => {
     const agent = new FakeFileSystemSource([source("a")]);
     agent.restoreSessionCacheMeta({ a: { id: "a", sourcePath: "/tmp/a.jsonl" } });
 
-    const result = agent.checkForChanges(Date.now(), [makeSession("a")]);
-    expect(result.hasChanges).toBe(true);
-    expect(result.changedIds).toEqual(["a"]);
+    const result = synchronizeFileSource(agent, [makeSession("a")], { kind: "inspect" });
+    expect(result.detectedSessionIds).toEqual(["a"]);
   });
 
   it("returns refs matching the listSessionSources enumeration", () => {
@@ -626,12 +636,14 @@ describe("FileSystemSessionSource.checkForChanges", () => {
     agent.scanSessionSource("/tmp/a.jsonl");
     agent.scanSessionSource("/tmp/b.jsonl");
 
-    const result = agent.checkForChanges(Date.now(), [makeSession("a"), makeSession("b")]);
-    expect(result.refs).toEqual(agent.listSessionSources());
+    const result = synchronizeFileSource(agent, [makeSession("a"), makeSession("b")], {
+      kind: "inspect",
+    });
+    expect(result.sources).toEqual(agent.listSessionSources());
   });
 });
 
-describe("FileSystemSessionSource.incrementalScan", () => {
+describe("FileSystemSessionSource source synchronization", () => {
   it("reports source enumeration, change, and processing workload", () => {
     const agent = new FakeFileSystemSource([source("a"), source("b")]);
 
@@ -654,20 +666,29 @@ describe("FileSystemSessionSource.incrementalScan", () => {
       source("b", "fp-1", { head: makeSession("b") }),
     ]);
 
-    const updated = agent.incrementalScan([makeSession("a"), makeSession("b")], ["a"]);
+    const updated = synchronizeFileSource(agent, [makeSession("a"), makeSession("b")], {
+      kind: "known-changes",
+      changedIds: ["a"],
+    }).sessions;
     expect(updated.map((s) => s.reference.sessionId).sort()).toEqual(["a", "b"]);
     expect(agent.getSessionCacheMeta("a")?.sourceFingerprint).toBe("fp-1");
   });
 
   it("adds new sources when listed but missing from cache", () => {
     const agent = new FakeFileSystemSource([source("a"), source("b")]);
-    const updated = agent.incrementalScan([makeSession("a")], ["b"]);
+    const updated = synchronizeFileSource(agent, [makeSession("a")], {
+      kind: "known-changes",
+      changedIds: ["b"],
+    }).sessions;
     expect(updated.map((s) => s.reference.sessionId).sort()).toEqual(["a", "b"]);
   });
 
   it("retains the last-known-good session when a source no longer parses", () => {
     const agent = new FakeFileSystemSource([source("a"), source("b", "fp-1", { head: null })]);
-    const updated = agent.incrementalScan([makeSession("a"), makeSession("b")], ["b"]);
+    const updated = synchronizeFileSource(agent, [makeSession("a"), makeSession("b")], {
+      kind: "known-changes",
+      changedIds: ["b"],
+    }).sessions;
     expect(updated.map((s) => s.reference.sessionId)).toEqual(["a", "b"]);
     expect(agent.getSessionCacheMeta("b")).toBeUndefined();
   });
@@ -681,7 +702,10 @@ describe("FileSystemSessionSource.incrementalScan", () => {
     agent.scanSessionSource("/tmp/a.jsonl");
     agent.setSources([source("a", "fp-new", { head: null, error })]);
 
-    const retained = agent.incrementalScan([before], ["a"]);
+    const retained = synchronizeFileSource(agent, [before], {
+      kind: "known-changes",
+      changedIds: ["a"],
+    }).sessions;
 
     expect(retained).toEqual([before]);
     expect(agent.getSessionCacheMeta("a")?.sourceFingerprint).toBe("fp-old");
@@ -690,7 +714,12 @@ describe("FileSystemSessionSource.incrementalScan", () => {
     recovered.title = "recovered";
     agent.setSources([source("a", "fp-new", { head: recovered })]);
 
-    expect(agent.incrementalScan(retained, ["a"])[0]?.title).toBe("recovered");
+    expect(
+      synchronizeFileSource(agent, retained, {
+        kind: "known-changes",
+        changedIds: ["a"],
+      }).sessions[0]?.title,
+    ).toBe("recovered");
     expect(agent.getSessionCacheMeta("a")?.sourceFingerprint).toBe("fp-new");
   });
 
@@ -700,7 +729,10 @@ describe("FileSystemSessionSource.incrementalScan", () => {
     agent.scanSessionSource("/tmp/a.jsonl");
     agent.setSources([source("a", "fp-new", { head: null, filtered: true })]);
 
-    const updated = agent.incrementalScan([before], ["a"]);
+    const updated = synchronizeFileSource(agent, [before], {
+      kind: "known-changes",
+      changedIds: ["a"],
+    }).sessions;
 
     expect(updated).toEqual([]);
     expect(agent.getSessionCacheMeta("a")).toBeUndefined();
@@ -713,7 +745,10 @@ describe("FileSystemSessionSource.incrementalScan", () => {
     const missingError = Object.assign(new Error("source disappeared"), { code: "ENOENT" });
     agent.setSources([source("a", "fp-new", { head: null, error: missingError })]);
 
-    const updated = agent.incrementalScan([before], ["a"]);
+    const updated = synchronizeFileSource(agent, [before], {
+      kind: "known-changes",
+      changedIds: ["a"],
+    }).sessions;
 
     expect(updated).toEqual([]);
     expect(agent.getSessionCacheMeta("a")).toBeUndefined();
@@ -728,10 +763,17 @@ describe("FileSystemSessionSource.incrementalScan", () => {
     const changedIds = ["a", "b"];
     const refs = agent.listSessionSources();
 
-    const fallback = agent.incrementalScan(cached, changedIds);
+    const fallback = synchronizeFileSource(agent, cached, {
+      kind: "known-changes",
+      changedIds,
+    }).sessions;
 
     const listSpy = vi.spyOn(agent, "listSessionSources");
-    const withRefs = agent.incrementalScan(cached, changedIds, refs);
+    const withRefs = synchronizeFileSource(agent, cached, {
+      kind: "known-changes",
+      changedIds,
+      refs,
+    }).sessions;
 
     expect(listSpy).toHaveBeenCalledTimes(0);
     expect(withRefs.map((s) => s.reference.sessionId).sort()).toEqual(
