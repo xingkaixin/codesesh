@@ -13,6 +13,7 @@ import {
   assertIdentifiedSessionHead,
   assertSessionIdentity,
   createSessionProjectionContext,
+  toPublicReferencedSessionHead,
   type SessionsUpdatedEvent,
 } from "@codesesh/core/contract";
 
@@ -125,8 +126,10 @@ export class LiveSessionIndex {
       removedSessions: counts.removed,
       totalSessions: this.sessions.length,
       timestamp: Date.now(),
-      changedSessionHeads,
-      projectionRelatedSessionHeads: projectionContext.relatedSessionHeads,
+      changedSessionHeads: changedSessionHeads.map(toPublicReferencedSessionHead),
+      projectionRelatedSessionHeads: projectionContext.relatedSessionHeads.map(
+        toPublicReferencedSessionHead,
+      ),
       projectionSessionOrder: projectionContext.sessionOrder,
       removedSessionRefs,
     };

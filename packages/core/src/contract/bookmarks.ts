@@ -1,4 +1,4 @@
-import type { SessionHead } from "./session.js";
+import type { PublicSessionHead } from "./session.js";
 import type { SessionReference } from "./session-reference.js";
 
 export interface BookmarkRecord {
@@ -8,7 +8,7 @@ export interface BookmarkRecord {
 
 export interface AvailableBookmarkView extends BookmarkRecord {
   availability: "available";
-  session: SessionHead;
+  session: PublicSessionHead;
 }
 
 export interface UnavailableBookmarkView extends BookmarkRecord {

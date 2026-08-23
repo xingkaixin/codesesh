@@ -167,14 +167,30 @@ export interface IdentifiedSessionHead extends SessionHead {
   project_identity: ProjectIdentity;
 }
 
+type InternalSessionHeadField =
+  | "model_usage"
+  | "project_identity_resolver_revision"
+  | "project_identity_input_signature"
+  | "smart_tags_source_updated_at"
+  | "smart_tags_classifier_revision";
+
+export type PublicSessionHead = Omit<SessionHead, InternalSessionHeadField>;
+
+export type PublicIdentifiedSessionHead = Omit<IdentifiedSessionHead, InternalSessionHeadField>;
+
 export interface SessionListPage {
-  sessions: IdentifiedSessionHead[];
+  sessions: PublicIdentifiedSessionHead[];
   nextCursor?: string;
 }
 
 export interface ReferencedSessionHead {
   reference: SessionReference;
   session: SessionHead;
+}
+
+export interface PublicReferencedSessionHead {
+  reference: SessionReference;
+  session: PublicSessionHead;
 }
 
 /** Complete normalized content for replaying a Session */
@@ -212,4 +228,24 @@ export function assertIdentifiedSessionHead(
   throw new Error(
     `Session ${session.reference.agentName}/${session.reference.sessionId} is missing project_identity`,
   );
+}
+
+export function toPublicSessionHead<T extends SessionHead>(
+  session: T,
+): Omit<T, InternalSessionHeadField> {
+  const {
+    model_usage: _modelUsage,
+    project_identity_resolver_revision: _resolverRevision,
+    project_identity_input_signature: _identityInputSignature,
+    smart_tags_source_updated_at: _smartTagsSourceUpdatedAt,
+    smart_tags_classifier_revision: _classifierRevision,
+    ...publicSession
+  } = session;
+  return publicSession;
+}
+
+export function toPublicReferencedSessionHead<T extends ReferencedSessionHead>(
+  item: T,
+): Omit<T, "session"> & { session: PublicSessionHead } {
+  return { ...item, session: toPublicSessionHead(item.session) };
 }

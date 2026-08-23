@@ -1,11 +1,11 @@
 import type {
   FileActivityKind,
-  ReferencedSessionHead,
+  PublicReferencedSessionHead,
   SessionFileActivity,
   ToolPart,
 } from "./session.js";
 
-export type FileActivityResult = SessionFileActivity & ReferencedSessionHead;
+export type FileActivityResult = SessionFileActivity & PublicReferencedSessionHead;
 
 export interface FileToolOperation {
   kind: FileActivityKind;

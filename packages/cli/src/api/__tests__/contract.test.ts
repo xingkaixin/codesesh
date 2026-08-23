@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { SAMPLE_SCAN_STATUS_EVENT, SAMPLE_SESSION_HEAD } from "@codesesh/core/test-fixtures";
+import { toPublicSessionHead } from "@codesesh/core/contract";
 import type { LiveSnapshot } from "@codesesh/core/runtime";
 import { createApiRoutes } from "../routes.js";
 import type { ScanResultSource } from "../handlers.js";
@@ -57,7 +58,7 @@ describe("cli routes stay wire-compatible with @codesesh/core/contract", () => {
     expect(body.results).toEqual([
       {
         reference: { agentName: "claudecode", sessionId: SAMPLE_SESSION_HEAD.reference.sessionId },
-        session: SAMPLE_SESSION_HEAD,
+        session: toPublicSessionHead(SAMPLE_SESSION_HEAD),
         snippet: `Recent session · ${SAMPLE_SESSION_HEAD.directory}`,
         snippetHighlights: [],
         matchType: "recent",

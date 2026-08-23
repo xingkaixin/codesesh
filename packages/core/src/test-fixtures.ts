@@ -1,6 +1,7 @@
 import type { DashboardData } from "./contract/dashboard.js";
 import type { AgentScanStatus, ScanStatusEvent, SessionsUpdatedEvent } from "./contract/events.js";
 import type { SessionHead } from "./contract/session.js";
+import { toPublicSessionHead } from "./contract/session.js";
 import { createSessionIdentity } from "./contract/session-reference.js";
 
 export const SAMPLE_SESSION_HEAD = {
@@ -78,7 +79,7 @@ export const SAMPLE_SESSIONS_UPDATED_EVENT = {
   changedSessionHeads: [
     {
       reference: SAMPLE_SESSION_HEAD.reference,
-      session: SAMPLE_SESSION_HEAD,
+      session: toPublicSessionHead(SAMPLE_SESSION_HEAD),
     },
   ],
   projectionRelatedSessionHeads: [],
@@ -143,7 +144,7 @@ export const SAMPLE_DASHBOARD_DATA = {
   recentSessions: [
     {
       reference: SAMPLE_SESSION_HEAD.reference,
-      session: SAMPLE_SESSION_HEAD,
+      session: toPublicSessionHead(SAMPLE_SESSION_HEAD),
     },
   ],
   recentFileActivities: [],

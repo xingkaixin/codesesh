@@ -1,5 +1,5 @@
 import type { SessionReference } from "./session-reference.js";
-import type { ReferencedSessionHead } from "./session.js";
+import type { PublicReferencedSessionHead } from "./session.js";
 
 export type SearchMatchType =
   | "recent"
@@ -19,7 +19,7 @@ export interface SearchHighlightRange {
   end: number;
 }
 
-export interface SearchResult extends ReferencedSessionHead {
+export interface SearchResult extends PublicReferencedSessionHead {
   snippet: string;
   snippetHighlights: SearchHighlightRange[];
   matchType: SearchMatchType;

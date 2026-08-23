@@ -1,7 +1,7 @@
 import type { FileActivityResult } from "./file-activity.js";
 import type { ModelCostEntry } from "./model-cost.js";
 import type { ProjectIdentityKind } from "./project-identity.js";
-import type { CostSource, ReferencedSessionHead } from "./session.js";
+import type { CostSource, PublicReferencedSessionHead } from "./session.js";
 
 export interface DashboardAgentStat {
   name: string;
@@ -62,7 +62,7 @@ export interface DashboardPreviousTotals {
   cost: number;
 }
 
-export type DashboardRecentSession = ReferencedSessionHead;
+export type DashboardRecentSession = PublicReferencedSessionHead;
 
 export interface DashboardTotals {
   sessions: number;

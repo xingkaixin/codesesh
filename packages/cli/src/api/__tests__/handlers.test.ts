@@ -1187,6 +1187,8 @@ describe("handleGetFileActivity", () => {
   it("projects aliases onto nested sessions", () => {
     const session = makeSession("s1", {
       reference: { agentName: "claudecode", sessionId: "s1" },
+      model_usage: { "gpt-5.5": 5 },
+      smart_tags_source_updated_at: 2,
     });
     coreMocks.listSessionAliases.mockReturnValue([makeAlias("claudecode", "s1", "Activity alias")]);
     coreMocks.listFileActivity.mockReturnValue([
@@ -1204,7 +1206,10 @@ describe("handleGetFileActivity", () => {
 
     handleGetFileActivity(c);
 
-    expect(c.json.mock.calls[0]![0].activity[0].session.display_title).toBe("Activity alias");
+    const responseSession = c.json.mock.calls[0]![0].activity[0].session;
+    expect(responseSession.display_title).toBe("Activity alias");
+    expect(responseSession).not.toHaveProperty("model_usage");
+    expect(responseSession).not.toHaveProperty("smart_tags_source_updated_at");
   });
 });
 
@@ -1541,6 +1546,30 @@ describe("handleGetDashboard", () => {
     expect(c.json.mock.calls[0]![0].recentFileActivities[0].session.display_title).toBe(
       "Activity alias",
     );
+  });
+
+  it("omits internal metadata from recent sessions", () => {
+    const session = makeSession("private", {
+      model_usage: { "gpt-5.5": 5 },
+      project_identity_resolver_revision: "resolver-v2",
+      project_identity_input_signature: "signature",
+      smart_tags_source_updated_at: 2,
+      smart_tags_classifier_revision: "classifier-v2",
+    });
+    const c = makeMockContext();
+
+    handleGetDashboard(
+      c,
+      makeScanSource({ sessions: [session], byAgent: { claudecode: [session] } }),
+    );
+
+    const responseSession = c.json.mock.calls[0]![0].recentSessions[0].session;
+    expect(responseSession).not.toHaveProperty("model_usage");
+    expect(responseSession).not.toHaveProperty("project_identity_resolver_revision");
+    expect(responseSession).not.toHaveProperty("project_identity_input_signature");
+    expect(responseSession).not.toHaveProperty("smart_tags_source_updated_at");
+    expect(responseSession).not.toHaveProperty("smart_tags_classifier_revision");
+    expect(session.model_usage).toEqual({ "gpt-5.5": 5 });
   });
 
   it("aggregates totals across all sessions", () => {

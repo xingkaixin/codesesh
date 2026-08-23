@@ -7,6 +7,8 @@ import {
   type AppConfig,
   type SessionReference,
   startOfCalendarDay,
+  toPublicReferencedSessionHead,
+  toPublicSessionHead,
 } from "@codesesh/core/contract";
 import {
   attachProjectMetricsFromTree,
@@ -141,18 +143,6 @@ function parseDateWindowRequest(c: Context, endpoint: string, defaults: SessionL
 interface ClientLogPayload {
   event?: unknown;
   data?: unknown;
-}
-
-function toSessionListItem(session: IdentifiedSessionHead): IdentifiedSessionHead {
-  const {
-    model_usage: _modelUsage,
-    project_identity_resolver_revision: _resolverRevision,
-    project_identity_input_signature: _identityInputSignature,
-    smart_tags_source_updated_at: _smartTagsSourceUpdatedAt,
-    smart_tags_classifier_revision: _smartTagsClassifierRevision,
-    ...item
-  } = session;
-  return item;
 }
 
 function getSessionHeadReference(session: SessionHead): SessionReference {
@@ -384,7 +374,7 @@ export async function handleGetSessions(
     }
     return c.json({
       sessions: page.items.map((session) =>
-        toSessionListItem(aliases.decorate(session, getSessionHeadReference(session))),
+        toPublicSessionHead(aliases.decorate(session, getSessionHeadReference(session))),
       ),
       ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
     });
@@ -392,7 +382,7 @@ export async function handleGetSessions(
 
   return c.json({
     sessions: sessions.map((session) =>
-      toSessionListItem(aliases.decorate(session, getSessionHeadReference(session))),
+      toPublicSessionHead(aliases.decorate(session, getSessionHeadReference(session))),
     ),
   });
 }
@@ -477,7 +467,9 @@ export async function handleSearchSessions(
     resolvedSearchOptions.limit ?? 50,
   );
   return c.json({
-    results: withParentContext(mergedResults, getSessionTree, aliases),
+    results: withParentContext(mergedResults, getSessionTree, aliases).map(
+      toPublicReferencedSessionHead,
+    ),
   });
 }
 
@@ -533,7 +525,7 @@ export async function handleGetFileActivity(
       from: window.from,
       to: window.to,
       limit: sessionQuery.limit.value,
-    }).map((activity) => decorateFileActivity(activity, aliases)),
+    }).map((activity) => toPublicReferencedSessionHead(decorateFileActivity(activity, aliases))),
   });
 }
 
@@ -711,12 +703,14 @@ export function handleGetDashboard(
   const aliases = loadAliasView();
   return c.json({
     ...data,
-    recentSessions: data.recentSessions.map((item) => ({
-      ...item,
-      session: aliases.decorate(item.session, item.reference),
-    })),
+    recentSessions: data.recentSessions.map((item) =>
+      toPublicReferencedSessionHead({
+        ...item,
+        session: aliases.decorate(item.session, item.reference),
+      }),
+    ),
     recentFileActivities: data.recentFileActivities.map((activity) =>
-      decorateFileActivity(activity, aliases),
+      toPublicReferencedSessionHead(decorateFileActivity(activity, aliases)),
     ),
   });
 }

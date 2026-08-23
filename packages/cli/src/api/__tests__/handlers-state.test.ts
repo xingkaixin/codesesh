@@ -265,6 +265,38 @@ describe("bookmark handlers", () => {
     expect(coreMocks.importBookmarks).not.toHaveBeenCalled();
   });
 
+  it("omits internal metadata from available sessions", () => {
+    const internalSession = {
+      ...sessionHead,
+      model_usage: { "gpt-5.5": 5 },
+      project_identity_resolver_revision: "resolver-v2",
+      project_identity_input_signature: "signature",
+      smart_tags_source_updated_at: 2,
+      smart_tags_classifier_revision: "classifier-v2",
+    };
+    const source: ScanResultSource = {
+      getSnapshot: () =>
+        ({
+          sessions: [internalSession],
+          byAgent: { codex: [internalSession] },
+          agents: [],
+        }) as LiveSnapshot,
+    };
+    coreMocks.listBookmarks.mockReturnValue([storedBookmark]);
+    const c = makeContext();
+
+    handleGetBookmarks(c as never, source);
+
+    const bookmark = getResponsePayload<{ bookmarks: BookmarkView[] }>(c).bookmarks[0];
+    const responseSession = bookmark?.availability === "available" ? bookmark.session : undefined;
+    expect(responseSession).not.toHaveProperty("model_usage");
+    expect(responseSession).not.toHaveProperty("project_identity_resolver_revision");
+    expect(responseSession).not.toHaveProperty("project_identity_input_signature");
+    expect(responseSession).not.toHaveProperty("smart_tags_source_updated_at");
+    expect(responseSession).not.toHaveProperty("smart_tags_classifier_revision");
+    expect(internalSession.model_usage).toEqual({ "gpt-5.5": 5 });
+  });
+
   it("tolerates unavailable alias storage and logs unexpected alias failures", () => {
     coreMocks.listBookmarks.mockReturnValue([storedBookmark]);
     coreMocks.listSessionAliases.mockImplementationOnce(() => {
