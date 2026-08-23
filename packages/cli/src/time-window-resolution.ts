@@ -11,21 +11,26 @@ export interface TimeWindow {
   days?: number;
 }
 
-interface RawTimeWindow {
+interface RawCliTimeWindow {
   from?: string;
   to?: string;
   days?: string;
 }
 
-interface CliTimeWindowRequest extends RawTimeWindow {
+interface CliTimeWindowRequest extends RawCliTimeWindow {
   mode: "cli";
   now?: number;
 }
 
 interface DashboardTimeWindowRequest {
   mode: "dashboard";
-  query: RawTimeWindow;
-  defaults?: TimeWindow;
+  window: {
+    from?: number;
+    to?: number;
+    hasExplicitFrom: boolean;
+  };
+  days?: string;
+  defaultDays?: number;
   now?: number;
 }
 
@@ -57,25 +62,23 @@ function resolveCliWindow(request: CliTimeWindowRequest): TimeWindow {
 
 function resolveDashboardWindow(request: DashboardTimeWindowRequest): DashboardTimeWindow {
   const now = request.now ?? Date.now();
-  const defaults = request.defaults ?? {};
-  const to = parseOptionalDate(request.query.to) ?? defaults.to ?? now;
-  const hasQueryDays = Boolean(request.query.days?.trim());
-  const parsedDays = hasQueryDays ? parseDays(request.query.days) : undefined;
-  let days = parsedDays != null && parsedDays > 0 ? parsedDays : defaults.days;
+  const to = request.window.to ?? now;
+  const hasQueryDays = Boolean(request.days?.trim());
+  const parsedDays = hasQueryDays ? parseDays(request.days) : undefined;
+  let days = parsedDays != null && parsedDays > 0 ? parsedDays : request.defaultDays;
 
-  const queryFrom = parseOptionalDate(request.query.from);
-  if (queryFrom != null) {
-    days ??= countCalendarDays(queryFrom, to);
-    return { from: queryFrom, to, days };
+  if (request.window.hasExplicitFrom && request.window.from != null) {
+    days ??= countCalendarDays(request.window.from, to);
+    return { from: request.window.from, to, days };
   }
 
-  if (parsedDays === 0 || (!hasQueryDays && defaults.days === 0)) {
+  if (parsedDays === 0 || (!hasQueryDays && request.defaultDays === 0)) {
     return { to, days: 0 };
   }
 
-  if (defaults.from != null) {
-    days ??= countCalendarDays(defaults.from, to);
-    return { from: defaults.from, to, days };
+  if (request.window.from != null) {
+    days ??= countCalendarDays(request.window.from, to);
+    return { from: request.window.from, to, days };
   }
 
   const resolvedDays = days != null && days > 0 ? days : DEFAULT_DASHBOARD_DAYS;
@@ -91,12 +94,6 @@ function parseRequiredDate(value: string | undefined): number | undefined {
   const timestamp = new Date(value).getTime();
   if (Number.isNaN(timestamp)) throw new Error(`Invalid date: ${value}`);
   return timestamp;
-}
-
-function parseOptionalDate(value: string | undefined): number | undefined {
-  if (value == null) return undefined;
-  const timestamp = new Date(value).getTime();
-  return Number.isNaN(timestamp) ? undefined : timestamp;
 }
 
 function parseDays(value: string | undefined): number | undefined {

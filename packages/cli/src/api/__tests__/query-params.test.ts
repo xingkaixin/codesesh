@@ -41,6 +41,21 @@ describe("session query contract", () => {
     });
   });
 
+  it("records whether the start came from the query", () => {
+    expect(parseDateWindow(new URLSearchParams(), { from: 1000, to: 2000 })).toEqual({
+      kind: "valid",
+      from: 1000,
+      to: 2000,
+      hasExplicitFrom: false,
+    });
+    expect(parseDateWindow(new URLSearchParams("from=1970-01-01T00:00:01.500Z"), {})).toEqual({
+      kind: "valid",
+      from: 1500,
+      to: undefined,
+      hasExplicitFrom: true,
+    });
+  });
+
   it("distinguishes an absent agent from known and unknown values", () => {
     expect(parseSessionQuery(new URLSearchParams(), ["claudecode"]).agent).toEqual({
       kind: "all",

@@ -627,12 +627,9 @@ export function handleGetDashboard(
   if (dateWindow.kind === "rejected") return dateWindow.response;
   const { from, to, days } = resolveTimeWindow({
     mode: "dashboard",
-    query: {
-      days: c.req.query("days"),
-      from: c.req.query("from"),
-      to: c.req.query("to"),
-    },
-    defaults,
+    window: dateWindow,
+    days: c.req.query("days"),
+    defaultDays: defaults.days,
   });
   const scope: DashboardScope = {
     agent: optionalQueryValue(c.req.query("agent"))?.toLowerCase(),
