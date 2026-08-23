@@ -33,6 +33,7 @@ import {
 } from "./orchestrate.js";
 import {
   executeAgentScanPlan,
+  commitAgentRefreshCheck,
   planAgentScan,
   resolveSessionSnapshotCompleteness,
   selectAgentRefresh,
@@ -519,7 +520,7 @@ async function scanAgentSmart(
         );
       }
 
-      if (refresh.kind === "scan") {
+      if (refresh.kind === "full-scan" || refresh.kind === "incremental-scan") {
         const checkResult = refresh.check;
         onProgress?.({
           agent: agent.name,
@@ -532,15 +533,13 @@ async function scanAgentSmart(
         const updatedSessions = await Promise.resolve(
           refresh.source.incrementalScan(
             cached.sessions,
-            checkResult.changedIds || [],
+            checkResult.changedIds ?? [],
             checkResult.refs,
             scanOptions,
           ),
         );
         timing.scan = performance.now() - t2;
-        refresh.source.commitChangeCheck();
-
-        return finalizeAgentScan(agent, updatedSessions, {
+        const result = await finalizeAgentScan(agent, updatedSessions, {
           finalization: {
             kind: "incremental",
             cached,
@@ -556,10 +555,11 @@ async function scanAgentSmart(
           ),
           onProgress,
         });
+        if (result.cachePersistence === "persisted") commitAgentRefreshCheck(refresh);
+        return result;
       }
 
-      refresh.source.commitChangeCheck();
-      return finalizeAgentScan(agent, cached.sessions, {
+      const result = await finalizeAgentScan(agent, cached.sessions, {
         finalization: { kind: "unchanged", cached },
         options,
         timing,
@@ -567,6 +567,8 @@ async function scanAgentSmart(
         completeness: "complete",
         onProgress,
       });
+      commitAgentRefreshCheck(refresh);
+      return result;
     }
   }
 

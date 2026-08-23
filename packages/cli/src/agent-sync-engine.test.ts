@@ -1410,6 +1410,7 @@ describe("AgentSyncEngine", () => {
     searchIndex.enqueue.mockRejectedValueOnce(new Error("index failed"));
     const previous = makeSession("session", "before");
     const updated = makeSession("session", "after");
+    const commitChangeCheck = vi.fn();
     const workerRunner = makeWorkerRunner();
     const { engine } = makeEngine(
       makeAgent({
@@ -1418,6 +1419,7 @@ describe("AgentSyncEngine", () => {
           changedIds: [updated.reference.sessionId],
           timestamp: 2,
         }),
+        commitChangeCheck,
         incrementalScan: () => [updated],
       }),
       [previous],
@@ -1437,6 +1439,7 @@ describe("AgentSyncEngine", () => {
     expect(workerLifecycle.commit).not.toHaveBeenCalled();
     expect(workerLifecycle.discard).not.toHaveBeenCalled();
     expect(workerRunner.reset).toHaveBeenCalledWith("codex");
+    expect(commitChangeCheck).not.toHaveBeenCalled();
     expect(engine.status().agentStatuses.codex).toMatchObject({ status: "failed" });
   });
 

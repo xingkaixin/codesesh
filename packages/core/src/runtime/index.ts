@@ -44,6 +44,7 @@ export {
   buildSessionPersistenceDiff,
   clearCache,
   closeCacheStorage,
+  commitAgentRefreshCheck,
   commitDurableSessionPublication,
   computeSessionDiff,
   executeAgentScanPlan,

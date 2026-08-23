@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  commitAgentRefreshCheck,
   executeAgentScanPlan,
   inspectAgentRefresh,
   planAgentScan,
@@ -147,7 +148,51 @@ describe("selectAgentRefresh", () => {
         sinceTimestamp: 10,
         cachedSessions: [],
       }),
-    ).resolves.toMatchObject({ kind: "unchanged", availabilityDurationMs: expect.any(Number) });
+    ).resolves.toMatchObject({
+      kind: "recompute-derived",
+      availabilityDurationMs: expect.any(Number),
+    });
+  });
+
+  it.each([
+    { changedIds: undefined, expectedKind: "full-scan" },
+    { changedIds: [], expectedKind: "incremental-scan" },
+    { changedIds: ["changed"], expectedKind: "incremental-scan" },
+  ])(
+    "selects $expectedKind when changed ids are $changedIds",
+    async ({ changedIds, expectedKind }) => {
+      const source: AggregateSessionSourceCapability = {
+        ...aggregate,
+        checkForChanges: () => ({ hasChanges: true, changedIds, timestamp: 11 }),
+      };
+
+      await expect(
+        selectAgentRefresh(agent(source), {
+          initialized: true,
+          sinceTimestamp: 10,
+          cachedSessions: [],
+        }),
+      ).resolves.toMatchObject({ kind: expectedKind });
+    },
+  );
+
+  it("commits a successful aggregate refresh through the policy owner", async () => {
+    const commitChangeCheck = vi.fn();
+    const source: AggregateSessionSourceCapability = {
+      ...aggregate,
+      commitChangeCheck,
+      checkForChanges: () => ({ hasChanges: false, timestamp: 11 }),
+    };
+    const selection = await selectAgentRefresh(agent(source), {
+      initialized: true,
+      sinceTimestamp: 10,
+      cachedSessions: [],
+    });
+    if (selection.kind !== "recompute-derived") throw new Error("Expected derived refresh");
+
+    commitAgentRefreshCheck(selection);
+
+    expect(commitChangeCheck).toHaveBeenCalledOnce();
   });
 });
 

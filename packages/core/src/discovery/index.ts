@@ -9,6 +9,7 @@ export {
 export type { AgentCacheFailure, LiveSnapshot, ScanOptions } from "./scanner.js";
 export type { SessionTagTiming } from "./session-tags.js";
 export {
+  commitAgentRefreshCheck,
   executeAgentScanPlan,
   inspectAgentRefresh,
   planAgentScan,

@@ -1205,6 +1205,7 @@ describe("scanSessions", () => {
       incrementalScanResult: refreshedSessions,
     });
     agent.checkForChanges = checkForChanges;
+    const commitChangeCheck = vi.spyOn(agent, "commitChangeCheck");
     mockCachedSessions({
       sessions: cachedSessions,
       meta: {},
@@ -1227,6 +1228,7 @@ describe("scanSessions", () => {
     expect(recovered.cacheFailures).toBeUndefined();
     expect(checkForChanges).toHaveBeenNthCalledWith(1, 123, cachedSessions);
     expect(checkForChanges).toHaveBeenNthCalledWith(2, 123, cachedSessions);
+    expect(commitChangeCheck).toHaveBeenCalledOnce();
   });
 
   it("reports a failed cache read separately from an empty cache", async () => {
